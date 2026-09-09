@@ -138,6 +138,7 @@ assert.deepEqual(interleaved.message.content.map(block => block.input.value), ['
 
 const invalidText = responseEvents(prepared);
 for (const [type, expected] of [['response.output_text.annotation.added', 'response.output_text.annotation.added'],
+  ...['ping', 'rate_limits.updated', 'codex.rate_limits'].map(type => [type, type]),
   ['SYNTHETIC_PRIVATE_EVENT_VALUE', 'other']]) {
   const parser = createNativeResponse(prepared);
   parser.push({ type: 'response.created', response: { id: 'resp_diagnostic', status: 'in_progress' } });

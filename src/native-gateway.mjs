@@ -5,7 +5,7 @@ import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
 import { betaFailure } from './native-beta.mjs';
-import { SELECTION_FAILURES } from './agent-selection.mjs';
+import { SELECTION_FAILURES, SELECTION_IO_CODES } from './agent-selection.mjs';
 
 export async function startNativeGateway({ transport, onUnregisteredAgent, admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000 } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
@@ -52,7 +52,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   async function handle(req, res, controller) {
     requests++;
     let release, upstream = false, timing, heartbeat, heartbeatPending = false, responseStarted = false;
-    let writeTail = Promise.resolve(), deliveryError;
+    let writeTail = Promise.resolve(), deliveryError, stage = 'request';
     const stopHeartbeat = () => { if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; activeHeartbeats--; } };
     const started = performance.now();
     const elapsed = () => Math.round((performance.now() - started) * 100) / 100;
@@ -144,6 +144,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       timing.requestedModel = Object.values(MODELS).find(item => item.model === doc?.model)?.model
         ?? (typeof doc?.model === 'string' && Object.hasOwn(MODELS, doc.model) ? MODELS[doc.model].model : null);
       const agent = req.headers['x-claude-code-agent-id'];
+      stage = 'selection';
       const agentBinding = agents.get(agent), role = agentBinding?.role;
       if (agentSelection && agent !== undefined) {
         if (agentBinding?.selectionPending) {
@@ -153,7 +154,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
             agentBinding.selectionBinding = undefined;
           }).catch(error => {
             agentBinding.selectionFailure = SELECTION_FAILURES.includes(error.selectionReason) ? error.selectionReason : 'UNKNOWN';
-            throw new NativeError(`AGENT_SELECTION_UNVERIFIED_${agentBinding.selectionFailure}`);
+            throw Object.assign(new NativeError(`AGENT_SELECTION_UNVERIFIED_${agentBinding.selectionFailure}`), {
+              selectionReason: agentBinding.selectionFailure,
+              selectionIoCode: SELECTION_IO_CODES.includes(error.selectionIoCode) ? error.selectionIoCode : null
+            });
           });
           await agentBinding.selectionWork;
           controller.signal.throwIfAborted();
@@ -164,8 +168,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
           && agentBinding.selection.parent === req.headers['x-claude-code-parent-agent-id'], 'AGENT_SELECTION_UNVERIFIED');
       }
       const route = agentSelection ? agentBinding?.selection?.route : Object.hasOwn(ROLE_MODELS, role) ? ROLE_MODELS[role] : undefined;
+      stage = 'prepare';
       const prepared = prepareNative(doc, { subagent: agent !== undefined, route,
         turnToolChanges: req.headers['anthropic-beta']?.split(',').some(value => value.trim() === 'mid-conversation-tool-changes-2026-07-01') });
+      stage = 'review';
       if (agentBinding?.selection?.review) prepareFileReview(prepared, doc);
       doc = undefined;
       timing.selectionSource = agentBinding?.selection?.source ?? null;
@@ -199,6 +205,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         return work;
       };
       timing.transportStartedMs = elapsed();
+      stage = 'upstream';
       const legacyEvents = await transport.send(prepared.body, controller.signal, {
         attemptTimings: timing.attempts,
         onEvent: async event => {
@@ -229,11 +236,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       // Existing injected offline transports can still return the old event-array contract.
       if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await emit(response.push(event));
       const output = response.finish();
+      stage = 'output-validation';
       verifyFileReviewStep(output.message, prepared);
       agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent);
       const kind = agent === undefined ? 'main' : 'subagent';
       maxObservedInputTokens[kind] = Math.max(maxObservedInputTokens[kind],
         output.message.usage.input_tokens + (output.message.usage.cache_read_input_tokens ?? 0));
+      stage = 'delivery';
       await emit(output.frames);
       res.end();
       timing.success = true;
@@ -245,6 +254,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const category = error instanceof NativeError ? error.code : upstream ? 'PROTOCOL_REJECTED' : 'INVALID_REQUEST';
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
       if (timing) timing.unsupportedEvent = eventKind;
+      if (timing) {
+        timing.failureStage = stage;
+        timing.selectionFailure = SELECTION_FAILURES.includes(error.selectionReason) ? error.selectionReason : null;
+        timing.selectionIoCode = SELECTION_IO_CODES.includes(error.selectionIoCode) ? error.selectionIoCode : null;
+      }
       if (timing) timing.reviewDiffMismatch = category === 'REVIEW_DIFF_REQUIRED'
         && ['call-count', 'tool-name', 'command', 'background'].includes(error.reviewDiffMismatch) ? error.reviewDiffMismatch : null;
       if (timing) timing.failureCategory = ['CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT',

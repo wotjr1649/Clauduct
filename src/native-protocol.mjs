@@ -10,7 +10,7 @@ export const OUTPUT_TOKEN_LIMIT_POLICY = 'usage-enforced-completion';
 // Diagnostic allowlist only, not a list of newly supported events. Never echo an
 // arbitrary upstream type or body through an error or status response.
 export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-object', 'missing-event-type', 'invalid-event-type',
-  'unknown-response-event', 'response.created', 'response.in_progress', 'response.queued',
+  'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'response.created', 'response.in_progress', 'response.queued',
   'response.completed', 'response.failed', 'response.incomplete', 'error',
   'response.output_item.added', 'response.output_item.done', 'response.content_part.added', 'response.content_part.done',
   'response.output_text.delta', 'response.output_text.done', 'response.output_text.annotation.added',

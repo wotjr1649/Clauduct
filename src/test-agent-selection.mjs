@@ -79,6 +79,12 @@ const denied = createAgentSelection({ readMetadata: async () => {
 } });
 await assert.rejects(denied.resolve(binding('denied')));
 assert.equal(deniedReads, 1);
+for (const code of ['ENOTDIR', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'SYNTHETIC_PRIVATE_CODE']) {
+  const io = createAgentSelection({ readMetadata: async () => { throw Object.assign(new Error('SYNTHETIC_PRIVATE_PATH'), { code }); } });
+  await assert.rejects(io.resolve(binding('io')), error => error.selectionReason === 'IO'
+    && error.selectionIoCode === (code === 'SYNTHETIC_PRIVATE_CODE' ? 'OTHER' : code)
+    && !JSON.stringify(error).includes('SYNTHETIC_PRIVATE'));
+}
 selection.remember(call('call_role', undefined, 'Plan'), 'session');
 snapshots.set('role', metadata('call_role'));
 await assert.rejects(selection.resolve(binding('role')), /AGENT_SELECTION_UNVERIFIED/);

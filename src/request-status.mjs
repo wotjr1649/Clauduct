@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
 import { EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
+import { SELECTION_FAILURES, SELECTION_IO_CODES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
   'firstTextDeltaMs', 'firstDownstreamWriteMs', 'transportFinishedMs', 'finishedMs'];
@@ -58,6 +59,9 @@ export async function readRequestStatus(env) {
       compactPercent: number(row.agentContextPolicy.compactPercent) } : null,
     subagent: row?.subagent === true, success: row?.success === true,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
+    failureStage: ['request', 'selection', 'prepare', 'review', 'upstream', 'output-validation', 'delivery'].includes(row?.failureStage) ? row.failureStage : null,
+    selectionFailure: SELECTION_FAILURES.includes(row?.selectionFailure) ? row.selectionFailure : null,
+    selectionIoCode: SELECTION_IO_CODES.includes(row?.selectionIoCode) ? row.selectionIoCode : null,
     reviewDiffMismatch: ['call-count', 'tool-name', 'command', 'background'].includes(row?.reviewDiffMismatch) ? row.reviewDiffMismatch : null,
     failureCategory: ['CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT', 'UPSTREAM_IO_ERROR',
       'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED', 'OTHER'].includes(row?.failureCategory) ? row.failureCategory : null,

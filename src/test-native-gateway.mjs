@@ -193,6 +193,7 @@ try {
       const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
         ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
       assert.equal(status.recentRequests.at(-1).unsupportedEvent, 'unknown-response-event');
+      assert.equal(status.recentRequests.at(-1).failureStage, 'upstream');
       assert.equal(status.recentRequests.at(-1).success, false);
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }

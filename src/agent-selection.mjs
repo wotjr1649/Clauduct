@@ -6,6 +6,10 @@ import { selectModel, ROLE_MODELS } from './models.mjs';
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 export const SELECTION_FAILURES = Object.freeze(['IDENTITY', 'PATH', 'SIZE', 'ACCESS', 'IO', 'MISSING', 'PARSE', 'CALL', 'ROLE', 'PARENT', 'MODEL', 'UNKNOWN']);
 const fail = (reason = 'UNKNOWN') => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), { selectionReason: reason }); };
+export const SELECTION_IO_CODES = Object.freeze(['ENOTDIR', 'EISDIR', 'EMFILE', 'ENFILE', 'EBUSY', 'EINVAL', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'OTHER']);
+const failIO = error => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), {
+  selectionReason: 'IO', selectionIoCode: SELECTION_IO_CODES.includes(error.code) ? error.code : 'OTHER'
+}); };
 const aliases = Object.freeze({ haiku: 'luna', sonnet: 'luna', opus: 'sol' });
 const model = value => selectModel(Object.hasOwn(aliases, value) ? aliases[value] : value);
 const within = (root, path) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..\\') && !rel.startsWith('../'); };
@@ -110,7 +114,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       catch (error) {
         if (error.selectionReason) throw error;
         if (['EACCES', 'EPERM'].includes(error.code)) fail('ACCESS');
-        if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) fail('IO');
+        if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) failIO(error);
         reason = error instanceof SyntaxError ? 'PARSE' : 'MISSING';
       }
       signal?.throwIfAborted();
@@ -120,7 +124,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         catch (error) {
           if (error.selectionReason) throw error;
           if (['EACCES', 'EPERM'].includes(error.code)) fail('ACCESS');
-          if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) fail('IO');
+          if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) failIO(error);
         }
       }
       signal?.throwIfAborted();

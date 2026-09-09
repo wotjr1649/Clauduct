@@ -43,7 +43,8 @@
 | 수동 compact 후 새 Read | 922e6ba0 84행 manual 경계 뒤 112/113행 models.mjs Read 성공 | 통과 |
 | compact medium 적용 | f236f867 40행 manual 64806ms, 31511→9820; request 11 requested=max/actual=medium 성공 | 통과. 서로 다른 입력의 max/medium 시간을 통제 실험으로 해석하지 않음 |
 | 자동 compact 및 후속 요청 | b6d81841 119행 auto 68608ms, 98097→39330; 142행 request 36 medium 성공; 137/138행 새 Read 성공 | 검증 모드 autoCompactWindow=100000에서 통과. 기본 400K와 각 자식 내부 발동은 미확인 |
-| native 역할·환경 상속 | f236f867 원본 진단 Explore/general-purpose=luna/max, Plan=sol/high; 500000/500000/83.33333333333334 상속 | 당시 정책 통과. 현재 Plan=sol/xhigh의 역할 선택은 실제 재확인 필요. 환경 상속은 backend 용량 증거가 아님 |
+| native 역할·환경 상속 | f236f867의 과거 역할·환경 증거 보존. c94bb0ac 원본 request 10/11은 무명시 Plan/role-default/sol/xhigh/success=true | 현재 무명시 Plan 실제 통과. [실제 감사](audit-2026-09-09-plan-lifetime-success.md). 환경 상속은 backend 용량 증거가 아님 |
+| gateway 누적 진단 | c94bb0ac 메인 38→57행 started/succeeded 2→7, failed/unsupportedEvents 0 유지 | 실제 출력·정상 증가 통과. 보조 이벤트는 0이므로 실발생 미관찰 |
 | 현재 sol/xhigh 명시 선택·재개 | c5a3b05b request 11/12 explicit-metadata, 19/21 verified-resume; 두 Read 및 완료 | 통과. 모델 명시 없는 Plan 역할 검증으로 대체하지 않음 |
 | native code-review low 완료 | 268e9bf2 자식 a91eb3a1de1548dde: Bash diff 결과 연결, 최종 지적 반환, 부모 267행 completed; 270행 request 4/5 luna/max native-fork 성공 | low 실제 완료. strict diff 호출 수용과 약 10분 31초 요청의 ping 41회 및 완료 확인. 다른 review 수준·병렬 전체 완료는 미확인 |
 | native 병렬 code-review 최종 반환 | HIGH-03: 1d6ef4cd 루트/직접 자식 13개/손자 4개 대상 Read, 부모 518행 completed, 521/522행 ReportFindings 5건. request 717/719 처리 13052.10ms 겹침 | 최종 반환 통과. 자식 task-notification 복귀 CALL 한 건과 도구 오류가 남아 오류 없는 완료는 아님. [상세 감사](audit-2026-09-09-native-high-03.md) |

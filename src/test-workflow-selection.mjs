@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ const event = { hook_event_name: 'PostToolUse', tool_name: 'Workflow', session_i
 const link = bindingFrom(event);
 const binding = id => ({ id, sessionId, transcriptPath, role: 'workflow-subagent', nativeRegistered: true,
   requestedModel: parentRoute.model });
-const row = id => ({ type: 'started', key: `v2:${'a'.repeat(64)}`, agentId: id, label: id });
+const row = id => ({ type: 'started', key: `v2:${createHash('sha256').update(id).digest('hex')}`, agentId: id, label: id });
 const journal = rows => writeFile(join(directory, 'journal.jsonl'), [{ type: 'launched' }, ...rows].map(JSON.stringify).join('\n') + '\n');
 const metadata = id => ({ agentType: 'workflow-subagent', description: id, spawnDepth: 1,
   requestShape: 'foreground', requestNonInteractive: false });
@@ -120,12 +121,12 @@ try {
     await child('one', scenario.effort ? { model: scenario.model } : {}); await journal([row('one')]);
     const seen = [];
     const gateway = await startNativeGateway({ agentSelection: current, admissionOptions: { freeBytes: () => 16 * 1024 ** 3 },
-      transport: { send: async body => { seen.push(body); return [
+      transport: { send: async body => { seen.push(body); const reply = `${body.model}/${body.reasoning.effort}`; return [
         { type: 'response.created', response: { id: 'r', status: 'in_progress' } },
         { type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: 'm', role: 'assistant', content: [] } },
-        { type: 'response.output_text.delta', output_index: 0, item_id: 'm', content_index: 0, delta: 'OK' },
-        { type: 'response.output_text.done', output_index: 0, item_id: 'm', content_index: 0, text: 'OK' },
-        { type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'OK' }] } },
+        { type: 'response.output_text.delta', output_index: 0, item_id: 'm', content_index: 0, delta: reply },
+        { type: 'response.output_text.done', output_index: 0, item_id: 'm', content_index: 0, text: reply },
+        { type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: reply }] } },
         { type: 'response.output_item.added', output_index: 1, item: { type: 'reasoning', id: 'rs_workflow', summary: [], encrypted_content: 'SYNTHETIC_OPAQUE' } },
         { type: 'response.output_item.done', output_index: 1, item: { type: 'reasoning', id: 'rs_workflow', summary: [], encrypted_content: 'SYNTHETIC_OPAQUE' } },
         { type: 'response.completed', response: { id: 'r', status: 'completed', model: body.model, output: [],
@@ -135,11 +136,12 @@ try {
     try {
       await registerBinding(link, env);
       await registerBinding({ id: 'one', role: 'workflow-subagent', stop: false, sessionId, transcriptPath }, env);
-      const response = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(5000),
+      const sendChild = (id, model, effort) => fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(5000),
         headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
-          'x-claude-code-session-id': sessionId, 'x-claude-code-agent-id': 'one' },
-        body: JSON.stringify({ model: scenario.model, ...(scenario.effort && { output_config: { effort: scenario.effort } }),
+          'x-claude-code-session-id': sessionId, 'x-claude-code-agent-id': id },
+        body: JSON.stringify({ model, ...(effort && { output_config: { effort } }),
           stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC_PRIVATE' }] }) });
+      const response = await sendChild('one', scenario.model, scenario.effort);
       const wire = await response.text();
       assert.equal(response.status, 200, wire);
       const frames = wire.split('\n\n').filter(frame => frame.startsWith('event:')).map(frame => JSON.parse(frame.split('\ndata: ')[1]));
@@ -150,7 +152,7 @@ try {
         if (frame.type === 'content_block_stop') yielded.push(blocks[frame.index]);
       }
       assert.deepEqual(yielded.map(block => block.type), ['redacted_thinking', 'text']);
-      assert.equal(yielded.at(-1).text, 'OK');
+      assert.equal(yielded.at(-1).text, `${scenario.expected.model}/${scenario.expected.effort}`);
       assert.equal(frames.at(-2).delta.stop_reason, 'end_turn');
       assert.equal(frames.at(-1).type, 'message_stop');
       assert.equal(seen.length, 1);
@@ -160,6 +162,31 @@ try {
       assert.equal(record.role, 'workflow-subagent');
       assert.equal(record.model, scenario.expected.model); assert.equal(record.effort, scenario.expected.effort);
       assert.equal(record.roleRegistered, true); assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
+      if (scenario.effort) {
+        // A completed sibling must not prevent a new child in the same run,
+        // consume the run twice, or overwrite either child's frozen route.
+        await child('two');
+        await journal([row('one'), { type: 'result', key: row('one').key, agentId: 'one', result: 'SYNTHETIC_ONE' }, row('two')]);
+        await registerBinding({ id: 'two', role: 'workflow-subagent', stop: false, sessionId, transcriptPath }, env);
+        const second = await sendChild('two', parentRoute.model);
+        assert.equal(second.status, 200);
+        const secondWire = await second.text();
+        assert.ok(secondWire.includes(`${parentRoute.model}/${parentRoute.effort}`));
+        assert.ok(!secondWire.includes(`${scenario.expected.model}/${scenario.expected.effort}`));
+        const again = await sendChild('one', scenario.model, scenario.effort);
+        assert.equal(again.status, 200);
+        assert.ok((await again.text()).includes(`${scenario.expected.model}/${scenario.expected.effort}`));
+        assert.deepEqual(seen.map(body => [body.model, body.reasoning.effort]), [
+          [scenario.expected.model, scenario.expected.effort], [parentRoute.model, parentRoute.effort],
+          [scenario.expected.model, scenario.expected.effort]
+        ]);
+        const after = await readRequestStatus(env), recent = after.recentRequests;
+        assert.equal(recent.length, 3); assert.equal(after.lifetime.failed, 0);
+        assert.equal(recent[0].agentRef, recent[2].agentRef);
+        assert.notEqual(recent[0].agentRef, recent[1].agentRef);
+        assert.ok(recent.every(row => row.success && row.selectionSource === 'workflow-result'));
+        passed++;
+      }
     } finally { await gateway.close(); }
   }
   console.log(JSON.stringify({ suite: 'workflow-selection', passed, actualClaude: 0, externalRequests: 0,

@@ -8,6 +8,8 @@
 
 ### 작업 순서와 종료 조건
 
+모델 선택의 최신 수용 기준은 [GPT Agent 선택 계약](gpt-agent-selection-contract.md)이다. 직접 GPT 선택과 명시 inherit의 부모 모델·effort 상속은 필수이며, Claude 별칭 대체 검증과 전체 모델 목록 확장은 이번 범위에서 제외한다.
+
 | 순서 | 작업 | 필요한 증거 / 종료 조건 |
 |---|---|---|
 | 1 | native task-notification(completed) 복귀 | c19c8b14 request 22에서 verified-completion-resume/luna/max/success=true 및 부모 선종료·최종 반환 확인. [실제 성공](audit-2026-09-09-completion-success.md). 단일 general-purpose 경로 통과, 과거 실패 원인·다중 알림·symlink는 별도 미완료 |

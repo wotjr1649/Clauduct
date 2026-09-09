@@ -37,6 +37,24 @@
 
 ## 현재 판정 — 원본 기록 재확인
 
+### 완료 이후 SSE 진단 — 2026-09-09
+
+`EVENT_AFTER_COMPLETION`은 이제 `OTHER`와 구분한다. 요청별 `attempts`에 다음 고정 분류를 추가했다. 원문 SSE, 임의 이벤트명, sequence 값 자체는 기록하지 않는다.
+
+| 필드 | 의미 |
+|---|---|
+| `terminalState` | `open`: 완료 미관찰, `completed`: response.completed 관찰, `done`: 후속 [DONE] 관찰. 전체 요청 성공을 뜻하지 않음 |
+| `postCompletionFrame` | 거부된 첫 후속 데이터 프레임의 allowlist 이벤트 종류 또는 `done`/`other`/`invalid-json`/`oversized`. 16 KiB 초과 데이터는 진단 JSON 파싱을 하지 않음 |
+| `postCompletionSequence` | `expected`/`unexpected`/`invalid`/`missing`/`unsequenced`. JSON 분류를 하지 않은 경우 null. 수치 대신 파서의 다음 순서와 관계만 표시 |
+
+완료 뒤 프레임 거부, 중복 [DONE] 거부, 자동 재시도 금지는 변경하지 않았다. 정상 단일 [DONE]과 comment는 기존대로 허용한다. 구문 검사나 크기 제한에서 먼저 거부된 프레임은 후속 데이터 분류가 없을 수 있다.
+
+Verified: Node permission 제한 아래 `src/test-native-transport.mjs`, `src/test-native-gateway.mjs`, `src/test-native-protocol.mjs` 통과. 합성 loopback에서 분할 프레임, 중복 완료·sentinel, 보조 이벤트, 순서 관계, 잘못된 JSON, 크기 상한, 원문 비노출, status allowlist, 거부·무재시도·소켓 정리를 확인했다. 외부 요청과 실제 인증 조회는 0이다.
+
+Not verified: 실제 upstream의 후속 프레임 종류와 이 진단의 native 세션 출력. 이번 변경은 원인 식별을 위한 계측이며 실제 SSE 실패 해결이 아니다. 과거 `OTHER` 요청의 정확한 원인은 소급 복원할 수 없다. TaskOutput의 `No task found` 원인 역시 미확정이며 별도 조사한다.
+
+다음 실제 검사는 사용자가 새 `--gpt-agents` 실행에서 실패했던 `clauduct-terra`의 단일 Read 작업만 수행한다. 종료 직후 기존 `src/request-status.mjs`로 요청 상태를 수집한다. 실패 시 같은 작업을 자동 반복하지 않는다. 이미 성공한 모델·상속·쓰기 전체 행렬을 재실행할 필요는 없다.
+
 아래 번호별 프롬프트는 과거 검증 절차다. 이미 통과한 항목을 반복 실행하라는 뜻이 아니다. 전체 완료 판정은 보류한다.
 
 | 요구사항 | 원본 증거 | 판정 / 남은 범위 |

@@ -47,6 +47,21 @@ const emptyStages = { request: 0, selection: 0, prepare: 0, review: 0, upstream:
 let passed = 0;
 const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
 try {
+  {
+    const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
+      failureCategory: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
+        postCompletionFrame: 'SYNTHETIC_PRIVATE', postCompletionSequence: 'SYNTHETIC_PRIVATE' }]
+    }] })));
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    try {
+      const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${upstream.address().port}`,
+        ANTHROPIC_AUTH_TOKEN: 'x'.repeat(43) });
+      const row = status.recentRequests[0];
+      assert.equal(row.failureCategory, null);
+      for (const key of ['terminalState', 'postCompletionFrame', 'postCompletionSequence']) assert.equal(row.attempts[0][key], null);
+      assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
+    } finally { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); }
+  }
   for (const mode of ['silent-baseline', 'ping', 'ping-retry', 'ping-cancel']) {
     let attempts = 0; const timers = new Set();
     const upstream = createServer((req, res) => {
@@ -104,7 +119,7 @@ try {
       assert.equal(sink.listenerCount('drain'), 0); passed++;
     } finally { sink.destroy(); }
   }
-  for (const mode of ['valid', 'malformed', 'disconnect', 'retry']) {
+  for (const mode of ['valid', 'malformed', 'disconnect', 'retry', 'post-completion']) {
     let attempts = 0, ended = false, sawEarlyText = false, sawEarlyTool = false;
     const timers = new Set();
     const upstream = createServer((req, res) => {
@@ -119,7 +134,9 @@ try {
         res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(wire(events.slice(0, 9)));
         const timer = setTimeout(() => {
           timers.delete(timer); ended = true;
-          if (mode === 'disconnect') res.destroy(); else res.end(wire(events.slice(9)));
+          if (mode === 'disconnect') res.destroy();
+          else res.end(wire(events.slice(9)) + (mode === 'post-completion'
+            ? wire([{ type: 'codex.response.metadata', payload: 'SYNTHETIC_PRIVATE' }]) : ''));
         }, 100); timers.add(timer);
       });
     });
@@ -147,6 +164,21 @@ try {
           ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
         assert.equal(collected.recentRequests.at(-1).attempts[0].status, 200);
         assert.ok(!JSON.stringify(collected).includes('SYNTHETIC'));
+      }
+      if (mode === 'post-completion') {
+        assert.match(result.text, /EVENT_AFTER_COMPLETION/);
+        const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+          ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+        const row = status.recentRequests.at(-1), attempt = row.attempts[0];
+        assert.equal(row.failureCategory, 'EVENT_AFTER_COMPLETION');
+        assert.equal(row.failureStage, 'upstream');
+        assert.equal(attempt.terminalState, 'completed');
+        assert.equal(attempt.postCompletionFrame, 'codex.response.metadata');
+        assert.equal(attempt.postCompletionSequence, 'unsequenced');
+        assert.equal(attempt.completed, false);
+        assert.equal(row.auxiliaryMetadataEvents, 0);
+        assert.equal(row.success, false);
+        assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE'));
       }
       assert.ok(timing.preparedMs >= timing.admittedMs);
       assert.ok(timing.firstDownstreamWriteMs >= timing.firstTextDeltaMs);

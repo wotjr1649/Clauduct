@@ -75,7 +75,7 @@ export async function readRequestStatus(env) {
     completionChildState: COMPLETION_STATES.includes(row?.completionChildState) ? row.completionChildState : null,
     reviewDiffMismatch: ['call-count', 'tool-name', 'command', 'background'].includes(row?.reviewDiffMismatch) ? row.reviewDiffMismatch : null,
     failureCategory: ['CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT', 'UPSTREAM_IO_ERROR',
-      'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED', 'OTHER'].includes(row?.failureCategory) ? row.failureCategory : null,
+      'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'EVENT_AFTER_COMPLETION', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED', 'OTHER'].includes(row?.failureCategory) ? row.failureCategory : null,
     clientDisconnected: row?.clientDisconnected === true,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),
@@ -84,7 +84,10 @@ export async function readRequestStatus(env) {
     retryScheduledMs: Array.isArray(row?.retryScheduledMs) ? row.retryScheduledMs.slice(0, 5).map(number) : [],
     attempts: Array.isArray(row?.attempts) ? row.attempts.slice(0, 6).map(attempt => ({
       ...Object.fromEntries(['attempt', 'startedMs', 'requestFlushedMs', 'headersMs', 'firstBodyMs', 'endedMs', 'status']
-        .map(key => [key, number(attempt?.[key])])), completed: attempt?.completed === true })) : [] })) };
+        .map(key => [key, number(attempt?.[key])])), completed: attempt?.completed === true,
+      terminalState: ['open', 'completed', 'done'].includes(attempt?.terminalState) ? attempt.terminalState : null,
+      postCompletionFrame: [...EVENT_DIAGNOSTIC_TYPES, 'done', 'invalid-json', 'oversized'].includes(attempt?.postCompletionFrame) ? attempt.postCompletionFrame : null,
+      postCompletionSequence: ['missing', 'unsequenced', 'invalid', 'expected', 'unexpected'].includes(attempt?.postCompletionSequence) ? attempt.postCompletionSequence : null })) : [] })) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

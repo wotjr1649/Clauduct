@@ -3,7 +3,7 @@ import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { buildHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { CLIENT_VERSION } from '../poc/codex-transport.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -170,10 +170,31 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
     return [crlf, 4];
   }
 
-  function parser({ onEvent, events }) {
+  function parser({ onEvent, events, timing }) {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     let pending = '', eventCount = 0, completed = false, sentinel = false;
     let sequenceMode = false, nextSequence = 0;
+
+    // Diagnostic parsing never accepts a rejected frame or retains upstream text.
+    const rejectAfterCompletion = raw => {
+      timing.postCompletionFrame = raw === '[DONE]' ? 'done' : 'invalid-json';
+      if (raw !== '[DONE]') {
+        // Bound diagnostic-only work; large trailers remain rejected and unclassified.
+        if (Buffer.byteLength(raw) > 16384) timing.postCompletionFrame = 'oversized';
+        else {
+          let event;
+          try { event = JSON.parse(raw); } catch { /* Keep fixed invalid-json classification. */ }
+          if (event !== undefined) {
+            timing.postCompletionFrame = EVENT_DIAGNOSTIC_TYPES.includes(event?.type) ? event.type : 'other';
+            const sequence = event?.sequence_number;
+            timing.postCompletionSequence = sequence === undefined ? (sequenceMode ? 'missing' : 'unsequenced')
+              : !Number.isSafeInteger(sequence) || sequence < 0 ? 'invalid'
+                : sequence === nextSequence ? 'expected' : 'unexpected';
+          }
+        }
+      }
+      throw new NativeError('EVENT_AFTER_COMPLETION');
+    };
 
     const deliver = async value => {
       if (onEvent) await onEvent(value);
@@ -195,13 +216,13 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
         } else throw new NativeError('INVALID_SSE');
       }
       if (!data.length) { need(name === undefined, 'INVALID_SSE'); return; }
-      if (sentinel) throw new NativeError('EVENT_AFTER_COMPLETION');
       const raw = data.join('\n');
+      if (sentinel) rejectAfterCompletion(raw);
       if (raw === '[DONE]') {
         need(name === undefined && completed, 'INCOMPLETE_RESPONSE');
-        sentinel = true; return;
+        sentinel = true; timing.terminalState = 'done'; return;
       }
-      need(!completed, 'EVENT_AFTER_COMPLETION');
+      if (completed) rejectAfterCompletion(raw);
       eventCount++;
       need(eventCount <= settings.maxEvents, 'TOO_MANY_EVENTS');
       let event;
@@ -215,7 +236,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
         nextSequence++;
       } else need(!sequenceMode, 'SEQUENCE_MISMATCH');
       if (event.type === 'response.completed') {
-        need(!completed, 'DUPLICATE_COMPLETION'); completed = true;
+        need(!completed, 'DUPLICATE_COMPLETION'); completed = true; timing.terminalState = 'completed';
       }
       await deliver(event);
     };
@@ -253,11 +274,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
   async function requestOnce(job, raw, current, onEvent, isRetry) {
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
-    const state = parser({ onEvent, events: collected });
     const headers = buildHeaders(current, CLIENT_VERSION, raw);
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
-      headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false };
+      headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false,
+      terminalState: 'open', postCompletionFrame: null, postCompletionSequence: null };
+    const state = parser({ onEvent, events: collected, timing });
     job.attemptTimings.push(timing);
     try {
       attempts++; lastStatus = null; responseBytes = 0;

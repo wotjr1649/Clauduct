@@ -209,6 +209,49 @@ async function testBounds() {
   });
 }
 
+async function testPostCompletionDiagnostics() {
+  const sequenced = frame({ type: 'response.completed', sequence_number: 0 });
+  for (const [prefix, trailer, kind, sequence] of [
+    [complete, frame({ type: 'rate_limits.updated' }), 'rate_limits.updated', 'unsequenced'],
+    [sequenced, frame({ type: 'response.completed', sequence_number: 1 }), 'response.completed', 'expected'],
+    [sequenced, frame({ type: 'response.created', sequence_number: 0 }), 'response.created', 'unexpected'],
+    [sequenced, frame({ type: 'error', sequence_number: 'SYNTHETIC_PRIVATE' }), 'error', 'invalid'],
+    [sequenced, frame({ type: 'ping' }), 'ping', 'missing'],
+    [good, 'data: [DONE]\n\n', 'done', null],
+    [good, frame({ type: 'SYNTHETIC_PRIVATE', text: 'SYNTHETIC_PRIVATE' }), 'other', 'unsequenced'],
+    [complete, 'data: SYNTHETIC_PRIVATE\n\n', 'invalid-json', null],
+    [complete, 'data: null\n\n', 'other', 'unsequenced'],
+    [complete, frame({ type: 'ping', text: 'x'.repeat(16384) }), 'oversized', null]
+  ]) {
+    await fixture((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(prefix + trailer.slice(0, 5));
+      setImmediate(() => res.end(trailer.slice(5)));
+    }, {}, async transport => {
+      const attemptTimings = [], delivered = [];
+      await assert.rejects(transport.send({}, signal(), { attemptTimings, onEvent: event => delivered.push(event.type) }),
+        error => error.code === 'EVENT_AFTER_COMPLETION');
+      assert.equal(attemptTimings.length, 1);
+      const timing = attemptTimings[0];
+      assert.equal(timing.terminalState, prefix === good ? 'done' : 'completed');
+      assert.equal(timing.postCompletionFrame, kind);
+      assert.equal(timing.postCompletionSequence, sequence);
+      assert.equal(timing.completed, false);
+      assert.deepEqual(delivered, prefix === good ? ['response.created', 'response.completed'] : ['response.completed']);
+      assert.equal(transport.diagnostics().retries, 0);
+      assert.equal(transport.diagnostics().activeSockets, 0);
+      assert.ok(!JSON.stringify(attemptTimings).includes('SYNTHETIC_PRIVATE'));
+    });
+  }
+  await fixture((_req, res) => res.end(good + ': keepalive\n\n'), {}, async transport => {
+    const attemptTimings = [];
+    await transport.send({}, signal(), { attemptTimings });
+    assert.equal(attemptTimings[0].terminalState, 'done');
+    assert.equal(attemptTimings[0].completed, true);
+    assert.equal(attemptTimings[0].postCompletionFrame, null);
+  });
+}
+
 async function testCredentialRotationAndBinding() {
   const seen = [];
   let count = 0;
@@ -244,6 +287,7 @@ await testRetryLimitAndPostOutputStop();
 await testRetryFenceBeforeCommit();
 await testAbortClearsRequestAndDelay();
 await testDoneAndMalformed();
+await testPostCompletionDiagnostics();
 await testBounds();
 await testCredentialRotationAndBinding();
 process.stdout.write(JSON.stringify({ suite: 'native-transport', passed: true, externalRequests: 0, credentialReads: 0 }) + '\n');

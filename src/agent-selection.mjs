@@ -26,7 +26,10 @@ const sameIdentity = (previous, metadata) => previous && metadata && metadata.st
 
 // Native metadata writes are not awaited before SubagentStart. Only a pending,
 // validated parent tool call can make a metadata snapshot usable for a new start.
-export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1500 } = {}) {
+export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1500, agentDefinitions = {} } = {}) {
+  // Launcher-owned definitions only, never request/transcript-provided configuration.
+  const inheritedTypes = new Set(Object.entries(agentDefinitions)
+    .filter(([, definition]) => definition?.model === 'inherit').map(([role]) => role));
   const pending = new Map();
   const verified = new Map();
   const startedAt = Date.now();
@@ -91,7 +94,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       if (input.subagent_type !== undefined && (typeof input.subagent_type !== 'string'
         || input.subagent_type.length === 0 || input.subagent_type.length > 200)) fail();
       let inheritedRoute;
-      if (input.model === 'inherit') {
+      if (input.model === 'inherit' || (input.model === undefined && ['Agent', 'Task'].includes(block.name)
+        && inheritedTypes.has(input.subagent_type))) {
         if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
         inheritedRoute = Object.freeze(selectModel(parentRoute.model, parentRoute.effort));
       }
@@ -282,12 +286,15 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           if ((['Agent', 'Task'].includes(call.tool) || call.selection !== undefined) && call.selection !== selected) fail('MODEL');
           if (selected !== undefined && typeof selected !== 'string') fail('MODEL');
           const route = selected !== undefined && selected !== 'inherit' ? model(selected) : undefined;
-          const inheritedRoute = selected === 'inherit'
+          const inherits = selected === 'inherit' || (selected === undefined
+            && (resumeEntry?.[0] === id ? previous.selection.inherits : call.inheritedRoute !== undefined));
+          const inheritedRoute = inherits
             ? (resumeEntry?.[0] === id ? previous.selection.route : call.inheritedRoute) : undefined;
-          if (selected === 'inherit' && !inheritedRoute) fail('MODEL');
+          if (inherits && !inheritedRoute) fail('MODEL');
           pending.delete(id);
           const selection = { route: inheritedRoute ?? route ?? (Object.hasOwn(ROLE_MODELS, binding.role) ? ROLE_MODELS[binding.role] : undefined),
-            source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
+            source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : inherits ? 'definition-inherit' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
+            inherits: Boolean(inherits),
             sessionId: binding.sessionId, parent,
             ...(metadata.name === 'code-review' && (nativeEntry || skillEntry || resumeEntry) && { review: true }) };
           selection.reviewContext = selection.review === true || (resumeEntry?.[0] === id

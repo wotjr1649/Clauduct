@@ -7,6 +7,7 @@ import { startNativeGateway } from './native-gateway.mjs';
 import { registerBinding, bindingFrom } from './agent-route.mjs';
 import { readRequestStatus } from './request-status.mjs';
 import { MODELS, EFFORTS } from './models.mjs';
+import { interactiveLaunch } from './clauduct.mjs';
 
 const binding = (id, extra = {}) => ({ id, role: 'general-purpose', sessionId: 'session', stop: false, ...extra });
 const call = (id, model, role = 'general-purpose') => ({ content: [{ type: 'tool_use', id, name: 'Agent',
@@ -14,6 +15,56 @@ const call = (id, model, role = 'general-purpose') => ({ content: [{ type: 'tool
 const metadata = (toolUseId, model, extra = {}) => ({ agentType: 'general-purpose', toolUseId,
   ...(model === undefined ? {} : { model }), ...extra });
 let snapshots = new Map();
+const probeLaunch = interactiveLaunch({ port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) },
+  {}, 'D:/SYNTHETIC_PROJECT', MODELS.luna, [], { verifyAgentModels: true });
+const agentDefinitions = JSON.parse(probeLaunch.args[probeLaunch.args.indexOf('--agents') + 1]);
+const probeRole = 'clauduct-probe-inherit';
+const definitionSelection = createAgentSelection({ agentDefinitions, timeoutMs: 10, readMetadata: async b => snapshots.get(b.id) });
+definitionSelection.remember(call('definition_origin', undefined, probeRole), 'session', undefined,
+  { model: 'gpt-5.6-luna', effort: 'high' });
+snapshots.set('definition_child', metadata('definition_origin', undefined, { agentType: probeRole }));
+const definitionInherited = await definitionSelection.resolve(binding('definition_child', { role: probeRole }));
+assert.deepEqual(definitionInherited.route, { model: 'gpt-5.6-luna', effort: 'high' });
+assert.equal(definitionInherited.source, 'definition-inherit');
+// A name alone is not evidence.
+const unregisteredDefinition = createAgentSelection({ timeoutMs: 10, readMetadata: async b => snapshots.get(b.id) });
+unregisteredDefinition.remember(call('definition_origin', undefined, probeRole), 'session', undefined,
+  { model: 'gpt-5.6-luna', effort: 'high' });
+assert.equal((await unregisteredDefinition.resolve(binding('definition_child', { role: probeRole }))).route, undefined);
+assert.throws(() => definitionSelection.remember(call('missing_parent', undefined, probeRole), 'session'));
+for (const change of [{ toolUseId: 'wrong' }, { model: 'inherit' }, { parentAgentId: 'wrong' }, { agentType: 'Plan' }]) {
+  definitionSelection.remember(call('definition_bad', undefined, probeRole), 'other-session', undefined,
+    { model: 'gpt-5.6-luna', effort: 'high' });
+  snapshots.set('definition_bad', metadata('definition_bad', undefined, { agentType: probeRole, ...change }));
+  await assert.rejects(definitionSelection.resolve(binding('definition_bad', { role: probeRole, sessionId: 'other-session' })));
+  // The valid metadata can still consume the original, unmodified pending call.
+  snapshots.set('definition_bad', metadata('definition_bad', undefined, { agentType: probeRole }));
+  assert.equal((await definitionSelection.resolve(binding('definition_bad', { role: probeRole, sessionId: 'other-session' }))).route.effort, 'high');
+}
+for (const [name, selected] of Object.entries(MODELS)) for (const effort of EFFORTS) {
+  const id = `definition_${name}_${effort}`, parent = { model: selected.model, effort };
+  definitionSelection.remember(call(id, undefined, probeRole), 'session', undefined, parent);
+  snapshots.set(id, metadata(id, undefined, { agentType: probeRole }));
+  assert.deepEqual((await definitionSelection.resolve(binding(id, { role: probeRole }))).route, parent);
+}
+definitionSelection.remember({ content: [{ type: 'tool_use', id: 'definition_resume', name: 'SendMessage',
+  input: { to: 'definition_child', message: 'SYNTHETIC' } }] }, 'session', undefined, MODELS.astra);
+definitionSelection.linkResume({ sessionId: 'session', toolUseId: 'definition_resume', id: 'definition_child' });
+assert.deepEqual((await definitionSelection.resolve(binding('definition_child', { role: probeRole }))).route,
+  { model: 'gpt-5.6-luna', effort: 'high' });
+const mutableDefinitions = { [probeRole]: { model: 'inherit' } };
+const fixedDefinitions = createAgentSelection({ agentDefinitions: mutableDefinitions, timeoutMs: 10,
+  readMetadata: async b => snapshots.get(b.id) });
+mutableDefinitions[probeRole].model = 'sol'; mutableDefinitions.injected = { model: 'inherit' };
+for (const [id, role] of [['definition_frozen', probeRole], ['definition_injected', 'injected']]) {
+  fixedDefinitions.remember(call(id, undefined, role), 'session', undefined, { model: 'gpt-5.6-luna', effort: 'high' });
+  snapshots.set(id, metadata(id, undefined, { agentType: role }));
+  assert.deepEqual((await fixedDefinitions.resolve(binding(id, { role }))).route,
+    role === probeRole ? { model: 'gpt-5.6-luna', effort: 'high' } : undefined);
+}
+definitionSelection.remember(call('definition_override', 'terra', probeRole), 'session');
+snapshots.set('definition_override', metadata('definition_override', 'terra', { agentType: probeRole }));
+assert.deepEqual((await definitionSelection.resolve(binding('definition_override', { role: probeRole }))).route, MODELS.terra);
 const selection = createAgentSelection({ timeoutMs: 80, readMetadata: async b => snapshots.get(b.id) });
 selection.remember(call('call_A'), 'session');
 selection.remember(call('call_B', 'opus'), 'session');
@@ -282,7 +333,7 @@ try {
 const received = [];
 let gatewayCall = { id: 'call_gateway', model: 'opus' };
 let onCancelRead;
-const routes = createAgentSelection({ timeoutMs: 100, readMetadata: async b => {
+const routes = createAgentSelection({ agentDefinitions, timeoutMs: 100, readMetadata: async b => {
   if (b.id === 'cancel_test') onCancelRead?.();
   return snapshots.get(b.id);
 } });
@@ -292,7 +343,7 @@ const gateway = await startNativeGateway({ agentSelection: routes,
     close: async () => {}, diagnostics: () => ({}), send: async body => {
       received.push(body);
       if (body.tools?.length) {
-        const args = JSON.stringify({ subagent_type: 'general-purpose', model: gatewayCall.model });
+        const args = JSON.stringify({ subagent_type: gatewayCall.role ?? 'general-purpose', model: gatewayCall.model });
         const item = { type: 'function_call', id: 'fc_parent', call_id: gatewayCall.id,
           name: body.tools[0].name, arguments: args, status: 'completed' };
         return [{ type: 'response.created', response: { id: 'resp_parent', status: 'in_progress' } },
@@ -417,5 +468,32 @@ try {
   assert.equal(inheritStatus.selectionSource, 'native-inherit');
   assert.equal(inheritStatus.requestedModel, 'gpt-5.6-luna');
   assert.equal(inheritStatus.model, 'gpt-6-astra'); assert.equal(inheritStatus.effort, 'max');
+
+  // Real native enum, omitted model: definition inheritance vs unchanged built-in defaults.
+  for (const [index, role, expected, effort, selectionSource] of [
+    [0, probeRole, 'gpt-5.6-luna', 'high', 'definition-inherit'],
+    [1, 'general-purpose', 'gpt-5.6-luna', 'max', 'role-default'],
+    [2, 'Plan', 'gpt-5.6-sol', 'xhigh', 'role-default']
+  ]) {
+    const id = `definition_gateway_${index}`;
+    gatewayCall = { id, role };
+    const parentResponse = await fetch(`${source.ANTHROPIC_BASE_URL}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(5000),
+      headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+        'x-claude-code-session-id': 'session' },
+      body: JSON.stringify({ model: 'luna', output_config: { effort: 'high' }, stream: true, max_tokens: 100,
+        messages: [{ role: 'user', content: 'SYNTHETIC' }],
+        tools: [{ name: 'Agent', input_schema: { type: 'object', properties: {
+          subagent_type: { type: 'string' }, model: { type: 'string', enum: ['sonnet', 'opus', 'haiku', 'fable'] }
+        }, required: ['subagent_type'] } }] }) });
+    assert.equal(parentResponse.status, 200, await parentResponse.text());
+    snapshots.set(id, metadata(id, undefined, { agentType: role }));
+    await registerBinding(binding(id, { role }), source);
+    for (const response of await Promise.all([post(id), post(id)])) assert.equal(response.status, 200, await response.text());
+    const status = (await readRequestStatus(source)).recentRequests.at(-1);
+    assert.equal(status.model, expected); assert.equal(status.effort, effort); assert.equal(status.selectionSource, selectionSource);
+    for (const request of received.slice(-2)) {
+      assert.equal(request.model, expected); assert.equal(request.reasoning.effort, effort);
+    }
+  }
 } finally { await gateway.close(); }
 process.stdout.write(JSON.stringify({ suite: 'agent-selection', passed: true, actualClaude: 0, externalRequests: 0 }) + '\n');

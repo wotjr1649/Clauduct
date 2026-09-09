@@ -2,6 +2,8 @@
 
 이 문서는 사용자가 확정한 수용 기준이며 현재 구현 완료를 뜻하지 않는다.
 
+최신 상태: 맨 아래의 정의 기반 inherit 연결 수정 참조. 앞선 조사·시험 기록은 당시 상태를 보존한다.
+
 ## 선택 의미
 
 | 입력 | 적용 규칙 |
@@ -73,3 +75,13 @@ Not verified: native의 실제 정의 로딩, 실제 도구 제한, 정의 모�
 사용자가 제공한 46f4a80e129350648d7d8ca740bc0cec는 status의 sessionRef이며 native 세션 UUID는 34f1e15c-dad7-49ba-b0bc-8d23982190a3이다. 원본 27행의 BEFORE request 4는 메인 gpt-5.6-luna/max, success=true다. 35행에서 model 인수를 생략한 clauduct-probe-astra 호출을 한 번 시도했으나, 36행에서 agent type not found로 거부됐다. 자식 기록은 생성되지 않았다. 표시된 사용 가능 목록에 시험 agent가 없으므로 모델 라우팅이 아니라 등록/로딩 단계에서 중단됐다. 실제 실행 명령이 없으므로 검증 옵션 누락과 다른 등록 실패 원인을 단정하지 않는다.
 
 이 세션의 inherit 목표는 부모의 실제 luna/max이며 astra/max로 판정하지 않는다. 네 모델과 다섯 effort 조합의 내부 상속 회귀 검사를 추가했다. 이 검사는 backend의 모든 조합 수락 또는 native 정의 기반 상속 성공을 의미하지 않는다. 다음 실제 검증은 사용자가 원하는 메인 모델·effort를 유지한 실행 명령에 --verify-agent-models를 추가하고 시험 agent 로딩부터 확인한다.
+
+## 정의 기반 inherit 연결 수정
+
+8884c607-6659-4165-b84d-0e6040c9cedd(sessionRef 33df4ff15620086a8bcf0791ff11ccbe)에서 시험 정의 5개가 실제 생성됐고 각 자식은 Read 1회 후 완료 문구를 반환했다. astra request 10/11=medium, sol 18/19=xhigh, terra 26/27=high, luna 33/35=max였다. 최초 inherit 42/43=luna/max는 당시 부모 luna/max와 같지만 luna 기본값도 max여서 상속 입증으로 충분하지 않았다. 이후 부모 51/52 및 63/66=luna/high인데 inherit 자식 54/55 및 65/67=luna/max로 불일치했다. Agent 호출과 연결 metadata 모두 model을 생략했으며 source=role-default였다. 이 관찰을 로컬 실패로 재현했다.
+
+수정: 실행기는 native에 전달할 시험 정의를 선택기에도 제공한다. 선택기는 생성 시 등록 정의 중 model=inherit인 유형을 고정해 저장한다. 그 유형을 선택한 Agent/Task 호출이 model을 생략한 경우에만 부모의 실제 모델·effort snapshot을 보관한다. 기존 세션·호출 ID·역할·부모·metadata.model 일치 검사 후 route를 적용하며 source=definition-inherit로 구분한다. 명시 model 인수가 있으면 기존 명시 선택이 우선한다. SendMessage 재개는 원래 상속 route를 유지하고 완료 알림도 기존 selection을 유지한다. 이름만으로 판정하지 않고 요청 본문에서 정의를 받지도 않는다. 일반 실행에는 정의를 전달하지 않으며 기존 역할 기본값은 그대로다.
+
+Verified: 수정 전 등록 정의 경로의 route=undefined 실패를 확인한 뒤 test-agent-selection.mjs 통과. 실제 실행기가 생성한 정의 JSON을 사용해 등록/미등록 구분, 생성 후 정의 객체 변조 비적용, 부모 snapshot 누락 거부, 잘못된 호출/역할/부모/model 거부, 20개 모델·effort 조합, 재개 유지와 명시 선택 우선순위를 검사했다. native model enum을 유지하고 model을 생략한 loopback 통합 검사에서 부모 luna/high → 정의 inherit=luna/high, 일반 역할=luna/max, Plan=sol/xhigh를 각각 두 병렬 요청과 status로 확인했다. test-completion-selection.mjs 46개, test-native-gateway.mjs 24개, test-launcher-native.mjs도 통과했다. 실제 Claude/외부 요청은 0이다.
+
+Not verified: 수정 버전의 실제 native 반환과 일반 개발용 GPT 직접 선택 인터페이스. symlink 검사는 기존 제한으로 미실행이다. 다음 실제 검증은 부모의 비기본 effort에서 inherit와 일반 역할/Plan만 확인한다. 이미 성공한 네 시험 모델은 반복하지 않는다. 그 증거를 받은 뒤 일반 호출 방식의 제공 범위를 정리한다. 시험 전용 경로의 성공을 전체 계약 완료로 바꾸지 않는다.

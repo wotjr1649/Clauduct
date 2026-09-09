@@ -194,7 +194,8 @@ async function main() {
   try {
     transport = openUserTransport({ signal: controller.signal, transportFactory: createNativeTransport });
     gateway = await startNativeGateway({ transport,
-      agentSelection: createAgentSelection({ projectsRoot: join(resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')), 'projects') }),
+      agentSelection: createAgentSelection({ projectsRoot: join(resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')), 'projects'),
+        agentDefinitions: options.verifyAgentModels ? agentModelProbes() : undefined }),
       onUnregisteredAgent: () => {
       process.stderr.write('Clauduct: 서브에이전트 역할 등록이 없어 역할별 배정을 적용하지 못했습니다. Claude가 요청한 모델과 해당 모델 기본 effort를 사용합니다. hook 신뢰/설정은 자동 변경하지 않습니다.\n');
     } });

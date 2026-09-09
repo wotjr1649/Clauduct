@@ -36,7 +36,7 @@ Agent에서 위 subagent_type을 선택하고 model 인수는 생략합니다. �
 
 도구 목록은 Read, Grep, Glob, Bash, Edit, Write, Agent, TaskOutput, SendMessage입니다. native가 현재 문맥에서 제공하는 도구와 기존 권한 검사 아래에서만 사용할 수 있습니다. permissionMode, hook, MCP, 전역 설정을 추가/완화하지 않습니다. 상속 모델과 작업 권한의 상속은 다른 문제이며 도구가 보인다고 외부 쓰기가 허용되는 것은 아닙니다. 임의 --agents 입력은 계속 차단합니다.
 
---verify-agent-models와 함께 켜면 별도 이름의 Read 전용 시험 정의도 유지하며, 단일 --agents JSON에 두 집합을 합칩니다. 선택기는 실행기가 생성한 정의의 모델·effort만 불변 복사하고 기존 생성 호출/metadata/세션/역할/부모 검증 후 적용합니다. 정의 자체를 요청이나 대화에서 받아들이지 않습니다. 로컬 검증 완료, 새 일반 작업용 정의의 실제 native 수행은 미검증입니다.
+--verify-agent-models와 함께 켜면 별도 이름의 Read 전용 시험 정의도 유지하며, 단일 --agents JSON에 두 집합을 합칩니다. 선택기는 실행기가 생성한 정의의 모델·effort만 불변 복사하고 기존 생성 호출/metadata/세션/역할/부모 검증 후 적용합니다. 정의 자체를 요청이나 대화에서 받아들이지 않습니다. 네 일반 GPT 정의의 실제 선택과 명시 inherit의 직접 부모·비기본 effort 다단계 상속을 확인했습니다. [검증 범위와 한계](audit-2026-09-10-agent-acceptance.md)를 참고하며 모든 도구·모델 조합의 보장으로 확대하지 않습니다.
 
 ### 읽기 전용 시험용 agent
 

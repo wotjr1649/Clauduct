@@ -8,9 +8,9 @@
 
 ### 작업 순서와 종료 조건
 
-직접 부모 기준 손자 inherit는 db34be24에서 메인 sol/high → 부모 terra/high → 손자 terra/high, parentRef 연결 및 완료 알림 후 부모 복귀까지 실제 확인했다. [실제 증거](audit-2026-09-10-direct-parent-success.md). 남은 다단계 항목은 비기본 effort 전달이다. Workflow 검증을 이 요구사항의 대체 증거로 사용하지 않는다.
+직접 부모 기준 손자 inherit는 db34be24에서 메인 sol/high → 부모 terra/high → 손자 terra/high로 확인했다. a2d50ff0에서는 sol/high → inherit 부모 → inherit 손자의 비기본 effort 유지와 부모 완료 복귀까지 확인했다. [직접 부모 증거](audit-2026-09-10-direct-parent-success.md), [비기본 상속 및 수용 조건 대조](audit-2026-09-10-agent-acceptance.md). Workflow 검증을 이 요구사항의 대체 증거로 사용하지 않는다.
 
-최신 판정: session-10 직접 부모 상속 시험 통과. 다음 session-11은 현재 메인의 비기본 effort를 기존 clauduct-inherit 부모·손자에 연속 전달하는 읽기 전용 시험이다. 기본 effort이면 생성 전에 중단하고 사용자가 비기본 값을 선택한다. 코드·등록 정의 변경은 필요 없다. 992c0794의 병렬 Workflow 성공은 [별도 증거](audit-2026-09-10-workflow-parallel-success.md)로 보존한다. 개별 시험 성공으로 전체 목표를 완료 처리하지 않는다.
+최신 판정: session-10·11 통과. 9f4e7179의 일반 astra/sol/luna 성공과 db34be24의 terra 성공을 대조했고 현행 선택·실행기·완료 복귀 로컬 검사도 통과했다. 새 모델/상속 시험을 반복하지 않는다. 다음은 아래 호출 경로·보안 잔여 항목의 로컬 감사이며 실제 시험이 필요한 차이를 찾은 뒤에만 후속 프롬프트를 만든다. 992c0794의 병렬 Workflow 성공은 [별도 증거](audit-2026-09-10-workflow-parallel-success.md)로 보존한다. 전체 목표 완료는 보류한다.
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 

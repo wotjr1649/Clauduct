@@ -31,7 +31,9 @@ Verified: src/agent-selection.mjs는 생성 호출의 직접 부모 model/effort
 
 직접 부모 기준 손자 상속은 [gateway 통합 검사](audit-2026-09-10-direct-parent-inherit.md)와 [실제 native 실행](audit-2026-09-10-direct-parent-success.md)으로 확인했다. 실제 메인 sol/high와 다른 부모 terra/high를 손자가 상속했고 완료 알림 후 부모 복귀도 성공했다. Workflow의 단일·순차·병렬 혼합 경로는 [별도 사용자 실행](audit-2026-09-10-workflow-parallel-success.md)으로 확인했다.
 
-Not verified: 비기본 effort의 실제 native 다단계 상속과 나머지 미확인 경로를 포함한 전체 수용 조건. terra/high는 모델 기본 effort이므로 이 실행만으로 비기본 다단계 전달을 입증하지 않는다. 목표는 완료로 표시하지 않는다. 실제 인증 실행 제한을 우회하지 않고 사용자 실행 증거를 확인한다. 이후 절은 변경 전 실패와 수정 순서를 보존한 역사 기록이다.
+Verified: session-11(a2d50ff0)에서 sol/high → clauduct-inherit 부모 sol/high → 손자 sol/high 및 완료 알림 후 부모 복귀를 확인했다. sol 기본 xhigh와 다른 effort가 두 단계 유지됐다. 네 일반 GPT 정의의 실제 선택과 역할 기본값 증거를 포함한 [수용 조건 대조](audit-2026-09-10-agent-acceptance.md)를 따른다.
+
+Not verified: 전체 경로·보안·운영 검증의 완료. symlink 동적 검사는 기존 거부로 미실행이며 모든 조합의 실제 실행을 주장하지 않는다. 핵심 선택·상속 성공과 제품 전체 완료를 구분한다. 이후 절은 변경 전 실패와 수정 순서를 보존한 역사 기록이다.
 
 ## 연결 지점 조사 — 계약 커밋 e412f14 이후
 

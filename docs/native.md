@@ -19,7 +19,7 @@ D:\AIDEV\Clauduct\clauduct.cmd --dry-run
 | gpt-5.6-terra | high |
 | gpt-5.6-luna | max |
 
-메인은 선택한 모델과 effort를 존중합니다. 모델 미지정 Explore/일반 작업은 luna/max, Plan은 sol/xhigh를 사용합니다. Haiku/Sonnet 별칭은 luna, Opus는 sol로 변환합니다. 검증된 부모 호출과 자식 metadata의 명시 모델이 역할 기본값보다 우선하며 선택 모델의 기본 effort를 적용합니다. 명시 inherit는 native가 보낸 모델을 유지합니다. 실제 계정에서 모든 조합이 수락되는지는 합성 검사로 입증되지 않습니다. 아래 과거 세션의 sol/high 통과 기록은 변경 전 증거이며 sol/xhigh의 실제 검증으로 확대하지 않습니다.
+메인은 선택한 모델과 effort를 존중합니다. 모델 미지정 Explore/일반 작업은 luna/max, Plan은 sol/xhigh를 사용합니다. 기존 Haiku/Sonnet 별칭은 luna, Opus는 sol로 변환하지만 현재 GPT 직접 선택 계약의 대체 검증에는 사용하지 않습니다. 검증된 부모 호출과 자식 metadata의 명시 모델이 역할 기본값보다 우선하며 선택 모델의 기본 effort를 적용합니다. gateway의 명시 inherit 처리는 생성 호출에 기록한 직접 부모의 실제 모델·effort를 유지하며 snapshot이 없으면 거부합니다. 설치 native Agent 입력 스키마의 GPT/inherit 지원은 아직 미해결입니다. [현재 계약과 검증](gpt-agent-selection-contract.md). 실제 계정에서 모든 조합이 수락되는지는 합성 검사로 입증되지 않습니다. 아래 과거 세션의 sol/high 통과 기록은 변경 전 증거이며 sol/xhigh의 실제 검증으로 확대하지 않습니다.
 
 **메타데이터 준비와 검증:** 설치 native는 sidecar 저장 완료를 기다리지 않고 SubagentStart로 진행합니다. 실제 기록에서 sidecar는 hook 반환 뒤에 생성됐으므로 hook 안에서 파일을 기다리지 않습니다. gateway는 검증 완료 후 전달하는 Agent/Task/Skill/SendMessage/Workflow 호출의 ID와 모델·역할·부모 ID만 메모리에 남깁니다. 기존 SubagentStart hook은 세션 ID와 transcript 위치를 등록하고 즉시 반환합니다. 첫 자식 모델 요청에서 gateway가 설정된 Claude projects 루트 안의 해당 agent metadata만 최대 16KiB 읽습니다. 동시 첫 요청은 같은 검증 Promise를 공유합니다. 부모 호출·역할·부모 agent가 일치해야 배정하며 사용한 호출 ID는 소비합니다. 파일 누락·쓰기 중 JSON은 최대 1.5초 재확인하고, 권한 거부는 재시도하지 않습니다. 확인 실패 시 AGENT_SELECTION_UNVERIFIED와 고정 원인 코드로 upstream 전송 전에 중단합니다. 이전 snapshot을 새 재개 호출로 재사용하지 않습니다. 파일·prompt·인증 원문은 진단에 포함하지 않습니다.
 

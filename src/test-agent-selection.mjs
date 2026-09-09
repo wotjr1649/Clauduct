@@ -68,9 +68,41 @@ for (const [index, parentAgentId] of [null, undefined].entries()) {
   snapshots.set('null_parent', metadata('null_origin', 'opus', { parentAgentId }));
   assert.equal((await selection.resolve(binding('null_parent'))).source, 'verified-resume');
 }
-selection.remember(call('call_inherit', 'inherit'), 'session');
+const parentRoute = { model: 'gpt-6-astra', effort: 'max' };
+selection.remember(call('call_inherit', 'inherit'), 'session', undefined, parentRoute);
+parentRoute.effort = 'low'; // A later parent change must not rewrite creation evidence.
 snapshots.set('inherit', metadata('call_inherit', 'inherit'));
-assert.equal((await selection.resolve(binding('inherit'))).source, 'native-inherit');
+const inherited = await selection.resolve(binding('inherit'));
+assert.equal(inherited.source, 'native-inherit');
+assert.deepEqual(inherited.route, { model: 'gpt-6-astra', effort: 'max' });
+assert.throws(() => { inherited.route.effort = 'low'; }, TypeError);
+for (const invalidParent of [undefined, {}, { model: 'gpt-6-astra' }, { effort: 'max' },
+  { model: 'unknown', effort: 'max' }, { model: 'gpt-6-astra', effort: 'invalid' }]) {
+  assert.throws(() => selection.remember(call('invalid_inherit', 'inherit'), 'session', undefined, invalidParent));
+}
+// Direct parent snapshot, not the top-level parent or a model's default effort.
+selection.remember(call('grandchild_inherit', 'inherit'), 'session', 'inherit', { model: 'gpt-5.6-sol', effort: 'low' });
+snapshots.set('grandchild', metadata('grandchild_inherit', 'inherit', { parentAgentId: 'wrong' }));
+await assert.rejects(selection.resolve(binding('grandchild')), /AGENT_SELECTION_UNVERIFIED/);
+snapshots.set('grandchild', metadata('grandchild_inherit', 'inherit', { parentAgentId: 'inherit' }));
+assert.deepEqual((await selection.resolve(binding('grandchild'))).route, { model: 'gpt-5.6-sol', effort: 'low' });
+selection.remember({ content: [{ type: 'tool_use', id: 'inherit_resume', name: 'SendMessage',
+  input: { to: 'inherit', message: 'SYNTHETIC' } }] }, 'session', undefined, parentRoute);
+selection.linkResume({ sessionId: 'session', toolUseId: 'inherit_resume', id: 'inherit' });
+assert.deepEqual((await selection.resolve(binding('inherit'))).route, { model: 'gpt-6-astra', effort: 'max' });
+for (const [id, chosen, expected] of [
+  ['inherit_plan', 'inherit', { model: 'gpt-6-astra', effort: 'low' }],
+  ['explicit_astra', 'astra', { model: 'gpt-6-astra', effort: 'medium' }],
+  ['explicit_sol', 'sol', { model: 'gpt-5.6-sol', effort: 'xhigh' }],
+  ['explicit_terra', 'terra', { model: 'gpt-5.6-terra', effort: 'high' }],
+  ['explicit_plan', 'luna', { model: 'gpt-5.6-luna', effort: 'max' }],
+  ['default_plan', undefined, { model: 'gpt-5.6-sol', effort: 'xhigh' }]
+]) {
+  selection.remember(call(id, chosen, 'Plan'), 'session', undefined, parentRoute);
+  snapshots.set(id, metadata(id, chosen, { agentType: 'Plan' }));
+  await assert.rejects(selection.resolve(binding(id, { role: 'Plan', sessionId: 'other' })), /AGENT_SELECTION_UNVERIFIED/);
+  assert.deepEqual((await selection.resolve(binding(id, { role: 'Plan' }))).route, expected);
+}
 const abort = new AbortController(); abort.abort();
 await assert.rejects(selection.resolve(binding('missing'), abort.signal));
 let deniedReads = 0;
@@ -240,6 +272,7 @@ try {
 }
 
 const received = [];
+let gatewayCall = { id: 'call_gateway', model: 'opus' };
 let onCancelRead;
 const routes = createAgentSelection({ timeoutMs: 100, readMetadata: async b => {
   if (b.id === 'cancel_test') onCancelRead?.();
@@ -251,8 +284,8 @@ const gateway = await startNativeGateway({ agentSelection: routes,
     close: async () => {}, diagnostics: () => ({}), send: async body => {
       received.push(body);
       if (body.tools?.length) {
-        const args = JSON.stringify({ subagent_type: 'general-purpose', model: 'opus' });
-        const item = { type: 'function_call', id: 'fc_parent', call_id: 'call_gateway',
+        const args = JSON.stringify({ subagent_type: 'general-purpose', model: gatewayCall.model });
+        const item = { type: 'function_call', id: 'fc_parent', call_id: gatewayCall.id,
           name: body.tools[0].name, arguments: args, status: 'completed' };
         return [{ type: 'response.created', response: { id: 'resp_parent', status: 'in_progress' } },
           { type: 'response.output_item.added', output_index: 0, item: { ...item, arguments: '', status: 'in_progress' } },
@@ -353,5 +386,28 @@ try {
   assert.equal(survivingResponse.status, 200, await survivingResponse.text());
   assert.equal(await cancelled, 'AbortError');
   assert.equal(received.length, 7);
+
+  // Gateway contract only: this synthetic schema does not claim native Agent accepts inherit.
+  gatewayCall = { id: 'gateway_inherit_origin', model: 'inherit' };
+  const inheritParent = await fetch(`${source.ANTHROPIC_BASE_URL}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(5000),
+    headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+      'x-claude-code-session-id': 'session' },
+    body: JSON.stringify({ model: 'astra', output_config: { effort: 'max' }, stream: true, max_tokens: 100,
+      messages: [{ role: 'user', content: 'SYNTHETIC' }],
+      tools: [{ name: 'Agent', input_schema: { type: 'object', properties: {
+        subagent_type: { type: 'string' }, model: { type: 'string', enum: ['inherit'] } } } }] }) });
+  assert.equal(inheritParent.status, 200, await inheritParent.text());
+  snapshots.set('gateway_inherit', metadata('gateway_inherit_origin', 'inherit'));
+  await registerBinding(binding('gateway_inherit'), source);
+  for (const result of await Promise.all([post('gateway_inherit'), post('gateway_inherit')])) {
+    assert.equal(result.status, 200, await result.text());
+  }
+  for (const request of received.slice(-2)) {
+    assert.equal(request.model, 'gpt-6-astra'); assert.equal(request.reasoning.effort, 'max');
+  }
+  const inheritStatus = (await readRequestStatus(source)).recentRequests.at(-1);
+  assert.equal(inheritStatus.selectionSource, 'native-inherit');
+  assert.equal(inheritStatus.requestedModel, 'gpt-5.6-luna');
+  assert.equal(inheritStatus.model, 'gpt-6-astra'); assert.equal(inheritStatus.effort, 'max');
 } finally { await gateway.close(); }
 process.stdout.write(JSON.stringify({ suite: 'agent-selection', passed: true, actualClaude: 0, externalRequests: 0 }) + '\n');

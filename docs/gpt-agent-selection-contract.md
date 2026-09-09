@@ -49,3 +49,13 @@ inherit의 구체적 공백: agent-selection은 inherit에 route=undefined를 �
 Not verified: 현재 native Agent(model=GPT/inherit) 그대로의 지원된 확장 API, 사용자 정의 agent 후보의 실제 실행·metadata 표현·기존 역할 보존, 부모 생성 시점 snapshot과 재개/병렬/손자 동작. 합성 테스트나 실제 계정 호출은 이번 문서 조사에서 실행하지 않았다. 연결 지점의 존재와 계약 전체의 실현 가능성을 구분한다.
 
 결론: gateway 쪽 모델·effort 적용 지점은 확인했다. 가장 앞의 native Agent 입력 계약은 아직 해결되지 않았다. 사용자 정의 agent는 native가 제공하는 별도 진입 후보지만 현재 launcher 차단 및 호출 형식 차이가 있어 채택하지 않았다. 다음 설계는 이 후보가 기존 역할과 명시 선택/생략의 구분을 보존하는지, 필요한 설정 변경 범위가 무엇인지부터 확인해야 한다. enum 패치나 Claude 별칭 대체는 하지 않는다.
+
+## 후속 구현 — 부모 snapshot, 2026-09-09
+
+위 조사의 inherit 공백 중 gateway 내부 처리를 수정했다. native-gateway는 생성 호출을 기록할 때 prepared.selected를 전달한다. remember는 명시 inherit에만 모델·effort를 검증하여 불변 복사본을 기존 pending 기록에 보관한다. 관계와 metadata 선택값의 기존 일치 검사를 통과한 자식만 이 route를 사용한다. 부모 snapshot이 없거나 잘못되면 기본값으로 조용히 대체하지 않고 거부한다. SendMessage 재개는 최초 상속 route를 유지하며, 완료 알림 재개도 기존 selection 재사용 경로를 유지한다. 역할 기본값과 명시 GPT 모델 기본 effort는 바꾸지 않았다. 새 누적 Map이나 의존성은 없다.
+
+Verified: test-agent-selection.mjs에서 수정 전 route=undefined 실패를 관찰한 후 수정 버전 통과. 생성 후 부모 객체 변경에 대한 고정, 상속 route 불변성, 직접 부모 기준 snapshot, 잘못된 부모·다른 세션 거부, 네 GPT 모델 명시/Plan 기본값/명시 inherit 우선순위, SendMessage 재개를 검사했다. loopback gateway 통합 검사에서 astra/max 부모 생성 응답 → remember → 등록·metadata 검증 → 자식 병렬 요청 두 개의 astra/max upstream 요청 및 status를 확인했다. test-completion-selection.mjs 46개, test-native-gateway.mjs 24개 통과. Node 권한을 프로젝트 읽기와 필요한 src fixture 쓰기로 제한했고 실제 Claude/외부 요청은 0이다. symlink 검사는 기존 제한으로 미실행이다.
+
+Not verified: native Agent가 model=inherit/GPT를 수락하는 실제 실행. 추가 gateway 검사의 schema는 계층 내부 계약용 합성이며 설치 native 스키마가 아니다. 따라서 내부 상속 수정 완료와 전체 native 연결 완료는 다르다.
+
+[공식 subagents 문서](https://code.claude.com/docs/en/sub-agents)를 2026-09-09 확인했다. 사용자 정의 agent는 전체 모델 ID/inherit와 effort를 설정할 수 있고 --agents 정의는 세션에 한정된다. 이는 설치 바이너리의 정의 parser와 일치하지만 Agent 호출 model enum 확대를 뜻하지 않는다. 현재 차단된 --agents 전달이나 agent 지침/설정 등록을 실제 사용하려면 그 정확한 범위의 권한을 먼저 확정해야 한다. 이번 변경은 그 차단·등록·전역 설정을 건드리지 않는다.

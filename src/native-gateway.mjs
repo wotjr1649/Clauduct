@@ -261,7 +261,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const output = response.finish();
       stage = 'output-validation';
       verifyFileReviewStep(output.message, prepared);
-      agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent);
+      agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent, prepared.selected);
       const kind = agent === undefined ? 'main' : 'subagent';
       maxObservedInputTokens[kind] = Math.max(maxObservedInputTokens[kind],
         output.message.usage.input_tokens + (output.message.usage.cache_read_input_tokens ?? 0));

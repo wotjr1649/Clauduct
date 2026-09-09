@@ -6,6 +6,7 @@ import { NativeError, FAILURE_DIAGNOSTIC_CATEGORIES } from './native-protocol.mj
 import { Writable } from 'node:stream';
 import { writeFrames } from './native-delivery.mjs';
 import { readRequestStatus } from './request-status.mjs';
+import { createAgentSelection } from './agent-selection.mjs';
 
 const doc = { model: 'astra', stream: true, max_tokens: 10000, messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
   tools: [{ name: 'Read', input_schema: { type: 'object', properties: {} } }] };
@@ -47,6 +48,74 @@ const emptyStages = { request: 0, selection: 0, prepare: 0, review: 0, upstream:
 let passed = 0;
 const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
 try {
+  for (const stop of [true, false]) for (const streaming of [false, true]) {
+    const selection = createAgentSelection({ timeoutMs: 10,
+      readMetadata: async binding => ({ agentType: 'general-purpose', toolUseId: binding.id }) });
+    for (const id of ['target', 'sibling']) selection.remember({ content: [{ type: 'tool_use', id,
+      name: 'Agent', input: { subagent_type: 'general-purpose' } }] }, 'session');
+    let hold = 0, entered, targetsEntered;
+    const started = new Promise(resolve => { entered = resolve; });
+    const targetsStarted = new Promise(resolve => { targetsEntered = resolve; });
+    const signals = [], releases = [], pending = [];
+    const gateway = await startNativeGateway({ agentSelection: selection, admissionOptions: ample, transport: {
+      send: async (body, signal, callbacks) => {
+        let offset = 0;
+        if (hold > 0) {
+          hold--; signals.push(signal);
+          if (streaming) {
+            offset = 5;
+            for (const event of frames(body).slice(0, offset)) await callbacks.onEvent(event);
+          }
+          await new Promise((resolve, reject) => {
+            // Also exercise a legacy transport returning events after cancellation.
+            const abort = () => streaming ? reject(new NativeError('CANCELLED')) : resolve();
+            signal.addEventListener('abort', abort, { once: true });
+            releases.push(() => { signal.removeEventListener('abort', abort); resolve(); });
+            if (signals.length === 2) targetsEntered();
+            if (signals.length === 3) entered();
+          });
+        }
+        return frames(body).slice(offset);
+      }, close: async () => {}, diagnostics: () => ({}) } });
+    const register = (id, stopping = false) => call(gateway, { path: '/clauduct/agents',
+      body: { id, role: 'general-purpose', stop: stopping, sessionId: 'session' } });
+    const headers = id => ({ 'x-claude-code-session-id': 'session', 'x-claude-code-agent-id': id });
+    try {
+      for (const id of ['target', 'sibling']) assert.equal((await register(id)).status, 200);
+      // Warm the cached selection before starting two active transport requests.
+      assert.equal((await call(gateway, { headers: headers('target') })).status, 200);
+      hold = 3;
+      for (let i = 0; i < 2; i++) pending.push(call(gateway, { headers: headers('target') })
+        .then(result => result, error => ({ error })));
+      // Capture target signals first, without assuming cross-socket scheduling order.
+      await targetsStarted;
+      pending.push(call(gateway, { headers: headers('sibling') }).then(result => result, error => ({ error })));
+      await started;
+      assert.equal((await call(gateway, { path: '/clauduct/agents', body: {
+        id: 'target', role: 'Plan', stop, sessionId: 'session' } })).status, 400);
+      assert.ok(signals.every(signal => !signal.aborted));
+      assert.equal((await register('target', stop)).status, 200);
+      assert.ok(signals.slice(0, 2).every(signal => signal.aborted), 'stop/re-registration must abort active child transports');
+      assert.equal(signals[2].aborted, false);
+      for (const result of await Promise.all(pending.slice(0, 2))) {
+        if (streaming) assert.equal(result.error?.code, 'ECONNRESET');
+        else { assert.equal(result.status, 502); assert.match(result.text, /CANCELLED/); }
+      }
+      const cancelled = gateway.diagnostics().recentRequests.filter(row => row.failureCategory === 'CANCELLED');
+      assert.equal(cancelled.length, 2);
+      assert.ok(cancelled.every(row => row.success === false && row.failureCategory === 'CANCELLED'));
+      releases[2]();
+      assert.equal((await pending[2]).status, 200);
+      assert.equal((await call(gateway)).status, 200);
+      assert.equal(gateway.diagnostics().admission.active, 0);
+      assert.equal(gateway.diagnostics().activeDeliveries, 0);
+      passed++;
+    } finally {
+      for (const release of releases) release();
+      await Promise.allSettled(pending);
+      await gateway.close();
+    }
+  }
   for (const [code, tail] of [
     ['INVALID_SSE', 'data: SYNTHETIC_PRIVATE\n\n'],
     ['INVALID_UTF8', Buffer.from([0xff])],

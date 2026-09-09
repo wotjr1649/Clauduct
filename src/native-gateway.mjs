@@ -58,7 +58,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   }
   async function handle(req, res, controller) {
     requests++;
-    let release, upstream = false, timing, heartbeat, heartbeatPending = false, responseStarted = false;
+    let release, activeAgent, upstream = false, timing, heartbeat, heartbeatPending = false, responseStarted = false;
     let writeTail = Promise.resolve(), deliveryError, stage = 'request';
     const stopHeartbeat = () => { if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; activeHeartbeats--; } };
     const started = performance.now();
@@ -122,15 +122,15 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
           && Number.isSafeInteger(context.window) && context.window > 0
           && Number.isSafeInteger(context.autoCompactWindow) && context.autoCompactWindow > 0
           && Number.isFinite(context.compactPercent) && context.compactPercent > 0 && context.compactPercent <= 100), 'INVALID_AGENT_BINDING');
+        need(!agents.has(binding.id) || agents.get(binding.id).role === binding.role, 'AGENT_BINDING_CONFLICT');
+        agents.get(binding.id)?.selectionController?.abort();
+        // Stop or replacement invalidates active requests of this registration only.
+        for (const active of agents.get(binding.id)?.requests ?? []) active.abort(new NativeError('CANCELLED'));
         if (binding.stop) {
-          need(!agents.has(binding.id) || agents.get(binding.id).role === binding.role, 'AGENT_BINDING_CONFLICT');
-          agents.get(binding.id)?.selectionController?.abort();
           agents.delete(binding.id);
         }
         else {
-          need(!agents.has(binding.id) || agents.get(binding.id).role === binding.role, 'AGENT_BINDING_CONFLICT');
-          agents.get(binding.id)?.selectionController?.abort();
-          const state = { role: binding.role, contextPolicy: context ?? null, selectionPending: Boolean(agentSelection),
+          const state = { role: binding.role, requests: new Set(), contextPolicy: context ?? null, selectionPending: Boolean(agentSelection),
             selectionBinding: agentSelection ? { ...binding, nativeRegistered: true } : undefined, selectionController: agentSelection ? new AbortController() : undefined };
           agents.set(binding.id, state);
           // Native can persist the sidecar only after this hook returns. Resolve
@@ -167,6 +167,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const agent = req.headers['x-claude-code-agent-id'];
       stage = 'selection';
       const agentBinding = agents.get(agent), role = agentBinding?.role;
+      activeAgent = agentBinding;
+      activeAgent?.requests.add(controller);
       if (agentSelection && agent !== undefined) {
         if (agentBinding?.selectionPending) {
           agentBinding.selectionWork ??= agentSelection.resolve({ ...agentBinding.selectionBinding,
@@ -268,6 +270,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       });
       timing.transportFinishedMs = elapsed();
       stopHeartbeat(); await writeTail;
+      controller.signal.throwIfAborted();
       // Existing injected offline transports can still return the old event-array contract.
       if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await pushEvent(event);
       const output = response.finish();
@@ -319,6 +322,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       } else res.destroy();
     } finally {
       stopHeartbeat();
+      activeAgent?.requests.delete(controller);
       if (timing) {
         timing.finishedMs = elapsed(); lifetime[timing.success ? 'succeeded' : 'failed']++;
         if (!timing.success) failuresByStage[stage]++;

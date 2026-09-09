@@ -14,6 +14,8 @@
 
 후속 보안 감사에서 사용자 중단 metadata가 일반 Agent/Task·연결된 Skill의 최초 선택에 수락되는 결함을 로컬 재현 후 수정했다. 중단 표시를 읽으면 transport 전에 selection/IDENTITY로 거부한다. [수정·회귀·미검증 범위](audit-2026-09-10-stopped-agent-selection.md). 실제 중단 경쟁 조건 전체나 이미 캐시된 요청의 취소를 통과 처리하지 않는다.
 
+이어서 등록 종료/교체가 이미 전송 중인 요청에 전달되지 않는 공백을 수정했다. 같은 등록의 활성 controller만 취소하며 캐시된 선택·병렬 요청·스트리밍·형제 격리를 로컬 검증했다. [활성 요청 취소 근거](audit-2026-09-10-active-agent-cancellation.md). 다음은 등록 연결 전 admission/본문 수신 구간의 순서 점검이다. 실제 UI 취소·원격 계산 중단이나 전체 취소 조합은 미검증이다.
+
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 
 Workflow는 별도 native 도구다. 기본 자식의 실제 성공을 명시 선택·custom agentType·중첩·resume 지원으로 확대하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.

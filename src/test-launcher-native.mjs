@@ -78,6 +78,37 @@ function autoCompactVerificationTest() {
   assert.throws(() => launchOptions(['--verify-auto-compact=1']));
 }
 
+function agentModelVerificationTest() {
+  const source = { CLAUDE_CONFIG_DIR: 'SYNTHETIC_NATIVE_CONFIG' }, before = JSON.stringify(source);
+  const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
+  const options = launchOptions(['--verify-agent-models', '--model', 'astra', '--effort', 'max']);
+  assert.equal(options.verifyAgentModels, true); assert.deepEqual(options.forward, []);
+  const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected);
+  assert.equal(normal.args.includes('--agents'), false);
+  const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, options.forward, options);
+  const agents = JSON.parse(launch.args[launch.args.indexOf('--agents') + 1]);
+  assert.deepEqual(Object.keys(agents), ['astra', 'sol', 'terra', 'luna', 'inherit'].map(name => `clauduct-probe-${name}`));
+  for (const [name, agent] of Object.entries(agents)) {
+    const chosen = name.slice('clauduct-probe-'.length);
+    assert.deepEqual(agent.tools, ['Read']); assert.equal(agent.maxTurns, 3);
+    assert.deepEqual(Object.keys(agent).sort(), ['description', 'prompt', 'tools', 'maxTurns', 'model',
+      ...(chosen === 'inherit' ? [] : ['effort'])].sort());
+    assert.equal(agent.model, chosen === 'inherit' ? 'inherit' : MODELS[chosen].model);
+    assert.equal(agent.effort, chosen === 'inherit' ? undefined : MODELS[chosen].effort);
+    assert.ok(agent.prompt.includes('/src/models.mjs')); assert.ok(!agent.prompt.includes('SYNTHETIC'));
+  }
+  assert.equal(launch.args.filter(value => value === '--agents').length, 1);
+  assert.equal(launch.args[launch.args.indexOf('--effort') + 1], 'max');
+  assert.equal(launch.args[launch.args.indexOf('--settings') + 1], normal.args[normal.args.indexOf('--settings') + 1]);
+  assert.deepEqual(launch.options, normal.options); assert.equal(JSON.stringify(source), before);
+  for (const args of [['--verify-agent-models', '--verify-agent-models'], ['--verify-agent-models=1'],
+    ['--agents', '{}'], ['--agents={}'], ['--verify-agent-models', '--agents', '{}'],
+    ['--verify-agent-models', '--agents={}'], ['--verify-agent-models', '--settings={}']]) {
+    assert.throws(() => launchOptions(args));
+  }
+  assert.equal(launchOptions(['--', '--verify-agent-models']).verifyAgentModels, undefined);
+}
+
 async function credentialTests() {
   let raw = cache('synthetic-account', 'first'), configReads = 0, credentialReads = 0;
   let runtimeChecks = 0, storeChecks = 0;
@@ -121,6 +152,7 @@ async function credentialTests() {
 optionTests();
 childRetryTest();
 autoCompactVerificationTest();
+agentModelVerificationTest();
 await credentialTests();
 process.stdout.write(JSON.stringify({ suite: 'launcher-native', passed: true, actualCredentialReads: 0,
   actualClaudeExecutions: 0, externalRequests: 0 }) + '\n');

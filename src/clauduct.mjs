@@ -10,7 +10,7 @@ import { createNativeTransport } from './native-transport.mjs';
 import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { CLAUDE_EXE } from '../poc/claude-inspection.mjs';
 
-const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact']);
+const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact', '--verify-agent-models']);
 const blockedOptions = new Set(['--settings', '--setting-sources', '--agents', '--system-prompt']);
 // These native options consume a following value. Tracking their values keeps a
 // value such as "--model" from being mistaken for a wrapper option.
@@ -22,7 +22,7 @@ const optionalNativeValueOptions = new Set(['--resume']);
 
 export function launchOptions(args) {
   if (!Array.isArray(args) || args.some(flag => typeof flag !== 'string')) throw new Error('INVALID_ARGUMENTS');
-  let model = 'astra', effort, mode = 'interactive', verifyAutoCompact = false;
+  let model = 'astra', effort, mode = 'interactive', verifyAutoCompact = false, verifyAgentModels = false;
   const forward = [];
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
@@ -40,6 +40,9 @@ export function launchOptions(args) {
     if (name === '--verify-auto-compact') {
       if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
       verifyAutoCompact = true;
+    } else if (name === '--verify-agent-models') {
+      if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
+      verifyAgentModels = true;
     } else if (name === '--help' || name === '--dry-run') {
       if (value !== undefined || mode !== 'interactive') throw new Error('INVALID_ARGUMENTS');
       mode = name.slice(2);
@@ -70,10 +73,19 @@ export function launchOptions(args) {
       }
     }
   }
-  return { selected: selectModel(model, effort), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}) };
+  return { selected: selectModel(model, effort), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}),
+    ...(verifyAgentModels ? { verifyAgentModels } : {}) };
 }
 
-export function interactiveLaunch(gateway, source, cwd, selected = selectModel(), forward = [], { verifyAutoCompact = false } = {}) {
+function agentModelProbes() {
+  const target = fileURLToPath(new URL('./models.mjs', import.meta.url)).replaceAll('\\', '/');
+  return Object.fromEntries([...Object.entries(MODELS), ['inherit', { model: 'inherit' }]].map(([name, route]) =>
+    [`clauduct-probe-${name}`, { description: `Read-only Clauduct model probe (${name}); use only when explicitly requested.`,
+      prompt: `Read ${JSON.stringify(target)} exactly once, then return MODEL-PROBE-COMPLETED. Do not read other files, delegate, or change state.`,
+      tools: ['Read'], maxTurns: 3, ...route }]));
+}
+
+export function interactiveLaunch(gateway, source, cwd, selected = selectModel(), forward = [], { verifyAutoCompact = false, verifyAgentModels = false } = {}) {
   const env = {};
   // Preserve native configuration discovery, including an explicit CLAUDE_CONFIG_DIR.
   for (const key of Object.keys(source)) {
@@ -112,7 +124,8 @@ export function interactiveLaunch(gateway, source, cwd, selected = selectModel()
   if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) throw new Error('LOCAL_SESSION_REQUIRED');
   env.ANTHROPIC_AUTH_TOKEN = authorization.slice(7);
   return { file: CLAUDE_EXE, args: ['--model', selected.model, '--effort', selected.effort,
-    '--settings', JSON.stringify(settings), ...forward], options: { cwd: resolve(cwd), env,
+    '--settings', JSON.stringify(settings), ...(verifyAgentModels ? ['--agents', JSON.stringify(agentModelProbes())] : []),
+    ...forward], options: { cwd: resolve(cwd), env,
     stdio: 'inherit', shell: false, windowsHide: true } };
 }
 
@@ -161,6 +174,7 @@ async function main() {
     process.stdout.write('clauduct [--model astra|sol|terra|luna] [--effort low|medium|high|xhigh|max] [--dry-run] [Claude 옵션]\n'
       + '기본 astra/medium. native 도구/config 유지, 누적 시간·요청 제한 없음. --continue/--resume 전달.\n');
     process.stdout.write('--verify-auto-compact: 이 실행에만 압축 계산 창 100K(기본 예약량에서 약 66.7K 발동)를 적용. 모델 창은 500K 유지.\n');
+    process.stdout.write('--verify-agent-models: 이 자식 세션에만 GPT 모델별 및 inherit Read 전용 시험용 agent 5개 등록. 일반 역할과 전역 설정은 유지.\n');
     return;
   }
   if (options.mode === 'dry-run') {
@@ -168,6 +182,7 @@ async function main() {
     process.stdout.write(JSON.stringify({ mode: 'interactive', model: selected.model, effort: selected.effort,
       terminal: 'inherit', tools: 'native', requestBudget: null, lifetimeMs: null, models: MODELS, contextPolicy: CONTEXT_POLICY,
       verificationAutoCompactWindow: options.verifyAutoCompact ? 100000 : null,
+      verificationAgentModels: options.verifyAgentModels ? Object.keys(agentModelProbes()) : [],
       credentialReads: 0, childStarted: false, globalWrites: 0 }) + '\n');
     return;
   }
@@ -185,6 +200,7 @@ async function main() {
     } });
     process.stdout.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
     if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 66.7K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
+    if (options.verifyAgentModels) process.stdout.write('모델 진입점 검증 모드: clauduct-probe-astra/sol/terra/luna/inherit 등록. 실제 라우팅은 아직 검증 중입니다.\n');
     const result = await runInteractive(gateway, endpoint => {
       const launch = interactiveLaunch(endpoint, process.env, process.cwd(), selected, options.forward, options);
       try { return spawn(launch.file, launch.args, launch.options); }

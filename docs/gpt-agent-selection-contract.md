@@ -59,3 +59,11 @@ Verified: test-agent-selection.mjs에서 수정 전 route=undefined 실패를 �
 Not verified: native Agent가 model=inherit/GPT를 수락하는 실제 실행. 추가 gateway 검사의 schema는 계층 내부 계약용 합성이며 설치 native 스키마가 아니다. 따라서 내부 상속 수정 완료와 전체 native 연결 완료는 다르다.
 
 [공식 subagents 문서](https://code.claude.com/docs/en/sub-agents)를 2026-09-09 확인했다. 사용자 정의 agent는 전체 모델 ID/inherit와 effort를 설정할 수 있고 --agents 정의는 세션에 한정된다. 이는 설치 바이너리의 정의 parser와 일치하지만 Agent 호출 model enum 확대를 뜻하지 않는다. 현재 차단된 --agents 전달이나 agent 지침/설정 등록을 실제 사용하려면 그 정확한 범위의 권한을 먼저 확정해야 한다. 이번 변경은 그 차단·등록·전역 설정을 건드리지 않는다.
+
+## 승인된 시험 등록
+
+사용자가 전역 설정과 임의 --agents 차단을 유지하는 자식 세션 한정 읽기 전용 시험용 agent 등록을 허용했다. 이에 따라 --verify-agent-models 옵션에서만 실행기가 고정한 시험 정의 5개를 --agents JSON으로 전달한다. 이는 사용자 입력 --agents를 허용하는 변경이 아니다. 설치 native 바이너리, hook, 권한 정책, 기존 settings·환경은 변경하지 않는다. 일반 역할 대신 시험 전용 이름을 사용하며 실제 호출은 사용자 실행으로만 검증한다. [사용법과 한계](native.md).
+
+Verified: test-launcher-native.mjs 통과. 일반 실행에서 미등록, 검증 옵션에서 정확히 5개 정의와 Read-only 도구 목록/maxTurns/모델/effort, 기존 settings·환경·메인 effort 보존, source 객체 불변, 임의 --agents·중복/값 첨부 옵션 거부를 검사했다. --verify-agent-models --model astra --effort max --dry-run에서 정의 이름 5개와 childStarted=false, credentialReads=0, globalWrites=0을 확인했다.
+
+Not verified: native의 실제 정의 로딩, 실제 도구 제한, 정의 모델의 요청·metadata 표현, 정의 기반 inherit의 effort 유지. 이 등록 변경은 gateway 선택 판정을 보정하지 않는다. 따라서 시험 성공을 만들기 위한 우회가 아니라 실제 입력·출력 관찰 준비이며, 전체 계약 완료는 여전히 보류다.

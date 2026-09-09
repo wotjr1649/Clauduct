@@ -12,6 +12,10 @@ D:\AIDEV\Clauduct\clauduct.cmd --dry-run
 
 현재 프로젝트 폴더와 터미널을 native Claude 자식에 연결하며 SEND 입력이나 별도 gateway 실행이 필요하지 않습니다. `--dry-run`은 인증·소켓·Claude 실행 없이 구성을 표시합니다. 사용자 PATH/PowerShell 프로필은 변경하지 않았습니다. Windows Terminal의 PowerShell 7을 편의상 권장하나 cmd/Git Bash에서도 같은 Node gateway가 실행됩니다. shell 선택이 모델 지연·메모리 안정성을 개선한다는 측정 근거는 없습니다.
 
+`--verify-agent-models`는 명시적으로 허용된 세션 한정 시험 옵션입니다. `clauduct-probe-astra/sol/terra/luna/inherit`라는 별도 agent 5개를 native `--agents` 정의로 전달합니다. 각 정의의 도구는 Read 하나, maxTurns는 3이며 대상은 이 실행기의 src/models.mjs입니다. 네 GPT 모델은 모델 기본 effort를 정의하고 inherit는 모델만 inherit로 정의합니다. 기존 내장 역할·settings·환경과 임의 사용자 `--agents` 차단은 유지합니다. 옵션 없이 다시 시작하면 시험 정의를 추가하지 않습니다. 전역/프로젝트 agent 파일은 생성하지 않지만 native 세션 기록 자체가 남지 않는다는 뜻은 아닙니다.
+
+사용자 실행: `D:/AIDEV/Clauduct/clauduct.cmd --verify-agent-models --model astra --effort max`. 이 옵션은 native의 정의 기반 모델 선택과 metadata를 관찰하기 위한 것이며 일반 Agent(model=GPT/inherit) 계약의 구현 완료가 아닙니다. 시험 agent 호출에서는 subagent_type으로 위 이름을 선택하고 model 인수는 생략해야 합니다. 특히 정의 기반 inherit는 아직 gateway의 명시 inherit snapshot 경로에 연결하지 않았으므로 실제 effort 보존은 미검증입니다. 요청별 status를 함께 수집하고 불일치를 숨기거나 별칭으로 대체하지 않습니다.
+
 | 모델 | 기본 effort |
 |---|---|
 | gpt-6-astra | medium |

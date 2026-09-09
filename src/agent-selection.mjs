@@ -84,7 +84,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
   }
   function linkSkill(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));
-    if (!validId(link.id) || !call || call.tool !== 'Skill' || call.skill !== link.skill
+    if (!validId(link.id) || !call || call.tool !== 'Skill'
+      || typeof call.skill !== 'string' || !call.skill || call.skill !== link.skill
       || call.parent !== link.parent || (call.child !== undefined && call.child !== link.id)) fail('CALL');
     if ([...pending.values()].some(other => other !== call && other.session === link.sessionId && other.child === link.id)) fail('CALL');
     call.child = link.id;

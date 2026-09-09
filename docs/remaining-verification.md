@@ -12,7 +12,8 @@
 | 자동 compact 및 후속 요청 | b6d81841 119행 auto 68608ms, 98097→39330; 142행 request 36 medium 성공; 137/138행 새 Read 성공 | 검증 모드 autoCompactWindow=100000에서 통과. 기본 400K와 각 자식 내부 발동은 미확인 |
 | native 역할·환경 상속 | f236f867 원본 진단 Explore/general-purpose=luna/max, Plan=sol/high; 500000/500000/83.33333333333334 상속 | 당시 정책 통과. 현재 Plan=sol/xhigh의 역할 선택은 실제 재확인 필요. 환경 상속은 backend 용량 증거가 아님 |
 | 현재 sol/xhigh 명시 선택·재개 | c5a3b05b request 11/12 explicit-metadata, 19/21 verified-resume; 두 Read 및 완료 | 통과. 모델 명시 없는 Plan 역할 검증으로 대체하지 않음 |
-| native code-review 전체 완료 | c5a3b05b root 및 하위 8개 대상 Read, 일부 결과 반환; root 최종 failed | 실패. UNSUPPORTED_EVENT 재발·자식 timeout 해결 및 재검증 필요 |
+| native code-review low 완료 | 268e9bf2 자식 a91eb3a1de1548dde: Bash diff 결과 연결, 최종 지적 반환, 부모 267행 completed; 270행 request 4/5 luna/max native-fork 성공 | low 실제 완료. strict diff 호출 수용과 약 10분 31초 요청의 ping 41회 및 완료 확인. 다른 review 수준·병렬 전체 완료는 미확인 |
+| native 병렬 code-review 전체 완료 | c5a3b05b root 및 하위 8개 대상 Read, 일부 결과 반환; root 최종 failed | 과거 UNSUPPORTED_EVENT 원인 해결 및 병렬 전체 재검증 필요. 최신 low 성공으로 대체하지 않음 |
 | 실제 인증 갱신·수시간 실행 | 사용자 지정 제외 | 이번 단계에서 실행하지 않음 |
 
 현재 우선순위는 UNSUPPORTED_EVENT의 정확한 원인 식별이다. 과거 event=other에는 원래 이벤트 이름이 없어 복원할 수 없다. 후속 진단은 고정 구조 분류를 추가했지만 실제 원인 해결 증거는 아니다. 인증된 실제 실행은 기존 거부를 우회하지 않으며, 합성 검사 통과만으로 미확인 행을 통과 처리하지 않는다.

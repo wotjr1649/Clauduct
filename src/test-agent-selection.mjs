@@ -96,6 +96,15 @@ for (const duplicate of [false, true]) {
 }
 
 const skillCall = id => ({ content: [{ type: 'tool_use', id, name: 'Skill', input: { skill: 'code-review' } }] });
+// Missing names must not become routing evidence through undefined equality.
+for (const skill of [undefined, null, 42, '', 'x'.repeat(201)]) {
+  const invalid = createAgentSelection({ timeoutMs: 1, readMetadata: async () => ({ agentType: 'general-purpose' }) });
+  invalid.remember({ content: [{ type: 'tool_use', id: 'bad_skill', name: 'Skill', input: { skill } }] }, 'session');
+  for (const name of [undefined, skill]) {
+    assert.throws(() => invalid.linkSkill({ sessionId: 'session', toolUseId: 'bad_skill', id: 'bad_child', skill: name }), /AGENT_SELECTION_UNVERIFIED/);
+  }
+  await assert.rejects(invalid.resolve(binding('bad_child')), /AGENT_SELECTION_UNVERIFIED/);
+}
 const skillHook = (id, child) => ({ hook_event_name: 'PostToolUse', tool_name: 'Skill', session_id: 'session', tool_use_id: id,
   tool_response: { success: true, status: 'forked', background: true, agentId: child, commandName: 'code-review', result: 'SYNTHETIC_PRIVATE' } });
 selection.remember(skillCall('skill_one'), 'session');

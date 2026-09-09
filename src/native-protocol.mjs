@@ -10,7 +10,7 @@ export const OUTPUT_TOKEN_LIMIT_POLICY = 'usage-enforced-completion';
 // Diagnostic allowlist only, not a list of newly supported events. Never echo an
 // arbitrary upstream type or body through an error or status response.
 export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-object', 'missing-event-type', 'invalid-event-type',
-  'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'response.created', 'response.in_progress', 'response.queued',
+  'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'codex.response.metadata', 'responsesapi.websocket_timing', 'response.created', 'response.in_progress', 'response.queued',
   'response.completed', 'response.failed', 'response.incomplete', 'error',
   'response.output_item.added', 'response.output_item.done', 'response.content_part.added', 'response.content_part.done',
   'response.output_text.delta', 'response.output_text.done', 'response.output_text.annotation.added',
@@ -420,6 +420,15 @@ export function createNativeResponse(prepared) {
     }
     need(state.responseId, 'MISSING_RESPONSE_START');
     need(event.response_id === undefined || event.response_id === state.responseId, 'SNAPSHOT_MISMATCH');
+    // OpenAI Codex treats this exact event as auxiliary metadata, not response output.
+    // Keep the envelope narrow; response/error/tool events still require their own handling.
+    if (event.type === 'codex.response.metadata') {
+      need(Object.keys(event).every(key => ['type', 'metadata', 'response_id', 'sequence_number'].includes(key))
+        && object(event.metadata)
+        && (event.sequence_number === undefined || (Number.isSafeInteger(event.sequence_number) && event.sequence_number >= 0)),
+      'UNSUPPORTED_METADATA_EVENT');
+      return [];
+    }
     if (event.type === 'response.completed') { need(object(event.response), 'INCOMPLETE_RESPONSE'); completedEvent(event); return []; }
     if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
       state.completed = object(event.response) ? event.response : { id: state.responseId, status: 'failed', error: true };

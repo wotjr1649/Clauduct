@@ -214,6 +214,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
           timing.lastUpstreamEventMs = elapsed();
           if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
           await emit(response.push(event));
+          if (event.type === 'codex.response.metadata') timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
           if (!heartbeat) {
             activeHeartbeats++;
             heartbeat = setInterval(() => {

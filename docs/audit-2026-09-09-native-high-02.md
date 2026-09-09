@@ -51,3 +51,14 @@
 4. 위 문제의 로컬 재현·회귀 검증 뒤 한 번의 high 실제 수용 검사를 진행한다. 같은 프롬프트 반복 실행은 먼저 하지 않는다.
 
 이번 변경은 감사 문서와 검증 판정 갱신뿐이다. 실행 코드 수정·live 재실행·전역 설정 변경은 없으며, 새로운 런타임 검사를 통과했다고 주장하지 않는다.
+
+## 후속 구현과 로컬 검증
+
+후속 사용자 승인에 따라 다음 수정을 원인별로 적용했다. 위 문단은 최초 감사 커밋의 범위다.
+
+- cb09130: failureStage, selectionFailure, 고정 selectionIoCode로 요청 준비/라우팅/상류/출력 검사 단계와 I/O 원인을 구분한다. 허용되지 않은 예외 코드·경로·이벤트 이름·payload는 노출하지 않는다. 모든 알 수 없는 이벤트를 허용한 변경이 아니다.
+- b5f520b: 실제 to=code-review 이름 사용을 반영했다. 이름을 전체 registry에서 검색하지 않고 이미 검증된 발신자의 직계 부모 이름과 일치할 때만 실제 ID로 연결한다. 성공한 PostToolUse SendMessage, 동일 세션 관계, 변경되지 않은 대상 metadata가 필요하다. 부모 ID를 발신 자식 ID로 바꾸지 않으며 전달 증거는 한 번 소비한다. 다른 세션/발신자/metadata 변조/사용자 중단/replay 거부와 hook HTTP 경로 복귀를 검사했다. 새 source는 verified-peer-resume이다.
+- 36bdc58: 검증된 리뷰 루트에서 Agent/Task 자식·손자 및 복귀에 reviewContext를 상속한다. gateway는 이 범위에만 이미 실행 중인 리뷰 본문을 직접 수행하도록 안내한다. 일반 요청/compact와 도구 목록은 유지하며 native Skill 재귀 방지나 전역 plugin/hook을 바꾸지 않았다. 실제 모델이 지침을 지키는지는 live 검사 대상이다.
+- OpenAI 공개 Codex parser에서 보조 이벤트로 취급하는 codex.response.metadata를 좁은 envelope(type, metadata object, 선택적 response_id/비음수 정수 sequence_number)로 처리한다. 정상 created 이후/완료 이전 및 응답 ID 일치를 요구한다. 추가 output/error 필드나 malformed envelope는 거부한다. payload를 답변·진단에 옮기지 않으며 실제 발생 건수만 auxiliaryMetadataEvents에 남긴다. 정상 응답 동일성, 변조·순서 오류 거부, gateway 완료 및 payload 비노출을 검사했다. 근거: https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/sse/responses.rs 의 process_responses_event. 공개 main 확인일 2026-09-09. 과거 event=other가 이 이벤트였다는 직접 증거는 없으므로 과거 장애 원인이 완전히 해결됐다고 단정하지 않는다.
+
+로컬 검증: agent-selection(직접 검사와 loopback hook 복귀), file-review, native-protocol, native-gateway 21/21 및 native 45/45. 실제 인증을 사용한 실행은 수행하지 않았다. 마지막 16개 요청만 보존하는 기존 진단 범위, 확인된 registry 최대 1024개/대기 증거 5분 유지 범위는 동일하다. 임의 sibling 이름이나 관계를 입증할 수 없는 peer 복귀는 계속 거부한다. 실제 high 전체 완료·스킬 재호출 감소·이전 미지원 이벤트/요청의 정확한 원인은 아직 미검증이다.

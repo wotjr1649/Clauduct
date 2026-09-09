@@ -137,6 +137,24 @@ const interleaved = interleavedParser.finish();
 assert.deepEqual(interleaved.message.content.map(block => block.input.value), ['a', 'b']);
 
 const invalidText = responseEvents(prepared);
+const auxiliary = responseEvents(prepared);
+auxiliary.splice(1, 0, { type: 'codex.response.metadata', response_id: 'resp_protocol',
+  metadata: { synthetic: 'SYNTHETIC_PRIVATE_METADATA' }, sequence_number: 1 });
+assert.deepEqual(nativeResponse(auxiliary, prepared), nativeResponse(responseEvents(prepared), prepared));
+for (const metadataEvent of [
+  { type: 'codex.response.metadata', metadata: null },
+  { type: 'codex.response.metadata', metadata: {}, sequence_number: -1 },
+  { type: 'codex.response.metadata', metadata: {}, response_id: 'wrong' },
+  { type: 'codex.response.metadata', metadata: {}, output: [] },
+  { type: 'codex.response.metadata', metadata: {}, error: {} }
+]) {
+  const invalid = responseEvents(prepared); invalid.splice(1, 0, metadataEvent);
+  assert.throws(() => nativeResponse(invalid, prepared));
+}
+const prematureMetadata = responseEvents(prepared); prematureMetadata.unshift(auxiliary[1]);
+assert.throws(() => nativeResponse(prematureMetadata, prepared), /MISSING_RESPONSE_START/);
+const lateMetadata = responseEvents(prepared); lateMetadata.push(auxiliary[1]);
+assert.throws(() => nativeResponse(lateMetadata, prepared), /EVENT_AFTER_COMPLETION/);
 for (const [type, expected] of [['response.output_text.annotation.added', 'response.output_text.annotation.added'],
   ...['ping', 'rate_limits.updated', 'codex.rate_limits'].map(type => [type, type]),
   ['SYNTHETIC_PRIVATE_EVENT_VALUE', 'other']]) {

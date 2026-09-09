@@ -198,6 +198,24 @@ try {
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
+  {
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async (body, _signal, { onEvent }) => {
+        const events = frames(body);
+        events.splice(1, 0, { type: 'codex.response.metadata', metadata: { synthetic: 'SYNTHETIC_PRIVATE_METADATA' } });
+        for (const event of events) await onEvent(event);
+      }, close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      const result = await call(gateway);
+      assert.match(result.text, /event: message_stop/);
+      assert.ok(!result.text.includes('SYNTHETIC_PRIVATE_METADATA'));
+      const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      assert.equal(status.recentRequests.at(-1).auxiliaryMetadataEvents, 1);
+      assert.equal(status.recentRequests.at(-1).success, true);
+      assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE_METADATA')); passed++;
+    } finally { await gateway.close(); }
+  }
   for (const mode of ['reject', 'hang']) {
     const transport = { send: async () => [], close: () => mode === 'reject' ? Promise.reject(new Error('SYNTHETIC')) : new Promise(() => {}),
       diagnostics: () => ({ activeSockets: 0, activeRequests: 0 }) };

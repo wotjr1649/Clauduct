@@ -68,6 +68,7 @@ export async function readRequestStatus(env) {
     clientDisconnected: row?.clientDisconnected === true,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),
+    auxiliaryMetadataEvents: number(row?.auxiliaryMetadataEvents) ?? 0,
     ...Object.fromEntries(times.map(key => [key, number(row?.[key])])),
     retryScheduledMs: Array.isArray(row?.retryScheduledMs) ? row.retryScheduledMs.slice(0, 5).map(number) : [],
     attempts: Array.isArray(row?.attempts) ? row.attempts.slice(0, 6).map(attempt => ({

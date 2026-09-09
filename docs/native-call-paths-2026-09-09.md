@@ -31,7 +31,7 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | 결합 완료/failed/killed/blocked 알림 복귀 | native wake router | 완료 증거로 사용하지 않음 | 신규 완료 복귀 경로에서 미지원, 조용한 성공 처리 없음 |
 | Workflow | native Workflow → local inline run → workflow-subagent | 인증된 호출·run·nested metadata 연결. 명시 sidecar 모델은 요청과 대조. 최종 text는 reasoning 뒤로 전달 | 5cd82157 순차·992c0794 병렬 혼합 자식 2개 실제 통과. 병렬 요청 약 4.77초 겹침·결과 복귀 확인. 중첩·resume·custom agentType은 별도 범위. [실제 병렬 성공](audit-2026-09-10-workflow-parallel-success.md) |
 | /compact·자동 compact | 명령은 local, 내부 querySource=compact는 모델 호출 | C, 요약 뒤 새 요청 연결 | 수동·낮춘 임계값 자동 압축 실제 통과, 기본400K·각 자식은 미검증 |
-| /btw | 명령은 local-jsx, 내부 side_question 경로 존재 | 별도 질문의 header·모델 연결 미추적 | 미검증 |
+| /btw | local-jsx → iOe → nk/Xyn → 공통 query/client | cacheSafeParams의 agentContext 유지. 메인 문맥이면 자식 header 없이 메인 경로. skipTranscript=true | [정적 경로 대조](audit-2026-09-10-native-btw-path.md). 실제 반환·effort·beta는 미검증. 일반 Agent metadata를 요구하거나 실제 성공으로 단정하지 않음 |
 | /fork·/subtask | native 정의에 백그라운드 에이전트/세션 생성 존재 | fork 유형에 따른 ID·모델 경로 미추적 | code-review fork와 동일 지원이라고 단정하지 않음 |
 | /init | builtin prompt 등록 확인 | 모델이 문서·설정 작업을 생성 | GPT 경로 실제 미검증, 설정/지침 쓰기는 별도 권한 대상 |
 | /batch | builtin prompt 등록, 병렬 worktree 및 PR 작업을 기술 | 하위 Agent 정책·원격 쓰기는 별도 | 미검증, PR/push를 자동 실행하지 않음 |

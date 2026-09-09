@@ -18,6 +18,8 @@
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 
+보조 호출 중 /btw의 side_question → 문맥 복제 → 공통 query/client·header 경로를 설치 2.1.266에서 정적 추적했다. 메인 문맥 경로와 일반 Agent 상속을 구분하며 실제 성공은 아직 아니다. [추적 근거와 한계](audit-2026-09-10-native-btw-path.md). session-12는 준비·사용자 /btw 1회·종료 진단의 읽기 전용 시험이며, skipTranscript에 대비해 UI 결과를 사용자가 함께 제공한다.
+
 Workflow는 별도 native 도구다. 기본 자식의 실제 성공을 명시 선택·custom agentType·중첩·resume 지원으로 확대하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.
 
 모델 선택의 최신 수용 기준은 [GPT Agent 선택 계약](gpt-agent-selection-contract.md)이다. 직접 GPT 선택과 명시 inherit의 부모 모델·effort 상속은 필수이며, Claude 별칭 대체 검증과 전체 모델 목록 확장은 이번 범위에서 제외한다.

@@ -181,9 +181,14 @@ try {
     finally { await gateway.close(); }
   }
   {
+    let first = true;
     const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
-      send: async () => [{ type: 'response.created', response: { id: 'resp_diagnostic', status: 'in_progress' } },
-        { type: 'response.SYNTHETIC_PRIVATE', payload: 'SYNTHETIC_PRIVATE_BODY' }],
+      send: async body => {
+        if (!first) return frames(body);
+        first = false;
+        return [{ type: 'response.created', response: { id: 'resp_diagnostic', status: 'in_progress' } },
+          { type: 'response.SYNTHETIC_PRIVATE', payload: 'SYNTHETIC_PRIVATE_BODY' }];
+      },
       close: async () => {}, diagnostics: () => ({}) } });
     try {
       const result = await call(gateway);
@@ -195,15 +200,23 @@ try {
       assert.equal(status.recentRequests.at(-1).unsupportedEvent, 'unknown-response-event');
       assert.equal(status.recentRequests.at(-1).failureStage, 'upstream');
       assert.equal(status.recentRequests.at(-1).success, false);
+      assert.equal(status.lifetime.unsupportedEvents, 1);
+      for (let i = 0; i < 17; i++) assert.equal((await call(gateway)).status, 200);
+      const after = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      assert.ok(after.recentRequests.every(row => row.success));
+      assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
+        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1 });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
-  {
+  for (const streaming of [false, true]) {
     const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
       send: async (body, _signal, { onEvent }) => {
         const events = frames(body);
         events.splice(1, 0, { type: 'codex.response.metadata', metadata: { synthetic: 'SYNTHETIC_PRIVATE_METADATA' } });
-        for (const event of events) await onEvent(event);
+        if (streaming) { for (const event of events) await onEvent(event); }
+        else return events;
       }, close: async () => {}, diagnostics: () => ({}) } });
     try {
       const result = await call(gateway);
@@ -213,6 +226,10 @@ try {
         ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
       assert.equal(status.recentRequests.at(-1).auxiliaryMetadataEvents, 1);
       assert.equal(status.recentRequests.at(-1).success, true);
+      assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
+        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0 });
+      const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
+      assert.equal(gateway.diagnostics().lifetime.started, 1);
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE_METADATA')); passed++;
     } finally { await gateway.close(); }
   }
@@ -241,6 +258,8 @@ try {
         ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
       assert.equal(status.recentRequests.length, 16);
       assert.equal(status.recentRequests.at(-1).model, 'gpt-6-astra');
+      assert.equal(status.lifetime.started, 19); assert.equal(status.lifetime.succeeded, 19);
+      assert.equal(status.lifetime.failed, 0);
       assert.ok(!JSON.stringify(status).includes('Bearer'));
       await assert.rejects(readRequestStatus({ ANTHROPIC_BASE_URL: 'https://example.invalid', ANTHROPIC_AUTH_TOKEN: 'synthetic' }));
       const binding = (role, stop) => call(gateway, { path: '/clauduct/agents', body: { id: 'reused', role, stop } });

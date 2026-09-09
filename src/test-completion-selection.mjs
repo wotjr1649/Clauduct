@@ -226,6 +226,7 @@ try {
     const response = await waiting; assert.equal(response.status, 200, await response.text());
     const status = await readRequestStatus(env);
     assert.equal(status.recentRequests.at(-1).selectionSource, 'verified-completion-resume');
+    assert.equal(status.recentRequests.at(-1).role, 'claude');
     assert.equal(status.recentRequests.at(-1).success, true); assert.equal(sends, 3);
     assert.equal(JSON.stringify(status).includes('SYNTHETIC_PRIVATE'), false);
     await register('parent', true); await register('parent');

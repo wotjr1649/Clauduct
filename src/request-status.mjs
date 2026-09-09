@@ -15,7 +15,7 @@ export async function readRequestStatus(env) {
   const base = env.ANTHROPIC_BASE_URL, token = env.ANTHROPIC_AUTH_TOKEN;
   if (typeof base !== 'string' || !/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(base)
     || typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('STATUS_UNAVAILABLE');
-  const rows = await new Promise((done, fail) => {
+  const { rows, lifetime } = await new Promise((done, fail) => {
     const req = request(`${base}/clauduct/status`, { agent: false, signal: AbortSignal.timeout(5000),
       headers: { Authorization: `Bearer ${token}` } }, res => {
       if (res.statusCode !== 200) { res.destroy(); fail(new Error('STATUS_UNAVAILABLE')); return; }
@@ -31,7 +31,7 @@ export async function readRequestStatus(env) {
         try {
           const value = JSON.parse(raw);
           if (!res.complete || !Array.isArray(value.recentRequests)) throw new Error('STATUS_UNAVAILABLE');
-          done(value.recentRequests.slice(-16));
+          done({ rows: value.recentRequests.slice(-16), lifetime: value.lifetime });
         } catch { fail(new Error('STATUS_UNAVAILABLE')); }
       });
     });
@@ -39,6 +39,9 @@ export async function readRequestStatus(env) {
   });
   return { clientContextPolicy: { evidence: 'inherited-environment',
     ...(contextFromEnvironment(env) ?? { window: null, autoCompactWindow: null, compactPercent: null }) },
+    lifetime: lifetime ? { scope: 'gateway-lifetime', ...Object.fromEntries(
+      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents'].map(key =>
+        [key, Number.isSafeInteger(lifetime[key]) && lifetime[key] >= 0 ? lifetime[key] : null])) } : null,
     recentRequests: rows.map(row => ({ request: number(row?.request),
     startedAt: typeof row?.startedAt === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(row.startedAt) ? row.startedAt : null,
     model: Object.values(MODELS).some(model => model.model === row?.model) ? row.model : null,
@@ -52,7 +55,7 @@ export async function readRequestStatus(env) {
       textBlocks: number(row.compactShape.textBlocks), mixedBlocks: row.compactShape.mixedBlocks === true,
       prefixMatches: row.compactShape.prefixMatches === true, suffixMatches: row.compactShape.suffixMatches === true,
       matches: row.compactShape.matches === true } : null,
-    role: ['Explore', 'Plan', 'general-purpose'].includes(row?.role) ? row.role : null,
+    role: ['Explore', 'Plan', 'general-purpose', 'claude'].includes(row?.role) ? row.role : null,
     roleRegistered: row?.roleRegistered === true,
     agentContextPolicy: row?.agentContextPolicy ? { evidence: 'subagent-start-hook-environment',
       window: number(row.agentContextPolicy.window), autoCompactWindow: number(row.agentContextPolicy.autoCompactWindow),

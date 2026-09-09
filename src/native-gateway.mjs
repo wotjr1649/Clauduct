@@ -19,11 +19,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   const maxObservedInputTokens = { main: 0, subagent: 0 };
   // Fixed metadata only; bounded memory, no transcript, headers or credential material.
   const recentRequests = [];
+  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0 };
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
     activeTimers: activeBodies + activeHeartbeats + Number(admission.diagnostics().timerActive), activeBodies,
     activeDeliveries, cleanupFailed, admission: admission.diagnostics(), maxObservedInputTokens: { ...maxObservedInputTokens },
     contextPolicy: CONTEXT_POLICY, contextPolicyRuntimeVerified: false,
+    lifetime: { ...lifetime },
     recentRequests: recentRequests.map(record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
       attempts: record.attempts.map(attempt => ({ ...attempt })),
       ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
@@ -137,6 +139,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         firstEventMs: null, firstTextDeltaMs: null, firstDownstreamWriteMs: null,
         transportFinishedMs: null, finishedMs: null, retryScheduledMs: [], attempts: [], success: false };
       recentRequests.push(timing);
+      lifetime.started++;
       if (recentRequests.length > 16) recentRequests.shift();
       release = await admission.acquire(controller.signal);
       timing.admittedMs = elapsed();
@@ -183,7 +186,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       timing.model = prepared.selected.model; timing.effort = prepared.selected.effort; timing.preparedMs = elapsed();
       timing.purpose = prepared.purpose; timing.requestedEffort = prepared.requestedEffort;
       timing.compactShape = prepared.compactShape;
-      timing.role = Object.hasOwn(ROLE_MODELS, role) ? role : null;
+      timing.role = Object.hasOwn(ROLE_MODELS, role) || role === 'claude' ? role : null;
       timing.roleRegistered = agent !== undefined && agents.has(agent);
       timing.agentContextPolicy = agentBinding?.contextPolicy ? { ...agentBinding.contextPolicy } : null;
       // Registration is routing metadata, not authorization. Never bypass native tool/permission hooks.
@@ -211,14 +214,20 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       };
       timing.transportStartedMs = elapsed();
       stage = 'upstream';
+      const pushEvent = async event => {
+        timing.firstEventMs ??= elapsed();
+        timing.lastUpstreamEventMs = elapsed();
+        if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
+        await emit(response.push(event));
+        if (event.type === 'codex.response.metadata') {
+          timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
+          lifetime.auxiliaryMetadataEvents++;
+        }
+      };
       const legacyEvents = await transport.send(prepared.body, controller.signal, {
         attemptTimings: timing.attempts,
         onEvent: async event => {
-          timing.firstEventMs ??= elapsed();
-          timing.lastUpstreamEventMs = elapsed();
-          if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
-          await emit(response.push(event));
-          if (event.type === 'codex.response.metadata') timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
+          await pushEvent(event);
           if (!heartbeat) {
             activeHeartbeats++;
             heartbeat = setInterval(() => {
@@ -240,7 +249,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       timing.transportFinishedMs = elapsed();
       stopHeartbeat(); await writeTail;
       // Existing injected offline transports can still return the old event-array contract.
-      if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await emit(response.push(event));
+      if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await pushEvent(event);
       const output = response.finish();
       stage = 'output-validation';
       verifyFileReviewStep(output.message, prepared);
@@ -259,6 +268,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       rejected++;
       // Only locally constructed fixed categories cross this diagnostic boundary.
       const category = error instanceof NativeError ? error.code : upstream ? 'PROTOCOL_REJECTED' : 'INVALID_REQUEST';
+      if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
       const completionFailure = COMPLETION_FAILURES.includes(error.completionFailure) ? error.completionFailure : null;
       const parentState = COMPLETION_STATES.includes(error.completionParentState) ? error.completionParentState : null;
@@ -290,7 +300,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       } else res.destroy();
     } finally {
       stopHeartbeat();
-      if (timing) timing.finishedMs = elapsed();
+      if (timing) { timing.finishedMs = elapsed(); lifetime[timing.success ? 'succeeded' : 'failed']++; }
       release?.(); res.removeListener('close', abort);
     }
   }

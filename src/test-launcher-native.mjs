@@ -1,0 +1,126 @@
+import assert from 'node:assert/strict';
+import { interactiveLaunch, launchOptions } from './clauduct.mjs';
+import { MODELS, ROLE_MODELS } from './models.mjs';
+import { prepareNative } from './native-protocol.mjs';
+import { createNativeCredentialSupplier } from '../poc/user-session.mjs';
+
+const now = 1_800_000_000_000;
+const token = (account, marker) => `synthetic.${Buffer.from(JSON.stringify({ exp: now / 1000 + 3600,
+  account, marker })).toString('base64url')}.signature`;
+const cache = (account, marker) => JSON.stringify({ auth_mode: 'chatgpt', tokens: {
+  access_token: token(account, marker), account_id: account } });
+
+function optionTests() {
+  assert.deepEqual(launchOptions(['--model', 'sol']).selected, { model: 'gpt-5.6-sol', effort: 'xhigh' });
+  const request = { model: 'sol', stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC' }] };
+  assert.equal(prepareNative(request, { subagent: true }).body.reasoning.effort, 'xhigh');
+  assert.equal(prepareNative({ ...request, model: 'luna' }, { subagent: true, route: ROLE_MODELS.Plan }).body.reasoning.effort, 'xhigh');
+  const launch = interactiveLaunch({ port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) },
+    {}, 'D:/SYNTHETIC_PROJECT', MODELS.sol);
+  assert.equal(launch.args[launch.args.indexOf('--effort') + 1], 'xhigh');
+  assert.equal(launch.options.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'gpt-5.6-sol');
+  assert.equal(launch.options.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'gpt-5.6-luna');
+  assert.equal(launch.options.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'gpt-5.6-luna');
+  const repeated = launchOptions(['--resume', 'SYNTHETIC_ONE', '--resume', 'SYNTHETIC_TWO',
+    '--add-dir', 'SYNTHETIC_DIR', '--add-dir', 'SYNTHETIC_OTHER']);
+  assert.deepEqual(repeated.forward, ['--resume', 'SYNTHETIC_ONE', '--resume', 'SYNTHETIC_TWO',
+    '--add-dir', 'SYNTHETIC_DIR', '--add-dir', 'SYNTHETIC_OTHER']);
+
+  const equals = launchOptions(['--model=sol', '--effort=high', '--', '--model', 'luna', '--settings', 'SYNTHETIC']);
+  assert.deepEqual(equals.selected, { model: 'gpt-5.6-sol', effort: 'high' });
+  assert.deepEqual(equals.forward, ['--', '--model', 'luna', '--settings', 'SYNTHETIC']);
+
+  const consumed = launchOptions(['--output-format', '--model', '--effort', 'low']);
+  assert.deepEqual(consumed.selected, { model: 'gpt-6-astra', effort: 'low' });
+  assert.deepEqual(consumed.forward, ['--output-format', '--model']);
+
+  for (const args of [['--model'], ['--model='], ['--effort'], ['--effort='],
+    ['--model', 'astra', '--model', 'sol'], ['--effort', 'low', '--effort', 'high'],
+    ['--help', '--dry-run'], ['--settings', '{}'], ['--settings={}']]) {
+    assert.throws(() => launchOptions(args));
+  }
+}
+
+function childRetryTest() {
+  const source = { CLAUDE_CODE_MAX_RETRIES: '10', CLAUDE_CODE_RETRY_WATCHDOG: '1',
+    CLAUDE_CODE_RESUME_INTERRUPTED_TURN: '1' };
+  const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
+  const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT');
+  const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
+  assert.match(settings.env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME, /\[startup configuration\]$/);
+  assert.ok(settings.modelPicker.options.every(option => !option.label.includes('startup configuration')));
+  assert.equal(settings.hooks.PostToolUse[0].matcher, 'Skill|SendMessage');
+  assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, settings.hooks.SubagentStart[0].hooks[0].command);
+  assert.equal(source.CLAUDE_CODE_MAX_RETRIES, '10');
+  assert.equal(source.CLAUDE_CODE_RETRY_WATCHDOG, '1');
+  assert.equal(source.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, '1');
+  assert.equal(launch.options.env.CLAUDE_CODE_MAX_RETRIES, '0');
+  assert.equal(launch.options.env.CLAUDE_CODE_RETRY_WATCHDOG, '0');
+  assert.equal(launch.options.env.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, '0');
+  assert.equal(settings.env.CLAUDE_CODE_MAX_RETRIES, '0');
+  assert.equal(settings.env.CLAUDE_CODE_RETRY_WATCHDOG, '0');
+  assert.equal(settings.env.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, '0');
+}
+
+function autoCompactVerificationTest() {
+  const source = { CLAUDE_CODE_AUTO_COMPACT_WINDOW: '500000' }, before = JSON.stringify(source);
+  const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
+  const options = launchOptions(['--verify-auto-compact', '--model', 'luna']);
+  const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, options.forward, options);
+  const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
+  assert.equal(launch.options.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
+  assert.equal(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '100000');
+  assert.equal(launch.options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '100000');
+  assert.equal(Math.floor(80000 * Number(settings.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) / 100), 66666);
+  assert.equal(interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT').options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '500000');
+  assert.equal(JSON.stringify(source), before);
+  assert.throws(() => launchOptions(['--verify-auto-compact', '--verify-auto-compact']));
+  assert.throws(() => launchOptions(['--verify-auto-compact=1']));
+}
+
+async function credentialTests() {
+  let raw = cache('synthetic-account', 'first'), configReads = 0, credentialReads = 0;
+  let runtimeChecks = 0, storeChecks = 0;
+  const supplier = createNativeCredentialSupplier({
+    readConfig: () => { configReads++; return 'cli_auth_credentials_store = "file"'; },
+    readCredential: () => { credentialReads++; return raw; },
+    runtimeCheck: () => { runtimeChecks++; },
+    homeCheck: () => {},
+    storeCheck: value => { storeChecks++; assert.match(value, /credentials_store/); },
+    now: () => now
+  });
+
+  const first = await supplier();
+  assert.equal(first.account, 'synthetic-account');
+  assert.equal(first.accessToken, token('synthetic-account', 'first'));
+  raw = cache('synthetic-account', 'renewed');
+  const renewed = await supplier({ force: true });
+  assert.equal(renewed.accessToken, token('synthetic-account', 'renewed'));
+  assert.deepEqual({ configReads, credentialReads, runtimeChecks, storeChecks },
+    { configReads: 2, credentialReads: 2, runtimeChecks: 2, storeChecks: 2 });
+
+  raw = cache('other-account', 'switched');
+  await assert.rejects(supplier(), error => error.code === 'CREDENTIAL_ACCOUNT_CHANGED');
+
+  raw = '{';
+  await assert.rejects(supplier(), error => error.code === 'INVALID_AUTH_CACHE');
+
+  const absent = createNativeCredentialSupplier({
+    readConfig: () => 'cli_auth_credentials_store = "file"', readCredential: () => undefined,
+    runtimeCheck: () => {}, homeCheck: () => {}
+  });
+  await assert.rejects(absent(), error => error.code === 'CODEX_RELOGIN_REQUIRED');
+
+  const missing = createNativeCredentialSupplier({
+    readConfig: () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); },
+    runtimeCheck: () => {}, homeCheck: () => {}
+  });
+  await assert.rejects(missing(), error => error.code === 'CODEX_RELOGIN_REQUIRED');
+}
+
+optionTests();
+childRetryTest();
+autoCompactVerificationTest();
+await credentialTests();
+process.stdout.write(JSON.stringify({ suite: 'launcher-native', passed: true, actualCredentialReads: 0,
+  actualClaudeExecutions: 0, externalRequests: 0 }) + '\n');

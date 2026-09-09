@@ -1,0 +1,236 @@
+import assert from 'node:assert/strict';
+import { createServer, request } from 'node:http';
+import { createNativeLoopbackTransport } from './native-transport.mjs';
+import { startNativeGateway } from './native-gateway.mjs';
+import { NativeError } from './native-protocol.mjs';
+import { Writable } from 'node:stream';
+import { writeFrames } from './native-delivery.mjs';
+import { readRequestStatus } from './request-status.mjs';
+
+const doc = { model: 'astra', stream: true, max_tokens: 10000, messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
+  tools: [{ name: 'Read', input_schema: { type: 'object', properties: {} } }] };
+function frames(body, malformed = false) {
+  const message = { id: 'msg_0', type: 'message', role: 'assistant', status: 'completed',
+    content: [{ type: 'output_text', text: 'SYNTHETIC_TEXT', annotations: [] }] };
+  const tool = { id: 'fc_1', type: 'function_call', call_id: 'call_1', name: 'Read', arguments: '{}', status: 'completed' };
+  return [
+    { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
+    { type: 'response.output_item.added', output_index: 0, item: { ...message, content: [], status: 'in_progress' } },
+    { type: 'response.output_text.delta', output_index: 0, item_id: 'msg_0', content_index: 0, delta: 'SYNTHETIC_TEXT' },
+    { type: 'response.output_text.done', output_index: 0, item_id: 'msg_0', content_index: 0, text: 'SYNTHETIC_TEXT' },
+    { type: 'response.output_item.done', output_index: 0, item: message },
+    { type: 'response.output_item.added', output_index: 1, item: { ...tool, arguments: '', status: 'in_progress' } },
+    { type: 'response.function_call_arguments.delta', output_index: 1, item_id: 'fc_1', delta: '{}' },
+    { type: 'response.function_call_arguments.done', output_index: 1, item_id: 'fc_1', arguments: '{}' },
+    { type: 'response.output_item.done', output_index: 1, item: tool },
+    { type: 'response.completed', response: { id: 'resp_1', status: 'completed', model: body.model,
+      reasoning: body.reasoning, output: [message, malformed ? { ...tool, arguments: '{"different":true}' } : tool],
+      usage: { input_tokens: 30, output_tokens: 5, total_tokens: 35, input_tokens_details: { cached_tokens: 0 } } } }
+  ];
+}
+const wire = events => events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
+function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, signal = AbortSignal.timeout(5000), idleMs } = {}) {
+  const raw = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port: gateway.port, method: 'POST', path, agent: false, signal,
+      headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'content-length': Buffer.byteLength(raw) } }, res => {
+      let text = '';
+      res.on('data', chunk => { text += chunk; onChunk(text); }); res.on('error', reject);
+      res.on('end', () => resolve({ status: res.statusCode, text }));
+    });
+    if (idleMs) req.setTimeout(idleMs, () => req.destroy(new Error('SYNTHETIC_CLIENT_IDLE')));
+    req.on('error', reject); req.end(raw);
+  });
+}
+const ample = { freeBytes: () => 16 * 1024 ** 3 };
+let passed = 0;
+const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
+try {
+  for (const mode of ['silent-baseline', 'ping', 'ping-retry', 'ping-cancel']) {
+    let attempts = 0; const timers = new Set();
+    const upstream = createServer((req, res) => {
+      let raw = ''; req.on('data', chunk => { raw += chunk; }); req.on('end', () => {
+        attempts++; const events = frames(JSON.parse(raw));
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(wire(events.slice(0, 1)));
+        const retry = mode === 'ping-retry' && attempts === 1;
+        const timer = setTimeout(() => { timers.delete(timer); if (retry) res.destroy(); else res.end(wire(events.slice(1))); }, retry ? 70 : 150);
+        timers.add(timer);
+      });
+    });
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    const transport = createNativeLoopbackTransport(upstream.address().port, { retryBaseMs: 1 });
+    const gateway = await startNativeGateway({ transport, admissionOptions: ample, heartbeatMs: mode === 'silent-baseline' ? 1000 : 10 });
+    try {
+      const cancel = new AbortController(); let sawPing = false;
+      const work = call(gateway, { idleMs: 60, signal: cancel.signal, onChunk: text => {
+        if (text.includes('event: ping')) { sawPing = true; if (mode === 'ping-cancel') cancel.abort(); }
+      } });
+      if (mode === 'silent-baseline') await assert.rejects(work, /SYNTHETIC_CLIENT_IDLE/);
+      else if (mode === 'ping-cancel') await assert.rejects(work);
+      else {
+        const result = await work;
+        assert.equal(result.status, 200); assert.ok(sawPing);
+        assert.ok(result.text.indexOf('event: ping') < result.text.indexOf('event: message_start'));
+        assert.match(result.text, /event: message_stop/);
+        assert.equal(attempts, mode === 'ping-retry' ? 2 : 1);
+        const row = gateway.diagnostics().recentRequests.at(-1);
+        assert.ok(row.pingCount > 0); assert.ok(row.lastUpstreamEventMs >= row.firstEventMs);
+        assert.ok(row.firstDownstreamWriteMs >= 100);
+        assert.equal(row.retryScheduledMs.length, mode === 'ping-retry' ? 1 : 0);
+        const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+          ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+        assert.ok(status.recentRequests.at(-1).pingCount > 0);
+        assert.equal(status.recentRequests.at(-1).failureCategory, null);
+      }
+      passed++;
+    } finally {
+      await gateway.close(); assert.equal(gateway.diagnostics().activeTimers, 0);
+      for (const timer of timers) clearTimeout(timer);
+      upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve));
+    }
+  }
+  for (const mode of ['drain', 'timeout', 'cancel']) {
+    const controller = new AbortController(); let bytes = 0;
+    const sink = new Writable({ highWaterMark: 1, write(chunk, _encoding, callback) {
+      bytes += chunk.length;
+      if (mode === 'drain') setImmediate(callback);
+    } });
+    try {
+      const work = writeFrames(sink, [{ type: 'content_block_delta', text: 'x'.repeat(40000) }], controller.signal, 20);
+      if (mode === 'cancel') controller.abort();
+      if (mode === 'drain') { await work; assert.ok(bytes > 40000); }
+      else await assert.rejects(work, error => error.code === (mode === 'cancel' ? 'CANCELLED' : 'DELIVERY_TIMEOUT'));
+      assert.equal(sink.listenerCount('drain'), 0); passed++;
+    } finally { sink.destroy(); }
+  }
+  for (const mode of ['valid', 'malformed', 'disconnect', 'retry']) {
+    let attempts = 0, ended = false, sawEarlyText = false, sawEarlyTool = false;
+    const timers = new Set();
+    const upstream = createServer((req, res) => {
+      let raw = ''; req.on('data', chunk => { raw += chunk; }); req.on('end', () => {
+        attempts++;
+        const events = frames(JSON.parse(raw), mode === 'malformed');
+        if (mode === 'retry' && attempts === 1) {
+          res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(wire(events.slice(0, 1)));
+          const timer = setTimeout(() => { timers.delete(timer); res.destroy(); }, 20); timers.add(timer);
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write(wire(events.slice(0, 9)));
+        const timer = setTimeout(() => {
+          timers.delete(timer); ended = true;
+          if (mode === 'disconnect') res.destroy(); else res.end(wire(events.slice(9)));
+        }, 100); timers.add(timer);
+      });
+    });
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    const transport = createNativeLoopbackTransport(upstream.address().port);
+    const gateway = await startNativeGateway({ transport, admissionOptions: ample });
+    try {
+      const result = await call(gateway, { onChunk: text => {
+        if (!ended && text.includes('SYNTHETIC_TEXT')) sawEarlyText = true;
+        if (!ended && text.includes('"type":"tool_use"')) sawEarlyTool = true;
+      } });
+      assert.equal(result.status, 200); assert.equal(sawEarlyText, true); assert.equal(sawEarlyTool, false);
+      assert.equal(attempts, mode === 'retry' ? 2 : 1);
+      const timing = gateway.diagnostics().recentRequests.at(-1);
+      assert.equal(timing.model, 'gpt-6-astra');
+      assert.equal(timing.retryScheduledMs.length, mode === 'retry' ? 1 : 0);
+      assert.equal(timing.attempts.length, attempts);
+      assert.equal(timing.attempts.at(-1).status, 200);
+      assert.ok(timing.attempts.at(-1).headersMs >= timing.attempts.at(-1).startedMs);
+      assert.ok(timing.attempts.at(-1).endedMs >= timing.attempts.at(-1).firstBodyMs);
+      timing.attempts[0].status = -1;
+      assert.equal(gateway.diagnostics().recentRequests.at(-1).attempts[0].status, 200);
+      if (mode === 'valid') {
+        const collected = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+          ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+        assert.equal(collected.recentRequests.at(-1).attempts[0].status, 200);
+        assert.ok(!JSON.stringify(collected).includes('SYNTHETIC'));
+      }
+      assert.ok(timing.preparedMs >= timing.admittedMs);
+      assert.ok(timing.firstDownstreamWriteMs >= timing.firstTextDeltaMs);
+      assert.ok(timing.finishedMs >= timing.firstDownstreamWriteMs);
+      assert.equal(timing.success, mode === 'valid' || mode === 'retry');
+      assert.ok(!JSON.stringify(timing).includes('SYNTHETIC'));
+      timing.retryScheduledMs.push(-1);
+      assert.ok(!gateway.diagnostics().recentRequests.at(-1).retryScheduledMs.includes(-1));
+      if (mode === 'valid' || mode === 'retry') {
+        assert.ok(result.text.includes('"type":"tool_use"')); assert.ok(result.text.includes('event: message_stop'));
+        const delta = result.text.split('\n').filter(line => line.startsWith('data: '))
+          .map(line => JSON.parse(line.slice(6))).find(event => event.type === 'message_delta');
+        assert.equal(delta.usage.input_tokens, 30);
+        assert.equal(gateway.diagnostics().maxObservedInputTokens.main, 30);
+        assert.equal(gateway.diagnostics().contextPolicyRuntimeVerified, false);
+        assert.equal(result.text.split('event: message_start').length - 1, 1);
+      } else {
+        assert.ok(result.text.includes('event: error')); assert.ok(result.text.includes('explicit resume'));
+        assert.ok(!result.text.includes('"type":"tool_use"')); assert.ok(!result.text.includes('event: message_stop'));
+      }
+      passed++;
+    } finally {
+      const state = await gateway.close(); assert.equal(state.cleanupFailed, false); assert.equal(state.activeJobs, 0);
+      for (const timer of timers) clearTimeout(timer);
+      upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve));
+    }
+  }
+  for (const code of ['UNAUTHENTICATED', 'CREDENTIAL_UNAVAILABLE_OR_EXPIRED', 'CREDENTIAL_ACCOUNT_MISMATCH', 'TRUNCATED_STREAM']) {
+    const transport = { send: async () => { throw new NativeError(code); }, close: async () => {},
+      diagnostics: () => ({ activeSockets: 0, activeRequests: 0 }) };
+    const gateway = await startNativeGateway({ transport, admissionOptions: ample });
+    try { const result = await call(gateway); assert.equal(result.status, code === 'TRUNCATED_STREAM' ? 502 : 503); passed++; }
+    finally { await gateway.close(); }
+  }
+  {
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async () => [{ type: 'response.created', response: { id: 'resp_diagnostic', status: 'in_progress' } },
+        { type: 'response.SYNTHETIC_PRIVATE', payload: 'SYNTHETIC_PRIVATE_BODY' }],
+      close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      const result = await call(gateway);
+      assert.equal(result.status, 502);
+      assert.match(result.text, /UNSUPPORTED_EVENT event=unknown-response-event/);
+      assert.ok(!result.text.includes('SYNTHETIC_PRIVATE'));
+      const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      assert.equal(status.recentRequests.at(-1).unsupportedEvent, 'unknown-response-event');
+      assert.equal(status.recentRequests.at(-1).success, false);
+      assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
+    } finally { await gateway.close(); }
+  }
+  for (const mode of ['reject', 'hang']) {
+    const transport = { send: async () => [], close: () => mode === 'reject' ? Promise.reject(new Error('SYNTHETIC')) : new Promise(() => {}),
+      diagnostics: () => ({ activeSockets: 0, activeRequests: 0 }) };
+    const gateway = await startNativeGateway({ transport, cleanupMs: 30, admissionOptions: ample });
+    const state = await gateway.close(); assert.equal(state.cleanupFailed, true); assert.equal(state.reason, 'CLEANUP_FAILED');
+    assert.equal((await gateway.done).cleanupFailed, true); passed++;
+  }
+  {
+    let free = 0, attempts = 0;
+    const transport = { send: async body => { attempts++; return frames(body); }, close: async () => {},
+      diagnostics: () => ({ activeSockets: 0, activeRequests: 0 }) };
+    const gateway = await startNativeGateway({ transport, admissionOptions: { freeBytes: () => free, headroomBytes: 20, requestReserveBytes: 40, pollMs: 5 } });
+    try {
+      const pending = call(gateway);
+      await new Promise(resolve => setTimeout(resolve, 30));
+      assert.equal(attempts, 0); assert.equal(gateway.diagnostics().admission.queued, 1); assert.equal(gateway.diagnostics().activeBodies, 0);
+      free = 100; assert.equal((await pending).status, 200); assert.equal(attempts, 1); passed++;
+      const timing = gateway.diagnostics().recentRequests.at(-1);
+      assert.ok(timing.admittedMs - timing.admissionStartedMs >= 20);
+      for (let i = 0; i < 18; i++) assert.equal((await call(gateway)).status, 200);
+      assert.equal(gateway.diagnostics().recentRequests.length, 16);
+      const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      assert.equal(status.recentRequests.length, 16);
+      assert.equal(status.recentRequests.at(-1).model, 'gpt-6-astra');
+      assert.ok(!JSON.stringify(status).includes('Bearer'));
+      await assert.rejects(readRequestStatus({ ANTHROPIC_BASE_URL: 'https://example.invalid', ANTHROPIC_AUTH_TOKEN: 'synthetic' }));
+      const binding = (role, stop) => call(gateway, { path: '/clauduct/agents', body: { id: 'reused', role, stop } });
+      assert.equal((await binding('Explore', false)).status, 200);
+      assert.equal((await binding('Explore', true)).status, 200);
+      assert.equal((await binding('Plan', false)).status, 200);
+      assert.equal((await binding('Explore', true)).status, 400);
+      assert.equal(gateway.diagnostics().registeredAgents, 1); passed++;
+    } finally { await gateway.close(); }
+  }
+  console.log(JSON.stringify({ suite: 'native-gateway', passed, realClaude: 0, credentialReads: 0, externalRequests: 0 }));
+} finally { clearTimeout(watchdog); }

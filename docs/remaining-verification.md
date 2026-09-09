@@ -8,9 +8,9 @@
 
 ### 작업 순서와 종료 조건
 
-전체 목표의 별도 잔여 항목: 직접 부모 기준 손자 inherit는 native 형식 생성 호출 → gateway 전송 → parentRef 연결까지 로컬 통합 검사를 보강했다. 실제 native 다단계 실행은 아직 미검증이다. [검사 근거](audit-2026-09-10-direct-parent-inherit.md). 아래 Workflow 검증을 이 요구사항의 대체 증거로 사용하지 않는다.
+직접 부모 기준 손자 inherit는 db34be24에서 메인 sol/high → 부모 terra/high → 손자 terra/high, parentRef 연결 및 완료 알림 후 부모 복귀까지 실제 확인했다. [실제 증거](audit-2026-09-10-direct-parent-success.md). 남은 다단계 항목은 비기본 effort 전달이다. Workflow 검증을 이 요구사항의 대체 증거로 사용하지 않는다.
 
-최신 판정: 992c0794의 병렬 Workflow에서 A luna/high·B sol/high, Read 각 1회, 결과 복귀, 약 4.77초 요청 겹침, 종료 후 추가 Skill 없음까지 실제 확인했다. 다음은 기존 일반 Agent 정의의 직접 부모 기준 손자 inherit 시험이다. [실제 성공과 후속 범위](audit-2026-09-10-workflow-parallel-success.md). Workflow 병렬 성공으로 Agent 다단계 상속 전체를 통과 처리하지 않는다.
+최신 판정: session-10 직접 부모 상속 시험 통과. 다음 session-11은 현재 메인의 비기본 effort를 기존 clauduct-inherit 부모·손자에 연속 전달하는 읽기 전용 시험이다. 기본 effort이면 생성 전에 중단하고 사용자가 비기본 값을 선택한다. 코드·등록 정의 변경은 필요 없다. 992c0794의 병렬 Workflow 성공은 [별도 증거](audit-2026-09-10-workflow-parallel-success.md)로 보존한다. 개별 시험 성공으로 전체 목표를 완료 처리하지 않는다.
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 

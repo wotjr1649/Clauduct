@@ -12,6 +12,8 @@
 
 최신 판정: session-10·11 통과. 9f4e7179의 일반 astra/sol/luna 성공과 db34be24의 terra 성공을 대조했고 현행 선택·실행기·완료 복귀 로컬 검사도 통과했다. 새 모델/상속 시험을 반복하지 않는다. 다음은 아래 호출 경로·보안 잔여 항목의 로컬 감사이며 실제 시험이 필요한 차이를 찾은 뒤에만 후속 프롬프트를 만든다. 992c0794의 병렬 Workflow 성공은 [별도 증거](audit-2026-09-10-workflow-parallel-success.md)로 보존한다. 전체 목표 완료는 보류한다.
 
+후속 보안 감사에서 사용자 중단 metadata가 일반 Agent/Task·연결된 Skill의 최초 선택에 수락되는 결함을 로컬 재현 후 수정했다. 중단 표시를 읽으면 transport 전에 selection/IDENTITY로 거부한다. [수정·회귀·미검증 범위](audit-2026-09-10-stopped-agent-selection.md). 실제 중단 경쟁 조건 전체나 이미 캐시된 요청의 취소를 통과 처리하지 않는다.
+
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 
 Workflow는 별도 native 도구다. 기본 자식의 실제 성공을 명시 선택·custom agentType·중첩·resume 지원으로 확대하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.

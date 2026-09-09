@@ -101,7 +101,7 @@ superpowers manifest는 SessionStart command hook 하나로 run-hook.cmd → ses
 
 현재 recentRequests는 마지막 16개만 보존한다. 과거 other의 원래 이벤트명과 전체 요청의 성공/실패를 복원할 수 없다. auxiliaryMetadataEvents=0인 마지막 16개 기록은 전체 세션에서 보조 이벤트가 없었다는 증거가 아니다.
 
-아래는 최초 조사 당시의 계측 요구다. 이후 요청 누적 카운터는 c94bb0ac에서 실제 확인했고, 불투명 관계 참조·role=claude 표시·실패 단계별 집계를 구현했다. [최신 구현·검증](audit-2026-09-09-request-correlation.md). 새 관계 참조와 단계별 집계의 실제 출력은 아직 미검증이다.
+아래는 최초 조사 당시의 계측 요구다. 이후 요청 누적 카운터는 c94bb0ac에서 실제 확인했고, 불투명 관계 참조·role=claude 표시·실패 단계별 집계를 구현했다. [구현 근거](audit-2026-09-09-request-correlation.md). 새 관계 참조와 failuresByStage 필드 출력은 [session-10·11](audit-2026-09-10-agent-acceptance.md)에서 확인했다. 이 두 정상 세션의 실패 집계는 모두 0이므로 각 실패 단계의 실제 증가나 보조 이벤트 발생까지 입증하지 않는다.
 
 1. gateway 수명 동안 고정 항목으로 성공·실패 단계·unsupportedEvent 분류·보조 이벤트 처리 횟수를 누적한다. 원래 이벤트명·본문·오류 문자열을 저장하지 않는다.
 2. 세션/agent/부모는 gateway마다 바뀌는 키를 쓰는 불투명 상관관계 값으로 연결한다. request 번호만으로 특정 자식을 추정하지 않는다.
@@ -110,4 +110,4 @@ superpowers manifest는 SessionStart command hook 하나로 run-hook.cmd → ses
 
 Verified: 설치 실행 파일 동일성, 활성 plugin 2개, skill 14+6+3=23개 및 frontmatter 대조, 사용자 hook 종류 13개, native querySource 리터럴 34종·일부 명령의 실제 등록 코드, 현재 Clauduct 모델/프로토콜 코드.
 
-Not verified: 전체 동적 명령/도구/skill 목록의 완전성, 별도 설정 소스·모든 hook 내부·외부 provider 우회/fallback 전수 추적, 보조 호출별 GPT 반환, 새 관계 참조와 실패 단계별 카운터의 실제 출력. 계정·외부 쓰기는 실행하지 않았다.
+Not verified: 전체 동적 명령/도구/skill 목록의 완전성, 별도 설정 소스·모든 hook 내부·외부 provider 우회/fallback 전수 추적, 보조 호출별 GPT 반환과 각 실패 단계·보조 이벤트의 실제 발생 검증. 계정·외부 쓰기는 실행하지 않았다.

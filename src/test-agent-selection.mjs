@@ -18,6 +18,15 @@ let snapshots = new Map();
 const probeLaunch = interactiveLaunch({ port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) },
   {}, 'D:/SYNTHETIC_PROJECT', MODELS.luna, [], { verifyAgentModels: true, gptAgents: true });
 const agentDefinitions = JSON.parse(probeLaunch.args[probeLaunch.args.indexOf('--agents') + 1]);
+// A delayed first request must not start a child already stopped by the user.
+for (const tool of ['Agent', 'Task']) for (const role of ['general-purpose', 'clauduct-sol', 'clauduct-inherit']) {
+  const stopped = createAgentSelection({ agentDefinitions, timeoutMs: 10,
+    readMetadata: async () => metadata('stopped_creation', undefined, { agentType: role, stoppedByUser: true }) });
+  const creation = call('stopped_creation', undefined, role);
+  creation.content[0].name = tool;
+  stopped.remember(creation, 'session', undefined, { model: MODELS.luna.model, effort: 'high' });
+  await assert.rejects(stopped.resolve(binding('stopped', { role })), error => error.selectionReason === 'IDENTITY');
+}
 for (const definition of [{}, { model: null }, { model: 'unknown' }, { model: MODELS.sol.model, effort: 'invalid' }]) {
   assert.throws(() => createAgentSelection({ agentDefinitions: { invalid: definition } }));
 }
@@ -211,6 +220,11 @@ for (const duplicate of [false, true]) {
 }
 
 const skillCall = id => ({ content: [{ type: 'tool_use', id, name: 'Skill', input: { skill: 'code-review' } }] });
+const stoppedSkill = createAgentSelection({ timeoutMs: 10, readMetadata: async () => ({
+  agentType: 'general-purpose', name: 'code-review', spawnDepth: 1, stoppedByUser: true }) });
+stoppedSkill.remember(skillCall('stopped_skill'), 'session');
+stoppedSkill.linkSkill({ sessionId: 'session', toolUseId: 'stopped_skill', id: 'stopped_skill_child', skill: 'code-review' });
+await assert.rejects(stoppedSkill.resolve(binding('stopped_skill_child')), error => error.selectionReason === 'IDENTITY');
 // Missing names must not become routing evidence through undefined equality.
 for (const skill of [undefined, null, 42, '', 'x'.repeat(201)]) {
   const invalid = createAgentSelection({ timeoutMs: 1, readMetadata: async () => ({ agentType: 'general-purpose' }) });
@@ -506,6 +520,17 @@ try {
           subagent_type: { type: 'string' }, model: { type: 'string', enum: ['sonnet', 'opus', 'haiku', 'fable'] }
         }, required: ['subagent_type'] } }] }) });
     assert.equal(parentResponse.status, 200, await parentResponse.text());
+    snapshots.set(id, metadata(id, undefined, { agentType: role, stoppedByUser: true }));
+    await registerBinding(binding(id, { role }), source);
+    const beforeStopped = received.length;
+    const stoppedResponse = await post(id);
+    assert.equal(stoppedResponse.status, 400);
+    assert.match(await stoppedResponse.text(), /AGENT_SELECTION_UNVERIFIED_IDENTITY/);
+    assert.equal(received.length, beforeStopped);
+    const stoppedStatus = (await readRequestStatus(source)).recentRequests.at(-1);
+    assert.equal(stoppedStatus.failureStage, 'selection');
+    assert.equal(stoppedStatus.selectionFailure, 'IDENTITY');
+    // Synthetic native state replacement and fresh registration, not a user-stop bypass.
     snapshots.set(id, metadata(id, undefined, { agentType: role }));
     await registerBinding(binding(id, { role }), source);
     for (const response of await Promise.all([post(id), post(id)])) assert.equal(response.status, 200, await response.text());

@@ -280,6 +280,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       evidence.stage = previous ? 'PARENT_IDENTITY' : 'PARENT_UNVERIFIED';
       evidence.parent = previous?.completionState ?? 'UNRECORDED';
       evidence.child = null;
+      // A pending creation is not permission to restart a user-stopped child.
+      if (metadata?.stoppedByUser === true) fail('IDENTITY');
       const resumeEntry = sameIdentity(previous, metadata) && previous.role === binding.role
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.target === binding.id
           && call.resumeConfirmed && call.resumeParent === previous.parent) : undefined;

@@ -2,9 +2,11 @@
 
 이 문서는 사용자가 확정한 수용 기준이며 현재 구현 완료를 뜻하지 않는다.
 
-최신 상태: 정의 기반 inherit와 역할 고정값은 2f96f1df에서 실제 성공했다. 일반 개발용 호출 방식은 승인 후 --gpt-agents로 구현·로컬 검증했고 실제 수행은 남아 있다. 앞선 조사·시험 기록은 당시 상태를 보존한다.
+최신 상태와 다음 실행 순서는 [남은 검증](remaining-verification.md)을 따른다. 아래 선택 의미와 수용 조건은 유지하며, 연결 지점 조사 이후의 절들은 당시의 구현·시험 이력이다. 과거 절의 “미구현/미검증”을 최신 상태로 해석하지 않는다.
 
 ## 선택 의미
+
+아래 표는 Agent 선택 정책이다. 지원된 native 입력은 세션 한정 clauduct-astra/sol/terra/luna/inherit의 subagent_type 선택이며 Agent의 model enum을 확장한 것이 아니다. 별도 Workflow의 model/effort 생략 정책과 혼동하지 않는다.
 
 | 입력 | 적용 규칙 |
 |---|---|
@@ -25,9 +27,11 @@ Agent 스키마, native 입력 처리, 자식 metadata, gateway 선택과 실제
 
 ## 현재 상태
 
-Not verified: 위 계약의 전체 구현과 실제 native 실행. 기존 내부 inherit는 native 요청 모델 유지 분기이며, 부모 모델과 effort의 생성 시점 snapshot을 보장한다는 증거가 아니다.
+Verified: src/agent-selection.mjs는 생성 호출의 직접 부모 model/effort를 불변 snapshot으로 보관하고 src/native-gateway.mjs는 실제 prepared.selected를 해당 호출에 전달한다. --gpt-agents 등록 정의 선택과 일반 역할 기본값은 별도 분기다. 이 구현을 단순 native 요청 모델 유지 분기로 설명한 아래 과거 조사 내용은 현재 코드 설명이 아니다.
 
-다음 작업은 native 실행까지 전달 가능한 지원된 연결 지점 조사다. 연결 지점이 확인되지 않으면 정확한 경계를 차단/미확인으로 남긴다.
+직접 부모 기준 손자 상속은 [gateway 통합 검사](audit-2026-09-10-direct-parent-inherit.md)까지 로컬 검증했다. Workflow의 단일·순차 혼합 경로는 사용자 실행으로 확인했고 [병렬 시험](audit-2026-09-10-workflow-parallel-preparation.md)은 실제 증거를 기다린다. Workflow 기본 상속 성공을 Agent의 명시 inherit 또는 native 손자 실행 전체의 증거로 대체하지 않는다.
+
+Not verified: 전체 수용 조건의 실제 native 검증 완료, 특히 다단계 직접 부모 상속 및 미확인 경로. 목표는 완료로 표시하지 않는다. 실제 인증 실행 제한을 우회하지 않고 사용자 실행 증거를 확인한다. 이후 절은 변경 전 실패와 수정 순서를 보존한 역사 기록이다.
 
 ## 연결 지점 조사 — 계약 커밋 e412f14 이후
 

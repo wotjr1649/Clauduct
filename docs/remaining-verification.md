@@ -10,7 +10,7 @@
 
 전체 목표의 별도 잔여 항목: 직접 부모 기준 손자 inherit는 native 형식 생성 호출 → gateway 전송 → parentRef 연결까지 로컬 통합 검사를 보강했다. 실제 native 다단계 실행은 아직 미검증이다. [검사 근거](audit-2026-09-10-direct-parent-inherit.md). 아래 Workflow 검증을 이 요구사항의 대체 증거로 사용하지 않는다.
 
-최신 판정: 5cd82157에서 동일 Workflow run의 순차 A 명시 luna/high와 B 기본 상속 sol/high가 Read·결과·메인 복귀까지 통과했다. 종료 진단 뒤 불필요한 verification-before-completion Skill 호출은 별도 절차 보완점이다. 다음은 정확히 두 자식의 제한된 병렬 시험이며 실제 요청 겹침과 종료 Skill 미호출을 함께 확인한다. [증거와 준비](audit-2026-09-10-workflow-parallel-preparation.md). 중첩·resume은 추가하지 않는다.
+최신 판정: 992c0794의 병렬 Workflow에서 A luna/high·B sol/high, Read 각 1회, 결과 복귀, 약 4.77초 요청 겹침, 종료 후 추가 Skill 없음까지 실제 확인했다. 다음은 기존 일반 Agent 정의의 직접 부모 기준 손자 inherit 시험이다. [실제 성공과 후속 범위](audit-2026-09-10-workflow-parallel-success.md). Workflow 병렬 성공으로 Agent 다단계 상속 전체를 통과 처리하지 않는다.
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 

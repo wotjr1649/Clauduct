@@ -28,6 +28,11 @@ const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'";
 export const fileReviewCommand = target => [process.execPath.replaceAll('\\', '/'),
   fileURLToPath(new URL('./review-diff.mjs', import.meta.url)).replaceAll('\\', '/'), target].map(shellQuote).join(' ');
 
+export function prepareReviewContext(prepared, selection) {
+  if (!selection?.reviewContext || prepared.purpose === 'compact-template') return;
+  prepared.body.input.push({ role: 'developer', content: 'You are already executing native code-review or one of its delegated review tasks. Execute the supplied review body and your assigned scope directly; do not invoke Skill(code-review) again. Apply the subagent exception in generic startup skill instructions. Load another skill only when the assigned review task actually needs its specific instructions. Use existing child results to complete the review; send concrete findings or a needed question, not repeated waiting/status messages.' });
+}
+
 // Only a verified code-review fork receives this policy, never a prompt-name guess.
 export function prepareFileReview(prepared, doc) {
   if (prepared.purpose === 'compact-template') return;
@@ -51,7 +56,7 @@ export function prepareFileReview(prepared, doc) {
       ready = true;
     }
   }
-  prepared.body.input.push({ role: 'developer', content: `Use the verified diff helper result as the review diff. untracked-added means the target is reviewed as a new file against an empty baseline; it does not require HEAD or main. Preserve the supplied review level: low reviews these hunks directly without full-file reads, other searches, or subagents. Other levels follow their own review body. Do not re-run diff collection after a successful result or invoke code-review again. First obtain the diff using this exact Bash command: ${command}` });
+  prepared.body.input.push({ role: 'developer', content: `Use the verified diff helper result as the review diff. untracked-added means the target is reviewed as a new file against an empty baseline; it does not require HEAD or main. Preserve the supplied review level: low reviews these hunks directly without full-file reads, other searches, or subagents. Other levels follow their own review body. Do not re-run diff collection after a successful result. First obtain the diff using this exact Bash command: ${command}` });
   if (ready) return;
   need(prepared.names.has('Bash') && prepared.body.tool_choice === 'auto', 'REVIEW_DIFF_UNAVAILABLE');
   prepared.body.tool_choice = { type: 'function', name: 'Bash' };

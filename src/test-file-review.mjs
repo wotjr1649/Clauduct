@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { prepareNative, prepareFileReview, verifyFileReviewStep, fileReviewCommand } from './native-protocol.mjs';
+import { prepareNative, prepareFileReview, prepareReviewContext, verifyFileReviewStep, fileReviewCommand } from './native-protocol.mjs';
 
 const target = 'D:/SYNTHETIC_PROJECT/example.mjs';
 const doc = () => ({ model: 'luna', stream: true, max_tokens: 1000,
@@ -51,6 +51,19 @@ const branch = doc(); branch.messages[0].content = 'Review target: `main`';
 const branchPrepared = prepareNative(branch); prepareFileReview(branchPrepared, branch);
 assert.equal(branchPrepared.body.tool_choice, 'auto');
 const ordinary = prepareNative(doc());
+const unchanged = JSON.stringify(ordinary);
+prepareReviewContext(ordinary, { reviewContext: false });
+assert.equal(JSON.stringify(ordinary), unchanged);
+const member = prepareNative(doc());
+prepareReviewContext(member, { reviewContext: true });
+assert.match(member.body.input.at(-1).content, /already executing native code-review/);
+assert.equal(member.requiredReviewDiff, undefined);
+assert.deepEqual(member.body.tools, ordinary.body.tools);
+assert.equal(member.body.tool_choice, ordinary.body.tool_choice);
+const compact = prepareNative(doc()); compact.purpose = 'compact-template';
+const beforeCompact = JSON.stringify(compact);
+prepareReviewContext(compact, { reviewContext: true });
+assert.equal(JSON.stringify(compact), beforeCompact);
 verifyFileReviewStep({ content: [{ type: 'text', text: 'ordinary reply' }] }, ordinary);
 assert.equal(ordinary.body.tool_choice, 'auto');
 console.log(JSON.stringify({ suite: 'file-review', passed: true, actualClaude: 0, externalRequests: 0 }));

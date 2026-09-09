@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { prepareNative, createNativeResponse, prepareFileReview, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
+import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
@@ -172,6 +172,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const prepared = prepareNative(doc, { subagent: agent !== undefined, route,
         turnToolChanges: req.headers['anthropic-beta']?.split(',').some(value => value.trim() === 'mid-conversation-tool-changes-2026-07-01') });
       stage = 'review';
+      prepareReviewContext(prepared, agentBinding?.selection);
       if (agentBinding?.selection?.review) prepareFileReview(prepared, doc);
       doc = undefined;
       timing.selectionSource = agentBinding?.selection?.source ?? null;

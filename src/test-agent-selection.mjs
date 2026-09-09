@@ -137,7 +137,13 @@ assert.throws(() => selection.linkSkill(linkA), /AGENT_SELECTION_UNVERIFIED/);
 // A verified child can wake its existing forked parent by ID or its exact native name.
 selection.remember(call('peer_child_origin'), 'session', 'skillA');
 snapshots.set('peer_child', metadata('peer_child_origin', undefined, { parentAgentId: 'skillA' }));
-await selection.resolve(binding('peer_child'));
+const reviewMember = await selection.resolve(binding('peer_child'));
+assert.equal(reviewMember.reviewContext, true);
+assert.equal(reviewMember.review, undefined); // member does not force root diff collection
+assert.equal(a.reviewContext, false);
+selection.remember(call('review_grandchild'), 'session', 'peer_child');
+snapshots.set('review_leaf', metadata('review_grandchild', undefined, { parentAgentId: 'peer_child' }));
+assert.equal((await selection.resolve(binding('review_leaf'))).reviewContext, true);
 for (const [index, recipient] of ['skillA', 'code-review'].entries()) {
   const toolUseId = `peer_send_${index}`;
   selection.remember({ content: [{ type: 'tool_use', id: toolUseId, name: 'SendMessage',
@@ -154,6 +160,7 @@ for (const [index, recipient] of ['skillA', 'code-review'].entries()) {
   const parent = await selection.resolve(binding('skillA'));
   assert.equal(parent.source, 'verified-peer-resume');
   assert.equal(parent.parent, undefined); assert.equal(parent.review, true);
+  assert.equal(parent.reviewContext, true);
   assert.equal(parent.route.model, 'gpt-5.6-luna');
   await assert.rejects(selection.resolve(binding('skillA'))); // delivery proof consumed once
 }
@@ -201,6 +208,7 @@ try {
     admissionOptions: { freeBytes: () => 16 * 1024 ** 3 }, transport: {
       close: async () => {}, diagnostics: () => ({}), send: async body => {
         assert.equal(body.model, 'gpt-5.6-luna'); assert.equal(body.reasoning.effort, 'max');
+        assert.ok(body.input.some(item => item.role === 'developer' && item.content.includes('already executing native code-review')));
         const item = { id: 'msg_fork', type: 'message', role: 'assistant', status: 'completed',
           content: [{ type: 'output_text', text: 'OK', annotations: [] }] };
         return [{ type: 'response.created', response: { id: 'resp_fork', status: 'in_progress' } },

@@ -165,11 +165,14 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
             source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
             sessionId: binding.sessionId, parent,
             ...(metadata.name === 'code-review' && (nativeEntry || skillEntry || resumeEntry) && { review: true }) };
+          selection.reviewContext = selection.review === true || (resumeEntry?.[0] === id
+            ? previous.reviewContext === true
+            : ['Agent', 'Task'].includes(call.tool) && verified.get(key(binding.sessionId, parent))?.reviewContext === true);
           const agentKey = key(binding.sessionId, binding.id);
           verified.delete(agentKey);
           if (verified.size >= 1024) verified.delete(verified.keys().next().value);
           verified.set(agentKey, { role: binding.role, origin: metadata.toolUseId, model: metadata.model,
-            name: metadata.name, parent: metadata.parentAgentId ?? undefined });
+            name: metadata.name, parent: metadata.parentAgentId ?? undefined, reviewContext: selection.reviewContext });
           return selection;
         }
       } else if (metadata) reason = metadata.agentType !== binding.role ? 'ROLE' : 'IDENTITY';

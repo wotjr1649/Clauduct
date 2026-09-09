@@ -6,6 +6,7 @@ import { createAgentSelection } from './agent-selection.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { registerBinding, bindingFrom } from './agent-route.mjs';
 import { readRequestStatus } from './request-status.mjs';
+import { MODELS, EFFORTS } from './models.mjs';
 
 const binding = (id, extra = {}) => ({ id, role: 'general-purpose', sessionId: 'session', stop: false, ...extra });
 const call = (id, model, role = 'general-purpose') => ({ content: [{ type: 'tool_use', id, name: 'Agent',
@@ -69,6 +70,13 @@ for (const [index, parentAgentId] of [null, undefined].entries()) {
   assert.equal((await selection.resolve(binding('null_parent'))).source, 'verified-resume');
 }
 const parentRoute = { model: 'gpt-6-astra', effort: 'max' };
+// Each session's actual parent route is the source; no fixed main model/effort.
+for (const [name, selected] of Object.entries(MODELS)) for (const effort of EFFORTS) {
+  const id = `inherit_${name}_${effort}`, parent = { model: selected.model, effort };
+  selection.remember(call(id, 'inherit'), 'session', undefined, parent);
+  snapshots.set(id, metadata(id, 'inherit'));
+  assert.deepEqual((await selection.resolve(binding(id))).route, parent);
+}
 selection.remember(call('call_inherit', 'inherit'), 'session', undefined, parentRoute);
 parentRoute.effort = 'low'; // A later parent change must not rewrite creation evidence.
 snapshots.set('inherit', metadata('call_inherit', 'inherit'));

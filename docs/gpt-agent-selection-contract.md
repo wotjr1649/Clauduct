@@ -11,7 +11,7 @@
 | 모델 생략, Plan | sol/xhigh |
 | 모델 생략, Explore 또는 general-purpose | luna/max |
 
-부모 astra/max 아래에서도 inherit를 명시한 자식만 astra/max를 상속한다. 생략은 상속이 아니며 모든 후손에 최상위 모델을 강제하지 않는다. 손자는 직접 부모를 기준으로 한다.
+메인 모델·effort는 세션마다 달라질 수 있으며 상속 기대값은 해당 생성 호출의 실제 부모 값이다. astra/max는 과거 검증 예시이지 고정값이 아니다. 부모가 luna/max이면 inherit 자식의 기대값도 luna/max다. 생략은 상속이 아니며 모든 후손에 최상위 모델을 강제하지 않는다. 손자는 직접 부모를 기준으로 한다.
 
 ## 범위와 수용 조건
 
@@ -67,3 +67,9 @@ Not verified: native Agent가 model=inherit/GPT를 수락하는 실제 실행. �
 Verified: test-launcher-native.mjs 통과. 일반 실행에서 미등록, 검증 옵션에서 정확히 5개 정의와 Read-only 도구 목록/maxTurns/모델/effort, 기존 settings·환경·메인 effort 보존, source 객체 불변, 임의 --agents·중복/값 첨부 옵션 거부를 검사했다. --verify-agent-models --model astra --effort max --dry-run에서 정의 이름 5개와 childStarted=false, credentialReads=0, globalWrites=0을 확인했다.
 
 Not verified: native의 실제 정의 로딩, 실제 도구 제한, 정의 모델의 요청·metadata 표현, 정의 기반 inherit의 effort 유지. 이 등록 변경은 gateway 선택 판정을 보정하지 않는다. 따라서 시험 성공을 만들기 위한 우회가 아니라 실제 입력·출력 관찰 준비이며, 전체 계약 완료는 여전히 보류다.
+
+## 시험 세션 확인 — 34f1e15c
+
+사용자가 제공한 46f4a80e129350648d7d8ca740bc0cec는 status의 sessionRef이며 native 세션 UUID는 34f1e15c-dad7-49ba-b0bc-8d23982190a3이다. 원본 27행의 BEFORE request 4는 메인 gpt-5.6-luna/max, success=true다. 35행에서 model 인수를 생략한 clauduct-probe-astra 호출을 한 번 시도했으나, 36행에서 agent type not found로 거부됐다. 자식 기록은 생성되지 않았다. 표시된 사용 가능 목록에 시험 agent가 없으므로 모델 라우팅이 아니라 등록/로딩 단계에서 중단됐다. 실제 실행 명령이 없으므로 검증 옵션 누락과 다른 등록 실패 원인을 단정하지 않는다.
+
+이 세션의 inherit 목표는 부모의 실제 luna/max이며 astra/max로 판정하지 않는다. 네 모델과 다섯 effort 조합의 내부 상속 회귀 검사를 추가했다. 이 검사는 backend의 모든 조합 수락 또는 native 정의 기반 상속 성공을 의미하지 않는다. 다음 실제 검증은 사용자가 원하는 메인 모델·effort를 유지한 실행 명령에 --verify-agent-models를 추가하고 시험 agent 로딩부터 확인한다.

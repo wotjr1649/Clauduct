@@ -14,7 +14,7 @@ D:\AIDEV\Clauduct\clauduct.cmd --dry-run
 
 `--verify-agent-models`는 명시적으로 허용된 세션 한정 시험 옵션입니다. `clauduct-probe-astra/sol/terra/luna/inherit`라는 별도 agent 5개를 native `--agents` 정의로 전달합니다. 각 정의의 도구는 Read 하나, maxTurns는 3이며 대상은 이 실행기의 src/models.mjs입니다. 네 GPT 모델은 모델 기본 effort를 정의하고 inherit는 모델만 inherit로 정의합니다. 기존 내장 역할·settings·환경과 임의 사용자 `--agents` 차단은 유지합니다. 옵션 없이 다시 시작하면 시험 정의를 추가하지 않습니다. 전역/프로젝트 agent 파일은 생성하지 않지만 native 세션 기록 자체가 남지 않는다는 뜻은 아닙니다.
 
-사용자 실행: `D:/AIDEV/Clauduct/clauduct.cmd --verify-agent-models --model astra --effort max`. 이 옵션은 native의 정의 기반 모델 선택과 metadata를 관찰하기 위한 것이며 일반 Agent(model=GPT/inherit) 계약의 구현 완료가 아닙니다. 시험 agent 호출에서는 subagent_type으로 위 이름을 선택하고 model 인수는 생략해야 합니다. 특히 정의 기반 inherit는 아직 gateway의 명시 inherit snapshot 경로에 연결하지 않았으므로 실제 effort 보존은 미검증입니다. 요청별 status를 함께 수집하고 불일치를 숨기거나 별칭으로 대체하지 않습니다.
+사용자 실행은 원하는 메인 모델·effort를 선택한 기존 명령에 `--verify-agent-models`만 추가합니다. 이 옵션은 메인 모델을 강제하지 않습니다. inherit 기대값은 생성 호출 시점의 실제 부모 모델·effort이며 고정된 astra/max가 아닙니다. 이 옵션은 native의 정의 기반 모델 선택과 metadata를 관찰하기 위한 것이며 일반 Agent(model=GPT/inherit) 계약의 구현 완료가 아닙니다. 시험 agent 호출에서는 subagent_type으로 위 이름을 선택하고 model 인수는 생략해야 합니다. 특히 정의 기반 inherit는 아직 gateway의 명시 inherit snapshot 경로에 연결하지 않았으므로 실제 effort 보존은 미검증입니다. 요청별 status를 함께 수집하고 불일치를 숨기거나 별칭으로 대체하지 않습니다. sessionRef는 불투명 상관관계 값이며 native 세션 UUID와 다릅니다.
 
 | 모델 | 기본 effort |
 |---|---|

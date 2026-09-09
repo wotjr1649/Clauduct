@@ -24,7 +24,8 @@ const binding = id => ({ id, sessionId, transcriptPath, role: 'workflow-subagent
   requestedModel: parentRoute.model });
 const row = id => ({ type: 'started', key: `v2:${'a'.repeat(64)}`, agentId: id, label: id });
 const journal = rows => writeFile(join(directory, 'journal.jsonl'), [{ type: 'launched' }, ...rows].map(JSON.stringify).join('\n') + '\n');
-const metadata = id => ({ agentType: 'workflow-subagent', description: id, spawnDepth: 1 });
+const metadata = id => ({ agentType: 'workflow-subagent', description: id, spawnDepth: 1,
+  requestShape: 'foreground', requestNonInteractive: false });
 async function child(id, extra = {}) {
   await writeFile(join(directory, `agent-${id}.meta.json`), JSON.stringify({ ...metadata(id), ...extra }));
   await writeFile(join(directory, `agent-${id}.jsonl`), JSON.stringify({ type: 'user', sessionId, agentId: id,
@@ -68,7 +69,12 @@ try {
     [[row('one')], { agentType: 'general-purpose' }],
     [[row('one')], { toolUseId: 'forged' }],
     [[row('one')], { parentAgentId: 'forged' }],
-    [[row('one')], { description: 'wrong' }]
+    [[row('one')], { description: 'wrong' }],
+    [[row('one')], { model: 'gpt-5.6-luna' }],
+    [[row('one')], { model: 'unknown' }],
+    [[row('one')], { model: null }],
+    [[row('one')], { model: { model: parentRoute.model } }],
+    [[row('one')], { effort: 'high' }]
   ]) {
     const current = selection(); current.linkWorkflow(link);
     await child('one', changes); await journal(rows);
@@ -110,7 +116,8 @@ try {
     { model: 'gpt-5.6-luna', effort: 'high', expected: { model: 'gpt-5.6-luna', effort: 'high' } },
     { model: 'gpt-5.6-terra', effort: 'xhigh', expected: { model: 'gpt-5.6-terra', effort: 'xhigh' } }
   ]) {
-    const current = selection(); await child('one'); await journal([row('one')]);
+    const current = selection();
+    await child('one', scenario.effort ? { model: scenario.model } : {}); await journal([row('one')]);
     const seen = [];
     const gateway = await startNativeGateway({ agentSelection: current, admissionOptions: { freeBytes: () => 16 * 1024 ** 3 },
       transport: { send: async body => { seen.push(body); return [

@@ -61,7 +61,7 @@ export function createWorkflowSelection(projectsRoot) {
       const metadataRaw = await read(path, 16384), metadata = JSON.parse(metadataRaw);
       if (metadata.agentType !== 'workflow-subagent' || metadata.toolUseId !== undefined
         || metadata.parentAgentId != null || metadata.spawnDepth !== 1
-        || metadata.model !== undefined || metadata.effort !== undefined || metadata.stoppedByUser === true
+        || metadata.effort !== undefined || metadata.stoppedByUser === true
         || metadata.description !== entries[0].label || run.parent !== undefined) fail('IDENTITY');
       // Require a fresh native child transcript with matching session and identity.
       const transcript = await read(join(run.directory, `agent-${binding.id}.jsonl`), 1048576);
@@ -89,6 +89,14 @@ export function createWorkflowSelection(projectsRoot) {
     try { selected = selectModel(binding.requestedModel, binding.requestedEffort
       ?? (selectModel(binding.requestedModel).model === parent.model ? parent.effort : undefined)); }
     catch { fail('MODEL'); }
+    // Native persists an explicit Workflow model in the sidecar, but not effort.
+    // It is corroborating evidence, not permission to override the request.
+    if (match.metadata.model !== undefined) {
+      try {
+        if (typeof match.metadata.model !== 'string'
+          || selectModel(match.metadata.model).model !== selected.model) fail('MODEL');
+      } catch { fail('MODEL'); }
+    }
     const route = Object.freeze(selected);
     if (previous && (previous.route.model !== route.model || previous.route.effort !== route.effort)) fail('MODEL');
     children.set(childKey, { runId: match.run.runId, route });

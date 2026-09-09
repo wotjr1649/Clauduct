@@ -8,7 +8,7 @@
 
 ### 작업 순서와 종료 조건
 
-최신 판정: 08594a7e에서 local inline Workflow 기본 자식의 sol/high·Read·네 모델 이름·완료 문구·completed=true·메인 복귀가 실제 통과했다. [실제 성공과 후속 범위](audit-2026-09-09-workflow-success.md). 다음은 단일 읽기 전용 Workflow 자식의 명시 GPT model/effort 선택이다. 다중 자식·병렬은 그 뒤에 별도로 검증한다. 전체 native 경로 완료를 뜻하지 않는다.
+최신 판정: 기본 상속은 08594a7e에서 실제 통과했다. 명시 선택은 927eefdf에서 native metadata.model 존재를 잘못 거부하여 IDENTITY로 실패했다. 요청 모델과 sidecar 모델의 일치 검증으로 수정하고 실제 형태 fixture로 로컬 검사를 통과했다. [실패·수정 근거](audit-2026-09-09-workflow-explicit-metadata.md). 다음은 동일 단일 읽기 전용 명시 선택 시험의 실제 성공 확인이다. 다중 자식·병렬로 아직 확대하지 않는다.
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 

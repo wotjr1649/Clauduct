@@ -71,6 +71,8 @@ background fork Skill은 meta.toolUseId가 없는 native 경로다. Clauduct 세
 
 ## 설정과 역할 hook
 
+Workflow 명시 선택의 metadata.model은 기존 지원 GPT이며 native 요청 모델과 일치할 때만 허용합니다. sidecar가 요청을 덮어쓰지는 않습니다. 927eefdf의 IDENTITY 실패를 재현해 수정했으며, 변경 후 실제 명시 선택 성공은 미검증입니다. [실패·수정 근거](audit-2026-09-09-workflow-explicit-metadata.md).
+
 local inline Workflow는 인증된 PostToolUse 결과의 호출 ID·script SHA256·run 경로와 live SubagentStart를 연결하고, 해당 run의 journal·nested metadata·자식 transcript를 확인합니다. 검증 후 `selectionSource=workflow-result`, `role=workflow-subagent`로 기록하며 native 첫 요청의 GPT 모델/effort를 고정합니다. 같은 모델에서 effort가 생략되면 호출 당시 부모의 실제 effort를 사용합니다. 이 경로만 text를 완료 검증까지 지연하고 reasoning 뒤에 하나의 text 블록으로 전달합니다. 08594a7e에서 기본 자식 sol/high·Read·정상 result·메인 복귀를 실제 확인했습니다. 명시 선택·다중 자식은 실제 미검증이고 중첩·resume·custom agentType은 지원 범위 밖입니다. 전역 설정은 변경하지 않습니다. [검증과 한계](audit-2026-09-09-workflow-success.md).
 
 직접 입력한 slash 명령의 최상위 background fork는 모델의 Skill 호출 ID가 없을 수 있습니다. 이 경우 인증된 SubagentStart 등록과 정확한 자식 경로의 metadata, `.forked-skill.marker.json`, `.forked-skill.json`을 함께 확인합니다. 부모 없음·spawnDepth=1·general-purpose, 세 파일의 스킬 이름 일치, gateway 검증기 생성 이후에 만들어진 두 fork 파일을 요구합니다. 이름만으로 연결하지 않으며 각 파일은 기존 projects 루트 검사와 16KiB 제한으로 읽습니다. 이름이 같은 대기 중 모델 Skill 호출이 있으면 이 경로를 사용하지 않고 기존 PostToolUse 연결을 기다립니다. 진단 근거는 `native-fork`이며 스킬의 low/high 검토 수준과 별개로 기존 역할 모델·effort 정책을 적용합니다.

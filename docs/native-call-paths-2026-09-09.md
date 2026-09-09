@@ -28,7 +28,7 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | SendMessage 복귀 | native 성공 PostToolUse → gateway | 기존 모델·부모·reviewContext, 1회 소비 | verified-resume 및 verified-peer-resume 실제 부분 통과 |
 | completed task-notification 복귀 | native JSONL origin·최종 응답 ID → gateway | 기존 정책, verified-completion-resume | c19c8b14 실제 성공 확인(adb4d26), 복수·실패 알림은 범위 밖 |
 | 결합 완료/failed/killed/blocked 알림 복귀 | native wake router | 완료 증거로 사용하지 않음 | 신규 완료 복귀 경로에서 미지원, 조용한 성공 처리 없음 |
-| Workflow | native Workflow → local inline run → workflow-subagent | 인증된 호출·run·nested metadata 연결. 최종 text는 reasoning 뒤로 전달 | 08594a7e에서 기본 자식 sol/high·Read·결과·메인 복귀 실제 통과. 명시 선택·다중 자식은 미검증, 중첩·resume·custom agentType은 범위 밖. [실제 성공](audit-2026-09-09-workflow-success.md) |
+| Workflow | native Workflow → local inline run → workflow-subagent | 인증된 호출·run·nested metadata 연결. 명시 sidecar 모델은 요청과 대조. 최종 text는 reasoning 뒤로 전달 | 기본 상속은 08594a7e 실제 통과. 927eefdf 명시 선택 IDENTITY 수정 후 실제 성공 미검증. 다중 자식·중첩·resume·custom agentType은 별도 범위. [명시 선택 수정](audit-2026-09-09-workflow-explicit-metadata.md) |
 | /compact·자동 compact | 명령은 local, 내부 querySource=compact는 모델 호출 | C, 요약 뒤 새 요청 연결 | 수동·낮춘 임계값 자동 압축 실제 통과, 기본400K·각 자식은 미검증 |
 | /btw | 명령은 local-jsx, 내부 side_question 경로 존재 | 별도 질문의 header·모델 연결 미추적 | 미검증 |
 | /fork·/subtask | native 정의에 백그라운드 에이전트/세션 생성 존재 | fork 유형에 따른 ID·모델 경로 미추적 | code-review fork와 동일 지원이라고 단정하지 않음 |

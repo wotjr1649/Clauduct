@@ -20,13 +20,13 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | Read/Edit/Write/Bash | 실행은 native, 선택·결과를 읽는 모델 요청은 gateway | M/A, tool_use_id ↔ tool_result | 프로토콜 합성 검사, 실제 Read/Bash 부분 증거. 도구 자체를 모델 호출로 세지 않음 |
 | ToolSearch·지연 도구 | 검색 실행 native, 현재 도구 목록을 gateway가 변환 | M/A, tool_reference 및 turn tool addition/removal | 로컬 검사 통과, 설치된 모든 도구별 실제 미검증 |
 | Agent/Task: Explore/general-purpose | native 생성·hook·metadata → gateway | A, 원래 부모/호출 ID 검증 | 순차·병렬 실제 부분 통과 |
-| Agent/Task: Plan | 동일 | 기본 sol/xhigh | 과거 sol/high, 현재 명시 sol/xhigh 성공은 있음. 현재 무명시 Plan 기본값 실증 미완료 |
-| native role=claude | HIGH-03 metadata에서 실제 확인 | 요청 모델, 부모 연결 유지 | 누락하면 안 되는 역할. 기존 status의 role whitelist에는 없어 null로 표시되는 진단 공백 |
+| Agent/Task: Plan | 동일 | 기본 sol/xhigh | c94bb0ac request 10/11에서 무명시 Plan/role-default/sol/xhigh 실제 통과. [근거](audit-2026-09-09-plan-lifetime-success.md) |
+| native role=claude | HIGH-03 metadata에서 실제 확인 | 요청 모델, 부모 연결 유지 | 78986b2에서 status whitelist 보완, 새 표시의 실제 출력은 미검증 |
 | inline Skill | native가 스킬 내용을 모델 문맥에 제공 | M/A, 별도 fork가 없으면 현재 요청 정책 | 일반 변환 지원, 개별 skill 전체 실행 미검증 |
 | background fork Skill | native fork 결과·PostToolUse → gateway | A, skill-result | 실제 생성/Read 통과. 모든 skill fork 조합 미검증 |
 | 직접 code-review 명령 fork | native fresh marker/scope·Start → gateway | luna/max, native-fork | low/high 실제 최종 반환 증거. high 오류 없는 전체 완료는 미검증 |
 | SendMessage 복귀 | native 성공 PostToolUse → gateway | 기존 모델·부모·reviewContext, 1회 소비 | verified-resume 및 verified-peer-resume 실제 부분 통과 |
-| completed task-notification 복귀 | native JSONL origin·최종 응답 ID → gateway | 기존 정책, verified-completion-resume | 로컬 42개 통과, 수정 버전 실제 미검증 |
+| completed task-notification 복귀 | native JSONL origin·최종 응답 ID → gateway | 기존 정책, verified-completion-resume | c19c8b14 실제 성공 확인(adb4d26), 복수·실패 알림은 범위 밖 |
 | 결합 완료/failed/killed/blocked 알림 복귀 | native wake router | 완료 증거로 사용하지 않음 | 신규 완료 복귀 경로에서 미지원, 조용한 성공 처리 없음 |
 | Workflow | native Workflow 실행 후 생성 경로에 따라 다름 | 호출을 기억하지만 전용 workflow 생성 증거 연결은 없음 | 전체 호환성 미검증. Agent/Task 하위 호출 성공으로 대체하지 않음 |
 | /compact·자동 compact | 명령은 local, 내부 querySource=compact는 모델 호출 | C, 요약 뒤 새 요청 연결 | 수동·낮춘 임계값 자동 압축 실제 통과, 기본400K·각 자식은 미검증 |
@@ -100,7 +100,7 @@ superpowers manifest는 SessionStart command hook 하나로 run-hook.cmd → ses
 
 현재 recentRequests는 마지막 16개만 보존한다. 과거 other의 원래 이벤트명과 전체 요청의 성공/실패를 복원할 수 없다. auxiliaryMetadataEvents=0인 마지막 16개 기록은 전체 세션에서 보조 이벤트가 없었다는 증거가 아니다.
 
-필요한 추가 계측은 다음과 같다. 아직 구현·검증한 것으로 처리하지 않는다.
+아래는 최초 조사 당시의 계측 요구다. 이후 요청 누적 카운터는 c94bb0ac에서 실제 확인했고, 불투명 관계 참조·role=claude 표시·실패 단계별 집계를 구현했다. [최신 구현·검증](audit-2026-09-09-request-correlation.md). 새 관계 참조와 단계별 집계의 실제 출력은 아직 미검증이다.
 
 1. gateway 수명 동안 고정 항목으로 성공·실패 단계·unsupportedEvent 분류·보조 이벤트 처리 횟수를 누적한다. 원래 이벤트명·본문·오류 문자열을 저장하지 않는다.
 2. 세션/agent/부모는 gateway마다 바뀌는 키를 쓰는 불투명 상관관계 값으로 연결한다. request 번호만으로 특정 자식을 추정하지 않는다.
@@ -109,4 +109,4 @@ superpowers manifest는 SessionStart command hook 하나로 run-hook.cmd → ses
 
 Verified: 설치 실행 파일 동일성, 활성 plugin 2개, skill 14+6+3=23개 및 frontmatter 대조, 사용자 hook 종류 13개, native querySource 리터럴 34종·일부 명령의 실제 등록 코드, 현재 Clauduct 모델/프로토콜 코드.
 
-Not verified: 전체 동적 명령/도구/skill 목록의 완전성, 별도 설정 소스·모든 hook 내부·외부 provider 우회/fallback 전수 추적, 보조 호출별 GPT 반환, 새 누적 진단 구현, 실제 완료 알림 수정 검증. 계정·외부 쓰기는 실행하지 않았다.
+Not verified: 전체 동적 명령/도구/skill 목록의 완전성, 별도 설정 소스·모든 hook 내부·외부 provider 우회/fallback 전수 추적, 보조 호출별 GPT 반환, 새 관계 참조와 실패 단계별 카운터의 실제 출력. 계정·외부 쓰기는 실행하지 않았다.

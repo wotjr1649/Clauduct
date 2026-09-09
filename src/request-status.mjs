@@ -3,19 +3,21 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
+import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
   'firstTextDeltaMs', 'firstDownstreamWriteMs', 'transportFinishedMs', 'finishedMs'];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+const reference = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : null;
 
 // User-operated within the native child. Credentials go only to its fixed loopback endpoint.
 export async function readRequestStatus(env) {
   const base = env.ANTHROPIC_BASE_URL, token = env.ANTHROPIC_AUTH_TOKEN;
   if (typeof base !== 'string' || !/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(base)
     || typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('STATUS_UNAVAILABLE');
-  const { rows, lifetime } = await new Promise((done, fail) => {
+  const { rows, lifetime, correlationScope } = await new Promise((done, fail) => {
     const req = request(`${base}/clauduct/status`, { agent: false, signal: AbortSignal.timeout(5000),
       headers: { Authorization: `Bearer ${token}` } }, res => {
       if (res.statusCode !== 200) { res.destroy(); fail(new Error('STATUS_UNAVAILABLE')); return; }
@@ -31,7 +33,7 @@ export async function readRequestStatus(env) {
         try {
           const value = JSON.parse(raw);
           if (!res.complete || !Array.isArray(value.recentRequests)) throw new Error('STATUS_UNAVAILABLE');
-          done({ rows: value.recentRequests.slice(-16), lifetime: value.lifetime });
+          done({ rows: value.recentRequests.slice(-16), lifetime: value.lifetime, correlationScope: value.correlationScope });
         } catch { fail(new Error('STATUS_UNAVAILABLE')); }
       });
     });
@@ -39,10 +41,13 @@ export async function readRequestStatus(env) {
   });
   return { clientContextPolicy: { evidence: 'inherited-environment',
     ...(contextFromEnvironment(env) ?? { window: null, autoCompactWindow: null, compactPercent: null }) },
-    lifetime: lifetime ? { scope: 'gateway-lifetime', ...Object.fromEntries(
+    correlationScope: reference(correlationScope),
+    lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
+      ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
       ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents'].map(key =>
-        [key, Number.isSafeInteger(lifetime[key]) && lifetime[key] >= 0 ? lifetime[key] : null])) } : null,
+        [key, counter(lifetime[key])])) } : null,
     recentRequests: rows.map(row => ({ request: number(row?.request),
+    sessionRef: reference(row?.sessionRef), agentRef: reference(row?.agentRef), parentRef: reference(row?.parentRef),
     startedAt: typeof row?.startedAt === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(row.startedAt) ? row.startedAt : null,
     model: Object.values(MODELS).some(model => model.model === row?.model) ? row.model : null,
     requestedModel: Object.values(MODELS).some(model => model.model === row?.requestedModel) ? row.requestedModel : null,
@@ -62,7 +67,7 @@ export async function readRequestStatus(env) {
       compactPercent: number(row.agentContextPolicy.compactPercent) } : null,
     subagent: row?.subagent === true, success: row?.success === true,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
-    failureStage: ['request', 'selection', 'prepare', 'review', 'upstream', 'output-validation', 'delivery'].includes(row?.failureStage) ? row.failureStage : null,
+    failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,
     selectionFailure: SELECTION_FAILURES.includes(row?.selectionFailure) ? row.selectionFailure : null,
     selectionIoCode: SELECTION_IO_CODES.includes(row?.selectionIoCode) ? row.selectionIoCode : null,
     completionFailure: COMPLETION_FAILURES.includes(row?.completionFailure) ? row.completionFailure : null,

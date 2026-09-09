@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { selectModel } from './models.mjs';
 import { reasoningSnapshot, reasoningEvent, mergeReasoning } from '../poc/adapter.mjs';
 import { inspectCompactTemplate } from './compact-policy.mjs';
+export const REQUEST_STAGES = Object.freeze(['request', 'selection', 'prepare', 'review', 'upstream', 'output-validation', 'delivery']);
 
 export const NATIVE_LIMITS = Object.freeze({ requestBytes: 32 * 1024 * 1024, responseBytes: 16 * 1024 * 1024 });
 export const OUTPUT_TOKEN_LIMIT_POLICY = 'usage-enforced-completion';

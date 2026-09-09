@@ -29,11 +29,11 @@ function frames(body, malformed = false) {
   ];
 }
 const wire = events => events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
-function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, signal = AbortSignal.timeout(5000), idleMs } = {}) {
+function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, signal = AbortSignal.timeout(5000), idleMs, headers = {} } = {}) {
   const raw = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port: gateway.port, method: 'POST', path, agent: false, signal,
-      headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'content-length': Buffer.byteLength(raw) } }, res => {
+      headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'content-length': Buffer.byteLength(raw), ...headers } }, res => {
       let text = '';
       res.on('data', chunk => { text += chunk; onChunk(text); }); res.on('error', reject);
       res.on('end', () => resolve({ status: res.statusCode, text }));
@@ -43,6 +43,7 @@ function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, 
   });
 }
 const ample = { freeBytes: () => 16 * 1024 ** 3 };
+const emptyStages = { request: 0, selection: 0, prepare: 0, review: 0, upstream: 0, 'output-validation': 0, delivery: 0 };
 let passed = 0;
 const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
 try {
@@ -206,7 +207,7 @@ try {
         ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
       assert.ok(after.recentRequests.every(row => row.success));
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
-        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1 });
+        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
@@ -227,9 +228,11 @@ try {
       assert.equal(status.recentRequests.at(-1).auxiliaryMetadataEvents, 1);
       assert.equal(status.recentRequests.at(-1).success, true);
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
-        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0 });
+        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);
+      snapshot.lifetime.failuresByStage.upstream = -1;
+      assert.equal(gateway.diagnostics().lifetime.failuresByStage.upstream, 0);
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE_METADATA')); passed++;
     } finally { await gateway.close(); }
   }
@@ -270,5 +273,33 @@ try {
       assert.equal(gateway.diagnostics().registeredAgents, 1); passed++;
     } finally { await gateway.close(); }
   }
+  const scopes = [], references = [];
+  for (let run = 0; run < 2; run++) {
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      const headers = { 'x-claude-code-session-id': 'PRIVATE_SESSION' };
+      const parent = { ...headers, 'x-claude-code-agent-id': 'PRIVATE_PARENT' };
+      const child = { ...headers, 'x-claude-code-agent-id': 'PRIVATE_CHILD', 'x-claude-code-parent-agent-id': 'PRIVATE_PARENT' };
+      for (const h of [headers, parent, child, child, { ...child, 'x-claude-code-session-id': 'OTHER_SESSION' }]) {
+        assert.equal((await call(gateway, { headers: h })).status, 200);
+      }
+      assert.equal((await call(gateway, { headers: child, body: { ...doc, model: 'unknown' } })).status, 400);
+      const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      const [main, p, c, repeat, other, failed] = status.recentRequests;
+      assert.match(status.correlationScope, /^[a-f0-9]{32}$/);
+      assert.match(main.sessionRef, /^[a-f0-9]{32}$/); assert.equal(main.agentRef, null);
+      assert.equal(main.sessionRef, p.sessionRef); assert.equal(c.parentRef, p.agentRef);
+      assert.notEqual(c.agentRef, p.agentRef); assert.equal(repeat.agentRef, c.agentRef);
+      assert.notEqual(other.sessionRef, c.sessionRef); assert.notEqual(other.agentRef, c.agentRef);
+      assert.equal(failed.agentRef, c.agentRef);
+      assert.deepEqual(status.lifetime.failuresByStage, { ...emptyStages, prepare: 1 });
+      assert.equal(Object.values(status.lifetime.failuresByStage).reduce((a, b) => a + b, 0), status.lifetime.failed);
+      assert.ok(!JSON.stringify(gateway.diagnostics()).includes('PRIVATE_'));
+      scopes.push(status.correlationScope); references.push(c.agentRef); passed++;
+    } finally { await gateway.close(); }
+  }
+  assert.notEqual(scopes[0], scopes[1]); assert.notEqual(references[0], references[1]);
   console.log(JSON.stringify({ suite: 'native-gateway', passed, realClaude: 0, credentialReads: 0, externalRequests: 0 }));
 } finally { clearTimeout(watchdog); }

@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
+import { REQUEST_STAGES } from './native-protocol.mjs';
 import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
@@ -14,18 +15,22 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   const admission = createAdmission(admissionOptions);
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('base64url')}`), jobs = new Set(), sockets = new Set();
   const agents = new Map();
+  const correlationKey = randomBytes(32), correlationScope = randomBytes(16).toString('hex');
+  const reference = (kind, session, id) => session && (kind === 'session' || id)
+    ? createHmac('sha256', correlationKey).update(JSON.stringify([kind, session, id ?? null])).digest('hex').slice(0, 32) : null;
   let closing = false, reason = 'NONE', requests = 0, rejected = 0, unregisteredAgentRequests = 0, port, finish, closingWork;
   let activeBodies = 0, activeDeliveries = 0, activeHeartbeats = 0, cleanupFailed = false;
   const maxObservedInputTokens = { main: 0, subagent: 0 };
   // Fixed metadata only; bounded memory, no transcript, headers or credential material.
   const recentRequests = [];
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0 };
+  const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
     activeTimers: activeBodies + activeHeartbeats + Number(admission.diagnostics().timerActive), activeBodies,
     activeDeliveries, cleanupFailed, admission: admission.diagnostics(), maxObservedInputTokens: { ...maxObservedInputTokens },
     contextPolicy: CONTEXT_POLICY, contextPolicyRuntimeVerified: false,
-    lifetime: { ...lifetime },
+    correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage } },
     recentRequests: recentRequests.map(record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
       attempts: record.attempts.map(attempt => ({ ...attempt })),
       ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
@@ -134,6 +139,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       }
       // Do not decode or retain a large request body while waiting for memory.
       timing = { request: requests, startedAt: new Date().toISOString(), model: null, effort: null,
+        sessionRef: reference('session', req.headers['x-claude-code-session-id']),
+        agentRef: reference('agent', req.headers['x-claude-code-session-id'], req.headers['x-claude-code-agent-id']),
+        parentRef: reference('agent', req.headers['x-claude-code-session-id'], req.headers['x-claude-code-parent-agent-id']),
         subagent: req.headers['x-claude-code-agent-id'] !== undefined,
         admissionStartedMs: elapsed(), admittedMs: null, preparedMs: null, transportStartedMs: null,
         firstEventMs: null, firstTextDeltaMs: null, firstDownstreamWriteMs: null,
@@ -300,7 +308,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       } else res.destroy();
     } finally {
       stopHeartbeat();
-      if (timing) { timing.finishedMs = elapsed(); lifetime[timing.success ? 'succeeded' : 'failed']++; }
+      if (timing) {
+        timing.finishedMs = elapsed(); lifetime[timing.success ? 'succeeded' : 'failed']++;
+        if (!timing.success) failuresByStage[stage]++;
+      }
       release?.(); res.removeListener('close', abort);
     }
   }
@@ -319,7 +330,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   port = server.address().port;
   function close(why = 'CLIENT_CLOSED') {
     if (closingWork) return closingWork;
-    closing = true; reason = why; secret.fill(0);
+    closing = true; reason = why; secret.fill(0); correlationKey.fill(0);
     for (const state of agents.values()) state.selectionController?.abort();
     agents.clear(); admission.close();
     closingWork = (async () => {

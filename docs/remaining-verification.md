@@ -11,7 +11,7 @@
 | 순서 | 작업 | 필요한 증거 / 종료 조건 |
 |---|---|---|
 | 1 | native task-notification(completed) 복귀 | c19c8b14 request 22에서 verified-completion-resume/luna/max/success=true 및 부모 선종료·최종 반환 확인. [실제 성공](audit-2026-09-09-completion-success.md). 단일 general-purpose 경로 통과, 과거 실패 원인·다중 알림·symlink는 별도 미완료 |
-| 2 | 이벤트·라우팅 진단 | [누적 진단](audit-2026-09-09-lifetime-diagnostics.md)으로 gateway 수명 요청 성공/실패·보조/미지원 이벤트 카운터와 role=claude 표시 구현·로컬 검증. 실제 보조 이벤트 발생, 관계 ID, 실패 단계별 누적 분류는 미완료. 과거 other 이름 복원 불가 |
+| 2 | 이벤트·라우팅 진단 | c94bb0ac에서 기존 누적 카운터 실제 확인. [요청 관계·단계별 누적](audit-2026-09-09-request-correlation.md) 추가 구현·로컬 검증 완료. 새 필드 실제 출력·보조 이벤트 발생은 미검증. 과거 other 이름 복원 불가 |
 | 3 | 현재 설치 버전 전체 호출 경로 목록 | 실행 파일 2.1.266 해시 일치, 활성 plugin 2개와 설치 skill 23개, querySource 리터럴 34종을 [호출 경로 조사](native-call-paths-2026-09-09.md)에 목록화. 동적 전체 목록·우회 provider/fallback 전수 추적·경로별 실제 반환은 미완료 |
 | 4 | 남은 회귀·보안 검증 | 아래 기능별 표의 미확인 항목과 설정 격리·취소·복귀·병렬·스트리밍·자원 정리 검증. 이미 통과한 항목은 변경 영향이 있을 때만 반복 |
 | 5 | 현재 코드 검토 및 최종 수용 | 오래된 fixture가 아닌 실제 변경 코드의 diff와 관련 호출자를 검토. 핵심 경로에서 예상치 못한 API 실패 없이 결과 반환. 미지원·보류·미검증을 남김없이 보고하며 전체 완료와 부분 완료를 구분 |

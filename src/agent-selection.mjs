@@ -78,6 +78,13 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         selection: input.model, skill: typeof input.skill === 'string' && input.skill.length <= 200 ? input.skill : undefined,
         target: block.name === 'SendMessage' && validId(input.to) && typeof input.message === 'string' && input.message.trim() ? input.to : undefined,
         session, created: now };
+      // Native peers may address their parent by name; resolve only that verified relationship.
+      if (call.target) {
+        call.recipient = call.target;
+        const sender = verified.get(key(session, parent));
+        const owner = sender?.parent && verified.get(key(session, sender.parent));
+        if (owner?.name === call.target) call.target = sender.parent;
+      }
       // Bounded outstanding metadata, never a cumulative session execution limit.
       const id = key(session, block.id);
       if (pending.size + additions.size >= 1024 || pending.has(id) || additions.has(id)) fail();
@@ -96,11 +103,15 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
   }
   function linkResume(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));
-    const previous = verified.get(key(link.sessionId, link.id));
-    if (!call || call.tool !== 'SendMessage' || call.target !== link.id || call.parent !== link.parent) fail('CALL');
-    // Parent notifications and messages to other sessions are not child resumes.
-    if (!previous || previous.parent !== link.parent) return false;
+    if (!call || call.tool !== 'SendMessage' || call.recipient !== link.id || call.parent !== link.parent) fail('CALL');
+    const previous = verified.get(key(link.sessionId, call.target));
+    const sender = verified.get(key(link.sessionId, link.parent));
+    const peer = previous && sender?.parent === call.target;
+    // Require the verified parent-child relationship in either direction, not a name search.
+    if (!previous || (previous.parent !== link.parent && !peer)) return false;
     call.resumeConfirmed = true;
+    call.resumeParent = previous.parent;
+    call.peerResume = Boolean(peer);
     return true;
   }
   async function resolveSelection(binding, signal) {
@@ -132,17 +143,18 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.child === binding.id
           && call.tool === 'Skill' && call.skill === metadata.name) : undefined;
       const previous = verified.get(key(binding.sessionId, binding.id));
-      const resumeEntry = metadata && previous && previous.role === binding.role
+      const resumeEntry = metadata && metadata.stoppedByUser !== true && previous && previous.role === binding.role
         && previous.origin === metadata.toolUseId && previous.model === metadata.model
         && previous.name === metadata.name && previous.parent === (metadata.parentAgentId ?? undefined)
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.target === binding.id
-          && call.resumeConfirmed && call.parent === previous.parent) : undefined;
+          && call.resumeConfirmed && call.resumeParent === previous.parent) : undefined;
       if (metadata && metadata.agentType === binding.role && (validId(metadata.toolUseId) || skillEntry || resumeEntry || nativeEntry)) {
         const id = skillEntry?.[0] ?? (pending.has(key(binding.sessionId, metadata.toolUseId))
           ? key(binding.sessionId, metadata.toolUseId) : resumeEntry?.[0] ?? key(binding.sessionId, metadata.toolUseId));
         const call = pending.get(id) ?? (nativeEntry ? { parent: undefined, tool: 'NativeFork', role: binding.role } : undefined);
-        reason = !call ? 'CALL' : (metadata.parentAgentId ?? undefined) !== call.parent ? 'PARENT' : 'ROLE';
-        if (call && (metadata.parentAgentId ?? undefined) === call.parent
+        const parent = resumeEntry?.[0] === id ? call.resumeParent : call?.parent;
+        reason = !call ? 'CALL' : (metadata.parentAgentId ?? undefined) !== parent ? 'PARENT' : 'ROLE';
+        if (call && (metadata.parentAgentId ?? undefined) === parent
           && (!call.role || call.role === binding.role)) {
           const selected = metadata.model;
           if ((['Agent', 'Task'].includes(call.tool) || call.selection !== undefined) && call.selection !== selected) fail('MODEL');
@@ -150,8 +162,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           const route = selected !== undefined && selected !== 'inherit' ? model(selected) : undefined;
           pending.delete(id);
           const selection = { route: selected === 'inherit' ? undefined : route ?? (Object.hasOwn(ROLE_MODELS, binding.role) ? ROLE_MODELS[binding.role] : undefined),
-            source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? 'verified-resume' : selected === 'inherit' ? 'native-inherit' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
-            sessionId: binding.sessionId, parent: call.parent,
+            source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
+            sessionId: binding.sessionId, parent,
             ...(metadata.name === 'code-review' && (nativeEntry || skillEntry || resumeEntry) && { review: true }) };
           const agentKey = key(binding.sessionId, binding.id);
           verified.delete(agentKey);

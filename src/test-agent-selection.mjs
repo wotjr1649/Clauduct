@@ -134,6 +134,34 @@ try {
 } finally { clearTimeout(linkTimer); }
 assert.throws(() => selection.linkSkill(linkA), /AGENT_SELECTION_UNVERIFIED/);
 
+// A verified child can wake its existing forked parent by ID or its exact native name.
+selection.remember(call('peer_child_origin'), 'session', 'skillA');
+snapshots.set('peer_child', metadata('peer_child_origin', undefined, { parentAgentId: 'skillA' }));
+await selection.resolve(binding('peer_child'));
+for (const [index, recipient] of ['skillA', 'code-review'].entries()) {
+  const toolUseId = `peer_send_${index}`;
+  selection.remember({ content: [{ type: 'tool_use', id: toolUseId, name: 'SendMessage',
+    input: { to: recipient, message: 'SYNTHETIC_PEER' } }] }, 'session', 'peer_child');
+  await assert.rejects(selection.resolve(binding('skillA'))); // no successful delivery proof yet
+  assert.throws(() => selection.linkResume({ sessionId: 'other', toolUseId, id: recipient, parent: 'peer_child' }));
+  assert.throws(() => selection.linkResume({ sessionId: 'session', toolUseId, id: recipient, parent: 'unknown' }));
+  assert.equal(selection.linkResume({ sessionId: 'session', toolUseId, id: recipient, parent: 'peer_child' }), true);
+  for (const change of [{ name: 'different' }, { model: 'opus' }, { parentAgentId: 'wrong' }, { stoppedByUser: true }]) {
+    snapshots.set('skillA', { agentType: 'general-purpose', name: 'code-review', spawnDepth: 1, ...change });
+    await assert.rejects(selection.resolve(binding('skillA')));
+  }
+  snapshots.set('skillA', { agentType: 'general-purpose', name: 'code-review', spawnDepth: 1 });
+  const parent = await selection.resolve(binding('skillA'));
+  assert.equal(parent.source, 'verified-peer-resume');
+  assert.equal(parent.parent, undefined); assert.equal(parent.review, true);
+  assert.equal(parent.route.model, 'gpt-5.6-luna');
+  await assert.rejects(selection.resolve(binding('skillA'))); // delivery proof consumed once
+}
+selection.remember({ content: [{ type: 'tool_use', id: 'unrelated_send', name: 'SendMessage',
+  input: { to: 'skillA', message: 'SYNTHETIC' } }] }, 'session', 'A');
+assert.equal(selection.linkResume({ sessionId: 'session', toolUseId: 'unrelated_send', id: 'skillA', parent: 'A' }), false);
+await assert.rejects(selection.resolve(binding('skillA')));
+
 // Exercise the real bounded filesystem reader with task-owned synthetic files.
 const root = await mkdtemp(fileURLToPath(new URL('./selection-fixture-', import.meta.url)));
 const sessionDir = join(root, 'session'), agentsDir = join(sessionDir, 'subagents');
@@ -290,6 +318,21 @@ try {
   assert.equal(received[4].model, 'gpt-5.6-sol');
   assert.equal(gateway.diagnostics().recentRequests.at(-1).selectionSource, 'verified-resume');
 
+  routes.remember(call('peer_gateway_origin'), 'session', 'fork_gateway');
+  snapshots.set('peer_gateway', metadata('peer_gateway_origin', undefined, { parentAgentId: 'fork_gateway' }));
+  // Resolve the sender before exercising its authenticated successful PostToolUse hook.
+  await routes.resolve(binding('peer_gateway'));
+  routes.remember({ content: [{ type: 'tool_use', id: 'peer_gateway_send', name: 'SendMessage',
+    input: { to: 'code-review', message: 'SYNTHETIC_PEER' } }] }, 'session', 'peer_gateway');
+  await registerBinding({ ...binding('fork_gateway'), stop: true }, source);
+  await registerBinding(binding('fork_gateway'), source);
+  const peerWaiting = post('fork_gateway');
+  await registerBinding(bindingFrom({ ...resumeHook, agent_id: 'peer_gateway', tool_use_id: 'peer_gateway_send',
+    tool_input: { to: 'code-review', message: 'SYNTHETIC_PEER' } }), source);
+  const peerResponse = await peerWaiting;
+  assert.equal(peerResponse.status, 200, await peerResponse.text());
+  assert.equal((await readRequestStatus(source)).recentRequests.at(-1).selectionSource, 'verified-peer-resume');
+
   routes.remember(call('cancel_origin', 'opus'), 'session');
   await registerBinding(binding('cancel_test'), source);
   const reading = new Promise(resolve => { onCancelRead = resolve; });
@@ -301,6 +344,6 @@ try {
   const survivingResponse = await survivor;
   assert.equal(survivingResponse.status, 200, await survivingResponse.text());
   assert.equal(await cancelled, 'AbortError');
-  assert.equal(received.length, 6);
+  assert.equal(received.length, 7);
 } finally { await gateway.close(); }
 process.stdout.write(JSON.stringify({ suite: 'agent-selection', passed: true, actualClaude: 0, externalRequests: 0 }) + '\n');

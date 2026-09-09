@@ -323,7 +323,7 @@ const ADAPTER_ERROR_CODES = new Set(['ITEM_INDEX_MISMATCH', 'SNAPSHOT_MISMATCH',
   'UNSUPPORTED_CONTENT', 'UNSUPPORTED_EVENT', 'UNSUPPORTED_FIELDS', 'UNSUPPORTED_OUTPUT']);
 
 // Validate streamed item snapshots while retaining only bounded item state, and expose text deltas early.
-export function createNativeResponse(prepared) {
+export function createNativeResponse(prepared, { deferText = false } = {}) {
   const state = { responseId: undefined, completed: undefined, inProgress: false,
     items: new Map(), ids: new Set(), responseBytes: 0, nextBlockIndex: 0,
     messageStart: undefined, failed: undefined, finished: false };
@@ -364,6 +364,7 @@ export function createNativeResponse(prepared) {
     need(!part.done, 'STREAM_ORDER');
     charge(item, Buffer.byteLength(event.delta));
     part.text += event.delta; part.deltas++;
+    if (deferText) return [];
     const frames = [];
     startMessage(frames);
     if (first) frames.push({ type: 'content_block_start', index: part.index, content_block: { type: 'text', text: '' } });
@@ -376,7 +377,7 @@ export function createNativeResponse(prepared) {
     const part = item.textParts[event.content_index];
     need(part && !part.done && part.text === event.text, 'SNAPSHOT_MISMATCH');
     part.done = true;
-    return [{ type: 'content_block_stop', index: part.index }];
+    return deferText ? [] : [{ type: 'content_block_stop', index: part.index }];
   };
   const contentPart = (event, item) => {
     need(item.kind === 'message' && id(event.item_id) && event.item_id === item.first.id
@@ -557,7 +558,7 @@ export function createNativeResponse(prepared) {
       });
       const deferred = [], content = [];
       textBlocks.sort((a, b) => a.streamed.index - b.streamed.index);
-      for (const { block, streamed } of textBlocks) {
+      for (const { block, streamed } of deferText ? [] : textBlocks) {
         const index = streamed.index;
         need(index === content.length, 'STREAM_ORDER');
         content.push(block);
@@ -565,6 +566,13 @@ export function createNativeResponse(prepared) {
       for (const entry of reasoningBlocks) {
         entry.stateItem.blockIndex = content.length;
         content.push(entry.block); deferred.push({ index: entry.stateItem.blockIndex, block: entry.block });
+      }
+      // Native Workflow reads only its last assistant block. Keep all response
+      // text together after opaque reasoning, without dropping or duplicating it.
+      if (deferText && textBlocks.length) {
+        const block = { type: 'text', text: textBlocks.map(entry => entry.block.text).join('\n') };
+        bounded(block, MAX_ITEM_BYTES);
+        deferred.push({ index: content.length, block }); content.push(block);
       }
       for (const entry of toolBlocks) {
         entry.stateItem.blockIndex = content.length;
@@ -579,7 +587,9 @@ export function createNativeResponse(prepared) {
       startMessage(frames);
       state.messageStart.message = { ...message, content: [], stop_reason: null, usage: { ...usage, output_tokens: 0 } };
       for (const { index, block } of deferred) {
-        frames.push({ type: 'content_block_start', index, content_block: block.type === 'tool_use' ? { ...block, input: {} } : block });
+        frames.push({ type: 'content_block_start', index, content_block: block.type === 'tool_use' ? { ...block, input: {} }
+          : block.type === 'text' ? { type: 'text', text: '' } : block });
+        if (block.type === 'text') frames.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } });
         if (block.type === 'tool_use') frames.push({ type: 'content_block_delta', index,
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } });
         frames.push({ type: 'content_block_stop', index });

@@ -8,7 +8,7 @@
 
 ### 작업 순서와 종료 조건
 
-최신 보완: local inline Workflow의 실행 관계와 nested metadata 연결을 구현했다. [보완 기록](audit-2026-09-09-workflow-link.md)의 로컬 검사는 통과했지만 변경 후 실제 native 성공은 미검증이다. 다음 단계는 새 실행기로 읽기 전용 Workflow 자식 1개를 실행하고 자식 Read·GPT 모델/effort·완료 복귀를 함께 확인하는 것이다. 아래 문서 선로드 순서는 이전 단계의 기록이다.
+최신 판정: c18a7379에서 Workflow metadata 연결, 자식 sol/high 및 Read 성공을 실제 확인했다. 그러나 마지막 reasoning-only 블록 때문에 Workflow result가 빈 문자열이었다. 검증된 Workflow 자식의 최종 text 전달 순서를 수정하고 로컬 회귀 검사를 통과했다. [실제 증거와 수정 기록](audit-2026-09-09-workflow-result.md). 다음은 새 실행기의 읽기 전용 Workflow 1회에서 비어 있지 않은 result·completed=true·네 모델 이름·완료 문자열의 메인 복귀 확인이다. 아래 문서 선로드 순서는 이전 단계의 기록이다.
 
 현재 우선 작업: 문서 선로드 → run-01 수정본 검사 → native Workflow 최소 시험 순서다. `--document-first`의 자식 실행 인자 연결·기존 환경/설정 보존·충돌 옵션 거부는 `test-launcher-native.mjs`에서 통과했고 dry-run도 확인했다. 실제 선로드 준수는 아직 미검증이다. 사용자 실행 시 최초 작업 도구 Read, 문서 전 선택적 Skill/Bash/Agent 부재, 범위 밖 쓰기 부재를 확인한다. 이후 run-01의 강화된 17개 테스트와 inherit 검토를 수행한다. 전역 plugin이나 guard는 변경하지 않는다.
 

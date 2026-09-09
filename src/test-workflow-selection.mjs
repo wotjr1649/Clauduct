@@ -115,6 +115,8 @@ try {
         { type: 'response.output_text.delta', output_index: 0, item_id: 'm', content_index: 0, delta: 'OK' },
         { type: 'response.output_text.done', output_index: 0, item_id: 'm', content_index: 0, text: 'OK' },
         { type: 'response.output_item.done', output_index: 0, item: { type: 'message', id: 'm', role: 'assistant', content: [{ type: 'output_text', text: 'OK' }] } },
+        { type: 'response.output_item.added', output_index: 1, item: { type: 'reasoning', id: 'rs_workflow', summary: [], encrypted_content: 'SYNTHETIC_OPAQUE' } },
+        { type: 'response.output_item.done', output_index: 1, item: { type: 'reasoning', id: 'rs_workflow', summary: [], encrypted_content: 'SYNTHETIC_OPAQUE' } },
         { type: 'response.completed', response: { id: 'r', status: 'completed', model: body.model, output: [],
           usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }
       ]; }, close: async () => {}, diagnostics: () => ({}) } });
@@ -126,7 +128,19 @@ try {
         headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
           'x-claude-code-session-id': sessionId, 'x-claude-code-agent-id': 'one' },
         body: JSON.stringify({ model: parentRoute.model, stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC_PRIVATE' }] }) });
-      assert.equal(response.status, 200, await response.text());
+      const wire = await response.text();
+      assert.equal(response.status, 200, wire);
+      const frames = wire.split('\n\n').filter(frame => frame.startsWith('event:')).map(frame => JSON.parse(frame.split('\ndata: ')[1]));
+      const blocks = [], yielded = [];
+      for (const frame of frames) {
+        if (frame.type === 'content_block_start') blocks[frame.index] = structuredClone(frame.content_block);
+        if (frame.type === 'content_block_delta' && frame.delta.type === 'text_delta') blocks[frame.index].text += frame.delta.text;
+        if (frame.type === 'content_block_stop') yielded.push(blocks[frame.index]);
+      }
+      assert.deepEqual(yielded.map(block => block.type), ['redacted_thinking', 'text']);
+      assert.equal(yielded.at(-1).text, 'OK');
+      assert.equal(frames.at(-2).delta.stop_reason, 'end_turn');
+      assert.equal(frames.at(-1).type, 'message_stop');
       assert.equal(seen.length, 1); assert.equal(seen[0].reasoning.effort, 'medium');
       const status = await readRequestStatus(env), record = status.recentRequests.at(-1);
       assert.equal(record.selectionSource, 'workflow-result'); assert.equal(record.success, true);

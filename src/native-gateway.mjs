@@ -214,7 +214,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         if (unregisteredAgentRequests === 1) onUnregisteredAgent?.();
       }
       upstream = true;
-      let response = createNativeResponse(prepared);
+      const responseOptions = { deferText: agentBinding?.selection?.source === 'workflow-result' };
+      let response = createNativeResponse(prepared, responseOptions);
       const emit = (frames, ping = false) => {
         if (!frames.length) return Promise.resolve();
         const work = writeTail.then(async () => {
@@ -262,7 +263,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         onRetry: () => {
           need(!responseStarted, 'RETRY_AFTER_OUTPUT');
           if (timing.retryScheduledMs.length < 5) timing.retryScheduledMs.push(elapsed());
-          response = createNativeResponse(prepared);
+          response = createNativeResponse(prepared, responseOptions);
         }
       });
       timing.transportFinishedMs = elapsed();

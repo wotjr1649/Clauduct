@@ -149,10 +149,44 @@ async function credentialTests() {
   await assert.rejects(missing(), error => error.code === 'CODEX_RELOGIN_REQUIRED');
 }
 
+function generalAgentTest() {
+  const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
+  const source = { CLAUDE_CONFIG_DIR: 'SYNTHETIC_NATIVE_CONFIG' }, before = JSON.stringify(source);
+  const options = launchOptions(['--gpt-agents', '--model', 'terra', '--effort', 'max']);
+  assert.equal(options.gptAgents, true); assert.deepEqual(options.forward, []);
+  const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected);
+  assert.equal(normal.args.includes('--agents'), false);
+  for (const verifyAgentModels of [false, true]) {
+    const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, [], { ...options, verifyAgentModels });
+    const definitions = JSON.parse(launch.args[launch.args.indexOf('--agents') + 1]);
+    assert.equal(launch.args.filter(value => value === '--agents').length, 1);
+    assert.equal(Object.keys(definitions).length, verifyAgentModels ? 10 : 5);
+    assert.deepEqual(launch.options, normal.options);
+    assert.equal(launch.args[launch.args.indexOf('--settings') + 1], normal.args[normal.args.indexOf('--settings') + 1]);
+    assert.equal(launch.args[launch.args.indexOf('--model') + 1], MODELS.terra.model);
+    assert.equal(launch.args[launch.args.indexOf('--effort') + 1], 'max');
+    for (const name of ['astra', 'sol', 'terra', 'luna', 'inherit']) {
+      const definition = definitions[`clauduct-${name}`];
+      assert.deepEqual(Object.keys(definition).sort(), ['description', 'prompt', 'tools', 'model', ...(name === 'inherit' ? [] : ['effort'])].sort());
+      assert.deepEqual(definition.tools, ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'Agent', 'TaskOutput', 'SendMessage']);
+      assert.equal(definition.model, name === 'inherit' ? name : MODELS[name].model);
+      assert.equal(definition.effort, name === 'inherit' ? undefined : MODELS[name].effort);
+      assert.equal(definition.prompt.includes('MODEL-PROBE-COMPLETED'), false);
+      if (verifyAgentModels) assert.deepEqual(definitions[`clauduct-probe-${name}`].tools, ['Read']);
+    }
+    assert.ok(['Explore', 'Plan', 'general-purpose'].every(role => !Object.hasOwn(definitions, role)));
+  }
+  assert.equal(JSON.stringify(source), before);
+  for (const args of [['--gpt-agents', '--gpt-agents'], ['--gpt-agents=1'], ['--gpt-agents', '--agents={}'],
+    ['--gpt-agents', '--settings={}'], ['--gpt-agents', '--system-prompt', 'SYNTHETIC']]) assert.throws(() => launchOptions(args));
+  assert.equal(launchOptions(['--', '--gpt-agents']).gptAgents, undefined);
+}
+
 optionTests();
 childRetryTest();
 autoCompactVerificationTest();
 agentModelVerificationTest();
+generalAgentTest();
 await credentialTests();
 process.stdout.write(JSON.stringify({ suite: 'launcher-native', passed: true, actualCredentialReads: 0,
   actualClaudeExecutions: 0, externalRequests: 0 }) + '\n');

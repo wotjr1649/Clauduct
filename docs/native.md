@@ -12,6 +12,26 @@ D:\AIDEV\Clauduct\clauduct.cmd --dry-run
 
 현재 프로젝트 폴더와 터미널을 native Claude 자식에 연결하며 SEND 입력이나 별도 gateway 실행이 필요하지 않습니다. `--dry-run`은 인증·소켓·Claude 실행 없이 구성을 표시합니다. 사용자 PATH/PowerShell 프로필은 변경하지 않았습니다. Windows Terminal의 PowerShell 7을 편의상 권장하나 cmd/Git Bash에서도 같은 Node gateway가 실행됩니다. shell 선택이 모델 지연·메모리 안정성을 개선한다는 측정 근거는 없습니다.
 
+### GPT 선택용 일반 작업 agent
+
+`clauduct --gpt-agents`로 시작하면 해당 자식 세션에만 일반 작업 agent 5개를 추가합니다. 메인 모델·effort는 평소처럼 실행 옵션이나 세션 안에서 선택하며, 이 옵션이 메인 값을 강제하지 않습니다. 일반 실행에는 추가하지 않으며 옵션 없이 다시 시작하면 추가 등록하지 않습니다. 전역 agent 파일은 생성하지 않습니다.
+
+| subagent_type | 모델·effort | selectionSource |
+|---|---|---|
+| clauduct-astra | astra/medium | definition-model |
+| clauduct-sol | sol/xhigh | definition-model |
+| clauduct-terra | terra/high | definition-model |
+| clauduct-luna | luna/max | definition-model |
+| clauduct-inherit | 생성 시점 직접 부모의 실제 모델·effort | definition-inherit |
+
+Agent에서 위 subagent_type을 선택하고 model 인수는 생략합니다. 예: `Agent(subagent_type="clauduct-sol", description="Review implementation", prompt="...")`. 이들은 자체 지침을 사용하는 일반 작업 agent이며 내장 Plan/Explore의 복제본이 아닙니다. 기존 Explore/general-purpose=luna/max, Plan=sol/xhigh는 그대로입니다. 기존 명시 model 인수가 있는 호출의 우선순위도 변경하지 않습니다.
+
+도구 목록은 Read, Grep, Glob, Bash, Edit, Write, Agent, TaskOutput, SendMessage입니다. native가 현재 문맥에서 제공하는 도구와 기존 권한 검사 아래에서만 사용할 수 있습니다. permissionMode, hook, MCP, 전역 설정을 추가/완화하지 않습니다. 상속 모델과 작업 권한의 상속은 다른 문제이며 도구가 보인다고 외부 쓰기가 허용되는 것은 아닙니다. 임의 --agents 입력은 계속 차단합니다.
+
+--verify-agent-models와 함께 켜면 별도 이름의 Read 전용 시험 정의도 유지하며, 단일 --agents JSON에 두 집합을 합칩니다. 선택기는 실행기가 생성한 정의의 모델·effort만 불변 복사하고 기존 생성 호출/metadata/세션/역할/부모 검증 후 적용합니다. 정의 자체를 요청이나 대화에서 받아들이지 않습니다. 로컬 검증 완료, 새 일반 작업용 정의의 실제 native 수행은 미검증입니다.
+
+### 읽기 전용 시험용 agent
+
 `--verify-agent-models`는 명시적으로 허용된 세션 한정 시험 옵션입니다. `clauduct-probe-astra/sol/terra/luna/inherit`라는 별도 agent 5개를 native `--agents` 정의로 전달합니다. 각 정의의 도구는 Read 하나, maxTurns는 3이며 대상은 이 실행기의 src/models.mjs입니다. 네 GPT 모델은 모델 기본 effort를 정의하고 inherit는 모델만 inherit로 정의합니다. 기존 내장 역할·settings·환경과 임의 사용자 `--agents` 차단은 유지합니다. 옵션 없이 다시 시작하면 시험 정의를 추가하지 않습니다. 전역/프로젝트 agent 파일은 생성하지 않지만 native 세션 기록 자체가 남지 않는다는 뜻은 아닙니다.
 
 사용자 실행은 원하는 메인 모델·effort를 선택한 기존 명령에 `--verify-agent-models`만 추가합니다. 이 옵션은 메인 모델을 강제하지 않습니다. inherit 기대값은 생성 호출 시점의 실제 부모 모델·effort이며 고정된 astra/max가 아닙니다. 시험 agent 호출에서는 subagent_type으로 위 이름을 선택하고 model 인수는 생략해야 합니다. 등록 정의의 inherit 의도와 검증된 생성 호출을 연결해 부모 snapshot을 적용하며 진단은 definition-inherit입니다. 이 수정은 로컬 검증됐고 실제 native 재검증은 남아 있습니다. 일반 Agent(model=GPT/inherit) 인터페이스의 구현 완료는 아닙니다. 요청별 status를 함께 수집하고 불일치를 숨기거나 별칭으로 대체하지 않습니다. sessionRef는 불투명 상관관계 값이며 native 세션 UUID와 다릅니다.

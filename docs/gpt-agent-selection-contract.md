@@ -2,7 +2,7 @@
 
 이 문서는 사용자가 확정한 수용 기준이며 현재 구현 완료를 뜻하지 않는다.
 
-최신 상태: 정의 기반 inherit와 역할 고정값의 실제 성공은 맨 아래 2f96f1df 기록 참조. 일반 개발용 호출 방식은 아직 미확정이다. 앞선 조사·시험 기록은 당시 상태를 보존한다.
+최신 상태: 정의 기반 inherit와 역할 고정값은 2f96f1df에서 실제 성공했다. 일반 개발용 호출 방식은 승인 후 --gpt-agents로 구현·로컬 검증했고 실제 수행은 남아 있다. 앞선 조사·시험 기록은 당시 상태를 보존한다.
 
 ## 선택 의미
 
@@ -99,3 +99,13 @@ Verified: 등록된 시험 정의의 모델·effort 상속과 기존 일반 역�
 설치 2.1.266 정의 parser는 자체 prompt를 요구하며, 확인한 스키마에는 기존 내장 agent를 extends하는 필드가 없다. [공식 문서](https://code.claude.com/docs/en/sub-agents)도 사용자 정의 agent의 자체 시스템 프롬프트와 도구 설정을 설명한다. 따라서 모델별 이름만 붙여 생성한 일반 agent를 native Plan/Explore의 동일한 구현으로 간주하지 않는다.
 
 검토안(미승인·미구현): 기존 내장 역할은 변경하지 않고, 별도 명시 옵션에서 세션 한정 일반 작업용 clauduct-astra/sol/terra/luna/inherit 정의를 제공한다. Agent의 model 인수 대신 해당 subagent_type 선택으로 GPT 모델을 선택한다. 모델 정책·관계 검증·부모 snapshot은 재사용한다. 이는 Plan/Explore의 model 인수 확장과는 다른 인터페이스이며 그 요구를 자동 충족한 것으로 처리하지 않는다. 일반 작업 도구를 제공하는 등록은 현재 Read 전용 시험 권한을 넘으므로 정확한 범위를 사용자와 확정하기 전 적용하지 않는다. 전역 설정·임의 --agents 차단은 유지한다.
+
+## 승인된 일반 작업용 인터페이스 구현
+
+사용자가 위 별도 활성화 옵션과 일반 개발 도구 제공을 승인했다. --gpt-agents가 세션 한정 일반 작업용 정의 5개를 생성하며, 사용법·도구 목록·권한 범위는 [native 경로 문서](native.md)의 일반 작업 agent 절에 정리했다. 기존 내장 역할이나 Read 전용 시험 정의를 교체하지 않는다.
+
+선택기는 시작 시 등록 정의의 명시 모델·effort를 검증·불변 복사하고, 그 정의를 선택한 Agent/Task 생성 호출에 연결한다. 기존 metadata.model과 원본 호출 선택값의 일치 검사는 유지한다. 정의 기반 직접 선택은 definition-model, 부모 snapshot 상속은 definition-inherit로 출력한다. SendMessage 재개와 완료 복귀는 원래 선택을 보존한다. 새 라이브러리, plugin/MCP/hook/permissionMode 또는 전역 설정은 추가하지 않았다.
+
+Verified: test-launcher-native.mjs와 test-agent-selection.mjs 통과. 실제 실행 인자 JSON으로 일반 5개/시험 포함 10개 등록, 기존 설정·환경·메인 선택 불변, 중복/값 첨부 옵션 및 임의 --agents 거부, 정확한 도구 필드, 네 모델별 정의 선택, 일반 inherit·손자 상속·재개를 검사했다. native enum을 유지한 loopback 요청에서 네 일반 모델의 definition-model 및 비기본 effort의 definition-inherit, 기존 일반 역할/Plan 고정값을 각 두 병렬 요청과 status로 확인했다. completion 46개, gateway 24개, native-protocol도 통과했다. 일반/시험 동시 dry-run은 main terra/max 유지, 이름 10개, credentialReads=0, childStarted=false, globalWrites=0이었다.
+
+Not verified: 새 일반용 이름의 실제 native 로딩·작업·쓰기 도구 및 다단계 위임 수행. symlink 검사는 기존 제한으로 미실행이다. 등록 스키마/로컬 프로토콜 검증을 실제 native 도구 실행 증거로 대신하지 않는다. 이전 시험 정의의 실제 성공은 보존하되 새 일반 인터페이스 전체 완료로 확대하지 않는다.

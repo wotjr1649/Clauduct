@@ -25,7 +25,7 @@
 | 범위 | 현 상태 | 다음 검사 |
 |---|---|---|
 | 일반 대화·도구 왕복 | Read 실증과 이후 사용자 1~6 통과 보고 보존. 모든 도구의 완전한 행렬은 아님 | Read/Edit/Write/Bash, tool search, 설치 도구의 모델 선택과 native 권한 실행을 분리해 목록화. 로컬 fixture로 검증하고 외부 쓰기는 자동 실행하지 않음 |
-| 모델 선택 | 8884c607에서 네 GPT 시험 정의 실제 반환 확인. 2f96f1df에서 terra/max definition-inherit 및 일반 역할 luna/max·Plan sol/xhigh 실제 성공 | [최신 계약과 증거](gpt-agent-selection-contract.md). 일반 개발용 직접 선택 인터페이스와 등록 범위 확정이 다음 단계. Claude 별칭 대체 검증은 제외. UI 배너를 backend 증거로 사용하지 않음 |
+| 모델 선택 | 네 GPT 시험 정의와 2f96f1df의 비기본 effort 상속·기존 고정 역할 실제 성공. 승인된 --gpt-agents 일반용 인터페이스 구현·로컬 검증 | [최신 계약과 증거](gpt-agent-selection-contract.md). 새 일반용 agent의 실제 native 작업·쓰기·위임 확인이 남음. Claude 별칭 대체 검증은 제외. UI 배너를 backend 증거로 사용하지 않음 |
 | 내장 review/skill/fork | low와 high 최종 반환 확인. high 자식 완료 알림 복귀 오류 남음 | 모든 review 수준을 low/high 성공만으로 통과 처리하지 않음. 공통 코드 검사는 재사용하고 수준별로 다른 실행 경로만 실제 검사 |
 | 압축·컨텍스트 | 아래 실제 증거 표 참조 | 500K 정책 전달과 backend 실제 용량을 구분. 기본 400K와 개별 자식 자동 압축은 미확인. 비용 큰 증거는 합성 결과와 구분해 보류 가능하되 통과 표시 금지 |
 | 스트리밍·재시도·취소 | 긴 low 요청 ping 41회 완료, 로컬 retry/취소 검사 | 텍스트 조기 전달, 도구 최종 검증 전 비전달, 실제 내용 전 최대 5회 재시도, 내용 전달 후 명시적 재개, backpressure 및 종료 정리 보존 |

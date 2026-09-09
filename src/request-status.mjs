@@ -53,7 +53,7 @@ export async function readRequestStatus(env) {
     requestedModel: Object.values(MODELS).some(model => model.model === row?.requestedModel) ? row.requestedModel : null,
     effort: EFFORTS.includes(row?.effort) ? row.effort : null,
     requestedEffort: EFFORTS.includes(row?.requestedEffort) ? row.requestedEffort : null,
-    selectionSource: ['explicit-metadata', 'role-default', 'native-inherit', 'definition-inherit', 'skill-result', 'verified-resume', 'verified-peer-resume', 'verified-completion-resume', 'native-fork'].includes(row?.selectionSource) ? row.selectionSource : null,
+    selectionSource: ['explicit-metadata', 'role-default', 'native-inherit', 'definition-inherit', 'definition-model', 'skill-result', 'verified-resume', 'verified-peer-resume', 'verified-completion-resume', 'native-fork'].includes(row?.selectionSource) ? row.selectionSource : null,
     purpose: ['compact-template', 'conversation'].includes(row?.purpose) ? row.purpose : null,
     compactShape: row?.compactShape ? {
       lastRole: ['user', 'assistant', 'other'].includes(row.compactShape.lastRole) ? row.compactShape.lastRole : 'other',

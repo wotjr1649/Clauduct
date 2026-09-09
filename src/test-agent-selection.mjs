@@ -16,10 +16,28 @@ const metadata = (toolUseId, model, extra = {}) => ({ agentType: 'general-purpos
   ...(model === undefined ? {} : { model }), ...extra });
 let snapshots = new Map();
 const probeLaunch = interactiveLaunch({ port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) },
-  {}, 'D:/SYNTHETIC_PROJECT', MODELS.luna, [], { verifyAgentModels: true });
+  {}, 'D:/SYNTHETIC_PROJECT', MODELS.luna, [], { verifyAgentModels: true, gptAgents: true });
 const agentDefinitions = JSON.parse(probeLaunch.args[probeLaunch.args.indexOf('--agents') + 1]);
+for (const definition of [{}, { model: null }, { model: 'unknown' }, { model: MODELS.sol.model, effort: 'invalid' }]) {
+  assert.throws(() => createAgentSelection({ agentDefinitions: { invalid: definition } }));
+}
 const probeRole = 'clauduct-probe-inherit';
 const definitionSelection = createAgentSelection({ agentDefinitions, timeoutMs: 10, readMetadata: async b => snapshots.get(b.id) });
+for (const [name, expected] of Object.entries(MODELS)) {
+  const id = `general_${name}`, role = `clauduct-${name}`;
+  definitionSelection.remember(call(id, undefined, role), 'session', undefined, { model: MODELS.luna.model, effort: 'low' });
+  snapshots.set(id, metadata(id, undefined, { agentType: role }));
+  const chosen = await definitionSelection.resolve(binding(id, { role }));
+  assert.deepEqual(chosen.route, expected); assert.equal(chosen.source, 'definition-model');
+  assert.throws(() => { chosen.route.effort = 'low'; }, TypeError);
+}
+definitionSelection.remember(call('general_leaf', undefined, 'clauduct-inherit'), 'session', 'general_sol', MODELS.sol);
+snapshots.set('general_leaf', metadata('general_leaf', undefined, { agentType: 'clauduct-inherit', parentAgentId: 'general_sol' }));
+assert.deepEqual((await definitionSelection.resolve(binding('general_leaf', { role: 'clauduct-inherit' }))).route, MODELS.sol);
+definitionSelection.remember({ content: [{ type: 'tool_use', id: 'general_resume', name: 'SendMessage',
+  input: { to: 'general_sol', message: 'SYNTHETIC' } }] }, 'session', undefined, MODELS.luna);
+definitionSelection.linkResume({ sessionId: 'session', toolUseId: 'general_resume', id: 'general_sol' });
+assert.deepEqual((await definitionSelection.resolve(binding('general_sol', { role: 'clauduct-sol' }))).route, MODELS.sol);
 definitionSelection.remember(call('definition_origin', undefined, probeRole), 'session', undefined,
   { model: 'gpt-5.6-luna', effort: 'high' });
 snapshots.set('definition_child', metadata('definition_origin', undefined, { agentType: probeRole }));
@@ -473,7 +491,9 @@ try {
   for (const [index, role, expected, effort, selectionSource] of [
     [0, probeRole, 'gpt-5.6-luna', 'high', 'definition-inherit'],
     [1, 'general-purpose', 'gpt-5.6-luna', 'max', 'role-default'],
-    [2, 'Plan', 'gpt-5.6-sol', 'xhigh', 'role-default']
+    [2, 'Plan', 'gpt-5.6-sol', 'xhigh', 'role-default'],
+    [3, 'clauduct-inherit', 'gpt-5.6-luna', 'high', 'definition-inherit'],
+    ...Object.entries(MODELS).map(([name, model], i) => [i + 4, `clauduct-${name}`, model.model, model.effort, 'definition-model'])
   ]) {
     const id = `definition_gateway_${index}`;
     gatewayCall = { id, role };

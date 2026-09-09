@@ -45,8 +45,12 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     res.end(JSON.stringify(value));
   }
   async function readBody(req, limit, controller) {
+    controller.signal.throwIfAborted();
     activeBodies++;
-    const timer = setTimeout(() => { controller.abort(); req.destroy(new NativeError('REQUEST_TIMEOUT')); }, 300000);
+    const abort = () => req.destroy(controller.signal.reason instanceof NativeError
+      ? controller.signal.reason : new NativeError('CANCELLED'));
+    controller.signal.addEventListener('abort', abort, { once: true });
+    const timer = setTimeout(() => controller.abort(new NativeError('REQUEST_TIMEOUT')), 300000);
     try {
       let bytes = 0, raw = ''; const decoder = new TextDecoder('utf-8', { fatal: true });
       for await (const chunk of req) {
@@ -54,7 +58,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       }
       raw += decoder.decode();
       try { return JSON.parse(raw); } catch { throw new NativeError('INVALID_JSON'); }
-    } finally { clearTimeout(timer); activeBodies--; }
+    } finally { clearTimeout(timer); controller.signal.removeEventListener('abort', abort); activeBodies--; }
   }
   async function handle(req, res, controller) {
     requests++;
@@ -63,7 +67,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     const stopHeartbeat = () => { if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; activeHeartbeats--; } };
     const started = performance.now();
     const elapsed = () => Math.round((performance.now() - started) * 100) / 100;
-    const abort = () => { if (!res.writableFinished) { if (timing && !closing) timing.clientDisconnected = true; controller.abort(); } };
+    const abort = () => { if (!res.writableFinished) { if (timing && !closing && !controller.signal.aborted) timing.clientDisconnected = true; controller.abort(); } };
     res.once('close', abort); req.on('error', abort); req.once('aborted', abort); res.on('error', abort);
     try {
       const names = req.rawHeaders.filter((_, i) => i % 2 === 0).map(name => name.toLowerCase());
@@ -159,16 +163,18 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       recentRequests.push(timing);
       lifetime.started++;
       if (recentRequests.length > 16) recentRequests.shift();
-      release = await admission.acquire(controller.signal);
-      timing.admittedMs = elapsed();
-      let doc = await readBody(req, NATIVE_LIMITS.requestBytes, controller);
-      timing.requestedModel = Object.values(MODELS).find(item => item.model === doc?.model)?.model
-        ?? (typeof doc?.model === 'string' && Object.hasOwn(MODELS, doc.model) ? MODELS[doc.model].model : null);
+      // Pin the registration before either admission or body reads can yield.
       const agent = req.headers['x-claude-code-agent-id'];
-      stage = 'selection';
       const agentBinding = agents.get(agent), role = agentBinding?.role;
       activeAgent = agentBinding;
       activeAgent?.requests.add(controller);
+      release = await admission.acquire(controller.signal);
+      timing.admittedMs = elapsed();
+      let doc = await readBody(req, NATIVE_LIMITS.requestBytes, controller);
+      controller.signal.throwIfAborted();
+      timing.requestedModel = Object.values(MODELS).find(item => item.model === doc?.model)?.model
+        ?? (typeof doc?.model === 'string' && Object.hasOwn(MODELS, doc.model) ? MODELS[doc.model].model : null);
+      stage = 'selection';
       if (agentSelection && agent !== undefined) {
         if (agentBinding?.selectionPending) {
           agentBinding.selectionWork ??= agentSelection.resolve({ ...agentBinding.selectionBinding,

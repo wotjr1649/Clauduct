@@ -30,7 +30,8 @@ function frames(body, malformed = false) {
   ];
 }
 const wire = events => events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
-function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, signal = AbortSignal.timeout(5000), idleMs, headers = {} } = {}) {
+function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, signal = AbortSignal.timeout(5000), idleMs, headers = {},
+  sendBody = (req, raw) => req.end(raw) } = {}) {
   const raw = JSON.stringify(body);
   return new Promise((resolve, reject) => {
     const req = request({ host: '127.0.0.1', port: gateway.port, method: 'POST', path, agent: false, signal,
@@ -40,7 +41,7 @@ function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, 
       res.on('end', () => resolve({ status: res.statusCode, text }));
     });
     if (idleMs) req.setTimeout(idleMs, () => req.destroy(new Error('SYNTHETIC_CLIENT_IDLE')));
-    req.on('error', reject); req.end(raw);
+    req.on('error', reject); sendBody(req, raw);
   });
 }
 const ample = { freeBytes: () => 16 * 1024 ** 3 };
@@ -48,6 +49,54 @@ const emptyStages = { request: 0, selection: 0, prepare: 0, review: 0, upstream:
 let passed = 0;
 const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
 try {
+  for (const phase of ['admission', 'body']) for (const stop of [true, false]) {
+    const selection = createAgentSelection({ timeoutMs: 10,
+      readMetadata: async () => ({ agentType: 'general-purpose', toolUseId: 'early' }) });
+    selection.remember({ content: [{ type: 'tool_use', id: 'early', name: 'Agent',
+      input: { subagent_type: 'general-purpose' } }] }, 'session');
+    let free = phase === 'admission' ? 0 : 16 * 1024 ** 3, sends = 0, finishBody;
+    const gateway = await startNativeGateway({ agentSelection: selection,
+      admissionOptions: { freeBytes: () => free, pollMs: 5 }, transport: {
+        send: async body => { sends++; return frames(body); }, close: async () => {}, diagnostics: () => ({}) } });
+    const register = stopping => call(gateway, { path: '/clauduct/agents', body: {
+      id: 'early', role: 'general-purpose', stop: stopping, sessionId: 'session' } });
+    const headers = { 'x-claude-code-session-id': 'session', 'x-claude-code-agent-id': 'early' };
+    const until = async predicate => {
+      const deadline = Date.now() + 1000;
+      while (!predicate()) {
+        assert.ok(Date.now() < deadline, `${phase}: expected state transition`);
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    };
+    let pending;
+    try {
+      assert.equal((await register(false)).status, 200);
+      pending = call(gateway, { headers, ...(phase === 'body' && { sendBody: (req, raw) => {
+        req.write(raw.slice(0, 1)); finishBody = () => req.end(raw.slice(1));
+      } }) }).then(result => result, error => ({ error }));
+      await until(() => phase === 'admission' ? gateway.diagnostics().admission.queued === 1 : gateway.diagnostics().activeBodies === 1);
+      assert.equal((await register(stop)).status, 200);
+      await until(() => gateway.diagnostics().lifetime.failed === 1);
+      const result = await pending;
+      if (phase === 'body') assert.equal(result.error?.code, 'ECONNRESET');
+      else { assert.equal(result.status, 400); assert.match(result.text, /CANCELLED/); }
+      assert.equal(sends, 0);
+      assert.equal(gateway.diagnostics().activeBodies, 0);
+      assert.equal(gateway.diagnostics().admission.queued, 0);
+      assert.equal(gateway.diagnostics().admission.active, 0);
+      assert.equal(gateway.diagnostics().activeTimers, 0);
+      assert.equal(gateway.diagnostics().recentRequests.at(-1).failureCategory, 'CANCELLED');
+      assert.notEqual(gateway.diagnostics().recentRequests.at(-1).clientDisconnected, true);
+      free = 16 * 1024 ** 3;
+      if (stop) assert.equal((await register(false)).status, 200);
+      assert.equal((await call(gateway, { headers })).status, 200);
+      assert.equal(sends, 1); passed++;
+    } finally {
+      free = 16 * 1024 ** 3; finishBody?.();
+      await pending;
+      await gateway.close();
+    }
+  }
   for (const stop of [true, false]) for (const streaming of [false, true]) {
     const selection = createAgentSelection({ timeoutMs: 10,
       readMetadata: async binding => ({ agentType: 'general-purpose', toolUseId: binding.id }) });

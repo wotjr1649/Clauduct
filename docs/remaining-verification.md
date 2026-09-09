@@ -8,11 +8,11 @@
 
 ### 작업 순서와 종료 조건
 
-최신 판정: c18a7379에서 Workflow metadata 연결, 자식 sol/high 및 Read 성공을 실제 확인했다. 그러나 마지막 reasoning-only 블록 때문에 Workflow result가 빈 문자열이었다. 검증된 Workflow 자식의 최종 text 전달 순서를 수정하고 로컬 회귀 검사를 통과했다. [실제 증거와 수정 기록](audit-2026-09-09-workflow-result.md). 다음은 새 실행기의 읽기 전용 Workflow 1회에서 비어 있지 않은 result·completed=true·네 모델 이름·완료 문자열의 메인 복귀 확인이다. 아래 문서 선로드 순서는 이전 단계의 기록이다.
+최신 판정: 08594a7e에서 local inline Workflow 기본 자식의 sol/high·Read·네 모델 이름·완료 문구·completed=true·메인 복귀가 실제 통과했다. [실제 성공과 후속 범위](audit-2026-09-09-workflow-success.md). 다음은 단일 읽기 전용 Workflow 자식의 명시 GPT model/effort 선택이다. 다중 자식·병렬은 그 뒤에 별도로 검증한다. 전체 native 경로 완료를 뜻하지 않는다.
 
-현재 우선 작업: 문서 선로드 → run-01 수정본 검사 → native Workflow 최소 시험 순서다. `--document-first`의 자식 실행 인자 연결·기존 환경/설정 보존·충돌 옵션 거부는 `test-launcher-native.mjs`에서 통과했고 dry-run도 확인했다. 실제 선로드 준수는 아직 미검증이다. 사용자 실행 시 최초 작업 도구 Read, 문서 전 선택적 Skill/Bash/Agent 부재, 범위 밖 쓰기 부재를 확인한다. 이후 run-01의 강화된 17개 테스트와 inherit 검토를 수행한다. 전역 plugin이나 guard는 변경하지 않는다.
+문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 
-Workflow는 별도 native 도구다. 설치 2.1.266의 번들 작성 참조에서 agent()의 model/effort/agentType 옵션을 확인했지만 실제 Workflow 자식 metadata·GPT 라우팅·완료 복귀는 미검증이다. 앞 단계 통과 후 사용자 운영의 읽기 전용 자식 1개 시험으로 증거를 확보하고, 그 뒤에만 다중 자식 관계를 검토한다. 기존 Agent 정의 성공을 Workflow 성공으로 대체하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.
+Workflow는 별도 native 도구다. 기본 자식의 실제 성공을 명시 선택·custom agentType·중첩·resume 지원으로 확대하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.
 
 모델 선택의 최신 수용 기준은 [GPT Agent 선택 계약](gpt-agent-selection-contract.md)이다. 직접 GPT 선택과 명시 inherit의 부모 모델·effort 상속은 필수이며, Claude 별칭 대체 검증과 전체 모델 목록 확장은 이번 범위에서 제외한다.
 

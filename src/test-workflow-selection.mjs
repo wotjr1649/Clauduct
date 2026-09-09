@@ -105,7 +105,11 @@ try {
     await writeFile(join(directory, 'journal.jsonl'), 'x'.repeat(131073));
     await assert.rejects(current.resolve(binding('one')), error => error.selectionReason === 'SIZE'); passed++;
   }
-  {
+  for (const scenario of [
+    { model: parentRoute.model, effort: undefined, expected: parentRoute },
+    { model: 'gpt-5.6-luna', effort: 'high', expected: { model: 'gpt-5.6-luna', effort: 'high' } },
+    { model: 'gpt-5.6-terra', effort: 'xhigh', expected: { model: 'gpt-5.6-terra', effort: 'xhigh' } }
+  ]) {
     const current = selection(); await child('one'); await journal([row('one')]);
     const seen = [];
     const gateway = await startNativeGateway({ agentSelection: current, admissionOptions: { freeBytes: () => 16 * 1024 ** 3 },
@@ -127,7 +131,8 @@ try {
       const response = await fetch(`${env.ANTHROPIC_BASE_URL}/v1/messages`, { method: 'POST', signal: AbortSignal.timeout(5000),
         headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
           'x-claude-code-session-id': sessionId, 'x-claude-code-agent-id': 'one' },
-        body: JSON.stringify({ model: parentRoute.model, stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC_PRIVATE' }] }) });
+        body: JSON.stringify({ model: scenario.model, ...(scenario.effort && { output_config: { effort: scenario.effort } }),
+          stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC_PRIVATE' }] }) });
       const wire = await response.text();
       assert.equal(response.status, 200, wire);
       const frames = wire.split('\n\n').filter(frame => frame.startsWith('event:')).map(frame => JSON.parse(frame.split('\ndata: ')[1]));
@@ -141,10 +146,12 @@ try {
       assert.equal(yielded.at(-1).text, 'OK');
       assert.equal(frames.at(-2).delta.stop_reason, 'end_turn');
       assert.equal(frames.at(-1).type, 'message_stop');
-      assert.equal(seen.length, 1); assert.equal(seen[0].reasoning.effort, 'medium');
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0].model, scenario.expected.model); assert.equal(seen[0].reasoning.effort, scenario.expected.effort);
       const status = await readRequestStatus(env), record = status.recentRequests.at(-1);
       assert.equal(record.selectionSource, 'workflow-result'); assert.equal(record.success, true);
       assert.equal(record.role, 'workflow-subagent');
+      assert.equal(record.model, scenario.expected.model); assert.equal(record.effort, scenario.expected.effort);
       assert.equal(record.roleRegistered, true); assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }

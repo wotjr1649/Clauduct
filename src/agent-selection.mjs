@@ -2,6 +2,7 @@ import { open, realpath } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { selectModel, ROLE_MODELS } from './models.mjs';
+import { createWorkflowSelection, workflowDigest } from './workflow-selection.mjs';
 
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 export const SELECTION_FAILURES = Object.freeze(['IDENTITY', 'PATH', 'SIZE', 'ACCESS', 'IO', 'MISSING', 'PARSE', 'CALL', 'ROLE', 'PARENT', 'MODEL', 'UNKNOWN']);
@@ -33,6 +34,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     return [role, definition.model === 'inherit' ? 'inherit' : Object.freeze(selectModel(definition.model, definition.effort))];
   }));
   const pending = new Map();
+  const workflows = createWorkflowSelection(projectsRoot);
   const verified = new Map();
   const startedAt = Date.now();
   const key = (session, call) => `${session}:${call}`;
@@ -107,6 +109,11 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         skill: typeof input.skill === 'string' && input.skill.length <= 200 ? input.skill : undefined,
         target: block.name === 'SendMessage' && validId(input.to) && typeof input.message === 'string' && input.message.trim() ? input.to : undefined,
         session, created: now };
+      if (block.name === 'Workflow' && typeof input.script === 'string' && Buffer.byteLength(input.script) <= 524288
+        && input.scriptPath === undefined && input.name === undefined && input.resumeFromRunId === undefined) {
+        if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
+        call.workflow = { digest: workflowDigest(input.script), route: Object.freeze(selectModel(parentRoute?.model, parentRoute?.effort)) };
+      }
       // Native peers may address their parent by name; resolve only that verified relationship.
       if (call.target) {
         call.recipient = call.target;
@@ -129,6 +136,12 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       || call.parent !== link.parent || (call.child !== undefined && call.child !== link.id)) fail('CALL');
     if ([...pending.values()].some(other => other !== call && other.session === link.sessionId && other.child === link.id)) fail('CALL');
     call.child = link.id;
+  }
+  function linkWorkflow(link) {
+    const id = key(link.sessionId, link.toolUseId), call = pending.get(id);
+    if (!call || call.tool !== 'Workflow') fail('CALL');
+    workflows.link(link, call);
+    pending.delete(id);
   }
   function linkResume(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));
@@ -227,6 +240,19 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     let reason = 'MISSING';
     do {
       signal?.throwIfAborted();
+      if (binding.role === 'workflow-subagent') {
+        try { return await workflows.resolve(binding, signal); }
+        catch (error) {
+          signal?.throwIfAborted();
+          if (error.selectionReason && error.selectionReason !== 'MISSING') throw error;
+          if (error.code === 'EACCES' || error.code === 'EPERM') fail('ACCESS');
+          if (!error.selectionReason && error.code !== 'ENOENT' && !(error instanceof SyntaxError)) failIO(error);
+          reason = error instanceof SyntaxError ? 'PARSE' : 'MISSING';
+        }
+        if (Date.now() >= deadline) break;
+        await delay(Math.min(25, deadline - Date.now()), undefined, { signal });
+        continue;
+      }
       evidence.stage = verified.has(key(binding.sessionId, binding.id)) ? 'PARENT_METADATA_READ' : null;
       let metadata;
       try { metadata = await read(binding); }
@@ -331,5 +357,5 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       throw error;
     }
   }
-  return { remember, linkSkill, linkResume, begin, delivered, resolve: resolveWithDiagnostics };
+  return { remember, linkSkill, linkWorkflow, linkResume, begin, delivered, resolve: resolveWithDiagnostics };
 }

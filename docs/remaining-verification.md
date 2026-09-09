@@ -8,6 +8,8 @@
 
 ### 작업 순서와 종료 조건
 
+최신 보완: local inline Workflow의 실행 관계와 nested metadata 연결을 구현했다. [보완 기록](audit-2026-09-09-workflow-link.md)의 로컬 검사는 통과했지만 변경 후 실제 native 성공은 미검증이다. 다음 단계는 새 실행기로 읽기 전용 Workflow 자식 1개를 실행하고 자식 Read·GPT 모델/effort·완료 복귀를 함께 확인하는 것이다. 아래 문서 선로드 순서는 이전 단계의 기록이다.
+
 현재 우선 작업: 문서 선로드 → run-01 수정본 검사 → native Workflow 최소 시험 순서다. `--document-first`의 자식 실행 인자 연결·기존 환경/설정 보존·충돌 옵션 거부는 `test-launcher-native.mjs`에서 통과했고 dry-run도 확인했다. 실제 선로드 준수는 아직 미검증이다. 사용자 실행 시 최초 작업 도구 Read, 문서 전 선택적 Skill/Bash/Agent 부재, 범위 밖 쓰기 부재를 확인한다. 이후 run-01의 강화된 17개 테스트와 inherit 검토를 수행한다. 전역 plugin이나 guard는 변경하지 않는다.
 
 Workflow는 별도 native 도구다. 설치 2.1.266의 번들 작성 참조에서 agent()의 model/effort/agentType 옵션을 확인했지만 실제 Workflow 자식 metadata·GPT 라우팅·완료 복귀는 미검증이다. 앞 단계 통과 후 사용자 운영의 읽기 전용 자식 1개 시험으로 증거를 확보하고, 그 뒤에만 다중 자식 관계를 검토한다. 기존 Agent 정의 성공을 Workflow 성공으로 대체하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.

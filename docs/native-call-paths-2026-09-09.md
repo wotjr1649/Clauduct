@@ -28,7 +28,7 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | SendMessage 복귀 | native 성공 PostToolUse → gateway | 기존 모델·부모·reviewContext, 1회 소비 | verified-resume 및 verified-peer-resume 실제 부분 통과 |
 | completed task-notification 복귀 | native JSONL origin·최종 응답 ID → gateway | 기존 정책, verified-completion-resume | c19c8b14 실제 성공 확인(adb4d26), 복수·실패 알림은 범위 밖 |
 | 결합 완료/failed/killed/blocked 알림 복귀 | native wake router | 완료 증거로 사용하지 않음 | 신규 완료 복귀 경로에서 미지원, 조용한 성공 처리 없음 |
-| Workflow | native Workflow 실행 후 생성 경로에 따라 다름 | 호출을 기억하지만 전용 workflow 생성 증거 연결은 없음 | 전체 호환성 미검증. Agent/Task 하위 호출 성공으로 대체하지 않음 |
+| Workflow | native Workflow → local inline run → workflow-subagent | 인증된 PostToolUse의 호출·script 해시·run 경로와 live Start, journal, nested metadata를 연결 | 로컬 합성 검사 통과, 변경 후 실제 실행 미검증. 중첩·resume·custom agentType은 지원 범위 밖. [보완 기록](audit-2026-09-09-workflow-link.md) |
 | /compact·자동 compact | 명령은 local, 내부 querySource=compact는 모델 호출 | C, 요약 뒤 새 요청 연결 | 수동·낮춘 임계값 자동 압축 실제 통과, 기본400K·각 자식은 미검증 |
 | /btw | 명령은 local-jsx, 내부 side_question 경로 존재 | 별도 질문의 header·모델 연결 미추적 | 미검증 |
 | /fork·/subtask | native 정의에 백그라운드 에이전트/세션 생성 존재 | fork 유형에 따른 ID·모델 경로 미추적 | code-review fork와 동일 지원이라고 단정하지 않음 |

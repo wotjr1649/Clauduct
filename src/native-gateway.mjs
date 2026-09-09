@@ -84,6 +84,16 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       if (req.method === 'GET' && path === '/clauduct/status') { reply(res, 200, diagnostics()); return; }
       if (req.method === 'POST' && path === '/clauduct/agents') {
         const binding = await readBody(req, 4096, controller);
+        if (binding?.kind === 'workflow-result') {
+          need(agentSelection && Object.keys(binding).every(key => ['kind', 'sessionId', 'toolUseId', 'taskId', 'runId',
+            'workflowName', 'transcriptPath', 'transcriptDir', 'scriptPath', 'scriptDigest', 'parent'].includes(key))
+            && ['sessionId', 'toolUseId', 'taskId', 'runId', 'workflowName'].every(key => typeof binding[key] === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding[key]))
+            && ['transcriptPath', 'transcriptDir', 'scriptPath'].every(key => typeof binding[key] === 'string' && binding[key].length <= 4096)
+            && typeof binding.scriptDigest === 'string' && /^[a-f0-9]{64}$/.test(binding.scriptDigest)
+            && (binding.parent === undefined || (typeof binding.parent === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding.parent))), 'INVALID_AGENT_BINDING');
+          try { agentSelection.linkWorkflow(binding); } catch { throw new NativeError('AGENT_SELECTION_UNVERIFIED_CALL'); }
+          reply(res, 200, { linked: true }); return;
+        }
         if (binding?.kind === 'resume-result') {
           need(agentSelection && Object.keys(binding).every(key => ['kind', 'sessionId', 'toolUseId', 'id', 'parent'].includes(key))
             && ['sessionId', 'toolUseId', 'id'].every(key => typeof binding[key] === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding[key]))
@@ -159,7 +169,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const agentBinding = agents.get(agent), role = agentBinding?.role;
       if (agentSelection && agent !== undefined) {
         if (agentBinding?.selectionPending) {
-          agentBinding.selectionWork ??= agentSelection.resolve(agentBinding.selectionBinding, agentBinding.selectionController.signal).then(selection => {
+          agentBinding.selectionWork ??= agentSelection.resolve({ ...agentBinding.selectionBinding,
+            requestedModel: doc.model, requestedEffort: doc.output_config?.effort }, agentBinding.selectionController.signal).then(selection => {
             agentBinding.selection = selection;
             agentBinding.selectionPending = false;
             agentBinding.selectionBinding = undefined;
@@ -194,7 +205,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       timing.model = prepared.selected.model; timing.effort = prepared.selected.effort; timing.preparedMs = elapsed();
       timing.purpose = prepared.purpose; timing.requestedEffort = prepared.requestedEffort;
       timing.compactShape = prepared.compactShape;
-      timing.role = Object.hasOwn(ROLE_MODELS, role) || role === 'claude' ? role : null;
+      timing.role = Object.hasOwn(ROLE_MODELS, role) || ['claude', 'workflow-subagent'].includes(role) ? role : null;
       timing.roleRegistered = agent !== undefined && agents.has(agent);
       timing.agentContextPolicy = agentBinding?.contextPolicy ? { ...agentBinding.contextPolicy } : null;
       // Registration is routing metadata, not authorization. Never bypass native tool/permission hooks.

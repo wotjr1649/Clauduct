@@ -49,7 +49,7 @@ function childRetryTest() {
   const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
   assert.match(settings.env.ANTHROPIC_CUSTOM_MODEL_OPTION_NAME, /\[startup configuration\]$/);
   assert.ok(settings.modelPicker.options.every(option => !option.label.includes('startup configuration')));
-  assert.equal(settings.hooks.PostToolUse[0].matcher, 'Skill|SendMessage');
+  assert.equal(settings.hooks.PostToolUse[0].matcher, 'Skill|SendMessage|Workflow');
   assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, settings.hooks.SubagentStart[0].hooks[0].command);
   assert.equal(source.CLAUDE_CODE_MAX_RETRIES, '10');
   assert.equal(source.CLAUDE_CODE_RETRY_WATCHDOG, '1');

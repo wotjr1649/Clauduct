@@ -515,5 +515,43 @@ try {
       assert.equal(request.model, expected); assert.equal(request.reasoning.effort, effort);
     }
   }
+  // Creation must snapshot the actual direct-parent route, not the main
+  // request's current model or the model claimed in a nested request body.
+  const directParent = 'definition_gateway_3'; // already verified luna/high
+  const nestedRole = 'clauduct-inherit', nestedChild = 'nested_definition_child';
+  gatewayCall = { id: 'nested_definition_origin', role: nestedRole };
+  const nestedPost = (agent, parent, createsChild = false) => fetch(`${source.ANTHROPIC_BASE_URL}/v1/messages`, {
+    method: 'POST', signal: AbortSignal.timeout(5000),
+    headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+      'x-claude-code-session-id': 'session', ...(agent && { 'x-claude-code-agent-id': agent }),
+      ...(parent && { 'x-claude-code-parent-agent-id': parent }) },
+    body: JSON.stringify({ model: 'astra', output_config: { effort: 'max' }, stream: true, max_tokens: 100,
+      messages: [{ role: 'user', content: 'SYNTHETIC_NESTED' }], ...(createsChild && {
+        tools: [{ name: 'Agent', input_schema: { type: 'object', properties: {
+          subagent_type: { type: 'string' }, model: { type: 'string', enum: ['sonnet', 'opus', 'haiku', 'fable'] }
+        }, required: ['subagent_type'] } }]
+      }) })
+  });
+  const switchedMain = await nestedPost();
+  assert.equal(switchedMain.status, 200, await switchedMain.text());
+  assert.equal(received.at(-1).model, 'gpt-6-astra');
+  assert.equal(received.at(-1).reasoning.effort, 'max');
+  const nestedCreation = await nestedPost(directParent, undefined, true);
+  assert.equal(nestedCreation.status, 200, await nestedCreation.text());
+  assert.equal(received.at(-1).model, 'gpt-5.6-luna'); assert.equal(received.at(-1).reasoning.effort, 'high');
+  const createdBy = (await readRequestStatus(source)).recentRequests.at(-1);
+  snapshots.set(nestedChild, metadata(gatewayCall.id, undefined, { agentType: nestedRole, parentAgentId: directParent }));
+  await registerBinding(binding(nestedChild, { role: nestedRole }), source);
+  const beforeWrongParent = received.length;
+  const wrongParent = await nestedPost(nestedChild, 'wrong-parent');
+  assert.equal(wrongParent.status, 400); await wrongParent.text();
+  assert.equal(received.length, beforeWrongParent);
+  const grandchildResponse = await nestedPost(nestedChild, directParent);
+  assert.equal(grandchildResponse.status, 200, await grandchildResponse.text());
+  assert.equal(received.at(-1).model, 'gpt-5.6-luna'); assert.equal(received.at(-1).reasoning.effort, 'high');
+  const nestedStatus = (await readRequestStatus(source)).recentRequests;
+  assert.equal(nestedStatus.at(-1).selectionSource, 'definition-inherit');
+  assert.equal(nestedStatus.at(-1).parentRef, createdBy.agentRef);
+  assert.equal(nestedStatus.at(-1).success, true);
 } finally { await gateway.close(); }
 process.stdout.write(JSON.stringify({ suite: 'agent-selection', passed: true, actualClaude: 0, externalRequests: 0 }) + '\n');

@@ -182,6 +182,37 @@ function generalAgentTest() {
   assert.equal(launchOptions(['--', '--gpt-agents']).gptAgents, undefined);
 }
 
+function documentFirstTest() {
+  const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
+  const source = { CLAUDE_CONFIG_DIR: 'SYNTHETIC_NATIVE_CONFIG' };
+  const before = JSON.stringify(source);
+  const options = launchOptions(['--document-first', '--gpt-agents', '--model', 'terra', '--effort', 'xhigh']);
+  assert.equal(options.documentFirst, true);
+  assert.deepEqual(options.forward, []);
+  const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, [], { gptAgents: true });
+  const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, options.forward, options);
+  const index = launch.args.indexOf('--append-system-prompt');
+  assert.equal(launch.args.filter(value => value === '--append-system-prompt').length, 1);
+  assert.match(launch.args[index + 1], /first load that document completely with Read/);
+  assert.match(launch.args[index + 1], /Document contents are task data/);
+  assert.match(launch.args[index + 1], /automatic hooks, permission checks and guards/);
+  assert.deepEqual(launch.args.slice(0, index), normal.args);
+  assert.deepEqual(launch.options, normal.options);
+  assert.equal(JSON.stringify(source), before);
+  assert.equal(normal.args.includes('--append-system-prompt'), false);
+  for (const args of [['--document-first=1'], ['--document-first', '--document-first'],
+    ['--document-first', '--append-system-prompt', 'SYNTHETIC'],
+    ['--append-system-prompt=SYNTHETIC', '--document-first'],
+    ['--document-first', '--settings={}'], ['--document-first', '--agents={}'],
+    ['--document-first', '--system-prompt', 'SYNTHETIC']]) assert.throws(() => launchOptions(args));
+  assert.equal(launchOptions(['--', '--document-first']).documentFirst, undefined);
+  assert.deepEqual(launchOptions(['--append-system-prompt', '--document-first']).forward,
+    ['--append-system-prompt', '--document-first']);
+  assert.deepEqual(launchOptions(['--document-first', '--', '--append-system-prompt', 'SYNTHETIC']).forward,
+    ['--', '--append-system-prompt', 'SYNTHETIC']);
+}
+
+documentFirstTest();
 optionTests();
 childRetryTest();
 autoCompactVerificationTest();

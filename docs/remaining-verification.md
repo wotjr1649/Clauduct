@@ -8,6 +8,10 @@
 
 ### 작업 순서와 종료 조건
 
+현재 우선 작업: 문서 선로드 → run-01 수정본 검사 → native Workflow 최소 시험 순서다. `--document-first`의 자식 실행 인자 연결·기존 환경/설정 보존·충돌 옵션 거부는 `test-launcher-native.mjs`에서 통과했고 dry-run도 확인했다. 실제 선로드 준수는 아직 미검증이다. 사용자 실행 시 최초 작업 도구 Read, 문서 전 선택적 Skill/Bash/Agent 부재, 범위 밖 쓰기 부재를 확인한다. 이후 run-01의 강화된 17개 테스트와 inherit 검토를 수행한다. 전역 plugin이나 guard는 변경하지 않는다.
+
+Workflow는 별도 native 도구다. 설치 2.1.266의 번들 작성 참조에서 agent()의 model/effort/agentType 옵션을 확인했지만 실제 Workflow 자식 metadata·GPT 라우팅·완료 복귀는 미검증이다. 앞 단계 통과 후 사용자 운영의 읽기 전용 자식 1개 시험으로 증거를 확보하고, 그 뒤에만 다중 자식 관계를 검토한다. 기존 Agent 정의 성공을 Workflow 성공으로 대체하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.
+
 모델 선택의 최신 수용 기준은 [GPT Agent 선택 계약](gpt-agent-selection-contract.md)이다. 직접 GPT 선택과 명시 inherit의 부모 모델·effort 상속은 필수이며, Claude 별칭 대체 검증과 전체 모델 목록 확장은 이번 범위에서 제외한다.
 
 | 순서 | 작업 | 필요한 증거 / 종료 조건 |

@@ -12,6 +12,14 @@ D:\AIDEV\Clauduct\clauduct.cmd --dry-run
 
 현재 프로젝트 폴더와 터미널을 native Claude 자식에 연결하며 SEND 입력이나 별도 gateway 실행이 필요하지 않습니다. `--dry-run`은 인증·소켓·Claude 실행 없이 구성을 표시합니다. 사용자 PATH/PowerShell 프로필은 변경하지 않았습니다. Windows Terminal의 PowerShell 7을 편의상 권장하나 cmd/Git Bash에서도 같은 Node gateway가 실행됩니다. shell 선택이 모델 지연·메모리 안정성을 개선한다는 측정 근거는 없습니다.
 
+### 작업 문서 선로드
+
+`clauduct --gpt-agents --document-first`는 이 native 자식 세션에만 고정 문서 선로드 지침을 `--append-system-prompt`로 전달합니다. 사용자가 작업 문서를 읽고 이어가라고 요청하면, 선택적 Skill/workflow·셸 준비·위임보다 먼저 문서를 Read로 읽고 범위와 중단 조건을 확정하도록 합니다. 문서 내용에 독립적인 권한을 부여하지 않습니다.
+
+기본 실행은 바꾸지 않으며 옵션 없이 새로 시작하면 지침을 추가하지 않습니다. 전역 설정·plugin·자동 hook·권한 검사·모델·effort·agent 정의는 그대로입니다. 이것은 모델 행동 지침이지 강제 sandbox나 tool gate가 아닙니다. 실제 첫 도구가 Read인지, 범위 밖 쓰기가 없는지는 native 세션에서 별도로 검증해야 합니다. 기존 세션에 소급 적용되지 않습니다.
+
+중복 native 옵션에 의한 지침 교체를 피하기 위해 `--document-first`와 사용자 `--append-system-prompt`는 함께 사용할 수 없습니다. raw `--agents`, `--settings`, `--setting-sources`, `--system-prompt` 차단은 유지합니다. `--dry-run`의 `documentFirst`는 시작 구성만 나타내며 실제 준수 증거가 아닙니다.
+
 ### GPT 선택용 일반 작업 agent
 
 `clauduct --gpt-agents`로 시작하면 해당 자식 세션에만 일반 작업 agent 5개를 추가합니다. 메인 모델·effort는 평소처럼 실행 옵션이나 세션 안에서 선택하며, 이 옵션이 메인 값을 강제하지 않습니다. 일반 실행에는 추가하지 않으며 옵션 없이 다시 시작하면 추가 등록하지 않습니다. 전역 agent 파일은 생성하지 않습니다.

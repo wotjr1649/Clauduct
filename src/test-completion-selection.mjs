@@ -56,7 +56,8 @@ try {
   assert.equal(resumed.reviewContext, true);
   assert.equal(resumed.review, undefined);
   assert.equal(resumed.route, undefined); // native role=claude keeps the original request-model policy
-  await assert.rejects(selection.resolve(binding('parent')), error => error.selectionReason === 'CALL');
+  await assert.rejects(selection.resolve(binding('parent')), error => error.selectionReason === 'CALL'
+    && error.completionFailure === 'PARENT_COMPLETION' && error.completionParentState === 'CONSUMED');
   // Rewriting the notification UUID cannot restore consumed child evidence.
   selection.delivered('session', 'parent', selection.begin('session', 'parent'), final('parent').message);
   await save('parent', 'jsonl', [{ ...notification(), uuid: 'notification_replay' }]);
@@ -95,13 +96,37 @@ try {
       s.delivered('session', 'child', old, final('child').message);
     }],
     ['tool-use-final', async s => s.delivered('session', 'child', s.begin('session', 'child'), { ...final('child').message, stop_reason: 'tool_use' })],
+    ['invalid-response-id', async s => s.delivered('session', 'child', s.begin('session', 'child'), { ...final('child').message, id: 'SYNTHETIC PRIVATE' })],
     ['broken-json', async () => writeFile(file('parent', 'jsonl'), '{')],
     ['oversized-line', async () => writeFile(file('parent', 'jsonl'), 'x'.repeat(1048577))],
     ['bad-utf8', async () => writeFile(file('parent', 'jsonl'), Buffer.from([0xff, 10]))]
   ];
+  const expectedStages = {
+    failed: 'NOTIFICATION_HEADER', killed: 'NOTIFICATION_HEADER', blocked: 'NOTIFICATION_HEADER',
+    'parent-stopped': 'PARENT_IDENTITY', 'parent-model': 'PARENT_IDENTITY',
+    'child-stopped': 'CHILD_IDENTITY', 'child-model': 'CHILD_IDENTITY', 'child-parent': 'CHILD_IDENTITY',
+    'child-origin': 'CHILD_IDENTITY', 'child-name': 'CHILD_IDENTITY', 'child-role': 'CHILD_IDENTITY',
+    'wrong-session': 'NOTIFICATION_ORIGIN', 'wrong-recipient': 'NOTIFICATION_ORIGIN',
+    'no-origin': 'NOTIFICATION_ORIGIN', 'peer-origin': 'NOTIFICATION_ORIGIN', 'ordinary-user': 'NOTIFICATION_ORIGIN',
+    'old-notification': 'NOTIFICATION_TIME', 'future-notification': 'NOTIFICATION_TIME', 'later-answer': 'NOTIFICATION_ORIGIN',
+    'child-error': 'CHILD_FINAL_RESPONSE', 'child-session': 'CHILD_FINAL_RESPONSE', 'child-id': 'CHILD_FINAL_RESPONSE',
+    'child-response': 'CHILD_FINAL_RESPONSE', 'child-not-finished': 'CHILD_FINAL_RESPONSE',
+    'child-begin-cancelled': 'CHILD_COMPLETION', 'parent-begin-cancelled': 'PARENT_COMPLETION',
+    'late-old-output': 'CHILD_COMPLETION', 'tool-use-final': 'CHILD_COMPLETION',
+    'invalid-response-id': 'CHILD_COMPLETION',
+    'broken-json': 'PARENT_TRANSCRIPT_READ', 'oversized-line': 'PARENT_TRANSCRIPT_READ', 'bad-utf8': 'PARENT_TRANSCRIPT_READ'
+  };
   for (const [name, mutate] of mutations) {
     const s = await setup(); await mutate(s);
-    await assert.rejects(s.resolve(binding('parent')), /AGENT_SELECTION_UNVERIFIED/, name);
+    await assert.rejects(s.resolve(binding('parent')), error => {
+      assert.equal(error.completionFailure, expectedStages[name], name);
+      assert.equal(JSON.stringify(error).includes('SYNTHETIC_PRIVATE'), false);
+      if (name === 'parent-begin-cancelled') assert.equal(error.completionParentState, 'REQUEST_STARTED');
+      if (name === 'child-begin-cancelled' || name === 'late-old-output') assert.equal(error.completionChildState, 'REQUEST_STARTED');
+      if (name === 'tool-use-final') assert.equal(error.completionChildState, 'NONTERMINAL');
+      if (name === 'invalid-response-id') assert.equal(error.completionChildState, 'INVALID_RESPONSE');
+      return /AGENT_SELECTION_UNVERIFIED/.test(error.message);
+    }, name);
     passed++;
   }
   for (const [from, to] of [['call_child', 'call_wrong'], ['<task-id>child', '<task-id>root'],
@@ -156,22 +181,25 @@ try {
   }
 
   // Real loopback registration and response delivery, with delayed native JSONL persistence.
+  for (const streaming of [false, true]) {
   const routes = createAgentSelection({ projectsRoot: root, timeoutMs: 150 });
   let sends = 0;
   const gateway = await startNativeGateway({ agentSelection: routes,
     admissionOptions: { freeBytes: () => 16 * 1024 ** 3 }, transport: {
-      diagnostics: () => ({}), close: async () => {}, send: async body => {
+      diagnostics: () => ({}), close: async () => {}, send: async (body, _signal, callbacks) => {
         sends++;
         assert.equal(body.model, 'gpt-5.6-luna'); assert.equal(body.reasoning.effort, 'max');
         const item = { id: `message_${sends}`, type: 'message', role: 'assistant', status: 'completed',
           content: [{ type: 'output_text', text: 'OK', annotations: [] }] };
-        return [{ type: 'response.created', response: { id: `response_${sends}`, status: 'in_progress' } },
+        const events = [{ type: 'response.created', response: { id: `response_${sends}`, status: 'in_progress' } },
           { type: 'response.output_item.added', output_index: 0, item: { ...item, content: [], status: 'in_progress' } },
           { type: 'response.output_text.delta', output_index: 0, item_id: item.id, content_index: 0, delta: 'OK' },
           { type: 'response.output_text.done', output_index: 0, item_id: item.id, content_index: 0, text: 'OK' },
           { type: 'response.output_item.done', output_index: 0, item },
           { type: 'response.completed', response: { id: `response_${sends}`, status: 'completed', model: body.model,
             output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }];
+        if (streaming) { for (const event of events) await callbacks.onEvent(event); }
+        else return events;
       }
     } });
   try {
@@ -201,9 +229,29 @@ try {
     assert.equal(status.recentRequests.at(-1).success, true); assert.equal(sends, 3);
     assert.equal(JSON.stringify(status).includes('SYNTHETIC_PRIVATE'), false);
     await register('parent', true); await register('parent');
-    const duplicate = await post('parent'); assert.equal(duplicate.status, 400, await duplicate.text());
+    const duplicate = await post('parent'); const failureBody = await duplicate.text();
+    assert.equal(duplicate.status, 400, failureBody);
+    assert.match(failureBody, /completion=NOTIFICATION_ORIGIN parent=RECORDED child=NONE/);
+    const diagnostic = (await readRequestStatus(env)).recentRequests.at(-1);
+    assert.equal(diagnostic.completionFailure, 'NOTIFICATION_ORIGIN');
+    assert.equal(diagnostic.completionParentState, 'RECORDED');
+    assert.equal(sends, 3); passed++;
+    // An injected dependency cannot put arbitrary strings in the error or status.
+    routes.resolve = async () => { throw Object.assign(new Error('SYNTHETIC_PRIVATE'), {
+      selectionReason: 'CALL', completionFailure: 'SYNTHETIC_PRIVATE',
+      completionParentState: 'SYNTHETIC_PRIVATE', completionChildState: 'SYNTHETIC_PRIVATE'
+    }); };
+    await register('parent');
+    const invalid = await post('parent'); const invalidBody = await invalid.text();
+    assert.equal(invalid.status, 400);
+    assert.equal(invalidBody.includes('SYNTHETIC_PRIVATE'), false);
+    assert.equal(invalidBody.includes('completion='), false);
+    const filtered = (await readRequestStatus(env)).recentRequests.at(-1);
+    assert.equal(filtered.completionFailure, null);
+    assert.equal(filtered.completionParentState, null); assert.equal(filtered.completionChildState, null);
     assert.equal(sends, 3); passed++;
   } finally { await gateway.close(); }
+  }
   process.stdout.write(JSON.stringify({ suite: 'completion-selection', passed, actualClaude: 0, externalRequests: 0,
     notRun: process.argv.includes('--symlink') ? [] : ['symlink: requires full Node filesystem permissions'] }) + '\n');
 } finally {

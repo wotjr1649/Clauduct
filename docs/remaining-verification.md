@@ -10,7 +10,7 @@
 
 | 순서 | 작업 | 필요한 증거 / 종료 조건 |
 |---|---|---|
-| 1 | native task-notification(completed) 복귀 | 수정 및 합성/loopback 42개 통과. 관계·세션·취소·변조·중복·지연 검사 포함. 실제 수정 버전 반환은 미검증, symlink 검사는 Node 권한 거부. 여러 알림이 한 행에 결합된 복귀 등 지원 한계는 감사 참조 |
+| 1 | native task-notification(completed) 복귀 | 실제 35985327에서 목표 순서 재현 후 CALL 재실패. [진단 수정](audit-2026-09-09-completion-diagnostics.md)으로 실패 단계·완료 증거 상태를 오류에 직접 표시. 합성/loopback 46개 통과, 새 버전 실제 상세 원인·복귀 성공은 미검증. symlink 기존 거부 유지 |
 | 2 | 이벤트·라우팅 진단 | 마지막 16개 한계·누적 고정 카운터·불투명 관계 ID·role=claude 진단 공백의 설계를 [호출 경로 조사](native-call-paths-2026-09-09.md)에 기록. 추가 계측 구현·실발생 확인은 미완료. 과거 other 이름 복원 불가 |
 | 3 | 현재 설치 버전 전체 호출 경로 목록 | 실행 파일 2.1.266 해시 일치, 활성 plugin 2개와 설치 skill 23개, querySource 리터럴 34종을 [호출 경로 조사](native-call-paths-2026-09-09.md)에 목록화. 동적 전체 목록·우회 provider/fallback 전수 추적·경로별 실제 반환은 미완료 |
 | 4 | 남은 회귀·보안 검증 | 아래 기능별 표의 미확인 항목과 설정 격리·취소·복귀·병렬·스트리밍·자원 정리 검증. 이미 통과한 항목은 변경 영향이 있을 때만 반복 |
@@ -48,12 +48,12 @@
 | native code-review low 완료 | 268e9bf2 자식 a91eb3a1de1548dde: Bash diff 결과 연결, 최종 지적 반환, 부모 267행 completed; 270행 request 4/5 luna/max native-fork 성공 | low 실제 완료. strict diff 호출 수용과 약 10분 31초 요청의 ping 41회 및 완료 확인. 다른 review 수준·병렬 전체 완료는 미확인 |
 | native 병렬 code-review 최종 반환 | HIGH-03: 1d6ef4cd 루트/직접 자식 13개/손자 4개 대상 Read, 부모 518행 completed, 521/522행 ReportFindings 5건. request 717/719 처리 13052.10ms 겹침 | 최종 반환 통과. 자식 task-notification 복귀 CALL 한 건과 도구 오류가 남아 오류 없는 완료는 아님. [상세 감사](audit-2026-09-09-native-high-03.md) |
 | peer 메시지 기반 복귀 | HIGH-03 원본 537행 request 717/730/735/740: luna/max verified-peer-resume success=true | 실제 통과. native task-notification 재기동은 별도 경로 |
-| 완료 알림 기반 복귀 | 완료 응답 ID·native origin·metadata 관계를 대조하는 verified-completion-resume 추가. [수정 감사](audit-2026-09-09-completion-resume.md) | 단일 completed 알림의 합성/loopback 통과. 실제 수정 버전 복귀 미검증 |
+| 완료 알림 기반 복귀 | 35985327 부모 19행 종료 → 자식 35행 종료 → 부모 20행 completed → 22행 CALL 오류. [진단 수정 감사](audit-2026-09-09-completion-diagnostics.md) | 실제 실패. 진단 수정 후 합성/loopback 46개 통과, 새 실제 검증 필요 |
 | 리뷰 스킬 재호출 감소 | HIGH-03 연결된 18개 실행에서 superpowers/code-review Skill 호출 0, claude-api 3 | 이번 실행에서 확인. 일반적인 모델 준수 보장은 아님 |
 | Codex 보조 metadata 이벤트 | HIGH-03 마지막 16개 진단 auxiliaryMetadataEvents=0 | 실제 발생·처리 미확인. 로컬 합성 검사만 통과 |
 | 실제 인증 갱신·수시간 실행 | 사용자 지정 제외 | 이번 단계에서 실행하지 않음 |
 
-HIGH-03에서 재현된 task-notification 복귀 CALL 오류는 로컬 수정·회귀 검증을 마쳤고 새 사용자 세션에서 실제 반환 확인이 남았다. UNSUPPORTED_EVENT의 정확한 원인 식별과 보조 이벤트 실발생 확인도 남아 있다. 과거 event=other에는 원래 이벤트 이름이 없어 복원할 수 없다. 후속 진단은 고정 구조 분류를 추가했지만 실제 원인 해결 증거는 아니다. 인증된 실제 실행은 기존 거부를 우회하지 않으며, 합성 검사 통과만으로 미확인 행을 통과 처리하지 않는다.
+HIGH-03에서 재현된 task-notification 복귀 CALL 오류는 35985327에서도 재실패했다. 실패 단계·완료 증거 상태를 드러내는 진단 수정과 로컬 회귀 검증을 마쳤고 새 사용자 세션의 상세 원인 또는 실제 성공 확인이 남았다. UNSUPPORTED_EVENT의 정확한 원인 식별과 보조 이벤트 실발생 확인도 남아 있다. 과거 event=other에는 원래 이벤트 이름이 없어 복원할 수 없다. 후속 진단은 고정 구조 분류를 추가했지만 실제 원인 해결 증거는 아니다. 인증된 실제 실행은 기존 거부를 우회하지 않으며, 합성 검사 통과만으로 미확인 행을 통과 처리하지 않는다.
 
 전제: 기존 live/인증 실행 거부 때문에 에이전트가 실제 Claude를 대신 실행하지 않는다. 사용자가 실행한 세션의 JSONL과 정제된 시간 진단을 확인한다. 전역 설정, hook trust, 모델 기본값, 권한은 변경하지 않는다. 실제 인증 갱신과 수시간 장기 실행은 이번 단계에서 제외한다.
 

@@ -5,6 +5,12 @@ import { selectModel, ROLE_MODELS } from './models.mjs';
 
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 export const SELECTION_FAILURES = Object.freeze(['IDENTITY', 'PATH', 'SIZE', 'ACCESS', 'IO', 'MISSING', 'PARSE', 'CALL', 'ROLE', 'PARENT', 'MODEL', 'UNKNOWN']);
+export const COMPLETION_FAILURES = Object.freeze(['PARENT_UNVERIFIED', 'PARENT_IDENTITY', 'REGISTRATION',
+  'PARENT_COMPLETION', 'TRANSCRIPT_BINDING', 'PARENT_TRANSCRIPT_READ', 'NOTIFICATION_ORIGIN',
+  'NOTIFICATION_TIME', 'NOTIFICATION_HEADER', 'CHILD_COMPLETION', 'CHILD_RELATIONSHIP',
+  'CHILD_METADATA_READ', 'CHILD_IDENTITY', 'CHILD_TRANSCRIPT_READ', 'CHILD_FINAL_RESPONSE',
+  'CHILD_FINAL_TIME', 'PARENT_METADATA_READ', 'IDENTITY_RECHECK', 'EVIDENCE_CHANGED']);
+export const COMPLETION_STATES = Object.freeze(['UNRECORDED', 'REQUEST_STARTED', 'RECORDED', 'CONSUMED', 'NONTERMINAL', 'INVALID_RESPONSE']);
 const fail = (reason = 'UNKNOWN') => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), { selectionReason: reason }); };
 export const SELECTION_IO_CODES = Object.freeze(['ENOTDIR', 'EISDIR', 'EMFILE', 'ENFILE', 'EBUSY', 'EINVAL', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'OTHER']);
 const failIO = error => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), {
@@ -128,59 +134,87 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     const state = verified.get(key(session, id));
     if (!state) return;
     state.completion = undefined;
+    state.completionState = 'REQUEST_STARTED';
     return state.request = {};
   }
   function delivered(session, id, request, message) {
     const state = verified.get(key(session, id));
-    if (state && request && state.request === request && message.stop_reason === 'end_turn' && validId(message.id)) {
-      state.completion = { id: message.id, at: Date.now() };
+    if (state && request && state.request === request) {
+      state.completionState = message.stop_reason !== 'end_turn' ? 'NONTERMINAL' : !validId(message.id) ? 'INVALID_RESPONSE' : 'RECORDED';
+      if (state.completionState === 'RECORDED') state.completion = { id: message.id, at: Date.now() };
     }
   }
-  async function completionResume(binding, previous, signal) {
-    if (!projectsRoot || binding.nativeRegistered !== true || !previous?.completion
-      || previous.transcriptPath !== binding.transcriptPath) return;
+  async function completionResume(binding, previous, signal, evidence) {
+    evidence.parent = previous.completionState ?? 'UNRECORDED';
+    evidence.stage = 'REGISTRATION';
+    if (!projectsRoot || binding.nativeRegistered !== true) return;
+    evidence.stage = 'PARENT_COMPLETION';
+    if (!previous.completion) return;
+    evidence.stage = 'TRANSCRIPT_BINDING';
+    if (previous.transcriptPath !== binding.transcriptPath) return;
     const parentCompletion = previous.completion;
+    evidence.stage = 'PARENT_TRANSCRIPT_READ';
     const records = await read(binding, 'jsonl');
     const latest = records.findLast(row => ['user', 'assistant'].includes(row.type));
+    evidence.stage = 'NOTIFICATION_ORIGIN';
     if (latest?.type !== 'user' || latest.isMeta !== true || latest.origin?.kind !== 'task-notification'
       || latest.sessionId !== binding.sessionId || latest.agentId !== binding.id || !validId(latest.uuid)
       || latest.uuid === previous.notification || typeof latest.message?.content !== 'string') return;
     const at = Date.parse(latest.timestamp);
-    if (!Number.isFinite(at) || at < previous.completion.at || at > Date.now() || Date.now() - at > 300000) return;
+    evidence.stage = 'NOTIFICATION_TIME';
+    if (!Number.isFinite(at) || at < parentCompletion.at || at > Date.now() || Date.now() - at > 300000) return;
     // Native 2.1.266 prepends a harness notice. Only the first outer header is
     // parsed; quoted result text cannot provide task identity or completion state.
     const text = latest.message.content;
     const header = /<task-notification>\s*<task-id>([A-Za-z0-9_-]{1,200})<\/task-id>\s*(?:<tool-use-id>([A-Za-z0-9_-]{1,200})<\/tool-use-id>\s*)?(?:<output-file>[^<]*<\/output-file>\s*)?<status>completed<\/status>\s*<summary>/.exec(text);
+    evidence.stage = 'NOTIFICATION_HEADER';
     if (!header || text.indexOf('<task-notification>') !== header.index
       || text.indexOf('<task-notification>', header.index + 1) !== -1
       || !text.trimEnd().endsWith('</task-notification>')) return;
     const child = verified.get(key(binding.sessionId, header[1]));
     const completion = child?.completion;
-    if (!completion || child.parent !== binding.id || child.transcriptPath !== binding.transcriptPath
+    evidence.child = child?.completionState ?? 'UNRECORDED';
+    evidence.stage = 'CHILD_COMPLETION';
+    if (!completion) return;
+    evidence.stage = 'CHILD_RELATIONSHIP';
+    if (child.parent !== binding.id || child.transcriptPath !== binding.transcriptPath
       || (header[2] !== undefined && header[2] !== child.origin) || completion.at > at) return;
     const childBinding = { ...binding, id: header[1], role: child.role };
-    if (!sameIdentity(child, await read(childBinding))) return;
+    evidence.stage = 'CHILD_METADATA_READ';
+    const childMetadata = await read(childBinding);
+    evidence.stage = 'CHILD_IDENTITY';
+    if (!sameIdentity(child, childMetadata)) return;
+    evidence.stage = 'CHILD_TRANSCRIPT_READ';
     const childRecords = await read(childBinding, 'jsonl');
     const final = childRecords.findLast(row => ['user', 'assistant'].includes(row.type));
+    evidence.stage = 'CHILD_FINAL_RESPONSE';
     if (final?.type !== 'assistant' || final.isApiErrorMessage === true
       || final.sessionId !== binding.sessionId || final.agentId !== header[1]
       || final.message?.id !== completion.id || final.message.stop_reason !== 'end_turn') return;
     const finalAt = Date.parse(final.timestamp);
+    evidence.stage = 'CHILD_FINAL_TIME';
     if (!Number.isFinite(finalAt) || finalAt < startedAt || finalAt > at) return;
     // Recheck identities after asynchronous reads; cancellation consumes nothing.
-    if (!sameIdentity(previous, await read(binding)) || !sameIdentity(child, await read(childBinding))) return;
+    evidence.stage = 'PARENT_METADATA_READ';
+    const parentRecheck = await read(binding);
+    evidence.stage = 'CHILD_METADATA_READ';
+    const childRecheck = await read(childBinding);
+    evidence.stage = 'IDENTITY_RECHECK';
+    if (!sameIdentity(previous, parentRecheck) || !sameIdentity(child, childRecheck)) return;
     signal?.throwIfAborted();
+    evidence.stage = 'EVIDENCE_CHANGED';
     if (verified.get(key(binding.sessionId, binding.id)) !== previous
       || previous.completion !== parentCompletion
       || verified.get(key(binding.sessionId, header[1])) !== child || child.completion !== completion) return;
     return { child, completion, parentCompletion, notification: latest.uuid };
   }
-  async function resolveSelection(binding, signal) {
+  async function resolveSelection(binding, signal, evidence) {
     if (!validId(binding.sessionId) || !validId(binding.id)) fail('IDENTITY');
     const deadline = Date.now() + timeoutMs;
     let reason = 'MISSING';
     do {
       signal?.throwIfAborted();
+      evidence.stage = verified.has(key(binding.sessionId, binding.id)) ? 'PARENT_METADATA_READ' : null;
       let metadata;
       try { metadata = await read(binding); }
       catch (error) {
@@ -204,12 +238,15 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.child === binding.id
           && call.tool === 'Skill' && call.skill === metadata.name) : undefined;
       const previous = verified.get(key(binding.sessionId, binding.id));
+      evidence.stage = previous ? 'PARENT_IDENTITY' : 'PARENT_UNVERIFIED';
+      evidence.parent = previous?.completionState ?? 'UNRECORDED';
+      evidence.child = null;
       const resumeEntry = sameIdentity(previous, metadata) && previous.role === binding.role
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.target === binding.id
           && call.resumeConfirmed && call.resumeParent === previous.parent) : undefined;
       if (!resumeEntry && sameIdentity(previous, metadata) && previous.role === binding.role) {
         let completion;
-        try { completion = await completionResume(binding, previous, signal); }
+        try { completion = await completionResume(binding, previous, signal, evidence); }
         catch (error) {
           if (error.selectionReason) throw error;
           if (['EACCES', 'EPERM'].includes(error.code)) fail('ACCESS');
@@ -221,7 +258,9 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         if (completion && completion.child.completion === completion.completion
           && previous.completion === completion.parentCompletion) {
           completion.child.completion = undefined;
+          completion.child.completionState = 'CONSUMED';
           previous.completion = undefined;
+          previous.completionState = 'CONSUMED';
           previous.notification = completion.notification;
           return { ...previous.selection, source: 'verified-completion-resume' };
         }
@@ -260,5 +299,16 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     } while (true);
     fail(reason);
   }
-  return { remember, linkSkill, linkResume, begin, delivered, resolve: resolveSelection };
+  async function resolveWithDiagnostics(binding, signal) {
+    const evidence = { stage: null, parent: null, child: null };
+    try {
+      return await resolveSelection(binding, signal, evidence);
+    } catch (error) {
+      error.completionFailure = evidence.stage;
+      error.completionParentState = evidence.parent;
+      error.completionChildState = evidence.child;
+      throw error;
+    }
+  }
+  return { remember, linkSkill, linkResume, begin, delivered, resolve: resolveWithDiagnostics };
 }

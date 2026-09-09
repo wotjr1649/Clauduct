@@ -5,7 +5,7 @@ import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
 import { betaFailure } from './native-beta.mjs';
-import { SELECTION_FAILURES, SELECTION_IO_CODES } from './agent-selection.mjs';
+import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 export async function startNativeGateway({ transport, onUnregisteredAgent, admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000 } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
@@ -156,7 +156,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
             agentBinding.selectionFailure = SELECTION_FAILURES.includes(error.selectionReason) ? error.selectionReason : 'UNKNOWN';
             throw Object.assign(new NativeError(`AGENT_SELECTION_UNVERIFIED_${agentBinding.selectionFailure}`), {
               selectionReason: agentBinding.selectionFailure,
-              selectionIoCode: SELECTION_IO_CODES.includes(error.selectionIoCode) ? error.selectionIoCode : null
+              selectionIoCode: SELECTION_IO_CODES.includes(error.selectionIoCode) ? error.selectionIoCode : null,
+              completionFailure: COMPLETION_FAILURES.includes(error.completionFailure) ? error.completionFailure : null,
+              completionParentState: COMPLETION_STATES.includes(error.completionParentState) ? error.completionParentState : null,
+              completionChildState: COMPLETION_STATES.includes(error.completionChildState) ? error.completionChildState : null
             });
           });
           await agentBinding.selectionWork;
@@ -257,11 +260,17 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       // Only locally constructed fixed categories cross this diagnostic boundary.
       const category = error instanceof NativeError ? error.code : upstream ? 'PROTOCOL_REJECTED' : 'INVALID_REQUEST';
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
+      const completionFailure = COMPLETION_FAILURES.includes(error.completionFailure) ? error.completionFailure : null;
+      const parentState = COMPLETION_STATES.includes(error.completionParentState) ? error.completionParentState : null;
+      const childState = COMPLETION_STATES.includes(error.completionChildState) ? error.completionChildState : null;
       if (timing) timing.unsupportedEvent = eventKind;
       if (timing) {
         timing.failureStage = stage;
         timing.selectionFailure = SELECTION_FAILURES.includes(error.selectionReason) ? error.selectionReason : null;
         timing.selectionIoCode = SELECTION_IO_CODES.includes(error.selectionIoCode) ? error.selectionIoCode : null;
+        timing.completionFailure = completionFailure;
+        timing.completionParentState = parentState;
+        timing.completionChildState = childState;
       }
       if (timing) timing.reviewDiffMismatch = category === 'REVIEW_DIFF_REQUIRED'
         && ['call-count', 'tool-name', 'command', 'background'].includes(error.reviewDiffMismatch) ? error.reviewDiffMismatch : null;
@@ -271,7 +280,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const status = category === 'LOCAL_SESSION_REQUIRED' ? 401 : category === 'RATE_LIMITED' ? 429
         : category === 'MEMORY_QUEUE_FULL' || relogin ? 503 : upstream ? 502 : 400;
       const failure = { type: 'error', error: { type: status === 429 ? 'rate_limit_error' : status >= 500 ? 'api_error' : 'invalid_request_error',
-        message: category + (eventKind ? ` event=${eventKind}` : '') + (relogin ? ': Codex login required; resume after logging in.' : res.headersSent ? ': Partial response; explicit resume required.' : '') } };
+        message: category + (eventKind ? ` event=${eventKind}` : '')
+          + (completionFailure ? ` completion=${completionFailure} parent=${parentState ?? 'NONE'} child=${childState ?? 'NONE'}` : '')
+          + (relogin ? ': Codex login required; resume after logging in.' : res.headersSent ? ': Partial response; explicit resume required.' : '') } };
       if (!res.destroyed && !res.headersSent) reply(res, status, failure);
       else if (!res.destroyed && !controller.signal.aborted) {
         try { await writeFrames(res, [failure], controller.signal); res.end(); }

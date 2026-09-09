@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES } from './native-protocol.mjs';
+import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
@@ -74,8 +74,7 @@ export async function readRequestStatus(env) {
     completionParentState: COMPLETION_STATES.includes(row?.completionParentState) ? row.completionParentState : null,
     completionChildState: COMPLETION_STATES.includes(row?.completionChildState) ? row.completionChildState : null,
     reviewDiffMismatch: ['call-count', 'tool-name', 'command', 'background'].includes(row?.reviewDiffMismatch) ? row.reviewDiffMismatch : null,
-    failureCategory: ['CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT', 'UPSTREAM_IO_ERROR',
-      'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'EVENT_AFTER_COMPLETION', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED', 'OTHER'].includes(row?.failureCategory) ? row.failureCategory : null,
+    failureCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(row?.failureCategory) ? row.failureCategory : null,
     clientDisconnected: row?.clientDisconnected === true,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
-import { REQUEST_STAGES } from './native-protocol.mjs';
+import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES } from './native-protocol.mjs';
 import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
@@ -292,8 +292,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       }
       if (timing) timing.reviewDiffMismatch = category === 'REVIEW_DIFF_REQUIRED'
         && ['call-count', 'tool-name', 'command', 'background'].includes(error.reviewDiffMismatch) ? error.reviewDiffMismatch : null;
-      if (timing) timing.failureCategory = ['CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT',
-        'UPSTREAM_IO_ERROR', 'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'EVENT_AFTER_COMPLETION', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED'].includes(category) ? category : 'OTHER';
+      if (timing) timing.failureCategory = FAILURE_DIAGNOSTIC_CATEGORIES.includes(category) ? category : 'OTHER';
       const relogin = ['UNAUTHENTICATED', 'CREDENTIAL_UNAVAILABLE_OR_EXPIRED', 'CREDENTIAL_ACCOUNT_CHANGED', 'CREDENTIAL_ACCOUNT_MISMATCH', 'CODEX_RELOGIN_REQUIRED'].includes(category);
       const status = category === 'LOCAL_SESSION_REQUIRED' ? 401 : category === 'RATE_LIMITED' ? 429
         : category === 'MEMORY_QUEUE_FULL' || relogin ? 503 : upstream ? 502 : 400;

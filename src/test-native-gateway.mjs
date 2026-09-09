@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
-import { NativeError } from './native-protocol.mjs';
+import { NativeError, FAILURE_DIAGNOSTIC_CATEGORIES } from './native-protocol.mjs';
 import { Writable } from 'node:stream';
 import { writeFrames } from './native-delivery.mjs';
 import { readRequestStatus } from './request-status.mjs';
@@ -47,6 +47,59 @@ const emptyStages = { request: 0, selection: 0, prepare: 0, review: 0, upstream:
 let passed = 0;
 const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
 try {
+  for (const [code, tail] of [
+    ['INVALID_SSE', 'data: SYNTHETIC_PRIVATE\n\n'],
+    ['INVALID_UTF8', Buffer.from([0xff])],
+    ['SEQUENCE_MISMATCH', wire([{ type: 'response.in_progress', sequence_number: 2 }])],
+    ['TRUNCATED_STREAM', 'data: {'],
+    ['INCOMPLETE_RESPONSE', ''],
+    ['STREAM_ORDER', wire([{ type: 'response.output_item.done', output_index: 0, item: {} }])],
+    ['SNAPSHOT_MISMATCH', wire([{ type: 'response.in_progress', response_id: 'SYNTHETIC_PRIVATE' }])],
+    ['UNSUPPORTED_METADATA_EVENT', wire([{ type: 'codex.response.metadata', metadata: 'SYNTHETIC_PRIVATE' }])]
+  ]) {
+    const upstream = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(wire([{ type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } }]));
+      res.end(tail);
+    });
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    const transport = createNativeLoopbackTransport(upstream.address().port);
+    const gateway = await startNativeGateway({ transport, admissionOptions: ample });
+    try {
+      const result = await call(gateway);
+      assert.equal(result.status, 502); assert.ok(result.text.includes(code));
+      const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      const row = status.recentRequests.at(-1);
+      assert.equal(row.failureCategory, code); assert.equal(row.failureStage, 'upstream');
+      assert.equal(row.success, false); assert.equal(row.attempts.length, 1);
+      assert.equal(row.attempts[0].terminalState, 'open');
+      assert.equal(row.attempts[0].completed, false);
+      assert.equal(row.firstDownstreamWriteMs, null); assert.deepEqual(row.retryScheduledMs, []);
+      assert.equal(transport.diagnostics().activeSockets, 0);
+      assert.equal(status.lifetime.failed, 1);
+      assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE'));
+      assert.ok(!result.text.includes('SYNTHETIC_PRIVATE')); passed++;
+    } finally { await gateway.close(); upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); }
+  }
+  {
+    // Exercise every fixed category through both status boundaries, not upstream parsing.
+    let code;
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async () => { throw new NativeError(code); }, close: async () => {}, diagnostics: () => ({})
+    } });
+    try {
+      assert.equal(new Set(FAILURE_DIAGNOSTIC_CATEGORIES).size, FAILURE_DIAGNOSTIC_CATEGORIES.length);
+      for (code of [...FAILURE_DIAGNOSTIC_CATEGORIES, 'UNLISTED_SYNTHETIC_CODE']) {
+        await call(gateway);
+        const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+          ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+        assert.equal(status.recentRequests.at(-1).failureCategory,
+          code === 'UNLISTED_SYNTHETIC_CODE' ? 'OTHER' : code);
+      }
+      passed++;
+    } finally { await gateway.close(); }
+  }
   {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
       failureCategory: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',

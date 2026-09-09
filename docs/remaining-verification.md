@@ -51,9 +51,17 @@
 
 Verified: Node permission 제한 아래 `src/test-native-transport.mjs`, `src/test-native-gateway.mjs`, `src/test-native-protocol.mjs` 통과. 합성 loopback에서 분할 프레임, 중복 완료·sentinel, 보조 이벤트, 순서 관계, 잘못된 JSON, 크기 상한, 원문 비노출, status allowlist, 거부·무재시도·소켓 정리를 확인했다. 외부 요청과 실제 인증 조회는 0이다.
 
-Not verified: 실제 upstream의 후속 프레임 종류와 이 진단의 native 세션 출력. 이번 변경은 원인 식별을 위한 계측이며 실제 SSE 실패 해결이 아니다. 과거 `OTHER` 요청의 정확한 원인은 소급 복원할 수 없다. TaskOutput의 `No task found` 원인 역시 미확정이며 별도 조사한다.
+Verified: 후속 실제 세션 `c970306f-170a-47f2-ab95-5a52bcd8ffa7`의 메인 56행·자식 17행·metadata 1개를 확인했다. 메인 JSONL 47행의 상태에서 새 진단 필드가 출력되며 자식 요청 7/8은 terra/high, definition-model, success=true다. 자식은 Read 1회와 TERRA-READ-COMPLETED 반환에 성공했다. 메인은 terra/xhigh였고 요청 9가 upstream/OTHER, terminalState=open, 단일 시도·무재시도로 실패했다. 상태 수집 시 누계는 6건 시작·5건 성공·1건 실패이며 최종 답변 이후 누계가 아니다.
 
-다음 실제 검사는 사용자가 새 `--gpt-agents` 실행에서 실패했던 `clauduct-terra`의 단일 Read 작업만 수행한다. 종료 직후 기존 `src/request-status.mjs`로 요청 상태를 수집한다. 실패 시 같은 작업을 자동 반복하지 않는다. 이미 성공한 모델·상속·쓰기 전체 행렬을 재실행할 필요는 없다.
+Not verified: 실제 upstream의 후속 프레임 종류. 위 세션에서 EVENT_AFTER_COMPLETION은 재현되지 않았으며 전체 SSE 실패 해결도 아니다. 과거 `OTHER` 요청의 정확한 원인은 소급 복원할 수 없다. TaskOutput의 `No task found` 원인 역시 미확정이며 별도 조사한다.
+
+### OTHER 분류 보완 — 2026-09-09
+
+`src/native-protocol.mjs`의 고정 `FAILURE_DIAGNOSTIC_CATEGORIES`를 gateway와 request-status가 함께 사용한다. 기존 transport/응답 검증 코드인 INVALID_SSE, INVALID_UTF8, SEQUENCE_MISMATCH, TRUNCATED_STREAM, INCOMPLETE_RESPONSE, STREAM_ORDER, SNAPSHOT_MISMATCH, UNSUPPORTED_METADATA_EVENT 등을 이제 개별 분류한다. 원문·임의 오류 코드는 저장하지 않으며 미등록 분류는 gateway에서 OTHER, 상태 입력의 미허용 값은 null로 유지한다. HTTP 응답·프로토콜 검증·재시도 동작은 변경하지 않았다.
+
+Verified: `node --permission --allow-fs-read=D:\AIDEV\Clauduct src/test-native-gateway.mjs` 35개 통과. 8종 실제 loopback 오류를 파서부터 상태 조회까지 검증했고, 전체 고정 분류의 전달·미등록 분류 fallback·비노출을 검사했다. 같은 Node 제한으로 test-native-protocol.mjs와 test-native-transport.mjs도 통과했다. 실제 모델 호출·인증 조회·외부 요청은 0이다.
+
+Not verified: 확장한 분류의 실제 native 실패 출력과 요청 9의 정확한 원인. 다음 관찰은 사용자가 새 `--gpt-agents` 실행에서 수행한다. 메인 모델·effort는 사용자의 현재 선택을 유지하고, 오류 발생 직후 기존 request-status.mjs로 분류를 수집한다. 실패한 작업을 자동 반복하거나 이미 성공한 전체 모델·상속·쓰기 행렬을 재실행하지 않는다.
 
 아래 번호별 프롬프트는 과거 검증 절차다. 이미 통과한 항목을 반복 실행하라는 뜻이 아니다. 전체 완료 판정은 보류한다.
 

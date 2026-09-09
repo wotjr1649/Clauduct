@@ -8,7 +8,7 @@
 
 ### 작업 순서와 종료 조건
 
-최신 판정: 기본 상속은 08594a7e, 명시 luna/high는 660a5d7d에서 Read·결과·메인 복귀까지 실제 통과했다. 다음은 동일 Workflow run의 A 명시 선택 → 성공 시 B 기본 상속 순차 자식 2개 시험이다. 혼합 자식의 로컬 모델·결과 격리 검사는 통과했으며 실제 실행은 미검증이다. [증거와 준비](audit-2026-09-09-workflow-mixed-children.md). 병렬·중첩·resume은 이번에 추가하지 않는다.
+최신 판정: 5cd82157에서 동일 Workflow run의 순차 A 명시 luna/high와 B 기본 상속 sol/high가 Read·결과·메인 복귀까지 통과했다. 종료 진단 뒤 불필요한 verification-before-completion Skill 호출은 별도 절차 보완점이다. 다음은 정확히 두 자식의 제한된 병렬 시험이며 실제 요청 겹침과 종료 Skill 미호출을 함께 확인한다. [증거와 준비](audit-2026-09-10-workflow-parallel-preparation.md). 중첩·resume은 추가하지 않는다.
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 

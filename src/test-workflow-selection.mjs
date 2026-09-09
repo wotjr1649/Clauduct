@@ -120,8 +120,12 @@ try {
     const current = selection();
     await child('one', scenario.effort ? { model: scenario.model } : {}); await journal([row('one')]);
     const seen = [];
+    let pairWait, releasePair, pairArrivals = 0;
     const gateway = await startNativeGateway({ agentSelection: current, admissionOptions: { freeBytes: () => 16 * 1024 ** 3 },
-      transport: { send: async body => { seen.push(body); const reply = `${body.model}/${body.reasoning.effort}`; return [
+      transport: { send: async body => {
+        seen.push(body);
+        if (pairWait) { if (++pairArrivals === 2) releasePair(); await pairWait; }
+        const reply = `${body.model}/${body.reasoning.effort}`; return [
         { type: 'response.created', response: { id: 'r', status: 'in_progress' } },
         { type: 'response.output_item.added', output_index: 0, item: { type: 'message', id: 'm', role: 'assistant', content: [] } },
         { type: 'response.output_text.delta', output_index: 0, item_id: 'm', content_index: 0, delta: reply },
@@ -186,6 +190,34 @@ try {
         assert.notEqual(recent[0].agentRef, recent[1].agentRef);
         assert.ok(recent.every(row => row.success && row.selectionSource === 'workflow-result'));
         passed++;
+        await child('parallel-explicit', { model: scenario.model }); await child('parallel-inherit');
+        await journal([row('parallel-explicit'), row('parallel-inherit')]);
+        for (const id of ['parallel-explicit', 'parallel-inherit'])
+          await registerBinding({ id, role: 'workflow-subagent', stop: false, sessionId, transcriptPath }, env);
+        let pairTimer;
+        pairWait = new Promise((resolve, reject) => {
+          releasePair = resolve;
+          pairTimer = setTimeout(() => reject(new Error('PARALLEL_PAIR_TIMEOUT')), 2000);
+        });
+        try {
+          const responses = await Promise.all([
+            sendChild('parallel-explicit', scenario.model, scenario.effort),
+            sendChild('parallel-inherit', parentRoute.model)
+          ]);
+          assert.ok(responses.every(response => response.status === 200));
+          const wires = await Promise.all(responses.map(response => response.text()));
+          const expected = [`${scenario.expected.model}/${scenario.expected.effort}`, `${parentRoute.model}/${parentRoute.effort}`];
+          wires.forEach((wire, index) => {
+            assert.ok(wire.includes(expected[index])); assert.ok(!wire.includes(expected[1 - index]));
+          });
+          assert.equal(pairArrivals, 2);
+          const parallelStatus = await readRequestStatus(env), pair = parallelStatus.recentRequests.slice(-2);
+          assert.notEqual(pair[0].agentRef, pair[1].agentRef);
+          assert.ok(pair.every(row => row.success && row.selectionSource === 'workflow-result'));
+          assert.deepEqual(pair.map(row => `${row.model}/${row.effort}`).sort(), expected.sort());
+          assert.equal(parallelStatus.lifetime.failed, 0);
+          passed++;
+        } finally { clearTimeout(pairTimer); pairWait = undefined; }
       }
     } finally { await gateway.close(); }
   }

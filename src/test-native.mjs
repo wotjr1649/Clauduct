@@ -140,7 +140,7 @@ await test('native_beta_headers_and_private_unknown', () => {
 await test('verified_file_review_rejects_no_diff_completion', async () => {
   const gateway = await startNativeGateway({ agentSelection: {
     resolve: async () => ({ route: MODELS.luna, source: 'native-fork', sessionId: 'review_session', review: true }),
-    remember: () => {} }, transport: {
+    remember: () => {}, begin: () => {}, delivered: () => {} }, transport: {
       send: async body => {
         assert.deepEqual(body.tool_choice, { type: 'function', name: 'Bash' });
         const bash = body.tools.find(tool => tool.name === 'Bash');

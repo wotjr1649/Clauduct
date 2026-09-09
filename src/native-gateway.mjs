@@ -167,6 +167,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         need(agentBinding.selection.sessionId === req.headers['x-claude-code-session-id']
           && agentBinding.selection.parent === req.headers['x-claude-code-parent-agent-id'], 'AGENT_SELECTION_UNVERIFIED');
       }
+      const selectionRequest = agentSelection?.begin(req.headers['x-claude-code-session-id'], agent);
       const route = agentSelection ? agentBinding?.selection?.route : Object.hasOwn(ROLE_MODELS, role) ? ROLE_MODELS[role] : undefined;
       stage = 'prepare';
       const prepared = prepareNative(doc, { subagent: agent !== undefined, route,
@@ -248,6 +249,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       await emit(output.frames);
       res.end();
       timing.success = true;
+      agentSelection?.delivered(req.headers['x-claude-code-session-id'], agent, selectionRequest, output.message);
     } catch (error) {
       stopHeartbeat(); await writeTail;
       error = deliveryError ?? error;

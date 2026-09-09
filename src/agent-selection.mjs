@@ -13,6 +13,10 @@ const failIO = error => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIF
 const aliases = Object.freeze({ haiku: 'luna', sonnet: 'luna', opus: 'sol' });
 const model = value => selectModel(Object.hasOwn(aliases, value) ? aliases[value] : value);
 const within = (root, path) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..\\') && !rel.startsWith('../'); };
+const sameIdentity = (previous, metadata) => previous && metadata && metadata.stoppedByUser !== true
+  && previous.role === metadata.agentType && previous.origin === metadata.toolUseId
+  && previous.model === metadata.model && previous.name === metadata.name
+  && previous.parent === (metadata.parentAgentId ?? undefined);
 
 // Native metadata writes are not awaited before SubagentStart. Only a pending,
 // validated parent tool call can make a metadata snapshot usable for a new start.
@@ -36,10 +40,16 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       const stat = await file.stat();
       if (!stat.isFile()) fail();
       if (fresh && stat.birthtimeMs < startedAt) fail('IDENTITY');
-      const buffer = Buffer.alloc(16385);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > 16384) fail('SIZE');
-      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead)));
+      const tail = suffix === 'jsonl', limit = tail ? 1048576 : 16384;
+      const offset = tail ? Math.max(0, stat.size - limit) : 0;
+      const buffer = Buffer.alloc(limit + Number(!tail));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, offset);
+      if (bytesRead > limit) fail('SIZE');
+      // Discard only the partial first line before decoding a bounded UTF-8 tail.
+      const start = offset ? buffer.indexOf(10) + 1 : 0;
+      if (offset && !start) fail('SIZE');
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(start, bytesRead));
+      return tail ? text.trimEnd().split('\n').filter(Boolean).map(line => JSON.parse(line)) : JSON.parse(text);
     } finally { await file.close(); }
   }
   async function nativeFork(binding, metadata) {
@@ -114,6 +124,57 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     call.peerResume = Boolean(peer);
     return true;
   }
+  function begin(session, id) {
+    const state = verified.get(key(session, id));
+    if (!state) return;
+    state.completion = undefined;
+    return state.request = {};
+  }
+  function delivered(session, id, request, message) {
+    const state = verified.get(key(session, id));
+    if (state && request && state.request === request && message.stop_reason === 'end_turn' && validId(message.id)) {
+      state.completion = { id: message.id, at: Date.now() };
+    }
+  }
+  async function completionResume(binding, previous, signal) {
+    if (!projectsRoot || binding.nativeRegistered !== true || !previous?.completion
+      || previous.transcriptPath !== binding.transcriptPath) return;
+    const parentCompletion = previous.completion;
+    const records = await read(binding, 'jsonl');
+    const latest = records.findLast(row => ['user', 'assistant'].includes(row.type));
+    if (latest?.type !== 'user' || latest.isMeta !== true || latest.origin?.kind !== 'task-notification'
+      || latest.sessionId !== binding.sessionId || latest.agentId !== binding.id || !validId(latest.uuid)
+      || latest.uuid === previous.notification || typeof latest.message?.content !== 'string') return;
+    const at = Date.parse(latest.timestamp);
+    if (!Number.isFinite(at) || at < previous.completion.at || at > Date.now() || Date.now() - at > 300000) return;
+    // Native 2.1.266 prepends a harness notice. Only the first outer header is
+    // parsed; quoted result text cannot provide task identity or completion state.
+    const text = latest.message.content;
+    const header = /<task-notification>\s*<task-id>([A-Za-z0-9_-]{1,200})<\/task-id>\s*(?:<tool-use-id>([A-Za-z0-9_-]{1,200})<\/tool-use-id>\s*)?(?:<output-file>[^<]*<\/output-file>\s*)?<status>completed<\/status>\s*<summary>/.exec(text);
+    if (!header || text.indexOf('<task-notification>') !== header.index
+      || text.indexOf('<task-notification>', header.index + 1) !== -1
+      || !text.trimEnd().endsWith('</task-notification>')) return;
+    const child = verified.get(key(binding.sessionId, header[1]));
+    const completion = child?.completion;
+    if (!completion || child.parent !== binding.id || child.transcriptPath !== binding.transcriptPath
+      || (header[2] !== undefined && header[2] !== child.origin) || completion.at > at) return;
+    const childBinding = { ...binding, id: header[1], role: child.role };
+    if (!sameIdentity(child, await read(childBinding))) return;
+    const childRecords = await read(childBinding, 'jsonl');
+    const final = childRecords.findLast(row => ['user', 'assistant'].includes(row.type));
+    if (final?.type !== 'assistant' || final.isApiErrorMessage === true
+      || final.sessionId !== binding.sessionId || final.agentId !== header[1]
+      || final.message?.id !== completion.id || final.message.stop_reason !== 'end_turn') return;
+    const finalAt = Date.parse(final.timestamp);
+    if (!Number.isFinite(finalAt) || finalAt < startedAt || finalAt > at) return;
+    // Recheck identities after asynchronous reads; cancellation consumes nothing.
+    if (!sameIdentity(previous, await read(binding)) || !sameIdentity(child, await read(childBinding))) return;
+    signal?.throwIfAborted();
+    if (verified.get(key(binding.sessionId, binding.id)) !== previous
+      || previous.completion !== parentCompletion
+      || verified.get(key(binding.sessionId, header[1])) !== child || child.completion !== completion) return;
+    return { child, completion, parentCompletion, notification: latest.uuid };
+  }
   async function resolveSelection(binding, signal) {
     if (!validId(binding.sessionId) || !validId(binding.id)) fail('IDENTITY');
     const deadline = Date.now() + timeoutMs;
@@ -143,11 +204,28 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.child === binding.id
           && call.tool === 'Skill' && call.skill === metadata.name) : undefined;
       const previous = verified.get(key(binding.sessionId, binding.id));
-      const resumeEntry = metadata && metadata.stoppedByUser !== true && previous && previous.role === binding.role
-        && previous.origin === metadata.toolUseId && previous.model === metadata.model
-        && previous.name === metadata.name && previous.parent === (metadata.parentAgentId ?? undefined)
+      const resumeEntry = sameIdentity(previous, metadata) && previous.role === binding.role
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.target === binding.id
           && call.resumeConfirmed && call.resumeParent === previous.parent) : undefined;
+      if (!resumeEntry && sameIdentity(previous, metadata) && previous.role === binding.role) {
+        let completion;
+        try { completion = await completionResume(binding, previous, signal); }
+        catch (error) {
+          if (error.selectionReason) throw error;
+          if (['EACCES', 'EPERM'].includes(error.code)) fail('ACCESS');
+          if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
+            signal?.throwIfAborted(); failIO(error);
+          }
+        }
+        signal?.throwIfAborted();
+        if (completion && completion.child.completion === completion.completion
+          && previous.completion === completion.parentCompletion) {
+          completion.child.completion = undefined;
+          previous.completion = undefined;
+          previous.notification = completion.notification;
+          return { ...previous.selection, source: 'verified-completion-resume' };
+        }
+      }
       if (metadata && metadata.agentType === binding.role && (validId(metadata.toolUseId) || skillEntry || resumeEntry || nativeEntry)) {
         const id = skillEntry?.[0] ?? (pending.has(key(binding.sessionId, metadata.toolUseId))
           ? key(binding.sessionId, metadata.toolUseId) : resumeEntry?.[0] ?? key(binding.sessionId, metadata.toolUseId));
@@ -172,7 +250,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           verified.delete(agentKey);
           if (verified.size >= 1024) verified.delete(verified.keys().next().value);
           verified.set(agentKey, { role: binding.role, origin: metadata.toolUseId, model: metadata.model,
-            name: metadata.name, parent: metadata.parentAgentId ?? undefined, reviewContext: selection.reviewContext });
+            name: metadata.name, parent: metadata.parentAgentId ?? undefined, reviewContext: selection.reviewContext,
+            transcriptPath: binding.transcriptPath, selection, notification: previous?.notification });
           return selection;
         }
       } else if (metadata) reason = metadata.agentType !== binding.role ? 'ROLE' : 'IDENTITY';
@@ -181,5 +260,5 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     } while (true);
     fail(reason);
   }
-  return { remember, linkSkill, linkResume, resolve: resolveSelection };
+  return { remember, linkSkill, linkResume, begin, delivered, resolve: resolveSelection };
 }

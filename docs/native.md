@@ -27,6 +27,8 @@ D:\AIDEV\Clauduct\clauduct.cmd --dry-run
 
 SendMessage 재개에서는 native가 최초 생성 toolUseId를 유지합니다. 세션 전용 PostToolUse:SendMessage hook이 성공한 실제 메시지 전달의 호출 ID·대상·부모만 연결합니다. 기존 자식의 검증된 metadata와 일치하고 새 성공 호출이 있어야 이전 snapshot을 재개에 사용할 수 있습니다. 검증 이력은 최대 1024개이며 프로세스 재시작·이력 퇴출 후에는 이 경로를 사용할 수 없습니다. 공유 metadata 검증은 각 HTTP 요청의 취소와 분리하며 Stop·등록 교체·gateway 종료 시 취소합니다.
 
+단일 completed task-notification으로 이미 종료한 부모가 복귀하는 경로는 `verified-completion-resume`으로 구분합니다. native transcript의 최상위 origin·세션·수신자·알림 UUID, 검증된 부모자식 metadata, gateway가 전달한 자식의 마지막 end_turn 응답 ID를 함께 확인합니다. 부모·자식 JSONL은 각각 끝 1MiB만 읽고 원문을 저장하거나 진단에 노출하지 않습니다. 완료 증거는 한 번 소비하고 원래 모델·부모·reviewContext를 유지합니다. 중단 표식·변조·중복·5분 초과 지연은 거부하며, 결합된 여러 알림과 실패/취소 알림 복귀는 지원하지 않습니다. 로컬 합성/loopback은 통과했고 실제 수정 버전 복귀는 미검증입니다. [상세 근거와 한계](audit-2026-09-09-completion-resume.md).
+
 background fork Skill은 meta.toolUseId가 없는 native 경로다. Clauduct 세션 전용 PostToolUse:Skill hook이 성공한 fork 결과의 agentId와 해당 tool_use_id, commandName, 부모 ID만 전달한다. gateway는 원래 전달한 Skill 호출과 대조한 뒤 자식 metadata.name과 연결한다. 스킬 이름이나 시간 순서만으로 연결하지 않으며 직접 Agent의 toolUseId 검증은 유지한다. 화면에 표시되는 결과 문자열에서 ID를 추출하지 않는다. inline 및 background가 아닌 Skill 결과는 연결 hook에서 무시하며, 동기 fork·다른 workflow 경로를 지원한다고 주장하지 않는다.
 
 **compact 전용 최적화:** 설치 Claude 2.1.263의 compact 요약 요청 시작·끝 문구가 최종 user 메시지에서 공백·줄바꿈 차이를 제외하고 일치할 때만 같은 모델의 effort를 최대 medium으로 낮춥니다. 비교만 정규화하며 upstream에 보내는 원문은 바꾸지 않습니다. low는 유지하고, 일반 작업 및 다음 요청의 기본값은 변경하지 않습니다. `compact-policy.mjs`는 텍스트 호환 분류이며 native 출처 인증이나 도구 권한 판단이 아닙니다. 동일 템플릿을 직접 입력해도 분류될 수 있고, native 템플릿 문구가 변경되면 자동 적용하지 않고 기존 effort를 유지합니다. 공식 compact 전용 effort API는 확인되지 않았습니다. 헤더나 전역 설정을 위장·변경하지 않습니다.

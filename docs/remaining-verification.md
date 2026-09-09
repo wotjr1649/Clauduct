@@ -2,7 +2,7 @@
 
 ## 이관 후 작업 기준 — 2026-09-09 확정
 
-이 문서를 현재 작업·검증 현황의 기준으로 유지한다. 과거 감사 기록은 증거 링크이며, 아래의 과거 실행 프롬프트를 일괄 재실행하지 않는다. 이관 직전 HEAD는 3828325, 최신 실행 코드 변경은 e24778e다. 후속 커밋이 있으면 git log와 diff로 먼저 확인한다.
+이 문서를 현재 작업·검증 현황의 기준으로 유지한다. 과거 감사 기록은 증거 링크이며, 아래의 과거 실행 프롬프트를 일괄 재실행하지 않는다. 이관 HEAD a64bff1 이후 완료 알림 복귀를 수정했다. 최신 커밋은 git log와 diff로 확인한다. [완료 알림 수정 감사](audit-2026-09-09-completion-resume.md)에 로컬 검사와 한계를 기록했다.
 
 사용자 확정 범위는 현재 설치 버전의 모델 호출 경로 전체 목록화 및 경로별 호환성 판정이다. 실제 모델을 호출하지 않는 로컬 명령·도구·훅은 GPT 전환 대상과 구분한다. 핵심 개발 경로의 정상 반환, 전체 경로 조사, 지원/미지원/미검증 분류를 각각 평가한다. 미지원 항목을 목록에 적은 것만으로 구현 완료로 처리하지 않는다. 인증 갱신과 수시간 실제 실행은 제외한다.
 
@@ -10,7 +10,7 @@
 
 | 순서 | 작업 | 필요한 증거 / 종료 조건 |
 |---|---|---|
-| 1 | native task-notification(completed) 복귀 | HIGH-03 자식 aa7f2126d47e23050의 205→207행 순서 재현. native 완료 알림의 신뢰 근거를 확인하고 관계·세션·취소·변조·중복·오래된 알림을 검증. 합성/loopback 통과 후 변경 경로 실제 반환 확인 |
+| 1 | native task-notification(completed) 복귀 | 수정 및 합성/loopback 42개 통과. 관계·세션·취소·변조·중복·지연 검사 포함. 실제 수정 버전 반환은 미검증, symlink 검사는 Node 권한 거부. 여러 알림이 한 행에 결합된 복귀 등 지원 한계는 감사 참조 |
 | 2 | 이벤트·라우팅 진단 | 보조 이벤트 실발생과 미지원 이벤트/요청을 구분. 마지막 16개 진단의 누락 범위를 명시하고, 원문을 저장하지 않는 필요한 상관관계 증거를 설계. 기존 other의 원래 이름은 복원했다고 주장하지 않음 |
 | 3 | 현재 설치 버전 전체 호출 경로 목록 | native 내장 기능과 설치된 skill/plugin별로 모델 호출 유무, 실행 주체, gateway 경유 여부, 모델·effort·context 선택 출처, 증거와 지원 상태를 기록. 숨은 보조 요청·우회 provider·fallback 여부도 조사. 환경에서 발견한 전체 목록과 판정표를 대조해 누락 확인 |
 | 4 | 남은 회귀·보안 검증 | 아래 기능별 표의 미확인 항목과 설정 격리·취소·복귀·병렬·스트리밍·자원 정리 검증. 이미 통과한 항목은 변경 영향이 있을 때만 반복 |
@@ -47,12 +47,13 @@
 | 현재 sol/xhigh 명시 선택·재개 | c5a3b05b request 11/12 explicit-metadata, 19/21 verified-resume; 두 Read 및 완료 | 통과. 모델 명시 없는 Plan 역할 검증으로 대체하지 않음 |
 | native code-review low 완료 | 268e9bf2 자식 a91eb3a1de1548dde: Bash diff 결과 연결, 최종 지적 반환, 부모 267행 completed; 270행 request 4/5 luna/max native-fork 성공 | low 실제 완료. strict diff 호출 수용과 약 10분 31초 요청의 ping 41회 및 완료 확인. 다른 review 수준·병렬 전체 완료는 미확인 |
 | native 병렬 code-review 최종 반환 | HIGH-03: 1d6ef4cd 루트/직접 자식 13개/손자 4개 대상 Read, 부모 518행 completed, 521/522행 ReportFindings 5건. request 717/719 처리 13052.10ms 겹침 | 최종 반환 통과. 자식 task-notification 복귀 CALL 한 건과 도구 오류가 남아 오류 없는 완료는 아님. [상세 감사](audit-2026-09-09-native-high-03.md) |
-| peer 메시지 기반 복귀 | HIGH-03 원본 537행 request 717/730/735/740: luna/max verified-peer-resume success=true | 실제 통과. native task-notification 재기동은 별도 미지원 경로 |
+| peer 메시지 기반 복귀 | HIGH-03 원본 537행 request 717/730/735/740: luna/max verified-peer-resume success=true | 실제 통과. native task-notification 재기동은 별도 경로 |
+| 완료 알림 기반 복귀 | 완료 응답 ID·native origin·metadata 관계를 대조하는 verified-completion-resume 추가. [수정 감사](audit-2026-09-09-completion-resume.md) | 단일 completed 알림의 합성/loopback 통과. 실제 수정 버전 복귀 미검증 |
 | 리뷰 스킬 재호출 감소 | HIGH-03 연결된 18개 실행에서 superpowers/code-review Skill 호출 0, claude-api 3 | 이번 실행에서 확인. 일반적인 모델 준수 보장은 아님 |
 | Codex 보조 metadata 이벤트 | HIGH-03 마지막 16개 진단 auxiliaryMetadataEvents=0 | 실제 발생·처리 미확인. 로컬 합성 검사만 통과 |
 | 실제 인증 갱신·수시간 실행 | 사용자 지정 제외 | 이번 단계에서 실행하지 않음 |
 
-현재 첫 작업은 HIGH-03에서 재현된 task-notification 복귀 CALL 오류다. UNSUPPORTED_EVENT의 정확한 원인 식별과 보조 이벤트 실발생 확인도 남아 있다. 과거 event=other에는 원래 이벤트 이름이 없어 복원할 수 없다. 후속 진단은 고정 구조 분류를 추가했지만 실제 원인 해결 증거는 아니다. 인증된 실제 실행은 기존 거부를 우회하지 않으며, 합성 검사 통과만으로 미확인 행을 통과 처리하지 않는다.
+HIGH-03에서 재현된 task-notification 복귀 CALL 오류는 로컬 수정·회귀 검증을 마쳤고 새 사용자 세션에서 실제 반환 확인이 남았다. UNSUPPORTED_EVENT의 정확한 원인 식별과 보조 이벤트 실발생 확인도 남아 있다. 과거 event=other에는 원래 이벤트 이름이 없어 복원할 수 없다. 후속 진단은 고정 구조 분류를 추가했지만 실제 원인 해결 증거는 아니다. 인증된 실제 실행은 기존 거부를 우회하지 않으며, 합성 검사 통과만으로 미확인 행을 통과 처리하지 않는다.
 
 전제: 기존 live/인증 실행 거부 때문에 에이전트가 실제 Claude를 대신 실행하지 않는다. 사용자가 실행한 세션의 JSONL과 정제된 시간 진단을 확인한다. 전역 설정, hook trust, 모델 기본값, 권한은 변경하지 않는다. 실제 인증 갱신과 수시간 장기 실행은 이번 단계에서 제외한다.
 

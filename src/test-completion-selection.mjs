@@ -150,11 +150,8 @@ try {
   if (process.argv.includes('--symlink')) {
     const s = await setup();
     await unlink(file('parent', 'jsonl'));
-    // A directory junction avoids Windows symlink privilege requirements.
-    const alias = join(root, 'alias');
-    await symlink(join(root, 'session'), alias, 'junction');
-    try { await assert.rejects(s.resolve({ ...binding('parent'), transcriptPath: join(root, 'alias.jsonl') })); }
-    finally { await rmdir(alias); }
+    await symlink(file('child', 'jsonl'), file('parent', 'jsonl'), 'file');
+    await assert.rejects(s.resolve(binding('parent')), error => error.selectionReason === 'PATH');
     passed++;
   }
 

@@ -18,7 +18,7 @@
 
 문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
 
-보조 호출 중 /btw의 side_question → 문맥 복제 → 공통 query/client·header 경로를 설치 2.1.266에서 정적 추적했다. 메인 문맥 경로와 일반 Agent 상속을 구분하며 실제 성공은 아직 아니다. [추적 근거와 한계](audit-2026-09-10-native-btw-path.md). session-12는 준비·사용자 /btw 1회·종료 진단의 읽기 전용 시험이며, skipTranscript에 대비해 UI 결과를 사용자가 함께 제공한다.
+session-12(d9752fc6)의 /btw UI 답변은 사용자 제공 증거로 성공이며 관찰 gateway 요청은 모두 sol/high였다. 취소 2건은 사용자 설명과 부합하지만 /btw와 메인 종료 진단 사이의 request 귀속은 미확정이다. [결과·정적 경로·한계](audit-2026-09-10-native-btw-path.md). 같은 시험을 반복하지 않으며 다음은 동일 세션에 기록된 away_summary의 생성 경로 대조다.
 
 Workflow는 별도 native 도구다. 기본 자식의 실제 성공을 명시 선택·custom agentType·중첩·resume 지원으로 확대하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.
 

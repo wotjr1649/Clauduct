@@ -1,5 +1,15 @@
 # /btw 보조 질문 경로 정적 대조
 
+## session-12 결과
+
+d9752fc6-4099-40fb-8504-34486f086b1e의 메인 JSONL 90행을 확인했다. 위치는 C:/Users/JS/.claude/projects/D--AIDEV-Clauduct-verification-dev-sandbox-run-01/ 아래 해당 ID.jsonl이다. 55행과 종료 진단 요청에 사용자가 제공한 UI 결과는 BTWS12-CONTEXT | 56 | BTW-SIDE-COMPLETED로 기대값과 일치한다. 사용자 제공 답변 성공 증거이며 화면 직접 관찰은 아니다.
+
+44행 기준 상태는 3/3/0, 73행 종료 상태는 11/9/2(started/succeeded/failed)다. 관찰 요청 모두 gpt-5.6-sol/high, agentRef/parentRef=null이며 sessionRef=b52c9fbe0b840d4e7957e4d032600f11, correlationScope=8bab261928c613c3e7ca0ce3c88b9469가 유지됐다. 상태 조회는 준비·종료 각 1회, 마지막 도구는 종료 조회였다. Skill/Agent/Workflow 호출은 없다. 모든 관찰 요청은 단일 시도이며 자동 재시도는 없다. 최종 답변 요청은 마지막 누계 밖이다.
+
+요청 16(13:19:38 KST)과 20(13:21:04 KST)은 upstream/CANCELLED, clientDisconnected=true, firstTextDeltaMs=null이다. 종료 진단 메시지는 63/66/69행에 제출됐고 마지막 요청 22는 성공했다. 사용자는 “실패가 전부 btw에서 나온 것이면 답변을 본 뒤 btw를 두 번 취소한 것이 맞다”는 조건부 설명을 제공했다. 이를 사용자 취소 설명과 부합하는 관찰로 보존하지만 두 요청을 /btw로 확정하거나 각각의 중단 원인을 단정하지 않는다.
+
+판정: /btw 답변 기능은 사용자 제공 UI 증거로 성공. gateway 관찰값은 모두 sol/high. 전체 무오류 실행은 아니며 querySource 부재로 /btw의 정확한 request 귀속은 미확정이다. 취소를 제품 결함이나 /btw 재실행 횟수로 단정하지 않고 동일 시험을 반복하지 않는다. 아래 정적 조사 당시의 미검증 항목 중 UI 반환은 이 증거로 보완하되 동시 실행·취소 UI·remote/fallback은 여전히 미검증이다.
+
 ## 기준과 판정
 
 활성 C:/Users/JS/.local/bin/claude.exe와 C:/Users/JS/.local/share/claude/versions/2.1.266의 SHA256을 재확인했다. 둘 모두 d2c5f7b3b6a12819097ceb6efbce2a390157166003fcaee32dbde0e6d7b45ef7이다. 설치 파일의 포함 JavaScript를 데이터로 읽었으며 바이너리나 추출 코드를 실행하지 않았다. 아래 심볼과 byte offset은 이 빌드에만 해당한다.

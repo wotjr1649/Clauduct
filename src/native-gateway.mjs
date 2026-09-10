@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
-import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES } from './native-protocol.mjs';
+import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, UPSTREAM_FAILURES } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
@@ -316,6 +316,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         && REQUEST_FAILURES.includes(error.requestFailure) ? error.requestFailure : null;
       if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
+      const eventTypeFormat = category === 'UNSUPPORTED_EVENT' && EVENT_TYPE_FORMATS.includes(error.eventTypeFormat) ? error.eventTypeFormat : null;
       const upstreamFailureEvent = Object.keys(UPSTREAM_FAILURES).find(type => UPSTREAM_FAILURES[type] === category) ?? null;
       const upstreamErrorCode = upstreamFailureEvent && UPSTREAM_ERROR_CODES.includes(error.upstreamErrorCode) ? error.upstreamErrorCode : null;
       const upstreamErrorType = upstreamFailureEvent && UPSTREAM_ERROR_TYPES.includes(error.upstreamErrorType) ? error.upstreamErrorType : null;
@@ -325,6 +326,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const parentState = COMPLETION_STATES.includes(error.completionParentState) ? error.completionParentState : null;
       const childState = COMPLETION_STATES.includes(error.completionChildState) ? error.completionChildState : null;
       if (timing) timing.unsupportedEvent = eventKind;
+      if (timing) timing.unsupportedEventTypeFormat = eventTypeFormat;
       if (timing) {
         timing.upstreamFailureEvent = upstreamFailureEvent;
         timing.upstreamErrorCode = upstreamErrorCode;
@@ -346,6 +348,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         : category === 'MEMORY_QUEUE_FULL' || relogin ? 503 : upstream ? 502 : 400;
       const failure = { type: 'error', error: { type: status === 429 ? 'rate_limit_error' : status >= 500 ? 'api_error' : 'invalid_request_error',
         message: category + (eventKind ? ` event=${eventKind}` : '')
+          + (eventTypeFormat ? ` event_type_format=${eventTypeFormat}` : '')
           + (upstreamFailureEvent ? ` event=${upstreamFailureEvent}` : '')
           + (upstreamErrorCode ? ` upstream_code=${upstreamErrorCode}` : '')
           + (upstreamErrorType ? ` upstream_type=${upstreamErrorType}` : '')

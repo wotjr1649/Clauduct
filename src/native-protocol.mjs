@@ -65,6 +65,8 @@ export const OUTPUT_TOKEN_LIMIT_POLICY = 'usage-enforced-completion';
 // Diagnostic allowlist only, not a list of newly supported events. Never echo an
 // arbitrary upstream type or body through an error or status response.
 export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-object', 'missing-event-type', 'invalid-event-type',
+  'unknown-codex-event', 'unknown-websocket-event',
+  'message_start', 'message_delta', 'message_stop', 'content_block_start', 'content_block_delta', 'content_block_stop',
   'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'codex.response.metadata', 'responsesapi.websocket_timing', 'response.created', 'response.in_progress', 'response.queued',
   'response.completed', 'response.failed', 'response.incomplete', 'error',
   'response.output_item.added', 'response.output_item.done', 'response.content_part.added', 'response.content_part.done',
@@ -73,6 +75,8 @@ export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-obj
   'response.reasoning_summary_part.added', 'response.reasoning_summary_part.done', 'response.reasoning_part.added', 'response.reasoning_part.done',
   'response.reasoning_summary_text.delta', 'response.reasoning_summary_text.done', 'response.reasoning_text.delta', 'response.reasoning_text.done',
   'response.custom_tool_call_input.delta', 'response.custom_tool_call_input.done']);
+// Finite structural diagnostics only; never retain or hash an unknown event name/body.
+export const EVENT_TYPE_FORMATS = Object.freeze(['missing', 'non-string', 'empty', 'oversized', 'identifier', 'other']);
 export class NativeError extends Error { constructor(code) { super(code); this.code = code; } }
 export const need = (condition, code = 'UNSUPPORTED_REQUEST') => { if (!condition) throw new NativeError(code); };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -656,7 +660,13 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
             : !Object.hasOwn(event, 'type') ? 'missing-event-type'
             : typeof event.type !== 'string' ? 'invalid-event-type'
             : EVENT_DIAGNOSTIC_TYPES.includes(event.type) ? event.type
-            : event.type.startsWith('response.') ? 'unknown-response-event' : 'other';
+            : event.type.startsWith('response.') ? 'unknown-response-event'
+            : event.type.startsWith('codex.') ? 'unknown-codex-event'
+            : event.type.startsWith('responsesapi.') ? 'unknown-websocket-event' : 'other';
+          const type = object(event) ? event.type : undefined;
+          failure.eventTypeFormat = type === undefined ? 'missing' : typeof type !== 'string' ? 'non-string'
+            : type.length === 0 ? 'empty' : type.length > 128 ? 'oversized'
+              : /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/.test(type) ? 'identifier' : 'other';
         }
         throw failure;
       }

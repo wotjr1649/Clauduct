@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { clientVersionPolicy, isClientVersion } from './client-version.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES,
+import { EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES,
   UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
@@ -79,6 +79,7 @@ export function requestStatusSnapshot(value, env = {}) {
       compactPercent: number(row.agentContextPolicy.compactPercent) } : null,
     subagent: row?.subagent === true, success: row?.success === true,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
+    unsupportedEventTypeFormat: EVENT_TYPE_FORMATS.includes(row?.unsupportedEventTypeFormat) ? row.unsupportedEventTypeFormat : null,
     failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,
     requestFailure: REQUEST_FAILURES.includes(row?.requestFailure) ? row.requestFailure : null,
     selectionFailure: SELECTION_FAILURES.includes(row?.selectionFailure) ? row.selectionFailure : null,

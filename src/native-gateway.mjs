@@ -22,7 +22,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   let activeBodies = 0, activeDeliveries = 0, activeHeartbeats = 0, cleanupFailed = false;
   const maxObservedInputTokens = { main: 0, subagent: 0 };
   // Fixed metadata only; bounded memory, no transcript, headers or credential material.
-  const recentRequests = [];
+  const recentRequests = [], failureRequests = [];
+  const copyRecord = record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
+    attempts: record.attempts.map(attempt => ({ ...attempt })),
+    ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
+    ...(record.compactShape && { compactShape: { ...record.compactShape } }) });
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0 };
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
@@ -31,10 +35,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     activeDeliveries, cleanupFailed, admission: admission.diagnostics(), maxObservedInputTokens: { ...maxObservedInputTokens },
     contextPolicy: CONTEXT_POLICY, contextPolicyRuntimeVerified: false,
     correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage } },
-    recentRequests: recentRequests.map(record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
-      attempts: record.attempts.map(attempt => ({ ...attempt })),
-      ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
-      ...(record.compactShape && { compactShape: { ...record.compactShape } }) })),
+    recentRequests: recentRequests.map(copyRecord),
+    failureRequests: failureRequests.map(copyRecord),
     busy: jobs.size > 0, transport: transport.diagnostics(), requests, rejected,
     persistedBodies: 0, registeredAgents: agents.size, unregisteredAgentRequests, sessionLifetime: null, requestBudget: null });
   function authorized(value) {
@@ -366,7 +368,12 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       activeAgent?.requests.delete(controller);
       if (timing) {
         timing.finishedMs = elapsed(); lifetime[timing.success ? 'succeeded' : 'failed']++;
-        if (!timing.success) failuresByStage[stage]++;
+        if (!timing.success) {
+          failuresByStage[stage]++;
+          failureRequests.push(copyRecord(timing));
+          // Pin the first eight completed failures; retain the latest eight thereafter.
+          if (failureRequests.length > 16) failureRequests.splice(8, 1);
+        }
       }
       release?.(); res.removeListener('close', abort);
     }

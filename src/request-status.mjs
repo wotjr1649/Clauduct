@@ -27,7 +27,7 @@ export async function readRequestStatus(env) {
       res.setEncoding('utf8');
       res.on('data', chunk => {
         bytes += Buffer.byteLength(chunk);
-        if (bytes > 128 * 1024) { res.destroy(); fail(new Error('STATUS_UNAVAILABLE')); return; }
+        if (bytes > 256 * 1024) { res.destroy(); fail(new Error('STATUS_UNAVAILABLE')); return; }
         raw += chunk;
       });
       res.on('error', fail);
@@ -49,16 +49,7 @@ export function requestStatusSnapshot(value, env = {}) {
   if (!Array.isArray(value?.recentRequests)) throw new Error('STATUS_UNAVAILABLE');
   const rows = value.recentRequests.slice(-16), { lifetime, correlationScope } = value;
   const clientVersion = value.transport?.clientVersion;
-  return { ...(isClientVersion(clientVersion) ? clientVersionPolicy(clientVersion)
-    : { clientVersion: null, referenceClientVersion: null, clientVersionStatus: 'not-observed' }),
-    clientContextPolicy: { evidence: 'inherited-environment',
-    ...(contextFromEnvironment(env) ?? { window: null, autoCompactWindow: null, compactPercent: null }) },
-    correlationScope: reference(correlationScope),
-    lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
-      ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
-      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents'].map(key =>
-        [key, counter(lifetime[key])])) } : null,
-    recentRequests: rows.map(row => ({ request: number(row?.request),
+  const projectRow = row => ({ request: number(row?.request),
     sessionRef: reference(row?.sessionRef), agentRef: reference(row?.agentRef), parentRef: reference(row?.parentRef),
     startedAt: typeof row?.startedAt === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(row.startedAt) ? row.startedAt : null,
     model: Object.values(MODELS).some(model => model.model === row?.model) ? row.model : null,
@@ -111,7 +102,27 @@ export function requestStatusSnapshot(value, env = {}) {
         .map(key => [key, number(attempt?.[key])])), completed: attempt?.completed === true,
       terminalState: ['open', 'completed', 'done', ...Object.keys(UPSTREAM_FAILURES)].includes(attempt?.terminalState) ? attempt.terminalState : null,
       postCompletionFrame: [...EVENT_DIAGNOSTIC_TYPES, 'done', 'invalid-json', 'oversized'].includes(attempt?.postCompletionFrame) ? attempt.postCompletionFrame : null,
-      postCompletionSequence: ['missing', 'unsequenced', 'invalid', 'expected', 'unexpected'].includes(attempt?.postCompletionSequence) ? attempt.postCompletionSequence : null })) : [] })) };
+      postCompletionSequence: ['missing', 'unsequenced', 'invalid', 'expected', 'unexpected'].includes(attempt?.postCompletionSequence) ? attempt.postCompletionSequence : null })) : [] });
+  const failures = Array.isArray(value.failureRequests) ? value.failureRequests
+    : value.failureHistory?.records;
+  const retained = Array.isArray(failures) ? (failures.length > 16 ? [...failures.slice(0, 8), ...failures.slice(-8)] : failures) : null;
+  const failed = counter(lifetime?.failed), started = counter(lifetime?.started), succeeded = counter(lifetime?.succeeded);
+  return { ...(isClientVersion(clientVersion) ? clientVersionPolicy(clientVersion)
+    : { clientVersion: null, referenceClientVersion: null, clientVersionStatus: 'not-observed' }),
+    clientContextPolicy: { evidence: 'inherited-environment',
+    ...(contextFromEnvironment(env) ?? { window: null, autoCompactWindow: null, compactPercent: null }) },
+    clientExecutionPolicy: { evidence: 'inherited-environment', nonStreamingFallbackDisabled:
+      env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK === '1' ? true : null },
+    correlationScope: reference(correlationScope),
+    requestOutcome: failed === null || started === null || succeeded === null ? 'not-observed'
+      : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
+    lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
+      ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
+      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents'].map(key =>
+        [key, counter(lifetime[key])])) } : null,
+    failureHistory: retained === null ? null : { retention: 'first-8-last-8-completed',
+      omitted: failed === null ? null : Math.max(0, failed - retained.length), records: retained.map(projectRow) },
+    recentRequests: rows.map(projectRow) };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

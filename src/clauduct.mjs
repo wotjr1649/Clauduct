@@ -123,6 +123,7 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
     CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(verifyAutoCompact ? 100000 : CONTEXT_POLICY.window),
     CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: String(CONTEXT_POLICY.compactPercent),
     CLAUDE_CODE_MAX_RETRIES: '0',
+    CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '1',
     CLAUDE_CODE_RETRY_WATCHDOG: '0',
     CLAUDE_CODE_RESUME_INTERRUPTED_TURN: '0',
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
@@ -246,7 +247,8 @@ async function main() {
     if (options.gptAgents) process.stdout.write('GPT 일반 작업 agent: clauduct-astra/sol/terra/luna/inherit 등록. 기존 역할과 메인 선택은 유지합니다.\n');
     const result = await runInteractive(gateway, endpoint => {
       const launch = interactiveLaunch(endpoint, process.env, process.cwd(), selected, options.forward, options);
-      for (const key of ['CLAUDE_CODE_MAX_CONTEXT_TOKENS', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE']) {
+      for (const key of ['CLAUDE_CODE_MAX_CONTEXT_TOKENS', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
+        'CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK']) {
         contextEnv[key] = launch.options.env[key];
       }
       try { return spawn(launch.file, launch.args, launch.options); }

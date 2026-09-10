@@ -80,6 +80,7 @@ try {
     diagnostics: () => ({ activeSockets: 0, activeRequests: 0, requestAttempts: 0, accessToken: 'SYNTHETIC_PRIVATE' })
   } });
   const contextEnv = { CLAUDE_CODE_MAX_CONTEXT_TOKENS: '400000', CLAUDE_CODE_AUTO_COMPACT_WINDOW: '400000',
+    CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '1',
     CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '84.21052631578947' };
   const result = await runInteractive(gateway, () => {
     const child = new EventEmitter(); child.kill = () => {};
@@ -87,6 +88,9 @@ try {
   }, { contextEnv });
   assert.equal(result.category, 'SUCCESS'); assert.equal(result.resourcesClosed, true);
   assert.equal(result.requestStatus.lifetime.started, 0);
+  assert.equal(result.requestStatus.requestOutcome, 'no-requests');
+  assert.equal(result.requestStatus.clientExecutionPolicy.nonStreamingFallbackDisabled, true);
+  assert.deepEqual(result.requestStatus.failureHistory.records, []);
   assert.deepEqual(result.requestStatus.recentRequests, []);
   assert.equal(result.requestStatus.clientContextPolicy.window, 400000);
   assert.equal(sends, 0); assert.equal(gateway.diagnostics().requests, 0);

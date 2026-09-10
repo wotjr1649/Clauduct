@@ -410,6 +410,82 @@ try {
     finally { await gateway.close(); }
   }
   {
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async () => { throw new NativeError('UPSTREAM_IO_ERROR'); },
+      close: async () => {}, diagnostics: () => ({ activeSockets: 0, activeRequests: 0 }) } });
+    try {
+      const ids = [];
+      assert.equal(requestStatusSnapshot(gateway.diagnostics()).requestOutcome, 'no-requests');
+      for (let i = 0; i < 24; i++) {
+        assert.equal((await call(gateway)).status, 502);
+        ids.push(gateway.diagnostics().recentRequests.at(-1).request);
+      }
+      const state = gateway.diagnostics();
+      const status = requestStatusSnapshot(state);
+      assert.equal(status.requestOutcome, 'has-failures');
+      assert.equal(status.failureHistory.omitted, 8);
+      const wireStatus = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+        ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+      assert.deepEqual(wireStatus.failureHistory, status.failureHistory);
+      assert.ok(Buffer.byteLength(JSON.stringify(wireStatus)) < 256 * 1024);
+      assert.deepEqual(status.failureHistory.records.map(row => row.request), [...ids.slice(0, 8), ...ids.slice(-8)]);
+      state.failureRequests[0].attempts.push({ status: 999 });
+      state.failureRequests[0].failureCategory = 'SYNTHETIC_PRIVATE';
+      assert.equal(gateway.diagnostics().failureRequests[0].attempts.length, 0);
+      assert.equal(gateway.diagnostics().failureRequests[0].failureCategory, 'UPSTREAM_IO_ERROR');
+      const projected = requestStatusSnapshot(status);
+      assert.deepEqual(projected.failureHistory, status.failureHistory);
+      const old = requestStatusSnapshot({ recentRequests: [] });
+      assert.equal(old.failureHistory, null); assert.equal(old.requestOutcome, 'not-observed');
+      assert.equal(old.clientExecutionPolicy.nonStreamingFallbackDisabled, null);
+      assert.equal(requestStatusSnapshot({ recentRequests: [], lifetime: { started: 2, succeeded: 2, failed: 0 } }).requestOutcome, 'all-succeeded');
+      const hostile = requestStatusSnapshot({ recentRequests: [], failureRequests: Array.from({ length: 25 }, () => ({
+        failureCategory: 'SYNTHETIC_PRIVATE', unsupportedEventTypeFormat: 'SYNTHETIC_PRIVATE',
+        payload: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE' }] })) });
+      assert.equal(hostile.failureHistory.records.length, 16);
+      assert.ok(!JSON.stringify(hostile).includes('SYNTHETIC_PRIVATE'));
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
+    let releaseFirst, entered;
+    const ready = new Promise(resolve => { entered = resolve; });
+    const pendingFailure = new Promise(resolve => { releaseFirst = resolve; });
+    let first = true;
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async body => {
+        if (!first) return frames(body);
+        first = false; entered(); await pendingFailure;
+        throw new NativeError('UNSUPPORTED_EVENT');
+      }, close: async () => { releaseFirst(); }, diagnostics: () => ({}) } });
+    const pending = call(gateway);
+    try {
+      await ready;
+      const firstId = gateway.diagnostics().recentRequests[0].request;
+      assert.equal(requestStatusSnapshot(gateway.diagnostics()).requestOutcome, 'in-progress');
+      for (let i = 0; i < 18; i++) assert.equal((await call(gateway)).status, 200);
+      assert.ok(!gateway.diagnostics().recentRequests.some(row => row.request === firstId));
+      releaseFirst(); assert.equal((await pending).status, 502);
+      await gateway.close();
+      const status = requestStatusSnapshot(gateway.diagnostics());
+      assert.equal(status.failureHistory.records[0].request, firstId);
+      assert.equal(status.failureHistory.omitted, 0);
+      assert.equal(status.requestOutcome, 'has-failures');
+      passed++;
+    } finally { releaseFirst(); await pending; await gateway.close(); }
+  }
+  {
+    const oversized = createServer((req, res) => {
+      req.resume(); res.end(JSON.stringify({ recentRequests: [], padding: 'x'.repeat(256 * 1024) }));
+    });
+    await new Promise(resolve => oversized.listen(0, '127.0.0.1', resolve));
+    try {
+      await assert.rejects(readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${oversized.address().port}`,
+        ANTHROPIC_AUTH_TOKEN: 's'.repeat(43) }), /STATUS_UNAVAILABLE/);
+      passed++;
+    } finally { oversized.closeAllConnections(); await new Promise(resolve => oversized.close(resolve)); }
+  }
+  {
     let first = true;
     const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
       send: async body => {
@@ -434,6 +510,10 @@ try {
       const after = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
         ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
       assert.ok(after.recentRequests.every(row => row.success));
+      assert.equal(after.requestOutcome, 'has-failures');
+      assert.equal(after.failureHistory.records.length, 1);
+      assert.equal(after.failureHistory.records[0].unsupportedEvent, 'unknown-response-event');
+      assert.equal(after.failureHistory.omitted, 0);
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;

@@ -6,6 +6,12 @@
 
 ### 모델 요청 없는 종료 진단
 
+`requestOutcome`은 요청 결과를 `no-requests`/`in-progress`/`all-succeeded`/`has-failures`/`not-observed`로 구분합니다. `Clauduct 종료: SUCCESS`는 프로세스 종료·정리 판정이며 요청 실패가 없어야 한다는 뜻은 아닙니다.
+
+`failureHistory`는 최근 요청 16개와 별개로 완료된 실패의 최초 8개·최근 8개를 최대 16개 보존합니다. 16개 이하에서는 중복 없이 모두 보존하며 완료 순서 기준입니다. `omitted`는 빠진 실패 수입니다. 성공 요청은 실패 이력을 밀어내지 않습니다. 모두 현재 gateway 메모리이며 재시작하면 사라집니다. 과거 진단에 이 필드가 없으면 null로 표시합니다. 상태 조회 응답은 256 KiB로 제한됩니다.
+
+Clauduct 자식 실행에만 `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1`을 적용합니다. 이 gateway가 지원하지 않는 비스트리밍 자동 전환 대신 최초 스트리밍 오류를 보존하기 위한 설정이며 재시도/검증 완화가 아닙니다. 전역 환경은 변경하지 않습니다. `clientExecutionPolicy.nonStreamingFallbackDisabled`는 전달한 실행 환경 증거이며 native 분기 실행의 실증은 아닙니다. 공식 동작은 [Claude Code 환경 변수 문서](https://code.claude.com/docs/en/env-vars)에 명시되어 있습니다.
+
 종료 JSON의 `cleanup`은 자식 종료, gateway 소켓·작업·타이머·전달·유휴 상태, gateway 정리 완료, transport 소켓·요청 종료의 고정 boolean 판정입니다. 모두 true여야 자원 정리가 성공합니다. false인 항목으로 실패 범위를 구분하며 원문 오류나 인증 값은 출력하지 않습니다. 요청 성공과 자원 정리 성공은 별도 판정입니다.
 
 native 세션을 종료해 launcher로 돌아오면 `CLAUDUCT_REQUEST_STATUS` 뒤에 최종 진단 JSON이 출력됩니다. launcher가 gateway 정리 후 메모리 상태를 기존 sanitizer로 변환하며, 새 HTTP 요청·인증 조회·모델 호출·파일 저장은 하지 않습니다. 창 자체를 강제 종료하면 이 출력이 남는다고 보장하지 않습니다. 최근 요청은 최대 16개이며 실제 값이 없는 필드는 null입니다.

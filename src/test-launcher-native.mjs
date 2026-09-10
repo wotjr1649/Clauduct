@@ -47,6 +47,7 @@ function optionTests() {
 
 function childRetryTest() {
   const source = { CLAUDE_CODE_MAX_RETRIES: '10', CLAUDE_CODE_RETRY_WATCHDOG: '1',
+    CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '0',
     CLAUDE_CODE_RESUME_INTERRUPTED_TURN: '1' };
   const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
   const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT');
@@ -56,6 +57,9 @@ function childRetryTest() {
   assert.equal(settings.hooks.PostToolUse[0].matcher, 'Skill|SendMessage|Workflow');
   assert.equal(settings.hooks.PostToolUse[0].hooks[0].command, settings.hooks.SubagentStart[0].hooks[0].command);
   assert.equal(source.CLAUDE_CODE_MAX_RETRIES, '10');
+  assert.equal(source.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK, '0');
+  assert.equal(launch.options.env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK, '1');
+  assert.equal(settings.env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK, '1');
   assert.equal(source.CLAUDE_CODE_RETRY_WATCHDOG, '1');
   assert.equal(source.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, '1');
   assert.equal(launch.options.env.CLAUDE_CODE_MAX_RETRIES, '0');

@@ -5,6 +5,15 @@ import { selectModel } from './models.mjs';
 import { reasoningSnapshot, reasoningEvent, mergeReasoning } from '../poc/adapter.mjs';
 import { inspectCompactTemplate } from './compact-policy.mjs';
 export const REQUEST_STAGES = Object.freeze(['request', 'selection', 'prepare', 'review', 'upstream', 'output-validation', 'delivery']);
+// Fixed labels only: never expose rejected field names, values or request bodies.
+export const REQUEST_FAILURES = Object.freeze([
+  'OBJECT_FIELDS', 'REQUEST_FIELDS', 'REQUEST_SHAPE', 'OUTPUT_CONFIG_FIELDS',
+  'THINKING_FIELDS', 'THINKING_TYPE', 'THINKING_BUDGET', 'CONTEXT_FIELDS',
+  'TOOLS_SHAPE', 'TOOL_FIELDS', 'TOOL_CHOICE_FIELDS', 'MESSAGE_FIELDS', 'MESSAGE_EFFORT_ROLE',
+  'TEXT_SHAPE', 'TEXT_FIELDS', 'TEXT_VALUE', 'CACHE_FIELDS', 'CACHE_VALUE',
+  'IMAGE_FIELDS', 'IMAGE_SOURCE_FIELDS', 'IMAGE_ROLE', 'TOOL_CHANGE_FIELDS', 'TOOL_REFERENCE_FIELDS',
+  'TOOL_USE_FIELDS', 'TOOL_RESULT_FIELDS', 'TOOL_RESULT_SHAPE', 'REDACTED_FIELDS', 'REDACTED_ROLE', 'REASONING_FIELDS'
+]);
 // Status classification only: never copy arbitrary error messages or upstream codes.
 export const FAILURE_DIAGNOSTIC_CATEGORIES = Object.freeze([
   'CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT', 'UPSTREAM_IO_ERROR',
@@ -100,24 +109,29 @@ export function verifyFileReviewStep(message, prepared) {
     throw error;
   }
 }
-function keys(value, allowed) { need(object(value) && Object.keys(value).every(key => allowed.includes(key))); }
+function requestNeed(condition, requestFailure) {
+  if (!condition) throw Object.assign(new NativeError('UNSUPPORTED_REQUEST'), { requestFailure });
+}
+function keys(value, allowed, failure = 'OBJECT_FIELDS') {
+  requestNeed(object(value) && Object.keys(value).every(key => allowed.includes(key)), failure);
+}
 function cache(value) {
   if (value === undefined) return;
-  keys(value, ['type', 'ttl', 'scope']);
-  need(value.type === 'ephemeral' && (value.ttl === undefined || ['5m', '1h'].includes(value.ttl)));
+  keys(value, ['type', 'ttl', 'scope'], 'CACHE_FIELDS');
+  requestNeed(value.type === 'ephemeral' && (value.ttl === undefined || ['5m', '1h'].includes(value.ttl)), 'CACHE_VALUE');
 }
 function text(value) {
   const blocks = typeof value === 'string' ? [{ type: 'text', text: value }] : value;
-  need(Array.isArray(blocks));
+  requestNeed(Array.isArray(blocks), 'TEXT_SHAPE');
   return blocks.map(block => {
-    keys(block, ['type', 'text', 'cache_control']); cache(block.cache_control);
-    need(block.type === 'text' && typeof block.text === 'string'); return block.text;
+    keys(block, ['type', 'text', 'cache_control'], 'TEXT_FIELDS'); cache(block.cache_control);
+    requestNeed(block.type === 'text' && typeof block.text === 'string', 'TEXT_VALUE'); return block.text;
   }).join('\n');
 }
 function image(block) {
-  keys(block, ['type', 'source', 'cache_control']); cache(block.cache_control);
+  keys(block, ['type', 'source', 'cache_control'], 'IMAGE_FIELDS'); cache(block.cache_control);
   const source = block.source;
-  keys(source, ['type', 'media_type', 'data']);
+  keys(source, ['type', 'media_type', 'data'], 'IMAGE_SOURCE_FIELDS');
   need(source.type === 'base64' && ['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(source.media_type)
     && typeof source.data === 'string' && /^[A-Za-z0-9+/]*={0,2}$/.test(source.data), 'UNSUPPORTED_IMAGE');
   return { type: 'input_image', image_url: `data:${source.media_type};base64,${source.data}` };
@@ -130,7 +144,7 @@ function decodeReasoning(value) {
   let result;
   try { result = JSON.parse(Buffer.from(value.slice(reasoningPrefix.length), 'base64url').toString('utf8')); }
   catch { throw new NativeError('UNSUPPORTED_THINKING'); }
-  keys(result, ['type', 'id', 'summary', 'encrypted_content']);
+  keys(result, ['type', 'id', 'summary', 'encrypted_content'], 'REASONING_FIELDS');
   need(result.type === 'reasoning' && id(result.id) && typeof result.encrypted_content === 'string'
     && Array.isArray(result.summary), 'UNSUPPORTED_THINKING');
   for (const part of result.summary) need(part.type === 'summary_text' && typeof part.text === 'string', 'UNSUPPORTED_THINKING');
@@ -138,26 +152,26 @@ function decodeReasoning(value) {
 }
 export function prepareNative(doc, { subagent = false, route, turnToolChanges = false } = {}) {
   keys(doc, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice', 'thinking',
-    'metadata', 'output_config', 'context_management', 'temperature', 'top_p', 'stop_sequences']);
-  need(doc.stream === true && Array.isArray(doc.messages) && doc.messages.length > 0);
+    'metadata', 'output_config', 'context_management', 'temperature', 'top_p', 'stop_sequences'], 'REQUEST_FIELDS');
+  requestNeed(doc.stream === true && Array.isArray(doc.messages) && doc.messages.length > 0, 'REQUEST_SHAPE');
   let selected = route ?? selectModel(doc.model, subagent ? undefined : doc.output_config?.effort);
-  if (doc.output_config !== undefined) keys(doc.output_config, ['effort']);
+  if (doc.output_config !== undefined) keys(doc.output_config, ['effort'], 'OUTPUT_CONFIG_FIELDS');
   need(Number.isSafeInteger(doc.max_tokens) && doc.max_tokens > 0, 'INVALID_OUTPUT_LIMIT');
   if (doc.thinking !== undefined) {
-    keys(doc.thinking, ['type', 'display', 'budget_tokens']);
-    need(['adaptive', 'enabled', 'disabled'].includes(doc.thinking.type));
-    need(doc.thinking.budget_tokens === undefined || (Number.isSafeInteger(doc.thinking.budget_tokens) && doc.thinking.budget_tokens > 0));
+    keys(doc.thinking, ['type', 'display', 'budget_tokens'], 'THINKING_FIELDS');
+    requestNeed(['adaptive', 'enabled', 'disabled'].includes(doc.thinking.type), 'THINKING_TYPE');
+    requestNeed(doc.thinking.budget_tokens === undefined || (Number.isSafeInteger(doc.thinking.budget_tokens) && doc.thinking.budget_tokens > 0), 'THINKING_BUDGET');
   }
   if (doc.context_management !== undefined) {
-    keys(doc.context_management, ['edits']);
+    keys(doc.context_management, ['edits'], 'CONTEXT_FIELDS');
     // Only a semantic no-op is consumed; native local compaction arrives as a new transcript.
     need(isDeepStrictEqual(doc.context_management.edits, [{ type: 'clear_thinking_20251015', keep: 'all' }]), 'UNSUPPORTED_CONTEXT_EDIT');
   }
   need(doc.temperature === undefined && doc.top_p === undefined && doc.stop_sequences === undefined, 'UNSUPPORTED_SAMPLING');
   const definitions = new Map(), discovered = new Set(), removed = new Set();
-  need(doc.tools === undefined || Array.isArray(doc.tools));
+  requestNeed(doc.tools === undefined || Array.isArray(doc.tools), 'TOOLS_SHAPE');
   for (const tool of doc.tools ?? []) {
-    keys(tool, ['name', 'description', 'input_schema', 'cache_control', 'defer_loading']); cache(tool.cache_control);
+    keys(tool, ['name', 'description', 'input_schema', 'cache_control', 'defer_loading'], 'TOOL_FIELDS'); cache(tool.cache_control);
     need(id(tool.name) && !definitions.has(tool.name) && object(tool.input_schema) && tool.input_schema.type === 'object', 'UNSUPPORTED_TOOLS');
     need(tool.description === undefined || typeof tool.description === 'string', 'UNSUPPORTED_TOOLS');
     need(tool.defer_loading === undefined || typeof tool.defer_loading === 'boolean', 'UNSUPPORTED_TOOLS');
@@ -165,7 +179,7 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   }
   let toolChoice = definitions.size ? 'auto' : 'none', parallel = true;
   if (doc.tool_choice !== undefined) {
-    keys(doc.tool_choice, ['type', 'name', 'disable_parallel_tool_use']);
+    keys(doc.tool_choice, ['type', 'name', 'disable_parallel_tool_use'], 'TOOL_CHOICE_FIELDS');
     need(['auto', 'any', 'none', 'tool'].includes(doc.tool_choice.type), 'UNSUPPORTED_TOOLS');
     need(doc.tool_choice.disable_parallel_tool_use === undefined
       || typeof doc.tool_choice.disable_parallel_tool_use === 'boolean', 'UNSUPPORTED_TOOLS');
@@ -180,9 +194,9 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   const input = [], pending = new Set(), used = new Set();
   if (doc.system !== undefined) input.push({ role: 'developer', content: text(doc.system) });
   for (const message of doc.messages) {
-    keys(message, ['role', 'content', 'output_config']);
+    keys(message, ['role', 'content', 'output_config'], 'MESSAGE_FIELDS');
     if (message.output_config !== undefined) {
-      need(message.role === 'system'); keys(message.output_config, ['effort']);
+      requestNeed(message.role === 'system', 'MESSAGE_EFFORT_ROLE'); keys(message.output_config, ['effort'], 'OUTPUT_CONFIG_FIELDS');
       const turn = selectModel(selected.model, message.output_config.effort);
       if (!subagent && !route) selected = turn;
     }
@@ -192,37 +206,37 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     for (const block of blocks) {
       cache(block.cache_control);
       if (block.type === 'text') {
-        keys(block, ['type', 'text', 'cache_control']); need(typeof block.text === 'string');
+        keys(block, ['type', 'text', 'cache_control'], 'TEXT_FIELDS'); requestNeed(typeof block.text === 'string', 'TEXT_VALUE');
         input.push({ role: message.role === 'system' ? 'developer' : message.role,
           content: [{ type: message.role === 'assistant' ? 'output_text' : 'input_text', text: block.text }] });
       } else if (block.type === 'tool_addition' || block.type === 'tool_removal') {
         need(turnToolChanges && message.role === 'system', 'UNSUPPORTED_TOOL_CHANGE');
-        keys(block, ['type', 'tool', 'cache_control']);
-        keys(block.tool, ['type', 'name']);
+        keys(block, ['type', 'tool', 'cache_control'], 'TOOL_CHANGE_FIELDS');
+        keys(block.tool, ['type', 'name'], 'TOOL_REFERENCE_FIELDS');
         need(block.tool.type === 'tool_reference' && id(block.tool.name)
           && definitions.has(block.tool.name), 'INVALID_TOOL_REFERENCE');
         if (block.type === 'tool_addition') {
           discovered.add(block.tool.name); removed.delete(block.tool.name);
         } else removed.add(block.tool.name);
       } else if (block.type === 'image') {
-        need(message.role === 'user'); input.push({ role: 'user', content: [image(block)] });
+        requestNeed(message.role === 'user', 'IMAGE_ROLE'); input.push({ role: 'user', content: [image(block)] });
       } else if (block.type === 'tool_use') {
-        keys(block, ['type', 'id', 'name', 'input', 'cache_control']);
+        keys(block, ['type', 'id', 'name', 'input', 'cache_control'], 'TOOL_USE_FIELDS');
         need(message.role === 'assistant' && id(block.id) && id(block.name) && object(block.input)
           && definitions.has(block.name) && !used.has(block.id), 'INVALID_TOOL_CALL');
         discovered.add(block.name);
         pending.add(block.id); used.add(block.id);
         input.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: JSON.stringify(block.input) });
       } else if (block.type === 'tool_result') {
-        keys(block, ['type', 'tool_use_id', 'content', 'is_error', 'cache_control']);
+        keys(block, ['type', 'tool_use_id', 'content', 'is_error', 'cache_control'], 'TOOL_RESULT_FIELDS');
         need(message.role === 'user' && id(block.tool_use_id) && pending.delete(block.tool_use_id)
           && (block.is_error === undefined || typeof block.is_error === 'boolean'), 'INVALID_TOOL_RESULT');
         const parts = typeof block.content === 'string' ? [{ type: 'text', text: block.content }] : block.content ?? [];
-        need(Array.isArray(parts));
+        requestNeed(Array.isArray(parts), 'TOOL_RESULT_SHAPE');
         const content = parts.map(part => {
           if (part.type === 'image') return image(part);
           if (part.type === 'tool_reference') {
-            keys(part, ['type', 'tool_name', 'cache_control']); cache(part.cache_control);
+            keys(part, ['type', 'tool_name', 'cache_control'], 'TOOL_REFERENCE_FIELDS'); cache(part.cache_control);
             need(id(part.tool_name) && definitions.has(part.tool_name), 'INVALID_TOOL_REFERENCE');
             discovered.add(part.tool_name);
             // Claude supplies the available definitions in tools; retain the historical reference as data.
@@ -233,7 +247,7 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
         if (block.is_error) content.unshift({ type: 'input_text', text: 'Tool execution failed:' });
         input.push({ type: 'function_call_output', call_id: block.tool_use_id, output: content });
       } else if (block.type === 'redacted_thinking') {
-        keys(block, ['type', 'data', 'cache_control']); need(message.role === 'assistant');
+        keys(block, ['type', 'data', 'cache_control'], 'REDACTED_FIELDS'); requestNeed(message.role === 'assistant', 'REDACTED_ROLE');
         input.push(decodeReasoning(block.data));
       } else throw new NativeError('UNSUPPORTED_CONTENT');
     }

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES } from './native-protocol.mjs';
+import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
@@ -68,6 +68,7 @@ export async function readRequestStatus(env) {
     subagent: row?.subagent === true, success: row?.success === true,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
     failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,
+    requestFailure: REQUEST_FAILURES.includes(row?.requestFailure) ? row.requestFailure : null,
     selectionFailure: SELECTION_FAILURES.includes(row?.selectionFailure) ? row.selectionFailure : null,
     selectionIoCode: SELECTION_IO_CODES.includes(row?.selectionIoCode) ? row.selectionIoCode : null,
     completionFailure: COMPLETION_FAILURES.includes(row?.completionFailure) ? row.completionFailure : null,

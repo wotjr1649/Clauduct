@@ -204,7 +204,7 @@ try {
     // Exercise every fixed category through both status boundaries, not upstream parsing.
     let code;
     const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
-      send: async () => { throw new NativeError(code); }, close: async () => {}, diagnostics: () => ({})
+      send: async () => { throw Object.assign(new NativeError(code), { requestFailure: 'REQUEST_FIELDS' }); }, close: async () => {}, diagnostics: () => ({})
     } });
     try {
       assert.equal(new Set(FAILURE_DIAGNOSTIC_CATEGORIES).size, FAILURE_DIAGNOSTIC_CATEGORIES.length);
@@ -214,13 +214,14 @@ try {
           ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
         assert.equal(status.recentRequests.at(-1).failureCategory,
           code === 'UNLISTED_SYNTHETIC_CODE' ? 'OTHER' : code);
+        assert.equal(status.recentRequests.at(-1).requestFailure, null);
       }
       passed++;
     } finally { await gateway.close(); }
   }
   {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
-      failureCategory: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
+      failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
         postCompletionFrame: 'SYNTHETIC_PRIVATE', postCompletionSequence: 'SYNTHETIC_PRIVATE' }]
     }] })));
     await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
@@ -229,6 +230,7 @@ try {
         ANTHROPIC_AUTH_TOKEN: 'x'.repeat(43) });
       const row = status.recentRequests[0];
       assert.equal(row.failureCategory, null);
+      assert.equal(row.requestFailure, null);
       for (const key of ['terminalState', 'postCompletionFrame', 'postCompletionSequence']) assert.equal(row.attempts[0][key], null);
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); }

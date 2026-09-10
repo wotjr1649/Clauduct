@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
-import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES } from './native-protocol.mjs';
+import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
 import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
@@ -302,12 +302,19 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
       const upstreamFailureEvent = Object.keys(UPSTREAM_FAILURES).find(type => UPSTREAM_FAILURES[type] === category) ?? null;
+      const upstreamErrorCode = upstreamFailureEvent && UPSTREAM_ERROR_CODES.includes(error.upstreamErrorCode) ? error.upstreamErrorCode : null;
+      const upstreamErrorType = upstreamFailureEvent && UPSTREAM_ERROR_TYPES.includes(error.upstreamErrorType) ? error.upstreamErrorType : null;
+      const upstreamIncompleteReason = upstreamFailureEvent === 'response.incomplete'
+        && UPSTREAM_INCOMPLETE_REASONS.includes(error.upstreamIncompleteReason) ? error.upstreamIncompleteReason : null;
       const completionFailure = COMPLETION_FAILURES.includes(error.completionFailure) ? error.completionFailure : null;
       const parentState = COMPLETION_STATES.includes(error.completionParentState) ? error.completionParentState : null;
       const childState = COMPLETION_STATES.includes(error.completionChildState) ? error.completionChildState : null;
       if (timing) timing.unsupportedEvent = eventKind;
       if (timing) {
         timing.upstreamFailureEvent = upstreamFailureEvent;
+        timing.upstreamErrorCode = upstreamErrorCode;
+        timing.upstreamErrorType = upstreamErrorType;
+        timing.upstreamIncompleteReason = upstreamIncompleteReason;
         timing.failureStage = stage;
         timing.requestFailure = requestFailure;
         timing.selectionFailure = SELECTION_FAILURES.includes(error.selectionReason) ? error.selectionReason : null;
@@ -325,6 +332,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const failure = { type: 'error', error: { type: status === 429 ? 'rate_limit_error' : status >= 500 ? 'api_error' : 'invalid_request_error',
         message: category + (eventKind ? ` event=${eventKind}` : '')
           + (upstreamFailureEvent ? ` event=${upstreamFailureEvent}` : '')
+          + (upstreamErrorCode ? ` upstream_code=${upstreamErrorCode}` : '')
+          + (upstreamErrorType ? ` upstream_type=${upstreamErrorType}` : '')
+          + (upstreamIncompleteReason ? ` incomplete_reason=${upstreamIncompleteReason}` : '')
           + (requestFailure ? ` request=${requestFailure}` : '')
           + (completionFailure ? ` completion=${completionFailure} parent=${parentState ?? 'NONE'} child=${childState ?? 'NONE'}` : '')
           + (relogin ? ': Codex login required; resume after logging in.' : res.headersSent ? ': Partial response; explicit resume required.' : '') } };

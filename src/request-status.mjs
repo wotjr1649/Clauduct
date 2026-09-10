@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { clientVersionPolicy, isClientVersion } from './client-version.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES } from './native-protocol.mjs';
+import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES,
+  UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
@@ -82,6 +83,12 @@ export async function readRequestStatus(env) {
     failureCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(row?.failureCategory) ? row.failureCategory : null,
     upstreamFailureEvent: typeof row?.upstreamFailureEvent === 'string' && Object.hasOwn(UPSTREAM_FAILURES, row.upstreamFailureEvent)
       && UPSTREAM_FAILURES[row.upstreamFailureEvent] === row?.failureCategory ? row.upstreamFailureEvent : null,
+    upstreamErrorCode: Object.values(UPSTREAM_FAILURES).includes(row?.failureCategory)
+      && UPSTREAM_ERROR_CODES.includes(row?.upstreamErrorCode) ? row.upstreamErrorCode : null,
+    upstreamErrorType: Object.values(UPSTREAM_FAILURES).includes(row?.failureCategory)
+      && UPSTREAM_ERROR_TYPES.includes(row?.upstreamErrorType) ? row.upstreamErrorType : null,
+    upstreamIncompleteReason: row?.failureCategory === UPSTREAM_FAILURES['response.incomplete']
+      && UPSTREAM_INCOMPLETE_REASONS.includes(row?.upstreamIncompleteReason) ? row.upstreamIncompleteReason : null,
     clientDisconnected: row?.clientDisconnected === true,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),

@@ -221,9 +221,13 @@ try {
   }
   {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
-      failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', upstreamFailureEvent: { toString: null, valueOf: null }, attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
+      failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', upstreamFailureEvent: { toString: null, valueOf: null },
+      upstreamErrorCode: 'server_error', upstreamErrorType: 'server_error', upstreamIncompleteReason: 'max_output_tokens', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
         postCompletionFrame: 'SYNTHETIC_PRIVATE', postCompletionSequence: 'SYNTHETIC_PRIVATE' }]
-    }], transport: { clientVersion: 'SYNTHETIC_PRIVATE' } })));
+    }, { failureCategory: 'UPSTREAM_ERROR_EVENT', upstreamErrorCode: 'SYNTHETIC_PRIVATE', upstreamErrorType: 'SYNTHETIC_PRIVATE',
+      upstreamIncompleteReason: 'max_output_tokens' },
+    { failureCategory: 'UPSTREAM_RESPONSE_INCOMPLETE', upstreamErrorCode: { toString: null },
+      upstreamIncompleteReason: 'SYNTHETIC_PRIVATE' }], transport: { clientVersion: 'SYNTHETIC_PRIVATE' } })));
     await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
     try {
       const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${upstream.address().port}`,
@@ -234,6 +238,14 @@ try {
       assert.equal(row.failureCategory, null);
       assert.equal(row.requestFailure, null);
       assert.equal(row.upstreamFailureEvent, null);
+      assert.equal(row.upstreamErrorCode, null);
+      assert.equal(row.upstreamErrorType, null);
+      assert.equal(row.upstreamIncompleteReason, null);
+      for (const extra of status.recentRequests.slice(1)) {
+        assert.equal(extra.upstreamErrorCode, null);
+        assert.equal(extra.upstreamErrorType, null);
+        assert.equal(extra.upstreamIncompleteReason, null);
+      }
       for (const key of ['terminalState', 'postCompletionFrame', 'postCompletionSequence']) assert.equal(row.attempts[0][key], null);
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); }

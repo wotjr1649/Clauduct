@@ -20,6 +20,25 @@ export const UPSTREAM_FAILURES = Object.freeze({
   'response.incomplete': 'UPSTREAM_RESPONSE_INCOMPLETE',
   error: 'UPSTREAM_ERROR_EVENT'
 });
+// Diagnostic vocabulary, not a retry policy or a claim of backend compatibility.
+export const UPSTREAM_ERROR_CODES = Object.freeze(['server_error', 'internal_error', 'invalid_request_error',
+  'invalid_prompt', 'context_length_exceeded', 'invalid_encrypted_content', 'model_not_found',
+  'unsupported_model', 'rate_limit_exceeded', 'usage_limit_reached', 'insufficient_quota',
+  'invalid_api_key', 'authentication_error', 'permission_denied', 'OTHER']);
+export const UPSTREAM_INCOMPLETE_REASONS = Object.freeze(['max_output_tokens', 'max_tokens', 'content_filter', 'steered', 'OTHER']);
+export const UPSTREAM_ERROR_TYPES = Object.freeze(['server_error', 'invalid_request_error', 'rate_limit_error',
+  'authentication_error', 'permission_error', 'not_found_error', 'api_error', 'overloaded_error', 'OTHER']);
+const failureLabel = (value, allowed) => value == null ? null : allowed.includes(value) ? value : 'OTHER';
+export function upstreamFailure(event) {
+  need(object(event) && typeof event.type === 'string' && Object.hasOwn(UPSTREAM_FAILURES, event.type), 'UNSUPPORTED_EVENT');
+  const failure = new NativeError(UPSTREAM_FAILURES[event.type]);
+  const code = event.type === 'error' ? (Object.hasOwn(event, 'code') ? event.code : event.error?.code) : event.response?.error?.code;
+  failure.upstreamErrorCode = failureLabel(code, UPSTREAM_ERROR_CODES);
+  failure.upstreamErrorType = failureLabel(event.type === 'error' ? event.error?.type : event.response?.error?.type, UPSTREAM_ERROR_TYPES);
+  failure.upstreamIncompleteReason = event.type === 'response.incomplete'
+    ? failureLabel(event.response?.incomplete_details?.reason, UPSTREAM_INCOMPLETE_REASONS) : null;
+  return failure;
+}
 // Status classification only: never copy arbitrary error messages or upstream codes.
 export const FAILURE_DIAGNOSTIC_CATEGORIES = Object.freeze([
   ...Object.values(UPSTREAM_FAILURES),
@@ -352,6 +371,11 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     const code = error instanceof NativeError ? error.code
       : ADAPTER_ERROR_CODES.has(error?.code) ? error.code : 'INVALID_REQUEST';
     state.failed ??= new NativeError(code);
+    if (Object.values(UPSTREAM_FAILURES).includes(code)) {
+      state.failed.upstreamErrorCode ??= failureLabel(error.upstreamErrorCode, UPSTREAM_ERROR_CODES);
+      state.failed.upstreamErrorType ??= failureLabel(error.upstreamErrorType, UPSTREAM_ERROR_TYPES);
+      state.failed.upstreamIncompleteReason ??= failureLabel(error.upstreamIncompleteReason, UPSTREAM_INCOMPLETE_REASONS);
+    }
     throw state.failed;
   };
   const charge = (item, bytes) => {
@@ -452,7 +476,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
   const parse = event => {
     need(object(event) && typeof event.type === 'string', 'UNSUPPORTED_EVENT');
     need(!state.completed, 'EVENT_AFTER_COMPLETION');
-    if (Object.hasOwn(UPSTREAM_FAILURES, event.type)) throw new NativeError(UPSTREAM_FAILURES[event.type]);
+    if (Object.hasOwn(UPSTREAM_FAILURES, event.type)) throw upstreamFailure(event);
     if (event.type === 'response.created') {
       need(state.responseId === undefined && id(event.response?.id)
         && (event.response.status === undefined || event.response.status === 'in_progress'), 'INVALID_RESPONSE_START');

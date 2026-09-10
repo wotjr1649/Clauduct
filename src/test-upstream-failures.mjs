@@ -16,8 +16,37 @@ const prefix = [{ type: 'response.created', response: { id: 'resp_test', status:
 const frame = event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 const failedEvent = type => ({ type, code: 'SYNTHETIC_PRIVATE', message: 'SYNTHETIC_PRIVATE',
   response: { id: 'resp_test', error: { code: 'SYNTHETIC_PRIVATE', message: 'SYNTHETIC_PRIVATE' } } });
+const detailCases = type => type === 'error' ? [
+  [{ type, code: 'server_error', error: { code: 'permission_denied' }, message: 'SYNTHETIC_PRIVATE' }, 'server_error', null],
+  [{ type, error: { code: 'context_length_exceeded', message: 'SYNTHETIC_PRIVATE' } }, 'context_length_exceeded', null],
+  [failedEvent(type), 'OTHER', null], [{ type }, null, null],
+  [{ type, code: null, error: { code: 'server_error', type: 'server_error' } }, null, null, 'server_error'],
+  [{ type, error: { type: 'invalid_request_error', message: 'SYNTHETIC_PRIVATE' } }, null, null, 'invalid_request_error'],
+  [{ type, code: { toString: null }, error: { type: { toString: null } }, message: 'SYNTHETIC_PRIVATE' }, 'OTHER', null, 'OTHER']
+] : type === 'response.failed' ? [
+  [{ type, response: { error: { code: 'server_error', message: 'SYNTHETIC_PRIVATE' } } }, 'server_error', null],
+  [{ type, response: { error: { code: 'invalid_encrypted_content' } } }, 'invalid_encrypted_content', null],
+  [failedEvent(type), 'OTHER', null]
+] : [
+  [{ type, response: { incomplete_details: { reason: 'max_output_tokens' } } }, null, 'max_output_tokens'],
+  [{ type, response: { incomplete_details: { reason: 'SYNTHETIC_PRIVATE' } } }, null, 'OTHER'],
+  [{ type, response: { error: { code: 'rate_limit_exceeded' }, incomplete_details: { reason: 'content_filter' } } }, 'rate_limit_exceeded', 'content_filter']
+];
 let checks = 0;
 for (const [type, code] of cases) {
+  for (const [event, expectedCode, expectedReason, expectedType = null] of detailCases(type)) {
+    const parser = createNativeResponse(prepareNative(doc));
+    assert.throws(() => parser.push(event), error => {
+      assert.equal(error.code, code);
+      assert.equal(error.upstreamErrorCode, expectedCode);
+      assert.equal(error.upstreamErrorType, expectedType);
+      assert.equal(error.upstreamIncompleteReason, expectedReason);
+      assert.ok(!JSON.stringify(error).includes('SYNTHETIC_PRIVATE'));
+      assert.throws(() => parser.finish(), next => next === error);
+      return true;
+    });
+    checks++;
+  }
   const completed = createNativeResponse(prepareNative(doc));
   completed.push(prefix[0]);
   completed.push({ type: 'response.completed', response: { id: 'resp_test' } });
@@ -97,11 +126,11 @@ try {
         } finally { await transport.close(); }
       }
     }
-    for (const before of [[], prefix]) {
+    for (const [event, expectedCode, expectedReason, expectedType = null] of detailCases(type)) for (const before of [[], prefix]) {
       split = false;
       const transport = createNativeLoopbackTransport(upstream.address().port);
       const gateway = await startNativeGateway({ transport, admissionOptions: { freeBytes: () => 16 * 1024 ** 3 } });
-      wire = before.map(frame).join('') + frame(failedEvent(type)) + frame({ type: 'error' });
+      wire = before.map(frame).join('') + frame(event) + frame({ type: 'error', code: 'permission_denied' });
       try {
         const result = await new Promise((resolve, reject) => {
           const req = request({ host: '127.0.0.1', port: gateway.port, method: 'POST', path: '/v1/messages',
@@ -115,6 +144,12 @@ try {
         assert.equal(result.status, before.length ? 200 : 502);
         assert.ok(result.text.includes(code));
         assert.ok(result.text.includes(`event=${type}`));
+        assert.equal(result.text.includes(' upstream_code='), expectedCode !== null);
+        if (expectedCode) assert.ok(result.text.includes(`upstream_code=${expectedCode}`));
+        assert.equal(result.text.includes(' upstream_type='), expectedType !== null);
+        if (expectedType) assert.ok(result.text.includes(`upstream_type=${expectedType}`));
+        assert.equal(result.text.includes(' incomplete_reason='), expectedReason !== null);
+        if (expectedReason) assert.ok(result.text.includes(`incomplete_reason=${expectedReason}`));
         assert.ok(!result.text.includes('SYNTHETIC_PRIVATE'));
         assert.ok(!result.text.includes('message_stop'));
         const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
@@ -122,6 +157,9 @@ try {
         const row = status.recentRequests.at(-1);
         assert.equal(row.failureCategory, code);
         assert.equal(row.upstreamFailureEvent, type);
+        assert.equal(row.upstreamErrorCode, expectedCode);
+        assert.equal(row.upstreamErrorType, expectedType);
+        assert.equal(row.upstreamIncompleteReason, expectedReason);
         assert.equal(row.failureStage, 'upstream');
         assert.equal(row.success, false);
         assert.equal(row.attempts[0].terminalState, type);

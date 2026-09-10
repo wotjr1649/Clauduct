@@ -127,7 +127,7 @@ export function requestStatusSnapshot(value, env = {}) {
     lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
       ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
       ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart',
-        'unmappedAgentModels'].map(key =>
+        'unmappedAgentModels', 'transportRejections', 'agentRegistrationsEvicted'].map(key =>
         [key, counter(lifetime[key])])),
       firstRejectedCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(lifetime.firstRejectedCategory)
         ? lifetime.firstRejectedCategory : null } : null,

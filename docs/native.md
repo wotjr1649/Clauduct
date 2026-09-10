@@ -24,6 +24,10 @@ Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 I
 
 미지원 이벤트 이름을 캡처하면 세션마다 한 번 stderr로 알립니다. 통지에는 이름이 들어가지 않으며, 창을 강제로 닫지 말고 정상 종료해 종료 JSON을 수집하라는 안내입니다.
 
+서브에이전트 등록표는 최대 1024개로 제한합니다. SubagentStop이 오지 않아 등록이 쌓이면 가장 오래 쓰이지 않은 **유휴** 등록을 제거하며, 진행 중인 요청이 있는 등록은 절대 제거하지 않습니다. 모두 사용 중이면 새 등록을 `AGENT_BINDING_LIMIT`으로 거부합니다. 제거 횟수는 `lifetime.agentRegistrationsEvicted`, 현재 값은 `registeredAgents`/`maxAgents`입니다.
+
+`lifetime.transportRejections`는 요청 처리기에 도달하기 전에 HTTP 서버가 직접 거부한 수입니다. 깨진 클라이언트 바이트, CONNECT, upgrade, `Expect` 처리가 여기 들어가며 `rejectedBeforeStart`나 요청 성패 카운터와 섞이지 않습니다.
+
 `failureCategory`는 고정 라벨만 사용합니다. 접미사가 붙는 로컬 코드는 고정 접두사로만 기록해 `AGENT_SELECTION_UNVERIFIED_<이유>`는 `AGENT_SELECTION_UNVERIFIED`로, `UNSUPPORTED_BETA known=... unknown=N`은 `UNSUPPORTED_BETA`로 남깁니다. 상세 이유는 기존 `selectionFailure`/오류 메시지에서 확인합니다. 등록되지 않은 코드는 계속 `OTHER`입니다.
 
 `failureHistory`는 최근 요청 16개와 별개로 완료된 실패의 최초 8개·최근 8개를 최대 16개 보존합니다. 16개 이하에서는 중복 없이 모두 보존하며 완료 순서 기준입니다. `omitted`는 빠진 실패 수입니다. 성공 요청은 실패 이력을 밀어내지 않습니다. 모두 현재 gateway 메모리이며 재시작하면 사라집니다. 과거 진단에 이 필드가 없으면 null로 표시합니다. 상태 조회 응답은 256 KiB로 제한됩니다.

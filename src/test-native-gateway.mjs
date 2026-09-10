@@ -314,6 +314,47 @@ try {
     assert.equal(notices, 2);
   }
   {
+    // The registration table is bounded. Eviction takes the least recently used entry and
+    // never one with a live request, and the HTTP server's own rejections are counted apart.
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    const gateway = await startNativeGateway({ admissionOptions: ample, maxAgents: 4, transport: {
+      send: async body => { await held; return frames(body); }, close: async () => {}, diagnostics: () => ({}) } });
+    const register = id => call(gateway, { path: '/clauduct/agents',
+      body: { id, role: 'general-purpose', stop: false, sessionId: 'session' } });
+    let busy;
+    try {
+      assert.equal((await register('busy')).status, 200);
+      busy = call(gateway, { headers: { 'x-claude-code-session-id': 'session', 'x-claude-code-agent-id': 'busy' } });
+      const deadline = Date.now() + 1000;
+      while (gateway.diagnostics().lifetime.started === 0) {
+        assert.ok(Date.now() < deadline, 'expected the held request to start');
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      for (const id of ['idle0', 'idle1', 'idle2']) assert.equal((await register(id)).status, 200);
+      assert.equal(gateway.diagnostics().registeredAgents, 4);
+      assert.equal(gateway.diagnostics().lifetime.agentRegistrationsEvicted, 0);
+      assert.equal((await register('idle3')).status, 200);
+      const state = gateway.diagnostics();
+      assert.equal(state.registeredAgents, 4);
+      assert.equal(state.maxAgents, 4);
+      assert.equal(state.lifetime.agentRegistrationsEvicted, 1);
+      assert.equal(requestStatusSnapshot(state).lifetime.agentRegistrationsEvicted, 1);
+      // The busy registration survived, so its held request still resolves normally.
+      release();
+      assert.equal((await busy).status, 200);
+      assert.equal(gateway.diagnostics().recentRequests.at(-1).success, true);
+      // Expect: 100-continue is answered by the server itself, before any request handler.
+      assert.equal(gateway.diagnostics().lifetime.transportRejections, 0);
+      const expected = await call(gateway, { headers: { Expect: '100-continue' } });
+      assert.equal(expected.status, 417);
+      const after = requestStatusSnapshot(gateway.diagnostics());
+      assert.equal(after.lifetime.transportRejections, 1);
+      assert.equal(after.lifetime.rejectedBeforeStart, 0);
+      passed++;
+    } finally { release(); await busy?.catch(() => {}); await gateway.close(); }
+  }
+  {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
       failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', upstreamFailureEvent: { toString: null, valueOf: null },
       upstreamErrorCode: 'server_error', upstreamErrorType: 'server_error', upstreamIncompleteReason: 'max_output_tokens', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
@@ -664,7 +705,8 @@ try {
       assert.equal(after.failureHistory.omitted, 0);
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
-        unmappedAgentModels: 0, failuresByStage: { ...emptyStages, upstream: 1 } });
+        unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
+        failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
@@ -686,7 +728,8 @@ try {
       assert.equal(status.recentRequests.at(-1).success, true);
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
         failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
-        firstRejectedCategory: null, unmappedAgentModels: 0, failuresByStage: emptyStages });
+        firstRejectedCategory: null, unmappedAgentModels: 0, transportRejections: 0,
+        agentRegistrationsEvicted: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);
       snapshot.lifetime.failuresByStage.upstream = -1;

@@ -17,11 +17,15 @@ function diagnosticCategory(code) {
   return FAILURE_DIAGNOSTIC_CATEGORIES.includes(fixed) ? fixed : 'OTHER';
 }
 
+// Matches the bounded pending/verified tables in agent selection.
+const MAX_AGENTS = 1024;
+
 export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture,
-  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000 } = {}) {
+  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
-    && Number.isInteger(heartbeatMs) && heartbeatMs >= 5 && heartbeatMs <= 60000, 'INVALID_GATEWAY_OPTIONS');
+    && Number.isInteger(heartbeatMs) && heartbeatMs >= 5 && heartbeatMs <= 60000
+    && Number.isInteger(maxAgents) && maxAgents > 0 && maxAgents <= MAX_AGENTS, 'INVALID_GATEWAY_OPTIONS');
   const admission = createAdmission(admissionOptions);
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('base64url')}`), jobs = new Set(), sockets = new Set();
   const agents = new Map();
@@ -44,7 +48,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // another route, a local boundary or authorization rejection, a malformed identifier header
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
-    rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0 };
+    rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
+    transportRejections: 0, agentRegistrationsEvicted: 0 };
   let notifiedUnmappedModel = false, notifiedEventCapture = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
@@ -57,7 +62,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     failureRequests: failureRequests.map(copyRecord),
     unsupportedEventNames: [...unsupportedEventNames], unknownBetaNames: [...unknownBetaNames],
     busy: jobs.size > 0, transport: transport.diagnostics(), requests, rejected,
-    persistedBodies: 0, registeredAgents: agents.size, unregisteredAgentRequests, sessionLifetime: null, requestBudget: null });
+    persistedBodies: 0, registeredAgents: agents.size, maxAgents, unregisteredAgentRequests, sessionLifetime: null, requestBudget: null });
   function authorized(value) {
     return typeof value === 'string' && Buffer.byteLength(value) === secret.length && timingSafeEqual(Buffer.from(value), secret);
   }
@@ -157,6 +162,15 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           && Number.isSafeInteger(context.autoCompactWindow) && context.autoCompactWindow > 0
           && Number.isFinite(context.compactPercent) && context.compactPercent > 0 && context.compactPercent <= 100), 'INVALID_AGENT_BINDING');
         need(!agents.has(binding.id) || agents.get(binding.id).role === binding.role, 'AGENT_BINDING_CONFLICT');
+        // Registrations are removed by SubagentStop. Bound the table for a session where that
+        // never arrives: evict the least recently used idle entry, never one with live requests.
+        if (!binding.stop && !agents.has(binding.id) && agents.size >= maxAgents) {
+          const idle = [...agents].find(([, state]) => state.requests.size === 0);
+          need(idle !== undefined, 'AGENT_BINDING_LIMIT');
+          idle[1].selectionController?.abort();
+          agents.delete(idle[0]);
+          lifetime.agentRegistrationsEvicted++;
+        }
         agents.get(binding.id)?.selectionController?.abort();
         // Stop or replacement invalidates active requests of this registration only.
         for (const active of agents.get(binding.id)?.requests ?? []) active.abort(new NativeError('CANCELLED'));
@@ -201,6 +215,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       // Pin the registration before either admission or body reads can yield.
       const agent = req.headers['x-claude-code-agent-id'];
       const agentBinding = agents.get(agent), role = agentBinding?.role;
+      if (agentBinding) { agents.delete(agent); agents.set(agent, agentBinding); }
       activeAgent = agentBinding;
       activeAgent?.requests.add(controller);
       release = await admission.acquire(controller.signal);
@@ -432,10 +447,12 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     job.finished = handle(req, res, controller).finally(() => jobs.delete(job)); jobs.add(job);
   });
   server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); socket.on('error', () => {}); });
-  server.on('clientError', (_error, socket) => { rejected++; socket.destroy(); });
-  for (const event of ['connect', 'upgrade']) server.on(event, (_req, socket) => { rejected++; socket.destroy(); });
+  // Rejected by the HTTP server before any request handler ran; counted apart from requests.
+  const transportReject = () => { rejected++; lifetime.transportRejections++; };
+  server.on('clientError', (_error, socket) => { transportReject(); socket.destroy(); });
+  for (const event of ['connect', 'upgrade']) server.on(event, (_req, socket) => { transportReject(); socket.destroy(); });
   for (const event of ['checkContinue', 'checkExpectation']) server.on(event, (_req, res) => {
-    rejected++; reply(res, 417, { type: 'error', error: { type: 'invalid_request_error', message: 'EXPECT_REJECTED' } });
+    transportReject(); reply(res, 417, { type: 'error', error: { type: 'invalid_request_error', message: 'EXPECT_REJECTED' } });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   port = server.address().port;

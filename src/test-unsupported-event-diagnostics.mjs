@@ -10,6 +10,13 @@ const created = { type: 'response.created', response: { id: 'resp_test', status:
 const cases = [
   ...['message_start', 'message_delta', 'message_stop', 'content_block_start', 'content_block_delta', 'content_block_stop']
     .map(type => [type, type, 'identifier']),
+  // Codex ThreadEvent tags share the other/identifier signature of the first observed failure.
+  ...['thread.started', 'turn.started', 'turn.completed', 'turn.failed',
+    'item.started', 'item.updated', 'item.completed'].map(type => [type, type, 'identifier']),
+  ['thread.private_event', 'unknown-thread-event', 'identifier'],
+  ['turn.private_event', 'unknown-thread-event', 'identifier'],
+  ['item.private_event', 'unknown-thread-event', 'identifier'],
+  ['threadprivate_event', 'other', 'identifier'],
   ['codex.private_event', 'unknown-codex-event', 'identifier'],
   ['responsesapi.private_event', 'unknown-websocket-event', 'identifier'],
   ['response.private_event', 'unknown-response-event', 'identifier'],

@@ -78,7 +78,11 @@ export const OUTPUT_TOKEN_LIMIT_POLICY = 'usage-enforced-completion';
 // Diagnostic allowlist only, not a list of newly supported events. Never echo an
 // arbitrary upstream type or body through an error or status response.
 export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-object', 'missing-event-type', 'invalid-event-type',
-  'unknown-codex-event', 'unknown-websocket-event',
+  'unknown-codex-event', 'unknown-websocket-event', 'unknown-thread-event',
+  // Codex ThreadEvent tags read from the installed binary's fixed enum. Diagnostic labels
+  // only: this gateway still rejects them, and no thread/turn/item support is implied.
+  'thread.started', 'turn.started', 'turn.completed', 'turn.failed',
+  'item.started', 'item.updated', 'item.completed',
   'message_start', 'message_delta', 'message_stop', 'content_block_start', 'content_block_delta', 'content_block_stop',
   'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'codex.response.metadata', 'responsesapi.websocket_timing', 'response.created', 'response.in_progress', 'response.queued',
   'response.completed', 'response.failed', 'response.incomplete', 'error',
@@ -675,7 +679,8 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
             : EVENT_DIAGNOSTIC_TYPES.includes(event.type) ? event.type
             : event.type.startsWith('response.') ? 'unknown-response-event'
             : event.type.startsWith('codex.') ? 'unknown-codex-event'
-            : event.type.startsWith('responsesapi.') ? 'unknown-websocket-event' : 'other';
+            : event.type.startsWith('responsesapi.') ? 'unknown-websocket-event'
+            : /^(?:thread|turn|item)\./.test(event.type) ? 'unknown-thread-event' : 'other';
           const type = object(event) ? event.type : undefined;
           failure.eventTypeFormat = type === undefined ? 'missing' : typeof type !== 'string' ? 'non-string'
             : type.length === 0 ? 'empty' : type.length > 128 ? 'oversized'

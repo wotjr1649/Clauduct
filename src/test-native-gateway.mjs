@@ -223,12 +223,14 @@ try {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
       failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
         postCompletionFrame: 'SYNTHETIC_PRIVATE', postCompletionSequence: 'SYNTHETIC_PRIVATE' }]
-    }] })));
+    }], transport: { clientVersion: 'SYNTHETIC_PRIVATE' } })));
     await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
     try {
       const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${upstream.address().port}`,
         ANTHROPIC_AUTH_TOKEN: 'x'.repeat(43) });
       const row = status.recentRequests[0];
+      assert.equal(status.clientVersion, null);
+      assert.equal(status.clientVersionStatus, 'not-observed');
       assert.equal(row.failureCategory, null);
       assert.equal(row.requestFailure, null);
       for (const key of ['terminalState', 'postCompletionFrame', 'postCompletionSequence']) assert.equal(row.attempts[0][key], null);

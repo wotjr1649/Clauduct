@@ -333,8 +333,8 @@ await test('unknown_transport_error_sanitized', async () => {
     sanitized(response); await gateway.done;
   } finally { await gateway.close(); }
 });
-await test('live_version_pin_before_any_send', () => {
-  assert.throws(() => createCodexTransport({ credential: {}, clientVersion: 'unreviewed' }), error => error.code === 'CLI_VERSION_CHANGED');
+await test('live_version_validation_before_any_send', () => {
+  assert.throws(() => createCodexTransport({ credential: {}, clientVersion: 'unreviewed' }), error => error.code === 'CLI_VERSION_INVALID');
 });
 await test('loopback_transport_limit_cannot_expand', () => {
   assert.throws(() => createLoopbackCodexTransport(1, { timeoutMs: 45001 }));

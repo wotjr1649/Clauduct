@@ -7,7 +7,8 @@ import { request } from 'node:http';
 import { isDeepStrictEqual } from 'node:util';
 import { readSmall, checkStore, selectCredential, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { ALIAS, FIXTURE_PATH, readTool, PROTOCOL_ERROR_CODES, protocolDiagnostics, probeProfile } from './adapter.mjs';
-import { CLIENT_VERSION, createCodexTransport } from './codex-transport.mjs';
+import { createCodexTransport } from './codex-transport.mjs';
+import { clientVersionPolicy, isClientVersion } from '../src/client-version.mjs';
 import { startGateway } from './gateway.mjs';
 
 const expectedRoot = 'C:\\Users\\JS\\.codex';
@@ -17,7 +18,7 @@ const credentialPath = join(expectedRoot, 'auth.json');
 export const RESULT_MARKER = 'CLAUDUCT_MEMORY_GATEWAY_7';
 const categories = new Set([...PROTOCOL_ERROR_CODES, 'SUCCESS', 'USER_TERMINAL_REQUIRED', 'INVALID_ARGUMENTS', 'USER_CANCELLED',
   'CONFIRMATION_TIMEOUT', 'UNEXPECTED_CODEX_HOME', 'DEBUG_RUNTIME_UNSUPPORTED', 'TRANSPORT_RUNTIME_UNSUPPORTED',
-  'CLI_VERSION_CHANGED', 'FILE_CACHE_UNAVAILABLE', 'FILE_TOO_LARGE', 'CONFIG_UNSUPPORTED',
+  'CLI_VERSION_CHANGED', 'CLI_VERSION_UNAVAILABLE', 'CLI_VERSION_INVALID', 'FILE_CACHE_UNAVAILABLE', 'FILE_TOO_LARGE', 'CONFIG_UNSUPPORTED',
   'CREDENTIAL_STORE_UNSUPPORTED', 'INVALID_AUTH_CACHE', 'TOKEN_EXPIRED', 'CREDENTIAL_UNAVAILABLE_OR_EXPIRED',
   'CREDENTIAL_ACCOUNT_CHANGED', 'CODEX_RELOGIN_REQUIRED',
   'NO_TOOL_CALL', 'INVALID_DOWNSTREAM_RESPONSE', 'FINAL_MARKER_MISMATCH', 'CLIENT_IO_ERROR', 'CLIENT_CANCELLED',
@@ -48,8 +49,11 @@ export function checkUserContext({ stdinTTY, stdoutTTY, env, execArgs }) {
     'UNEXPECTED_CODEX_HOME');
 }
 export function checkClientVersion(result) {
-  requireThat(!result.error && result.status === 0 && result.stdout?.trim() === `codex-cli ${CLIENT_VERSION}`,
-    'CLI_VERSION_CHANGED');
+  requireThat(result && !result.error && !result.signal && result.status === 0, 'CLI_VERSION_UNAVAILABLE');
+  requireThat(typeof result.stdout === 'string' && result.stdout.length <= 128, 'CLI_VERSION_INVALID');
+  const match = /^codex-cli ([^\r\n]+)$/.exec(result.stdout.trim());
+  requireThat(match && isClientVersion(match[1]), 'CLI_VERSION_INVALID');
+  return match[1];
 }
 export function requireConfirmation(answer, aborted = false) {
   requireThat(answer === 'SEND' && !aborted, 'USER_CANCELLED');
@@ -194,7 +198,9 @@ export function entrySummary(category, diagnostics, outcome, profile = 'astra-xh
   return { diagnosticVersion: 5, passed: successful, category: safeEntryCategory({ code: category === 'SUCCESS' && !successful ? 'CLEANUP_FAILED' : category }),
     transport: diagnostics?.transport?.synthetic === true ? 'loopback-test-gateway' : 'node-https-gateway',
     upstreamMode: diagnostics?.transport ? diagnostics.transport.synthetic ? 'synthetic' : 'live' : 'not-started',
-    requestedModel: selected.model, requestedEffort: selected.effort, clientVersion: CLIENT_VERSION,
+    requestedModel: selected.model, requestedEffort: selected.effort,
+    ...(isClientVersion(upstream?.clientVersion) ? clientVersionPolicy(upstream.clientVersion)
+      : { clientVersion: null, referenceClientVersion: null, clientVersionStatus: 'not-observed' }),
     requestAttempts: attempts, connectionAttempts: integer(diagnostics?.transport?.connectionAttempts),
     compatibilityApplied: integer(diagnostics?.counts?.compatibilityApplied), resourcesClosed: clean,
     reconstructedToolCalls: diagnostics?.counts?.reconstructedToolCalls === 1 ? 1 : 0,
@@ -212,11 +218,15 @@ export function openUserTransport({ profile = 'astra-low', tokenLimitPolicy = 'r
   checkUserContext({ stdinTTY: process.stdin.isTTY, stdoutTTY: process.stdout.isTTY,
     env: process.env, execArgs: process.execArgv });
   requireThat(!signal?.aborted, 'USER_CANCELLED');
-  checkClientVersion(spawnSync(codexExe, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
+  const clientVersion = checkClientVersion(spawnSync(codexExe, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
+  const compatibility = clientVersionPolicy(clientVersion);
+  if (compatibility.clientVersionStatus === 'unverified') {
+    process.stderr.write(`Clauduct: CLI_VERSION_UNVERIFIED detected=${clientVersion} reference=${compatibility.referenceClientVersion}; protocol checks remain active.\n`);
+  }
   if (transportFactory) {
     const credentialSupplier = createNativeCredentialSupplier();
     requireThat(!signal?.aborted, 'USER_CANCELLED');
-    return transportFactory({ credentialSupplier, clientVersion: CLIENT_VERSION, profile, tokenLimitPolicy, requestBudget });
+    return transportFactory({ credentialSupplier, clientVersion, profile, tokenLimitPolicy, requestBudget });
   }
   let credential;
   try {
@@ -225,7 +235,7 @@ export function openUserTransport({ profile = 'astra-low', tokenLimitPolicy = 'r
     credential = credentialFromCache(config, readSmall(join(expectedRoot, 'auth.json')));
   } catch (error) { throw new EntryError(safeEntryCategory(error) === 'LOCAL_CHECK_FAILED' ? 'FILE_CACHE_UNAVAILABLE' : safeEntryCategory(error)); }
   requireThat(!signal?.aborted, 'USER_CANCELLED');
-  try { return createCodexTransport({ credential, clientVersion: CLIENT_VERSION, profile, tokenLimitPolicy, requestBudget }); }
+  try { return createCodexTransport({ credential, clientVersion, profile, tokenLimitPolicy, requestBudget }); }
   finally { credential = undefined; }
 }
 

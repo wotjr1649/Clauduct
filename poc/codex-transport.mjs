@@ -3,7 +3,7 @@ import { request as httpRequest } from 'node:http';
 import { ENDPOINT, LIMITS, CHAT_REQUESTS, PROTOCOL_ERROR_CODES, probeProfile } from './adapter.mjs';
 import { buildHeaders, selectCredential, checkRuntime } from '../verification/manual-http-probe.mjs';
 
-export const CLIENT_VERSION = '0.153.4';
+import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from '../src/client-version.mjs';
 class TransportError extends Error { constructor(code) { super(code); this.code = code; } }
 function requireThat(ok, code) { if (!ok) throw new TransportError(code); }
 async function destroySocket(socket, tracked) {
@@ -14,30 +14,31 @@ async function destroySocket(socket, tracked) {
 
 // The caller supplies an already owned, in-memory credential. No files, login, refresh or writes.
 export function createCodexTransport({ credential, clientVersion, profile = 'astra-xhigh', tokenLimitPolicy = 'reject', requestBudget = LIMITS.requests }) {
-  requireThat(clientVersion === CLIENT_VERSION, 'CLI_VERSION_CHANGED');
+  clientVersionPolicy(clientVersion);
   const selected = probeProfile(profile);
   checkRuntime(process.env, process.execArgv);
   requireThat(typeof credential?.accessToken === 'string' && typeof credential?.account === 'string', 'INVALID_CREDENTIAL');
   const owned = { accessToken: credential.accessToken, account: credential.account };
-  return createSender(httpsRequest, ENDPOINT, owned, false, LIMITS.timeoutMs, selected, tokenLimitPolicy, requestBudget);
+  return createSender(httpsRequest, ENDPOINT, owned, false, LIMITS.timeoutMs, selected, tokenLimitPolicy, requestBudget, clientVersion);
 }
 
 // Synthetic Codex protocol endpoint for loopback integration checks; accepts no real credential.
-export function createLoopbackCodexTransport(port, { timeoutMs = LIMITS.timeoutMs, profile = 'astra-xhigh', tokenLimitPolicy = 'reject', requestBudget = LIMITS.requests } = {}) {
+export function createLoopbackCodexTransport(port, { timeoutMs = LIMITS.timeoutMs, profile = 'astra-xhigh', tokenLimitPolicy = 'reject', requestBudget = LIMITS.requests, clientVersion = REFERENCE_CLIENT_VERSION } = {}) {
   requireThat(Number.isInteger(port) && port > 0 && port <= 65535, 'INVALID_LOOPBACK_PORT');
   requireThat(Number.isInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= LIMITS.timeoutMs, 'INVALID_TIMEOUT');
   return createSender(httpRequest, `http://127.0.0.1:${port}/backend-api/codex/responses`,
-    { accessToken: 'synthetic', account: 'synthetic' }, true, timeoutMs, probeProfile(profile), tokenLimitPolicy, requestBudget);
+    { accessToken: 'synthetic', account: 'synthetic' }, true, timeoutMs, probeProfile(profile), tokenLimitPolicy, requestBudget, clientVersion);
 }
 
-function createSender(nativeRequest, destination, credential, synthetic, timeoutMs, profile, tokenLimitPolicy, requestBudget) {
+function createSender(nativeRequest, destination, credential, synthetic, timeoutMs, profile, tokenLimitPolicy, requestBudget, clientVersion) {
+  const compatibility = clientVersionPolicy(clientVersion);
   requireThat(Number.isInteger(requestBudget) && requestBudget > 0 && requestBudget <= CHAT_REQUESTS, 'INVALID_REQUEST_BUDGET');
   requireThat(['reject', 'preserve', 'backend-default'].includes(tokenLimitPolicy), 'INVALID_TOKEN_LIMIT_POLICY');
   let attempts = 0, connectionAttempts = 0, bytes = 0, active, closed = false, lastCategory = 'NONE';
   let httpStatus = null, contentTypeState = 'not-received', httpComplete = null;
   const sockets = new Set();
   function diagnostics() {
-    return { synthetic, tokenLimitPolicy, requestBudget, requestAttempts: attempts, connectionAttempts, responseBytes: bytes, httpStatus, contentTypeState, httpComplete,
+    return { synthetic, ...compatibility, tokenLimitPolicy, requestBudget, requestAttempts: attempts, connectionAttempts, responseBytes: bytes, httpStatus, contentTypeState, httpComplete,
       activeRequests: active ? 1 : 0, activeSockets: sockets.size, closed,
       category: lastCategory, retries: 0, credentialWrites: 0, redirectsFollowed: 0 };
   }
@@ -75,7 +76,7 @@ function createSender(nativeRequest, destination, credential, synthetic, timeout
           access_token: credential.accessToken, account_id: credential.account } }));
       } catch { throw new TransportError('CREDENTIAL_UNAVAILABLE_OR_EXPIRED'); }
     }
-    const headers = buildHeaders(credential, CLIENT_VERSION, raw);
+    const headers = buildHeaders(credential, clientVersion, raw);
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });

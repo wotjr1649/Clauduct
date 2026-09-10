@@ -1,7 +1,7 @@
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { buildHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
-import { CLIENT_VERSION } from '../poc/codex-transport.mjs';
+import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
 import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
 
@@ -22,11 +22,11 @@ export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
 const criticalHeaders = ['content-type', 'content-encoding', 'content-length', 'transfer-encoding'];
 
 export function createNativeTransport({ credential, credentialSupplier, clientVersion }) {
-  need(clientVersion === CLIENT_VERSION, 'CLI_VERSION_CHANGED');
+  clientVersionPolicy(clientVersion);
   checkRuntime(process.env, process.execArgv);
   need(typeof credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpsRequest, HttpsAgent, ENDPOINT,
-    { credential, credentialSupplier, synthetic: false });
+    { credential, credentialSupplier, clientVersion, synthetic: false });
 }
 
 export function createNativeLoopbackTransport(port, options = {}) {
@@ -34,7 +34,7 @@ export function createNativeLoopbackTransport(port, options = {}) {
   const credential = options.credential ?? { accessToken: 'synthetic', account: 'synthetic' };
   need(typeof options.credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpRequest, HttpAgent, `http://127.0.0.1:${port}/backend-api/codex/responses`, {
-    credential, credentialSupplier: options.credentialSupplier, synthetic: true, options
+    credential, credentialSupplier: options.credentialSupplier, clientVersion: options.clientVersion ?? REFERENCE_CLIENT_VERSION, synthetic: true, options
   });
 }
 
@@ -60,7 +60,8 @@ function optionInteger(value, fallback, minimum, maximum) {
   return value === undefined ? fallback : Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : null;
 }
 
-function sender(request, Agent, destination, { credential, credentialSupplier, synthetic, options = {} }) {
+function sender(request, Agent, destination, { credential, credentialSupplier, clientVersion, synthetic, options = {} }) {
+  const compatibility = clientVersionPolicy(clientVersion);
   const settings = {
     maxRetries: NATIVE_TRANSPORT_LIMITS.maxRetries,
     maxFrameBytes: optionInteger(options.maxFrameBytes, NATIVE_TRANSPORT_LIMITS.maxFrameBytes, 1, 8 * 1024 * 1024),
@@ -88,7 +89,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
 
   function diagnostics() {
     const idleSockets = Object.values(agent.freeSockets).reduce((count, list) => count + list.length, 0);
-    return { activeRequests: active.size, activeSockets: sockets.size, idleSockets,
+    return { ...compatibility, activeRequests: active.size, activeSockets: sockets.size, idleSockets,
       requestAttempts: attempts, retries, connectionAttempts, responseBytes, totalResponseBytes, httpStatus: lastStatus,
       category: lastCategory, synthetic, closed };
   }
@@ -274,7 +275,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
   async function requestOnce(job, raw, current, onEvent, isRetry) {
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
-    const headers = buildHeaders(current, CLIENT_VERSION, raw);
+    const headers = buildHeaders(current, clientVersion, raw);
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
       headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false,

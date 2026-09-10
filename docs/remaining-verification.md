@@ -1,197 +1,141 @@
-# 남은 실제 검증
+# 남은 실제 검증 — 현행 기준표
 
-## 이관 후 작업 기준 — 2026-09-09 확정
+## 1. 이 문서를 읽는 법
 
-이 문서를 현재 작업·검증 현황의 기준으로 유지한다. 과거 감사 기록은 증거 링크이며, 아래의 과거 실행 프롬프트를 일괄 재실행하지 않는다. 이관 HEAD a64bff1 이후 완료 알림 복귀를 수정했다. 최신 커밋은 git log와 diff로 확인한다. [완료 알림 수정 감사](audit-2026-09-09-completion-resume.md)에 로컬 검사와 한계를 기록했다.
+이 문서의 **2~5장이 현재 기준**이다. 6장은 이력 자료이며 그 안의 수치·프롬프트는 당시 값이므로 현재 설정으로 사용하지 않는다. 감사 원문(`docs/audit-*.md`)은 지우지 않고 증거 링크로만 참조한다. 아래 상태 값의 뜻은 다음과 같다.
 
-사용자 확정 범위는 현재 설치 버전의 모델 호출 경로 전체 목록화 및 경로별 호환성 판정이다. 실제 모델을 호출하지 않는 로컬 명령·도구·훅은 GPT 전환 대상과 구분한다. 핵심 개발 경로의 정상 반환, 전체 경로 조사, 지원/미지원/미검증 분류를 각각 평가한다. 미지원 항목을 목록에 적은 것만으로 구현 완료로 처리하지 않는다. 인증 갱신과 수시간 실제 실행은 제외한다.
-
-### 작업 순서와 종료 조건
-
-직접 부모 기준 손자 inherit는 db34be24에서 메인 sol/high → 부모 terra/high → 손자 terra/high로 확인했다. a2d50ff0에서는 sol/high → inherit 부모 → inherit 손자의 비기본 effort 유지와 부모 완료 복귀까지 확인했다. [직접 부모 증거](audit-2026-09-10-direct-parent-success.md), [비기본 상속 및 수용 조건 대조](audit-2026-09-10-agent-acceptance.md). Workflow 검증을 이 요구사항의 대체 증거로 사용하지 않는다.
-
-최신 판정: session-10·11 통과. 9f4e7179의 일반 astra/sol/luna 성공과 db34be24의 terra 성공을 대조했고 현행 선택·실행기·완료 복귀 로컬 검사도 통과했다. 새 모델/상속 시험을 반복하지 않는다. 다음은 아래 호출 경로·보안 잔여 항목의 로컬 감사이며 실제 시험이 필요한 차이를 찾은 뒤에만 후속 프롬프트를 만든다. 992c0794의 병렬 Workflow 성공은 [별도 증거](audit-2026-09-10-workflow-parallel-success.md)로 보존한다. 전체 목표 완료는 보류한다.
-
-후속 보안 감사에서 사용자 중단 metadata가 일반 Agent/Task·연결된 Skill의 최초 선택에 수락되는 결함을 로컬 재현 후 수정했다. 중단 표시를 읽으면 transport 전에 selection/IDENTITY로 거부한다. [수정·회귀·미검증 범위](audit-2026-09-10-stopped-agent-selection.md). 실제 중단 경쟁 조건 전체나 이미 캐시된 요청의 취소를 통과 처리하지 않는다.
-
-이어서 등록 종료/교체가 이미 전송 중인 요청에 전달되지 않는 공백과 admission/본문 수신 중 등록 교체 공백을 수정했다. 요청은 admission 이전의 등록에 고정되며 같은 등록의 controller만 취소한다. 캐시된 선택·병렬 요청·스트리밍·형제 격리·대기/본문 수신 중 취소·새 등록 요청의 성공을 로컬 검증했다. [취소 검증 근거](audit-2026-09-10-active-agent-cancellation.md). 실제 UI 취소·원격 계산 중단이나 전체 취소 조합은 미검증이다. 다음은 남은 보조 호출 경로의 정적 대조이며 정상 모델/상속 시험을 반복하지 않는다.
-
-문서 선로드는 08594a7e의 첫 작업 도구 Read에서도 관찰했다. 이는 모델의 매 실행 준수 보장이 아니다. 전역 plugin이나 guard는 변경하지 않는다.
-
-session-12(d9752fc6)의 /btw UI 답변은 사용자 제공 증거로 성공이며 관찰 gateway 요청은 모두 sol/high였다. 취소 2건은 사용자 설명과 부합하지만 /btw와 메인 종료 진단 사이의 request 귀속은 미확정이다. [결과·정적 경로·한계](audit-2026-09-10-native-btw-path.md). 같은 시험을 반복하지 않는다.
-
-away_summary 대조 완료: d9752fc6에 실제 172자 요약이 기록됐고 직전 sol/high 성공 요청과 시간상 대응한다. 정확한 request 귀속은 미확정이다. 현재 실행 파일과 해당 세션은 2.1.267이며 기존 전체 목록의 기준 2.1.266과 다르다. [조사 근거](audit-2026-09-10-away-summary.md). 다음은 추가 실제 실행이 아니라 2.1.267 Agent/Workflow 연결 계약의 정적 차이 확인이다.
-
-Workflow는 별도 native 도구다. 기본 자식의 실제 성공을 명시 선택·custom agentType·중첩·resume 지원으로 확대하지 않는다. 실제 인증 실행 제한을 우회하지 않는다.
-
-모델 선택의 최신 수용 기준은 [GPT Agent 선택 계약](gpt-agent-selection-contract.md)이다. 직접 GPT 선택과 명시 inherit의 부모 모델·effort 상속은 필수이며, Claude 별칭 대체 검증과 전체 모델 목록 확장은 이번 범위에서 제외한다.
-
-| 순서 | 작업 | 필요한 증거 / 종료 조건 |
-|---|---|---|
-| 1 | native task-notification(completed) 복귀 | c19c8b14 request 22에서 verified-completion-resume/luna/max/success=true 및 부모 선종료·최종 반환 확인. [실제 성공](audit-2026-09-09-completion-success.md). 단일 general-purpose 경로 통과, 과거 실패 원인·다중 알림·symlink는 별도 미완료 |
-| 2 | 이벤트·라우팅 진단 | c94bb0ac에서 기존 누적 카운터 실제 확인. [요청 관계·단계별 누적](audit-2026-09-09-request-correlation.md) 추가 구현·로컬 검증 완료. 새 필드 실제 출력·보조 이벤트 발생은 미검증. 과거 other 이름 복원 불가 |
-| 3 | 현재 설치 버전 전체 호출 경로 목록 | 실행 파일 2.1.266 해시 일치, 활성 plugin 2개와 설치 skill 23개, querySource 리터럴 34종을 [호출 경로 조사](native-call-paths-2026-09-09.md)에 목록화. 동적 전체 목록·우회 provider/fallback 전수 추적·경로별 실제 반환은 미완료 |
-| 4 | 남은 회귀·보안 검증 | 아래 기능별 표의 미확인 항목과 설정 격리·취소·복귀·병렬·스트리밍·자원 정리 검증. 이미 통과한 항목은 변경 영향이 있을 때만 반복 |
-| 5 | 현재 코드 검토 및 최종 수용 | 오래된 fixture가 아닌 실제 변경 코드의 diff와 관련 호출자를 검토. 핵심 경로에서 예상치 못한 API 실패 없이 결과 반환. 미지원·보류·미검증을 남김없이 보고하며 전체 완료와 부분 완료를 구분 |
-
-현재 버전은 실행 대상과 2.1.266 설치 파일의 SHA256 일치로 재확인했다. 활성 plugin·설치 skill 목록은 수집했고 내장 동적 기능 전체 목록은 미완료다. 발견한 경로와 각 근거는 호출 경로 조사표에 연결하며 이름을 추정해서 완성하지 않는다.
-
-### 기능별 추가 점검 범위
-
-| 범위 | 현 상태 | 다음 검사 |
-|---|---|---|
-| 일반 대화·도구 왕복 | Read 실증과 이후 사용자 1~6 통과 보고 보존. 모든 도구의 완전한 행렬은 아님 | Read/Edit/Write/Bash, tool search, 설치 도구의 모델 선택과 native 권한 실행을 분리해 목록화. 로컬 fixture로 검증하고 외부 쓰기는 자동 실행하지 않음 |
-| 모델 선택 | 네 GPT 시험 정의와 2f96f1df의 비기본 effort 상속·기존 고정 역할 실제 성공. 승인된 --gpt-agents 일반용 인터페이스 구현·로컬 검증 | [최신 계약과 증거](gpt-agent-selection-contract.md). 새 일반용 agent의 실제 native 작업·쓰기·위임 확인이 남음. Claude 별칭 대체 검증은 제외. UI 배너를 backend 증거로 사용하지 않음 |
-| 내장 review/skill/fork | low와 high 최종 반환 확인. high 자식 완료 알림 복귀 오류 남음 | 모든 review 수준을 low/high 성공만으로 통과 처리하지 않음. 공통 코드 검사는 재사용하고 수준별로 다른 실행 경로만 실제 검사 |
-| 압축·컨텍스트 | 아래 실제 증거 표 참조 | 500K 정책 전달과 backend 실제 용량을 구분. 기본 400K와 개별 자식 자동 압축은 미확인. 비용 큰 증거는 합성 결과와 구분해 보류 가능하되 통과 표시 금지 |
-| 스트리밍·재시도·취소 | 긴 low 요청 ping 41회 완료, 로컬 retry/취소 검사 | 텍스트 조기 전달, 도구 최종 검증 전 비전달, 실제 내용 전 최대 5회 재시도, 내용 전달 후 명시적 재개, backpressure 및 종료 정리 보존 |
-| 설정·native 공존 | 전역 설정 상속과 사용자 keybindings 해결 보고 보존 | 모델 변경의 전역 오염, 추가 hook의 Clauduct 자식 한정, native 플러그인/설정 상속을 검사. 전역 설정·keybindings·statusline·plugin·trust는 변경하지 않음 |
-| 메모리·장기 개발 | admission 대기와 기존 활성 작업 유지 구현 | 누적 실행 제한과 개별 요청/registry 보존 한도를 구분. 소규모 반복·취소·정리·메모리 상한 검사로 보완하며 수시간 실제 실행 완료로 대체하지 않음 |
-| 보안 경계 | 관계 검증·metadata 경로/크기·loopback 인증·비밀 비노출 검사 존재 | 완료 알림 위조/재사용/세션 혼동/사용자 중단, path 탈출·symlink·잘못된 인코딩, 이벤트 형식·순서·본문 비노출 등 변경 경로별 공격 사례 검증. guard 완화로 테스트 통과 금지 |
-
-실제 모델 테스트는 로컬 원인 재현과 회귀 검사를 먼저 끝내고 변경 경로만 수행한다. 같은 실패를 재시험하려면 관련 수정이나 새 증거가 있어야 한다. 고정 토큰/호출 예산을 새로 설정하지 않았으며, 이것이 무제한 실제 실행 허용을 뜻하지 않는다. 기존 인증·실행 거부를 유지하고 사용자가 실제 CLI를 실행한다.
-
-## 현재 판정 — 원본 기록 재확인
-
-### 완료 이후 SSE 진단 — 2026-09-09
-
-`EVENT_AFTER_COMPLETION`은 이제 `OTHER`와 구분한다. 요청별 `attempts`에 다음 고정 분류를 추가했다. 원문 SSE, 임의 이벤트명, sequence 값 자체는 기록하지 않는다.
-
-| 필드 | 의미 |
+| 상태 | 뜻 |
 |---|---|
-| `terminalState` | `open`: 완료 미관찰, `completed`: response.completed 관찰, `done`: 후속 [DONE] 관찰. 전체 요청 성공을 뜻하지 않음 |
-| `postCompletionFrame` | 거부된 첫 후속 데이터 프레임의 allowlist 이벤트 종류 또는 `done`/`other`/`invalid-json`/`oversized`. 16 KiB 초과 데이터는 진단 JSON 파싱을 하지 않음 |
-| `postCompletionSequence` | `expected`/`unexpected`/`invalid`/`missing`/`unsequenced`. JSON 분류를 하지 않은 경우 null. 수치 대신 파서의 다음 순서와 관계만 표시 |
+| 완료 | 해당 범위의 수용 조건을 만족하는 증거가 있고, 변경 영향이 없으면 재검증하지 않는다 |
+| 조건부 | 로컬·합성 증거는 있으나 실제 실행 증거가 없거나 일부 조건이 남아 있다 |
+| 미검증 | 증거가 없다. 통과로 표시하지 않는다 |
+| 차단 | guard·권한·정책으로 검사를 실행할 수 없다. 우회하지 않고 미검증으로 남긴다 |
+| 범위밖 | 사용자가 이번 목표에서 제외했다 |
 
-완료 뒤 프레임 거부, 중복 [DONE] 거부, 자동 재시도 금지는 변경하지 않았다. 정상 단일 [DONE]과 comment는 기존대로 허용한다. 구문 검사나 크기 제한에서 먼저 거부된 프레임은 후속 데이터 분류가 없을 수 있다.
+실제 인증 실행은 사용자가 수행한다. 에이전트는 실제 Claude를 대신 실행하지 않고, 전역 설정·hook 신뢰·권한·인증 파일을 변경하거나 조회하지 않는다. 이미 통과한 항목은 변경 영향이나 새 증거가 있을 때만 다시 확인한다. 같은 smoke 시험을 반복 요청하지 않는다.
 
-Verified: Node permission 제한 아래 `src/test-native-transport.mjs`, `src/test-native-gateway.mjs`, `src/test-native-protocol.mjs` 통과. 합성 loopback에서 분할 프레임, 중복 완료·sentinel, 보조 이벤트, 순서 관계, 잘못된 JSON, 크기 상한, 원문 비노출, status allowlist, 거부·무재시도·소켓 정리를 확인했다. 외부 요청과 실제 인증 조회는 0이다.
+## 2. 현재 계약 값
 
-Verified: 후속 실제 세션 `c970306f-170a-47f2-ab95-5a52bcd8ffa7`의 메인 56행·자식 17행·metadata 1개를 확인했다. 메인 JSONL 47행의 상태에서 새 진단 필드가 출력되며 자식 요청 7/8은 terra/high, definition-model, success=true다. 자식은 Read 1회와 TERRA-READ-COMPLETED 반환에 성공했다. 메인은 terra/xhigh였고 요청 9가 upstream/OTHER, terminalState=open, 단일 시도·무재시도로 실패했다. 상태 수집 시 누계는 6건 시작·5건 성공·1건 실패이며 최종 답변 이후 누계가 아니다.
+`src/models.mjs`, `src/clauduct.mjs`, `src/native-gateway.mjs` 기준이다.
 
-Not verified: 실제 upstream의 후속 프레임 종류. 위 세션에서 EVENT_AFTER_COMPLETION은 재현되지 않았으며 전체 SSE 실패 해결도 아니다. 과거 `OTHER` 요청의 정확한 원인은 소급 복원할 수 없다. TaskOutput의 `No task found` 원인 역시 미확정이며 별도 조사한다.
-
-### OTHER 분류 보완 — 2026-09-09
-
-`src/native-protocol.mjs`의 고정 `FAILURE_DIAGNOSTIC_CATEGORIES`를 gateway와 request-status가 함께 사용한다. 기존 transport/응답 검증 코드인 INVALID_SSE, INVALID_UTF8, SEQUENCE_MISMATCH, TRUNCATED_STREAM, INCOMPLETE_RESPONSE, STREAM_ORDER, SNAPSHOT_MISMATCH, UNSUPPORTED_METADATA_EVENT 등을 이제 개별 분류한다. 원문·임의 오류 코드는 저장하지 않으며 미등록 분류는 gateway에서 OTHER, 상태 입력의 미허용 값은 null로 유지한다. HTTP 응답·프로토콜 검증·재시도 동작은 변경하지 않았다.
-
-Verified: `node --permission --allow-fs-read=D:\AIDEV\Clauduct src/test-native-gateway.mjs` 35개 통과. 8종 실제 loopback 오류를 파서부터 상태 조회까지 검증했고, 전체 고정 분류의 전달·미등록 분류 fallback·비노출을 검사했다. 같은 Node 제한으로 test-native-protocol.mjs와 test-native-transport.mjs도 통과했다. 실제 모델 호출·인증 조회·외부 요청은 0이다.
-
-Not verified: 확장한 분류의 실제 native 실패 출력과 요청 9의 정확한 원인. 다음 관찰은 사용자가 새 `--gpt-agents` 실행에서 수행한다. 메인 모델·effort는 사용자의 현재 선택을 유지하고, 오류 발생 직후 기존 request-status.mjs로 분류를 수집한다. 실패한 작업을 자동 반복하거나 이미 성공한 전체 모델·상속·쓰기 행렬을 재실행하지 않는다.
-
-아래 번호별 프롬프트는 과거 검증 절차다. 이미 통과한 항목을 반복 실행하라는 뜻이 아니다. 전체 완료 판정은 보류한다.
-
-| 요구사항 | 원본 증거 | 판정 / 남은 범위 |
+| 항목 | 현재 값 | 주의 |
 |---|---|---|
-| compact 구간별 시간 계측 | f236f867 61행 request 11: admission 0.15ms, 첫 이벤트 2212.41ms, 첫 텍스트 10776.14ms, 첫 전달 10776.18ms, 완료 64177.91ms, 재시도 없음 | 실제 계측 확인. upstream 내부의 세부 연산 시간은 미확인 |
-| 수동 compact 후 새 Read | 922e6ba0 84행 manual 경계 뒤 112/113행 models.mjs Read 성공 | 통과 |
-| compact medium 적용 | f236f867 40행 manual 64806ms, 31511→9820; request 11 requested=max/actual=medium 성공 | 통과. 서로 다른 입력의 max/medium 시간을 통제 실험으로 해석하지 않음 |
-| 자동 compact 및 후속 요청 | b6d81841 119행 auto 68608ms, 98097→39330; 142행 request 36 medium 성공; 137/138행 새 Read 성공 | 검증 모드 autoCompactWindow=100000에서 통과. 기본 400K와 각 자식 내부 발동은 미확인 |
-| native 역할·환경 상속 | f236f867의 과거 역할·환경 증거 보존. c94bb0ac 원본 request 10/11은 무명시 Plan/role-default/sol/xhigh/success=true | 현재 무명시 Plan 실제 통과. [실제 감사](audit-2026-09-09-plan-lifetime-success.md). 환경 상속은 backend 용량 증거가 아님 |
-| gateway 누적 진단 | c94bb0ac 메인 38→57행 started/succeeded 2→7, failed/unsupportedEvents 0 유지 | 실제 출력·정상 증가 통과. 보조 이벤트는 0이므로 실발생 미관찰 |
-| 현재 sol/xhigh 명시 선택·재개 | c5a3b05b request 11/12 explicit-metadata, 19/21 verified-resume; 두 Read 및 완료 | 통과. 모델 명시 없는 Plan 역할 검증으로 대체하지 않음 |
-| native code-review low 완료 | 268e9bf2 자식 a91eb3a1de1548dde: Bash diff 결과 연결, 최종 지적 반환, 부모 267행 completed; 270행 request 4/5 luna/max native-fork 성공 | low 실제 완료. strict diff 호출 수용과 약 10분 31초 요청의 ping 41회 및 완료 확인. 다른 review 수준·병렬 전체 완료는 미확인 |
-| native 병렬 code-review 최종 반환 | HIGH-03: 1d6ef4cd 루트/직접 자식 13개/손자 4개 대상 Read, 부모 518행 completed, 521/522행 ReportFindings 5건. request 717/719 처리 13052.10ms 겹침 | 최종 반환 통과. 자식 task-notification 복귀 CALL 한 건과 도구 오류가 남아 오류 없는 완료는 아님. [상세 감사](audit-2026-09-09-native-high-03.md) |
-| peer 메시지 기반 복귀 | HIGH-03 원본 537행 request 717/730/735/740: luna/max verified-peer-resume success=true | 실제 통과. native task-notification 재기동은 별도 경로 |
-| 완료 알림 기반 복귀 | c19c8b14 부모 19행 종료 → 자식 23행 종료 → 부모 20행 completed → 부모 23행 최종 반환. 메인 50행 request 22 진단 성공. [실제 성공 감사](audit-2026-09-09-completion-success.md) | 단일 general-purpose 실제 통과. 35985327 실패의 정확한 원인은 미확정 |
-| 리뷰 스킬 재호출 감소 | HIGH-03 연결된 18개 실행에서 superpowers/code-review Skill 호출 0, claude-api 3 | 이번 실행에서 확인. 일반적인 모델 준수 보장은 아님 |
-| Codex 보조 metadata 이벤트 | HIGH-03 마지막 16개 진단 auxiliaryMetadataEvents=0 | 실제 발생·처리 미확인. 로컬 합성 검사만 통과 |
-| 실제 인증 갱신·수시간 실행 | 사용자 지정 제외 | 이번 단계에서 실행하지 않음 |
+| 메인 무옵션 시작값 | `gpt-6-astra` / `low` | 모델별 기본 effort와 다르다 |
+| 명시 모델 기본 effort | astra=medium, sol=xhigh, terra=high, luna=max | `--effort` 명시값이 우선한다 |
+| 역할 기본값 | Explore=luna/max, Plan=**sol/xhigh**, general-purpose=luna/max | 과거 문서의 `Plan=sol/high`는 오기다 |
+| context 창 | window 400000, 자동 압축 목표 320000 | 설정 전달이며 backend 용량 증명이 아니다 |
+| 압축 계산 | outputReserve 20000, compactPercent 84.21052631578947 | 과거 500000 / 83.33333333333334는 폐기됐다 |
+| `--verify-auto-compact` | 계산 창 100000, 기본 예약량에서 약 67.4K 발동 목표 | 모델 창 400000은 유지한다. 전역 설정을 바꾸지 않는다 |
+| 자식 실행 환경 | `CLAUDE_CODE_MAX_RETRIES=0`, `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1` | 부모 환경은 바꾸지 않는다 |
+| clauduct-inherit | 생성 시점 직접 부모의 실제 모델·effort | 메인 값이나 고정 역할값을 하드코딩하지 않는다 |
+| Codex clientVersion | 관측 0.154.0 / reference 0.153.4 → `unverified` | Claude CLI 버전(2.1.26x)과 구분한다 |
+| 차단 옵션 | `--settings`, `--setting-sources`, `--agents`, `--system-prompt` | 임의 agent 정의 주입을 막는다 |
 
-완료 알림 복귀는 35985327에서 재실패한 뒤 c19c8b14의 단일 general-purpose 경로에서 실제 성공했다. 과거 실패의 정확한 원인은 여전히 미확정이다. 다음 작업은 보조 이벤트 실발생과 미검증 모델 호출 경로의 증거 확인이다. 누적 진단은 새 gateway부터 적용되며 과거 event=other의 원래 이름은 복원할 수 없다. 인증된 실제 실행은 기존 거부를 우회하지 않으며, 합성 검사 통과만으로 미확인 행을 통과 처리하지 않는다.
+## 3. 현행 상태표
 
-전제: 기존 live/인증 실행 거부 때문에 에이전트가 실제 Claude를 대신 실행하지 않는다. 사용자가 실행한 세션의 JSONL과 정제된 시간 진단을 확인한다. 전역 설정, hook trust, 모델 기본값, 권한은 변경하지 않는다. 실제 인증 갱신과 수시간 장기 실행은 이번 단계에서 제외한다.
+| 항목 | 상태 | 증거 | 남은 위험 | 다음 행동 |
+|---|---|---|---|---|
+| 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md) | 원인 미확정. 미재발을 해결로 처리하지 않는다 | 재발 시 고정 이름이 그대로 기록된다. 이를 위해 새 실사용 시험을 따로 만들지 않는다 |
+| 미지원 이벤트 분류 | 완료 | `src/test-unsupported-event-diagnostics.mjs` 51개 검사 / loopback 24회. Codex `ThreadEvent` 7개 태그와 `unknown-thread-event` 추가 | 설치 바이너리의 enum 확인일 뿐 backend 실제 전송은 미확인 | 없음 |
+| 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), `test-native-gateway` 49개 검사 | 서버 수준 clientError·CONNECT·upgrade는 여전히 카운터 밖이다 | 없음 |
+| `OTHER` 분류 축소 | 완료 | 같은 감사. 요청 기록에 도달 가능한 고정 코드 추가와 접미사 정규화 | 새 오류 코드를 추가하면 목록도 함께 갱신해야 한다 | 코드 추가 시 목록 동기화 |
+| native fallback 차단 | 조건부 | 자식 env·settings 동시 적용은 `test-launcher-native` 통과. 공식 [환경 변수 문서](https://code.claude.com/docs/en/env-vars)와 설치 코드 경로 확인 | 실제 native의 비스트리밍 전환 차단 분기는 실행되지 않았다 | 실제 스트리밍 오류가 난 세션의 종료 JSON을 수집한다 |
+| 내용 전달 후 재시도 금지(도구 중복 실행 방지) | 완료 | `test-native-gateway` 재시도 울타리 2건. 울타리를 제거하면 실패하는 것을 확인 | downstream 전달 전 재시도는 유지되므로 upstream 계산은 중복될 수 있다 | 없음 |
+| 요청 형식 거부에서 upstream 미시도 | 완료 | `test-request-diagnostics` 69개 검사 / loopback 34회, `sends=0` | 없음 | 없음 |
+| 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개 | 실제 UI 취소 시점, 원격 계산 중단, 전송 데이터 회수는 보장하지 않는다 | 실제 취소가 발생한 세션의 진단만 수집한다 |
+| 정상 종료 자원 정리 | 완료 | [정리 경합 감사](audit-2026-09-11-cleanup-close-race.md), `test-cancel-snapshot` 6개, 세션 0d5d6174의 cleanup 9개 true | 창을 강제 종료하면 종료 JSON이 남는다고 보장하지 않는다 | 없음 |
+| 종료 판정과 exit code 계약 | 완료 | [native.md](native.md) 종료 진단 절, `requestOutcome`과 `cleanup` 분리 | exit 0은 프로세스 종료·자원 정리 판정이며 요청 성공 판정이 아니다 | 호환성 검토 없이 exit code를 바꾸지 않는다 |
+| 완료 알림 기반 복귀 | 조건부 | c19c8b14 실제 성공, [감사](audit-2026-09-09-completion-resume.md), 로컬 회귀 | 과거 실패(35985327)의 원인 미확정. 다중 알림·실패 알림 복귀는 미지원 | 없음 |
+| 직접 부모 모델·effort 상속 | 완료 | db34be24, a2d50ff0, [수용 조건](audit-2026-09-10-agent-acceptance.md), [계약](gpt-agent-selection-contract.md) | 생성 후 모델 변경과 손자 전 조합은 미검증 | 회귀 통과만 유지한다 |
+| Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
+| 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
+| 장기 자원 안정성 | 미검증 | `test-native` 45개(1000요청 / 20동시 포함), `test-request-admission` | 3주기 종료 후 registry·socket·timer·listener 실측이 없다. gateway `agents` Map은 SubagentStop에 의존하며 별도 상한이 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`과 `admission`을 함께 본다 |
+| 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
+| 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
+| 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
+| SDD 무인 3주기 | 미검증 | run-02(38e9c28)의 보존 결과 통합만 완료 | 하나의 실행에서 무개입 3주기를 마친 증거가 없다 | 5.4의 선행 조건이 닫히기 전에는 시험하지 않는다 |
+| Claude 모델 전체 지원·app-server 전환·버전 pin | 범위밖 | 사용자 지정 | — | — |
+| 실제 인증 갱신·수시간 연속 실행 | 범위밖 | 사용자 지정 | — | — |
+| 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |
 
-## 1. compact 최적화 적용과 품질
+## 4. 최신 증거
 
-현재 Clauduct를 종료하고 업데이트된 실행기로 기존 세션을 재개한다.
+### 4.1 사용자가 제공한 실제 실행 종료 JSON
+
+| 세션 | 관측 | 확대 해석 금지 |
+|---|---|---|
+| 5f27e1c8 | 요청 37건 전부 성공, `requestOutcome=all-succeeded`, `failureHistory` 빈 배열 / `omitted=0`, `cleanup` 9개 true, 자식 fallback 설정 true, 최근 16개 sol/low | 실패가 없었으므로 fallback 차단 분기와 실패 이력 실발생은 미검증이다 |
+| 0d5d6174 | 요청 3건 성공, sol/low, cleanup 9개 true, 종료 SUCCESS | 취소 경로나 과거 정리 실패 원인의 소급 확정이 아니다 |
+| 878f5eda | 요청 3건 성공, luna/max, `unsupportedEventTypeFormat` 출력됨(오류가 없어 null) | 새 진단의 실패 분기는 미검증이다 |
+| 1433a5dd | 요청 4 성공 → 5 `UNSUPPORTED_EVENT/other` → 6 prepare 단계 `REQUEST_SHAPE` | 후속 요청이 native fallback인지는 미확인이다 |
+| c4c222f8 | 총 49 / 성공 44 / 실패 5. 요청 57 `UNSUPPORTED_EVENT other/identifier`, 58 `REQUEST_STREAM_FALSE` | 앞선 실패 3건의 상세는 복원할 수 없다 |
+
+이 표의 출처는 대화로 제공된 종료 JSON이다. 원문 JSON을 저장하지 않으며 누락된 요청별 값을 추정해 채우지 않는다.
+
+### 4.2 이 저장소의 로컬 검사
+
+2026-09-11, Node.js v24.19.0, 프로젝트 `Invoke-ClauductNodeTests`, 60초 제한, test concurrency 1.
+
+기준 11개 파일이 함께 통과했다: `test-native-gateway`(49), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(45), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(51 / loopback 24), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
+
+선택·완료 표면도 함께 통과했다: `test-agent-selection`, `test-completion-selection`(46, symlink notRun), `test-workflow-selection`(36, native Workflow·symlink notRun), `test-request-admission`.
+
+모든 실행에서 외부 추론 요청 0, 실제 인증 조회 0, 실제 Claude 실행 0이다. 과거 실행의 검사 수를 새 실행 결과로 보고하지 않는다.
+
+## 5. 실행 가능한 절차
+
+실행 지시는 이 장에만 둔다. 6장 이력의 프롬프트는 재실행 대상이 아니다.
+
+### 5.1 로컬 회귀
+
+PowerShell 7에서 프로젝트 실행기를 직접 사용한다.
 
 ```powershell
-D:\AIDEV\Clauduct\clauduct.cmd --model luna --effort max --resume 922e6ba0-e03b-44de-81a2-b68dcb217bf3
+. D:/AIDEV/Clauduct/src/run-node-tests.ps1
+Invoke-ClauductNodeTests -Root D:/AIDEV/Clauduct -TimeoutSeconds 60 -TestFiles @(
+  'src/test-native-gateway.mjs', 'src/test-launcher-native.mjs', 'src/test-native-protocol.mjs',
+  'src/test-native-transport.mjs', 'src/test-native.mjs', 'src/test-request-diagnostics.mjs',
+  'src/test-upstream-failures.mjs', 'src/test-unsupported-event-diagnostics.mjs',
+  'src/test-cancel-snapshot.mjs', 'src/test-client-version.mjs', 'src/test-compact-policy.mjs')
 ```
 
-먼저 아래 짧은 사전 점검 프롬프트를 입력창에 직접 붙여넣는다. 파일을 Read로 읽게 하면 tool_result 경로가 되어 같은 검사가 아니다. 이것은 native /compact 실행이 아니라 실제 Claude 전송 경로에서 템플릿 라우팅만 확인하는 검사다.
+모든 `src/test-*.mjs`를 무검토 glob으로 실행하지 않는다. fixture·자식 프로세스·네트워크·쓰기 대상을 먼저 확인하고 필요한 파일만 나열한다. 선택·완료·Workflow·보안 표면을 수정했으면 `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, `test-request-admission`을 포함한다. 이 실행기는 환경 allowlist·시간 제한·단일 concurrency를 제공하지만 OS 보안 sandbox가 아니다.
 
-```text
-CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
+### 5.2 실제 실행 후 증거 수집
 
-- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
-- You already have all the context you need in the conversation above.
-- Tool calls will be REJECTED and will waste your only turn — you will fail the task.
-- Your entire response must be plain text: an <analysis> block followed by a <summary> block.
+native 세션을 정상 종료하면 launcher가 `Clauduct 종료: <분류>`와 `CLAUDUCT_REQUEST_STATUS <JSON>`을 출력한다. 이 출력을 그대로 수집한다. 세션 안에서 `node src/request-status.mjs`를 부르는 방식은 뒤이어 assistant 처리가 붙어 모델 요청 없는 수집이 아니므로 사용하지 않는다.
 
-This is a compact routing preflight, not a conversation summary. Do not analyze the conversation or perform work. Return exactly this fixed response:
-<analysis>Routing check only.</analysis><summary>COMPACT-PREFLIGHT-OK</summary>
+먼저 볼 값: `requestOutcome`, `lifetime.failed`, `lifetime.failuresByStage`, `lifetime.rejectedBeforeStart`, `lifetime.firstRejectedCategory`, `failureHistory.records[].failureCategory`, `cleanup`의 9개 항목, `clientExecutionPolicy.nonStreamingFallbackDisabled`.
 
-REMINDER: Do NOT call any tools. Respond with plain text only — an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task.
-```
+첫 오류에서 중단하고 정상 종료 JSON을 수집한다. 실패한 작업을 자동으로 반복하지 않는다.
 
-응답 직후 다음 프롬프트로 결과를 수집한다.
+### 5.3 자동 압축 저비용 확인
 
-```text
-허용된 셸 도구로 node D:/AIDEV/Clauduct/src/request-status.mjs를 정확히 한 번 실행해.
-진단 JSON을 생략하거나 고치지 말고 그대로 출력해.
-직전 사전 점검 요청에서 purpose=compact-template, requestedEffort=max, effort=medium, compactShape.matches=true, success=true인지 확인해.
-뒤따른 일반 진단 요청이 conversation/max인지도 확인해.
-기록이 없거나 조건이 다르면 실패 또는 미확인으로 보고하고 중단해.
-/compact를 실행하지 마. 파일·설정·권한을 변경하거나 환경 변수·인증 파일을 별도로 조회하지 마.
-명령이 거부되거나 실패하면 우회·재시도하지 말고 오류만 보고해.
-```
-
-이 사전 점검이 실패하면 긴 compact는 반복하지 않는다. compactShape와 시간 진단부터 분석한다. 성공해도 native의 실제 compact 요청과 같은 형태임을 완전히 입증한 것은 아니므로, 다음 단계에서 manual boundary와 진단 요청 시각을 연결해야 한다.
-
-사전 점검 통과 후에만 다음 명령을 입력한다.
-
-```text
-/compact 검증 식별자, 네 모델 기본 effort, 파일 수정 금지와 남은 검증 항목을 보존해.
-```
-
-완료 후 아래 프롬프트를 입력한다.
-
-```text
-압축 이전 검증 식별자와 파일 수정 금지 조건을 말해.
-Read 도구를 새로 호출해 D:/AIDEV/Clauduct/src/models.mjs를 읽고 네 모델의 기본 effort를 표로 답해.
-이어서 허용된 셸로 node D:/AIDEV/Clauduct/src/request-status.mjs를 한 번 실행하고 JSON을 그대로 보여줘.
-파일·설정을 수정하거나 인증 값을 별도로 조회하지 마. 실패하면 우회하지 말고 보고해.
-```
-
-통과: compact 요청에서 purpose=compact-template, requestedEffort=max, effort=medium, 같은 모델과 성공 상태를 확인한다. 이후 일반 요청은 max로 돌아오고 기억 복원·새 Read 결과 연결이 성공해야 한다. duration과 요약 길이를 기록하되 대화 길이가 달라진 순차 실행을 엄밀한 동일 조건 벤치마크라고 부르지 않는다. 템플릿이 일치하지 않으면 목적 분류를 조정하기 전에 설치 native와 요청 형태를 다시 확인한다.
-
-## 2. native 역할과 컨텍스트 환경 상속
-
-같은 세션에서 아래 프롬프트를 입력한다.
-
-```text
-Clauduct의 실제 native 서브에이전트 연결을 검증해.
-Agent 도구로 Explore, Plan, general-purpose를 각각 한 번씩 순차 실행해. 모델을 명시적으로 지정하지 마.
-각 에이전트는 Read로 D:/AIDEV/Clauduct/src/models.mjs를 읽고 자신에게 지정된 역할의 기본 모델과 effort를 코드 근거로 보고해.
-각 에이전트가 끝날 때마다 메인의 허용된 셸에서 node D:/AIDEV/Clauduct/src/request-status.mjs를 한 번 실행하고 JSON을 그대로 보여줘.
-에이전트에게 셸 도구 실행을 요구하지 마. 역할과 hook 환경은 진단의 role, roleRegistered, model, effort, agentContextPolicy로 확인해.
-모델의 자기소개를 실제 실행 모델의 증거로 쓰지 마.
-관련 진단 값이 없으면 추측하지 말고 미확인으로 보고해. 도구가 거부되면 권한을 바꾸거나 우회하지 마.
-파일이나 설정은 수정하지 마.
-```
-
-통과: native Agent 생성 및 역할 hook과 실제 요청 진단에서 Explore/general-purpose=luna/max, Plan=sol/high, roleRegistered=true를 대조한다. 일반 실행에서는 각 agentContextPolicy가 window=500000, autoCompactWindow=500000, compactPercent=83.33333333333334여야 한다. evidence=subagent-start-hook-environment는 실제 hook 프로세스 환경을 뜻하며 native 내부의 최종 context 계산이나 backend 용량까지 증명하지 않는다. 사용자 입력에 단순히 역할명이 있었다는 사실은 증거가 아니다. hook이 생략돼 값이 없으면 미검증으로 유지한다. 기존 hook 등록에 수치가 추가됐으므로 이 버전을 처음 사용하는 경우 gateway를 재시작해야 한다. 최근 16개 요청에서 앞 역할 기록이 밀려나지 않도록 에이전트별로 진단을 수집한다.
-
-## 3. 자동 압축 실제 경로의 저비용 확인
-
-기존 정상 세션과 구분되는 새 실행에서만 검증 옵션을 사용한다.
+정상 세션과 구분되는 새 실행에서만 사용한다.
 
 ```powershell
 D:\AIDEV\Clauduct\clauduct.cmd --model luna --effort max --verify-auto-compact
 ```
 
-`/context`로 500K 모델 창을 확인하고, 진단에서 autoCompactWindow=100000을 확인한다. 이 모드는 20K 출력 예약량 조건에서 약 66.7K 자동 발동 목표다. /autocompact 값 지정으로 전역 설정을 바꾸지 않는다. 자동 압축이 기존 설정에서 비활성화돼 있으면 이를 숨기거나 덮어쓰지 않고 해당 조건을 보고한다.
+`/context`에서 400K 모델 창을, 진단에서 `autoCompactWindow=100000`을 확인한다. 목표는 기본 출력 예약량에서 약 67.4K 발동이다. `/autocompact` 값 지정으로 전역 설정을 바꾸지 않는다. 자동 압축이 비활성화돼 있으면 덮어쓰지 않고 그 조건을 보고한다. transcript의 `compact_boundary`에서 `trigger=auto`, 압축 후 토큰 감소, 후속 요청 성공으로 판정한다. 메인의 성공을 모든 자식의 압축 성공이나 backend 용량 수락으로 확대하지 않는다.
 
-```text
-D:/AIDEV/Clauduct의 실제 구현을 읽기 전용으로 검토해.
-Read로 src/native-protocol.mjs, src/native-gateway.mjs, src/native-transport.mjs, src/test-native.mjs, src/test-native-protocol.mjs를 순서대로 각각 한 번씩 읽어.
-누락된 범위가 있으면 필요한 범위만 추가로 읽되 총 Read 호출은 10회를 넘기지 마.
-라우팅, 스트리밍, 오류 처리 검증이 서로 연결되는지 근거를 들어 1000자 이내로 보고해.
-/compact를 직접 실행하거나 문맥 채우기용 반복 출력·파일·루프를 만들지 마.
-마지막으로 허용된 셸에서 node D:/AIDEV/Clauduct/src/request-status.mjs를 한 번 실행하고 JSON을 보여줘.
-파일·설정·권한은 변경하지 마. 도구가 거부되면 우회하지 말고 보고해.
-```
+### 5.4 무인 3주기 선행 조건
 
-통과는 transcript의 compact_boundary에서 trigger=auto, 압축 후 토큰 감소, 후속 요청 성공으로 판정한다. 이 작업량으로 기준에 도달하지 않으면 자동 발동 미관찰로 기록하고 정상 개발 중 관찰을 이어간다. main의 auto compact 성공을 모든 subagent의 auto compact 성공이나 실제 400K/500K backend 수락으로 확대하지 않는다.
+다음이 모두 닫히기 전에는 무인 판정을 보류한다.
+
+1. 최초 `UNSUPPORTED_EVENT`의 원인이 확정되거나, 재발 시 고정 이름·안전 중단·데이터 보존·도구 중복 방지가 실제 실행으로 확인될 것.
+2. 실행 시간·비용·동시성·중단 조건과 실행 주체를 시험 전에 별도로 확인할 것.
+3. 기능 3개가 의존성·외부 서비스 없이 의미 있는 로컬 작업일 것.
+
+각 주기에 계획, 새 구현(TDD면 RED→GREEN 증거), 실제 독립 리뷰 완료, 전체 회귀, 로컬 커밋을 남긴다. 외부 장애·권한 거부·사용자 개입 뒤 이어서 완료한 것은 회복 시험이며 무개입 PASS가 아니다. 계획된 RED assertion 실패는 예상된 개발 증거이며 API·환경 오류와 분리해 기록한다. 3주기 통과는 무제한·수시간 운영 안정성의 보증이 아니다.
+
+## 6. 이력 자료
+
+아래는 과거 검증 기록이다. **수치와 프롬프트는 당시 값이며 현재 설정이 아니다.** 재실행 지시가 아니다.
+
+- 이관 기준과 호출 경로 조사: [호출 경로](native-call-paths-2026-09-09.md), [초기 감사](audit-2026-09-08.md). 당시 기준 실행 파일은 Claude 2.1.266이었고 이후 2.1.267 실행이 관측됐다. 동적 전체 기능 목록은 미완료로 남아 있다.
+- 진단 확장 경과: [완료 이후 SSE](audit-2026-09-09-completion-diagnostics.md), [요청 상관](audit-2026-09-09-request-correlation.md), [lifetime](audit-2026-09-09-lifetime-diagnostics.md), [upstream 오류 상세](audit-2026-09-10-upstream-error-details.md), [실패 보존](audit-2026-09-10-upstream-failure-preservation.md), [요청 형식](audit-2026-09-11-request-shape.md), [fallback과 실패 이력](audit-2026-09-11-native-fallback-failure-history.md), [테스트 실행기](audit-2026-09-10-request-diagnostics-test-runner.md).
+- 모델·역할·Workflow 실제 성공: [Plan 역할](audit-2026-09-09-plan-lifetime-success.md), [완료 성공](audit-2026-09-09-completion-success.md), [직접 부모](audit-2026-09-10-direct-parent-success.md), [병렬 Workflow](audit-2026-09-10-workflow-parallel-success.md), [/btw 경로](audit-2026-09-10-native-btw-path.md), [away 요약](audit-2026-09-10-away-summary.md), [세션20 취소 snapshot](audit-2026-09-10-session20-cancel-snapshot.md).
+- 압축 실측(과거 500K / 83.33% 설정): f236f867 request 11에서 admission 0.15ms, 첫 이벤트 2212.41ms, 첫 텍스트 10776.14ms, 완료 64177.91ms, 재시도 없음. 922e6ba0에서 수동 압축 경계 뒤 새 Read 성공. b6d81841에서 검증 모드 `autoCompactWindow=100000` 자동 압축 68608ms(98097→39330)와 후속 요청 성공.
+- 리뷰·병렬 실행: [native high-02](audit-2026-09-09-native-high-02.md), [native high-03](audit-2026-09-09-native-high-03.md). low와 high 최종 반환은 확인했고 모든 review 수준은 확인하지 않았다.
+- 세션별 실행 프롬프트는 `docs/prompts/`에 uncommitted 이력으로 남아 있다. session-13~23은 절차 기록이며 그 전제(미커밋 상태 등)를 현재 상태에 적용하지 않는다.

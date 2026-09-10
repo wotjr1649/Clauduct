@@ -48,7 +48,8 @@ export async function readRequestStatus(env) {
 export function requestStatusSnapshot(value, env = {}) {
   if (!Array.isArray(value?.recentRequests)) throw new Error('STATUS_UNAVAILABLE');
   const rows = value.recentRequests.slice(-16), { lifetime, correlationScope } = value;
-  const clientVersion = value.transport?.clientVersion;
+  // Re-projecting an already projected snapshot keeps the same version evidence.
+  const clientVersion = value.transport?.clientVersion ?? value.clientVersion;
   const projectRow = row => ({ request: number(row?.request),
     sessionRef: reference(row?.sessionRef), agentRef: reference(row?.agentRef), parentRef: reference(row?.parentRef),
     startedAt: typeof row?.startedAt === 'string' && /^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/.test(row.startedAt) ? row.startedAt : null,

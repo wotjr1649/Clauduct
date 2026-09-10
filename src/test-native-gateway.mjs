@@ -530,6 +530,12 @@ try {
       assert.equal(gateway.diagnostics().failureRequests[0].failureCategory, 'UPSTREAM_IO_ERROR');
       const projected = requestStatusSnapshot(status);
       assert.deepEqual(projected.failureHistory, status.failureHistory);
+      assert.deepEqual(projected.lifetime, status.lifetime);
+      // Re-projection keeps the version evidence instead of downgrading to not-observed.
+      const observed = requestStatusSnapshot({ recentRequests: [], transport: { clientVersion: '0.153.4' } });
+      assert.deepEqual([observed.clientVersion, observed.clientVersionStatus], ['0.153.4', 'reference']);
+      assert.deepEqual(requestStatusSnapshot(observed), observed);
+      assert.equal(requestStatusSnapshot({ recentRequests: [], clientVersion: 'SYNTHETIC_PRIVATE' }).clientVersionStatus, 'not-observed');
       const old = requestStatusSnapshot({ recentRequests: [] });
       assert.equal(old.failureHistory, null); assert.equal(old.requestOutcome, 'not-observed');
       assert.equal(old.clientExecutionPolicy.nonStreamingFallbackDisabled, null);

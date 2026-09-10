@@ -208,6 +208,20 @@ snapshots.set('role', metadata('call_role'));
 await assert.rejects(selection.resolve(binding('role')), /AGENT_SELECTION_UNVERIFIED/);
 assert.throws(() => selection.remember(call('call_unknown', 'unknown'), 'session'),
   error => error.message === 'AGENT_SELECTION_UNVERIFIED' && error.selectionReason === 'MODEL');
+// Every Claude alias and its full model id route to the same GPT model; an unmapped
+// name still fails closed instead of ending the turn without a reason.
+for (const [name, expected] of [['fable', MODELS.astra], ['claude-fable-5-1', MODELS.astra],
+  ['opus', MODELS.sol], ['claude-opus-5', MODELS.sol], ['sonnet', MODELS.luna], ['claude-sonnet-5', MODELS.luna],
+  ['haiku', MODELS.luna], ['claude-haiku-4-5-20251001', MODELS.luna]]) {
+  const id = `alias_${name.replaceAll(/[^a-z0-9]/g, '_')}`;
+  selection.remember(call(id, name), 'session');
+  snapshots.set(id, metadata(id, name));
+  assert.deepEqual((await selection.resolve(binding(id))).route, expected);
+}
+for (const name of ['claude-3-5-sonnet-20241022', '__proto__', 'claude-', 'fable-5']) {
+  assert.throws(() => selection.remember(call(`bad_${name}`, name), 'session'),
+    error => error.selectionReason === 'MODEL');
+}
 assert.throws(() => selection.remember(call('call_object', { private: 'SYNTHETIC' }), 'session'), /AGENT_SELECTION_UNVERIFIED/);
 // A later invalid call must not leave an earlier, undelivered call usable.
 for (const duplicate of [false, true]) {

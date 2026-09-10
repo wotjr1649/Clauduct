@@ -17,8 +17,14 @@ export const SELECTION_IO_CODES = Object.freeze(['ENOTDIR', 'EISDIR', 'EMFILE', 
 const failIO = error => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), {
   selectionReason: 'IO', selectionIoCode: SELECTION_IO_CODES.includes(error.code) ? error.code : 'OTHER'
 }); };
-const aliases = Object.freeze({ haiku: 'luna', sonnet: 'luna', opus: 'sol' });
-const model = value => selectModel(Object.hasOwn(aliases, value) ? aliases[value] : value);
+const aliases = Object.freeze({ haiku: 'luna', sonnet: 'luna', opus: 'sol', fable: 'astra' });
+// Native accepts a family alias or a full model id for the same model. Match the family
+// prefix so a version suffix is never pinned here; unknown names still fail closed.
+const families = Object.freeze([['claude-haiku-', 'luna'], ['claude-sonnet-', 'luna'],
+  ['claude-opus-', 'sol'], ['claude-fable-', 'astra']]);
+const alias = value => Object.hasOwn(aliases, value) ? aliases[value]
+  : families.find(([prefix]) => value.startsWith(prefix))?.[1];
+const model = value => selectModel(alias(value) ?? value);
 const within = (root, path) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..\\') && !rel.startsWith('../'); };
 const sameIdentity = (previous, metadata) => previous && metadata && metadata.stoppedByUser !== true
   && previous.role === metadata.agentType && previous.origin === metadata.toolUseId

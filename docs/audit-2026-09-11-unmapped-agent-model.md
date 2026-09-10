@@ -38,3 +38,20 @@ upstream이 완성한 응답에 `Agent` tool call이 있고 그 `model` 인자�
 `test-native-gateway`는 49 → 51개 검사다. 새 검사는 매핑된 별칭의 정상 성공과, 매핑되지 않은 이름에서 `AGENT_SELECTION_UNVERIFIED`/`output-validation`/`selectionFailure=MODEL`, `message_stop` 미전달, 원문 모델 이름 미노출을 확인한다. `test-agent-selection`의 기존 거부 검사는 새 실패 라벨을 확인하도록 갱신했다.
 
 기준 11개 파일과 선택·완료 표면 4개(`test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, `test-request-admission`)가 모두 통과했다. 외부 추론 요청·실제 인증 조회·실제 Claude 실행은 0이다.
+
+## 사용자 결정과 적용 — 2026-09-11
+
+grilling에서 사용자가 `fable → astra` 매핑과 "전체 모델 ID도 별칭과 동일 규칙으로 매핑"을 선택했다. 적용 내용은 다음과 같다.
+
+| 입력 | 라우팅 |
+|---|---|
+| `fable`, `claude-fable-*` | `gpt-6-astra` / medium |
+| `opus`, `claude-opus-*` | `gpt-5.6-sol` / xhigh |
+| `sonnet`, `claude-sonnet-*` | `gpt-5.6-luna` / max |
+| `haiku`, `claude-haiku-*` | `gpt-5.6-luna` / max |
+
+접두사만 비교하므로 버전 숫자를 고정하지 않는다. [공식 서브에이전트 문서](https://code.claude.com/docs/en/sub-agents) 기준 `model` 필드는 이 네 별칭, 전체 모델 ID, `inherit`을 받는다. 전달 계약과 `remember`의 원자성은 바꾸지 않았다.
+
+한계: 구형 명명(`claude-3-5-sonnet-*` 등)은 이 접두사에 맞지 않아 계속 `AGENT_SELECTION_UNVERIFIED_MODEL`로 실패한다. 매핑되지 않은 이름의 턴 손실 동작 자체도 그대로다. 다만 이제 실패 원인이 진단에 드러난다.
+
+검증: `test-agent-selection`에 여덟 개 별칭·전체 ID의 실제 route 확인과 네 개 거부 사례(`claude-3-5-sonnet-20241022`, `__proto__`, `claude-`, `fable-5`)를 추가했다. 기준 11개와 선택·완료 표면 4개 suite가 모두 통과했다.

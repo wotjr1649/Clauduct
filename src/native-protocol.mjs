@@ -8,6 +8,8 @@ export const REQUEST_STAGES = Object.freeze(['request', 'selection', 'prepare', 
 // Fixed labels only: never expose rejected field names, values or request bodies.
 export const REQUEST_FAILURES = Object.freeze([
   'OBJECT_FIELDS', 'REQUEST_FIELDS', 'REQUEST_SHAPE', 'OUTPUT_CONFIG_FIELDS',
+  'REQUEST_STREAM_FALSE', 'REQUEST_STREAM_MISSING', 'REQUEST_STREAM_INVALID',
+  'REQUEST_MESSAGES_INVALID', 'REQUEST_MESSAGES_EMPTY',
   'THINKING_FIELDS', 'THINKING_TYPE', 'THINKING_BUDGET', 'CONTEXT_FIELDS',
   'TOOLS_SHAPE', 'TOOL_FIELDS', 'TOOL_CHOICE_FIELDS', 'MESSAGE_FIELDS', 'MESSAGE_EFFORT_ROLE',
   'TEXT_SHAPE', 'TEXT_FIELDS', 'TEXT_VALUE', 'CACHE_FIELDS', 'CACHE_VALUE',
@@ -179,7 +181,10 @@ function decodeReasoning(value) {
 export function prepareNative(doc, { subagent = false, route, turnToolChanges = false } = {}) {
   keys(doc, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice', 'thinking',
     'metadata', 'output_config', 'context_management', 'temperature', 'top_p', 'stop_sequences'], 'REQUEST_FIELDS');
-  requestNeed(doc.stream === true && Array.isArray(doc.messages) && doc.messages.length > 0, 'REQUEST_SHAPE');
+  requestNeed(doc.stream === true, doc.stream === false ? 'REQUEST_STREAM_FALSE'
+    : doc.stream === undefined ? 'REQUEST_STREAM_MISSING' : 'REQUEST_STREAM_INVALID');
+  requestNeed(Array.isArray(doc.messages), 'REQUEST_MESSAGES_INVALID');
+  requestNeed(doc.messages.length > 0, 'REQUEST_MESSAGES_EMPTY');
   let selected = route ?? selectModel(doc.model, subagent ? undefined : doc.output_config?.effort);
   if (doc.output_config !== undefined) keys(doc.output_config, ['effort'], 'OUTPUT_CONFIG_FIELDS');
   need(Number.isSafeInteger(doc.max_tokens) && doc.max_tokens > 0, 'INVALID_OUTPUT_LIMIT');

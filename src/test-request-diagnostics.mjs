@@ -8,7 +8,14 @@ const base = () => ({ model: 'sol', stream: true, max_tokens: 100,
   messages: [{ role: 'user', content: 'synthetic' }] });
 const cases = [
   ['REQUEST_FIELDS', d => { d.SYNTHETIC_PRIVATE_FIELD = 'SYNTHETIC_PRIVATE_VALUE'; }],
-  ['REQUEST_SHAPE', d => { d.stream = false; }],
+  ['REQUEST_STREAM_FALSE', d => { d.stream = false; }],
+  ['REQUEST_STREAM_MISSING', d => { delete d.stream; }],
+  ...[null, 0, 1, 'SYNTHETIC_PRIVATE_VALUE', {}, []].map(value =>
+    ['REQUEST_STREAM_INVALID', d => { d.stream = value; }]),
+  ['REQUEST_MESSAGES_INVALID', d => { delete d.messages; }],
+  ...[null, {}, 'SYNTHETIC_PRIVATE_VALUE'].map(value =>
+    ['REQUEST_MESSAGES_INVALID', d => { d.messages = value; }]),
+  ['REQUEST_MESSAGES_EMPTY', d => { d.messages = []; }],
   ['OUTPUT_CONFIG_FIELDS', d => { d.output_config = { private: true }; }],
   ['CONTEXT_FIELDS', d => { d.context_management = { private: true }; }],
   ['THINKING_FIELDS', d => { d.thinking = { type: 'adaptive', private: true }; }],
@@ -53,7 +60,8 @@ let sends = 0;
 const gateway = await startNativeGateway({ admissionOptions: { freeBytes: () => 16 * 1024 ** 3 },
   transport: { send: async () => { sends++; throw Error('must not send'); }, close: async () => {}, diagnostics: () => ({}) } });
 try {
-  const body = base(); body.SYNTHETIC_PRIVATE_FIELD = 'SYNTHETIC_PRIVATE_VALUE';
+  for (const [expected, mutate] of cases) {
+  const body = base(); mutate(body);
   const response = await new Promise((resolve, reject) => {
     const req = request({ hostname: '127.0.0.1', port: gateway.port, path: '/v1/messages', method: 'POST',
       signal: AbortSignal.timeout(5000), agent: false,
@@ -64,14 +72,15 @@ try {
     }); req.on('error', reject); req.end(JSON.stringify(body));
   });
   assert.equal(response.status, 400);
-  assert.match(response.text, /UNSUPPORTED_REQUEST request=REQUEST_FIELDS/);
+  assert.ok(response.text.includes(`UNSUPPORTED_REQUEST request=${expected}`));
   assert.ok(!response.text.includes('SYNTHETIC_PRIVATE'));
   const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
     ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
-  assert.equal(status.recentRequests.at(-1).requestFailure, 'REQUEST_FIELDS');
+  assert.equal(status.recentRequests.at(-1).requestFailure, expected);
   assert.equal(status.recentRequests.at(-1).failureStage, 'prepare');
   assert.equal(status.recentRequests.at(-1).attempts.length, 0);
   assert.equal(sends, 0);
   assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE'));
+  }
 } finally { await gateway.close(); }
-console.log(JSON.stringify({ passed: cases.length + 2 }));
+console.log(JSON.stringify({ passed: cases.length * 2 + 1, loopbackRequests: cases.length, externalRequests: 0 }));

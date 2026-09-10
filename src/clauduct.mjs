@@ -187,13 +187,21 @@ export async function runInteractive(gateway, startClient, { signal, cleanupMs =
     }
   }
   const state = gateway.diagnostics();
-  const resourcesClosed = (!child || closed) && state.activeSockets === 0 && state.activeJobs === 0
-    && state.activeTimers === 0 && state.activeDeliveries === 0 && !state.busy
-    && state.cleanupFailed !== true
-    && state.transport.activeSockets === 0 && state.transport.activeRequests === 0;
+  const cleanup = {
+    childClosed: !child || closed,
+    gatewaySocketsClosed: state.activeSockets === 0,
+    gatewayJobsClosed: state.activeJobs === 0,
+    gatewayTimersClosed: state.activeTimers === 0,
+    gatewayDeliveriesClosed: state.activeDeliveries === 0,
+    gatewayIdle: !state.busy,
+    gatewayCleanupCompleted: state.cleanupFailed !== true,
+    transportSocketsClosed: state.transport.activeSockets === 0,
+    transportRequestsClosed: state.transport.activeRequests === 0
+  };
+  const resourcesClosed = Object.values(cleanup).every(value => value === true);
   return { category: !resourcesClosed ? 'CLEANUP_FAILED' : failure ?? (exitCode === 0 ? 'SUCCESS' : 'CLIENT_FAILED'),
     clientExitCode: exitCode, resourcesClosed, requestAttempts: state.transport.requestAttempts,
-    requestStatus: requestStatusSnapshot(state, contextEnv) };
+    requestStatus: { ...requestStatusSnapshot(state, contextEnv), cleanup } };
 }
 
 async function main() {

@@ -6,6 +6,8 @@
 
 ### 모델 요청 없는 종료 진단
 
+종료 JSON의 `cleanup`은 자식 종료, gateway 소켓·작업·타이머·전달·유휴 상태, gateway 정리 완료, transport 소켓·요청 종료의 고정 boolean 판정입니다. 모두 true여야 자원 정리가 성공합니다. false인 항목으로 실패 범위를 구분하며 원문 오류나 인증 값은 출력하지 않습니다. 요청 성공과 자원 정리 성공은 별도 판정입니다.
+
 native 세션을 종료해 launcher로 돌아오면 `CLAUDUCT_REQUEST_STATUS` 뒤에 최종 진단 JSON이 출력됩니다. launcher가 gateway 정리 후 메모리 상태를 기존 sanitizer로 변환하며, 새 HTTP 요청·인증 조회·모델 호출·파일 저장은 하지 않습니다. 창 자체를 강제 종료하면 이 출력이 남는다고 보장하지 않습니다. 최근 요청은 최대 16개이며 실제 값이 없는 필드는 null입니다.
 
 native의 `! node .../request-status.mjs`는 Bash 출력 뒤 후속 assistant 처리가 발생할 수 있으므로 모델 요청 없는 수집 경로로 사용하지 않습니다. 기존 status API는 유지하되, 사용자 검증 결과 수집은 종료 후 launcher 출력을 우선합니다.

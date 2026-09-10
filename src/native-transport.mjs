@@ -100,10 +100,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
     socket.once('error', () => {});
-    socketDone.set(socket, new Promise(resolve => {
-      if (socket.destroyed) resolve();
-      else socket.once('close', resolve);
-    }));
+    socketDone.set(socket, new Promise(resolve => socket.once('close', resolve)));
   }
 
   async function resolveCredential(force, account) {
@@ -436,10 +433,10 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       agent.destroy();
     }
     await Promise.all([...active].map(job => job.finished));
-    await Promise.all([...sockets].map(socket => new Promise(resolve => {
-      if (socket.destroyed) { resolve(); return; }
-      socket.once('close', resolve); socket.destroy();
-    })));
+    await Promise.all([...sockets].map(socket => {
+      socket.destroy();
+      return socketDone.get(socket); // destroyed is not the close event that clears tracking.
+    }));
     return diagnostics();
   }
 

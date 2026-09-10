@@ -97,5 +97,47 @@ try {
     assert.equal(filtered.recentRequests[0][key], null);
   }
   checks++;
+  // Successful keep-alive traffic must be fully closed before native exit returns.
+  const keepAliveServer = createServer((req, res) => {
+    req.resume(); res.end(frame({ type: 'response.completed' }));
+  });
+  await new Promise(resolve => keepAliveServer.listen(0, '127.0.0.1', resolve));
+  const keepAliveTransport = createNativeLoopbackTransport(keepAliveServer.address().port);
+  const keepAliveGateway = await startNativeGateway({ transport: keepAliveTransport });
+  try {
+    await keepAliveTransport.send({}, AbortSignal.timeout(5000));
+    assert.equal(keepAliveTransport.diagnostics().activeSockets, 1);
+    const exit = await runInteractive(keepAliveGateway, () => {
+      const child = new EventEmitter(); child.kill = () => {};
+      setImmediate(() => child.emit('close', 0)); return child;
+    });
+    assert.equal(exit.category, 'SUCCESS');
+    assert.equal(exit.resourcesClosed, true);
+    assert.ok(Object.values(exit.requestStatus.cleanup).every(value => value === true));
+    assert.equal(keepAliveTransport.diagnostics().activeSockets, 0);
+    const closed = await Promise.all([keepAliveTransport.close(), keepAliveTransport.close()]);
+    assert.ok(closed.every(state => state.activeSockets === 0 && state.activeRequests === 0));
+    checks++;
+  } finally {
+    await keepAliveGateway.close(); keepAliveServer.closeAllConnections();
+    await new Promise(resolve => keepAliveServer.close(resolve));
+  }
+  // Real cleanup rejection stays a failure; diagnostics expose fixed booleans, not error text.
+  const failedGateway = await startNativeGateway({ transport: {
+    send: async () => { throw new Error('UNEXPECTED_SEND'); },
+    close: async () => { throw new Error('SYNTHETIC_PRIVATE'); },
+    diagnostics: () => ({ activeSockets: 1, activeRequests: 0 })
+  } });
+  const failedExit = await runInteractive(failedGateway, () => {
+    const child = new EventEmitter(); child.kill = () => {};
+    setImmediate(() => child.emit('close', 0)); return child;
+  });
+  assert.equal(failedExit.category, 'CLEANUP_FAILED');
+  assert.equal(failedExit.resourcesClosed, false);
+  assert.equal(failedExit.requestStatus.cleanup.gatewayCleanupCompleted, false);
+  assert.equal(failedExit.requestStatus.cleanup.transportSocketsClosed, false);
+  assert.equal(failedExit.requestStatus.cleanup.childClosed, true);
+  assert.ok(!JSON.stringify(failedExit).includes('SYNTHETIC_PRIVATE'));
+  checks++;
 } finally { clearTimeout(watchdog); }
 console.log(JSON.stringify({ suite: 'cancel-snapshot', checks, passed: true, externalRequests: 0, credentialReads: 0, actualClaudeExecutions: 0 }));

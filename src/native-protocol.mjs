@@ -94,6 +94,15 @@ export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-obj
   'response.custom_tool_call_input.delta', 'response.custom_tool_call_input.done']);
 // Finite structural diagnostics only; never retain or hash an unknown event name/body.
 export const EVENT_TYPE_FORMATS = Object.freeze(['missing', 'non-string', 'empty', 'oversized', 'identifier', 'other']);
+// Bounded capture of an unmapped upstream event type, kept for the exit diagnostic only.
+// A value passes only in strict dotted-identifier shape: lower-case segments of at most
+// 24 characters, at least one dot, 48 characters overall. Anything else stays an unnamed
+// fixed label. Never a body, a hash, a partial value or a name that already has a label.
+const eventNameShape = /^[a-z][a-z0-9_]{0,23}(?:\.[a-z][a-z0-9_]{0,23}){1,4}$/;
+export function capturableEventName(value) {
+  return typeof value === 'string' && value.length <= 48 && eventNameShape.test(value)
+    && !EVENT_DIAGNOSTIC_TYPES.includes(value) ? value : null;
+}
 export class NativeError extends Error { constructor(code) { super(code); this.code = code; } }
 export const need = (condition, code = 'UNSUPPORTED_REQUEST') => { if (!condition) throw new NativeError(code); };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -682,6 +691,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
             : event.type.startsWith('responsesapi.') ? 'unknown-websocket-event'
             : /^(?:thread|turn|item)\./.test(event.type) ? 'unknown-thread-event' : 'other';
           const type = object(event) ? event.type : undefined;
+          failure.eventTypeName = capturableEventName(type);
           failure.eventTypeFormat = type === undefined ? 'missing' : typeof type !== 'string' ? 'non-string'
             : type.length === 0 ? 'empty' : type.length > 128 ? 'oversized'
               : /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$/.test(type) ? 'identifier' : 'other';

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { clientVersionPolicy, isClientVersion } from './client-version.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES,
+import { EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES, capturableEventName,
   UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
@@ -115,6 +115,10 @@ export function requestStatusSnapshot(value, env = {}) {
     clientExecutionPolicy: { evidence: 'inherited-environment', nonStreamingFallbackDisabled:
       env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK === '1' ? true : null },
     correlationScope: reference(correlationScope),
+    // null means this channel does not carry the capture (the in-session status API);
+    // an empty array means the capture is available and no unmapped name was observed.
+    unsupportedEventNames: Array.isArray(value.unsupportedEventNames)
+      ? value.unsupportedEventNames.map(capturableEventName).filter(Boolean).slice(0, 4) : null,
     requestOutcome: failed === null || started === null || succeeded === null ? 'not-observed'
       : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
     lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage

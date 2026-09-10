@@ -499,7 +499,11 @@ try {
         const collected = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
           ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
         assert.equal(collected.recentRequests.at(-1).attempts[0].status, 200);
-        assert.deepEqual(requestStatusSnapshot(gateway.diagnostics()), collected);
+        // The captured event-name list is the only field the in-session API withholds.
+        const local = requestStatusSnapshot(gateway.diagnostics());
+        assert.deepEqual(local.unsupportedEventNames, []);
+        assert.equal(collected.unsupportedEventNames, null);
+        assert.deepEqual({ ...local, unsupportedEventNames: null }, collected);
         assert.ok(!JSON.stringify(collected).includes('SYNTHETIC'));
       }
       if (mode === 'post-completion') {

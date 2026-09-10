@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
-import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, UPSTREAM_FAILURES } from './native-protocol.mjs';
+import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, UPSTREAM_FAILURES, capturableEventName } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
@@ -32,6 +32,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   const maxObservedInputTokens = { main: 0, subagent: 0 };
   // Fixed metadata only; bounded memory, no transcript, headers or credential material.
   const recentRequests = [], failureRequests = [];
+  // At most four distinct unmapped upstream event names, kept for the exit diagnostic only.
+  const unsupportedEventNames = [];
   const copyRecord = record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
     attempts: record.attempts.map(attempt => ({ ...attempt })),
     ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
@@ -50,6 +52,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage } },
     recentRequests: recentRequests.map(copyRecord),
     failureRequests: failureRequests.map(copyRecord),
+    unsupportedEventNames: [...unsupportedEventNames],
     busy: jobs.size > 0, transport: transport.diagnostics(), requests, rejected,
     persistedBodies: 0, registeredAgents: agents.size, unregisteredAgentRequests, sessionLifetime: null, requestBudget: null });
   function authorized(value) {
@@ -105,7 +108,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       if (req.method === 'GET' && path === '/v1/models') {
         reply(res, 200, { object: 'list', data: Object.values(MODELS).map(item => ({ id: item.model, object: 'model', owned_by: 'openai' })) }); return;
       }
-      if (req.method === 'GET' && path === '/clauduct/status') { reply(res, 200, diagnostics()); return; }
+      if (req.method === 'GET' && path === '/clauduct/status') {
+        // The captured upstream name is withheld here so it never enters model context.
+        const { unsupportedEventNames: withheld, ...state } = diagnostics();
+        void withheld; reply(res, 200, state); return;
+      }
       if (req.method === 'POST' && path === '/clauduct/agents') {
         const binding = await readBody(req, 4096, controller);
         if (binding?.kind === 'workflow-result') {
@@ -342,6 +349,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const requestFailure = stage === 'prepare' && category === 'UNSUPPORTED_REQUEST'
         && REQUEST_FAILURES.includes(error.requestFailure) ? error.requestFailure : null;
       if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
+      const eventName = category === 'UNSUPPORTED_EVENT' ? capturableEventName(error.eventTypeName) : null;
+      if (eventName && unsupportedEventNames.length < 4 && !unsupportedEventNames.includes(eventName)) {
+        unsupportedEventNames.push(eventName);
+      }
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
       const eventTypeFormat = category === 'UNSUPPORTED_EVENT' && EVENT_TYPE_FORMATS.includes(error.eventTypeFormat) ? error.eventTypeFormat : null;
       const upstreamFailureEvent = Object.keys(UPSTREAM_FAILURES).find(type => UPSTREAM_FAILURES[type] === category) ?? null;

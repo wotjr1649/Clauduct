@@ -12,6 +12,12 @@
 
 `lifetime.rejectedBeforeStart`는 요청 기록을 만들기 전에 HTTP 경계에서 거부된 수입니다. 다른 경로(`/v1/messages` 이외), loopback/헤더 경계 거부, 인증 실패, 형식이 잘못된 식별자 헤더, agent 등록 거부가 여기 들어가며 모델 요청 성패 카운터와 섞이지 않습니다. `lifetime.firstRejectedCategory`는 그중 첫 거부의 고정 분류이며 없으면 null입니다. 이 값들은 gateway 메모리 누계이고 서버 수준에서 끊긴 연결(clientError/CONNECT/upgrade)은 포함하지 않습니다.
 
+미지원 upstream 이벤트의 이름은 엄격한 형태 검사를 통과할 때만 제한적으로 기록합니다. 소문자로 시작하는 24자 이하 세그먼트, 점 1개 이상 4개 이하, 전체 48자 이하만 통과하며 이미 고정 라벨이 있는 이름은 기록하지 않습니다. 서로 다른 이름 최대 4개까지 중복 없이 보관하고 본문·해시·부분 값은 기록하지 않습니다. 클라이언트에 돌려주는 오류 메시지에도 이름은 넣지 않습니다.
+
+이 값은 launcher 종료 JSON의 `unsupportedEventNames`에만 나옵니다. 세션 안의 `/clauduct/status`는 이 필드를 제거해 응답하므로 upstream 문자열이 모델 컨텍스트로 들어가지 않습니다. 투영 결과에서 `null`은 이 경로가 캡처를 제공하지 않는다는 뜻이고, `[]`는 캡처가 가능하나 관측된 이름이 없다는 뜻입니다. 형태를 정확히 흉내 낸 문자열은 통과할 수 있다는 잔여 위험을 안고 선택한 정책입니다.
+
+Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 ID를 함께 받습니다. `fable`/`claude-fable-*`는 gpt-6-astra, `opus`/`claude-opus-*`는 gpt-5.6-sol, `sonnet`/`claude-sonnet-*`와 `haiku`/`claude-haiku-*`는 gpt-5.6-luna로 보냅니다. 접두사만 비교해 버전 숫자는 고정하지 않으며, 매핑되지 않은 이름은 `AGENT_SELECTION_UNVERIFIED_MODEL`로 fail-closed 됩니다.
+
 `failureCategory`는 고정 라벨만 사용합니다. 접미사가 붙는 로컬 코드는 고정 접두사로만 기록해 `AGENT_SELECTION_UNVERIFIED_<이유>`는 `AGENT_SELECTION_UNVERIFIED`로, `UNSUPPORTED_BETA known=... unknown=N`은 `UNSUPPORTED_BETA`로 남깁니다. 상세 이유는 기존 `selectionFailure`/오류 메시지에서 확인합니다. 등록되지 않은 코드는 계속 `OTHER`입니다.
 
 `failureHistory`는 최근 요청 16개와 별개로 완료된 실패의 최초 8개·최근 8개를 최대 16개 보존합니다. 16개 이하에서는 중복 없이 모두 보존하며 완료 순서 기준입니다. `omitted`는 빠진 실패 수입니다. 성공 요청은 실패 이력을 밀어내지 않습니다. 모두 현재 gateway 메모리이며 재시작하면 사라집니다. 과거 진단에 이 필드가 없으면 null로 표시합니다. 상태 조회 응답은 256 KiB로 제한됩니다.

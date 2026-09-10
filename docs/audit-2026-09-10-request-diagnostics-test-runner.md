@@ -12,11 +12,23 @@
 
 ## 공통 테스트 실행기
 
-`src/run-node-tests.ps1`은 Windows의 PowerShell 7 현재 셸에서 직접 실행한다. 다른 셸을 띄우거나 execution policy를 변경하지 않는다. 메인과 구현 자식 모두 이 실행 경로를 호스트가 허용할 때 재사용할 수 있다. native Bash에서의 실제 호출 허용 여부는 아직 미검증이며 guard 거부를 우회하면 안 된다.
+`src/run-node-tests.ps1`은 Windows의 PowerShell 7에서 실행한다. PowerShell 직접 호출 외에 아래 Git Bash의 명시적 `pwsh -File` 경로도 검증했다. 실행기 내부는 다른 셸을 띄우지 않고 Node를 직접 실행한다. execution policy와 guard는 변경하지 않는다. 인증된 native Agent 내부에서의 최종 실행은 별도 증거가 필요하다.
 
 ```powershell
 & D:\AIDEV\Clauduct\src\run-node-tests.ps1 -Root D:\AIDEV\Clauduct\verification\dev-sandbox\run-02
 ```
+
+Git Bash에서 같은 실행기를 호출하는 명령:
+
+```bash
+pwsh -NoProfile -NonInteractive -File D:/AIDEV/Clauduct/src/run-node-tests.ps1 -Root D:/AIDEV/Clauduct/verification/dev-sandbox/run-02
+```
+
+후속 세션 24a198f9-103f-4653-9cb1-89742850a80e는 session-17이 직접 PowerShell 도구만 요구한 탓에 문서 두 번 읽기 후 중단했다. 이후 공유 guard의 ps-nested-shell/bash-nested-shell 규칙을 읽기 전용으로 확인한 결과 명시적인 `pwsh -File` 예외가 있었다. 이 명령은 그 예외에 해당한다. native 설정의 `PowerShell(*)`·`Bash(powershell*)` 금지와 `pwsh -File`을 동일하게 취급한 이전 안내는 과도했다. 동적 명령 문자열·인코딩·PATH 변경 또는 거부 후 다른 셸로 재현하는 방식은 사용하지 않는다.
+
+실제 `C:/Program Files/Git/bin/bash.exe`를 셸로 지정해 위 전체 명령, `-TestFiles test/untag.test.mjs`, `-File D:/AIDEV/Clauduct/src/test-run-node-tests.ps1`을 실행했다. 공유 guard는 변경하지 않았다. 실행기 검사 통과와 전체 41개 중 36 pass/5 fail(exit 1), 보존된 RED만의 0 pass/5 fail(exit 1)을 확인했다. 새로운 제품 코드 없이 이미 있던 실행기·테스트를 재사용했다. 이 검사는 로컬 Git Bash 경로이며 native 모델 호출/Agent 실행을 대신하지 않는다.
+
+후속 문서 자동 검사 명령에 포함된 실행 명령 문자열이 ps-nested-shell에 차단됐다. 해당 검사 명령은 재시도하지 않았으며, 실행된 Bash 파일 경로 검사와 이 문서 검사 거부를 구분한다. 최종 문서는 읽기 전용 내용 확인과 Git diff 검사로 검토했다. 과거 session-17은 보존하고, session-18에 검증된 파일 실행 진입점을 반영한다.
 
 특정 RED만 확인하려면 `-TestFiles test/untag.test.mjs`를 지정한다. 실행기는 선택한 .mjs를 루트 내부에서 확인하고 절대 경로·상위 이탈·reparse point를 거부한다. 검토된 테스트 코드만 실행해야 한다.
 

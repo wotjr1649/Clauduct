@@ -93,7 +93,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       const input = block.input ?? {};
       if (input.model !== undefined) {
         if (typeof input.model !== 'string') fail();
-        if (input.model !== 'inherit') model(input.model);
+        // A model name this gateway does not map is a routing failure, not an unlabelled throw.
+        if (input.model !== 'inherit') { try { model(input.model); } catch { fail('MODEL'); } }
       }
       if (input.subagent_type !== undefined && (typeof input.subagent_type !== 'string'
         || input.subagent_type.length === 0 || input.subagent_type.length > 200)) fail();

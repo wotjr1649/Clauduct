@@ -271,6 +271,52 @@ try {
     } finally { await gateway.close(); }
   }
   {
+    // A model name the gateway does not map must name its own routing failure rather than
+    // reaching the client as a generic protocol rejection with no selection reason.
+    const agentDoc = { ...doc, tools: [{ name: 'Agent', input_schema: { type: 'object', properties: {} } }] };
+    const message = { id: 'msg_0', type: 'message', role: 'assistant', status: 'completed',
+      content: [{ type: 'output_text', text: 'SYNTHETIC_TEXT', annotations: [] }] };
+    for (const [selected, expected] of [['opus', null], ['SYNTHETIC_UNMAPPED_MODEL', 'MODEL']]) {
+      const args = JSON.stringify({ subagent_type: 'general-purpose', model: selected });
+      const tool = { id: 'fc_1', type: 'function_call', call_id: 'call_1', name: 'Agent', arguments: args, status: 'completed' };
+      const gateway = await startNativeGateway({ admissionOptions: ample,
+        agentSelection: createAgentSelection({ timeoutMs: 10, readMetadata: async () => ({}) }),
+        transport: { send: async body => [
+          { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
+          { type: 'response.output_item.added', output_index: 0, item: { ...message, content: [], status: 'in_progress' } },
+          { type: 'response.output_text.delta', output_index: 0, item_id: 'msg_0', content_index: 0, delta: 'SYNTHETIC_TEXT' },
+          { type: 'response.output_text.done', output_index: 0, item_id: 'msg_0', content_index: 0, text: 'SYNTHETIC_TEXT' },
+          { type: 'response.output_item.done', output_index: 0, item: message },
+          { type: 'response.output_item.added', output_index: 1, item: { ...tool, arguments: '', status: 'in_progress' } },
+          { type: 'response.function_call_arguments.delta', output_index: 1, item_id: 'fc_1', delta: args },
+          { type: 'response.function_call_arguments.done', output_index: 1, item_id: 'fc_1', arguments: args },
+          { type: 'response.output_item.done', output_index: 1, item: tool },
+          { type: 'response.completed', response: { id: 'resp_1', status: 'completed', model: body.model,
+            reasoning: body.reasoning, output: [message, tool],
+            usage: { input_tokens: 30, output_tokens: 5, total_tokens: 35, input_tokens_details: { cached_tokens: 0 } } } }
+        ], close: async () => {}, diagnostics: () => ({}) } });
+      try {
+        const result = await call(gateway, { body: agentDoc, headers: { 'x-claude-code-session-id': 'session1' } });
+        const row = gateway.diagnostics().recentRequests.at(-1);
+        assert.equal(result.status, 200);
+        if (expected === null) {
+          assert.equal(row.success, true);
+          assert.match(result.text, /event: message_stop/);
+        } else {
+          assert.equal(row.success, false);
+          assert.equal(row.failureCategory, 'AGENT_SELECTION_UNVERIFIED');
+          assert.equal(row.failureStage, 'output-validation');
+          assert.equal(row.selectionFailure, expected);
+          assert.ok(result.text.includes(`AGENT_SELECTION_UNVERIFIED_${expected}`));
+          assert.ok(!result.text.includes('message_stop'));
+          assert.ok(!result.text.includes('SYNTHETIC_UNMAPPED_MODEL'));
+          assert.ok(!JSON.stringify(requestStatusSnapshot(gateway.diagnostics())).includes('SYNTHETIC_UNMAPPED_MODEL'));
+        }
+        passed++;
+      } finally { await gateway.close(); }
+    }
+  }
+  {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
       failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', upstreamFailureEvent: { toString: null, valueOf: null },
       upstreamErrorCode: 'server_error', upstreamErrorType: 'server_error', upstreamIncompleteReason: 'max_output_tokens', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',

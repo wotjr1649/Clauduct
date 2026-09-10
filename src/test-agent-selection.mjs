@@ -206,7 +206,8 @@ for (const code of ['ENOTDIR', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'SYNTHETIC_P
 selection.remember(call('call_role', undefined, 'Plan'), 'session');
 snapshots.set('role', metadata('call_role'));
 await assert.rejects(selection.resolve(binding('role')), /AGENT_SELECTION_UNVERIFIED/);
-assert.throws(() => selection.remember(call('call_unknown', 'unknown'), 'session'), /UNSUPPORTED_MODEL_OR_EFFORT/);
+assert.throws(() => selection.remember(call('call_unknown', 'unknown'), 'session'),
+  error => error.message === 'AGENT_SELECTION_UNVERIFIED' && error.selectionReason === 'MODEL');
 assert.throws(() => selection.remember(call('call_object', { private: 'SYNTHETIC' }), 'session'), /AGENT_SELECTION_UNVERIFIED/);
 // A later invalid call must not leave an earlier, undelivered call usable.
 for (const duplicate of [false, true]) {

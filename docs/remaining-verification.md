@@ -37,7 +37,7 @@
 |---|---|---|---|---|
 | 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md) | 원인 미확정. 미재발을 해결로 처리하지 않는다 | 재발 시 고정 이름이 그대로 기록된다. 이를 위해 새 실사용 시험을 따로 만들지 않는다 |
 | 미지원 이벤트 분류 | 완료 | `src/test-unsupported-event-diagnostics.mjs` 51개 검사 / loopback 24회. Codex `ThreadEvent` 7개 태그와 `unknown-thread-event` 추가 | 설치 바이너리의 enum 확인일 뿐 backend 실제 전송은 미확인 | 없음 |
-| 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), `test-native-gateway` 49개 검사 | 서버 수준 clientError·CONNECT·upgrade는 여전히 카운터 밖이다 | 없음 |
+| 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), `test-native-gateway` 51개 검사 | 서버 수준 clientError·CONNECT·upgrade는 여전히 카운터 밖이다 | 없음 |
 | `OTHER` 분류 축소 | 완료 | 같은 감사. 요청 기록에 도달 가능한 고정 코드 추가와 접미사 정규화 | 새 오류 코드를 추가하면 목록도 함께 갱신해야 한다 | 코드 추가 시 목록 동기화 |
 | native fallback 차단 | 조건부 | 자식 env·settings 동시 적용은 `test-launcher-native` 통과. 공식 [환경 변수 문서](https://code.claude.com/docs/en/env-vars)와 설치 코드 경로 확인 | 실제 native의 비스트리밍 전환 차단 분기는 실행되지 않았다 | 실제 스트리밍 오류가 난 세션의 종료 JSON을 수집한다 |
 | 내용 전달 후 재시도 금지(도구 중복 실행 방지) | 완료 | `test-native-gateway` 재시도 울타리 2건. 울타리를 제거하면 실패하는 것을 확인 | downstream 전달 전 재시도는 유지되므로 upstream 계산은 중복될 수 있다 | 없음 |
@@ -47,6 +47,7 @@
 | 종료 판정과 exit code 계약 | 완료 | [native.md](native.md) 종료 진단 절, `requestOutcome`과 `cleanup` 분리 | exit 0은 프로세스 종료·자원 정리 판정이며 요청 성공 판정이 아니다 | 호환성 검토 없이 exit code를 바꾸지 않는다 |
 | 완료 알림 기반 복귀 | 조건부 | c19c8b14 실제 성공, [감사](audit-2026-09-09-completion-resume.md), 로컬 회귀 | 과거 실패(35985327)의 원인 미확정. 다중 알림·실패 알림 복귀는 미지원 | 없음 |
 | 직접 부모 모델·effort 상속 | 완료 | db34be24, a2d50ff0, [수용 조건](audit-2026-09-10-agent-acceptance.md), [계약](gpt-agent-selection-contract.md) | 생성 후 모델 변경과 손자 전 조합은 미검증 | 회귀 통과만 유지한다 |
+| 매핑되지 않은 Agent 모델 이름 | 조건부 | [감사](audit-2026-09-11-unmapped-agent-model.md), `test-native-gateway` 51개 검사 | 진단은 고쳤으나 해당 턴은 계속 손실된다. 현재 Claude의 Agent `model` 값 중 `fable`은 별칭표에 없다 | 별칭 추가 여부는 모델 매핑 결정이므로 사용자가 정한다 |
 | Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
 | 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
 | 장기 자원 안정성 | 미검증 | `test-native` 45개(1000요청 / 20동시 포함), `test-request-admission` | 3주기 종료 후 registry·socket·timer·listener 실측이 없다. gateway `agents` Map은 SubagentStop에 의존하며 별도 상한이 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`과 `admission`을 함께 본다 |
@@ -76,7 +77,7 @@
 
 2026-09-11, Node.js v24.19.0, 프로젝트 `Invoke-ClauductNodeTests`, 60초 제한, test concurrency 1.
 
-기준 11개 파일이 함께 통과했다: `test-native-gateway`(49), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(45), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(51 / loopback 24), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
+기준 11개 파일이 함께 통과했다: `test-native-gateway`(51), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(45), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(51 / loopback 24), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
 
 선택·완료 표면도 함께 통과했다: `test-agent-selection`, `test-completion-selection`(46, symlink notRun), `test-workflow-selection`(36, native Workflow·symlink notRun), `test-request-admission`.
 

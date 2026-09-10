@@ -314,7 +314,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const output = validateResponse('final', () => response.finish());
       stage = 'output-validation';
       verifyFileReviewStep(output.message, prepared);
-      agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent, prepared.selected);
+      // Recording routing evidence is atomic; report why it was refused instead of a
+      // generic protocol rejection, so the failed turn names the unverified selection.
+      try { agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent, prepared.selected); }
+      catch (error) {
+        const reason = SELECTION_FAILURES.includes(error?.selectionReason) ? error.selectionReason : 'UNKNOWN';
+        throw Object.assign(new NativeError(`AGENT_SELECTION_UNVERIFIED_${reason}`), { selectionReason: reason });
+      }
       const kind = agent === undefined ? 'main' : 'subagent';
       maxObservedInputTokens[kind] = Math.max(maxObservedInputTokens[kind],
         output.message.usage.input_tokens + (output.message.usage.cache_read_input_tokens ?? 0));

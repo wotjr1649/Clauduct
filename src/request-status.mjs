@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { MODELS, EFFORTS } from './models.mjs';
 import { clientVersionPolicy, isClientVersion } from './client-version.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
-import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES } from './native-protocol.mjs';
+import { EVENT_DIAGNOSTIC_TYPES, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
@@ -80,6 +80,8 @@ export async function readRequestStatus(env) {
     completionChildState: COMPLETION_STATES.includes(row?.completionChildState) ? row.completionChildState : null,
     reviewDiffMismatch: ['call-count', 'tool-name', 'command', 'background'].includes(row?.reviewDiffMismatch) ? row.reviewDiffMismatch : null,
     failureCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(row?.failureCategory) ? row.failureCategory : null,
+    upstreamFailureEvent: typeof row?.upstreamFailureEvent === 'string' && Object.hasOwn(UPSTREAM_FAILURES, row.upstreamFailureEvent)
+      && UPSTREAM_FAILURES[row.upstreamFailureEvent] === row?.failureCategory ? row.upstreamFailureEvent : null,
     clientDisconnected: row?.clientDisconnected === true,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),
@@ -89,7 +91,7 @@ export async function readRequestStatus(env) {
     attempts: Array.isArray(row?.attempts) ? row.attempts.slice(0, 6).map(attempt => ({
       ...Object.fromEntries(['attempt', 'startedMs', 'requestFlushedMs', 'headersMs', 'firstBodyMs', 'endedMs', 'status']
         .map(key => [key, number(attempt?.[key])])), completed: attempt?.completed === true,
-      terminalState: ['open', 'completed', 'done'].includes(attempt?.terminalState) ? attempt.terminalState : null,
+      terminalState: ['open', 'completed', 'done', ...Object.keys(UPSTREAM_FAILURES)].includes(attempt?.terminalState) ? attempt.terminalState : null,
       postCompletionFrame: [...EVENT_DIAGNOSTIC_TYPES, 'done', 'invalid-json', 'oversized'].includes(attempt?.postCompletionFrame) ? attempt.postCompletionFrame : null,
       postCompletionSequence: ['missing', 'unsequenced', 'invalid', 'expected', 'unexpected'].includes(attempt?.postCompletionSequence) ? attempt.postCompletionSequence : null })) : [] })) };
 }

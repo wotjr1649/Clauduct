@@ -14,8 +14,15 @@ export const REQUEST_FAILURES = Object.freeze([
   'IMAGE_FIELDS', 'IMAGE_SOURCE_FIELDS', 'IMAGE_ROLE', 'TOOL_CHANGE_FIELDS', 'TOOL_REFERENCE_FIELDS',
   'TOOL_USE_FIELDS', 'TOOL_RESULT_FIELDS', 'TOOL_RESULT_SHAPE', 'REDACTED_FIELDS', 'REDACTED_ROLE', 'REASONING_FIELDS'
 ]);
+// A failure event is terminal immediately; never retain its body or wait for a trailer.
+export const UPSTREAM_FAILURES = Object.freeze({
+  'response.failed': 'UPSTREAM_RESPONSE_FAILED',
+  'response.incomplete': 'UPSTREAM_RESPONSE_INCOMPLETE',
+  error: 'UPSTREAM_ERROR_EVENT'
+});
 // Status classification only: never copy arbitrary error messages or upstream codes.
 export const FAILURE_DIAGNOSTIC_CATEGORIES = Object.freeze([
+  ...Object.values(UPSTREAM_FAILURES),
   'CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT', 'UPSTREAM_IO_ERROR',
   'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'EVENT_AFTER_COMPLETION', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED',
   'INVALID_SSE', 'INVALID_UTF8', 'SEQUENCE_MISMATCH', 'TRUNCATED_STREAM', 'INCOMPLETE_RESPONSE',
@@ -445,6 +452,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
   const parse = event => {
     need(object(event) && typeof event.type === 'string', 'UNSUPPORTED_EVENT');
     need(!state.completed, 'EVENT_AFTER_COMPLETION');
+    if (Object.hasOwn(UPSTREAM_FAILURES, event.type)) throw new NativeError(UPSTREAM_FAILURES[event.type]);
     if (event.type === 'response.created') {
       need(state.responseId === undefined && id(event.response?.id)
         && (event.response.status === undefined || event.response.status === 'in_progress'), 'INVALID_RESPONSE_START');
@@ -463,10 +471,6 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
       return [];
     }
     if (event.type === 'response.completed') { need(object(event.response), 'INCOMPLETE_RESPONSE'); completedEvent(event); return []; }
-    if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
-      state.completed = object(event.response) ? event.response : { id: state.responseId, status: 'failed', error: true };
-      return [];
-    }
     if (event.type === 'response.in_progress') {
       need(!state.inProgress && state.items.size === 0
         && (event.response === undefined || (event.response.id === state.responseId

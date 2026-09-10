@@ -3,7 +3,7 @@ import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { buildHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES } from './native-protocol.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -236,6 +236,10 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
         need(event.sequence_number === nextSequence, 'SEQUENCE_MISMATCH');
         nextSequence++;
       } else need(!sequenceMode, 'SEQUENCE_MISMATCH');
+      if (Object.hasOwn(UPSTREAM_FAILURES, event.type)) {
+        timing.terminalState = event.type;
+        throw new NativeError(UPSTREAM_FAILURES[event.type]);
+      }
       if (event.type === 'response.completed') {
         need(!completed, 'DUPLICATE_COMPLETION'); completed = true; timing.terminalState = 'completed';
       }

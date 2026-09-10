@@ -221,7 +221,7 @@ try {
   }
   {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
-      failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
+      failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', upstreamFailureEvent: { toString: null, valueOf: null }, attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
         postCompletionFrame: 'SYNTHETIC_PRIVATE', postCompletionSequence: 'SYNTHETIC_PRIVATE' }]
     }], transport: { clientVersion: 'SYNTHETIC_PRIVATE' } })));
     await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
@@ -233,6 +233,7 @@ try {
       assert.equal(status.clientVersionStatus, 'not-observed');
       assert.equal(row.failureCategory, null);
       assert.equal(row.requestFailure, null);
+      assert.equal(row.upstreamFailureEvent, null);
       for (const key of ['terminalState', 'postCompletionFrame', 'postCompletionSequence']) assert.equal(row.attempts[0][key], null);
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve)); }

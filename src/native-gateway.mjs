@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES } from './native-protocol.mjs';
-import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES } from './native-protocol.mjs';
+import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
@@ -301,11 +301,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         && REQUEST_FAILURES.includes(error.requestFailure) ? error.requestFailure : null;
       if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
+      const upstreamFailureEvent = Object.keys(UPSTREAM_FAILURES).find(type => UPSTREAM_FAILURES[type] === category) ?? null;
       const completionFailure = COMPLETION_FAILURES.includes(error.completionFailure) ? error.completionFailure : null;
       const parentState = COMPLETION_STATES.includes(error.completionParentState) ? error.completionParentState : null;
       const childState = COMPLETION_STATES.includes(error.completionChildState) ? error.completionChildState : null;
       if (timing) timing.unsupportedEvent = eventKind;
       if (timing) {
+        timing.upstreamFailureEvent = upstreamFailureEvent;
         timing.failureStage = stage;
         timing.requestFailure = requestFailure;
         timing.selectionFailure = SELECTION_FAILURES.includes(error.selectionReason) ? error.selectionReason : null;
@@ -322,6 +324,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         : category === 'MEMORY_QUEUE_FULL' || relogin ? 503 : upstream ? 502 : 400;
       const failure = { type: 'error', error: { type: status === 429 ? 'rate_limit_error' : status >= 500 ? 'api_error' : 'invalid_request_error',
         message: category + (eventKind ? ` event=${eventKind}` : '')
+          + (upstreamFailureEvent ? ` event=${upstreamFailureEvent}` : '')
           + (requestFailure ? ` request=${requestFailure}` : '')
           + (completionFailure ? ` completion=${completionFailure} parent=${parentState ?? 'NONE'} child=${childState ?? 'NONE'}` : '')
           + (relogin ? ': Codex login required; resume after logging in.' : res.headersSent ? ': Partial response; explicit resume required.' : '') } };

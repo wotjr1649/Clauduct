@@ -16,7 +16,13 @@
 
 이 값은 launcher 종료 JSON의 `unsupportedEventNames`에만 나옵니다. 세션 안의 `/clauduct/status`는 이 필드를 제거해 응답하므로 upstream 문자열이 모델 컨텍스트로 들어가지 않습니다. 투영 결과에서 `null`은 이 경로가 캡처를 제공하지 않는다는 뜻이고, `[]`는 캡처가 가능하나 관측된 이름이 없다는 뜻입니다. 형태를 정확히 흉내 낸 문자열은 통과할 수 있다는 잔여 위험을 안고 선택한 정책입니다.
 
-Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 ID를 함께 받습니다. `fable`/`claude-fable-*`는 gpt-6-astra, `opus`/`claude-opus-*`는 gpt-5.6-sol, `sonnet`/`claude-sonnet-*`와 `haiku`/`claude-haiku-*`는 gpt-5.6-luna로 보냅니다. 접두사만 비교해 버전 숫자는 고정하지 않으며, 매핑되지 않은 이름은 `AGENT_SELECTION_UNVERIFIED_MODEL`로 fail-closed 됩니다.
+Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 ID를 함께 받습니다. `fable`/`claude-fable-*`는 gpt-6-astra, `opus`/`claude-opus-*`는 gpt-5.6-sol, `sonnet`/`claude-sonnet-*`와 `haiku`/`claude-haiku-*`는 gpt-5.6-luna로 보냅니다. 접두사만 비교해 버전 숫자는 고정하지 않습니다.
+
+매핑되지 않은 이름을 만나면 **그 tool_use 블록의 라우팅 기록만 생략하고 턴은 그대로 전달**합니다. 그 이름으로 만들려던 자식은 검증된 호출이 없으므로 첫 요청에서 `AGENT_SELECTION_UNVERIFIED_CALL`로 fail-closed 되고, 나머지 블록과 응답 내용은 보존됩니다. 중복 tool_use id나 비문자열 model 같은 구조적 위반은 예전처럼 턴 전체를 거부합니다. 생략 횟수는 `lifetime.unmappedAgentModels`에 누적되고 세션마다 한 번 stderr로 알립니다.
+
+`anthropic-beta` 헤더는 이 프로젝트가 비호환으로 판정한 목록에 있으면 계속 거부합니다. 한 번도 본 적 없는 beta는 통과시키고 이름을 종료 JSON의 `unknownBetaNames`에 최대 8개까지 기록합니다. beta 헤더는 upstream으로 전달되지 않으며, 그 beta가 실제로 요청·응답 계약을 바꾸면 기존 엄격 검증이 더 구체적인 라벨로 거부합니다. 이 목록도 세션 내 상태 API에서는 제거됩니다.
+
+미지원 이벤트 이름을 캡처하면 세션마다 한 번 stderr로 알립니다. 통지에는 이름이 들어가지 않으며, 창을 강제로 닫지 말고 정상 종료해 종료 JSON을 수집하라는 안내입니다.
 
 `failureCategory`는 고정 라벨만 사용합니다. 접미사가 붙는 로컬 코드는 고정 접두사로만 기록해 `AGENT_SELECTION_UNVERIFIED_<이유>`는 `AGENT_SELECTION_UNVERIFIED`로, `UNSUPPORTED_BETA known=... unknown=N`은 `UNSUPPORTED_BETA`로 남깁니다. 상세 이유는 기존 `selectionFailure`/오류 메시지에서 확인합니다. 등록되지 않은 코드는 계속 `OTHER`입니다.
 

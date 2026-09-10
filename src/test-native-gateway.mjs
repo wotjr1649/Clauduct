@@ -271,16 +271,18 @@ try {
     } finally { await gateway.close(); }
   }
   {
-    // A model name the gateway does not map must name its own routing failure rather than
-    // reaching the client as a generic protocol rejection with no selection reason.
+    // A model name the gateway does not map costs only that block's routing evidence:
+    // the completed turn is still delivered and the skip is counted and announced once.
     const agentDoc = { ...doc, tools: [{ name: 'Agent', input_schema: { type: 'object', properties: {} } }] };
     const message = { id: 'msg_0', type: 'message', role: 'assistant', status: 'completed',
       content: [{ type: 'output_text', text: 'SYNTHETIC_TEXT', annotations: [] }] };
-    for (const [selected, expected] of [['opus', null], ['SYNTHETIC_UNMAPPED_MODEL', 'MODEL']]) {
+    let notices = 0;
+    for (const [selected, unmapped] of [['opus', 0], ['synthetic-unmapped-model', 1], ['synthetic-unmapped-model', 1]]) {
       const args = JSON.stringify({ subagent_type: 'general-purpose', model: selected });
       const tool = { id: 'fc_1', type: 'function_call', call_id: 'call_1', name: 'Agent', arguments: args, status: 'completed' };
       const gateway = await startNativeGateway({ admissionOptions: ample,
         agentSelection: createAgentSelection({ timeoutMs: 10, readMetadata: async () => ({}) }),
+        onUnmappedAgentModel: () => { notices++; },
         transport: { send: async body => [
           { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
           { type: 'response.output_item.added', output_index: 0, item: { ...message, content: [], status: 'in_progress' } },
@@ -297,24 +299,19 @@ try {
         ], close: async () => {}, diagnostics: () => ({}) } });
       try {
         const result = await call(gateway, { body: agentDoc, headers: { 'x-claude-code-session-id': 'session1' } });
-        const row = gateway.diagnostics().recentRequests.at(-1);
+        const state = gateway.diagnostics(), row = state.recentRequests.at(-1);
         assert.equal(result.status, 200);
-        if (expected === null) {
-          assert.equal(row.success, true);
-          assert.match(result.text, /event: message_stop/);
-        } else {
-          assert.equal(row.success, false);
-          assert.equal(row.failureCategory, 'AGENT_SELECTION_UNVERIFIED');
-          assert.equal(row.failureStage, 'output-validation');
-          assert.equal(row.selectionFailure, expected);
-          assert.ok(result.text.includes(`AGENT_SELECTION_UNVERIFIED_${expected}`));
-          assert.ok(!result.text.includes('message_stop'));
-          assert.ok(!result.text.includes('SYNTHETIC_UNMAPPED_MODEL'));
-          assert.ok(!JSON.stringify(requestStatusSnapshot(gateway.diagnostics())).includes('SYNTHETIC_UNMAPPED_MODEL'));
-        }
+        assert.equal(row.success, true);
+        assert.match(result.text, /event: message_stop/);
+        assert.match(result.text, /"type":"tool_use"/);
+        assert.equal(state.lifetime.unmappedAgentModels, unmapped);
+        assert.equal(requestStatusSnapshot(state).lifetime.unmappedAgentModels, unmapped);
+        assert.ok(!JSON.stringify(requestStatusSnapshot(state)).includes('synthetic-unmapped-model'));
         passed++;
       } finally { await gateway.close(); }
     }
+    // Each gateway is its own session, so the notice fires once in each unmapped one.
+    assert.equal(notices, 2);
   }
   {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
@@ -499,11 +496,11 @@ try {
         const collected = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
           ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
         assert.equal(collected.recentRequests.at(-1).attempts[0].status, 200);
-        // The captured event-name list is the only field the in-session API withholds.
+        // The two capture lists are the only fields the in-session API withholds.
         const local = requestStatusSnapshot(gateway.diagnostics());
-        assert.deepEqual(local.unsupportedEventNames, []);
-        assert.equal(collected.unsupportedEventNames, null);
-        assert.deepEqual({ ...local, unsupportedEventNames: null }, collected);
+        assert.deepEqual([local.unsupportedEventNames, local.unknownBetaNames], [[], []]);
+        assert.deepEqual([collected.unsupportedEventNames, collected.unknownBetaNames], [null, null]);
+        assert.deepEqual({ ...local, unsupportedEventNames: null, unknownBetaNames: null }, collected);
         assert.ok(!JSON.stringify(collected).includes('SYNTHETIC'));
       }
       if (mode === 'post-completion') {
@@ -667,7 +664,7 @@ try {
       assert.equal(after.failureHistory.omitted, 0);
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
-        failuresByStage: { ...emptyStages, upstream: 1 } });
+        unmappedAgentModels: 0, failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
@@ -689,7 +686,7 @@ try {
       assert.equal(status.recentRequests.at(-1).success, true);
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
         failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
-        firstRejectedCategory: null, failuresByStage: emptyStages });
+        firstRejectedCategory: null, unmappedAgentModels: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);
       snapshot.lifetime.failuresByStage.upstream = -1;

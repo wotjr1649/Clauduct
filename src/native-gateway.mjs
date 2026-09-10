@@ -5,7 +5,7 @@ import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewCo
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
-import { betaFailure } from './native-beta.mjs';
+import { betaFailure, unknownBetas } from './native-beta.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 // Fixed-label diagnostics. A composed local code carries a variable suffix built from
@@ -17,7 +17,8 @@ function diagnosticCategory(code) {
   return FAILURE_DIAGNOSTIC_CATEGORIES.includes(fixed) ? fixed : 'OTHER';
 }
 
-export async function startNativeGateway({ transport, onUnregisteredAgent, admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000 } = {}) {
+export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture,
+  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000 } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
     && Number.isInteger(heartbeatMs) && heartbeatMs >= 5 && heartbeatMs <= 60000, 'INVALID_GATEWAY_OPTIONS');
@@ -32,8 +33,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   const maxObservedInputTokens = { main: 0, subagent: 0 };
   // Fixed metadata only; bounded memory, no transcript, headers or credential material.
   const recentRequests = [], failureRequests = [];
-  // At most four distinct unmapped upstream event names, kept for the exit diagnostic only.
-  const unsupportedEventNames = [];
+  // At most four distinct unmapped upstream event names and eight unrecognised client beta
+  // names, both kept for the exit diagnostic only.
+  const unsupportedEventNames = [], unknownBetaNames = [];
   const copyRecord = record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
     attempts: record.attempts.map(attempt => ({ ...attempt })),
     ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
@@ -42,7 +44,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
   // another route, a local boundary or authorization rejection, a malformed identifier header
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
-    rejectedBeforeStart: 0, firstRejectedCategory: null };
+    rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0 };
+  let notifiedUnmappedModel = false, notifiedEventCapture = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
@@ -52,7 +55,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage } },
     recentRequests: recentRequests.map(copyRecord),
     failureRequests: failureRequests.map(copyRecord),
-    unsupportedEventNames: [...unsupportedEventNames],
+    unsupportedEventNames: [...unsupportedEventNames], unknownBetaNames: [...unknownBetaNames],
     busy: jobs.size > 0, transport: transport.diagnostics(), requests, rejected,
     persistedBodies: 0, registeredAgents: agents.size, unregisteredAgentRequests, sessionLifetime: null, requestBudget: null });
   function authorized(value) {
@@ -110,8 +113,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       }
       if (req.method === 'GET' && path === '/clauduct/status') {
         // The captured upstream name is withheld here so it never enters model context.
-        const { unsupportedEventNames: withheld, ...state } = diagnostics();
-        void withheld; reply(res, 200, state); return;
+        const { unsupportedEventNames: withheldEvents, unknownBetaNames: withheldBetas, ...state } = diagnostics();
+        void withheldEvents; void withheldBetas; reply(res, 200, state); return;
       }
       if (req.method === 'POST' && path === '/clauduct/agents') {
         const binding = await readBody(req, 4096, controller);
@@ -190,6 +193,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       need(req.headers['anthropic-version'] === '2023-06-01', 'UNSUPPORTED_VERSION');
       const betaError = betaFailure(req.headers['anthropic-beta']);
       if (betaError) throw new NativeError(betaError);
+      for (const name of unknownBetas(req.headers['anthropic-beta'])) {
+        if (unknownBetaNames.length < 8 && !unknownBetaNames.includes(name)) unknownBetaNames.push(name);
+      }
       need((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() === 'application/json'
         && (!req.headers['content-encoding'] || req.headers['content-encoding'] === 'identity'), 'UNSUPPORTED_ENCODING');
       // Pin the registration before either admission or body reads can yield.
@@ -323,10 +329,15 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       verifyFileReviewStep(output.message, prepared);
       // Recording routing evidence is atomic; report why it was refused instead of a
       // generic protocol rejection, so the failed turn names the unverified selection.
-      try { agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent, prepared.selected); }
+      let unmappedModels = 0;
+      try { unmappedModels = agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent, prepared.selected) ?? 0; }
       catch (error) {
         const reason = SELECTION_FAILURES.includes(error?.selectionReason) ? error.selectionReason : 'UNKNOWN';
         throw Object.assign(new NativeError(`AGENT_SELECTION_UNVERIFIED_${reason}`), { selectionReason: reason });
+      }
+      if (unmappedModels > 0) {
+        lifetime.unmappedAgentModels += unmappedModels;
+        if (!notifiedUnmappedModel) { notifiedUnmappedModel = true; onUnmappedAgentModel?.(); }
       }
       const kind = agent === undefined ? 'main' : 'subagent';
       maxObservedInputTokens[kind] = Math.max(maxObservedInputTokens[kind],
@@ -352,6 +363,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       const eventName = category === 'UNSUPPORTED_EVENT' ? capturableEventName(error.eventTypeName) : null;
       if (eventName && unsupportedEventNames.length < 4 && !unsupportedEventNames.includes(eventName)) {
         unsupportedEventNames.push(eventName);
+        if (!notifiedEventCapture) { notifiedEventCapture = true; onUnsupportedEventCapture?.(); }
       }
       const eventKind = category === 'UNSUPPORTED_EVENT' && EVENT_DIAGNOSTIC_TYPES.includes(error.eventKind) ? error.eventKind : null;
       const eventTypeFormat = category === 'UNSUPPORTED_EVENT' && EVENT_TYPE_FORMATS.includes(error.eventTypeFormat) ? error.eventTypeFormat : null;

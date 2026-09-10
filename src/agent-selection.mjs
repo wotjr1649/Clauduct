@@ -25,6 +25,7 @@ const families = Object.freeze([['claude-haiku-', 'luna'], ['claude-sonnet-', 'l
 const alias = value => Object.hasOwn(aliases, value) ? aliases[value]
   : families.find(([prefix]) => value.startsWith(prefix))?.[1];
 const model = value => selectModel(alias(value) ?? value);
+const mapped = value => { try { model(value); return true; } catch { return false; } };
 const within = (root, path) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..\\') && !rel.startsWith('../'); };
 const sameIdentity = (previous, metadata) => previous && metadata && metadata.stoppedByUser !== true
   && previous.role === metadata.agentType && previous.origin === metadata.toolUseId
@@ -93,14 +94,17 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     const now = Date.now();
     for (const [id, call] of pending) if (now - call.created > 300000) pending.delete(id);
     const additions = new Map();
+    let unmappedModels = 0;
     for (const block of message.content) {
       if (block.type !== 'tool_use' || !['Agent', 'Task', 'Skill', 'SendMessage', 'Workflow'].includes(block.name)) continue;
       if (!validId(block.id)) fail();
       const input = block.input ?? {};
       if (input.model !== undefined) {
         if (typeof input.model !== 'string') fail();
-        // A model name this gateway does not map is a routing failure, not an unlabelled throw.
-        if (input.model !== 'inherit') { try { model(input.model); } catch { fail('MODEL'); } }
+        // A model name this gateway does not map costs only this block's routing evidence.
+        // The turn is still delivered; the child it names fails closed on its first request
+        // because no verified call exists. A structural violation still fails the whole turn.
+        if (input.model !== 'inherit' && !mapped(input.model)) { unmappedModels++; continue; }
       }
       if (input.subagent_type !== undefined && (typeof input.subagent_type !== 'string'
         || input.subagent_type.length === 0 || input.subagent_type.length > 200)) fail();
@@ -135,6 +139,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     }
     // Validate the whole response before publishing any routing evidence.
     for (const [id, call] of additions) pending.set(id, call);
+    return unmappedModels;
   }
   function linkSkill(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));
@@ -326,6 +331,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           if (selected !== undefined && typeof selected !== 'string') fail('MODEL');
           const definedRoute = selected === undefined
             ? (resumeEntry?.[0] === id ? previous.selection.definedRoute : call.definedRoute) : undefined;
+          if (selected !== undefined && selected !== 'inherit' && !mapped(selected)) fail('MODEL');
           const route = selected !== undefined && selected !== 'inherit' ? model(selected) : definedRoute;
           const inherits = selected === 'inherit' || (selected === undefined
             && (resumeEntry?.[0] === id ? previous.selection.inherits : call.inheritedRoute !== undefined));

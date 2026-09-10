@@ -240,6 +240,13 @@ async function main() {
         agentDefinitions: sessionAgentDefinitions(options) }),
       onUnregisteredAgent: () => {
       process.stderr.write('Clauduct: 서브에이전트 역할 등록이 없어 역할별 배정을 적용하지 못했습니다. Claude가 요청한 모델과 해당 모델 기본 effort를 사용합니다. hook 신뢰/설정은 자동 변경하지 않습니다.\n');
+    },
+      // Both notices fire once per session and never carry the observed name.
+      onUnmappedAgentModel: () => {
+      process.stderr.write('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하며 이번 턴은 그대로 전달됩니다. 종료 JSON의 lifetime.unmappedAgentModels를 확인하세요.\n');
+    },
+      onUnsupportedEventCapture: () => {
+      process.stderr.write('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. 창을 강제로 닫지 말고 정상 종료한 뒤 CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.\n');
     } });
     process.stdout.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
     if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');

@@ -13,6 +13,7 @@ const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStart
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const reference = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : null;
+const betaName = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value);
 
 // User-operated within the native child. Credentials go only to its fixed loopback endpoint.
 export async function readRequestStatus(env) {
@@ -119,11 +120,14 @@ export function requestStatusSnapshot(value, env = {}) {
     // an empty array means the capture is available and no unmapped name was observed.
     unsupportedEventNames: Array.isArray(value.unsupportedEventNames)
       ? value.unsupportedEventNames.map(capturableEventName).filter(Boolean).slice(0, 4) : null,
+    unknownBetaNames: Array.isArray(value.unknownBetaNames)
+      ? value.unknownBetaNames.filter(betaName).slice(0, 8) : null,
     requestOutcome: failed === null || started === null || succeeded === null ? 'not-observed'
       : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
     lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
       ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
-      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart'].map(key =>
+      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart',
+        'unmappedAgentModels'].map(key =>
         [key, counter(lifetime[key])])),
       firstRejectedCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(lifetime.firstRejectedCategory)
         ? lifetime.firstRejectedCategory : null } : null,

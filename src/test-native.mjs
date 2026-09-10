@@ -175,7 +175,7 @@ await test('oauth_beta_does_not_replace_local_auth_or_reach_codex', () => fixtur
   assert.equal((await post(gateway, doc(), { ...headers, Authorization: 'Bearer SYNTHETIC_WRONG' })).status, 401);
   assert.equal((await post(gateway, doc(), { ...headers, Authorization: '', 'x-api-key': 'SYNTHETIC_WRONG' })).status, 400);
   assert.equal(received(), 1);
-  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'oauth-2025-04-20,SYNTHETIC_PRIVATE' })).status, 400);
+  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'oauth-2025-04-20,files-api-2025-04-14' })).status, 400);
   assert.equal(received(), 1);
 }));
 await test('tool_search_result_and_turn_effort', () => {
@@ -224,14 +224,22 @@ await test('turn_tool_change_beta_http', () => fixture(async (gateway, received)
   request.messages.push({ role: 'system', content: [{ type: 'tool_addition', tool: { type: 'tool_reference', name: 'Read' } }] });
   assert.equal((await post(gateway, request, header)).status, 200);
   assert.equal((await post(gateway, request)).status, 400);
-  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',SYNTHETIC_PRIVATE' })).status, 400);
+  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',files-api-2025-04-14' })).status, 400);
   assert.equal(received(), 1);
+  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',brand-new-turn-2026-10-01' })).status, 200);
+  assert.equal(received(), 2);
 }));
 await test('native_beta_http_accept_and_reject_without_upstream', () => fixture(async (gateway, received) => {
   assert.equal((await post(gateway, doc(), { 'anthropic-beta': NATIVE_BETAS.join(',') })).status, 200);
-  const result = await post(gateway, doc(), { 'anthropic-beta': 'SYNTHETIC_PRIVATE' });
-  assert.equal(result.status, 400); assert.equal(result.text.includes('SYNTHETIC_PRIVATE'), false);
-  assert.ok(result.text.includes('unknown=1')); assert.equal(received(), 1);
+  const judged = await post(gateway, doc(), { 'anthropic-beta': 'files-api-2025-04-14,SYNTHETIC_PRIVATE' });
+  assert.equal(judged.status, 400); assert.equal(judged.text.includes('SYNTHETIC_PRIVATE'), false);
+  assert.ok(judged.text.includes('known=FILES_API unknown=1')); assert.equal(received(), 1);
+  // A beta this project has never judged passes; only its lower-case fixed shape is recorded.
+  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'brand-new-feature-2026-10-01,SYNTHETIC_PRIVATE' })).status, 200);
+  assert.equal(received(), 2);
+  const state = gateway.diagnostics();
+  assert.deepEqual(state.unknownBetaNames, ['brand-new-feature-2026-10-01']);
+  assert.ok(!JSON.stringify(state).includes('SYNTHETIC_PRIVATE'));
 }));
 await test('parallel_tools_reasoning_roundtrip_and_restart', () => {
   const request = doc(), first = prepareNative(request), result = nativeResponse(events(first, ['reasoning', 'text', 'Read', 'Bash', 'Agent', 'mcp__test__read']), first);

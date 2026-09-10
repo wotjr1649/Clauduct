@@ -206,8 +206,16 @@ for (const code of ['ENOTDIR', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'SYNTHETIC_P
 selection.remember(call('call_role', undefined, 'Plan'), 'session');
 snapshots.set('role', metadata('call_role'));
 await assert.rejects(selection.resolve(binding('role')), /AGENT_SELECTION_UNVERIFIED/);
-assert.throws(() => selection.remember(call('call_unknown', 'unknown'), 'session'),
-  error => error.message === 'AGENT_SELECTION_UNVERIFIED' && error.selectionReason === 'MODEL');
+// An unmapped name costs only that block's routing evidence; the rest of the turn is kept.
+{
+  const mixed = { content: [call('call_unknown', 'unknown').content[0], call('call_kept', 'opus').content[0]] };
+  assert.equal(selection.remember(mixed, 'session'), 1);
+  snapshots.set('kept', metadata('call_kept', 'opus'));
+  assert.deepEqual((await selection.resolve(binding('kept'))).route, MODELS.sol);
+  // No verified call was published for the skipped block, so its child fails closed on CALL.
+  snapshots.set('skipped', metadata('call_unknown', 'unknown'));
+  await assert.rejects(selection.resolve(binding('skipped')), error => error.selectionReason === 'CALL');
+}
 // Every Claude alias and its full model id route to the same GPT model; an unmapped
 // name still fails closed instead of ending the turn without a reason.
 for (const [name, expected] of [['fable', MODELS.astra], ['claude-fable-5-1', MODELS.astra],
@@ -219,15 +227,17 @@ for (const [name, expected] of [['fable', MODELS.astra], ['claude-fable-5-1', MO
   assert.deepEqual((await selection.resolve(binding(id))).route, expected);
 }
 for (const name of ['claude-3-5-sonnet-20241022', '__proto__', 'claude-', 'fable-5']) {
-  assert.throws(() => selection.remember(call(`bad_${name}`, name), 'session'),
-    error => error.selectionReason === 'MODEL');
+  assert.equal(selection.remember(call(`bad_${name}`, name), 'session'), 1);
 }
+assert.throws(() => selection.remember(call('bad_type', 7), 'session'),
+  error => error.message === 'AGENT_SELECTION_UNVERIFIED');
 assert.throws(() => selection.remember(call('call_object', { private: 'SYNTHETIC' }), 'session'), /AGENT_SELECTION_UNVERIFIED/);
 // A later invalid call must not leave an earlier, undelivered call usable.
 for (const duplicate of [false, true]) {
   const routes = createAgentSelection({ timeoutMs: 10, readMetadata: async () => metadata('batch_first', 'opus') });
   const first = call('batch_first', 'opus').content[0];
-  const second = duplicate ? first : call('batch_invalid', 'unsupported').content[0];
+  // A structural violation still voids the whole turn; an unmapped name only skips its block.
+  const second = duplicate ? first : call('batch_invalid', 7).content[0];
   assert.throws(() => routes.remember({ content: [first, second] }, 'session'));
   await assert.rejects(routes.resolve(binding('batch_child')), /AGENT_SELECTION_UNVERIFIED/);
   routes.remember({ content: [first] }, 'session');

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { MODELS, EFFORTS, selectModel, CONTEXT_POLICY } from './models.mjs';
+import { MODELS, EFFORTS, selectModel, CONTEXT_POLICY, DEFAULT_SELECTION } from './models.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { createAgentSelection } from './agent-selection.mjs';
 import { createNativeTransport } from './native-transport.mjs';
@@ -24,7 +24,7 @@ const DOCUMENT_FIRST_PROMPT = 'When the user asks you to read a task document an
 
 export function launchOptions(args) {
   if (!Array.isArray(args) || args.some(flag => typeof flag !== 'string')) throw new Error('INVALID_ARGUMENTS');
-  let model = 'astra', effort, mode = 'interactive', verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false;
+  let model = DEFAULT_SELECTION.model, effort, mode = 'interactive', verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false;
   let documentFirst = false, appendPrompt = false;
   const forward = [];
   const seen = new Set();
@@ -84,7 +84,7 @@ export function launchOptions(args) {
     }
   }
   if (documentFirst && appendPrompt) throw new Error('INVALID_ARGUMENTS');
-  return { selected: selectModel(model, effort), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}),
+  return { selected: selectModel(model, effort ?? (seen.has('--model') ? undefined : DEFAULT_SELECTION.effort)), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}),
     ...(verifyAgentModels ? { verifyAgentModels } : {}), ...(gptAgents ? { gptAgents } : {}),
     ...(documentFirst ? { documentFirst } : {}) };
 }
@@ -109,7 +109,7 @@ function sessionAgentDefinitions({ verifyAgentModels = false, gptAgents = false 
   return definitions;
 }
 
-export function interactiveLaunch(gateway, source, cwd, selected = selectModel(), forward = [], { verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false, documentFirst = false } = {}) {
+export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELECTION, forward = [], { verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false, documentFirst = false } = {}) {
   const env = {};
   // Preserve native configuration discovery, including an explicit CLAUDE_CONFIG_DIR.
   for (const key of Object.keys(source)) {
@@ -198,8 +198,8 @@ async function main() {
   const options = launchOptions(process.argv.slice(2)), selected = options.selected;
   if (options.mode === 'help') {
     process.stdout.write('clauduct [--model astra|sol|terra|luna] [--effort low|medium|high|xhigh|max] [--dry-run] [Claude 옵션]\n'
-      + '기본 astra/medium. native 도구/config 유지, 누적 시간·요청 제한 없음. --continue/--resume 전달.\n');
-    process.stdout.write('--verify-auto-compact: 이 실행에만 압축 계산 창 100K(기본 예약량에서 약 66.7K 발동)를 적용. 모델 창은 500K 유지.\n');
+      + '기본 astra/low. native 도구/config 유지, 누적 시간·요청 제한 없음. --continue/--resume 전달.\n');
+    process.stdout.write('--verify-auto-compact: 이 실행에만 압축 계산 창 100K(기본 예약량에서 약 67.4K 발동)를 적용. 모델 창은 400K 유지.\n');
     process.stdout.write('--verify-agent-models: 이 자식 세션에만 GPT 모델별 및 inherit Read 전용 시험용 agent 5개 등록. 일반 역할과 전역 설정은 유지.\n');
     process.stdout.write('--gpt-agents: 이 자식 세션에만 clauduct-astra/sol/terra/luna/inherit 일반 작업 agent 등록. 기존 역할·native 권한 검사 유지.\n');
     process.stdout.write('--document-first: 사용자 지정 작업 문서를 선택적 스킬·workflow보다 먼저 Read하도록 자식 세션에 지침 추가. 강제 보안 장치가 아니며 --append-system-prompt와 함께 사용할 수 없음.\n');
@@ -230,7 +230,7 @@ async function main() {
       process.stderr.write('Clauduct: 서브에이전트 역할 등록이 없어 역할별 배정을 적용하지 못했습니다. Claude가 요청한 모델과 해당 모델 기본 effort를 사용합니다. hook 신뢰/설정은 자동 변경하지 않습니다.\n');
     } });
     process.stdout.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
-    if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 66.7K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
+    if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
     if (options.verifyAgentModels) process.stdout.write('모델 진입점 검증 모드: clauduct-probe-astra/sol/terra/luna/inherit 등록. 실제 라우팅은 아직 검증 중입니다.\n');
     if (options.gptAgents) process.stdout.write('GPT 일반 작업 agent: clauduct-astra/sol/terra/luna/inherit 등록. 기존 역할과 메인 선택은 유지합니다.\n');
     const result = await runInteractive(gateway, endpoint => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { interactiveLaunch, launchOptions } from './clauduct.mjs';
-import { MODELS, ROLE_MODELS } from './models.mjs';
+import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { prepareNative } from './native-protocol.mjs';
 import { createNativeCredentialSupplier } from '../poc/user-session.mjs';
 
@@ -11,6 +11,10 @@ const cache = (account, marker) => JSON.stringify({ auth_mode: 'chatgpt', tokens
   access_token: token(account, marker), account_id: account } });
 
 function optionTests() {
+  assert.deepEqual(launchOptions([]).selected, { model: 'gpt-6-astra', effort: 'low' });
+  assert.deepEqual(launchOptions(['--gpt-agents', '--document-first']).selected, { model: 'gpt-6-astra', effort: 'low' });
+  assert.deepEqual(launchOptions(['--effort', 'max']).selected, { model: 'gpt-6-astra', effort: 'max' });
+  assert.deepEqual(launchOptions(['--model', 'astra']).selected, MODELS.astra);
   assert.deepEqual(launchOptions(['--model', 'sol']).selected, { model: 'gpt-5.6-sol', effort: 'xhigh' });
   const request = { model: 'sol', stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC' }] };
   assert.equal(prepareNative(request, { subagent: true }).body.reasoning.effort, 'xhigh');
@@ -68,11 +72,24 @@ function autoCompactVerificationTest() {
   const options = launchOptions(['--verify-auto-compact', '--model', 'luna']);
   const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, options.forward, options);
   const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
-  assert.equal(launch.options.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
+  assert.equal(launch.options.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '400000');
   assert.equal(settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '100000');
   assert.equal(launch.options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '100000');
-  assert.equal(Math.floor(80000 * Number(settings.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) / 100), 66666);
-  assert.equal(interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT').options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '500000');
+  assert.equal(Math.floor(80000 * Number(settings.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) / 100), 67368);
+  const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT');
+  assert.deepEqual(normal.args.slice(0, 4), ['--model', 'gpt-6-astra', '--effort', 'low']);
+  assert.equal(normal.options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
+  assert.equal(CONTEXT_POLICY.compactAt, 320000);
+  for (const selected of [...Object.values(MODELS), ...Object.values(ROLE_MODELS)]) {
+    const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', selected);
+    const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
+    for (const env of [settings.env, launch.options.env]) {
+      assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '400000');
+      assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
+      const effective = Number(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) - 20000;
+      assert.equal(Math.min(Math.floor(effective * (Number(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) / 100)), effective - 13000), 320000);
+    }
+  }
   assert.equal(JSON.stringify(source), before);
   assert.throws(() => launchOptions(['--verify-auto-compact', '--verify-auto-compact']));
   assert.throws(() => launchOptions(['--verify-auto-compact=1']));

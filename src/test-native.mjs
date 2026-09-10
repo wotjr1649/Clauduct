@@ -101,17 +101,17 @@ await test('context_policy_covers_every_main_and_role_model_without_claude_ident
     const launch = interactiveLaunch(gateway, source, process.cwd(), selected);
     const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
     for (const env of [launch.options.env, settings.env]) {
-      assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
-      assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '500000');
+      assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '400000');
+      assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
       const effective = Number(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) - 20000;
       const trigger = Math.min(Math.floor(effective * (Number(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) / 100)), effective - 13000);
-      assert.equal(trigger, 400000);
+      assert.equal(trigger, 320000);
     }
     assert.ok(settings.modelPicker.options.every(row => !Object.hasOwn(row, 'behavesAs')));
     assert.equal(launch.options.env.CLAUDE_CONFIG_DIR, source.CLAUDE_CONFIG_DIR);
   }
   assert.deepEqual(source, before);
-  assert.equal(CONTEXT_POLICY.compactAt, 400000);
+  assert.equal(CONTEXT_POLICY.compactAt, 320000);
 });
 await test('repeated_unused_response_headers_do_not_break_sse', () => fixture(async gateway => {
   const result = await post(gateway, doc());

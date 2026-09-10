@@ -2,6 +2,8 @@
 
 ## 실행과 모델
 
+모델·effort 옵션 없는 메인 시작값은 GPT-6 Astra/low입니다. `--effort` 명시값이 우선하며, `--model`을 명시하고 effort를 생략하면 아래 모델별 기본값을 사용합니다. 예를 들어 `--model astra`는 기존 medium, 옵션 없는 실행은 low입니다. 고정 clauduct-astra/sol/terra/luna 정의는 변경하지 않으며 clauduct-inherit는 생성 시점 직접 부모의 실제 모델·effort를 따릅니다.
+
 ```powershell
 D:\AIDEV\Clauduct\clauduct.cmd
 D:\AIDEV\Clauduct\clauduct.cmd --model sol --effort xhigh
@@ -67,7 +69,7 @@ background fork Skill은 meta.toolUseId가 없는 native 경로다. Clauduct 세
 
 `request-status.mjs`의 `purpose`, `requestedEffort`, `effort`로 실제 적용을 확인합니다. `role`, `roleRegistered`는 역할 연결을, `clientContextPolicy`는 실행 자식에 상속된 수치만 보여줍니다. 환경값 확인을 실제 backend 용량이나 자동 발동의 증거로 대체하지 않습니다.
 
-자동 압축을 낮은 비용으로 확인하려면 실행기에 `--verify-auto-compact`를 붙입니다. 이 실행의 AUTO_COMPACT_WINDOW만 100000이며 500K 모델 창과 83.3333% 정책은 유지합니다. 기본 출력 예약량 20K이면 약 66,666토큰에 자동 발동하는 조건입니다. 이 옵션 없이 다음 실행하면 원래 500K/400K 정책으로 돌아갑니다. 전역 설정이나 disable compact 설정을 덮어쓰지 않습니다. 실제 400K 발동 검증을 대신하지 않습니다. [후속 검증 절차](remaining-verification.md).
+자동 압축을 낮은 비용으로 확인하려면 실행기에 `--verify-auto-compact`를 붙입니다. 이 실행의 AUTO_COMPACT_WINDOW만 100000이며 400K 모델 창과 84.2105% 정책은 유지합니다. 기본 출력 예약량 20K이면 약 67,368토큰에 자동 발동하는 조건입니다. 이 옵션 없이 다음 실행하면 400K/320K 정책으로 돌아갑니다. 전역 설정이나 disable compact 설정을 덮어쓰지 않습니다. 실제 320K 발동 검증을 대신하지 않습니다. 과거 검증 기록의 500K/400K 수치는 당시 설정이며 현재 목표의 증거가 아닙니다.
 
 ## 설정과 역할 hook
 
@@ -135,17 +137,17 @@ Claude Code → gateway → Codex 텍스트 delta를 즉시 전달합니다. 느
 
 2026-09-08 로컬 CIM 확인 당시 `C:\pagefile.sys`가 **32 GiB 할당**되어 활성 상태였습니다. 자동 관리 설정은 false, 당시 사용량은 1,717 MiB였습니다. 설정은 바꾸지 않았습니다. pagefile 존재는 메모리 부족/성능 저하가 없다는 보장이 아닙니다.
 
-## 컨텍스트 500K / 자동 압축 400K
+## 컨텍스트 400K / 자동 압축 목표 320K
 
 `src/models.mjs`의 CONTEXT_POLICY를 자식 환경과 settings.env로 메인·서브에이전트에 전달합니다.
 
 ```text
-CLAUDE_CODE_MAX_CONTEXT_TOKENS=500000
-CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000
-CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=83.33333333333334
+CLAUDE_CODE_MAX_CONTEXT_TOKENS=400000
+CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000
+CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=84.21052631578947
 ```
 
-설치 Claude 2.1.263에서 출력 예약량 min(outputTokens,20000)을 제외하고 `min(floor(effectiveWindow*pct/100),effectiveWindow-13000)`으로 계산하는 경로를 정적 확인했습니다. 기본 예약량 20K일 때 400K이며 80%는 384K이므로 사용하지 않습니다. 다른 출력 예약량·선제 압축·자동 압축 비활성화 설정은 실제 시점을 바꿀 수 있습니다. modelPicker의 Claude behavesAs identity를 제거해 알려진 Claude 용량으로 덮이지 않게 했습니다.
+기존 정적 확인 기준 Claude 2.1.263은 출력 예약량 min(outputTokens,20000)을 제외하고 `min(floor(effectiveWindow*pct/100),effectiveWindow-13000)`으로 계산합니다. 이 계산식과 기본 예약량 20K에서 목표는 320K이며 단순 80%는 304K이므로 사용하지 않습니다. AUTO_COMPACT_WINDOW는 발동 토큰 수가 아니라 계산 창이므로 400000을 전달합니다. 다른 출력 예약량·native 버전·선제 압축·자동 압축 비활성화 설정은 실제 시점을 바꿀 수 있습니다. modelPicker의 Claude behavesAs identity를 제거해 알려진 Claude 용량으로 덮이지 않게 했습니다. 320K 실제 발동은 아직 검증하지 않았습니다.
 
 인증된 로컬 `/clauduct/status`는 main/subagent의 관찰된 최대 입력 토큰(캐시 포함), contextPolicy, 자원·재시도 진단을 제공합니다. 토큰 관찰만으로 실제 압축 성공을 선언하지 않으며 `contextPolicyRuntimeVerified:false`를 유지합니다. 이 설정은 backend의 물리적인 context 수용량을 확대하지 않습니다.
 

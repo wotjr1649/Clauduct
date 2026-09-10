@@ -1,5 +1,7 @@
 # 설치 native 모델 호출 경로 조사
 
+현재 버전 주의: 후속 조사에서 활성 실행 파일과 session-12가 2.1.267임을 확인했다. 아래 최초 목록의 2.1.266 전체 근거를 새 버전 전체 검증으로 해석하지 않는다. away_summary/side_question 일부 경로는 [2.1.267 대조](audit-2026-09-10-away-summary.md)를 참조한다.
+
 기준: 2026-09-09, 코드 수정 da2e050 이후. 현재 실행 대상 C:/Users/JS/.local/bin/claude.exe와 C:/Users/JS/.local/share/claude/versions/2.1.266은 SHA256이 같고 크기는 218971808 bytes다. 실행 파일은 실행하지 않고 읽었다. 활성 plugin 설정의 이름·버전·scope·설치 경로와 hook 종류만 추출했다. 인증값·설정 원문·사용자 대화·reasoning은 기록하지 않았다.
 
 이 문서는 발견 목록과 판정의 첫 대조표다. 설치 skill 23개는 목록화했지만 native 전체 기능의 동적 활성화, 모든 호출자의 header·provider·fallback 추적 및 실제 반환 검증은 미완료다. 문자열 검색에서 발견하지 못한 동적 querySource나 원격 기능을 없다고 단정하지 않는다.
@@ -31,7 +33,8 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | 결합 완료/failed/killed/blocked 알림 복귀 | native wake router | 완료 증거로 사용하지 않음 | 신규 완료 복귀 경로에서 미지원, 조용한 성공 처리 없음 |
 | Workflow | native Workflow → local inline run → workflow-subagent | 인증된 호출·run·nested metadata 연결. 명시 sidecar 모델은 요청과 대조. 최종 text는 reasoning 뒤로 전달 | 5cd82157 순차·992c0794 병렬 혼합 자식 2개 실제 통과. 병렬 요청 약 4.77초 겹침·결과 복귀 확인. 중첩·resume·custom agentType은 별도 범위. [실제 병렬 성공](audit-2026-09-10-workflow-parallel-success.md) |
 | /compact·자동 compact | 명령은 local, 내부 querySource=compact는 모델 호출 | C, 요약 뒤 새 요청 연결 | 수동·낮춘 임계값 자동 압축 실제 통과, 기본400K·각 자식은 미검증 |
-| /btw | local-jsx → iOe → nk/Xyn → 공통 query/client | cacheSafeParams의 agentContext 유지. 메인 문맥이면 자식 header 없이 메인 경로. skipTranscript=true | [정적 경로 대조](audit-2026-09-10-native-btw-path.md). 실제 반환·effort·beta는 미검증. 일반 Agent metadata를 요구하거나 실제 성공으로 단정하지 않음 |
+| /btw | local-jsx → side_question → 공통 query/client | cacheSafeParams의 agentContext 유지. 메인 문맥이면 자식 header 없이 메인 경로. skipTranscript=true | [session-12 결과와 정적 경로](audit-2026-09-10-native-btw-path.md). 사용자 제공 UI 답변 성공, 관찰 요청 sol/high. 취소 2건의 귀속·전체 beta 호환성은 미확정 |
+| away_summary | 저장된 메인 문맥 → 보조 query → system 요약 기록 | 2.1.267 b4e/XD/hk/kSn/oB/knr 경로. 특정 모델 강제 없음 | d9752fc6에 실제 요약 172자 기록. 직전 요청 13 sol/high 성공과 약 393ms 차이, 정확한 귀속은 추론. [증거·버전 경계](audit-2026-09-10-away-summary.md) |
 | /fork·/subtask | native 정의에 백그라운드 에이전트/세션 생성 존재 | fork 유형에 따른 ID·모델 경로 미추적 | code-review fork와 동일 지원이라고 단정하지 않음 |
 | /init | builtin prompt 등록 확인 | 모델이 문서·설정 작업을 생성 | GPT 경로 실제 미검증, 설정/지침 쓰기는 별도 권한 대상 |
 | /batch | builtin prompt 등록, 병렬 worktree 및 PR 작업을 기술 | 하위 Agent 정책·원격 쓰기는 별도 | 미검증, PR/push를 자동 실행하지 않음 |

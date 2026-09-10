@@ -20,6 +20,20 @@
 
 cancel-snapshot 6개 시나리오에는 정상 keep-alive 종료, 반복/동시 close 호출, 실제 실패 보존이 포함된다. native 45개, gateway 43개, upstream failures 84개, request diagnostics 24개 검사도 통과했다. 외부 요청·실제 인증 조회·실제 Claude 실행은 하지 않았다.
 
-## 남은 확인
+## 실제 native 재시험: PASS
 
-실제 native 새 프로세스에서 session-21의 기존 최소 읽기/정상 종료 절차를 한 번 재실행한다. 종료 줄, 최종 JSON의 cleanup, 세션 ID로 판정한다. 의도적인 취소나 Bash 진단 호출은 추가하지 않는다. 모든 API 오류 해결, SDD 완주, 장시간 무인 개발 검증으로 확대 해석하지 않는다. run-02의 사용자 미커밋 개발 산출물은 변경하지 않았다.
+사용자가 제공한 session `0d5d6174-f709-4ac1-9c24-90bbbe4a9be0`의 종료 출력으로 판정했다. 원본 transcript를 이번 기록 작업에서 별도 확인한 것은 아니다.
+
+- `Clauduct 종료: SUCCESS`, cleanup의 9개 항목 모두 true.
+- 요청 4/5/6 총 3건 성공, 실패 0건, 모두 HTTP 200/completed, 재시도 없음.
+- 실제 model/requestedModel은 gpt-5.6-sol, effort/requestedEffort는 low.
+- upstream 및 snapshot mismatch 실패, clientDisconnected가 관측되지 않았다.
+- clientVersion 0.154.0 / reference 0.153.4 / unverified. context 설정 증거는 inherited-environment, window/autoCompactWindow 400000, compactPercent 84.21052631578947이다. 실제 압축 발동 증거는 아니다.
+
+정상 요청→native 종료→자원 정리→진단 출력의 단일 실제 시험을 PASS로 종료한다. 같은 읽기 시험을 반복하지 않는다. 과거 정리 실패의 원인 소급 확정, 취소 경로, 모든 API 오류 해결, SDD 완주, 장시간 무인 개발 검증으로 확대 해석하지 않는다.
+
+## SDD 재개 준비
+
+run-02의 HEAD 298a5332e8f4f698002e236b020adf0d803f1562, 독립 .git, staged 변경 없음과 기존 네 tracked 수정/한 untracked 테스트를 확인했다. 다섯 파일 SHA256은 기존 session-19 기준과 모두 일치한다. SDD_VERIFICATION.md는 아직 없다. 이번 작업에서 구현 수정·테스트 재실행·sandbox 커밋은 하지 않았다.
+
+다음은 새 세션에서 보존된 GREEN의 기준선 검사, 독립 명세/품질 자식 검토, 최종 검증과 sandbox 로컬 커밋이다. 새 session-22 프롬프트는 과거 session-19의 오류 후 진단 호출 및 사용자 ! Bash 안내를 제거하고 종료 JSON 수집으로 대체한다. 프롬프트는 docs/prompts 관례에 따라 uncommitted로 남긴다.

@@ -8,6 +8,15 @@ import { createAdmission } from './request-admission.mjs';
 import { betaFailure } from './native-beta.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
+// Fixed-label diagnostics. A composed local code carries a variable suffix built from
+// this project's own allowlists, never upstream text; keep only its fixed prefix.
+function diagnosticCategory(code) {
+  const fixed = typeof code !== 'string' ? 'OTHER'
+    : code.startsWith('AGENT_SELECTION_UNVERIFIED') ? 'AGENT_SELECTION_UNVERIFIED'
+    : code.startsWith('UNSUPPORTED_BETA ') ? 'UNSUPPORTED_BETA' : code;
+  return FAILURE_DIAGNOSTIC_CATEGORIES.includes(fixed) ? fixed : 'OTHER';
+}
+
 export async function startNativeGateway({ transport, onUnregisteredAgent, admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000 } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
@@ -27,7 +36,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     attempts: record.attempts.map(attempt => ({ ...attempt })),
     ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
     ...(record.compactShape && { compactShape: { ...record.compactShape } }) });
-  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0 };
+  // rejectedBeforeStart counts HTTP-boundary rejections that never became a request record:
+  // another route, a local boundary or authorization rejection, a malformed identifier header
+  // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
+  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
+    rejectedBeforeStart: 0, firstRejectedCategory: null };
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
@@ -150,11 +163,6 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         reply(res, 200, { registered: !binding.stop }); return;
       }
       need(req.method === 'POST' && path === '/v1/messages', 'UNSUPPORTED_ROUTE');
-      need(req.headers['anthropic-version'] === '2023-06-01', 'UNSUPPORTED_VERSION');
-      const betaError = betaFailure(req.headers['anthropic-beta']);
-      if (betaError) throw new NativeError(betaError);
-      need((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() === 'application/json'
-        && (!req.headers['content-encoding'] || req.headers['content-encoding'] === 'identity'), 'UNSUPPORTED_ENCODING');
       for (const key of ['x-claude-code-session-id', 'x-claude-code-agent-id', 'x-claude-code-parent-agent-id']) {
         need(req.headers[key] === undefined || /^[A-Za-z0-9_-]{1,200}$/.test(req.headers[key]), 'INVALID_SESSION_ID');
       }
@@ -170,6 +178,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       recentRequests.push(timing);
       lifetime.started++;
       if (recentRequests.length > 16) recentRequests.shift();
+      // Record the inference request before header compatibility checks so a rejected
+      // version, beta or encoding is a diagnosed failure instead of an unrecorded 400.
+      need(req.headers['anthropic-version'] === '2023-06-01', 'UNSUPPORTED_VERSION');
+      const betaError = betaFailure(req.headers['anthropic-beta']);
+      if (betaError) throw new NativeError(betaError);
+      need((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() === 'application/json'
+        && (!req.headers['content-encoding'] || req.headers['content-encoding'] === 'identity'), 'UNSUPPORTED_ENCODING');
       // Pin the registration before either admission or body reads can yield.
       const agent = req.headers['x-claude-code-agent-id'];
       const agentBinding = agents.get(agent), role = agentBinding?.role;
@@ -314,6 +329,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       rejected++;
       // Only locally constructed fixed categories cross this diagnostic boundary.
       const category = error instanceof NativeError ? error.code : upstream ? 'PROTOCOL_REJECTED' : 'INVALID_REQUEST';
+      if (!timing) {
+        lifetime.rejectedBeforeStart++;
+        lifetime.firstRejectedCategory ??= diagnosticCategory(category);
+      }
       const requestFailure = stage === 'prepare' && category === 'UNSUPPORTED_REQUEST'
         && REQUEST_FAILURES.includes(error.requestFailure) ? error.requestFailure : null;
       if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
@@ -344,7 +363,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       }
       if (timing) timing.reviewDiffMismatch = category === 'REVIEW_DIFF_REQUIRED'
         && ['call-count', 'tool-name', 'command', 'background'].includes(error.reviewDiffMismatch) ? error.reviewDiffMismatch : null;
-      if (timing) timing.failureCategory = FAILURE_DIAGNOSTIC_CATEGORIES.includes(category) ? category : 'OTHER';
+      if (timing) timing.failureCategory = diagnosticCategory(category);
       const relogin = ['UNAUTHENTICATED', 'CREDENTIAL_UNAVAILABLE_OR_EXPIRED', 'CREDENTIAL_ACCOUNT_CHANGED', 'CREDENTIAL_ACCOUNT_MISMATCH', 'CODEX_RELOGIN_REQUIRED'].includes(category);
       const status = category === 'LOCAL_SESSION_REQUIRED' ? 401 : category === 'RATE_LIMITED' ? 429
         : category === 'MEMORY_QUEUE_FULL' || relogin ? 503 : upstream ? 502 : 400;

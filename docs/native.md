@@ -8,6 +8,12 @@
 
 `requestOutcome`은 요청 결과를 `no-requests`/`in-progress`/`all-succeeded`/`has-failures`/`not-observed`로 구분합니다. `Clauduct 종료: SUCCESS`는 프로세스 종료·정리 판정이며 요청 실패가 없어야 한다는 뜻은 아닙니다.
 
+`/v1/messages` 요청은 `anthropic-version`·`anthropic-beta`·`content-type` 호환성 검사보다 먼저 진단 기록을 만듭니다. 따라서 native가 새 beta나 다른 버전 헤더를 보내 400으로 거부돼도 `lifetime.started/failed`, `failuresByStage.request`, `failureHistory`, `requestOutcome`에 나타납니다. 이때 `failureCategory`는 `UNSUPPORTED_VERSION`/`UNSUPPORTED_BETA`/`INVALID_BETA_HEADER`/`UNSUPPORTED_ENCODING`이며, 거부 자체는 완화하지 않고 upstream 시도도 하지 않습니다.
+
+`lifetime.rejectedBeforeStart`는 요청 기록을 만들기 전에 HTTP 경계에서 거부된 수입니다. 다른 경로(`/v1/messages` 이외), loopback/헤더 경계 거부, 인증 실패, 형식이 잘못된 식별자 헤더, agent 등록 거부가 여기 들어가며 모델 요청 성패 카운터와 섞이지 않습니다. `lifetime.firstRejectedCategory`는 그중 첫 거부의 고정 분류이며 없으면 null입니다. 이 값들은 gateway 메모리 누계이고 서버 수준에서 끊긴 연결(clientError/CONNECT/upgrade)은 포함하지 않습니다.
+
+`failureCategory`는 고정 라벨만 사용합니다. 접미사가 붙는 로컬 코드는 고정 접두사로만 기록해 `AGENT_SELECTION_UNVERIFIED_<이유>`는 `AGENT_SELECTION_UNVERIFIED`로, `UNSUPPORTED_BETA known=... unknown=N`은 `UNSUPPORTED_BETA`로 남깁니다. 상세 이유는 기존 `selectionFailure`/오류 메시지에서 확인합니다. 등록되지 않은 코드는 계속 `OTHER`입니다.
+
 `failureHistory`는 최근 요청 16개와 별개로 완료된 실패의 최초 8개·최근 8개를 최대 16개 보존합니다. 16개 이하에서는 중복 없이 모두 보존하며 완료 순서 기준입니다. `omitted`는 빠진 실패 수입니다. 성공 요청은 실패 이력을 밀어내지 않습니다. 모두 현재 gateway 메모리이며 재시작하면 사라집니다. 과거 진단에 이 필드가 없으면 null로 표시합니다. 상태 조회 응답은 256 KiB로 제한됩니다.
 
 Clauduct 자식 실행에만 `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1`을 적용합니다. 이 gateway가 지원하지 않는 비스트리밍 자동 전환 대신 최초 스트리밍 오류를 보존하기 위한 설정이며 재시도/검증 완화가 아닙니다. 전역 환경은 변경하지 않습니다. `clientExecutionPolicy.nonStreamingFallbackDisabled`는 전달한 실행 환경 증거이며 native 분기 실행의 실증은 아닙니다. 공식 동작은 [Claude Code 환경 변수 문서](https://code.claude.com/docs/en/env-vars)에 명시되어 있습니다.

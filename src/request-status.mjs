@@ -118,8 +118,10 @@ export function requestStatusSnapshot(value, env = {}) {
       : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
     lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
       ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
-      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents'].map(key =>
-        [key, counter(lifetime[key])])) } : null,
+      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart'].map(key =>
+        [key, counter(lifetime[key])])),
+      firstRejectedCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(lifetime.firstRejectedCategory)
+        ? lifetime.firstRejectedCategory : null } : null,
     failureHistory: retained === null ? null : { retention: 'first-8-last-8-completed',
       omitted: failed === null ? null : Math.max(0, failed - retained.length), records: retained.map(projectRow) },
     recentRequests: rows.map(projectRow) };

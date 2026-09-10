@@ -210,14 +210,63 @@ try {
     } });
     try {
       assert.equal(new Set(FAILURE_DIAGNOSTIC_CATEGORIES).size, FAILURE_DIAGNOSTIC_CATEGORIES.length);
-      for (code of [...FAILURE_DIAGNOSTIC_CATEGORIES, 'UNLISTED_SYNTHETIC_CODE']) {
+      // A composed local code keeps only its fixed prefix; an unlisted one stays OTHER.
+      const composed = new Map([['AGENT_SELECTION_UNVERIFIED_MODEL', 'AGENT_SELECTION_UNVERIFIED'],
+        ['AGENT_SELECTION_UNVERIFIED_SYNTHETIC_PRIVATE', 'AGENT_SELECTION_UNVERIFIED'],
+        ['UNSUPPORTED_BETA known=FILES_API unknown=1', 'UNSUPPORTED_BETA'],
+        ['UNSUPPORTED_BETA_SYNTHETIC_PRIVATE', 'OTHER'], ['UNLISTED_SYNTHETIC_CODE', 'OTHER']]);
+      for (code of [...FAILURE_DIAGNOSTIC_CATEGORIES, ...composed.keys()]) {
         await call(gateway);
         const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
           ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
-        assert.equal(status.recentRequests.at(-1).failureCategory,
-          code === 'UNLISTED_SYNTHETIC_CODE' ? 'OTHER' : code);
+        assert.equal(status.recentRequests.at(-1).failureCategory, composed.get(code) ?? code);
         assert.equal(status.recentRequests.at(-1).requestFailure, null);
+        assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE'));
       }
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
+    // An inference request rejected by a header compatibility check is a diagnosed failure,
+    // not a silent 400. Other routes stay outside the request counters.
+    let sends = 0;
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async body => { sends++; return frames(body); }, close: async () => {}, diagnostics: () => ({}) } });
+    const status = () => readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
+      ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
+    try {
+      assert.equal((await call(gateway)).status, 200);
+      const recorded = [['UNSUPPORTED_VERSION', { 'anthropic-version': '2024-01-01' }],
+        ['UNSUPPORTED_BETA', { 'anthropic-beta': 'files-api-2025-04-14' }],
+        ['INVALID_BETA_HEADER', { 'anthropic-beta': 'per-turn-control-2026-07-01,per-turn-control-2026-07-01' }],
+        ['UNSUPPORTED_ENCODING', { 'content-type': 'text/plain' }]];
+      for (const [category, headers] of recorded) {
+        const before = (await status()).lifetime;
+        const result = await call(gateway, { headers });
+        assert.equal(result.status, 400);
+        assert.ok(result.text.includes(category));
+        const after = await status();
+        assert.equal(after.lifetime.started, before.started + 1);
+        assert.equal(after.lifetime.failed, before.failed + 1);
+        assert.equal(after.lifetime.rejectedBeforeStart, before.rejectedBeforeStart);
+        assert.equal(after.requestOutcome, 'has-failures');
+        const row = after.recentRequests.at(-1);
+        assert.equal(row.failureCategory, category);
+        assert.equal(row.failureStage, 'request');
+        assert.equal(row.success, false); assert.equal(row.model, null); assert.equal(row.attempts.length, 0);
+        assert.equal(after.failureHistory.records.at(-1).failureCategory, category);
+        assert.equal(after.failureHistory.omitted, 0);
+      }
+      // A route the gateway does not serve never reached request diagnostics.
+      const boundary = (await status()).lifetime;
+      assert.equal((await call(gateway, { path: '/v1/messages/count_tokens' })).status, 400);
+      assert.equal((await call(gateway, { headers: { 'x-claude-code-agent-id': 'not valid' } })).status, 400);
+      const after = await status();
+      assert.equal(after.lifetime.started, boundary.started);
+      assert.equal(after.lifetime.failed, boundary.failed);
+      assert.equal(after.lifetime.rejectedBeforeStart, 2);
+      assert.equal(after.lifetime.firstRejectedCategory, 'UNSUPPORTED_ROUTE');
+      assert.equal(sends, 1);
       passed++;
     } finally { await gateway.close(); }
   }
@@ -291,6 +340,52 @@ try {
       passed++;
     } finally {
       await gateway.close(); assert.equal(gateway.diagnostics().activeTimers, 0);
+      for (const timer of timers) clearTimeout(timer);
+      upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve));
+    }
+  }
+  // Retryable truncation is re-sent only while nothing has been delivered downstream.
+  // After content reaches the client a second upstream turn could repeat a tool call.
+  for (const [sent, expectedAttempts] of [[1, 2], [3, 1]]) {
+    let attempts = 0; const timers = new Set();
+    const upstream = createServer((req, res) => {
+      let raw = ''; req.on('data', chunk => { raw += chunk; }); req.on('end', () => {
+        attempts++; const events = frames(JSON.parse(raw));
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        if (attempts > 1) { res.end(wire(events)); return; }
+        res.write(wire(events.slice(0, sent)));
+        const timer = setTimeout(() => { timers.delete(timer); res.destroy(); }, 10);
+        timers.add(timer);
+      });
+    });
+    await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
+    const transport = createNativeLoopbackTransport(upstream.address().port, { retryBaseMs: 1 });
+    const gateway = await startNativeGateway({ transport, admissionOptions: ample });
+    try {
+      const result = await call(gateway);
+      assert.equal(attempts, expectedAttempts);
+      assert.equal(transport.diagnostics().retries, expectedAttempts - 1);
+      const row = gateway.diagnostics().recentRequests.at(-1);
+      assert.equal(row.retryScheduledMs.length, expectedAttempts - 1);
+      assert.equal(row.attempts.length, expectedAttempts);
+      if (sent === 1) {
+        assert.equal(result.status, 200);
+        assert.equal(row.success, true); assert.equal(row.failureCategory, undefined);
+        assert.equal((result.text.match(/event: message_start/g) ?? []).length, 1);
+        assert.equal((result.text.match(/"type":"tool_use"/g) ?? []).length, 1);
+      } else {
+        // Headers are already sent, so the preserved failure arrives as a trailing error frame.
+        assert.equal(result.status, 200);
+        assert.equal(row.success, false);
+        assert.ok(['TRUNCATED_STREAM', 'UPSTREAM_IO_ERROR'].includes(row.failureCategory));
+        assert.ok(result.text.includes(row.failureCategory));
+        assert.ok(!result.text.includes('message_stop'));
+        assert.ok(!result.text.includes('"type":"tool_use"'));
+        assert.equal(transport.diagnostics().activeSockets, 0);
+      }
+      passed++;
+    } finally {
+      await gateway.close();
       for (const timer of timers) clearTimeout(timer);
       upstream.closeAllConnections(); await new Promise(resolve => upstream.close(resolve));
     }
@@ -515,7 +610,8 @@ try {
       assert.equal(after.failureHistory.records[0].unsupportedEvent, 'unknown-response-event');
       assert.equal(after.failureHistory.omitted, 0);
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
-        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, failuresByStage: { ...emptyStages, upstream: 1 } });
+        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
+        failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
@@ -536,7 +632,8 @@ try {
       assert.equal(status.recentRequests.at(-1).auxiliaryMetadataEvents, 1);
       assert.equal(status.recentRequests.at(-1).success, true);
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
-        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, failuresByStage: emptyStages });
+        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
+        firstRejectedCategory: null, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);
       snapshot.lifetime.failuresByStage.upstream = -1;

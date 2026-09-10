@@ -45,7 +45,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     res.end(JSON.stringify(value));
   }
   async function readBody(req, limit, controller) {
-    controller.signal.throwIfAborted();
+    need(!controller.signal.aborted, 'CANCELLED');
     activeBodies++;
     const abort = () => req.destroy(controller.signal.reason instanceof NativeError
       ? controller.signal.reason : new NativeError('CANCELLED'));
@@ -67,7 +67,12 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
     const stopHeartbeat = () => { if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; activeHeartbeats--; } };
     const started = performance.now();
     const elapsed = () => Math.round((performance.now() - started) * 100) / 100;
-    const abort = () => { if (!res.writableFinished) { if (timing && !closing && !controller.signal.aborted) timing.clientDisconnected = true; controller.abort(); } };
+    const abort = () => { if (!res.writableFinished) {
+      if (timing && !closing && !controller.signal.aborted) {
+        timing.clientDisconnected = true; timing.clientDisconnectedMs = elapsed();
+      }
+      controller.abort();
+    } };
     res.once('close', abort); req.on('error', abort); req.once('aborted', abort); res.on('error', abort);
     try {
       const names = req.rawHeaders.filter((_, i) => i % 2 === 0).map(name => name.toLowerCase());
@@ -171,7 +176,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       release = await admission.acquire(controller.signal);
       timing.admittedMs = elapsed();
       let doc = await readBody(req, NATIVE_LIMITS.requestBytes, controller);
-      controller.signal.throwIfAborted();
+      need(!controller.signal.aborted, 'CANCELLED');
       timing.requestedModel = Object.values(MODELS).find(item => item.model === doc?.model)?.model
         ?? (typeof doc?.model === 'string' && Object.hasOwn(MODELS, doc.model) ? MODELS[doc.model].model : null);
       stage = 'selection';
@@ -193,7 +198,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
             });
           });
           await agentBinding.selectionWork;
-          controller.signal.throwIfAborted();
+          need(!controller.signal.aborted, 'CANCELLED');
         }
         need(agentBinding && !agentBinding.selectionPending,
           `AGENT_SELECTION_UNVERIFIED_${agentBinding?.selectionFailure ?? (agentBinding ? 'PENDING' : 'UNREGISTERED')}`);
@@ -224,6 +229,16 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       upstream = true;
       const responseOptions = { deferText: agentBinding?.selection?.source === 'workflow-result' };
       let response = createNativeResponse(prepared, responseOptions);
+      const validateResponse = (phase, action) => {
+        need(!controller.signal.aborted, 'CANCELLED');
+        try { return action(); }
+        catch (error) {
+          if (error instanceof NativeError && error.code === 'SNAPSHOT_MISMATCH' && timing.snapshotMismatchMs === undefined) {
+            timing.snapshotMismatchMs = elapsed(); timing.snapshotMismatchPhase = phase;
+          }
+          throw error;
+        }
+      };
       const emit = (frames, ping = false) => {
         if (!frames.length) return Promise.resolve();
         const work = writeTail.then(async () => {
@@ -246,7 +261,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
         timing.firstEventMs ??= elapsed();
         timing.lastUpstreamEventMs = elapsed();
         if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
-        await emit(response.push(event));
+        await emit(validateResponse('stream', () => response.push(event)));
         if (event.type === 'codex.response.metadata') {
           timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
           lifetime.auxiliaryMetadataEvents++;
@@ -276,10 +291,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, admis
       });
       timing.transportFinishedMs = elapsed();
       stopHeartbeat(); await writeTail;
-      controller.signal.throwIfAborted();
+      need(!controller.signal.aborted, 'CANCELLED');
       // Existing injected offline transports can still return the old event-array contract.
       if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await pushEvent(event);
-      const output = response.finish();
+      const output = validateResponse('final', () => response.finish());
       stage = 'output-validation';
       verifyFileReviewStep(output.message, prepared);
       agentSelection?.remember(output.message, req.headers['x-claude-code-session-id'], agent, prepared.selected);

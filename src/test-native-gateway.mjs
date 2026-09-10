@@ -5,7 +5,7 @@ import { startNativeGateway } from './native-gateway.mjs';
 import { NativeError, FAILURE_DIAGNOSTIC_CATEGORIES } from './native-protocol.mjs';
 import { Writable } from 'node:stream';
 import { writeFrames } from './native-delivery.mjs';
-import { readRequestStatus } from './request-status.mjs';
+import { readRequestStatus, requestStatusSnapshot } from './request-status.mjs';
 import { createAgentSelection } from './agent-selection.mjs';
 
 const doc = { model: 'astra', stream: true, max_tokens: 10000, messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
@@ -190,6 +190,8 @@ try {
         ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
       const row = status.recentRequests.at(-1);
       assert.equal(row.failureCategory, code); assert.equal(row.failureStage, 'upstream');
+      assert.equal(row.snapshotMismatchPhase, code === 'SNAPSHOT_MISMATCH' ? 'stream' : null);
+      if (code === 'SNAPSHOT_MISMATCH') assert.equal(typeof row.snapshotMismatchMs, 'number');
       assert.equal(row.success, false); assert.equal(row.attempts.length, 1);
       assert.equal(row.attempts[0].terminalState, 'open');
       assert.equal(row.attempts[0].completed, false);
@@ -340,6 +342,11 @@ try {
       assert.equal(attempts, mode === 'retry' ? 2 : 1);
       const timing = gateway.diagnostics().recentRequests.at(-1);
       assert.equal(timing.model, 'gpt-6-astra');
+      if (mode === 'malformed') {
+        assert.equal(timing.failureCategory, 'SNAPSHOT_MISMATCH');
+        assert.equal(timing.snapshotMismatchPhase, 'final');
+        assert.ok(timing.snapshotMismatchMs >= timing.transportFinishedMs);
+      }
       assert.equal(timing.retryScheduledMs.length, mode === 'retry' ? 1 : 0);
       assert.equal(timing.attempts.length, attempts);
       assert.equal(timing.attempts.at(-1).status, 200);
@@ -351,6 +358,7 @@ try {
         const collected = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
           ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
         assert.equal(collected.recentRequests.at(-1).attempts[0].status, 200);
+        assert.deepEqual(requestStatusSnapshot(gateway.diagnostics()), collected);
         assert.ok(!JSON.stringify(collected).includes('SYNTHETIC'));
       }
       if (mode === 'post-completion') {

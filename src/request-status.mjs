@@ -19,7 +19,7 @@ export async function readRequestStatus(env) {
   const base = env.ANTHROPIC_BASE_URL, token = env.ANTHROPIC_AUTH_TOKEN;
   if (typeof base !== 'string' || !/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(base)
     || typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error('STATUS_UNAVAILABLE');
-  const { rows, lifetime, correlationScope, clientVersion } = await new Promise((done, fail) => {
+  const snapshot = await new Promise((done, fail) => {
     const req = request(`${base}/clauduct/status`, { agent: false, signal: AbortSignal.timeout(5000),
       headers: { Authorization: `Bearer ${token}` } }, res => {
       if (res.statusCode !== 200) { res.destroy(); fail(new Error('STATUS_UNAVAILABLE')); return; }
@@ -35,13 +35,20 @@ export async function readRequestStatus(env) {
         try {
           const value = JSON.parse(raw);
           if (!res.complete || !Array.isArray(value.recentRequests)) throw new Error('STATUS_UNAVAILABLE');
-          done({ rows: value.recentRequests.slice(-16), lifetime: value.lifetime, correlationScope: value.correlationScope,
-            clientVersion: value.transport?.clientVersion });
+          done(value);
         } catch { fail(new Error('STATUS_UNAVAILABLE')); }
       });
     });
     req.on('error', fail); req.end();
   });
+  return requestStatusSnapshot(snapshot, env);
+}
+
+// Pure projection, also usable after gateway shutdown: no credential or HTTP access.
+export function requestStatusSnapshot(value, env = {}) {
+  if (!Array.isArray(value?.recentRequests)) throw new Error('STATUS_UNAVAILABLE');
+  const rows = value.recentRequests.slice(-16), { lifetime, correlationScope } = value;
+  const clientVersion = value.transport?.clientVersion;
   return { ...(isClientVersion(clientVersion) ? clientVersionPolicy(clientVersion)
     : { clientVersion: null, referenceClientVersion: null, clientVersionStatus: 'not-observed' }),
     clientContextPolicy: { evidence: 'inherited-environment',
@@ -90,6 +97,9 @@ export async function readRequestStatus(env) {
     upstreamIncompleteReason: row?.failureCategory === UPSTREAM_FAILURES['response.incomplete']
       && UPSTREAM_INCOMPLETE_REASONS.includes(row?.upstreamIncompleteReason) ? row.upstreamIncompleteReason : null,
     clientDisconnected: row?.clientDisconnected === true,
+    clientDisconnectedMs: number(row?.clientDisconnectedMs),
+    snapshotMismatchMs: number(row?.snapshotMismatchMs),
+    snapshotMismatchPhase: ['stream', 'final'].includes(row?.snapshotMismatchPhase) ? row.snapshotMismatchPhase : null,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),
     auxiliaryMetadataEvents: number(row?.auxiliaryMetadataEvents) ?? 0,

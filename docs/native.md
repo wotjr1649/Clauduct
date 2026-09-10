@@ -4,6 +4,14 @@
 
 모델·effort 옵션 없는 메인 시작값은 GPT-6 Astra/low입니다. `--effort` 명시값이 우선하며, `--model`을 명시하고 effort를 생략하면 아래 모델별 기본값을 사용합니다. 예를 들어 `--model astra`는 기존 medium, 옵션 없는 실행은 low입니다. 고정 clauduct-astra/sol/terra/luna 정의는 변경하지 않으며 clauduct-inherit는 생성 시점 직접 부모의 실제 모델·effort를 따릅니다.
 
+### 모델 요청 없는 종료 진단
+
+native 세션을 종료해 launcher로 돌아오면 `CLAUDUCT_REQUEST_STATUS` 뒤에 최종 진단 JSON이 출력됩니다. launcher가 gateway 정리 후 메모리 상태를 기존 sanitizer로 변환하며, 새 HTTP 요청·인증 조회·모델 호출·파일 저장은 하지 않습니다. 창 자체를 강제 종료하면 이 출력이 남는다고 보장하지 않습니다. 최근 요청은 최대 16개이며 실제 값이 없는 필드는 null입니다.
+
+native의 `! node .../request-status.mjs`는 Bash 출력 뒤 후속 assistant 처리가 발생할 수 있으므로 모델 요청 없는 수집 경로로 사용하지 않습니다. 기존 status API는 유지하되, 사용자 검증 결과 수집은 종료 후 launcher 출력을 우선합니다.
+
+취소 진단의 clientDisconnectedMs는 gateway가 downstream 연결 종료를 관측한 시각이고 키보드 입력 시각이 아닙니다. snapshotMismatchMs/snapshotMismatchPhase(stream 또는 final)는 gateway 검증에서 불일치를 관측한 상대 시각/단계입니다. 취소를 먼저 관측하면 늦은 callback을 검증하지 않고 CANCELLED로 종료하며, 이미 발생한 SNAPSHOT_MISMATCH는 뒤늦은 취소로 숨기지 않습니다. 실제 native UI의 취소 전달 시점은 별도 확인 대상입니다.
+
 ```powershell
 D:\AIDEV\Clauduct\clauduct.cmd
 D:\AIDEV\Clauduct\clauduct.cmd --model sol --effort xhigh

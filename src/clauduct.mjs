@@ -9,6 +9,7 @@ import { createAgentSelection } from './agent-selection.mjs';
 import { createNativeTransport } from './native-transport.mjs';
 import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { CLAUDE_EXE } from '../poc/claude-inspection.mjs';
+import { requestStatusSnapshot } from './request-status.mjs';
 
 const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact', '--verify-agent-models', '--gpt-agents', '--document-first']);
 const blockedOptions = new Set(['--settings', '--setting-sources', '--agents', '--system-prompt']);
@@ -156,7 +157,7 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
 }
 
 // No shell or PTY shim: the native child inherits the user's console directly.
-export async function runInteractive(gateway, startClient, { signal, cleanupMs = 2000 } = {}) {
+export async function runInteractive(gateway, startClient, { signal, cleanupMs = 2000, contextEnv = {} } = {}) {
   if (!Number.isInteger(cleanupMs) || cleanupMs < 1 || cleanupMs > 2000) throw new Error('INVALID_LIMIT');
   let child, closed = false, exitCode = null, failure, timer;
   let finishChild;
@@ -191,7 +192,8 @@ export async function runInteractive(gateway, startClient, { signal, cleanupMs =
     && state.cleanupFailed !== true
     && state.transport.activeSockets === 0 && state.transport.activeRequests === 0;
   return { category: !resourcesClosed ? 'CLEANUP_FAILED' : failure ?? (exitCode === 0 ? 'SUCCESS' : 'CLIENT_FAILED'),
-    clientExitCode: exitCode, resourcesClosed, requestAttempts: state.transport.requestAttempts };
+    clientExitCode: exitCode, resourcesClosed, requestAttempts: state.transport.requestAttempts,
+    requestStatus: requestStatusSnapshot(state, contextEnv) };
 }
 
 async function main() {
@@ -220,6 +222,7 @@ async function main() {
   const cancel = () => controller.abort();
   const nativeInterrupt = () => {}; // Inherited Claude owns Ctrl+C/Esc; its exit closes the gateway.
   let transport, gateway;
+  const contextEnv = {};
   process.on('SIGINT', nativeInterrupt); process.once('SIGTERM', cancel);
   try {
     transport = openUserTransport({ signal: controller.signal, transportFactory: createNativeTransport });
@@ -235,12 +238,16 @@ async function main() {
     if (options.gptAgents) process.stdout.write('GPT 일반 작업 agent: clauduct-astra/sol/terra/luna/inherit 등록. 기존 역할과 메인 선택은 유지합니다.\n');
     const result = await runInteractive(gateway, endpoint => {
       const launch = interactiveLaunch(endpoint, process.env, process.cwd(), selected, options.forward, options);
+      for (const key of ['CLAUDE_CODE_MAX_CONTEXT_TOKENS', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE']) {
+        contextEnv[key] = launch.options.env[key];
+      }
       try { return spawn(launch.file, launch.args, launch.options); }
       finally { launch.options.env.ANTHROPIC_AUTH_TOKEN = ''; }
-    }, { signal: controller.signal });
+    }, { signal: controller.signal, contextEnv });
     const category = ['SUCCESS', 'CLIENT_FAILED', 'CLIENT_START_FAILED', 'REQUEST_BUDGET', 'USER_CANCELLED'].includes(result.category)
       ? result.category : safeEntryCategory({ code: result.category });
     process.stdout.write(`Clauduct 종료: ${category}\n`);
+    process.stdout.write(`CLAUDUCT_REQUEST_STATUS ${JSON.stringify(result.requestStatus)}\n`);
     process.exitCode = result.category === 'SUCCESS' ? 0 : 1;
   } finally {
     if (gateway) await gateway.close(); else if (transport) await transport.close();

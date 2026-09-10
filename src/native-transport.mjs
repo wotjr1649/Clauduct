@@ -322,6 +322,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       reusable = true;
       return result;
     } catch (error) {
+      // A validated mismatch predates any cancellation arriving while the callback unwinds.
+      if (error instanceof NativeError && error.code === 'SNAPSHOT_MISMATCH') throw error;
       if (job.controller.signal.aborted) {
         if (timedOut) {
           const timeout = new NativeError('UPSTREAM_IDLE_TIMEOUT'); timeout.retryable = true; throw timeout;

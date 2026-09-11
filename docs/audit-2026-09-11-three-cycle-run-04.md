@@ -64,7 +64,17 @@ transcript에 들어온 외부 메시지는 `clauduct-ba`(이 세션)가 보낸 
 
 플랜 3 명세 검토 자식이 `SPEC PASS` 근거를 메시지로 반환한 뒤, 그 자식의 최종 completion transport가 API `server_error` timeout이었다. 메인은 결과가 이미 있으므로 재실행하지 않았다. 같은 단위를 두 번 돌리지 않는다는 규칙대로다.
 
-이것은 합성이 아닌 실제 upstream 실패 관측이며, 종료 JSON을 확보하면 스트리밍 오류 행의 증거가 될 수 있다.
+호스트가 띄운 알림은 이렇다.
+
+```
+<status>failed</status>
+<summary>Agent "플랜 3 명세 검토" failed: Agent terminated early due to
+an API error: Request timed out (error type server_error)</summary>
+```
+
+알림은 "resume 할 수 있다"고 안내했고 메인은 하지 않았다. 결과가 이미 메시지로 와 있었고 같은 단위를 두 번 돌리지 않는 규칙이 우선한다. 실패 알림에서의 올바른 비-재실행이 실측된 것이다.
+
+이것은 합성이 아닌 실제 upstream 실패 관측이며, 종료 JSON을 확보하면 스트리밍 오류 행의 증거가 될 수 있다. 종료 JSON 없이는 이 실패가 스트리밍 단계였는지 분류할 수 없다.
 
 ## 5. 네 번의 시도
 

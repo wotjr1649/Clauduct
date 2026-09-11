@@ -452,6 +452,13 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       const account = current.account;
       try { return await searchOnce(job, body, current); }
       catch (error) {
+        // A search is an idempotent read, so one retry cannot duplicate an effect. Exactly one:
+        // a side query the client is waiting on is not the place to spend a retry budget.
+        if (error?.retryable === true) {
+          await wait(job, settings.retryBaseMs);
+          need(!job.controller.signal.aborted, 'CANCELLED');
+          return await searchOnce(job, body, current);
+        }
         if (error?.code !== 'UNAUTHENTICATED' || !supplier) throw error;
         current = await resolveCredential(true, account);
         return await searchOnce(job, body, current);
@@ -495,7 +502,14 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           responseBytes = length; totalResponseBytes += length;
           const status = res.statusCode ?? 0;
           if (status === 401) { done(reject, new NativeError('UNAUTHENTICATED')); return; }
-          if (status !== 200) { done(reject, new NativeError('SEARCH_HTTP_ERROR')); return; }
+          // An alpha endpoint that is gone is a different problem from one that is briefly
+          // unwell: the first ends the feature, the second is worth one more try.
+          if (status === 404 || status === 410) { done(reject, new NativeError('SEARCH_UNAVAILABLE')); return; }
+          if (status !== 200) {
+            done(reject, Object.assign(new NativeError('SEARCH_HTTP_ERROR'),
+              { retryable: status === 429 || status >= 500 }));
+            return;
+          }
           let doc;
           try { doc = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
           catch { done(reject, new NativeError('SEARCH_RESPONSE_SHAPE')); return; }
@@ -504,7 +518,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
         });
       });
       req.on('socket', socket => trackSocket(socket));
-      req.on('error', () => done(reject, new NativeError(job.controller.signal.aborted ? 'CANCELLED' : 'SEARCH_UNAVAILABLE')));
+      req.on('error', () => done(reject, job.controller.signal.aborted ? new NativeError('CANCELLED')
+        : Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: true })));
       job.controller.signal.addEventListener('abort', () => { req.destroy(); done(reject, new NativeError('CANCELLED')); }, { once: true });
       req.end(raw);
     });

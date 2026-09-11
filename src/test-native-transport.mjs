@@ -290,6 +290,13 @@ async function testStandaloneSearch() {
       const mode = JSON.parse(raw).commands?.search_query?.[0]?.q;
       if (mode === 'UNAUTHORIZED') { res.writeHead(401).end('{}'); return; }
       if (mode === 'BROKEN') { res.writeHead(500).end('{}'); return; }
+      if (mode === 'GONE') { res.writeHead(404).end('{}'); return; }
+      if (mode === 'FLAKY') {
+        if (seen.filter(entry => entry.body.includes('FLAKY')).length === 1) { res.writeHead(503).end('{}'); return; }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ encrypted_output: null, output: 'SYNTHETIC_RECOVERED', results: [] }));
+        return;
+      }
       if (mode === 'NOT_JSON') { res.writeHead(200, { 'Content-Type': 'application/json' }).end('<html>'); return; }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ encrypted_output: 'opaque', output: 'SYNTHETIC_DIGEST', results: [] }));
@@ -319,10 +326,19 @@ async function testStandaloneSearch() {
     await transport.search(ask('SYNTHETIC_QUERY'), signal());
     assert.equal(JSON.parse(seen[1].body).id, sent.id);
   });
+  // One retry, and only for a failure that can pass: a search is an idempotent read.
+  await fixture(handler, { retryBaseMs: 0 }, async transport => {
+    const result = await transport.search(ask('FLAKY'), signal());
+    assert.equal(result.output, 'SYNTHETIC_RECOVERED');
+    assert.equal(seen.filter(entry => entry.body.includes('FLAKY')).length, 2);
+  });
   for (const [query, code] of [['UNAUTHORIZED', 'UNAUTHENTICATED'], ['BROKEN', 'SEARCH_HTTP_ERROR'],
-    ['NOT_JSON', 'SEARCH_RESPONSE_SHAPE']]) {
-    await fixture(handler, {}, async transport => {
+    ['GONE', 'SEARCH_UNAVAILABLE'], ['NOT_JSON', 'SEARCH_RESPONSE_SHAPE']]) {
+    await fixture(handler, { retryBaseMs: 0 }, async transport => {
+      const before = seen.length;
       await assert.rejects(() => transport.search(ask(query), signal()), error => error.code === code, query);
+      // A vanished endpoint and a rejected credential are not retried; a sick one is, once.
+      assert.equal(seen.length - before, query === 'BROKEN' ? 2 : 1, query);
     });
   }
   // A cancelled search reports cancellation, and a closed transport refuses outright.

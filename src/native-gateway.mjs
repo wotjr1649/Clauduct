@@ -420,8 +420,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       if (timing.webSearchRequested) {
         lifetime.webSearchCalls += timing.webSearchCalls;
         lifetime.webSearchLinks += timing.webSearchLinks ?? 0;
-        // A completed request that asked the backend to search and got no search back is a
-        // silent no-op: nothing failed, yet the feature did nothing. Say so once.
+        // The gateway answers a search side query itself, so a request that carried the search
+        // tool and was not answered here is one detection did not recognise: it went to the
+        // model with the tool dropped and came back without results. Nothing failed, yet the
+        // feature did nothing. Say so once, and say which case it is.
         if (timing.webSearchCalls === 0 && !notifiedWebSearchUnused) {
           notifiedWebSearchUnused = true; onWebSearchUnused?.();
         }

@@ -249,7 +249,7 @@ async function main() {
       // its prompt input box.
       onUnregisteredAgent: () => notice('Clauduct: 서브에이전트 역할 등록이 없어 역할별 배정을 적용하지 못했습니다. Claude가 요청한 모델과 해당 모델 기본 effort를 사용했습니다. hook 신뢰/설정은 자동 변경하지 않았습니다.'),
       onUnmappedAgentModel: () => notice('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하고 턴은 그대로 전달됐습니다. lifetime.unmappedAgentModels를 확인하세요.'),
-      onWebSearchUnused: () => notice('Clauduct: 상류에 웹 검색 도구를 보냈지만 상류가 검색을 수행하지 않았습니다. 요청 자체는 성공이며 검색 결과만 비어 있습니다. lifetime.webSearchRequests/webSearchCalls를 확인하세요.'),
+      onWebSearchUnused: () => notice('Clauduct: 웹 검색 도구를 실은 요청을 게이트웨이가 검색 요청으로 인식하지 못했습니다. 그 요청은 모델로 갔고 검색 결과 없이 성공했습니다. 클라이언트가 보내는 요청 모양이 바뀌었을 수 있습니다. 종료 JSON의 webSearchRequested/webSearchAnswered를 확인하세요.'),
       onUnsupportedEventCapture: () => notice('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.') });
     process.stdout.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
     if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');

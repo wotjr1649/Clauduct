@@ -1,7 +1,7 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
 import { buildBody, buildLiteBody, buildHeaders, checkStore, selectCredential, summarizeResponse, model, endpoint,
-  liteModel, liteEffort, readClientVersion } from './manual-http-probe.mjs';
+  liteModel, liteEffort, readClientVersion, LITE_PROMPT } from './manual-http-probe.mjs';
 import { liteSearchEnvelope } from '../src/native-protocol.mjs';
 import { REFERENCE_CLIENT_VERSION } from '../src/client-version.mjs';
 
@@ -430,6 +430,20 @@ check('search envelope shape', () => {
   assert.equal(typeof body.prompt_cache_key, 'string');
   assert.equal(body.client_metadata.session_id, body.prompt_cache_key);
   assert.equal(body.model, liteModel);
+});
+check('the question cannot be answered from memory', () => {
+  const body = buildLiteBody(liteSearchEnvelope());
+  assert.equal(body.input[0].content[0].text, LITE_PROMPT);
+  assert.match(LITE_PROMPT, /NO_SEARCH/);
+});
+check('a named refusal is reported as a boolean', () => {
+  const refusal = { ...searchComplete, response: { ...searchComplete.response,
+    output: [{ type: 'message', content: [{ type: 'output_text', text: 'NO_SEARCH' }] }] } };
+  const result = liteSummary(refusal);
+  assert.equal(result.noSearchDeclared, true);
+  assert.equal(result.webSearchCalls, 0);
+  assert.equal(result.passed, false);
+  assert.equal(liteSummary(searchComplete).noSearchDeclared, false);
 });
 check('backend search counted, not unexpected', () => {
   const result = liteSummary(searchComplete);

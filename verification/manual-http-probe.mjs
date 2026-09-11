@@ -93,13 +93,21 @@ export function buildLiteBody(envelope) {
   return { model: liteModel,
     // No additional_tools item: the gateway omits it when there are no client tools to carry,
     // and a search side query declares only the search tool the backend supplies itself.
-    input: [{ role: 'user', content: [{ type: 'input_text',
-        text: 'Search the web and reply with the current stable Node.js release number only.' }] }],
+    // A question the model can answer from memory cannot tell "no search tool" apart from "did
+    // not need one". This one cannot be answered without live access, and it names the reply to
+    // give when there is no tool, so a refusal is a signal instead of prose to interpret.
+    input: [{ role: 'user', content: [{ type: 'input_text', text: LITE_PROMPT }] }],
     tool_choice: 'auto', parallel_tool_calls: false,
     reasoning: { effort: liteEffort, context: 'all_turns' }, store: false, stream: true,
     include: ['reasoning.encrypted_content'], prompt_cache_key: envelope.cacheKey,
     text: { verbosity: 'medium' }, client_metadata: envelope.metadata };
 }
+
+export const LITE_PROMPT = 'Use your web search tool to look up the current top story on '
+  + 'Hacker News (news.ycombinator.com) and reply with only its title. Do not answer from memory. '
+  + 'If you have no web search tool available, reply with exactly NO_SEARCH and nothing else.';
+// The one reply this probe names itself, so recognising it reports a boolean rather than text.
+const NO_SEARCH = 'NO_SEARCH';
 
 // Field names this probe itself sends. Reporting which of our own names an upstream rejection
 // mentions narrows the envelope without echoing the upstream message.
@@ -365,6 +373,8 @@ function inspectSse(text, lite = false) {
   const effortEchoMatches = completed.reasoning?.effort === (lite ? liteEffort : effort);
   const passed = modelMatches && effortEchoMatches && !unexpectedTool && !refused && streamConsistent
     && (lite ? searchItems.size > 0 : exactOK);
+  // The probe named this reply, so reporting it is reporting our own token, not upstream text.
+  if (lite) result.noSearchDeclared = reply.trim() === NO_SEARCH;
   const counts = {};
   for (const name of ['input_tokens', 'output_tokens', 'total_tokens']) {
     const value = completed.usage?.[name];

@@ -138,8 +138,13 @@ export function requestStatusSnapshot(value, env = {}) {
     requestOutcome: failed === null || started === null || succeeded === null ? 'not-observed'
       : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
     lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
-      ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
-      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart',
+      ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null,
+      // Only the fixed vocabulary passes, and a zero is dropped rather than listed.
+      rejectedCategories: lifetime.rejectedCategories && typeof lifetime.rejectedCategories === 'object'
+        ? Object.fromEntries(FAILURE_DIAGNOSTIC_CATEGORIES
+          .filter(name => counter(lifetime.rejectedCategories[name]))
+          .map(name => [name, counter(lifetime.rejectedCategories[name])])) : null, ...Object.fromEntries(
+      ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'unsupportedEventNamesWithheld', 'rejectedBeforeStart',
         'unmappedAgentModels', 'transportRejections', 'agentRegistrationsEvicted',
         'agentRegistrationsExpired', 'webSearchRequests', 'webSearchCalls', 'webSearchLinks'].map(key =>
         [key, counter(lifetime[key])])),

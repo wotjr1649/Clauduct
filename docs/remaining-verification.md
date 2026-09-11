@@ -55,7 +55,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 
 | 항목 | 상태 | 증거 | 남은 위험 | 다음 행동 |
 |---|---|---|---|---|
-| 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md). run-04에서 **재발했으나 이름을 못 잡았다** — `unsupportedEvents: 1`인데 `unsupportedEventNames: []` | 포착 정규식은 점 1개 이상을 요구하는데 형식 분류는 점 0개도 `identifier`로 받는다. 점 없는 식별자는 분류되지만 영구히 포착되지 않는다. **선행 조건 1을 닫은 근거가 반증됐다.** [분석](audit-2026-09-11-run-04-exit-diagnostics.md) | 포착 정규식을 형식 분류와 같은 공간으로 넓히기 전에는 다음 재발도 못 잡는다 |
+| 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md). run-04에서 재발했으나 이름을 못 잡았고, 그 원인을 찾아 고쳤다 — [분석과 수정](audit-2026-09-11-run-04-exit-diagnostics.md) | 이름 두 건 모두 소실됐다. 원인은 여전히 미확정이며 이번 수정은 **다음 재발을 잡을 수 있게 했을 뿐** 지난 두 건을 밝히지 않는다 | 다음 재발의 종료 JSON에서 `unsupportedEventNames`를 본다. 비어 있으면 `unsupportedEventNamesWithheld`가 그것이 소실인지 부재인지 말해 준다 |
 | 미지원 이벤트 분류와 제한 캡처 | 완료 | `src/test-unsupported-event-diagnostics.mjs` 61개 검사 / loopback 36회. 형태 검사·4개 상한·상태 API 비노출 포함 | ThreadEvent는 SDK/app-server 어휘라 원인 후보에서 격하했다. 형태를 흉내 낸 문자열은 통과할 수 있다 | 없음 |
 | 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), `test-native-gateway` 53개 검사 | 서버 수준 clientError·CONNECT·upgrade는 여전히 카운터 밖이다 | 없음 |
 | `OTHER` 분류 축소 | 완료 | 같은 감사. 요청 기록에 도달 가능한 고정 코드 추가와 접미사 정규화 | 새 오류 코드를 추가하면 목록도 함께 갱신해야 한다 | 코드 추가 시 목록 동기화 |
@@ -80,7 +80,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
 | 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
 | 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
-| SDD 무인 3주기 | 완료 | run-04(2c4ceab9)이 THREE-CYCLE-PASS — [run-04 감사](audit-2026-09-11-three-cycle-run-04.md). 커밋 3개, 독립 재실행 63/63 pass, 자식 9명, 개입 0. 이전 세 시도는 [run-03 감사](audit-2026-09-11-three-cycle-run-03.md) | 자식의 effort는 9명 전부, model은 9명 중 1명이 Not verified. 종료 JSON을 아직 확보하지 못해 자원·이벤트 지표는 이 실행으로 채울 수 있는 값이지 채워진 값이 아니다 | 종료 JSON(`CLAUDUCT_REQUEST_STATUS`)을 확보해 관련 행에 반영한다 |
+| SDD 무인 3주기 | 완료 | run-04(2c4ceab9)이 THREE-CYCLE-PASS — [run-04 감사](audit-2026-09-11-three-cycle-run-04.md). 커밋 3개, 독립 재실행 63/63 pass, 자식 9명, 개입 0. 종료 JSON도 확보해 [분석](audit-2026-09-11-run-04-exit-diagnostics.md)했다. 이전 세 시도는 [run-03 감사](audit-2026-09-11-three-cycle-run-03.md) | 자식의 effort는 9명 전부, model은 9명 중 1명이 Not verified | 없음 |
 | Claude 모델 전체 지원·app-server 전환·버전 pin | 범위밖 | 사용자 지정. 별칭·전체 ID 매핑은 2026-09-11에 사용자가 별도 승인했다 | — | — |
 | 실제 인증 갱신·수시간 연속 실행 | 범위밖 | 사용자 지정 | — | — |
 | 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |
@@ -132,7 +132,7 @@ Invoke-ClauductNodeTests -Root D:/AIDEV/Clauduct -TimeoutSeconds 60 -TestFiles @
 
 ### 5.2 실제 실행 후 증거 수집
 
-native 세션을 정상 종료하면 launcher가 `Clauduct 종료: <분류>`와 `CLAUDUCT_REQUEST_STATUS <JSON>`을 출력한다. 이 출력을 그대로 수집한다. 세션 안에서 `node src/request-status.mjs`를 부르는 방식은 뒤이어 assistant 처리가 붙어 모델 요청 없는 수집이 아니므로 사용하지 않는다.
+native 세션을 정상 종료하면 launcher가 `Clauduct 종료: <분류>`와 `CLAUDUCT_REQUEST_STATUS <JSON>`을 출력한다. 같은 JSON이 `/.clauduct-status/request-status.jsonl`에도 한 줄씩 덧붙으므로(무시 대상 디렉터리) 스크롤백을 뒤질 필요가 없다 — run-04 이전에는 stdout이 유일한 사본이었다. 셋째 줄 `CLAUDUCT_REQUEST_STATUS_FILE`이 그 경로이며 `none`이면 기록에 실패한 것이다. 이 출력을 그대로 수집한다. 세션 안에서 `node src/request-status.mjs`를 부르는 방식은 뒤이어 assistant 처리가 붙어 모델 요청 없는 수집이 아니므로 사용하지 않는다.
 
 먼저 볼 값: `requestOutcome`, `lifetime.failed`, `lifetime.failuresByStage`, `lifetime.rejectedBeforeStart`, `lifetime.firstRejectedCategory`, `failureHistory.records[].failureCategory`, `unsupportedEventNames`, `unknownBetaNames`, `lifetime.unmappedAgentModels`, `cleanup`의 9개 항목, `clientExecutionPolicy.nonStreamingFallbackDisabled`.
 

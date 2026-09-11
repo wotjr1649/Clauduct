@@ -49,18 +49,23 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // rejectedBeforeStart counts HTTP-boundary rejections that never became a request record:
   // another route, a local boundary or authorization rejection, a malformed identifier header
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
-  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
+  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
     transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
     webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0 };
   let notifiedUnmappedModel = false, notifiedEventCapture = false, notifiedWebSearchUnused = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
+  // rejectedBeforeStart counts every pre-timing refusal but firstRejectedCategory keeps only
+  // one label, so a long run reports a number nothing can be read out of. Keys come from
+  // diagnosticCategory, which answers inside a fixed vocabulary, so this cannot grow unbounded.
+  const rejectedCategories = {};
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
     activeTimers: activeBodies + activeHeartbeats + Number(admission.diagnostics().timerActive), activeBodies,
     activeDeliveries, cleanupFailed, admission: admission.diagnostics(), maxObservedInputTokens: { ...maxObservedInputTokens },
     contextPolicy: CONTEXT_POLICY, contextPolicyRuntimeVerified: false,
-    correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage } },
+    correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage },
+      rejectedCategories: { ...rejectedCategories } },
     recentRequests: recentRequests.map(copyRecord),
     failureRequests: failureRequests.map(copyRecord),
     unsupportedEventNames: [...unsupportedEventNames], unknownBetaNames: [...unknownBetaNames],
@@ -437,12 +442,19 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       const category = error instanceof NativeError ? error.code : upstream ? 'PROTOCOL_REJECTED' : 'INVALID_REQUEST';
       if (!timing) {
         lifetime.rejectedBeforeStart++;
-        lifetime.firstRejectedCategory ??= diagnosticCategory(category);
+        const rejectedLabel = diagnosticCategory(category);
+        lifetime.firstRejectedCategory ??= rejectedLabel;
+        rejectedCategories[rejectedLabel] = (rejectedCategories[rejectedLabel] ?? 0) + 1;
       }
       const requestFailure = stage === 'prepare' && category === 'UNSUPPORTED_REQUEST'
         && REQUEST_FAILURES.includes(error.requestFailure) ? error.requestFailure : null;
-      if (timing && category === 'UNSUPPORTED_EVENT') lifetime.unsupportedEvents++;
       const eventName = category === 'UNSUPPORTED_EVENT' ? capturableEventName(error.eventTypeName) : null;
+      // An empty capture list must not read the same as "no unsupported event happened".
+      // Without this counter a withheld name is indistinguishable from nothing to withhold.
+      if (timing && category === 'UNSUPPORTED_EVENT') {
+        lifetime.unsupportedEvents++;
+        if (!eventName) lifetime.unsupportedEventNamesWithheld++;
+      }
       if (eventName && unsupportedEventNames.length < 4 && !unsupportedEventNames.includes(eventName)) {
         unsupportedEventNames.push(eventName);
         if (!notifiedEventCapture) { notifiedEventCapture = true; onUnsupportedEventCapture?.(); }

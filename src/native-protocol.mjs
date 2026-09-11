@@ -100,10 +100,14 @@ export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-obj
 // Finite structural diagnostics only; never retain or hash an unknown event name/body.
 export const EVENT_TYPE_FORMATS = Object.freeze(['missing', 'non-string', 'empty', 'oversized', 'identifier', 'other']);
 // Bounded capture of an unmapped upstream event type, kept for the exit diagnostic only.
-// A value passes only in strict dotted-identifier shape: lower-case segments of at most
-// 24 characters, at least one dot, 48 characters overall. Anything else stays an unnamed
+// A value passes only in strict identifier shape: lower-case segments of at most
+// 24 characters, at most four dots, 48 characters overall. Anything else stays an unnamed
 // fixed label. Never a body, a hash, a partial value or a name that already has a label.
-const eventNameShape = /^[a-z][a-z0-9_]{0,23}(?:\.[a-z][a-z0-9_]{0,23}){1,4}$/;
+// Dots are optional because this protocol's own vocabulary is partly dotless — 'error',
+// 'ping' and 'message_start' all sit in EVENT_DIAGNOSTIC_TYPES. Requiring one cost run-04
+// the name this capture exists to take: the type classified as 'identifier' and the list
+// came back empty. The 24-character lower-case segment bounds the value, not the dot.
+const eventNameShape = /^[a-z][a-z0-9_]{0,23}(?:\.[a-z][a-z0-9_]{0,23}){0,4}$/;
 export function capturableEventName(value) {
   return typeof value === 'string' && value.length <= 48 && eventNameShape.test(value)
     && !EVENT_DIAGNOSTIC_TYPES.includes(value) ? value : null;

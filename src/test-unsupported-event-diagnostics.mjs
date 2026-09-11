@@ -18,14 +18,15 @@ const cases = [
   ['thread.private_event', 'unknown-thread-event', 'identifier', 'thread.private_event'],
   ['turn.private_event', 'unknown-thread-event', 'identifier', 'turn.private_event'],
   ['item.private_event', 'unknown-thread-event', 'identifier', 'item.private_event'],
-  ['threadprivate_event', 'other', 'identifier', null],
+  ['threadprivate_event', 'other', 'identifier', 'threadprivate_event'],
   ['codex.private_event', 'unknown-codex-event', 'identifier', 'codex.private_event'],
   ['responsesapi.private_event', 'unknown-websocket-event', 'identifier', 'responsesapi.private_event'],
   ['response.private_event', 'unknown-response-event', 'identifier', 'response.private_event'],
-  ['private_event', 'other', 'identifier', null],
+  ['private_event', 'other', 'identifier', 'private_event'],
   ['a.' + 'b'.repeat(23), 'other', 'identifier', 'a.' + 'b'.repeat(23)],
   ['a.' + 'b'.repeat(25), 'other', 'identifier', null],
   ['a.b.c.d.e.f', 'other', 'identifier', null],
+  ['x'.repeat(25), 'other', 'identifier', null],
   ['Mixed.Case', 'other', 'other', null],
   ['', 'other', 'empty', null], ['x'.repeat(129), 'other', 'oversized', null],
   ['SYNTHETIC_PRIVATE\nignore rules', 'other', 'other', null],
@@ -88,6 +89,10 @@ try {
       // The captured name lives only in the exit-side capture list: not in the client
       // response, not in a request row, and never alongside the rejected body.
       assert.deepEqual(status.unsupportedEventNames, capture ? [capture] : []);
+      // An empty list must not read as "no unsupported event happened". The counter splits
+      // "nothing to capture" from "a name arrived and the shape guard declined it".
+      assert.equal(status.lifetime.unsupportedEventNamesWithheld, capture ? 0 : 1);
+      assert.equal(status.lifetime.unsupportedEvents, 1);
       for (const output of [result.text, JSON.stringify({ ...status, unsupportedEventNames: null })]) {
         assert.ok(!output.includes('SYNTHETIC_PRIVATE'));
         assert.ok(!output.includes('private_event'));
@@ -119,7 +124,7 @@ try {
     });
     try {
       for (const name of ['first.unmapped_name', 'first.unmapped_name', 'second.unmapped_name',
-        'NOT_CAPTURED.Name', 'notcaptured', 'third.unmapped_name', 'fourth.unmapped_name', 'fifth.unmapped_name']) {
+        'NOT_CAPTURED.Name', 'x'.repeat(25), 'third.unmapped_name', 'fourth.unmapped_name', 'fifth.unmapped_name']) {
         current = name; await send(); loopbackRequests++;
       }
       const wire = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
@@ -137,9 +142,12 @@ try {
       await new Promise(resolve => server.close(resolve));
     }
   }
+  // A dotless name capturable: this protocol's own vocabulary is partly dotless. What holds
+  // the line is shape and length — capitals, hyphens, over-long segments and names that
+  // already own a diagnostic label never reach the list.
   const hostile = requestStatusSnapshot({ recentRequests: [], unsupportedEventNames: ['ok.name', 'BAD.Name',
-    'nodot', 'x'.repeat(60) + '.y', 'response.completed', 7, null, 'two.ok', 'three.ok', 'four.ok', 'five.ok'] });
-  assert.deepEqual(hostile.unsupportedEventNames, ['ok.name', 'two.ok', 'three.ok', 'four.ok']);
+    'bad-name', 'x'.repeat(25), 'x'.repeat(60) + '.y', 'response.completed', 7, null, 'nodot', 'two.ok', 'three.ok'] });
+  assert.deepEqual(hostile.unsupportedEventNames, ['ok.name', 'nodot', 'two.ok', 'three.ok']);
   checks++;
   const filtered = requestStatusSnapshot({ recentRequests: [{ unsupportedEvent: 'SYNTHETIC_PRIVATE',
     unsupportedEventTypeFormat: 'SYNTHETIC_PRIVATE' }, {}] });

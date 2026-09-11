@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { interactiveLaunch, launchOptions } from './clauduct.mjs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { interactiveLaunch, launchOptions, recordRequestStatus } from './clauduct.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { prepareNative } from './native-protocol.mjs';
 import { createNativeCredentialSupplier } from '../poc/user-session.mjs';
@@ -233,6 +236,26 @@ function documentFirstTest() {
     ['--', '--append-system-prompt', 'SYNTHETIC']);
 }
 
+function statusRecordTest() {
+  const directory = mkdtempSync(join(tmpdir(), 'clauduct-status-'));
+  try {
+    const first = recordRequestStatus({ marker: 'SYNTHETIC_ONE' },
+      { directory, now: new Date('2026-09-11T09:15:34.117Z') });
+    assert.equal(first, join(directory, 'request-status.jsonl'));
+    assert.equal(recordRequestStatus({ marker: 'SYNTHETIC_TWO' }, { directory }), first);
+    const lines = readFileSync(first, 'utf8').split('\n').filter(Boolean);
+    assert.equal(lines.length, 2, 'each exit appends its own line');
+    assert.deepEqual(JSON.parse(lines[0]),
+      { recordedAt: '2026-09-11T09:15:34.117Z', status: { marker: 'SYNTHETIC_ONE' } });
+    assert.equal(JSON.parse(lines[1]).status.marker, 'SYNTHETIC_TWO');
+    // A profile that cannot be written must not break the exit path; stdout still has the line.
+    const blocked = join(directory, 'blocked');
+    writeFileSync(blocked, 'SYNTHETIC');
+    assert.equal(recordRequestStatus({ marker: 'SYNTHETIC_THREE' }, { directory: blocked }), null);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
+statusRecordTest();
 documentFirstTest();
 optionTests();
 childRetryTest();

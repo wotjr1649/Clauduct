@@ -1,5 +1,6 @@
 // The authenticated entry is user-operated. Tests exercise launch shape and synthetic children only.
 import { spawn } from 'node:child_process';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -160,6 +161,22 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
 }
 
 // No shell or PTY shim: the native child inherits the user's console directly.
+// The exit status is the only copy of unsupportedEventNames and the cleanup flags — the
+// in-session status API withholds the capture on purpose, so stdout was the single channel
+// and one run's line has already been lost to scrollback. Written into the launcher's
+// own ignored directory — never inside .clauduct-profile, which looks like a client config
+// home. A write failure is never fatal: stdout still carried the line.
+// ponytail: unbounded append, add rotation only if a profile file ever grows enough to matter.
+export function recordRequestStatus(status, { directory, now = new Date() } = {}) {
+  try {
+    const target = directory ?? fileURLToPath(new URL('../.clauduct-status/', import.meta.url));
+    mkdirSync(target, { recursive: true });
+    const file = join(target, 'request-status.jsonl');
+    appendFileSync(file, JSON.stringify({ recordedAt: now.toISOString(), status }) + '\n');
+    return file;
+  } catch { return null; }
+}
+
 export async function runInteractive(gateway, startClient, { signal, cleanupMs = 2000, contextEnv = {} } = {}) {
   if (!Number.isInteger(cleanupMs) || cleanupMs < 1 || cleanupMs > 2000) throw new Error('INVALID_LIMIT');
   let child, closed = false, exitCode = null, failure, timer;
@@ -269,6 +286,9 @@ async function main() {
     for (const line of notices) process.stderr.write(line + '\n');
     process.stdout.write(`Clauduct 종료: ${category}\n`);
     process.stdout.write(`CLAUDUCT_REQUEST_STATUS ${JSON.stringify(result.requestStatus)}\n`);
+    const statusFile = recordRequestStatus(result.requestStatus);
+    process.stdout.write(`CLAUDUCT_REQUEST_STATUS_FILE ${statusFile ?? 'none'}\n`);
+    if (!statusFile) process.stderr.write('Clauduct: 종료 상태를 파일로 남기지 못했습니다. 위 CLAUDUCT_REQUEST_STATUS 줄이 유일한 사본입니다.\n');
     process.exitCode = result.category === 'SUCCESS' ? 0 : 1;
   } finally {
     if (gateway) await gateway.close(); else if (transport) await transport.close();

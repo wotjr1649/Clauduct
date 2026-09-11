@@ -102,3 +102,39 @@ agentRegistrationsEvicted: 0, agentRegistrationsExpired: 1, transportRejections:
 - `clientContextPolicy.autoCompactWindow: 400000` — 정상 모드다(검증 모드의 100000이 아님). 이번 실행에 `compact_boundary`는 없었고 압축이 일어나지 않았다.
 - `webSearchRequests/Calls/Links` 전부 0 — 이번 작업에 검색이 필요 없었다. 탐지가 빗나가 0이 된 것이 아니라 요청 자체가 없었다.
 - `unknownBetaNames: []`, `judgedBetaLabels: []` — beta allowlist 보완 대상 없음.
+
+## 8. 고친 것 (2026-09-11)
+
+이 분석이 찾아낸 것 중 셋을 같은 날 고쳤다. 전부 진단이 자기 질문에 답하지 못하던 자리다.
+
+### 8.1 포착 정규식이 점을 요구하던 것
+
+`eventNameShape`의 점 요구를 `{1,4}`에서 `{0,4}`로 바꿨다. 24자 소문자 세그먼트, 전체 48자, 알려진 라벨 제외는 그대로다 — 값을 묶는 것은 세그먼트 길이지 점이 아니다.
+
+근거는 추정이 아니다. 이 계열의 SSE 이벤트 이름은 점이 없다. 공식 문서가 `event: message_stop`, `event: error`, `event: ping`을 그대로 쓰고 `overloaded_error` 같은 점 없는 오류 타입도 있다. 이 저장소의 `EVENT_DIAGNOSTIC_TYPES`에도 `error`·`ping`·`message_start`·`content_block_delta`가 점 없이 들어 있다. 점을 요구하는 포착은 프로토콜이 실제로 쓰는 네임스페이스 하나를 통째로 못 본다.
+
+**점 없는 이름 거부는 사고가 아니라 의도였다.** 테스트가 `'nodot'`을 거부 대상으로 고정하고 있었고, 사례표에도 `['private_event', 'other', 'identifier', null]`과 `['threadprivate_event', 'other', 'identifier', null]`이 기대값으로 박혀 있었다 — run-04에서 관측한 그 조합 그대로다. 진단이 확정되는 지점이자, 시험이 결함을 정답으로 굳히고 있던 지점이다. 두 행의 기대값을 포착으로 바꾸고 계약 변경을 주석에 남겼다.
+
+### 8.2 빈 목록이 두 가지를 뜻하던 것
+
+`unsupportedEventNames: []`는 "미지원 이벤트가 없었다"와 "있었는데 이름을 못 잡았다"를 구분하지 못했다. run-04를 읽을 때 실제로 막힌 지점이다. `lifetime.unsupportedEventNamesWithheld`를 추가해 갈랐다.
+
+세그먼트가 24자를 넘거나 점이 5개 이상인 이름은 **여전히 포착되지 않는다.** 잔여 구멍을 없앤 것이 아니라 보이게 만든 것이다. 사례표에 `['x'.repeat(25), 'other', 'identifier', null]`을 넣어 고정했다.
+
+### 8.3 97건의 거부에 라벨이 하나뿐이던 것
+
+`rejectedBeforeStart: 97`인데 `firstRejectedCategory` 하나만 남아 나머지 96건을 복원할 수 없었다(6장). `lifetime.rejectedCategories` 집계를 추가했다. 키는 `diagnosticCategory`가 답하는 고정 어휘에서만 나오므로 무한히 늘지 않고, 0인 항목은 출력에서 뺀다.
+
+### 8.4 종료 JSON이 stdout에만 있던 것
+
+`recordRequestStatus`가 종료 시 `/.clauduct-status/request-status.jsonl`에 한 줄을 덧붙이고 `CLAUDUCT_REQUEST_STATUS_FILE` 줄로 경로를 알린다. `.gitignore`에 넣었고 `.clauduct-profile`(클라이언트 설정 홈처럼 보이는 옛 디렉터리) 안에는 쓰지 않는다. 쓰기 실패는 치명적이지 않다 — stdout 줄은 그대로 나가고 stderr로 사본이 하나뿐임을 알린다. 종료 출력 줄을 검사하는 테스트가 그때까지 **하나도 없었다.**
+
+### 검증
+
+`src/test-*.mjs` 19개 중 17 pass / 2 fail. 실패 2건은 인계 문서 6장의 환경 실패(`test-chat`, `test-review-diff` — 이 셸에서 자식 프로세스 spawn 불가)이며 이번 변경과 무관하다. `unsupported-event-diagnostics`는 61 → **63**으로 늘었고 `native-gateway` 61, `request-diagnostics` 69, `verification/test-manual-http-probe` 88/88이 기준선과 같다. 기본 경로 기록은 실제로 한 번 써서 확인한 뒤 지웠다.
+
+### 고치지 않은 것
+
+- **admission 메모리 압력.** 4장의 6~7분 대기는 정책 설계 문제이며 실패 동작이 아니다 — 죽지 않고 큐잉했다. 임계값은 측정 없이 손대지 않는다.
+- **지난 두 건의 이벤트 이름.** 복구 불가다. 이번 수정은 다음 재발을 잡을 뿐 지난 것을 밝히지 않는다.
+- `clientVersionStatus: "unverified"` (0.154.0 / 기준 0.153.4). 결함이 아니라 버전 흐름이다.

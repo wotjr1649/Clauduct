@@ -274,6 +274,9 @@ try {
       assert.equal(after.lifetime.failed, boundary.failed);
       assert.equal(after.lifetime.rejectedBeforeStart, 2);
       assert.equal(after.lifetime.firstRejectedCategory, 'UNSUPPORTED_ROUTE');
+      // One label cannot describe a run that refused 97 requests; the tally is what can.
+      assert.equal(Object.values(after.lifetime.rejectedCategories).reduce((sum, n) => sum + n, 0), 2);
+      assert.equal(after.lifetime.rejectedCategories.UNSUPPORTED_ROUTE, 1);
       // The baseline request and the carried-beta request both reached upstream; the refused
       // headers and the other routes never did.
       assert.equal(sends, 2);
@@ -866,7 +869,8 @@ try {
       assert.equal(after.failureHistory.records[0].unsupportedEvent, 'unknown-response-event');
       assert.equal(after.failureHistory.omitted, 0);
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
-        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
+        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, unsupportedEventNamesWithheld: 1,
+        rejectedBeforeStart: 0, firstRejectedCategory: null, rejectedCategories: {},
         unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
         agentRegistrationsExpired: 0, webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0,
         failuresByStage: { ...emptyStages, upstream: 1 } });
@@ -890,8 +894,9 @@ try {
       assert.equal(status.recentRequests.at(-1).auxiliaryMetadataEvents, 1);
       assert.equal(status.recentRequests.at(-1).success, true);
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
-        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
-        firstRejectedCategory: null, unmappedAgentModels: 0, transportRejections: 0,
+        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0,
+        rejectedBeforeStart: 0, firstRejectedCategory: null, rejectedCategories: {},
+        unmappedAgentModels: 0, transportRejections: 0,
         agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, webSearchLinks: 0, webSearchRequests: 0,
         webSearchCalls: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;

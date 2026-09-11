@@ -80,7 +80,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
 | 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
 | 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
-| SDD 무인 3주기 | 완료 | run-04(2c4ceab9)이 THREE-CYCLE-PASS — [run-04 감사](audit-2026-09-11-three-cycle-run-04.md). 커밋 3개, 독립 재실행 63/63 pass, 자식 9명, 개입 0. 종료 JSON도 확보해 [분석](audit-2026-09-11-run-04-exit-diagnostics.md)했다. 이전 세 시도는 [run-03 감사](audit-2026-09-11-three-cycle-run-03.md) | 자식의 effort는 9명 전부, model은 9명 중 1명이 Not verified | 없음 |
+| SDD 무인 3주기 | 완료 | run-04(2c4ceab9)이 THREE-CYCLE-PASS — [run-04 감사](audit-2026-09-11-three-cycle-run-04.md). 커밋 3개, 독립 재실행 63/63 pass, 자식 9명, 개입 0. 종료 JSON도 확보해 [분석](audit-2026-09-11-run-04-exit-diagnostics.md)했고, 보존된 자식 행은 전부 `model: gpt-5.6-luna` / `effort: max`이며 `requestedModel`·`requestedEffort`와 일치한다 | 게이트웨이가 보낸 라우팅까지가 관측이다. upstream이 그 effort로 실제 추론했는지는 이쪽에서 관측할 수 없다. 자식 9명이 개별로 다 보존된 것도 아니다(보존은 first-8·last-8과 최근 요청) | 없음 |
 | Claude 모델 전체 지원·app-server 전환·버전 pin | 범위밖 | 사용자 지정. 별칭·전체 ID 매핑은 2026-09-11에 사용자가 별도 승인했다 | — | — |
 | 실제 인증 갱신·수시간 연속 실행 | 범위밖 | 사용자 지정 | — | — |
 | 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |

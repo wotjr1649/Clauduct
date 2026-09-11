@@ -284,3 +284,59 @@ lite 봉투는 `instructions`를 보내지 않는다. 서버가 지시를 공급
 검색 요청만 기준 클라이언트의 정체성으로 보낸다. 일반 요청의 정체성은 한 글자도 건드리지 않으며 테스트가 양쪽을 동시에 고정한다. 선택 기준은 "고정 봉투 헤더를 하나라도 실었는가"다. 처음에 `extraHeaders !== undefined`로 판정했다가 루프백 전송이 항상 빈 객체를 넘기는 탓에 일반 요청까지 lite로 빠졌고, `client-version` suite가 그 자리에서 잡아냈다.
 
 turn metadata에 기준 클라이언트가 담는 `agent_name`, `context_window_id`, `node_repl_auto_review_required`를 추가했다. `workspaces`는 여전히 담지 않는다 — 로컬 경로다.
+
+## 결론 — 내장 검색은 lite에 없다. 전용 엔드포인트가 있다
+
+공개 소스(openai/codex `da20788`, 2026-09-11)가 여섯 번의 가설을 한 번에 정리했다.
+
+```rust
+// "Responses Lite accepts schemas for client-executed tools, not hosted Responses tools."
+if model_info.use_responses_lite || is_basic_session_source(...) { return Vec::new(); }
+```
+
+lite 봉투에서는 호스티드 `ToolSpec::WebSearch`가 **생성 자체가 차단**된다. 대신 클라이언트가 실행하는 `web.run` 도구가 `additional_tools`에 실리고, 코덱스 프로세스가 그 호출을 받아 `POST <base_url>/alpha/search`로 검색한다. 로컬 크롤링은 없다.
+
+### 내 실험이 왜 전부 무효였나
+
+```rust
+available: (is_openai() || uses_openai_actor_authorization() || supports_standalone_web_search)
+           && web_search_mode != WebSearchMode::Disabled
+```
+
+`supports_standalone_web_search`는 `#[serde(default)]` → 커스텀 `model_providers.*`에서 false다. 모든 캡처를 `model_provider=capture`로 떴으므로, 찾던 도구를 관측 방법이 지우고 있었다. "live와 disabled가 동일하다"도 여기서 나왔다 — 양쪽 다 억제된 상태였다. **관측 장치가 대상을 지우고 있는지 먼저 확인한다.**
+
+### 라이브 확인
+
+```
+POST https://chatgpt.com/backend-api/codex/alpha/search
+200 · results 6 · keys{domain, ref_id, snippet, title, type, url} · output 10003자 · encrypted_output 있음
+```
+
+### 채택한 구조
+
+Claude Code의 WebSearch side query는 격리된 요청이다 — 메시지 하나(`Perform a web search for the query: <질의>`), 시스템 프롬프트 한 줄, 도구 하나. 그리고 응답을 줄이는 코드는 결과 블록에서 `title`과 `url`만 읽고 나머지는 주변 `text` 블록에서 가져간다.
+
+```js
+if (v.type === "web_search_tool_result") o.push({ tool_use_id: v.tool_use_id,
+  content: v.content.map(I => ({ title: I.title, url: I.url })) });
+if (v.type === "text") d += v.text;
+```
+
+그래서 게이트웨이가 그 side query를 직접 답한다. 질의를 뽑아 `alpha/search`에 한 번 던지고, `results`로 `web_search_tool_result`를, `output` 요약으로 뒤따르는 `text` 블록을 만든다. **추론 턴 없음 · 토큰 0 · HTTP 1회.** 네이티브의 `encrypted_content`(페이지 본문) 자리를 백엔드가 만든 요약이 채우므로 품질 격차도 닫힌다.
+
+경계:
+
+- 탐지는 클라이언트가 실제로 세우는 조건 전부가 맞아야 한다. 하나라도 어긋나면 모델 경로로 흘린다. `tool_choice`는 클라이언트가 항상 보내지는 않으므로(라이브 요청이 upstream 단계까지 갔다는 것이 증거다) 보낼 수 있는 형태만 허용한다.
+- 질의 하나만 나간다. 기준 클라이언트는 대화 꼬리를 함께 보내지만 우리는 보내지 않는다.
+- 검색 결과는 정의상 공격자가 쓴 웹 콘텐츠다. 길이·형태를 검사하고 비-http 스킴과 제어문자는 결과를 버린다. 링크도 텍스트도 없으면 `SEARCH_RESULTS_EMPTY`로 실패한다 — 조용한 빈 성공은 없다.
+- 상태 응답에는 개수만 나간다. 질의도 결과도 나가지 않으며 테스트가 canary로 고정한다.
+
+### 걷어낸 것
+
+responses-lite 봉투 전체(본문·헤더 허용목록·전송 배선·프로브 `--lite` 모드·분기된 클라이언트 정체성). 동작할 수 없는 코드 215줄이다. 남은 것은 검색 요청의 turn identity 하나뿐이고 이름도 그 일에 맞게 바꿨다.
+
+### 검증
+
+`native-search` 8, `native-gateway` 61, `native-transport`(루프백 검색 포함), `native` 47, `manual-http-probe` 88 통과. 루프백 테스트가 버그 하나를 잡았다 — 이미 취소된 signal은 리스너가 발화하지 않아 취소된 검색이 요청을 보내고 있었다.
+
+미검증: 실제 Clauduct 세션에서의 종단 동작. 게이트웨이 경로는 주입 전송으로, 전송 경로는 루프백으로, 엔드포인트는 프로브로 각각 확인했으나 셋을 한 번에 통과시킨 적은 없다.

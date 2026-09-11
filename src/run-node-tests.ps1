@@ -19,7 +19,7 @@ function Invoke-ClauductNodeTests {
         if ([IO.Path]::IsPathRooted($pattern) -or $pattern -match '(^|[\\/])\.\.([\\/]|$)|[:\r\n"]' -or $pattern.StartsWith('-')) {
             throw 'INVALID_TEST_PATH'
         }
-        $matches = @(Resolve-Path -Path (Join-Path $taskRoot $pattern))
+        $matches = @(Resolve-Path -Path (Join-Path $taskRoot $pattern) -ErrorAction SilentlyContinue)
         if ($matches.Count -eq 0) { throw 'TEST_FILE_NOT_FOUND' }
         foreach ($match in $matches) {
             $path = $match.ProviderPath

@@ -16,6 +16,10 @@ try {
     }
     # Task-created fixtures only; never execute an external or user-selected file.
     [void](New-Item -ItemType Directory -Path $temporary)
+    $missing = $false
+    try { $null = Invoke-ClauductNodeTests -Root $temporary -TestFiles @('test/*.test.mjs') }
+    catch { $missing = $_.Exception.Message -eq 'TEST_FILE_NOT_FOUND' }
+    if (-not $missing) { throw 'EMPTY_ROOT_MISCLASSIFIED' }
     [IO.File]::WriteAllText((Join-Path $temporary 'fail.mjs'), "process.exitCode = 7;")
     [IO.File]::WriteAllText((Join-Path $temporary 'wait.mjs'), "console.log('FIXTURE_PID=' + process.pid); setTimeout(() => {}, 10000);")
     $failed = Invoke-ClauductNodeTests -Root $temporary -TestFiles @('fail.mjs')
@@ -31,7 +35,7 @@ try {
         try { if (-not $fixtureProcess.WaitForExit(1000)) { throw 'TIMEOUT_CHILD_STILL_RUNNING' } }
         finally { $fixtureProcess.Dispose() }
     }
-    Write-Output 'Runner: environment 3/3; path rejection 3/3; failure exit; timeout tree termination passed'
+    Write-Output 'Runner: environment 3/3; path rejection 3/3; empty root named; failure exit; timeout tree termination passed'
 } finally {
     [Environment]::SetEnvironmentVariable('CLAUDUCT_ENV_SENTINEL', $originalSentinel)
     if (Test-Path -LiteralPath $temporary) {

@@ -67,3 +67,18 @@ guard 규칙 파일 자체는 조회하지 않았다. 근거는 그 세션의 �
 자식 3종 실제 실행, 무개입 3주기, 누적 자원 지표(`cleanup` 9개·`admission`·registration eviction), `unsupportedEventNames`, 자동 압축 자연 발동, 스트리밍 fallback 분기 — 전부 **미관측**이다. 요청이 한 건도 나가지 않았으므로 종료 JSON으로도 채워지지 않는다.
 
 SAFE-STOP은 안전 정지의 증거이지 개발 능력의 증거가 아니다.
+
+## 7. run-04 준비에서 확인한 것과 고친 것
+
+프롬프트에 적을 명령은 전부 먼저 실행해 확인했다.
+
+- **`pwsh -File` 러너 명령은 오늘도 Bash에서 허용된다.** 직접 실행해 확인했다. 거부된 것은 인라인 `-Command`뿐이라는 3장의 결론이 실측으로 확인됐다.
+- 최초 확인 1~3단계 명령을 새 `run-04` 샌드박스에서 그대로 실행해 출력을 확인했다. `GIT_IS_DIR`, `HEAD exit=1`, 시험용 identity, Node v24.19.0 / Git 2.55.0 / `node:test OK`.
+- **러너 결함 1건을 발견해 고쳤다.** 빈 루트에서 `test/*.test.mjs`가 하나도 맞지 않으면 `Resolve-Path`가 예외를 던지고, 그 예외가 known 목록에 없어 `TEST_RUNNER_FAILED`로 뭉개졌다. 프롬프트가 약속한 `NO_TEST_FILES`는 나오지 않았고, **진짜 러너 장애와 "아직 테스트를 안 썼다"가 같은 문구로 보였다.** 무인 실행에서 이 모호함은 양방향으로 위험하다 — 정상을 장애로 보고 멈추거나, 장애를 정상으로 보고 계속한다.
+
+  `-ErrorAction SilentlyContinue` 한 줄로 no-match가 예외 대신 0건이 되게 해 `TEST_FILE_NOT_FOUND`가 나오도록 했다. `src/test-run-node-tests.ps1`에 빈 루트 assertion을 추가했고 수정 전 `EMPTY_ROOT_MISCLASSIFIED`로 실패하는 것을 먼저 확인했다.
+
+- 회귀: `src/test-*.mjs` 19개 중 17 pass / 2 fail. 실패는 인계 문서 6장이 기록한 환경 실패 2건(`test-chat`, `test-review-diff` — 이 셸에서 자식 프로세스 spawn 불가)이며 이번 변경과 무관하다.
+- 새 샌드박스 `verification/dev-sandbox/run-04`를 run-03과 동일한 준비 상태로 만들었다. run-03 디렉터리를 재사용하지 않은 이유는 transcript 폴더가 cwd에서 파생되어 두 시도의 기록이 한 폴더에 섞이기 때문이다.
+
+실행 프롬프트는 `docs/prompts/2026-09-11-session-27-sdd-three-cycle-run-04.md`다.

@@ -355,6 +355,28 @@ try {
     } finally { release(); await busy?.catch(() => {}); await gateway.close(); }
   }
   {
+    // A request that asks the backend to search and gets no search back is a silent no-op:
+    // the request succeeds, the counters say the feature did nothing, and it is announced once.
+    const searchDoc = { ...doc, tools: [...doc.tools, { type: 'web_search_20250305', name: 'web_search' }] };
+    let notices = 0;
+    const gateway = await startNativeGateway({ admissionOptions: ample, onWebSearchUnused: () => { notices++; },
+      transport: { send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      assert.equal((await call(gateway, { body: searchDoc })).status, 200);
+      assert.equal((await call(gateway, { body: searchDoc })).status, 200);
+      assert.equal((await call(gateway)).status, 200);
+      const state = gateway.diagnostics(), status = requestStatusSnapshot(state);
+      assert.equal(state.lifetime.webSearchRequests, 2);
+      assert.equal(state.lifetime.webSearchCalls, 0);
+      assert.equal(status.lifetime.webSearchRequests, 2);
+      assert.equal(notices, 1);
+      assert.deepEqual(status.recentRequests.map(row => [row.webSearchRequested, row.webSearchCalls]),
+        [[true, 0], [true, 0], [false, 0]]);
+      assert.ok(status.recentRequests.every(row => row.success));
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
     // An idle registration past the window is released before the cap is ever reached.
     const gateway = await startNativeGateway({ admissionOptions: ample, agentIdleMs: 1, transport: {
       send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });
@@ -727,7 +749,8 @@ try {
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
         unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
-        agentRegistrationsExpired: 0, failuresByStage: { ...emptyStages, upstream: 1 } });
+        agentRegistrationsExpired: 0, webSearchRequests: 0, webSearchCalls: 0,
+        failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
@@ -750,7 +773,8 @@ try {
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
         failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
         firstRejectedCategory: null, unmappedAgentModels: 0, transportRejections: 0,
-        agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, failuresByStage: emptyStages });
+        agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, webSearchRequests: 0,
+        webSearchCalls: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);
       snapshot.lifetime.failuresByStage.upstream = -1;

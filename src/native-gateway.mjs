@@ -20,7 +20,7 @@ function diagnosticCategory(code) {
 // Matches the bounded pending/verified tables in agent selection.
 const MAX_AGENTS = 1024;
 
-export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture,
+export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture, onWebSearchUnused,
   admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS, agentIdleMs = 1800000 } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
@@ -50,8 +50,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
-    transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0 };
-  let notifiedUnmappedModel = false, notifiedEventCapture = false;
+    transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
+    webSearchRequests: 0, webSearchCalls: 0 };
+  let notifiedUnmappedModel = false, notifiedEventCapture = false, notifiedWebSearchUnused = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
@@ -378,6 +379,14 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       res.end();
       timing.webSearchCalls = response.webSearchCalls?.() ?? 0;
       timing.success = true;
+      if (timing.webSearchRequested) {
+        lifetime.webSearchRequests++; lifetime.webSearchCalls += timing.webSearchCalls;
+        // A completed request that asked the backend to search and got no search back is a
+        // silent no-op: nothing failed, yet the feature did nothing. Say so once.
+        if (timing.webSearchCalls === 0 && !notifiedWebSearchUnused) {
+          notifiedWebSearchUnused = true; onWebSearchUnused?.();
+        }
+      }
       agentSelection?.delivered(req.headers['x-claude-code-session-id'], agent, selectionRequest, output.message);
     } catch (error) {
       stopHeartbeat(); await writeTail;

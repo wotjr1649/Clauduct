@@ -129,7 +129,7 @@ export function requestStatusSnapshot(value, env = {}) {
       ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
       ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart',
         'unmappedAgentModels', 'transportRejections', 'agentRegistrationsEvicted',
-        'agentRegistrationsExpired'].map(key =>
+        'agentRegistrationsExpired', 'webSearchRequests', 'webSearchCalls'].map(key =>
         [key, counter(lifetime[key])])),
       firstRejectedCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(lifetime.firstRejectedCategory)
         ? lifetime.firstRejectedCategory : null } : null,

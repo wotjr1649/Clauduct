@@ -62,3 +62,25 @@
 브리지 자체는 로컬 검사를 통과하고 서버 도구가 오면 올바르게 번역한다. 그러나 **현재 Claude Code는 그 형태로 보내지 않으므로 실사용에서 웹 검색은 여전히 동작하지 않는다.** function 도구 형태(`WebSearch`)까지 받아 상류 내장 검색으로 바꿔치기하는 것은 클라이언트가 선언한 도구를 게이트웨이가 대체하는 별개의 설계 결정이라 임의로 하지 않았다.
 
 WebFetch는 이번 관측에서 시험하지 않았다.
+
+## 정정 — 브리지는 호출됐다 (2026-09-11, 바이너리 확증)
+
+위 "브리지가 호출되지 않았다"는 판단은 틀렸다. 설치 `claude.exe`의 WebSearch 실행부를 찾아 확인했다.
+
+```
+I = Te({content: "Perform a web search for the query: " + _}),
+D = {type: "web_search_20250305", name: "web_search",
+     allowed_domains: …, blocked_domains: …, max_uses: 8}
+```
+
+즉 `functions.WebSearch`는 모델에게 보이는 껍데기이고, Claude Code는 그것을 실행할 때 **서버 도구 형태를 실은 side query를 별도로 보낸다**. 같은 영역에 `web-search-side-query-api-error`, `Qus(q,_,xe)`의 `results` 배열, `mapToolResultToToolResultBlockParam`의 `Web search results for query: "${r}"` 봉투가 함께 있다.
+
+따라서 실제 흐름은 이렇다. side query가 게이트웨이에 도착 → `prepareNative`가 서버 도구를 받아 상류에 `{type:'web_search'}`로 번역 → 상류 Codex가 검색을 수행하지 않고 정상 응답 → `results` 빈 배열 → 빈 봉투가 tool result가 됨. 실패 0건인 이유가 이것이다.
+
+**결론: 브리지는 정상 동작했고, 상류가 검색을 하지 않았다.** 원인 후보는 모델 계열별 도구 타입 토큰 불일치, 계열 미지원, 계정 권한이며 오프라인으로는 좁힐 수 없다. 근거 없이 도구 형태를 바꿔 재시도하지 않는다.
+
+## 무동작 표면화
+
+성공한 요청이 서버 검색 도구를 실었는데 상류 검색이 0회면 세션당 한 번 stderr로 알린다. 질의도 결과도 담지 않는다. 누계는 `lifetime.webSearchRequests`와 `lifetime.webSearchCalls`이며, 요청별로는 `webSearchRequested`/`webSearchCalls`다. `requests>0 && calls===0`이 곧 "보냈는데 상류가 안 썼다"는 판정이다.
+
+검증: `test-native-gateway`가 54 → 55개 검사다. 새 검사는 검색 도구를 실은 요청 2건과 실지 않은 1건에서 누계가 2/0이 되고, 요청별 값이 `[true,0],[true,0],[false,0]`이며, 세 요청 모두 성공이고, 알림이 세션당 1회인지 확인한다.

@@ -247,6 +247,9 @@ async function main() {
       onUnmappedAgentModel: () => {
       process.stderr.write('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하며 이번 턴은 그대로 전달됩니다. 종료 JSON의 lifetime.unmappedAgentModels를 확인하세요.\n');
     },
+      onWebSearchUnused: () => {
+      process.stderr.write('Clauduct: 상류에 웹 검색 도구를 보냈지만 상류가 검색을 수행하지 않았습니다. 요청 자체는 성공이며 검색 결과만 비어 있습니다. 종료 JSON의 lifetime.webSearchRequests/webSearchCalls를 확인하세요.\n');
+    },
       onUnsupportedEventCapture: () => {
       process.stderr.write('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. 창을 강제로 닫지 말고 정상 종료한 뒤 CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.\n');
     } });

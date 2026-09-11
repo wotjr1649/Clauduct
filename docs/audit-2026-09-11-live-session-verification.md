@@ -54,3 +54,17 @@ retryScheduledMs [], attempts 0, clientDisconnected false, success false
 ## 검증
 
 2026-09-11, Node.js v24.19.0, `Invoke-ClauductNodeTests`, 60초 제한. 기준 11개 파일과 선택·완료 표면 4개가 모두 통과했다. `test-native-gateway` 55개 검사, `test-native` 47개 검사다. 새 검사는 판정 beta가 200으로 통과하며 라벨이 요청별·세션 누계로 기록되는지, 형식이 잘못된 헤더는 여전히 `INVALID_BETA_HEADER`로 거부되며 upstream 시도가 없는지, 원문 헤더 텍스트가 진단에 남지 않는지를 확인한다. 외부 추론 요청·실제 인증 조회·실제 Claude 실행은 0이다.
+
+## 5. 정상 종료 증거 — 감독하 PASS 확정
+
+세션 46b6af24를 정상 종료해 얻은 종료 JSON의 `cleanup`이 9개 항목 모두 true였다.
+
+`childClosed`, `gatewaySocketsClosed`, `gatewayJobsClosed`, `gatewayTimersClosed`, `gatewayDeliveriesClosed`, `gatewayIdle`, `gatewayCleanupCompleted`, `transportSocketsClosed`, `transportRequestsClosed`.
+
+이로써 3장의 세 조건이 모두 충족됐다. **감독하 판정을 CONDITIONAL에서 PASS로 올린다.**
+
+범위를 분명히 한다. PASS는 **감독하 사용**에 대한 것이며, 한 번의 실제 실패와 그 복구가 계약이 요구한 세 조건을 만족했다는 뜻이다. 다음은 여기에 포함되지 않는다.
+
+- 무인 연속 개발은 계속 HOLD다. 하나의 실행에서 새 기능 3개의 무개입 주기를 마친 증거가 없다.
+- 웹 검색은 상류 제약으로 동작하지 않는다. 최초 `UNSUPPORTED_EVENT other/identifier`의 원인도 여전히 미확정이다.
+- 자동 압축 실발동, 3주기 종료 후 자원 실측, 동적 symlink 검사는 그대로 미검증·차단이다.

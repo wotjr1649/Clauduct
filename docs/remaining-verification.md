@@ -12,7 +12,17 @@
 | 차단 | guard·권한·정책으로 검사를 실행할 수 없다. 우회하지 않고 미검증으로 남긴다 |
 | 범위밖 | 사용자가 이번 목표에서 제외했다 |
 
-감독하 판정을 CONDITIONAL에서 PASS로 올리는 조건은 **실제 실패가 한 번 발생하고 그 복구가 관측되는 것**이다(2026-09-11 사용자 결정). 실패의 종류는 가리지 않으며 종료 JSON에서 다음 세 가지를 모두 확인한다.
+감독하 판정은 2026-09-11 **PASS**다. 조건이던 "실제 실패 1회와 그 복구 관측"이 세션 46b6af24에서 충족됐다. [실사용 검증 기록](audit-2026-09-11-live-session-verification.md).
+
+| 조건 | 관측 |
+|---|---|
+| 안전 중단 | request 3이 고정 라벨 `UNSUPPORTED_BETA`, upstream 시도 0, 재시도 0, `clientDisconnected` false. 종료 시 `cleanup` 9개 모두 true |
+| 데이터 보존 | 실패가 `failureHistory`에 보존되고 `omitted` 0. 실패 직후 대화가 이어졌고 이후 요청 7건이 모두 성공 |
+| 도구 미중복 | upstream 시도가 0회라 중복 실행이 성립하지 않음 |
+
+PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 HOLD이며, 아래 표의 미검증·조건부 항목이 PASS로 바뀌는 것도 아니다.
+
+원래의 승격 조건은 다음과 같았다.
 
 | 조건 | 종료 JSON에서 볼 값 |
 |---|---|
@@ -58,10 +68,11 @@
 | 완료 알림 기반 복귀 | 조건부 | c19c8b14 실제 성공, [감사](audit-2026-09-09-completion-resume.md), 로컬 회귀 | 과거 실패(35985327)의 원인 미확정. 다중 알림·실패 알림 복귀는 미지원 | 없음 |
 | 직접 부모 모델·effort 상속 | 완료 | db34be24, a2d50ff0, [수용 조건](audit-2026-09-10-agent-acceptance.md), [계약](gpt-agent-selection-contract.md) | 생성 후 모델 변경과 손자 전 조합은 미검증 | 회귀 통과만 유지한다 |
 | Claude 별칭·전체 모델 ID 매핑 | 완료 | [감사](audit-2026-09-11-unmapped-agent-model.md), `test-agent-selection`의 8개 route 확인과 블록 단위 생략 검사 | 사용자가 구형 모델을 쓰지 않기로 해 구형 명명 위험은 닫혔다. 새 계열이 나오면 그 자식만 fail-closed 되고 턴은 보존된다 | 없음 |
-| 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·거부·기록 검사. 비호환 판정 27개는 계속 거부, 서버 의존 7개는 표시만 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
+| 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·기록 검사. 이름만으로는 거부하지 않고 형식 오류만 거부한다. 판정 27개는 `judgedBetaLabels`로 기록 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
 | Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
 | 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
-| 웹 검색 경로 | 조건부 | [브리지 감사](audit-2026-09-11-web-search-bridge.md), `test-native` 47개 검사 | 우리 네 모델이 상류에서 내장 검색을 받는지, 실제로 검색이 도는지 미검증. 출처 카드·인용 블록은 만들지 않는다 | 정상 사용 중 웹 검색을 한 번 써 보고 종료 JSON을 본다 |
+| 웹 검색 경로 | 차단(상류) | [브리지 감사](audit-2026-09-11-web-search-bridge.md), [실사용](audit-2026-09-11-live-session-verification.md)에서 `webSearchRequests:1 / webSearchCalls:0` | 게이트웨이는 정상 번역한다. **상류 Codex가 검색을 수행하지 않는다.** 원인은 오프라인으로 좁힐 수 없다 | 근거 없이 도구 타입을 바꿔 재시도하지 않는다 |
+| WebFetch | 미검증 | 직전 실행에서 `UNSUPPORTED_BETA`로 실패했고 그 원인을 고쳤다 | 수정 후 실제 동작은 다음 실행에서 확인 | 한 번 써 보고 `judgedBetaLabels`를 본다 |
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
 | 장기 자원 안정성 | 조건부 | `test-native` 47개(1000요청 / 20동시 포함), `test-request-admission`, `test-native-gateway`의 등록표 만료·상한 검사 | 등록표는 30분 유휴 만료 뒤 1024 상한으로 묶인다. 3주기 종료 후 socket·timer·listener 실측은 여전히 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`·`admission`·`agentRegistrationsEvicted`를 함께 본다 |
 | HTTP 서버 수준 거부 집계 | 완료 | `lifetime.transportRejections`, `test-native-gateway`의 Expect 검사 | 연결 단계에서 끊긴 바이트의 원인까지는 남기지 않는다 | 없음 |

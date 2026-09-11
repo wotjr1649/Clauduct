@@ -218,3 +218,31 @@ input item kinds: ["additional_tools", "message"]
 - `webSearchCalls >= 1` → 1단계 성공. 2단계(인용 → Anthropic 블록)로 간다.
 - `200`인데 `webSearchCalls = 0` → 봉투는 받아들여졌으나 백엔드가 검색하지 않은 것.
 - 다시 오류 → 본문 차이는 소진했으므로 남은 용의자는 헤더와 `originator`다. 기준 클라이언트는 `originator: codex_exec`에 `Openai-Beta` 헤더가 없는데, Clauduct는 `originator: codex_cli_rs`에 `Openai-Beta: responses=experimental`를 보낸다. 일반 요청은 이 조합으로 잘 동작하므로 lite 봉투에서만 문제가 되는지는 측정해야 안다.
+
+## 2차 측정 — 400, `tools`
+
+프로브 검색 모드 첫 실행 결과다.
+
+```
+httpStatus 400  category HTTP_ERROR  jsonKind error  responseBytes 262
+rejectedFields ["tools"]
+clientVersion 0.154.0 (unverified; baseline 0.153.4)
+```
+
+상류 메시지가 `tools`를 언급하고 `additional_tools`는 언급하지 않았다. 우리가 보낸 namespace의 `tools`가 **빈 배열**이었다. 기준 클라이언트는 항상 도구를 실어 보내므로 빈 namespace는 캡처에 나타난 적이 없다.
+
+검색 side query는 `web_search` 도구 하나만 선언하고 그 도구는 백엔드가 스스로 공급하므로 우리가 떨어뜨린다. 그러면 실을 게 남지 않는다. 그래서 **도구가 없으면 `additional_tools` 항목을 아예 보내지 않는다.** 항목의 존재 이유가 클라이언트 도구를 싣는 것이고, 실을 게 없으면 항목도 없다. 도구가 있으면 항목은 그대로 나가며 그 경우를 테스트로 고정했다.
+
+라이브 502와 이 400은 같은 원인으로 보인다. 게이트웨이 경로에서도 side query의 도구 목록은 비어 있었다.
+
+### 버전 드리프트가 발현했다
+
+설치된 codex가 `0.154.0`으로 올라갔는데 프로브는 `0.153.4` 리터럴에 하드 핀이 걸려 있어 실행 자체를 거부했다(`CLI_VERSION_CHANGED`). 게이트웨이는 원래 실행 시점에 `codex --version`을 읽어 그 값을 보내고 기준선과 다르면 `CLI_VERSION_UNVERIFIED`만 알린다. 프로브도 같은 방식으로 바꿨다. 중단은 드리프트를 숨기고, 보고는 사용자가 결정하기 전 화면에 올린다. 읽기 불가·형식 오류는 여전히 멈춘다.
+
+`REFERENCE_CLIENT_VERSION`은 `0.153.4`로 둔다. 끝까지 검증된 버전을 기록하는 값이고 `0.154.0`은 아직 검증되지 않았다.
+
+**부수 확인: 502는 낡은 버전 헤더 탓이 아니다.** 게이트웨이는 실행 시점 버전을 보내므로 라이브 세션은 이미 `0.154.0`을 보내고 있었다.
+
+### 측정 정밀도 보강
+
+거부 시 상류 오류의 자체 어휘(`type`, `code`, `param`)를 고정 형태로 검사해 보고한다. `param`은 우리가 보낸 매개변수 경로라서 `input[0].tools` 같은 대괄호 표기를 허용한다. 메시지 본문은 재현하지 않으며 테스트가 이를 고정한다. 다음 거부가 오면 어느 필드인지 추론할 필요가 없다.

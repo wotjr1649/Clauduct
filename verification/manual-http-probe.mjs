@@ -90,9 +90,9 @@ export function buildBody() {
 // accepts it and whether it runs its own search. Carries no client tools and no local text.
 export function buildLiteBody(envelope) {
   return { model: liteModel,
-    input: [{ type: 'additional_tools', id: envelope.toolsId, role: 'developer',
-      tools: [{ type: 'namespace', name: 'functions', description: '', tools: [] }] },
-      { role: 'user', content: [{ type: 'input_text',
+    // No additional_tools item: the gateway omits it when there are no client tools to carry,
+    // and a search side query declares only the search tool the backend supplies itself.
+    input: [{ role: 'user', content: [{ type: 'input_text',
         text: 'Search the web and reply with the current stable Node.js release number only.' }] }],
     tool_choice: 'auto', parallel_tool_calls: false,
     reasoning: { effort: liteEffort, context: 'all_turns' }, store: false, stream: true,
@@ -102,6 +102,21 @@ export function buildLiteBody(envelope) {
 
 // Field names this probe itself sends. Reporting which of our own names an upstream rejection
 // mentions narrows the envelope without echoing the upstream message.
+// A parameter path such as input[0].tools is a name this probe sent back to it, so brackets
+// and indices belong in the shape. No spaces, no punctuation that could carry a sentence.
+const SAFE_LABEL = /^[A-Za-z][A-Za-z0-9_.\[\]-]{0,63}$/;
+function errorLabels(text) {
+  let doc;
+  try { doc = JSON.parse(text); } catch { return {}; }
+  const error = doc?.error;
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
+  const labels = {};
+  for (const key of ['type', 'code', 'param']) {
+    if (typeof error[key] === 'string' && SAFE_LABEL.test(error[key])) labels[key] = error[key];
+  }
+  return Object.keys(labels).length ? { errorLabels: labels } : {};
+}
+
 const LITE_FIELDS = Object.freeze(['instructions', 'tools', 'additional_tools', 'client_metadata',
   'prompt_cache_key', 'reasoning', 'context', 'text', 'verbosity', 'include', 'tool_choice',
   'parallel_tool_calls', 'store', 'stream', 'model']);
@@ -150,6 +165,9 @@ export function summarizeResponse(status, contentType, bytes, rawHeaders, lite =
     // Only names this probe itself sent, never upstream text: enough to say which part of the
     // envelope the backend objected to without reproducing its message.
     result.rejectedFields = LITE_FIELDS.filter(name => text.includes(name));
+    // The upstream error's own vocabulary and the name of a parameter this probe sent, both
+    // bounded to a fixed shape. The message text itself is never reproduced.
+    Object.assign(result, errorLabels(text));
     return result;
   }
   if (mediaType !== 'text/event-stream') {

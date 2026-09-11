@@ -404,8 +404,13 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     envelope = liteSearchEnvelope();
     delete body.tools;
     delete body.instructions;
-    body.input = [{ type: 'additional_tools', id: envelope.toolsId, role: 'developer',
-      tools: [{ type: 'namespace', name: 'functions', description: '', tools }] }, ...input];
+    // An empty namespace is rejected: the backend answered a 400 naming tools. The item exists
+    // to carry client tools, so with none to carry it is not sent at all. A search side query
+    // declares only the search tool, which the backend supplies itself, so this is the usual case.
+    body.input = tools.length
+      ? [{ type: 'additional_tools', id: envelope.toolsId, role: 'developer',
+        tools: [{ type: 'namespace', name: 'functions', description: '', tools }] }, ...input]
+      : input;
     body.reasoning = { effort: selected.effort, context: 'all_turns' };
     body.text = { verbosity: 'medium' };
     body.prompt_cache_key = envelope.cacheKey;

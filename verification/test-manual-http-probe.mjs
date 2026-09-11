@@ -424,7 +424,8 @@ check('search envelope shape', () => {
   const body = buildLiteBody(liteSearchEnvelope());
   assert.equal('instructions' in body, false);
   assert.equal('tools' in body, false);
-  assert.equal(body.input[0].type, 'additional_tools');
+  // An empty namespace drew a 400 naming tools, so with no client tools the item is not sent.
+  assert.equal(body.input.some(item => item.type === 'additional_tools'), false);
   assert.equal(body.reasoning.context, 'all_turns');
   assert.equal(typeof body.prompt_cache_key, 'string');
   assert.equal(body.client_metadata.session_id, body.prompt_cache_key);
@@ -449,6 +450,18 @@ check('search envelope accepted but no search fails', () => {
 });
 check('a search item is still unexpected in connectivity mode', () =>
   assert.equal(summary({ ...complete, response: { ...complete.response, output: [searchItem] } }).unexpectedTool, true));
+check('error vocabulary reported, message text is not', () => {
+  const result = summarizeResponse(400, 'application/json', Buffer.from(JSON.stringify({ error: {
+    type: 'invalid_request_error', code: 'empty_array', param: 'input[0].tools',
+    message: 'SYNTHETIC_PRIVATE_CANARY' } })), null, true);
+  assert.deepEqual(result.errorLabels, { type: 'invalid_request_error', code: 'empty_array', param: 'input[0].tools' });
+  assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+});
+check('an unbounded error label is dropped', () => {
+  const result = summarizeResponse(400, 'application/json', Buffer.from(JSON.stringify({ error: {
+    type: 'a b c', code: 'x'.repeat(200), param: { nested: 1 } } })), null, true);
+  assert.equal(result.errorLabels, undefined);
+});
 check('rejected field named without echoing upstream text', () => {
   const result = summarizeResponse(400, 'application/json',
     Buffer.from('{"error":{"message":"Unknown parameter: client_metadata. SYNTHETIC_PRIVATE_CANARY"}}'), null, true);

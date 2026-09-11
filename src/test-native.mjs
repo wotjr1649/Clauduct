@@ -355,15 +355,25 @@ await test('web_search_is_translated_to_the_backend_tool', () => {
   assert.equal(prepared.body.client_metadata['x-codex-turn-metadata'],
     prepared.upstreamHeaders['x-codex-turn-metadata']);
   assert.equal(prepared.body.client_metadata.session_id, prepared.upstreamHeaders['session-id']);
-  const envelope = prepared.body.input[0];
+  // A search side query declares only the search tool, which the backend supplies itself, so
+  // there is nothing left to carry. An empty namespace drew a 400 naming tools upstream, so the
+  // item is omitted entirely rather than sent empty.
+  assert.deepEqual(prepared.body.input.map(item => item.role ?? item.type), ['user']);
+  // With a client tool to carry, the item is present and holds exactly that tool.
+  const withTool = base();
+  withTool.tools.push({ name: 'Bash', description: 'run', input_schema: { type: 'object', properties: {} } });
+  const carried = prepareNative(withTool);
+  assert.equal(carried.webSearch, true);
+  const envelope = carried.body.input[0];
   assert.equal(envelope.type, 'additional_tools');
   assert.equal(envelope.role, 'developer');
   assert.match(envelope.id, /^at_[0-9a-f-]{36}$/);
   assert.equal(envelope.tools.length, 1);
   assert.equal(envelope.tools[0].type, 'namespace');
   assert.equal(envelope.tools[0].name, 'functions');
-  assert.deepEqual(envelope.tools[0].tools.map(tool => tool.name), []);
-  assert.deepEqual(prepared.body.input.slice(1).map(item => item.role ?? item.type), ['user']);
+  assert.deepEqual(envelope.tools[0].tools.map(tool => tool.name), ['Bash']);
+  assert.equal('tools' in carried.body, false);
+  assert.deepEqual(carried.body.input.slice(1).map(item => item.role ?? item.type), ['user']);
   assert.deepEqual(Object.keys(prepared.upstreamHeaders).sort(), ['session-id', 'thread-id',
     'x-client-request-id', 'x-codex-beta-features', 'x-codex-turn-metadata', 'x-codex-window-id',
     'x-openai-internal-codex-responses-lite'].sort());

@@ -289,6 +289,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       // Fixed booleans/counts only: whether the client asked for backend search and how many
       // searches the backend actually ran. Neither carries a query or a result.
       timing.webSearchRequested = prepared.webSearch === true;
+      // Counted where the request is shaped, not where it succeeds: a search request that
+      // fails upstream is exactly the one the lifetime totals have to show.
+      if (timing.webSearchRequested) lifetime.webSearchRequests++;
       // Registration is routing metadata, not authorization. Never bypass native tool/permission hooks.
       if (agent !== undefined && !agents.has(agent)) {
         unregisteredAgentRequests++;
@@ -394,7 +397,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       timing.webSearchCalls = response.webSearchCalls?.() ?? 0;
       timing.success = true;
       if (timing.webSearchRequested) {
-        lifetime.webSearchRequests++; lifetime.webSearchCalls += timing.webSearchCalls;
+        lifetime.webSearchCalls += timing.webSearchCalls;
         // A completed request that asked the backend to search and got no search back is a
         // silent no-op: nothing failed, yet the feature did nothing. Say so once.
         if (timing.webSearchCalls === 0 && !notifiedWebSearchUnused) {

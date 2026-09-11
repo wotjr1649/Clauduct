@@ -345,7 +345,16 @@ await test('web_search_is_translated_to_the_backend_tool', () => {
   // The reference client's lite envelope: no top-level tools, client tools carried inside an
   // additional_tools item, and the codex turn headers. Built-in search is supplied server side.
   assert.equal('tools' in prepared.body, false);
+  // The captured envelope carries no instructions and repeats the turn identity in the body.
+  assert.equal('instructions' in prepared.body, false);
   assert.equal(prepared.body.text.verbosity, 'medium');
+  assert.deepEqual(prepared.body.reasoning, { effort: prepared.selected.effort, context: 'all_turns' });
+  assert.equal(prepared.body.prompt_cache_key, prepared.upstreamHeaders['session-id']);
+  assert.deepEqual(Object.keys(prepared.body.client_metadata).sort(), ['root_turn_id', 'session_id',
+    'thread_id', 'turn_id', 'x-codex-installation-id', 'x-codex-turn-metadata', 'x-codex-window-id']);
+  assert.equal(prepared.body.client_metadata['x-codex-turn-metadata'],
+    prepared.upstreamHeaders['x-codex-turn-metadata']);
+  assert.equal(prepared.body.client_metadata.session_id, prepared.upstreamHeaders['session-id']);
   const envelope = prepared.body.input[0];
   assert.equal(envelope.type, 'additional_tools');
   assert.equal(envelope.role, 'developer');

@@ -406,6 +406,25 @@ try {
     } finally { await gateway.close(); }
   }
   {
+    // A search request the backend rejects is the one the totals most need to show, so the
+    // request is counted where it is shaped rather than where it succeeds.
+    const searchDoc = { ...doc, tools: [...doc.tools, { type: 'web_search_20250305', name: 'web_search' }] };
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async () => { throw new NativeError('UPSTREAM_HTTP_ERROR'); },
+      close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      assert.equal((await call(gateway, { body: searchDoc })).status, 502);
+      const state = gateway.diagnostics();
+      assert.equal(state.lifetime.webSearchRequests, 1);
+      assert.equal(state.lifetime.webSearchCalls, 0);
+      const row = requestStatusSnapshot(state).recentRequests.at(-1);
+      assert.equal(row.webSearchRequested, true);
+      assert.equal(row.success, false);
+      assert.equal(row.failureCategory, 'UPSTREAM_HTTP_ERROR');
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
     // An idle registration past the window is released before the cap is ever reached.
     const gateway = await startNativeGateway({ admissionOptions: ample, agentIdleMs: 1, transport: {
       send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });

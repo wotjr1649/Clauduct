@@ -211,21 +211,27 @@ function decodeReasoning(value) {
   return result;
 }
 // The backend only runs its built-in web search in the reference client's lite envelope:
-// no top-level tools, client tools carried as an additional_tools input item, and a codex
-// shaped turn envelope in the headers. Captured from the installed client against a local
-// sink. Identifiers here are generated for this process; none are copied from the user's
-// codex installation, and nothing local (path, repository, workspace) is included.
+// no top-level tools and no instructions, client tools carried as an additional_tools input
+// item, and a codex shaped turn envelope repeated in the headers and in client_metadata.
+// Captured field for field from the installed client against a local sink. Identifiers here
+// are generated for this process; none are copied from the user's codex installation, and
+// nothing local (path, repository, workspace) is described.
 const LITE_HEADERS = Object.freeze(['x-openai-internal-codex-responses-lite', 'x-codex-beta-features',
   'session-id', 'thread-id', 'x-client-request-id', 'x-codex-window-id', 'x-codex-turn-metadata']);
-export function liteSearchHeaders(now = Date.now(), id = randomUUID) {
-  const session = id(), turn = id();
-  return { 'x-openai-internal-codex-responses-lite': 'true', 'x-codex-beta-features': 'remote_compaction_v2',
-    'session-id': session, 'thread-id': session, 'x-client-request-id': session,
-    'x-codex-window-id': `${session}:0`,
-    'x-codex-turn-metadata': JSON.stringify({ installation_id: id(), session_id: session, thread_id: session,
-      turn_id: turn, root_turn_id: turn, window_id: `${session}:0`, window_number: 0, request_kind: 'turn',
-      thread_source: 'user', sandbox: 'none', sandbox_mode: 'read-only', auto_review_enabled: false,
-      node_repl_disabled: true, turn_started_at_unix_ms: now }) };
+export function liteSearchEnvelope(now = Date.now(), id = randomUUID) {
+  const session = id(), turn = id(), install = id(), window = `${session}:0`;
+  const metadata = JSON.stringify({ installation_id: install, session_id: session, thread_id: session,
+    turn_id: turn, root_turn_id: turn, window_id: window, window_number: 0, request_kind: 'turn',
+    thread_source: 'user', sandbox: 'none', sandbox_mode: 'read-only', auto_review_enabled: false,
+    node_repl_disabled: true, turn_started_at_unix_ms: now });
+  return {
+    headers: { 'x-openai-internal-codex-responses-lite': 'true', 'x-codex-beta-features': 'remote_compaction_v2',
+      'session-id': session, 'thread-id': session, 'x-client-request-id': session,
+      'x-codex-window-id': window, 'x-codex-turn-metadata': metadata },
+    cacheKey: session,
+    metadata: { 'x-codex-installation-id': install, session_id: session, thread_id: session,
+      turn_id: turn, root_turn_id: turn, 'x-codex-window-id': window, 'x-codex-turn-metadata': metadata }
+  };
 }
 export const LITE_HEADER_NAMES = LITE_HEADERS;
 
@@ -388,17 +394,25 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
     parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
     include: ['reasoning.encrypted_content'], stream: true, store: false };
+  let envelope;
   if (lite) {
     // Built-in search only appears when the request carries no top-level tools. The client
     // tools move into the envelope item instead, so nothing this request declared is dropped.
+    // The lite envelope also carries no instructions: the backend supplies its own, and the
+    // conversation's own developer message still carries everything this request asked for.
+    envelope = liteSearchEnvelope();
     delete body.tools;
+    delete body.instructions;
     body.input = [{ type: 'additional_tools', id: `at_${randomUUID()}`, role: 'developer',
       tools: [{ type: 'namespace', name: 'functions', description: '', tools }] }, ...input];
+    body.reasoning = { effort: selected.effort, context: 'all_turns' };
     body.text = { verbosity: 'medium' };
+    body.prompt_cache_key = envelope.cacheKey;
+    body.client_metadata = envelope.metadata;
   }
   return { selected, names, purpose, compactShape, requestedEffort, webSearch: lite,
     outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY,
-    ...(lite && { upstreamHeaders: liteSearchHeaders() }), body };
+    ...(lite && { upstreamHeaders: envelope.headers }), body };
 }
 
 export function nativeUsage(value) {

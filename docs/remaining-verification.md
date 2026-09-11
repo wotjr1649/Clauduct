@@ -70,7 +70,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | Claude 별칭·전체 모델 ID 매핑 | 완료 | [감사](audit-2026-09-11-unmapped-agent-model.md), `test-agent-selection`의 8개 route 확인과 블록 단위 생략 검사 | 사용자가 구형 모델을 쓰지 않기로 해 구형 명명 위험은 닫혔다. 새 계열이 나오면 그 자식만 fail-closed 되고 턴은 보존된다 | 없음 |
 | 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·기록 검사. 이름만으로는 거부하지 않고 형식 오류만 거부한다. 판정 27개는 `judgedBetaLabels`로 기록 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
 | Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
-| 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
+| 자동 압축 실제 발동(400K / 320K) | 미검증 | 축소 창(100000)에서의 발동은 메인 3건·자식 1건이 실측됐다(아래 관측 기록). 현재 기본값에서의 발동 증거는 없다 | 현재 기본값(400K/320K)에서의 발동과 압축 후 기억·도구 이력 보존이 미확인. 자식별 압축은 1건 실측으로 더 이상 전면 미확인이 아니다 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
 | 웹 검색 경로 | 완료 | [브리지 감사](audit-2026-09-11-web-search-bridge.md). 실사용 세션 a6e7f1ad 요청 13: `webSearchAnswered=true`, `webSearchCalls=1`, `webSearchLinks=15`, `firstContentBlock=server_tool_use`, 모델이 출처를 인용 | 게이트웨이가 side query를 직접 답한다. `alpha/`는 알파 경로라 사라지거나 모양이 바뀔 수 있다. 그때는 `SEARCH_UNAVAILABLE`·`SEARCH_HTTP_ERROR`·`SEARCH_RESPONSE_SHAPE`로 이름이 붙어 실패하며 조용한 빈 결과가 되지 않는다 | 탐지가 빗나가면 세션당 1회 stderr 통지가 뜬다. 그때 실제 요청 모양을 확보한다 |
 | WebFetch | 완료 | 세션 4851a91a에서 `https://example.com` 정상 성공. 요청 3개(결정·apply·후속) 중 `effort: high`인 apply 호출이 텍스트를 반환 | 이전 한 번의 `No response from model`은 대상 URL 미기록으로 재현 불가. 게이트웨이는 거부한 적이 없다 | 재발 시 `effort: high` 요청의 타이밍으로 귀속한다 |
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
@@ -148,6 +148,8 @@ native 세션을 정상 종료하면 launcher가 `Clauduct 종료: <분류>`와 
 D:\AIDEV\Clauduct\clauduct.cmd --model luna --effort max --verify-auto-compact
 ```
 
+이 절차의 대상 메커니즘은 이미 실측됐다 — 위 관측 기록의 축소 창 자동 압축 4건이다. 새 실행이 더하는 것은 **현재 400K 설정에서의 재확인뿐**이며 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`를 세우는 코드 경로(`src/clauduct.mjs`)는 그때와 같다. 돌릴지는 그 값어치로 판단한다.
+
 `/context`에서 400K 모델 창을, 진단에서 `autoCompactWindow=100000`을 확인한다. 목표는 기본 출력 예약량에서 약 67.4K 발동이다. `/autocompact` 값 지정으로 전역 설정을 바꾸지 않는다. 자동 압축이 비활성화돼 있으면 덮어쓰지 않고 그 조건을 보고한다. transcript의 `compact_boundary`에서 `trigger=auto`, 압축 후 토큰 감소, 후속 요청 성공으로 판정한다. 메인의 성공을 모든 자식의 압축 성공이나 backend 용량 수락으로 확대하지 않는다.
 
 ### 5.4 무인 3주기 — 선행 조건과 실행 조건
@@ -180,5 +182,6 @@ SDD 범위는 사용자 결정으로 **자식 3종 필수**다. 회차마다 구
 - 진단 확장 경과: [완료 이후 SSE](audit-2026-09-09-completion-diagnostics.md), [요청 상관](audit-2026-09-09-request-correlation.md), [lifetime](audit-2026-09-09-lifetime-diagnostics.md), [upstream 오류 상세](audit-2026-09-10-upstream-error-details.md), [실패 보존](audit-2026-09-10-upstream-failure-preservation.md), [요청 형식](audit-2026-09-11-request-shape.md), [fallback과 실패 이력](audit-2026-09-11-native-fallback-failure-history.md), [테스트 실행기](audit-2026-09-10-request-diagnostics-test-runner.md).
 - 모델·역할·Workflow 실제 성공: [Plan 역할](audit-2026-09-09-plan-lifetime-success.md), [완료 성공](audit-2026-09-09-completion-success.md), [직접 부모](audit-2026-09-10-direct-parent-success.md), [병렬 Workflow](audit-2026-09-10-workflow-parallel-success.md), [/btw 경로](audit-2026-09-10-native-btw-path.md), [away 요약](audit-2026-09-10-away-summary.md), [세션20 취소 snapshot](audit-2026-09-10-session20-cancel-snapshot.md).
 - 압축 실측(과거 500K / 83.33% 설정): f236f867 request 11에서 admission 0.15ms, 첫 이벤트 2212.41ms, 첫 텍스트 10776.14ms, 완료 64177.91ms, 재시도 없음. 922e6ba0에서 수동 압축 경계 뒤 새 Read 성공. b6d81841에서 검증 모드 `autoCompactWindow=100000` 자동 압축 68608ms(98097→39330)와 후속 요청 성공.
+- 축소 창 자동 압축 전수(2026-09-11 transcript 재조사, 2026-09-08 기록): 같은 검증 모드에서 `trigger=auto` 경계가 **메인 3건·자식 1건** 있다. 6b4e6224(`gpt-5.6-luna`) 101740→56090과 69249→38457, b6d81841 98097→39330, 그리고 6b4e6224의 sidechain 자식 `a22a7821c3ca7295c` 86170→44712. 네 경계 모두 뒤에 assistant 턴이 이어졌고 `is_error` tool_result는 0건이다. 69249는 목표 발동점 약 67.4K에 가장 근접한 관측이며, 나머지가 더 높은 것은 한 턴이 임계를 크게 넘겨 채운 경우다. 창 값은 당시 설정인 `window=500000`이고 `autoCompactWindow=100000`은 `request-status.mjs`의 `clientContextPolicy` tool_result로 확인했다 — 문서 텍스트가 아니라 실행 진단이다. 이 관측은 축소 창의 발동이며 현재 기본값 400K/320K 발동을 증명하지 않는다.
 - 리뷰·병렬 실행: [native high-02](audit-2026-09-09-native-high-02.md), [native high-03](audit-2026-09-09-native-high-03.md). low와 high 최종 반환은 확인했고 모든 review 수준은 확인하지 않았다.
 - 세션별 실행 프롬프트는 `docs/prompts/`에 uncommitted 이력으로 남아 있다. session-13~23은 절차 기록이며 그 전제(미커밋 상태 등)를 현재 상태에 적용하지 않는다.

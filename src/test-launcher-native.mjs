@@ -236,6 +236,36 @@ function documentFirstTest() {
     ['--', '--append-system-prompt', 'SYNTHETIC']);
 }
 
+function optionBoundaryTest() {
+  // Every line here is a way out of the gateway or out of the wrapper's own settings.
+  // docs/claude-option-classification.md carries the help-text evidence for each.
+  const refused = ['--cloud', '--environment', '--teleport', '--remote-control',
+    '--remote-control-session-name-prefix', '--from-pr', '--file', '--plugin-url',
+    '--bare', '--safe-mode', '--autocompact', '--fallback-model',
+    '--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--permission-mode',
+    '--mcp-config', '--plugin-dir', '--worktree', '-w', '--restricted', '--betas',
+    '--prompt-suggestions', '--chrome', '--no-chrome', '--json-schema', '--brief',
+    '--settings', '--setting-sources', '--agents', '--system-prompt'];
+  for (const flag of refused) {
+    assert.throws(() => launchOptions([flag]), /INVALID_ARGUMENTS/, flag + ' must not reach the child');
+    assert.throws(() => launchOptions([flag + '=SYNTHETIC']), /INVALID_ARGUMENTS/);
+    assert.throws(() => launchOptions(['--effort', 'low', flag]), /INVALID_ARGUMENTS/);
+  }
+  // Local options still travel, values and all.
+  assert.deepEqual(launchOptions(['--add-dir', 'D:/SYNTHETIC', '--name', 'SYNTHETIC_NAME',
+    '--session-id', 'SYNTHETIC_ID', '--system-prompt-snapshot', 'off', '--continue']).forward,
+  ['--add-dir', 'D:/SYNTHETIC', '--name', 'SYNTHETIC_NAME', '--session-id', 'SYNTHETIC_ID',
+    '--system-prompt-snapshot', 'off', '--continue']);
+  // An untracked value option used to let its value be read as a wrapper option. --name takes
+  // one, so the wrapper keeps its own model rather than answering to the value.
+  const shadowed = launchOptions(['--name', '--model']);
+  assert.deepEqual(shadowed.forward, ['--name', '--model']);
+  assert.equal(shadowed.selected.model, MODELS.astra.model);
+  // Optional-value options must not swallow the flag that follows them.
+  assert.deepEqual(launchOptions(['-d', '--verbose']).forward, ['-d', '--verbose']);
+  assert.deepEqual(launchOptions(['-d', 'api', '--verbose']).forward, ['-d', 'api', '--verbose']);
+}
+
 function statusRecordTest() {
   const directory = mkdtempSync(join(tmpdir(), 'clauduct-status-'));
   try {
@@ -255,6 +285,7 @@ function statusRecordTest() {
   } finally { rmSync(directory, { recursive: true, force: true }); }
 }
 
+optionBoundaryTest();
 statusRecordTest();
 documentFirstTest();
 optionTests();

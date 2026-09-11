@@ -71,7 +71,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·기록 검사. 이름만으로는 거부하지 않고 형식 오류만 거부한다. 판정 27개는 `judgedBetaLabels`로 기록 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
 | Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
 | 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
-| 웹 검색 경로 | 차단(상류) | [브리지 감사](audit-2026-09-11-web-search-bridge.md), [실사용](audit-2026-09-11-live-session-verification.md)에서 `webSearchRequests:1 / webSearchCalls:0` | 게이트웨이는 정상 번역한다. **상류 Codex가 검색을 수행하지 않는다.** 원인은 오프라인으로 좁힐 수 없다 | 근거 없이 도구 타입을 바꿔 재시도하지 않는다 |
+| 웹 검색 경로 | 완료 | [브리지 감사](audit-2026-09-11-web-search-bridge.md). 실사용 세션 a6e7f1ad 요청 13: `webSearchAnswered=true`, `webSearchCalls=1`, `webSearchLinks=15`, `firstContentBlock=server_tool_use`, 모델이 출처를 인용 | 게이트웨이가 side query를 직접 답한다. `alpha/`는 알파 경로라 사라지거나 모양이 바뀔 수 있다. 그때는 `SEARCH_UNAVAILABLE`·`SEARCH_HTTP_ERROR`·`SEARCH_RESPONSE_SHAPE`로 이름이 붙어 실패하며 조용한 빈 결과가 되지 않는다 | 탐지가 빗나가면 세션당 1회 stderr 통지가 뜬다. 그때 실제 요청 모양을 확보한다 |
 | WebFetch | 완료 | 세션 4851a91a에서 `https://example.com` 정상 성공. 요청 3개(결정·apply·후속) 중 `effort: high`인 apply 호출이 텍스트를 반환 | 이전 한 번의 `No response from model`은 대상 URL 미기록으로 재현 불가. 게이트웨이는 거부한 적이 없다 | 재발 시 `effort: high` 요청의 타이밍으로 귀속한다 |
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
 | 장기 자원 안정성 | 조건부 | `test-native` 47개(1000요청 / 20동시 포함), `test-request-admission`, `test-native-gateway`의 등록표 만료·상한 검사 | 등록표는 30분 유휴 만료 뒤 1024 상한으로 묶인다. 3주기 종료 후 socket·timer·listener 실측은 여전히 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`·`admission`·`agentRegistrationsEvicted`를 함께 본다 |
@@ -80,7 +80,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
 | 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
 | 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
-| SDD 무인 3주기 | 미검증 | run-02(38e9c28)의 보존 결과 통합만 완료 | 하나의 실행에서 무개입 3주기를 마친 증거가 없다 | 5.4의 선행 조건이 닫히기 전에는 시험하지 않는다 |
+| SDD 무인 3주기 | 미검증 | run-02(38e9c28)의 보존 결과 통합만 완료. run-01·run-02는 기능은 완성했으나 guard 거부 뒤 계속해 절차 불합격 | 하나의 실행에서 무개입 3주기를 마친 증거가 없다. 자식 3종의 실제 실행 증거도 없다 | 선행 조건 3개가 2026-09-11에 닫혔다. `docs/prompts/2026-09-11-session-25-sdd-three-cycle-run-03.md`를 새 세션에 1회 전달해 실행한다 |
 | Claude 모델 전체 지원·app-server 전환·버전 pin | 범위밖 | 사용자 지정. 별칭·전체 ID 매핑은 2026-09-11에 사용자가 별도 승인했다 | — | — |
 | 실제 인증 갱신·수시간 연속 실행 | 범위밖 | 사용자 지정 | — | — |
 | 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |
@@ -103,7 +103,9 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 
 2026-09-11, Node.js v24.19.0, 프로젝트 `Invoke-ClauductNodeTests`, 60초 제한, test concurrency 1.
 
-기준 11개 파일이 함께 통과했다: `test-native-gateway`(54), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(47), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(61 / loopback 36), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
+2026-09-11 후반, 웹 검색 경로 구현 이후 기준선은 다음과 같다: `test-native-gateway`(61), `test-native`(47), `test-native-search`(8, 신규), `test-native-transport`(루프백 검색 왕복 포함), `test-client-version`(loopback 12), `verification/test-manual-http-probe`(88). 이 실행에서 `test-chat`과 `test-review-diff`는 이 셸에서 자식 프로세스를 띄우지 못해 실패했고, `verification/test-http-transport`와 `test-dotnet-http-transport`는 러너의 `--test-concurrency=1`이 프로브의 런타임 검사에 걸려 실패했다. 네 건 모두 HEAD 워크트리에서 같은 실패를 확인했으므로 환경 조건이며 변경 때문이 아니다. 뒤 두 건은 exec 인수 없이 직접 실행하면 통과한다.
+
+아래는 그 이전 기준선 기록이다. 기준 11개 파일이 함께 통과했다: `test-native-gateway`(54), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(47), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(61 / loopback 36), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
 
 선택·완료 표면도 함께 통과했다: `test-agent-selection`, `test-completion-selection`(46, symlink notRun), `test-workflow-selection`(36, native Workflow·symlink notRun), `test-request-admission`.
 
@@ -148,13 +150,21 @@ D:\AIDEV\Clauduct\clauduct.cmd --model luna --effort max --verify-auto-compact
 
 `/context`에서 400K 모델 창을, 진단에서 `autoCompactWindow=100000`을 확인한다. 목표는 기본 출력 예약량에서 약 67.4K 발동이다. `/autocompact` 값 지정으로 전역 설정을 바꾸지 않는다. 자동 압축이 비활성화돼 있으면 덮어쓰지 않고 그 조건을 보고한다. transcript의 `compact_boundary`에서 `trigger=auto`, 압축 후 토큰 감소, 후속 요청 성공으로 판정한다. 메인의 성공을 모든 자식의 압축 성공이나 backend 용량 수락으로 확대하지 않는다.
 
-### 5.4 무인 3주기 선행 조건
+### 5.4 무인 3주기 — 선행 조건과 실행 조건
 
-다음이 모두 닫히기 전에는 무인 판정을 보류한다.
+선행 조건 3개는 2026-09-11에 사용자 결정으로 모두 닫혔다.
 
-1. 최초 `UNSUPPORTED_EVENT`의 원인이 확정되거나, 재발 시 고정 이름·안전 중단·데이터 보존·도구 중복 방지가 실제 실행으로 확인될 것.
-2. 실행 시간·비용·동시성·중단 조건과 실행 주체를 시험 전에 별도로 확인할 것.
-3. 기능 3개가 의존성·외부 서비스 없이 의미 있는 로컬 작업일 것.
+| 조건 | 처리 |
+|---|---|
+| 1. 최초 `UNSUPPORTED_EVENT`의 원인 확정 **또는** 재발 시 4속성 확인 | **닫음.** 세션 46b6af24에서 다른 실패(`UNSUPPORTED_BETA`)로 고정 이름·안전 중단·데이터 보존·도구 미중복이 실제 관측됐고, 재발 시 이름을 잡는 `unsupportedEventNames`가 들어가 있다. 원인 자체는 여전히 미확정이며 이 판정이 그것을 확정하지 않는다 |
+| 2. 시간·비용·동시성·중단 조건과 실행 주체 | **닫음.** 시간 상한 없음. guard·권한·사용량·인증 거부 중 하나라도 나오면 즉시 SAFE-STOP. 사용자가 새 세션을 시작하고 프롬프트가 1회 전달되며 그 뒤 회신하지 않는다 |
+| 3. 기능 3개가 의존성·외부 서비스 없이 의미 있는 로컬 작업 | **닫음.** JSONL 로그 집계 CLI 3플랜, `verification/dev-sandbox/run-03` |
+
+실행 프롬프트는 `docs/prompts/2026-09-11-session-25-sdd-three-cycle-run-03.md`다. 사용자가 세션을 시작하고 그 프롬프트를 **한 번만** 전달한다. 이후 그 세션이 질문을 보내도 답하지 않는다. 답하면 그 실행은 회복 시험이며 무인 완주가 아니다.
+
+run-01과 run-02가 깨진 지점은 같다. 테스트 러너가 guard에 거부된 뒤 중단하지 않고 계속했다. 새 프롬프트는 `src/run-node-tests.ps1`을 처음부터 지정해 그 거부가 발생할 상황 자체를 없앤다. 이것은 guard 우회가 아니라 위반하지 않는 방법이다.
+
+SDD 범위는 사용자 결정으로 **자식 3종 필수**다. 회차마다 구현 자식 1명, 독립 명세 검토 자식 1명, 독립 품질 검토 자식 1명이 실제로 실행되어야 한다. 자식 없이 메인이 전부 수행하면 3주기를 마쳐도 THREE-CYCLE-PASS가 아니다. session-14 프롬프트의 "서브에이전트는 필수가 아니다"는 그 세션의 조건이며 현재 기준이 아니다.
 
 각 주기에 계획, 새 구현(TDD면 RED→GREEN 증거), 실제 독립 리뷰 완료, 전체 회귀, 로컬 커밋을 남긴다. 외부 장애·권한 거부·사용자 개입 뒤 이어서 완료한 것은 회복 시험이며 무개입 PASS가 아니다. 계획된 RED assertion 실패는 예상된 개발 증거이며 API·환경 오류와 분리해 기록한다. 3주기 통과는 무제한·수시간 운영 안정성의 보증이 아니다.
 

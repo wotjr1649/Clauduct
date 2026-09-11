@@ -355,6 +355,27 @@ try {
     } finally { release(); await busy?.catch(() => {}); await gateway.close(); }
   }
   {
+    // An idle registration past the window is released before the cap is ever reached.
+    const gateway = await startNativeGateway({ admissionOptions: ample, agentIdleMs: 1, transport: {
+      send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });
+    const register = id => call(gateway, { path: '/clauduct/agents',
+      body: { id, role: 'general-purpose', stop: false, sessionId: 'session' } });
+    try {
+      assert.equal((await register('stale')).status, 200);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      assert.equal((await register('fresh')).status, 200);
+      const state = gateway.diagnostics();
+      assert.equal(state.registeredAgents, 1);
+      assert.equal(state.lifetime.agentRegistrationsExpired, 1);
+      assert.equal(state.lifetime.agentRegistrationsEvicted, 0);
+      assert.equal(requestStatusSnapshot(state).lifetime.agentRegistrationsExpired, 1);
+      // Re-registering the same id is never treated as stale by its own sweep.
+      assert.equal((await register('fresh')).status, 200);
+      assert.equal(gateway.diagnostics().registeredAgents, 1);
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
     const upstream = createServer((_req, res) => res.end(JSON.stringify({ recentRequests: [{
       failureCategory: 'SYNTHETIC_PRIVATE', requestFailure: 'SYNTHETIC_PRIVATE', upstreamFailureEvent: { toString: null, valueOf: null },
       upstreamErrorCode: 'server_error', upstreamErrorType: 'server_error', upstreamIncompleteReason: 'max_output_tokens', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE',
@@ -706,7 +727,7 @@ try {
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
         unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
-        failuresByStage: { ...emptyStages, upstream: 1 } });
+        agentRegistrationsExpired: 0, failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
   }
@@ -729,7 +750,7 @@ try {
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
         failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
         firstRejectedCategory: null, unmappedAgentModels: 0, transportRejections: 0,
-        agentRegistrationsEvicted: 0, failuresByStage: emptyStages });
+        agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);
       snapshot.lifetime.failuresByStage.upstream = -1;

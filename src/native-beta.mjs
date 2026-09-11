@@ -5,11 +5,13 @@ import { READ_BRIDGED_BETAS } from '../poc/gateway.mjs';
 export const NATIVE_BETAS = Object.freeze([...READ_BRIDGED_BETAS,
   'advanced-tool-use-2025-11-20', 'tool-search-tool-2025-10-19',
   'per-turn-control-2026-07-01', 'mid-conversation-output-config-2026-07-01',
+  // The backend runs this search itself; the gateway translates the tool, not the results.
+  'web-search-2025-03-05',
   'mid-conversation-tool-changes-2026-07-01',
   // Native Claude may retain this account-state hint with a custom gateway URL.
   // Local Bearer authentication is still required; neither the beta nor Claude OAuth goes upstream.
   'oauth-2025-04-20']);
-const unsupported = Object.freeze({
+export const UNSUPPORTED_BETAS = Object.freeze({
   'extended-cache-ttl-2025-04-11': 'EXTENDED_CACHE_TTL',
   'cache-diagnosis-2026-04-07': 'CACHE_DIAGNOSIS',
   'thinking-binding-controls-2026-08-01': 'THINKING_BINDING',
@@ -30,7 +32,6 @@ const unsupported = Object.freeze({
   'dreaming-2026-04-21': 'DREAMING',
   'managed-agents-2026-04-01': 'MANAGED_AGENTS',
   'user-profiles-2026-03-24': 'USER_PROFILES',
-  'web-search-2025-03-05': 'WEB_SEARCH',
   'token-counting-2024-11-01': 'TOKEN_COUNTING',
   'context-hint-2026-04-09': 'CONTEXT_HINT',
   'mid-conversation-system-clear-at-2026-08-21': 'SYSTEM_CLEAR_AT',
@@ -49,11 +50,18 @@ function parseBetas(value) {
 // A beta this project has judged incompatible stays rejected. One it has never seen passes:
 // the header is not forwarded upstream, and every request and response field it could affect
 // is validated on its own, so an actual contract change fails later with a specific label.
+// Observed in the installed binary and known to require Anthropic servers, so they cannot work
+// here. They are not refused: refusing a header fails the whole request, while the feature is
+// already inert against this backend. Listed so the feature scan does not report them as new.
+export const SERVER_DEPENDENT_BETAS = Object.freeze(['ccr-byoc-2025-07-29', 'ccr-triggers-2026-01-30',
+  'environments-2025-11-01', 'mcp-tunnels-2026-06-22', 'message-batches-2024-09-24',
+  'message-threads-2026-08-12', 'oidc-federation-2026-04-01']);
+
 export function betaFailure(value) {
   const missing = parseBetas(value);
   if (missing === null || !missing.length) return null;
   if (typeof missing === 'string') return missing;
-  const known = missing.filter(item => Object.hasOwn(unsupported, item)).map(item => unsupported[item]);
+  const known = missing.filter(item => Object.hasOwn(UNSUPPORTED_BETAS, item)).map(item => UNSUPPORTED_BETAS[item]);
   if (!known.length) return null;
   return `UNSUPPORTED_BETA known=${known.join('|')} unknown=${missing.length - known.length}`;
 }
@@ -64,5 +72,5 @@ const betaNameShape = /^[a-z][a-z0-9-]{0,63}$/;
 export function unknownBetas(value) {
   const missing = parseBetas(value);
   if (missing === null || typeof missing === 'string') return [];
-  return missing.filter(item => !Object.hasOwn(unsupported, item) && betaNameShape.test(item)).slice(0, 8);
+  return missing.filter(item => !Object.hasOwn(UNSUPPORTED_BETAS, item) && betaNameShape.test(item)).slice(0, 8);
 }

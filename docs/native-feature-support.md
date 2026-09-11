@@ -7,7 +7,7 @@
 Clauduct는 **추론 backend만 교체**한다. Claude Code → loopback gateway → 직접 HTTPS Codex responses 엔드포인트다. 따라서 판정은 딱 두 갈래로 갈린다.
 
 - **클라이언트 로컬 기능**: Claude Code 프로세스 안에서 끝나는 것. Clauduct는 건드리지 않으므로 native와 동일하게 동작한다.
-- **서버 의존 기능**: Anthropic 서버가 무언가를 해 줘야 하는 것. upstream이 Codex이므로 동작할 수 없고, 대부분 `anthropic-beta` 헤더로 요청되며 gateway가 거부한다.
+- **서버 의존 기능**: Anthropic 서버가 무언가를 해 줘야 하는 것. upstream이 Codex이므로 동작할 수 없고, 대부분 `anthropic-beta` 헤더로 요청되며 gateway가 거부한다. 예외는 상류에 동등한 기능이 있어 번역할 수 있는 경우이며, 현재 웹 검색이 그렇다.
 
 ## 2. 설정 소스 — 전역 settings인가, codex config.toml인가
 
@@ -61,13 +61,13 @@ Clauduct에서 이 헤더는 **upstream으로 전달되지 않는다.** upstream
 
 | 구분 | 개수 | 처리 |
 |---|---|---|
-| 허용 목록(`NATIVE_BETAS`) | **14** | 통과. `mid-conversation-tool-changes-2026-07-01`만 실제 동작(턴 중 도구 추가·제거)을 켠다 |
-| 비호환 판정 목록 | **28** | 400 `UNSUPPORTED_BETA`로 거부. upstream 시도 없음 |
+| 허용 목록(`NATIVE_BETAS`) | **15** | 통과. `mid-conversation-tool-changes-2026-07-01`만 실제 동작(턴 중 도구 추가·제거)을 켠다 |
+| 비호환 판정 목록 | **27** | 400 `UNSUPPORTED_BETA`로 거부. upstream 시도 없음 |
 | 그 외(처음 보는 이름) | 가변 | 통과시키고 이름을 종료 JSON `unknownBetaNames`에 최대 8개 기록 |
 
-허용 14개: `claude-code-20250219`, `interleaved-thinking-2025-05-14`, `context-management-2025-06-27`, `effort-2025-11-24`, `redact-thinking-2026-02-12`, `prompt-caching-scope-2026-01-05`, `mid-conversation-system-2026-04-07`, `thinking-token-count-2026-05-13`, `advanced-tool-use-2025-11-20`, `tool-search-tool-2025-10-19`, `per-turn-control-2026-07-01`, `mid-conversation-output-config-2026-07-01`, `mid-conversation-tool-changes-2026-07-01`, `oauth-2025-04-20`.
+허용 15개: `claude-code-20250219`, `interleaved-thinking-2025-05-14`, `context-management-2025-06-27`, `effort-2025-11-24`, `redact-thinking-2026-02-12`, `prompt-caching-scope-2026-01-05`, `mid-conversation-system-2026-04-07`, `thinking-token-count-2026-05-13`, `advanced-tool-use-2025-11-20`, `tool-search-tool-2025-10-19`, `per-turn-control-2026-07-01`, `mid-conversation-output-config-2026-07-01`, `mid-conversation-tool-changes-2026-07-01`, `oauth-2025-04-20`, `web-search-2025-03-05`.
 
-거부 28개와 그 기능:
+거부 27개와 그 기능:
 
 | 라벨 | 기능 | 라벨 | 기능 |
 |---|---|---|---|
@@ -80,7 +80,7 @@ Clauduct에서 이 헤더는 **upstream으로 전달되지 않는다.** upstream
 | FAST_MODE | Fast mode | AFK_MODE | AFK 모드 |
 | TASK_BUDGETS | 서버 task 예산 | DREAMING | dreaming |
 | ADVISOR_TOOL | 서버 advisor 도구 | MANAGED_AGENTS | Managed Agents |
-| USER_PROFILES | 사용자 프로필 | WEB_SEARCH | 서버측 웹 검색 도구 |
+| USER_PROFILES | 사용자 프로필 | (이동) | `WEB_SEARCH`는 Codex 내장 검색으로 브리지해 허용으로 옮겼다 |
 | TOKEN_COUNTING | count_tokens API | CONTEXT_HINT | context hint |
 | SYSTEM_CLEAR_AT | 턴 중 system clear | SERVER_COMPACT | 서버측 압축 |
 | CONTEXT_1M | 1M 컨텍스트 창 | AUTO_CLASSIFIER | auto 모드 분류기 |
@@ -118,7 +118,7 @@ Clauduct에서 이 헤더는 **upstream으로 전달되지 않는다.** upstream
 
 | 축 | 사용 가능 | 사용 불가 | 비고 |
 |---|---|---|---|
-| beta 기능 | 14 허용 + 처음 보는 이름 통과 | **28** 명시 거부 | 전부 서버 의존 기능 |
+| beta 기능 | 15 허용 + 서버의존 7 + 처음 보는 이름 통과 | **27** 명시 거부 | 거부는 전부 서버 의존 기능 |
 | hook 이벤트 | **13 전부** | 0 | Clauduct는 3종을 추가할 뿐 |
 | 메모리 파일 | CLAUDE.md 계층 전부 | AGENTS.md 직접 로드 | native 자체 제약이며 import로 우회 |
 | 설정 소스 | 5개 계층 전부 | 없음 | `--settings`는 병합, `modelPicker`만 대체 |
@@ -128,3 +128,21 @@ Clauduct에서 이 헤더는 **upstream으로 전달되지 않는다.** upstream
 ## 9. 미검증으로 남는 것
 
 hook 13종 중 SubagentStart/SubagentStop/PostToolUse 외 10종의 실제 발화, 로컬 MCP 도구의 실제 왕복, 이미지 입력의 실제 왕복, 프롬프트 캐시의 실제 적중, plan mode·permission mode의 실제 동작, 설치된 skill·plugin 각각의 실제 실행. 모두 이 저장소에서 직접 확인하지 않았으며 정상 사용 중 관측되면 그때 기록한다.
+
+## 10. 추가 확정 사항 — 2026-09-11 2차 조사
+
+### 웹 검색과 웹 가져오기
+
+`WebFetch`는 클라이언트가 직접 가져와 모델 호출로 요약하므로 **이미 Codex로 간다**(실제 왕복 미검증). `WebSearch`는 Anthropic 서버 도구였으나 이제 **Codex 내장 검색으로 브리지**한다. [상세](audit-2026-09-11-web-search-bridge.md). 사용자는 답변 텍스트로 결과를 받지만 출처 카드·인용 링크는 아직 보이지 않는다.
+
+### 서버 의존이지만 거부하지 않는 7개
+
+`ccr-byoc-2025-07-29`(BYOC), `ccr-triggers-2026-01-30`(원격 트리거), `environments-2025-11-01`(클라우드 환경), `mcp-tunnels-2026-06-22`(MCP 터널), `message-batches-2024-09-24`(Batch API), `message-threads-2026-08-12`(메시지 스레드), `oidc-federation-2026-04-01`(OIDC 연합). 모두 Anthropic 서버가 필요해 이 백엔드에서는 이미 무력하다. 헤더를 거부하면 기능이 꺼지는 게 아니라 요청 전체가 실패하므로 **표시만 하고 통과시킨다.**
+
+### 신규 기능 감지
+
+`node src/scan-native-features.mjs`가 설치 바이너리를 읽기 전용으로 훑어 beta 형태 이름을 추출하고 허용·거부·서버의존 목록과 대조한다. 실행하지 않으며 인증 파일도 읽지 않는다. 현재 결과는 관측 50 / 허용 15 / 거부 27 / 서버의존 7 / 미분류 0이다. 미분류가 나오면 stderr로 알리지만 **회귀 테스트를 실패시키지는 않는다.** Claude를 업데이트한 뒤 한 번 돌려 보는 용도다.
+
+### Anthropic 측 보고 차단
+
+자식 세션에만 `DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`을 적용한다. 전역 설정은 바꾸지 않는다.

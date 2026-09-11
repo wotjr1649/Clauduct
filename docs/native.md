@@ -24,9 +24,15 @@ Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 I
 
 미지원 이벤트 이름을 캡처하면 세션마다 한 번 stderr로 알립니다. 통지에는 이름이 들어가지 않으며, 창을 강제로 닫지 말고 정상 종료해 종료 JSON을 수집하라는 안내입니다.
 
-서브에이전트 등록표는 최대 1024개로 제한합니다. SubagentStop이 오지 않아 등록이 쌓이면 가장 오래 쓰이지 않은 **유휴** 등록을 제거하며, 진행 중인 요청이 있는 등록은 절대 제거하지 않습니다. 모두 사용 중이면 새 등록을 `AGENT_BINDING_LIMIT`으로 거부합니다. 제거 횟수는 `lifetime.agentRegistrationsEvicted`, 현재 값은 `registeredAgents`/`maxAgents`입니다.
+서브에이전트 등록표는 새 등록이 들어올 때 **30분 이상 쓰이지 않은 유휴 항목을 먼저 정리**합니다. 타이머 없이 등록 시점에만 훑으며 진행 중인 요청이 있는 항목은 대상이 아닙니다. 정리 횟수는 `lifetime.agentRegistrationsExpired`입니다.
+
+그 뒤에도 남는 경우를 위해 등록표는 최대 1024개로 제한합니다. SubagentStop이 오지 않아 등록이 쌓이면 가장 오래 쓰이지 않은 **유휴** 등록을 제거하며, 진행 중인 요청이 있는 등록은 절대 제거하지 않습니다. 모두 사용 중이면 새 등록을 `AGENT_BINDING_LIMIT`으로 거부합니다. 제거 횟수는 `lifetime.agentRegistrationsEvicted`, 현재 값은 `registeredAgents`/`maxAgents`입니다.
 
 `lifetime.transportRejections`는 요청 처리기에 도달하기 전에 HTTP 서버가 직접 거부한 수입니다. 깨진 클라이언트 바이트, CONNECT, upgrade, `Expect` 처리가 여기 들어가며 `rejectedBeforeStart`나 요청 성패 카운터와 섞이지 않습니다.
+
+`WebSearch`는 Codex 내장 검색으로 넘어갑니다. `web_search_20*` 서버 도구 정의를 받아 상류에 `{ type: 'web_search' }`로 보내고, 도메인 필터와 `user_location`만 함께 전달합니다. 검색은 상류에서 실행되어 답변 텍스트에 반영되며, 질의와 출처 목록은 downstream으로 나가지 않습니다. 출처 카드와 인용 블록은 아직 만들지 않습니다. `WebFetch`는 클라이언트가 직접 가져오므로 원래부터 이 경로를 탑니다.
+
+자식 세션에만 `DISABLE_TELEMETRY=1`과 `DISABLE_ERROR_REPORTING=1`을 적용합니다. Anthropic 측 보고는 이 백엔드에서 대응이 없습니다. 전역 환경은 바꾸지 않습니다.
 
 `failureCategory`는 고정 라벨만 사용합니다. 접미사가 붙는 로컬 코드는 고정 접두사로만 기록해 `AGENT_SELECTION_UNVERIFIED_<이유>`는 `AGENT_SELECTION_UNVERIFIED`로, `UNSUPPORTED_BETA known=... unknown=N`은 `UNSUPPORTED_BETA`로 남깁니다. 상세 이유는 기존 `selectionFailure`/오류 메시지에서 확인합니다. 등록되지 않은 코드는 계속 `OTHER`입니다.
 

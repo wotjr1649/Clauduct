@@ -21,11 +21,12 @@ function diagnosticCategory(code) {
 const MAX_AGENTS = 1024;
 
 export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture,
-  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS } = {}) {
+  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS, agentIdleMs = 1800000 } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
     && Number.isInteger(heartbeatMs) && heartbeatMs >= 5 && heartbeatMs <= 60000
-    && Number.isInteger(maxAgents) && maxAgents > 0 && maxAgents <= MAX_AGENTS, 'INVALID_GATEWAY_OPTIONS');
+    && Number.isInteger(maxAgents) && maxAgents > 0 && maxAgents <= MAX_AGENTS
+    && Number.isInteger(agentIdleMs) && agentIdleMs > 0, 'INVALID_GATEWAY_OPTIONS');
   const admission = createAdmission(admissionOptions);
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('base64url')}`), jobs = new Set(), sockets = new Set();
   const agents = new Map();
@@ -49,7 +50,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
-    transportRejections: 0, agentRegistrationsEvicted: 0 };
+    transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0 };
   let notifiedUnmappedModel = false, notifiedEventCapture = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
@@ -162,8 +163,19 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           && Number.isSafeInteger(context.autoCompactWindow) && context.autoCompactWindow > 0
           && Number.isFinite(context.compactPercent) && context.compactPercent > 0 && context.compactPercent <= 100), 'INVALID_AGENT_BINDING');
         need(!agents.has(binding.id) || agents.get(binding.id).role === binding.role, 'AGENT_BINDING_CONFLICT');
-        // Registrations are removed by SubagentStop. Bound the table for a session where that
-        // never arrives: evict the least recently used idle entry, never one with live requests.
+        // Registrations are removed by SubagentStop. For a session where that never arrives,
+        // drop idle entries that have gone unused past the window. No timer: the sweep runs
+        // here, and a registration with live requests is never a candidate.
+        if (!binding.stop) {
+          const stale = Date.now() - agentIdleMs;
+          for (const [id, state] of agents) {
+            if (id === binding.id || state.requests.size > 0 || state.lastUsedMs > stale) continue;
+            state.selectionController?.abort();
+            agents.delete(id);
+            lifetime.agentRegistrationsExpired++;
+          }
+        }
+        // The cap is the backstop when even the window has not released enough entries.
         if (!binding.stop && !agents.has(binding.id) && agents.size >= maxAgents) {
           const idle = [...agents].find(([, state]) => state.requests.size === 0);
           need(idle !== undefined, 'AGENT_BINDING_LIMIT');
@@ -178,7 +190,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           agents.delete(binding.id);
         }
         else {
-          const state = { role: binding.role, requests: new Set(), contextPolicy: context ?? null, selectionPending: Boolean(agentSelection),
+          const state = { role: binding.role, requests: new Set(), lastUsedMs: Date.now(),
+            contextPolicy: context ?? null, selectionPending: Boolean(agentSelection),
             selectionBinding: agentSelection ? { ...binding, nativeRegistered: true } : undefined, selectionController: agentSelection ? new AbortController() : undefined };
           agents.set(binding.id, state);
           // Native can persist the sidecar only after this hook returns. Resolve
@@ -215,7 +228,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       // Pin the registration before either admission or body reads can yield.
       const agent = req.headers['x-claude-code-agent-id'];
       const agentBinding = agents.get(agent), role = agentBinding?.role;
-      if (agentBinding) { agents.delete(agent); agents.set(agent, agentBinding); }
+      if (agentBinding) { agentBinding.lastUsedMs = Date.now(); agents.delete(agent); agents.set(agent, agentBinding); }
       activeAgent = agentBinding;
       activeAgent?.requests.add(controller);
       release = await admission.acquire(controller.signal);

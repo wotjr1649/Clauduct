@@ -58,10 +58,12 @@
 | 완료 알림 기반 복귀 | 조건부 | c19c8b14 실제 성공, [감사](audit-2026-09-09-completion-resume.md), 로컬 회귀 | 과거 실패(35985327)의 원인 미확정. 다중 알림·실패 알림 복귀는 미지원 | 없음 |
 | 직접 부모 모델·effort 상속 | 완료 | db34be24, a2d50ff0, [수용 조건](audit-2026-09-10-agent-acceptance.md), [계약](gpt-agent-selection-contract.md) | 생성 후 모델 변경과 손자 전 조합은 미검증 | 회귀 통과만 유지한다 |
 | Claude 별칭·전체 모델 ID 매핑 | 완료 | [감사](audit-2026-09-11-unmapped-agent-model.md), `test-agent-selection`의 8개 route 확인과 블록 단위 생략 검사 | 사용자가 구형 모델을 쓰지 않기로 해 구형 명명 위험은 닫혔다. 새 계열이 나오면 그 자식만 fail-closed 되고 턴은 보존된다 | 없음 |
-| 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·거부·기록 검사. 비호환 판정 목록 29개는 계속 거부 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
+| 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·거부·기록 검사. 비호환 판정 27개는 계속 거부, 서버 의존 7개는 표시만 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
 | Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
 | 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
-| 장기 자원 안정성 | 조건부 | `test-native` 45개(1000요청 / 20동시 포함), `test-request-admission`, `test-native-gateway`의 등록표 상한 검사 | 등록표는 1024로 묶였고 유휴 LRU만 제거한다. 3주기 종료 후 socket·timer·listener 실측은 여전히 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`·`admission`·`agentRegistrationsEvicted`를 함께 본다 |
+| 웹 검색 경로 | 조건부 | [브리지 감사](audit-2026-09-11-web-search-bridge.md), `test-native` 47개 검사 | 우리 네 모델이 상류에서 내장 검색을 받는지, 실제로 검색이 도는지 미검증. 출처 카드·인용 블록은 만들지 않는다 | 정상 사용 중 웹 검색을 한 번 써 보고 종료 JSON을 본다 |
+| 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
+| 장기 자원 안정성 | 조건부 | `test-native` 47개(1000요청 / 20동시 포함), `test-request-admission`, `test-native-gateway`의 등록표 만료·상한 검사 | 등록표는 30분 유휴 만료 뒤 1024 상한으로 묶인다. 3주기 종료 후 socket·timer·listener 실측은 여전히 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`·`admission`·`agentRegistrationsEvicted`를 함께 본다 |
 | HTTP 서버 수준 거부 집계 | 완료 | `lifetime.transportRejections`, `test-native-gateway`의 Expect 검사 | 연결 단계에서 끊긴 바이트의 원인까지는 남기지 않는다 | 없음 |
 | native 기능 지원 범위 | 완료 | [전수 대조](native-feature-support.md) | 로컬 MCP·이미지·plan mode 등 개별 실제 왕복은 미검증으로 명시 | 정상 사용 중 관측되면 기록 |
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
@@ -90,7 +92,7 @@
 
 2026-09-11, Node.js v24.19.0, 프로젝트 `Invoke-ClauductNodeTests`, 60초 제한, test concurrency 1.
 
-기준 11개 파일이 함께 통과했다: `test-native-gateway`(53), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(45), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(61 / loopback 36), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
+기준 11개 파일이 함께 통과했다: `test-native-gateway`(54), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(47), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(61 / loopback 36), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
 
 선택·완료 표면도 함께 통과했다: `test-agent-selection`, `test-completion-selection`(46, symlink notRun), `test-workflow-selection`(36, native Workflow·symlink notRun), `test-request-admission`.
 

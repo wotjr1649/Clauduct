@@ -125,6 +125,8 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
     CLAUDE_CODE_MAX_RETRIES: '0',
     CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '1',
     CLAUDE_CODE_RETRY_WATCHDOG: '0',
+    // Anthropic-side reporting has no backend here; keep it off for this child only.
+    DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1',
     CLAUDE_CODE_RESUME_INTERRUPTED_TURN: '0',
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
     ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', ANTHROPIC_CUSTOM_HEADERS: '',

@@ -6,6 +6,7 @@ import { prepareNative, nativeResponse } from './native-protocol.mjs';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { bindingFrom, registerBinding, contextFromEnvironment } from './agent-route.mjs';
+import { classifyBetaNames } from './scan-native-features.mjs';
 import { interactiveLaunch, launchOptions, runInteractive } from './clauduct.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -321,8 +322,65 @@ await test('advisor_disabled_only_in_clauduct_child', () => {
     assert.equal(settings.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, '1');
     assert.deepEqual(source, before);
     assert.equal(Object.hasOwn(settings, 'advisorModel'), false);
+    // Anthropic-side reporting is off for this child only; the caller's environment is untouched.
+    assert.equal(launch.options.env.DISABLE_TELEMETRY, '1');
+    assert.equal(launch.options.env.DISABLE_ERROR_REPORTING, '1');
+    assert.equal(settings.env.DISABLE_TELEMETRY, '1');
   }
   assert.equal(betaFailure('advisor-tool-2026-03-01'), 'UNSUPPORTED_BETA known=ADVISOR_TOOL unknown=0');
+});
+await test('web_search_is_translated_to_the_backend_tool', () => {
+  const base = () => ({ model: 'astra', stream: true, max_tokens: 100,
+    messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', allowed_domains: ['example.com'] }] });
+  const prepared = prepareNative(base());
+  assert.equal(prepared.webSearch, true);
+  assert.equal(prepared.names.size, 0);
+  assert.deepEqual(prepared.body.tools, [{ type: 'web_search', filters: { allowed_domains: ['example.com'] } }]);
+  // Both domain lists at once, an unknown field, or a renamed tool stay rejected.
+  for (const mutate of [d => { d.tools[0].blocked_domains = ['x.com']; }, d => { d.tools[0].private = 1; },
+    d => { d.tools[0].name = 'other'; }, d => { d.tools.push({ ...d.tools[0] }); }]) {
+    const doc = base(); mutate(doc); assert.throws(() => prepareNative(doc));
+  }
+  const search = { id: 'ws_1', type: 'web_search_call', status: 'completed',
+    action: { type: 'search', query: 'SYNTHETIC_PRIVATE_QUERY' } };
+  const message = { id: 'msg_0', type: 'message', role: 'assistant', status: 'completed',
+    content: [{ type: 'output_text', text: 'SYNTHETIC_TEXT', annotations: [
+      { type: 'url_citation', url: 'https://example.com', title: 'T', start_index: 0, end_index: 5 }] }] };
+  const events = [
+    { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
+    { type: 'response.output_item.added', output_index: 0, item: { id: 'ws_1', type: 'web_search_call', status: 'in_progress' } },
+    { type: 'response.web_search_call.in_progress', output_index: 0, item_id: 'ws_1' },
+    { type: 'response.web_search_call.searching', output_index: 0, item_id: 'ws_1' },
+    { type: 'response.web_search_call.completed', output_index: 0, item_id: 'ws_1' },
+    { type: 'response.output_item.done', output_index: 0, item: search },
+    { type: 'response.output_item.added', output_index: 1, item: { ...message, content: [], status: 'in_progress' } },
+    { type: 'response.output_text.delta', output_index: 1, item_id: 'msg_0', content_index: 0, delta: 'SYNTHETIC_TEXT' },
+    { type: 'response.output_text.done', output_index: 1, item_id: 'msg_0', content_index: 0, text: 'SYNTHETIC_TEXT' },
+    { type: 'response.output_item.done', output_index: 1, item: message },
+    { type: 'response.completed', response: { id: 'resp_1', status: 'completed', model: prepared.body.model,
+      reasoning: prepared.body.reasoning, output: [search, message],
+      usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8, input_tokens_details: { cached_tokens: 0 } } } }];
+  const result = nativeResponse(events, prepared);
+  // The search runs upstream; downstream sees the answer without the query or the source list.
+  assert.deepEqual(result.message.content, [{ type: 'text', text: 'SYNTHETIC_TEXT' }]);
+  assert.equal(result.message.stop_reason, 'end_turn');
+  for (const output of [JSON.stringify(result.message), result.sse]) {
+    assert.ok(!output.includes('SYNTHETIC_PRIVATE_QUERY'));
+    assert.ok(!output.includes('example.com'));
+    assert.ok(!output.includes('web_search'));
+  }
+  // Without the tool requested the same upstream items stay unsupported.
+  const plain = prepareNative({ ...base(), tools: [] });
+  assert.throws(() => nativeResponse(events, plain), error => error.code === 'UNSUPPORTED_OUTPUT');
+});
+await test('feature_scan_classifies_known_names', () => {
+  const report = classifyBetaNames(['web-search-2025-03-05', 'files-api-2025-04-14',
+    'mcp-tunnels-2026-06-22', 'foo-2025-01-01', 'pre-2026-07-28', 'brand-new-feature-2026-10-01']);
+  assert.deepEqual(report.allowed, ['web-search-2025-03-05']);
+  assert.deepEqual(report.refused, ['files-api-2025-04-14']);
+  assert.deepEqual(report.serverDependent, ['mcp-tunnels-2026-06-22']);
+  assert.deepEqual(report.unclassified, ['brand-new-feature-2026-10-01']);
 });
 await test('forward_native_resume_and_effort', () => {
   assert.equal(launchOptions(['--model', 'luna', '--effort', 'high', '--resume', 'SYNTHETIC_SESSION']).selected.effort, 'high');

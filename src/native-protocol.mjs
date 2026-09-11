@@ -84,6 +84,7 @@ export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-obj
   'thread.started', 'turn.started', 'turn.completed', 'turn.failed',
   'item.started', 'item.updated', 'item.completed',
   'message_start', 'message_delta', 'message_stop', 'content_block_start', 'content_block_delta', 'content_block_stop',
+  'response.web_search_call.in_progress', 'response.web_search_call.searching', 'response.web_search_call.completed',
   'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'codex.response.metadata', 'responsesapi.websocket_timing', 'response.created', 'response.in_progress', 'response.queued',
   'response.completed', 'response.failed', 'response.incomplete', 'error',
   'response.output_item.added', 'response.output_item.done', 'response.content_part.added', 'response.content_part.done',
@@ -231,7 +232,31 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   need(doc.temperature === undefined && doc.top_p === undefined && doc.stop_sequences === undefined, 'UNSUPPORTED_SAMPLING');
   const definitions = new Map(), discovered = new Set(), removed = new Set();
   requestNeed(doc.tools === undefined || Array.isArray(doc.tools), 'TOOLS_SHAPE');
+  let webSearch;
   for (const tool of doc.tools ?? []) {
+    // The search tool is executed by the backend, not by the client, so it never becomes a
+    // callable definition here. Only the fields this gateway can carry upstream are accepted.
+    if (typeof tool.type === 'string' && /^web_search_20\d{6}$/.test(tool.type)) {
+      keys(tool, ['type', 'name', 'max_uses', 'allowed_domains', 'blocked_domains', 'user_location',
+        'allowed_callers', 'response_inclusion', 'cache_control'], 'TOOL_FIELDS');
+      cache(tool.cache_control);
+      need(tool.name === 'web_search' && webSearch === undefined, 'UNSUPPORTED_TOOLS');
+      const domains = value => value === undefined || (Array.isArray(value) && value.length <= 64
+        && value.every(item => typeof item === 'string' && item.length > 0 && item.length <= 256));
+      need(domains(tool.allowed_domains) && domains(tool.blocked_domains)
+        && !(tool.allowed_domains && tool.blocked_domains), 'UNSUPPORTED_TOOLS');
+      webSearch = { type: 'web_search' };
+      if (tool.allowed_domains) webSearch.filters = { allowed_domains: [...tool.allowed_domains] };
+      else if (tool.blocked_domains) webSearch.filters = { blocked_domains: [...tool.blocked_domains] };
+      if (tool.user_location !== undefined) {
+        keys(tool.user_location, ['type', 'city', 'region', 'country', 'timezone'], 'TOOL_FIELDS');
+        need(tool.user_location.type === 'approximate'
+          && Object.entries(tool.user_location).every(([, item]) => typeof item === 'string' && item.length <= 128),
+        'UNSUPPORTED_TOOLS');
+        webSearch.user_location = { ...tool.user_location };
+      }
+      continue;
+    }
     keys(tool, ['name', 'description', 'input_schema', 'cache_control', 'defer_loading'], 'TOOL_FIELDS'); cache(tool.cache_control);
     need(id(tool.name) && !definitions.has(tool.name) && object(tool.input_schema) && tool.input_schema.type === 'object', 'UNSUPPORTED_TOOLS');
     need(tool.description === undefined || typeof tool.description === 'string', 'UNSUPPORTED_TOOLS');
@@ -324,6 +349,8 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     && (tool.defer_loading !== true || discovered.has(tool.name)))
     .map(tool => ({ type: 'function', name: tool.name, description: tool.description ?? '', parameters: tool.input_schema, strict: false }));
   const names = new Set(tools.map(tool => tool.name));
+  // The backend tool is not callable by name downstream, so it stays out of the name set.
+  if (webSearch) tools.push(webSearch);
   need(typeof toolChoice !== 'object' || names.has(toolChoice.name), 'UNSUPPORTED_TOOLS');
   need(toolChoice !== 'required' || names.size > 0, 'UNSUPPORTED_TOOLS');
   if (names.size === 0) toolChoice = 'none';
@@ -333,7 +360,8 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   if (purpose === 'compact-template' && !['low', 'medium'].includes(selected.effort)) {
     selected = { ...selected, effort: 'medium' };
   }
-  return { selected, names, purpose, compactShape, requestedEffort, outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY,
+  return { selected, names, purpose, compactShape, requestedEffort, webSearch: webSearch !== undefined,
+    outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY,
     body: { model: selected.model,
       instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
       parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
@@ -361,20 +389,41 @@ function bounded(value, limit = NATIVE_LIMITS.responseBytes) {
   return value;
 }
 function emptyArrayOrMissing(value) { return value === undefined || value === null || (Array.isArray(value) && value.length === 0); }
-function outputTextPart(value) {
+function outputTextPart(value, citations = false) {
   keys(value, ['type', 'text', 'annotations', 'logprobs']);
   need(value.type === 'output_text' && typeof value.text === 'string', 'UNSUPPORTED_CONTENT');
   // These fields are not represented by Anthropic text blocks. Reject data rather than dropping it.
-  need(emptyArrayOrMissing(value.annotations) && emptyArrayOrMissing(value.logprobs), 'UNSUPPORTED_CONTENT');
+  // The one exception is a url_citation from the requested search tool: its source list has no
+  // Anthropic block here, so it is validated and dropped rather than silently reshaped.
+  need(emptyArrayOrMissing(value.logprobs), 'UNSUPPORTED_CONTENT');
+  if (!emptyArrayOrMissing(value.annotations)) {
+    need(citations && Array.isArray(value.annotations), 'UNSUPPORTED_CONTENT');
+    for (const annotation of value.annotations) {
+      keys(annotation, ['type', 'url', 'title', 'start_index', 'end_index']);
+      need(annotation.type === 'url_citation' && typeof annotation.url === 'string', 'UNSUPPORTED_CONTENT');
+    }
+  }
   return value;
 }
-function messageSnapshot(value, starting = false) {
+// A server-executed search item. Its query stays inside this snapshot: never emitted
+// downstream and never copied into a diagnostic.
+function webSearchSnapshot(value, starting = false) {
+  keys(value, ['id', 'type', 'status', 'action']);
+  need(id(value.id) && value.type === 'web_search_call', 'INVALID_OUTPUT_ITEM');
+  need(value.status === undefined
+    || ['in_progress', 'searching', 'completed', 'failed', 'incomplete'].includes(value.status), 'SNAPSHOT_MISMATCH');
+  need(!starting || value.status !== 'completed', 'SNAPSHOT_MISMATCH');
+  need(value.action === undefined || object(value.action), 'INVALID_OUTPUT_ITEM');
+  bounded(value, MAX_ITEM_BYTES);
+  return value;
+}
+function messageSnapshot(value, starting = false, citations = false) {
   keys(value, ['id', 'type', 'status', 'role', 'content', 'phase']);
   need(id(value.id) && value.type === 'message' && value.role === 'assistant', 'INVALID_OUTPUT_ITEM');
   need(value.status === undefined || value.status === (starting ? 'in_progress' : 'completed'), 'SNAPSHOT_MISMATCH');
   need(Array.isArray(value.content) && value.content.length <= MAX_OUTPUT_PARTS, 'INVALID_OUTPUT_ITEM');
   if (starting) need(value.content.length === 0, 'INVALID_OUTPUT_ITEM');
-  else value.content.forEach(outputTextPart);
+  else value.content.forEach(part => outputTextPart(part, citations));
   need(value.phase === undefined || typeof value.phase === 'string', 'INVALID_OUTPUT_ITEM');
   bounded(value, MAX_ITEM_BYTES);
   return value;
@@ -399,6 +448,7 @@ const ADAPTER_ERROR_CODES = new Set(['ITEM_INDEX_MISMATCH', 'SNAPSHOT_MISMATCH',
 
 // Validate streamed item snapshots while retaining only bounded item state, and expose text deltas early.
 export function createNativeResponse(prepared, { deferText = false } = {}) {
+  const citations = prepared.webSearch === true;
   const state = { responseId: undefined, completed: undefined, inProgress: false,
     items: new Map(), ids: new Set(), responseBytes: 0, nextBlockIndex: 0,
     messageStart: undefined, failed: undefined, finished: false };
@@ -464,10 +514,10 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
       && Number.isSafeInteger(event.content_index) && event.content_index >= 0, 'STREAM_ORDER');
     if (event.type === 'response.content_part.added') {
       need(event.content_index === item.textParts.length && object(event.part), 'STREAM_ORDER');
-      outputTextPart(event.part);
+      outputTextPart(event.part, citations);
     } else {
       const part = item.textParts[event.content_index];
-      need(part?.done === true && object(event.part) && outputTextPart(event.part).text === part.text, 'SNAPSHOT_MISMATCH');
+      need(part?.done === true && object(event.part) && outputTextPart(event.part, citations).text === part.text, 'SNAPSHOT_MISMATCH');
     }
   };
   const addItem = event => {
@@ -476,9 +526,10 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     const first = event.item;
     need(!state.ids.has(first.id), 'INVALID_OUTPUT_ITEM');
     let kind;
-    if (first.type === 'message') { messageSnapshot(first, true); kind = 'message'; }
+    if (first.type === 'message') { messageSnapshot(first, true, citations); kind = 'message'; }
     else if (first.type === 'function_call') { functionSnapshot(first, true); kind = 'function_call'; }
     else if (first.type === 'reasoning') { reasoningSnapshot(first, true); kind = 'reasoning'; }
+    else if (citations && first.type === 'web_search_call') { webSearchSnapshot(first, true); kind = 'web-search'; }
     else throw new NativeError('UNSUPPORTED_OUTPUT');
     const item = { index: event.output_index, first, kind, final: undefined, done: false, bytes: encodedSize(first),
       textParts: [], arguments: '', argumentsDone: false, reasoning: kind === 'reasoning'
@@ -493,8 +544,10 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
       functionSnapshot(final);
       need(item.argumentsDone && final.arguments === item.arguments && final.name === item.first.name
         && final.call_id === item.first.call_id, 'SNAPSHOT_MISMATCH');
+    } else if (item.kind === 'web-search') {
+      webSearchSnapshot(final);
     } else if (item.kind === 'message') {
-      messageSnapshot(final);
+      messageSnapshot(final, false, citations);
       need(final.content.length === item.textParts.length, 'SNAPSHOT_MISMATCH');
       final.content.forEach((part, index) => {
         const streamed = item.textParts[index];
@@ -556,6 +609,11 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     if (event.type === 'response.content_part.added' || event.type === 'response.content_part.done') {
       contentPart(event, active(event.output_index)); return [];
     }
+    if (event.type.startsWith('response.web_search_call.')) {
+      const item = active(event.output_index);
+      need(item.kind === 'web-search', 'STREAM_ORDER');
+      return [];
+    }
     if (event.type.startsWith('response.reasoning')) {
       const item = active(event.output_index);
       need(item.kind === 'reasoning', 'STREAM_ORDER');
@@ -597,8 +655,9 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
             states[index].final = merged;
             return merged;
           }
-          if (item.type === 'message') messageSnapshot(item);
+          if (item.type === 'message') messageSnapshot(item, false, citations);
           else if (item.type === 'function_call') functionSnapshot(item);
+          else if (citations && item.type === 'web_search_call') webSearchSnapshot(item);
           else throw new NativeError('UNSUPPORTED_OUTPUT');
           need(isDeepStrictEqual(item, snapshots[index]), 'SNAPSHOT_MISMATCH'); return item;
         });
@@ -623,10 +682,12 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
           need(object(input), 'INVALID_TOOL_CALL'); bounded(input, MAX_ITEM_BYTES); calls.add(item.call_id);
           const block = { type: 'tool_use', id: item.call_id, name: item.name, input };
           toolBlocks.push({ block, stateItem });
+        } else if (item.type === 'web_search_call') {
+          need(stateItem.kind === 'web-search', 'SNAPSHOT_MISMATCH');
         } else {
           need(item.type === 'message' && item.role === 'assistant' && Array.isArray(item.content), 'UNSUPPORTED_OUTPUT');
           item.content.forEach((part, partIndex) => {
-            outputTextPart(part);
+            outputTextPart(part, citations);
             const streamed = stateItem.textParts[partIndex];
             need(streamed && streamed.done && streamed.text === part.text, 'STREAM_ORDER');
             textBlocks.push({ block: { type: 'text', text: part.text }, streamed });

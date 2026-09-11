@@ -71,6 +71,7 @@ export function requestStatusSnapshot(value, env = {}) {
       window: number(row.agentContextPolicy.window), autoCompactWindow: number(row.agentContextPolicy.autoCompactWindow),
       compactPercent: number(row.agentContextPolicy.compactPercent) } : null,
     subagent: row?.subagent === true, success: row?.success === true,
+    webSearchRequested: row?.webSearchRequested === true, webSearchCalls: counter(row?.webSearchCalls) ?? 0,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
     unsupportedEventTypeFormat: EVENT_TYPE_FORMATS.includes(row?.unsupportedEventTypeFormat) ? row.unsupportedEventTypeFormat : null,
     failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,

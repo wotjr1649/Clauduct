@@ -279,6 +279,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       timing.role = Object.hasOwn(ROLE_MODELS, role) || ['claude', 'workflow-subagent'].includes(role) ? role : null;
       timing.roleRegistered = agent !== undefined && agents.has(agent);
       timing.agentContextPolicy = agentBinding?.contextPolicy ? { ...agentBinding.contextPolicy } : null;
+      // Fixed booleans/counts only: whether the client asked for backend search and how many
+      // searches the backend actually ran. Neither carries a query or a result.
+      timing.webSearchRequested = prepared.webSearch === true;
       // Registration is routing metadata, not authorization. Never bypass native tool/permission hooks.
       if (agent !== undefined && !agents.has(agent)) {
         unregisteredAgentRequests++;
@@ -373,6 +376,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       stage = 'delivery';
       await emit(output.frames);
       res.end();
+      timing.webSearchCalls = response.webSearchCalls?.() ?? 0;
       timing.success = true;
       agentSelection?.delivered(req.headers['x-claude-code-session-id'], agent, selectionRequest, output.message);
     } catch (error) {

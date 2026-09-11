@@ -450,7 +450,7 @@ const ADAPTER_ERROR_CODES = new Set(['ITEM_INDEX_MISMATCH', 'SNAPSHOT_MISMATCH',
 export function createNativeResponse(prepared, { deferText = false } = {}) {
   const citations = prepared.webSearch === true;
   const state = { responseId: undefined, completed: undefined, inProgress: false,
-    items: new Map(), ids: new Set(), responseBytes: 0, nextBlockIndex: 0,
+    items: new Map(), ids: new Set(), responseBytes: 0, nextBlockIndex: 0, webSearchCalls: 0,
     messageStart: undefined, failed: undefined, finished: false };
   const fail = error => {
     const code = error instanceof NativeError ? error.code
@@ -529,7 +529,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     if (first.type === 'message') { messageSnapshot(first, true, citations); kind = 'message'; }
     else if (first.type === 'function_call') { functionSnapshot(first, true); kind = 'function_call'; }
     else if (first.type === 'reasoning') { reasoningSnapshot(first, true); kind = 'reasoning'; }
-    else if (citations && first.type === 'web_search_call') { webSearchSnapshot(first, true); kind = 'web-search'; }
+    else if (citations && first.type === 'web_search_call') { webSearchSnapshot(first, true); kind = 'web-search'; state.webSearchCalls++; }
     else throw new NativeError('UNSUPPORTED_OUTPUT');
     const item = { index: event.output_index, first, kind, final: undefined, done: false, bytes: encodedSize(first),
       textParts: [], arguments: '', argumentsDone: false, reasoning: kind === 'reasoning'
@@ -761,7 +761,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
       }
     }
   };
-  return { push, finish };
+  return { push, finish, webSearchCalls: () => state.webSearchCalls };
 }
 
 export function nativeResponse(events, prepared) {

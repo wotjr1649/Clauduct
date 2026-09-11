@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { MODELS, ROLE_MODELS, selectModel, CONTEXT_POLICY } from './models.mjs';
-import { prepareNative, nativeResponse } from './native-protocol.mjs';
+import { prepareNative, nativeResponse, createNativeResponse } from './native-protocol.mjs';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { bindingFrom, registerBinding, contextFromEnvironment } from './agent-route.mjs';
@@ -361,6 +361,12 @@ await test('web_search_is_translated_to_the_backend_tool', () => {
     { type: 'response.completed', response: { id: 'resp_1', status: 'completed', model: prepared.body.model,
       reasoning: prepared.body.reasoning, output: [search, message],
       usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8, input_tokens_details: { cached_tokens: 0 } } } }];
+  const counted = createNativeResponse(prepared);
+  for (const event of events.slice(0, -1)) counted.push(event);
+  counted.push(events.at(-1));
+  // Whether the backend actually searched is observable without any query or result.
+  assert.equal(counted.webSearchCalls(), 1);
+  assert.equal(createNativeResponse(prepared).webSearchCalls(), 0);
   const result = nativeResponse(events, prepared);
   // The search runs upstream; downstream sees the answer without the query or the source list.
   assert.deepEqual(result.message.content, [{ type: 'text', text: 'SYNTHETIC_TEXT' }]);

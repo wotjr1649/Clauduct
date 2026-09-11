@@ -342,9 +342,29 @@ await test('web_search_is_translated_to_the_backend_tool', () => {
   const prepared = prepareNative(base());
   assert.equal(prepared.webSearch, true);
   assert.equal(prepared.names.size, 0);
-  // Live access is explicit: omitting both flags left the backend running zero searches.
-  assert.deepEqual(prepared.body.tools, [{ type: 'web_search', external_web_access: true,
-    indexed_web_access: true, filters: { allowed_domains: ['example.com'] } }]);
+  // The reference client's lite envelope: no top-level tools, client tools carried inside an
+  // additional_tools item, and the codex turn headers. Built-in search is supplied server side.
+  assert.equal('tools' in prepared.body, false);
+  assert.equal(prepared.body.text.verbosity, 'medium');
+  const envelope = prepared.body.input[0];
+  assert.equal(envelope.type, 'additional_tools');
+  assert.equal(envelope.role, 'developer');
+  assert.match(envelope.id, /^at_[0-9a-f-]{36}$/);
+  assert.equal(envelope.tools.length, 1);
+  assert.equal(envelope.tools[0].type, 'namespace');
+  assert.equal(envelope.tools[0].name, 'functions');
+  assert.deepEqual(envelope.tools[0].tools.map(tool => tool.name), []);
+  assert.deepEqual(prepared.body.input.slice(1).map(item => item.role ?? item.type), ['user']);
+  assert.deepEqual(Object.keys(prepared.upstreamHeaders).sort(), ['session-id', 'thread-id',
+    'x-client-request-id', 'x-codex-beta-features', 'x-codex-turn-metadata', 'x-codex-window-id',
+    'x-openai-internal-codex-responses-lite'].sort());
+  assert.equal(prepared.upstreamHeaders['x-openai-internal-codex-responses-lite'], 'true');
+  // Generated for this process only: nothing is copied from the user's codex install and no
+  // local path, repository or workspace is described.
+  const metadata = JSON.parse(prepared.upstreamHeaders['x-codex-turn-metadata']);
+  assert.equal(metadata.node_repl_disabled, true);
+  assert.equal(Object.hasOwn(metadata, 'workspaces'), false);
+  assert.ok(!prepared.upstreamHeaders['x-codex-turn-metadata'].includes(String.fromCharCode(92)));
   // Both domain lists at once, an unknown field, or a renamed tool stay rejected.
   for (const mutate of [d => { d.tools[0].blocked_domains = ['x.com']; }, d => { d.tools[0].private = 1; },
     d => { d.tools[0].name = 'other'; }, d => { d.tools.push({ ...d.tools[0] }); }]) {

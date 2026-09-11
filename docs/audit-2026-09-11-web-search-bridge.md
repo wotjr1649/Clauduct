@@ -139,3 +139,43 @@ web_search { external_web_access, indexed_web_access, filters,
 ## 알림 위치 수정
 
 세션 중 stderr 출력이 native의 프롬프트 입력창 안으로 끼어드는 것을 사용자가 화면으로 확인했다. 네 알림(미등록 역할, 미등록 모델명, 미지원 이벤트 캡처, 웹 검색 무동작)을 모두 수집만 하고 **자식 종료 후 종료 JSON 직전에** 출력하도록 바꿨다. TUI를 건드리지 않는다. 강제 종료 시에는 유실되지만 이 알림들은 세션이 죽는 상황을 다루지 않는다.
+
+## 원인 확정 — 봉투가 달랐다 (2026-09-11, 로컬 캡처)
+
+설치 codex를 loopback sink로 향하게 해서 실제 요청을 그대로 받아 봤다. 커스텀 provider(`requires_openai_auth=true`, `wire_api=responses`)로 base_url만 로컬로 돌렸고, 외부로 나간 요청은 없다. `Authorization`과 계정 식별자는 도착 즉시 버려 출력·저장하지 않았다.
+
+관측한 요청:
+
+```
+POST /backend-api/codex/responses
+headers: x-openai-internal-codex-responses-lite: true
+         x-codex-beta-features, x-codex-window-id, x-codex-turn-metadata,
+         x-client-request-id, session-id, thread-id, originator: codex_exec
+body keys: model input tool_choice parallel_tool_calls reasoning store
+           stream include prompt_cache_key text client_metadata
+tools: 없음
+input item kinds: ["additional_tools", "message"]
+```
+
+`additional_tools` 항목의 형태는 `{type, id: "at_<uuid>", role: "developer", tools: [{type:"namespace", name, description, tools:[...]}]}`이고 **그 안에 `web_search`는 없다.**
+
+즉 이 엔드포인트에서 내장 웹 검색은 **클라이언트가 선언하는 도구가 아니다.** 서버가 lite 봉투에서 직접 공급한다. 우리가 `tools`에 `{type:'web_search'}`를 넣어 온 접근 자체가 틀렸고, 그래서 태그 이름·접근 플래그·모델·계정을 아무리 바꿔도 검색이 0회였다.
+
+네 번의 실패한 가설을 남긴다. 도구 태그 이름 → 접근 모드 플래그 → 모델 계열 → 계정·엔드포인트. 전부 요청 **내용**을 의심했는데 실제 차이는 요청 **봉투**였다. 대조 실험(codex CLI에서 같은 모델·같은 계정으로 검색 성공)이 앞의 둘을 죽였고, 로컬 캡처가 답을 줬다.
+
+## 1단계 구현 — 검색 요청에만 lite 봉투
+
+사용자 결정에 따라 검색 side query에만 적용한다. 일반 대화 경로는 건드리지 않는다.
+
+- 그 요청은 최상위 `tools`를 보내지 않는다. 클라이언트 도구는 `additional_tools` 항목의 `functions` namespace 안으로 옮긴다. 선언된 도구가 사라지지는 않는다.
+- `text: { verbosity: 'medium' }`를 함께 보낸다.
+- 헤더 일곱 개를 덧붙인다: `x-openai-internal-codex-responses-lite`, `x-codex-beta-features`, `session-id`, `thread-id`, `x-client-request-id`, `x-codex-window-id`, `x-codex-turn-metadata`.
+- **검색 도구 항목은 어디에도 보내지 않는다.** 기준 요청에도 없다.
+
+식별자는 이 프로세스에서 생성한다. 사용자 codex 설치의 값을 복사하지 않으며, turn metadata에 로컬 경로·저장소·워크스페이스를 담지 않는다(`workspaces` 없음, 백슬래시 없음을 테스트로 고정). transport는 이 일곱 개 이름만 허용하고 값에 CR/LF가 있으면 거부하므로 임의 헤더가 주입될 수 없다.
+
+## 남은 것 — 2단계
+
+백엔드가 검색을 수행해도 그것만으로 WebSearch 결과가 채워지지는 않는다. Claude Code의 side query는 응답에서 Anthropic의 `web_search_tool_result` 블록을 읽어 `results`를 만든다. 우리는 그 블록을 만들지 않으므로 결과는 비어 있을 수 있다. 1단계는 **백엔드가 실제로 검색을 수행하는가**만 판정한다(`lifetime.webSearchCalls > 0`). 그것이 확인되면 2단계로 `url_citation` annotation을 Anthropic 결과 블록으로 옮기는 작업을 한다.
+
+검증: 기준 11개와 선택·완료 4개 suite가 모두 통과했다. `test-native`가 봉투 형태, 헤더 집합, 식별자 생성, 로컬 경로 미포함을 고정한다. 실제 검색 수행 여부는 실행 1회로만 확인된다.

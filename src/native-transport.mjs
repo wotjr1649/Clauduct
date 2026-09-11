@@ -3,7 +3,7 @@ import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { buildHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, LITE_HEADER_NAMES } from './native-protocol.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -276,7 +276,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   async function requestOnce(job, raw, current, onEvent, isRetry) {
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
-    const headers = buildHeaders(current, clientVersion, raw);
+    const headers = { ...buildHeaders(current, clientVersion, raw), ...job.extraHeaders };
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
       headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false,
@@ -377,8 +377,16 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });
     let finish;
+    // Only this fixed envelope may be added, and only with header-safe values: a request
+    // can never introduce an arbitrary header name or inject one through a value.
+    const extra = {};
+    for (const [name, value] of Object.entries(options.headers ?? {})) {
+      need(LITE_HEADER_NAMES.includes(name), 'INVALID_OPTIONS');
+      need(typeof value === 'string' && value.length <= 2048 && !/[\r\n]/.test(value), 'INVALID_OPTIONS');
+      extra[name] = value;
+    }
     const job = { controller, timers: new Set(), started: performance.now(), attemptTimings: options.attemptTimings ?? [],
-      finished: new Promise(resolve => { finish = resolve; }) };
+      extraHeaders: extra, finished: new Promise(resolve => { finish = resolve; }) };
     active.add(job);
     const canRetryConfigured = options.canRetry !== undefined;
     let outputStarted = false, retryCount = 0, refreshed = false, current, isRetry = false;

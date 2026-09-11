@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import { randomUUID } from 'node:crypto';
 import { win32, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectModel } from './models.mjs';
@@ -209,6 +210,25 @@ function decodeReasoning(value) {
   for (const part of result.summary) need(part.type === 'summary_text' && typeof part.text === 'string', 'UNSUPPORTED_THINKING');
   return result;
 }
+// The backend only runs its built-in web search in the reference client's lite envelope:
+// no top-level tools, client tools carried as an additional_tools input item, and a codex
+// shaped turn envelope in the headers. Captured from the installed client against a local
+// sink. Identifiers here are generated for this process; none are copied from the user's
+// codex installation, and nothing local (path, repository, workspace) is included.
+const LITE_HEADERS = Object.freeze(['x-openai-internal-codex-responses-lite', 'x-codex-beta-features',
+  'session-id', 'thread-id', 'x-client-request-id', 'x-codex-window-id', 'x-codex-turn-metadata']);
+export function liteSearchHeaders(now = Date.now(), id = randomUUID) {
+  const session = id(), turn = id();
+  return { 'x-openai-internal-codex-responses-lite': 'true', 'x-codex-beta-features': 'remote_compaction_v2',
+    'session-id': session, 'thread-id': session, 'x-client-request-id': session,
+    'x-codex-window-id': `${session}:0`,
+    'x-codex-turn-metadata': JSON.stringify({ installation_id: id(), session_id: session, thread_id: session,
+      turn_id: turn, root_turn_id: turn, window_id: `${session}:0`, window_number: 0, request_kind: 'turn',
+      thread_source: 'user', sandbox: 'none', sandbox_mode: 'read-only', auto_review_enabled: false,
+      node_repl_disabled: true, turn_started_at_unix_ms: now }) };
+}
+export const LITE_HEADER_NAMES = LITE_HEADERS;
+
 export function prepareNative(doc, { subagent = false, route, turnToolChanges = false } = {}) {
   keys(doc, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice', 'thinking',
     'metadata', 'output_config', 'context_management', 'temperature', 'top_p', 'stop_sequences'], 'REQUEST_FIELDS');
@@ -352,8 +372,8 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     && (tool.defer_loading !== true || discovered.has(tool.name)))
     .map(tool => ({ type: 'function', name: tool.name, description: tool.description ?? '', parameters: tool.input_schema, strict: false }));
   const names = new Set(tools.map(tool => tool.name));
-  // The backend tool is not callable by name downstream, so it stays out of the name set.
-  if (webSearch) tools.push(webSearch);
+  // The backend supplies its own search in the lite envelope, so no search tool is sent at
+  // all. The captured reference request carries none either.
   need(typeof toolChoice !== 'object' || names.has(toolChoice.name), 'UNSUPPORTED_TOOLS');
   need(toolChoice !== 'required' || names.size > 0, 'UNSUPPORTED_TOOLS');
   if (names.size === 0) toolChoice = 'none';
@@ -363,12 +383,22 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   if (purpose === 'compact-template' && !['low', 'medium'].includes(selected.effort)) {
     selected = { ...selected, effort: 'medium' };
   }
-  return { selected, names, purpose, compactShape, requestedEffort, webSearch: webSearch !== undefined,
+  const lite = webSearch !== undefined;
+  const body = { model: selected.model,
+    instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
+    parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
+    include: ['reasoning.encrypted_content'], stream: true, store: false };
+  if (lite) {
+    // Built-in search only appears when the request carries no top-level tools. The client
+    // tools move into the envelope item instead, so nothing this request declared is dropped.
+    delete body.tools;
+    body.input = [{ type: 'additional_tools', id: `at_${randomUUID()}`, role: 'developer',
+      tools: [{ type: 'namespace', name: 'functions', description: '', tools }] }, ...input];
+    body.text = { verbosity: 'medium' };
+  }
+  return { selected, names, purpose, compactShape, requestedEffort, webSearch: lite,
     outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY,
-    body: { model: selected.model,
-      instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
-      parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
-      include: ['reasoning.encrypted_content'], stream: true, store: false } };
+    ...(lite && { upstreamHeaders: liteSearchHeaders() }), body };
 }
 
 export function nativeUsage(value) {

@@ -337,6 +337,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       };
       const legacyEvents = await transport.send(prepared.body, controller.signal, {
         attemptTimings: timing.attempts,
+        ...(prepared.upstreamHeaders && { headers: prepared.upstreamHeaders }),
         onEvent: async event => {
           await pushEvent(event);
           if (!heartbeat) {

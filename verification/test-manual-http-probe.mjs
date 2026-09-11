@@ -1,8 +1,9 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
 import { buildBody, buildLiteBody, checkStore, selectCredential, summarizeResponse, model, endpoint,
-  liteModel, liteEffort } from './manual-http-probe.mjs';
+  liteModel, liteEffort, readClientVersion } from './manual-http-probe.mjs';
 import { liteSearchEnvelope } from '../src/native-protocol.mjs';
+import { REFERENCE_CLIENT_VERSION } from '../src/client-version.mjs';
 
 let count = 0;
 function check(name, action) { action(); count++; }
@@ -454,4 +455,23 @@ check('rejected field named without echoing upstream text', () => {
   assert.deepEqual(result.rejectedFields, ['client_metadata']);
   assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
 });
+// The version is read, not pinned: an unvalidated version is reported, not silently sent and
+// not aborted. Only an unreadable or malformed version stops the run.
+check('installed version reported as unverified', () => {
+  const result = readClientVersion({ status: 0, stdout: 'codex-cli 9.9.9' + String.fromCharCode(10) });
+  assert.equal(result.clientVersion, '9.9.9');
+  assert.equal(result.clientVersionStatus, 'unverified');
+});
+check('baseline version reported as reference', () => {
+  const result = readClientVersion({ status: 0, stdout: `codex-cli ${REFERENCE_CLIENT_VERSION}` });
+  assert.equal(result.clientVersionStatus, 'reference');
+});
+check('unreadable version stops the run', () => {
+  for (const result of [{ status: 1, stdout: 'codex-cli 1.2.3' }, { error: new Error('x'), status: 0, stdout: '' },
+    { status: 0, stdout: 'something else' }, { status: 0, stdout: 'codex-cli 1.2.3 extra' }]) {
+    assert.throws(() => readClientVersion(result), /CLI_VERSION_UNREADABLE/);
+  }
+});
+check('malformed version stops the run', () =>
+  assert.throws(() => readClientVersion({ status: 0, stdout: 'codex-cli not.a.version' }), /CLI_VERSION_INVALID/));
 console.log(JSON.stringify({ offlineTests: count, passed: count, credentialReads: 0, networkRequests: 0 }));

@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { request } from 'node:https';
 import { createInterface } from 'node:readline/promises';
 import { liteSearchEnvelope } from '../src/native-protocol.mjs';
+import { clientVersionPolicy } from '../src/client-version.mjs';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
 export const model = 'gpt-6-astra';
@@ -17,10 +18,19 @@ export const liteModel = 'gpt-5.6-luna';
 export const liteEffort = 'medium';
 const expectedRoot = 'C:\\Users\\JS\\.codex';
 const codexExe = 'C:\\Users\\JS\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
-const testedVersion = '0.153.4';
+// The version this probe sends is the installed one, read at run time, exactly as the gateway
+// does. A version the project has not validated end to end is reported as unverified rather
+// than aborted: aborting hides the drift, reporting it puts the drift in the result the user
+// reads before deciding anything. A version that cannot be read or parsed still stops the run.
+export function readClientVersion(result) {
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') stop('CLI_VERSION_UNREADABLE');
+  const match = result.stdout.trim().match(/^codex-cli (\S+)$/);
+  if (!match) stop('CLI_VERSION_UNREADABLE');
+  try { return clientVersionPolicy(match[1]); } catch { stop('CLI_VERSION_INVALID'); }
+}
 const limit = 256 * 1024;
 const knownErrors = new Set(['USER_TERMINAL_REQUIRED', 'USER_CANCELLED', 'UNEXPECTED_CODEX_HOME',
-  'CLI_VERSION_CHANGED', 'FILE_CACHE_UNAVAILABLE', 'FILE_TOO_LARGE', 'CONFIG_UNSUPPORTED',
+  'CLI_VERSION_UNREADABLE', 'CLI_VERSION_INVALID', 'FILE_CACHE_UNAVAILABLE', 'FILE_TOO_LARGE', 'CONFIG_UNSUPPORTED',
   'CREDENTIAL_STORE_UNSUPPORTED', 'INVALID_AUTH_CACHE', 'TOKEN_EXPIRED', 'TIMEOUT',
   'RESPONSE_TOO_LARGE', 'NETWORK_OR_TLS_ERROR', 'DEBUG_RUNTIME_UNSUPPORTED', 'TRANSPORT_RUNTIME_UNSUPPORTED']);
 
@@ -433,23 +443,26 @@ async function sendOnce(credential, version, envelope) {
 
 async function main() {
   let attempted = false;
-  let transport, lite = false;
+  let transport, lite = false, compatibility;
   try {
     const args = process.argv.slice(2);
     lite = args.includes('--lite');
     transport = selectTransport(args.filter(arg => arg !== '--lite'), process.stdin.isTTY, process.stdout.isTTY);
     checkRuntime(process.env, process.execArgv);
+    // Read before the confirmation so a version the project has not validated is on screen
+    // while the user decides, rather than reported after the request has already gone out.
+    compatibility = readClientVersion(spawnSync(codexExe, ['--version'],
+      { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
     console.log(`USER-OPERATED TEST: ${lite ? `${liteModel}/${liteEffort}; gateway search envelope` : `${model}/${effort}`}; ${transport}; one request to ${endpoint}`);
+    console.log(`Client version sent: ${compatibility.clientVersion} (${compatibility.clientVersionStatus}; project baseline ${compatibility.referenceClientVersion}).`);
     console.log('Reads the existing file cache in memory only. No refresh, writes, tool execution, redirects, or retries.');
-    console.log('This consumes account usage. The backend compatibility path is not a public API support guarantee.');
+    console.log(`This consumes account usage.${lite ? ' The backend runs its own search for this request.' : ''} The backend compatibility path is not a public API support guarantee.`);
     const terminal = createInterface({ input: process.stdin, output: process.stdout });
     let answer;
     try { answer = await terminal.question('Type SEND to run once, or press Enter to cancel: '); }
     finally { terminal.close(); }
     if (answer !== 'SEND') stop('USER_CANCELLED');
     if (resolve(process.env.CODEX_HOME || expectedRoot).toLowerCase() !== resolve(expectedRoot).toLowerCase()) stop('UNEXPECTED_CODEX_HOME');
-    const cli = spawnSync(codexExe, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 });
-    if (cli.error || cli.status !== 0 || cli.stdout.trim() !== `codex-cli ${testedVersion}`) stop('CLI_VERSION_CHANGED');
     let credential;
     try {
       checkStore(readSmall(join(expectedRoot, 'config.toml')));
@@ -460,16 +473,16 @@ async function main() {
     }
     attempted = true;
     const envelope = lite ? liteSearchEnvelope() : undefined;
-    const result = transport === 'node-fetch' ? await sendFetchOnce(credential, testedVersion, envelope)
-      : await sendOnce(credential, testedVersion, envelope);
+    const result = transport === 'node-fetch' ? await sendFetchOnce(credential, compatibility.clientVersion, envelope)
+      : await sendOnce(credential, compatibility.clientVersion, envelope);
     credential = null;
     console.log(JSON.stringify({ ...result, mode: lite ? 'search-envelope' : 'connectivity',
       requestedModel: lite ? liteModel : model, requestedEffort: lite ? liteEffort : effort,
-      clientVersion: testedVersion, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
+      ...compatibility, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
     if (!result.passed) process.exitCode = 1;
   } catch (error) {
     console.log(JSON.stringify({ passed: false, category: knownErrors.has(error.message) ? error.message : 'LOCAL_CHECK_FAILED',
-      transport, requestAttempts: attempted ? 1 : 0, credentialWrites: 0, retries: 0 }, null, 2));
+      ...compatibility, transport, requestAttempts: attempted ? 1 : 0, credentialWrites: 0, retries: 0 }, null, 2));
     process.exitCode = 1;
   }
 }

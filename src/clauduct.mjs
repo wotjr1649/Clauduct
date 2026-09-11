@@ -254,9 +254,16 @@ export async function runInteractive(gateway, startClient, { signal, cleanupMs =
     transportRequestsClosed: state.transport.activeRequests === 0
   };
   const resourcesClosed = Object.values(cleanup).every(value => value === true);
+  // The projection must never be able to take the report down with it. A throw here used to
+  // travel out of runInteractive, so main() never reached the exit line, the status JSON or the
+  // status file — the record destroyed by the thing it records. The cleanup flags are computed
+  // from state directly and still stand, so a failed projection names itself and keeps them.
+  let snapshot;
+  try { snapshot = requestStatusSnapshot(state, contextEnv); }
+  catch (error) { snapshot = { statusUnavailable: String(error?.message ?? error).slice(0, 64) }; }
   return { category: !resourcesClosed ? 'CLEANUP_FAILED' : failure ?? (exitCode === 0 ? 'SUCCESS' : 'CLIENT_FAILED'),
     clientExitCode: exitCode, resourcesClosed, requestAttempts: state.transport.requestAttempts,
-    requestStatus: { ...requestStatusSnapshot(state, contextEnv), cleanup } };
+    requestStatus: { ...snapshot, cleanup } };
 }
 
 async function main() {

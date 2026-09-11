@@ -103,7 +103,14 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 
 2026-09-11, Node.js v24.19.0, 프로젝트 `Invoke-ClauductNodeTests`, 60초 제한, test concurrency 1.
 
-2026-09-11 후반, 웹 검색 경로 구현 이후 기준선은 다음과 같다: `test-native-gateway`(61), `test-native`(47), `test-native-search`(8, 신규), `test-native-transport`(루프백 검색 왕복 포함), `test-client-version`(loopback 12), `verification/test-manual-http-probe`(88). 이 실행에서 `test-chat`과 `test-review-diff`는 이 셸에서 자식 프로세스를 띄우지 못해 실패했고, `verification/test-http-transport`와 `test-dotnet-http-transport`는 러너의 `--test-concurrency=1`이 프로브의 런타임 검사에 걸려 실패했다. 네 건 모두 HEAD 워크트리에서 같은 실패를 확인했으므로 환경 조건이며 변경 때문이 아니다. 뒤 두 건은 exec 인수 없이 직접 실행하면 통과한다.
+2026-09-11 후반, 웹 검색 경로 구현 이후 기준선은 다음과 같다: `test-native-gateway`(61), `test-native`(47), `test-native-search`(8, 신규), `test-native-transport`(루프백 검색 왕복 포함), `test-client-version`(loopback 12), `verification/test-manual-http-probe`(88). 2026-09-12에 `src/test-*.mjs` 20개가 **20/20으로 통과**한다(러너 종료 코드 0).
+
+그 전까지 `test-chat`과 `test-review-diff`를 "이 셸에서 자식 프로세스를 띄우지 못한다"로 적어 둔 것은 **오진이었다.** 실패 이름만 남기고 이유를 버리는 하네스 때문에 두 개의 다른 원인이 한 라벨로 묶여 있었다.
+
+- `test-chat` 7건은 셸과 무관했다. 6건은 `runInteractive`가 상태 projection 실패에 그대로 무너지던 것이고 — 그중 하나는 자식을 아예 띄우지도 않는다 — 1건은 기본 effort를 `medium`으로 적은 낡은 기대값이었다. 원인을 고치자 27건 전부 통과한다.
+- `test-review-diff`는 러너가 자식 env를 `SystemRoot`/`WINDIR`/`TEMP`/`TMP`로 비우면서 **PATH가 없어** git을 찾지 못하는 것이다. PATH가 있으면 통과하고, 러너 아래에서는 `notRun`으로 보고한다. 매번 빨간 채로 두면 아무도 읽지 않는 실패가 되고, 그것이 이 오진이 살아남은 방식이었다.
+
+`verification/test-http-transport`와 `test-dotnet-http-transport`는 러너의 `--test-concurrency=1`이 프로브의 런타임 검사에 걸리는 별개 건이며 exec 인수 없이 직접 실행하면 통과한다.
 
 아래는 그 이전 기준선 기록이다. 기준 11개 파일이 함께 통과했다: `test-native-gateway`(54), `test-launcher-native`, `test-native-protocol`, `test-native-transport`, `test-native`(47), `test-request-diagnostics`(69 / loopback 34), `test-upstream-failures`(84 / loopback 62), `test-unsupported-event-diagnostics`(61 / loopback 36), `test-cancel-snapshot`(6), `test-client-version`(loopback 12), `test-compact-policy`. 모두 `src/`의 `.mjs`다.
 

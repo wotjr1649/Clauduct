@@ -72,7 +72,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | Workflow 자식 선택 | 조건부 | 992c0794 병렬 성공, `test-workflow-selection` 36개 | custom agentType·중첩·resume은 미검증 | 없음 |
 | 자동 압축 실제 발동(400K / 320K) | 미검증 | 과거 축소 창(100000)에서의 발동 증거만 있다 | 현재 기본값에서의 발동, 자식별 압축, 압축 후 기억·도구 이력 보존이 미확인 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
 | 웹 검색 경로 | 차단(상류) | [브리지 감사](audit-2026-09-11-web-search-bridge.md), [실사용](audit-2026-09-11-live-session-verification.md)에서 `webSearchRequests:1 / webSearchCalls:0` | 게이트웨이는 정상 번역한다. **상류 Codex가 검색을 수행하지 않는다.** 원인은 오프라인으로 좁힐 수 없다 | 근거 없이 도구 타입을 바꿔 재시도하지 않는다 |
-| WebFetch | 미검증 | 직전 실행에서 `UNSUPPORTED_BETA`로 실패했고 그 원인을 고쳤다 | 수정 후 실제 동작은 다음 실행에서 확인 | 한 번 써 보고 `judgedBetaLabels`를 본다 |
+| WebFetch | 완료 | 세션 4851a91a에서 `https://example.com` 정상 성공. 요청 3개(결정·apply·후속) 중 `effort: high`인 apply 호출이 텍스트를 반환 | 이전 한 번의 `No response from model`은 대상 URL 미기록으로 재현 불가. 게이트웨이는 거부한 적이 없다 | 재발 시 `effort: high` 요청의 타이밍으로 귀속한다 |
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
 | 장기 자원 안정성 | 조건부 | `test-native` 47개(1000요청 / 20동시 포함), `test-request-admission`, `test-native-gateway`의 등록표 만료·상한 검사 | 등록표는 30분 유휴 만료 뒤 1024 상한으로 묶인다. 3주기 종료 후 socket·timer·listener 실측은 여전히 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`·`admission`·`agentRegistrationsEvicted`를 함께 본다 |
 | HTTP 서버 수준 거부 집계 | 완료 | `lifetime.transportRejections`, `test-native-gateway`의 Expect 검사 | 연결 단계에서 끊긴 바이트의 원인까지는 남기지 않는다 | 없음 |

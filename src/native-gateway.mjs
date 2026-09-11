@@ -22,7 +22,8 @@ function diagnosticCategory(code) {
 const MAX_AGENTS = 1024;
 
 export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture, onWebSearchUnused,
-  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS, agentIdleMs = 1800000 } = {}) {
+  admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS, agentIdleMs = 1800000,
+  injectStreamError = false } = {}) {
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
     && Number.isInteger(heartbeatMs) && heartbeatMs >= 5 && heartbeatMs <= 60000
@@ -49,7 +50,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // rejectedBeforeStart counts HTTP-boundary rejections that never became a request record:
   // another route, a local boundary or authorization rejection, a malformed identifier header
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
-  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0,
+  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
     transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
     webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0 };
@@ -59,6 +60,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // one label, so a long run reports a number nothing can be read out of. Keys come from
   // diagnosticCategory, which answers inside a fixed vocabulary, so this cannot grow unbounded.
   const rejectedCategories = {};
+  // Verification only, and off unless the launcher was told which fallback arm is running.
+  // One synthetic upstream error per gateway, after content has already reached the client,
+  // because that is the shape the client's stream-failure path actually sees. Never an idle
+  // timeout: the client disables fallback for those on a separate term, which would decide
+  // the experiment before the setting under test got a say. Hooked to onEvent only, so a
+  // transport that returns its events as an array instead of streaming them is not injected.
+  let streamErrorInjected = false;
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
     activeTimers: activeBodies + activeHeartbeats + Number(admission.diagnostics().timerActive), activeBodies,
@@ -366,6 +374,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           attemptTimings: timing.attempts,
           onEvent: async event => {
             await pushEvent(event);
+            if (injectStreamError && !streamErrorInjected && responseStarted) {
+              streamErrorInjected = true;
+              lifetime.injectedStreamErrors++;
+              await pushEvent({ type: 'error', error: { type: 'api_error', code: 'server_error' } });
+            }
             if (!heartbeat) {
               activeHeartbeats++;
               heartbeat = setInterval(() => {

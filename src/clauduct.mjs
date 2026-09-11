@@ -12,7 +12,10 @@ import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { CLAUDE_EXE } from '../poc/claude-inspection.mjs';
 import { requestStatusSnapshot } from './request-status.mjs';
 
-const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact', '--verify-agent-models', '--gpt-agents', '--document-first']);
+const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact', '--verify-agent-models', '--verify-fallback', '--gpt-agents', '--document-first']);
+// Both arms inject the same stream error; only the child's fallback setting differs, so a
+// run says which arm it was and neither arm is reachable without naming itself.
+export const FALLBACK_ARMS = Object.freeze(['blocked', 'allowed']);
 const blockedOptions = new Set(['--settings', '--setting-sources', '--agents', '--system-prompt']);
 // These native options consume a following value. Tracking their values keeps a
 // value such as "--model" from being mistaken for a wrapper option.
@@ -27,7 +30,7 @@ const DOCUMENT_FIRST_PROMPT = 'When the user asks you to read a task document an
 export function launchOptions(args) {
   if (!Array.isArray(args) || args.some(flag => typeof flag !== 'string')) throw new Error('INVALID_ARGUMENTS');
   let model = DEFAULT_SELECTION.model, effort, mode = 'interactive', verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false;
-  let documentFirst = false, appendPrompt = false;
+  let documentFirst = false, appendPrompt = false, verifyFallback;
   const forward = [];
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
@@ -62,6 +65,12 @@ export function launchOptions(args) {
         throw new Error('INVALID_ARGUMENTS');
       }
       model = value ?? args[++i];
+    } else if (name === '--verify-fallback') {
+      if (value !== undefined ? value.length === 0 : args[i + 1] === undefined || args[i + 1] === '--') {
+        throw new Error('INVALID_ARGUMENTS');
+      }
+      verifyFallback = value ?? args[++i];
+      if (!FALLBACK_ARMS.includes(verifyFallback)) throw new Error('INVALID_ARGUMENTS');
     } else if (name === '--effort') {
       if (value !== undefined ? value.length === 0 : args[i + 1] === undefined || args[i + 1] === '--') {
         throw new Error('INVALID_ARGUMENTS');
@@ -88,6 +97,7 @@ export function launchOptions(args) {
   if (documentFirst && appendPrompt) throw new Error('INVALID_ARGUMENTS');
   return { selected: selectModel(model, effort ?? (seen.has('--model') ? undefined : DEFAULT_SELECTION.effort)), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}),
     ...(verifyAgentModels ? { verifyAgentModels } : {}), ...(gptAgents ? { gptAgents } : {}),
+    ...(verifyFallback ? { verifyFallback } : {}),
     ...(documentFirst ? { documentFirst } : {}) };
 }
 
@@ -111,7 +121,7 @@ function sessionAgentDefinitions({ verifyAgentModels = false, gptAgents = false 
   return definitions;
 }
 
-export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELECTION, forward = [], { verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false, documentFirst = false } = {}) {
+export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELECTION, forward = [], { verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false, documentFirst = false, verifyFallback } = {}) {
   const env = {};
   // Preserve native configuration discovery, including an explicit CLAUDE_CONFIG_DIR.
   for (const key of Object.keys(source)) {
@@ -119,12 +129,18 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
       || /(?:TOKEN|SECRET|PASSWORD|API_KEY|PRIVATE_KEY)/i.test(key)) continue;
     env[key] = source[key];
   }
+  // The parent copy is a denylist, so a parent value would otherwise survive into the arm
+  // that is supposed to be running without one.
+  if (verifyFallback === 'allowed') delete env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK;
   const settings = { env: {
     CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(CONTEXT_POLICY.window),
     CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(verifyAutoCompact ? 100000 : CONTEXT_POLICY.window),
     CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: String(CONTEXT_POLICY.compactPercent),
     CLAUDE_CODE_MAX_RETRIES: '0',
-    CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '1',
+    // The client disables fallback on an independent OR term, so '1' settles it whatever the
+    // gate flags say. The control arm removes the key instead of writing '0': what the client
+    // makes of '0' is its parser's business and the experiment must not rest on it.
+    ...(verifyFallback === 'allowed' ? {} : { CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '1' }),
     CLAUDE_CODE_RETRY_WATCHDOG: '0',
     // Anthropic-side reporting has no backend here; keep it off for this child only.
     DISABLE_TELEMETRY: '1', DISABLE_ERROR_REPORTING: '1',
@@ -227,7 +243,7 @@ export async function runInteractive(gateway, startClient, { signal, cleanupMs =
 async function main() {
   const options = launchOptions(process.argv.slice(2)), selected = options.selected;
   if (options.mode === 'help') {
-    process.stdout.write('clauduct [--model astra|sol|terra|luna] [--effort low|medium|high|xhigh|max] [--dry-run] [Claude 옵션]\n'
+    process.stdout.write('clauduct [--model astra|sol|terra|luna] [--effort low|medium|high|xhigh|max] [--verify-fallback blocked|allowed] [--dry-run] [Claude 옵션]\n'
       + '기본 astra/low. native 도구/config 유지, 누적 시간·요청 제한 없음. --continue/--resume 전달.\n');
     process.stdout.write('--verify-auto-compact: 이 실행에만 압축 계산 창 100K(기본 예약량에서 약 67.4K 발동)를 적용. 모델 창은 400K 유지.\n');
     process.stdout.write('--verify-agent-models: 이 자식 세션에만 GPT 모델별 및 inherit Read 전용 시험용 agent 5개 등록. 일반 역할과 전역 설정은 유지.\n');
@@ -240,6 +256,7 @@ async function main() {
     process.stdout.write(JSON.stringify({ mode: 'interactive', model: selected.model, effort: selected.effort,
       terminal: 'inherit', tools: 'native', requestBudget: null, lifetimeMs: null, models: MODELS, contextPolicy: CONTEXT_POLICY,
       verificationAutoCompactWindow: options.verifyAutoCompact ? 100000 : null,
+      verificationFallbackArm: options.verifyFallback ?? null,
       verificationAgentModels: options.verifyAgentModels ? Object.keys(agentModelProbes()) : [],
       generalAgentModels: options.gptAgents ? Object.keys(sessionAgentDefinitions({ gptAgents: true })) : [],
       documentFirst: options.documentFirst === true,
@@ -259,6 +276,7 @@ async function main() {
   try {
     transport = openUserTransport({ signal: controller.signal, transportFactory: createNativeTransport });
     gateway = await startNativeGateway({ transport,
+      injectStreamError: options.verifyFallback !== undefined,
       agentSelection: createAgentSelection({ projectsRoot: join(resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')), 'projects'),
         agentDefinitions: sessionAgentDefinitions(options) }),
       // Each fires once per session and carries no observed name or value. They are collected

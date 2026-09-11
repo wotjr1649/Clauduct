@@ -1,9 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { request as httpRequest, Agent as HttpAgent } from 'node:http';
-import { buildHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
+import { buildHeaders, buildSearchHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, LITE_HEADER_NAMES } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, LITE_HEADER_NAMES, liteSearchEnvelope } from './native-protocol.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -437,6 +438,87 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     }
   }
 
+  // The client's search side query is answered from the backend's standalone search endpoint:
+  // one plain JSON POST, no stream, no model turn. Same host and same credential as a model
+  // request, so nothing new is trusted and no second secret exists.
+  const searchDestination = destination.replace(/\/responses$/, '/alpha/search');
+  need(searchDestination !== destination, 'INVALID_ENDPOINT');
+  const searchSession = randomUUID();
+
+  async function search(body, signal) {
+    need(!closed, 'TRANSPORT_CLOSED');
+    need(signal instanceof AbortSignal, 'INVALID_OPTIONS');
+    const job = { controller: new AbortController(), timers: new Set(), started: performance.now(),
+      attemptTimings: [], extraHeaders: {}, finished: Promise.resolve() };
+    let finish;
+    job.finished = new Promise(resolve => { finish = resolve; });
+    const abort = () => job.controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    active.add(job);
+    let current;
+    try {
+      current = await resolveCredential(false);
+      const account = current.account;
+      try { return await searchOnce(job, body, current); }
+      catch (error) {
+        if (error?.code !== 'UNAUTHENTICATED' || !supplier) throw error;
+        current = await resolveCredential(true, account);
+        return await searchOnce(job, body, current);
+      }
+    } catch (error) {
+      lastCategory = error?.code ?? 'SEARCH_UNAVAILABLE';
+      throw error instanceof NativeError ? error : new NativeError('SEARCH_UNAVAILABLE');
+    } finally {
+      signal.removeEventListener('abort', abort);
+      current = undefined;
+      for (const timer of job.timers) clearTimeout(timer);
+      job.timers.clear(); active.delete(job); finish();
+    }
+  }
+
+  function searchOnce(job, body, credential) {
+    const raw = JSON.stringify({ ...body, id: searchSession });
+    const headers = buildSearchHeaders(credential, clientVersion, raw,
+      liteSearchEnvelope().headers['x-codex-turn-metadata']);
+    const timeoutMs = Math.min(settings.timeoutMs, 45_000);
+    return new Promise((resolveResult, reject) => {
+      let settled = false;
+      const done = (action, value) => { if (!settled) { settled = true; clearTimeout(timer); action(value); } };
+      const timer = setTimeout(() => { req.destroy(); done(reject, new NativeError('UPSTREAM_IDLE_TIMEOUT')); }, timeoutMs);
+      job.timers.add(timer);
+      attempts++;
+      const req = request(searchDestination, { method: 'POST', agent, headers,
+        ...(request === httpsRequest && { rejectUnauthorized: true }) }, res => {
+        const chunks = [];
+        let length = 0;
+        lastStatus = res.statusCode ?? 0;
+        res.on('data', chunk => {
+          if ((length += chunk.length) > settings.maxResponseBytes) {
+            req.destroy(); done(reject, new NativeError('RESPONSE_TOO_LARGE'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on('error', () => done(reject, new NativeError('SEARCH_UNAVAILABLE')));
+        res.on('end', () => {
+          responseBytes = length; totalResponseBytes += length;
+          const status = res.statusCode ?? 0;
+          if (status === 401) { done(reject, new NativeError('UNAUTHENTICATED')); return; }
+          if (status !== 200) { done(reject, new NativeError('SEARCH_HTTP_ERROR')); return; }
+          let doc;
+          try { doc = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+          catch { done(reject, new NativeError('SEARCH_RESPONSE_SHAPE')); return; }
+          lastCategory = 'SUCCESS';
+          done(resolveResult, doc);
+        });
+      });
+      req.on('socket', socket => trackSocket(socket));
+      req.on('error', () => done(reject, new NativeError(job.controller.signal.aborted ? 'CANCELLED' : 'SEARCH_UNAVAILABLE')));
+      job.controller.signal.addEventListener('abort', () => { req.destroy(); done(reject, new NativeError('CANCELLED')); }, { once: true });
+      req.end(raw);
+    });
+  }
+
   async function close() {
     if (!closed) {
       closed = true; supplier = undefined; staticCredential = undefined;
@@ -451,5 +533,5 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     return diagnostics();
   }
 
-  return Object.freeze({ send, close, diagnostics });
+  return Object.freeze({ send, search, close, diagnostics });
 }

@@ -21,7 +21,12 @@ export function searchSideQuery(doc) {
   if (!Array.isArray(doc?.tools) || doc.tools.length !== 1) return null;
   const [tool] = doc.tools;
   if (tool?.type !== 'web_search_20250305' || tool.name !== 'web_search') return null;
-  if (doc.tool_choice?.type !== 'tool' || doc.tool_choice.name !== 'web_search') return null;
+  // Live requests carrying this tool reached the upstream stage, so the client does not always
+  // name the tool in tool_choice. Accept the shapes it can send and refuse anything that points
+  // at a different tool, which would be a conversation rather than the side query.
+  const choice = doc.tool_choice;
+  if (!(choice === undefined || choice?.type === 'auto'
+    || (choice?.type === 'tool' && choice.name === 'web_search'))) return null;
   if (!Array.isArray(doc.messages) || doc.messages.length !== 1 || doc.messages[0]?.role !== 'user') return null;
   const body = text(doc.messages[0].content);
   if (typeof body !== 'string' || !body.startsWith(PROMPT)) return null;

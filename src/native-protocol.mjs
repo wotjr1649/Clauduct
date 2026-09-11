@@ -240,7 +240,7 @@ export function liteSearchEnvelope(now = Date.now(), id = randomUUID) {
 }
 export const LITE_HEADER_NAMES = LITE_HEADERS;
 
-export function prepareNative(doc, { subagent = false, route, turnToolChanges = false } = {}) {
+export function prepareNative(doc, { subagent = false, route, turnToolChanges = false, search = false } = {}) {
   keys(doc, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice', 'thinking',
     'metadata', 'output_config', 'context_management', 'temperature', 'top_p', 'stop_sequences'], 'REQUEST_FIELDS');
   requestNeed(doc.stream === true, doc.stream === false ? 'REQUEST_STREAM_FALSE'
@@ -305,7 +305,10 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
       || typeof doc.tool_choice.disable_parallel_tool_use === 'boolean', 'UNSUPPORTED_TOOLS');
     parallel = doc.tool_choice.disable_parallel_tool_use !== true;
     toolChoice = doc.tool_choice.type === 'any' ? 'required' : doc.tool_choice.type;
-    if (toolChoice === 'tool') {
+    // The gateway answers the search side query itself, so a choice naming the server tool is
+    // satisfied here rather than upstream: no function tool of that name exists, or should.
+    if (toolChoice === 'tool' && search && doc.tool_choice.name === 'web_search') toolChoice = 'none';
+    else if (toolChoice === 'tool') {
       need(definitions.has(doc.tool_choice.name), 'UNSUPPORTED_TOOLS');
       discovered.add(doc.tool_choice.name);
       toolChoice = { type: 'function', name: doc.tool_choice.name };

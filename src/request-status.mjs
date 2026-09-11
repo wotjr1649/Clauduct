@@ -74,10 +74,13 @@ export function requestStatusSnapshot(value, env = {}) {
       compactPercent: number(row.agentContextPolicy.compactPercent) } : null,
     subagent: row?.subagent === true, success: row?.success === true,
     webSearchRequested: row?.webSearchRequested === true, webSearchCalls: counter(row?.webSearchCalls) ?? 0,
+    // Whether this gateway answered the search itself, and how many links it returned. Counts
+    // only: no query and no result ever reaches a status response.
+    webSearchAnswered: row?.webSearchAnswered === true, webSearchLinks: counter(row?.webSearchLinks) ?? 0,
     judgedBetaLabels: betaLabels(row?.judgedBetaLabels),
     contentBlocks: row?.contentBlocks ? { text: counter(row.contentBlocks.text) ?? 0,
       toolUse: counter(row.contentBlocks.toolUse) ?? 0, thinking: counter(row.contentBlocks.thinking) ?? 0 } : null,
-    firstContentBlock: ['text', 'tool_use', 'redacted_thinking'].includes(row?.firstContentBlock) ? row.firstContentBlock : null,
+    firstContentBlock: ['text', 'tool_use', 'redacted_thinking', 'server_tool_use', 'web_search_tool_result'].includes(row?.firstContentBlock) ? row.firstContentBlock : null,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
     unsupportedEventTypeFormat: EVENT_TYPE_FORMATS.includes(row?.unsupportedEventTypeFormat) ? row.unsupportedEventTypeFormat : null,
     failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,
@@ -136,7 +139,7 @@ export function requestStatusSnapshot(value, env = {}) {
       ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null, ...Object.fromEntries(
       ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'unsupportedEvents', 'rejectedBeforeStart',
         'unmappedAgentModels', 'transportRejections', 'agentRegistrationsEvicted',
-        'agentRegistrationsExpired', 'webSearchRequests', 'webSearchCalls'].map(key =>
+        'agentRegistrationsExpired', 'webSearchRequests', 'webSearchCalls', 'webSearchLinks'].map(key =>
         [key, counter(lifetime[key])])),
       firstRejectedCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(lifetime.firstRejectedCategory)
         ? lifetime.firstRejectedCategory : null } : null,

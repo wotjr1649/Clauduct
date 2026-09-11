@@ -461,6 +461,17 @@ export function buildHeaders(credential, version, body, lite = false) {
       originator: 'codex_cli_rs', 'Openai-Beta': 'responses=experimental' };
 }
 
+// The standalone search endpoint answers plain JSON, and the reference client identifies itself
+// to it the same way it identifies itself for a model request. One builder so the probe and the
+// gateway cannot drift apart on the wire.
+export function buildSearchHeaders(credential, version, body, turnMetadata) {
+  return { Authorization: `Bearer ${credential.accessToken}`, 'ChatGPT-Account-ID': credential.account,
+    'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Encoding': 'identity',
+    originator: 'codex_exec', 'User-Agent': liteAgent(version),
+    ...(turnMetadata && { 'x-codex-turn-metadata': turnMetadata }),
+    'Content-Length': Buffer.byteLength(body) };
+}
+
 export function buildFetchOptions(body, headers, signal) {
   // A non-replayable body prevents Fetch's automatic HTTP 421 resend.
   const bytes = new TextEncoder().encode(body);
@@ -497,11 +508,7 @@ async function sendFetchOnce(credential, version, envelope) {
 // Plain JSON, not SSE: the reference client posts this one and parses the whole body at once.
 async function sendSearchOnce(credential, version, envelope) {
   const body = JSON.stringify(buildSearchBody(envelope));
-  const headers = { Authorization: `Bearer ${credential.accessToken}`,
-    'ChatGPT-Account-ID': credential.account, 'Content-Type': 'application/json',
-    Accept: 'application/json', 'Accept-Encoding': 'identity', originator: 'codex_exec',
-    'User-Agent': liteAgent(version), 'x-codex-turn-metadata': envelope.headers['x-codex-turn-metadata'],
-    'Content-Length': Buffer.byteLength(body) };
+  const headers = buildSearchHeaders(credential, version, body, envelope.headers['x-codex-turn-metadata']);
   return new Promise((resolveResult, reject) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);

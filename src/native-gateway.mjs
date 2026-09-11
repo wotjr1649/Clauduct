@@ -7,6 +7,7 @@ import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
 import { betaFailure, unknownBetas, judgedBetas } from './native-beta.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
+import { searchSideQuery, searchRequestBody, searchReply } from './native-search.mjs';
 
 // Fixed-label diagnostics. A composed local code carries a variable suffix built from
 // this project's own allowlists, never upstream text; keep only its fixed prefix.
@@ -51,7 +52,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
     transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
-    webSearchRequests: 0, webSearchCalls: 0 };
+    webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0 };
   let notifiedUnmappedModel = false, notifiedEventCapture = false, notifiedWebSearchUnused = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
   const done = new Promise(resolve => { finish = resolve; });
@@ -273,7 +274,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       const selectionRequest = agentSelection?.begin(req.headers['x-claude-code-session-id'], agent);
       const route = agentSelection ? agentBinding?.selection?.route : Object.hasOwn(ROLE_MODELS, role) ? ROLE_MODELS[role] : undefined;
       stage = 'prepare';
-      const prepared = prepareNative(doc, { subagent: agent !== undefined, route,
+      // The client's search side query is a server tool call addressed to this gateway, not a
+      // model request. Detected before preparation so the model path stays untouched; anything
+      // that is not exactly the side query the client sends falls through to it.
+      const searchRequest = searchSideQuery(doc);
+      const prepared = prepareNative(doc, { subagent: agent !== undefined, route, search: searchRequest !== null,
         turnToolChanges: req.headers['anthropic-beta']?.split(',').some(value => value.trim() === 'mid-conversation-tool-changes-2026-07-01') });
       stage = 'review';
       prepareReviewContext(prepared, agentBinding?.selection);
@@ -289,6 +294,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       // Fixed booleans/counts only: whether the client asked for backend search and how many
       // searches the backend actually ran. Neither carries a query or a result.
       timing.webSearchRequested = prepared.webSearch === true;
+      timing.webSearchAnswered = searchRequest !== null;
       // Counted where the request is shaped, not where it succeeds: a search request that
       // fails upstream is exactly the one the lifetime totals have to show.
       if (timing.webSearchRequested) lifetime.webSearchRequests++;
@@ -299,6 +305,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       }
       upstream = true;
       const responseOptions = { deferText: agentBinding?.selection?.source === 'workflow-result' };
+      let output;
       let response = createNativeResponse(prepared, responseOptions);
       const validateResponse = (phase, action) => {
         need(!controller.signal.aborted, 'CANCELLED');
@@ -328,46 +335,59 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       };
       timing.transportStartedMs = elapsed();
       stage = 'upstream';
-      const pushEvent = async event => {
-        timing.firstEventMs ??= elapsed();
-        timing.lastUpstreamEventMs = elapsed();
-        if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
-        await emit(validateResponse('stream', () => response.push(event)));
-        if (event.type === 'codex.response.metadata') {
-          timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
-          lifetime.auxiliaryMetadataEvents++;
-        }
-      };
-      const legacyEvents = await transport.send(prepared.body, controller.signal, {
-        attemptTimings: timing.attempts,
-        ...(prepared.upstreamHeaders && { headers: prepared.upstreamHeaders }),
-        onEvent: async event => {
-          await pushEvent(event);
-          if (!heartbeat) {
-            activeHeartbeats++;
-            heartbeat = setInterval(() => {
-              if (heartbeatPending || controller.signal.aborted || res.writableEnded) return;
-              heartbeatPending = true;
-              void emit([{ type: 'ping' }], true).then(() => { heartbeatPending = false; }, error => {
-                heartbeatPending = false; deliveryError = error; controller.abort(error);
-              });
-            }, heartbeatMs);
+      if (searchRequest) {
+        // No model turn: one JSON round trip to the backend's own search endpoint, then the
+        // blocks the client reduces. Nothing from this conversation travels with the query.
+        const found = await transport.search(
+          searchRequestBody(null, prepared.selected.model, searchRequest), controller.signal);
+        timing.transportFinishedMs = elapsed();
+        need(!controller.signal.aborted, 'CANCELLED');
+        stage = 'output-validation';
+        output = searchReply(prepared.selected.model, searchRequest, found);
+        timing.webSearchCalls = output.searchCalls;
+        timing.webSearchLinks = output.links;
+      } else {
+        const pushEvent = async event => {
+          timing.firstEventMs ??= elapsed();
+          timing.lastUpstreamEventMs = elapsed();
+          if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
+          await emit(validateResponse('stream', () => response.push(event)));
+          if (event.type === 'codex.response.metadata') {
+            timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
+            lifetime.auxiliaryMetadataEvents++;
           }
-        },
-        canRetry: () => !responseStarted && !controller.signal.aborted,
-        onRetry: () => {
-          need(!responseStarted, 'RETRY_AFTER_OUTPUT');
-          if (timing.retryScheduledMs.length < 5) timing.retryScheduledMs.push(elapsed());
-          response = createNativeResponse(prepared, responseOptions);
-        }
-      });
-      timing.transportFinishedMs = elapsed();
-      stopHeartbeat(); await writeTail;
-      need(!controller.signal.aborted, 'CANCELLED');
-      // Existing injected offline transports can still return the old event-array contract.
-      if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await pushEvent(event);
-      const output = validateResponse('final', () => response.finish());
-      stage = 'output-validation';
+        };
+        const legacyEvents = await transport.send(prepared.body, controller.signal, {
+          attemptTimings: timing.attempts,
+          ...(prepared.upstreamHeaders && { headers: prepared.upstreamHeaders }),
+          onEvent: async event => {
+            await pushEvent(event);
+            if (!heartbeat) {
+              activeHeartbeats++;
+              heartbeat = setInterval(() => {
+                if (heartbeatPending || controller.signal.aborted || res.writableEnded) return;
+                heartbeatPending = true;
+                void emit([{ type: 'ping' }], true).then(() => { heartbeatPending = false; }, error => {
+                  heartbeatPending = false; deliveryError = error; controller.abort(error);
+                });
+              }, heartbeatMs);
+            }
+          },
+          canRetry: () => !responseStarted && !controller.signal.aborted,
+          onRetry: () => {
+            need(!responseStarted, 'RETRY_AFTER_OUTPUT');
+            if (timing.retryScheduledMs.length < 5) timing.retryScheduledMs.push(elapsed());
+            response = createNativeResponse(prepared, responseOptions);
+          }
+        });
+        timing.transportFinishedMs = elapsed();
+        stopHeartbeat(); await writeTail;
+        need(!controller.signal.aborted, 'CANCELLED');
+        // Existing injected offline transports can still return the old event-array contract.
+        if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await pushEvent(event);
+        output = validateResponse('final', () => response.finish());
+        stage = 'output-validation';
+      }
       // Fixed block kinds and counts, never their content. The client reads only the first
       // block in some paths, so record which kind that was.
       const blocks = output.message.content;
@@ -394,10 +414,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       stage = 'delivery';
       await emit(output.frames);
       res.end();
-      timing.webSearchCalls = response.webSearchCalls?.() ?? 0;
+      timing.webSearchCalls ??= response.webSearchCalls?.() ?? 0;
       timing.success = true;
       if (timing.webSearchRequested) {
         lifetime.webSearchCalls += timing.webSearchCalls;
+        lifetime.webSearchLinks += timing.webSearchLinks ?? 0;
         // A completed request that asked the backend to search and got no search back is a
         // silent no-op: nothing failed, yet the feature did nothing. Say so once.
         if (timing.webSearchCalls === 0 && !notifiedWebSearchUnused) {

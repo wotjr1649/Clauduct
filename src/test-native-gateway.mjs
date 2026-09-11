@@ -425,6 +425,75 @@ try {
     } finally { await gateway.close(); }
   }
   {
+    // The client's search side query is answered by this gateway, not by the model: the model
+    // transport is never reached, the reply carries the blocks the client reduces, and the
+    // query never appears in a status response.
+    const searchDoc = { model: 'astra', stream: true, max_tokens: 10000,
+      messages: [{ role: 'user', content: 'Perform a web search for the query: SYNTHETIC_QUERY' }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      tool_choice: { type: 'tool', name: 'web_search' } };
+    let sends = 0, searches = 0, sent;
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async body => { sends++; return frames(body); },
+      search: async body => { searches++; sent = body; return { encrypted_output: 'opaque',
+        output: 'SYNTHETIC_DIGEST', results: [{ type: 'text_result', url: 'https://example.com/a',
+          title: 'A', snippet: 'SYNTHETIC_SNIPPET' }] }; },
+      close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      const result = await call(gateway, { body: searchDoc });
+      assert.equal(result.status, 200);
+      assert.equal(searches, 1);
+      assert.equal(sends, 0);
+      // Only the query travels: the client's prompt wrapper does not.
+      assert.deepEqual(sent.commands, { search_query: [{ q: 'SYNTHETIC_QUERY' }] });
+      assert.equal(JSON.stringify(sent).includes('Perform a web search'), false);
+      for (const type of ['server_tool_use', 'web_search_tool_result', 'web_search_result']) {
+        assert.ok(result.text.includes(type), type);
+      }
+      assert.ok(result.text.includes('SYNTHETIC_DIGEST'));
+      const state = gateway.diagnostics(), status = requestStatusSnapshot(state);
+      assert.equal(state.lifetime.webSearchRequests, 1);
+      assert.equal(state.lifetime.webSearchCalls, 1);
+      assert.equal(state.lifetime.webSearchLinks, 1);
+      const row = status.recentRequests.at(-1);
+      assert.equal(row.success, true);
+      assert.equal(row.webSearchAnswered, true);
+      assert.equal(row.webSearchLinks, 1);
+      assert.equal(row.firstContentBlock, 'server_tool_use');
+      assert.equal(JSON.stringify(status).includes('SYNTHETIC_QUERY'), false);
+      assert.equal(JSON.stringify(status).includes('example.com'), false);
+      // The same tool in an ordinary conversation is still a model request.
+      assert.equal((await call(gateway, { body: { ...searchDoc, tool_choice: { type: 'auto' },
+        messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }] } })).status, 200);
+      assert.equal(sends, 1);
+      assert.equal(searches, 1);
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
+    // A failing search names its own stage instead of arriving as an empty success.
+    const searchDoc = { model: 'astra', stream: true, max_tokens: 10000,
+      messages: [{ role: 'user', content: 'Perform a web search for the query: SYNTHETIC_QUERY' }],
+      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+      tool_choice: { type: 'tool', name: 'web_search' } };
+    for (const [reply, category] of [[{ output: '', results: [] }, 'SEARCH_RESULTS_EMPTY'],
+      [{ results: [] }, 'SEARCH_RESPONSE_SHAPE'], [new NativeError('SEARCH_HTTP_ERROR'), 'SEARCH_HTTP_ERROR']]) {
+      const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+        send: async body => frames(body),
+        search: async () => { if (reply instanceof Error) throw reply; return reply; },
+        close: async () => {}, diagnostics: () => ({}) } });
+      try {
+        const result = await call(gateway, { body: searchDoc });
+        assert.equal(result.status, 502, category);
+        const row = requestStatusSnapshot(gateway.diagnostics()).recentRequests.at(-1);
+        assert.equal(row.success, false);
+        assert.equal(row.failureCategory, category);
+        assert.ok(FAILURE_DIAGNOSTIC_CATEGORIES.includes(category));
+        passed++;
+      } finally { await gateway.close(); }
+    }
+  }
+  {
     // An idle registration past the window is released before the cap is ever reached.
     const gateway = await startNativeGateway({ admissionOptions: ample, agentIdleMs: 1, transport: {
       send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });
@@ -797,7 +866,7 @@ try {
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, rejectedBeforeStart: 0, firstRejectedCategory: null,
         unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
-        agentRegistrationsExpired: 0, webSearchRequests: 0, webSearchCalls: 0,
+        agentRegistrationsExpired: 0, webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0,
         failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
     } finally { await gateway.close(); }
@@ -821,7 +890,7 @@ try {
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
         failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, rejectedBeforeStart: 0,
         firstRejectedCategory: null, unmappedAgentModels: 0, transportRejections: 0,
-        agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, webSearchRequests: 0,
+        agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, webSearchLinks: 0, webSearchRequests: 0,
         webSearchCalls: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;
       assert.equal(gateway.diagnostics().lifetime.started, 1);

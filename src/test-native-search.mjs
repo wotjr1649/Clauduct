@@ -17,6 +17,12 @@ check('the client side query is recognised', () => {
     messages: [{ role: 'user', content: [{ type: 'text', text: 'Perform a web search for the query: SYNTHETIC_QUERY' }] }]
   })).query, 'SYNTHETIC_QUERY');
   assert.deepEqual(searchSideQuery(side('q', { allowed_domains: ['example.com'] })).allowed, ['example.com']);
+  // The client does not always name the tool in tool_choice: live requests carrying it reached
+  // the upstream stage, which a choice naming a tool with no function definition cannot.
+  for (const choice of [undefined, { type: 'auto' }, { type: 'tool', name: 'web_search' }]) {
+    const doc = side(); if (choice === undefined) delete doc.tool_choice; else doc.tool_choice = choice;
+    assert.equal(searchSideQuery(doc)?.query, 'SYNTHETIC_QUERY', JSON.stringify(choice));
+  }
 });
 check('anything the client would not send falls through to the model', () => {
   const cases = [
@@ -24,6 +30,8 @@ check('anything the client would not send falls through to the model', () => {
     { tools: [tool(), tool()] },
     { tools: [{ type: 'web_search_20250305', name: 'other' }] },
     { tool_choice: 'auto' },
+    { tool_choice: { type: 'any' } },
+    { tool_choice: { type: 'none' } },
     { tool_choice: { type: 'tool', name: 'Bash' } },
     { messages: [{ role: 'user', content: 'search the web for cats' }] },
     { messages: [{ role: 'assistant', content: 'Perform a web search for the query: x' }] },

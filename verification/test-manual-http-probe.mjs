@@ -1,9 +1,9 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
-import { buildBody, buildLiteBody, buildHeaders, checkStore, selectCredential, summarizeResponse, model, endpoint,
-  liteModel, liteEffort, readClientVersion, LITE_PROMPT,
+import { buildBody, buildHeaders, checkStore, selectCredential, summarizeResponse, model, endpoint,
+  searchModel, readClientVersion,
   buildSearchBody, summarizeSearch, searchEndpoint, SEARCH_QUERY } from './manual-http-probe.mjs';
-import { liteSearchEnvelope } from '../src/native-protocol.mjs';
+import { searchEnvelope } from '../src/native-protocol.mjs';
 import { REFERENCE_CLIENT_VERSION } from '../src/client-version.mjs';
 
 let count = 0;
@@ -412,77 +412,6 @@ check('duplicate content completion prevents reconstruction', () => {
   const result = streamSummary([delta('OK', 1), textDone('OK'), part, part, textless]);
   assert.equal(result.passed, false); assert.equal(result.textDiagnostics.streamOrderValid, false);
 });
-// Search mode: the envelope the gateway sends, and a backend search counted rather than
-// treated as an unexpected tool. Never reaches the network; every fixture is local.
-const searchItem = { id: 'ws_synthetic', type: 'web_search_call', status: 'completed' };
-const searchComplete = { type: 'response.completed', response: { model: liteModel, status: 'completed',
-  reasoning: { effort: liteEffort }, output: [searchItem,
-    { type: 'message', content: [{ type: 'output_text', text: 'SYNTHETIC_REPLY' }] }],
-  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } };
-const liteSummary = (...events) => summarizeResponse(200, 'text/event-stream',
-  Buffer.concat(events.map(sse)), null, true);
-check('search envelope shape', () => {
-  const body = buildLiteBody(liteSearchEnvelope());
-  assert.equal('instructions' in body, false);
-  assert.equal('tools' in body, false);
-  // An empty namespace drew a 400 naming tools, so with no client tools the item is not sent.
-  assert.equal(body.input.some(item => item.type === 'additional_tools'), false);
-  assert.equal(body.reasoning.context, 'all_turns');
-  assert.equal(typeof body.prompt_cache_key, 'string');
-  assert.equal(body.client_metadata.session_id, body.prompt_cache_key);
-  assert.equal(body.model, liteModel);
-});
-check('the question cannot be answered from memory', () => {
-  const body = buildLiteBody(liteSearchEnvelope());
-  assert.equal(body.input[0].content[0].text, LITE_PROMPT);
-  assert.match(LITE_PROMPT, /NO_SEARCH/);
-});
-check('a named refusal is reported as a boolean', () => {
-  const refusal = { ...searchComplete, response: { ...searchComplete.response,
-    output: [{ type: 'message', content: [{ type: 'output_text', text: 'NO_SEARCH' }] }] } };
-  const result = liteSummary(refusal);
-  assert.equal(result.noSearchDeclared, true);
-  assert.equal(result.webSearchCalls, 0);
-  assert.equal(result.passed, false);
-  assert.equal(liteSummary(searchComplete).noSearchDeclared, false);
-});
-check('backend search counted, not unexpected', () => {
-  const result = liteSummary(searchComplete);
-  assert.equal(result.webSearchCalls, 1);
-  assert.equal(result.unexpectedTool, false);
-  assert.equal(result.passed, true);
-});
-check('search events count once per item', () => {
-  const result = liteSummary({ type: 'response.web_search_call.in_progress', item_id: 'ws_synthetic' },
-    { type: 'response.web_search_call.completed', item_id: 'ws_synthetic' }, searchComplete);
-  assert.equal(result.webSearchCalls, 1);
-});
-check('search envelope accepted but no search fails', () => {
-  const result = liteSummary({ ...searchComplete,
-    response: { ...searchComplete.response, output: [searchComplete.response.output[1]] } });
-  assert.equal(result.webSearchCalls, 0);
-  assert.equal(result.passed, false);
-});
-check('a search item is still unexpected in connectivity mode', () =>
-  assert.equal(summary({ ...complete, response: { ...complete.response, output: [searchItem] } }).unexpectedTool, true));
-check('error vocabulary reported, message text is not', () => {
-  const result = summarizeResponse(400, 'application/json', Buffer.from(JSON.stringify({ error: {
-    type: 'invalid_request_error', code: 'empty_array', param: 'input[0].tools',
-    message: 'SYNTHETIC_PRIVATE_CANARY' } })), null, true);
-  assert.deepEqual(result.errorLabels, { type: 'invalid_request_error', code: 'empty_array', param: 'input[0].tools' });
-  assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
-});
-check('an unbounded error label is dropped', () => {
-  const result = summarizeResponse(400, 'application/json', Buffer.from(JSON.stringify({ error: {
-    type: 'a b c', code: 'x'.repeat(200), param: { nested: 1 } } })), null, true);
-  assert.equal(result.errorLabels, undefined);
-});
-check('rejected field named without echoing upstream text', () => {
-  const result = summarizeResponse(400, 'application/json',
-    Buffer.from('{"error":{"message":"Unknown parameter: client_metadata. SYNTHETIC_PRIVATE_CANARY"}}'), null, true);
-  assert.deepEqual(result.rejectedFields, ['client_metadata']);
-  assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
-});
 // The version is read, not pinned: an unvalidated version is reported, not silently sent and
 // not aborted. Only an unreadable or malformed version stops the run.
 check('installed version reported as unverified', () => {
@@ -506,39 +435,28 @@ check('malformed version stops the run', () =>
 // instructions — and with them the built-in toolset — from that identity. Everything else keeps
 // the identity the ordinary path has always sent.
 const credential = { accessToken: 'synthetic', account: 'synthetic-account' };
-check('search request uses the reference client identity', () => {
-  const headers = buildHeaders(credential, '1.2.3', '{}', true);
-  assert.equal(headers.originator, 'codex_exec');
-  assert.match(headers['User-Agent'], /^codex_exec\/1\.2\.3 \(.+\) xterm-256color \(codex_exec; 1\.2\.3\)$/);
-  assert.equal('Version' in headers, false);
-  assert.equal('Openai-Beta' in headers, false);
-});
-check('the ordinary request identity is unchanged', () => {
+check('the model request identity is unchanged', () => {
   const headers = buildHeaders(credential, '1.2.3', '{}');
   assert.equal(headers.originator, 'codex_cli_rs');
   assert.equal(headers['User-Agent'], 'codex-cli/1.2.3 (Windows; x64)');
   assert.equal(headers.Version, '1.2.3');
   assert.equal(headers['Openai-Beta'], 'responses=experimental');
-});
-check('both carry the same credential and framing headers', () => {
-  for (const headers of [buildHeaders(credential, '1.2.3', '{}'), buildHeaders(credential, '1.2.3', '{}', true)]) {
-    assert.equal(headers.Authorization, 'Bearer synthetic');
-    assert.equal(headers['chatgpt-account-id'], 'synthetic-account');
-    assert.equal(headers.Accept, 'text/event-stream');
-    assert.equal(headers['Content-Length'], 2);
-  }
+  assert.equal(headers.Authorization, 'Bearer synthetic');
+  assert.equal(headers['chatgpt-account-id'], 'synthetic-account');
+  assert.equal(headers.Accept, 'text/event-stream');
+  assert.equal(headers['Content-Length'], 2);
 });
 // The reference client's standalone search endpoint. The request carries one query and no
 // conversation tail, and the summary reports shape and counts, never a result's own text.
 const searchBytes = doc => Buffer.from(JSON.stringify(doc));
 check('search request carries only the query', () => {
-  const body = buildSearchBody(liteSearchEnvelope());
+  const body = buildSearchBody(searchEnvelope());
   assert.deepEqual(body.commands, { search_query: [{ q: SEARCH_QUERY }] });
   assert.equal(body.input.length, 1);
   assert.equal(body.input[0].content[0].text, SEARCH_QUERY);
   assert.equal(body.settings.external_web_access, true);
   assert.deepEqual(body.settings.allowed_callers, ['direct']);
-  assert.equal(body.model, liteModel);
+  assert.equal(body.model, searchModel);
   assert.equal(typeof body.id, 'string');
 });
 check('search endpoint is the same host as the model endpoint', () => {

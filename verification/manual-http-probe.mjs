@@ -6,21 +6,20 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { request } from 'node:https';
 import { createInterface } from 'node:readline/promises';
-import { liteSearchEnvelope } from '../src/native-protocol.mjs';
+import { searchEnvelope } from '../src/native-protocol.mjs';
 import { clientVersionPolicy } from '../src/client-version.mjs';
 import { release, arch } from 'node:os';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
-// The reference client's standalone web search. In the lite envelope it never sends a hosted
+// The reference client's standalone web search. In the responses-lite envelope it sends no hosted
 // search tool at all — it declares a client-executed web.run tool and answers the call by
 // posting here with the same credential the model requests already use.
 export const searchEndpoint = 'https://chatgpt.com/backend-api/codex/alpha/search';
 export const model = 'gpt-6-astra';
 export const effort = 'xhigh';
-// Search mode runs on the cheapest model: it is measuring whether the envelope is
-// accepted and whether the backend searches, not how well the model answers.
-export const liteModel = 'gpt-5.6-luna';
-export const liteEffort = 'medium';
+// Search mode runs on the cheapest model: it measures whether the endpoint answers and in
+// what shape, not how well a model writes.
+export const searchModel = 'gpt-5.6-luna';
 const expectedRoot = 'C:\\Users\\JS\\.codex';
 const codexExe = 'C:\\Users\\JS\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
 // The version this probe sends is the installed one, read at run time, exactly as the gateway
@@ -91,32 +90,11 @@ export function buildBody() {
     reasoning: { effort }, tools: [], tool_choice: 'none', stream: true, store: false };
 }
 
-// The gateway's search envelope, built here the same way so one SEND says whether the backend
-// accepts it and whether it runs its own search. Carries no client tools and no local text.
-export function buildLiteBody(envelope) {
-  return { model: liteModel,
-    // No additional_tools item: the gateway omits it when there are no client tools to carry,
-    // and a search side query declares only the search tool the backend supplies itself.
-    // A question the model can answer from memory cannot tell "no search tool" apart from "did
-    // not need one". This one cannot be answered without live access, and it names the reply to
-    // give when there is no tool, so a refusal is a signal instead of prose to interpret.
-    input: [{ role: 'user', content: [{ type: 'input_text', text: LITE_PROMPT }] }],
-    tool_choice: 'auto', parallel_tool_calls: false,
-    reasoning: { effort: liteEffort, context: 'all_turns' }, store: false, stream: true,
-    include: ['reasoning.encrypted_content'], prompt_cache_key: envelope.cacheKey,
-    text: { verbosity: 'medium' }, client_metadata: envelope.metadata };
-}
-
-export const LITE_PROMPT = 'Use your web search tool to look up the current top story on '
-  + 'Hacker News (news.ycombinator.com) and reply with only its title. Do not answer from memory. '
-  + 'If you have no web search tool available, reply with exactly NO_SEARCH and nothing else.';
-// The one reply this probe names itself, so recognising it reports a boolean rather than text.
-const NO_SEARCH = 'NO_SEARCH';
 
 // One search command, shaped as the reference client shapes it. No conversation tail is sent:
 // the query is the whole input, so nothing from this machine travels with it.
 export function buildSearchBody(envelope, query = SEARCH_QUERY) {
-  return { id: envelope.cacheKey, model: liteModel,
+  return { id: envelope.cacheKey, model: searchModel,
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: query }] }],
     commands: { search_query: [{ q: query }] },
     settings: { external_web_access: true, search_context_size: 'medium', allowed_callers: ['direct'] },
@@ -175,7 +153,7 @@ const LITE_FIELDS = Object.freeze(['instructions', 'tools', 'additional_tools', 
   'prompt_cache_key', 'reasoning', 'context', 'text', 'verbosity', 'include', 'tool_choice',
   'parallel_tool_calls', 'store', 'stream', 'model']);
 
-export function summarizeResponse(status, contentType, bytes, rawHeaders, lite = false) {
+export function summarizeResponse(status, contentType, bytes, rawHeaders) {
   // Only fixed labels and counts leave this boundary; never echo headers or body snippets.
   const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
   const result = { httpStatus: status, passed: false, category: 'UNEXPECTED_RESPONSE',
@@ -227,11 +205,11 @@ export function summarizeResponse(status, contentType, bytes, rawHeaders, lite =
   if (mediaType !== 'text/event-stream') {
     // Diagnostic parsing does not make a missing Content-Type a successful response.
     if (result.mediaType === 'missing' && result.bodyFormat === 'sse-like') {
-      return { ...result, category: 'MISSING_CONTENT_TYPE', sseDiagnostics: inspectSse(text, lite) };
+      return { ...result, category: 'MISSING_CONTENT_TYPE', sseDiagnostics: inspectSse(text) };
     }
     return result;
   }
-  return { ...result, ...inspectSse(text, lite) };
+  return { ...result, ...inspectSse(text) };
 }
 
 function textPosition(event) {
@@ -251,12 +229,10 @@ function joinTextParts(parts) {
   }).map(([, value]) => value).join('');
 }
 
-function inspectSse(text, lite = false) {
+function inspectSse(text) {
   const result = { passed: false, category: 'UNEXPECTED_RESPONSE' };
   let completed, eventCount = 0, failed = false, unexpectedTool = false;
-  // In search mode a backend search is the thing being measured, so it is counted rather
-  // than treated as an unexpected tool. The count is a number; no query or result is read.
-  const searchItems = new Set();
+
   const deltas = new Map();
   const textDone = new Map();
   const itemDoneIndices = new Set();
@@ -311,13 +287,9 @@ function inspectSse(text, lite = false) {
         }
       }
       if (event.type.startsWith('response.refusal.') || event.part?.type === 'refusal') streamRefused = true;
-      if (lite && event.type.startsWith('response.web_search_call.') && typeof event.item_id === 'string') {
-        searchItems.add(event.item_id);
-      } else if (/^response\..*(?:_call|_arguments)(?:\.|$)/.test(event.type)) unexpectedTool = true;
+      if (/^response\..*(?:_call|_arguments)(?:\.|$)/.test(event.type)) unexpectedTool = true;
       if (['response.failed', 'response.incomplete', 'response.cancelled', 'response.canceled', 'error'].includes(event.type)) failed = true;
-      if (lite && event.item?.type === 'web_search_call') {
-        if (typeof event.item.id === 'string') searchItems.add(event.item.id);
-      } else if (event.item?.type && !['message', 'reasoning'].includes(event.item.type)) unexpectedTool = true;
+      if (event.item?.type && !['message', 'reasoning'].includes(event.item.type)) unexpectedTool = true;
       if (event.item?.type === 'reasoning' && Number.isSafeInteger(event.output_index)) nonMessageIndices.add(event.output_index);
       if (event.item?.type === 'message' && Array.isArray(event.item.content)
         && event.item.content.some(part => part?.type === 'refusal')) streamRefused = true;
@@ -353,12 +325,7 @@ function inspectSse(text, lite = false) {
   if (completed.output.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
     return { ...result, category: 'INVALID_RESPONSE_SHAPE', eventCount };
   }
-  for (const item of completed.output) {
-    if (lite && item.type === 'web_search_call' && typeof item.id === 'string') searchItems.add(item.id);
-  }
-  unexpectedTool ||= completed.output.some(item => !['message', 'reasoning'].includes(item.type)
-    && !(lite && item.type === 'web_search_call'));
-  if (lite) result.webSearchCalls = searchItems.size;
+  unexpectedTool ||= completed.output.some(item => !['message', 'reasoning'].includes(item.type));
   const messages = completed.output.filter(item => item.type === 'message');
   if (messages.some(item => !Array.isArray(item.content)
     || (item.role !== undefined && item.role !== 'assistant')
@@ -410,16 +377,11 @@ function inspectSse(text, lite = false) {
     textDoneEventCount, doneShapeValid, streamOrderValid, streamMatchesTextDone,
     snapshotsMatch, indicesCompatible, reconstructed
   };
-  const modelMatches = completed.model === (lite ? liteModel : model);
-  // Connectivity mode asks for the exact word OK. Search mode asks a real question, so the
-  // measured outcome is whether the envelope was accepted and the backend ran a search.
-  const exactOK = lite ? null : reply === 'OK';
+  const modelMatches = completed.model === model;
+  const exactOK = reply === 'OK';
   const refused = streamRefused || output.some(part => part.type === 'refusal');
-  const effortEchoMatches = completed.reasoning?.effort === (lite ? liteEffort : effort);
-  const passed = modelMatches && effortEchoMatches && !unexpectedTool && !refused && streamConsistent
-    && (lite ? searchItems.size > 0 : exactOK);
-  // The probe named this reply, so reporting it is reporting our own token, not upstream text.
-  if (lite) result.noSearchDeclared = reply.trim() === NO_SEARCH;
+  const effortEchoMatches = completed.reasoning?.effort === effort;
+  const passed = modelMatches && effortEchoMatches && exactOK && !unexpectedTool && !refused && streamConsistent;
   const counts = {};
   for (const name of ['input_tokens', 'output_tokens', 'total_tokens']) {
     const value = completed.usage?.[name];
@@ -443,22 +405,16 @@ export function checkRuntime(env, execArgs) {
   if (env.NODE_USE_ENV_PROXY || env.NODE_TLS_REJECT_UNAUTHORIZED !== undefined) stop('TRANSPORT_RUNTIME_UNSUPPORTED');
 }
 
-// Captured from the reference client: web_search = "live" and web_search = "disabled" produce
-// byte-identical requests apart from per-run identifiers, so the built-in search is not declared
-// in the request at all. The lite envelope also sends no instructions, which means the backend
-// supplies them — and which ones it supplies follows the client identity in these headers. So a
-// lite request identifies itself the way the reference client does and omits the headers the
-// reference client does not send.
-const liteAgent = version => `codex_exec/${version} (${release()}; ${arch() === 'x64' ? 'x86_64' : arch()}) `
+// The identity the reference client presents to the standalone search endpoint. A model request
+// keeps the identity it has always sent; only the search request uses this one.
+const searchAgent = version => `codex_exec/${version} (${release()}; ${arch() === 'x64' ? 'x86_64' : arch()}) `
   + `xterm-256color (codex_exec; ${version})`;
-export function buildHeaders(credential, version, body, lite = false) {
+export function buildHeaders(credential, version, body) {
   const common = { Authorization: `Bearer ${credential.accessToken}`, 'chatgpt-account-id': credential.account,
     'Content-Type': 'application/json', Accept: 'text/event-stream', 'Accept-Encoding': 'identity',
     'Content-Length': Buffer.byteLength(body) };
-  return lite
-    ? { ...common, originator: 'codex_exec', 'User-Agent': liteAgent(version) }
-    : { ...common, Version: version, 'User-Agent': `codex-cli/${version} (Windows; x64)`,
-      originator: 'codex_cli_rs', 'Openai-Beta': 'responses=experimental' };
+  return { ...common, Version: version, 'User-Agent': `codex-cli/${version} (Windows; x64)`,
+    originator: 'codex_cli_rs', 'Openai-Beta': 'responses=experimental' };
 }
 
 // The standalone search endpoint answers plain JSON, and the reference client identifies itself
@@ -467,7 +423,7 @@ export function buildHeaders(credential, version, body, lite = false) {
 export function buildSearchHeaders(credential, version, body, turnMetadata) {
   return { Authorization: `Bearer ${credential.accessToken}`, 'ChatGPT-Account-ID': credential.account,
     'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Encoding': 'identity',
-    originator: 'codex_exec', 'User-Agent': liteAgent(version),
+    originator: 'codex_exec', 'User-Agent': searchAgent(version),
     ...(turnMetadata && { 'x-codex-turn-metadata': turnMetadata }),
     'Content-Length': Buffer.byteLength(body) };
 }
@@ -479,7 +435,7 @@ export function buildFetchOptions(body, headers, signal) {
     body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }) };
 }
 
-export async function inspectFetchResponse(response, lite = false) {
+export async function inspectFetchResponse(response) {
   const chunks = [];
   let length = 0;
   if (response.body) {
@@ -488,18 +444,17 @@ export async function inspectFetchResponse(response, lite = false) {
       chunks.push(chunk);
     }
   }
-  return { ...summarizeResponse(response.status, response.headers.get('content-type') ?? '', Buffer.concat(chunks), null, lite),
+  return { ...summarizeResponse(response.status, response.headers.get('content-type') ?? '', Buffer.concat(chunks)),
     transportDiagnostics: { contentTypePresent: response.headers.has('content-type') } };
 }
 
-async function sendFetchOnce(credential, version, envelope) {
-  const body = JSON.stringify(envelope ? buildLiteBody(envelope) : buildBody());
+async function sendFetchOnce(credential, version) {
+  const body = JSON.stringify(buildBody());
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
-    const headers = { ...buildHeaders(credential, version, body, envelope !== undefined), ...envelope?.headers };
-    const response = await fetch(endpoint, buildFetchOptions(body, headers, controller.signal));
-    return await inspectFetchResponse(response, envelope !== undefined);
+    const response = await fetch(endpoint, buildFetchOptions(body, buildHeaders(credential, version, body), controller.signal));
+    return await inspectFetchResponse(response);
   } catch (error) {
     stop(controller.signal.aborted ? 'TIMEOUT' : error.message === 'RESPONSE_TOO_LARGE' ? error.message : 'NETWORK_OR_TLS_ERROR');
   } finally { clearTimeout(timeout); }
@@ -535,14 +490,14 @@ async function sendSearchOnce(credential, version, envelope) {
   });
 }
 
-async function sendOnce(credential, version, envelope) {
-  const body = JSON.stringify(envelope ? buildLiteBody(envelope) : buildBody());
+async function sendOnce(credential, version) {
+  const body = JSON.stringify(buildBody());
   return new Promise((resolveResult, reject) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
     const req = request(endpoint, { method: 'POST', agent: false, signal: controller.signal,
       rejectUnauthorized: true,
-      headers: { ...buildHeaders(credential, version, body, envelope !== undefined), ...envelope?.headers } }, res => {
+      headers: buildHeaders(credential, version, body) }, res => {
       const chunks = [];
       let length = 0;
       res.on('data', chunk => {
@@ -554,7 +509,7 @@ async function sendOnce(credential, version, envelope) {
         clearTimeout(timeout);
         try {
           resolveResult(summarizeResponse(res.statusCode ?? 0, String(res.headers['content-type'] ?? ''),
-            Buffer.concat(chunks), res.rawHeaders, envelope !== undefined));
+            Buffer.concat(chunks), res.rawHeaders));
         } catch { reject(new Error('LOCAL_CHECK_FAILED')); }
       });
     });
@@ -569,13 +524,11 @@ async function sendOnce(credential, version, envelope) {
 
 async function main() {
   let attempted = false;
-  let transport, lite = false, search = false, compatibility;
+  let transport, search = false, compatibility;
   try {
     const args = process.argv.slice(2);
-    lite = args.includes('--lite');
     search = args.includes('--search');
-    if (lite && search) stop('USER_TERMINAL_REQUIRED');
-    transport = selectTransport(args.filter(arg => arg !== '--lite' && arg !== '--search'),
+    transport = selectTransport(args.filter(arg => arg !== '--search'),
       process.stdin.isTTY, process.stdout.isTTY);
     checkRuntime(process.env, process.execArgv);
     // Read before the confirmation so a version the project has not validated is on screen
@@ -583,11 +536,11 @@ async function main() {
     compatibility = readClientVersion(spawnSync(codexExe, ['--version'],
       { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
     const target = search ? searchEndpoint : endpoint;
-    console.log(`USER-OPERATED TEST: ${search ? `${liteModel}; standalone web search` : lite ? `${liteModel}/${liteEffort}; gateway search envelope` : `${model}/${effort}`}; ${transport}; one request to ${target}`);
+    console.log(`USER-OPERATED TEST: ${search ? `${searchModel}; standalone web search` : `${model}/${effort}`}; ${transport}; one request to ${target}`);
     if (search) console.log(`Sends one search query and nothing else: "${SEARCH_QUERY}". No conversation, path or file travels with it.`);
     console.log(`Client version sent: ${compatibility.clientVersion} (${compatibility.clientVersionStatus}; project baseline ${compatibility.referenceClientVersion}).`);
     console.log('Reads the existing file cache in memory only. No refresh, writes, tool execution, redirects, or retries.');
-    console.log(`This consumes account usage.${lite ? ' The backend runs its own search for this request.' : ''} The backend compatibility path is not a public API support guarantee.`);
+    console.log('This consumes account usage. The backend compatibility path is not a public API support guarantee.');
     const terminal = createInterface({ input: process.stdin, output: process.stdout });
     let answer;
     try { answer = await terminal.question('Type SEND to run once, or press Enter to cancel: '); }
@@ -603,13 +556,12 @@ async function main() {
       stop('FILE_CACHE_UNAVAILABLE');
     }
     attempted = true;
-    const envelope = lite || search ? liteSearchEnvelope() : undefined;
-    const result = search ? await sendSearchOnce(credential, compatibility.clientVersion, envelope)
-      : transport === 'node-fetch' ? await sendFetchOnce(credential, compatibility.clientVersion, envelope)
-        : await sendOnce(credential, compatibility.clientVersion, envelope);
+    const result = search ? await sendSearchOnce(credential, compatibility.clientVersion, searchEnvelope())
+      : transport === 'node-fetch' ? await sendFetchOnce(credential, compatibility.clientVersion)
+        : await sendOnce(credential, compatibility.clientVersion);
     credential = null;
-    console.log(JSON.stringify({ ...result, mode: search ? 'standalone-search' : lite ? 'search-envelope' : 'connectivity',
-      requestedModel: lite || search ? liteModel : model, requestedEffort: search ? null : lite ? liteEffort : effort,
+    console.log(JSON.stringify({ ...result, mode: search ? 'standalone-search' : 'connectivity',
+      requestedModel: search ? searchModel : model, requestedEffort: search ? null : effort,
       ...compatibility, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
     if (!result.passed) process.exitCode = 1;
   } catch (error) {

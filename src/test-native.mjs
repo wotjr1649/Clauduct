@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { MODELS, ROLE_MODELS, selectModel, CONTEXT_POLICY } from './models.mjs';
-import { prepareNative, nativeResponse, createNativeResponse } from './native-protocol.mjs';
+import { prepareNative, nativeResponse, createNativeResponse, searchEnvelope } from './native-protocol.mjs';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { bindingFrom, registerBinding, contextFromEnvironment } from './agent-route.mjs';
@@ -335,55 +335,36 @@ await test('advisor_disabled_only_in_clauduct_child', () => {
   }
   assert.deepEqual(judgedBetas('advisor-tool-2026-03-01'), ['ADVISOR_TOOL']);
 });
-await test('web_search_is_translated_to_the_backend_tool', () => {
+await test('web_search_is_never_sent_upstream', () => {
   const base = () => ({ model: 'astra', stream: true, max_tokens: 100,
     messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
     tools: [{ type: 'web_search_20250305', name: 'web_search', allowed_domains: ['example.com'] }] });
   const prepared = prepareNative(base());
+  // Accepted and recorded, never forwarded: the gateway answers that side query from the
+  // backend's standalone search endpoint, and the reference client sends no such tool either.
   assert.equal(prepared.webSearch, true);
   assert.equal(prepared.names.size, 0);
-  // The reference client's lite envelope: no top-level tools, client tools carried inside an
-  // additional_tools item, and the codex turn headers. Built-in search is supplied server side.
-  assert.equal('tools' in prepared.body, false);
-  // The captured envelope carries no instructions and repeats the turn identity in the body.
-  assert.equal('instructions' in prepared.body, false);
-  assert.equal(prepared.body.text.verbosity, 'medium');
-  assert.deepEqual(prepared.body.reasoning, { effort: prepared.selected.effort, context: 'all_turns' });
-  assert.equal(prepared.body.prompt_cache_key, prepared.upstreamHeaders['session-id']);
-  assert.deepEqual(Object.keys(prepared.body.client_metadata).sort(), ['root_turn_id', 'session_id',
-    'thread_id', 'turn_id', 'x-codex-installation-id', 'x-codex-turn-metadata', 'x-codex-window-id']);
-  assert.equal(prepared.body.client_metadata['x-codex-turn-metadata'],
-    prepared.upstreamHeaders['x-codex-turn-metadata']);
-  assert.equal(prepared.body.client_metadata.session_id, prepared.upstreamHeaders['session-id']);
-  // A search side query declares only the search tool, which the backend supplies itself, so
-  // there is nothing left to carry. An empty namespace drew a 400 naming tools upstream, so the
-  // item is omitted entirely rather than sent empty.
+  assert.deepEqual(prepared.body.tools, []);
+  assert.equal(prepared.body.tool_choice, 'none');
+  assert.equal(prepared.upstreamHeaders, undefined);
+  assert.equal(JSON.stringify(prepared.body).includes('web_search'), false);
   assert.deepEqual(prepared.body.input.map(item => item.role ?? item.type), ['user']);
-  // With a client tool to carry, the item is present and holds exactly that tool.
+  // Client tools alongside it are still declared normally.
   const withTool = base();
   withTool.tools.push({ name: 'Bash', description: 'run', input_schema: { type: 'object', properties: {} } });
   const carried = prepareNative(withTool);
-  assert.equal(carried.webSearch, true);
-  const envelope = carried.body.input[0];
-  assert.equal(envelope.type, 'additional_tools');
-  assert.equal(envelope.role, 'developer');
-  assert.match(envelope.id, /^at_[0-9a-f-]{36}$/);
-  assert.equal(envelope.tools.length, 1);
-  assert.equal(envelope.tools[0].type, 'namespace');
-  assert.equal(envelope.tools[0].name, 'functions');
-  assert.deepEqual(envelope.tools[0].tools.map(tool => tool.name), ['Bash']);
-  assert.equal('tools' in carried.body, false);
-  assert.deepEqual(carried.body.input.slice(1).map(item => item.role ?? item.type), ['user']);
-  assert.deepEqual(Object.keys(prepared.upstreamHeaders).sort(), ['session-id', 'thread-id',
-    'x-client-request-id', 'x-codex-beta-features', 'x-codex-turn-metadata', 'x-codex-window-id',
-    'x-openai-internal-codex-responses-lite'].sort());
-  assert.equal(prepared.upstreamHeaders['x-openai-internal-codex-responses-lite'], 'true');
-  // Generated for this process only: nothing is copied from the user's codex install and no
-  // local path, repository or workspace is described.
-  const metadata = JSON.parse(prepared.upstreamHeaders['x-codex-turn-metadata']);
+  assert.deepEqual(carried.body.tools.map(tool => tool.name), ['Bash']);
+  assert.equal(carried.body.tool_choice, 'auto');
+  // A choice naming the server tool is satisfied here only when this request is that side query.
+  const chosen = { ...base(), tool_choice: { type: 'tool', name: 'web_search' } };
+  assert.throws(() => prepareNative(chosen), error => error.code === 'UNSUPPORTED_TOOLS');
+  assert.equal(prepareNative(chosen, { search: true }).body.tool_choice, 'none');
+  // Turn identity for the search request is generated here: nothing is copied from the user's
+  // codex install and no local path, repository or workspace is described.
+  const metadata = JSON.parse(searchEnvelope().metadata);
   assert.equal(metadata.node_repl_disabled, true);
   assert.equal(Object.hasOwn(metadata, 'workspaces'), false);
-  assert.ok(!prepared.upstreamHeaders['x-codex-turn-metadata'].includes(String.fromCharCode(92)));
+  assert.ok(!searchEnvelope().metadata.includes(String.fromCharCode(92)));
   // Both domain lists at once, an unknown field, or a renamed tool stay rejected.
   for (const mutate of [d => { d.tools[0].blocked_domains = ['x.com']; }, d => { d.tools[0].private = 1; },
     d => { d.tools[0].name = 'other'; }, d => { d.tools.push({ ...d.tools[0] }); }]) {

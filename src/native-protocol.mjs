@@ -213,32 +213,19 @@ function decodeReasoning(value) {
   for (const part of result.summary) need(part.type === 'summary_text' && typeof part.text === 'string', 'UNSUPPORTED_THINKING');
   return result;
 }
-// The backend only runs its built-in web search in the reference client's lite envelope:
-// no top-level tools and no instructions, client tools carried as an additional_tools input
-// item, and a codex shaped turn envelope repeated in the headers and in client_metadata.
-// Captured field for field from the installed client against a local sink. Identifiers here
-// are generated for this process; none are copied from the user's codex installation, and
-// nothing local (path, repository, workspace) is described.
-const LITE_HEADERS = Object.freeze(['x-openai-internal-codex-responses-lite', 'x-codex-beta-features',
-  'session-id', 'thread-id', 'x-client-request-id', 'x-codex-window-id', 'x-codex-turn-metadata']);
-export function liteSearchEnvelope(now = Date.now(), id = randomUUID) {
+// Identity for the standalone search request: a codex shaped turn envelope, generated for this
+// process. Nothing is copied from the user's codex installation, and nothing local (path,
+// repository, workspace) is described. The hosted search tool is deliberately absent — the
+// reference client never sends one in this envelope, and the endpoint is the mechanism instead.
+export function searchEnvelope(now = Date.now(), id = randomUUID) {
   const session = id(), turn = id(), install = id(), window = `${session}:0`;
-  const toolsId = `at_${id()}`;
   const metadata = JSON.stringify({ installation_id: install, session_id: session, thread_id: session,
     agent_name: '/root', turn_id: turn, root_turn_id: turn, window_id: window, window_number: 0,
     context_window_id: id(), request_kind: 'turn', thread_source: 'user', sandbox: 'none',
     sandbox_mode: 'read-only', auto_review_enabled: false, node_repl_auto_review_required: false,
     node_repl_disabled: true, turn_started_at_unix_ms: now });
-  return {
-    headers: { 'x-openai-internal-codex-responses-lite': 'true', 'x-codex-beta-features': 'remote_compaction_v2',
-      'session-id': session, 'thread-id': session, 'x-client-request-id': session,
-      'x-codex-window-id': window, 'x-codex-turn-metadata': metadata },
-    cacheKey: session, toolsId,
-    metadata: { 'x-codex-installation-id': install, session_id: session, thread_id: session,
-      turn_id: turn, root_turn_id: turn, 'x-codex-window-id': window, 'x-codex-turn-metadata': metadata }
-  };
+  return { headers: { 'x-codex-turn-metadata': metadata }, cacheKey: session, toolsId: `at_${id()}`, metadata };
 }
-export const LITE_HEADER_NAMES = LITE_HEADERS;
 
 export function prepareNative(doc, { subagent = false, route, turnToolChanges = false, search = false } = {}) {
   keys(doc, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice', 'thinking',
@@ -386,8 +373,8 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     && (tool.defer_loading !== true || discovered.has(tool.name)))
     .map(tool => ({ type: 'function', name: tool.name, description: tool.description ?? '', parameters: tool.input_schema, strict: false }));
   const names = new Set(tools.map(tool => tool.name));
-  // The backend supplies its own search in the lite envelope, so no search tool is sent at
-  // all. The captured reference request carries none either.
+  // The search tool is never sent upstream: the gateway answers that side query itself from the
+  // backend's standalone search endpoint, and the reference client sends no such tool either.
   need(typeof toolChoice !== 'object' || names.has(toolChoice.name), 'UNSUPPORTED_TOOLS');
   need(toolChoice !== 'required' || names.size > 0, 'UNSUPPORTED_TOOLS');
   if (names.size === 0) toolChoice = 'none';
@@ -397,35 +384,12 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   if (purpose === 'compact-template' && !['low', 'medium'].includes(selected.effort)) {
     selected = { ...selected, effort: 'medium' };
   }
-  const lite = webSearch !== undefined;
   const body = { model: selected.model,
     instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
     parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
     include: ['reasoning.encrypted_content'], stream: true, store: false };
-  let envelope;
-  if (lite) {
-    // Built-in search only appears when the request carries no top-level tools. The client
-    // tools move into the envelope item instead, so nothing this request declared is dropped.
-    // The lite envelope also carries no instructions: the backend supplies its own, and the
-    // conversation's own developer message still carries everything this request asked for.
-    envelope = liteSearchEnvelope();
-    delete body.tools;
-    delete body.instructions;
-    // An empty namespace is rejected: the backend answered a 400 naming tools. The item exists
-    // to carry client tools, so with none to carry it is not sent at all. A search side query
-    // declares only the search tool, which the backend supplies itself, so this is the usual case.
-    body.input = tools.length
-      ? [{ type: 'additional_tools', id: envelope.toolsId, role: 'developer',
-        tools: [{ type: 'namespace', name: 'functions', description: '', tools }] }, ...input]
-      : input;
-    body.reasoning = { effort: selected.effort, context: 'all_turns' };
-    body.text = { verbosity: 'medium' };
-    body.prompt_cache_key = envelope.cacheKey;
-    body.client_metadata = envelope.metadata;
-  }
-  return { selected, names, purpose, compactShape, requestedEffort, webSearch: lite,
-    outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY,
-    ...(lite && { upstreamHeaders: envelope.headers }), body };
+  return { selected, names, purpose, compactShape, requestedEffort, webSearch: webSearch !== undefined,
+    outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY, body };
 }
 
 export function nativeUsage(value) {

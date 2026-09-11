@@ -4,7 +4,7 @@ import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { buildHeaders, buildSearchHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, LITE_HEADER_NAMES, liteSearchEnvelope } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, searchEnvelope } from './native-protocol.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -277,10 +277,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   async function requestOnce(job, raw, current, onEvent, isRetry) {
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
-    // Extra headers are only ever set for the search envelope, and the allowlist below keeps it
-    // that way, so carrying any of them is what selects the reference client's identity headers.
-    const lite = Object.keys(job.extraHeaders).length > 0;
-    const headers = { ...buildHeaders(current, clientVersion, raw, lite), ...job.extraHeaders };
+    const headers = buildHeaders(current, clientVersion, raw);
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
       headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false,
@@ -381,16 +378,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });
     let finish;
-    // Only this fixed envelope may be added, and only with header-safe values: a request
-    // can never introduce an arbitrary header name or inject one through a value.
-    const extra = {};
-    for (const [name, value] of Object.entries(options.headers ?? {})) {
-      need(LITE_HEADER_NAMES.includes(name), 'INVALID_OPTIONS');
-      need(typeof value === 'string' && value.length <= 2048 && !/[\r\n]/.test(value), 'INVALID_OPTIONS');
-      extra[name] = value;
-    }
     const job = { controller, timers: new Set(), started: performance.now(), attemptTimings: options.attemptTimings ?? [],
-      extraHeaders: extra, finished: new Promise(resolve => { finish = resolve; }) };
+      finished: new Promise(resolve => { finish = resolve; }) };
     active.add(job);
     const canRetryConfigured = options.canRetry !== undefined;
     let outputStarted = false, retryCount = 0, refreshed = false, current, isRetry = false;
@@ -449,7 +438,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     need(!closed, 'TRANSPORT_CLOSED');
     need(signal instanceof AbortSignal, 'INVALID_OPTIONS');
     const job = { controller: new AbortController(), timers: new Set(), started: performance.now(),
-      attemptTimings: [], extraHeaders: {}, finished: Promise.resolve() };
+      attemptTimings: [], finished: Promise.resolve() };
     let finish;
     job.finished = new Promise(resolve => { finish = resolve; });
     const abort = () => job.controller.abort();
@@ -479,7 +468,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   function searchOnce(job, body, credential) {
     const raw = JSON.stringify({ ...body, id: searchSession });
     const headers = buildSearchHeaders(credential, clientVersion, raw,
-      liteSearchEnvelope().headers['x-codex-turn-metadata']);
+      searchEnvelope().headers['x-codex-turn-metadata']);
     const timeoutMs = Math.min(settings.timeoutMs, 45_000);
     return new Promise((resolveResult, reject) => {
       let settled = false;

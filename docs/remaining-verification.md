@@ -80,7 +80,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
 | 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
 | 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
-| SDD 무인 3주기 | 미검증 | run-03(98c0dc2c)은 최초 확인에서 SAFE-STOP, 완료 0회차 — [run-03 감사](audit-2026-09-11-three-cycle-run-03.md). run-01·run-02는 기능은 완성했으나 guard 거부 뒤 계속해 절차 불합격 | 하나의 실행에서 무개입 3주기를 마친 증거가 없다. 자식 3종의 실제 실행 증거도 없다. 지정된 러너 줄은 무인 실행에서 아직 한 번도 도달되지 않았다 | 최초 확인 명령을 프롬프트가 직접 적고 허용되는 pwsh 형태를 `-File` 하나로 고정한 run-04 프롬프트가 필요하다 |
+| SDD 무인 3주기 | 완료 | run-04(2c4ceab9)이 THREE-CYCLE-PASS — [run-04 감사](audit-2026-09-11-three-cycle-run-04.md). 커밋 3개, 독립 재실행 63/63 pass, 자식 9명, 개입 0. 이전 세 시도는 [run-03 감사](audit-2026-09-11-three-cycle-run-03.md) | 자식의 effort는 9명 전부, model은 9명 중 1명이 Not verified. 종료 JSON을 아직 확보하지 못해 자원·이벤트 지표는 이 실행으로 채울 수 있는 값이지 채워진 값이 아니다 | 종료 JSON(`CLAUDUCT_REQUEST_STATUS`)을 확보해 관련 행에 반영한다 |
 | Claude 모델 전체 지원·app-server 전환·버전 pin | 범위밖 | 사용자 지정. 별칭·전체 ID 매핑은 2026-09-11에 사용자가 별도 승인했다 | — | — |
 | 실제 인증 갱신·수시간 연속 실행 | 범위밖 | 사용자 지정 | — | — |
 | 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |
@@ -164,7 +164,9 @@ D:\AIDEV\Clauduct\clauduct.cmd --model luna --effort max --verify-auto-compact
 
 run-01과 run-02가 깨진 지점은 같다. 테스트 러너가 guard에 거부된 뒤 중단하지 않고 계속했다. 새 프롬프트는 `src/run-node-tests.ps1`을 처음부터 지정해 그 거부가 발생할 상황 자체를 없앤다. 이것은 guard 우회가 아니라 위반하지 않는 방법이다.
 
-run-03(2026-09-11)에서 그 의도는 확인됐다. `test-node-runner-cap`은 등장하지 않았고 세션은 거부 직후 다른 셸로 재현하지 않고 멈췄다 — 절차 규칙이 처음 지켜졌다. 다만 최초 확인 1단계가 reparse point 판별의 수단을 열어 둔 탓에 세션이 `pwsh -Command`를 골랐고 `bash-nested-shell`에 거부됐다. 공유 guard에는 `pwsh -File` 예외가 있어 지정된 러너 줄 자체는 허용되는 형태였으나 거기 도달하지 못했다. run-04 프롬프트는 최초 확인 명령을 직접 적고 허용되는 pwsh 형태를 `-File` 하나로 고정한다.
+run-04(2026-09-11)가 **THREE-CYCLE-PASS**다. 3개 플랜이 실제 테스트·로컬 커밋까지 완료됐고, 회차마다 구현 자식 1명과 순차 검토 자식 2명이 실제로 실행됐으며(총 9명), 최초 전달 이후 개입이 없었다. 검토 자식이 구체적 결함을 반환해 수정 회차로 이어진 기록이 남아 있어 형식적 검토가 아니었다. 판정은 보고가 아니라 커밋·작업 트리·독립 러너 재실행(63/63 pass)·transcript 대조로 확인했다.
+
+run-03(2026-09-11)에서 그 의도는 확인됐다. `test-node-runner-cap`은 등장하지 않았고 세션은 거부 직후 다른 셸로 재현하지 않고 멈췄다 — 절차 규칙이 처음 지켜졌다. 다만 최초 확인 1단계가 reparse point 판별의 수단을 열어 둔 탓에 세션이 `pwsh -Command`를 골랐고 `bash-nested-shell`에 거부됐다. 공유 guard에는 `pwsh -File` 예외가 있어 지정된 러너 줄 자체는 허용되는 형태였으나 거기 도달하지 못했다. run-04 프롬프트는 최초 확인 명령을 직접 적고 허용되는 pwsh 형태를 `-File` 하나로 고정했다. 함께 러너의 빈 루트 오분류(`TEST_RUNNER_FAILED` → `TEST_FILE_NOT_FOUND`)도 고쳤다. run-04의 `VERIFICATION.md`는 회차마다 `TEST_RUNNER_FAILED`나 guard 거부가 없었음을 명시한다.
 
 SDD 범위는 사용자 결정으로 **자식 3종 필수**다. 회차마다 구현 자식 1명, 독립 명세 검토 자식 1명, 독립 품질 검토 자식 1명이 실제로 실행되어야 한다. 자식 없이 메인이 전부 수행하면 3주기를 마쳐도 THREE-CYCLE-PASS가 아니다. session-14 프롬프트의 "서브에이전트는 필수가 아니다"는 그 세션의 조건이며 현재 기준이 아니다.
 

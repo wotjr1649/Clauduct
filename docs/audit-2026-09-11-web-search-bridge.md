@@ -179,3 +179,42 @@ input item kinds: ["additional_tools", "message"]
 백엔드가 검색을 수행해도 그것만으로 WebSearch 결과가 채워지지는 않는다. Claude Code의 side query는 응답에서 Anthropic의 `web_search_tool_result` 블록을 읽어 `results`를 만든다. 우리는 그 블록을 만들지 않으므로 결과는 비어 있을 수 있다. 1단계는 **백엔드가 실제로 검색을 수행하는가**만 판정한다(`lifetime.webSearchCalls > 0`). 그것이 확인되면 2단계로 `url_citation` annotation을 Anthropic 결과 블록으로 옮기는 작업을 한다.
 
 검증: 기준 11개와 선택·완료 4개 suite가 모두 통과했다. `test-native`가 봉투 형태, 헤더 집합, 식별자 생성, 로컬 경로 미포함을 고정한다. 실제 검색 수행 여부는 실행 1회로만 확인된다.
+
+## 1단계 1차 결과 — 상류가 봉투를 거부했다
+
+세션 `53f89b33`에서 관측했다. request 8, `success=false`, `failureStage=upstream`, `failureCategory=UPSTREAM_HTTP_ERROR`. WebSearch는 `Tool execution failed: API Error: 502`를 반환했다. 같은 실행의 request 7과 9(일반 대화)는 정상이었으므로 변경 범위는 의도대로 검색 요청에만 적용됐다.
+
+조용한 무시가 아니라 명시적 거부라는 점이 중요하다. 이전에는 요청이 성공하면서 검색만 0회였다. 봉투가 이제 **평가되고 있다**는 뜻이고, 평가 결과 뭔가가 받아들여지지 않았다는 뜻이다.
+
+이 실행이 계수 버그도 드러냈다. `lifetime.webSearchRequests`를 성공 경로에서만 올리고 있어서 행에는 `webSearchRequested=true`인데 누계는 `webSearchRequests=0`이었다. 요청을 만드는 지점에서 세도록 옮겼다. 상류에 거부당한 검색 요청이야말로 누계가 보여줘야 하는 요청이다.
+
+## 2차 캡처 — 본문 차이 네 곳
+
+로컬 싱크로 codex 요청을 다시 받아 스칼라 필드까지 대조했다.
+
+| 필드 | 기준 클라이언트 | Clauduct 1차 |
+| --- | --- | --- |
+| `instructions` | 없음 | 있음 |
+| `client_metadata` | 7키 | 없음 |
+| `prompt_cache_key` | uuid 문자열 | 없음 |
+| `reasoning` | `{effort, context:"all_turns"}` | `{effort}` |
+
+네 곳을 한 번에 맞췄다. `instructions` 제거가 손실이 아닌 이유는 Clauduct가 실제 시스템 프롬프트를 `input`의 developer 메시지로 싣고 `instructions`에는 그것을 가리키는 고정 문장만 넣어 왔기 때문이다. 서버가 자기 기본 지시를 공급하는 lite 봉투에서 그 고정 문장은 불필요하고, 기준 클라이언트도 보내지 않는다.
+
+`client_metadata`는 헤더와 같은 turn identity를 반복한다: `x-codex-installation-id`, `session_id`, `thread_id`, `turn_id`, `root_turn_id`, `x-codex-window-id`, `x-codex-turn-metadata`. 헤더와 같은 생성 결과를 쓰므로 둘이 어긋날 수 없다. 여전히 로컬 경로·저장소·워크스페이스는 담지 않는다.
+
+## 측정 도구 — 프로브에 검색 모드
+
+네 번의 실패한 가설이 모두 요청을 **측정하지 않고 추론**해서 나왔고, 유일한 측정 수단이 Claude 세션 한 판이었다. `verification/manual-http-probe.mjs --live --lite`가 SEND 한 번으로 게이트웨이와 같은 봉투를 보내고 다음을 보고한다.
+
+- `httpStatus`와 category
+- `webSearchCalls` — 백엔드가 실제로 수행한 검색 횟수
+- 거부 시 `rejectedFields` — 상류 메시지가 언급한, **이 프로브가 스스로 보낸** 필드 이름들. 상류 텍스트는 절대 그대로 내보내지 않는다(테스트로 고정).
+
+검색 모드는 가장 싼 모델로 돈다. 측정 대상은 답변 품질이 아니라 봉투 수용 여부와 검색 수행 여부다. 대화형 터미널과 명시적 SEND 확인이라는 기존 경계는 그대로다.
+
+## 판정 갈래
+
+- `webSearchCalls >= 1` → 1단계 성공. 2단계(인용 → Anthropic 블록)로 간다.
+- `200`인데 `webSearchCalls = 0` → 봉투는 받아들여졌으나 백엔드가 검색하지 않은 것.
+- 다시 오류 → 본문 차이는 소진했으므로 남은 용의자는 헤더와 `originator`다. 기준 클라이언트는 `originator: codex_exec`에 `Openai-Beta` 헤더가 없는데, Clauduct는 `originator: codex_cli_rs`에 `Openai-Beta: responses=experimental`를 보낸다. 일반 요청은 이 조합으로 잘 동작하므로 lite 봉투에서만 문제가 되는지는 측정해야 안다.

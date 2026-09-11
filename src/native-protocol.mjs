@@ -46,6 +46,9 @@ export function upstreamFailure(event) {
 export const FAILURE_DIAGNOSTIC_CATEGORIES = Object.freeze([
   ...Object.values(UPSTREAM_FAILURES),
   'CANCELLED', 'CLIENT_DISCONNECTED', 'UPSTREAM_IDLE_TIMEOUT', 'UPSTREAM_IO_ERROR',
+  // The gateway answers the client's search side query itself; these name its own failures so
+  // a broken search is told apart from a broken model request instead of collapsing into OTHER.
+  'SEARCH_RESPONSE_SHAPE', 'SEARCH_RESULTS_EMPTY', 'SEARCH_HTTP_ERROR', 'SEARCH_UNAVAILABLE',
   'DELIVERY_TIMEOUT', 'UNSUPPORTED_EVENT', 'EVENT_AFTER_COMPLETION', 'REVIEW_DIFF_FAILED', 'REVIEW_DIFF_REQUIRED',
   'INVALID_SSE', 'INVALID_UTF8', 'SEQUENCE_MISMATCH', 'TRUNCATED_STREAM', 'INCOMPLETE_RESPONSE',
   'FRAME_TOO_LARGE', 'TOO_MANY_EVENTS', 'RESPONSE_TOO_LARGE', 'DUPLICATE_COMPLETION',

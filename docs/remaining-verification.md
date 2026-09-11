@@ -55,14 +55,14 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 
 | 항목 | 상태 | 증거 | 남은 위험 | 다음 행동 |
 |---|---|---|---|---|
-| 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md) | 기준 클라이언트 0.154.0도 모르는 이름이라 오프라인 분석은 소진됐다. 미재발을 해결로 처리하지 않는다 | 재발 시 종료 JSON의 `unsupportedEventNames`로 이름을 확보한다. 이를 위해 새 실사용 시험을 따로 만들지 않는다 |
+| 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md). run-04에서 **재발했으나 이름을 못 잡았다** — `unsupportedEvents: 1`인데 `unsupportedEventNames: []` | 포착 정규식은 점 1개 이상을 요구하는데 형식 분류는 점 0개도 `identifier`로 받는다. 점 없는 식별자는 분류되지만 영구히 포착되지 않는다. **선행 조건 1을 닫은 근거가 반증됐다.** [분석](audit-2026-09-11-run-04-exit-diagnostics.md) | 포착 정규식을 형식 분류와 같은 공간으로 넓히기 전에는 다음 재발도 못 잡는다 |
 | 미지원 이벤트 분류와 제한 캡처 | 완료 | `src/test-unsupported-event-diagnostics.mjs` 61개 검사 / loopback 36회. 형태 검사·4개 상한·상태 API 비노출 포함 | ThreadEvent는 SDK/app-server 어휘라 원인 후보에서 격하했다. 형태를 흉내 낸 문자열은 통과할 수 있다 | 없음 |
 | 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), `test-native-gateway` 53개 검사 | 서버 수준 clientError·CONNECT·upgrade는 여전히 카운터 밖이다 | 없음 |
 | `OTHER` 분류 축소 | 완료 | 같은 감사. 요청 기록에 도달 가능한 고정 코드 추가와 접미사 정규화 | 새 오류 코드를 추가하면 목록도 함께 갱신해야 한다 | 코드 추가 시 목록 동기화 |
-| native fallback 차단 | 조건부 | 자식 env·settings 동시 적용은 `test-launcher-native` 통과. 공식 [환경 변수 문서](https://code.claude.com/docs/en/env-vars)와 설치 코드 경로 확인 | 실제 native의 비스트리밍 전환 차단 분기는 실행되지 않았다 | 실제 스트리밍 오류가 난 세션의 종료 JSON을 수집한다 |
+| native fallback 차단 | 조건부 | 자식 env·settings 동시 적용은 `test-launcher-native` 통과. run-04에서 `nonStreamingFallbackDisabled: true`가 적용된 채 스트리밍 도중 `invalid_prompt` 2건이 났고 재시도·비스트리밍 전환이 없었다 | 그것은 fallback이 **일어나지 않았다**는 음성 관측이며 차단 분기가 실행됐다는 양성 증거가 아니다. 전환 조건 자체가 아니었을 가능성과 구분되지 않는다 | 전환이 시도되어 막히는 것을 직접 보여주는 진단이 필요하다 |
 | 내용 전달 후 재시도 금지(도구 중복 실행 방지) | 완료 | `test-native-gateway` 재시도 울타리 2건. 울타리를 제거하면 실패하는 것을 확인 | downstream 전달 전 재시도는 유지되므로 upstream 계산은 중복될 수 있다 | 없음 |
 | 요청 형식 거부에서 upstream 미시도 | 완료 | `test-request-diagnostics` 69개 검사 / loopback 34회, `sends=0` | 없음 | 없음 |
-| 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개 | 실제 UI 취소 시점, 원격 계산 중단, 전송 데이터 회수는 보장하지 않는다 | 실제 취소가 발생한 세션의 진단만 수집한다 |
+| 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개. run-04에서 실제 취소 3건의 진단 확보 — 자식 2건은 `clientDisconnected: false`로 연결이 살아 있는 상태의 취소, 1건은 클라이언트 선이탈 | 실제 UI 취소 시점, 원격 계산 중단, 전송 데이터 회수는 여전히 보장하지 않는다 | 없음 |
 | 정상 종료 자원 정리 | 완료 | [정리 경합 감사](audit-2026-09-11-cleanup-close-race.md), `test-cancel-snapshot` 6개, 세션 0d5d6174의 cleanup 9개 true | 창을 강제 종료하면 종료 JSON이 남는다고 보장하지 않는다 | 없음 |
 | 종료 판정과 exit code 계약 | 완료 | [native.md](native.md) 종료 진단 절, `requestOutcome`과 `cleanup` 분리 | exit 0은 프로세스 종료·자원 정리 판정이며 요청 성공 판정이 아니다 | 호환성 검토 없이 exit code를 바꾸지 않는다 |
 | 완료 알림 기반 복귀 | 조건부 | c19c8b14 실제 성공, [감사](audit-2026-09-09-completion-resume.md), 로컬 회귀 | 과거 실패(35985327)의 원인 미확정. 다중 알림·실패 알림 복귀는 미지원 | 없음 |
@@ -74,7 +74,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 웹 검색 경로 | 완료 | [브리지 감사](audit-2026-09-11-web-search-bridge.md). 실사용 세션 a6e7f1ad 요청 13: `webSearchAnswered=true`, `webSearchCalls=1`, `webSearchLinks=15`, `firstContentBlock=server_tool_use`, 모델이 출처를 인용 | 게이트웨이가 side query를 직접 답한다. `alpha/`는 알파 경로라 사라지거나 모양이 바뀔 수 있다. 그때는 `SEARCH_UNAVAILABLE`·`SEARCH_HTTP_ERROR`·`SEARCH_RESPONSE_SHAPE`로 이름이 붙어 실패하며 조용한 빈 결과가 되지 않는다 | 탐지가 빗나가면 세션당 1회 stderr 통지가 뜬다. 그때 실제 요청 모양을 확보한다 |
 | WebFetch | 완료 | 세션 4851a91a에서 `https://example.com` 정상 성공. 요청 3개(결정·apply·후속) 중 `effort: high`인 apply 호출이 텍스트를 반환 | 이전 한 번의 `No response from model`은 대상 URL 미기록으로 재현 불가. 게이트웨이는 거부한 적이 없다 | 재발 시 `effort: high` 요청의 타이밍으로 귀속한다 |
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
-| 장기 자원 안정성 | 조건부 | `test-native` 47개(1000요청 / 20동시 포함), `test-request-admission`, `test-native-gateway`의 등록표 만료·상한 검사 | 등록표는 30분 유휴 만료 뒤 1024 상한으로 묶인다. 3주기 종료 후 socket·timer·listener 실측은 여전히 없다 | 실제 장시간 실행 시 종료 JSON의 `cleanup`·`admission`·`agentRegistrationsEvicted`를 함께 본다 |
+| 장기 자원 안정성 | 완료 | run-04(2c4ceab9) 종료 JSON 실측 — 2시간 37분·408요청·자식 9명 뒤 `cleanup` 9개 전부 true, `gatewayIdle` true, `agentRegistrationsEvicted` 0, `agentRegistrationsExpired` 1. [종료 진단 분석](audit-2026-09-11-run-04-exit-diagnostics.md). 합성 근거는 `test-native` 47개, `test-request-admission` | admission이 메모리 기반이라 같은 부하에서 요청 4건이 6~7분 대기 끝에 클라이언트 이탈로 끝났다. 죽지는 않았으나 지연은 실재한다 | socket·timer·listener를 OS 수준에서 별도 실측하지는 않았다 |
 | HTTP 서버 수준 거부 집계 | 완료 | `lifetime.transportRejections`, `test-native-gateway`의 Expect 검사 | 연결 단계에서 끊긴 바이트의 원인까지는 남기지 않는다 | 없음 |
 | native 기능 지원 범위 | 완료 | [전수 대조](native-feature-support.md) | 로컬 MCP·이미지·plan mode 등 개별 실제 왕복은 미검증으로 명시 | 정상 사용 중 관측되면 기록 |
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |

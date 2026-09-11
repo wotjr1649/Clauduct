@@ -6,10 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { request } from 'node:https';
 import { createInterface } from 'node:readline/promises';
+import { liteSearchEnvelope } from '../src/native-protocol.mjs';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
 export const model = 'gpt-6-astra';
 export const effort = 'xhigh';
+// Search mode runs on the cheapest model: it is measuring whether the envelope is
+// accepted and whether the backend searches, not how well the model answers.
+export const liteModel = 'gpt-5.6-luna';
+export const liteEffort = 'medium';
 const expectedRoot = 'C:\\Users\\JS\\.codex';
 const codexExe = 'C:\\Users\\JS\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
 const testedVersion = '0.153.4';
@@ -71,7 +76,27 @@ export function buildBody() {
     reasoning: { effort }, tools: [], tool_choice: 'none', stream: true, store: false };
 }
 
-export function summarizeResponse(status, contentType, bytes, rawHeaders) {
+// The gateway's search envelope, built here the same way so one SEND says whether the backend
+// accepts it and whether it runs its own search. Carries no client tools and no local text.
+export function buildLiteBody(envelope) {
+  return { model: liteModel,
+    input: [{ type: 'additional_tools', id: envelope.toolsId, role: 'developer',
+      tools: [{ type: 'namespace', name: 'functions', description: '', tools: [] }] },
+      { role: 'user', content: [{ type: 'input_text',
+        text: 'Search the web and reply with the current stable Node.js release number only.' }] }],
+    tool_choice: 'auto', parallel_tool_calls: false,
+    reasoning: { effort: liteEffort, context: 'all_turns' }, store: false, stream: true,
+    include: ['reasoning.encrypted_content'], prompt_cache_key: envelope.cacheKey,
+    text: { verbosity: 'medium' }, client_metadata: envelope.metadata };
+}
+
+// Field names this probe itself sends. Reporting which of our own names an upstream rejection
+// mentions narrows the envelope without echoing the upstream message.
+const LITE_FIELDS = Object.freeze(['instructions', 'tools', 'additional_tools', 'client_metadata',
+  'prompt_cache_key', 'reasoning', 'context', 'text', 'verbosity', 'include', 'tool_choice',
+  'parallel_tool_calls', 'store', 'stream', 'model']);
+
+export function summarizeResponse(status, contentType, bytes, rawHeaders, lite = false) {
   // Only fixed labels and counts leave this boundary; never echo headers or body snippets.
   const mediaType = contentType.split(';', 1)[0].trim().toLowerCase();
   const result = { httpStatus: status, passed: false, category: 'UNEXPECTED_RESPONSE',
@@ -112,16 +137,19 @@ export function summarizeResponse(status, contentType, bytes, rawHeaders) {
     // Never echo the upstream message: it may include request headers or account information.
     if (status === 400 && /requires a newer version of Codex/i.test(text)) result.category = 'CLIENT_VERSION_REJECTED';
     else if (status === 400 && /unsupported parameter|unknown parameter|not supported/i.test(text)) result.category = 'REQUEST_NOT_SUPPORTED';
+    // Only names this probe itself sent, never upstream text: enough to say which part of the
+    // envelope the backend objected to without reproducing its message.
+    result.rejectedFields = LITE_FIELDS.filter(name => text.includes(name));
     return result;
   }
   if (mediaType !== 'text/event-stream') {
     // Diagnostic parsing does not make a missing Content-Type a successful response.
     if (result.mediaType === 'missing' && result.bodyFormat === 'sse-like') {
-      return { ...result, category: 'MISSING_CONTENT_TYPE', sseDiagnostics: inspectSse(text) };
+      return { ...result, category: 'MISSING_CONTENT_TYPE', sseDiagnostics: inspectSse(text, lite) };
     }
     return result;
   }
-  return { ...result, ...inspectSse(text) };
+  return { ...result, ...inspectSse(text, lite) };
 }
 
 function textPosition(event) {
@@ -141,9 +169,12 @@ function joinTextParts(parts) {
   }).map(([, value]) => value).join('');
 }
 
-function inspectSse(text) {
+function inspectSse(text, lite = false) {
   const result = { passed: false, category: 'UNEXPECTED_RESPONSE' };
   let completed, eventCount = 0, failed = false, unexpectedTool = false;
+  // In search mode a backend search is the thing being measured, so it is counted rather
+  // than treated as an unexpected tool. The count is a number; no query or result is read.
+  const searchItems = new Set();
   const deltas = new Map();
   const textDone = new Map();
   const itemDoneIndices = new Set();
@@ -198,9 +229,13 @@ function inspectSse(text) {
         }
       }
       if (event.type.startsWith('response.refusal.') || event.part?.type === 'refusal') streamRefused = true;
-      if (/^response\..*(?:_call|_arguments)(?:\.|$)/.test(event.type)) unexpectedTool = true;
+      if (lite && event.type.startsWith('response.web_search_call.') && typeof event.item_id === 'string') {
+        searchItems.add(event.item_id);
+      } else if (/^response\..*(?:_call|_arguments)(?:\.|$)/.test(event.type)) unexpectedTool = true;
       if (['response.failed', 'response.incomplete', 'response.cancelled', 'response.canceled', 'error'].includes(event.type)) failed = true;
-      if (event.item?.type && !['message', 'reasoning'].includes(event.item.type)) unexpectedTool = true;
+      if (lite && event.item?.type === 'web_search_call') {
+        if (typeof event.item.id === 'string') searchItems.add(event.item.id);
+      } else if (event.item?.type && !['message', 'reasoning'].includes(event.item.type)) unexpectedTool = true;
       if (event.item?.type === 'reasoning' && Number.isSafeInteger(event.output_index)) nonMessageIndices.add(event.output_index);
       if (event.item?.type === 'message' && Array.isArray(event.item.content)
         && event.item.content.some(part => part?.type === 'refusal')) streamRefused = true;
@@ -236,7 +271,12 @@ function inspectSse(text) {
   if (completed.output.some(item => !item || typeof item !== 'object' || Array.isArray(item))) {
     return { ...result, category: 'INVALID_RESPONSE_SHAPE', eventCount };
   }
-  unexpectedTool ||= completed.output.some(item => !['message', 'reasoning'].includes(item.type));
+  for (const item of completed.output) {
+    if (lite && item.type === 'web_search_call' && typeof item.id === 'string') searchItems.add(item.id);
+  }
+  unexpectedTool ||= completed.output.some(item => !['message', 'reasoning'].includes(item.type)
+    && !(lite && item.type === 'web_search_call'));
+  if (lite) result.webSearchCalls = searchItems.size;
   const messages = completed.output.filter(item => item.type === 'message');
   if (messages.some(item => !Array.isArray(item.content)
     || (item.role !== undefined && item.role !== 'assistant')
@@ -288,11 +328,14 @@ function inspectSse(text) {
     textDoneEventCount, doneShapeValid, streamOrderValid, streamMatchesTextDone,
     snapshotsMatch, indicesCompatible, reconstructed
   };
-  const modelMatches = completed.model === model;
-  const exactOK = reply === 'OK';
+  const modelMatches = completed.model === (lite ? liteModel : model);
+  // Connectivity mode asks for the exact word OK. Search mode asks a real question, so the
+  // measured outcome is whether the envelope was accepted and the backend ran a search.
+  const exactOK = lite ? null : reply === 'OK';
   const refused = streamRefused || output.some(part => part.type === 'refusal');
-  const effortEchoMatches = completed.reasoning?.effort === effort;
-  const passed = modelMatches && effortEchoMatches && exactOK && !unexpectedTool && !refused && streamConsistent;
+  const effortEchoMatches = completed.reasoning?.effort === (lite ? liteEffort : effort);
+  const passed = modelMatches && effortEchoMatches && !unexpectedTool && !refused && streamConsistent
+    && (lite ? searchItems.size > 0 : exactOK);
   const counts = {};
   for (const name of ['input_tokens', 'output_tokens', 'total_tokens']) {
     const value = completed.usage?.[name];
@@ -330,7 +373,7 @@ export function buildFetchOptions(body, headers, signal) {
     body: new ReadableStream({ start(controller) { controller.enqueue(bytes); controller.close(); } }) };
 }
 
-export async function inspectFetchResponse(response) {
+export async function inspectFetchResponse(response, lite = false) {
   const chunks = [];
   let length = 0;
   if (response.body) {
@@ -339,30 +382,31 @@ export async function inspectFetchResponse(response) {
       chunks.push(chunk);
     }
   }
-  return { ...summarizeResponse(response.status, response.headers.get('content-type') ?? '', Buffer.concat(chunks)),
+  return { ...summarizeResponse(response.status, response.headers.get('content-type') ?? '', Buffer.concat(chunks), null, lite),
     transportDiagnostics: { contentTypePresent: response.headers.has('content-type') } };
 }
 
-async function sendFetchOnce(credential, version) {
-  const body = JSON.stringify(buildBody());
+async function sendFetchOnce(credential, version, envelope) {
+  const body = JSON.stringify(envelope ? buildLiteBody(envelope) : buildBody());
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
-    const response = await fetch(endpoint, buildFetchOptions(body, buildHeaders(credential, version, body), controller.signal));
-    return await inspectFetchResponse(response);
+    const headers = { ...buildHeaders(credential, version, body), ...envelope?.headers };
+    const response = await fetch(endpoint, buildFetchOptions(body, headers, controller.signal));
+    return await inspectFetchResponse(response, envelope !== undefined);
   } catch (error) {
     stop(controller.signal.aborted ? 'TIMEOUT' : error.message === 'RESPONSE_TOO_LARGE' ? error.message : 'NETWORK_OR_TLS_ERROR');
   } finally { clearTimeout(timeout); }
 }
 
-async function sendOnce(credential, version) {
-  const body = JSON.stringify(buildBody());
+async function sendOnce(credential, version, envelope) {
+  const body = JSON.stringify(envelope ? buildLiteBody(envelope) : buildBody());
   return new Promise((resolveResult, reject) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
     const req = request(endpoint, { method: 'POST', agent: false, signal: controller.signal,
       rejectUnauthorized: true,
-      headers: buildHeaders(credential, version, body) }, res => {
+      headers: { ...buildHeaders(credential, version, body), ...envelope?.headers } }, res => {
       const chunks = [];
       let length = 0;
       res.on('data', chunk => {
@@ -374,7 +418,7 @@ async function sendOnce(credential, version) {
         clearTimeout(timeout);
         try {
           resolveResult(summarizeResponse(res.statusCode ?? 0, String(res.headers['content-type'] ?? ''),
-            Buffer.concat(chunks), res.rawHeaders));
+            Buffer.concat(chunks), res.rawHeaders, envelope !== undefined));
         } catch { reject(new Error('LOCAL_CHECK_FAILED')); }
       });
     });
@@ -389,11 +433,13 @@ async function sendOnce(credential, version) {
 
 async function main() {
   let attempted = false;
-  let transport;
+  let transport, lite = false;
   try {
-    transport = selectTransport(process.argv.slice(2), process.stdin.isTTY, process.stdout.isTTY);
+    const args = process.argv.slice(2);
+    lite = args.includes('--lite');
+    transport = selectTransport(args.filter(arg => arg !== '--lite'), process.stdin.isTTY, process.stdout.isTTY);
     checkRuntime(process.env, process.execArgv);
-    console.log(`USER-OPERATED TEST: ${model}/${effort}; ${transport}; one request to ${endpoint}`);
+    console.log(`USER-OPERATED TEST: ${lite ? `${liteModel}/${liteEffort}; gateway search envelope` : `${model}/${effort}`}; ${transport}; one request to ${endpoint}`);
     console.log('Reads the existing file cache in memory only. No refresh, writes, tool execution, redirects, or retries.');
     console.log('This consumes account usage. The backend compatibility path is not a public API support guarantee.');
     const terminal = createInterface({ input: process.stdin, output: process.stdout });
@@ -413,9 +459,12 @@ async function main() {
       stop('FILE_CACHE_UNAVAILABLE');
     }
     attempted = true;
-    const result = transport === 'node-fetch' ? await sendFetchOnce(credential, testedVersion) : await sendOnce(credential, testedVersion);
+    const envelope = lite ? liteSearchEnvelope() : undefined;
+    const result = transport === 'node-fetch' ? await sendFetchOnce(credential, testedVersion, envelope)
+      : await sendOnce(credential, testedVersion, envelope);
     credential = null;
-    console.log(JSON.stringify({ ...result, requestedModel: model, requestedEffort: effort,
+    console.log(JSON.stringify({ ...result, mode: lite ? 'search-envelope' : 'connectivity',
+      requestedModel: lite ? liteModel : model, requestedEffort: lite ? liteEffort : effort,
       clientVersion: testedVersion, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
     if (!result.passed) process.exitCode = 1;
   } catch (error) {

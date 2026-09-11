@@ -220,6 +220,7 @@ const LITE_HEADERS = Object.freeze(['x-openai-internal-codex-responses-lite', 'x
   'session-id', 'thread-id', 'x-client-request-id', 'x-codex-window-id', 'x-codex-turn-metadata']);
 export function liteSearchEnvelope(now = Date.now(), id = randomUUID) {
   const session = id(), turn = id(), install = id(), window = `${session}:0`;
+  const toolsId = `at_${id()}`;
   const metadata = JSON.stringify({ installation_id: install, session_id: session, thread_id: session,
     turn_id: turn, root_turn_id: turn, window_id: window, window_number: 0, request_kind: 'turn',
     thread_source: 'user', sandbox: 'none', sandbox_mode: 'read-only', auto_review_enabled: false,
@@ -228,7 +229,7 @@ export function liteSearchEnvelope(now = Date.now(), id = randomUUID) {
     headers: { 'x-openai-internal-codex-responses-lite': 'true', 'x-codex-beta-features': 'remote_compaction_v2',
       'session-id': session, 'thread-id': session, 'x-client-request-id': session,
       'x-codex-window-id': window, 'x-codex-turn-metadata': metadata },
-    cacheKey: session,
+    cacheKey: session, toolsId,
     metadata: { 'x-codex-installation-id': install, session_id: session, thread_id: session,
       turn_id: turn, root_turn_id: turn, 'x-codex-window-id': window, 'x-codex-turn-metadata': metadata }
   };
@@ -403,7 +404,7 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
     envelope = liteSearchEnvelope();
     delete body.tools;
     delete body.instructions;
-    body.input = [{ type: 'additional_tools', id: `at_${randomUUID()}`, role: 'developer',
+    body.input = [{ type: 'additional_tools', id: envelope.toolsId, role: 'developer',
       tools: [{ type: 'namespace', name: 'functions', description: '', tools }] }, ...input];
     body.reasoning = { effort: selected.effort, context: 'all_turns' };
     body.text = { verbosity: 'medium' };

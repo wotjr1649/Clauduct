@@ -1,6 +1,8 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
-import { buildBody, checkStore, selectCredential, summarizeResponse, model, endpoint } from './manual-http-probe.mjs';
+import { buildBody, buildLiteBody, checkStore, selectCredential, summarizeResponse, model, endpoint,
+  liteModel, liteEffort } from './manual-http-probe.mjs';
+import { liteSearchEnvelope } from '../src/native-protocol.mjs';
 
 let count = 0;
 function check(name, action) { action(); count++; }
@@ -407,5 +409,49 @@ check('duplicate content completion prevents reconstruction', () => {
     part: { type: 'output_text', text: 'OK' } };
   const result = streamSummary([delta('OK', 1), textDone('OK'), part, part, textless]);
   assert.equal(result.passed, false); assert.equal(result.textDiagnostics.streamOrderValid, false);
+});
+// Search mode: the envelope the gateway sends, and a backend search counted rather than
+// treated as an unexpected tool. Never reaches the network; every fixture is local.
+const searchItem = { id: 'ws_synthetic', type: 'web_search_call', status: 'completed' };
+const searchComplete = { type: 'response.completed', response: { model: liteModel, status: 'completed',
+  reasoning: { effort: liteEffort }, output: [searchItem,
+    { type: 'message', content: [{ type: 'output_text', text: 'SYNTHETIC_REPLY' }] }],
+  usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } };
+const liteSummary = (...events) => summarizeResponse(200, 'text/event-stream',
+  Buffer.concat(events.map(sse)), null, true);
+check('search envelope shape', () => {
+  const body = buildLiteBody(liteSearchEnvelope());
+  assert.equal('instructions' in body, false);
+  assert.equal('tools' in body, false);
+  assert.equal(body.input[0].type, 'additional_tools');
+  assert.equal(body.reasoning.context, 'all_turns');
+  assert.equal(typeof body.prompt_cache_key, 'string');
+  assert.equal(body.client_metadata.session_id, body.prompt_cache_key);
+  assert.equal(body.model, liteModel);
+});
+check('backend search counted, not unexpected', () => {
+  const result = liteSummary(searchComplete);
+  assert.equal(result.webSearchCalls, 1);
+  assert.equal(result.unexpectedTool, false);
+  assert.equal(result.passed, true);
+});
+check('search events count once per item', () => {
+  const result = liteSummary({ type: 'response.web_search_call.in_progress', item_id: 'ws_synthetic' },
+    { type: 'response.web_search_call.completed', item_id: 'ws_synthetic' }, searchComplete);
+  assert.equal(result.webSearchCalls, 1);
+});
+check('search envelope accepted but no search fails', () => {
+  const result = liteSummary({ ...searchComplete,
+    response: { ...searchComplete.response, output: [searchComplete.response.output[1]] } });
+  assert.equal(result.webSearchCalls, 0);
+  assert.equal(result.passed, false);
+});
+check('a search item is still unexpected in connectivity mode', () =>
+  assert.equal(summary({ ...complete, response: { ...complete.response, output: [searchItem] } }).unexpectedTool, true));
+check('rejected field named without echoing upstream text', () => {
+  const result = summarizeResponse(400, 'application/json',
+    Buffer.from('{"error":{"message":"Unknown parameter: client_metadata. SYNTHETIC_PRIVATE_CANARY"}}'), null, true);
+  assert.deepEqual(result.rejectedFields, ['client_metadata']);
+  assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
 });
 console.log(JSON.stringify({ offlineTests: count, passed: count, credentialReads: 0, networkRequests: 0 }));

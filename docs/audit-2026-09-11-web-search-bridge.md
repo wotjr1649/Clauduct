@@ -246,3 +246,41 @@ clientVersion 0.154.0 (unverified; baseline 0.153.4)
 ### 측정 정밀도 보강
 
 거부 시 상류 오류의 자체 어휘(`type`, `code`, `param`)를 고정 형태로 검사해 보고한다. `param`은 우리가 보낸 매개변수 경로라서 `input[0].tools` 같은 대괄호 표기를 허용한다. 메시지 본문은 재현하지 않으며 테스트가 이를 고정한다. 다음 거부가 오면 어느 필드인지 추론할 필요가 없다.
+
+## 3차 측정 — 200, 그러나 검색 0회
+
+```
+httpStatus 200  category MISSING_CONTENT_TYPE  webSearchCalls 0
+eventCount 11  modelMatches true  effortEchoMatches true  unexpectedTool false
+usage 21/305/326  streamChars 2
+```
+
+**봉투는 받아들여졌다.** 빈 namespace가 400의 원인이었다는 진단이 맞았다. 그런데 백엔드가 검색을 하지 않고 305 토큰을 추론한 뒤 2글자로 답했다. 기억으로 답한 것이다.
+
+## 검색은 요청에 선언되지 않는다
+
+`web_search = "live"`와 `web_search = "disabled"`로 같은 요청을 각각 캡처해 본문을 대조했다.
+
+```
+key sets equal: true
+차이: client_metadata (실행마다 달라지는 식별자와 타임스탬프뿐)
+namespace: 양쪽 모두 functions:exec,wait,request_user_input / mcp__cua_repl:js,js_reset
+헤더 이름 집합: 동일
+```
+
+**설정을 껐다 켜도 요청이 동일하다.** 즉 codex의 `web_search` 설정은 이 엔드포인트로 가는 요청에 아무 흔적도 남기지 않는다. 내장 검색은 전적으로 서버가 공급하며 요청이 선언하는 것이 아니다. 앞서 "검색 도구를 어떻게 선언할까"를 네 번 틀린 이유가 여기 있다 — 선언하는 물건이 아니었다.
+
+## 남은 차이는 클라이언트 정체성뿐
+
+lite 봉투는 `instructions`를 보내지 않는다. 서버가 지시를 공급한다는 뜻이고, **어떤 지시를 — 따라서 어떤 내장 도구 모음을 — 줄지는 헤더의 클라이언트 정체성을 따른다**고 보는 것이 남은 유일한 설명이다.
+
+| 헤더 | 기준 클라이언트 | Clauduct(이전) |
+| --- | --- | --- |
+| `originator` | `codex_exec` | `codex_cli_rs` |
+| `User-Agent` | `codex_exec/<v> (<os>; x86_64) xterm-256color (codex_exec; <v>)` | `codex-cli/<v> (Windows; x64)` |
+| `Version` | 없음 | 있음 |
+| `Openai-Beta` | 없음 | `responses=experimental` |
+
+검색 요청만 기준 클라이언트의 정체성으로 보낸다. 일반 요청의 정체성은 한 글자도 건드리지 않으며 테스트가 양쪽을 동시에 고정한다. 선택 기준은 "고정 봉투 헤더를 하나라도 실었는가"다. 처음에 `extraHeaders !== undefined`로 판정했다가 루프백 전송이 항상 빈 객체를 넘기는 탓에 일반 요청까지 lite로 빠졌고, `client-version` suite가 그 자리에서 잡아냈다.
+
+turn metadata에 기준 클라이언트가 담는 `agent_name`, `context_window_id`, `node_repl_auto_review_required`를 추가했다. `workspaces`는 여전히 담지 않는다 — 로컬 경로다.

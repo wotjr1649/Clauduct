@@ -4,6 +4,7 @@ import { checkClientVersion, entrySummary, safeEntryCategory } from '../poc/user
 import { createLoopbackCodexTransport, createCodexTransport } from '../poc/codex-transport.mjs';
 import { createNativeLoopbackTransport, createNativeTransport } from './native-transport.mjs';
 import { probeProfile } from '../poc/adapter.mjs';
+import { liteSearchEnvelope } from './native-protocol.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { readRequestStatus } from './request-status.mjs';
 
@@ -29,7 +30,8 @@ for (const factory of [createCodexTransport, createNativeTransport]) {
 
 const received = [];
 const server = createServer((req, res) => {
-  received.push({ version: req.headers.version, agent: req.headers['user-agent'] });
+  received.push({ version: req.headers.version, agent: req.headers['user-agent'],
+    originator: req.headers.originator, beta: req.headers['openai-beta'] });
   req.resume();
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   res.end('event: response.created\ndata: {"type":"response.created"}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\ndata: [DONE]\n\n');
@@ -50,7 +52,8 @@ try {
           if (index === 0) await transport.send(body, AbortSignal.timeout(5000));
           else await transport.send(JSON.stringify(body), { begin() {}, push() {} }, AbortSignal.timeout(5000));
           assert.deepEqual(received.at(-1), { version: clientVersion,
-            agent: `codex-cli/${clientVersion} (Windows; x64)` });
+            agent: `codex-cli/${clientVersion} (Windows; x64)`,
+            originator: 'codex_cli_rs', beta: 'responses=experimental' });
         }
         const diagnostics = transport.diagnostics();
         assert.equal(diagnostics.clientVersion, clientVersion);
@@ -68,6 +71,23 @@ try {
       }
     } finally { await Promise.all(transports.map(t => t.close())); }
   }
+  // A search request identifies itself as the reference client, because the lite envelope sends
+  // no instructions and the backend picks them — and the built-in toolset with them — from that
+  // identity. Carrying one of the fixed envelope headers is what selects it; an ordinary request
+  // carries none and keeps the identity every other request has always sent.
+  const transport = createNativeLoopbackTransport(server.address().port, { clientVersion: '0.154.0', profile: 'astra-low' });
+  try {
+    const body = { model: probeProfile('astra-low').model, reasoning: { effort: 'low' }, stream: true, store: false };
+    await transport.send(body, AbortSignal.timeout(5000), { headers: liteSearchEnvelope().headers });
+    const lite = received.at(-1);
+    assert.equal(lite.originator, 'codex_exec');
+    assert.equal(lite.beta, undefined);
+    assert.equal(lite.version, undefined);
+    assert.match(lite.agent, /^codex_exec\/0\.154\.0 \(.+\) xterm-256color \(codex_exec; 0\.154\.0\)$/);
+    await transport.send(body, AbortSignal.timeout(5000));
+    assert.equal(received.at(-1).originator, 'codex_cli_rs');
+    assert.equal(received.at(-1).beta, 'responses=experimental');
+  } finally { await transport.close(); }
 } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 assert.equal(entrySummary('USER_CANCELLED', {}).clientVersion, null);
 assert.equal(entrySummary('USER_CANCELLED', { transport: { clientVersion: 'SYNTHETIC_PRIVATE' } }).clientVersion, null);

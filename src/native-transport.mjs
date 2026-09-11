@@ -276,7 +276,10 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   async function requestOnce(job, raw, current, onEvent, isRetry) {
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
-    const headers = { ...buildHeaders(current, clientVersion, raw), ...job.extraHeaders };
+    // Extra headers are only ever set for the search envelope, and the allowlist below keeps it
+    // that way, so carrying any of them is what selects the reference client's identity headers.
+    const lite = Object.keys(job.extraHeaders).length > 0;
+    const headers = { ...buildHeaders(current, clientVersion, raw, lite), ...job.extraHeaders };
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
       headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false,

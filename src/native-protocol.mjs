@@ -222,8 +222,9 @@ export function liteSearchEnvelope(now = Date.now(), id = randomUUID) {
   const session = id(), turn = id(), install = id(), window = `${session}:0`;
   const toolsId = `at_${id()}`;
   const metadata = JSON.stringify({ installation_id: install, session_id: session, thread_id: session,
-    turn_id: turn, root_turn_id: turn, window_id: window, window_number: 0, request_kind: 'turn',
-    thread_source: 'user', sandbox: 'none', sandbox_mode: 'read-only', auto_review_enabled: false,
+    agent_name: '/root', turn_id: turn, root_turn_id: turn, window_id: window, window_number: 0,
+    context_window_id: id(), request_kind: 'turn', thread_source: 'user', sandbox: 'none',
+    sandbox_mode: 'read-only', auto_review_enabled: false, node_repl_auto_review_required: false,
     node_repl_disabled: true, turn_started_at_unix_ms: now });
   return {
     headers: { 'x-openai-internal-codex-responses-lite': 'true', 'x-codex-beta-features': 'remote_compaction_v2',

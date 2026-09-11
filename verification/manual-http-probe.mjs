@@ -8,6 +8,7 @@ import { request } from 'node:https';
 import { createInterface } from 'node:readline/promises';
 import { liteSearchEnvelope } from '../src/native-protocol.mjs';
 import { clientVersionPolicy } from '../src/client-version.mjs';
+import { release, arch } from 'node:os';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
 export const model = 'gpt-6-astra';
@@ -387,11 +388,22 @@ export function checkRuntime(env, execArgs) {
   if (env.NODE_USE_ENV_PROXY || env.NODE_TLS_REJECT_UNAUTHORIZED !== undefined) stop('TRANSPORT_RUNTIME_UNSUPPORTED');
 }
 
-export function buildHeaders(credential, version, body) {
-  return { Authorization: `Bearer ${credential.accessToken}`, 'chatgpt-account-id': credential.account,
+// Captured from the reference client: web_search = "live" and web_search = "disabled" produce
+// byte-identical requests apart from per-run identifiers, so the built-in search is not declared
+// in the request at all. The lite envelope also sends no instructions, which means the backend
+// supplies them — and which ones it supplies follows the client identity in these headers. So a
+// lite request identifies itself the way the reference client does and omits the headers the
+// reference client does not send.
+const liteAgent = version => `codex_exec/${version} (${release()}; ${arch() === 'x64' ? 'x86_64' : arch()}) `
+  + `xterm-256color (codex_exec; ${version})`;
+export function buildHeaders(credential, version, body, lite = false) {
+  const common = { Authorization: `Bearer ${credential.accessToken}`, 'chatgpt-account-id': credential.account,
     'Content-Type': 'application/json', Accept: 'text/event-stream', 'Accept-Encoding': 'identity',
-    Version: version, 'User-Agent': `codex-cli/${version} (Windows; x64)`, originator: 'codex_cli_rs',
-    'Openai-Beta': 'responses=experimental', 'Content-Length': Buffer.byteLength(body) };
+    'Content-Length': Buffer.byteLength(body) };
+  return lite
+    ? { ...common, originator: 'codex_exec', 'User-Agent': liteAgent(version) }
+    : { ...common, Version: version, 'User-Agent': `codex-cli/${version} (Windows; x64)`,
+      originator: 'codex_cli_rs', 'Openai-Beta': 'responses=experimental' };
 }
 
 export function buildFetchOptions(body, headers, signal) {
@@ -419,7 +431,7 @@ async function sendFetchOnce(credential, version, envelope) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45000);
   try {
-    const headers = { ...buildHeaders(credential, version, body), ...envelope?.headers };
+    const headers = { ...buildHeaders(credential, version, body, envelope !== undefined), ...envelope?.headers };
     const response = await fetch(endpoint, buildFetchOptions(body, headers, controller.signal));
     return await inspectFetchResponse(response, envelope !== undefined);
   } catch (error) {
@@ -434,7 +446,7 @@ async function sendOnce(credential, version, envelope) {
     const timeout = setTimeout(() => controller.abort(), 45000);
     const req = request(endpoint, { method: 'POST', agent: false, signal: controller.signal,
       rejectUnauthorized: true,
-      headers: { ...buildHeaders(credential, version, body), ...envelope?.headers } }, res => {
+      headers: { ...buildHeaders(credential, version, body, envelope !== undefined), ...envelope?.headers } }, res => {
       const chunks = [];
       let length = 0;
       res.on('data', chunk => {

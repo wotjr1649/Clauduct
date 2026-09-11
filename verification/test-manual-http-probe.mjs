@@ -1,6 +1,6 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
-import { buildBody, buildLiteBody, checkStore, selectCredential, summarizeResponse, model, endpoint,
+import { buildBody, buildLiteBody, buildHeaders, checkStore, selectCredential, summarizeResponse, model, endpoint,
   liteModel, liteEffort, readClientVersion } from './manual-http-probe.mjs';
 import { liteSearchEnvelope } from '../src/native-protocol.mjs';
 import { REFERENCE_CLIENT_VERSION } from '../src/client-version.mjs';
@@ -487,4 +487,30 @@ check('unreadable version stops the run', () => {
 });
 check('malformed version stops the run', () =>
   assert.throws(() => readClientVersion({ status: 0, stdout: 'codex-cli not.a.version' }), /CLI_VERSION_INVALID/));
+// A search request identifies itself as the reference client, because the backend picks the
+// instructions — and with them the built-in toolset — from that identity. Everything else keeps
+// the identity the ordinary path has always sent.
+const credential = { accessToken: 'synthetic', account: 'synthetic-account' };
+check('search request uses the reference client identity', () => {
+  const headers = buildHeaders(credential, '1.2.3', '{}', true);
+  assert.equal(headers.originator, 'codex_exec');
+  assert.match(headers['User-Agent'], /^codex_exec\/1\.2\.3 \(.+\) xterm-256color \(codex_exec; 1\.2\.3\)$/);
+  assert.equal('Version' in headers, false);
+  assert.equal('Openai-Beta' in headers, false);
+});
+check('the ordinary request identity is unchanged', () => {
+  const headers = buildHeaders(credential, '1.2.3', '{}');
+  assert.equal(headers.originator, 'codex_cli_rs');
+  assert.equal(headers['User-Agent'], 'codex-cli/1.2.3 (Windows; x64)');
+  assert.equal(headers.Version, '1.2.3');
+  assert.equal(headers['Openai-Beta'], 'responses=experimental');
+});
+check('both carry the same credential and framing headers', () => {
+  for (const headers of [buildHeaders(credential, '1.2.3', '{}'), buildHeaders(credential, '1.2.3', '{}', true)]) {
+    assert.equal(headers.Authorization, 'Bearer synthetic');
+    assert.equal(headers['chatgpt-account-id'], 'synthetic-account');
+    assert.equal(headers.Accept, 'text/event-stream');
+    assert.equal(headers['Content-Length'], 2);
+  }
+});
 console.log(JSON.stringify({ offlineTests: count, passed: count, credentialReads: 0, networkRequests: 0 }));

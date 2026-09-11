@@ -27,11 +27,11 @@ export async function scanBetaNames(path = CLAUDE_EXE, { chunkBytes = 1 << 20 } 
 export function classifyBetaNames(names) {
   const known = new Set(NATIVE_BETAS), judged = new Set(Object.keys(UNSUPPORTED_BETAS));
   const serverDependent = new Set(SERVER_DEPENDENT_BETAS);
-  const report = { observed: names.length, allowed: [], refused: [], serverDependent: [], unclassified: [] };
+  const report = { observed: names.length, allowed: [], judged: [], serverDependent: [], unclassified: [] };
   for (const name of names) {
     if (IGNORED.has(name)) continue;
     if (known.has(name)) report.allowed.push(name);
-    else if (judged.has(name)) report.refused.push(name);
+    else if (judged.has(name)) report.judged.push(name);
     else if (serverDependent.has(name)) report.serverDependent.push(name);
     else report.unclassified.push(name);
   }

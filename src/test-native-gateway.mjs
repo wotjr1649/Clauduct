@@ -237,7 +237,6 @@ try {
     try {
       assert.equal((await call(gateway)).status, 200);
       const recorded = [['UNSUPPORTED_VERSION', { 'anthropic-version': '2024-01-01' }],
-        ['UNSUPPORTED_BETA', { 'anthropic-beta': 'files-api-2025-04-14' }],
         ['INVALID_BETA_HEADER', { 'anthropic-beta': 'per-turn-control-2026-07-01,per-turn-control-2026-07-01' }],
         ['UNSUPPORTED_ENCODING', { 'content-type': 'text/plain' }]];
       for (const [category, headers] of recorded) {
@@ -253,10 +252,19 @@ try {
         const row = after.recentRequests.at(-1);
         assert.equal(row.failureCategory, category);
         assert.equal(row.failureStage, 'request');
+        assert.deepEqual(row.judgedBetaLabels, []);
         assert.equal(row.success, false); assert.equal(row.model, null); assert.equal(row.attempts.length, 0);
         assert.equal(after.failureHistory.records.at(-1).failureCategory, category);
         assert.equal(after.failureHistory.omitted, 0);
       }
+      // A beta this project judged incompatible is carried through and recorded by label.
+      const before = (await status()).lifetime;
+      assert.equal((await call(gateway, { headers: { 'anthropic-beta': 'files-api-2025-04-14' } })).status, 200);
+      const carried = await status();
+      assert.equal(carried.lifetime.failed, before.failed);
+      assert.deepEqual(carried.judgedBetaLabels, ['FILES_API']);
+      assert.deepEqual(carried.recentRequests.at(-1).judgedBetaLabels, ['FILES_API']);
+      assert.equal(carried.recentRequests.at(-1).success, true);
       // A route the gateway does not serve never reached request diagnostics.
       const boundary = (await status()).lifetime;
       assert.equal((await call(gateway, { path: '/v1/messages/count_tokens' })).status, 400);
@@ -266,7 +274,9 @@ try {
       assert.equal(after.lifetime.failed, boundary.failed);
       assert.equal(after.lifetime.rejectedBeforeStart, 2);
       assert.equal(after.lifetime.firstRejectedCategory, 'UNSUPPORTED_ROUTE');
-      assert.equal(sends, 1);
+      // The baseline request and the carried-beta request both reached upstream; the refused
+      // headers and the other routes never did.
+      assert.equal(sends, 2);
       passed++;
     } finally { await gateway.close(); }
   }

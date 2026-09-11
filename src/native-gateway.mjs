@@ -5,7 +5,7 @@ import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewCo
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
-import { betaFailure, unknownBetas } from './native-beta.mjs';
+import { betaFailure, unknownBetas, judgedBetas } from './native-beta.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 // Fixed-label diagnostics. A composed local code carries a variable suffix built from
@@ -40,7 +40,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   const recentRequests = [], failureRequests = [];
   // At most four distinct unmapped upstream event names and eight unrecognised client beta
   // names, both kept for the exit diagnostic only.
-  const unsupportedEventNames = [], unknownBetaNames = [];
+  const unsupportedEventNames = [], unknownBetaNames = [], judgedBetaLabels = [];
   const copyRecord = record => ({ ...record, retryScheduledMs: [...record.retryScheduledMs],
     attempts: record.attempts.map(attempt => ({ ...attempt })),
     ...(record.agentContextPolicy && { agentContextPolicy: { ...record.agentContextPolicy } }),
@@ -63,6 +63,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     recentRequests: recentRequests.map(copyRecord),
     failureRequests: failureRequests.map(copyRecord),
     unsupportedEventNames: [...unsupportedEventNames], unknownBetaNames: [...unknownBetaNames],
+    judgedBetaLabels: [...judgedBetaLabels],
     busy: jobs.size > 0, transport: transport.diagnostics(), requests, rejected,
     persistedBodies: 0, registeredAgents: agents.size, maxAgents, unregisteredAgentRequests, sessionLifetime: null, requestBudget: null });
   function authorized(value) {
@@ -223,6 +224,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       if (betaError) throw new NativeError(betaError);
       for (const name of unknownBetas(req.headers['anthropic-beta'])) {
         if (unknownBetaNames.length < 8 && !unknownBetaNames.includes(name)) unknownBetaNames.push(name);
+      }
+      // Fixed labels, so unlike the raw names these stay available inside the session too.
+      timing.judgedBetaLabels = judgedBetas(req.headers['anthropic-beta']);
+      for (const label of timing.judgedBetaLabels) {
+        if (!judgedBetaLabels.includes(label)) judgedBetaLabels.push(label);
       }
       need((req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase() === 'application/json'
         && (!req.headers['content-encoding'] || req.headers['content-encoding'] === 'identity'), 'UNSUPPORTED_ENCODING');

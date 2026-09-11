@@ -14,6 +14,8 @@ const number = value => typeof value === 'number' && Number.isFinite(value) && v
 const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const reference = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : null;
 const betaName = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value);
+const betaLabels = value => Array.isArray(value)
+  ? value.filter(label => typeof label === 'string' && /^[A-Z][A-Z0-9_]{0,31}$/.test(label)).slice(0, 8) : [];
 
 // User-operated within the native child. Credentials go only to its fixed loopback endpoint.
 export async function readRequestStatus(env) {
@@ -72,6 +74,7 @@ export function requestStatusSnapshot(value, env = {}) {
       compactPercent: number(row.agentContextPolicy.compactPercent) } : null,
     subagent: row?.subagent === true, success: row?.success === true,
     webSearchRequested: row?.webSearchRequested === true, webSearchCalls: counter(row?.webSearchCalls) ?? 0,
+    judgedBetaLabels: betaLabels(row?.judgedBetaLabels),
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
     unsupportedEventTypeFormat: EVENT_TYPE_FORMATS.includes(row?.unsupportedEventTypeFormat) ? row.unsupportedEventTypeFormat : null,
     failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,
@@ -123,6 +126,7 @@ export function requestStatusSnapshot(value, env = {}) {
       ? value.unsupportedEventNames.map(capturableEventName).filter(Boolean).slice(0, 4) : null,
     unknownBetaNames: Array.isArray(value.unknownBetaNames)
       ? value.unknownBetaNames.filter(betaName).slice(0, 8) : null,
+    judgedBetaLabels: betaLabels(value.judgedBetaLabels),
     requestOutcome: failed === null || started === null || succeeded === null ? 'not-observed'
       : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
     lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage

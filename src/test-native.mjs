@@ -10,7 +10,7 @@ import { classifyBetaNames } from './scan-native-features.mjs';
 import { interactiveLaunch, launchOptions, runInteractive } from './clauduct.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { NATIVE_BETAS, betaFailure } from './native-beta.mjs';
+import { NATIVE_BETAS, betaFailure, judgedBetas } from './native-beta.mjs';
 
 const tool = name => ({ name, description: 'Synthetic tool', input_schema: { type: 'object',
   properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } });
@@ -136,7 +136,9 @@ await test('native_beta_headers_and_private_unknown', () => {
   assert.equal(betaFailure(NATIVE_BETAS.join(',')), null);
   assert.equal(betaFailure('per-turn-control-2026-07-01,per-turn-control-2026-07-01'), 'INVALID_BETA_HEADER');
   assert.equal(betaFailure(''), 'INVALID_BETA_HEADER');
-  assert.equal(betaFailure('context-hint-2026-04-09,SYNTHETIC_PRIVATE'), 'UNSUPPORTED_BETA known=CONTEXT_HINT unknown=1');
+  // A judged beta is recorded by label, not refused; only a malformed header is refused.
+  assert.equal(betaFailure('context-hint-2026-04-09,SYNTHETIC_PRIVATE'), null);
+  assert.deepEqual(judgedBetas('context-hint-2026-04-09,SYNTHETIC_PRIVATE'), ['CONTEXT_HINT']);
 });
 await test('verified_file_review_rejects_no_diff_completion', async () => {
   const gateway = await startNativeGateway({ agentSelection: {
@@ -167,8 +169,9 @@ await test('beta_fixture_is_independent_of_implementation_list', () => {
     + 'effort-2025-11-24,redact-thinking-2026-02-12,prompt-caching-scope-2026-01-05,'
     + 'mid-conversation-system-2026-04-07,thinking-token-count-2026-05-13,tool-search-tool-2025-10-19,oauth-2025-04-20';
   assert.equal(betaFailure(header), null);
-  assert.equal(betaFailure('thinking-binding-controls-2026-08-01'), 'UNSUPPORTED_BETA known=THINKING_BINDING unknown=0');
-  assert.equal(betaFailure('cache-diagnosis-2026-04-07,SYNTHETIC_PRIVATE'), 'UNSUPPORTED_BETA known=CACHE_DIAGNOSIS unknown=1');
+  assert.equal(betaFailure('thinking-binding-controls-2026-08-01'), null);
+  assert.deepEqual(judgedBetas('thinking-binding-controls-2026-08-01'), ['THINKING_BINDING']);
+  assert.deepEqual(judgedBetas('cache-diagnosis-2026-04-07,SYNTHETIC_PRIVATE'), ['CACHE_DIAGNOSIS']);
 });
 await test('oauth_beta_does_not_replace_local_auth_or_reach_codex', () => fixture(async (gateway, received) => {
   const headers = { 'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20' };
@@ -176,7 +179,8 @@ await test('oauth_beta_does_not_replace_local_auth_or_reach_codex', () => fixtur
   assert.equal((await post(gateway, doc(), { ...headers, Authorization: 'Bearer SYNTHETIC_WRONG' })).status, 401);
   assert.equal((await post(gateway, doc(), { ...headers, Authorization: '', 'x-api-key': 'SYNTHETIC_WRONG' })).status, 400);
   assert.equal(received(), 1);
-  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'oauth-2025-04-20,files-api-2025-04-14' })).status, 400);
+  // A malformed header is still refused before any upstream attempt.
+  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'oauth-2025-04-20,oauth-2025-04-20' })).status, 400);
   assert.equal(received(), 1);
 }));
 await test('tool_search_result_and_turn_effort', () => {
@@ -225,21 +229,23 @@ await test('turn_tool_change_beta_http', () => fixture(async (gateway, received)
   request.messages.push({ role: 'system', content: [{ type: 'tool_addition', tool: { type: 'tool_reference', name: 'Read' } }] });
   assert.equal((await post(gateway, request, header)).status, 200);
   assert.equal((await post(gateway, request)).status, 400);
-  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',files-api-2025-04-14' })).status, 400);
+  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',,' })).status, 400);
   assert.equal(received(), 1);
   assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',brand-new-turn-2026-10-01' })).status, 200);
   assert.equal(received(), 2);
 }));
 await test('native_beta_http_accept_and_reject_without_upstream', () => fixture(async (gateway, received) => {
   assert.equal((await post(gateway, doc(), { 'anthropic-beta': NATIVE_BETAS.join(',') })).status, 200);
-  const judged = await post(gateway, doc(), { 'anthropic-beta': 'files-api-2025-04-14,SYNTHETIC_PRIVATE' });
-  assert.equal(judged.status, 400); assert.equal(judged.text.includes('SYNTHETIC_PRIVATE'), false);
-  assert.ok(judged.text.includes('known=FILES_API unknown=1')); assert.equal(received(), 1);
-  // A beta this project has never judged passes; only its lower-case fixed shape is recorded.
-  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'brand-new-feature-2026-10-01,SYNTHETIC_PRIVATE' })).status, 200);
+  // A judged beta passes and is recorded by its fixed label; a malformed header is refused.
+  const malformed = await post(gateway, doc(), { 'anthropic-beta': 'files-api-2025-04-14,' });
+  assert.equal(malformed.status, 400);
+  assert.ok(malformed.text.includes('INVALID_BETA_HEADER')); assert.equal(received(), 1);
+  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'files-api-2025-04-14,brand-new-feature-2026-10-01,SYNTHETIC_PRIVATE' })).status, 200);
   assert.equal(received(), 2);
   const state = gateway.diagnostics();
   assert.deepEqual(state.unknownBetaNames, ['brand-new-feature-2026-10-01']);
+  assert.deepEqual(state.judgedBetaLabels, ['FILES_API']);
+  assert.deepEqual(state.recentRequests.at(-1).judgedBetaLabels, ['FILES_API']);
   assert.ok(!JSON.stringify(state).includes('SYNTHETIC_PRIVATE'));
 }));
 await test('parallel_tools_reasoning_roundtrip_and_restart', () => {
@@ -327,7 +333,7 @@ await test('advisor_disabled_only_in_clauduct_child', () => {
     assert.equal(launch.options.env.DISABLE_ERROR_REPORTING, '1');
     assert.equal(settings.env.DISABLE_TELEMETRY, '1');
   }
-  assert.equal(betaFailure('advisor-tool-2026-03-01'), 'UNSUPPORTED_BETA known=ADVISOR_TOOL unknown=0');
+  assert.deepEqual(judgedBetas('advisor-tool-2026-03-01'), ['ADVISOR_TOOL']);
 });
 await test('web_search_is_translated_to_the_backend_tool', () => {
   const base = () => ({ model: 'astra', stream: true, max_tokens: 100,
@@ -384,7 +390,7 @@ await test('feature_scan_classifies_known_names', () => {
   const report = classifyBetaNames(['web-search-2025-03-05', 'files-api-2025-04-14',
     'mcp-tunnels-2026-06-22', 'foo-2025-01-01', 'pre-2026-07-28', 'brand-new-feature-2026-10-01']);
   assert.deepEqual(report.allowed, ['web-search-2025-03-05']);
-  assert.deepEqual(report.refused, ['files-api-2025-04-14']);
+  assert.deepEqual(report.judged, ['files-api-2025-04-14']);
   assert.deepEqual(report.serverDependent, ['mcp-tunnels-2026-06-22']);
   assert.deepEqual(report.unclassified, ['brand-new-feature-2026-10-01']);
 });

@@ -1,7 +1,8 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
 import { buildBody, buildLiteBody, buildHeaders, checkStore, selectCredential, summarizeResponse, model, endpoint,
-  liteModel, liteEffort, readClientVersion, LITE_PROMPT } from './manual-http-probe.mjs';
+  liteModel, liteEffort, readClientVersion, LITE_PROMPT,
+  buildSearchBody, summarizeSearch, searchEndpoint, SEARCH_QUERY } from './manual-http-probe.mjs';
 import { liteSearchEnvelope } from '../src/native-protocol.mjs';
 import { REFERENCE_CLIENT_VERSION } from '../src/client-version.mjs';
 
@@ -526,5 +527,53 @@ check('both carry the same credential and framing headers', () => {
     assert.equal(headers.Accept, 'text/event-stream');
     assert.equal(headers['Content-Length'], 2);
   }
+});
+// The reference client's standalone search endpoint. The request carries one query and no
+// conversation tail, and the summary reports shape and counts, never a result's own text.
+const searchBytes = doc => Buffer.from(JSON.stringify(doc));
+check('search request carries only the query', () => {
+  const body = buildSearchBody(liteSearchEnvelope());
+  assert.deepEqual(body.commands, { search_query: [{ q: SEARCH_QUERY }] });
+  assert.equal(body.input.length, 1);
+  assert.equal(body.input[0].content[0].text, SEARCH_QUERY);
+  assert.equal(body.settings.external_web_access, true);
+  assert.deepEqual(body.settings.allowed_callers, ['direct']);
+  assert.equal(body.model, liteModel);
+  assert.equal(typeof body.id, 'string');
+});
+check('search endpoint is the same host as the model endpoint', () => {
+  assert.equal(searchEndpoint, 'https://chatgpt.com/backend-api/codex/alpha/search');
+  assert.equal(new URL(searchEndpoint).origin, new URL(endpoint).origin);
+});
+check('search results are reported as shape, never as text', () => {
+  const result = summarizeSearch(200, searchBytes({ encrypted_output: 'x', output: 'SYNTHETIC_PRIVATE_CANARY',
+    results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com/SYNTHETIC_PRIVATE_CANARY',
+      title: 'SYNTHETIC_PRIVATE_CANARY' }, { type: 'image_result', ref_id: 'turn0image0', url: 'https://example.com/b' }] }));
+  assert.equal(result.passed, true);
+  assert.equal(result.category, 'SUCCESS');
+  assert.equal(result.resultCount, 2);
+  assert.equal(result.outputChars, 24);
+  assert.equal(result.encryptedOutput, true);
+  assert.deepEqual(result.resultKeys, ['ref_id', 'title', 'type', 'url']);
+  assert.deepEqual(result.resultKinds, ['image_result', 'text_result']);
+  assert.deepEqual(result.topLevelKeys, ['encrypted_output', 'output', 'results']);
+  assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+});
+check('an older endpoint without results still reports its output', () => {
+  const result = summarizeSearch(200, searchBytes({ encrypted_output: null, output: 'abc' }));
+  assert.equal(result.resultCount, 0);
+  assert.equal(result.outputChars, 3);
+  assert.equal(result.encryptedOutput, false);
+  assert.equal(result.passed, true);
+});
+check('a missing endpoint is named, not lumped into HTTP_ERROR', () => {
+  assert.equal(summarizeSearch(404, Buffer.from('nope')).category, 'ENDPOINT_ABSENT');
+  assert.equal(summarizeSearch(401, Buffer.from('SYNTHETIC_PRIVATE_CANARY')).category, 'AUTH_REJECTED');
+  assert.equal(JSON.stringify(summarizeSearch(401, Buffer.from('SYNTHETIC_PRIVATE_CANARY'))).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+});
+check('a non-JSON body fails instead of passing empty', () => {
+  assert.equal(summarizeSearch(200, Buffer.from('<html>')).category, 'INVALID_JSON');
+  assert.equal(summarizeSearch(200, Buffer.from('[]')).category, 'INVALID_JSON');
+  assert.equal(summarizeSearch(200, searchBytes({ output: '' })).passed, false);
 });
 console.log(JSON.stringify({ offlineTests: count, passed: count, credentialReads: 0, networkRequests: 0 }));

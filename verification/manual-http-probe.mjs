@@ -11,6 +11,10 @@ import { clientVersionPolicy } from '../src/client-version.mjs';
 import { release, arch } from 'node:os';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
+// The reference client's standalone web search. In the lite envelope it never sends a hosted
+// search tool at all — it declares a client-executed web.run tool and answers the call by
+// posting here with the same credential the model requests already use.
+export const searchEndpoint = 'https://chatgpt.com/backend-api/codex/alpha/search';
 export const model = 'gpt-6-astra';
 export const effort = 'xhigh';
 // Search mode runs on the cheapest model: it is measuring whether the envelope is
@@ -108,6 +112,47 @@ export const LITE_PROMPT = 'Use your web search tool to look up the current top 
   + 'If you have no web search tool available, reply with exactly NO_SEARCH and nothing else.';
 // The one reply this probe names itself, so recognising it reports a boolean rather than text.
 const NO_SEARCH = 'NO_SEARCH';
+
+// One search command, shaped as the reference client shapes it. No conversation tail is sent:
+// the query is the whole input, so nothing from this machine travels with it.
+export function buildSearchBody(envelope, query = SEARCH_QUERY) {
+  return { id: envelope.cacheKey, model: liteModel,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: query }] }],
+    commands: { search_query: [{ q: query }] },
+    settings: { external_web_access: true, search_context_size: 'medium', allowed_callers: ['direct'] },
+    max_output_tokens: 2500 };
+}
+export const SEARCH_QUERY = 'current top story on Hacker News';
+
+// Counts, field names and result kinds only. A search result's own text never leaves here:
+// this reports the shape the gateway has to map, not what the shape contained.
+const RESULT_KEY = /^[a-z][a-z0-9_]{0,31}$/;
+export function summarizeSearch(status, bytes) {
+  const result = { httpStatus: status, passed: false, category: 'UNEXPECTED_RESPONSE', responseBytes: bytes.length };
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { return { ...result, category: 'INVALID_UTF8' }; }
+  if (status !== 200) {
+    return { ...result, category: status === 401 ? 'AUTH_REJECTED' : status === 403 ? 'ACCESS_DENIED'
+      : status === 404 ? 'ENDPOINT_ABSENT' : status === 429 ? 'RATE_LIMITED' : 'HTTP_ERROR',
+      rejectedFields: LITE_FIELDS.filter(name => text.includes(name)), ...errorLabels(text) };
+  }
+  let doc;
+  try { doc = JSON.parse(text); } catch { return { ...result, category: 'INVALID_JSON' }; }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ...result, category: 'INVALID_JSON' };
+  const results = Array.isArray(doc.results) ? doc.results : [];
+  const keys = new Set(), kinds = new Set();
+  for (const item of results.slice(0, 64)) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    for (const key of Object.keys(item)) if (RESULT_KEY.test(key)) keys.add(key);
+    if (typeof item.type === 'string' && RESULT_KEY.test(item.type)) kinds.add(item.type);
+  }
+  const outputChars = typeof doc.output === 'string' ? Array.from(doc.output).length : null;
+  return { ...result, passed: outputChars > 0 || results.length > 0, category: 'SUCCESS',
+    outputChars, encryptedOutput: typeof doc.encrypted_output === 'string',
+    resultCount: results.length, resultKeys: [...keys].sort().slice(0, 24), resultKinds: [...kinds].sort().slice(0, 12),
+    topLevelKeys: Object.keys(doc).filter(key => RESULT_KEY.test(key)).sort().slice(0, 12) };
+}
 
 // Field names this probe itself sends. Reporting which of our own names an upstream rejection
 // mentions narrows the envelope without echoing the upstream message.
@@ -449,6 +494,40 @@ async function sendFetchOnce(credential, version, envelope) {
   } finally { clearTimeout(timeout); }
 }
 
+// Plain JSON, not SSE: the reference client posts this one and parses the whole body at once.
+async function sendSearchOnce(credential, version, envelope) {
+  const body = JSON.stringify(buildSearchBody(envelope));
+  const headers = { Authorization: `Bearer ${credential.accessToken}`,
+    'ChatGPT-Account-ID': credential.account, 'Content-Type': 'application/json',
+    Accept: 'application/json', 'Accept-Encoding': 'identity', originator: 'codex_exec',
+    'User-Agent': liteAgent(version), 'x-codex-turn-metadata': envelope.headers['x-codex-turn-metadata'],
+    'Content-Length': Buffer.byteLength(body) };
+  return new Promise((resolveResult, reject) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    const req = request(searchEndpoint, { method: 'POST', agent: false, signal: controller.signal,
+      rejectUnauthorized: true, headers }, res => {
+      const chunks = [];
+      let length = 0;
+      res.on('data', chunk => {
+        if ((length += chunk.length) > limit) { req.destroy(new Error('RESPONSE_TOO_LARGE')); return; }
+        chunks.push(chunk);
+      });
+      res.on('error', () => { clearTimeout(timeout); reject(new Error(controller.signal.aborted ? 'TIMEOUT' : 'NETWORK_OR_TLS_ERROR')); });
+      res.on('end', () => {
+        clearTimeout(timeout);
+        try { resolveResult(summarizeSearch(res.statusCode ?? 0, Buffer.concat(chunks))); }
+        catch { reject(new Error('LOCAL_CHECK_FAILED')); }
+      });
+    });
+    req.on('error', error => {
+      clearTimeout(timeout);
+      reject(new Error(controller.signal.aborted ? 'TIMEOUT' : error.message === 'RESPONSE_TOO_LARGE' ? error.message : 'NETWORK_OR_TLS_ERROR'));
+    });
+    req.end(body);
+  });
+}
+
 async function sendOnce(credential, version, envelope) {
   const body = JSON.stringify(envelope ? buildLiteBody(envelope) : buildBody());
   return new Promise((resolveResult, reject) => {
@@ -483,17 +562,22 @@ async function sendOnce(credential, version, envelope) {
 
 async function main() {
   let attempted = false;
-  let transport, lite = false, compatibility;
+  let transport, lite = false, search = false, compatibility;
   try {
     const args = process.argv.slice(2);
     lite = args.includes('--lite');
-    transport = selectTransport(args.filter(arg => arg !== '--lite'), process.stdin.isTTY, process.stdout.isTTY);
+    search = args.includes('--search');
+    if (lite && search) stop('USER_TERMINAL_REQUIRED');
+    transport = selectTransport(args.filter(arg => arg !== '--lite' && arg !== '--search'),
+      process.stdin.isTTY, process.stdout.isTTY);
     checkRuntime(process.env, process.execArgv);
     // Read before the confirmation so a version the project has not validated is on screen
     // while the user decides, rather than reported after the request has already gone out.
     compatibility = readClientVersion(spawnSync(codexExe, ['--version'],
       { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
-    console.log(`USER-OPERATED TEST: ${lite ? `${liteModel}/${liteEffort}; gateway search envelope` : `${model}/${effort}`}; ${transport}; one request to ${endpoint}`);
+    const target = search ? searchEndpoint : endpoint;
+    console.log(`USER-OPERATED TEST: ${search ? `${liteModel}; standalone web search` : lite ? `${liteModel}/${liteEffort}; gateway search envelope` : `${model}/${effort}`}; ${transport}; one request to ${target}`);
+    if (search) console.log(`Sends one search query and nothing else: "${SEARCH_QUERY}". No conversation, path or file travels with it.`);
     console.log(`Client version sent: ${compatibility.clientVersion} (${compatibility.clientVersionStatus}; project baseline ${compatibility.referenceClientVersion}).`);
     console.log('Reads the existing file cache in memory only. No refresh, writes, tool execution, redirects, or retries.');
     console.log(`This consumes account usage.${lite ? ' The backend runs its own search for this request.' : ''} The backend compatibility path is not a public API support guarantee.`);
@@ -512,12 +596,13 @@ async function main() {
       stop('FILE_CACHE_UNAVAILABLE');
     }
     attempted = true;
-    const envelope = lite ? liteSearchEnvelope() : undefined;
-    const result = transport === 'node-fetch' ? await sendFetchOnce(credential, compatibility.clientVersion, envelope)
-      : await sendOnce(credential, compatibility.clientVersion, envelope);
+    const envelope = lite || search ? liteSearchEnvelope() : undefined;
+    const result = search ? await sendSearchOnce(credential, compatibility.clientVersion, envelope)
+      : transport === 'node-fetch' ? await sendFetchOnce(credential, compatibility.clientVersion, envelope)
+        : await sendOnce(credential, compatibility.clientVersion, envelope);
     credential = null;
-    console.log(JSON.stringify({ ...result, mode: lite ? 'search-envelope' : 'connectivity',
-      requestedModel: lite ? liteModel : model, requestedEffort: lite ? liteEffort : effort,
+    console.log(JSON.stringify({ ...result, mode: search ? 'standalone-search' : lite ? 'search-envelope' : 'connectivity',
+      requestedModel: lite || search ? liteModel : model, requestedEffort: search ? null : lite ? liteEffort : effort,
       ...compatibility, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
     if (!result.passed) process.exitCode = 1;
   } catch (error) {

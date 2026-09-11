@@ -277,6 +277,70 @@ async function testCredentialRotationAndBinding() {
   });
 }
 
+// The standalone search request: its own path, its own headers, plain JSON, and failures that
+// name themselves instead of arriving as an empty success.
+async function testStandaloneSearch() {
+  const seen = [];
+  const handler = (req, res) => {
+    let raw = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => { raw += chunk; });
+    req.on('end', () => {
+      seen.push({ url: req.url, method: req.method, headers: req.headers, body: raw });
+      const mode = JSON.parse(raw).commands?.search_query?.[0]?.q;
+      if (mode === 'UNAUTHORIZED') { res.writeHead(401).end('{}'); return; }
+      if (mode === 'BROKEN') { res.writeHead(500).end('{}'); return; }
+      if (mode === 'NOT_JSON') { res.writeHead(200, { 'Content-Type': 'application/json' }).end('<html>'); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ encrypted_output: 'opaque', output: 'SYNTHETIC_DIGEST', results: [] }));
+    });
+  };
+  const ask = q => ({ id: 'ignored', model: 'gpt-5.6-luna', commands: { search_query: [{ q }] } });
+  await fixture(handler, {}, async transport => {
+    const result = await transport.search(ask('SYNTHETIC_QUERY'), signal());
+    assert.equal(result.output, 'SYNTHETIC_DIGEST');
+    const [request] = seen;
+    assert.equal(request.method, 'POST');
+    assert.equal(request.url, '/backend-api/codex/alpha/search');
+    assert.equal(request.headers['content-type'], 'application/json');
+    assert.equal(request.headers.accept, 'application/json');
+    assert.equal(request.headers.authorization, 'Bearer synthetic');
+    assert.equal(request.headers['chatgpt-account-id'], 'synthetic');
+    assert.equal(request.headers.originator, 'codex_exec');
+    // Turn identity travels, and it describes nothing local.
+    const metadata = JSON.parse(request.headers['x-codex-turn-metadata']);
+    assert.equal(Object.hasOwn(metadata, 'workspaces'), false);
+    // The caller's id is replaced by one this transport generated for its own lifetime.
+    const sent = JSON.parse(request.body);
+    assert.notEqual(sent.id, 'ignored');
+    assert.match(sent.id, /^[0-9a-f-]{36}$/);
+    assert.deepEqual(sent.commands, { search_query: [{ q: 'SYNTHETIC_QUERY' }] });
+    // A second search reuses the same generated session.
+    await transport.search(ask('SYNTHETIC_QUERY'), signal());
+    assert.equal(JSON.parse(seen[1].body).id, sent.id);
+  });
+  for (const [query, code] of [['UNAUTHORIZED', 'UNAUTHENTICATED'], ['BROKEN', 'SEARCH_HTTP_ERROR'],
+    ['NOT_JSON', 'SEARCH_RESPONSE_SHAPE']]) {
+    await fixture(handler, {}, async transport => {
+      await assert.rejects(() => transport.search(ask(query), signal()), error => error.code === code, query);
+    });
+  }
+  // A cancelled search reports cancellation, and a closed transport refuses outright.
+  await fixture(handler, {}, async transport => {
+    const controller = new AbortController();
+    controller.abort();
+    await assert.rejects(() => transport.search(ask('SYNTHETIC_QUERY'), controller.signal),
+      error => error.code === 'CANCELLED');
+  });
+  const server = createServer(handler);
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const transport = createNativeLoopbackTransport(server.address().port);
+  await transport.close();
+  await assert.rejects(() => transport.search(ask('SYNTHETIC_QUERY'), signal()),
+    error => error.code === 'TRANSPORT_CLOSED');
+  await new Promise(resolve => server.close(resolve));
+}
+
 await testStreamingBeforeEof();
 await testSplitUtf8();
 await testKeepAliveReuse();
@@ -290,4 +354,5 @@ await testDoneAndMalformed();
 await testPostCompletionDiagnostics();
 await testBounds();
 await testCredentialRotationAndBinding();
+await testStandaloneSearch();
 process.stdout.write(JSON.stringify({ suite: 'native-transport', passed: true, externalRequests: 0, credentialReads: 0 }) + '\n');

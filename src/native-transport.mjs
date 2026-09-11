@@ -437,6 +437,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   async function search(body, signal) {
     need(!closed, 'TRANSPORT_CLOSED');
     need(signal instanceof AbortSignal, 'INVALID_OPTIONS');
+    // An already-aborted signal never fires its listener, so check it rather than sending.
+    need(!signal.aborted, 'CANCELLED');
     const job = { controller: new AbortController(), timers: new Set(), started: performance.now(),
       attemptTimings: [], finished: Promise.resolve() };
     let finish;

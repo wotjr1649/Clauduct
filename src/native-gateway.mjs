@@ -390,9 +390,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       // Fixed block kinds and counts, never their content. The client reads only the first
       // block in some paths, so record which kind that was.
       const blocks = output.message.content;
-      timing.contentBlocks = { text: blocks.filter(block => block.type === 'text').length,
-        toolUse: blocks.filter(block => block.type === 'tool_use').length,
-        thinking: blocks.filter(block => block.type === 'redacted_thinking').length };
+      const blockCount = kind => blocks.filter(block => block.type === kind).length;
+      timing.contentBlocks = { text: blockCount('text'), toolUse: blockCount('tool_use'),
+        thinking: blockCount('redacted_thinking'),
+        // A search reply is three blocks; counting only the first three kinds reported one.
+        serverToolUse: blockCount('server_tool_use'), searchResult: blockCount('web_search_tool_result') };
       timing.firstContentBlock = blocks[0]?.type ?? null;
       verifyFileReviewStep(output.message, prepared);
       // Recording routing evidence is atomic; report why it was refused instead of a

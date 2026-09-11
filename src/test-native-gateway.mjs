@@ -372,14 +372,14 @@ try {
     try {
       assert.equal((await call(gateway)).status, 200);
       const row = requestStatusSnapshot(gateway.diagnostics()).recentRequests.at(-1);
-      assert.deepEqual(row.contentBlocks, { text: 1, toolUse: 1, thinking: 0 });
+      assert.deepEqual(row.contentBlocks, { text: 1, toolUse: 1, thinking: 0, serverToolUse: 0, searchResult: 0 });
       assert.equal(row.firstContentBlock, 'text');
       assert.equal(row.success, true);
       // A hostile snapshot cannot introduce a kind outside the fixed list.
       const hostile = requestStatusSnapshot({ recentRequests: [{ firstContentBlock: 'SYNTHETIC_PRIVATE',
         contentBlocks: { text: -1, toolUse: 'SYNTHETIC_PRIVATE' } }] }).recentRequests[0];
       assert.equal(hostile.firstContentBlock, null);
-      assert.deepEqual(hostile.contentBlocks, { text: 0, toolUse: 0, thinking: 0 });
+      assert.deepEqual(hostile.contentBlocks, { text: 0, toolUse: 0, thinking: 0, serverToolUse: 0, searchResult: 0 });
       passed++;
     } finally { await gateway.close(); }
   }
@@ -460,6 +460,8 @@ try {
       assert.equal(row.webSearchAnswered, true);
       assert.equal(row.webSearchLinks, 1);
       assert.equal(row.firstContentBlock, 'server_tool_use');
+      // Every block the reply carries is counted, not just the model-path kinds.
+      assert.deepEqual(row.contentBlocks, { text: 1, toolUse: 0, thinking: 0, serverToolUse: 1, searchResult: 1 });
       assert.equal(JSON.stringify(status).includes('SYNTHETIC_QUERY'), false);
       assert.equal(JSON.stringify(status).includes('example.com'), false);
       // The same tool in an ordinary conversation is still a model request.

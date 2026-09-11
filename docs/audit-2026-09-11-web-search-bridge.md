@@ -112,3 +112,30 @@ web_search { external_web_access, indexed_web_access, filters,
 설치 바이너리의 WebFetch apply 코드가 `content[0]`에 `text`가 없을 때 `No response from model`을 반환하므로, 그 실패가 재발하면 이 값 하나로 즉시 갈린다. 이전에 같은 문제를 세 번 추론해 세 번 틀린 이유가 이 값이 없어서였다.
 
 검증: `test-native-gateway` 55 → 56개 검사, `test-native` 47개 검사. 기준 11개와 선택·완료 4개가 모두 통과했다.
+
+## 접근 플래그도 실패 — 세션 c89e267f (2026-09-11)
+
+`external_web_access`/`indexed_web_access`를 모두 true로 보낸 뒤 실사용에서 다시 측정했다. `lifetime.webSearchRequests: 1`, `webSearchCalls: 0`. **여전히 상류가 검색을 0회 수행한다.** 사용자가 같은 세션에서 모델을 terra로 바꿔 한 번 더 시도했으나 역시 실패했으므로 모델 계열 가설도 약해졌다.
+
+실패한 가설을 순서대로 남긴다. 도구 태그 이름 → 접근 모드 플래그 → 모델 계열. 네 번째로 추측하지 않는다.
+
+남은 후보는 이 게이트웨이가 codex와 다르게 보내는 것들이다. 기준 클라이언트는 요청에 `x-codex-turn-metadata`, `x-codex-routing-hint`, `x-codex-installation-id`, `x-codex-window-id`, `x-codex-server-id`, `x-codex-turn-state` 같은 헤더를 싣는데 Clauduct는 하나도 보내지 않는다(현재 보내는 것은 `Authorization`, `chatgpt-account-id`, `Content-Type`, `Accept`, `Accept-Encoding`, `Version`, `User-Agent`, `originator: codex_cli_rs`, `Openai-Beta: responses=experimental`뿐이다). 다만 그 헤더들의 내용을 알지 못하며, 설치 식별자를 지어내 보내는 것은 이 프로젝트가 해 온 방식이 아니다.
+
+따라서 다음 단계는 추측이 아니라 **전제 측정**이다. 설치된 codex 자체로 같은 계정·같은 모델에서 검색이 실제로 되는지 확인한다. 되면 우리 요청과 codex 요청의 차이를 좁히는 문제이고, 안 되면 계정·엔드포인트 제약이라 게이트웨이로는 해결할 수 없다.
+
+## 콘텐츠 블록 진단의 첫 실사용 출력
+
+같은 세션에서 새 진단이 즉시 값을 했다.
+
+| 요청 | `contentBlocks` | `firstContentBlock` |
+|---|---|---|
+| 10 | text 0, toolUse 1, thinking 2 | `redacted_thinking` |
+| 11 | text 0, toolUse 1, thinking 1 | `redacted_thinking` |
+| 12 | text 1, toolUse 0, thinking 1 | `text` |
+| 13 | text 1, toolUse 1, thinking 1 | `text` |
+
+블록 순서는 text → thinking → tool_use이고, **텍스트가 없는 응답에서는 첫 블록이 `redacted_thinking`이 된다.** 설치 바이너리의 WebFetch apply는 `content[0]`에 `text`가 없으면 `No response from model`을 반환하므로, 이것이 그 비결정적 실패의 메커니즘으로 유력하다. 다만 실패했던 그 요청은 텍스트를 냈으므로 그 사례 자체의 확정은 아니다.
+
+## 알림 위치 수정
+
+세션 중 stderr 출력이 native의 프롬프트 입력창 안으로 끼어드는 것을 사용자가 화면으로 확인했다. 네 알림(미등록 역할, 미등록 모델명, 미지원 이벤트 캡처, 웹 검색 무동작)을 모두 수집만 하고 **자식 종료 후 종료 JSON 직전에** 출력하도록 바꿨다. TUI를 건드리지 않는다. 강제 종료 시에는 유실되지만 이 알림들은 세션이 죽는 상황을 다루지 않는다.

@@ -234,25 +234,23 @@ async function main() {
   const nativeInterrupt = () => {}; // Inherited Claude owns Ctrl+C/Esc; its exit closes the gateway.
   let transport, gateway;
   const contextEnv = {};
+  // Native owns the terminal while it runs, so a mid-session write lands inside its input box.
+  // Collect the notices and print them once the child has exited, before the exit JSON.
+  const notices = [];
+  const notice = line => { if (!notices.includes(line)) notices.push(line); };
   process.on('SIGINT', nativeInterrupt); process.once('SIGTERM', cancel);
   try {
     transport = openUserTransport({ signal: controller.signal, transportFactory: createNativeTransport });
     gateway = await startNativeGateway({ transport,
       agentSelection: createAgentSelection({ projectsRoot: join(resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')), 'projects'),
         agentDefinitions: sessionAgentDefinitions(options) }),
-      onUnregisteredAgent: () => {
-      process.stderr.write('Clauduct: 서브에이전트 역할 등록이 없어 역할별 배정을 적용하지 못했습니다. Claude가 요청한 모델과 해당 모델 기본 effort를 사용합니다. hook 신뢰/설정은 자동 변경하지 않습니다.\n');
-    },
-      // Both notices fire once per session and never carry the observed name.
-      onUnmappedAgentModel: () => {
-      process.stderr.write('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하며 이번 턴은 그대로 전달됩니다. 종료 JSON의 lifetime.unmappedAgentModels를 확인하세요.\n');
-    },
-      onWebSearchUnused: () => {
-      process.stderr.write('Clauduct: 상류에 웹 검색 도구를 보냈지만 상류가 검색을 수행하지 않았습니다. 요청 자체는 성공이며 검색 결과만 비어 있습니다. 종료 JSON의 lifetime.webSearchRequests/webSearchCalls를 확인하세요.\n');
-    },
-      onUnsupportedEventCapture: () => {
-      process.stderr.write('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. 창을 강제로 닫지 말고 정상 종료한 뒤 CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.\n');
-    } });
+      // Each fires once per session and carries no observed name or value. They are collected
+      // rather than written now: native owns the terminal, so a mid-session write lands inside
+      // its prompt input box.
+      onUnregisteredAgent: () => notice('Clauduct: 서브에이전트 역할 등록이 없어 역할별 배정을 적용하지 못했습니다. Claude가 요청한 모델과 해당 모델 기본 effort를 사용했습니다. hook 신뢰/설정은 자동 변경하지 않았습니다.'),
+      onUnmappedAgentModel: () => notice('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하고 턴은 그대로 전달됐습니다. lifetime.unmappedAgentModels를 확인하세요.'),
+      onWebSearchUnused: () => notice('Clauduct: 상류에 웹 검색 도구를 보냈지만 상류가 검색을 수행하지 않았습니다. 요청 자체는 성공이며 검색 결과만 비어 있습니다. lifetime.webSearchRequests/webSearchCalls를 확인하세요.'),
+      onUnsupportedEventCapture: () => notice('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.') });
     process.stdout.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
     if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
     if (options.verifyAgentModels) process.stdout.write('모델 진입점 검증 모드: clauduct-probe-astra/sol/terra/luna/inherit 등록. 실제 라우팅은 아직 검증 중입니다.\n');
@@ -268,6 +266,7 @@ async function main() {
     }, { signal: controller.signal, contextEnv });
     const category = ['SUCCESS', 'CLIENT_FAILED', 'CLIENT_START_FAILED', 'REQUEST_BUDGET', 'USER_CANCELLED'].includes(result.category)
       ? result.category : safeEntryCategory({ code: result.category });
+    for (const line of notices) process.stderr.write(line + '\n');
     process.stdout.write(`Clauduct 종료: ${category}\n`);
     process.stdout.write(`CLAUDUCT_REQUEST_STATUS ${JSON.stringify(result.requestStatus)}\n`);
     process.exitCode = result.category === 'SUCCESS' ? 0 : 1;

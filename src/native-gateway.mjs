@@ -364,6 +364,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       if (Array.isArray(legacyEvents)) for (const event of legacyEvents) await pushEvent(event);
       const output = validateResponse('final', () => response.finish());
       stage = 'output-validation';
+      // Fixed block kinds and counts, never their content. The client reads only the first
+      // block in some paths, so record which kind that was.
+      const blocks = output.message.content;
+      timing.contentBlocks = { text: blocks.filter(block => block.type === 'text').length,
+        toolUse: blocks.filter(block => block.type === 'tool_use').length,
+        thinking: blocks.filter(block => block.type === 'redacted_thinking').length };
+      timing.firstContentBlock = blocks[0]?.type ?? null;
       verifyFileReviewStep(output.message, prepared);
       // Recording routing evidence is atomic; report why it was refused instead of a
       // generic protocol rejection, so the failed turn names the unverified selection.

@@ -84,3 +84,31 @@ D = {type: "web_search_20250305", name: "web_search",
 성공한 요청이 서버 검색 도구를 실었는데 상류 검색이 0회면 세션당 한 번 stderr로 알린다. 질의도 결과도 담지 않는다. 누계는 `lifetime.webSearchRequests`와 `lifetime.webSearchCalls`이며, 요청별로는 `webSearchRequested`/`webSearchCalls`다. `requests>0 && calls===0`이 곧 "보냈는데 상류가 안 썼다"는 판정이다.
 
 검증: `test-native-gateway`가 54 → 55개 검사다. 새 검사는 검색 도구를 실은 요청 2건과 실지 않은 1건에서 누계가 2/0이 되고, 요청별 값이 `[true,0],[true,0],[false,0]`이며, 세 요청 모두 성공이고, 알림이 세션당 1회인지 확인한다.
+
+## 원인 확정과 수정 — 접근 플래그 누락 (2026-09-11)
+
+실사용에서 `webSearchRequests: 1 / webSearchCalls: 0`이 나온 뒤, 설치 Codex 0.154.0의 `tools/src/tool_spec.rs` 문자열에서 `ToolSpec::web_search`의 필드 목록을 찾았다.
+
+```
+web_search { external_web_access, indexed_web_access, filters,
+             user_location, search_context_size, search_content_types }
+```
+
+같은 바이너리에 `WebSearchMode` enum이 `disabled | indexed | live`로 들어 있고, 사용자 codex 설정에는 `web_search = "live"`가 이미 있다. 즉 **접근 모드는 저 두 불리언으로 표현된다.**
+
+우리는 `{type:'web_search'}`만 보내고 두 필드를 모두 생략했다. 백엔드가 기본값을 꺼진 쪽으로 잡으면 도구는 수용되지만 웹에 나가지 못한다 — 오류 없이 검색 0회. 관측과 정확히 일치한다.
+
+수정: `external_web_access: true`, `indexed_web_access: true`를 함께 보낸다. 이는 codex의 `live` 모드와 같고 사용자의 기존 설정과도 일치한다. `search_context_size`와 `max_uses`는 이번에 보내지 않는다(상류 기본값 사용).
+
+이것은 추측이 아니라 기준 클라이언트의 필드 정의에서 나온 수정이지만, **실제로 검색이 도는지는 실행해 봐야 확정된다.** 다음 실행에서 `webSearchCalls > 0`이면 확정이고, 여전히 0이면 모델 계열의 `supports_standalone_web_search`나 계정 제약 쪽을 봐야 한다.
+
+## 콘텐츠 블록 진단
+
+응답으로 전달한 블록의 종류별 개수와 첫 블록 종류를 기록한다. 내용은 담지 않는다.
+
+- `contentBlocks`: `{ text, toolUse, thinking }` 개수
+- `firstContentBlock`: `text` / `tool_use` / `redacted_thinking` / null
+
+설치 바이너리의 WebFetch apply 코드가 `content[0]`에 `text`가 없을 때 `No response from model`을 반환하므로, 그 실패가 재발하면 이 값 하나로 즉시 갈린다. 이전에 같은 문제를 세 번 추론해 세 번 틀린 이유가 이 값이 없어서였다.
+
+검증: `test-native-gateway` 55 → 56개 검사, `test-native` 47개 검사. 기준 11개와 선택·완료 4개가 모두 통과했다.

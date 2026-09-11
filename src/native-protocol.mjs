@@ -245,7 +245,10 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
         && value.every(item => typeof item === 'string' && item.length > 0 && item.length <= 256));
       need(domains(tool.allowed_domains) && domains(tool.blocked_domains)
         && !(tool.allowed_domains && tool.blocked_domains), 'UNSUPPORTED_TOOLS');
-      webSearch = { type: 'web_search' };
+      // The reference client's ToolSpec carries the access mode as two booleans and its
+      // WebSearchMode enum is disabled | indexed | live. Sending neither field left the tool
+      // present but unable to reach the web: accepted, no error, zero searches. Ask for live.
+      webSearch = { type: 'web_search', external_web_access: true, indexed_web_access: true };
       if (tool.allowed_domains) webSearch.filters = { allowed_domains: [...tool.allowed_domains] };
       else if (tool.blocked_domains) webSearch.filters = { blocked_domains: [...tool.blocked_domains] };
       if (tool.user_location !== undefined) {

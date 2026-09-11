@@ -365,6 +365,25 @@ try {
     } finally { release(); await busy?.catch(() => {}); await gateway.close(); }
   }
   {
+    // The delivered block kinds are recorded, so a client that reads only the first block can
+    // be diagnosed without guessing. frames() answers with text first, then a tool call.
+    const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
+      send: async body => frames(body), close: async () => {}, diagnostics: () => ({}) } });
+    try {
+      assert.equal((await call(gateway)).status, 200);
+      const row = requestStatusSnapshot(gateway.diagnostics()).recentRequests.at(-1);
+      assert.deepEqual(row.contentBlocks, { text: 1, toolUse: 1, thinking: 0 });
+      assert.equal(row.firstContentBlock, 'text');
+      assert.equal(row.success, true);
+      // A hostile snapshot cannot introduce a kind outside the fixed list.
+      const hostile = requestStatusSnapshot({ recentRequests: [{ firstContentBlock: 'SYNTHETIC_PRIVATE',
+        contentBlocks: { text: -1, toolUse: 'SYNTHETIC_PRIVATE' } }] }).recentRequests[0];
+      assert.equal(hostile.firstContentBlock, null);
+      assert.deepEqual(hostile.contentBlocks, { text: 0, toolUse: 0, thinking: 0 });
+      passed++;
+    } finally { await gateway.close(); }
+  }
+  {
     // A request that asks the backend to search and gets no search back is a silent no-op:
     // the request succeeds, the counters say the feature did nothing, and it is announced once.
     const searchDoc = { ...doc, tools: [...doc.tools, { type: 'web_search_20250305', name: 'web_search' }] };

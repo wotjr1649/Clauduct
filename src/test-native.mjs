@@ -342,7 +342,9 @@ await test('web_search_is_translated_to_the_backend_tool', () => {
   const prepared = prepareNative(base());
   assert.equal(prepared.webSearch, true);
   assert.equal(prepared.names.size, 0);
-  assert.deepEqual(prepared.body.tools, [{ type: 'web_search', filters: { allowed_domains: ['example.com'] } }]);
+  // Live access is explicit: omitting both flags left the backend running zero searches.
+  assert.deepEqual(prepared.body.tools, [{ type: 'web_search', external_web_access: true,
+    indexed_web_access: true, filters: { allowed_domains: ['example.com'] } }]);
   // Both domain lists at once, an unknown field, or a renamed tool stay rejected.
   for (const mutate of [d => { d.tools[0].blocked_domains = ['x.com']; }, d => { d.tools[0].private = 1; },
     d => { d.tools[0].name = 'other'; }, d => { d.tools.push({ ...d.tools[0] }); }]) {

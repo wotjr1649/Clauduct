@@ -60,11 +60,34 @@ const deferredFollowup = prepareNative(doc([tool('ToolSearch'), tool('Read', tru
   { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_call', content: [{ type: 'tool_reference', tool_name: 'Read' }] }] }
 ]));
 assert.deepEqual(deferredFollowup.body.tools.map(value => value.name), ['ToolSearch', 'Read']);
-assert.throws(() => prepareNative(doc([tool('ToolSearch'), tool('Read', true)], [
+const unknownHistoricalReference = prepareNative(doc([tool('ToolSearch'), tool('Read', true)], [
   { role: 'user', content: 'SYNTHETIC_PROMPT' },
   { role: 'assistant', content: [{ type: 'tool_use', id: 'search_call', name: 'ToolSearch', input: { value: 'Read' } }] },
   { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_call', content: [{ type: 'tool_reference', tool_name: 'Missing' }] }] }
-])));
+]));
+assert.deepEqual(unknownHistoricalReference.body.tools.map(value => value.name), ['ToolSearch']);
+assert.equal(unknownHistoricalReference.names.has('Missing'), false);
+const removedToolHistory = [
+  { role: 'user', content: 'SYNTHETIC_PROMPT' },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 'search_old', name: 'ToolSearch', input: { value: 'mcp__old__read' } }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_old', content: [{ type: 'tool_reference', tool_name: 'mcp__old__read' }] }] },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 'read_old', name: 'mcp__old__read', input: {} }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'read_old', content: 'SYNTHETIC_SAVED_RESULT' }] },
+  { role: 'user', content: 'Continue without tools.' }
+];
+const removedTools = prepareNative(doc([], removedToolHistory));
+assert.deepEqual(removedTools.body.tools, []);
+assert.equal(removedTools.body.tool_choice, 'none');
+assert.equal(removedTools.names.size, 0);
+assert.equal(removedTools.body.input.filter(value => value.type === 'function_call_output').length, 2);
+assert.equal(JSON.stringify(removedTools.body.input).includes('SYNTHETIC_SAVED_RESULT'), true);
+// Historical data does not authorize a new call or forgive a missing/duplicate result.
+assert.throws(() => nativeResponse(responseEvents(removedTools), removedTools), /UNSUPPORTED_TOOL_CALL/);
+assert.throws(() => prepareNative(doc([], removedToolHistory.filter((_, index) => index !== 4))), /MISSING_TOOL_RESULT/);
+assert.throws(() => prepareNative(doc([], [...removedToolHistory, removedToolHistory[4]])), /INVALID_TOOL_RESULT/);
+assert.throws(() => prepareNative(doc([], [{ role: 'assistant', content: [{ type: 'tool_use', id: 'bad', name: '../bad', input: {} }] }])), /INVALID_TOOL_CALL/);
+assert.throws(() => prepareNative(doc([], [{ role: 'user', content: 'X' }, removedToolHistory[1],
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_old', content: [{ type: 'tool_reference', tool_name: '../bad' }] }] }])), /INVALID_TOOL_REFERENCE/);
 assert.throws(() => prepareNative(doc([tool('Read', true)])));
 
 const prepared = prepareNative(doc());
@@ -116,6 +139,29 @@ function workflowEvents(options = {}) {
   filtered.at(-1).response.output = filtered.at(-1).response.output.filter(item => item.type !== 'function_call');
   return filtered;
 }
+// Native print and child-result consumers keep the last yielded assistant block.
+// Text still streams immediately; its stop must follow opaque reasoning, exactly once.
+const printParser = createNativeResponse(reasoningPrepared);
+const printEarly = collect(printParser, workflowEvents());
+const printFinal = printParser.finish();
+const printFrames = [...printEarly, ...printFinal.frames];
+const printBlocks = new Map(), printYielded = [];
+for (const frame of printFrames) {
+  if (frame.type === 'content_block_start') {
+    assert.equal(printBlocks.has(frame.index), false);
+    printBlocks.set(frame.index, { ...frame.content_block });
+  }
+  if (frame.type === 'content_block_delta') printBlocks.get(frame.index).text += frame.delta.text;
+  if (frame.type === 'content_block_stop') printYielded.push(printBlocks.get(frame.index));
+}
+assert.equal(printEarly.some(frame => frame.type === 'content_block_delta'), true);
+assert.deepEqual(printYielded.map(block => block.type), ['redacted_thinking', 'text']);
+assert.equal(printYielded.at(-1).text, 'hello');
+assert.deepEqual([...printBlocks.values()], printFinal.message.content);
+assert.equal(printFinal.message.content[0].text, 'hello'); // Native WebFetch reads the first block.
+assert.equal(prepareNative(doc([], [{ role: 'user', content: 'SYNTHETIC_PROMPT' },
+  { role: 'assistant', content: printYielded }, { role: 'user', content: 'NEXT' }]))
+  .body.input.find(item => item.type === 'reasoning').encrypted_content, 'OPAQUE_REASONING');
 const workflowParser = createNativeResponse(reasoningPrepared, { deferText: true });
 assert.deepEqual(collect(workflowParser, workflowEvents()), []);
 const workflowFinished = workflowParser.finish();

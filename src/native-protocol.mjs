@@ -337,7 +337,9 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
       } else if (block.type === 'tool_use') {
         keys(block, ['type', 'id', 'name', 'input', 'cache_control'], 'TOOL_USE_FIELDS');
         need(message.role === 'assistant' && id(block.id) && id(block.name) && object(block.input)
-          && definitions.has(block.name) && !used.has(block.id), 'INVALID_TOOL_CALL');
+          && !used.has(block.id), 'INVALID_TOOL_CALL');
+        // Completed history survives a changed tool/permission set on resume. Only
+        // current definitions populate names, which validates every new output call.
         discovered.add(block.name);
         pending.add(block.id); used.add(block.id);
         input.push({ type: 'function_call', call_id: block.id, name: block.name, arguments: JSON.stringify(block.input) });
@@ -351,9 +353,9 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
           if (part.type === 'image') return image(part);
           if (part.type === 'tool_reference') {
             keys(part, ['type', 'tool_name', 'cache_control'], 'TOOL_REFERENCE_FIELDS'); cache(part.cache_control);
-            need(id(part.tool_name) && definitions.has(part.tool_name), 'INVALID_TOOL_REFERENCE');
+            need(id(part.tool_name), 'INVALID_TOOL_REFERENCE');
             discovered.add(part.tool_name);
-            // Claude supplies the available definitions in tools; retain the historical reference as data.
+            // A historical reference is data, not a definition that can reactivate a tool.
             return { type: 'input_text', text: JSON.stringify({ type: 'tool_reference', tool_name: part.tool_name }) };
           }
           return { type: 'input_text', text: text([part]) };
@@ -535,7 +537,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     const part = item.textParts[event.content_index];
     need(part && !part.done && part.text === event.text, 'SNAPSHOT_MISMATCH');
     part.done = true;
-    return deferText ? [] : [{ type: 'content_block_stop', index: part.index }];
+    return []; // Finish text after opaque reasoning so native's last yielded block is not empty.
   };
   const contentPart = (event, item) => {
     need(item.kind === 'message' && id(event.item_id) && event.item_id === item.first.id
@@ -752,7 +754,14 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
       const frames = [];
       startMessage(frames);
       state.messageStart.message = { ...message, content: [], stop_reason: null, usage: { ...usage, output_tokens: 0 } };
+      const stopText = () => {
+        for (const { streamed } of deferText ? [] : textBlocks) frames.push({ type: 'content_block_stop', index: streamed.index });
+      };
+      let textStopped = false;
       for (const { index, block } of deferred) {
+        // Deltas retain their original indexes and arrive early. End their blocks after
+        // reasoning, before any validated tool call, without replaying visible text.
+        if (block.type === 'tool_use' && !textStopped) { stopText(); textStopped = true; }
         frames.push({ type: 'content_block_start', index, content_block: block.type === 'tool_use' ? { ...block, input: {} }
           : block.type === 'text' ? { type: 'text', text: '' } : block });
         if (block.type === 'text') frames.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } });
@@ -760,6 +769,7 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
           delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } });
         frames.push({ type: 'content_block_stop', index });
       }
+      if (!textStopped) stopText();
       frames.push({ type: 'message_delta', delta: { stop_reason: message.stop_reason, stop_sequence: null },
         usage }, { type: 'message_stop' });
       return { message, frames };

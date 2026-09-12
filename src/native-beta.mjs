@@ -5,7 +5,7 @@ import { READ_BRIDGED_BETAS } from '../poc/gateway.mjs';
 export const NATIVE_BETAS = Object.freeze([...READ_BRIDGED_BETAS,
   'advanced-tool-use-2025-11-20', 'tool-search-tool-2025-10-19',
   'per-turn-control-2026-07-01', 'mid-conversation-output-config-2026-07-01',
-  // The backend runs this search itself; the gateway translates the tool, not the results.
+  // The gateway maps native search requests/results to the backend's standalone search endpoint.
   'web-search-2025-03-05',
   'mid-conversation-tool-changes-2026-07-01',
   // Native Claude may retain this account-state hint with a custom gateway URL.
@@ -47,9 +47,6 @@ function parseBetas(value) {
   return betas.filter(item => !NATIVE_BETAS.includes(item));
 }
 
-// A beta this project has judged incompatible stays rejected. One it has never seen passes:
-// the header is not forwarded upstream, and every request and response field it could affect
-// is validated on its own, so an actual contract change fails later with a specific label.
 // Observed in the installed binary and known to require Anthropic servers, so they cannot work
 // here. They are not refused: refusing a header fails the whole request, while the feature is
 // already inert against this backend. Listed so the feature scan does not report them as new.

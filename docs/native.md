@@ -8,11 +8,11 @@
 
 `requestOutcome`은 요청 결과를 `no-requests`/`in-progress`/`all-succeeded`/`has-failures`/`not-observed`로 구분합니다. `Clauduct 종료: SUCCESS`는 프로세스 종료·정리 판정이며 요청 실패가 없어야 한다는 뜻은 아닙니다.
 
-`/v1/messages` 요청은 `anthropic-version`·`anthropic-beta`·`content-type` 호환성 검사보다 먼저 진단 기록을 만듭니다. 따라서 native가 새 beta나 다른 버전 헤더를 보내 400으로 거부돼도 `lifetime.started/failed`, `failuresByStage.request`, `failureHistory`, `requestOutcome`에 나타납니다. 이때 `failureCategory`는 `UNSUPPORTED_VERSION`/`UNSUPPORTED_BETA`/`INVALID_BETA_HEADER`/`UNSUPPORTED_ENCODING`이며, 거부 자체는 완화하지 않고 upstream 시도도 하지 않습니다.
+`/v1/messages` 요청은 `anthropic-version`·`anthropic-beta`·`content-type` 검사보다 먼저 진단 기록을 만듭니다. 버전 불일치·잘못된 beta 형식·지원하지 않는 인코딩은 `lifetime.started/failed`, `failuresByStage.request`, `failureHistory`, `requestOutcome`에 남으며 upstream 시도는 없습니다. 정상 형식의 새 beta 이름만으로 요청을 거부하지는 않습니다.
 
 `lifetime.rejectedBeforeStart`는 요청 기록을 만들기 전에 HTTP 경계에서 거부된 수입니다. 다른 경로(`/v1/messages` 이외), loopback/헤더 경계 거부, 인증 실패, 형식이 잘못된 식별자 헤더, agent 등록 거부가 여기 들어가며 모델 요청 성패 카운터와 섞이지 않습니다. `lifetime.firstRejectedCategory`는 그중 첫 거부의 고정 분류이며 없으면 null입니다. 이 값들은 gateway 메모리 누계이고 서버 수준에서 끊긴 연결(clientError/CONNECT/upgrade)은 포함하지 않습니다.
 
-미지원 upstream 이벤트의 이름은 엄격한 형태 검사를 통과할 때만 제한적으로 기록합니다. 소문자로 시작하는 24자 이하 세그먼트, 점 1개 이상 4개 이하, 전체 48자 이하만 통과하며 이미 고정 라벨이 있는 이름은 기록하지 않습니다. 서로 다른 이름 최대 4개까지 중복 없이 보관하고 본문·해시·부분 값은 기록하지 않습니다. 클라이언트에 돌려주는 오류 메시지에도 이름은 넣지 않습니다.
+미지원 upstream 이벤트의 이름은 엄격한 형태 검사를 통과할 때만 제한적으로 기록합니다. 소문자로 시작하는 24자 이하 세그먼트, 점 0~4개, 전체 48자 이하만 통과하며 이미 고정 라벨이 있는 이름은 기록하지 않습니다. 서로 다른 이름 최대 4개까지 중복 없이 보관하고 본문·해시·부분 값은 기록하지 않습니다. 클라이언트에 돌려주는 오류 메시지에도 이름은 넣지 않습니다. `lifetime.unsupportedEventNamesWithheld`는 이름을 캡처하지 못한 미지원 이벤트 수입니다.
 
 이 값은 launcher 종료 JSON의 `unsupportedEventNames`에만 나옵니다. 세션 안의 `/clauduct/status`는 이 필드를 제거해 응답하므로 upstream 문자열이 모델 컨텍스트로 들어가지 않습니다. 투영 결과에서 `null`은 이 경로가 캡처를 제공하지 않는다는 뜻이고, `[]`는 캡처가 가능하나 관측된 이름이 없다는 뜻입니다. 형태를 정확히 흉내 낸 문자열은 통과할 수 있다는 잔여 위험을 안고 선택한 정책입니다.
 
@@ -30,7 +30,7 @@ Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 I
 
 `lifetime.transportRejections`는 요청 처리기에 도달하기 전에 HTTP 서버가 직접 거부한 수입니다. 깨진 클라이언트 바이트, CONNECT, upgrade, `Expect` 처리가 여기 들어가며 `rejectedBeforeStart`나 요청 성패 카운터와 섞이지 않습니다.
 
-`WebSearch`는 Codex 내장 검색으로 넘어갑니다. `web_search_20*` 서버 도구 정의를 받아 상류에 `{ type: 'web_search' }`로 보내고, 도메인 필터와 `user_location`만 함께 전달합니다. 검색은 상류에서 실행되어 답변 텍스트에 반영되며, 질의와 출처 목록은 downstream으로 나가지 않습니다. 출처 카드와 인용 블록은 아직 만들지 않습니다. `WebFetch`는 클라이언트가 직접 가져오므로 원래부터 이 경로를 탑니다.
+`WebSearch`의 native side query는 Codex의 standalone 검색 endpoint로 변환합니다. 모델 요청에 hosted search 도구를 추가하지 않습니다. 질의와 도메인 필터를 검색 요청으로 보내고 `server_tool_use`, `web_search_tool_result` 링크 목록, 결과 텍스트로 native에 답합니다. 이 내용은 진단에는 기록하지 않습니다. `WebFetch`는 native가 웹 페이지를 가져온 뒤 모델 요청으로 처리합니다. 두 경로의 실제 비대화형 왕복은 [릴리즈 검증](release-readiness.md)에 있습니다.
 
 자식 세션에만 `DISABLE_TELEMETRY=1`과 `DISABLE_ERROR_REPORTING=1`을 적용합니다. Anthropic 측 보고는 이 백엔드에서 대응이 없습니다. 전역 환경은 바꾸지 않습니다.
 
@@ -42,11 +42,11 @@ Clauduct 자식 실행에만 `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1`을 �
 
 종료 JSON의 `cleanup`은 자식 종료, gateway 소켓·작업·타이머·전달·유휴 상태, gateway 정리 완료, transport 소켓·요청 종료의 고정 boolean 판정입니다. 모두 true여야 자원 정리가 성공합니다. false인 항목으로 실패 범위를 구분하며 원문 오류나 인증 값은 출력하지 않습니다. 요청 성공과 자원 정리 성공은 별도 판정입니다.
 
-native 세션을 종료해 launcher로 돌아오면 `CLAUDUCT_REQUEST_STATUS` 뒤에 최종 진단 JSON이 출력됩니다. launcher가 gateway 정리 후 메모리 상태를 기존 sanitizer로 변환하며, 새 HTTP 요청·인증 조회·모델 호출·파일 저장은 하지 않습니다. 창 자체를 강제 종료하면 이 출력이 남는다고 보장하지 않습니다. 최근 요청은 최대 16개이며 실제 값이 없는 필드는 null입니다.
+native 세션을 종료하면 `CLAUDUCT_REQUEST_STATUS` 뒤에 최종 진단 JSON이 출력됩니다. launcher는 gateway 정리 후 sanitizer를 적용하고 설치 폴더의 `.clauduct-status/request-status.jsonl`에 같은 진단을 추가 기록합니다. 기록 실패는 경고하며 HTTP 요청·인증 조회·모델 호출은 추가하지 않습니다. 대화형에서는 stdout, `-p`에서는 stderr에 안내·진단을 보내 native 결과 stdout을 보존합니다. 창 강제 종료 시 기록 보존은 보장하지 않습니다. 최근 요청은 최대 16개이며 실제 값이 없는 필드는 null입니다.
 
 native의 `! node .../request-status.mjs`는 Bash 출력 뒤 후속 assistant 처리가 발생할 수 있으므로 모델 요청 없는 수집 경로로 사용하지 않습니다. 기존 status API는 유지하되, 사용자 검증 결과 수집은 종료 후 launcher 출력을 우선합니다.
 
-취소 진단의 clientDisconnectedMs는 gateway가 downstream 연결 종료를 관측한 시각이고 키보드 입력 시각이 아닙니다. snapshotMismatchMs/snapshotMismatchPhase(stream 또는 final)는 gateway 검증에서 불일치를 관측한 상대 시각/단계입니다. 취소를 먼저 관측하면 늦은 callback을 검증하지 않고 CANCELLED로 종료하며, 이미 발생한 SNAPSHOT_MISMATCH는 뒤늦은 취소로 숨기지 않습니다. 실제 native UI의 취소 전달 시점은 별도 확인 대상입니다.
+취소 진단의 clientDisconnectedMs는 gateway의 연결 종료 관측 시각이며 키보드 입력 시각이 아닙니다. snapshotMismatchMs/snapshotMismatchPhase(stream 또는 final)는 검증 불일치의 상대 시각/단계이고 snapshotMismatchEvent는 알려진 고정 이벤트 종류만 제공합니다. 취소를 먼저 관측하면 늦은 callback을 검증하지 않고 CANCELLED로 종료하며 이미 발생한 SNAPSHOT_MISMATCH는 숨기지 않습니다. 실제 TaskStop 뒤 worker 프로세스 종료는 비대화형으로 검증했지만 UI 키 입력 시점의 측정은 아닙니다.
 
 ```powershell
 D:\AIDEV\Clauduct\clauduct.cmd
@@ -54,6 +54,7 @@ D:\AIDEV\Clauduct\clauduct.cmd --model sol --effort xhigh
 D:\AIDEV\Clauduct\clauduct.cmd --continue
 D:\AIDEV\Clauduct\clauduct.cmd --resume <session-id>
 D:\AIDEV\Clauduct\clauduct.cmd --dry-run
+D:\AIDEV\Clauduct\clauduct.cmd -p --output-format json --max-turns 3 -- "Summarize the task"
 ```
 
 현재 프로젝트 폴더와 터미널을 native Claude 자식에 연결하며 SEND 입력이나 별도 gateway 실행이 필요하지 않습니다. `--dry-run`은 인증·소켓·Claude 실행 없이 구성을 표시합니다. 사용자 PATH/PowerShell 프로필은 변경하지 않았습니다. Windows Terminal의 PowerShell 7을 편의상 권장하나 cmd/Git Bash에서도 같은 Node gateway가 실행됩니다. shell 선택이 모델 지연·메모리 안정성을 개선한다는 측정 근거는 없습니다.
@@ -127,9 +128,9 @@ local inline Workflow는 인증된 PostToolUse 결과의 호출 ID·script SHA25
 
 기존 CLAUDE_CONFIG_DIR를 상속하며 없으면 native 기본 설정 경로를 사용합니다. 전용 프로필을 강제하지 않습니다. 전역 settings·keybindings·신뢰·권한은 변경하지 않습니다. `/model`의 세션 선택 동작은 사용자가 해결한 keybindings에 따르며 gateway가 native의 설정 파일 쓰기를 가로채지 않습니다.
 
-SubagentStart/Stop hook은 자식 `--settings`에만 추가합니다. agent_id/agent_type/이벤트 종류와 Start 시 알려진 컨텍스트 환경 숫자 세 개만 인증된 loopback 등록 endpoint에 전달하며 프롬프트·transcript_path·답변은 보내지 않습니다. 환경 증거는 진단의 agentContextPolicy에 보존합니다. 신뢰를 자동 승인하거나 disableAllHooks/관리형 정책을 우회하지 않습니다. 미등록 에이전트는 요청 모델의 기본 effort로 처리하고 한 번 경고하며 `unregisteredAgentRequests`에 집계합니다. 다른 역할의 오래된 Stop은 기존 등록을 삭제하지 못합니다. 같은 ID·같은 역할 재사용의 세대 구분, resume의 hook 재발행과 native Stop 순서는 실제 관찰이 필요합니다.
+SubagentStart/Stop hook은 자식 `--settings`에만 추가합니다. ID·역할·Start의 세션 ID와 transcript **경로**·컨텍스트 숫자 세 개를 인증된 loopback 등록 endpoint에 전달합니다. 프롬프트·transcript 본문·답변은 보내지 않습니다. 환경 증거는 agentContextPolicy에 남습니다. 신뢰·disableAllHooks·관리형 정책을 우회하지 않습니다. 정식 launcher는 등록·metadata·부모 호출의 연결을 검증하지 못한 자식을 거부합니다. 다른 역할의 오래된 Stop은 기존 등록을 삭제하지 못합니다. 같은 ID·같은 역할 재사용의 세대 구분은 별도 한계입니다.
 
-statusline은 사용자가 검증한 `C:/Users/JS/.agents/scripts/claude/clauduct_statusline.sh`를 연결하며 변경하지 않았습니다. provider와 TOKEN/SECRET/PASSWORD/API_KEY 계열 환경 변수는 자식에 복사하지 않아 해당 값에 의존하는 MCP/도구는 별도 제약이 있습니다. 충돌 방지를 위해 wrapper의 `--settings`, `--agents`, `--setting-sources`, `--system-prompt` 입력은 거부합니다. 반복 native 인수와 `--` 구분자, `--model=`, `--effort=`는 처리합니다.
+statusLine은 native 사용자 설정을 따르며 개인 스크립트 경로를 강제하지 않습니다. provider와 TOKEN/SECRET/PASSWORD/API_KEY 계열 환경 변수는 자식에 복사하지 않아 해당 값에 의존하는 MCP/도구는 별도 제약이 있습니다. 충돌 방지를 위해 wrapper의 `--settings`, `--agents`, `--setting-sources`, `--system-prompt` 입력은 거부합니다. 반복 native 인수와 `--` 구분자, `--model=`, `--effort=`는 처리합니다.
 
 Anthropic 서버 Advisor는 Codex에 구현되지 않아 자식에서 공식 `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`을 적용합니다. 서버 도구·미지원 beta를 무조건 허용하지 않습니다. 지원하는 client-side beta는 로컬에서 소비하며 Codex로 전달하지 않습니다. HTTP 의미상 중복 가능 부가 헤더는 허용하고 Content-Type/Content-Encoding/Content-Length/Transfer-Encoding 중복은 거부합니다.
 
@@ -145,15 +146,15 @@ native의 custom model 표시는 실행 시 설정이라는 뜻으로 `[startup 
 
 `mid-conversation-tool-changes-2026-07-01`은 native gateway에서 처리합니다. system 메시지의 `tool_addition`/`tool_removal`을 순서대로 적용해 현재 Codex 요청의 tools 목록을 만듭니다. 대상은 최상위 tools에 선언된 `tool_reference.name`이며 제거된 도구는 과거 호출 이력이 있어도 현재 목록에서 제외합니다. beta가 있는 요청에서는 defer_loading 도구를 향후 addition까지 숨겨 둘 수 있습니다. beta와 변경 블록은 upstream에 전달하지 않습니다. Anthropic 서버 MCP의 `mcp_tool_reference`/`mcp_toolset_reference`는 미지원으로 거부합니다. native client MCP가 일반 function으로 제공하는 경로와는 다릅니다.
 
-Claude Code → gateway → Codex 텍스트 delta를 즉시 전달합니다. 느린 클라이언트에는 write backpressure를 기다립니다. 도구 인수·최종 snapshot·usage 및 정상 EOF를 검증한 뒤에만 tool_use와 message_stop을 보냅니다. 전송한 텍스트 뒤에 검증 실패/연결 단절이 생기면 SSE 오류를 표시하고 자동 재실행하지 않습니다. 텍스트를 되돌릴 수는 없으며 실패 응답의 도구 실행을 차단합니다.
+Claude Code → gateway → Codex 텍스트 delta를 즉시 전달합니다. 텍스트의 block 종료는 opaque reasoning 뒤·도구 앞에 전달해 native의 마지막 결과를 보존합니다. delta 없는 빈 텍스트 done도 처리하지만 비어 있지 않은 snapshot의 delta 누락은 거부합니다. 느린 클라이언트에는 write backpressure를 기다립니다. 도구 인수·최종 snapshot·usage 및 정상 EOF를 검증한 뒤에만 tool_use와 message_stop을 보냅니다. 내용 전달 후 실패는 SSE 오류로 남기고 자동 재실행하지 않으며 실패 응답의 도구 실행을 차단합니다.
 
 게이트웨이는 도구를 실행하지 않습니다. native가 제공한 schema를 Codex function으로 변환하며 호출 ID와 결과 연결을 검사합니다. 병렬 도구 호출과 disable_parallel_tool_use를 처리합니다. 지연 도구는 ToolSearch로 발견된 tool_reference, 기존 실행 이력 또는 명시적 tool_choice가 있는 경우만 노출합니다. 발견 경로가 없는 지연 도구는 명시적으로 거부합니다.
 
-각 요청의 현재 transcript를 변환하므로 앞 요청의 prefix/길이 일치를 강제하지 않습니다. 압축 요약·모델 전환·resume 형태의 이력을 처리합니다. opaque reasoning은 검증·병합해 버전 표시된 redacted_thinking 데이터로 돌려주며 별도 gateway 디스크 캐시는 만들지 않습니다. native의 실제 저장/복원은 별도 검증 대상입니다. 지원하지 않는 annotations/logprobs·문서/PDF·서버 도구·context edit는 조용히 버리지 않고 거부합니다.
+각 요청의 현재 transcript를 변환하므로 앞 요청의 prefix/길이 일치를 강제하지 않습니다. 압축 요약·모델 전환·resume 이력을 처리합니다. 현재 비활성 도구의 과거 호출·결과는 보존하되 새 호출의 허용 목록에는 추가하지 않습니다. opaque reasoning은 검증·병합해 redacted_thinking으로 왕복하며 gateway 디스크 캐시는 만들지 않습니다. 실제 새 프로세스의 저장/복원과 실패 뒤 도구 미중복은 [릴리즈 검증](release-readiness.md)에서 확인했습니다. 지원하지 않는 annotations/logprobs·문서/PDF·서버 도구·context edit는 거부합니다.
 
 ## 인증과 재시도
 
-요청마다 고정된 기존 Codex 인증 저장소를 재검사합니다. Codex가 갱신한 토큰은 다음 요청부터 재사용합니다. 401이면 한 번 강제 재읽기를 시도하며 계정 변경은 거부합니다. 인증 부재/만료는 재로그인을 안내합니다. 자체 refresh·자동 로그인·credential 쓰기는 하지 않습니다. Codex CLI 0.153.4 버전 검증과 기존 runtime 검사를 유지합니다.
+요청마다 OS 사용자 홈의 기존 Codex 인증 저장소를 재검사합니다. 임의 USERPROFILE 값으로 인증 홈을 변경하지 않습니다. Codex가 갱신한 토큰은 다음 요청부터 재사용하고 401이면 한 번 강제 재읽기를 하며 계정 변경은 거부합니다. 자체 refresh·자동 로그인·credential 쓰기는 하지 않습니다. 설치 CLI 버전을 읽어 사용하며 reference 0.153.4와 다른 관측 0.154.0에는 `CLI_VERSION_UNVERIFIED` 안내를 유지합니다. runtime·TLS 검사는 비대화형에서도 유지합니다.
 
 일시적인 I/O·429·5xx만 **최초 시도 + 최대 5회 재시도**합니다. 인증 재읽기 후 재전송도 이 예산에 포함됩니다. 본문 검증 오류는 재시도하지 않습니다. gateway가 사용자 응답 전송을 시작하면 자동 재시도를 금지하고 명시적 재개를 안내합니다. Claude의 자체 재시도가 이 횟수를 곱하지 않도록 자식 `CLAUDE_CODE_MAX_RETRIES=0`, `CLAUDE_CODE_RETRY_WATCHDOG=0`, `CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0`을 설정합니다. 부모 환경과 일반 Claude 실행은 바꾸지 않으며 명시적 `--continue`/`--resume`는 유지합니다.
 
@@ -199,7 +200,9 @@ backend가 max_output_tokens를 거부했던 기존 증거 때문에 이 필드�
 
 ## 검증 범위와 남은 공백
 
-신규 protocol/transport/gateway/launcher/admission 합성 검사와 기존 native/chat/PoC 회귀를 사용합니다. 테스트는 고정 합성 데이터와 loopback HTTP이며 실제 Claude·인증 파일·외부 모델을 실행하지 않습니다. **Verified:** native 41/41, gateway 15/15, chat 26/26, adapter 318/318, user-session 89/89, 신규 protocol/transport/launcher/admission suite 통과. 60초 soak 포함 native 42/42, soak 요청 3,908회, activeJobs 0, RSS 증가 50,774,016 bytes였습니다. 최종 launch retry 환경 보완 뒤 native 41/41을 다시 확인했습니다. [감사 수정·검증 기록](audit-2026-09-08.md)에 항목별 결과와 미검증 범위를 기록했습니다.
+현행 기준은 [remaining-verification.md](remaining-verification.md) 2~5장과 [릴리즈 검증](release-readiness.md)입니다. 로컬 회귀와 명시적 `-Live` 검증을 구분합니다. 2026-09-12 최신 src 회귀는 23/23, native 47, gateway 61, chat 28, request diagnostics 69, upstream failures 84, unsupported-event diagnostics 63개가 포함됐습니다. 기본 러너의 review-diff는 PATH 부재로 notRun이며 별도 최소 Git PATH 실행은 실제 통과했습니다. symlink 차단은 유지합니다.
+
+2026-09-08 과거 기준선은 native 41/41, gateway 15/15, chat 26/26, adapter 318/318, user-session 89/89였습니다. 당시 60초 soak 포함 native 42/42, 요청 3,908회, activeJobs 0, RSS 증가 50,774,016 bytes를 관측했습니다. 이 수치를 새 코드의 재실행 결과로 사용하지 않습니다. [당시 감사](audit-2026-09-08.md)를 참고합니다.
 
 ```powershell
 node --permission --allow-fs-read=D:\AIDEV\Clauduct src/test-native-protocol.mjs
@@ -212,7 +215,7 @@ node --permission --allow-fs-read=D:\AIDEV\Clauduct --allow-child-process src/te
 
 **실제 검증:** 사용자 화면에서 점진적 출력 확인, 저장된 세션에서 Read 왕복·수동 compact 후 새 Read·일반 effort 복귀를 확인했습니다. f236 세션에서는 Explore/general-purpose=luna/max, Plan=sol/high와 각 역할의 hook 컨텍스트 환경 상속을 확인했습니다. b6d81841 세션에서는 검증용 autoCompactWindow=100000으로 trigger=auto, 98097→39330 토큰, 68608ms, compact medium 및 후속 max·새 Read 성공을 확인했습니다. 환경 상속은 native 내부 계산이나 backend 용량의 증거가 아닙니다. 진단은 모델이 재작성한 JSON이 아닌 원본 tool_result로 검사합니다.
 
-**Not verified:** opaque reasoning의 완전 보존, 중첩 서브에이전트 상속과 각 서브에이전트 내부 auto compact, 실제 기본 400K 압축/복귀, backend의 모든 모델/effort/500K 수락, 실제 갱신 인증 재사용, 실제 429/네트워크 단절 복구, 수시간·수일 운영. 실제 인증 갱신과 수시간 장기 실행은 이번 검증 목표에서 제외했습니다. **Blocked by:** 이전 실제 인증/live/PTY 실행 거부를 유지하므로 다른 shell/Python 경로로 우회하지 않았습니다. 후속 실제 증거는 사용자가 실행한 세션을 읽기 전용으로 확인한 것입니다.
+**Not verified:** 실제 기본 400K/320K 압축·복귀, 모든 모델/effort 조합, 실제 계정 회전, 모든 사용자 hook/plugin/UI 조합과 수일 운영입니다. opaque reasoning·직접 부모 상속·축소 창의 압축·장기 실행은 각각 관측 범위가 있으므로 위 현행 기준표를 따릅니다. 2026-09-12에는 사용자 요청에 따라 명시적 비대화형 경로에서 공개 fixture의 실제 Claude 왕복을 실행했습니다. 이것을 과거 거부된 PTY 경로의 통과로 해석하지 않습니다. **Blocked by:** 동적 symlink/junction 검사는 거부를 유지하며 다른 경로로 재현하지 않습니다.
 
 합성 부하 검사로 누적 카운터 한도·작업/소켓 정리·메모리 추이를 저비용으로 검사할 수 있지만 장기간 무결함을 입증하지는 못합니다. 기존 shell 측정 중 생성된 `%SystemDrive%` 폴더는 삭제 guard가 거부하여 그대로 보존했습니다.
 

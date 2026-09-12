@@ -2,7 +2,7 @@
 // the search tool and reads web_search_tool_result blocks out of the reply. This gateway is that
 // server, so it answers the side query itself from the backend's standalone search endpoint —
 // the same endpoint, and the same credential, the reference client uses for its own web.run
-// tool. No model turn is involved, so the answer costs no tokens and adds no upstream latency.
+// tool. This is a search round trip, not an additional model generation. Backend billing is not inferred here.
 import { randomUUID } from 'node:crypto';
 import { NativeError, need } from './native-protocol.mjs';
 

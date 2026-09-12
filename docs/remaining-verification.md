@@ -33,7 +33,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 
 무오류 누적만으로는 승격하지 않으며, 실패가 끝내 발생하지 않으면 CONDITIONAL이 최종 상태로 남는다.
 
-실제 인증 실행은 사용자가 수행한다. 에이전트는 실제 Claude를 대신 실행하지 않고, 전역 설정·hook 신뢰·권한·인증 파일을 변경하거나 조회하지 않는다. 이미 통과한 항목은 변경 영향이나 새 증거가 있을 때만 다시 확인한다. 같은 smoke 시험을 반복 요청하지 않는다.
+2026-09-12 릴리즈 작업에서는 사용자가 비대화형 실제 실행을 명시적으로 요청해 새 작업 전용 프로필과 공개 fixture로 검증했다. 기존 credential supplier를 사용하고 전역 설정·hook 신뢰·권한·인증 파일은 변경하지 않았으며 원문 인증 값을 출력하지 않았다. 당시의 실행 요청을 향후 임의 작업의 상시 권한으로 사용하지 않는다. 이미 통과한 항목은 변경 영향이나 새 증거가 있을 때만 다시 확인한다.
 
 ## 2. 현재 계약 값
 
@@ -51,6 +51,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | clauduct-inherit | 생성 시점 직접 부모의 실제 모델·effort | 메인 값이나 고정 역할값을 하드코딩하지 않는다 |
 | Codex clientVersion | 관측 0.154.0 / reference 0.153.4 → `unverified` | Claude CLI 버전(2.1.26x)과 구분한다 |
 | 차단 옵션 | `--settings`, `--setting-sources`, `--agents`, `--system-prompt` | 임의 agent 정의 주입을 막는다 |
+| 비대화형 진입 | 명시적 `-p` / `--print` | native 결과는 stdout, wrapper 안내·종료 진단은 stderr. 기본 대화형은 TTY 요구 유지 |
 
 ## 3. 현행 상태표
 
@@ -65,6 +66,10 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 요청 형식 거부에서 upstream 미시도 | 완료 | `test-request-diagnostics` 69개 검사 / loopback 34회, `sends=0` | 없음 | 없음 |
 | 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개. run-04 취소 3건 중 자식 2건은 `clientDisconnected: false`, 1건은 클라이언트 선이탈. 2026-09-12 인수인계에 보존된 사용자 보고: UI에서 직접 취소했고 오류가 없었다 | 사용자 UI 보고의 세션·요청 ID·취소 시각은 미기록이다. 이 관측을 등록 교체·형제 격리 전체의 실제 검증으로 확대하지 않는다. 원격 계산 중단과 전송 데이터 회수는 보장하지 않는다 | 릴리즈 검증에서는 UI 관측과 gateway 취소·격리 증거를 각각 판정한다 |
 | 정상 종료 자원 정리 | 완료 | [정리 경합 감사](audit-2026-09-11-cleanup-close-race.md), `test-cancel-snapshot` 6개, 세션 0d5d6174의 cleanup 9개 true | 창을 강제 종료하면 종료 JSON이 남는다고 보장하지 않는다 | 없음 |
+| 비대화형 작업·재개·오류 복구 | 완료 | [릴리즈 검증](release-readiness.md): 실제 새 프로세스의 session ID 일치·공개 코드 회상, MCP 1회 실행 후 응답 중 오류·명시적 재개·도구 미중복·정리 9개 true | 모든 서버 장애의 무중단 처리를 보장하지 않는다. 전달 후 오류는 명시적 재개가 필요하다 | 최종 릴리즈 구성으로 회귀·배포 검증 |
+| native background 작업·TaskStop | 완료 | 같은 릴리즈 검증: 실제 Bash background 1회·TaskOutput 1회, 별도 TaskStop 뒤 worker PID 종료 확인 | 사용자 UI 키 입력 시각·Agent 등록 교체·형제 격리 전체의 실제 검증은 아님 | 기존 취소·형제 격리 조건부 판정 유지 |
+| headless 최종 텍스트·도구 축소 후 이력 보존 | 완료 | 빈 JSON 결과와 과거 도구의 `INVALID_TOOL_CALL`을 실제 재현·수정. 수정 전 실패 회귀와 실제 resume/failure-resume 통과 | 비활성 도구의 새 호출은 계속 거부한다 | 없음 |
+| 빈 text done 처리·불일치 이벤트 진단 | 완료 | delta 없는 빈 `response.output_text.done` 실패를 실제·합성 재현 후 수정. 비어 있지 않은 누락 delta는 계속 거부. `snapshotMismatchEvent` 고정 라벨 검사 | 이전 실패의 원문 복원 기능은 아님 | 새 불일치의 이벤트 종류로 위치를 구분 |
 | 종료 판정과 exit code 계약 | 완료 | [native.md](native.md) 종료 진단 절, `requestOutcome`과 `cleanup` 분리 | exit 0은 프로세스 종료·자원 정리 판정이며 요청 성공 판정이 아니다 | 호환성 검토 없이 exit code를 바꾸지 않는다 |
 | 단일 완료 알림 기반 복귀 | 완료 | c19c8b14의 [실제 성공](audit-2026-09-09-completion-success.md), 2026-09-12 `test-completion-selection` 46개 통과 | 같은 gateway의 검증 이력과 단일 `completed` 알림을 연결한 경로에 한정한다. [지원 한계](audit-2026-09-09-completion-resume.md)는 유지한다 | 없음 |
 | 다중 알림·실패/취소 알림에 의한 자동 복귀 | 범위밖 | 설계상 미지원. 실패·취소 알림의 거부는 로컬 회귀로 확인했고, [run-04](audit-2026-09-11-three-cycle-run-04.md)에서는 결과가 이미 전달된 실패 알림 뒤 올바른 비재실행을 관측했다 | run-04는 실패 알림 자동 복귀의 성공이나 gateway 거부 분기의 실측이 아니다 | 측정 대기 항목으로 두지 않는다 |
@@ -79,7 +84,7 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
 | 장기 자원 안정성 | 완료 | run-04(2c4ceab9) 종료 JSON 실측 — 2시간 37분·408요청·자식 9명 뒤 `cleanup` 9개 전부 true, `gatewayIdle` true, `agentRegistrationsEvicted` 0, `agentRegistrationsExpired` 1. [종료 진단 분석](audit-2026-09-11-run-04-exit-diagnostics.md). 합성 근거는 `test-native` 47개, `test-request-admission` | admission이 메모리 기반이라 같은 부하에서 요청 4건이 6~7분 대기 끝에 클라이언트 이탈로 끝났다. 죽지는 않았으나 지연은 실재한다 | socket·timer·listener를 OS 수준에서 별도 실측하지는 않았다 |
 | HTTP 서버 수준 거부 집계 | 완료 | `lifetime.transportRejections`, `test-native-gateway`의 Expect 검사 | 연결 단계에서 끊긴 바이트의 원인까지는 남기지 않는다 | 없음 |
-| native 기능 지원 범위 | 완료 | [전수 대조](native-feature-support.md) | 로컬 MCP·이미지·plan mode 등 개별 실제 왕복은 미검증으로 명시 | 정상 사용 중 관측되면 기록 |
+| native 기능 지원 범위 | 완료 | [전수 대조](native-feature-support.md), [릴리즈 검증](release-readiness.md)의 실제 Read/Edit·Bash·PowerShell·stdio MCP·PNG·WebFetch·WebSearch | 모든 사용자 plugin·hook·UI 조합을 실측한 것은 아님 | 남은 개별 범위를 완료와 구분 |
 | 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
 | 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
 | 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
@@ -89,6 +94,12 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 | 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |
 
 ## 4. 최신 증거
+
+### 4.0 릴리즈 보완의 새 실행
+
+2026-09-12 개발 작업 트리, Node 24.19.0 / native Claude 2.1.269 / Codex 0.154.0에서 실행했다. 최신 `src/test-*.mjs`는 23/23, exit 0, 17.87초다. `test-review-diff`는 기본 러너에서는 PATH 부재로 notRun이며, 검토한 Git 디렉터리만 PATH에 둔 별도 최소 환경 실행에서는 실제 통과했다. symlink 차단은 그대로다. `verification/test-manual-http-probe.mjs`는 88/88 통과했다.
+
+실제 정상·실패·취소 왕복은 [릴리즈 검증](release-readiness.md)의 케이스 표를 기준으로 한다. 모델 4종의 low 왕복을 확인했지만 astra 최초 검사에서는 전달 전 `UPSTREAM_ERROR_EVENT`가 한 번 관측됐다. 이후 단독 성공을 그 원인의 수정 증거로 보지 않으며 최초 원인은 미확정이다. 원래 감독하 PASS·과거 3주기 관측과 이 새 실행을 섞지 않는다.
 
 ### 4.1 사용자가 제공한 실제 실행 종료 JSON
 

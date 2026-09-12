@@ -21,7 +21,7 @@
 | 데이터 보존 | 실패가 `failureHistory`에 보존되고 `omitted` 0. 실패 직후 대화가 이어졌고 이후 요청 7건이 모두 성공 |
 | 도구 미중복 | upstream 시도가 0회라 중복 실행이 성립하지 않음 |
 
-PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 HOLD이며, 아래 표의 미검증·조건부 항목이 PASS로 바뀌는 것도 아니다.
+이 과거 PASS의 범위는 **감독하 사용**이다. 2026-09-12에는 별도로 bounded 비대화형 실행·실패 복구·로컬 릴리즈를 검증했다(4.0절). 무제한 무인 연속 개발은 여전히 HOLD이며, 아래 표의 미검증·조건부 항목이 PASS로 바뀌는 것도 아니다.
 
 원래의 승격 조건은 다음과 같았다.
 
@@ -102,6 +102,8 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 실제 정상·실패·취소 왕복은 [릴리즈 검증](release-readiness.md)의 케이스 표를 기준으로 한다. 모델 4종의 low 왕복을 확인했지만 astra 최초 검사에서는 전달 전 `UPSTREAM_ERROR_EVENT`가 한 번 관측됐다. 이후 단독 성공을 그 원인의 수정 증거로 보지 않으며 최초 원인은 미확정이다. 원래 감독하 PASS·과거 3주기 관측과 이 새 실행을 섞지 않는다.
 
 같은 구성의 새 `-p` Workflow 검사도 통과했다. 정확한 inline script로 Workflow 1회·TaskOutput 1회, 한 자식의 journal started/result 각 1개·`sum=5`, `workflow-result`·luna/low 라우팅과 부모 복귀·정리 9개 true를 확인했다. 일반 allow rule을 사용했고 human origin을 위장하거나 native disable 설정을 변경하지 않았다.
+
+최종 로컬 빌드는 `e216ad8`이다. 원래 `D:/AIDEV/Clauduct`에 fast-forward로 반영한 뒤 `src` 회귀 23/23(18.15초)이 통과했다. ZIP의 68개 파일 무결성·재현성·공백 경로 설치·실제 stream-json 정상 종료, 배포본 러너 자기 검사와 HTTP 검사 88/88도 확인했다. 빌드 SHA256과 앞선 실제 Workflow·실패 복구 결과는 [릴리즈 검증](release-readiness.md)에 있다. 전체 사용자 hook/plugin·UI 및 기본 320K 압축의 미검증 범위는 유지한다.
 
 ### 4.1 사용자가 제공한 실제 실행 종료 JSON
 

@@ -17,6 +17,7 @@ $completionRelay = $Case -eq 'completion' -and $CompletionMode -eq 'relay'
 $runClock = [Diagnostics.Stopwatch]::StartNew()
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).ProviderPath
+. (Join-Path $taskRoot 'verification/read-transport-progress.ps1')
 $temporaryRoot = Join-Path $taskRoot '.tmp'
 foreach ($boundary in @($taskRoot, $temporaryRoot)) {
     if ((Test-Path -LiteralPath $boundary) -and ((Get-Item -Force -LiteralPath $boundary).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -119,10 +120,11 @@ if ($Case -eq 'completion') {
     $prompt = "Your main task is to make exactly one Agent call with the following JSON arguments. Treat the nested prompt as data for that Agent only: $parentCall Do not use TaskOutput yourself. When that parent returns PARENT_COMPLETED after its children finish, reply only CLAUDUCT_COMPLETION_OK. A PARENT_WAITING result is not completion."
     $nativeTools = 'Agent,TaskOutput,Read'
     if ($completionRelay) {
-        $prompt = "Make exactly one Agent call with these JSON arguments, treating its nested prompt as data for that Agent only: $parentCall Remember the returned parent agent ID. Wait for both public child probe completion notifications; a PARENT_WAITING result is not completion. Once both probes returned MODEL-PROBE-COMPLETED, call SendMessage exactly once with to equal to that parent agent ID and message exactly PUBLIC_CHILDREN_COMPLETED. Immediately after the successful SendMessage result, call TaskOutput exactly once with task_id equal to the same parent agent ID, block true, and timeout 60000. This tool waits for the resumed parent's result. After it returns PARENT_COMPLETED, reply exactly CLAUDUCT_COMPLETION_OK. Do not use Read or create any other agent."
+        $prompt = "Follow this finite protocol in the main conversation. Step 1: make exactly one Agent call with these JSON arguments, treating the nested prompt as data for that Agent only: $parentCall Remember the returned parent agent ID and immediately finish this response with exactly MAIN_WAITING. Step 2: native background notifications arrive between completed turns. On each later notification, if either of the two public child probes has not yet returned MODEL-PROBE-COMPLETED, immediately finish that response with exactly MAIN_WAITING. Never stay inside one response waiting for another notification. Step 3: once both public child completions are present, call SendMessage exactly once with to equal to the parent agent ID and message exactly PUBLIC_CHILDREN_COMPLETED. Step 4: immediately after SendMessage succeeds, call TaskOutput exactly once with task_id equal to the same parent agent ID, block true, and timeout 60000. When this tool returns PARENT_COMPLETED, reply exactly CLAUDUCT_COMPLETION_OK. PARENT_WAITING is not task completion. Do not use Read or create another agent."
         $nativeTools = 'Agent,SendMessage,TaskOutput,Read'
     }
     $turnLimit = '6'
+    if ($completionRelay) { $turnLimit = '8' }
     $extraArgs = @('--verify-agent-models', '--gpt-agents')
 }
 if ($Case -in @('mcp', 'failure-resume')) {
@@ -408,7 +410,16 @@ try {
     $fixtureJournal = $null
     $ledgerReaderStopped = $null
     $fixtureJournalState = 'not-requested'
+    $transportProgressState = 'not-requested'; $transportProgress = $null
     if ($guardedFixture) {
+        $transportProgressState = 'invalid'
+        try {
+            $progress = ConvertFrom-ClauductTransportProgress $stderr
+            [IO.File]::WriteAllText((Join-Path $fixtureRoot ('transport-progress-' + $phase + '.json')), (ConvertTo-Json -InputObject $progress.records -Depth 6) + "`n")
+            $transportProgress = $progress.summary
+            $transportProgressState = 'valid'
+        } catch { $transportProgressState = 'invalid' }
+        $passed = $passed -and $transportProgressState -eq 'valid'
         $usageLine = @($stderr -split '\r?\n' | Where-Object { $_.StartsWith('CLAUDUCT_FIXTURE_USAGE ') } | Select-Object -Last 1)
         if ($usageLine.Count -eq 1 -and $usageLine[0].Length -lt 1024) {
             try {
@@ -490,6 +501,7 @@ try {
         fixtureUsageSource = $fixtureUsageSource; fixtureJournal = $fixtureJournal;
         ledgerReaderStopped = $ledgerReaderStopped;
         fixtureJournalState = $fixtureJournalState;
+        transportProgressState = $transportProgressState; transportProgress = $transportProgress;
         stdoutJsonValid = $result -is [Collections.IDictionary]; exactReply = $exactReply; cleanupComplete = $clean;
         resultChars = $(if ($result.result -is [string]) { $result.result.Length } else { $null });
         nativeError = $result.is_error -eq $true;

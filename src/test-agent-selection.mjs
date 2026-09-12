@@ -389,9 +389,10 @@ try {
 
 const received = [];
 let gatewayCall = { id: 'call_gateway', model: 'opus' };
-let onCancelRead;
+let onCancelRead, releaseCancelMetadata;
+const cancelMetadataPending = new Promise(resolve => { releaseCancelMetadata = resolve; });
 const routes = createAgentSelection({ agentDefinitions, timeoutMs: 100, readMetadata: async b => {
-  if (b.id === 'cancel_test') onCancelRead?.();
+  if (b.id === 'cancel_test') { onCancelRead?.(); await cancelMetadataPending; }
   return snapshots.get(b.id);
 } });
 snapshots.delete('gateway');
@@ -491,13 +492,16 @@ try {
   assert.equal((await readRequestStatus(source)).recentRequests.at(-1).selectionSource, 'verified-peer-resume');
 
   routes.remember(call('cancel_origin', 'opus'), 'session');
+  const beforeCancellation = received.length;
   await registerBinding(binding('cancel_test'), source);
   const reading = new Promise(resolve => { onCancelRead = resolve; });
   const cancellation = new AbortController();
   const cancelled = post('cancel_test', cancellation.signal).then(async r => { await r.text(); return 'completed'; }, e => e.name);
   await reading;
   const cancelledRequest = gateway.diagnostics().recentRequests.at(-1).request;
-  const survivor = post('cancel_test');
+  // Observe rejection immediately so cleanup after another assertion cannot
+  // replace the original failure with an unhandled fetch rejection.
+  const survivor = Promise.allSettled([post('cancel_test')]);
   // Keep both waiters pending, observe the cancellation at the gateway, then
   // release metadata. A local AbortController call alone is not peer receipt.
   const until = async predicate => {
@@ -506,10 +510,18 @@ try {
     assert.ok(predicate(), 'CANCELLATION_FIXTURE_BOUNDARY_NOT_OBSERVED');
   };
   await until(() => gateway.diagnostics().activeJobs >= 2);
+  // Exercise scheduling latency beyond the fixture's short metadata poll
+  // deadline. Both requests must still be waiting for the controlled metadata.
+  await new Promise(done => setTimeout(done, 150));
+  assert.equal(gateway.diagnostics().recentRequests.find(row => row.request === cancelledRequest).finishedMs, null);
+  assert.equal(received.length, beforeCancellation);
   cancellation.abort();
   await until(() => gateway.diagnostics().recentRequests.some(row => row.request === cancelledRequest && row.clientDisconnected));
   snapshots.set('cancel_test', metadata('cancel_origin', 'opus'));
-  const survivingResponse = await survivor;
+  releaseCancelMetadata();
+  const [surviving] = await survivor;
+  if (surviving.status === 'rejected') throw surviving.reason;
+  const survivingResponse = surviving.value;
   assert.equal(survivingResponse.status, 200, await survivingResponse.text());
   assert.equal(await cancelled, 'AbortError');
   assert.equal(received.length, 7);
@@ -614,5 +626,5 @@ try {
   assert.equal(nestedStatus.at(-1).selectionSource, 'definition-inherit');
   assert.equal(nestedStatus.at(-1).parentRef, createdBy.agentRef);
   assert.equal(nestedStatus.at(-1).success, true);
-} finally { await gateway.close(); }
+} finally { releaseCancelMetadata(); await gateway.close(); }
 process.stdout.write(JSON.stringify({ suite: 'agent-selection', passed: true, actualClaude: 0, externalRequests: 0 }) + '\n');

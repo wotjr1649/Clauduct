@@ -1,6 +1,6 @@
 # Clauduct — Windows 릴리즈 안내
 
-현재 후보의 무인 개발 출하 판정은 **HOLD**다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 2026-09-13 후보에서는 정상 HTTP 일부가 재성공했지만 request-inspector, user-session watchdog, TCP 반닫기 검사에 실패가 남아 있다. 최신 변경 범위 회귀는10개 파일 중9개가 통과했고, agent-selection의 실제 client 취소 도착 관측이 실패했다. 같은 loopback 반닫기 이상을 Clauduct·Node 없는 .NET 비교에서도 관측했으며, 이번 취소 실패와의 인과관계 및 정상 환경에서의 재검증은 미완료다.
+현재 후보의 무인 개발 출하 판정은 **HOLD**다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 2026-09-13 후보에서는 정상 HTTP 일부가 재성공했지만 request-inspector, user-session watchdog, TCP 반닫기 검사에 실패가 남아 있다. 취소 검사의 metadata 준비 경쟁은150ms 지연으로 재현하고, 실제 취소 도착까지 준비 완료를 보류하는 fixture로 고쳐 관련5개 파일 회귀를 통과했다. 같은 loopback 반닫기 이상은 Clauduct·Node 없는 .NET 비교에서도 관측했으며 원인과 정상 환경에서의 재검증은 미완료다.
 
 ## 시작
 
@@ -53,15 +53,16 @@ Not verified / 제한:
 - 정상 인증 갱신·만료 경계, 모든 사용자 hook/plugin·permission/plan UI 조합, 프롬프트 캐시 실제 적중은 미검증이다. 인증 파일의 직접 편집이나 계정 전환으로 시험을 대신하지 않는다.
 - 두 조합 각각의 4시간 → 24시간 3회 → 72시간 단계는 시작하지 않았다. 기본 메인·자식 압축, 정상 인증 갱신과 원래 개발 과제 완료의 필수 사건 수를 모두 채워야 하며 짧은 기능 검사로 대체하지 않는다.
 - 취소·등록 교체·형제 격리의 합성 검사는 통과했지만 UI 취소 시점까지 연결한 전체 실측은 조건부다. 동적 symlink/junction 검사는 정책 차단으로 실행하지 않았다.
-- 단일 completed 알림 자동 복귀에는 기존 실측이 있다. 연속된 독립 completed 알림은 최대64개를 모두 검증한 뒤 완료 증거를 함께 소비하도록 보완했으며, 앞 자식 증거의 재사용·중복·위조·중간 취소에 대한 합성 검사를 통과했다. 이번 `-p`의 foreground/background/fork 비교에서는 자식 알림이 부모에 도착하지 않아 실패했다. 제한된 SendMessage 조정 시험에서는 동일 부모의 재개 후 완료를 관측했지만 메인 최종 응답 timeout으로 전체 FAIL이며, TaskOutput 회수 변형도120초 timeout이었다. 실제 native 다중·실패·취소 알림 자동 복귀는 미완료다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 미완료다.
+- 단일 completed 알림 자동 복귀에는 기존 실측이 있다. 연속된 독립 completed 알림은 최대64개를 모두 검증한 뒤 완료 증거를 함께 소비하도록 보완했으며, 앞 자식 증거의 재사용·중복·위조·중간 취소에 대한 합성 검사를 통과했다. 이번 `-p`의 foreground/background/fork 비교에서는 자식 알림이 부모에 도착하지 않아 실패했다. 별도 `CompletionMode relay` 검증은 대기하는 메인 응답을 끝내 다음 native 알림을 받고, 두 자식 완료를 확인한 뒤 정확한 부모에게 SendMessage1회와 TaskOutput1회로 이어진다. 두 조합에서 같은 부모의 verified-resume·최종 완료·정리를 확인했다. 이 결과는 메인이 조정한 재개의 증거이며, 직접 native 다중·실패·취소 알림 자동 복귀는 미완료다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 미완료다.
 - Anthropic 서버 전용 기능, 비스트리밍 API, 서버 실행 도구·첨부/PDF·미지원 context edit·sampling 필드는 지원하지 않는다. 신규 native 버전과 Codex 비공개 backend 변경은 재검증이 필요하다. `CLI_VERSION_UNVERIFIED` 안내를 숨기지 않는다.
 
 ## 검증과 무결성
 
 ```powershell
 pwsh -NoProfile -NonInteractive -File src/run-node-tests.ps1 -Root . -TestFiles 'src/test-*.mjs'
-pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -Live -Case text
-pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -Live -Case workflow
+pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -Live -Case text -Model luna -Effort max
+pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -Live -Case workflow -Model sol -Effort low
+pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -Live -Case completion -CompletionMode relay -Model luna -Effort max -TimeoutSeconds 120 -RequestLimit 16
 ```
 
 첫 명령은 검토된 로컬 회귀이며 실제 backend를 호출하지 않는다. 기본 러너의 `review-diff`는 PATH 부재로 notRun을 표시한다. 별도 검토된 Git 경로의 제한 환경에서는 실제 검사가 통과했다. native Workflow와 symlink의 합성 suite notRun을 실검사 성공으로 세지 않는다.

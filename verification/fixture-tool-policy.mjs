@@ -90,6 +90,17 @@ export function createFixtureToolPolicy(policy) {
 export function guardFixtureTransport(transport, policy, { onUsage } = {}) {
   const check = createFixtureToolPolicy(policy);
   need(onUsage === undefined || typeof onUsage === 'function');
+  const active = new Set();
+  let requestsStarted = 0;
+  const fixtureProgress = () => ({ requestsStarted, activeCount: active.size, truncated: active.size > 16,
+    active: [...active].slice(0, 16).map(job => {
+      const timing = job.timings.at(-1);
+      return { request: job.request, elapsedMs: Math.max(0, Math.round(performance.now() - job.started)),
+        attempt: job.timings.length, status: Number.isInteger(timing?.status) && timing.status >= 100 && timing.status <= 599 ? timing.status : null,
+        phase: !timing ? 'credentials' : timing.endedMs !== null ? 'cleanup' : timing.requestFlushedMs === null ? 'request'
+          : timing.headersMs === null ? 'headers' : timing.firstBodyMs === null ? 'body' : 'stream',
+        sawCompletion: ['completed', 'done'].includes(timing?.terminalState) };
+    }) });
   const usage = { inputTokens: 0, outputTokens: 0, completions: 0, maxInputTokens: 131072, maxOutputTokens: 32768, imageFormatMask: 0 };
   const snapshot = () => ({ ...usage, requestAttempts: transport.diagnostics?.().requestAttempts ?? null });
   const inspect = event => {
@@ -106,7 +117,7 @@ export function guardFixtureTransport(transport, policy, { onUsage } = {}) {
   const checkBudget = () => {
     if (usage.inputTokens >= usage.maxInputTokens || usage.outputTokens >= usage.maxOutputTokens) throw new NativeError('REQUEST_BUDGET');
   };
-  return Object.freeze({ ...transport, fixtureUsage: snapshot, search: async (body, signal) => {
+  return Object.freeze({ ...transport, fixtureUsage: snapshot, fixtureProgress, search: async (body, signal) => {
     checkBudget();
     need(policy.kind === 'websearch' && ['gpt-5.6-luna', 'gpt-5.6-sol'].includes(body?.model));
     const expected = searchRequestBody(null, body.model, { query: 'Node.js documentation', allowed: ['nodejs.org'], blocked: null });
@@ -123,11 +134,16 @@ export function guardFixtureTransport(transport, policy, { onUsage } = {}) {
       need(type !== undefined);
       usage.imageFormatMask |= { png: 1, jpeg: 2, gif: 4, webp: 8 }[type];
     }
-    if (typeof options.onEvent !== 'function') {
-      const events = await transport.send(body, signal, options);
-      for (const event of events) inspect(event);
-      return events;
-    }
-    return transport.send(body, signal, { ...options, onEvent: async event => { inspect(event); await options.onEvent(event); } });
+    const job = { request: ++requestsStarted, started: performance.now(), timings: options.attemptTimings ?? [] };
+    active.add(job);
+    try {
+      if (typeof options.onEvent !== 'function') {
+        const events = await transport.send(body, signal, { ...options, attemptTimings: job.timings });
+        for (const event of events) inspect(event);
+        return events;
+      }
+      return await transport.send(body, signal, { ...options, attemptTimings: job.timings,
+        onEvent: async event => { inspect(event); await options.onEvent(event); } });
+    } finally { active.delete(job); }
   } });
 }

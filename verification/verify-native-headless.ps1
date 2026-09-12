@@ -1,13 +1,19 @@
 [CmdletBinding()]
-param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 'workflow', 'mcp', 'resume', 'failure-resume', 'image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task')][string] $Case = 'text',
+param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 'completion', 'workflow', 'mcp', 'resume', 'failure-resume', 'image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task')][string] $Case = 'text',
     [ValidateSet('astra', 'sol', 'terra', 'luna')][string] $Model = 'luna',
     [ValidateSet('low', 'medium', 'high', 'xhigh', 'max')][string] $Effort = 'low',
     [ValidateSet('png', 'jpeg', 'gif', 'webp')][string] $ImageFormat = 'png',
+    [ValidateSet('foreground', 'fork', 'relay')][string] $CompletionMode = 'foreground',
+    [switch] $StopAfterFirstCompletion,
     [ValidateRange(1, 120)][int] $TimeoutSeconds = 90,
     [ValidateRange(1, 256)][int] $RequestLimit = 16)
 
 $ErrorActionPreference = 'Stop'
 if (-not $Live) { throw 'LIVE_FLAG_REQUIRED' }
+if ($StopAfterFirstCompletion -and $Case -ne 'image') { throw 'STOP_FIXTURE_REQUIRES_IMAGE_CASE' }
+if ($CompletionMode -ne 'foreground' -and $Case -ne 'completion') { throw 'COMPLETION_MODE_REQUIRES_COMPLETION_CASE' }
+$completionFork = $Case -eq 'completion' -and $CompletionMode -eq 'fork'
+$completionRelay = $Case -eq 'completion' -and $CompletionMode -eq 'relay'
 $runClock = [Diagnostics.Stopwatch]::StartNew()
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).ProviderPath
@@ -99,6 +105,26 @@ if ($Case -eq 'workflow') {
     $turnLimit = '6'
     $extraArgs = @()
 }
+if ($Case -eq 'completion') {
+    $childPrompts = @('PUBLIC_FIRST: Follow your read-only probe instructions and return MODEL-PROBE-COMPLETED.', 'PUBLIC_SECOND: Follow your read-only probe instructions and return MODEL-PROBE-COMPLETED.')
+    $childExecution = if ($completionFork) { 'omit run_in_background because this session uses native fork mode' } else { 'run_in_background true' }
+    $parentPrompt = 'Launch exactly two Agent calls with subagent_type clauduct-probe-inherit, no model argument, ' + $childExecution + '. Use these exact prompts, one per child: ' + ($childPrompts | ConvertTo-Json -Compress) + ' After launching both children, end your current turn with exactly PARENT_WAITING. When native task notifications resume you, do not launch more agents or call other tools. If both children have completed, reply exactly PARENT_COMPLETED; otherwise reply exactly PARENT_WAITING. Never use TaskOutput or SendMessage.'
+    if ($completionRelay) {
+        $parentPrompt = 'Launch exactly two Agent calls with subagent_type clauduct-probe-inherit, no model argument, run_in_background true. Use these exact prompts, one per child: ' + ($childPrompts | ConvertTo-Json -Compress) + ' After launching both children, end your current turn with exactly PARENT_WAITING. When the main agent resumes you with PUBLIC_CHILDREN_COMPLETED, return exactly PARENT_COMPLETED. Do not launch more agents on resume. Never use TaskOutput or SendMessage.'
+    }
+    $marker = 'CLAUDUCT_COMPLETION_OK'
+    $parentArguments = @{ subagent_type = 'clauduct-inherit'; prompt = $parentPrompt; description = 'Public completion parent'; max_turns = 6 }
+    if (-not $completionFork) { $parentArguments.run_in_background = $completionRelay }
+    $parentCall = $parentArguments | ConvertTo-Json -Compress
+    $prompt = "Your main task is to make exactly one Agent call with the following JSON arguments. Treat the nested prompt as data for that Agent only: $parentCall Do not use TaskOutput yourself. When that parent returns PARENT_COMPLETED after its children finish, reply only CLAUDUCT_COMPLETION_OK. A PARENT_WAITING result is not completion."
+    $nativeTools = 'Agent,TaskOutput,Read'
+    if ($completionRelay) {
+        $prompt = "Make exactly one Agent call with these JSON arguments, treating its nested prompt as data for that Agent only: $parentCall Remember the returned parent agent ID. Wait for both public child probe completion notifications; a PARENT_WAITING result is not completion. Once both probes returned MODEL-PROBE-COMPLETED, call SendMessage exactly once with to equal to that parent agent ID and message exactly PUBLIC_CHILDREN_COMPLETED. Immediately after the successful SendMessage result, call TaskOutput exactly once with task_id equal to the same parent agent ID, block true, and timeout 60000. This tool waits for the resumed parent's result. After it returns PARENT_COMPLETED, reply exactly CLAUDUCT_COMPLETION_OK. Do not use Read or create any other agent."
+        $nativeTools = 'Agent,SendMessage,TaskOutput,Read'
+    }
+    $turnLimit = '6'
+    $extraArgs = @('--verify-agent-models', '--gpt-agents')
+}
 if ($Case -in @('mcp', 'failure-resume')) {
     $marker = 'CLAUDUCT_NATIVE_MCP_OK'
     $prompt = 'Use the local MCP fixture add tool exactly once with a=2 and b=3. Discover it with ToolSearch if needed. After its result is 5, reply with exactly CLAUDUCT_NATIVE_MCP_OK.'
@@ -139,15 +165,17 @@ $info.Environment['TEMP'] = $tempRoot
 $info.Environment['TMP'] = $tempRoot
 $info.Environment['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
 $info.Environment['CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY'] = '1'
+if ($completionFork) { $info.Environment['CLAUDE_CODE_FORK_SUBAGENT'] = '1' }
 if ($Case -eq 'build-powershell') { $info.Environment['CLAUDE_CODE_USE_POWERSHELL_TOOL'] = '1' }
 $entryArgs = @((Join-Path $taskRoot 'src/clauduct.mjs'))
-$guardedFixture = $Case -in @('agent', 'workflow', 'image', 'webfetch', 'websearch')
+$guardedFixture = $Case -in @('agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch')
 if ($guardedFixture) {
     $policyPath = Join-Path $fixtureRoot 'tool-policy.json'
     $policy = @{ version = 1; kind = $Case; workingRoot = $workingRoot }
-    if ($Case -eq 'agent') { $policy.readPath = Join-Path $taskRoot 'src/models.mjs' }
+    if ($Case -in @('agent', 'completion')) { $policy.readPath = Join-Path $taskRoot 'src/models.mjs' }
     elseif ($Case -eq 'image') { $policy.readPath = $imagePath }
     elseif ($Case -eq 'workflow') { $policy.workflowScript = $workflowScript }
+    if ($Case -eq 'completion') { $policy.parentPrompt = $parentPrompt; $policy.childPrompts = $childPrompts; $policy.completionMode = $CompletionMode }
     [IO.File]::WriteAllText($policyPath, ($policy | ConvertTo-Json -Depth 4))
     $entryArgs = @((Join-Path $taskRoot 'verification/guarded-headless-entry.mjs'), $policyPath)
 }
@@ -186,10 +214,45 @@ try {
     $process.StandardInput.Close()
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
     $stderrTask = $process.StandardError.ReadToEndAsync()
-    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
-    if ($timedOut) { $process.Kill($true); $process.WaitForExit() }
-    $stdout = $stdoutTask.GetAwaiter().GetResult()
-    $stderr = $stderrTask.GetAwaiter().GetResult()
+    $injectedStop = $false
+    $injectedStopAfterCompletions = $null
+    $stopControlFailure = $false
+    $stopJournalBoundaryRejected = $false
+    if ($StopAfterFirstCompletion) {
+        $journalPath = Join-Path $fixtureRoot 'tool-usage.jsonl'
+        while ($executionClock.ElapsedMilliseconds -lt $TimeoutSeconds * 1000 -and -not $process.WaitForExit(25)) {
+            if (-not (Test-Path -LiteralPath $journalPath -PathType Leaf)) { continue }
+            try {
+                $journalInfo = Get-Item -Force -LiteralPath $journalPath
+                if ($journalInfo.Length -gt 262144 -or ($journalInfo.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                    $stopJournalBoundaryRejected = $true; throw 'STOP_JOURNAL_BOUNDARY'
+                }
+                $stream = [IO.File]::Open($journalPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+                try {
+                    $textReader = [IO.StreamReader]::new($stream)
+                    try { $journalText = $textReader.ReadToEnd() } finally { $textReader.Dispose() }
+                } finally { $stream.Dispose() }
+            } catch { $stopControlFailure = $true; break }
+            $boundary = $journalText.LastIndexOf("`n")
+            if ($boundary -lt 0) { continue }
+            try { $last = ($journalText.Substring(0, $boundary) -split "`n")[-1] | ConvertFrom-Json -AsHashtable } catch { continue }
+            if ($last.version -eq 1 -and $last.kind -in @('attempt','usage') -and $last.completions -ge 1 -and
+                $last.requestAttempts -ge 1 -and $last.requestAttempts -le $RequestLimit) {
+                $injectedStop = $true; $injectedStopAfterCompletions = $last.completions
+                $process.Kill($true); [void]$process.WaitForExit(10000)
+                break
+            }
+        }
+        $timedOut = -not $process.HasExited -and -not $stopControlFailure
+    } else { $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000) }
+    if (($timedOut -or $stopControlFailure) -and -not $injectedStop) { $process.Kill($true); [void]$process.WaitForExit(10000) }
+    $nativeStopConfirmed = $process.HasExited
+    $nativeExitCode = if ($nativeStopConfirmed) { $process.ExitCode } else { $null }
+    $outputSettled = $false; $outputCollectionFailed = $false
+    try { $outputSettled = $stdoutTask.Wait(10000) -and $stderrTask.Wait(10000) }
+    catch { $outputCollectionFailed = $true }
+    $stdout = if ($stdoutTask.IsCompletedSuccessfully) { $stdoutTask.GetAwaiter().GetResult() } else { '' }
+    $stderr = if ($stderrTask.IsCompletedSuccessfully) { $stderrTask.GetAwaiter().GetResult() } else { '' }
     $result = $null
     $status = $null
     $streamVerified = $null
@@ -214,6 +277,7 @@ try {
     $featureVerified = $null
     $nativeImageMediaType = $null
     $upstreamImageMediaType = $null
+    $completionEvidence = $null
     $workerStopped = $null
     $expectedModel = @{ astra = 'gpt-6-astra'; sol = 'gpt-5.6-sol'; terra = 'gpt-5.6-terra'; luna = 'gpt-5.6-luna' }[$Model]
     $modelMatched = @($status.recentRequests | Where-Object { $_.subagent -ne $true -and $_.model -eq $expectedModel -and $_.effort -eq $Effort }).Count -gt 0
@@ -230,7 +294,7 @@ try {
         }
     }
     if ($Case -in @('resume', 'failure-resume')) { $sameSession = $result.session_id -eq $resumeId }
-    if ($Case -in @('image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task', 'workflow')) {
+    if ($Case -in @('image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task', 'workflow', 'completion')) {
         $featureVerified = $false
         if ($result.session_id -match '^[a-f0-9-]{36}$') {
             $transcripts = @(Get-ChildItem -LiteralPath (Join-Path $profileRoot 'projects') -File -Recurse -Filter ($result.session_id + '.jsonl'))
@@ -273,6 +337,50 @@ try {
                         }
                         $featureVerified = $featureVerified -and $workerStopped
                     }
+                } elseif ($Case -eq 'completion') {
+                    $subagentRoot = Join-Path (Join-Path $transcripts[0].DirectoryName $result.session_id) 'subagents'
+                    $metadata = @(if (Test-Path -LiteralPath $subagentRoot -PathType Container) { Get-ChildItem -LiteralPath $subagentRoot -File -Filter 'agent-*.meta.json' | Where-Object { $_.Length -le 16384 } | ForEach-Object {
+                        $value = Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json -AsHashtable
+                        if ($_.Name -match '^agent-([A-Za-z0-9_-]{1,200})\.meta\.json$') { $value.fixtureId = $Matches[1]; $value }
+                    } })
+                    $parents = @($metadata | Where-Object { $_.agentType -eq 'clauduct-inherit' })
+                    $children = @($metadata | Where-Object { $_.agentType -eq 'clauduct-probe-inherit' })
+                    $notifications = @(); $parentAgentCalls = @(); $parentCompleted = $false; $parentWaited = $false
+                    if ($parents.Count -eq 1) {
+                        $parentTranscript = Join-Path $subagentRoot ('agent-' + $parents[0].fixtureId + '.jsonl')
+                        if ((Get-Item -LiteralPath $parentTranscript).Length -le 4MB) {
+                            foreach ($line in [IO.File]::ReadLines($parentTranscript)) {
+                                if ($line.Length -gt 1MB) { throw 'VERIFICATION_TRANSCRIPT_TOO_LARGE' }
+                                $row = $line | ConvertFrom-Json -AsHashtable
+                                if ($row.type -eq 'user' -and $row.isMeta -eq $true -and $row.origin.kind -eq 'task-notification' -and $row.message.content -is [string] -and
+                                    $row.message.content -match '<task-id>([A-Za-z0-9_-]{1,200})</task-id>' -and $row.message.content.Contains('<status>completed</status>')) { $notifications += $Matches[1] }
+                                foreach ($block in $row.message.content) {
+                                    if ($row.type -eq 'assistant' -and $block.type -eq 'tool_use' -and $block.name -eq 'Agent') { $parentAgentCalls += $block }
+                                    if ($row.type -eq 'assistant' -and $block.type -eq 'text' -and $block.text.Trim() -eq 'PARENT_COMPLETED') { $parentCompleted = $true }
+                                    if ($row.type -eq 'assistant' -and $block.type -eq 'text' -and $block.text.Trim() -eq 'PARENT_WAITING' -and $notifications.Count -eq 0) { $parentWaited = $true }
+                                }
+                            }
+                        }
+                    }
+                    $resumeSource = if ($completionRelay) { 'verified-resume' } else { 'verified-completion-resume' }
+                    $resumeRoutes = @($status.recentRequests | Where-Object { $_.selectionSource -eq $resumeSource -and $_.success -eq $true -and $_.model -eq $expectedModel -and $_.effort -eq $Effort })
+                    $agentRefs = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.success -eq $true } | ForEach-Object { $_.agentRef } | Sort-Object -Unique)
+                    $relayCalls = @($calls | Where-Object { $_.name -eq 'SendMessage' })
+                    $completionDelivery = if ($completionRelay) {
+                        $parents.Count -eq 1 -and $calls.Count -eq 3 -and $relayCalls.Count -eq 1 -and
+                        $relayCalls[0].input.to -eq $parents[0].fixtureId -and $relayCalls[0].input.message -ceq 'PUBLIC_CHILDREN_COMPLETED' -and
+                        @($calls | Where-Object { $_.name -eq 'TaskOutput' -and $_.input.task_id -eq $parents[0].fixtureId -and $_.input.block -eq $true -and $_.input.timeout -eq 60000 }).Count -eq 1
+                    } else { @($children | Where-Object { $_.fixtureId -notin $notifications }).Count -eq 0 }
+                    $completionEvidence = @{ parentCount = $parents.Count; childCount = $children.Count; parentAgentCalls = $parentAgentCalls.Count;
+                        notifications = @($notifications | Sort-Object -Unique).Count; resumeRoutes = $resumeRoutes.Count; routedAgents = $agentRefs.Count; parentCompleted = $parentCompleted; parentWaited = $parentWaited;
+                        relayCalls = $relayCalls.Count; resumeSource = $resumeSource }
+                    $agentRouted = $resumeRoutes.Count -gt 0 -and $agentRefs.Count -eq 3
+                    $featureVerified = $parents.Count -eq 1 -and $children.Count -eq 2 -and $parentAgentCalls.Count -eq 2 -and $parentCompleted -and $parentWaited -and
+                        @($children | Where-Object { $_.parentAgentId -ne $parents[0].fixtureId }).Count -eq 0 -and
+                        $completionDelivery -and
+                        @($parentAgentCalls | Where-Object { $_.input.subagent_type -ne 'clauduct-probe-inherit' -or $_.input.prompt -cnotin $childPrompts -or $(if ($completionFork) { $_.input.ContainsKey('run_in_background') } else { $_.input.run_in_background -ne $true }) }).Count -eq 0 -and
+                        @($calls | Where-Object { $_.name -eq 'Agent' -and $_.input.subagent_type -eq 'clauduct-inherit' -and $_.input.prompt -ceq $parentPrompt -and $(if ($completionFork) { -not $_.input.ContainsKey('run_in_background') } else { $_.input.run_in_background -eq $completionRelay }) }).Count -eq 1 -and
+                        @($results | Where-Object { $_.is_error -eq $true }).Count -eq 0
                 } elseif ($Case -eq 'workflow') {
                     $journals = @(Get-ChildItem -LiteralPath (Join-Path $transcripts[0].DirectoryName $result.session_id) -File -Recurse -Filter 'journal.jsonl')
                     $journal = @()
@@ -288,26 +396,74 @@ try {
         }
     }
     $failurePreserved = $null
-    $outcomeMatched = $process.ExitCode -eq 0 -and $exactReply -and $result.is_error -eq $false -and $status.requestOutcome -eq 'all-succeeded'
+    $outcomeMatched = $nativeExitCode -eq 0 -and $exactReply -and $result.is_error -eq $false -and $status.requestOutcome -eq 'all-succeeded'
     if ($phase -eq 'failure') {
         $failedRequests = @($status.failureHistory.records | Where-Object { $_.failureCategory -eq 'UPSTREAM_ERROR_EVENT' -and $_.firstDownstreamWriteMs -ne $null -and $_.attempts.Count -eq 1 })
-        $failurePreserved = $process.ExitCode -ne 0 -and $result.is_error -eq $true -and $status.lifetime.injectedStreamErrors -eq 1 -and $status.lifetime.failed -eq 1 -and $status.lifetime.started -eq 1 -and $failedRequests.Count -eq 1
+        $failurePreserved = $nativeExitCode -ne 0 -and $result.is_error -eq $true -and $status.lifetime.injectedStreamErrors -eq 1 -and $status.lifetime.failed -eq 1 -and $status.lifetime.started -eq 1 -and $failedRequests.Count -eq 1
         $outcomeMatched = $failurePreserved
     }
-    $passed = -not $timedOut -and $outcomeMatched -and $clean -and $modelMatched -and $fixtureMatched -ne $false -and $agentRouted -ne $false -and $mcpVerified -ne $false -and $sameSession -ne $false -and $featureVerified -ne $false -and $streamVerified -ne $false
+    $passed = $nativeStopConfirmed -and $outputSettled -and -not $StopAfterFirstCompletion -and -not $timedOut -and $outcomeMatched -and $clean -and $modelMatched -and $fixtureMatched -ne $false -and $agentRouted -ne $false -and $mcpVerified -ne $false -and $sameSession -ne $false -and $featureVerified -ne $false -and $streamVerified -ne $false
     $fixtureUsage = $null
+    $fixtureUsageSource = $null
+    $fixtureJournal = $null
+    $ledgerReaderStopped = $null
+    $fixtureJournalState = 'not-requested'
     if ($guardedFixture) {
         $usageLine = @($stderr -split '\r?\n' | Where-Object { $_.StartsWith('CLAUDUCT_FIXTURE_USAGE ') } | Select-Object -Last 1)
         if ($usageLine.Count -eq 1 -and $usageLine[0].Length -lt 1024) {
             try {
                 $candidateUsage = ConvertFrom-Json -InputObject $usageLine[0].Substring(23) -AsHashtable
                 if (@($candidateUsage.Keys | Where-Object { $_ -notin @('inputTokens','outputTokens','completions','maxInputTokens','maxOutputTokens','requestAttempts','imageFormatMask') }).Count -eq 0 -and
-                    @($candidateUsage.Values | Where-Object { ($_ -isnot [long] -and $_ -isnot [int]) -or $_ -lt 0 }).Count -eq 0) { $fixtureUsage = $candidateUsage }
+                    @($candidateUsage.Values | Where-Object { ($_ -isnot [long] -and $_ -isnot [int]) -or $_ -lt 0 }).Count -eq 0) { $fixtureUsage = $candidateUsage; $fixtureUsageSource = 'footer' }
             } catch { }
         }
+        $readerInfo = [Diagnostics.ProcessStartInfo]::new($info.FileName)
+        $readerInfo.UseShellExecute = $false; $readerInfo.CreateNoWindow = $true
+        $readerInfo.WorkingDirectory = $fixtureRoot
+        $readerInfo.RedirectStandardOutput = $true; $readerInfo.RedirectStandardError = $true
+        $readerInfo.Environment.Clear()
+        $readerInfo.Environment['SystemRoot'] = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
+        $readerInfo.Environment['TEMP'] = $tempRoot; $readerInfo.Environment['TMP'] = $tempRoot
+        $readerInfo.ArgumentList.Add((Join-Path $taskRoot 'verification/verification-ledger.mjs'))
+        $readerInfo.ArgumentList.Add((Join-Path $fixtureRoot 'tool-usage.jsonl'))
+        $reader = $null
+        $ledgerReaderStopped = $false
+        $fixtureJournalState = 'unavailable'
+        try {
+            if ($stopJournalBoundaryRejected) { throw 'STOP_JOURNAL_BOUNDARY' }
+            $reader = [Diagnostics.Process]::Start($readerInfo)
+            $readerOut = $reader.StandardOutput.ReadToEndAsync(); $readerErr = $reader.StandardError.ReadToEndAsync()
+            if (-not $reader.WaitForExit(5000)) { $reader.Kill($true); [void]$reader.WaitForExit(5000) }
+            $ledgerReaderStopped = $reader.HasExited
+            if ($reader.HasExited -and $reader.ExitCode -eq 0 -and $readerOut.Wait(1000) -and $readerErr.Wait(1000)) {
+                $readerText = $readerOut.GetAwaiter().GetResult()
+                if ($readerText.Length -lt 2048) {
+                    try {
+                        $journal = $readerText | ConvertFrom-Json -AsHashtable
+                        $numericKeys = @('inputTokens','outputTokens','completions','requestAttempts','imageFormatMask','recordCount')
+                        if ($journal.Count -eq 8 -and $journal.finalRecorded -is [bool] -and $journal.truncatedTail -is [bool] -and
+                            @($numericKeys | Where-Object { ($journal[$_] -isnot [long] -and $journal[$_] -isnot [int]) -or $journal[$_] -lt 0 }).Count -eq 0) {
+                            $matched = $null
+                            if ($null -ne $fixtureUsage) { $matched = @($numericKeys[0..4] | Where-Object { $fixtureUsage[$_] -ne $journal[$_] }).Count -eq 0 }
+                            else {
+                                $fixtureUsage = @{ maxInputTokens = 131072; maxOutputTokens = 32768 }
+                                foreach ($key in $numericKeys[0..4]) { $fixtureUsage[$key] = $journal[$key] }
+                                $fixtureUsageSource = 'journal'
+                            }
+                            $fixtureJournal = @{ records = $journal.recordCount; finalRecorded = $journal.finalRecorded; truncatedTail = $journal.truncatedTail; matchedFooter = $matched }
+                            $fixtureJournalState = 'valid'
+                        }
+                    } catch { }
+                }
+            }
+        } catch {
+            $fixtureJournalState = 'unavailable'
+            $ledgerReaderStopped = $null -eq $reader -or $reader.HasExited
+        } finally { if ($null -ne $reader) { $reader.Dispose() } }
         $passed = $passed -and $null -ne $fixtureUsage -and $fixtureUsage.completions -gt 0 -and
             $fixtureUsage.inputTokens -le 131072 -and $fixtureUsage.outputTokens -le 32768 -and
-            $fixtureUsage.requestAttempts -gt 0 -and $fixtureUsage.requestAttempts -le $RequestLimit
+            $fixtureUsage.requestAttempts -gt 0 -and $fixtureUsage.requestAttempts -le $RequestLimit -and
+            $ledgerReaderStopped -eq $true -and $null -ne $fixtureJournal -and $fixtureJournal.finalRecorded -and -not $fixtureJournal.truncatedTail -and $fixtureJournal.matchedFooter -ne $false
         if ($Case -eq 'image') {
             $upstreamImageMediaType = @{ 1 = 'image/png'; 2 = 'image/jpeg'; 4 = 'image/gif'; 8 = 'image/webp' }[[int]$fixtureUsage.imageFormatMask]
             $featureVerified = $featureVerified -and $null -ne $upstreamImageMediaType -and $upstreamImageMediaType -eq $nativeImageMediaType
@@ -320,13 +476,20 @@ try {
         $usageValue = if ($result.usage -is [Collections.IDictionary]) { $result.usage[$usageKey] } else { $null }
         if ($usageValue -is [long] -or $usageValue -is [int]) { $safeUsage[$usageKey] = $usageValue }
     }
-    $summary = [ordered]@{ suite = 'native-headless-live'; case = $Case; phase = $phase; passed = $passed; exitCode = $process.ExitCode; timedOut = $timedOut;
+    $summary = [ordered]@{ suite = 'native-headless-live'; case = $Case; phase = $phase; passed = $passed; exitCode = $nativeExitCode; timedOut = $timedOut;
+        injectedStop = $injectedStop; injectedStopAfterCompletions = $injectedStopAfterCompletions;
+        stopControlFailure = $stopControlFailure; stopJournalBoundaryRejected = $stopJournalBoundaryRejected;
+        nativeStopConfirmed = $nativeStopConfirmed; outputSettled = $outputSettled;
+        outputCollectionFailed = $outputCollectionFailed;
         elapsedMs = $executionClock.ElapsedMilliseconds; runElapsedMs = $runClock.ElapsedMilliseconds; usage = $safeUsage;
         requests = $status.lifetime.started; succeeded = $status.lifetime.succeeded; failed = $status.lifetime.failed;
-        upstreamAttempts = $(if ($null -ne $fixtureUsage) { $fixtureUsage.requestAttempts } else { (@($status.recentRequests | ForEach-Object { $_.attempts.Count }) | Measure-Object -Sum).Sum });
+        upstreamAttempts = $(if ($null -ne $fixtureUsage) { $fixtureUsage.requestAttempts } elseif ($null -ne $status) { (@($status.recentRequests | ForEach-Object { $_.attempts.Count }) | Measure-Object -Sum).Sum } else { $null });
         failureCategories = @($status.failureHistory.records | ForEach-Object { $_.failureCategory });
         entryCategories = @([regex]::Matches($stderr, '(?m)^Clauduct: ([A-Z_]{1,64})(?: |\r?$)') | ForEach-Object { $_.Groups[1].Value });
         fixtureUsage = $fixtureUsage;
+        fixtureUsageSource = $fixtureUsageSource; fixtureJournal = $fixtureJournal;
+        ledgerReaderStopped = $ledgerReaderStopped;
+        fixtureJournalState = $fixtureJournalState;
         stdoutJsonValid = $result -is [Collections.IDictionary]; exactReply = $exactReply; cleanupComplete = $clean;
         resultChars = $(if ($result.result -is [string]) { $result.result.Length } else { $null });
         nativeError = $result.is_error -eq $true;
@@ -340,6 +503,8 @@ try {
         imageFormat = $(if ($Case -eq 'image') { $ImageFormat } else { $null });
         nativeImageMediaType = $nativeImageMediaType;
         upstreamImageMediaType = $upstreamImageMediaType;
+        completionEvidence = $completionEvidence;
+        completionMode = $(if ($Case -eq 'completion') { $CompletionMode } else { $null });
         model = $Model; effort = $Effort; modelMatched = $modelMatched;
         workerStopped = $workerStopped;
         streamVerified = $streamVerified;

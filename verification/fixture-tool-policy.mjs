@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { NativeError } from '../src/native-protocol.mjs';
 import { searchRequestBody } from '../src/native-search.mjs';
+import { verifyCompletionRelayTarget } from './completion-relay-target.mjs';
 
 const need = ok => { if (!ok) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED'); };
 const fields = (value, allowed) => value && typeof value === 'object' && !Array.isArray(value)
@@ -10,11 +11,18 @@ const text = (value, maximum) => typeof value === 'string' && value.length > 0 &
 // Verification-only execution boundary. Model output is data; only these exact
 // reviewed effects may be delivered to the native tools during a live fixture.
 export function createFixtureToolPolicy(policy) {
-  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript']) && policy.version === 1
-    && ['agent', 'workflow', 'image', 'webfetch', 'websearch', 'none'].includes(policy.kind) && text(policy.workingRoot, 1024));
-  if (['agent', 'image'].includes(policy.kind)) need(text(policy.readPath, 1024));
+  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode']) && policy.version === 1
+    && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none'].includes(policy.kind) && text(policy.workingRoot, 1024));
+  if (['agent', 'completion', 'image'].includes(policy.kind)) need(text(policy.readPath, 1024));
   else if (policy.kind === 'workflow') need(text(policy.workflowScript, 8192));
-  const readPath = ['agent', 'image'].includes(policy.kind) ? resolve(policy.readPath).toLowerCase() : null;
+  if (policy.kind === 'completion') need(text(policy.parentPrompt, 8192) && Array.isArray(policy.childPrompts)
+    && policy.childPrompts.length === 2 && policy.childPrompts.every(value => text(value, 1024))
+    && policy.childPrompts[0] !== policy.childPrompts[1]);
+  need(policy.completionMode === undefined || policy.kind === 'completion' && ['foreground', 'fork', 'relay'].includes(policy.completionMode));
+  const readPath = ['agent', 'completion', 'image'].includes(policy.kind) ? resolve(policy.readPath).toLowerCase() : null;
+  const completionCalls = new Set();
+  const completionCallIds = new Map();
+  let relaySent = false, relayCollected = false, relayTarget;
   return event => {
     if (event?.type !== 'response.completed' || !Array.isArray(event.response?.output)) return;
     need(event.response.output.length <= 64);
@@ -24,12 +32,36 @@ export function createFixtureToolPolicy(policy) {
       need(text(item.arguments, 65536));
       let input;
       try { input = JSON.parse(item.arguments); } catch { need(false); }
+      need(input && typeof input === 'object' && !Array.isArray(input));
       if (policy.kind === 'agent' && item.name === 'Agent') {
         need(fields(input, ['description', 'prompt', 'subagent_type', 'run_in_background', 'max_turns'])
           && input.subagent_type === 'clauduct-probe-inherit' && (input.run_in_background === undefined || input.run_in_background === false)
           && text(input.prompt, 8192) && text(input.description, 256)
           && (input.max_turns === undefined || Number.isInteger(input.max_turns) && input.max_turns >= 1 && input.max_turns <= 3));
-      } else if (['agent', 'image'].includes(policy.kind) && item.name === 'Read') {
+      } else if (policy.kind === 'completion' && item.name === 'Agent') {
+        const parent = input.subagent_type === 'clauduct-inherit' && input.prompt === policy.parentPrompt;
+        const child = input.subagent_type === 'clauduct-probe-inherit' && policy.childPrompts.includes(input.prompt);
+        need(fields(input, ['description', 'prompt', 'subagent_type', 'run_in_background', 'max_turns'])
+          && (parent || child) && (policy.completionMode === 'fork' ? !Object.hasOwn(input, 'run_in_background') : input.run_in_background === (!parent || policy.completionMode === 'relay'))
+          && text(input.description, 256)
+          && (input.max_turns === undefined || Number.isInteger(input.max_turns) && input.max_turns >= 1 && input.max_turns <= (parent ? 6 : 3))
+          && !completionCalls.has(input.prompt) && completionCalls.size < 3);
+        if (policy.completionMode === 'relay') {
+          need(typeof item.call_id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(item.call_id)
+            && ![...completionCallIds.values()].includes(item.call_id));
+          completionCallIds.set(input.prompt, item.call_id);
+        }
+        completionCalls.add(input.prompt);
+      } else if (policy.kind === 'completion' && policy.completionMode === 'relay' && item.name === 'SendMessage') {
+        need(!relaySent && fields(input, ['to', 'message']) && input.message === 'PUBLIC_CHILDREN_COMPLETED');
+        relayTarget = verifyCompletionRelayTarget({ workingRoot: policy.workingRoot, target: input.to,
+          parentCall: completionCallIds.get(policy.parentPrompt), childCalls: policy.childPrompts.map(prompt => completionCallIds.get(prompt)) });
+        relaySent = true;
+      } else if (policy.kind === 'completion' && policy.completionMode === 'relay' && item.name === 'TaskOutput') {
+        need(relaySent && !relayCollected && fields(input, ['task_id', 'block', 'timeout'])
+          && input.task_id === relayTarget && input.block === true && input.timeout === 60000);
+        relayCollected = true;
+      } else if (['agent', 'completion', 'image'].includes(policy.kind) && item.name === 'Read') {
         need(fields(input, ['file_path', 'offset', 'limit']) && text(input.file_path, 1024)
           && resolve(policy.workingRoot, input.file_path).toLowerCase() === readPath
           && (input.offset === undefined || Number.isInteger(input.offset) && input.offset >= 0 && input.offset <= 2000)
@@ -46,7 +78,7 @@ export function createFixtureToolPolicy(policy) {
         need(fields(input, ['query', 'allowed_domains', 'blocked_domains']) && input.query === 'Node.js documentation'
           && Array.isArray(input.allowed_domains) && input.allowed_domains.length === 1 && input.allowed_domains[0] === 'nodejs.org'
           && (input.blocked_domains === undefined || Array.isArray(input.blocked_domains) && input.blocked_domains.length === 0));
-      } else if (['agent', 'workflow'].includes(policy.kind) && item.name === 'TaskOutput') {
+      } else if (['agent', 'completion', 'workflow'].includes(policy.kind) && item.name === 'TaskOutput') {
         need(fields(input, ['task_id', 'block', 'timeout']) && typeof input.task_id === 'string'
           && /^[A-Za-z0-9_-]{1,200}$/.test(input.task_id) && (input.block === undefined || input.block === true)
           && (input.timeout === undefined || Number.isInteger(input.timeout) && input.timeout >= 0 && input.timeout <= 120000));
@@ -55,15 +87,18 @@ export function createFixtureToolPolicy(policy) {
   };
 }
 
-export function guardFixtureTransport(transport, policy) {
+export function guardFixtureTransport(transport, policy, { onUsage } = {}) {
   const check = createFixtureToolPolicy(policy);
+  need(onUsage === undefined || typeof onUsage === 'function');
   const usage = { inputTokens: 0, outputTokens: 0, completions: 0, maxInputTokens: 131072, maxOutputTokens: 32768, imageFormatMask: 0 };
+  const snapshot = () => ({ ...usage, requestAttempts: transport.diagnostics?.().requestAttempts ?? null });
   const inspect = event => {
     if (event?.type === 'response.completed') {
       const value = event.response?.usage;
       if (Number.isSafeInteger(value?.input_tokens) && value.input_tokens >= 0
         && Number.isSafeInteger(value?.output_tokens) && value.output_tokens >= 0) {
         usage.inputTokens += value.input_tokens; usage.outputTokens += value.output_tokens; usage.completions++;
+        onUsage?.(snapshot());
       }
     }
     check(event);
@@ -71,8 +106,7 @@ export function guardFixtureTransport(transport, policy) {
   const checkBudget = () => {
     if (usage.inputTokens >= usage.maxInputTokens || usage.outputTokens >= usage.maxOutputTokens) throw new NativeError('REQUEST_BUDGET');
   };
-  return Object.freeze({ ...transport, fixtureUsage: () => ({ ...usage,
-    requestAttempts: transport.diagnostics?.().requestAttempts ?? null }), search: async (body, signal) => {
+  return Object.freeze({ ...transport, fixtureUsage: snapshot, search: async (body, signal) => {
     checkBudget();
     need(policy.kind === 'websearch' && ['gpt-5.6-luna', 'gpt-5.6-sol'].includes(body?.model));
     const expected = searchRequestBody(null, body.model, { query: 'Node.js documentation', allowed: ['nodejs.org'], blocked: null });

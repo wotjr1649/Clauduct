@@ -23,12 +23,12 @@ export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
 
 const criticalHeaders = ['content-type', 'content-encoding', 'content-length', 'transfer-encoding'];
 
-export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget }) {
+export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget, onAttempt }) {
   clientVersionPolicy(clientVersion);
   checkRuntime(process.env, process.execArgv);
   need(typeof credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpsRequest, HttpsAgent, ENDPOINT,
-    { credential, credentialSupplier, clientVersion, synthetic: false, options: { requestBudget } });
+    { credential, credentialSupplier, clientVersion, synthetic: false, options: { requestBudget, onAttempt } });
 }
 
 export function createNativeLoopbackTransport(port, options = {}) {
@@ -65,6 +65,7 @@ function optionInteger(value, fallback, minimum, maximum) {
 function sender(request, Agent, destination, { credential, credentialSupplier, clientVersion, synthetic, options = {} }) {
   const requestBudget = options.requestBudget;
   need(requestBudget === undefined || (Number.isSafeInteger(requestBudget) && requestBudget >= 1 && requestBudget <= 4096), 'INVALID_LIMIT');
+  need(options.onAttempt === undefined || typeof options.onAttempt === 'function', 'INVALID_OPTIONS');
   const compatibility = clientVersionPolicy(clientVersion);
   const settings = {
     maxRetries: NATIVE_TRANSPORT_LIMITS.maxRetries,
@@ -91,6 +92,14 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   let closed = false, attempts = 0, retries = 0, connectionAttempts = 0;
   let lastCategory = 'NONE', lastStatus = null, responseBytes = 0, totalResponseBytes = 0;
   let retryNotBeforeMs = 0, retryAfterUnrepresentable = false;
+
+  function beginAttempt() {
+    attempts++;
+    // A process-owned synchronous observer can persist this reservation before
+    // any socket is opened. No credentials, destination, headers or body escape.
+    try { options.onAttempt?.(Object.freeze({ requestAttempts: attempts })); }
+    catch { throw new NativeError('ATTEMPT_OBSERVER_FAILED'); }
+  }
 
   function diagnostics() {
     const idleSockets = Object.values(agent.freeSockets).reduce((count, list) => count + list.length, 0);
@@ -312,7 +321,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const state = parser({ onEvent, events: collected, timing });
     job.attemptTimings.push(timing);
     try {
-      attempts++; lastStatus = null; responseBytes = 0;
+      lastStatus = null; responseBytes = 0; beginAttempt();
       if (isRetry) retries++;
       response = await new Promise((resolve, reject) => {
         req = request(destination, { method: 'POST', agent, signal: job.controller.signal,
@@ -520,12 +529,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const headers = buildSearchHeaders(credential, clientVersion, raw,
       searchEnvelope().headers['x-codex-turn-metadata']);
     const timeoutMs = Math.min(settings.timeoutMs, 45_000);
+    lastStatus = null; responseBytes = 0; beginAttempt();
     return new Promise((resolveResult, reject) => {
       let settled = false;
       const done = (action, value) => { if (!settled) { settled = true; clearTimeout(timer); action(value); } };
       const timer = setTimeout(() => { req.destroy(); done(reject, new NativeError('UPSTREAM_IDLE_TIMEOUT')); }, timeoutMs);
       job.timers.add(timer);
-      attempts++;
       const req = request(searchDestination, { method: 'POST', agent, headers,
         ...(request === httpsRequest && { rejectUnauthorized: true }) }, res => {
         const chunks = [];

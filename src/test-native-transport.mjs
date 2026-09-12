@@ -385,6 +385,39 @@ async function testStandaloneSearch() {
   await new Promise(resolve => server.close(resolve));
 }
 
+async function testAttemptObserver() {
+  let received = 0, modelRequests = 0, searchRequests = 0;
+  const observed = [];
+  await fixture((req, res) => {
+    received++;
+    if (req.url.endsWith('/alpha/search')) {
+      if (++searchRequests === 1) { res.writeHead(503).end('{}'); return; }
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end('{"results":[]}');
+    } else {
+      if (++modelRequests === 1) { res.writeHead(503).end('{}'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' }).end(good);
+    }
+  }, { retryDelayMs: 0, onAttempt: value => {
+    assert.ok(Object.isFrozen(value)); assert.deepEqual(Object.keys(value), ['requestAttempts']);
+    observed.push({ attempts: value.requestAttempts, received });
+  } }, async transport => {
+    await transport.send({}, signal());
+    await transport.search({}, signal());
+    assert.deepEqual(observed, [1, 2, 3, 4].map((attempts, index) => ({ attempts, received: index })));
+    assert.equal(received, 4);
+  });
+  for (const method of ['send', 'search']) {
+    let received = 0;
+    await fixture((_req, res) => { received++; res.end(); }, { onAttempt: () => { throw new Error('SYNTHETIC_PRIVATE'); } }, async transport => {
+      await assert.rejects(transport[method]({}, signal()), error => error.code === 'ATTEMPT_OBSERVER_FAILED'
+        && !error.message.includes('SYNTHETIC_PRIVATE'));
+      assert.equal(received, 0); assert.equal(transport.diagnostics().activeRequests, 0);
+    });
+  }
+  assert.throws(() => createNativeLoopbackTransport(12345, { onAttempt: true }), error => error.code === 'INVALID_OPTIONS');
+}
+
+await testAttemptObserver();
 await testStreamingBeforeEof();
 await testSocketClosedBeforeObservation();
 await testSplitUtf8();

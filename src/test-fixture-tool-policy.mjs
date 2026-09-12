@@ -81,5 +81,33 @@ assert.equal(searches, 1); assert.equal(searchGuard.fixtureUsage().requestAttemp
 const noTools = createFixtureToolPolicy({ version: 1, kind: 'none', workingRoot });
 assert.throws(() => noTools(event('TaskOutput', { task_id: 'public' })), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED');
 assert.doesNotThrow(() => noTools({ type: 'response.completed', response: { output: [{ type: 'message' }] } })); checks++;
+const completionPolicy = { version: 1, kind: 'completion', workingRoot, readPath,
+  parentPrompt: 'PUBLIC_PARENT', childPrompts: ['PUBLIC_FIRST', 'PUBLIC_SECOND'] };
+const forkCompletionPolicy = { ...completionPolicy, completionMode: 'fork' };
+const forkCompletion = createFixtureToolPolicy(forkCompletionPolicy);
+for (const [subagent_type, prompt] of [['clauduct-inherit', 'PUBLIC_PARENT'], ['clauduct-probe-inherit', 'PUBLIC_FIRST'], ['clauduct-probe-inherit', 'PUBLIC_SECOND']]) {
+  assert.doesNotThrow(() => forkCompletion(event('Agent', { subagent_type, prompt, description: 'Public probe' }))); checks++;
+}
+for (const input of [{ run_in_background: true }, { run_in_background: false }, { model: 'astra' }, { subagent_type: 'fork' }, { prompt: 'UNREVIEWED' }]) {
+  const policy = createFixtureToolPolicy(forkCompletionPolicy);
+  assert.throws(() => policy(event('Agent', { subagent_type: 'clauduct-inherit', prompt: 'PUBLIC_PARENT', description: 'Public', ...input })),
+    error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
+assert.throws(() => createFixtureToolPolicy({ ...completionPolicy, completionMode: 'unknown' }), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+const completion = createFixtureToolPolicy(completionPolicy);
+for (const [subagent_type, prompt] of [['clauduct-inherit', 'PUBLIC_PARENT'], ['clauduct-probe-inherit', 'PUBLIC_FIRST'], ['clauduct-probe-inherit', 'PUBLIC_SECOND']]) {
+  assert.doesNotThrow(() => completion(event('Agent', { subagent_type, prompt, description: 'Public probe', run_in_background: subagent_type !== 'clauduct-inherit' })));
+  checks++;
+}
+assert.throws(() => completion(event('Agent', { subagent_type: 'clauduct-probe-inherit', prompt: 'PUBLIC_FIRST', description: 'Duplicate', run_in_background: true })),
+  error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+for (const change of [{ prompt: 'UNREVIEWED_PROMPT' }, { subagent_type: 'other' }, { run_in_background: true }, { model: 'astra' }, { max_turns: 7 }]) {
+  const policy = createFixtureToolPolicy(completionPolicy);
+  assert.throws(() => policy(event('Agent', { subagent_type: 'clauduct-inherit', prompt: 'PUBLIC_PARENT', description: 'Public', run_in_background: false, ...change })),
+    error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
+for (const input of [null, [], true, 1]) {
+  assert.throws(() => createFixtureToolPolicy(completionPolicy)(event('Agent', input)), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
 console.log(JSON.stringify({ suite: 'fixture-tool-policy', checks, unreviewedToolDeliveries: delivered,
   externalRequests: 0, actualCredentialReads: 0 }));

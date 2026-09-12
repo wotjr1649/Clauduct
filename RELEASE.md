@@ -1,6 +1,6 @@
 # Clauduct — Windows 릴리즈 안내
 
-현재 후보의 무인 개발 출하 판정은 **HOLD**다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 2026-09-13 후보에서는 정상 HTTP 일부가 재성공했지만 request-inspector, user-session watchdog, TCP 반닫기 검사에 실패가 남아 있다. 같은 loopback 반닫기 이상을 Clauduct·Node 없는 .NET 비교에서도 관측했으며 원인과 정상 환경에서의 재검증은 미완료다.
+현재 후보의 무인 개발 출하 판정은 **HOLD**다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 2026-09-13 후보에서는 정상 HTTP 일부가 재성공했지만 request-inspector, user-session watchdog, TCP 반닫기 검사에 실패가 남아 있다. 최신 변경 범위 회귀는10개 파일 중9개가 통과했고, agent-selection의 실제 client 취소 도착 관측이 실패했다. 같은 loopback 반닫기 이상을 Clauduct·Node 없는 .NET 비교에서도 관측했으며, 이번 취소 실패와의 인과관계 및 정상 환경에서의 재검증은 미완료다.
 
 ## 시작
 
@@ -44,6 +44,8 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 2026-09-13 작업 중 후보별 실측: `luna/max`와 `sol/low`에서 실제 코드 구현 및 독립28-case 판정, 고정 효과 직후 native tree 중단과 동일 세션 자동 재개, Agent·Workflow 자식 라우팅, PNG/JPEG/GIF/WebP, WebFetch 내부 요약과 WebSearch를 확인했다. JPEG/GIF/WebP는 native Read 결과와 실제 upstream MIME도 각각 일치했다. 모든 기능이 최종 동일 후보에서 재검증된 상태는 아니며, 최초 실패 및 관측기 수정 전 실패를 별도 원장에 보존한다.
 
+짧은 검증기의 guarded fixture는 실제 전송 시도 직전과 완료 사용량을 새 작업 경로의 제한된 숫자 원장에 기록한다. 두 조합에서 정상 종료 출력과 원장이 일치했고, 첫 응답 직후 강제 종료에서도 마지막 숫자를 복구했다. sol의 종료 주입은 잔여 프로세스0까지 통과했다. luna의 즉시 종료 관측은 실패로 보존했으며 이후 잔여0을 확인했다. 진행 중이던 요청의 미관측 사용량은0으로 처리하지 않는다. 전원 손실 내구성이나 장기 streaming 수집을 입증한 것은 아니다.
+
 Not verified / 제한:
 
 - astra 최초 공개 단문 검사에서 전달 전 upstream error 1건이 있었고 이후 단독 검사는 성공했다. 최초 오류의 원인은 미확정이며 외부 서버 무장애를 보장하지 않는다.
@@ -51,7 +53,7 @@ Not verified / 제한:
 - 정상 인증 갱신·만료 경계, 모든 사용자 hook/plugin·permission/plan UI 조합, 프롬프트 캐시 실제 적중은 미검증이다. 인증 파일의 직접 편집이나 계정 전환으로 시험을 대신하지 않는다.
 - 두 조합 각각의 4시간 → 24시간 3회 → 72시간 단계는 시작하지 않았다. 기본 메인·자식 압축, 정상 인증 갱신과 원래 개발 과제 완료의 필수 사건 수를 모두 채워야 하며 짧은 기능 검사로 대체하지 않는다.
 - 취소·등록 교체·형제 격리의 합성 검사는 통과했지만 UI 취소 시점까지 연결한 전체 실측은 조건부다. 동적 symlink/junction 검사는 정책 차단으로 실행하지 않았다.
-- 단일 completed 알림의 검증된 자동 복귀는 지원하지만 다중·실패·취소 알림 자동 복귀는 지원하지 않는다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 보장하지 않는다.
+- 단일 completed 알림 자동 복귀에는 기존 실측이 있다. 연속된 독립 completed 알림은 최대64개를 모두 검증한 뒤 완료 증거를 함께 소비하도록 보완했으며, 앞 자식 증거의 재사용·중복·위조·중간 취소에 대한 합성 검사를 통과했다. 이번 `-p`의 foreground/background/fork 비교에서는 자식 알림이 부모에 도착하지 않아 실패했다. 제한된 SendMessage 조정 시험에서는 동일 부모의 재개 후 완료를 관측했지만 메인 최종 응답 timeout으로 전체 FAIL이며, TaskOutput 회수 변형도120초 timeout이었다. 실제 native 다중·실패·취소 알림 자동 복귀는 미완료다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 미완료다.
 - Anthropic 서버 전용 기능, 비스트리밍 API, 서버 실행 도구·첨부/PDF·미지원 context edit·sampling 필드는 지원하지 않는다. 신규 native 버전과 Codex 비공개 backend 변경은 재검증이 필요하다. `CLI_VERSION_UNVERIFIED` 안내를 숨기지 않는다.
 
 ## 검증과 무결성

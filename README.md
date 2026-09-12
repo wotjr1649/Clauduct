@@ -26,6 +26,6 @@ D:\AIDEV\Clauduct\clauduct.cmd -p --output-format json --max-turns 3 "Summarize 
 
 `-p`/`--print`는 비대화형 실행입니다. 파이프로 입력·출력을 연결할 수 있고, stdout은 native Claude의 텍스트/JSON/stream-json 결과만 제공합니다. Clauduct의 시작 안내와 종료 진단은 stderr 및 기존 상태 파일에 남습니다. 명시적 `-p` 없이 일반 실행을 파이프에서 시작하면 터미널 요구 오류로 중단합니다. 인증·TLS·계정 고정·native 권한 검사는 비대화형에서도 적용됩니다. 자동 실행은 `--max-turns`와 실행 주체의 시간 제한으로 범위를 정합니다.
 
-릴리즈 보완 및 검증 진행은 [릴리즈 검증](docs/release-readiness.md)에 기록합니다.
+설치·비대화형 실행·복구·배포 파일 무결성은 [릴리즈 안내](RELEASE.md), 보완 및 검증 증거는 [릴리즈 검증](docs/release-readiness.md)에 기록합니다.
 
 **Verified / Not verified의 상세 구분, 자원 제한, 호환성 제약과 검사 명령은 [native 구현 안내](docs/native.md)에 있습니다.** 기존 [Read 1회 PoC](poc/실제-Read-실행.md)의 사용자 SUCCESS와 이후 프롬프트 1~6 통과 보고는 보존하지만, 이번 스트리밍 변경의 실제 native 성공 증거로 대체하지 않습니다.

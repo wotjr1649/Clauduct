@@ -57,6 +57,7 @@ Not verified: 실제 Claude 실행은 0회다. 이 결과로 native 도구·자�
 | `-Case stream-json` | 실제 native partial `stream_event`의 text delta가 정확한 답변을 이루며 최종 result JSON은 1개. stdout의 모든 줄을 JSON으로 파싱, 정상 종료·정리·exit 0 |
 | `-Case read-edit` | 실제 Read→Edit로 새 `math.mjs`의 빼기를 덧셈으로 수정. 전체 파일이 기대한 한 줄과 일치, 정확한 최종 답변·정상 요청 결과·정리·exit 0 |
 | `-Case agent` | 실제 `clauduct-probe-luna`의 Read와 부모 복귀. 자식의 `selectionSource=definition-model`, `model=gpt-5.6-luna`, `effort=max`를 종료 진단에서 확인. 정상 최종 답변·요청 결과·정리·exit 0 |
+| `-Case workflow` | 정확한 inline script의 Workflow 1회·TaskOutput 1회. native journal의 자식 started/result 각 1개와 `sum=5`, `workflow-result`·`workflow-subagent`·`luna/low` 라우팅, 부모 최종 답변·정리·exit 0 |
 | `-Case mcp` | 프로젝트 `.mcp.json`으로 발견한 stdio 계산 도구가 `a=2,b=3`으로 정확히 1회 호출됨. 결과 5 이후 정확한 최종 답변·정상 요청 결과·정리·exit 0 |
 | `-Case resume` | 서로 다른 두 프로세스의 session ID 일치. 첫 공개 코드 저장과 다음 프로세스의 정확한 코드 회상, JSON 결과·정리·exit 0 |
 | `-Case failure-resume` | 실제 MCP 호출 1회 성공 → 다음 응답의 내용 전달 뒤 고정 upstream 오류 1회 주입 → 명시적 `--resume`에서 기존 호출 기록 Read. 실패 프로세스 exit 1·`is_error=true`, 전달 후 재시도 0, 실패 이력 보존. 재개 exit 0. 모든 단계의 session ID 일치·정리 9개 true, MCP 호출 총수는 끝까지 1 |
@@ -70,6 +71,8 @@ Not verified: 실제 Claude 실행은 0회다. 이 결과로 native 도구·자�
 | `-Case text -Model astra` (`sol`, `terra`도 각각 실행) | 세 모델 모두 정확한 고정 답변, 실제 요청의 모델·low effort, JSON·정리·exit 0을 확인. astra 최초 실패는 아래 별도 보존 |
 
 agent 첫 시도는 검증기가 `--tools Agent,TaskOutput`으로 Read를 제외해 native가 자식 생성을 거부했다. 프로세스는 exit 0이었지만 검증기는 답변·라우팅 미달로 실패를 반환했다. 원문 tool_result의 `zero tools`·`unrecognized [Read]`를 확인한 뒤 검증기의 도구 목록에 Read를 포함했고 다음 시도가 통과했다. gateway/API 실패나 제품 수정으로 분류하지 않는다.
+
+Workflow는 `-p`에서 명시적 도구 호출과 해당 호출의 정상 allow rule을 사용했다. `ultracode` 키워드나 human origin 위장은 사용하지 않았다. 한 자식의 공개 산술 문제만 실행하며 script의 filesystem·shell 접근은 없다. `CLAUDE_CODE_DISABLE_WORKFLOWS`가 있으면 보존한다. [공식 Workflow 문서](https://code.claude.com/docs/en/workflows)는 비대화형 명시 호출과 키워드 활성화 경로를 구분한다.
 
 실패 복구 검증기의 첫 시도는 마지막 가변 길이 옵션이 프롬프트를 소비해 모델 요청이 0회였다. 프롬프트 앞에 `--`를 넣어 해결했다. 다음 시도에서 아래의 과거 도구 이력 거부를 재현했으며, 제품 수정 후 3단계가 모두 통과했다. 주입 오류는 정상 장애를 숨기는 설정이 아니라 명시적 `--verify-fallback blocked` 검증 경로이며 일반 실행에는 적용되지 않는다.
 

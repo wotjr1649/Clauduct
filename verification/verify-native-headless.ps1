@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 'mcp', 'resume', 'failure-resume', 'image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task')][string] $Case = 'text',
+param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 'workflow', 'mcp', 'resume', 'failure-resume', 'image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task')][string] $Case = 'text',
     [ValidateSet('astra', 'sol', 'terra', 'luna')][string] $Model = 'luna',
     [ValidateSet('low', 'medium', 'high', 'xhigh', 'max')][string] $Effort = 'low',
     [ValidateRange(1, 120)][int] $TimeoutSeconds = 90)
@@ -80,6 +80,14 @@ if ($Case -eq 'agent') {
     $turnLimit = '6'
     $extraArgs = @('--verify-agent-models')
 }
+if ($Case -eq 'workflow') {
+    $workflowScript = "export const meta = { name: 'clauduct-check', description: 'Public arithmetic check' }; return await agent('Compute 2 + 3. Return the sum using StructuredOutput. Do not use other tools.', { label: 'one', model: 'luna', schema: { type: 'object', properties: { sum: { type: 'number' } }, required: ['sum'], additionalProperties: false } });"
+    $marker = 'CLAUDUCT_NATIVE_WORKFLOW_OK'
+    $prompt = "Call Workflow exactly once with this exact inline script, without a scriptPath or a saved workflow name: $workflowScript Use TaskOutput exactly once to wait for the returned task ID. After its structured result has sum=5, reply with exactly CLAUDUCT_NATIVE_WORKFLOW_OK. Do not launch another workflow or agent."
+    $nativeTools = 'Workflow,TaskOutput'
+    $turnLimit = '6'
+    $extraArgs = @()
+}
 if ($Case -in @('mcp', 'failure-resume')) {
     $marker = 'CLAUDUCT_NATIVE_MCP_OK'
     $prompt = 'Use the local MCP fixture add tool exactly once with a=2 and b=3. Discover it with ToolSearch if needed. After its result is 5, reply with exactly CLAUDUCT_NATIVE_MCP_OK.'
@@ -109,7 +117,8 @@ $info.RedirectStandardError = $true
 $info.Environment.Clear()
 foreach ($name in @('SystemRoot', 'WINDIR', 'SystemDrive', 'ComSpec', 'PATH', 'PATHEXT', 'USERPROFILE',
     'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'ProgramFiles', 'ProgramFiles(x86)',
-    'OS', 'PROCESSOR_ARCHITECTURE', 'CODEX_HOME', 'NODE_DEBUG', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'NODE_TLS_REJECT_UNAUTHORIZED')) {
+    'OS', 'PROCESSOR_ARCHITECTURE', 'CODEX_HOME', 'NODE_DEBUG', 'NODE_OPTIONS', 'NODE_USE_ENV_PROXY', 'NODE_TLS_REJECT_UNAUTHORIZED',
+    'CLAUDE_CODE_DISABLE_WORKFLOWS')) {
     $value = [Environment]::GetEnvironmentVariable($name)
     if ($null -ne $value) { $info.Environment[$name] = $value }
 }
@@ -184,6 +193,9 @@ try {
     $modelMatched = @($status.recentRequests | Where-Object { $_.subagent -ne $true -and $_.model -eq $expectedModel -and $_.effort -eq $Effort }).Count -gt 0
     if ($Case -eq 'read-edit') { $fixtureMatched = [IO.File]::ReadAllText((Join-Path $workingRoot 'math.mjs')).Trim() -eq $expectedFile }
     if ($Case -eq 'agent') { $agentRouted = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.selectionSource -eq 'definition-model' -and $_.model -eq 'gpt-5.6-luna' -and $_.effort -eq 'max' }).Count -gt 0 }
+    if ($Case -eq 'workflow') {
+        $agentRouted = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.selectionSource -eq 'workflow-result' -and $_.role -eq 'workflow-subagent' -and $_.model -eq 'gpt-5.6-luna' -and $_.effort -eq $Effort -and $_.success -eq $true }).Count -gt 0
+    }
     if ($Case -in @('mcp', 'failure-resume')) {
         $mcpVerified = $false
         if (Test-Path -LiteralPath $mcpRecord) {
@@ -192,7 +204,7 @@ try {
         }
     }
     if ($Case -in @('resume', 'failure-resume')) { $sameSession = $result.session_id -eq $resumeId }
-    if ($Case -in @('image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task')) {
+    if ($Case -in @('image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task', 'workflow')) {
         $featureVerified = $false
         if ($result.session_id -match '^[a-f0-9-]{36}$') {
             $transcripts = @(Get-ChildItem -LiteralPath (Join-Path $profileRoot 'projects') -File -Recurse -Filter ($result.session_id + '.jsonl'))
@@ -233,6 +245,14 @@ try {
                         }
                         $featureVerified = $featureVerified -and $workerStopped
                     }
+                } elseif ($Case -eq 'workflow') {
+                    $journals = @(Get-ChildItem -LiteralPath (Join-Path $transcripts[0].DirectoryName $result.session_id) -File -Recurse -Filter 'journal.jsonl')
+                    $journal = @()
+                    if ($journals.Count -eq 1 -and $journals[0].Length -le 1MB) {
+                        $journal = @(Get-Content -LiteralPath $journals[0].FullName | ForEach-Object { ConvertFrom-Json -InputObject $_ -AsHashtable })
+                    }
+                    $completed = @($journal | Where-Object { $_.type -eq 'result' })
+                    $featureVerified = $calls.Count -eq 2 -and $calls[0].name -eq 'Workflow' -and $calls[0].input.script -ceq $workflowScript -and $calls[1].name -eq 'TaskOutput' -and $results.Count -eq 2 -and @($results | Where-Object { $_.is_error -eq $true }).Count -eq 0 -and @($journal | Where-Object { $_.type -eq 'started' }).Count -eq 1 -and $completed.Count -eq 1 -and $completed[0].result.sum -eq 5
                 } else {
                     $featureVerified = $toolObserved -and $status.lifetime.webSearchRequests -eq 1 -and $status.lifetime.webSearchCalls -eq 1 -and $status.lifetime.webSearchLinks -gt 0
                 }

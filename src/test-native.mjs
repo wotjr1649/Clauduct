@@ -75,18 +75,43 @@ async function fixture(action, { fault, onUnregisteredAgent, responseHeaders = [
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   const transport = createNativeLoopbackTransport(server.address().port), gateway = await startNativeGateway({ transport, onUnregisteredAgent,
     admissionOptions: { freeBytes: () => 16 * 1024 * 1024 * 1024 } });
+  let actionFailure;
   try { await action(gateway, () => received, routes); assert.equal(invalid, false); }
+  catch (error) { actionFailure = error; throw error; }
   finally {
-    const result = await gateway.close(); assert.equal(result.activeJobs, 0); assert.equal(result.activeSockets, 0);
-    assert.equal(result.transport.activeRequests, 0); assert.equal(result.registeredAgents, 0);
-    server.closeAllConnections(); await new Promise(done => server.close(done));
+    const result = await gateway.close();
+    try {
+      assert.equal(result.activeJobs, 0); assert.equal(result.activeSockets, 0);
+      assert.equal(result.transport.activeRequests, 0); assert.equal(result.registeredAgents, 0);
+    } catch (error) {
+      error.fixtureCleanup = { jobs: result.activeJobs, sockets: result.activeSockets, deliveries: result.activeDeliveries,
+        pendingCloses: result.pendingConnectionCloses, transportRequests: result.transport.activeRequests,
+        transportSockets: result.transport.activeSockets, cleanupFailed: result.cleanupFailed,
+        recent: result.recentRequests.slice(-4).map(row => ({ success: row.success, category: row.failureCategory,
+          admittedMs: row.admittedMs, transportStartedMs: row.transportStartedMs, transportFinishedMs: row.transportFinishedMs,
+          firstEventMs: row.firstEventMs, finishedMs: row.finishedMs })),
+        initialCode: ['ABORT_ERR', 'ERR_ASSERTION', 'ECONNRESET'].includes(actionFailure?.code) ? actionFailure.code : null };
+      throw error;
+    } finally { server.closeAllConnections(); await new Promise(done => server.close(done)); }
   }
 }
 let passed = 0, failed = 0;
+const focused = process.argv.includes('--concurrency-only');
 const seconds = Number(process.argv[process.argv.indexOf('--soak-seconds') + 1]) || 0;
 assert.ok(seconds >= 0 && seconds <= 600);
 const watchdog = setTimeout(() => { process.stderr.write('NATIVE_SUITE_TIMEOUT\n'); process.exit(1); }, (seconds + 40) * 1000);
-async function test(name, fn) { try { await fn(); passed++; } catch { failed++; process.stderr.write(JSON.stringify({ failure: name }) + '\n'); } }
+async function test(name, fn) {
+  if (focused && name !== '20_concurrent_agents_and_repeated_release') return;
+  try { await fn(); passed++; }
+  catch (error) {
+    failed++;
+    const codes = ['ERR_ASSERTION', 'ABORT_ERR', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT'];
+    const scalar = value => typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) ? value : null;
+    process.stderr.write(JSON.stringify({ failure: name, code: codes.includes(error?.code) ? error.code : 'OTHER',
+      actual: scalar(error?.actual), expected: scalar(error?.expected), fixtureCleanup: error?.fixtureCleanup ?? null,
+      fixtureConcurrency: error?.fixtureConcurrency ?? null }) + '\n');
+  }
+}
 for (const [name, selected] of Object.entries(MODELS)) await test('model_' + name, () => {
   assert.deepEqual(prepareNative(doc(name)).selected, selected);
   assert.equal(prepareNative({ ...doc(name), output_config: { effort: 'low' } }).selected.effort, 'low');
@@ -522,9 +547,21 @@ await test('20_concurrent_agents_and_repeated_release', () => fixture(async gate
   for (let round = 0; round < 10; round++) {
     await Promise.all(Array.from({ length: 20 }, async (_, i) => {
       const binding = { id: `agent_${round}_${i}`, role: i % 2 ? 'Plan' : 'Explore', stop: false };
-      await registerBinding(binding, source);
-      assert.equal((await post(gateway, doc(), { 'x-claude-code-agent-id': binding.id })).status, 200);
-      await registerBinding({ ...binding, stop: true }, source);
+      let phase = 'register';
+      try {
+        await registerBinding(binding, source);
+        phase = 'inference';
+        assert.equal((await post(gateway, doc(), { 'x-claude-code-agent-id': binding.id })).status, 200);
+        phase = 'unregister';
+        await registerBinding({ ...binding, stop: true }, source);
+      } catch (error) {
+        const state = gateway.diagnostics();
+        error.fixtureConcurrency = { round, worker: i, phase, jobs: state.activeJobs,
+          registered: state.registeredAgents, pendingCloses: state.pendingConnectionCloses,
+          closeTimeouts: state.connectionCloseTimeouts, upstreamAttempts: state.transport.requestAttempts,
+          succeeded: state.lifetime.succeeded, failed: state.lifetime.failed };
+        throw error;
+      }
     }));
     assert.equal(gateway.diagnostics().registeredAgents, 0);
   }
@@ -556,5 +593,6 @@ if (seconds) await test('wall_clock_soak', () => fixture(async (gateway, receive
     rssGrowthBytes: process.memoryUsage().rss - rss, activeJobs: state.activeJobs }) + '\n');
 }));
 clearTimeout(watchdog);
-process.stdout.write(JSON.stringify({ suite: 'native', passed, failed, realClaude: 0, credentialReads: 0, externalRequests: 0 }) + '\n');
+process.stdout.write(JSON.stringify({ suite: 'native', passed, failed, realClaude: 0, credentialReads: 0, externalRequests: 0,
+  notRun: focused ? ['other cases: focused concurrency diagnostic'] : [] }) + '\n');
 process.exitCode = failed ? 1 : 0;

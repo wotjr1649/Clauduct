@@ -12,7 +12,7 @@ import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { CLAUDE_EXE } from '../poc/claude-inspection.mjs';
 import { requestStatusSnapshot } from './request-status.mjs';
 
-const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact', '--verify-agent-models', '--verify-fallback', '--gpt-agents', '--document-first']);
+const ownedOptions = new Set(['--help', '--dry-run', '--model', '--effort', '--verify-auto-compact', '--verify-agent-models', '--verify-model-route', '--verify-request-limit', '--verify-fallback', '--gpt-agents', '--document-first']);
 // Both arms inject the same stream error; only the child's fallback setting differs, so a
 // run says which arm it was and neither arm is reachable without naming itself.
 export const FALLBACK_ARMS = Object.freeze(['blocked', 'allowed']);
@@ -49,7 +49,7 @@ const DOCUMENT_FIRST_PROMPT = 'When the user asks you to read a task document an
 export function launchOptions(args) {
   if (!Array.isArray(args) || args.some(flag => typeof flag !== 'string')) throw new Error('INVALID_ARGUMENTS');
   let model = DEFAULT_SELECTION.model, effort, mode = 'interactive', verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false;
-  let documentFirst = false, appendPrompt = false, verifyFallback, print = false;
+  let documentFirst = false, appendPrompt = false, verifyFallback, print = false, verifyModelRoute = false, verifyRequestLimit;
   const forward = [];
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
@@ -74,6 +74,13 @@ export function launchOptions(args) {
     } else if (name === '--verify-auto-compact') {
       if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
       verifyAutoCompact = true;
+    } else if (name === '--verify-request-limit') {
+      const limit = value ?? args[++i];
+      if (typeof limit !== 'string' || !/^[1-9][0-9]{0,3}$/.test(limit) || Number(limit) > 4096) throw new Error('INVALID_ARGUMENTS');
+      verifyRequestLimit = Number(limit);
+    } else if (name === '--verify-model-route') {
+      if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
+      verifyModelRoute = true;
     } else if (name === '--verify-agent-models') {
       if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
       verifyAgentModels = true;
@@ -121,6 +128,8 @@ export function launchOptions(args) {
   return { selected: selectModel(model, effort ?? (seen.has('--model') ? undefined : DEFAULT_SELECTION.effort)), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}),
     ...(verifyAgentModels ? { verifyAgentModels } : {}), ...(gptAgents ? { gptAgents } : {}),
     ...(verifyFallback ? { verifyFallback } : {}), ...(print ? { print } : {}),
+    ...(verifyModelRoute ? { verifyModelRoute } : {}),
+    ...(verifyRequestLimit !== undefined ? { verifyRequestLimit } : {}),
     ...(documentFirst ? { documentFirst } : {}) };
 }
 
@@ -144,7 +153,7 @@ function sessionAgentDefinitions({ verifyAgentModels = false, gptAgents = false 
   return definitions;
 }
 
-export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELECTION, forward = [], { verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false, documentFirst = false, verifyFallback } = {}) {
+export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELECTION, forward = [], { verifyAutoCompact = false, verifyAgentModels = false, verifyModelRoute = false, gptAgents = false, documentFirst = false, verifyFallback } = {}) {
   const env = {};
   // Preserve native configuration discovery, including an explicit CLAUDE_CONFIG_DIR.
   for (const key of Object.keys(source)) {
@@ -170,7 +179,12 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
     CLAUDE_CODE_RESUME_INTERRUPTED_TURN: '0',
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
     ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', ANTHROPIC_CUSTOM_HEADERS: '',
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: MODELS.luna.model, ANTHROPIC_DEFAULT_SONNET_MODEL: MODELS.luna.model,
+    // Native auxiliary work (including WebFetch extraction) has its own model
+    // and effort defaults. Verification configures those before asserting the
+    // actual upstream route; the gateway still rejects any remaining drift.
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: verifyModelRoute ? selected.model : MODELS.luna.model,
+    ...(verifyModelRoute ? { CLAUDE_CODE_EFFORT_LEVEL: selected.effort } : {}),
+    ANTHROPIC_DEFAULT_SONNET_MODEL: MODELS.luna.model,
     ANTHROPIC_DEFAULT_OPUS_MODEL: MODELS.sol.model,
     ANTHROPIC_CUSTOM_MODEL_OPTION: selected.model,
     ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: `${selected.model} via Clauduct [startup configuration]`,
@@ -279,6 +293,8 @@ export async function main({ args = process.argv.slice(2), openTransport = openU
       + '(--bare, --safe-mode), 권한·MCP·플러그인처럼 정책 판단이 필요한 옵션은 거부합니다. 분류: docs/claude-option-classification.md\n');
     process.stdout.write('--verify-auto-compact: 이 실행에만 압축 계산 창 100K(기본 예약량에서 약 67.4K 발동)를 적용. 모델 창은 400K 유지.\n');
     process.stdout.write('--verify-agent-models: 이 자식 세션에만 GPT 모델별 및 inherit Read 전용 시험용 agent 5개 등록. 일반 역할과 전역 설정은 유지.\n');
+    process.stdout.write('--verify-model-route: 보조 모델/effort와 압축을 시작 조합으로 구성하고 모든 모델 요청의 실제 upstream 경로를 검사. 조합 이탈은 거부.\n');
+    process.stdout.write('--verify-request-limit N: 이 프로세스의 실제 upstream 시도(재시도·검색 포함) 1~4096회 상한. 한도 도달은 작업 완료가 아님.\n');
     process.stdout.write('--gpt-agents: 이 자식 세션에만 clauduct-astra/sol/terra/luna/inherit 일반 작업 agent 등록. 기존 역할·native 권한 검사 유지.\n');
     process.stdout.write('--document-first: 사용자 지정 작업 문서를 선택적 스킬·workflow보다 먼저 Read하도록 자식 세션에 지침 추가. 강제 보안 장치가 아니며 --append-system-prompt와 함께 사용할 수 없음.\n');
     return;
@@ -289,6 +305,8 @@ export async function main({ args = process.argv.slice(2), openTransport = openU
       terminal: 'inherit', tools: 'native', requestBudget: null, lifetimeMs: null, models: MODELS, contextPolicy: CONTEXT_POLICY,
       verificationAutoCompactWindow: options.verifyAutoCompact ? 100000 : null,
       verificationFallbackArm: options.verifyFallback ?? null,
+      verificationModelRoute: options.verifyModelRoute ? selected : null,
+      verificationRequestLimit: options.verifyRequestLimit ?? null,
       verificationAgentModels: options.verifyAgentModels ? Object.keys(agentModelProbes()) : [],
       generalAgentModels: options.gptAgents ? Object.keys(sessionAgentDefinitions({ gptAgents: true })) : [],
       documentFirst: options.documentFirst === true,
@@ -308,8 +326,10 @@ export async function main({ args = process.argv.slice(2), openTransport = openU
   process.on('SIGINT', nativeInterrupt); process.once('SIGTERM', cancel);
   try {
     transport = openTransport({ signal: controller.signal, transportFactory: createNativeTransport,
+      requestBudget: options.verifyRequestLimit,
       nonInteractive: options.print === true });
     gateway = await startNativeGateway({ transport,
+      verificationSelection: options.verifyModelRoute ? selected : undefined,
       injectStreamError: options.verifyFallback !== undefined,
       agentSelection: createAgentSelection({ projectsRoot: join(resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')), 'projects'),
         agentDefinitions: sessionAgentDefinitions(options) }),
@@ -320,7 +340,8 @@ export async function main({ args = process.argv.slice(2), openTransport = openU
       onUnmappedAgentModel: () => notice('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하고 턴은 그대로 전달됐습니다. lifetime.unmappedAgentModels를 확인하세요.'),
       onWebSearchUnused: () => notice('Clauduct: 웹 검색 도구를 실은 요청을 게이트웨이가 검색 요청으로 인식하지 못했습니다. 그 요청은 모델로 갔고 검색 결과 없이 성공했습니다. 클라이언트가 보내는 요청 모양이 바뀌었을 수 있습니다. 종료 JSON의 webSearchRequested/webSearchAnswered를 확인하세요.'),
       onUnsupportedEventCapture: () => notice('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.') });
-    output.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
+    const requestBudgetNotice = options.verifyRequestLimit === undefined ? '세션 총량 제한 없음' : `검증 upstream 시도 상한 ${options.verifyRequestLimit}회`;
+    output.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · ${requestBudgetNotice}\n`);
     if (options.verifyAutoCompact) output.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
     if (options.verifyAgentModels) output.write('모델 진입점 검증 모드: clauduct-probe-astra/sol/terra/luna/inherit 등록. 실제 라우팅은 아직 검증 중입니다.\n');
     if (options.gptAgents) output.write('GPT 일반 작업 agent: clauduct-astra/sol/terra/luna/inherit 등록. 기존 역할과 메인 선택은 유지합니다.\n');

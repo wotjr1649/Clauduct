@@ -2,12 +2,13 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
 import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
 import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, UPSTREAM_FAILURES, capturableEventName } from './native-protocol.mjs';
-import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
+import { MODELS, ROLE_MODELS, CONTEXT_POLICY, selectModel } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
 import { createAdmission } from './request-admission.mjs';
 import { betaFailure, unknownBetas, judgedBetas } from './native-beta.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 import { searchSideQuery, searchRequestBody, searchReply } from './native-search.mjs';
+import { installHttpClose } from './http-close.mjs';
 
 // Fixed-label diagnostics. A composed local code carries a variable suffix built from
 // this project's own allowlists, never upstream text; keep only its fixed prefix.
@@ -23,7 +24,11 @@ const MAX_AGENTS = 1024;
 
 export async function startNativeGateway({ transport, onUnregisteredAgent, onUnmappedAgentModel, onUnsupportedEventCapture, onWebSearchUnused,
   admissionOptions, agentSelection, cleanupMs = 2000, heartbeatMs = 15000, maxAgents = MAX_AGENTS, agentIdleMs = 1800000,
-  injectStreamError = false } = {}) {
+  injectStreamError = false, verificationSelection } = {}) {
+  if (verificationSelection !== undefined) {
+    need(verificationSelection?.model && verificationSelection?.effort, 'INVALID_GATEWAY_OPTIONS');
+    verificationSelection = Object.freeze(selectModel(verificationSelection.model, verificationSelection.effort));
+  }
   need(typeof transport?.send === 'function' && typeof transport?.close === 'function'
     && typeof transport?.diagnostics === 'function' && Number.isInteger(cleanupMs) && cleanupMs > 0 && cleanupMs <= 10000
     && Number.isInteger(heartbeatMs) && heartbeatMs >= 5 && heartbeatMs <= 60000
@@ -37,6 +42,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     ? createHmac('sha256', correlationKey).update(JSON.stringify([kind, session, id ?? null])).digest('hex').slice(0, 32) : null;
   let closing = false, reason = 'NONE', requests = 0, rejected = 0, unregisteredAgentRequests = 0, port, finish, closingWork;
   let activeBodies = 0, activeDeliveries = 0, activeHeartbeats = 0, cleanupFailed = false;
+  let pendingConnectionCloses = 0, connectionCloseTimeouts = 0;
+  const connectionClosures = new WeakMap();
   const maxObservedInputTokens = { main: 0, subagent: 0 };
   // Fixed metadata only; bounded memory, no transcript, headers or credential material.
   const recentRequests = [], failureRequests = [];
@@ -69,7 +76,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   let streamErrorInjected = false;
   const done = new Promise(resolve => { finish = resolve; });
   const diagnostics = () => ({ closing, reason, activeSockets: sockets.size, activeJobs: jobs.size,
-    activeTimers: activeBodies + activeHeartbeats + Number(admission.diagnostics().timerActive), activeBodies,
+    activeTimers: activeBodies + activeHeartbeats + pendingConnectionCloses + Number(admission.diagnostics().timerActive), activeBodies,
+    pendingConnectionCloses, connectionCloseTimeouts,
     activeDeliveries, cleanupFailed, admission: admission.diagnostics(), maxObservedInputTokens: { ...maxObservedInputTokens },
     contextPolicy: CONTEXT_POLICY, contextPolicyRuntimeVerified: false,
     correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage },
@@ -90,8 +98,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   async function readBody(req, limit, controller) {
     need(!controller.signal.aborted, 'CANCELLED');
     activeBodies++;
-    const abort = () => req.destroy(controller.signal.reason instanceof NativeError
-      ? controller.signal.reason : new NativeError('CANCELLED'));
+    const abort = () => {
+      // An incomplete/cancelled request must reset promptly, rather than use the
+      // graceful response-close path and leave a half-written client waiting.
+      if (req.socket && !req.socket.destroyed) req.socket.resetAndDestroy();
+      req.destroy(controller.signal.reason instanceof NativeError
+        ? controller.signal.reason : new NativeError('CANCELLED'));
+    };
     controller.signal.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => controller.abort(new NativeError('REQUEST_TIMEOUT')), 300000);
     try {
@@ -292,6 +305,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       // that is not exactly the side query the client sends falls through to it.
       const searchRequest = searchSideQuery(doc);
       const prepared = prepareNative(doc, { subagent: agent !== undefined, route, search: searchRequest !== null,
+        verificationSelection,
         turnToolChanges: req.headers['anthropic-beta']?.split(',').some(value => value.trim() === 'mid-conversation-tool-changes-2026-07-01') });
       stage = 'review';
       prepareReviewContext(prepared, agentBinding?.selection);
@@ -501,9 +515,12 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       if (timing) timing.reviewDiffMismatch = category === 'REVIEW_DIFF_REQUIRED'
         && ['call-count', 'tool-name', 'command', 'background'].includes(error.reviewDiffMismatch) ? error.reviewDiffMismatch : null;
       if (timing) timing.failureCategory = diagnosticCategory(category);
+      const retryAtMs = category === 'UPSTREAM_RETRY_DEFERRED' && Number.isSafeInteger(error.retryAtMs)
+        && error.retryAtMs >= 0 ? error.retryAtMs : null;
+      if (timing) timing.retryAtMs = retryAtMs;
       const relogin = ['UNAUTHENTICATED', 'CREDENTIAL_UNAVAILABLE_OR_EXPIRED', 'CREDENTIAL_ACCOUNT_CHANGED', 'CREDENTIAL_ACCOUNT_MISMATCH', 'CODEX_RELOGIN_REQUIRED'].includes(category);
-      const status = category === 'LOCAL_SESSION_REQUIRED' ? 401 : category === 'RATE_LIMITED' ? 429
-        : category === 'MEMORY_QUEUE_FULL' || relogin ? 503 : upstream ? 502 : 400;
+      const status = category === 'LOCAL_SESSION_REQUIRED' ? 401 : category === 'RATE_LIMITED' || category === 'UPSTREAM_RETRY_DEFERRED' ? 429
+        : category === 'MEMORY_QUEUE_FULL' || category === 'MEMORY_ADMISSION_TIMEOUT' || relogin ? 503 : upstream ? 502 : 400;
       const failure = { type: 'error', error: { type: status === 429 ? 'rate_limit_error' : status >= 500 ? 'api_error' : 'invalid_request_error',
         message: category + (eventKind ? ` event=${eventKind}` : '')
           + (eventTypeFormat ? ` event_type_format=${eventTypeFormat}` : '')
@@ -512,13 +529,19 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           + (upstreamErrorType ? ` upstream_type=${upstreamErrorType}` : '')
           + (upstreamIncompleteReason ? ` incomplete_reason=${upstreamIncompleteReason}` : '')
           + (requestFailure ? ` request=${requestFailure}` : '')
+          + (retryAtMs !== null ? ` retry_at_ms=${retryAtMs}; resume no earlier than this time.` : '')
+          + (category === 'UPSTREAM_RETRY_UNREPRESENTABLE' ? ': Server retry deadline exceeds the supported numeric range; automatic retry is blocked.' : '')
+          + (category === 'MEMORY_ADMISSION_TIMEOUT' ? ': Memory admission timed out before upstream execution; retry when capacity recovers.' : '')
           + (completionFailure ? ` completion=${completionFailure} parent=${parentState ?? 'NONE'} child=${childState ?? 'NONE'}` : '')
           + (relogin ? ': Codex login required; resume after logging in.' : res.headersSent ? ': Partial response; explicit resume required.' : '') } };
       if (!res.destroyed && !res.headersSent) reply(res, status, failure);
       else if (!res.destroyed && !controller.signal.aborted) {
         try { await writeFrames(res, [failure], controller.signal); res.end(); }
         catch { res.destroy(); }
-      } else res.destroy();
+      } else {
+        if (res.socket && !res.socket.destroyed) res.socket.resetAndDestroy();
+        res.destroy();
+      }
     } finally {
       stopHeartbeat();
       activeAgent?.requests.delete(controller);
@@ -539,7 +562,12 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     const controller = new AbortController(); const job = { controller };
     job.finished = handle(req, res, controller).finally(() => jobs.delete(job)); jobs.add(job);
   });
-  server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); socket.on('error', () => {}); });
+  server.on('connection', socket => {
+    sockets.add(socket); socket.once('close', () => sockets.delete(socket)); socket.on('error', () => {});
+    connectionClosures.set(socket, installHttpClose(socket, { onPending: change => { pendingConnectionCloses += change; },
+      onTimeout: () => { connectionCloseTimeouts++; } }));
+    if (closing) socket.resetAndDestroy();
+  });
   // Rejected by the HTTP server before any request handler ran; counted apart from requests.
   const transportReject = () => { rejected++; lifetime.transportRejections++; };
   server.on('clientError', (_error, socket) => { transportReject(); socket.destroy(); });
@@ -555,9 +583,14 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     for (const state of agents.values()) state.selectionController?.abort();
     agents.clear(); admission.close();
     closingWork = (async () => {
-      const serverDone = new Promise(resolve => server.close(resolve));
       for (const job of jobs) job.controller.abort();
-      const socketsDone = [...sockets].map(socket => new Promise(resolve => { socket.once('close', resolve); socket.destroy(); }));
+      const socketsDone = [...sockets].map(socket => new Promise(resolve => {
+        socket.once('close', resolve);
+        if (!connectionClosures.get(socket)?.pending) socket.resetAndDestroy();
+      }));
+      // server.close() itself destroys idle HTTP sockets. Let already-finished
+      // responses drain first; the closing flag rejects newly accepted peers.
+      const serverDone = Promise.all(socketsDone).then(() => new Promise(resolve => server.close(resolve)));
       let timer;
       const work = Promise.allSettled([Promise.resolve().then(() => transport.close()),
         ...[...jobs].map(job => job.finished), ...socketsDone, serverDone]);

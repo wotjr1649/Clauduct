@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { installHttpClose } from './http-close.mjs';
 import { checkClientVersion, entrySummary, safeEntryCategory } from '../poc/user-session.mjs';
 import { createLoopbackCodexTransport, createCodexTransport } from '../poc/codex-transport.mjs';
 import { createNativeLoopbackTransport, createNativeTransport } from './native-transport.mjs';
@@ -35,6 +36,7 @@ const server = createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   res.end('event: response.created\ndata: {"type":"response.created"}\n\nevent: response.completed\ndata: {"type":"response.completed"}\n\ndata: [DONE]\n\n');
 });
+server.on('connection', socket => installHttpClose(socket));
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 try {
   for (const clientVersion of ['0.153.4', '0.154.0', '0.155.0-beta.1']) {

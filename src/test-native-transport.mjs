@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, Agent } from 'node:http';
+import { Socket } from 'node:net';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 
 const signal = () => new AbortController().signal;
@@ -7,6 +8,33 @@ const frame = value => `event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n
 const complete = frame({ type: 'response.completed' });
 const created = frame({ type: 'response.created' });
 const good = created + complete + 'data: [DONE]\n\n';
+
+async function testSocketClosedBeforeObservation() {
+  // Each connection gets a distinct actual already-closed Socket. Reusing one
+  // closed object across retries would itself accumulate Node HTTP listeners.
+  // Request handling, retry limits and transport cleanup run unchanged.
+  for (const [method, attempts, code] of [['send', 6, 'UPSTREAM_IO_ERROR'], ['search', 2, 'SEARCH_HTTP_ERROR']]) {
+    const sockets = Array.from({ length: attempts }, () => new Socket());
+    await Promise.all(sockets.map(socket => new Promise(done => { socket.once('close', done); socket.destroy(); })));
+    const original = Agent.prototype.createConnection;
+    let connections = 0, timer;
+    Agent.prototype.createConnection = () => { assert.ok(connections < sockets.length); return sockets[connections++]; };
+    const transport = createNativeLoopbackTransport(12345, { retryDelayMs: 0 });
+    const controller = new AbortController();
+    try {
+      const failed = transport[method]({}, controller.signal).then(() => 'SUCCESS', error => error.code);
+      const result = await Promise.race([failed, new Promise(done => { timer = setTimeout(() => done('UNSETTLED'), 500); })]);
+      clearTimeout(timer);
+      assert.equal(result, code, method);
+      const stopped = await Promise.race([transport.close().then(() => true), new Promise(done => { timer = setTimeout(() => done(false), 500); })]);
+      assert.equal(stopped, true, method);
+      assert.equal(connections, attempts, method);
+      assert.equal(transport.diagnostics().requestAttempts, attempts);
+      assert.equal(transport.diagnostics().activeRequests, 0); assert.equal(transport.diagnostics().activeSockets, 0);
+      assert.ok(sockets.every(socket => socket.closed));
+    } finally { clearTimeout(timer); controller.abort(); Agent.prototype.createConnection = original; }
+  }
+}
 
 async function fixture(handler, options, run) {
   const server = createServer(handler);
@@ -358,6 +386,7 @@ async function testStandaloneSearch() {
 }
 
 await testStreamingBeforeEof();
+await testSocketClosedBeforeObservation();
 await testSplitUtf8();
 await testKeepAliveReuse();
 await testConcurrentResponseBounds();

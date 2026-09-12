@@ -153,7 +153,12 @@ export async function startInspector({ lifetimeMs = INSPECT_LIMITS.lifetimeMs,
   bounded(lifetimeMs, INSPECT_LIMITS.lifetimeMs);
   bounded(requestMs, INSPECT_LIMITS.requestMs);
   bounded(observationMs, INSPECT_LIMITS.observationMs);
+  // Synthetic clients import only FIXTURE_MARKER from this module. Load the
+  // server helper only when starting the inspector; their read scope stays poc/.
+  const { installHttpClose } = await import('../src/http-close.mjs');
   const sockets = new Set(), timers = new Set();
+  const connectionClosures = new WeakMap();
+  let pendingConnectionCloses = 0;
   const counters = { receivedRequests: 0, acceptedConnections: 0, droppedConnections: 0, messages: 0, countTokens: 0,
     hello: 0, rejected: 0, truncated: 0, timeouts: 0, malformedHttp: 0, transportErrorEvents: 0, captured: 0 };
   const records = [];
@@ -169,7 +174,7 @@ export async function startInspector({ lifetimeMs = INSPECT_LIMITS.lifetimeMs,
   function result() {
     return { category: counters.captured > 0 ? 'REQUEST_SHAPE_CAPTURED' : 'NO_MESSAGE_CAPTURED',
       closeReason, counters: { ...counters }, records: structuredClone(records),
-      activeSockets: sockets.size, activeRequestTimers: timers.size, activeBodies: clearBody ? 1 : 0,
+      activeSockets: sockets.size, activeRequestTimers: timers.size, activeBodies: clearBody ? 1 : 0, pendingConnectionCloses,
       upstreamRequests: 0, toolExecutions: 0, persistedBodies: 0,
       authenticatedProductSession: false };
   }
@@ -180,10 +185,13 @@ export async function startInspector({ lifetimeMs = INSPECT_LIMITS.lifetimeMs,
     clearTimeout(deadlineTimer); clearTimeout(observationTimer);
     for (const timer of timers) clearTimeout(timer);
     timers.clear();
-    const closedSockets = [...sockets].map(socket => new Promise(resolve => socket.once('close', resolve)));
-    server.close(() => { void Promise.all(closedSockets).then(() => complete(result())); });
-    server.closeAllConnections();
-    for (const socket of sockets) socket.destroy();
+    const closedSockets = [...sockets].map(socket => new Promise(resolve => {
+      socket.once('close', resolve);
+      if (!connectionClosures.get(socket)?.pending) socket.resetAndDestroy();
+    }));
+    // Keep the final diagnostic reply intact while its bounded normal close
+    // drains. server.close() would destroy those completed idle responses.
+    void Promise.all(closedSockets).then(() => server.close(() => complete(result())));
     return done;
   }
   function reply(res, status, code) {
@@ -307,6 +315,7 @@ export async function startInspector({ lifetimeMs = INSPECT_LIMITS.lifetimeMs,
     sockets.add(socket);
     socket.on('error', () => { counters.transportErrorEvents++; });
     socket.once('close', () => sockets.delete(socket));
+    connectionClosures.set(socket, installHttpClose(socket, { onPending: change => { pendingConnectionCloses += change; } }));
     if (closing || counters.acceptedConnections > INSPECT_LIMITS.connections) {
       socket.destroy(); stop('CONNECTION_BUDGET');
     }

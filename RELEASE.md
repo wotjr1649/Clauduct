@@ -1,5 +1,7 @@
 # Clauduct — Windows 릴리즈 안내
 
+현재 후보의 무인 개발 출하 판정은 **HOLD**다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 2026-09-13 후보에서는 정상 HTTP 일부가 재성공했지만 request-inspector, user-session watchdog, TCP 반닫기 검사에 실패가 남아 있다. 같은 loopback 반닫기 이상을 Clauduct·Node 없는 .NET 비교에서도 관측했으며 원인과 정상 환경에서의 재검증은 미완료다.
+
 ## 시작
 
 1. ZIP을 새 폴더에 풀고 `Clauduct` 폴더를 연다. 기존 설치·사용자 프로필에 덮어쓰지 않는다.
@@ -28,6 +30,8 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 - 기본 메인은 `astra/low`다. 명시 모델의 기본 effort는 astra/medium, sol/xhigh, terra/high, luna/max이며 `--effort`가 우선한다.
 - `-p`/`--print`는 비대화형이다. stdout은 native 결과만, wrapper 안내·종료 상태는 stderr다. 명시적 print 없이 파이프로 실행하면 TTY 오류로 종료한다.
 - 텍스트는 스트리밍하고 도구 호출은 정상 완료 검증 뒤 전달한다. 전달 전 일시 I/O·429·5xx는 제한 재시도하며 전달 후 오류는 자동 재실행하지 않는다. 완료된 도구를 반복하지 말고 `--resume`으로 이력을 이어간다.
+- 서버의 `Retry-After`가 짧은 대기 예산을 넘으면 `UPSTREAM_RETRY_DEFERRED`와 `retry_at_ms`를 반환한다. 그 시각보다 일찍 재개하지 않는다. 숫자 범위로 표현할 수 없는 유효한 지시는 `UPSTREAM_RETRY_UNREPRESENTABLE`로 표시하고 자동 재시도를 막는다.
+- 메모리 admission은 진행 중 요청을 유지하며 새 요청을 기본 최대 30초 대기시킨다. 기한을 넘으면 upstream 실행 전에 HTTP 503과 `MEMORY_ADMISSION_TIMEOUT`을 반환한다. 상태의 `admission`에 큐 길이·대기 상한·기한 초과 누계가 남으며, 여유 메모리 회복 뒤 다시 요청할 수 있다.
 - JSON `is_error`, 종료 코드, `CLAUDUCT_REQUEST_STATUS`의 `requestOutcome`·`failureHistory`·`cleanup`을 함께 확인한다. exit 0이나 `Clauduct 종료: SUCCESS`만으로 세션 중 모든 요청이 성공했다고 판단하지 않는다.
 - 종료 상태는 설치 폴더의 `.clauduct-status/request-status.jsonl`에도 추가된다. 원문 오류·인증 값은 기록하지 않는다. 기록 실패는 명시적으로 안내하며, 강제 프로세스 종료에서는 기록을 보장하지 않는다.
 - 비대화형 자동화에는 `--max-turns`와 호출자의 시간 제한을 둔다. `--bg`/`--background`의 세션 분리 동작은 이 릴리즈에서 실검증되지 않았으며, 검증된 background 도구/TaskOutput/TaskStop과 구분한다.
@@ -36,13 +40,16 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 ## 확인된 기능과 남는 한계
 
-Verified: 실제 비대화형 JSON·stream-json, Read/Edit, Bash·PowerShell, stdio MCP, PNG 입력, WebFetch·WebSearch, Agent 선택, inline Workflow·StructuredOutput·부모 복귀, background 도구 결과 회수·TaskStop 뒤 worker 종료, 새 프로세스 resume, 실패 후 도구 미중복·이력 보존·정리를 확인했다. 모델 네 종류의 low 요청도 실제 성공을 확인했다.
+이전 후보의 실측: 비대화형 JSON·stream-json, Read/Edit, Bash·PowerShell, stdio MCP, PNG 입력, WebFetch·WebSearch, Agent 선택, inline Workflow·StructuredOutput·부모 복귀, background 도구 결과 회수·TaskStop 뒤 worker 종료, 새 프로세스 resume, 실패 후 도구 미중복·이력 보존·정리를 확인했다. 모델 네 종류의 low 요청도 당시 성공했다. 이전 후보의 결과를 이번 후보 전체의 회귀 통과로 복사하지 않는다.
+
+2026-09-13 작업 중 후보별 실측: `luna/max`와 `sol/low`에서 실제 코드 구현 및 독립28-case 판정, 고정 효과 직후 native tree 중단과 동일 세션 자동 재개, Agent·Workflow 자식 라우팅, PNG/JPEG/GIF/WebP, WebFetch 내부 요약과 WebSearch를 확인했다. JPEG/GIF/WebP는 native Read 결과와 실제 upstream MIME도 각각 일치했다. 모든 기능이 최종 동일 후보에서 재검증된 상태는 아니며, 최초 실패 및 관측기 수정 전 실패를 별도 원장에 보존한다.
 
 Not verified / 제한:
 
 - astra 최초 공개 단문 검사에서 전달 전 upstream error 1건이 있었고 이후 단독 검사는 성공했다. 최초 오류의 원인은 미확정이며 외부 서버 무장애를 보장하지 않는다.
 - 기본 400K 창·320K 자동 압축 목표는 설정 계약이다. 기본값에서의 실제 발동·압축 후 전체 이력 보존은 미검증이며, 축소 창에서의 기존 실측과 구분한다.
-- 실제 계정 회전, 모든 사용자 hook/plugin·permission/plan UI 조합, JPEG/GIF/WebP 실제 왕복, 프롬프트 캐시 실제 적중은 전수 검증하지 않았다.
+- 정상 인증 갱신·만료 경계, 모든 사용자 hook/plugin·permission/plan UI 조합, 프롬프트 캐시 실제 적중은 미검증이다. 인증 파일의 직접 편집이나 계정 전환으로 시험을 대신하지 않는다.
+- 두 조합 각각의 4시간 → 24시간 3회 → 72시간 단계는 시작하지 않았다. 기본 메인·자식 압축, 정상 인증 갱신과 원래 개발 과제 완료의 필수 사건 수를 모두 채워야 하며 짧은 기능 검사로 대체하지 않는다.
 - 취소·등록 교체·형제 격리의 합성 검사는 통과했지만 UI 취소 시점까지 연결한 전체 실측은 조건부다. 동적 symlink/junction 검사는 정책 차단으로 실행하지 않았다.
 - 단일 completed 알림의 검증된 자동 복귀는 지원하지만 다중·실패·취소 알림 자동 복귀는 지원하지 않는다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 보장하지 않는다.
 - Anthropic 서버 전용 기능, 비스트리밍 API, 서버 실행 도구·첨부/PDF·미지원 context edit·sampling 필드는 지원하지 않는다. 신규 native 버전과 Codex 비공개 backend 변경은 재검증이 필요하다. `CLI_VERSION_UNVERIFIED` 안내를 숨기지 않는다.

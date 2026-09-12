@@ -6,6 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { startGateway, deliverSse } from './gateway.mjs';
 import { createLoopbackCodexTransport, createCodexTransport } from './codex-transport.mjs';
 import { ALIAS, MODEL, EFFORT, FIXTURE_PATH, LIMITS, readTool, probeProfile } from './adapter.mjs';
+import { installHttpClose } from '../src/http-close.mjs';
 
 const marker = 'CLAUDUCT_GATEWAY_FIXTURE';
 const suiteTimeout = setTimeout(() => { process.stderr.write('GATEWAY_TEST_TIMEOUT\n'); process.exit(1); },
@@ -94,7 +95,7 @@ async function backend(modes = ['text']) {
     });
   });
   server.maxConnections = 4;
-  server.on('connection', socket => { sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => sockets.delete(socket)); });
+  server.on('connection', socket => { installHttpClose(socket); sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => sockets.delete(socket)); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return { port: server.address().port, requests, async close() {
     const closed = new Promise(resolve => server.close(resolve));

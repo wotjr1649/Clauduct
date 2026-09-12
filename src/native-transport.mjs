@@ -5,6 +5,7 @@ import { buildHeaders, buildSearchHeaders, checkRuntime } from '../verification/
 import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
 import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, searchEnvelope } from './native-protocol.mjs';
+import { parseRetryAfter } from './retry-after.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -14,7 +15,7 @@ export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   timeoutMs: 600_000,
   retryBaseMs: 100,
   retryMaxMs: 2_000,
-  retryAfterMaxMs: 5_000,
+  retryAfterMaxMs: 5_000, // Short in-process wait budget; longer server delays are preserved and deferred.
   maxSockets: Infinity,
   maxFreeSockets: 2,
   idleSocketMs: 600_000
@@ -22,12 +23,12 @@ export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
 
 const criticalHeaders = ['content-type', 'content-encoding', 'content-length', 'transfer-encoding'];
 
-export function createNativeTransport({ credential, credentialSupplier, clientVersion }) {
+export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget }) {
   clientVersionPolicy(clientVersion);
   checkRuntime(process.env, process.execArgv);
   need(typeof credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpsRequest, HttpsAgent, ENDPOINT,
-    { credential, credentialSupplier, clientVersion, synthetic: false });
+    { credential, credentialSupplier, clientVersion, synthetic: false, options: { requestBudget } });
 }
 
 export function createNativeLoopbackTransport(port, options = {}) {
@@ -62,6 +63,8 @@ function optionInteger(value, fallback, minimum, maximum) {
 }
 
 function sender(request, Agent, destination, { credential, credentialSupplier, clientVersion, synthetic, options = {} }) {
+  const requestBudget = options.requestBudget;
+  need(requestBudget === undefined || (Number.isSafeInteger(requestBudget) && requestBudget >= 1 && requestBudget <= 4096), 'INVALID_LIMIT');
   const compatibility = clientVersionPolicy(clientVersion);
   const settings = {
     maxRetries: NATIVE_TRANSPORT_LIMITS.maxRetries,
@@ -87,16 +90,20 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   let supplier = typeof credentialSupplier === 'function' ? credentialSupplier : undefined;
   let closed = false, attempts = 0, retries = 0, connectionAttempts = 0;
   let lastCategory = 'NONE', lastStatus = null, responseBytes = 0, totalResponseBytes = 0;
+  let retryNotBeforeMs = 0, retryAfterUnrepresentable = false;
 
   function diagnostics() {
     const idleSockets = Object.values(agent.freeSockets).reduce((count, list) => count + list.length, 0);
     return { ...compatibility, activeRequests: active.size, activeSockets: sockets.size, idleSockets,
       requestAttempts: attempts, retries, connectionAttempts, responseBytes, totalResponseBytes, httpStatus: lastStatus,
-      category: lastCategory, synthetic, closed };
+      category: lastCategory, retryNotBeforeMs, retryAfterUnrepresentable, synthetic, closed };
   }
 
   function trackSocket(socket) {
-    if (sockets.has(socket)) return;
+    if (socketDone.has(socket)) return;
+    // ClientRequest emits its socket asynchronously. A socket may have closed
+    // before this observer runs; its close event will never fire a second time.
+    if (socket.closed) { socketDone.set(socket, Promise.resolve()); return; }
     connectionAttempts++;
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
@@ -128,18 +135,37 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     return error;
   }
 
-  function retryAfter(headers) {
-    const value = Array.isArray(headers['retry-after']) ? headers['retry-after'][0] : headers['retry-after'];
-    if (typeof value !== 'string') return 0;
-    const seconds = Number(value.trim());
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(settings.retryAfterMaxMs, seconds * 1000);
-    const date = Date.parse(value);
-    return Number.isFinite(date) ? Math.min(settings.retryAfterMaxMs, Math.max(0, date - Date.now())) : 0;
+  function deferred(failure) {
+    return Object.assign(new NativeError('UPSTREAM_RETRY_DEFERRED'), { retryAtMs: retryNotBeforeMs,
+      retryAfterMs: Math.max(0, retryNotBeforeMs - Date.now()), statusCode: failure?.statusCode ?? lastStatus });
+  }
+
+  function checkRetryDeadline() {
+    need(!retryAfterUnrepresentable, 'UPSTREAM_RETRY_UNREPRESENTABLE');
+    if (retryNotBeforeMs > Date.now()) throw deferred();
+  }
+
+  function preserveRetryAfter(error, response) {
+    const parsed = parseRetryAfter(response.headers['retry-after']);
+    if (error.retryable === true && parsed) {
+      if (parsed.unrepresentable) {
+        retryAfterUnrepresentable = true;
+        return Object.assign(new NativeError('UPSTREAM_RETRY_UNREPRESENTABLE'), { retryable: false, statusCode: error.statusCode });
+      }
+      retryNotBeforeMs = Math.max(retryNotBeforeMs, parsed.retryAtMs);
+      error.retryAtMs = retryNotBeforeMs;
+      error.retryAfterMs = Math.max(0, retryNotBeforeMs - Date.now());
+    }
+    return error;
   }
 
   function retryDelay(attempt, failure) {
     const exponential = Math.min(settings.retryMaxMs, settings.retryBaseMs * 2 ** (attempt - 1));
-    return Math.max(exponential, failure.retryAfterMs ?? 0);
+    const minimum = Math.max(failure.retryAfterMs ?? 0, retryNotBeforeMs - Date.now());
+    if (minimum > settings.retryAfterMaxMs) throw deferred(failure);
+    const half = Math.ceil(exponential / 2);
+    const jittered = half + Math.floor(Math.random() * (exponential - half + 1));
+    return Math.max(jittered, minimum);
   }
 
   function errorForStatus(response) {
@@ -147,9 +173,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const error = new NativeError(status === 401 ? 'UNAUTHENTICATED'
       : status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_HTTP_ERROR');
     error.statusCode = status;
-    error.retryAfterMs = retryAfter(response.headers);
     error.retryable = status === 429 || (status >= 500 && status <= 599);
-    return error;
+    return preserveRetryAfter(error, response);
   }
 
   function validateHeaders(response) {
@@ -275,6 +300,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   }
 
   async function requestOnce(job, raw, current, onEvent, isRetry) {
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
     const headers = buildHeaders(current, clientVersion, raw);
@@ -297,6 +324,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           socket = value;
           trackSocket(socket);
           socketClosed = socketDone.get(socket);
+          // An already-emitted close cannot reject ClientRequest's response
+          // promise. Fail this attempt directly; do not await another event.
+          if (socket.closed) {
+            const error = new NativeError('UPSTREAM_IO_ERROR');
+            req.destroy(error); reject(error);
+          }
         });
         req.setTimeout(settings.timeoutMs, () => {
           timedOut = true; req.destroy(new NativeError('UPSTREAM_IDLE_TIMEOUT'));
@@ -360,6 +393,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   }
 
   async function send(body, signal, options = {}) {
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
     need(signal instanceof AbortSignal && !signal.aborted, 'CANCELLED');
     need(!closed, 'TRANSPORT_CLOSED');
     need(options && typeof options === 'object', 'INVALID_OPTIONS');
@@ -403,17 +438,19 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           const failure = mark(error);
           if (failure.code === 'UNAUTHENTICATED' && !refreshed && supplier && retryCount < settings.maxRetries) {
             if (!await retryAllowed()) throw failure;
+            const delay = retryDelay(retryCount + 1, failure);
             current = await resolveCredential(true, account); refreshed = true; retryCount++; isRetry = true;
             await onRetry?.(retryCount);
-            await wait(job, retryDelay(retryCount, failure));
+            await wait(job, delay);
             continue;
           }
           const transient = failure.retryable === true || (failure.code === 'UPSTREAM_IO_ERROR'
             && failure.retryable !== false) || failure.code === 'UPSTREAM_IDLE_TIMEOUT';
           if (!transient || retryCount >= settings.maxRetries || !await retryAllowed()) throw failure;
+          const delay = retryDelay(retryCount + 1, failure);
           retryCount++; isRetry = true;
           await onRetry?.(retryCount);
-          await wait(job, retryDelay(retryCount, failure));
+          await wait(job, delay);
         }
       }
     } catch (error) {
@@ -435,6 +472,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   const searchSession = randomUUID();
 
   async function search(body, signal) {
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
     need(!closed, 'TRANSPORT_CLOSED');
     need(signal instanceof AbortSignal, 'INVALID_OPTIONS');
     // An already-aborted signal never fires its listener, so check it rather than sending.
@@ -455,7 +494,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
         // A search is an idempotent read, so one retry cannot duplicate an effect. Exactly one:
         // a side query the client is waiting on is not the place to spend a retry budget.
         if (error?.retryable === true) {
-          await wait(job, settings.retryBaseMs);
+          await wait(job, retryDelay(1, error));
           need(!job.controller.signal.aborted, 'CANCELLED');
           return await searchOnce(job, body, current);
         }
@@ -475,6 +514,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   }
 
   function searchOnce(job, body, credential) {
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
     const raw = JSON.stringify({ ...body, id: searchSession });
     const headers = buildSearchHeaders(credential, clientVersion, raw,
       searchEnvelope().headers['x-codex-turn-metadata']);
@@ -506,8 +547,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           // unwell: the first ends the feature, the second is worth one more try.
           if (status === 404 || status === 410) { done(reject, new NativeError('SEARCH_UNAVAILABLE')); return; }
           if (status !== 200) {
-            done(reject, Object.assign(new NativeError('SEARCH_HTTP_ERROR'),
-              { retryable: status === 429 || status >= 500 }));
+            done(reject, preserveRetryAfter(Object.assign(new NativeError('SEARCH_HTTP_ERROR'),
+              { statusCode: status, retryable: status === 429 || status >= 500 }), res));
             return;
           }
           let doc;
@@ -517,7 +558,13 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           done(resolveResult, doc);
         });
       });
-      req.on('socket', socket => trackSocket(socket));
+      req.on('socket', socket => {
+        trackSocket(socket);
+        if (socket.closed) {
+          const error = Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: true });
+          req.destroy(error); done(reject, error);
+        }
+      });
       req.on('error', () => done(reject, job.controller.signal.aborted ? new NativeError('CANCELLED')
         : Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: true })));
       job.controller.signal.addEventListener('abort', () => { req.destroy(); done(reject, new NativeError('CANCELLED')); }, { once: true });

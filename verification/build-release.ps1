@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).ProviderPath
-$git = (Get-Command git.exe -CommandType Application).Source
+$git = (Get-Command git.exe -CommandType Application | Select-Object -First 1).Source
 function Read-Git([string[]] $Arguments) {
     $result = @(& $git -C $taskRoot -c core.fsmonitor=false @Arguments)
     if ($LASTEXITCODE -ne 0) { throw 'RELEASE_GIT_FAILED' }
@@ -22,7 +22,16 @@ if ($commit -notmatch '^[a-f0-9]{40}$') { throw 'RELEASE_COMMIT_INVALID' }
 $paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md', 'src',
     'verification/manual-http-probe.mjs', 'verification/test-manual-http-probe.mjs',
     'verification/verify-live.mjs', 'verification/verify-native-headless.ps1',
-    'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1')
+    'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1',
+    'verification/development-fixture.mjs', 'verification/fixture-tool-policy.mjs',
+    'verification/guarded-headless-entry.mjs', 'verification/native-recovery-entry.mjs',
+    'verification/stop-owned-native-tree.ps1', 'verification/unattended-recovery.mjs',
+    'verification/verify-native-development.mjs', 'verification/verify-native-recovery.mjs',
+    'verification/verify-retry-after-recovery.mjs',
+    'verification/fixtures/development-mcp.mjs', 'verification/fixtures/development-oracle.mjs',
+    'verification/fixtures/public-images.json',
+    'verification/fixtures/native-recovery-mcp.mjs', 'verification/fixtures/process-tree.mjs',
+    'verification/fixtures/recovery-worker.mjs', 'verification/fixtures/retry-recovery-worker.mjs')
 $paths += @(Read-Git -Arguments @('ls-files', '--', 'poc/*.mjs'))
 $tree = @(Read-Git -Arguments (@('ls-tree', '-r', $commit, '--') + $paths))
 $files = @($tree | ForEach-Object {

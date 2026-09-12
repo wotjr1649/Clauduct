@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
+import { installHttpClose } from './http-close.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -79,6 +80,7 @@ async function fixture(action, { fault, requestBudget = 32, limits = {} } = {}) 
       res.end(fault === 'http400' ? '{}' : wire(received, { overLimit: fault === 'over-limit' }));
     });
   });
+  server.on('connection', socket => installHttpClose(socket));
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   const transport = createLoopbackCodexTransport(server.address().port,
     { profile: 'astra-low', tokenLimitPolicy: 'backend-default', requestBudget });

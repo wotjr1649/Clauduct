@@ -7,6 +7,7 @@ import { Writable } from 'node:stream';
 import { writeFrames } from './native-delivery.mjs';
 import { readRequestStatus, requestStatusSnapshot } from './request-status.mjs';
 import { createAgentSelection } from './agent-selection.mjs';
+import { installHttpClose } from './http-close.mjs';
 
 const doc = { model: 'astra', stream: true, max_tokens: 10000, messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
   tools: [{ name: 'Read', input_schema: { type: 'object', properties: {} } }] };
@@ -34,14 +35,27 @@ function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, 
   sendBody = (req, raw) => req.end(raw) } = {}) {
   const raw = JSON.stringify(body);
   return new Promise((resolve, reject) => {
+    const fail = (error, phase) => {
+      const state = gateway.diagnostics();
+      error.fixtureCheckpoint = passed; error.fixturePath = path; error.fixturePhase = phase;
+      error.fixtureState = { jobs: state.activeJobs, bodies: state.activeBodies, timers: state.activeTimers,
+        pendingCloses: state.pendingConnectionCloses, attempts: state.transport.requestAttempts,
+        transportRequests: state.transport.activeRequests, transportSockets: state.transport.activeSockets,
+        recent: state.recentRequests.slice(-2).map(row => ({ success: row.success, category: row.failureCategory,
+          stage: row.failureStage, admittedMs: row.admittedMs, transportStartedMs: row.transportStartedMs,
+          transportFinishedMs: row.transportFinishedMs, lastUpstreamEventMs: row.lastUpstreamEventMs, finishedMs: row.finishedMs,
+          lastAttempt: row.attempts?.at(-1) })) };
+      reject(error);
+    };
     const req = request({ host: '127.0.0.1', port: gateway.port, method: 'POST', path, agent: false, signal,
       headers: { ...gateway.clientHeaders(), 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'content-length': Buffer.byteLength(raw), ...headers } }, res => {
       let text = '';
-      res.on('data', chunk => { text += chunk; onChunk(text); }); res.on('error', reject);
+      res.on('data', chunk => { text += chunk; onChunk(text); });
+      res.on('error', error => fail(error, 'response'));
       res.on('end', () => resolve({ status: res.statusCode, text }));
     });
     if (idleMs) req.setTimeout(idleMs, () => req.destroy(new Error('SYNTHETIC_CLIENT_IDLE')));
-    req.on('error', reject); sendBody(req, raw);
+    req.on('error', error => fail(error, 'request')); sendBody(req, raw);
   });
 }
 const ample = { freeBytes: () => 16 * 1024 ** 3 };
@@ -61,8 +75,8 @@ try {
     const register = stopping => call(gateway, { path: '/clauduct/agents', body: {
       id: 'early', role: 'general-purpose', stop: stopping, sessionId: 'session' } });
     const headers = { 'x-claude-code-session-id': 'session', 'x-claude-code-agent-id': 'early' };
-    const until = async predicate => {
-      const deadline = Date.now() + 1000;
+    const until = async (predicate, timeoutMs = 1000) => {
+      const deadline = Date.now() + timeoutMs;
       while (!predicate()) {
         assert.ok(Date.now() < deadline, `${phase}: expected state transition`);
         await new Promise(resolve => setTimeout(resolve, 5));
@@ -84,6 +98,9 @@ try {
       assert.equal(gateway.diagnostics().activeBodies, 0);
       assert.equal(gateway.diagnostics().admission.queued, 0);
       assert.equal(gateway.diagnostics().admission.active, 0);
+      // The normal close path has its own 1000ms fallback. Allow it to fire
+      // before checking complete release, including event-loop scheduling.
+      await until(() => gateway.diagnostics().pendingConnectionCloses === 0, 1500);
       assert.equal(gateway.diagnostics().activeTimers, 0);
       assert.equal(gateway.diagnostics().recentRequests.at(-1).failureCategory, 'CANCELLED');
       assert.notEqual(gateway.diagnostics().recentRequests.at(-1).clientDisconnected, true);
@@ -529,6 +546,7 @@ try {
       upstreamIncompleteReason: 'max_output_tokens' },
     { failureCategory: 'UPSTREAM_RESPONSE_INCOMPLETE', upstreamErrorCode: { toString: null },
       upstreamIncompleteReason: 'SYNTHETIC_PRIVATE' }], transport: { clientVersion: 'SYNTHETIC_PRIVATE' } })));
+    upstream.on('connection', socket => installHttpClose(socket));
     await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve));
     try {
       const status = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${upstream.address().port}`,
@@ -598,13 +616,19 @@ try {
   // After content reaches the client a second upstream turn could repeat a tool call.
   for (const [sent, expectedAttempts] of [[1, 2], [3, 1]]) {
     let attempts = 0; const timers = new Set();
+    const upstreamState = { destroyCalls: 0, responseCloses: 0, socketCloses: 0, destroyed: false, closed: false };
     const upstream = createServer((req, res) => {
+      const socket = req.socket;
+      res.once('close', () => { upstreamState.responseCloses++; });
+      socket.once('close', () => { upstreamState.socketCloses++; upstreamState.closed = socket.closed; });
       let raw = ''; req.on('data', chunk => { raw += chunk; }); req.on('end', () => {
         attempts++; const events = frames(JSON.parse(raw));
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         if (attempts > 1) { res.end(wire(events)); return; }
         res.write(wire(events.slice(0, sent)));
-        const timer = setTimeout(() => { timers.delete(timer); res.destroy(); }, 10);
+        const timer = setTimeout(() => {
+          timers.delete(timer); upstreamState.destroyCalls++; res.destroy(); upstreamState.destroyed = socket.destroyed;
+        }, 10);
         timers.add(timer);
       });
     });
@@ -634,6 +658,8 @@ try {
         assert.equal(transport.diagnostics().activeSockets, 0);
       }
       passed++;
+    } catch (error) {
+      error.fixtureTruncation = { sent, ...upstreamState }; throw error;
     } finally {
       await gateway.close();
       for (const timer of timers) clearTimeout(timer);
@@ -834,6 +860,7 @@ try {
     const oversized = createServer((req, res) => {
       req.resume(); res.end(JSON.stringify({ recentRequests: [], padding: 'x'.repeat(256 * 1024) }));
     });
+    oversized.on('connection', socket => installHttpClose(socket));
     await new Promise(resolve => oversized.listen(0, '127.0.0.1', resolve));
     try {
       await assert.rejects(readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${oversized.address().port}`,
@@ -945,6 +972,29 @@ try {
       assert.equal(gateway.diagnostics().registeredAgents, 1); passed++;
     } finally { await gateway.close(); }
   }
+  {
+    let free = 0, attempts = 0;
+    const gateway = await startNativeGateway({
+      admissionOptions: { freeBytes: () => free, headroomBytes: 20, requestReserveBytes: 40, maxWaitMs: 40, pollMs: 1000 },
+      transport: { send: async body => { attempts++; return frames(body); }, close: async () => {}, diagnostics: () => ({}) }
+    });
+    try {
+      const expired = await call(gateway);
+      assert.equal(expired.status, 503); assert.match(expired.text, /MEMORY_ADMISSION_TIMEOUT/);
+      assert.equal(attempts, 0);
+      const status = requestStatusSnapshot(gateway.diagnostics()), row = status.recentRequests.at(-1);
+      assert.equal(row.failureCategory, 'MEMORY_ADMISSION_TIMEOUT'); assert.equal(row.failureStage, 'request');
+      assert.equal(row.admittedMs, null); assert.equal(row.transportStartedMs, null); assert.equal(row.attempts.length, 0);
+      assert.equal(status.admission.timedOutTotal, 1); assert.equal(status.admission.maxWaitMs, 40);
+      assert.equal(status.admission.queued, 0); assert.equal(status.admission.active, 0);
+      assert.deepEqual(requestStatusSnapshot(status), status);
+      free = 100;
+      const recovered = await call(gateway);
+      assert.equal(recovered.status, 200); assert.match(recovered.text, /event: message_stop/);
+      assert.equal(attempts, 1); assert.equal(gateway.diagnostics().recentRequests.at(-1).success, true);
+      assert.equal(gateway.diagnostics().lifetime.failed, 1); passed++;
+    } finally { await gateway.close(); }
+  }
   const scopes = [], references = [];
   for (let run = 0; run < 2; run++) {
     const gateway = await startNativeGateway({ admissionOptions: ample, transport: {
@@ -974,4 +1024,7 @@ try {
   }
   assert.notEqual(scopes[0], scopes[1]); assert.notEqual(references[0], references[1]);
   console.log(JSON.stringify({ suite: 'native-gateway', passed, realClaude: 0, credentialReads: 0, externalRequests: 0 }));
+} catch (error) {
+  console.error(JSON.stringify({ suite: 'native-gateway', completedChecksBeforeFailure: passed }));
+  throw error;
 } finally { clearTimeout(watchdog); }

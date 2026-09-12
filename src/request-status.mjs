@@ -94,6 +94,7 @@ export function requestStatusSnapshot(value, env = {}) {
     completionChildState: COMPLETION_STATES.includes(row?.completionChildState) ? row.completionChildState : null,
     reviewDiffMismatch: ['call-count', 'tool-name', 'command', 'background'].includes(row?.reviewDiffMismatch) ? row.reviewDiffMismatch : null,
     failureCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(row?.failureCategory) ? row.failureCategory : null,
+    retryAtMs: row?.failureCategory === 'UPSTREAM_RETRY_DEFERRED' ? counter(row?.retryAtMs) : null,
     upstreamFailureEvent: typeof row?.upstreamFailureEvent === 'string' && Object.hasOwn(UPSTREAM_FAILURES, row.upstreamFailureEvent)
       && UPSTREAM_FAILURES[row.upstreamFailureEvent] === row?.failureCategory ? row.upstreamFailureEvent : null,
     upstreamErrorCode: Object.values(UPSTREAM_FAILURES).includes(row?.failureCategory)
@@ -129,6 +130,8 @@ export function requestStatusSnapshot(value, env = {}) {
     clientExecutionPolicy: { evidence: 'inherited-environment', nonStreamingFallbackDisabled:
       env.CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK === '1' ? true : null },
     correlationScope: reference(correlationScope),
+    admission: { ...Object.fromEntries(['active', 'queued', 'queuedTotal', 'timedOutTotal', 'maxWaitMs']
+      .map(key => [key, counter(value.admission?.[key])])), oldestWaitMs: number(value.admission?.oldestWaitMs) },
     // null means this channel does not carry the capture (the in-session status API);
     // an empty array means the capture is available and no unmapped name was observed.
     unsupportedEventNames: Array.isArray(value.unsupportedEventNames)

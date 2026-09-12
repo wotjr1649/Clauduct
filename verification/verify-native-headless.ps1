@@ -2,10 +2,13 @@
 param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 'workflow', 'mcp', 'resume', 'failure-resume', 'image', 'webfetch', 'websearch', 'build', 'build-powershell', 'background', 'cancel-task')][string] $Case = 'text',
     [ValidateSet('astra', 'sol', 'terra', 'luna')][string] $Model = 'luna',
     [ValidateSet('low', 'medium', 'high', 'xhigh', 'max')][string] $Effort = 'low',
-    [ValidateRange(1, 120)][int] $TimeoutSeconds = 90)
+    [ValidateSet('png', 'jpeg', 'gif', 'webp')][string] $ImageFormat = 'png',
+    [ValidateRange(1, 120)][int] $TimeoutSeconds = 90,
+    [ValidateRange(1, 256)][int] $RequestLimit = 16)
 
 $ErrorActionPreference = 'Stop'
 if (-not $Live) { throw 'LIVE_FLAG_REQUIRED' }
+$runClock = [Diagnostics.Stopwatch]::StartNew()
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).ProviderPath
 $temporaryRoot = Join-Path $taskRoot '.tmp'
@@ -27,10 +30,18 @@ $extraArgs = @('--no-session-persistence')
 if ($Case -eq 'stream-json') { $extraArgs += @('--verbose', '--include-partial-messages') }
 $expectedFile = 'export function add(a, b) { return a + b; }'
 if ($Case -eq 'image') {
-    # Public 32x32 solid-red RGB PNG, generated from constant pixels; no user image.
-    [IO.File]::WriteAllBytes((Join-Path $workingRoot 'square.png'), [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR4nO3NsQ0AAAzCMP5/un0CNkuZ41wybXsHAAAAAAAAAAAAxR4yw/wuPL6QkAAAAABJRU5ErkJggg=='))
+    $imageDataPath = Join-Path $taskRoot 'verification/fixtures/public-images.json'
+    $imageDataInfo = Get-Item -Force -LiteralPath $imageDataPath
+    if ($imageDataInfo.Length -gt 16384 -or ($imageDataInfo.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'IMAGE_FIXTURE_BOUNDARY' }
+    $imageData = ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($imageDataPath)) -AsHashtable
+    $imageBase64 = $imageData[$ImageFormat]
+    if ($imageData.version -ne 1 -or $imageData.width -ne 32 -or $imageData.height -ne 32 -or $imageData.color -ne 'RED' -or
+        $imageBase64 -isnot [string] -or $imageBase64.Length -gt 8192 -or $imageBase64 -notmatch '^[A-Za-z0-9+/]+={0,2}$') { throw 'IMAGE_FIXTURE_DATA' }
+    $imageFileName = 'square.' + $(if ($ImageFormat -eq 'jpeg') { 'jpg' } else { $ImageFormat })
+    $imagePath = Join-Path $workingRoot $imageFileName
+    [IO.File]::WriteAllBytes($imagePath, [Convert]::FromBase64String($imageBase64))
     $marker = 'RED'
-    $prompt = 'Read square.png exactly once with Read. Look at the image and reply only with its dominant color name in uppercase.'
+    $prompt = "Read $imageFileName exactly once with Read. Look at the image and reply only with its dominant color name in uppercase."
     $nativeTools = 'Read'
 }
 if ($Case -eq 'webfetch') {
@@ -75,13 +86,13 @@ if ($Case -eq 'read-edit') {
 }
 if ($Case -eq 'agent') {
     $marker = 'CLAUDUCT_NATIVE_AGENT_OK'
-    $prompt = 'Use Agent exactly once with subagent_type clauduct-probe-luna, without a model argument, and run_in_background false. Ask it to follow its read-only probe instructions. Wait for its MODEL-PROBE-COMPLETED result, then reply with exactly CLAUDUCT_NATIVE_AGENT_OK.'
+    $prompt = 'Use Agent exactly once with subagent_type clauduct-probe-inherit, without a model argument, and run_in_background false. Ask it to follow its read-only probe instructions. Wait for its MODEL-PROBE-COMPLETED result, then reply with exactly CLAUDUCT_NATIVE_AGENT_OK.'
     $nativeTools = 'Agent,TaskOutput,Read'
     $turnLimit = '6'
     $extraArgs = @('--verify-agent-models')
 }
 if ($Case -eq 'workflow') {
-    $workflowScript = "export const meta = { name: 'clauduct-check', description: 'Public arithmetic check' }; return await agent('Compute 2 + 3. Return the sum using StructuredOutput. Do not use other tools.', { label: 'one', model: 'luna', schema: { type: 'object', properties: { sum: { type: 'number' } }, required: ['sum'], additionalProperties: false } });"
+    $workflowScript = "export const meta = { name: 'clauduct-check', description: 'Public arithmetic check' }; return await agent('Compute 2 + 3. Return the sum using StructuredOutput. Do not use other tools.', { label: 'one', model: '$Model', schema: { type: 'object', properties: { sum: { type: 'number' } }, required: ['sum'], additionalProperties: false } });"
     $marker = 'CLAUDUCT_NATIVE_WORKFLOW_OK'
     $prompt = "Call Workflow exactly once with this exact inline script, without a scriptPath or a saved workflow name: $workflowScript Use TaskOutput exactly once to wait for the returned task ID. After its structured result has sum=5, reply with exactly CLAUDUCT_NATIVE_WORKFLOW_OK. Do not launch another workflow or agent."
     $nativeTools = 'Workflow,TaskOutput'
@@ -94,7 +105,7 @@ if ($Case -in @('mcp', 'failure-resume')) {
     $nativeTools = 'ToolSearch'
     $turnLimit = '5'
     $mcpRecord = Join-Path $workingRoot 'mcp-calls.jsonl'
-    $mcpConfig = @{ mcpServers = @{ fixture = @{ type = 'stdio'; command = (Get-Command node.exe -CommandType Application).Source;
+    $mcpConfig = @{ mcpServers = @{ fixture = @{ type = 'stdio'; command = (Get-Command node.exe -CommandType Application | Select-Object -First 1).Source;
         args = @((Join-Path $taskRoot 'verification/fixtures/native-mcp.mjs'), $mcpRecord) } } }
     [IO.File]::WriteAllText((Join-Path $workingRoot '.mcp.json'), ($mcpConfig | ConvertTo-Json -Depth 6))
 }
@@ -107,7 +118,7 @@ if ($Case -in @('resume', 'failure-resume')) {
     $extraArgs = @('--session-id', $resumeId)
 }
 $info = [Diagnostics.ProcessStartInfo]::new()
-$info.FileName = (Get-Command node.exe -CommandType Application).Source
+$info.FileName = (Get-Command node.exe -CommandType Application | Select-Object -First 1).Source
 $info.WorkingDirectory = $workingRoot
 $info.UseShellExecute = $false
 $info.CreateNoWindow = $true
@@ -129,6 +140,17 @@ $info.Environment['TMP'] = $tempRoot
 $info.Environment['CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC'] = '1'
 $info.Environment['CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY'] = '1'
 if ($Case -eq 'build-powershell') { $info.Environment['CLAUDE_CODE_USE_POWERSHELL_TOOL'] = '1' }
+$entryArgs = @((Join-Path $taskRoot 'src/clauduct.mjs'))
+$guardedFixture = $Case -in @('agent', 'workflow', 'image', 'webfetch', 'websearch')
+if ($guardedFixture) {
+    $policyPath = Join-Path $fixtureRoot 'tool-policy.json'
+    $policy = @{ version = 1; kind = $Case; workingRoot = $workingRoot }
+    if ($Case -eq 'agent') { $policy.readPath = Join-Path $taskRoot 'src/models.mjs' }
+    elseif ($Case -eq 'image') { $policy.readPath = $imagePath }
+    elseif ($Case -eq 'workflow') { $policy.workflowScript = $workflowScript }
+    [IO.File]::WriteAllText($policyPath, ($policy | ConvertTo-Json -Depth 4))
+    $entryArgs = @((Join-Path $taskRoot 'verification/guarded-headless-entry.mjs'), $policyPath)
+}
 $phases = if ($Case -eq 'failure-resume') { @('seed', 'failure', 'resume') } elseif ($Case -eq 'resume') { @('seed', 'resume') } else { @('single') }
 foreach ($phase in $phases) {
 if ($phase -eq 'failure') {
@@ -152,12 +174,14 @@ if ($phase -eq 'resume') {
 }
 $info.ArgumentList.Clear()
 $allowedTools = if ($nativeTools -eq 'ToolSearch') { 'ToolSearch,mcp__fixture__add' } elseif ($Case -eq 'webfetch') { 'WebFetch(domain:example.com)' } elseif ($Case -in @('build', 'build-powershell')) { "$nativeTools(node verify.mjs)" } elseif ($Case -eq 'background') { 'Bash(node worker.mjs),TaskOutput' } elseif ($Case -eq 'cancel-task') { 'Bash(node worker.mjs),TaskStop' } else { $nativeTools }
-foreach ($argument in @((Join-Path $taskRoot 'src/clauduct.mjs'), '--model', $Model, '--effort', $Effort,
+foreach ($argument in $entryArgs + @('--model', $Model, '--effort', $Effort, '--verify-model-route',
+    '--verify-request-limit', [string]$RequestLimit,
     '-p', '--output-format', $(if ($Case -eq 'stream-json') { 'stream-json' } else { 'json' }), '--tools', $nativeTools, '--allowedTools', $allowedTools,
     '--max-turns', $turnLimit) + $extraArgs + @('--', $prompt)) {
     $info.ArgumentList.Add($argument)
 }
 $process = [Diagnostics.Process]::Start($info)
+$executionClock = [Diagnostics.Stopwatch]::StartNew()
 try {
     $process.StandardInput.Close()
     $stdoutTask = $process.StandardOutput.ReadToEndAsync()
@@ -188,13 +212,15 @@ try {
     $mcpVerified = $null
     $sameSession = $null
     $featureVerified = $null
+    $nativeImageMediaType = $null
+    $upstreamImageMediaType = $null
     $workerStopped = $null
     $expectedModel = @{ astra = 'gpt-6-astra'; sol = 'gpt-5.6-sol'; terra = 'gpt-5.6-terra'; luna = 'gpt-5.6-luna' }[$Model]
     $modelMatched = @($status.recentRequests | Where-Object { $_.subagent -ne $true -and $_.model -eq $expectedModel -and $_.effort -eq $Effort }).Count -gt 0
     if ($Case -eq 'read-edit') { $fixtureMatched = [IO.File]::ReadAllText((Join-Path $workingRoot 'math.mjs')).Trim() -eq $expectedFile }
-    if ($Case -eq 'agent') { $agentRouted = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.selectionSource -eq 'definition-model' -and $_.model -eq 'gpt-5.6-luna' -and $_.effort -eq 'max' }).Count -gt 0 }
+    if ($Case -eq 'agent') { $agentRouted = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.selectionSource -eq 'definition-inherit' -and $_.model -eq $expectedModel -and $_.effort -eq $Effort }).Count -gt 0 }
     if ($Case -eq 'workflow') {
-        $agentRouted = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.selectionSource -eq 'workflow-result' -and $_.role -eq 'workflow-subagent' -and $_.model -eq 'gpt-5.6-luna' -and $_.effort -eq $Effort -and $_.success -eq $true }).Count -gt 0
+        $agentRouted = @($status.recentRequests | Where-Object { $_.subagent -eq $true -and $_.selectionSource -eq 'workflow-result' -and $_.role -eq 'workflow-subagent' -and $_.model -eq $expectedModel -and $_.effort -eq $Effort -and $_.success -eq $true }).Count -gt 0
     }
     if ($Case -in @('mcp', 'failure-resume')) {
         $mcpVerified = $false
@@ -221,7 +247,9 @@ try {
                 }
                 $toolObserved = $calls.Count -eq 1 -and $calls[0].name -eq $nativeTools -and @($results | Where-Object { $_.tool_use_id -eq $calls[0].id -and $_.is_error -ne $true }).Count -eq 1
                 if ($Case -eq 'image') {
-                    $featureVerified = $toolObserved -and [IO.Path]::GetFullPath($calls[0].input.file_path, $workingRoot) -eq (Join-Path $workingRoot 'square.png') -and @($results[0].content | Where-Object { $_.type -eq 'image' }).Count -eq 1
+                    $imageBlocks = @($results[0].content | Where-Object { $_.type -eq 'image' })
+                    $nativeImageMediaType = if ($imageBlocks.Count -eq 1 -and $imageBlocks[0].source.media_type -in @('image/png','image/jpeg','image/gif','image/webp')) { $imageBlocks[0].source.media_type } else { $null }
+                    $featureVerified = $toolObserved -and [IO.Path]::GetFullPath($calls[0].input.file_path, $workingRoot) -eq $imagePath -and $imageBlocks.Count -eq 1 -and $null -ne $nativeImageMediaType
                 } elseif ($Case -eq 'webfetch') {
                     $featureVerified = $toolObserved -and $calls[0].input.url -in @('https://example.com', 'https://example.com/')
                 } elseif ($Case -in @('build', 'build-powershell')) {
@@ -267,19 +295,59 @@ try {
         $outcomeMatched = $failurePreserved
     }
     $passed = -not $timedOut -and $outcomeMatched -and $clean -and $modelMatched -and $fixtureMatched -ne $false -and $agentRouted -ne $false -and $mcpVerified -ne $false -and $sameSession -ne $false -and $featureVerified -ne $false -and $streamVerified -ne $false
-    [ordered]@{ suite = 'native-headless-live'; case = $Case; phase = $phase; passed = $passed; exitCode = $process.ExitCode; timedOut = $timedOut;
+    $fixtureUsage = $null
+    if ($guardedFixture) {
+        $usageLine = @($stderr -split '\r?\n' | Where-Object { $_.StartsWith('CLAUDUCT_FIXTURE_USAGE ') } | Select-Object -Last 1)
+        if ($usageLine.Count -eq 1 -and $usageLine[0].Length -lt 1024) {
+            try {
+                $candidateUsage = ConvertFrom-Json -InputObject $usageLine[0].Substring(23) -AsHashtable
+                if (@($candidateUsage.Keys | Where-Object { $_ -notin @('inputTokens','outputTokens','completions','maxInputTokens','maxOutputTokens','requestAttempts','imageFormatMask') }).Count -eq 0 -and
+                    @($candidateUsage.Values | Where-Object { ($_ -isnot [long] -and $_ -isnot [int]) -or $_ -lt 0 }).Count -eq 0) { $fixtureUsage = $candidateUsage }
+            } catch { }
+        }
+        $passed = $passed -and $null -ne $fixtureUsage -and $fixtureUsage.completions -gt 0 -and
+            $fixtureUsage.inputTokens -le 131072 -and $fixtureUsage.outputTokens -le 32768 -and
+            $fixtureUsage.requestAttempts -gt 0 -and $fixtureUsage.requestAttempts -le $RequestLimit
+        if ($Case -eq 'image') {
+            $upstreamImageMediaType = @{ 1 = 'image/png'; 2 = 'image/jpeg'; 4 = 'image/gif'; 8 = 'image/webp' }[[int]$fixtureUsage.imageFormatMask]
+            $featureVerified = $featureVerified -and $null -ne $upstreamImageMediaType -and $upstreamImageMediaType -eq $nativeImageMediaType
+            $passed = $passed -and $featureVerified
+        }
+    }
+    $executionClock.Stop()
+    $safeUsage = @{}
+    foreach ($usageKey in @('input_tokens','output_tokens','cache_read_input_tokens','cache_creation_input_tokens')) {
+        $usageValue = if ($result.usage -is [Collections.IDictionary]) { $result.usage[$usageKey] } else { $null }
+        if ($usageValue -is [long] -or $usageValue -is [int]) { $safeUsage[$usageKey] = $usageValue }
+    }
+    $summary = [ordered]@{ suite = 'native-headless-live'; case = $Case; phase = $phase; passed = $passed; exitCode = $process.ExitCode; timedOut = $timedOut;
+        elapsedMs = $executionClock.ElapsedMilliseconds; runElapsedMs = $runClock.ElapsedMilliseconds; usage = $safeUsage;
+        requests = $status.lifetime.started; succeeded = $status.lifetime.succeeded; failed = $status.lifetime.failed;
+        upstreamAttempts = $(if ($null -ne $fixtureUsage) { $fixtureUsage.requestAttempts } else { (@($status.recentRequests | ForEach-Object { $_.attempts.Count }) | Measure-Object -Sum).Sum });
+        failureCategories = @($status.failureHistory.records | ForEach-Object { $_.failureCategory });
+        entryCategories = @([regex]::Matches($stderr, '(?m)^Clauduct: ([A-Z_]{1,64})(?: |\r?$)') | ForEach-Object { $_.Groups[1].Value });
+        fixtureUsage = $fixtureUsage;
         stdoutJsonValid = $result -is [Collections.IDictionary]; exactReply = $exactReply; cleanupComplete = $clean;
         resultChars = $(if ($result.result -is [string]) { $result.result.Length } else { $null });
         nativeError = $result.is_error -eq $true;
+        nativeMessageCategories = @(foreach ($label in @('ECONNRESET','ConnectionReset','ConnectionClosed','connection','socket','network','fetch','quota','rate','permission','API Error','timeout')) {
+            if ($result.is_error -eq $true -and $result.result -is [string] -and $result.result -match [regex]::Escape($label)) { $label }
+        });
         nativeResultKind = $(if ($result.subtype -in @('success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd')) { $result.subtype } else { 'OTHER' });
         fixtureMatched = $fixtureMatched; agentRouted = $agentRouted; mcpVerified = $mcpVerified; sameSession = $sameSession;
         failurePreserved = $failurePreserved;
         featureVerified = $featureVerified;
+        imageFormat = $(if ($Case -eq 'image') { $ImageFormat } else { $null });
+        nativeImageMediaType = $nativeImageMediaType;
+        upstreamImageMediaType = $upstreamImageMediaType;
         model = $Model; effort = $Effort; modelMatched = $modelMatched;
         workerStopped = $workerStopped;
         streamVerified = $streamVerified;
         statusPresent = $null -ne $status; stdoutChars = $stdout.Length; stderrChars = $stderr.Length;
-        profile = 'new-task-local'; fixtureRoot = $fixtureRoot } | ConvertTo-Json -Compress
+        profile = 'new-task-local'; fixtureRoot = $fixtureRoot }
+    $summaryJson = $summary | ConvertTo-Json -Depth 8 -Compress
+    [IO.File]::WriteAllText((Join-Path $fixtureRoot ('result-' + $phase + '.json')), $summaryJson + "`n")
+    Write-Output $summaryJson
     if (-not $passed) { exit 1 }
 } finally { $process.Dispose() }
 }

@@ -98,5 +98,65 @@ try {
   assert.equal(status.recentRequests[0].effort, 'medium');
   assert.equal(status.recentRequests[1].purpose, 'conversation');
   assert.equal(status.recentRequests[1].effort, 'max');
+} catch (error) {
+  const state = gateway.diagnostics();
+  console.error(JSON.stringify({ fixture: 'original-compact-baseline', sent: sent.length,
+    requests: state.requests, transportRejections: state.lifetime.transportRejections,
+    failures: state.recentRequests.map(row => ({ stage: row.failureStage, category: row.failureCategory })) }));
+  throw error;
 } finally { await gateway.close(); }
+// F21: the opt-in verification route preserves compact effort; all existing
+// default-model/role assertions above retain the production contract.
+for (const selected of [{ model: 'gpt-5.6-luna', effort: 'max' }, { model: 'gpt-5.6-sol', effort: 'low' }]) {
+  for (const subagent of [false, true]) {
+    const input = doc(selected.model, compactPrompt, selected.effort);
+    const result = prepareNative(input, { subagent, route: subagent ? selected : undefined, verificationSelection: selected });
+    assert.equal(result.purpose, 'compact-template');
+    assert.deepEqual(result.selected, selected);
+    assert.equal(result.body.reasoning.effort, selected.effort);
+  }
+  const observed = [];
+  const locked = await startNativeGateway({ verificationSelection: selected,
+    admissionOptions: { freeBytes: () => 16 * 1024 ** 3 }, transport: {
+      diagnostics: () => ({ activeRequests: 0, activeSockets: 0 }), close: async () => {},
+      send: async body => {
+        observed.push({ model: body.model, effort: body.reasoning.effort });
+        const item = { id: 'msg_route', type: 'message', role: 'assistant', status: 'completed',
+          content: [{ type: 'output_text', text: 'PUBLIC_ROUTE_OK', annotations: [] }] };
+        return [
+          { type: 'response.created', response: { id: 'resp_route', status: 'in_progress' } },
+          { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } },
+          { type: 'response.output_text.delta', output_index: 0, item_id: item.id, content_index: 0, delta: 'PUBLIC_ROUTE_OK' },
+          { type: 'response.output_text.done', output_index: 0, item_id: item.id, content_index: 0, text: 'PUBLIC_ROUTE_OK' },
+          { type: 'response.output_item.done', output_index: 0, item },
+          { type: 'response.completed', response: { id: 'resp_route', status: 'completed', model: body.model,
+            reasoning: body.reasoning, output: [item], usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 } } }
+        ];
+      }
+    } });
+  try {
+    for (const [model, effort, prompt, allowed] of [
+      [selected.model, selected.effort, 'Public task', true],
+      [selected.model, selected.effort, compactPrompt, true],
+      [selected.model, 'medium', 'Public task', false],
+      ['gpt-6-astra', selected.effort, 'Public task', false]
+    ]) {
+      const count = observed.length;
+      const response = await fetch(`http://127.0.0.1:${locked.port}/v1/messages`, { method: 'POST',
+        signal: AbortSignal.timeout(5000), headers: { ...locked.clientHeaders(),
+          'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, body: JSON.stringify(doc(model, prompt, effort)) })
+        .catch(error => { throw new Error(JSON.stringify({ model, effort, allowed, observed: observed.length,
+          failure: locked.diagnostics().recentRequests.at(-1)?.failureCategory, code: error.cause?.code })); });
+      const text = await response.text();
+      if (allowed) { assert.equal(response.status, 200); assert.match(text, /message_stop/); }
+      assert.equal(observed.length, count + Number(allowed));
+      if (!allowed) {
+        const failure = locked.diagnostics().recentRequests.at(-1);
+        assert.equal(failure.failureCategory, 'VERIFICATION_ROUTE_MISMATCH');
+        assert.equal(failure.attempts.length, 0);
+      }
+    }
+    assert.deepEqual(observed, [selected, selected]);
+  } finally { await locked.close(); }
+}
 console.log(JSON.stringify({ suite: 'compact-policy', passed: true, externalRequests: 0, credentialReads: 0 }));

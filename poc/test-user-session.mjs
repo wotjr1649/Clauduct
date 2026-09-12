@@ -7,6 +7,7 @@ import { readSmall } from '../verification/manual-http-probe.mjs';
 import { MODEL, FIXTURE_PATH, probeProfile } from './adapter.mjs';
 import { createLoopbackCodexTransport } from './codex-transport.mjs';
 import { startGateway } from './gateway.mjs';
+import { installHttpClose } from '../src/http-close.mjs';
 import { entryPolicy, entryOptions, checkUserContext, checkClientVersion, requireConfirmation, credentialFromCache,
   safeEntryCategory, runGatewayRoundtrip, entrySummary, RESULT_MARKER } from './user-session.mjs';
 
@@ -205,7 +206,7 @@ async function session(mode, expected, policy = 'strict', profile = 'astra-xhigh
       res.end(wire(tool, requests.length, mode === 'wrong_marker' ? 'WRONG' : RESULT_MARKER, mode, profile));
     });
   });
-  server.on('connection', socket => { sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => sockets.delete(socket)); });
+  server.on('connection', socket => { installHttpClose(socket); sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => sockets.delete(socket)); });
   await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
   let outcome, category = 'SUCCESS';
   try {

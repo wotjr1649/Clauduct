@@ -56,6 +56,10 @@ export const FAILURE_DIAGNOSTIC_CATEGORIES = Object.freeze([
   'DOWNSTREAM_CALLBACK_FAILED', 'TRANSPORT_CLOSED', 'UPSTREAM_HTTP_ERROR', 'RATE_LIMITED',
   'UNAUTHENTICATED', 'CREDENTIAL_UNAVAILABLE_OR_EXPIRED', 'CREDENTIAL_ACCOUNT_CHANGED',
   'CREDENTIAL_ACCOUNT_MISMATCH', 'CODEX_RELOGIN_REQUIRED',
+  'VERIFICATION_ROUTE_MISMATCH',
+  'VERIFICATION_TOOL_INPUT_REJECTED',
+  'REQUEST_BUDGET',
+  'UPSTREAM_RETRY_DEFERRED', 'UPSTREAM_RETRY_UNREPRESENTABLE',
   'INVALID_RESPONSE_START', 'MISSING_RESPONSE_START', 'STREAM_ORDER', 'SNAPSHOT_MISMATCH',
   'ITEM_INDEX_MISMATCH', 'TEXT_MISMATCH', 'INVALID_OUTPUT_ITEM', 'UNSUPPORTED_OUTPUT',
   'UNSUPPORTED_CONTENT', 'UNSUPPORTED_FIELDS', 'UNSUPPORTED_REQUEST', 'UNSUPPORTED_METADATA_EVENT',
@@ -64,7 +68,7 @@ export const FAILURE_DIAGNOSTIC_CATEGORIES = Object.freeze([
   'EMPTY_REPLY', 'INVALID_USAGE', 'OUTPUT_TOKEN_LIMIT_EXCEEDED',
   // Locally constructed rejections that used to collapse into OTHER. Each is a fixed
   // label for a gateway/prepare/review decision, never a copied upstream value.
-  'REQUEST_TIMEOUT', 'INPUT_TOO_LARGE', 'INVALID_JSON', 'MEMORY_QUEUE_FULL', 'AGENT_SELECTION_UNVERIFIED',
+  'REQUEST_TIMEOUT', 'INPUT_TOO_LARGE', 'INVALID_JSON', 'MEMORY_QUEUE_FULL', 'MEMORY_ADMISSION_TIMEOUT', 'AGENT_SELECTION_UNVERIFIED',
   'INVALID_OUTPUT_LIMIT', 'UNSUPPORTED_SAMPLING', 'UNSUPPORTED_MESSAGES', 'UNSUPPORTED_TOOLS',
   'UNSUPPORTED_IMAGE', 'UNSUPPORTED_CONTEXT_EDIT', 'UNSUPPORTED_DEFERRED_TOOLS', 'UNSUPPORTED_TOOL_CHANGE',
   'INVALID_TOOL_REFERENCE', 'INVALID_TOOL_RESULT', 'MISSING_TOOL_RESULT', 'REVIEW_DIFF_UNAVAILABLE',
@@ -231,7 +235,7 @@ export function searchEnvelope(now = Date.now(), id = randomUUID) {
   return { headers: { 'x-codex-turn-metadata': metadata }, cacheKey: session, toolsId: `at_${id()}`, metadata };
 }
 
-export function prepareNative(doc, { subagent = false, route, turnToolChanges = false, search = false } = {}) {
+export function prepareNative(doc, { subagent = false, route, turnToolChanges = false, search = false, verificationSelection } = {}) {
   keys(doc, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice', 'thinking',
     'metadata', 'output_config', 'context_management', 'temperature', 'top_p', 'stop_sequences'], 'REQUEST_FIELDS');
   requestNeed(doc.stream === true, doc.stream === false ? 'REQUEST_STREAM_FALSE'
@@ -387,13 +391,17 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   const compactShape = inspectCompactTemplate(doc.messages);
   const purpose = compactShape.matches ? 'compact-template' : 'conversation';
   const requestedEffort = selected.effort;
-  if (purpose === 'compact-template' && !['low', 'medium'].includes(selected.effort)) {
+  if (purpose === 'compact-template' && verificationSelection === undefined && !['low', 'medium'].includes(selected.effort)) {
     selected = { ...selected, effort: 'medium' };
   }
   const body = { model: selected.model,
     instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
     parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
     include: ['reasoning.encrypted_content'], stream: true, store: false };
+  // This process-owned test configuration is never accepted from a request body.
+  // Search is a separately classified side query with no model execution.
+  if (verificationSelection !== undefined && !search) need(body.model === verificationSelection?.model
+    && body.reasoning.effort === verificationSelection?.effort, 'VERIFICATION_ROUTE_MISMATCH');
   return { selected, names, purpose, compactShape, requestedEffort, webSearch: webSearch !== undefined,
     outputLimit: doc.max_tokens, outputTokenLimitPolicy: OUTPUT_TOKEN_LIMIT_POLICY, body };
 }

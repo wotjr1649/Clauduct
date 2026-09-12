@@ -30,6 +30,11 @@ if (process.argv[2] === '--synthetic-client') {
     assert.notEqual(launchOptions(args).print, true); checks++;
   }
   const context = { stdinTTY: false, stdoutTTY: false, env: {}, execArgs: [] };
+  const locked = launchOptions(['-p', '--model', 'luna', '--effort', 'max', '--verify-model-route']);
+  assert.equal(locked.verifyModelRoute, true);
+  assert.equal(locked.forward.includes('--verify-model-route'), false); checks++;
+  assert.throws(() => launchOptions(['--verify-model-route=true']), /INVALID_ARGUMENTS/); checks++;
+  assert.throws(() => launchOptions(['--verify-model-route', '--verify-model-route']), /INVALID_ARGUMENTS/); checks++;
   assert.throws(() => checkUserContext(context), /USER_TERMINAL_REQUIRED/); checks++;
   checkUserContext({ ...context, nonInteractive: true }); checks++;
   assert.throws(() => checkUserContext({ ...context, nonInteractive: 'true' }), /INVALID_ARGUMENTS/); checks++;

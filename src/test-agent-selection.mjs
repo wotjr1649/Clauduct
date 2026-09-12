@@ -495,8 +495,19 @@ try {
   const reading = new Promise(resolve => { onCancelRead = resolve; });
   const cancellation = new AbortController();
   const cancelled = post('cancel_test', cancellation.signal).then(async r => { await r.text(); return 'completed'; }, e => e.name);
-  await reading; cancellation.abort();
+  await reading;
+  const cancelledRequest = gateway.diagnostics().recentRequests.at(-1).request;
   const survivor = post('cancel_test');
+  // Keep both waiters pending, observe the cancellation at the gateway, then
+  // release metadata. A local AbortController call alone is not peer receipt.
+  const until = async predicate => {
+    const deadline = Date.now() + 3000;
+    while (!predicate() && Date.now() < deadline) await new Promise(done => setTimeout(done, 5));
+    assert.ok(predicate(), 'CANCELLATION_FIXTURE_BOUNDARY_NOT_OBSERVED');
+  };
+  await until(() => gateway.diagnostics().activeJobs >= 2);
+  cancellation.abort();
+  await until(() => gateway.diagnostics().recentRequests.some(row => row.request === cancelledRequest && row.clientDisconnected));
   snapshots.set('cancel_test', metadata('cancel_origin', 'opus'));
   const survivingResponse = await survivor;
   assert.equal(survivingResponse.status, 200, await survivingResponse.text());

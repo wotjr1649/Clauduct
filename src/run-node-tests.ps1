@@ -42,7 +42,7 @@ function Invoke-ClauductNodeTests {
             throw 'TEST_TEMP_REPARSE_POINT'
         }
     } else { [void](New-Item -ItemType Directory -Path $temporaryRoot) }
-    $nodeExecutable = (Get-Command node.exe -CommandType Application).Source
+    $nodeExecutable = (Get-Command node.exe -CommandType Application | Select-Object -First 1).Source
     $windowsRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::Windows)
     if (-not $windowsRoot -or -not (Test-Path -LiteralPath $windowsRoot -PathType Container)) {
         throw 'WINDOWS_ROOT_UNAVAILABLE'

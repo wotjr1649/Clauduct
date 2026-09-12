@@ -9,6 +9,7 @@ import { createInterface } from 'node:readline/promises';
 import { searchEnvelope } from '../src/native-protocol.mjs';
 import { clientVersionPolicy } from '../src/client-version.mjs';
 import { release, arch } from 'node:os';
+import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe } from '../src/runtime-paths.mjs';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
 // The reference client's standalone web search. In the responses-lite envelope it sends no hosted
@@ -20,8 +21,6 @@ export const effort = 'xhigh';
 // Search mode runs on the cheapest model: it measures whether the endpoint answers and in
 // what shape, not how well a model writes.
 export const searchModel = 'gpt-5.6-luna';
-const expectedRoot = 'C:\\Users\\JS\\.codex';
-const codexExe = 'C:\\Users\\JS\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
 // The version this probe sends is the installed one, read at run time, exactly as the gateway
 // does. A version the project has not validated end to end is reported as unverified rather
 // than aborted: aborting hides the drift, reporting it puts the drift in the result the user

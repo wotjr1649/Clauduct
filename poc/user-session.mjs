@@ -10,9 +10,8 @@ import { ALIAS, FIXTURE_PATH, readTool, PROTOCOL_ERROR_CODES, protocolDiagnostic
 import { createCodexTransport } from './codex-transport.mjs';
 import { clientVersionPolicy, isClientVersion } from '../src/client-version.mjs';
 import { startGateway } from './gateway.mjs';
+import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe } from '../src/runtime-paths.mjs';
 
-const expectedRoot = 'C:\\Users\\JS\\.codex';
-const codexExe = 'C:\\Users\\JS\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
 const configPath = join(expectedRoot, 'config.toml');
 const credentialPath = join(expectedRoot, 'auth.json');
 export const RESULT_MARKER = 'CLAUDUCT_MEMORY_GATEWAY_7';

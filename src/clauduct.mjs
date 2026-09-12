@@ -181,7 +181,6 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
   } };
   settings.modelPicker = { replaceBuiltInOptions: true, options: Object.values(MODELS).map(item => ({ model: item.model,
     label: `${item.model} via Clauduct`, description: `Default effort: ${item.effort}` })) };
-  settings.statusLine = { type: 'command', command: 'bash "C:/Users/JS/.agents/scripts/claude/clauduct_statusline.sh"' };
   const hookPath = fileURLToPath(new URL('./agent-route.mjs', import.meta.url)).replaceAll('\\', '/');
   const nodePath = process.execPath.replaceAll('\\', '/');
   settings.hooks = Object.fromEntries(['SubagentStart', 'SubagentStop'].map(event => [event,
@@ -264,7 +263,7 @@ export async function runInteractive(gateway, startClient, { signal, cleanupMs =
   // from state directly and still stand, so a failed projection names itself and keeps them.
   let snapshot;
   try { snapshot = requestStatusSnapshot(state, contextEnv); }
-  catch (error) { snapshot = { statusUnavailable: String(error?.message ?? error).slice(0, 64) }; }
+  catch { snapshot = { statusUnavailable: 'STATUS_UNAVAILABLE' }; }
   return { category: !resourcesClosed ? 'CLEANUP_FAILED' : failure ?? (exitCode === 0 ? 'SUCCESS' : 'CLIENT_FAILED'),
     clientExitCode: exitCode, resourcesClosed, requestAttempts: state.transport.requestAttempts,
     requestStatus: { ...snapshot, cleanup } };

@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import { fileURLToPath } from 'node:url';
 
 export const ENDPOINT = 'https://chatgpt.com/backend-api/codex/responses';
 export const MODEL = 'gpt-6-astra';
@@ -13,7 +14,7 @@ export function probeProfile(name = 'astra-xhigh') {
   return profiles[name];
 }
 export const ALIAS = 'clauduct-poc';
-export const FIXTURE_PATH = 'D:\\AIDEV\\Clauduct\\poc\\fixture.txt';
+export const FIXTURE_PATH = fileURLToPath(new URL('./fixture.txt', import.meta.url));
 export const LIMITS = Object.freeze({ requestBytes: 65536, responseBytes: 262144,
   argumentBytes: 8192, events: 512, timeoutMs: 45000, requests: 2 });
 export const CHAT_REQUESTS = 32;

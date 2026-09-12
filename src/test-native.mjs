@@ -299,7 +299,7 @@ await test('native_launch_preserves_global_profile_and_statusline', () => {
   assert.equal(launch.args.includes('--tools'), false); assert.equal(launch.args.includes('--continue'), true);
   const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
   assert.equal(Object.hasOwn(settings.env, 'CLAUDE_CONFIG_DIR'), false);
-  assert.equal(settings.statusLine.command.includes('clauduct_statusline.sh'), true);
+  assert.equal(Object.hasOwn(settings, 'statusLine'), false); // Preserve native user configuration.
   assert.equal(settings.modelPicker.options.length, 4);
   assert.equal(settings.hooks.SubagentStart.length, 1);
   assert.equal(JSON.stringify(launch.args).includes('SYNTHETIC_TOKEN'), false);

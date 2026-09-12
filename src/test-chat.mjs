@@ -215,6 +215,17 @@ async function tests() {
     assert.equal(result.category, 'CLIENT_START_FAILED');
     assert.ok(!JSON.stringify(result).includes('SYNTHETIC_PRIVATE'));
   }));
+  await test('status_projection_exception_never_becomes_output', () => fixture(async gateway => {
+    const brokenProjection = { ...gateway, diagnostics: () => {
+      const state = gateway.diagnostics();
+      Object.defineProperty(state, 'recentRequests', { get() { throw new Error('SYNTHETIC_PRIVATE_STATUS'); } });
+      return state;
+    } };
+    const result = await runInteractive(brokenProjection, () => { throw new Error('SYNTHETIC_START_FAILURE'); });
+    assert.equal(result.requestStatus.statusUnavailable, 'STATUS_UNAVAILABLE');
+    assert.ok(!JSON.stringify(result).includes('SYNTHETIC_PRIVATE_STATUS'));
+    assert.ok(Object.values(result.requestStatus.cleanup).every(value => value === true));
+  }));
   await test('spawn_error_event_closes_gateway', () => fixture(async gateway => {
     const result = await runInteractive(gateway, () => spawn(root + '/synthetic-missing-executable', [],
       { shell: false, windowsHide: true, env: {}, stdio: 'ignore' }));

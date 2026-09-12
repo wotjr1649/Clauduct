@@ -9,6 +9,7 @@ D:\AIDEV\Clauduct\clauduct.cmd
 D:\AIDEV\Clauduct\clauduct.cmd --model sol --effort xhigh
 D:\AIDEV\Clauduct\clauduct.cmd --continue
 D:\AIDEV\Clauduct\clauduct.cmd --resume <session-id>
+D:\AIDEV\Clauduct\clauduct.cmd -p --output-format json --max-turns 3 "Summarize the current task"
 ```
 
 메인 기본 실행은 **astra/low**입니다. 명시적 모델 선택의 기본값(astra/medium, sol/xhigh, terra/high, luna/max)과 고정 agent 정의는 보존합니다. `--effort`로 지정한 값이 우선합니다. 실행 중 `/model` 선택을 사용하며, 모델 미지정 Explore와 일반 역할은 luna/max, Plan은 sol/xhigh로 연결합니다. 자식 메타데이터와 부모 호출 ID로 확인한 명시 모델이 역할 기본값보다 우선합니다. 실제 실행에서 연결을 확인할 수 없으면 AGENT_SELECTION_UNVERIFIED로 중단하며 다른 모델로 추정 배정하지 않습니다.
@@ -22,5 +23,9 @@ D:\AIDEV\Clauduct\clauduct.cmd --resume <session-id>
 기존 native 설정 경로·플러그인·훅을 상속합니다. Clauduct용 라우팅 hook과 환경 설정은 자식 세션에만 추가합니다. 사용자가 해결한 모델 선택 keybindings와 전역 settings는 수정하지 않습니다. 보안상 provider/secret 계열 환경 변수는 자식에 복사하지 않으므로 이 값에 의존하는 도구는 일반 Claude 실행과 차이가 있습니다.
 
 설치된 Node와 native Claude를 사용하는 Windows 실행기입니다. 사용자 PATH·프로필은 변경하지 않았으며, bare `clauduct` 등록 여부는 별개입니다. 인증 없이 실행 구성을 확인하려면 `clauduct.cmd --dry-run`을 사용합니다.
+
+`-p`/`--print`는 비대화형 실행입니다. 파이프로 입력·출력을 연결할 수 있고, stdout은 native Claude의 텍스트/JSON/stream-json 결과만 제공합니다. Clauduct의 시작 안내와 종료 진단은 stderr 및 기존 상태 파일에 남습니다. 명시적 `-p` 없이 일반 실행을 파이프에서 시작하면 터미널 요구 오류로 중단합니다. 인증·TLS·계정 고정·native 권한 검사는 비대화형에서도 적용됩니다. 자동 실행은 `--max-turns`와 실행 주체의 시간 제한으로 범위를 정합니다.
+
+릴리즈 보완 및 검증 진행은 [릴리즈 검증](docs/release-readiness.md)에 기록합니다.
 
 **Verified / Not verified의 상세 구분, 자원 제한, 호환성 제약과 검사 명령은 [native 구현 안내](docs/native.md)에 있습니다.** 기존 [Read 1회 PoC](poc/실제-Read-실행.md)의 사용자 SUCCESS와 이후 프롬프트 1~6 통과 보고는 보존하지만, 이번 스트리밍 변경의 실제 native 성공 증거로 대체하지 않습니다.

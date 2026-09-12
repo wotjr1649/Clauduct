@@ -9,6 +9,7 @@
 | 완료 | 해당 범위의 수용 조건을 만족하는 증거가 있고, 변경 영향이 없으면 재검증하지 않는다 |
 | 조건부 | 로컬·합성 증거는 있으나 실제 실행 증거가 없거나 일부 조건이 남아 있다 |
 | 미검증 | 증거가 없다. 통과로 표시하지 않는다 |
+| 복구 불가 | 당시 필요한 증거가 보존되지 않아 과거 원인을 확정할 수 없다. 수정 완료나 정상 동작을 뜻하지 않는다 |
 | 차단 | guard·권한·정책으로 검사를 실행할 수 없다. 우회하지 않고 미검증으로 남긴다 |
 | 범위밖 | 사용자가 이번 목표에서 제외했다 |
 
@@ -55,17 +56,19 @@ PASS의 범위는 **감독하 사용**이다. 무인 연속 개발은 여전히 
 
 | 항목 | 상태 | 증거 | 남은 위험 | 다음 행동 |
 |---|---|---|---|---|
-| 최초 `UNSUPPORTED_EVENT other/identifier`의 원인 | 미검증 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md). run-04에서 재발했으나 이름을 못 잡았고, 그 원인을 찾아 고쳤다 — [분석과 수정](audit-2026-09-11-run-04-exit-diagnostics.md) | 이름 두 건 모두 소실됐다. 원인은 여전히 미확정이며 이번 수정은 **다음 재발을 잡을 수 있게 했을 뿐** 지난 두 건을 밝히지 않는다 | 다음 재발의 종료 JSON에서 `unsupportedEventNames`를 본다. 비어 있으면 `unsupportedEventNamesWithheld`가 그것이 소실인지 부재인지 말해 준다 |
-| 미지원 이벤트 분류와 제한 캡처 | 완료 | `src/test-unsupported-event-diagnostics.mjs` 61개 검사 / loopback 36회. 형태 검사·4개 상한·상태 API 비노출 포함 | ThreadEvent는 SDK/app-server 어휘라 원인 후보에서 격하했다. 형태를 흉내 낸 문자열은 통과할 수 있다 | 없음 |
-| 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), `test-native-gateway` 53개 검사 | 서버 수준 clientError·CONNECT·upgrade는 여전히 카운터 밖이다 | 없음 |
+| 과거 `UNSUPPORTED_EVENT other/identifier` 두 건의 원인 | 복구 불가 | 세션 c4c222f8 종료 JSON(요청 57), [진단 감사](audit-2026-09-11-unsupported-event-diagnostics.md). run-04에서도 이름을 못 잡았다 — [분석과 수정](audit-2026-09-11-run-04-exit-diagnostics.md) | 이름 두 건 모두 소실됐다. 원인은 여전히 미확정이며 포착 수정은 지난 두 건을 밝히지 않는다 | 과거 원인 복원은 종료한다. 새 재발은 종료 JSON의 `unsupportedEventNames`와 `unsupportedEventNamesWithheld`로 별도 판정한다 |
+| 미지원 이벤트 분류와 제한 캡처 | 완료 | 2026-09-12 재실행: `src/test-unsupported-event-diagnostics.mjs` 63개 검사 / loopback 37회. 형태 검사·4개 상한·상태 API 비노출 포함 | ThreadEvent는 SDK/app-server 어휘라 원인 후보에서 격하했다. 형태를 흉내 낸 문자열은 통과할 수 있다 | 없음 |
+| 경계 거부가 진단에 남지 않던 공백 | 완료 | [경계 거부 감사](audit-2026-09-11-boundary-failure-diagnostics.md), 2026-09-12 `test-native-gateway` 61개 검사 | 요청 기록 전 거부는 `rejectedBeforeStart`, 서버 수준 clientError·CONNECT·upgrade·Expect 거부는 별도 `transportRejections` 집계다 | 없음 |
 | `OTHER` 분류 축소 | 완료 | 같은 감사. 요청 기록에 도달 가능한 고정 코드 추가와 접미사 정규화 | 새 오류 코드를 추가하면 목록도 함께 갱신해야 한다 | 코드 추가 시 목록 동기화 |
 | native fallback 차단 | 완료 | 통제 실험 — 같은 주입 자극에 설정만 다른 두 세션에서 대조군만 `REQUEST_STREAM_FALSE`를 냈다(prepare 실패 1 대 0). [실험 기록](audit-2026-09-12-fallback-arms.md). 자식 env·settings 동시 적용은 `test-launcher-native`, 주입 경로는 `test-fallback-verification` 19개 | 여전히 효과의 관측이지 바이너리 안 분기의 직접 관측은 아니다. 이 클라이언트 버전(0.154.0)에 대한 판정이며 조건식이 바뀌면 다시 돌려야 한다 | `--verify-fallback blocked\|allowed`로 재현한다. 클라이언트가 올라가면 다시 본다 |
 | 내용 전달 후 재시도 금지(도구 중복 실행 방지) | 완료 | `test-native-gateway` 재시도 울타리 2건. 울타리를 제거하면 실패하는 것을 확인 | downstream 전달 전 재시도는 유지되므로 upstream 계산은 중복될 수 있다 | 없음 |
 | 요청 형식 거부에서 upstream 미시도 | 완료 | `test-request-diagnostics` 69개 검사 / loopback 34회, `sends=0` | 없음 | 없음 |
-| 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개. run-04에서 실제 취소 3건의 진단 확보 — 자식 2건은 `clientDisconnected: false`로 연결이 살아 있는 상태의 취소, 1건은 클라이언트 선이탈 | 실제 UI 취소 시점, 원격 계산 중단, 전송 데이터 회수는 여전히 보장하지 않는다 | 없음 |
+| 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개. run-04 취소 3건 중 자식 2건은 `clientDisconnected: false`, 1건은 클라이언트 선이탈. 2026-09-12 인수인계에 보존된 사용자 보고: UI에서 직접 취소했고 오류가 없었다 | 사용자 UI 보고의 세션·요청 ID·취소 시각은 미기록이다. 이 관측을 등록 교체·형제 격리 전체의 실제 검증으로 확대하지 않는다. 원격 계산 중단과 전송 데이터 회수는 보장하지 않는다 | 릴리즈 검증에서는 UI 관측과 gateway 취소·격리 증거를 각각 판정한다 |
 | 정상 종료 자원 정리 | 완료 | [정리 경합 감사](audit-2026-09-11-cleanup-close-race.md), `test-cancel-snapshot` 6개, 세션 0d5d6174의 cleanup 9개 true | 창을 강제 종료하면 종료 JSON이 남는다고 보장하지 않는다 | 없음 |
 | 종료 판정과 exit code 계약 | 완료 | [native.md](native.md) 종료 진단 절, `requestOutcome`과 `cleanup` 분리 | exit 0은 프로세스 종료·자원 정리 판정이며 요청 성공 판정이 아니다 | 호환성 검토 없이 exit code를 바꾸지 않는다 |
-| 완료 알림 기반 복귀 | 조건부 | c19c8b14 실제 성공, [감사](audit-2026-09-09-completion-resume.md), 로컬 회귀 | 과거 실패(35985327)의 원인 미확정. 다중 알림·실패 알림 복귀는 미지원 | 없음 |
+| 단일 완료 알림 기반 복귀 | 완료 | c19c8b14의 [실제 성공](audit-2026-09-09-completion-success.md), 2026-09-12 `test-completion-selection` 46개 통과 | 같은 gateway의 검증 이력과 단일 `completed` 알림을 연결한 경로에 한정한다. [지원 한계](audit-2026-09-09-completion-resume.md)는 유지한다 | 없음 |
+| 다중 알림·실패/취소 알림에 의한 자동 복귀 | 범위밖 | 설계상 미지원. 실패·취소 알림의 거부는 로컬 회귀로 확인했고, [run-04](audit-2026-09-11-three-cycle-run-04.md)에서는 결과가 이미 전달된 실패 알림 뒤 올바른 비재실행을 관측했다 | run-04는 실패 알림 자동 복귀의 성공이나 gateway 거부 분기의 실측이 아니다 | 측정 대기 항목으로 두지 않는다 |
+| 과거 완료 복귀 실패(35985327)의 원인 | 복구 불가 | [당시 진단](audit-2026-09-09-completion-diagnostics.md): `CALL`만 남았고 당시 gateway 메모리·파일 가용 시점 증거가 없다 | 보존 기록의 재구성 성공으로 과거 원인을 소급 확정하지 않는다 | 과거 원인 복원은 종료한다. 새 실패는 `completionFailure`·`completionParentState`·`completionChildState`로 별도 판정한다 |
 | 직접 부모 모델·effort 상속 | 완료 | db34be24, a2d50ff0, [수용 조건](audit-2026-09-10-agent-acceptance.md), [계약](gpt-agent-selection-contract.md) | 생성 후 모델 변경과 손자 전 조합은 미검증 | 회귀 통과만 유지한다 |
 | Claude 별칭·전체 모델 ID 매핑 | 완료 | [감사](audit-2026-09-11-unmapped-agent-model.md), `test-agent-selection`의 8개 route 확인과 블록 단위 생략 검사 | 사용자가 구형 모델을 쓰지 않기로 해 구형 명명 위험은 닫혔다. 새 계열이 나오면 그 자식만 fail-closed 되고 턴은 보존된다 | 없음 |
 | 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·기록 검사. 이름만으로는 거부하지 않고 형식 오류만 거부한다. 판정 27개는 `judgedBetaLabels`로 기록 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |

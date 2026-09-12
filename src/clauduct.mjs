@@ -49,7 +49,7 @@ const DOCUMENT_FIRST_PROMPT = 'When the user asks you to read a task document an
 export function launchOptions(args) {
   if (!Array.isArray(args) || args.some(flag => typeof flag !== 'string')) throw new Error('INVALID_ARGUMENTS');
   let model = DEFAULT_SELECTION.model, effort, mode = 'interactive', verifyAutoCompact = false, verifyAgentModels = false, gptAgents = false;
-  let documentFirst = false, appendPrompt = false, verifyFallback;
+  let documentFirst = false, appendPrompt = false, verifyFallback, print = false;
   const forward = [];
   const seen = new Set();
   for (let i = 0; i < args.length; i++) {
@@ -64,7 +64,11 @@ export function launchOptions(args) {
       if (seen.has(name)) throw new Error('INVALID_ARGUMENTS');
       seen.add(name);
     }
-    if (name === '--document-first') {
+    if (name === '-p' || name === '--print') {
+      if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
+      print = true;
+      forward.push(flag);
+    } else if (name === '--document-first') {
       if (value !== undefined) throw new Error('INVALID_ARGUMENTS');
       documentFirst = true;
     } else if (name === '--verify-auto-compact') {
@@ -116,7 +120,7 @@ export function launchOptions(args) {
   if (documentFirst && appendPrompt) throw new Error('INVALID_ARGUMENTS');
   return { selected: selectModel(model, effort ?? (seen.has('--model') ? undefined : DEFAULT_SELECTION.effort)), mode, forward, ...(verifyAutoCompact ? { verifyAutoCompact } : {}),
     ...(verifyAgentModels ? { verifyAgentModels } : {}), ...(gptAgents ? { gptAgents } : {}),
-    ...(verifyFallback ? { verifyFallback } : {}),
+    ...(verifyFallback ? { verifyFallback } : {}), ...(print ? { print } : {}),
     ...(documentFirst ? { documentFirst } : {}) };
 }
 
@@ -266,11 +270,12 @@ export async function runInteractive(gateway, startClient, { signal, cleanupMs =
     requestStatus: { ...snapshot, cleanup } };
 }
 
-async function main() {
-  const options = launchOptions(process.argv.slice(2)), selected = options.selected;
+export async function main({ args = process.argv.slice(2), openTransport = openUserTransport, startClient = spawn } = {}) {
+  const options = launchOptions(args), selected = options.selected;
   if (options.mode === 'help') {
     process.stdout.write('clauduct [--model astra|sol|terra|luna] [--effort low|medium|high|xhigh|max] [--verify-fallback blocked|allowed] [--dry-run] [Claude 옵션]\n'
       + '기본 astra/low. native 도구/config 유지, 누적 시간·요청 제한 없음. --continue/--resume 전달.\n');
+    process.stdout.write('-p/--print: 비대화형 실행. stdout은 Claude 결과만 출력하고 Clauduct 안내·종료 진단은 stderr로 보냅니다.\n');
     process.stdout.write('게이트웨이를 벗어나는 Claude 옵션(cloud·teleport·remote-control·plugin-url·file), hook과 설정을 끄는 옵션'
       + '(--bare, --safe-mode), 권한·MCP·플러그인처럼 정책 판단이 필요한 옵션은 거부합니다. 분류: docs/claude-option-classification.md\n');
     process.stdout.write('--verify-auto-compact: 이 실행에만 압축 계산 창 100K(기본 예약량에서 약 67.4K 발동)를 적용. 모델 창은 400K 유지.\n');
@@ -281,7 +286,7 @@ async function main() {
   }
   if (options.mode === 'dry-run') {
     // This mode never opens credentials, a socket, or Claude. No child token is generated.
-    process.stdout.write(JSON.stringify({ mode: 'interactive', model: selected.model, effort: selected.effort,
+    process.stdout.write(JSON.stringify({ mode: options.print ? 'print' : 'interactive', model: selected.model, effort: selected.effort,
       terminal: 'inherit', tools: 'native', requestBudget: null, lifetimeMs: null, models: MODELS, contextPolicy: CONTEXT_POLICY,
       verificationAutoCompactWindow: options.verifyAutoCompact ? 100000 : null,
       verificationFallbackArm: options.verifyFallback ?? null,
@@ -293,7 +298,8 @@ async function main() {
   }
   const controller = new AbortController();
   const cancel = () => controller.abort();
-  const nativeInterrupt = () => {}; // Inherited Claude owns Ctrl+C/Esc; its exit closes the gateway.
+  const nativeInterrupt = options.print ? cancel : () => {}; // Interactive Claude owns Ctrl+C/Esc.
+  const output = options.print ? process.stderr : process.stdout;
   let transport, gateway;
   const contextEnv = {};
   // Native owns the terminal while it runs, so a mid-session write lands inside its input box.
@@ -302,7 +308,8 @@ async function main() {
   const notice = line => { if (!notices.includes(line)) notices.push(line); };
   process.on('SIGINT', nativeInterrupt); process.once('SIGTERM', cancel);
   try {
-    transport = openUserTransport({ signal: controller.signal, transportFactory: createNativeTransport });
+    transport = openTransport({ signal: controller.signal, transportFactory: createNativeTransport,
+      nonInteractive: options.print === true });
     gateway = await startNativeGateway({ transport,
       injectStreamError: options.verifyFallback !== undefined,
       agentSelection: createAgentSelection({ projectsRoot: join(resolve(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')), 'projects'),
@@ -314,26 +321,26 @@ async function main() {
       onUnmappedAgentModel: () => notice('Clauduct: 매핑되지 않은 모델 이름 때문에 해당 서브에이전트의 라우팅 기록을 생략했습니다. 그 자식은 AGENT_SELECTION_UNVERIFIED_CALL로 실패하고 턴은 그대로 전달됐습니다. lifetime.unmappedAgentModels를 확인하세요.'),
       onWebSearchUnused: () => notice('Clauduct: 웹 검색 도구를 실은 요청을 게이트웨이가 검색 요청으로 인식하지 못했습니다. 그 요청은 모델로 갔고 검색 결과 없이 성공했습니다. 클라이언트가 보내는 요청 모양이 바뀌었을 수 있습니다. 종료 JSON의 webSearchRequested/webSearchAnswered를 확인하세요.'),
       onUnsupportedEventCapture: () => notice('Clauduct: 미지원 upstream 이벤트 이름을 캡처했습니다. CLAUDUCT_REQUEST_STATUS의 unsupportedEventNames를 확인하세요.') });
-    process.stdout.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
-    if (options.verifyAutoCompact) process.stdout.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
-    if (options.verifyAgentModels) process.stdout.write('모델 진입점 검증 모드: clauduct-probe-astra/sol/terra/luna/inherit 등록. 실제 라우팅은 아직 검증 중입니다.\n');
-    if (options.gptAgents) process.stdout.write('GPT 일반 작업 agent: clauduct-astra/sol/terra/luna/inherit 등록. 기존 역할과 메인 선택은 유지합니다.\n');
+    output.write(`Clauduct · ${selected.model}/${selected.effort} · native tools · 세션 총량 제한 없음\n`);
+    if (options.verifyAutoCompact) output.write('자동 압축 검증 모드: 계산 창 100K, 기본 출력 예약량에서 약 67.4K에 발동. 일반 실행 설정은 변경하지 않습니다.\n');
+    if (options.verifyAgentModels) output.write('모델 진입점 검증 모드: clauduct-probe-astra/sol/terra/luna/inherit 등록. 실제 라우팅은 아직 검증 중입니다.\n');
+    if (options.gptAgents) output.write('GPT 일반 작업 agent: clauduct-astra/sol/terra/luna/inherit 등록. 기존 역할과 메인 선택은 유지합니다.\n');
     const result = await runInteractive(gateway, endpoint => {
       const launch = interactiveLaunch(endpoint, process.env, process.cwd(), selected, options.forward, options);
       for (const key of ['CLAUDE_CODE_MAX_CONTEXT_TOKENS', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
         'CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK']) {
         contextEnv[key] = launch.options.env[key];
       }
-      try { return spawn(launch.file, launch.args, launch.options); }
+      try { return startClient(launch.file, launch.args, launch.options); }
       finally { launch.options.env.ANTHROPIC_AUTH_TOKEN = ''; }
     }, { signal: controller.signal, contextEnv });
     const category = ['SUCCESS', 'CLIENT_FAILED', 'CLIENT_START_FAILED', 'REQUEST_BUDGET', 'USER_CANCELLED'].includes(result.category)
       ? result.category : safeEntryCategory({ code: result.category });
     for (const line of notices) process.stderr.write(line + '\n');
-    process.stdout.write(`Clauduct 종료: ${category}\n`);
-    process.stdout.write(`CLAUDUCT_REQUEST_STATUS ${JSON.stringify(result.requestStatus)}\n`);
+    output.write(`Clauduct 종료: ${category}\n`);
+    output.write(`CLAUDUCT_REQUEST_STATUS ${JSON.stringify(result.requestStatus)}\n`);
     const statusFile = recordRequestStatus(result.requestStatus);
-    process.stdout.write(`CLAUDUCT_REQUEST_STATUS_FILE ${statusFile ?? 'none'}\n`);
+    output.write(`CLAUDUCT_REQUEST_STATUS_FILE ${statusFile ?? 'none'}\n`);
     if (!statusFile) process.stderr.write('Clauduct: 종료 상태를 파일로 남기지 못했습니다. 위 CLAUDUCT_REQUEST_STATUS 줄이 유일한 사본입니다.\n');
     process.exitCode = result.category === 'SUCCESS' ? 0 : 1;
   } finally {

@@ -42,8 +42,9 @@ export function entryOptions(args) {
     profile: flags.includes('--profile=luna-low') ? 'luna-low' : 'astra-low' };
 }
 export function entryPolicy(args) { return entryOptions(args).headerPolicy; }
-export function checkUserContext({ stdinTTY, stdoutTTY, env, execArgs }) {
-  requireThat(stdinTTY === true && stdoutTTY === true, 'USER_TERMINAL_REQUIRED');
+export function checkUserContext({ stdinTTY, stdoutTTY, env, execArgs, nonInteractive = false }) {
+  requireThat(typeof nonInteractive === 'boolean', 'INVALID_ARGUMENTS');
+  requireThat(nonInteractive || (stdinTTY === true && stdoutTTY === true), 'USER_TERMINAL_REQUIRED');
   checkRuntime(env, execArgs);
   requireThat(resolve(env.CODEX_HOME || expectedRoot).toLowerCase() === resolve(expectedRoot).toLowerCase(),
     'UNEXPECTED_CODEX_HOME');
@@ -214,9 +215,9 @@ export function entrySummary(category, diagnostics, outcome, profile = 'astra-xh
 }
 
 // User-terminal boundary shared by the two user-operated entry points. Never called by tests.
-export function openUserTransport({ profile = 'astra-low', tokenLimitPolicy = 'reject', signal, requestBudget, transportFactory } = {}) {
+export function openUserTransport({ profile = 'astra-low', tokenLimitPolicy = 'reject', signal, requestBudget, transportFactory, nonInteractive = false } = {}) {
   checkUserContext({ stdinTTY: process.stdin.isTTY, stdoutTTY: process.stdout.isTTY,
-    env: process.env, execArgs: process.execArgv });
+    env: process.env, execArgs: process.execArgv, nonInteractive });
   requireThat(!signal?.aborted, 'USER_CANCELLED');
   const clientVersion = checkClientVersion(spawnSync(codexExe, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
   const compatibility = clientVersionPolicy(clientVersion);

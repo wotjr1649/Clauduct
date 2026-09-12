@@ -106,6 +106,7 @@ export function requestStatusSnapshot(value, env = {}) {
     clientDisconnectedMs: number(row?.clientDisconnectedMs),
     snapshotMismatchMs: number(row?.snapshotMismatchMs),
     snapshotMismatchPhase: ['stream', 'final'].includes(row?.snapshotMismatchPhase) ? row.snapshotMismatchPhase : null,
+    snapshotMismatchEvent: row?.failureCategory === 'SNAPSHOT_MISMATCH' && EVENT_DIAGNOSTIC_TYPES.includes(row?.snapshotMismatchEvent) ? row.snapshotMismatchEvent : null,
     lastUpstreamEventMs: number(row?.lastUpstreamEventMs),
     pingCount: number(row?.pingCount) ?? 0, lastPingMs: number(row?.lastPingMs),
     auxiliaryMetadataEvents: number(row?.auxiliaryMetadataEvents) ?? 0,

@@ -326,6 +326,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         catch (error) {
           if (error instanceof NativeError && error.code === 'SNAPSHOT_MISMATCH' && timing.snapshotMismatchMs === undefined) {
             timing.snapshotMismatchMs = elapsed(); timing.snapshotMismatchPhase = phase;
+            timing.snapshotMismatchEvent = EVENT_DIAGNOSTIC_TYPES.includes(error.snapshotMismatchEvent) ? error.snapshotMismatchEvent : null;
           }
           throw error;
         }

@@ -191,6 +191,7 @@ try {
       const row = status.recentRequests.at(-1);
       assert.equal(row.failureCategory, code); assert.equal(row.failureStage, 'upstream');
       assert.equal(row.snapshotMismatchPhase, code === 'SNAPSHOT_MISMATCH' ? 'stream' : null);
+      assert.equal(row.snapshotMismatchEvent, code === 'SNAPSHOT_MISMATCH' ? 'response.in_progress' : null);
       if (code === 'SNAPSHOT_MISMATCH') assert.equal(typeof row.snapshotMismatchMs, 'number');
       assert.equal(row.success, false); assert.equal(row.attempts.length, 1);
       assert.equal(row.attempts[0].terminalState, 'open');
@@ -689,6 +690,7 @@ try {
       if (mode === 'malformed') {
         assert.equal(timing.failureCategory, 'SNAPSHOT_MISMATCH');
         assert.equal(timing.snapshotMismatchPhase, 'final');
+        assert.equal(timing.snapshotMismatchEvent, 'response.completed');
         assert.ok(timing.snapshotMismatchMs >= timing.transportFinishedMs);
       }
       assert.equal(timing.retryScheduledMs.length, mode === 'retry' ? 1 : 0);
@@ -795,7 +797,7 @@ try {
       assert.equal(requestStatusSnapshot({ recentRequests: [], lifetime: { started: 2, succeeded: 2, failed: 0 } }).requestOutcome, 'all-succeeded');
       const hostile = requestStatusSnapshot({ recentRequests: [], failureRequests: Array.from({ length: 25 }, () => ({
         failureCategory: 'SYNTHETIC_PRIVATE', unsupportedEventTypeFormat: 'SYNTHETIC_PRIVATE',
-        payload: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE' }] })) });
+        payload: 'SYNTHETIC_PRIVATE', snapshotMismatchEvent: 'SYNTHETIC_PRIVATE', attempts: [{ terminalState: 'SYNTHETIC_PRIVATE' }] })) });
       assert.equal(hostile.failureHistory.records.length, 16);
       assert.ok(!JSON.stringify(hostile).includes('SYNTHETIC_PRIVATE'));
       passed++;

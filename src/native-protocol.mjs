@@ -486,6 +486,9 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     const code = error instanceof NativeError ? error.code
       : ADAPTER_ERROR_CODES.has(error?.code) ? error.code : 'INVALID_REQUEST';
     state.failed ??= new NativeError(code);
+    if (code === 'SNAPSHOT_MISMATCH' && EVENT_DIAGNOSTIC_TYPES.includes(error.snapshotMismatchEvent)) {
+      state.failed.snapshotMismatchEvent = error.snapshotMismatchEvent;
+    }
     if (Object.values(UPSTREAM_FAILURES).includes(code)) {
       state.failed.upstreamErrorCode ??= failureLabel(error.upstreamErrorCode, UPSTREAM_ERROR_CODES);
       state.failed.upstreamErrorType ??= failureLabel(error.upstreamErrorType, UPSTREAM_ERROR_TYPES);
@@ -534,10 +537,12 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
   const textDone = (event, item) => {
     need(item.kind === 'message' && id(event.item_id) && event.item_id === item.first.id
       && Number.isSafeInteger(event.content_index) && event.content_index >= 0 && typeof event.text === 'string', 'STREAM_ORDER');
+    const frames = !item.textParts[event.content_index] && event.text === ''
+      ? textDelta({ ...event, delta: '' }, item) : [];
     const part = item.textParts[event.content_index];
     need(part && !part.done && part.text === event.text, 'SNAPSHOT_MISMATCH');
     part.done = true;
-    return []; // Finish text after opaque reasoning so native's last yielded block is not empty.
+    return frames; // Finish text after opaque reasoning so native's last yielded block is not empty.
   };
   const contentPart = (event, item) => {
     need(item.kind === 'message' && id(event.item_id) && event.item_id === item.first.id
@@ -773,13 +778,19 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
       frames.push({ type: 'message_delta', delta: { stop_reason: message.stop_reason, stop_sequence: null },
         usage }, { type: 'message_stop' });
       return { message, frames };
-    } catch (error) { return fail(error); }
+    } catch (error) {
+      if (error.code === 'SNAPSHOT_MISMATCH') error.snapshotMismatchEvent = 'response.completed';
+      return fail(error);
+    }
   };
   const push = event => {
     if (state.failed) throw state.failed;
     if (state.finished) throw new NativeError('INVALID_STATE');
     try { return parse(event); } catch (error) {
       try { return fail(error); } catch (failure) {
+        if (failure.code === 'SNAPSHOT_MISMATCH') {
+          failure.snapshotMismatchEvent = EVENT_DIAGNOSTIC_TYPES.includes(event?.type) ? event.type : null;
+        }
         if (failure.code === 'UNSUPPORTED_EVENT') {
           failure.eventKind = !object(event) ? 'invalid-event-object'
             : !Object.hasOwn(event, 'type') ? 'missing-event-type'

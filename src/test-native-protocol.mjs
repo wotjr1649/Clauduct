@@ -101,6 +101,17 @@ assert.deepEqual(finished.message.content.map(block => block.type), ['text', 'to
 assert.ok(finished.frames.some(frame => JSON.stringify(frame).includes('tool_use')));
 assert.equal(finished.frames.at(-1).type, 'message_stop');
 assert.equal(textFrames.find(frame => frame.type === 'content_block_delta').index, 0);
+// Empty text has no deltas. Its done snapshot must not prevent a following tool call.
+const emptyTextEvents = responseEvents(prepared).filter(event => event.type !== 'response.output_text.delta');
+emptyTextEvents.find(event => event.type === 'response.output_text.done').text = '';
+emptyTextEvents.find(event => event.type === 'response.output_item.done' && event.item.type === 'message').item.content[0].text = '';
+const emptyText = nativeResponse(emptyTextEvents, prepared);
+assert.deepEqual(emptyText.message.content.map(block => block.type), ['text', 'tool_use']);
+assert.equal(emptyText.message.content[0].text, '');
+assert.equal(emptyText.message.stop_reason, 'tool_use');
+assert.equal(emptyText.sse.split('event: content_block_start').length - 1, 2);
+assert.equal(emptyText.sse.split('event: content_block_stop').length - 1, 2);
+assert.throws(() => nativeResponse(responseEvents(prepared).filter(event => event.type !== 'response.output_text.delta'), prepared), /SNAPSHOT_MISMATCH/);
 const streamedFramesBeforeFinish = collect(createNativeResponse(prepared), responseEvents(prepared));
 const serializedTextFrames = streamedFramesBeforeFinish.map(frame => JSON.stringify(frame));
 assert.ok(serializedTextFrames.some(frame => frame.includes('text_delta')));

@@ -67,6 +67,8 @@ pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -L
 
 첫 명령은 검토된 로컬 회귀이며 실제 backend를 호출하지 않는다. 기본 러너의 `review-diff`는 PATH 부재로 notRun을 표시한다. 별도 검토된 Git 경로의 제한 환경에서는 실제 검사가 통과했다. native Workflow와 symlink의 합성 suite notRun을 실검사 성공으로 세지 않는다.
 
+Workflow의 긴 기록은 작은 조각으로 순차 읽고 해당 자식의 출처를 끝까지 검증한다. 단일 journal 레코드128KiB, snapshot16MiB·65536레코드와 선택 전체1초의 읽기 작업 한도가 있으며, 중복·실패 기록과 재검증 사이의 기존 기록 변경은 거부한다. 자식 transcript는 최대1MiB의 첫 레코드로 신원을 검증한다. 긴 journal·transcript 및 위조·잘림·취소에 대한 로컬 검사를 통과했지만, 실제 긴 Workflow의 cache-miss resume는 아직 미완료다.
+
 `-Live` 검사는 기존 로그인으로 공개 고정 fixture를 실제 전송하며 사용량이 발생한다. 새 작업 전용 프로필을 사용하고 프로세스당 최대 120초로 제한한다. 사용자 대화·프로필을 복사하지 않는다. `failure-resume`은 전달 후 오류를 의도적으로 1회 주입해 보존·복구를 확인하는 별도 사례다.
 
 ZIP 옆 `manifest.json`은 소스 commit, 파일별 크기·SHA256, ZIP SHA256을 기록한다. SHA256은 손상 검사용이며 서명을 대신하지 않는다. 코드·검사·이 안내만 묶고 사용자 상태·프로필·Git 이력·감사 기록·과거 프롬프트·생성된 schema는 포함하지 않는다. 원본 Git checkout에서는 `pwsh -NoProfile -NonInteractive -File verification/build-release.ps1`로 같은 commit의 ZIP을 다시 만들 수 있다. 압축을 푼 배포본에는 Git 이력이 없어 빌더를 실행하지 않는다.

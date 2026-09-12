@@ -119,6 +119,12 @@ try {
   ]) {
     const current = selection();
     await child('one', scenario.effort ? { model: scenario.model } : {}); await journal([row('one')]);
+    if (!scenario.effort) {
+      const completed = Array.from({ length: 2048 }, (_, index) => ({ type: 'result',
+        agentId: `older-${index}`, result: 'PUBLIC_WORKFLOW_HISTORY'.repeat(8) }));
+      assert.ok(Buffer.byteLength(completed.map(JSON.stringify).join('\n')) > 131072);
+      await journal([...completed, row('one')]);
+    }
     const seen = [];
     let pairWait, releasePair, pairArrivals = 0;
     const gateway = await startNativeGateway({ agentSelection: current, admissionOptions: { freeBytes: () => 16 * 1024 ** 3 },

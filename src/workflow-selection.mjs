@@ -27,22 +27,82 @@ export function createWorkflowSelection(projectsRoot) {
     if (runs.has(runKey) || runs.size >= 1024) fail('CALL');
     runs.set(runKey, { ...link, directory, script, route: call.workflow.route, created: call.created });
   }
-  async function read(path, limit) {
+  async function openEvidence(path) {
     const root = await realpath(projectsRoot), canonical = await realpath(path);
     if (!within(root, canonical) || canonical.toLowerCase() !== path.toLowerCase()) fail('PATH');
-    const file = await open(canonical, 'r');
+    return open(canonical, 'r');
+  }
+  async function read(path, limit, firstLine = false) {
+    const file = await openEvidence(path);
     try {
       const stat = await file.stat();
-      if (!stat.isFile() || stat.size > limit) fail('SIZE');
+      if (!stat.isFile() || (!firstLine && stat.size > limit)) fail('SIZE');
       const buffer = Buffer.alloc(limit + 1);
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > limit) fail('SIZE');
-      return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
+      const newline = firstLine ? buffer.subarray(0, bytesRead).indexOf(10) : -1;
+      const end = newline < 0 ? bytesRead : newline;
+      if (end > limit || (firstLine && newline < 0 && stat.size > bytesRead)) fail('SIZE');
+      return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, end));
+    } finally { await file.close(); }
+  }
+  async function readJournal(path, agentId, signal, deadline, previous) {
+    // Bound retained memory per record, total scan work and time independently.
+    // A new child may occur anywhere in a long journal; a tail alone cannot prove
+    // that its origin is unique or that an earlier stop/failure was not omitted.
+    const check = () => { signal?.throwIfAborted(); if (performance.now() > deadline) fail('SIZE'); };
+    check();
+    const file = await openEvidence(path);
+    try {
+      const stat = await file.stat();
+      check();
+      if (!stat.isFile() || stat.size > 16777216) fail('SIZE');
+      const identity = `${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
+      if (previous && (identity !== previous.identity || stat.size < previous.bytes)) fail('IDENTITY');
+      const digest = createHash('sha256'), prefix = previous ? createHash('sha256') : undefined;
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      const chunk = Buffer.alloc(65536);
+      let pending = Buffer.alloc(0), position = 0, records = 0, entry;
+      function row(bytes) {
+        check();
+        if (bytes.length > 131072 || ++records > 65536) fail('SIZE');
+        const value = JSON.parse(decoder.decode(bytes));
+        if (!value || typeof value !== 'object' || Array.isArray(value)) fail('PARSE');
+        if (records === 1 && value.type !== 'launched') fail('IDENTITY');
+        if (value.agentId !== agentId) return;
+        if (entry || value.type !== 'started' || typeof value.key !== 'string' || !/^v2:[a-f0-9]{64}$/.test(value.key)
+          || typeof value.label !== 'string') fail('IDENTITY');
+        entry = { key: value.key, label: value.label };
+      }
+      while (position < stat.size) {
+        check();
+        const { bytesRead } = await file.read(chunk, 0, Math.min(chunk.length, stat.size - position), position);
+        check();
+        if (!bytesRead) fail('IDENTITY');
+        const bytes = chunk.subarray(0, bytesRead);
+        digest.update(bytes);
+        if (previous && position < previous.bytes) prefix.update(bytes.subarray(0, Math.min(bytesRead, previous.bytes - position)));
+        position += bytesRead;
+        pending = Buffer.concat([pending, bytes]);
+        let start = 0, newline;
+        while ((newline = pending.indexOf(10, start)) !== -1) {
+          row(pending.subarray(start, newline)); start = newline + 1;
+        }
+        pending = pending.subarray(start);
+        if (pending.length > 131072) fail('SIZE');
+      }
+      if (pending.length) row(pending);
+      if (!records) fail('IDENTITY');
+      const after = await file.stat();
+      check();
+      if (`${after.dev}:${after.ino}:${after.birthtimeMs}` !== identity || after.size < stat.size) fail('IDENTITY');
+      if (previous && prefix.digest('hex') !== previous.digest) fail('IDENTITY');
+      return { entry, identity, bytes: stat.size, digest: digest.digest('hex') };
     } finally { await file.close(); }
   }
   async function resolveChild(binding, signal) {
     if (!projectsRoot || !binding.nativeRegistered || binding.role !== 'workflow-subagent'
       || !id(binding.id) || !id(binding.sessionId)) fail('IDENTITY');
+    const deadline = performance.now() + 1000;
     const candidates = [...runs.values()].filter(run => run.sessionId === binding.sessionId
       && run.transcriptPath === binding.transcriptPath);
     let match;
@@ -50,34 +110,32 @@ export function createWorkflowSelection(projectsRoot) {
       signal?.throwIfAborted();
       const script = await read(run.script, 524288);
       if (workflowDigest(script) !== run.scriptDigest) fail('IDENTITY');
-      const raw = await read(join(run.directory, 'journal.jsonl'), 131072);
-      const journal = raw.trimEnd().split('\n').map(line => JSON.parse(line));
-      if (journal[0]?.type !== 'launched') fail('IDENTITY');
-      const entries = journal.filter(row => row.agentId === binding.id);
-      if (!entries.length) continue;
-      if (match || entries.length !== 1 || entries[0].type !== 'started'
-        || !/^v2:[a-f0-9]{64}$/.test(entries[0].key) || typeof entries[0].label !== 'string') fail('IDENTITY');
+      const journalPath = join(run.directory, 'journal.jsonl');
+      const journal = await readJournal(journalPath, binding.id, signal, deadline);
+      if (!journal.entry) continue;
+      if (match) fail('IDENTITY');
       const path = join(run.directory, `agent-${binding.id}.meta.json`);
       const metadataRaw = await read(path, 16384), metadata = JSON.parse(metadataRaw);
       if (metadata.agentType !== 'workflow-subagent' || metadata.toolUseId !== undefined
         || metadata.parentAgentId != null || metadata.spawnDepth !== 1
         || metadata.effort !== undefined || metadata.stoppedByUser === true
-        || metadata.description !== entries[0].label || run.parent !== undefined) fail('IDENTITY');
+        || metadata.description !== journal.entry.label || run.parent !== undefined) fail('IDENTITY');
       // Require a fresh native child transcript with matching session and identity.
-      const transcript = await read(join(run.directory, `agent-${binding.id}.jsonl`), 1048576);
-      const first = JSON.parse(transcript.split('\n')[0]);
+      const transcriptPath = join(run.directory, `agent-${binding.id}.jsonl`);
+      const transcript = await read(transcriptPath, 1048576, true);
+      const first = JSON.parse(transcript);
       if (first.type !== 'user' || first.agentId !== binding.id || first.sessionId !== binding.sessionId
         || !Number.isFinite(Date.parse(first.timestamp)) || Date.parse(first.timestamp) < run.created
         || Date.parse(first.timestamp) > Date.now()) fail('IDENTITY');
       if (await read(path, 16384) !== metadataRaw) fail('IDENTITY');
-      const latest = (await read(join(run.directory, 'journal.jsonl'), 131072)).trimEnd().split('\n').map(line => JSON.parse(line));
-      if (latest[0]?.type !== 'launched'
-        || JSON.stringify(latest.filter(row => row.agentId === binding.id)) !== JSON.stringify(entries)) fail('IDENTITY');
+      await readJournal(journalPath, binding.id, signal, deadline, journal);
+      if (await read(transcriptPath, 1048576, true) !== transcript) fail('IDENTITY');
       if (workflowDigest(await read(run.script, 524288)) !== run.scriptDigest) fail('IDENTITY');
       match = { run, metadata };
     }
     if (!match) fail('MISSING');
     signal?.throwIfAborted();
+    if (performance.now() > deadline) fail('SIZE');
     const childKey = key(binding.sessionId, binding.id), previous = children.get(childKey);
     if (previous && previous.runId !== match.run.runId) fail('IDENTITY');
     if (!previous && children.size >= 1024) fail('SIZE');

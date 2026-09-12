@@ -11,6 +11,8 @@ function Read-Git([string[]] $Arguments) {
     return $result
 }
 
+$gitRoot = @(Read-Git -Arguments @('rev-parse', '--show-toplevel'))[0]
+if ([IO.Path]::GetFullPath($gitRoot) -ne [IO.Path]::GetFullPath($taskRoot)) { throw 'RELEASE_NOT_CHECKOUT' }
 $status = @(Read-Git -Arguments @('status', '--porcelain=v1', '--untracked-files=no'))
 if ($status.Count -ne 0) { throw 'RELEASE_TRACKED_CHANGES' }
 $commit = @(Read-Git -Arguments @('rev-parse', '--verify', 'HEAD'))[0]

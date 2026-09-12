@@ -7,8 +7,8 @@
 ## 출하 조건과 진행
 
 1. [x] 완료 알림 복귀의 지원 범위·복원 불가 원인·사용자 UI 취소 관측을 현재 상태표에 분리했다.
-2. [ ] 제공 기능과 실제 구현을 전수 대조하고 재현되는 결함을 수정한다. 텍스트·도구·모델/effort·자식/Workflow·취소/재개·검색·이미지·로컬 MCP·컨텍스트·진단을 포함한다.
-3. [ ] 비대화형 실행으로 정상 작업 및 실패 뒤 결과 보존·도구 미중복·종료 정리를 검증한다. 로컬 합성과 실제 backend 증거를 구분한다.
+2. [x] 제공 기능과 실제 구현을 전수 대조하고 재현된 결함을 수정했다. 텍스트·도구·모델/effort·자식/Workflow·취소/재개·검색·이미지·로컬 MCP·컨텍스트·진단을 포함하며, 미검증·차단 범위는 아래와 현행 상태표에 유지한다.
+3. [x] 비대화형 실행으로 정상 작업 및 실패 뒤 결과 보존·도구 미중복·종료 정리를 검증했다. 로컬 합성과 실제 backend 증거를 구분한다.
 4. [ ] 릴리즈 구성의 전체 회귀, 배포 산출물 내용·경로·시작/종료 검사와 최종 판정을 기록한다.
 
 외부 서비스 무장애나 모든 future client 버전 호환성은 입증할 수 없다. 복구 가능한 전달 전 장애는 제한된 재시도로 처리하고, 전달 후 장애·취소는 미완료 상태와 진단을 보존해야 한다. 실패한 응답의 도구를 실행하거나 이미 끝난 작업을 자동 중복 실행하면 불합격이다.
@@ -100,3 +100,11 @@ Not verified: 최초 astra 오류의 원문은 보존하지 않았으며 동시�
 Verified: 별도 작업 트리에서 `TASK_ROOT`가 원래 개발 폴더를 가리키는 assertion 실패를 재현했다. fixture 경로를 현재 설치 위치로 계산하고, 실행 파일·인증 홈의 개인 사용자명 고정값을 OS 사용자 홈 기준으로 바꿨다. 임의 `USERPROFILE` 값으로 credential home을 바꾸지 않는다. [Node.js `os.userInfo`](https://nodejs.org/download/release/v24.1.0/docs/api/os.html#osuserinfooptions)의 OS 제공 홈을 사용한다.
 
 개인 statusline 스크립트의 강제 지정은 제거했다. native의 사용자 설정이 statusLine을 결정하며 사용자 설정 파일은 수정하지 않는다. 경로·환경 주입 검사는 7개 통과, 변경 후 `src` 23/23와 PoC 6/6가 통과했다. PoC 세부 결과는 adapter 318, inspection 14, Read 33, gateway 74, request-inspector 90, user-session 89다.
+
+## 로컬 배포 산출물 검증
+
+`verification/build-release.ps1`은 tracked 변경이 없는 정확한 Git checkout에서 커밋된 68개 파일만 ZIP으로 묶는다. `src` 실행 코드·검사, 필요한 `poc` 모듈·검사, 실제 검증기, [설치 안내](../RELEASE.md), 옵션 분류를 포함한다. 사용자 상태·프로필·감사 기록·과거 프롬프트·생성 schema·Git 이력과 모든 untracked 파일은 제외한다. 파일 경로·타입·개수·크기를 확인하고 파일별 및 ZIP SHA256을 `manifest.json`에 기록한다. 외부 게시·push·계정/전역 설치는 수행하지 않는다.
+
+Verified: `c310c59`의 ZIP을 두 번 만들어 동일 SHA256을 확인했다. 공백이 있는 새 설치 경로에 풀고 68개 파일의 크기·해시를 전부 대조했다. 실제 `clauduct.cmd --dry-run -p`에서 인증 조회 0·자식 실행 없음과 print 구성을 확인했다. 배포본의 `src` 23/23(17.73초), PoC 6/6(12.81초), 별도 제한 환경의 review-diff가 통과했다. 같은 배포본에서 실제 Workflow와 failure-resume 3단계도 모두 통과했으며, 오류 프로세스의 exit 1·실패 이력·cleanup과 재개 시 MCP 호출 총 1회를 다시 확인했다.
+
+추가 러너 검사의 첫 실행은 배포본에 포함하지 않은 개발용 `README.md`를 전제로 해서 실패했다. 런타임의 경로 검사는 이를 허용하지 않고 `TEST_FILE_NOT_FOUND`로 거부한 상태였다. 존재하는 `.ps1` 거부를 검사하도록 fixture를 `src/test-run-node-tests.ps1`로 바꿨다. 소스 checkout에서 환경 격리 3/3·경로 거부 3/3·없는 루트·실패 exit·timeout 후 프로세스 트리 종료가 통과했다. 같은 검사와 최종 ZIP은 수정 후 별도로 확인한다.

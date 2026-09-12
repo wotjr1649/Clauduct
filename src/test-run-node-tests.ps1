@@ -8,7 +8,7 @@ try {
     [Environment]::SetEnvironmentVariable('CLAUDUCT_ENV_SENTINEL', 'synthetic-excluded')
     $result = Invoke-ClauductNodeTests -Root $repository -TestFiles @($fixture)
     if ($result.ExitCode -ne 0 -or $result.Stdout -notmatch 'pass 3') { throw 'ENVIRONMENT_FIXTURE_FAILED' }
-    foreach ($invalid in @('../outside.mjs', '--eval', 'README.md')) {
+    foreach ($invalid in @('../outside.mjs', '--eval', 'src/test-run-node-tests.ps1')) {
         $rejected = $false
         try { $null = Invoke-ClauductNodeTests -Root $repository -TestFiles @($invalid) }
         catch { $rejected = $_.Exception.Message -eq 'INVALID_TEST_PATH' }

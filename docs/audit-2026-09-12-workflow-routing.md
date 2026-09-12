@@ -44,8 +44,21 @@ Workflow 스크립트가 자식 둘에 서로 다른 모델을 명시했고, 둘
 
 resume이 붙었고 캐시가 적중했다. **새 모델 호출도 도구 실행도 없었으므로, 바뀐 에이전트를 다시 띄우는 resume은 이 실행이 다루지 않는다.**
 
-## 5. 남는 것
+## 5. 종료 JSON — 게이트웨이 쪽 확인
+
+같은 결론이 게이트웨이의 기록에서도 나온다.
+
+```
+req 10  src: workflow-result  model: gpt-5.6-luna   reqModel: gpt-5.6-luna   effort: high  role: workflow-subagent  parentRef: null
+req 11  src: workflow-result  model: gpt-5.6-terra  reqModel: gpt-5.6-terra  effort: high  role: workflow-subagent  parentRef: null
+lifetime: started 20, succeeded 20, failed 0, unmappedAgentModels 0, cleanup 9/9
+```
+
+`model`이 `requestedModel`과 같고 `role`이 `workflow-subagent`로 고정된 것이 1장과 맞는다. `parentRef`가 둘 다 `null`인 것은 2장 — 중첩 자식이 없었다는 뜻이다.
+
+**`effort: high`는 스크립트가 준 값이 아니다.** 옵션에 effort는 없었고 부모 세션이 `--effort high`였다. Workflow 자식이 부모 effort를 상속한다는 것이 실측으로 확인된다.
+
+## 6. 남는 것
 
 - 커스텀 agentType의 실제 라우팅. 적용 지점을 만들려면 Workflow 밖에서 Agent를 직접 부르는 별도 관측이 필요하다. 이를 위해 새 시험을 만들지는 않는다 — 정상 사용 중 관측되면 기록한다.
 - 캐시가 적중하지 않는 resume.
-- 이 실행의 종료 JSON. 세션이 아직 종료되지 않아 `selectionSource: "workflow-result"` 행과 `unmappedAgentModels` 카운터는 확보하지 못했다. 1장의 metadata·transcript 쌍이 더 직접적인 증거이므로 판정은 그것으로 한다.

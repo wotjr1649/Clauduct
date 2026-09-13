@@ -11,6 +11,7 @@ import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnosti
 import { readVerificationLedger } from './verification-ledger.mjs';
 import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
 import { rateLimitEvidence } from '../src/rate-limit-observation.mjs';
+import { createExecutionReservation, settleExecutionReservation, readExecutionReservation } from './execution-reservation.mjs';
 
 const need = (ok, label) => { if (!ok) throw new Error(label); };
 const sleep = ms => new Promise(done => setTimeout(done, ms));
@@ -28,7 +29,7 @@ function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
-    'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
+    'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
     'verification/verify-native-recovery.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/adapter.mjs',
     'src/clauduct.mjs', 'src/native-transport.mjs', 'src/rate-limit-observation.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs', 'src/request-status.mjs',
@@ -36,6 +37,20 @@ function developmentHashes(project, localNative) {
   return Object.fromEntries(files.map(name => {
     const path = join(project, name); return [path.slice(project.length + 1), sourceHash(readFileSync(path))];
   }));
+}
+function verifyPriorReservation(root, result, code) {
+  try {
+    const usage = join(root, 'usage-development'), state = readExecutionReservation(usage);
+    const observationPath = join(usage, 'execution-observation.json');
+    const observation = JSON.parse(read(observationPath));
+    need(result.executionReservationMatched === true && state.settlementState === 'recorded'
+      && !state.overrun && state.withinLimits && JSON.stringify(state) === JSON.stringify(result.executionReservation)
+      && state.basisHash === sourceHash(readFileSync(join(root, 'budget.json')))
+      && state.evidenceHash === sourceHash(readFileSync(observationPath))
+      && observation.version === 1 && observation.phase === 'development' && observation.sessionId === result.sessionId
+      && observation.ownerStopped === true && observation.ledgerMatched === result.ledgerMatched
+      && observation.usageUnobservedAttempts === result.usageUnobservedAttempts, code);
+  } catch { need(false, code); }
 }
 function completedDevelopmentContext(root, model, localNative, taskId) {
   const project = dirname(dirname(fileURLToPath(import.meta.url))), canonical = resolve(root);
@@ -68,6 +83,7 @@ function completedDevelopmentContext(root, model, localNative, taskId) {
     && usage.unobservedCompletions === 0 && usage.completions === usage.requestAttempts
     && usage.inputTokens === result.inputTokens && usage.outputTokens === result.outputTokens, 'CONTINUATION_LEDGER_INVALID');
   need(nativeClientsStopped(read(join(canonical, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'CONTINUATION_OWNER_UNVERIFIED');
+  verifyPriorReservation(canonical, result, 'CONTINUATION_RESERVATION_INVALID');
   const configRoot = join(canonical, 'config'), info = lstatSync(configRoot);
   need(info.isDirectory() && !info.isSymbolicLink(), 'CONTINUATION_CONFIG_INVALID');
   const minimumPrior = { priorAttempts: result.cumulativeAttempts, priorElapsedMs: result.cumulativeElapsedMs,
@@ -104,6 +120,7 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
     && sourceHash(read(join(root, 'control', 'oracle.mjs'))) === priorBudget.oracleHash
     && sourceHash(read(join(root, 'control', 'TASK.md'))) === priorBudget.taskHash, 'RESUME_ARTIFACT_CHANGED');
   checkDevelopmentSource(read(join(root, 'work', task.sourceFile)), taskId);
+  verifyPriorReservation(root, first, 'RESUME_RESERVATION_INVALID');
   if (incomplete) {
     const events = read(join(root, 'work', 'events.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse);
     const review = JSON.parse(read(join(root, 'control', 'review.json'), 1024));
@@ -190,6 +207,13 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   }
   write(join(root, `budget${suffix}.json`), budget);
   writeFileSync(join(root, `transport-${phase}.jsonl`), '', { flag: 'wx' }); mkdirSync(join(root, `usage-${phase}`));
+  // This reservation covers this phase only; the outer manager retains all
+  // earlier cumulative reservations. Cleanup has its own bounded allowance.
+  const reservationRoot = join(root, `usage-${phase}`);
+  const phaseAllowance = { attempts: requestLimit, inputTokens: budget.maxObservedInputTokens,
+    outputTokens: budget.maxObservedOutputTokens, elapsedMs: phaseMs + 30000 };
+  const reservationProof = createExecutionReservation(reservationRoot, { basisHash: sourceHash(readFileSync(join(root, `budget${suffix}.json`))),
+    previous: { attempts: 0, inputTokens: 0, outputTokens: 0, elapsedMs: 0 }, limits: phaseAllowance, allowance: phaseAllowance });
   const sessionId = resuming ? fixture.priorOwner.sessionId : context ? context.owner.sessionId : randomUUID(), phaseStart = Date.now();
   const args = ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', String(requestLimit), '-p',
     '--output-format', 'stream-json', '--verbose', '--tools', '', '--allowedTools',
@@ -271,6 +295,10 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && contexts[0].previousFunctionObserved === true && contexts[0].previousCompletionObserved === true;
   const recordedNativeStopped = nativeClientsStopped(rows);
   const requests = rows.filter(row => row.event === 'REQUEST_STARTED'), settled = rows.filter(row => row.event === 'REQUEST_SETTLED');
+  const reservations = rows.filter(row => row.event === 'RESERVATION_OBSERVED');
+  const reservationBeforeNative = reservations.length === 1 && reservations[0].reservationHash === reservationProof.reservationHash
+    && JSON.stringify(reservations[0].charged) === JSON.stringify(phaseAllowance)
+    && rows.indexOf(reservations[0]) < rows.findIndex(row => row.event === 'NATIVE_STARTED');
   const attempts = Math.max(0, ...settled.map(row => row.attempts));
   const routeMatched = requests.length > 0 && requests.every(row => row.model === `gpt-5.6-${model}` && row.effort === effort);
   const inputTokens = rows.filter(row => row.event === 'USAGE').reduce((sum, row) => sum + (row.usage.input_tokens ?? 0), 0);
@@ -310,6 +338,24 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const revisedPassed = tests.at(-1)?.passed === true && tests.at(-1)?.sha256 === sha256 && events.some(row => row.event === 'SOURCE_WRITTEN');
   const cleanupComplete = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
   if (!contextMatched) failure ??= 'CONTINUATION_CONTEXT_MISSING';
+  const elapsedMs = Date.now() - phaseStart;
+  const ownerStopped = finished && treeEvidence?.stopped === true && recordedNativeStopped;
+  const attemptsObserved = ownerStopped && ledgerMatched && usageLedger.version === 2 && requests.length === settled.length;
+  const tokensObserved = attemptsObserved && completedUsageObserved && usageUnobservedAttempts === 0;
+  const observation = { version: 1, phase, sessionId, ownerStopped: ownerStopped === true,
+    ledgerMatched, usageUnobservedAttempts, observed: { attempts: attemptsObserved ? attempts : null,
+      inputTokens: tokensObserved ? inputTokens : null, outputTokens: tokensObserved ? outputTokens : null,
+      elapsedMs: ownerStopped ? elapsedMs : null } };
+  const observationPath = join(reservationRoot, 'execution-observation.json');
+  write(observationPath, observation);
+  const observationHash = sourceHash(readFileSync(observationPath));
+  const executionReservation = settleExecutionReservation(reservationRoot,
+    { observed: observation.observed, evidenceHash: observationHash });
+  const executionReservationMatched = executionReservation.settlementState === 'recorded'
+    && executionReservation.evidenceHash === observationHash && !executionReservation.overrun && executionReservation.withinLimits
+    && reservationBeforeNative;
+  if (executionReservation.overrun || !executionReservation.withinLimits) failure ??= 'EXECUTION_RESERVATION_OVERRUN';
+  if (!executionReservationMatched) failure ??= 'EXECUTION_RESERVATION_INVALID';
   const taskIncompleteBeforeEffect = !failure && !resuming && !context && !cutOutputAfterPass
     && output.valid === true && exitCode === 0 && result?.is_error === false && result.session_id === sessionId
     && requestDiagnostics.requestOutcome === 'all-succeeded' && cleanupComplete === true
@@ -323,11 +369,11 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && routeMatched && requests.length === settled.length && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens
     && events[0]?.event === 'TASK_READ' && baselineFailed && revisedPassed && independentPassed && oracleUnchanged;
   const outputCutObserved = outputCut && cutReleased && output.evidence.failure === 'OUTPUT_PIPE_CLOSED'
+    && executionReservationMatched
     && output.evidence.resultCount === 0 && output.valid === false && treeEvidence?.stopped === true
     && sourceUnchanged && ledgerMatched && rateLimitsMatched && independentPassed && baselineFailed && revisedPassed && recordedNativeStopped
     && events.filter(row => row.event === 'SOURCE_WRITTEN').length === 1 && routeMatched && requests.length === settled.length
     && attempts <= budget.requestLimit && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens;
-  const elapsedMs = Date.now() - phaseStart;
   const summary = { suite: localNative ? 'native-development-local' : 'native-development-live', root, model, effort, taskId, localNative, phase, sessionId,
     continuedFrom: context?.root ?? null, contextMatched, contextEvidence: contexts[0] ?? null,
     actualModelRequests: localNative ? 0 : attempts, passed: passed === true, failure, exitCode,
@@ -337,6 +383,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     routeMatched, nativeJson: result !== null, nativeError: result?.is_error ?? null, cleanupComplete: cleanupComplete === true,
     baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256,
     sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics, rateLimits, rateLimitsMatched,
+    executionReservation, executionReservationMatched, reservationBeforeNative,
     outputCut, cutReleased, outputCutObserved, taskIncompleteBeforeEffect: taskIncompleteBeforeEffect === true, recordedNativeStopped,
     output: output.evidence, tree: treeEvidence };
   write(join(root, `result${suffix}.json`), summary); return summary;

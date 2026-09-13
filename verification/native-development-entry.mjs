@@ -2,12 +2,14 @@ import { appendFileSync, statSync, readFileSync, lstatSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { main } from '../src/clauduct.mjs';
 import { NativeError } from '../src/native-protocol.mjs';
 import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { guardFixtureTransport } from './fixture-tool-policy.mjs';
 import { createVerificationLedger } from './verification-ledger.mjs';
 import { developmentTask } from './development-tasks.mjs';
+import { readExecutionReservation } from './execution-reservation.mjs';
 
 export function createDevelopmentContextCheck(previousTaskId) {
   const previousFunction = developmentTask(previousTaskId).functionName;
@@ -39,6 +41,13 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
   if (typeof budget.taskId !== 'string' || !Object.hasOwn({ luna: 'max', sol: 'low' }, budget.model) || budget.effort !== { luna: 'max', sol: 'low' }[budget.model]
     || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768
     || !Number.isSafeInteger(budget.requestLimit) || budget.requestLimit < 1 || budget.requestLimit > 16) throw new Error('INVALID_DEVELOPMENT_ENTRY');
+  const reservation = readExecutionReservation(join(runRoot, `usage-${phase}`));
+  const expectedAllowance = { attempts: budget.requestLimit, inputTokens: budget.maxObservedInputTokens,
+    outputTokens: budget.maxObservedOutputTokens, elapsedMs: budget.phaseMs + 30000 };
+  if (reservation.basisHash !== createHash('sha256').update(readFileSync(path)).digest('hex')
+    || reservation.settlementState !== 'missing' || !reservation.withinLimits
+    || Object.values(reservation.previous).some(value => value !== 0)
+    || JSON.stringify(reservation.charged) !== JSON.stringify(expectedAllowance)) throw new Error('INVALID_DEVELOPMENT_RESERVATION');
   const ledger = createVerificationLedger(join(runRoot, `usage-${phase}`));
   const logPath = join(runRoot, `transport-${phase}.jsonl`);
   let guarded, previousInput = 0, previousOutput = 0, contextRecorded = false, contextAllowed = !budget.continuedFrom;
@@ -51,6 +60,7 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
   const startTimer = setTimeout(() => process.exit(1), 5000);
   await new Promise(done => process.once('message', message => { if (message?.start === true) done(); else process.exit(1); }));
   clearTimeout(startTimer);
+  record({ event: 'RESERVATION_OBSERVED', reservationHash: reservation.reservationHash, charged: reservation.charged });
   try {
     await main({ args, startClient: (file, nativeArgs, options) => {
       const child = spawn(file, nativeArgs, options); record({ event: 'NATIVE_STARTED', pid: child.pid }); return child;

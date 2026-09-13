@@ -72,7 +72,8 @@ export function readDevelopmentSourceBatches(work, taskId) {
   for (let index = 1; index <= 2; index++) {
     const path = batchPath(work, index);
     if (!existsSync(path)) {
-      requireBatch(!existsSync(batchPath(work, index, '-done')) && !existsSync(batchPath(work, index, '-recovery')));
+      requireBatch(!existsSync(batchPath(work, index, '-done')) && !existsSync(batchPath(work, index, '-recovery'))
+        && !existsSync(batchPath(work, index, '-recovery-resume')));
       if (index === 1) requireBatch(!existsSync(batchPath(work, 2)));
       continue;
     }
@@ -90,18 +91,32 @@ export function readDevelopmentSourceBatches(work, taskId) {
         && file.beforeHash === hash(JSON.parse(before).files[part].code)
         && ['dev', 'ino', 'mtimeNs'].every(key => typeof file[key] === 'string' && /^[0-9]{1,30}$/.test(file[key])));
     }
-    let done = false, recovery = null;
+    let done = false, recovery = null, recoveryHash = null, recoveryResume = null, recoveryResumeHash = null;
     if (existsSync(batchPath(work, index, '-recovery'))) {
-      recovery = JSON.parse(read(batchPath(work, index, '-recovery'), 1024));
+      const text = read(batchPath(work, index, '-recovery'), 1024);
+      recovery = JSON.parse(text); recoveryHash = hash(text);
       requireBatch(shape(recovery, ['intentHash', 'ownerPid']) && recovery.intentHash === intentHash
         && Number.isSafeInteger(recovery.ownerPid) && recovery.ownerPid > 0 && recovery.ownerPid !== intent.ownerPid);
+    }
+    if (existsSync(batchPath(work, index, '-recovery-resume'))) {
+      const text = read(batchPath(work, index, '-recovery-resume'), 1024);
+      recoveryResume = JSON.parse(text); recoveryResumeHash = hash(text);
+      requireBatch(recovery !== null && text === encode(recoveryResume)
+        && shape(recoveryResume, ['intentHash', 'recoveryHash', 'ownerPid', 'eventsHash', 'eventBytes'])
+        && recoveryResume.intentHash === intentHash && recoveryResume.recoveryHash === recoveryHash
+        && Number.isSafeInteger(recoveryResume.ownerPid) && recoveryResume.ownerPid > 0
+        && recoveryResume.ownerPid !== intent.ownerPid && recoveryResume.ownerPid !== recovery.ownerPid
+        && Number.isSafeInteger(recoveryResume.eventBytes) && recoveryResume.eventBytes > 0 && recoveryResume.eventBytes <= 32768
+        && typeof recoveryResume.eventsHash === 'string' && /^[a-f0-9]{64}$/.test(recoveryResume.eventsHash));
+      const events = Buffer.from(read(join(work, 'events.jsonl'), 32768));
+      requireBatch(events.length >= recoveryResume.eventBytes && hash(events.subarray(0, recoveryResume.eventBytes)) === recoveryResume.eventsHash);
     }
     if (existsSync(batchPath(work, index, '-done'))) {
       const value = JSON.parse(read(batchPath(work, index, '-done'), 1024));
       requireBatch(shape(value, ['intentHash', 'sourceHash']) && value.intentHash === intentHash && value.sourceHash === hash(intent.source));
       done = true;
     }
-    result.push({ intent, intentHash, done, recovery }); before = intent.source;
+    result.push({ intent, intentHash, done, recovery, recoveryHash, recoveryResume, recoveryResumeHash }); before = intent.source;
   }
   return result;
 }
@@ -109,7 +124,8 @@ export function readDevelopmentSourceWriteEvidence(work, taskId) {
   return encode(readDevelopmentSourceBatches(work, taskId).map(batch => ({ index: batch.intent.index,
     intent: read(batchPath(work, batch.intent.index), 32768),
     done: batch.done ? read(batchPath(work, batch.intent.index, '-done'), 1024) : null,
-    recovery: batch.recovery ? read(batchPath(work, batch.intent.index, '-recovery'), 1024) : null })));
+    recovery: batch.recovery ? read(batchPath(work, batch.intent.index, '-recovery'), 1024) : null,
+    ...(batch.recoveryResume ? { recoveryResume: read(batchPath(work, batch.intent.index, '-recovery-resume'), 1024) } : {}) })));
 }
 function sourceStates(work, batch) {
   const proposed = JSON.parse(batch.intent.source).files;
@@ -142,7 +158,7 @@ function applyBatch(work, taskId, batch, record) {
   writeFileSync(batchPath(work, batch.intent.index, '-done'), encode({ intentHash: batch.intentHash, sourceHash: hash(batch.intent.source) }), { flag: 'wx' });
   return { source: batch.intent.source, writes, confirmed };
 }
-function recoverDevelopmentSource(work, taskId, record, terminatedOwnerPid, expectedSource, expectedIntentHash) {
+function recoverDevelopmentSource(work, taskId, record, terminatedOwnerPid, expectedSource, expectedIntentHash, expectedRecoveryHash) {
   const batch = readDevelopmentSourceBatches(work, taskId).at(-1); requireBatch(batch !== undefined);
   requireBatch(batch.intent.source === expectedSource && batch.intentHash === expectedIntentHash);
   if (batch.done) {
@@ -153,20 +169,34 @@ function recoverDevelopmentSource(work, taskId, record, terminatedOwnerPid, expe
   // intent. The MCP path uses its child handle; managed recovery also requires
   // the native tree's protected interruption proof before reaching this helper.
   requireBatch(batch.intent.ownerPid === terminatedOwnerPid && batch.intent.ownerPid !== process.pid);
-  if (batch.recovery) throw new Error('DEVELOPMENT_SOURCE_RECOVERY_UNCERTAIN');
+  if (batch.recovery && (expectedRecoveryHash === undefined || batch.recoveryResume)) throw new Error('DEVELOPMENT_SOURCE_RECOVERY_UNCERTAIN');
+  requireBatch(expectedRecoveryHash === undefined || batch.recoveryHash === expectedRecoveryHash);
   sourceStates(work, batch); // Reject every unknown target before claiming or writing.
-  writeFileSync(batchPath(work, batch.intent.index, '-recovery'), encode({ intentHash: batch.intentHash, ownerPid: process.pid }), { flag: 'wx' });
-  record({ event: 'SOURCE_RECOVERY_STARTED', intentHash: batch.intentHash });
+  if (batch.recovery) {
+    const events = read(join(work, 'events.jsonl'), 32768), rows = events.trim().split('\n').map(JSON.parse);
+    requireBatch(events === rows.map(encode).join(''));
+    verifyDevelopmentRecoveryPrefix(work, taskId, rows);
+    const resume = encode({ intentHash: batch.intentHash, recoveryHash: batch.recoveryHash, ownerPid: process.pid,
+      eventsHash: hash(events), eventBytes: Buffer.byteLength(events) });
+    writeFileSync(batchPath(work, batch.intent.index, '-recovery-resume'), resume, { flag: 'wx' });
+    record({ event: 'SOURCE_RECOVERY_RESUMED', intentHash: batch.intentHash, recoveryHash: batch.recoveryHash, resumeHash: hash(resume) });
+  } else {
+    writeFileSync(batchPath(work, batch.intent.index, '-recovery'), encode({ intentHash: batch.intentHash, ownerPid: process.pid }), { flag: 'wx' });
+    record({ event: 'SOURCE_RECOVERY_STARTED', intentHash: batch.intentHash });
+  }
   return applyBatch(work, taskId, batch, record);
 }
-export function recoverStoppedDevelopmentSource(work, taskId, record, expectedIntentHash) {
+export function recoverStoppedDevelopmentSource(work, taskId, record, expectedIntentHash, expectedRecoveryHash) {
   const { batch } = readDevelopmentSourceState(work, taskId);
-  requireBatch(batch.intentHash === expectedIntentHash);
+  requireBatch(batch.intentHash === expectedIntentHash && (expectedRecoveryHash === undefined
+    || typeof expectedRecoveryHash === 'string' && /^[a-f0-9]{64}$/.test(expectedRecoveryHash) && batch.recoveryHash === expectedRecoveryHash));
   if (!batch.done) {
-    try { process.kill(batch.intent.ownerPid, 0); throw new Error('SOURCE_OWNER_ACTIVE'); }
-    catch (error) { if (error.code !== 'ESRCH') throw new Error('DEVELOPMENT_SOURCE_OWNER_UNVERIFIED'); }
+    for (const ownerPid of [batch.intent.ownerPid, ...(expectedRecoveryHash === undefined ? [] : [batch.recovery.ownerPid])]) {
+      try { process.kill(ownerPid, 0); throw new Error('SOURCE_OWNER_ACTIVE'); }
+      catch (error) { if (error.code !== 'ESRCH') throw new Error('DEVELOPMENT_SOURCE_OWNER_UNVERIFIED'); }
+    }
   }
-  return recoverDevelopmentSource(work, taskId, record, batch.intent.ownerPid, batch.intent.source, expectedIntentHash);
+  return recoverDevelopmentSource(work, taskId, record, batch.intent.ownerPid, batch.intent.source, expectedIntentHash, expectedRecoveryHash);
 }
 export function writeDevelopmentSourceWithRecovery(work, taskId, source, record) {
   requireBatch(taskId === 'retry-project'); developmentSourceArguments(source, taskId);
@@ -206,31 +236,52 @@ export function expectedDevelopmentOracle(project, taskId) {
 }
 export function verifyDevelopmentSourceWrites(source, events, taskId, work) {
   const task = developmentTask(taskId); if (!task.parts) return;
-  const reject = () => { throw new Error('DEVELOPMENT_SOURCE_WRITES_INCOMPLETE'); };
   let batches;
-  try { batches = readDevelopmentSourceBatches(work, taskId); } catch { reject(); }
-  if (batches.length < 1 || batches.some(batch => !batch.done) || batches.at(-1).intent.source !== source) reject();
-  const rows = events.filter(row => ['SOURCE_WRITE_STARTED', 'SOURCE_FILE_WRITTEN', 'SOURCE_FILE_CONFIRMED', 'SOURCE_RECOVERY_STARTED', 'SOURCE_WRITTEN'].includes(row.event));
+  try { batches = readDevelopmentSourceBatches(work, taskId); } catch { rejectWrites(); }
+  if (batches.length < 1 || batches.some(batch => !batch.done) || batches.at(-1).intent.source !== source) rejectWrites();
+  verifySourceEvents(events, task, batches, false);
+}
+const rejectWrites = () => { throw new Error('DEVELOPMENT_SOURCE_WRITES_INCOMPLETE'); };
+export function verifyDevelopmentRecoveryPrefix(work, taskId, events) {
+  const state = readDevelopmentSourceState(work, taskId);
+  requireBatch(state.batchCount === 1 && state.batch.recovery && !state.batch.done && !state.batch.recoveryResume);
+  verifySourceEvents(events, developmentTask(taskId), [state.batch], true);
+}
+function verifySourceEvents(events, task, batches, pendingRecovery) {
+  const reject = rejectWrites, kinds = ['SOURCE_WRITE_STARTED', 'SOURCE_FILE_WRITTEN', 'SOURCE_FILE_CONFIRMED',
+    'SOURCE_RECOVERY_STARTED', 'SOURCE_RECOVERY_RESUMED', 'SOURCE_WRITTEN'];
+  const rows = events.filter(row => kinds.includes(row.event));
   let cursor = 0;
   for (const batch of batches) {
     const first = rows[cursor++], values = JSON.parse(batch.intent.source).files, written = new Set();
     if (!first || first.event !== 'SOURCE_WRITE_STARTED' || first.fileCount !== task.parts.length || Object.keys(first).length !== 4
       || first.sha256 !== hash(batch.intent.source) || first.intentHash !== batch.intentHash) reject();
-    let recovered = false, index = 0;
-    while (rows[cursor]?.event !== 'SOURCE_WRITTEN') {
-      const row = rows[cursor++]; if (!row) reject();
+    let recovered = false, resumed = false, finished = false, index = 0;
+    while (cursor < rows.length && rows[cursor].event !== 'SOURCE_WRITE_STARTED') {
+      const row = rows[cursor++];
       if (row.event === 'SOURCE_RECOVERY_STARTED') {
-        if (!batch.recovery || recovered || Object.keys(row).length !== 2 || row.intentHash !== batch.intentHash) reject();
+        if (!batch.recovery || recovered || finished || Object.keys(row).length !== 2 || row.intentHash !== batch.intentHash) reject();
         recovered = true; index = 0; continue;
       }
+      if (row.event === 'SOURCE_RECOVERY_RESUMED') {
+        if (!batch.recoveryResume || resumed || Object.keys(row).length !== 4 || row.intentHash !== batch.intentHash
+          || row.recoveryHash !== batch.recoveryHash || row.resumeHash !== batch.recoveryResumeHash) reject();
+        const prefix = events.slice(0, events.indexOf(row)).map(encode).join('');
+        if (Buffer.byteLength(prefix) !== batch.recoveryResume.eventBytes || hash(prefix) !== batch.recoveryResume.eventsHash) reject();
+        recovered = true; resumed = true; finished = false; index = 0; continue;
+      }
+      if (row.event === 'SOURCE_WRITTEN') {
+        if (finished || index !== values.length || recovered !== Boolean(batch.recovery)
+          || Object.keys(row).length !== 2 || row.sha256 !== first.sha256) reject();
+        finished = true; continue;
+      }
       if (!['SOURCE_FILE_WRITTEN', 'SOURCE_FILE_CONFIRMED'].includes(row.event) || Object.keys(row).length !== 3
-        || index >= values.length || row.path !== values[index].path || row.sha256 !== hash(values[index].code)) reject();
+        || finished || index >= values.length || row.path !== values[index].path || row.sha256 !== hash(values[index].code)) reject();
       if (row.event === 'SOURCE_FILE_WRITTEN') { if (written.has(row.path)) reject(); written.add(row.path); }
       else if (!recovered && batch.intent.files[index].beforeHash !== row.sha256) reject();
       index++;
     }
-    const last = rows[cursor++];
-    if (index !== values.length || recovered !== Boolean(batch.recovery) || Object.keys(last).length !== 2 || last.sha256 !== first.sha256) reject();
+    if (!pendingRecovery && (!finished || recovered !== Boolean(batch.recovery) || resumed !== Boolean(batch.recoveryResume))) reject();
   }
   if (cursor !== rows.length) reject();
 }

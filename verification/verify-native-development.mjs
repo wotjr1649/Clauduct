@@ -8,7 +8,7 @@ import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-task
 import { checkDevelopmentSource } from './development-source-policy.mjs';
 import { readDevelopmentArtifactHashes, verifyDevelopmentArtifacts, developmentEventArtifactHash } from './development-artifacts.mjs';
 import { readDevelopmentSource, developmentSourcePaths, readDevelopmentOracle, expectedDevelopmentOracle, developmentOracleInvocation,
-  readDevelopmentSourceState, recoverStoppedDevelopmentSource, verifyDevelopmentSourceWrites } from './development-source-files.mjs';
+  readDevelopmentSourceState, recoverStoppedDevelopmentSource, verifyDevelopmentSourceWrites, verifyDevelopmentRecoveryPrefix } from './development-source-files.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
@@ -215,10 +215,17 @@ function interruptedDevelopmentState(root, model, localNative, accountHash, even
     if (batch.done) {
       need(eventBytes !== undefined && batch.recovery !== null && source === batch.intent.source, code);
       verifyDevelopmentSourceWrites(source, fullEvents, budget.taskId, work);
+    } else if (batch.recovery) {
+      const suffix = fullEvents.slice(events.length);
+      need(eventBytes !== undefined && batch.recoveryResume === null && state.states[0] === 'applied'
+        && (suffix.length === 0 || suffix[0].event === 'SOURCE_RECOVERY_STARTED')
+        && suffix.every(row => ['SOURCE_RECOVERY_STARTED', 'SOURCE_FILE_CONFIRMED', 'SOURCE_FILE_WRITTEN', 'SOURCE_WRITTEN'].includes(row.event)), code);
+      verifyDevelopmentRecoveryPrefix(work, budget.taskId, fullEvents);
     } else {
       need(batch.recovery === null && source === original && fullWrites.length === 0 && allEvents.length === length, code);
     }
-    partialSource = { intentHash: batch.intentHash, pending: !batch.done, proposed: batch.intent.source };
+    partialSource = { intentHash: batch.intentHash, pending: !batch.done, proposed: batch.intent.source,
+      recoveryHash: batch.recoveryHash, recoveryOwnerPid: batch.recoveryResume?.ownerPid ?? batch.recovery?.ownerPid ?? null };
   } else need(fullWrites.length === 1 && writes[0].sha256 === sha256, code);
   const usagePath = join(root, 'usage-development', 'tool-usage.jsonl'), usage = readVerificationLedger(usagePath);
   need(usage.version === 2 && usage.requestAttempts <= budget.requestLimit
@@ -236,10 +243,12 @@ function interruptedDevelopmentState(root, model, localNative, accountHash, even
   return { project, root, taskId: budget.taskId, task, budget, owner, work, control, source, currentSourceHash, stage, snapshot, partialSource };
 }
 
-export function prepareDevelopmentInterruption(root, { model, localNative, accountHash, powershell, managerPid }) {
+const partialRecoveryFaults = ['claim', 'start', 'first-confirm', 'last-write', 'written', 'done'];
+export function prepareDevelopmentInterruption(root, { model, localNative, accountHash, powershell, managerPid, interruptPartialRecoveryAt }) {
   const project = dirname(dirname(fileURLToPath(import.meta.url)));
   need(typeof root === 'string' && typeof powershell === 'string' && powershell.endsWith('pwsh.exe')
-    && Number.isSafeInteger(managerPid) && managerPid > 0, 'INTERRUPTION_ARGUMENTS');
+    && Number.isSafeInteger(managerPid) && managerPid > 0
+    && (interruptPartialRecoveryAt === undefined || localNative === true && partialRecoveryFaults.includes(interruptPartialRecoveryAt)), 'INTERRUPTION_ARGUMENTS');
   root = resolve(root);
   need(dirname(root).toLowerCase() === join(project, '.tmp').toLowerCase()
     && /^native-development-[A-Za-z0-9]{6}$/.test(root.slice(root.lastIndexOf('\\') + 1))
@@ -248,6 +257,7 @@ export function prepareDevelopmentInterruption(root, { model, localNative, accou
   need(budget.managerPid === managerPid && budget.model === model && budget.localNative === localNative
     && budget.executionAccountHash === accountHash && budget.phase === 'development'
     && JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'INTERRUPTION_EVIDENCE_INVALID');
+  need(interruptPartialRecoveryAt === undefined || budget.holdAfterFirstSourceWrite === true, 'INTERRUPTION_ARGUMENTS');
   need(!existsSync(join(root, 'result.json')), 'INTERRUPTION_RESULT_PRESENT');
   try { process.kill(managerPid, 0); need(false, 'INTERRUPTION_MANAGER_ACTIVE'); }
   catch (error) { need(error.code === 'ESRCH', 'INTERRUPTION_MANAGER_ACTIVE'); }
@@ -284,22 +294,35 @@ export function prepareDevelopmentInterruption(root, { model, localNative, accou
   const proof = { version: state.partialSource ? 3 : 2, kind: 'manager-interruption', ...state.snapshot, originalResultAbsent: true, taskCompleted: false,
     sourceReviewed: true, independentPassed: afterWrite, observed: { attempts: null, inputTokens: null, outputTokens: null, elapsedMs: null } };
   write(join(state.root, 'interruption-evidence.json'), proof);
-  if (state.partialSource) return completeDevelopmentPartialInterruption(state.root);
+  if (state.partialSource) return completeDevelopmentPartialInterruption(state.root, { interruptAt: interruptPartialRecoveryAt });
   return readDevelopmentInterruption(state.root);
 }
 
-export function completeDevelopmentPartialInterruption(root) {
+export function completeDevelopmentPartialInterruption(root, { interruptAt } = {}) {
   const state = readDevelopmentInterruption(root);
   need(state.stage === 'partial-write', 'INTERRUPTION_PARTIAL_REQUIRED');
-  if (!state.partialSource.pending) return state;
+  need(interruptAt === undefined || partialRecoveryFaults.includes(interruptAt) && state.budget.localNative
+    && state.budget.holdAfterFirstSourceWrite && state.partialSource.pending && state.partialSource.recoveryHash === null, 'INTERRUPTION_ARGUMENTS');
+  if (!state.partialSource.pending && !state.partialSource.reviewPending) return state;
   if (state.budget.localNative) need(state.partialSource.proposed === publicDevelopmentSource(state.taskId), 'INTERRUPTION_LOCAL_SOURCE_INVALID');
-  const recovered = recoverStoppedDevelopmentSource(state.work, state.taskId, row => {
-    const path = join(state.work, 'events.jsonl'), line = JSON.stringify(row) + '\n';
-    need(lstatSync(path).size + Buffer.byteLength(line) <= 32768, 'INTERRUPTION_EVENT_LIMIT');
-    appendFileSync(path, line);
-  }, state.partialSource.intentHash);
-  need(recovered.source === state.partialSource.proposed, 'INTERRUPTION_SOURCE_CHANGED');
-  if (state.budget.localNative) writeFileSync(join(state.control, 'review.json'), JSON.stringify({ sha256: sourceHash(recovered.source), approved: true }), { flush: true });
+  if (state.partialSource.pending) {
+    const recovered = recoverStoppedDevelopmentSource(state.work, state.taskId, row => {
+      if (interruptAt === 'claim' && row.event === 'SOURCE_RECOVERY_STARTED'
+        || interruptAt === 'last-write' && row.event === 'SOURCE_FILE_WRITTEN') process.exit(74);
+      const path = join(state.work, 'events.jsonl'), line = JSON.stringify(row) + '\n';
+      need(lstatSync(path).size + Buffer.byteLength(line) <= 32768, 'INTERRUPTION_EVENT_LIMIT');
+      appendFileSync(path, line);
+      if (interruptAt === 'start' && row.event === 'SOURCE_RECOVERY_STARTED'
+        || interruptAt === 'first-confirm' && row.event === 'SOURCE_FILE_CONFIRMED'
+        || interruptAt === 'written' && row.event === 'SOURCE_WRITTEN') process.exit(74);
+    }, state.partialSource.intentHash, state.partialSource.recoveryHash ?? undefined);
+    need(recovered.source === state.partialSource.proposed, 'INTERRUPTION_SOURCE_CHANGED');
+    if (interruptAt === 'done') process.exit(74);
+  } else {
+    try { process.kill(state.partialSource.recoveryOwnerPid, 0); need(false, 'INTERRUPTION_RECOVERY_OWNER_ACTIVE'); }
+    catch (error) { need(error.code === 'ESRCH', 'INTERRUPTION_RECOVERY_OWNER_ACTIVE'); }
+  }
+  if (state.budget.localNative) writeFileSync(join(state.control, 'review.json'), JSON.stringify({ sha256: sourceHash(state.partialSource.proposed), approved: true }), { flush: true });
   return readDevelopmentInterruption(state.root);
 }
 
@@ -319,7 +342,11 @@ export function readDevelopmentInterruption(root) {
   const state = interruptedDevelopmentState(root, proof.model, proof.localNative, proof.accountHash, proof.eventBytes);
   need(Object.entries(state.snapshot).every(([key, value]) => proof[key] === value), 'INTERRUPTION_RECORD_CHANGED');
   const review = JSON.parse(read(join(state.control, 'review.json'), 1024));
-  need(review.sha256 === state.currentSourceHash && review.approved === true, 'INTERRUPTION_SOURCE_REVIEW_REQUIRED');
+  const reviewPending = partial && state.budget.localNative && state.budget.holdAfterFirstSourceWrite
+    && state.partialSource.recoveryHash !== null && state.partialSource.proposed === publicDevelopmentSource(state.taskId)
+    && review.sha256 === proof.sourceHash && review.sha256 !== state.currentSourceHash;
+  need((review.sha256 === state.currentSourceHash || reviewPending) && review.approved === true, 'INTERRUPTION_SOURCE_REVIEW_REQUIRED');
+  if (partial) state.partialSource.reviewPending = reviewPending;
   return { ...state, evidence: { root: state.root, phase: 'development', model: proof.model, effort: state.budget.effort,
     taskId: proof.taskId, localNative: proof.localNative, observed: proof.observed, evidenceHash: sourceHash(readFileSync(path)),
     passed: false, failure: 'MANAGER_INTERRUPTED', sourceHash: proof.sourceHash, stage: proof.stage },
@@ -467,7 +494,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   }
   if (interrupted) need(interrupted.evidence.model === model && interrupted.evidence.localNative === localNative
     && interrupted.evidence.taskId === taskId, 'RESUME_INTERRUPTION_INVALID');
-  need(!interrupted?.partialSource?.pending, 'RESUME_PARTIAL_SOURCE_PENDING');
+  need(!interrupted?.partialSource?.pending && !interrupted?.partialSource?.reviewPending, 'RESUME_PARTIAL_SOURCE_PENDING');
   const fixture = interrupted?.fixture ?? (resuming ? resumeDevelopmentFixture(resumeRoot ?? resumeIncompleteRoot, model, localNative, taskId, retrying)
     : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, holdAfterSourceWrite, holdAfterTaskRead, holdAfterFirstSourceWrite, recoverAfterFirstSourceWrite, taskId }));
   const { project, root, work, control, task } = fixture;

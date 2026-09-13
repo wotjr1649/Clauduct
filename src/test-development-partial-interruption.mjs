@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync, existsSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { classifyDevelopmentInterruption, verifyNativeDevelopment, readDevelopmentInterruption } from '../verification/verify-native-development.mjs';
+import { classifyDevelopmentInterruption, verifyNativeDevelopment, readDevelopmentInterruption, prepareDevelopmentInterruption } from '../verification/verify-native-development.mjs';
 import { developmentTask } from '../verification/development-tasks.mjs';
 import { sourceHash, createDevelopmentFixture } from '../verification/development-fixture.mjs';
 import { publicDevelopmentSource } from '../verification/fixtures/development-responses.mjs';
@@ -15,6 +15,11 @@ const rows = [{ event: 'TASK_READ' }, { event: 'TESTS_EXECUTED', sha256: sourceH
 { event: 'SOURCE_FIRST_FILE_WAIT' }];
 let checks = 0;
 const equal = (actual, expected) => { assert.deepEqual(actual, expected); checks++; };
+for (const [localNative, stage] of [[true, ''], [true, null], [true, 1], [true, 'unknown'], [true, {}], [true, []],
+  ...['claim', 'start', 'first-confirm', 'last-write', 'written', 'done'].map(stage => [false, stage])]) {
+  assert.throws(() => prepareDevelopmentInterruption('PUBLIC', { model: 'sol', localNative, powershell: 'C:\\Public\\pwsh.exe',
+    managerPid: process.pid, accountHash: 'a'.repeat(64), interruptPartialRecoveryAt: stage }), { message: 'INTERRUPTION_ARGUMENTS' }); checks++;
+}
 equal(classifyDevelopmentInterruption(rows, 'retry-project'), 'partial-write');
 for (const mutate of [value => value.slice(1), value => value.concat(value[3]), value => value.slice(0, 3),
   value => { value[1].passed = true; return value; }, value => { value[1].checks = 1; return value; },

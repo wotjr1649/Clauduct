@@ -108,8 +108,9 @@ export async function runManagedDevelopment({ root, model, powershell, taskId = 
     if (!existsSync(join(binding.root, 'interruption-evidence.json'))) {
       prepareDevelopmentInterruption(binding.root, { model, localNative, powershell, managerPid: last.ownerPid,
         accountHash: last.reservation.reservationHash });
-    } else if (readDevelopmentInterruption(binding.root).partialSource?.pending) {
-      completeDevelopmentPartialInterruption(binding.root);
+    } else {
+      const partial = readDevelopmentInterruption(binding.root).partialSource;
+      if (partial?.pending || partial?.reviewPending) completeDevelopmentPartialInterruption(binding.root);
     }
     const previous = reconcileManagedDevelopment(root);
     need(previous.evidence.failure === 'MANAGER_INTERRUPTED', 'MANAGED_DEVELOPMENT_PREDECESSOR');

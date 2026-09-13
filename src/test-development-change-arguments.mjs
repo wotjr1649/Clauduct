@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { prepareDevelopmentChange, readDevelopmentChange } from '../verification/development-change.mjs';
+import { prepareDevelopmentChange, readDevelopmentChange, prepareDevelopmentChangeSet } from '../verification/development-change.mjs';
 import { readManagedDevelopmentResult } from '../verification/managed-development.mjs';
 import { createPublicLegacyLedger } from '../verification/fixtures/legacy-ledger.mjs';
 import { createManagedLedgerAccount } from '../verification/managed-ledger-account.mjs';
@@ -13,6 +13,11 @@ for (const value of [null, {}, [], { root: 'PUBLIC' },
   { accountRoot: 'PUBLIC', entryIndex: 1, targetRoot: 'PUBLIC', targetPath: 'source.mjs', expectedBeforeHash: 'bad', expectedAfterHash: '0'.repeat(64) },
   { accountRoot: 'PUBLIC', entryIndex: 1, targetRoot: 'PUBLIC', targetPath: 'source.mjs', expectedBeforeHash: '0'.repeat(64), expectedAfterHash: 'bad' }]) {
   denied(() => prepareDevelopmentChange(value), 'DEVELOPMENT_CHANGE_INVALID');
+}
+for (const value of [null, {}, [], { changeRoots: [] }, { changeRoots: [], integration: {} },
+  { changeRoots: ['PUBLIC'], integration: {} }, { changeRoots: Array(17).fill('PUBLIC'), integration: {} },
+  { changeRoots: [null, null], integration: {} }]) {
+  denied(() => prepareDevelopmentChangeSet(value), 'DEVELOPMENT_CHANGE_SET_INVALID');
 }
 const account = createManagedLedgerAccount({ ...createPublicLegacyLedger(), localNative: true });
 for (const index of [-1, 0, 1, 1.5, '1', null]) denied(() => readManagedDevelopmentResult(account.root, index), 'MANAGED_DEVELOPMENT_ENTRY_INVALID');

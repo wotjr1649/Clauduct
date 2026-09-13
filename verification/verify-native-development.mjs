@@ -30,7 +30,7 @@ function developmentHashes(project, localNative) {
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
-    'verification/execution-account.mjs', 'verification/managed-development.mjs',
+    'verification/execution-account.mjs', 'verification/managed-development.mjs', 'verification/managed-ledger-account.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
     'verification/verify-native-recovery.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/adapter.mjs',
     'src/clauduct.mjs', 'src/native-transport.mjs', 'src/rate-limit-observation.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs', 'src/request-status.mjs',

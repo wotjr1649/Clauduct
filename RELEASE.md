@@ -90,7 +90,7 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 `execution-account.mjs`는 검증된 과거 잔액과 미관측 예약을 초기 잔액으로 보존하고, 계정 안의 다음 실행 디렉터리를 배타적으로 생성해 한 소유자만 예약하도록 한다. 정산 파일이 생겼어도 종료 증거를 확인해 기록하기 전에는 예약 전량을 유지하며, 이미 관측된 초과량도 낮추지 않는다. 종료 기록은 정산 상태와 native 결과의 hash에 결속한다. 살아 있는 소유자, 미완성 실행, 깨진 정산·종료 기록은 다음 예약을 차단한다. 파일 기록의 crash 구간이 불명확하면 실행을 추가하지 않으며, 전원 손실 내구성은 미검증이다.
 
-`managed-development.mjs`는 이 계정을 native 검증기에 연결한다. 호출자는 검증한 기존 원장 hash·초기 잔액·한도로 `createExecutionAccount(root, { basisHash, previous, limits })`를 호출하며, root는 프로젝트 `.tmp` 바로 아래의 새 `managed-development-XXXXXX` 디렉터리다. CLI `--local-task <root> <model> <pwsh.exe> <task-id>`는 한 과제를 실행하고, `--local-continue`는 같은 계정의 직전 완료 과제와 같은 세션에서 다른 과제를 실행한다. `--reconcile <root>`는 기록된 native 소유자의 종료·현재 소스·사용량 원장·예약 결속을 확인해 정산한다. 정산을 위해 native를 다시 시작하지 않는다. 각 실행은6요청 상한이며, 계정 생성 자체가 모델 요청이나 한도 증액을 승인하지 않는다.
+`managed-development.mjs`는 이 계정을 native 검증기에 연결한다. 합성 검사에서는 `createExecutionAccount(root, { basisHash, previous, limits })`를 사용할 수 있다. 기존 원장을 연결하는 경로는 아래 `createManagedLedgerAccount`이며, root는 프로젝트 `.tmp` 바로 아래의 새 `managed-development-XXXXXX` 디렉터리다. CLI `--local-task <root> <model> <pwsh.exe> <task-id>`는 한 과제를 실행하고, `--local-continue`는 같은 계정의 직전 완료 과제와 같은 세션에서 다른 과제를 실행한다. `--reconcile <root>`는 기록된 native 소유자의 종료·현재 소스·사용량 원장·예약 결속을 확인해 정산한다. 정산을 위해 native를 다시 시작하지 않는다. 각 실행은6요청 상한이며, 계정 생성 자체가 모델 요청이나 한도 증액을 승인하지 않는다.
 
 로컬 중단 주입 `--local-interrupt-after-result`는 native 결과 기록 후 관리기를 exit73으로 종료한다. 두 조합 설정에서 예약 전량 보존→새 관리기의 정산→후속 개발을 각각10loopback으로 확인했다. sol/low의 두 native 단계는6685ms, luna/max는5914ms였다. 초기 합성 잔액37시도는 유지됐고 두 과제의 관측10시도만 추가됐다. 각 과제의 소스 쓰기1회·독립 검사·같은session·사용량·회수를 대조했다. 실제 공개 프로세스7개의 소유 경쟁/중단42개 및 계정39개를 포함한 관련482개 확인 항목이 통과했다. 별도 공개 fixture는 다른 실행의 binding과 정산 후 변경된 결과를 거부했다. 기존 출력 단절 복구6506ms/8loopback과 조기 종료 재개5181ms/7loopback도 통과했다.
 
@@ -104,7 +104,13 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 요구사항 읽기 직후 실제 native 실행 중 관리기만 종료한 공개 검사는 두 조합에서 재개와 후속 두 과제를 통과했다. sol/low는7621/2843/2800ms, luna/max는7594/2547/2091ms였다. 원래 결과 부재·원래 기준 검사 실패·같은 작업 디렉터리와 세션·수정1회·전량 예약을 대조했다. 재개와 후속 과제는각5loopback이며 초기 합성37+첫 예약6+관측15=58을 유지한다. 관련18files/843개 확인 항목, 실제 공개 fixture의 소스/증거 변조 거부, 기존 쓰기 후 복구와 출력 단절·조기 종료 복구도 통과했다. 외부 모델/credential 추가 호출0이다. 소스 쓰기 도중의 부분 효과나 모든 crash 경계의 일반화를 입증한 것은 아니다.
 
-이 계정 경로의 추가 실제 backend 요청은0이다. 기존 실제 잔액297/한도301을 적용한 검사에서6요청 예약은 실행 디렉터리 생성 전에 거부됐다. 실제 누적 원장의 운영 경로 이관, 결과 없는 crash의 나머지 경계, 임의 개발 과제와 장기 시험을 수행하는 관리기 전체는 미완료다. 기존 실제 원장·미관측 예약·실패 이력은 유지한다.
+`managed-ledger-account.mjs`의 `createManagedLedgerAccount({ sourceDirectory, ledgerHash, manifestHash, scopeRoot, localNative })`는 검토한 기존 `result.json`과 `manifest.json`의 hash를 확인하고 허용된 숫자·boolean18개만 초기 계정에 반영한다. 실제 모드는 `localNative: false`와 명시적인 작업 루트 `scopeRoot`가 필요하다. 관측하지 못한 토큰·시간 예약은 초기 잔액에 포함해 보존한다. 파일당64KiB 제한, 중복 최상위 키, 알 수 없는 계수, 불일치·초과·변조를 검사한다. 원장 디렉터리와 작업 범위 registry의 배타 등록으로 같은 snapshot을 별도 계정에 재등록하지 못하게 한다. `openManagedLedgerSource(sourceDirectory)`는 기존 등록을 조회하며 초기화하지 않는다. 부분 등록과 원장 변경은 실패로 남기며 자동 재생성하지 않는다.
+
+관리기의 `--live-task`, `--live-continue`, `--live-recover`는 이 등록을 요구한다. 공개 localNative 계정의 실제 모드 사용과 등록 없는 실제 실행은 예약 전에 거부한다. 등록된 원장은 정산 때도 다시 검증하며 기존 한도나 초기 예약을 낮추지 않는다. 이 인터페이스의 구현과 실제 모델을 통한 실행 성공은 별도 증거다. 이전 단발 native 검증기의 호출자가 관리하던 전역 원장까지 이 인터페이스가 자동으로 이관하는 것은 아니다.
+
+2026-09-14 공개 검사는 계정43개·등록 경쟁/결과 없는 등록 완료24개·복사한 snapshot 중복 거부3개를 포함한다. 관련21files/911개 확인 항목 통과 뒤 live-mode 공개 메타데이터 검사를 추가한 계정43개도 통과했다. 두 조합의 공유 계정에서 세 과제는각5loopback으로 완료됐고, luna의 후속 과제는 같은 세션을 유지했다. 별도 sol 실행은 관리기exit73 후 예약 전량을 유지하고 새 native 시작0으로 정산했다. 공개 manifest의 한도 변경은 정산을 거부하며 예약 전량을 보존했다. 각 실행의 기존 PASS와 별개로 Node `--permission` 아래 사후 종합 종료 재확인은 `DEVELOPMENT_ACCOUNTING_INVALID`로 실패했다. 파일 증거4단계·각31개 소스 hash 대조는 통과했으나 종료 재확인 실패를 대체하지 않는다.
+
+이 계정 경로의 추가 실제 backend 요청은0이다. 기존 실제 잔액297/한도301을 적용한 앞선 검사에서6요청 예약은 실행 디렉터리 생성 전에 거부됐다. 실제 원장 등록은 작업 범위 registry의 디렉터리 생성에서 Node `FileSystemWrite` 검사에 거부되어 운영 계정이 생성되지 않았다. 원장·한도·미관측 예약은 불변이며 이 등록을 다른 권한이나 경로로 재시도하지 않았다. 실제 누적 원장의 운영 경로 이관, 결과 없는 crash의 나머지 경계, 임의 개발 과제와 장기 시험을 수행하는 관리기 전체는 미완료다.
 
 `long-stage-policy.mjs`는 4h→24h×3→72h 순서와 사건 수를 계산한다. 후보·ZIP·판정기·런타임·모델 조합이 같은지, 기본 context 설정, 각 단계의 시간·개발 수, 24h 세 실행의 압축/갱신 합계, 실패·개입·효과 중복·기록 누락·재사용된 개발 증거를 검사한다. 72h의 반복 병렬·취소·장애 복구는 각각 최소2회로 수량화했다. 입력한 관측치의 진위는 이 순수 계산기가 증명하지 않으므로, 모든 수량이 맞아도 `observationsIndependentlyVerified=false`와 `releaseVerdict=HOLD`를 반환한다. 실제 원자료를 대조하는 장기 관리기 연결과 시간 시험은 미완료다.
 

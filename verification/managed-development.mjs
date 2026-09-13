@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { sourceHash } from './development-fixture.mjs';
 import { developmentTask } from './development-tasks.mjs';
 import { readExecutionAccount, reserveExecutionAccount, closeExecutionAccount } from './execution-account.mjs';
+import { readManagedLedgerAccount } from './managed-ledger-account.mjs';
 import { verifyNativeDevelopment, readDevelopmentAccountingEvidence, prepareDevelopmentInterruption, readDevelopmentInterruption } from './verify-native-development.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -41,7 +42,8 @@ function evidenceFor(entry) {
 }
 
 export function reconcileManagedDevelopment(path, ownerNonce) {
-  const root = rootPath(path), before = readExecutionAccount(root), entry = before.entries.at(-1);
+  const root = rootPath(path), before = existsSync(join(root, 'legacy-ledger.json'))
+    ? readManagedLedgerAccount(root).account : readExecutionAccount(root), entry = before.entries.at(-1);
   need(entry, 'MANAGED_DEVELOPMENT_EMPTY');
   const evidence = evidenceFor(entry);
   const account = entry.closed ? before : closeExecutionAccount(entry.entry,
@@ -61,6 +63,7 @@ export async function runManagedDevelopment({ root, model, powershell, taskId = 
     && typeof interruptAfterNativeResult === 'boolean' && (!interruptAfterNativeResult || localNative)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'));
   developmentTask(taskId);
+  if (!localNative || existsSync(join(root, 'legacy-ledger.json'))) readManagedLedgerAccount(root, { localNative });
   let account = readExecutionAccount(root), interruptedRoot;
   if (recoverInterrupted) {
     const last = account.entries.at(-1); need(last, 'MANAGED_DEVELOPMENT_EMPTY');
@@ -105,11 +108,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const [mode, root, model, powershell, taskId] = process.argv.slice(2);
     need(mode === '--reconcile' ? process.argv.length === 4
-      : ['--local-task', '--local-continue', '--local-interrupt-after-result', '--local-recover', '--local-hold-after-source', '--local-hold-after-read'].includes(mode) && process.argv.length === 7);
+      : ['--live-task', '--live-continue', '--live-recover', '--local-task', '--local-continue', '--local-interrupt-after-result', '--local-recover', '--local-hold-after-source', '--local-hold-after-read'].includes(mode) && process.argv.length === 7);
     const result = mode === '--reconcile' ? reconcileManagedDevelopment(root)
-      : await runManagedDevelopment({ root, model, powershell, taskId, localNative: true,
-        continuation: mode === '--local-continue', interruptAfterNativeResult: mode === '--local-interrupt-after-result',
-        recoverInterrupted: mode === '--local-recover', holdAfterSourceWrite: mode === '--local-hold-after-source', holdAfterTaskRead: mode === '--local-hold-after-read' });
+      : await runManagedDevelopment({ root, model, powershell, taskId, localNative: mode.startsWith('--local-'),
+        continuation: mode.endsWith('-continue'), interruptAfterNativeResult: mode === '--local-interrupt-after-result',
+        recoverInterrupted: mode.endsWith('-recover'), holdAfterSourceWrite: mode === '--local-hold-after-source', holdAfterTaskRead: mode === '--local-hold-after-read' });
     console.log(JSON.stringify({ suite: result.suite, root: result.root, nativeRoot: result.nativeRoot, passed: result.passed,
       nativePassed: result.nativePassed, failure: result.failure, entries: result.account.entries.length,
       pending: result.account.pending !== null, initial: result.account.initial, charged: result.account.charged,
@@ -117,7 +120,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       actualModelRequests: result.evidence.localNative ? 0 : result.evidence.observed.attempts }));
     process.exitCode = result.passed ? 0 : 1;
   } catch (error) {
-    const known = /^(?:EXECUTION_ACCOUNT_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ACCOUNTING_INVALID)$/;
+    const known = /^(?:EXECUTION_ACCOUNT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ACCOUNTING_INVALID)$/;
     console.log(JSON.stringify({ suite: 'managed-development', passed: false,
       failure: known.test(error.message) ? error.message : 'MANAGED_DEVELOPMENT_FAILED' }));
     process.exitCode = 1;

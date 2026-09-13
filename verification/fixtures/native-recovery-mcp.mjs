@@ -1,9 +1,10 @@
 import { createInterface } from 'node:readline';
-import { openSync, closeSync, writeFileSync, readFileSync, lstatSync } from 'node:fs';
+import { openSync, closeSync, writeFileSync, readFileSync, lstatSync, fstatSync, writeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const [directory, operationId, hold] = process.argv.slice(2);
-if (!directory || !/^[0-9a-f-]{36}$/.test(operationId) || !['hold', 'return'].includes(hold)) throw new Error('INVALID_FIXTURE_ARGUMENTS');
+const [directory, operationId, hold, audit] = process.argv.slice(2);
+if (!directory || !/^[0-9a-f-]{36}$/.test(operationId) || !['hold', 'return'].includes(hold)
+  || audit !== undefined && audit !== 'audit' || process.argv.length > 6) throw new Error('INVALID_FIXTURE_ARGUMENTS');
 const root = resolve(directory), rootStat = lstatSync(root);
 if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('INVALID_FIXTURE_ROOT');
 const receiptPath = join(root, 'operation.json'), reportPath = join(root, 'report.json');
@@ -27,6 +28,24 @@ const descriptions = {
   complete_report: 'Complete the original report from the verified receipt. No parameters.'
 };
 const content = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
+function recordCall(name) {
+  if (audit !== 'audit') return;
+  const path = join(root, 'mcp-events.jsonl');
+  let before;
+  try { before = lstatSync(path); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  if (before && (!before.isFile() || before.isSymbolicLink() || before.size > 16300)) throw new Error('INVALID_CALL_AUDIT');
+  const fd = openSync(path, before ? 'r+' : 'wx');
+  try {
+    const current = fstatSync(fd);
+    if (!current.isFile() || current.size > 16300 || before &&
+      (before.dev !== current.dev || before.ino !== current.ino || before.size !== current.size)) throw new Error('INVALID_CALL_AUDIT');
+    // The append is before the effect, so an audit failure cannot silently allow it.
+    const row = Buffer.from(JSON.stringify({ name }) + '\n');
+    // A positional append keeps a replaced pathname from redirecting this descriptor.
+    if (writeSync(fd, row, 0, row.length, current.size) !== row.length) throw new Error('INVALID_CALL_AUDIT');
+  } finally { closeSync(fd); }
+}
 async function respond(message) {
   if (!Object.hasOwn(message, 'id')) return;
   if (!['number', 'string'].includes(typeof message.id)) return;
@@ -43,6 +62,7 @@ async function respond(message) {
     || !args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).length !== 0) {
     return { ...reply, error: { code: -32602, message: 'INVALID_FIXTURE_REQUEST' } };
   }
+  recordCall(message.params.name);
   if (message.params.name === 'apply_effect') {
     if (readReceipt() === 0) writeExclusive(receiptPath, receipt);
     // The manager kills this owned process tree after the receipt exists and

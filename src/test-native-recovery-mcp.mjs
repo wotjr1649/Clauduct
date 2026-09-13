@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -33,5 +33,33 @@ for (const index of [5, 6, 7]) assert.deepEqual(JSON.parse(replies[index].result
 for (const index of [8, 9]) assert.equal(JSON.parse(replies[index].result.content[0].text).completed, true);
 assert.equal(replies[10].error.code, -32602);
 assert.equal(recoveryOracle(root), true);
-console.log(JSON.stringify({ suite: 'native-recovery-mcp', checks: 16, duplicateEffects: 0,
+let checks = 16;
+for (const shape of ['normal', 'oversized', 'directory']) {
+  const auditRoot = mkdtempSync(join(project, '.tmp', 'native-recovery-mcp-audit-'));
+  const state = initializeRecovery(auditRoot), auditWork = join(auditRoot, 'work');
+  const path = join(auditWork, 'mcp-events.jsonl');
+  if (shape === 'oversized') writeFileSync(path, 'x'.repeat(16384));
+  if (shape === 'directory') mkdirSync(path);
+  const invoke = messages => spawnSync(process.execPath, ['--permission', `--allow-fs-read=${script}`,
+    `--allow-fs-read=${auditWork}`, `--allow-fs-write=${auditWork}`, script, auditWork, state.operationId, 'return', 'audit'],
+  { cwd: auditWork, env, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384,
+    input: messages.map(message => JSON.stringify(message)).join('\n') + '\n' });
+  const first = invoke([call(1, 'apply_effect')]);
+  assert.equal(first.error, undefined);
+  if (shape === 'normal') {
+    assert.equal(first.status, 0); assert.equal(first.stderr, '');
+    assert.deepEqual(readFileSync(path, 'utf8'), '{"name":"apply_effect"}\n');
+    const second = invoke([call(2, 'effect_status'), call(3, 'complete_report')]);
+    assert.equal(second.status, 0); assert.equal(second.stderr, '');
+    assert.deepEqual(readFileSync(path, 'utf8').trim().split('\n').map(line => JSON.parse(line)),
+      ['apply_effect', 'effect_status', 'complete_report'].map(name => ({ name })));
+    assert.equal(recoveryOracle(auditRoot), true);
+  } else {
+    assert.equal(first.status, 1); assert.equal(first.stderr, 'RECOVERY_FIXTURE_FAILED\n');
+    assert.equal(existsSync(join(auditWork, 'operation.json')), false);
+    if (shape === 'oversized') assert.equal(readFileSync(path, 'utf8'), 'x'.repeat(16384));
+  }
+  checks++;
+}
+console.log(JSON.stringify({ suite: 'native-recovery-mcp', checks, duplicateEffects: 0,
   externalRequests: 0, actualCredentialReads: 0, evidenceRoot: root }));

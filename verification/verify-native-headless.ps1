@@ -6,6 +6,7 @@ param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 
     [ValidateSet('foreground', 'fork', 'relay')][string] $CompletionMode = 'foreground',
     [switch] $StopAfterFirstCompletion,
     [switch] $FailFirstConnection,
+    [ValidatePattern('(?-i)^(?:[a-f0-9]{32})?$')][string] $RunId = '',
     [ValidateRange(1, 120)][int] $TimeoutSeconds = 90,
     [ValidateRange(1, 256)][int] $RequestLimit = 16)
 
@@ -27,7 +28,8 @@ foreach ($boundary in @($taskRoot, $temporaryRoot)) {
         throw 'VERIFICATION_ROOT_REPARSE_POINT'
     }
 }
-$fixtureRoot = Join-Path $temporaryRoot ('native-headless-' + [Guid]::NewGuid().ToString('N'))
+$fixtureRoot = Join-Path $temporaryRoot ('native-headless-' + $(if ($RunId) { $RunId } else { [Guid]::NewGuid().ToString('N') }))
+if (Test-Path -LiteralPath $fixtureRoot) { throw 'VERIFICATION_RUN_EXISTS' }
 $profileRoot = Join-Path $fixtureRoot 'config'
 $workingRoot = Join-Path $fixtureRoot 'work'
 $tempRoot = Join-Path $fixtureRoot 'temp'
@@ -173,10 +175,10 @@ $info.Environment['CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY'] = '1'
 if ($completionFork) { $info.Environment['CLAUDE_CODE_FORK_SUBAGENT'] = '1' }
 if ($Case -eq 'build-powershell') { $info.Environment['CLAUDE_CODE_USE_POWERSHELL_TOOL'] = '1' }
 $entryArgs = @((Join-Path $taskRoot 'src/clauduct.mjs'))
-$guardedFixture = $Case -in @('agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch') -or $FailFirstConnection
+$guardedFixture = $Case -in @('text', 'stream-json', 'agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch') -or $FailFirstConnection
 if ($guardedFixture) {
     $policyPath = Join-Path $fixtureRoot 'tool-policy.json'
-    $policy = @{ version = 1; kind = $(if ($FailFirstConnection) { 'none' } else { $Case }); workingRoot = $workingRoot }
+    $policy = @{ version = 1; kind = $(if ($Case -in @('text', 'stream-json') -or $FailFirstConnection) { 'none' } else { $Case }); workingRoot = $workingRoot }
     if ($Case -in @('agent', 'completion')) { $policy.readPath = Join-Path $taskRoot 'src/models.mjs' }
     elseif ($Case -eq 'image') { $policy.readPath = $imagePath }
     elseif ($Case -eq 'workflow') { $policy.workflowScript = $workflowScript }
@@ -242,7 +244,7 @@ try {
             $boundary = $journalText.LastIndexOf("`n")
             if ($boundary -lt 0) { continue }
             try { $last = ($journalText.Substring(0, $boundary) -split "`n")[-1] | ConvertFrom-Json -AsHashtable } catch { continue }
-            if ($last.version -eq 1 -and $last.kind -in @('attempt','usage') -and $last.completions -ge 1 -and
+            if ($last.version -in @(1,2) -and $last.kind -in @('attempt','usage') -and $last.completions -ge 1 -and
                 $last.requestAttempts -ge 1 -and $last.requestAttempts -le $RequestLimit) {
                 $injectedStop = $true; $injectedStopAfterCompletions = $last.completions
                 $process.Kill($true); [void]$process.WaitForExit(10000)
@@ -424,14 +426,6 @@ try {
             $transportProgressState = 'valid'
         } catch { $transportProgressState = 'invalid' }
         $passed = $passed -and $transportProgressState -eq 'valid'
-        $usageLine = @($stderr -split '\r?\n' | Where-Object { $_.StartsWith('CLAUDUCT_FIXTURE_USAGE ') } | Select-Object -Last 1)
-        if ($usageLine.Count -eq 1 -and $usageLine[0].Length -lt 1024) {
-            try {
-                $candidateUsage = ConvertFrom-Json -InputObject $usageLine[0].Substring(23) -AsHashtable
-                if (@($candidateUsage.Keys | Where-Object { $_ -notin @('inputTokens','outputTokens','completions','maxInputTokens','maxOutputTokens','requestAttempts','imageFormatMask') }).Count -eq 0 -and
-                    @($candidateUsage.Values | Where-Object { ($_ -isnot [long] -and $_ -isnot [int]) -or $_ -lt 0 }).Count -eq 0) { $fixtureUsage = $candidateUsage; $fixtureUsageSource = 'footer' }
-            } catch { }
-        }
         $readerInfo = [Diagnostics.ProcessStartInfo]::new($info.FileName)
         $readerInfo.UseShellExecute = $false; $readerInfo.CreateNoWindow = $true
         $readerInfo.WorkingDirectory = $fixtureRoot
@@ -454,20 +448,10 @@ try {
                 $readerText = $readerOut.GetAwaiter().GetResult()
                 if ($readerText.Length -lt 2048) {
                     try {
-                        $journal = $readerText | ConvertFrom-Json -AsHashtable
-                        $numericKeys = @('inputTokens','outputTokens','completions','requestAttempts','imageFormatMask','recordCount')
-                        if ($journal.Count -eq 8 -and $journal.finalRecorded -is [bool] -and $journal.truncatedTail -is [bool] -and
-                            @($numericKeys | Where-Object { ($journal[$_] -isnot [long] -and $journal[$_] -isnot [int]) -or $journal[$_] -lt 0 }).Count -eq 0) {
-                            $matched = $null
-                            if ($null -ne $fixtureUsage) { $matched = @($numericKeys[0..4] | Where-Object { $fixtureUsage[$_] -ne $journal[$_] }).Count -eq 0 }
-                            else {
-                                $fixtureUsage = @{ maxInputTokens = 131072; maxOutputTokens = 32768 }
-                                foreach ($key in $numericKeys[0..4]) { $fixtureUsage[$key] = $journal[$key] }
-                                $fixtureUsageSource = 'journal'
-                            }
-                            $fixtureJournal = @{ records = $journal.recordCount; finalRecorded = $journal.finalRecorded; truncatedTail = $journal.truncatedTail; matchedFooter = $matched }
-                            $fixtureJournalState = 'valid'
-                        }
+                        if ($readerErr.GetAwaiter().GetResult().Length -ne 0) { throw 'VERIFICATION_LEDGER_READER_STDERR' }
+                        $accounting = ConvertFrom-ClauductFixtureAccounting -UsageText $stderr -JournalText $readerText -RequestLimit $RequestLimit
+                        $fixtureUsage = $accounting.usage; $fixtureUsageSource = $accounting.source
+                        $fixtureJournal = $accounting.journal; $fixtureJournalState = 'valid'
                     } catch { }
                 }
             }
@@ -476,6 +460,7 @@ try {
             $ledgerReaderStopped = $null -eq $reader -or $reader.HasExited
         } finally { if ($null -ne $reader) { $reader.Dispose() } }
         $passed = $passed -and $null -ne $fixtureUsage -and $fixtureUsage.completions -gt 0 -and
+            $fixtureUsage.unobservedCompletions -eq 0 -and $fixtureJournal.version -eq 2 -and
             $fixtureUsage.inputTokens -le 131072 -and $fixtureUsage.outputTokens -le 32768 -and
             $fixtureUsage.requestAttempts -gt 0 -and $fixtureUsage.requestAttempts -le $RequestLimit -and
             $ledgerReaderStopped -eq $true -and $null -ne $fixtureJournal -and $fixtureJournal.finalRecorded -and -not $fixtureJournal.truncatedTail -and $fixtureJournal.matchedFooter -ne $false
@@ -512,6 +497,7 @@ try {
         failureCategories = @($status.failureHistory.records | ForEach-Object { $_.failureCategory });
         entryCategories = @([regex]::Matches($stderr, '(?m)^Clauduct: ([A-Z_]{1,64})(?: |\r?$)') | ForEach-Object { $_.Groups[1].Value });
         fixtureUsage = $fixtureUsage;
+        usageUnobservedAttempts = $(if ($null -ne $fixtureUsage) { $fixtureUsage.requestAttempts - $fixtureUsage.completions } else { $null });
         fixtureUsageSource = $fixtureUsageSource; fixtureJournal = $fixtureJournal;
         ledgerReaderStopped = $ledgerReaderStopped;
         fixtureJournalState = $fixtureJournalState;

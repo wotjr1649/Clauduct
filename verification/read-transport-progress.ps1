@@ -1,3 +1,51 @@
+function ConvertFrom-ClauductFixtureAccounting {
+    param([string] $UsageText, [string] $JournalText, [int] $RequestLimit)
+    try {
+        if ($UsageText.Length -gt 256KB -or $JournalText.Length -gt 2048 -or $RequestLimit -lt 1 -or $RequestLimit -gt 256) { throw 'INVALID' }
+        $parse = {
+            param([string] $Text, [string[]] $Keys)
+            $document = [System.Text.Json.JsonDocument]::Parse($Text)
+            try {
+                if ($document.RootElement.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { throw 'INVALID' }
+                $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                foreach ($property in $document.RootElement.EnumerateObject()) {
+                    if ($property.Name -cnotin $Keys -or -not $names.Add($property.Name)) { throw 'INVALID' }
+                }
+                if ($names.Count -ne $Keys.Count) { throw 'INVALID' }
+            } finally { $document.Dispose() }
+            return $Text | ConvertFrom-Json -AsHashtable -Depth 4 -ErrorAction Stop
+        }
+        $counters = @('inputTokens','outputTokens','completions','requestAttempts','imageFormatMask','unobservedCompletions')
+        $journal = & $parse $JournalText ($counters + @('version','recordCount','finalRecorded','truncatedTail'))
+        foreach ($key in $counters + @('version','recordCount')) {
+            if (($journal[$key] -isnot [int] -and $journal[$key] -isnot [long]) -or $journal[$key] -lt 0 -or $journal[$key] -gt 9007199254740991) { throw 'INVALID' }
+        }
+        if ($journal.version -notin @(1,2) -or $journal.finalRecorded -isnot [bool] -or $journal.truncatedTail -isnot [bool] -or
+            ($journal.finalRecorded -and $journal.truncatedTail) -or $journal.recordCount -lt 1 -or $journal.recordCount -gt 4096 -or
+            $journal.requestAttempts -gt $RequestLimit -or $journal.imageFormatMask -gt 15 -or
+            $journal.completions + $journal.unobservedCompletions -gt $journal.requestAttempts -or
+            ($journal.version -eq 1 -and $journal.unobservedCompletions -ne 0) -or
+            $journal.recordCount -lt 1 + $journal.requestAttempts + $journal.completions + $journal.unobservedCompletions + [int]$journal.finalRecorded) { throw 'INVALID' }
+        $prefix = 'CLAUDUCT_FIXTURE_USAGE '
+        $lines = @($UsageText -split '\r?\n' | Where-Object { $_.StartsWith($prefix) })
+        if ($lines.Count -gt 1 -or ($lines.Count -eq 1 -and $lines[0].Length -gt 1024)) { throw 'INVALID' }
+        $usage = @{ maxInputTokens = 131072; maxOutputTokens = 32768 }
+        foreach ($key in $counters) { $usage[$key] = $journal[$key] }
+        $matched = $null; $source = 'journal'
+        if ($lines.Count -eq 1) {
+            $footerKeys = $counters + @('maxInputTokens','maxOutputTokens')
+            if ($journal.version -eq 1) { $footerKeys = @($footerKeys | Where-Object { $_ -cne 'unobservedCompletions' }) }
+            $footer = & $parse $lines[0].Substring($prefix.Length) $footerKeys
+            foreach ($key in $footerKeys) {
+                if (($footer[$key] -isnot [int] -and $footer[$key] -isnot [long]) -or $footer[$key] -ne $usage[$key]) { throw 'INVALID' }
+            }
+            $matched = $true; $source = 'footer'
+        }
+        return @{ usage = $usage; source = $source; journal = @{ version = $journal.version; records = $journal.recordCount;
+            finalRecorded = $journal.finalRecorded; truncatedTail = $journal.truncatedTail; matchedFooter = $matched } }
+    } catch { throw 'VERIFICATION_USAGE_INVALID' }
+}
+
 function ConvertFrom-ClauductTransportProgress {
     param([string] $Text)
     try {

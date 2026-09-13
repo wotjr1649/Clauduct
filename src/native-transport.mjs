@@ -589,7 +589,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           if (status === 404 || status === 410) { done(reject, new NativeError('SEARCH_UNAVAILABLE')); return; }
           if (status !== 200) {
             done(reject, preserveRetryAfter(Object.assign(new NativeError('SEARCH_HTTP_ERROR'),
-              { statusCode: status, retryable: status === 429 || status >= 500 }), res));
+              { statusCode: status, retryable: status === 429 || (status >= 500 && status <= 599) }), res));
             return;
           }
           let doc;

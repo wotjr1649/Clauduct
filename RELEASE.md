@@ -30,6 +30,7 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 - 기본 메인은 `astra/low`다. 명시 모델의 기본 effort는 astra/medium, sol/xhigh, terra/high, luna/max이며 `--effort`가 우선한다.
 - `-p`/`--print`는 비대화형이다. stdout은 native 결과만, wrapper 안내·종료 상태는 stderr다. 명시적 print 없이 파이프로 실행하면 TTY 오류로 종료한다.
 - 텍스트는 스트리밍하고 도구 호출은 정상 완료 검증 뒤 전달한다. 전달 전 일시 I/O·429·5xx는 제한 재시도하며 전달 후 오류는 자동 재실행하지 않는다. 완료된 도구를 반복하지 말고 `--resume`으로 이력을 이어간다.
+- 검색도 HTTP 429 또는500~599에서만 상태 코드에 따른 재시도를 한다. 비표준600 이상을 일시 장애로 재시도하던 범위를 수정했으며, 로컬 HTTP의14개 경계 사례에서 model 최대6회·search 최대2회와 종료 후 자원 회수를 대조했다.
 - DNS 오류는 `UPSTREAM_DNS_ERROR`로 분류하고 정해진 재시도 한도를 적용한다. 인증서·TLS 오류와 접근 거부는 `UPSTREAM_TLS_ERROR`·`UPSTREAM_ACCESS_DENIED`로 분류하여 즉시 종료한다. 모델과 검색에 같은 분류를 적용하며 인증서 검증은 유지한다. 요청의 `attempts[].failureCategory`는 재시도 후 성공한 요청에도 앞선 실패를 남긴다.
 - 모델·검색의401 재시도는 취소 여부와 남은 요청 한도를 확인한 뒤 credential을 다시 조회한다. 비동기 조회 중 취소된 검색도 새 전송 전에 중단한다. 공개 합성 cache 파일의 교체·만료·계정 변경과 반복401/403을 로컬 HTTP에서 검사했으며, 실제 사용자 credential이나 정상 OAuth 갱신의 증거와 구분한다.
 - 서버의 `Retry-After`가 짧은 대기 예산을 넘으면 `UPSTREAM_RETRY_DEFERRED`와 `retry_at_ms`를 반환한다. 그 시각보다 일찍 재개하지 않는다. 숫자 범위로 표현할 수 없는 유효한 지시는 `UPSTREAM_RETRY_UNREPRESENTABLE`로 표시하고 자동 재시도를 막는다.

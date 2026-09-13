@@ -11,14 +11,19 @@ const text = (value, maximum) => typeof value === 'string' && value.length > 0 &
 // Verification-only execution boundary. Model output is data; only these exact
 // reviewed effects may be delivered to the native tools during a live fixture.
 export function createFixtureToolPolicy(policy) {
-  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode']) && policy.version === 1
-    && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none'].includes(policy.kind) && text(policy.workingRoot, 1024));
+  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode', 'phase']) && policy.version === 1
+    && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none', 'recovery'].includes(policy.kind) && text(policy.workingRoot, 1024));
   if (['agent', 'completion', 'image'].includes(policy.kind)) need(text(policy.readPath, 1024));
   else if (policy.kind === 'workflow') need(text(policy.workflowScript, 8192));
   if (policy.kind === 'completion') need(text(policy.parentPrompt, 8192) && Array.isArray(policy.childPrompts)
     && policy.childPrompts.length === 2 && policy.childPrompts.every(value => text(value, 1024))
     && policy.childPrompts[0] !== policy.childPrompts[1]);
   need(policy.completionMode === undefined || policy.kind === 'completion' && ['foreground', 'fork', 'relay'].includes(policy.completionMode));
+  need(policy.kind === 'recovery' ? ['effect', 'finish'].includes(policy.phase) : policy.phase === undefined);
+  const recoveryOrder = policy.phase === 'effect' ? ['mcp__fixture__apply_effect']
+    : ['mcp__fixture__effect_status', 'mcp__fixture__complete_report'];
+  const recoveryIds = new Set();
+  let recoveryStep = 0;
   const readPath = ['agent', 'completion', 'image'].includes(policy.kind) ? resolve(policy.readPath).toLowerCase() : null;
   const completionCalls = new Set();
   const completionCallIds = new Map();
@@ -26,6 +31,7 @@ export function createFixtureToolPolicy(policy) {
   return event => {
     if (event?.type !== 'response.completed' || !Array.isArray(event.response?.output)) return;
     need(event.response.output.length <= 64);
+    if (policy.kind === 'recovery') need(event.response.output.filter(item => item?.type === 'function_call').length <= 1);
     for (const item of event.response.output) {
       if (item?.type !== 'function_call') continue;
       need(policy.kind !== 'none');
@@ -33,7 +39,11 @@ export function createFixtureToolPolicy(policy) {
       let input;
       try { input = JSON.parse(item.arguments); } catch { need(false); }
       need(input && typeof input === 'object' && !Array.isArray(input));
-      if (policy.kind === 'agent' && item.name === 'Agent') {
+      if (policy.kind === 'recovery') {
+        need(recoveryStep < recoveryOrder.length && item.name === recoveryOrder[recoveryStep] && Object.keys(input).length === 0
+          && typeof item.call_id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(item.call_id) && !recoveryIds.has(item.call_id));
+        recoveryIds.add(item.call_id); recoveryStep++;
+      } else if (policy.kind === 'agent' && item.name === 'Agent') {
         need(fields(input, ['description', 'prompt', 'subagent_type', 'run_in_background', 'max_turns'])
           && input.subagent_type === 'clauduct-probe-inherit' && (input.run_in_background === undefined || input.run_in_background === false)
           && text(input.prompt, 8192) && text(input.description, 256)

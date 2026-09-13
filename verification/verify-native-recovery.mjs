@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { initializeRecovery, runRecovery, recordRecoveryWorker, recoveryOracle } from './unattended-recovery.mjs';
+import { readVerificationLedger } from './verification-ledger.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const entry = join(project, 'verification', 'native-recovery-entry.mjs');
@@ -29,23 +30,30 @@ export function nativeVerificationEnvironment(root) {
   return env;
 }
 
-export async function verifyNativeRecovery({ model, powershell, priorAttempts, priorElapsedMs, phaseMs = 120000, requestLimit = 16 }) {
+export async function verifyNativeRecovery({ model, powershell, priorAttempts, priorElapsedMs, phaseMs = 120000, requestLimit = 16, failureMode = 'crash' }) {
   need(Object.hasOwn(combinations, model) && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'), 'INVALID_ARGUMENTS');
+  need(['crash', 'service-signal'].includes(failureMode), 'INVALID_ARGUMENTS');
+  const serviceSignal = failureMode === 'service-signal';
+  const selectedEntry = serviceSignal ? join(project, 'verification', 'native-service-live-entry.mjs') : entry;
   need(Number.isSafeInteger(priorAttempts) && priorAttempts >= 0 && Number.isSafeInteger(priorElapsedMs) && priorElapsedMs >= 0, 'INVALID_PRIOR_USAGE');
   need(phaseMs === 120000 && requestLimit === 16, 'INVALID_BUDGET');
   const root = mkdtempSync(join(project, '.tmp', 'native-recovery-'));
   const manifest = initializeRecovery(root), work = join(root, 'work'), config = join(root, 'config'), temp = join(root, 'temp');
   mkdirSync(config); mkdirSync(temp);
-  const budget = { model, effort: combinations[model], phaseMs, requestLimit, maxPhases: 2, maxTurns: 8,
+  const budget = { model, effort: combinations[model], phaseMs, requestLimit, maxPhases: 2, maxTurns: 8, failureMode,
     maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
     outputBytes: 1024 * 1024, priorAttempts, priorElapsedMs, cumulativeReservedAttempts: priorAttempts + 2 * requestLimit,
     cumulativeReservedMs: priorElapsedMs + 2 * phaseMs, mainConcurrency: 1,
     basis: 'Observed text runs used one attempt and 2.87-5.12s. Up to eight tool turns plus the existing retry allowance fit 16 attempts; two phases are reserved.',
-    hashes: Object.fromEntries([entry, mcp, helper, join(project, 'verification', 'unattended-recovery.mjs')].map(path => [path.slice(project.length + 1), hash(path)])) };
+    hashes: Object.fromEntries([selectedEntry, mcp, helper, ...['verification/verify-native-recovery.mjs',
+      'verification/unattended-recovery.mjs', 'verification/fixture-tool-policy.mjs', 'verification/verification-ledger.mjs',
+      'verification/manual-http-probe.mjs', 'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-protocol.mjs',
+      'src/native-gateway.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/user-session.mjs', 'poc/adapter.mjs']
+      .map(name => join(project, name))].map(path => [path.slice(project.length + 1), hash(path)])) };
   write(join(root, 'budget.json'), budget);
   write(join(work, '.mcp.json'), { mcpServers: { fixture: { type: 'stdio', command: process.execPath,
     args: ['--permission', `--allow-fs-read=${mcp}`, `--allow-fs-read=${work}`, `--allow-fs-write=${work}`,
-      mcp, work, manifest.operationId, 'hold'], env: { ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '',
+      mcp, work, manifest.operationId, ...(serviceSignal ? ['return', 'audit'] : ['hold'])], env: { ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '',
       ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } } } });
   const env = nativeVerificationEnvironment(root);
   const controlEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'ProgramFiles', 'TEMP', 'TMP'].filter(key => env[key]).map(key => [key, env[key]]));
@@ -53,16 +61,21 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
   const started = Date.now();
   const execute = async (stateRoot, state, records, phase) => {
     need(phases.length < 2 && Date.now() - started < phaseMs * 2, 'RUN_BUDGET');
-    const prompt = phase === 'effect'
+    const prompt = serviceSignal ? phase === 'effect'
+      ? 'Complete this public verification task in separate tool turns. First call mcp__fixture__apply_effect exactly once with {}. Wait for its result before completing the report. Do not claim completion before the report exists. The MCP tools are already available; do not search for tools.'
+      : 'Continue the same interrupted public verification task. First call mcp__fixture__effect_status exactly once with {}. Wait for its result. Then call mcp__fixture__complete_report exactly once with {}. Wait for its success and reply exactly CLAUDUCT_RECOVERY_DONE. Never call apply_effect again. Use one tool per response. The MCP tools are already available.'
+      : phase === 'effect'
       ? 'Complete this public verification task: first call mcp__fixture__apply_effect, then call mcp__fixture__complete_report, then reply exactly CLAUDUCT_RECOVERY_DONE. Use ToolSearch to discover these tools if needed. Do not claim completion before the report tool succeeds.'
       : 'Continue the original interrupted public verification task in this same session. The manager independently found its effect receipt. First use mcp__fixture__effect_status to reconcile it, then mcp__fixture__complete_report to finish the original report. Never call apply_effect again. After the report succeeds, reply exactly CLAUDUCT_RECOVERY_DONE.';
     const args = ['--model', model, '--effort', combinations[model], '--verify-model-route', '--verify-request-limit', String(requestLimit),
-      '-p', '--output-format', 'json', '--tools', 'ToolSearch', '--allowedTools',
-      phase === 'effect' ? 'ToolSearch,mcp__fixture__apply_effect,mcp__fixture__complete_report' : 'ToolSearch,mcp__fixture__effect_status,mcp__fixture__complete_report',
+      '-p', '--output-format', 'json', '--tools', serviceSignal ? '' : 'ToolSearch', '--allowedTools',
+      serviceSignal ? phase === 'effect' ? 'mcp__fixture__apply_effect' : 'mcp__fixture__effect_status,mcp__fixture__complete_report'
+        : phase === 'effect' ? 'ToolSearch,mcp__fixture__apply_effect,mcp__fixture__complete_report' : 'ToolSearch,mcp__fixture__effect_status,mcp__fixture__complete_report',
       '--max-turns', '8', ...(phase === 'effect' ? ['--session-id', state.operationId] : ['--resume', state.operationId, '--disallowedTools', 'mcp__fixture__apply_effect']), '--', prompt];
     writeFileSync(join(root, `transport-${phase}.jsonl`), '', { flag: 'wx' });
+    if (serviceSignal) mkdirSync(join(root, `usage-${phase}`));
     const phaseStart = Date.now();
-    const child = fork(entry, [root, phase, ...args], { cwd: work, env, execArgv: [], windowsHide: true,
+    const child = fork(selectedEntry, [root, phase, ...args], { cwd: work, env, execArgv: [], windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
     let stdout = '', stderr = '', outputBytes = 0, tooLarge = false, finished = false, exitCode, failure = null;
     const stopped = new Promise(done => {
@@ -73,17 +86,28 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
     child.stderr.on('data', chunk => { outputBytes += chunk.length; if (outputBytes <= budget.outputBytes) stderr += chunk.toString(); else tooLarge = true; });
     recordRecoveryWorker(stateRoot, records, child.pid, phase);
     child.send({ start: true });
+    let stopAttempted = false;
     function tree(stop) {
+      if (stop) { need(!stopAttempted, 'TREE_STOP_UNVERIFIED'); stopAttempted = true; }
       const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(child.pid),
         '-StartedAfterMs', String(phaseStart), '-RunRoot', root, ...(stop ? ['-Stop'] : [])],
       { cwd: project, env: controlEnv, windowsHide: true, timeout: 12000, maxBuffer: 32768, encoding: 'utf8' });
       need(!result.error && result.status === 0, 'TREE_STOP_UNVERIFIED');
       return JSON.parse(result.stdout);
     }
+    async function waitStopped() {
+      if (finished) return;
+      let deadline;
+      try {
+        await Promise.race([stopped, new Promise((_, reject) => {
+          deadline = setTimeout(() => reject(new Error('PROCESS_STOP_UNVERIFIED')), 5000);
+        })]);
+      } finally { clearTimeout(deadline); }
+    }
     let crashInjected = false, treeEvidence;
     try {
       while (!finished) {
-        if (phase === 'effect' && existsSync(join(work, 'operation.json'))) {
+        if (!serviceSignal && phase === 'effect' && existsSync(join(work, 'operation.json'))) {
           need(read(join(work, 'operation.json')) === JSON.stringify({ operationId: state.operationId, count: 1 }), 'RECEIPT_MISMATCH');
           need(!existsSync(join(work, 'report.json')), 'CRASH_BOUNDARY_MISSED');
           treeEvidence = tree(true); crashInjected = true; break;
@@ -91,13 +115,13 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
         if (tooLarge || Date.now() - phaseStart >= phaseMs) { failure = tooLarge ? 'OUTPUT_LIMIT' : 'PHASE_TIMEOUT'; treeEvidence = tree(true); break; }
         await sleep(25);
       }
-      await Promise.race([stopped, sleep(5000).then(() => { if (!finished) throw new Error('PROCESS_STOP_UNVERIFIED'); })]);
+      await waitStopped();
       treeEvidence ??= tree(false);
       need(treeEvidence.stopped, 'ORPHAN_PROCESS');
     } catch (error) {
       failure = ['RECEIPT_MISMATCH', 'CRASH_BOUNDARY_MISSED', 'TREE_STOP_UNVERIFIED', 'PROCESS_STOP_UNVERIFIED', 'ORPHAN_PROCESS'].includes(error.message)
         ? error.message : 'NATIVE_RECOVERY_FAILED';
-      if (!finished) { treeEvidence = tree(true); await stopped; }
+      if (!finished && !stopAttempted) { treeEvidence = tree(true); await waitStopped(); }
     }
     let result = null, status = null;
     try { result = JSON.parse(stdout); } catch { }
@@ -108,6 +132,8 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
     const attempts = Math.max(0, ...settled.map(row => row.attempts));
     const routeMatched = requests.length > 0 && requests.every(row => row.model === `gpt-5.6-${model}` && row.effort === combinations[model]);
     const usage = rows.filter(row => row.event === 'USAGE').map(row => row.usage);
+    const signals = rows.filter(row => row.event === 'SERVICE_SIGNAL_INJECTED');
+    const usageLedger = serviceSignal ? readVerificationLedger(join(root, `usage-${phase}`, 'tool-usage.jsonl')) : null;
     const withinUsageBudget = usage.reduce((sum, row) => sum + (row.input_tokens ?? 0), 0) <= budget.maxObservedInputTokens
       && usage.reduce((sum, row) => sum + (row.output_tokens ?? 0), 0) <= budget.maxObservedOutputTokens;
     const clean = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
@@ -118,20 +144,39 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
       routeMatched, attempts, attemptsComplete: requests.length === settled.length, usage, withinUsageBudget, outputBytes,
       nativeJson: result !== null, nativeError: result?.is_error ?? null, sameSession: result?.session_id === state.operationId,
       cleanupComplete: clean === true, tree: treeEvidence };
+    if (serviceSignal) Object.assign(summary, { syntheticServiceSignals: signals.length, usageLedger });
     phases.push(summary); write(join(root, `result-${phase}.json`), summary);
     need(!failure && routeMatched && withinUsageBudget && requests.length === settled.length && treeEvidence?.stopped, 'PHASE_FAILED');
-    if (phase === 'effect') need(crashInjected && !recoveryOracle(root), 'CRASH_NOT_VERIFIED');
+    if (serviceSignal) {
+      need(usageLedger.finalRecorded && !usageLedger.truncatedTail && usageLedger.requestAttempts === attempts
+        && usageLedger.completions === usage.length && usage.length === requests.length - signals.length
+        && usageLedger.inputTokens === usage.reduce((sum, row) => sum + row.input_tokens, 0)
+        && usageLedger.outputTokens === usage.reduce((sum, row) => sum + row.output_tokens, 0), 'SERVICE_USAGE_UNVERIFIED');
+      const audit = read(join(work, 'mcp-events.jsonl')).trim().split('\n').map(line => JSON.parse(line));
+      const expectedCalls = phase === 'effect' ? ['apply_effect'] : ['apply_effect', 'effect_status', 'complete_report'];
+      need(audit.length === expectedCalls.length && audit.every((row, index) => Object.keys(row).length === 1 && row.name === expectedCalls[index]), 'SERVICE_EFFECT_UNVERIFIED');
+      if (phase === 'effect') need(!completed && exitCode !== 0 && result?.is_error === true && result.session_id === state.operationId
+        && status?.requestOutcome === 'has-failures' && clean && !recoveryOracle(root) && signals.length === 1
+        && signals[0].category === 'UPSTREAM_HTTP_ERROR' && signals[0].status === 503 && signals[0].backendAttempted === false
+        && status.lifetime.failed === 1 && status.recentRequests.filter(row => row.success === false).length === 1
+        && status.recentRequests.at(-1).failureCategory === 'UPSTREAM_HTTP_ERROR'
+        && status.recentRequests.at(-1).attempts.length === 0, 'SERVICE_SIGNAL_NOT_VERIFIED');
+      else need(completed && signals.length === 0, 'SERVICE_RESUME_UNVERIFIED');
+    } else if (phase === 'effect') need(crashInjected && !recoveryOracle(root), 'CRASH_NOT_VERIFIED');
     return { completed: completed === true, exitCode };
   };
   let first = null, final = null, error = null;
   try {
     first = await runRecovery(root, { execute });
-    need(first.state === 'RECOVERING' && !first.taskCompleted && phases[0]?.crashInjected, 'RECOVERY_BASELINE_FAILED');
+    need(first.state === 'RECOVERING' && !first.taskCompleted
+      && (serviceSignal ? phases[0]?.syntheticServiceSignals === 1 : phases[0]?.crashInjected), 'RECOVERY_BASELINE_FAILED');
     // The manager chooses resume from its preserved receipt/journal, without a user turn.
     final = await runRecovery(root, { execute });
-  } catch (caught) { error = ['PHASE_FAILED', 'RECOVERY_BASELINE_FAILED', 'CRASH_NOT_VERIFIED'].includes(caught.message) ? caught.message : 'RECOVERY_FAILED'; }
-  const passed = !error && final?.taskCompleted === true && recoveryOracle(root) && phases.length === 2;
-  const summary = { suite: 'native-recovery-live', root, model, effort: combinations[model], passed, error, first, final,
+  } catch (caught) { error = ['PHASE_FAILED', 'RECOVERY_BASELINE_FAILED', 'CRASH_NOT_VERIFIED', 'SERVICE_USAGE_UNVERIFIED',
+    'SERVICE_EFFECT_UNVERIFIED', 'SERVICE_SIGNAL_NOT_VERIFIED', 'SERVICE_RESUME_UNVERIFIED'].includes(caught.message) ? caught.message : 'RECOVERY_FAILED'; }
+  const sourceUnchanged = Object.entries(budget.hashes).every(([path, expected]) => hash(join(project, path)) === expected);
+  const passed = !error && final?.taskCompleted === true && recoveryOracle(root) && phases.length === 2 && sourceUnchanged;
+  const summary = { suite: 'native-recovery-live', root, model, effort: combinations[model], failureMode, passed, error, first, final, sourceUnchanged,
     elapsedMs: Date.now() - started, phases, attempts: phases.reduce((sum, row) => sum + row.attempts, 0),
     cumulativeAttempts: priorAttempts + phases.reduce((sum, row) => sum + row.attempts, 0),
     cumulativeNativeElapsedMs: priorElapsedMs + phases.reduce((sum, row) => sum + row.elapsedMs, 0) };
@@ -140,9 +185,10 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    const [live, model, powershell, priorAttempts, priorElapsedMs] = process.argv.slice(2);
-    need(live === '--live' && process.argv.length === 7, 'LIVE_ARGUMENTS_REQUIRED');
-    const result = await verifyNativeRecovery({ model, powershell, priorAttempts: Number(priorAttempts), priorElapsedMs: Number(priorElapsedMs) });
+    const [live, model, powershell, priorAttempts, priorElapsedMs, mode] = process.argv.slice(2);
+    need(live === '--live' && (process.argv.length === 7 || process.argv.length === 8 && mode === '--service-signal'), 'LIVE_ARGUMENTS_REQUIRED');
+    const result = await verifyNativeRecovery({ model, powershell, priorAttempts: Number(priorAttempts), priorElapsedMs: Number(priorElapsedMs),
+      failureMode: mode === '--service-signal' ? 'service-signal' : 'crash' });
     console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;
   } catch { console.log(JSON.stringify({ suite: 'native-recovery-live', passed: false, error: 'VERIFIER_FAILED' })); process.exitCode = 1; }
 }

@@ -109,5 +109,44 @@ for (const change of [{ prompt: 'UNREVIEWED_PROMPT' }, { subagent_type: 'other' 
 for (const input of [null, [], true, 1]) {
   assert.throws(() => createFixtureToolPolicy(completionPolicy)(event('Agent', input)), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
 }
+const recoveryEvent = (name, input = {}, call_id = 'call_public_first') => {
+  const value = event(name, input); value.response.output[0].call_id = call_id; return value;
+};
+const recoveryPolicy = phase => createFixtureToolPolicy({ version: 1, kind: 'recovery', phase, workingRoot });
+{
+  const effect = recoveryPolicy('effect'), finish = recoveryPolicy('finish');
+  assert.doesNotThrow(() => effect(recoveryEvent('mcp__fixture__apply_effect')));
+  assert.throws(() => effect(recoveryEvent('mcp__fixture__apply_effect', {}, 'call_public_second')), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED');
+  assert.doesNotThrow(() => finish(recoveryEvent('mcp__fixture__effect_status')));
+  assert.throws(() => finish(recoveryEvent('mcp__fixture__complete_report')), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED');
+  assert.doesNotThrow(() => finish(recoveryEvent('mcp__fixture__complete_report', {}, 'call_public_second')));
+  checks++;
+}
+for (const [phase, name, input] of [
+  ['effect', 'mcp__fixture__effect_status', {}], ['effect', 'mcp__fixture__complete_report', {}],
+  ['finish', 'mcp__fixture__apply_effect', {}], ['finish', 'mcp__fixture__complete_report', {}],
+  ['effect', 'mcp__fixture__apply_effect', { path: '../oracle.json' }],
+  ['effect', 'ToolSearch', { query: 'fixture' }], ['finish', 'Read', { file_path: 'private' }],
+  ['effect', 'mcp__other__apply_effect', {}], ['finish', 'Bash', { command: 'anything' }]
+]) {
+  assert.throws(() => recoveryPolicy(phase)(recoveryEvent(name, input)), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
+for (const callId of [undefined, true, '', '../private', 'x'.repeat(201)]) {
+  const value = recoveryEvent('mcp__fixture__apply_effect'); value.response.output[0].call_id = callId;
+  assert.throws(() => recoveryPolicy('effect')(value), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
+{
+  const check = recoveryPolicy('finish');
+  const batch = recoveryEvent('mcp__fixture__effect_status');
+  batch.response.output.push(recoveryEvent('mcp__fixture__complete_report', {}, 'call_public_second').response.output[0]);
+  assert.throws(() => check(batch), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED');
+  // The rejected batch cannot advance the expected step without a tool result.
+  assert.doesNotThrow(() => check(recoveryEvent('mcp__fixture__effect_status'))); checks++;
+}
+for (const policy of [{ version: 1, kind: 'recovery', workingRoot },
+  { version: 1, kind: 'recovery', phase: 'development', workingRoot },
+  { version: 1, kind: 'none', phase: 'effect', workingRoot }]) {
+  assert.throws(() => createFixtureToolPolicy(policy), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
 console.log(JSON.stringify({ suite: 'fixture-tool-policy', checks, unreviewedToolDeliveries: delivered,
   externalRequests: 0, actualCredentialReads: 0 }));

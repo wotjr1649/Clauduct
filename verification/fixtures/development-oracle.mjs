@@ -1,4 +1,5 @@
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 const cases = [
   ['zero', '0', 0], ['one', '1', 1000], ['sixty-not-capped', '60', 60000], ['three-hundred-not-capped', '300', 300000],
   ['large-not-capped', '86400', 86400000], ['leading-zeros', '00060', 60000], ['http-ows', ' \t300\t ', 300000],
@@ -9,15 +10,18 @@ const cases = [
   ['comma-values', '60,300', null], ['crlf', '60\r\n', null], ['unicode-space', '\u00a060', null],
   ['overflow', '9007199254741', null], ['safe-large', '9007199254740', 9007199254740000], ['size-limit', '0'.repeat(129), null]
 ];
-let failures = [];
-try {
-  const module = await import(pathToFileURL(process.argv[2]).href);
-  if (typeof module.parseRetryAfterSeconds !== 'function') failures.push('MISSING_EXPORT');
+export function checkRetryAfterSeconds(operation) {
+  const failures = [];
+  if (typeof operation !== 'function') failures.push('MISSING_EXPORT');
   else for (const [name, value, expected] of cases) {
-    try { if (module.parseRetryAfterSeconds(value) !== expected) failures.push(name); }
+    try { if (operation(value) !== expected) failures.push(name); }
     catch { failures.push(name); }
   }
-} catch { failures.push('MODULE_LOAD_FAILED'); }
-const passed = failures.length === 0;
-console.log(JSON.stringify({ passed, checks: cases.length, failures }));
-process.exitCode = passed ? 0 : 1;
+  return { passed: failures.length === 0, checks: cases.length, failures };
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let result;
+  try { result = checkRetryAfterSeconds((await import(pathToFileURL(process.argv[2]).href)).parseRetryAfterSeconds); }
+  catch { result = { passed: false, checks: cases.length, failures: ['MODULE_LOAD_FAILED'] }; }
+  console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;
+}

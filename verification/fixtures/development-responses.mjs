@@ -1,4 +1,5 @@
 import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from '../development-tasks.mjs';
+import { developmentSourceArguments } from '../development-source-policy.mjs';
 
 // Reviewed public replacement used only by local native integration checks.
 // Live development starts from BASELINE_SOURCE and receives no replacement.
@@ -17,6 +18,7 @@ const windowSource = `export function retryDelayWithinBudget(value) {
 `;
 export function publicDevelopmentSource(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
   const task = developmentTask(taskId);
+  if (task.parts) return JSON.stringify({ files: task.parts.map(part => ({ path: part.path, code: publicDevelopmentSource(part.taskId) })) }) + '\n';
   if (task.registered) {
     if (task.localFixtureSource === null) throw new Error('DEVELOPMENT_LOCAL_SOURCE_REQUIRED');
     return task.localFixtureSource;
@@ -36,7 +38,7 @@ export function publicDevelopmentEvents(model, effort, serial, finish = false, t
   const marker = variant === 'early' ? 'PUBLIC_TASK_READ_ONLY' : 'CLAUDUCT_DEVELOPMENT_DONE';
   const responseId = `resp_public_${suffix}`, itemId = `item_public_${suffix}`;
   const item = name ? { type: 'function_call', id: itemId, call_id: `call_public_${suffix}`, name,
-    arguments: JSON.stringify(!finish && serial === 3 ? { code: source } : {}), status: 'completed' }
+    arguments: JSON.stringify(!finish && serial === 3 ? developmentSourceArguments(source, taskId) : {}), status: 'completed' }
     : { type: 'message', id: itemId, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: marker, annotations: [] }] };
   return [{ type: 'response.created', response: { id: responseId, status: 'in_progress' } },
     { type: 'response.output_item.added', output_index: 0,

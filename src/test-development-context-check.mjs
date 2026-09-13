@@ -29,6 +29,9 @@ for (const value of [cyclic, [1n]]) {
 }
 const other = createDevelopmentContextCheck('retry-delay-window')(input);
 equal(other.previousFunctionObserved, false);
+equal(createDevelopmentContextCheck('retry-project')(input).previousFunctionObserved, false);
+const allFunctions = structuredClone(input); allFunctions[0].content[0].text += ' Also implement retryDelayWithinBudget(value).';
+equal(createDevelopmentContextCheck('retry-project')(allFunctions).previousFunctionObserved, true);
 for (const value of ['constructor', '../control', null]) {
   assert.throws(() => createDevelopmentContextCheck(value), { message: 'INVALID_DEVELOPMENT_TASK' }); checks++;
 }

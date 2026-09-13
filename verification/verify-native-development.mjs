@@ -4,9 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createDevelopmentFixture, sourceHash } from './development-fixture.mjs';
-import { developmentTask, developmentOracleSource, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
+import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
 import { readDevelopmentArtifactHashes, verifyDevelopmentArtifacts } from './development-artifacts.mjs';
+import { readDevelopmentSource, developmentSourcePaths, readDevelopmentOracle, expectedDevelopmentOracle, developmentOracleInvocation } from './development-source-files.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
@@ -30,6 +31,7 @@ function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
+    'verification/development-source-files.mjs', 'verification/fixtures/development-project-oracle.mjs',
     'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs', 'verification/development-artifacts.mjs', 'verification/development-change.mjs', 'verification/fixtures/development-integration-oracle.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/execution-account.mjs', 'verification/managed-development.mjs', 'verification/managed-ledger-account.mjs', 'verification/managed-plan-entry.mjs',
@@ -81,8 +83,8 @@ export function readDevelopmentAccountingEvidence(root, phase) {
     && JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, result.localNative)), code);
   const task = developmentTask(budget.taskId), control = join(root, 'control');
   need(budget.taskHash === sourceHash(task.task) && sourceHash(read(join(control, 'TASK.md'))) === budget.taskHash
-    && budget.oracleHash === sourceHash(developmentOracleSource(budget.taskId))
-    && sourceHash(read(join(control, 'oracle.mjs'))) === budget.oracleHash, code);
+    && budget.oracleHash === sourceHash(expectedDevelopmentOracle(project, budget.taskId))
+    && sourceHash(readDevelopmentOracle(control, budget.taskId)) === budget.oracleHash, code);
   const rows = read(join(root, `transport-${phase}.jsonl`)).trim().split('\n').filter(Boolean).map(JSON.parse);
   need(nativeClientsStopped(rows) && rows.filter(row => row.event === 'REQUEST_STARTED').length
     === rows.filter(row => row.event === 'REQUEST_SETTLED').length, code);
@@ -159,9 +161,9 @@ function interruptedDevelopmentState(root, model, localNative, accountHash, even
   const task = developmentTask(budget.taskId), work = join(root, 'work'), control = join(root, 'control');
   need(budget.taskHash === sourceHash(task.task) && sourceHash(read(join(control, 'TASK.md'))) === budget.taskHash
     && sourceHash(read(join(work, '.mcp.json'))) === budget.mcpHash
-    && sourceHash(read(join(control, 'oracle.mjs'))) === budget.oracleHash
-    && budget.oracleHash === sourceHash(developmentOracleSource(budget.taskId)), code);
-  const source = read(join(work, task.sourceFile)); checkDevelopmentSource(source, budget.taskId);
+    && sourceHash(readDevelopmentOracle(control, budget.taskId)) === budget.oracleHash
+    && budget.oracleHash === sourceHash(expectedDevelopmentOracle(project, budget.taskId)), code);
+  const source = readDevelopmentSource(work, budget.taskId); checkDevelopmentSource(source, budget.taskId);
   const eventsPath = join(work, 'events.jsonl'); read(eventsPath, 32768);
   const currentSourceHash = sourceHash(source), allEvents = readFileSync(eventsPath);
   const fullText = new TextDecoder('utf-8', { fatal: true }).decode(allEvents);
@@ -243,8 +245,8 @@ export function prepareDevelopmentInterruption(root, { model, localNative, accou
   }
   const review = JSON.parse(read(join(state.control, 'review.json'), 1024));
   need(review.sha256 === state.snapshot.sourceHash && review.approved === true, 'INTERRUPTION_SOURCE_REVIEW_REQUIRED');
-  const oracle = join(state.control, 'oracle.mjs'), source = join(state.work, state.task.sourceFile);
-  const tested = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${oracle}`, `--allow-fs-read=${source}`, oracle, source],
+  const invocation = developmentOracleInvocation(state.control, state.work, state.taskId);
+  const tested = spawnSync(process.execPath, ['--permission', ...invocation.readPaths.map(path => `--allow-fs-read=${path}`), invocation.oracle, invocation.argument],
     { cwd: state.work, env, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
   let verdict; try { verdict = JSON.parse(tested.stdout); } catch { }
   const afterWrite = state.stage === 'after-write';
@@ -305,14 +307,14 @@ function completedDevelopmentContext(root, model, localNative, taskId) {
   need(!existsSync(join(canonical, 'successor-intent.json')), 'CONTINUATION_ALREADY_STARTED');
   need(JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'CONTINUATION_SOURCE_CHANGED');
   verifyDevelopmentArtifacts(canonical, result, budget);
-  const source = read(join(canonical, 'work', previousTask.sourceFile));
+  const source = readDevelopmentSource(join(canonical, 'work'), budget.taskId);
   checkDevelopmentSource(source, budget.taskId);
   const review = JSON.parse(read(join(canonical, 'control', 'review.json'), 1024));
   need(sourceHash(source) === result.sourceSha256 && review.sha256 === result.sourceSha256 && review.approved === true
     && sourceHash(read(join(canonical, 'work', '.mcp.json'))) === budget.mcpHash
     && sourceHash(read(join(canonical, 'control', 'TASK.md'))) === budget.taskHash && budget.taskHash === sourceHash(previousTask.task)
-    && sourceHash(read(join(canonical, 'control', 'oracle.mjs'))) === budget.oracleHash
-    && budget.oracleHash === sourceHash(developmentOracleSource(budget.taskId)), 'CONTINUATION_ARTIFACT_CHANGED');
+    && sourceHash(readDevelopmentOracle(join(canonical, 'control'), budget.taskId)) === budget.oracleHash
+    && budget.oracleHash === sourceHash(expectedDevelopmentOracle(project, budget.taskId)), 'CONTINUATION_ARTIFACT_CHANGED');
   const usage = readVerificationLedger(join(canonical, `usage-${phase}`, 'tool-usage.jsonl'));
   need(usage.version === 2 && usage.finalRecorded && !usage.truncatedTail && usage.requestAttempts === result.attempts
     && usage.unobservedCompletions === 0 && usage.completions === usage.requestAttempts
@@ -348,12 +350,12 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
   need(nativeClientsStopped(read(join(root, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'RESUME_OWNER_UNVERIFIED');
   need(JSON.stringify(priorBudget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'RESUME_SOURCE_CHANGED');
   need(priorBudget.taskHash === sourceHash(task.task)
-    && priorBudget.oracleHash === sourceHash(developmentOracleSource(taskId)), 'RESUME_ARTIFACT_CHANGED');
-  need(sourceHash(read(join(root, 'work', task.sourceFile))) === first.sourceSha256
+    && priorBudget.oracleHash === sourceHash(expectedDevelopmentOracle(project, taskId)), 'RESUME_ARTIFACT_CHANGED');
+  need(sourceHash(readDevelopmentSource(join(root, 'work'), taskId)) === first.sourceSha256
     && sourceHash(read(join(root, 'work', '.mcp.json'))) === priorBudget.mcpHash
-    && sourceHash(read(join(root, 'control', 'oracle.mjs'))) === priorBudget.oracleHash
+    && sourceHash(readDevelopmentOracle(join(root, 'control'), taskId)) === priorBudget.oracleHash
     && sourceHash(read(join(root, 'control', 'TASK.md'))) === priorBudget.taskHash, 'RESUME_ARTIFACT_CHANGED');
-  checkDevelopmentSource(read(join(root, 'work', task.sourceFile)), taskId);
+  checkDevelopmentSource(readDevelopmentSource(join(root, 'work'), taskId), taskId);
   verifyPriorReservation(root, first, 'RESUME_RESERVATION_INVALID');
   if (incomplete) {
     const events = read(join(root, 'work', 'events.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse);
@@ -515,9 +517,10 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
           reportedReview = requested.sha256;
           if (localNative) {
             need(requested.sha256 === sourceHash(publicDevelopmentSource(taskId))
-              && read(join(work, task.sourceFile)) === publicDevelopmentSource(taskId), 'LOCAL_SOURCE_MISMATCH');
+              && readDevelopmentSource(work, taskId) === publicDevelopmentSource(taskId), 'LOCAL_SOURCE_MISMATCH');
             writeFileSync(join(control, 'review.json'), JSON.stringify({ sha256: requested.sha256, approved: true }), { flush: true });
-          } else console.log(JSON.stringify({ event: 'SOURCE_REVIEW_PENDING', root, taskId, sourcePath: join(work, task.sourceFile), sha256: requested.sha256 }));
+          } else console.log(JSON.stringify({ event: 'SOURCE_REVIEW_PENDING', root, taskId,
+            ...(task.parts ? { sourcePaths: developmentSourcePaths(work, taskId) } : { sourcePath: join(work, task.sourceFile) }), sha256: requested.sha256 }));
         }
       }
       if (cutOutputAfterPass && !outputCut && existsSync(join(work, 'events.jsonl'))) {
@@ -587,13 +590,13 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const sourceUnchanged = Object.entries(budget.hashes).every(([path, hash]) => sourceHash(readFileSync(join(project, path))) === hash);
   const eventsText = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')) : '';
   const events = eventsText.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-  const source = join(work, task.sourceFile), sha256 = sourceHash(read(source));
+  const sha256 = sourceHash(readDevelopmentSource(work, taskId));
   const review = JSON.parse(read(join(control, 'review.json'), 1024));
-  const oracleUnchanged = sourceHash(read(join(control, 'oracle.mjs'))) === fixture.oracleHash;
+  const oracleUnchanged = sourceHash(readDevelopmentOracle(control, taskId)) === fixture.oracleHash;
   let independentPassed = false;
   if (finished && (!failure || outputCut && failure === 'OUTPUT_PIPE_CLOSED') && oracleUnchanged && review.sha256 === sha256 && review.approved === true) {
-    const oracle = join(control, 'oracle.mjs');
-    const check = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${oracle}`, `--allow-fs-read=${source}`, oracle, source],
+    const invocation = developmentOracleInvocation(control, work, taskId);
+    const check = spawnSync(process.execPath, ['--permission', ...invocation.readPaths.map(path => `--allow-fs-read=${path}`), invocation.oracle, invocation.argument],
       { cwd: work, env: controlEnv, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
     try { const verdict = JSON.parse(check.stdout); independentPassed = !check.error && check.status === 0 && verdict.passed && verdict.checks === task.checks && verdict.failures.length === 0; } catch { }
   }
@@ -688,7 +691,7 @@ export async function verifyDevelopmentSequence({ model, powershell, localNative
       continuationFailure = /^CONTINUATION_[A-Z_]+$/.test(error.message) ? error.message : 'CONTINUATION_FAILED';
     }
   }
-  const originalSourceUnchanged = sourceHash(read(join(first.root, 'work', developmentTask().sourceFile))) === first.sourceSha256;
+  const originalSourceUnchanged = sourceHash(readDevelopmentSource(join(first.root, 'work'), first.taskId)) === first.sourceSha256;
   const passed = first.passed && second?.passed === true && first.sessionId === second.sessionId
     && second.contextMatched === true && originalSourceUnchanged && continuationFailure === null;
   const result = { suite: localNative ? 'native-development-sequence-local' : 'native-development-sequence-live',

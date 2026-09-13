@@ -7,8 +7,8 @@ import { spawnSync } from 'node:child_process';
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const evidence = mkdtempSync(join(project, '.tmp', 'development-initialization-'));
 const files = ['development-fixture.mjs', 'development-tasks.mjs', 'development-source-policy.mjs',
-  'development-source-grammar.mjs', 'registered-development-tasks.mjs',
-  'fixtures/development-oracle.mjs', 'fixtures/development-window-oracle.mjs', 'fixtures/development-mcp.mjs'];
+  'development-source-files.mjs', 'development-source-grammar.mjs', 'registered-development-tasks.mjs',
+  'fixtures/development-oracle.mjs', 'fixtures/development-window-oracle.mjs', 'fixtures/development-project-oracle.mjs', 'fixtures/development-mcp.mjs'];
 function prepare(name) {
   const root = join(evidence, name);
   mkdirSync(join(root, 'verification', 'fixtures'), { recursive: true });
@@ -50,6 +50,14 @@ equal(second.taskId, 'retry-after-seconds');
 equal(second.root === first.root, false);
 equal(readFileSync(join(first.work, 'retry-delay-window.mjs'), 'utf8'), preserved);
 equal(readFileSync(join(fresh, '.tmp', 'public-preserved.txt'), 'utf8'), 'PUBLIC_PRESERVED');
+const composite = initialize(fresh, 'retry-project');
+equal(composite.failure, undefined);
+equal(composite.taskId, 'retry-project');
+equal(readdirSync(composite.work).sort(), ['.mcp.json', 'retry-after-seconds.mjs', 'retry-delay-window.mjs']);
+for (const name of ['development-oracle.mjs', 'development-window-oracle.mjs']) {
+  equal(readFileSync(join(composite.control, name), 'utf8'), readFileSync(join(project, 'verification', 'fixtures', name), 'utf8'));
+}
+equal(readFileSync(join(first.work, 'retry-delay-window.mjs'), 'utf8'), preserved);
 const occupied = prepare('occupied project');
 writeFileSync(join(occupied, '.tmp'), 'PUBLIC_OCCUPIED', { flag: 'wx' });
 equal(initialize(occupied, 'retry-delay-window'), { failure: 'DEVELOPMENT_PATH' });
@@ -57,5 +65,5 @@ equal(readFileSync(join(occupied, '.tmp'), 'utf8'), 'PUBLIC_OCCUPIED');
 equal(readdirSync(occupied).sort(), ['.tmp', 'verification']);
 console.log(JSON.stringify({ suite: 'development-initialization', checks, evidenceRoot: evidence,
   freshTemporaryRootCreated: true, existingWorkPreserved: true, occupiedFileRejected: true,
-  actualPublicChildren: 3, actualNativeExecutions: 0, actualCredentialReads: 0, externalRequests: 0,
+  actualPublicChildren: 4, actualNativeExecutions: 0, actualCredentialReads: 0, externalRequests: 0,
   dynamicLinkChecks: 'BLOCKED_NOT_RUN' }));

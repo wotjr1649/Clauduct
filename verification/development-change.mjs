@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { sourceHash } from './development-fixture.mjs';
 import { developmentTask, developmentOracleSource } from './development-tasks.mjs';
 import { readManagedDevelopmentResult } from './managed-development.mjs';
+import { readDevelopmentSource } from './development-source-files.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const encode = value => JSON.stringify(value) + '\n';
@@ -45,31 +46,37 @@ function targetPath(root, path) {
     && path.split('/').every(part => !['node_modules', 'hooks'].includes(part)));
   return join(root, path);
 }
-function sourceResult(accountRoot, entryIndex) {
+function sourceResult(accountRoot, entryIndex, sourcePath) {
   const managed = readManagedDevelopmentResult(accountRoot, entryIndex), evidence = managed.evidence;
   const suffix = evidence.phase.slice('development'.length);
   const result = read(join(evidence.root, `result${suffix}.json`), 65536);
-  const task = developmentTask(evidence.taskId), source = bytes(join(evidence.root, 'work', task.sourceFile), 8192);
-  need(sourceHash(source) === result.sourceSha256 && result.baselineFailed === true && result.revisedPassed === true
+  const originalTask = developmentTask(evidence.taskId), aggregate = readDevelopmentSource(join(evidence.root, 'work'), evidence.taskId);
+  need(sourceHash(aggregate) === result.sourceSha256 && result.baselineFailed === true && result.revisedPassed === true
     && result.independentPassed === true && result.cleanupComplete === true, 'DEVELOPMENT_CHANGE_SOURCE_CHANGED');
-  return { managed, result, task, source };
+  const part = originalTask.parts?.find(part => part.path === sourcePath);
+  need(originalTask.parts ? part !== undefined : sourcePath === undefined, 'DEVELOPMENT_CHANGE_SOURCE_PART');
+  const sourceTaskId = part?.taskId ?? evidence.taskId, task = developmentTask(sourceTaskId);
+  const source = Buffer.from(part ? JSON.parse(aggregate).files.find(file => file.path === sourcePath).code : aggregate);
+  return { managed, result, task, source, sourceTaskId };
 }
 
 // The caller reviews the source and selects the target. Hashes identify the
 // reviewed bytes; they do not authorize an effect. This writes a proposal only.
 export function prepareDevelopmentChange(options) {
-  need(shape(options, ['accountRoot', 'entryIndex', 'targetRoot', 'targetPath', 'expectedBeforeHash', 'expectedAfterHash'])
+  need(shape(options, ['accountRoot', 'entryIndex', 'targetRoot', 'targetPath', 'expectedBeforeHash', 'expectedAfterHash',
+    ...(options && Object.hasOwn(options, 'sourcePath') ? ['sourcePath'] : [])])
     && digest(options.expectedBeforeHash) && digest(options.expectedAfterHash));
-  const { managed, task, source } = sourceResult(options.accountRoot, options.entryIndex);
+  const { managed, task, source, sourceTaskId } = sourceResult(options.accountRoot, options.entryIndex, options.sourcePath);
   const target = targetPath(options.targetRoot, options.targetPath), before = bytes(target, 8192);
   need(sourceHash(before) === options.expectedBeforeHash && options.expectedBeforeHash === sourceHash(task.baseline), 'DEVELOPMENT_CHANGE_TARGET_CHANGED');
   need(sourceHash(source) === options.expectedAfterHash && options.expectedAfterHash !== options.expectedBeforeHash, 'DEVELOPMENT_CHANGE_SOURCE_CHANGED');
   const root = mkdtempSync(join(project, '.tmp', 'development-change-'));
-  const record = { version: 1, rootHash: sourceHash(root.toLowerCase()), accountRoot: managed.root, entryIndex: managed.entryIndex,
+  const record = { version: options.sourcePath === undefined ? 1 : 2, rootHash: sourceHash(root.toLowerCase()), accountRoot: managed.root, entryIndex: managed.entryIndex,
     accountHash: managed.accountHash, executionHash: managed.executionHash, evidenceHash: managed.evidence.evidenceHash,
     taskId: managed.evidence.taskId, localNative: managed.evidence.localNative,
+    ...(options.sourcePath === undefined ? {} : { sourcePath: options.sourcePath, sourceTaskId }),
     targetRoot: resolve(options.targetRoot), targetPath: options.targetPath,
-    beforeHash: options.expectedBeforeHash, afterHash: options.expectedAfterHash, oracleHash: sourceHash(developmentOracleSource(managed.evidence.taskId)) };
+    beforeHash: options.expectedBeforeHash, afterHash: options.expectedAfterHash, oracleHash: sourceHash(developmentOracleSource(sourceTaskId)) };
   writeFileSync(join(root, 'before.mjs'), before, { flag: 'wx' });
   writeFileSync(join(root, 'proposed.mjs'), source, { flag: 'wx' });
   create(join(root, 'change.json'), record);
@@ -82,13 +89,14 @@ export function readDevelopmentChange(path) {
   const changeHash = sourceHash(encode(record));
   need(shape(ready, ['version', 'changeHash']) && ready.version === 1 && ready.changeHash === changeHash
     && shape(record, ['version', 'rootHash', 'accountRoot', 'entryIndex', 'accountHash', 'executionHash', 'evidenceHash', 'taskId',
-      'localNative', 'targetRoot', 'targetPath', 'beforeHash', 'afterHash', 'oracleHash'])
-    && record.version === 1 && record.rootHash === sourceHash(root.toLowerCase()), 'DEVELOPMENT_CHANGE_RECORD_CHANGED');
-  const { managed, source, task } = sourceResult(record.accountRoot, record.entryIndex);
+      'localNative', 'targetRoot', 'targetPath', 'beforeHash', 'afterHash', 'oracleHash', ...(record.version === 2 ? ['sourcePath', 'sourceTaskId'] : [])])
+    && [1, 2].includes(record.version) && record.rootHash === sourceHash(root.toLowerCase()), 'DEVELOPMENT_CHANGE_RECORD_CHANGED');
+  const { managed, source, task, sourceTaskId } = sourceResult(record.accountRoot, record.entryIndex, record.sourcePath);
   need(managed.accountHash === record.accountHash && managed.executionHash === record.executionHash
     && managed.evidence.evidenceHash === record.evidenceHash && managed.evidence.taskId === record.taskId
     && managed.evidence.localNative === record.localNative && sourceHash(source) === record.afterHash
-    && sourceHash(developmentOracleSource(record.taskId)) === record.oracleHash, 'DEVELOPMENT_CHANGE_SOURCE_CHANGED');
+    && (record.version === 1 || record.sourceTaskId === sourceTaskId)
+    && sourceHash(developmentOracleSource(sourceTaskId)) === record.oracleHash, 'DEVELOPMENT_CHANGE_SOURCE_CHANGED');
   need(sourceHash(bytes(join(root, 'before.mjs'), 8192)) === record.beforeHash && record.beforeHash === sourceHash(task.baseline)
     && sourceHash(bytes(join(root, 'proposed.mjs'), 8192)) === record.afterHash, 'DEVELOPMENT_CHANGE_RECORD_CHANGED');
   const target = targetPath(record.targetRoot, record.targetPath), targetHash = sourceHash(bytes(target, 8192));
@@ -130,8 +138,8 @@ export function verifyDevelopmentChange(path) {
   need(current.applied, 'DEVELOPMENT_CHANGE_NOT_APPLIED');
   if (current.verification) return { ...current, testsStarted: 0 };
   create(join(current.root, 'verification-intent.json'), { version: 1, changeHash: current.changeHash, ownerPid: process.pid });
-  const managed = readManagedDevelopmentResult(current.record.accountRoot, current.record.entryIndex), task = developmentTask(current.record.taskId);
-  const oracle = join(managed.evidence.root, 'control', 'oracle.mjs');
+  const managed = readManagedDevelopmentResult(current.record.accountRoot, current.record.entryIndex), task = developmentTask(current.record.sourceTaskId ?? current.record.taskId);
+  const oracle = join(managed.evidence.root, 'control', current.record.version === 2 ? task.oracleFile : 'oracle.mjs');
   need(sourceHash(bytes(oracle, 65536)) === current.record.oracleHash, 'DEVELOPMENT_CHANGE_SOURCE_CHANGED');
   const env = Object.fromEntries(['SystemRoot', 'WINDIR'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
   const result = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${oracle}`, `--allow-fs-read=${current.target}`, oracle, current.target],
@@ -202,16 +210,17 @@ function integrationSpecification(definition, changes) {
     return { moduleIndex, argument: step.argument };
   });
   if (used.size !== changes.length) invalid();
-  return { version: 1, modules: changes.map(change => ({ path: change.target, exportName: developmentTask(change.record.taskId).functionName })),
+  return { version: 1, modules: changes.map(change => ({ path: change.target, exportName: developmentTask(change.record.sourceTaskId ?? change.record.taskId).functionName })),
     steps, cases: definition.cases };
 }
 function changeSetMembers(roots) {
   need(Array.isArray(roots) && roots.length >= 2 && roots.length <= 16 && roots.every(root => typeof root === 'string'), 'DEVELOPMENT_CHANGE_SET_INVALID');
   const changes = roots.map(readDevelopmentChange), paths = new Set(), entries = new Set();
   for (const change of changes) {
+    const sourceKey = `${change.record.entryIndex}:${change.record.sourcePath ?? ''}`;
     need(change.record.accountRoot === changes[0].record.accountRoot && change.record.targetRoot === changes[0].record.targetRoot
-      && !paths.has(change.record.targetPath.toLowerCase()) && !entries.has(change.record.entryIndex), 'DEVELOPMENT_CHANGE_SET_MEMBERS');
-    paths.add(change.record.targetPath.toLowerCase()); entries.add(change.record.entryIndex);
+      && !paths.has(change.record.targetPath.toLowerCase()) && !entries.has(sourceKey), 'DEVELOPMENT_CHANGE_SET_MEMBERS');
+    paths.add(change.record.targetPath.toLowerCase()); entries.add(sourceKey);
   }
   return changes;
 }

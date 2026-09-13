@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { NativeError } from '../src/native-protocol.mjs';
 import { searchRequestBody } from '../src/native-search.mjs';
 import { verifyCompletionRelayTarget } from './completion-relay-target.mjs';
-import { checkDevelopmentSource } from './development-source-policy.mjs';
+import { developmentSourceFromArguments } from './development-source-policy.mjs';
 import { developmentTask } from './development-tasks.mjs';
 
 const need = ok => { if (!ok) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED'); };
@@ -58,8 +58,8 @@ export function createFixtureToolPolicy(policy) {
             && developmentTests < (policy.phase === 'finish' ? 1 : 3) && Object.keys(input).length === 0); developmentTests++;
         } else if (item.name === 'mcp__fixture__write_source') {
           need(policy.phase !== 'finish' && developmentRead && developmentTests > 0 && developmentLast === 'mcp__fixture__run_tests'
-            && developmentWrites < 2 && fields(input, ['code']) && typeof input.code === 'string');
-          try { checkDevelopmentSource(input.code, policy.taskId); } catch { need(false); }
+            && developmentWrites < 2);
+          try { developmentSourceFromArguments(input, policy.taskId); } catch { need(false); }
           developmentWrites++;
         } else need(false);
         recoveryIds.add(item.call_id); developmentLast = item.name;

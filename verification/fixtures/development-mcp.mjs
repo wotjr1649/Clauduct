@@ -3,8 +3,9 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, lstatSync } fr
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { checkDevelopmentSource } from '../development-source-policy.mjs';
+import { checkDevelopmentSource, developmentSourceFromArguments } from '../development-source-policy.mjs';
 import { developmentTask } from '../development-tasks.mjs';
+import { readDevelopmentSource, writeDevelopmentSource, developmentOracleInvocation } from '../development-source-files.mjs';
 
 const [directory, waitMode, taskId, holdMode] = process.argv.slice(2), root = resolve(directory);
 if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && !['hold-after-pass', 'hold-after-source', 'hold-after-read'].includes(holdMode)
@@ -14,7 +15,7 @@ const work = join(root, 'work'), control = join(root, 'control');
 for (const path of [work, control]) {
   const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('DEVELOPMENT_PATH');
 }
-const source = join(work, task.sourceFile), oracle = join(control, 'oracle.mjs');
+const readSource = () => readDevelopmentSource(work, taskId);
 const digest = text => createHash('sha256').update(text).digest('hex');
 function read(path, limit = 16384) {
   const stat = lstatSync(path);
@@ -28,7 +29,11 @@ function record(row) {
 }
 const tools = [
   { name: 'read_task', description: 'Read the complete reviewed TASK.md and the current source for this bounded development task.', properties: {} },
-  { name: 'write_source', description: `Replace only ${task.sourceFile} with the proposed JavaScript source. No other file can be written.`, properties: { code: { type: 'string', maxLength: 8192 } } },
+  { name: 'write_source', description: task.parts ? 'Replace the complete explicit file set in the declared order. Every source must pass its language check before any file is written.'
+    : `Replace only ${task.sourceFile} with the proposed JavaScript source. No other file can be written.`,
+  properties: task.parts ? { files: { type: 'array', minItems: task.parts.length, maxItems: task.parts.length,
+    items: { type: 'object', properties: { path: { type: 'string', enum: task.parts.map(part => part.path) }, code: { type: 'string', maxLength: 8192 } },
+      required: ['path', 'code'], additionalProperties: false } } } : { code: { type: 'string', maxLength: 8192 } } },
   { name: 'run_tests', description: `Run the fixed independent ${task.checks}-case Node test suite. A proposed source is reviewed by the outer developer before execution; this call waits for that review.`, properties: {} }
 ];
 const textResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
@@ -42,35 +47,37 @@ async function respond(message) {
     inputSchema: { type: 'object', properties: tool.properties, required: Object.keys(tool.properties), additionalProperties: false } })) } };
   const args = message.params?.arguments ?? {}, name = message.params?.name;
   if (message.method !== 'tools/call' || !tools.some(tool => tool.name === name) || !args || typeof args !== 'object' || Array.isArray(args)
-    || Object.keys(args).sort().join(',') !== (name === 'write_source' ? 'code' : '')) return { ...reply, error: { code: -32602, message: 'INVALID_DEVELOPMENT_REQUEST' } };
+    || Object.keys(args).sort().join(',') !== (name === 'write_source' ? task.parts ? 'files' : 'code' : '')) return { ...reply, error: { code: -32602, message: 'INVALID_DEVELOPMENT_REQUEST' } };
   if (name === 'read_task') {
-    const currentSource = read(source); checkDevelopmentSource(currentSource, taskId);
+    const currentSource = readSource(); checkDevelopmentSource(currentSource, taskId);
     record({ event: 'TASK_READ' });
     if (holdMode === 'hold-after-read') {
       record({ event: 'TASK_READ_WAIT' });
       await new Promise(done => setTimeout(done, 5000));
     }
-    return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')), source: currentSource }) };
+    return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')),
+      ...(task.parts ? { files: JSON.parse(currentSource).files } : { source: currentSource }) }) };
   }
   if (name === 'write_source') {
     if (existsSync(join(control, 'source-sealed.json'))) {
       const seal = JSON.parse(read(join(control, 'source-sealed.json'), 1024));
-      if (!seal || Object.keys(seal).length !== 1 || seal.sha256 !== digest(read(source))) throw new Error('SOURCE_SEAL_INVALID');
+      if (!seal || Object.keys(seal).length !== 1 || seal.sha256 !== digest(readSource())) throw new Error('SOURCE_SEAL_INVALID');
       record({ event: 'SOURCE_WRITE_BLOCKED', sha256: seal.sha256 });
       return { ...reply, result: { ...textResult({ written: false, reason: 'DEVELOPMENT_SOURCE_SEALED' }), isError: true } };
     }
-    if (typeof args.code !== 'string' || Buffer.byteLength(args.code) > 8192) return { ...reply, error: { code: -32602, message: 'INVALID_SOURCE_SIZE' } };
-    try { checkDevelopmentSource(args.code, taskId); }
+    if (!task.parts && (typeof args.code !== 'string' || Buffer.byteLength(args.code) > 8192)) return { ...reply, error: { code: -32602, message: 'INVALID_SOURCE_SIZE' } };
+    let proposed;
+    try { proposed = developmentSourceFromArguments(args, taskId); }
     catch { return { ...reply, error: { code: -32602, message: 'DEVELOPMENT_SOURCE_REJECTED' } }; }
-    read(source); // Reject replaced paths before writing only this task-created file.
-    writeFileSync(source, args.code); record({ event: 'SOURCE_WRITTEN', sha256: digest(args.code) });
+    writeDevelopmentSource(work, taskId, proposed, record);
+    record({ event: 'SOURCE_WRITTEN', sha256: digest(proposed) });
     if (holdMode === 'hold-after-source') {
-      record({ event: 'SOURCE_WRITE_WAIT', sha256: digest(args.code) });
+      record({ event: 'SOURCE_WRITE_WAIT', sha256: digest(proposed) });
       await new Promise(done => setTimeout(done, 5000));
     }
     return { ...reply, result: textResult({ written: true }) };
   }
-  const sha256 = digest(read(source));
+  const sha256 = digest(readSource());
   writeFileSync(join(work, 'review-request.json'), JSON.stringify({ sha256 }));
   const approval = join(control, 'review.json'), deadline = Date.now() + (waitMode === 'wait' ? 180000 : 0);
   let reviewed = false;
@@ -82,13 +89,14 @@ async function respond(message) {
     if (Date.now() >= deadline) break;
     await new Promise(done => setTimeout(done, 100));
   } while (true);
-  if (!reviewed || digest(read(source)) !== sha256) {
+  if (!reviewed || digest(readSource()) !== sha256) {
     record({ event: 'TESTS_UNRUN', sha256 });
     return { ...reply, result: { ...textResult({ passed: false, testsRun: false, reason: 'SOURCE_REVIEW_REQUIRED' }), isError: true } };
   }
   const env = Object.fromEntries(['SystemRoot', 'WINDIR'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
-  const result = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${oracle}`, `--allow-fs-read=${source}`,
-    oracle, source], { cwd: work, env, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
+  const invocation = developmentOracleInvocation(control, work, taskId);
+  const result = spawnSync(process.execPath, ['--permission', ...invocation.readPaths.map(path => `--allow-fs-read=${path}`),
+    invocation.oracle, invocation.argument], { cwd: work, env, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
   let outcome = null;
   try { outcome = JSON.parse(result.stdout); } catch { }
   if (result.error || result.signal || !outcome || outcome.checks !== task.checks || typeof outcome.passed !== 'boolean'

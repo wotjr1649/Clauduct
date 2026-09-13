@@ -8,11 +8,11 @@ import { NativeError } from '../src/native-protocol.mjs';
 import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { guardFixtureTransport } from './fixture-tool-policy.mjs';
 import { createVerificationLedger } from './verification-ledger.mjs';
-import { developmentTask } from './development-tasks.mjs';
+import { developmentTask, developmentFunctionNames } from './development-tasks.mjs';
 import { readExecutionReservation } from './execution-reservation.mjs';
 
 export function createDevelopmentContextCheck(previousTaskId) {
-  const previousFunction = developmentTask(previousTaskId).functionName;
+  const previousFunctions = developmentFunctionNames(previousTaskId);
   let observation = null;
   return input => {
     if (observation) return observation;
@@ -20,7 +20,7 @@ export function createDevelopmentContextCheck(previousTaskId) {
     // later changed request cannot turn a failed initial binding into success.
     observation = Object.freeze({ previousTaskId, previousFunctionObserved: false, previousCompletionObserved: false, observedInputBytes: 0 });
     const text = JSON.stringify(input ?? null);
-    observation = Object.freeze({ previousTaskId, previousFunctionObserved: Array.isArray(input) && text.includes(previousFunction),
+    observation = Object.freeze({ previousTaskId, previousFunctionObserved: Array.isArray(input) && previousFunctions.every(name => text.includes(name)),
       previousCompletionObserved: Array.isArray(input) && input.some(item => item?.role === 'assistant'
         && JSON.stringify(item).includes('CLAUDUCT_DEVELOPMENT_DONE')), observedInputBytes: Buffer.byteLength(text) });
     return observation;

@@ -58,6 +58,25 @@ Use only read_task, write_source and run_tests. The oracle and execution setting
     calls: ['isSafeInteger', 'isArray']
   }
 };
+tasks['retry-project'] = {
+  sourceFile: null, functionName: null, oracleFile: 'development-project-oracle.mjs', checks: 81,
+  oracleDependencies: ['development-oracle.mjs', 'development-window-oracle.mjs'],
+  parts: [Object.freeze({ path: 'retry-after-seconds.mjs', taskId: 'retry-after-seconds' }),
+    Object.freeze({ path: 'retry-delay-window.mjs', taskId: 'retry-delay-window' })],
+  baseline: JSON.stringify({ files: ['retry-after-seconds', 'retry-delay-window'].map(taskId =>
+    ({ path: tasks[taskId].sourceFile, code: tasks[taskId].baseline })) }) + '\n',
+  task: `# Retry scheduling across two source files
+
+Implement both files in this one task. First call run_tests on the baseline. Then call write_source with a files array containing exactly the two paths below, in that order, and their complete proposed code. Run run_tests again and finish only when all 81 checks pass. The 81 checks cover both functions and their composition. Use only read_task, write_source and run_tests. The outer developer reviews the complete file set before proposed code can execute. Never change the oracle, settings or another file. After all checks pass, reply exactly CLAUDUCT_DEVELOPMENT_DONE.
+
+1. retry-after-seconds.mjs exports parseRetryAfterSeconds(value). Accept only primitive strings of at most 128 characters containing ASCII decimal digits with optional leading/trailing HTTP OWS (space or tab). Return the nonnegative duration in milliseconds without a five-second cap. Leading zeros are valid. Reject all other inputs with null: empty strings, CR/LF, other whitespace, dates, signs, fractions, exponent/hex syntax, arrays, objects and multiplication outside Number's safe integer range. For example, '60' -> 60000 and '300' -> 300000.
+2. retry-delay-window.mjs exports retryDelayWithinBudget(value). Accept only a non-null, non-array object whose nowMs, retryAtMs and deadlineMs are nonnegative safe integers. Ignore extra fields. Return null for invalid inputs, deadlineMs <= nowMs, or retryAtMs >= deadlineMs. Otherwise return zero when retryAtMs <= nowMs, or retryAtMs - nowMs. Never shorten a requested delay to fit the deadline. Do not mutate input or throw on rejected input.
+
+Both modules must remain pure. No imports, file/network/process/environment access, dynamic execution, global/input mutation, logging, dependencies, loops, recursion or asynchronous work. Exactly one exported function per file, with if/else, const, return, typeof, null and conditional/arithmetic/boolean expressions; no comments or other declarations.
+The first file permits parameter value and local names seconds/milliseconds/result/ms/digits/trimmed; Number, Number.isFinite/isSafeInteger, Math.min, .length, .trim(), and regexes /^[ \\t]*[0-9]+[ \\t]*$/ or /[\\r\\n]/. String literal 'string' and numeric literals 0, 1, 128, 1000, 5000 only.
+The second permits parameter value and local names now/retryAt/deadline/delay/result; Number.isSafeInteger, Array.isArray and value.nowMs/value.retryAtMs/value.deadlineMs only. String literal 'object' and numeric literal 0 only.
+`
+};
 for (const task of Object.values(tasks)) {
   for (const value of Object.values(task)) if (value && typeof value === 'object') {
     for (const nested of Object.values(value)) if (Array.isArray(nested)) Object.freeze(nested);
@@ -81,4 +100,11 @@ export function developmentOracleSource(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
 export function developmentTaskWorkKey(taskId) {
   const task = developmentTask(taskId);
   return task.registered ? `registered:${task.workKey}` : `builtin:${taskId}`;
+}
+export function developmentTaskFiles(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
+  const task = developmentTask(taskId);
+  return task.parts ?? [Object.freeze({ path: task.sourceFile, taskId })];
+}
+export function developmentFunctionNames(taskId) {
+  return developmentTaskFiles(taskId).map(part => developmentTask(part.taskId).functionName);
 }

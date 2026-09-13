@@ -91,15 +91,160 @@ export function readDevelopmentAccountingEvidence(root, phase) {
   return { root, phase, model: result.model, effort: result.effort, taskId: result.taskId, localNative: result.localNative,
     observed, evidenceHash: sourceHash(readFileSync(resultPath)), passed: result.passed === true, failure: result.failure };
 }
+function developmentConfiguration(root, budget, owner, code) {
+  const project = dirname(dirname(fileURLToPath(import.meta.url))), configRoot = resolve(budget.configRoot ?? join(root, 'config'));
+  const origin = dirname(configRoot), info = lstatSync(configRoot);
+  need(configRoot === join(origin, 'config') && dirname(origin).toLowerCase() === join(project, '.tmp').toLowerCase()
+    && /^native-development-[A-Za-z0-9]{6}$/.test(origin.slice(origin.lastIndexOf('\\') + 1))
+    && info.isDirectory() && !info.isSymbolicLink() && realpathSync(configRoot).toLowerCase() === configRoot.toLowerCase(), code);
+  const originBudget = JSON.parse(read(join(origin, 'budget.json'))), originOwner = JSON.parse(read(join(origin, 'process.json'), 1024));
+  need(originBudget.model === budget.model && originBudget.localNative === budget.localNative && originOwner.sessionId === owner.sessionId, code);
+  return configRoot;
+}
+function interruptedDevelopmentState(root, model, localNative, accountHash, eventBytes) {
+  const code = 'INTERRUPTION_EVIDENCE_INVALID', project = dirname(dirname(fileURLToPath(import.meta.url)));
+  need(typeof root === 'string' && typeof localNative === 'boolean' && typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
+    && typeof accountHash === 'string' && /^[a-f0-9]{64}$/.test(accountHash), code);
+  root = resolve(root);
+  need(dirname(root).toLowerCase() === join(project, '.tmp').toLowerCase()
+    && /^native-development-[A-Za-z0-9]{6}$/.test(root.slice(root.lastIndexOf('\\') + 1))
+    && realpathSync(root).toLowerCase() === root.toLowerCase(), code);
+  need(!existsSync(join(root, 'result.json')), 'INTERRUPTION_RESULT_PRESENT');
+  const budget = JSON.parse(read(join(root, 'budget.json'))), owner = JSON.parse(read(join(root, 'process.json'), 1024));
+  need(budget.phase === 'development' && budget.model === model && budget.localNative === localNative
+    && budget.executionAccountHash === accountHash && budget.cutOutputAfterPass === false
+    && JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, localNative))
+    && Number.isSafeInteger(owner.pid) && owner.pid > 0 && /^[a-f0-9-]{36}$/.test(owner.sessionId), code);
+  try { process.kill(owner.pid, 0); need(false, 'INTERRUPTION_OWNER_ACTIVE'); }
+  catch (error) { need(error.code === 'ESRCH', 'INTERRUPTION_OWNER_ACTIVE'); }
+  const transport = read(join(root, 'transport-development.jsonl'));
+  const rows = transport.trim().split('\n').filter(Boolean).map(JSON.parse);
+  need(nativeClientsStopped(rows), 'INTERRUPTION_OWNER_ACTIVE');
+  const reservation = readExecutionReservation(join(root, 'usage-development'));
+  need(reservation.basisHash === sourceHash(readFileSync(join(root, 'budget.json'))), code);
+  const seen = rows.filter(row => row.event === 'RESERVATION_OBSERVED');
+  need(seen.length === 1 && seen[0].reservationHash === reservation.reservationHash
+    && rows.indexOf(seen[0]) < rows.findIndex(row => row.event === 'NATIVE_STARTED'), code);
+  const task = developmentTask(budget.taskId), work = join(root, 'work'), control = join(root, 'control');
+  need(budget.taskHash === sourceHash(task.task) && sourceHash(read(join(control, 'TASK.md'))) === budget.taskHash
+    && sourceHash(read(join(work, '.mcp.json'))) === budget.mcpHash
+    && sourceHash(read(join(control, 'oracle.mjs'))) === budget.oracleHash
+    && budget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', task.oracleFile))), code);
+  const source = read(join(work, task.sourceFile)); checkDevelopmentSource(source, budget.taskId);
+  const eventsPath = join(work, 'events.jsonl'); read(eventsPath, 32768);
+  const sha256 = sourceHash(source), allEvents = readFileSync(eventsPath);
+  const fullText = new TextDecoder('utf-8', { fatal: true }).decode(allEvents);
+  need(allEvents.length <= 32768 && fullText.endsWith('\n')
+    && fullText.trim().split('\n').map(JSON.parse).filter(row => row.event === 'SOURCE_WRITTEN').length === 1, code);
+  const length = eventBytes ?? allEvents.length;
+  need(Number.isSafeInteger(length) && length > 0 && length <= allEvents.length, code);
+  const prefix = allEvents.subarray(0, length), text = new TextDecoder('utf-8', { fatal: true }).decode(prefix);
+  need(text.endsWith('\n'), code);
+  const events = text.trim().split('\n').map(JSON.parse), writes = events.filter(row => row.event === 'SOURCE_WRITTEN');
+  need(events[0]?.event === 'TASK_READ' && writes.length === 1 && writes[0].sha256 === sha256
+    && events.some(row => row.event === 'TESTS_EXECUTED' && row.passed === false && events.indexOf(row) < events.indexOf(writes[0])), code);
+  const usagePath = join(root, 'usage-development', 'tool-usage.jsonl'), usage = readVerificationLedger(usagePath);
+  need(usage.version === 2 && usage.requestAttempts <= budget.requestLimit
+    && usage.inputTokens <= budget.maxObservedInputTokens && usage.outputTokens <= budget.maxObservedOutputTokens,
+  'INTERRUPTION_USAGE_INVALID');
+  const configRoot = developmentConfiguration(root, budget, owner, code);
+  const stopPath = join(root, 'interruption-stop-result.json'), stopRecord = JSON.parse(read(stopPath, 8192));
+  need(stopRecord.version === 1 && stopRecord.managerPid === budget.managerPid
+    && stopRecord.budgetHash === sourceHash(readFileSync(join(root, 'budget.json'))) && stopRecord.tree?.stopped === true, code);
+  const snapshot = { root, model, localNative, taskId: budget.taskId, phase: 'development', sessionId: owner.sessionId,
+    accountHash, budgetHash: sourceHash(readFileSync(join(root, 'budget.json'))), sourceHash: sha256,
+    eventsHash: sourceHash(prefix), eventBytes: length, transportHash: sourceHash(transport),
+    usageHash: sourceHash(readFileSync(usagePath)), ownerHash: sourceHash(readFileSync(join(root, 'process.json'))), configRoot,
+    stopHash: sourceHash(readFileSync(stopPath)) };
+  return { project, root, taskId: budget.taskId, task, budget, owner, work, control, source, snapshot };
+}
+
+export function prepareDevelopmentInterruption(root, { model, localNative, accountHash, powershell, managerPid }) {
+  const project = dirname(dirname(fileURLToPath(import.meta.url)));
+  need(typeof root === 'string' && typeof powershell === 'string' && powershell.endsWith('pwsh.exe')
+    && Number.isSafeInteger(managerPid) && managerPid > 0, 'INTERRUPTION_ARGUMENTS');
+  root = resolve(root);
+  need(dirname(root).toLowerCase() === join(project, '.tmp').toLowerCase()
+    && /^native-development-[A-Za-z0-9]{6}$/.test(root.slice(root.lastIndexOf('\\') + 1))
+    && realpathSync(root).toLowerCase() === root.toLowerCase(), 'INTERRUPTION_ROOT_INVALID');
+  const budgetPath = join(root, 'budget.json'), budget = JSON.parse(read(budgetPath));
+  need(budget.managerPid === managerPid && budget.model === model && budget.localNative === localNative
+    && budget.executionAccountHash === accountHash && budget.phase === 'development'
+    && JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'INTERRUPTION_EVIDENCE_INVALID');
+  need(!existsSync(join(root, 'result.json')), 'INTERRUPTION_RESULT_PRESENT');
+  try { process.kill(managerPid, 0); need(false, 'INTERRUPTION_MANAGER_ACTIVE'); }
+  catch (error) { need(error.code === 'ESRCH', 'INTERRUPTION_MANAGER_ACTIVE'); }
+  need(readExecutionReservation(join(root, 'usage-development')).basisHash === sourceHash(readFileSync(budgetPath)), 'INTERRUPTION_EVIDENCE_INVALID');
+  const owner = JSON.parse(read(join(root, 'process.json'), 1024));
+  const stopIntent = join(root, 'interruption-stop-intent.json'), stopResult = join(root, 'interruption-stop-result.json');
+  const stopping = !existsSync(stopResult);
+  if (stopping) {
+    need(!existsSync(stopIntent), 'INTERRUPTION_STOP_UNVERIFIED');
+    write(stopIntent, { managerPid, budgetHash: sourceHash(readFileSync(budgetPath)), ownerHash: sourceHash(readFileSync(join(root, 'process.json'))) });
+  }
+  const helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
+  const env = Object.fromEntries(['SystemRoot', 'WINDIR'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
+  const check = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(owner.pid),
+    '-StartedAfterMs', String(owner.startedAt), '-RunRoot', root, ...(stopping ? ['-Stop'] : [])],
+  { cwd: project, env, windowsHide: true, encoding: 'utf8', timeout: 12000, maxBuffer: 32768 });
+  need(!check.error && check.status === 0 && check.stderr === '' && JSON.parse(check.stdout).stopped === true, 'INTERRUPTION_OWNER_UNVERIFIED');
+  if (stopping) write(stopResult, { version: 1, managerPid, budgetHash: sourceHash(readFileSync(budgetPath)), tree: JSON.parse(check.stdout) });
+  const state = interruptedDevelopmentState(root, model, localNative, accountHash);
+  if (localNative) {
+    need(state.source === publicDevelopmentSource(state.taskId), 'INTERRUPTION_LOCAL_SOURCE_INVALID');
+    writeFileSync(join(state.control, 'review.json'), JSON.stringify({ sha256: state.snapshot.sourceHash, approved: true }), { flush: true });
+  }
+  const review = JSON.parse(read(join(state.control, 'review.json'), 1024));
+  need(review.sha256 === state.snapshot.sourceHash && review.approved === true, 'INTERRUPTION_SOURCE_REVIEW_REQUIRED');
+  const oracle = join(state.control, 'oracle.mjs'), source = join(state.work, state.task.sourceFile);
+  const tested = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${oracle}`, `--allow-fs-read=${source}`, oracle, source],
+    { cwd: state.work, env, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
+  let verdict; try { verdict = JSON.parse(tested.stdout); } catch { }
+  need(!tested.error && tested.status === 0 && tested.stderr === '' && verdict?.passed === true
+    && verdict.checks === state.task.checks && verdict.failures?.length === 0, 'INTERRUPTION_SOURCE_TESTS_FAILED');
+  const proof = { version: 1, kind: 'manager-interruption', ...state.snapshot, originalResultAbsent: true, taskCompleted: false,
+    sourceReviewed: true, independentPassed: true, observed: { attempts: null, inputTokens: null, outputTokens: null, elapsedMs: null } };
+  write(join(state.root, 'interruption-evidence.json'), proof);
+  return readDevelopmentInterruption(state.root);
+}
+
+export function readDevelopmentInterruption(root) {
+  const project = dirname(dirname(fileURLToPath(import.meta.url)));
+  need(typeof root === 'string' && dirname(resolve(root)).toLowerCase() === join(project, '.tmp').toLowerCase()
+    && /^native-development-[A-Za-z0-9]{6}$/.test(resolve(root).slice(resolve(root).lastIndexOf('\\') + 1)), 'INTERRUPTION_ROOT_INVALID');
+  root = resolve(root);
+  const path = join(root, 'interruption-evidence.json'), proof = JSON.parse(read(path, 8192));
+  need(proof && typeof proof === 'object' && !Array.isArray(proof) && Object.keys(proof).length === 23
+    && proof.version === 1 && proof.kind === 'manager-interruption' && proof.originalResultAbsent === true
+    && proof.taskCompleted === false && proof.sourceReviewed === true && proof.independentPassed === true
+    && JSON.stringify(proof.observed) === JSON.stringify({ attempts: null, inputTokens: null, outputTokens: null, elapsedMs: null }),
+  'INTERRUPTION_RECORD_INVALID');
+  const state = interruptedDevelopmentState(root, proof.model, proof.localNative, proof.accountHash, proof.eventBytes);
+  need(Object.entries(state.snapshot).every(([key, value]) => proof[key] === value), 'INTERRUPTION_RECORD_CHANGED');
+  const review = JSON.parse(read(join(state.control, 'review.json'), 1024));
+  need(review.sha256 === proof.sourceHash && review.approved === true, 'INTERRUPTION_SOURCE_REVIEW_REQUIRED');
+  return { ...state, evidence: { root: state.root, phase: 'development', model: proof.model, effort: state.budget.effort,
+    taskId: proof.taskId, localNative: proof.localNative, observed: proof.observed, evidenceHash: sourceHash(readFileSync(path)),
+    passed: false, failure: 'MANAGER_INTERRUPTED', sourceHash: proof.sourceHash },
+  fixture: { project: state.project, root: state.root, taskId: state.taskId, task: state.task, work: state.work, control: state.control,
+    script: join(state.project, 'verification', 'fixtures', 'development-mcp.mjs'), oracleHash: state.budget.oracleHash,
+    taskHash: state.budget.taskHash, priorOwner: state.owner, priorSourceHash: proof.sourceHash, configRoot: state.snapshot.configRoot,
+    minimumPrior: { priorAttempts: state.budget.priorAttempts + state.budget.requestLimit,
+      priorInputTokens: state.budget.priorInputTokens + state.budget.maxObservedInputTokens,
+      priorOutputTokens: state.budget.priorOutputTokens + state.budget.maxObservedOutputTokens,
+      priorElapsedMs: state.budget.priorElapsedMs + state.budget.phaseMs + 30000 } } };
+}
 function completedDevelopmentContext(root, model, localNative, taskId) {
   const project = dirname(dirname(fileURLToPath(import.meta.url))), canonical = resolve(root);
   need(dirname(canonical).toLowerCase() === join(project, '.tmp').toLowerCase()
     && /^native-development-[A-Za-z0-9]{6}$/.test(canonical.slice(canonical.lastIndexOf('\\') + 1))
     && realpathSync(canonical).toLowerCase() === canonical.toLowerCase(), 'CONTINUATION_ROOT_INVALID');
-  const budget = JSON.parse(read(join(canonical, 'budget.json'))), result = JSON.parse(read(join(canonical, 'result.json')));
-  const owner = JSON.parse(read(join(canonical, 'process.json'))), previousTask = developmentTask(budget.taskId);
+  const suffix = existsSync(join(canonical, 'result-finish.json')) ? '-finish' : existsSync(join(canonical, 'result-retry.json')) ? '-retry' : '';
+  const phase = `development${suffix}`;
+  const budget = JSON.parse(read(join(canonical, `budget${suffix}.json`))), result = JSON.parse(read(join(canonical, `result${suffix}.json`)));
+  const owner = JSON.parse(read(join(canonical, `process${suffix}.json`))), previousTask = developmentTask(budget.taskId);
   need(budget.model === model && budget.localNative === localNative && budget.taskId !== taskId
-    && budget.continuedFrom === undefined && budget.cutOutputAfterPass === false
+    && budget.cutOutputAfterPass === false && budget.phase === phase && result.phase === phase && result.root === canonical
     && result.model === model && result.taskId === budget.taskId && result.localNative === localNative && result.passed === true
     && result.failure === null && result.tree?.stopped === true && result.recordedNativeStopped === true
     && result.sourceUnchanged === true && result.independentPassed === true && result.ledgerMatched === true
@@ -117,14 +262,13 @@ function completedDevelopmentContext(root, model, localNative, taskId) {
     && sourceHash(read(join(canonical, 'control', 'TASK.md'))) === budget.taskHash && budget.taskHash === sourceHash(previousTask.task)
     && sourceHash(read(join(canonical, 'control', 'oracle.mjs'))) === budget.oracleHash
     && budget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', previousTask.oracleFile))), 'CONTINUATION_ARTIFACT_CHANGED');
-  const usage = readVerificationLedger(join(canonical, 'usage-development', 'tool-usage.jsonl'));
+  const usage = readVerificationLedger(join(canonical, `usage-${phase}`, 'tool-usage.jsonl'));
   need(usage.version === 2 && usage.finalRecorded && !usage.truncatedTail && usage.requestAttempts === result.attempts
     && usage.unobservedCompletions === 0 && usage.completions === usage.requestAttempts
     && usage.inputTokens === result.inputTokens && usage.outputTokens === result.outputTokens, 'CONTINUATION_LEDGER_INVALID');
-  need(nativeClientsStopped(read(join(canonical, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'CONTINUATION_OWNER_UNVERIFIED');
+  need(nativeClientsStopped(read(join(canonical, `transport-${phase}.jsonl`)).trim().split('\n').filter(Boolean).map(JSON.parse)), 'CONTINUATION_OWNER_UNVERIFIED');
   verifyPriorReservation(canonical, result, 'CONTINUATION_RESERVATION_INVALID');
-  const configRoot = join(canonical, 'config'), info = lstatSync(configRoot);
-  need(info.isDirectory() && !info.isSymbolicLink(), 'CONTINUATION_CONFIG_INVALID');
+  const configRoot = developmentConfiguration(canonical, budget, owner, 'CONTINUATION_CONFIG_INVALID');
   const minimumPrior = { priorAttempts: result.cumulativeAttempts, priorElapsedMs: result.cumulativeElapsedMs,
     priorInputTokens: result.cumulativeInputTokens, priorOutputTokens: result.cumulativeOutputTokens };
   need(Object.values(minimumPrior).every(value => Number.isSafeInteger(value) && value >= 0), 'CONTINUATION_LEDGER_INVALID');
@@ -178,6 +322,7 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
     }
   }
   return { project, root, taskId, task, work: join(root, 'work'), control: join(root, 'control'),
+    configRoot: developmentConfiguration(root, priorBudget, owner, 'RESUME_CONFIG_INVALID'),
     script: join(project, 'verification', 'fixtures', 'development-mcp.mjs'), oracleHash: priorBudget.oracleHash,
     taskHash: priorBudget.taskHash, priorOwner: owner, priorSourceHash: first.sourceSha256,
     ...(incomplete ? { minimumPrior: { priorAttempts: first.cumulativeAttempts, priorElapsedMs: first.cumulativeElapsedMs,
@@ -185,37 +330,46 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
   localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16,
-  earlyExitAfterRead = false, resumeIncompleteRoot, onReservation, executionAccountHash }) {
+  earlyExitAfterRead = false, resumeIncompleteRoot, onReservation, executionAccountHash, resumeInterruptedRoot, holdAfterSourceWrite = false }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
     && typeof cutOutputAfterPass === 'boolean' && Number.isSafeInteger(requestLimit) && requestLimit >= 1 && requestLimit <= 16
     && typeof earlyExitAfterRead === 'boolean'
+    && typeof holdAfterSourceWrite === 'boolean' && (!holdAfterSourceWrite || localNative && !cutOutputAfterPass && !earlyExitAfterRead
+      && resumeRoot === undefined && resumeIncompleteRoot === undefined && resumeInterruptedRoot === undefined && continueFrom === undefined)
     && (onReservation === undefined || typeof onReservation === 'function')
     && (executionAccountHash === undefined || typeof executionAccountHash === 'string' && /^[a-f0-9]{64}$/.test(executionAccountHash))
+    && (resumeInterruptedRoot === undefined || typeof resumeInterruptedRoot === 'string' && resumeRoot === undefined
+      && resumeIncompleteRoot === undefined && continueFrom === undefined && !cutOutputAfterPass && !earlyExitAfterRead)
     && (!earlyExitAfterRead || localNative === true && !cutOutputAfterPass && resumeRoot === undefined && resumeIncompleteRoot === undefined && continueFrom === undefined)
     && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass)
     && (resumeIncompleteRoot === undefined || typeof resumeIncompleteRoot === 'string' && resumeRoot === undefined && !cutOutputAfterPass)
     && (continueFrom === undefined || typeof continueFrom === 'string' && resumeRoot === undefined && resumeIncompleteRoot === undefined && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
   try { developmentTask(taskId); } catch { need(false, 'INVALID_ARGUMENTS'); }
   for (const value of [priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens]) need(Number.isSafeInteger(value) && value >= 0, 'INVALID_PRIOR_USAGE');
-  const finishing = resumeRoot !== undefined, retrying = resumeIncompleteRoot !== undefined, resuming = finishing || retrying;
+  const recovering = resumeInterruptedRoot !== undefined;
+  const finishing = resumeRoot !== undefined || recovering, retrying = resumeIncompleteRoot !== undefined, resuming = finishing || retrying;
   const suffix = finishing ? '-finish' : retrying ? '-retry' : '', phase = `development${suffix}`;
   const context = continueFrom === undefined ? null : completedDevelopmentContext(continueFrom, model, localNative, taskId);
   if (context) {
     const supplied = { priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens };
     need(Object.entries(context.minimumPrior).every(([key, value]) => supplied[key] >= value), 'CONTINUATION_USAGE_REGRESSION');
   }
-  const fixture = resuming ? resumeDevelopmentFixture(resumeRoot ?? resumeIncompleteRoot, model, localNative, taskId, retrying)
-    : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, taskId });
+  const interrupted = recovering ? readDevelopmentInterruption(resumeInterruptedRoot) : null;
+  if (interrupted) need(interrupted.evidence.model === model && interrupted.evidence.localNative === localNative
+    && interrupted.evidence.taskId === taskId, 'RESUME_INTERRUPTION_INVALID');
+  const fixture = interrupted?.fixture ?? (resuming ? resumeDevelopmentFixture(resumeRoot ?? resumeIncompleteRoot, model, localNative, taskId, retrying)
+    : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, holdAfterSourceWrite, taskId }));
   const { project, root, work, control, task } = fixture;
-  if (retrying) {
+  if (retrying || recovering) {
     const supplied = { priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens };
     need(Object.entries(fixture.minimumPrior).every(([key, value]) => Number.isSafeInteger(value) && value >= 0
       && supplied[key] >= value), 'RESUME_USAGE_REGRESSION');
   }
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
   const phaseMs = localNative ? 30000 : finishing ? 120000 : 600000;
+  const configRoot = context?.configRoot ?? fixture.configRoot ?? join(root, 'config');
   const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, earlyExitAfterRead, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
     outputBytes: 1048576, mainConcurrency: 1, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
     cumulativeReservedAttempts: priorAttempts + requestLimit, cumulativeReservedMs: priorElapsedMs + phaseMs,
@@ -223,9 +377,10 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     basis: 'The initial eight-turn code task permits up to sixteen attempts and ten minutes, including source review. An explicitly smaller requestLimit reduces both the reservation and enforced transport budget; it never raises a cumulative cap.',
     oracleHash: fixture.oracleHash, taskHash: fixture.taskHash, mcpHash: sourceHash(read(join(work, '.mcp.json'))),
     ...(context ? { continuedFrom: context.root, previousTaskId: context.previousTaskId, previousSourceSha256: context.sourceSha256 } : {}),
-    ...(executionAccountHash === undefined ? {} : { executionAccountHash }), hashes: developmentHashes(project, localNative) };
+    ...(executionAccountHash === undefined ? {} : { executionAccountHash }), configRoot, managerPid: process.pid, recoveredFromInterruption: recovering,
+    hashes: developmentHashes(project, localNative) };
   const env = nativeVerificationEnvironment(root);
-  if (context) env.CLAUDE_CONFIG_DIR = context.configRoot;
+  env.CLAUDE_CONFIG_DIR = configRoot;
   const controlEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(key => env[key]).map(key => [key, env[key]]));
   if (resuming) {
     const owner = fixture.priorOwner;
@@ -235,6 +390,11 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     need(!previous.error && previous.status === 0 && JSON.parse(previous.stdout).stopped === true, 'RESUME_OWNER_UNVERIFIED');
     // Exclusive, task-local intent is created before any new child or effect.
     write(join(root, finishing ? 'finish-intent.json' : 'retry-intent.json'), { sessionId: owner.sessionId, sourceSha256: fixture.priorSourceHash });
+    if (finishing) {
+      const seal = join(control, 'source-sealed.json'), expected = { sha256: fixture.priorSourceHash };
+      if (existsSync(seal)) need(JSON.stringify(JSON.parse(read(seal, 1024))) === JSON.stringify(expected), 'SOURCE_SEAL_INVALID');
+      else write(seal, expected);
+    }
   }
   if (context) {
     const owner = context.owner;
@@ -288,7 +448,9 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
         failure ??= capture.evidence().failure ?? 'PHASE_TIMEOUT'; treeEvidence = tree(true); break;
       }
       const reviewPath = join(work, 'review-request.json');
-      if (existsSync(reviewPath)) {
+      // A finishing phase uses the already reviewed, sealed source. Its work
+      // directory can still contain the earlier baseline's review request.
+      if (!finishing && existsSync(reviewPath)) {
         const requested = JSON.parse(read(reviewPath, 1024));
         const reviewed = JSON.parse(read(join(control, 'review.json'), 1024));
         if (requested.sha256 !== reviewed.sha256 && requested.sha256 !== reportedReview) {
@@ -322,7 +484,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     need(finished, 'PROCESS_STOP_UNVERIFIED'); await stopped;
     treeEvidence ??= tree(false); need(treeEvidence.stopped, 'ORPHAN_PROCESS');
   } catch (error) {
-    failure = ['TREE_STOP_UNVERIFIED', 'PROCESS_STOP_UNVERIFIED', 'ORPHAN_PROCESS'].includes(error.message) ? error.message : 'DEVELOPMENT_EXECUTION_FAILED';
+    failure = ['TREE_STOP_UNVERIFIED', 'PROCESS_STOP_UNVERIFIED', 'ORPHAN_PROCESS', 'LOCAL_SOURCE_MISMATCH'].includes(error.message) ? error.message : 'DEVELOPMENT_EXECUTION_FAILED';
     // A failed stop is not silently retried through another mechanism.
     if (!finished && !treeStopAttempted && failure !== 'TREE_STOP_UNVERIFIED') {
       try { treeEvidence = tree(true); } catch { failure = 'TREE_STOP_UNVERIFIED'; }

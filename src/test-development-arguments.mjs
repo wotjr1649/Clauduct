@@ -13,6 +13,11 @@ for (const extra of [{ onReservation: true }, { onReservation: {} }, { execution
   { executionAccountHash: null }, { executionAccountHash: ['a'.repeat(64)] }]) {
   await assert.rejects(verifyNativeDevelopment({ ...base, ...extra }), { message: 'INVALID_ARGUMENTS' }); checks++;
 }
+for (const extra of [{ resumeInterruptedRoot: 1 }, { resumeInterruptedRoot: 'public', resumeRoot: 'public' },
+  { resumeInterruptedRoot: 'public', resumeIncompleteRoot: 'public' }, { resumeInterruptedRoot: 'public', continueFrom: 'public' },
+  { resumeInterruptedRoot: 'public', earlyExitAfterRead: true }, { resumeInterruptedRoot: 'public', cutOutputAfterPass: true }]) {
+  await assert.rejects(verifyNativeDevelopment({ ...base, ...extra }), { message: 'INVALID_ARGUMENTS' }); checks++;
+}
 await assert.rejects(verifyDevelopmentOutputRecovery({ ...base, localNative: undefined }), { message: 'INVALID_ARGUMENTS' }); checks++;
 await assert.rejects(verifyDevelopmentSequence({ ...base, localNative: undefined }), { message: 'INVALID_ARGUMENTS' }); checks++;
 for (const key of ['priorAttempts','priorElapsedMs','priorInputTokens','priorOutputTokens']) {

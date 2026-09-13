@@ -7,7 +7,7 @@ import { checkDevelopmentSource } from '../development-source-policy.mjs';
 import { developmentTask } from '../development-tasks.mjs';
 
 const [directory, waitMode, taskId, holdMode] = process.argv.slice(2), root = resolve(directory);
-if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && holdMode !== 'hold-after-pass'
+if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && !['hold-after-pass', 'hold-after-source'].includes(holdMode)
   || typeof taskId !== 'string' || process.argv.length > 6) throw new Error('DEVELOPMENT_MODE');
 const task = developmentTask(taskId);
 const work = join(root, 'work'), control = join(root, 'control');
@@ -49,11 +49,21 @@ async function respond(message) {
     return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')), source: currentSource }) };
   }
   if (name === 'write_source') {
+    if (existsSync(join(control, 'source-sealed.json'))) {
+      const seal = JSON.parse(read(join(control, 'source-sealed.json'), 1024));
+      if (!seal || Object.keys(seal).length !== 1 || seal.sha256 !== digest(read(source))) throw new Error('SOURCE_SEAL_INVALID');
+      record({ event: 'SOURCE_WRITE_BLOCKED', sha256: seal.sha256 });
+      return { ...reply, result: { ...textResult({ written: false, reason: 'DEVELOPMENT_SOURCE_SEALED' }), isError: true } };
+    }
     if (typeof args.code !== 'string' || Buffer.byteLength(args.code) > 8192) return { ...reply, error: { code: -32602, message: 'INVALID_SOURCE_SIZE' } };
     try { checkDevelopmentSource(args.code, taskId); }
     catch { return { ...reply, error: { code: -32602, message: 'DEVELOPMENT_SOURCE_REJECTED' } }; }
     read(source); // Reject replaced paths before writing only this task-created file.
     writeFileSync(source, args.code); record({ event: 'SOURCE_WRITTEN', sha256: digest(args.code) });
+    if (holdMode === 'hold-after-source') {
+      record({ event: 'SOURCE_WRITE_WAIT', sha256: digest(args.code) });
+      await new Promise(done => setTimeout(done, 5000));
+    }
     return { ...reply, result: textResult({ written: true }) };
   }
   const sha256 = digest(read(source));

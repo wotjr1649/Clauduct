@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { readFileSync, lstatSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, basename } from 'node:path';
 import { runNativeDevelopmentEntry } from './native-development-entry.mjs';
 import { createNativeLoopbackTransport } from '../src/native-transport.mjs';
 import { publicDevelopmentEvents } from './fixtures/development-responses.mjs';
@@ -23,7 +23,7 @@ const server = createServer((req, res) => {
     for await (const chunk of req) { if ((bytes += chunk.length) > 1048576) throw new Error('DEVELOPMENT_LOCAL_REQUEST'); chunks.push(chunk); }
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const events = publicDevelopmentEvents(body.model, body.reasoning?.effort, requests, finish, taskId,
-      earlyExitAfterRead ? 'early' : retry ? 'retry' : 'complete');
+      earlyExitAfterRead ? 'early' : retry ? 'retry' : 'complete', basename(process.argv[2]));
     // Exercise the exact supported empty envelope through real native HTTP/SSE
     // handling. This public fixture does not assert the shape of a live event.
     events.splice(1, 0, { type: 'keepalive' });

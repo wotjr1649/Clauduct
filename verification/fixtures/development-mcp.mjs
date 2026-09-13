@@ -5,8 +5,9 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { checkDevelopmentSource } from '../development-source-policy.mjs';
 
-const [directory, waitMode] = process.argv.slice(2), root = resolve(directory);
-if (!['wait', 'check'].includes(waitMode)) throw new Error('DEVELOPMENT_MODE');
+const [directory, waitMode, holdMode] = process.argv.slice(2), root = resolve(directory);
+if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && holdMode !== 'hold-after-pass'
+  || process.argv.length > 5) throw new Error('DEVELOPMENT_MODE');
 const work = join(root, 'work'), control = join(root, 'control');
 for (const path of [work, control]) {
   const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('DEVELOPMENT_PATH');
@@ -41,8 +42,9 @@ async function respond(message) {
   if (message.method !== 'tools/call' || !tools.some(tool => tool.name === name) || !args || typeof args !== 'object' || Array.isArray(args)
     || Object.keys(args).sort().join(',') !== (name === 'write_source' ? 'code' : '')) return { ...reply, error: { code: -32602, message: 'INVALID_DEVELOPMENT_REQUEST' } };
   if (name === 'read_task') {
+    const currentSource = read(source); checkDevelopmentSource(currentSource);
     record({ event: 'TASK_READ' });
-    return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')), source: read(source) }) };
+    return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')), source: currentSource }) };
   }
   if (name === 'write_source') {
     if (typeof args.code !== 'string' || Buffer.byteLength(args.code) > 8192) return { ...reply, error: { code: -32602, message: 'INVALID_SOURCE_SIZE' } };
@@ -77,6 +79,21 @@ async function respond(message) {
     || !Array.isArray(outcome.failures) || outcome.failures.some(item => typeof item !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(item))) throw new Error('TEST_EXECUTION_FAILED');
   const passed = result.status === 0 && outcome.passed && outcome.failures.length === 0 && result.stderr === '';
   record({ event: 'TESTS_EXECUTED', sha256, passed, checks: outcome.checks, failures: outcome.failures });
+  if (passed && holdMode === 'hold-after-pass') {
+    // The controller closes native's final-result pipe while this tool is held,
+    // then releases this fixed barrier. The model cannot write the control root.
+    const release = join(control, 'output-cut-release.json'), stopAt = Date.now() + 5000;
+    if (!existsSync(release)) record({ event: 'OUTPUT_CUT_WAIT', sha256 });
+    for (;;) {
+      if (existsSync(release)) {
+        const value = JSON.parse(read(release, 1024));
+        if (!value || Object.keys(value).length !== 1 || value.released !== true) throw new Error('OUTPUT_CUT_RELEASE_INVALID');
+        break;
+      }
+      if (Date.now() >= stopAt) throw new Error('OUTPUT_CUT_RELEASE_MISSING');
+      await new Promise(done => setTimeout(done, 25));
+    }
+  }
   return { ...reply, result: textResult({ ...outcome, passed, testsRun: true }) };
 }
 const lines = createInterface({ input: process.stdin });

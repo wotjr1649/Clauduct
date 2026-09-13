@@ -20,8 +20,8 @@ Use only read_task, write_source, and run_tests. The independent oracle and exec
 run_tests waits for the outer developer's source review. Do not alter or bypass that review. After tests pass, reply exactly CLAUDUCT_DEVELOPMENT_DONE.
 `;
 export const sourceHash = source => createHash('sha256').update(source).digest('hex');
-export function createDevelopmentFixture({ waitMode = 'wait' } = {}) {
-  if (!['wait', 'check'].includes(waitMode)) throw new Error('INVALID_DEVELOPMENT_MODE');
+export function createDevelopmentFixture({ waitMode = 'wait', holdAfterPass = false } = {}) {
+  if (!['wait', 'check'].includes(waitMode) || typeof holdAfterPass !== 'boolean') throw new Error('INVALID_DEVELOPMENT_MODE');
   const project = dirname(dirname(fileURLToPath(import.meta.url)));
   const root = mkdtempSync(join(project, '.tmp', 'native-development-'));
   for (const name of ['work', 'control', 'config', 'temp']) mkdirSync(join(root, name));
@@ -33,7 +33,7 @@ export function createDevelopmentFixture({ waitMode = 'wait' } = {}) {
   const script = join(project, 'verification', 'fixtures', 'development-mcp.mjs');
   const policy = join(project, 'verification', 'development-source-policy.mjs');
   const args = ['--permission', '--allow-child-process', `--allow-fs-read=${script}`, `--allow-fs-read=${policy}`, `--allow-fs-read=${work}`, `--allow-fs-read=${control}`,
-    `--allow-fs-write=${work}`, script, root, waitMode];
+    `--allow-fs-write=${work}`, script, root, waitMode, ...(holdAfterPass ? ['hold-after-pass'] : [])];
   writeFileSync(join(work, '.mcp.json'), JSON.stringify({ mcpServers: { fixture: { type: 'stdio', command: process.execPath, args,
     env: { ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '', ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } } } }), { flag: 'wx' });
   return { project, root, work, control, script, args,

@@ -6,13 +6,15 @@ export const PUBLIC_DEVELOPMENT_SOURCE = `export function parseRetryAfterSeconds
   return Number.isSafeInteger(milliseconds) ? milliseconds : null;
 }
 `;
-export function publicDevelopmentEvents(model, effort, serial) {
+export function publicDevelopmentEvents(model, effort, serial, finish = false) {
   if (!['gpt-5.6-luna', 'gpt-5.6-sol'].includes(model) || effort !== (model.endsWith('luna') ? 'max' : 'low')
-    || !Number.isSafeInteger(serial) || serial < 1 || serial > 5) throw new Error('DEVELOPMENT_STIMULUS_INVALID');
-  const name = ['mcp__fixture__read_task', 'mcp__fixture__run_tests', 'mcp__fixture__write_source', 'mcp__fixture__run_tests', null][serial - 1];
-  const marker = 'CLAUDUCT_DEVELOPMENT_DONE', responseId = `resp_public_${serial}`, itemId = `item_public_${serial}`;
-  const item = name ? { type: 'function_call', id: itemId, call_id: `call_public_${serial}`, name,
-    arguments: JSON.stringify(serial === 3 ? { code: PUBLIC_DEVELOPMENT_SOURCE } : {}), status: 'completed' }
+    || typeof finish !== 'boolean' || !Number.isSafeInteger(serial) || serial < 1 || serial > (finish ? 3 : 5)) throw new Error('DEVELOPMENT_STIMULUS_INVALID');
+  const name = (finish ? ['mcp__fixture__read_task', 'mcp__fixture__run_tests', null]
+    : ['mcp__fixture__read_task', 'mcp__fixture__run_tests', 'mcp__fixture__write_source', 'mcp__fixture__run_tests', null])[serial - 1];
+  const suffix = finish ? `finish_${serial}` : String(serial);
+  const marker = 'CLAUDUCT_DEVELOPMENT_DONE', responseId = `resp_public_${suffix}`, itemId = `item_public_${suffix}`;
+  const item = name ? { type: 'function_call', id: itemId, call_id: `call_public_${suffix}`, name,
+    arguments: JSON.stringify(!finish && serial === 3 ? { code: PUBLIC_DEVELOPMENT_SOURCE } : {}), status: 'completed' }
     : { type: 'message', id: itemId, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: marker, annotations: [] }] };
   return [{ type: 'response.created', response: { id: responseId, status: 'in_progress' } },
     { type: 'response.output_item.added', output_index: 0,

@@ -20,7 +20,8 @@ export function createFixtureToolPolicy(policy) {
     && policy.childPrompts.length === 2 && policy.childPrompts.every(value => text(value, 1024))
     && policy.childPrompts[0] !== policy.childPrompts[1]);
   need(policy.completionMode === undefined || policy.kind === 'completion' && ['foreground', 'fork', 'relay'].includes(policy.completionMode));
-  need(policy.kind === 'recovery' ? ['effect', 'finish'].includes(policy.phase) : policy.phase === undefined);
+  need(policy.kind === 'recovery' ? ['effect', 'finish'].includes(policy.phase)
+    : policy.kind === 'development' ? policy.phase === undefined || policy.phase === 'finish' : policy.phase === undefined);
   const recoveryOrder = policy.phase === 'effect' ? ['mcp__fixture__apply_effect']
     : ['mcp__fixture__effect_status', 'mcp__fixture__complete_report'];
   const recoveryIds = new Set();
@@ -51,9 +52,9 @@ export function createFixtureToolPolicy(policy) {
           need(!developmentRead && Object.keys(input).length === 0); developmentRead = true;
         } else if (item.name === 'mcp__fixture__run_tests') {
           need(developmentRead && ['mcp__fixture__read_task', 'mcp__fixture__write_source'].includes(developmentLast)
-            && developmentTests < 3 && Object.keys(input).length === 0); developmentTests++;
+            && developmentTests < (policy.phase === 'finish' ? 1 : 3) && Object.keys(input).length === 0); developmentTests++;
         } else if (item.name === 'mcp__fixture__write_source') {
-          need(developmentRead && developmentTests > 0 && developmentLast === 'mcp__fixture__run_tests'
+          need(policy.phase !== 'finish' && developmentRead && developmentTests > 0 && developmentLast === 'mcp__fixture__run_tests'
             && developmentWrites < 2 && fields(input, ['code']) && typeof input.code === 'string');
           try { checkDevelopmentSource(input.code); } catch { need(false); }
           developmentWrites++;

@@ -51,4 +51,11 @@ assert.throws(() => duplicate(event('mcp__fixture__run_tests', {}, 'call_duplica
 const batch = event('mcp__fixture__read_task');
 batch.response.output.push(event('mcp__fixture__run_tests').response.output[0]);
 assert.throws(() => policy()(batch), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+const finish = createFixtureToolPolicy({ version: 1, kind: 'development', phase: 'finish', workingRoot: process.cwd() });
+assert.doesNotThrow(() => finish(event('mcp__fixture__read_task', {}, 'call_finish_read'))); checks++;
+assert.doesNotThrow(() => finish(event('mcp__fixture__run_tests', {}, 'call_finish_test'))); checks++;
+for (const value of [event('mcp__fixture__write_source', { code: source }, 'call_finish_write'),
+  event('mcp__fixture__read_task', {}, 'call_finish_repeat_read'), event('mcp__fixture__run_tests', {}, 'call_finish_repeat_test')]) {
+  assert.throws(() => finish(value), error => error.code === 'VERIFICATION_TOOL_INPUT_REJECTED'); checks++;
+}
 console.log(JSON.stringify({ suite: 'development-source-policy', checks, externalRequests: 0, credentialReads: 0 }));

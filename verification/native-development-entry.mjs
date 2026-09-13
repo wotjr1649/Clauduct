@@ -12,16 +12,16 @@ import { createVerificationLedger } from './verification-ledger.mjs';
 // tools can reach this native child, with a durable reservation before HTTPS.
 export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice(2), openTransport = openUserTransport, transportFactory } = {}) {
   const [runRoot, phase, ...args] = entryArgs;
-  if (typeof runRoot !== 'string' || resolve(runRoot, 'work') !== process.cwd() || phase !== 'development'
+  if (typeof runRoot !== 'string' || resolve(runRoot, 'work') !== process.cwd() || !['development', 'development-finish'].includes(phase)
     || !process.send || typeof openTransport !== 'function'
     || transportFactory !== undefined && typeof transportFactory !== 'function') throw new Error('INVALID_DEVELOPMENT_ENTRY');
-  const path = join(runRoot, 'budget.json'), info = lstatSync(path);
+  const path = join(runRoot, phase === 'development' ? 'budget.json' : 'budget-finish.json'), info = lstatSync(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size > 16384) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const budget = JSON.parse(readFileSync(path, 'utf8'));
   if (!Object.hasOwn({ luna: 'max', sol: 'low' }, budget.model) || budget.effort !== { luna: 'max', sol: 'low' }[budget.model]
     || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768) throw new Error('INVALID_DEVELOPMENT_ENTRY');
-  const ledger = createVerificationLedger(join(runRoot, 'usage-development'));
-  const logPath = join(runRoot, 'transport-development.jsonl');
+  const ledger = createVerificationLedger(join(runRoot, `usage-${phase}`));
+  const logPath = join(runRoot, `transport-${phase}.jsonl`);
   let guarded, previousInput = 0, previousOutput = 0;
   function record(value) {
     const line = JSON.stringify({ at: Date.now(), ...value }) + '\n';
@@ -38,7 +38,8 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
       const factory = transportFactory ?? options.transportFactory;
       const transport = openTransport({ ...options, transportFactory: configuration => factory({ ...configuration,
         onAttempt: value => ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }) }) });
-      guarded = guardFixtureTransport(transport, { version: 1, kind: 'development', workingRoot: process.cwd() }, { onUsage: value => {
+      guarded = guardFixtureTransport(transport, { version: 1, kind: 'development', workingRoot: process.cwd(),
+        ...(phase === 'development-finish' ? { phase: 'finish' } : {}) }, { onUsage: value => {
         ledger.record('usage', value);
         record({ event: 'USAGE', usage: { input_tokens: value.inputTokens - previousInput, output_tokens: value.outputTokens - previousOutput } });
         previousInput = value.inputTokens; previousOutput = value.outputTokens;

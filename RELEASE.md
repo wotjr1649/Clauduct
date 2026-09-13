@@ -88,6 +88,7 @@ Not verified / 제한:
 - 기본 400K 창·320K 자동 압축 목표는 설정 계약이다. 기본값에서의 실제 발동·압축 후 전체 이력 보존은 미검증이며, 축소 창에서의 기존 실측과 구분한다.
 - 정상 인증 갱신·만료 경계, 모든 사용자 hook/plugin·permission/plan UI 조합, 프롬프트 캐시 실제 적중은 미검증이다. 인증 파일의 직접 편집이나 계정 전환으로 시험을 대신하지 않는다.
 - 두 조합 각각의 4시간 → 24시간 3회 → 72시간 단계는 시작하지 않았다. 기본 메인·자식 압축, 정상 인증 갱신과 원래 개발 과제 완료의 필수 사건 수를 모두 채워야 하며 짧은 기능 검사로 대체하지 않는다.
+- native Bash 명령의 허용·거부 경계는 새 공개 fixture에서 확인했다. `verify-native-permissions.mjs --local-native sol <pwsh.exe 경로>` 및 luna 설정 각각에서 허용 worker 시작/효과1회, 명시적 거부 도구 결과, 거부 worker 시작/효과0회와 종료 상태를 대조했다. 실제 native와 loopback 응답을 사용하며 모델·credential 호출은0이다. runtime 제한·native 권한 검사·기존 hooks는 유지한다. 이 결과는 해당 명령 규칙의 증거이며 hooks·MCP·UI의 모든 권한 조합을 입증하지 않는다.
 - 취소·등록 교체·형제 격리의 합성 검사는 통과했지만 UI 취소 시점까지 연결한 전체 실측은 조건부다. 동적 symlink/junction 검사는 정책 차단으로 실행하지 않았다.
 - 단일 completed 알림 자동 복귀에는 기존 실측이 있다. 연속된 독립 completed 알림은 최대64개를 모두 검증한 뒤 완료 증거를 함께 소비하도록 보완했으며, 앞 자식 증거의 재사용·중복·위조·중간 취소에 대한 합성 검사를 통과했다. 이번 `-p`의 foreground/background/fork 비교에서는 자식 알림이 부모에 도착하지 않아 실패했다. 별도 `CompletionMode relay` 검증은 대기하는 메인 응답을 끝내 다음 native 알림을 받고, 두 자식 완료를 확인한 뒤 정확한 부모에게 SendMessage1회와 TaskOutput1회로 이어진다. 두 조합에서 같은 부모의 verified-resume·최종 완료·정리를 확인했다. 이 결과는 메인이 조정한 재개의 증거이며, 직접 native 다중·실패·취소 알림 자동 복귀는 미완료다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 미완료다.
 - Anthropic 서버 전용 기능, 비스트리밍 API, 서버 실행 도구·첨부/PDF·미지원 context edit·sampling 필드는 지원하지 않는다. 신규 native 버전과 Codex 비공개 backend 변경은 재검증이 필요하다. `CLI_VERSION_UNVERIFIED` 안내를 숨기지 않는다.

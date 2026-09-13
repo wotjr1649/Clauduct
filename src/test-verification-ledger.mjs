@@ -21,9 +21,33 @@ try {
   ledger.record('usage', { inputTokens: 40, outputTokens: 2, completions: 1 });
   ledger.record('final'); ledger.close();
   assert.deepEqual(readVerificationLedger(ledger.path), { requestAttempts: 1, inputTokens: 40, outputTokens: 2,
-    completions: 1, imageFormatMask: 0, recordCount: 4, finalRecorded: true, truncatedTail: false }); checks++;
+    completions: 1, imageFormatMask: 0, unobservedCompletions: 0, version: 2, recordCount: 4, finalRecorded: true, truncatedTail: false }); checks++;
   assert.throws(() => createVerificationLedger(first), error => error.code === 'EEXIST'); checks++;
   const exact = readFileSync(ledger.path, 'utf8');
+  const legacy = exact.trim().split('\n').map(line => {
+    const row = JSON.parse(line); row.version = 1; delete row.unobservedCompletions; return JSON.stringify(row);
+  }).join('\n') + '\n';
+  writeFileSync(ledger.path, legacy);
+  const legacyRead = readVerificationLedger(ledger.path);
+  assert.equal(legacyRead.version, 1); assert.equal(legacyRead.completions, 1);
+  assert.equal(legacyRead.unobservedCompletions, 0); checks++;
+  writeFileSync(ledger.path, exact.replace('"version":2', '"version":1'));
+  invalid(() => readVerificationLedger(ledger.path)); checks++;
+  writeFileSync(ledger.path, exact);
+  const unknown = createVerificationLedger(directory('unobserved'));
+  unknown.record('attempt', { requestAttempts: 1 });
+  invalid(() => unknown.record('final', { unobservedCompletions: 1 })); checks++;
+  invalid(() => unknown.record('usage-unobserved', { unobservedCompletions: 1, inputTokens: 1 })); checks++;
+  invalid(() => unknown.record('usage-unobserved', { unobservedCompletions: 2 })); checks++;
+  unknown.record('usage-unobserved', { unobservedCompletions: 1 });
+  invalid(() => unknown.record('usage', { completions: 1 })); checks++;
+  unknown.close();
+  const unknownRead = readVerificationLedger(unknown.path);
+  assert.equal(unknownRead.unobservedCompletions, 1); assert.equal(unknownRead.completions, 0);
+  assert.equal(unknownRead.finalRecorded, false); checks++;
+  const unknownText = readFileSync(unknown.path, 'utf8');
+  writeFileSync(unknown.path, unknownText.replace('"kind":"usage-unobserved"', '"kind":"final"'));
+  invalid(() => readVerificationLedger(unknown.path)); checks++;
   for (const failureCategory of ['ATTEMPT_OBSERVER_FAILED', 'VERIFICATION_LEDGER_INVALID', 'VERIFICATION_LEDGER_IO']) {
     assert.equal(requestStatusSnapshot({ recentRequests: [{ failureCategory }] }).recentRequests[0].failureCategory, failureCategory); checks++;
   }
@@ -52,8 +76,9 @@ try {
   let guarded, received = 0, delivered = 0;
   const server = createServer((_req, res) => {
     received++;
-    assert.equal(readVerificationLedger(pipeline.path).requestAttempts, 1);
-    const event = { type: 'response.completed', response: { output: [], usage: { input_tokens: 41, output_tokens: 3 } } };
+    assert.equal(readVerificationLedger(pipeline.path).requestAttempts, received);
+    const event = { type: 'response.completed', response: { output: [],
+      ...(received === 1 ? { usage: { input_tokens: 41, output_tokens: 3 } } : {}) } };
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     res.end(`event: response.completed\ndata: ${JSON.stringify(event)}\n\n`);
   });
@@ -61,16 +86,19 @@ try {
   const transport = createNativeLoopbackTransport(server.address().port, {
     onAttempt: value => pipeline.record('attempt', { ...guarded.fixtureUsage(), ...value }) });
   guarded = guardFixtureTransport(transport, { version: 1, kind: 'none', workingRoot: root },
-    { onUsage: value => pipeline.record('usage', value) });
+    { onUsage: value => pipeline.record('usage', value), onUsageUnobserved: value => pipeline.record('usage-unobserved', value) });
   try {
     await guarded.send({}, AbortSignal.timeout(3000), { onEvent: () => {
       const record = readVerificationLedger(pipeline.path);
       assert.equal(record.completions, 1); assert.equal(record.inputTokens, 41); assert.equal(record.outputTokens, 3);
       delivered++;
     } });
+    await assert.rejects(guarded.send({}, AbortSignal.timeout(3000), { onEvent: () => { delivered++; } }), error => error.code === 'INVALID_USAGE');
+    assert.equal(readVerificationLedger(pipeline.path).unobservedCompletions, 1); checks++;
+    await assert.rejects(guarded.send({}, AbortSignal.timeout(3000)), error => error.code === 'INVALID_USAGE');
     pipeline.record('final', guarded.fixtureUsage());
     assert.equal(readVerificationLedger(pipeline.path).finalRecorded, true);
-    assert.equal(received, 1); assert.equal(delivered, 1); checks++;
+    assert.equal(received, 2); assert.equal(delivered, 1); checks++;
   } finally {
     pipeline.close(); await guarded.close(); server.closeAllConnections(); await new Promise(done => server.close(done));
   }

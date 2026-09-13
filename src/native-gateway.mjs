@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
-import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
+import { REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS, KEEPALIVE_SHAPES } from './native-protocol.mjs';
 import { prepareNative, createNativeResponse, prepareFileReview, prepareReviewContext, verifyFileReviewStep, NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, UPSTREAM_FAILURES, capturableEventName } from './native-protocol.mjs';
 import { MODELS, ROLE_MODELS, CONTEXT_POLICY, selectModel } from './models.mjs';
 import { writeFrames } from './native-delivery.mjs';
@@ -499,6 +499,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       const childState = COMPLETION_STATES.includes(error.completionChildState) ? error.completionChildState : null;
       if (timing) timing.unsupportedEvent = eventKind;
       if (timing) timing.unsupportedEventTypeFormat = eventTypeFormat;
+      if (timing) timing.keepaliveShape = KEEPALIVE_SHAPES.includes(error.keepaliveShape) ? error.keepaliveShape : null;
       if (timing) {
         timing.upstreamFailureEvent = upstreamFailureEvent;
         timing.upstreamErrorCode = upstreamErrorCode;

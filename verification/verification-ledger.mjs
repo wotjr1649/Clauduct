@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url';
 import { NativeError } from '../src/native-protocol.mjs';
 
 const maximumBytes = 262144;
-const counters = ['requestAttempts', 'inputTokens', 'outputTokens', 'completions', 'imageFormatMask'];
-const kinds = ['start', 'attempt', 'usage', 'final'];
+const legacyCounters = ['requestAttempts', 'inputTokens', 'outputTokens', 'completions', 'imageFormatMask'];
+const counters = [...legacyCounters, 'unobservedCompletions'];
+const kinds = ['start', 'attempt', 'usage', 'usage-unobserved', 'final'];
 const fail = () => { throw new NativeError('VERIFICATION_LEDGER_INVALID'); };
 const zero = () => Object.fromEntries(counters.map(key => [key, 0]));
 function snapshot(value, previous) {
@@ -17,7 +18,7 @@ function snapshot(value, previous) {
     if (!Number.isSafeInteger(current) || current < previous[key]) fail();
     next[key] = current;
   }
-  if (next.requestAttempts > 4096 || next.completions > next.requestAttempts || next.imageFormatMask > 15
+  if (next.requestAttempts > 4096 || next.completions + next.unobservedCompletions > next.requestAttempts || next.imageFormatMask > 15
     || (next.imageFormatMask & previous.imageFormatMask) !== previous.imageFormatMask) fail();
   return next;
 }
@@ -36,7 +37,10 @@ export function createVerificationLedger(directory) {
     if (kind === 'attempt' && next.requestAttempts !== state.requestAttempts + 1) fail();
     if (kind !== 'attempt' && next.requestAttempts !== state.requestAttempts) fail();
     if (kind === 'usage' ? next.completions !== state.completions + 1 : next.completions !== state.completions) fail();
-    const line = Buffer.from(JSON.stringify({ version: 1, sequence: sequence + 1, kind, ...next }) + '\n');
+    if (kind === 'usage-unobserved' ? next.unobservedCompletions !== state.unobservedCompletions + 1
+      : next.unobservedCompletions !== state.unobservedCompletions) fail();
+    if (kind === 'usage-unobserved' && (next.inputTokens !== state.inputTokens || next.outputTokens !== state.outputTokens)) fail();
+    const line = Buffer.from(JSON.stringify({ version: 2, sequence: sequence + 1, kind, ...next }) + '\n');
     if (bytes + line.length > maximumBytes) fail();
     try {
       if (writeSync(fd, line) !== line.length) throw new Error();
@@ -58,22 +62,28 @@ export function readVerificationLedger(path) {
   if (boundary < 0) fail();
   const truncatedTail = boundary !== text.length - 1;
   const rows = text.slice(0, boundary).split('\n');
-  let state = zero(), finalRecorded = false;
+  let state = zero(), finalRecorded = false, version = null;
   for (let index = 0; index < rows.length; index++) {
     let row;
     try { row = JSON.parse(rows[index]); } catch { fail(); }
-    if (!row || row.version !== 1 || row.sequence !== index + 1 || !kinds.includes(row.kind) || finalRecorded
-      || Object.keys(row).length !== counters.length + 3
-      || Object.keys(row).some(key => ![...counters, 'version', 'sequence', 'kind'].includes(key))
+    const rowCounters = row?.version === 1 ? legacyCounters : counters;
+    if (!row || ![1, 2].includes(row.version) || version !== null && version !== row.version
+      || row.sequence !== index + 1 || !kinds.includes(row.kind) || row.version === 1 && row.kind === 'usage-unobserved' || finalRecorded
+      || Object.keys(row).length !== rowCounters.length + 3
+      || Object.keys(row).some(key => ![...rowCounters, 'version', 'sequence', 'kind'].includes(key))
       || (row.kind === 'start') !== (index === 0)) fail();
-    const next = snapshot(Object.fromEntries(counters.map(key => [key, row[key]])), state);
+    version = row.version;
+    const next = snapshot(Object.fromEntries(rowCounters.map(key => [key, row[key]])), state);
     if (row.kind === 'attempt' ? next.requestAttempts !== state.requestAttempts + 1 : next.requestAttempts !== state.requestAttempts) fail();
     if (row.kind === 'usage' ? next.completions !== state.completions + 1 : next.completions !== state.completions) fail();
+    if (row.kind === 'usage-unobserved' ? next.unobservedCompletions !== state.unobservedCompletions + 1
+      : next.unobservedCompletions !== state.unobservedCompletions) fail();
+    if (row.kind === 'usage-unobserved' && (next.inputTokens !== state.inputTokens || next.outputTokens !== state.outputTokens)) fail();
     if (index === 0 && counters.some(key => next[key] !== 0)) fail();
     state = next; finalRecorded = row.kind === 'final';
   }
   if (truncatedTail && finalRecorded) fail();
-  return { ...state, recordCount: rows.length, finalRecorded, truncatedTail };
+  return { ...state, version, recordCount: rows.length, finalRecorded, truncatedTail };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

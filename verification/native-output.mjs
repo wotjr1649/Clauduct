@@ -1,3 +1,5 @@
+import { FAILURE_DIAGNOSTIC_CATEGORIES, EVENT_DIAGNOSTIC_TYPES, KEEPALIVE_SHAPES } from '../src/native-protocol.mjs';
+
 const channels = ['stdout', 'stderr'];
 const need = ok => { if (!ok) throw new Error('INVALID_OUTPUT_CAPTURE'); };
 
@@ -98,4 +100,24 @@ export function nativeOutputCompleted(snapshot, { exitCode, sessionId, resultTex
     && snapshot.nativeResult?.is_error === false && snapshot.nativeResult.session_id === sessionId
     && snapshot.nativeResult.result === resultText && snapshot.status?.requestOutcome === 'all-succeeded'
     && cleanup && Object.keys(cleanup).length === cleanupKeys.length && cleanupKeys.every(key => cleanup[key] === true) ? true : false;
+}
+
+// Durable development evidence uses this projection, never the raw status,
+// native result text, request history, event fields or arbitrary error strings.
+export function nativeOutputDiagnostics(snapshot) {
+  const status = snapshot?.status;
+  const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const rows = Array.isArray(status?.failureHistory?.records) ? status.failureHistory.records.slice(0, 16) : [];
+  const requestOutcome = ['all-succeeded', 'has-failures', 'no-requests', 'in-progress', 'not-observed'].includes(status?.requestOutcome)
+    ? status.requestOutcome : 'not-observed';
+  const failures = rows.map(row => ({
+    category: FAILURE_DIAGNOSTIC_CATEGORIES.includes(row?.failureCategory) ? row.failureCategory : null,
+    eventKind: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
+    keepaliveShape: KEEPALIVE_SHAPES.includes(row?.keepaliveShape) ? row.keepaliveShape : null
+  }));
+  return { requestOutcome,
+    started: counter(status?.lifetime?.started), succeeded: counter(status?.lifetime?.succeeded), failed: counter(status?.lifetime?.failed),
+    failures,
+    failure: requestOutcome === 'has-failures' ? failures.find(row => row.category)?.category ?? 'NATIVE_REQUEST_FAILED'
+      : snapshot?.nativeResult?.is_error === true ? 'NATIVE_RESULT_ERROR' : null };
 }

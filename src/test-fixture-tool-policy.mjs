@@ -41,6 +41,7 @@ for (const [policy, name, input] of [
 // A rejected completion never reaches the downstream callback that releases native tools.
 let delivered = 0;
 const unsafe = event('Workflow', { script: 'arbitrary();' });
+unsafe.response.usage = { input_tokens: 1, output_tokens: 1 };
 const transport = { send: async (_body, _signal, options) => { await options.onEvent(unsafe); }, close: async () => {}, diagnostics: () => ({}) };
 const guarded = guardFixtureTransport(transport, { version: 1, kind: 'workflow', workingRoot, workflowScript });
 await assert.rejects(guarded.send({}, new AbortController().signal, { onEvent: () => { delivered++; } }),

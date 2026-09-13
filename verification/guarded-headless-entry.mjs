@@ -26,7 +26,10 @@ try {
     const factory = options.transportFactory;
     const transport = openUserTransport({ ...options, transportFactory: configuration => factory({ ...configuration,
       onAttempt: value => { checkProgress(); ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }); } }) });
-    guarded = guardFixtureTransport(transport, policy, { onUsage: value => { checkProgress(); ledger.record('usage', value); } });
+    guarded = guardFixtureTransport(transport, policy, {
+      onUsage: value => { checkProgress(); ledger.record('usage', value); },
+      onUsageUnobserved: value => { checkProgress(); ledger.record('usage-unobserved', value); }
+    });
     emitProgress();
     progressTimer = setInterval(() => {
       try { emitProgress(); }

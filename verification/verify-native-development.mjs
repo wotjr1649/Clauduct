@@ -7,7 +7,7 @@ import { createDevelopmentFixture, sourceHash } from './development-fixture.mjs'
 import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
-import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
+import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
 import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
 
@@ -29,11 +29,50 @@ function developmentHashes(project, localNative) {
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
-    'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs',
+    'verification/verify-native-recovery.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/adapter.mjs',
+    'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs', 'src/request-status.mjs',
     'poc/user-session.mjs', 'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs'];
   return Object.fromEntries(files.map(name => {
     const path = join(project, name); return [path.slice(project.length + 1), sourceHash(readFileSync(path))];
   }));
+}
+function completedDevelopmentContext(root, model, localNative, taskId) {
+  const project = dirname(dirname(fileURLToPath(import.meta.url))), canonical = resolve(root);
+  need(dirname(canonical).toLowerCase() === join(project, '.tmp').toLowerCase()
+    && /^native-development-[A-Za-z0-9]{6}$/.test(canonical.slice(canonical.lastIndexOf('\\') + 1))
+    && realpathSync(canonical).toLowerCase() === canonical.toLowerCase(), 'CONTINUATION_ROOT_INVALID');
+  const budget = JSON.parse(read(join(canonical, 'budget.json'))), result = JSON.parse(read(join(canonical, 'result.json')));
+  const owner = JSON.parse(read(join(canonical, 'process.json'))), previousTask = developmentTask(budget.taskId);
+  need(budget.model === model && budget.localNative === localNative && budget.taskId !== taskId
+    && budget.continuedFrom === undefined && budget.cutOutputAfterPass === false
+    && result.model === model && result.taskId === budget.taskId && result.localNative === localNative && result.passed === true
+    && result.failure === null && result.tree?.stopped === true && result.recordedNativeStopped === true
+    && result.sourceUnchanged === true && result.independentPassed === true && result.ledgerMatched === true
+    && result.completedUsageObserved === true && result.usageUnobservedAttempts === 0
+    && result.cleanupComplete === true && result.output?.resultCount === 1 && result.output?.statusCount === 1
+    && result.output?.stdoutEnded === true && result.output?.stderrEnded === true
+    && result.sessionId === owner.sessionId && /^[0-9a-f-]{36}$/.test(owner.sessionId), 'CONTINUATION_EVIDENCE_INVALID');
+  need(!existsSync(join(canonical, 'successor-intent.json')), 'CONTINUATION_ALREADY_STARTED');
+  need(JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'CONTINUATION_SOURCE_CHANGED');
+  const source = read(join(canonical, 'work', previousTask.sourceFile));
+  checkDevelopmentSource(source, budget.taskId);
+  const review = JSON.parse(read(join(canonical, 'control', 'review.json'), 1024));
+  need(sourceHash(source) === result.sourceSha256 && review.sha256 === result.sourceSha256 && review.approved === true
+    && sourceHash(read(join(canonical, 'work', '.mcp.json'))) === budget.mcpHash
+    && sourceHash(read(join(canonical, 'control', 'TASK.md'))) === budget.taskHash && budget.taskHash === sourceHash(previousTask.task)
+    && sourceHash(read(join(canonical, 'control', 'oracle.mjs'))) === budget.oracleHash
+    && budget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', previousTask.oracleFile))), 'CONTINUATION_ARTIFACT_CHANGED');
+  const usage = readVerificationLedger(join(canonical, 'usage-development', 'tool-usage.jsonl'));
+  need(usage.version === 2 && usage.finalRecorded && !usage.truncatedTail && usage.requestAttempts === result.attempts
+    && usage.unobservedCompletions === 0 && usage.completions === usage.requestAttempts
+    && usage.inputTokens === result.inputTokens && usage.outputTokens === result.outputTokens, 'CONTINUATION_LEDGER_INVALID');
+  need(nativeClientsStopped(read(join(canonical, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'CONTINUATION_OWNER_UNVERIFIED');
+  const configRoot = join(canonical, 'config'), info = lstatSync(configRoot);
+  need(info.isDirectory() && !info.isSymbolicLink(), 'CONTINUATION_CONFIG_INVALID');
+  const minimumPrior = { priorAttempts: result.cumulativeAttempts, priorElapsedMs: result.cumulativeElapsedMs,
+    priorInputTokens: result.cumulativeInputTokens, priorOutputTokens: result.cumulativeOutputTokens };
+  need(Object.values(minimumPrior).every(value => Number.isSafeInteger(value) && value >= 0), 'CONTINUATION_LEDGER_INVALID');
+  return { root: canonical, owner, configRoot, previousTaskId: budget.taskId, sourceSha256: result.sourceSha256, minimumPrior };
 }
 function resumeDevelopmentFixture(root, model, localNative, taskId) {
   const task = developmentTask(taskId);
@@ -60,15 +99,21 @@ function resumeDevelopmentFixture(root, model, localNative, taskId) {
     taskHash: priorBudget.taskHash, priorOwner: owner, priorSourceHash: first.sourceSha256 };
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
-  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID }) {
+  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
     && typeof cutOutputAfterPass === 'boolean'
-    && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
+    && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass)
+    && (continueFrom === undefined || typeof continueFrom === 'string' && resumeRoot === undefined && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
   try { developmentTask(taskId); } catch { need(false, 'INVALID_ARGUMENTS'); }
   for (const value of [priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens]) need(Number.isSafeInteger(value) && value >= 0, 'INVALID_PRIOR_USAGE');
   const finishing = resumeRoot !== undefined, phase = finishing ? 'development-finish' : 'development';
+  const context = continueFrom === undefined ? null : completedDevelopmentContext(continueFrom, model, localNative, taskId);
+  if (context) {
+    const supplied = { priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens };
+    need(Object.entries(context.minimumPrior).every(([key, value]) => supplied[key] >= value), 'CONTINUATION_USAGE_REGRESSION');
+  }
   const fixture = finishing ? resumeDevelopmentFixture(resumeRoot, model, localNative, taskId) : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, taskId });
   const { project, root, work, control, task } = fixture;
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
@@ -79,8 +124,10 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     cumulativeObservedInputLimit: priorInputTokens + 131072, cumulativeObservedOutputLimit: priorOutputTokens + 32768,
     basis: 'Prior recovery used four requests and 10.6-12.5s. This eight-turn code task reserves 16 attempts and the authorized initial ten-minute development unit, including source review.',
     oracleHash: fixture.oracleHash, taskHash: fixture.taskHash, mcpHash: sourceHash(read(join(work, '.mcp.json'))),
+    ...(context ? { continuedFrom: context.root, previousTaskId: context.previousTaskId, previousSourceSha256: context.sourceSha256 } : {}),
     hashes: developmentHashes(project, localNative) };
   const env = nativeVerificationEnvironment(root);
+  if (context) env.CLAUDE_CONFIG_DIR = context.configRoot;
   const controlEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(key => env[key]).map(key => [key, env[key]]));
   if (finishing) {
     const owner = fixture.priorOwner;
@@ -91,15 +138,25 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     // Exclusive, task-local intent is created before any new child or effect.
     write(join(root, 'finish-intent.json'), { sessionId: owner.sessionId, sourceSha256: fixture.priorSourceHash });
   }
+  if (context) {
+    const owner = context.owner;
+    const previous = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(owner.pid),
+      '-StartedAfterMs', String(owner.startedAt), '-RunRoot', context.root],
+      { cwd: project, env: controlEnv, windowsHide: true, encoding: 'utf8', timeout: 12000, maxBuffer: 32768 });
+    need(!previous.error && previous.status === 0 && JSON.parse(previous.stdout).stopped === true, 'CONTINUATION_OWNER_UNVERIFIED');
+    // New fixture files exist for inspection; only one successor may start a
+    // native process. An interrupted handoff is not retried as a new task.
+    write(join(context.root, 'successor-intent.json'), { root, taskId, sessionId: owner.sessionId, previousSourceSha256: context.sourceSha256 });
+  }
   write(join(root, finishing ? 'budget-finish.json' : 'budget.json'), budget);
   writeFileSync(join(root, `transport-${phase}.jsonl`), '', { flag: 'wx' }); mkdirSync(join(root, `usage-${phase}`));
-  const sessionId = finishing ? fixture.priorOwner.sessionId : randomUUID(), phaseStart = Date.now();
+  const sessionId = finishing ? fixture.priorOwner.sessionId : context ? context.owner.sessionId : randomUUID(), phaseStart = Date.now();
   const args = ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', '16', '-p',
     '--output-format', 'stream-json', '--verbose', '--tools', '', '--allowedTools',
     finishing ? 'mcp__fixture__read_task,mcp__fixture__run_tests' : 'mcp__fixture__read_task,mcp__fixture__write_source,mcp__fixture__run_tests',
-    '--max-turns', '8', finishing ? '--resume' : '--session-id', sessionId, '--', finishing
+    '--max-turns', '8', finishing || context ? '--resume' : '--session-id', sessionId, '--', finishing
     ? 'Continue the same public development task after the output receiver lost the final result. The outer manager verified that your source was written once, reviewed and passed the fixed tests. Do not modify it. Read the original requirements and current source once with mcp__fixture__read_task, run mcp__fixture__run_tests once, and after success reply exactly CLAUDUCT_DEVELOPMENT_DONE. Use one tool per response. The original baseline/fix instructions are already fulfilled; only verification and this final report remain.'
-    :
+    : (context ? 'The previous public development task is complete. Start the different task in this new working directory; its fixture tools, TASK.md and source are separate from the previous task. ' : '') +
     'Read the complete TASK.md with mcp__fixture__read_task once and implement its bounded code change. Run the prescribed tests on the baseline, fix the code, then run the tests again. Use one fixture tool per response; the three MCP tools are already available. Follow the task completion marker only after tests pass.'];
   const child = fork(entry, [root, phase, ...args], { cwd: work, env, windowsHide: true, execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const capture = createNativeOutputCapture({ maxBytes: budget.outputBytes, maxLineBytes: budget.outputBytes, maxRecords: 4096 });
@@ -165,7 +222,12 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   }
   const output = capture.snapshot(), result = output.nativeResult, status = output.status;
   failure ??= output.evidence.failure;
+  const requestDiagnostics = nativeOutputDiagnostics(output);
+  failure ??= requestDiagnostics.failure;
   const rows = read(join(root, `transport-${phase}.jsonl`)).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  const contexts = rows.filter(row => row.event === 'CONTEXT_OBSERVED');
+  const contextMatched = !context || contexts.length === 1 && contexts[0].previousTaskId === context.previousTaskId
+    && contexts[0].previousFunctionObserved === true && contexts[0].previousCompletionObserved === true;
   const recordedNativeStopped = nativeClientsStopped(rows);
   const requests = rows.filter(row => row.event === 'REQUEST_STARTED'), settled = rows.filter(row => row.event === 'REQUEST_SETTLED');
   const attempts = Math.max(0, ...settled.map(row => row.attempts));
@@ -176,7 +238,12 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   try { usageLedger = readVerificationLedger(join(root, `usage-${phase}`, 'tool-usage.jsonl')); }
   catch { failure ??= 'VERIFICATION_LEDGER_INVALID'; }
   const ledgerMatched = usageLedger?.finalRecorded === true && usageLedger.truncatedTail === false
-    && usageLedger.requestAttempts === attempts && usageLedger.inputTokens === inputTokens && usageLedger.outputTokens === outputTokens;
+    && usageLedger.requestAttempts === attempts && usageLedger.inputTokens === inputTokens && usageLedger.outputTokens === outputTokens
+    && usageLedger.completions === rows.filter(row => row.event === 'USAGE').length
+    && usageLedger.unobservedCompletions === rows.filter(row => row.event === 'USAGE_UNOBSERVED').length;
+  const completedUsageObserved = usageLedger?.version === 2 && usageLedger.unobservedCompletions === 0;
+  const usageUnobservedAttempts = usageLedger ? usageLedger.requestAttempts - usageLedger.completions : null;
+  if (usageLedger?.unobservedCompletions > 0) failure ??= 'INVALID_USAGE';
   const sourceUnchanged = Object.entries(budget.hashes).every(([path, hash]) => sourceHash(readFileSync(join(project, path))) === hash);
   const events = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
   const source = join(work, task.sourceFile), sha256 = sourceHash(read(source));
@@ -193,8 +260,9 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const baselineFailed = tests.length >= 2 && tests[0].passed === false;
   const revisedPassed = tests.at(-1)?.passed === true && tests.at(-1)?.sha256 === sha256 && events.some(row => row.event === 'SOURCE_WRITTEN');
   const cleanupComplete = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
+  if (!contextMatched) failure ??= 'CONTINUATION_CONTEXT_MISSING';
   const passed = !failure && nativeOutputCompleted(output, { exitCode, sessionId, resultText: 'CLAUDUCT_DEVELOPMENT_DONE', oraclePassed: independentPassed })
-    && ledgerMatched && sourceUnchanged && treeEvidence?.stopped && recordedNativeStopped
+    && ledgerMatched && completedUsageObserved && sourceUnchanged && treeEvidence?.stopped && recordedNativeStopped
     && routeMatched && requests.length === settled.length && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens
     && events[0]?.event === 'TASK_READ' && baselineFailed && revisedPassed && independentPassed && oracleUnchanged;
   const outputCutObserved = outputCut && cutReleased && output.evidence.failure === 'OUTPUT_PIPE_CLOSED'
@@ -202,16 +270,50 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && sourceUnchanged && ledgerMatched && independentPassed && baselineFailed && revisedPassed && recordedNativeStopped
     && events.filter(row => row.event === 'SOURCE_WRITTEN').length === 1 && routeMatched && requests.length === settled.length
     && attempts <= budget.requestLimit && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens;
+  const elapsedMs = Date.now() - phaseStart;
   const summary = { suite: localNative ? 'native-development-local' : 'native-development-live', root, model, effort, taskId, localNative, phase, sessionId,
+    continuedFrom: context?.root ?? null, contextMatched, contextEvidence: contexts[0] ?? null,
     actualModelRequests: localNative ? 0 : attempts, passed: passed === true, failure, exitCode,
-    elapsedMs: Date.now() - phaseStart, attempts, attemptsComplete: requests.length === settled.length, inputTokens, outputTokens,
-    cumulativeAttempts: priorAttempts + attempts, cumulativeElapsedMs: priorElapsedMs + Date.now() - phaseStart,
+    elapsedMs, attempts, attemptsComplete: requests.length === settled.length, inputTokens, outputTokens,
+    cumulativeAttempts: priorAttempts + attempts, cumulativeElapsedMs: priorElapsedMs + elapsedMs,
     cumulativeInputTokens: priorInputTokens + inputTokens, cumulativeOutputTokens: priorOutputTokens + outputTokens,
     routeMatched, nativeJson: result !== null, nativeError: result?.is_error ?? null, cleanupComplete: cleanupComplete === true,
     baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256,
-    sourceUnchanged, ledgerMatched, usageLedger, outputCut, cutReleased, outputCutObserved, recordedNativeStopped,
+    sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics,
+    outputCut, cutReleased, outputCutObserved, recordedNativeStopped,
     output: output.evidence, tree: treeEvidence };
   write(join(root, finishing ? 'result-finish.json' : 'result.json'), summary); return summary;
+}
+export async function verifyDevelopmentSequence({ model, powershell, localNative,
+  priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens }) {
+  need(typeof localNative === 'boolean', 'INVALID_ARGUMENTS');
+  const first = await verifyNativeDevelopment({ model, powershell, localNative,
+    priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens });
+  let second = null, continuationFailure = null;
+  if (first.passed) {
+    try {
+      second = await verifyNativeDevelopment({ model, powershell, localNative, taskId: 'retry-delay-window', continueFrom: first.root,
+        priorAttempts: first.cumulativeAttempts, priorElapsedMs: first.cumulativeElapsedMs,
+        priorInputTokens: first.cumulativeInputTokens, priorOutputTokens: first.cumulativeOutputTokens });
+    } catch (error) {
+      continuationFailure = /^CONTINUATION_[A-Z_]+$/.test(error.message) ? error.message : 'CONTINUATION_FAILED';
+    }
+  }
+  const originalSourceUnchanged = sourceHash(read(join(first.root, 'work', developmentTask().sourceFile))) === first.sourceSha256;
+  const passed = first.passed && second?.passed === true && first.sessionId === second.sessionId
+    && second.contextMatched === true && originalSourceUnchanged && continuationFailure === null;
+  const result = { suite: localNative ? 'native-development-sequence-local' : 'native-development-sequence-live',
+    root: first.root, model, localNative, passed, scenarioPassed: passed, taskCompleted: passed,
+    first, second, continuationFailure, originalSourceUnchanged, sameSession: first.sessionId === second?.sessionId,
+    attempts: first.attempts + (second?.attempts ?? 0), elapsedMs: first.elapsedMs + (second?.elapsedMs ?? 0),
+    inputTokens: first.inputTokens + (second?.inputTokens ?? 0), outputTokens: first.outputTokens + (second?.outputTokens ?? 0),
+    attemptsComplete: first.attemptsComplete && (first.passed ? second?.attemptsComplete === true : true) && continuationFailure === null,
+    actualModelRequests: first.actualModelRequests + (second?.actualModelRequests ?? 0),
+    usageUnobservedAttempts: Number.isSafeInteger(first.usageUnobservedAttempts)
+      && (!second || Number.isSafeInteger(second.usageUnobservedAttempts))
+      ? first.usageUnobservedAttempts + (second?.usageUnobservedAttempts ?? 0) : null,
+    continuationUsageUnobserved: continuationFailure !== null, longStageCounts: 0 };
+  write(join(first.root, 'sequence-result.json'), result); return result;
 }
 export async function verifyDevelopmentOutputRecovery({ model, powershell, localNative, taskId = DEFAULT_DEVELOPMENT_TASK_ID,
   priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens }) {
@@ -241,7 +343,14 @@ export async function verifyDevelopmentOutputRecovery({ model, powershell, local
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [live, model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens] = process.argv.slice(2);
-    if (['--local-output-recovery', '--live-output-recovery'].includes(live)) {
+    if (['--local-sequence', '--live-sequence'].includes(live)) {
+      const localNative = live === '--local-sequence';
+      need(process.argv.length === (localNative ? 5 : 9), 'LIVE_ARGUMENTS_REQUIRED');
+      const result = await verifyDevelopmentSequence({ model, powershell, localNative,
+        priorAttempts: localNative ? 0 : Number(priorAttempts), priorElapsedMs: localNative ? 0 : Number(priorElapsedMs),
+        priorInputTokens: localNative ? 0 : Number(priorInputTokens), priorOutputTokens: localNative ? 0 : Number(priorOutputTokens) });
+      console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;
+    } else if (['--local-output-recovery', '--live-output-recovery'].includes(live)) {
       const localNative = live === '--local-output-recovery';
       need(process.argv.length === (localNative ? 5 : 9), 'LIVE_ARGUMENTS_REQUIRED');
       const result = await verifyDevelopmentOutputRecovery({ model, powershell, localNative,

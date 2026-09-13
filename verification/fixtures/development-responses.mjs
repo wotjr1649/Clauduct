@@ -25,7 +25,7 @@ export function publicDevelopmentEvents(model, effort, serial, finish = false, t
     || typeof finish !== 'boolean' || !Number.isSafeInteger(serial) || serial < 1 || serial > (finish ? 3 : 5)) throw new Error('DEVELOPMENT_STIMULUS_INVALID');
   const name = (finish ? ['mcp__fixture__read_task', 'mcp__fixture__run_tests', null]
     : ['mcp__fixture__read_task', 'mcp__fixture__run_tests', 'mcp__fixture__write_source', 'mcp__fixture__run_tests', null])[serial - 1];
-  const suffix = finish ? `finish_${serial}` : String(serial);
+  const suffix = (taskId === DEFAULT_DEVELOPMENT_TASK_ID ? '' : 'window_') + (finish ? `finish_${serial}` : String(serial));
   const marker = 'CLAUDUCT_DEVELOPMENT_DONE', responseId = `resp_public_${suffix}`, itemId = `item_public_${suffix}`;
   const item = name ? { type: 'function_call', id: itemId, call_id: `call_public_${suffix}`, name,
     arguments: JSON.stringify(!finish && serial === 3 ? { code: source } : {}), status: 'completed' }

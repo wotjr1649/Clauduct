@@ -5,7 +5,7 @@ import { MODELS, EFFORTS } from './models.mjs';
 import { clientVersionPolicy, isClientVersion } from './client-version.mjs';
 import { contextFromEnvironment } from './agent-route.mjs';
 import { EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES, capturableEventName,
-  UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS } from './native-protocol.mjs';
+  UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS, KEEPALIVE_SHAPES } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
@@ -85,6 +85,7 @@ export function requestStatusSnapshot(value, env = {}) {
     firstContentBlock: ['text', 'tool_use', 'redacted_thinking', 'server_tool_use', 'web_search_tool_result'].includes(row?.firstContentBlock) ? row.firstContentBlock : null,
     unsupportedEvent: EVENT_DIAGNOSTIC_TYPES.includes(row?.unsupportedEvent) ? row.unsupportedEvent : null,
     unsupportedEventTypeFormat: EVENT_TYPE_FORMATS.includes(row?.unsupportedEventTypeFormat) ? row.unsupportedEventTypeFormat : null,
+    keepaliveShape: KEEPALIVE_SHAPES.includes(row?.keepaliveShape) ? row.keepaliveShape : null,
     failureStage: REQUEST_STAGES.includes(row?.failureStage) ? row.failureStage : null,
     requestFailure: REQUEST_FAILURES.includes(row?.requestFailure) ? row.requestFailure : null,
     selectionFailure: SELECTION_FAILURES.includes(row?.selectionFailure) ? row.selectionFailure : null,

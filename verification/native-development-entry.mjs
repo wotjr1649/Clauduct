@@ -9,6 +9,22 @@ import { guardFixtureTransport } from './fixture-tool-policy.mjs';
 import { createVerificationLedger } from './verification-ledger.mjs';
 import { developmentTask } from './development-tasks.mjs';
 
+export function createDevelopmentContextCheck(previousTaskId) {
+  const previousFunction = developmentTask(previousTaskId).functionName;
+  let observation = null;
+  return input => {
+    if (observation) return observation;
+    // Cache a denial before inspecting input. A serialization failure or a
+    // later changed request cannot turn a failed initial binding into success.
+    observation = Object.freeze({ previousTaskId, previousFunctionObserved: false, previousCompletionObserved: false, observedInputBytes: 0 });
+    const text = JSON.stringify(input ?? null);
+    observation = Object.freeze({ previousTaskId, previousFunctionObserved: Array.isArray(input) && text.includes(previousFunction),
+      previousCompletionObserved: Array.isArray(input) && input.some(item => item?.role === 'assistant'
+        && JSON.stringify(item).includes('CLAUDUCT_DEVELOPMENT_DONE')), observedInputBytes: Buffer.byteLength(text) });
+    return observation;
+  };
+}
+
 // Separate from recovery's historical entry: only the reviewed development
 // tools can reach this native child, with a durable reservation before HTTPS.
 export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice(2), openTransport = openUserTransport, transportFactory } = {}) {
@@ -24,7 +40,8 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
     || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const ledger = createVerificationLedger(join(runRoot, `usage-${phase}`));
   const logPath = join(runRoot, `transport-${phase}.jsonl`);
-  let guarded, previousInput = 0, previousOutput = 0;
+  let guarded, previousInput = 0, previousOutput = 0, contextRecorded = false, contextAllowed = !budget.continuedFrom;
+  const contextCheck = budget.continuedFrom ? createDevelopmentContextCheck(budget.previousTaskId) : null;
   function record(value) {
     const line = JSON.stringify({ at: Date.now(), ...value }) + '\n';
     if (statSync(logPath).size + Buffer.byteLength(line) > 65536) throw new Error('DEVELOPMENT_LEDGER_LIMIT');
@@ -45,9 +62,21 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
         ledger.record('usage', value);
         record({ event: 'USAGE', usage: { input_tokens: value.inputTokens - previousInput, output_tokens: value.outputTokens - previousOutput } });
         previousInput = value.inputTokens; previousOutput = value.outputTokens;
+      }, onUsageUnobserved: value => {
+        ledger.record('usage-unobserved', value);
+        record({ event: 'USAGE_UNOBSERVED', completions: value.unobservedCompletions });
       } });
       return Object.freeze({ ...guarded, send: async (body, signal, settings = {}) => {
         if (body.model !== `gpt-5.6-${budget.model}` || body.reasoning?.effort !== budget.effort) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED');
+        if (contextCheck && !contextRecorded) {
+          // Inspect only the intended public task history and persist booleans
+          // and a byte count. No raw input, profile or transcript is recorded.
+          const observation = { event: 'CONTEXT_OBSERVED', ...contextCheck(body.input) };
+          record(observation);
+          contextAllowed = observation.previousFunctionObserved && observation.previousCompletionObserved;
+          contextRecorded = true;
+        }
+        if (!contextAllowed) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED');
         record({ event: 'REQUEST_STARTED', model: body.model, effort: body.reasoning.effort });
         try { return await guarded.send(body, signal, settings); }
         finally { record({ event: 'REQUEST_SETTLED', attempts: transport.diagnostics().requestAttempts }); }

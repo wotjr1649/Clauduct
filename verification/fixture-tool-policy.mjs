@@ -117,9 +117,10 @@ export function createFixtureToolPolicy(policy) {
   };
 }
 
-export function guardFixtureTransport(transport, policy, { onUsage } = {}) {
+export function guardFixtureTransport(transport, policy, { onUsage, onUsageUnobserved } = {}) {
   const check = createFixtureToolPolicy(policy);
   need(onUsage === undefined || typeof onUsage === 'function');
+  need(onUsageUnobserved === undefined || typeof onUsageUnobserved === 'function');
   const active = new Set();
   let requestsStarted = 0;
   const fixtureProgress = () => ({ requestsStarted, activeCount: active.size, truncated: active.size > 16,
@@ -131,20 +132,30 @@ export function guardFixtureTransport(transport, policy, { onUsage } = {}) {
           : timing.headersMs === null ? 'headers' : timing.firstBodyMs === null ? 'body' : 'stream',
         sawCompletion: ['completed', 'done'].includes(timing?.terminalState) };
     }) });
-  const usage = { inputTokens: 0, outputTokens: 0, completions: 0, maxInputTokens: 131072, maxOutputTokens: 32768, imageFormatMask: 0 };
+  const usage = { inputTokens: 0, outputTokens: 0, completions: 0, unobservedCompletions: 0,
+    maxInputTokens: 131072, maxOutputTokens: 32768, imageFormatMask: 0 };
   const snapshot = () => ({ ...usage, requestAttempts: transport.diagnostics?.().requestAttempts ?? null });
   const inspect = event => {
     if (event?.type === 'response.completed') {
       const value = event.response?.usage;
-      if (Number.isSafeInteger(value?.input_tokens) && value.input_tokens >= 0
-        && Number.isSafeInteger(value?.output_tokens) && value.output_tokens >= 0) {
-        usage.inputTokens += value.input_tokens; usage.outputTokens += value.output_tokens; usage.completions++;
-        onUsage?.(snapshot());
+      if (!value || typeof value !== 'object' || Array.isArray(value) || !Number.isSafeInteger(value.input_tokens) || value.input_tokens < 0
+        || !Number.isSafeInteger(value.output_tokens) || value.output_tokens < 0
+        || !Number.isSafeInteger(usage.inputTokens + value.input_tokens) || !Number.isSafeInteger(usage.outputTokens + value.output_tokens)) {
+        // Latch before notifying the observer: even an observer failure must
+        // prevent another request or delivery after unaccounted consumption.
+        usage.unobservedCompletions++;
+        onUsageUnobserved?.(snapshot());
+        throw new NativeError('INVALID_USAGE');
       }
+      usage.inputTokens += value.input_tokens; usage.outputTokens += value.output_tokens; usage.completions++;
+      onUsage?.(snapshot());
+      if (usage.inputTokens > usage.maxInputTokens || usage.outputTokens > usage.maxOutputTokens) throw new NativeError('REQUEST_BUDGET');
     }
+    if (usage.unobservedCompletions) throw new NativeError('INVALID_USAGE');
     check(event);
   };
   const checkBudget = () => {
+    if (usage.unobservedCompletions) throw new NativeError('INVALID_USAGE');
     if (usage.inputTokens >= usage.maxInputTokens || usage.outputTokens >= usage.maxOutputTokens) throw new NativeError('REQUEST_BUDGET');
   };
   return Object.freeze({ ...transport, fixtureUsage: snapshot, fixtureProgress, search: async (body, signal) => {

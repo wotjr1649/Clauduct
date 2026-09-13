@@ -61,7 +61,7 @@ function call(gateway, { path = '/v1/messages', body = doc, onChunk = () => {}, 
 const ample = { freeBytes: () => 16 * 1024 ** 3 };
 const emptyStages = { request: 0, selection: 0, prepare: 0, review: 0, upstream: 0, 'output-validation': 0, delivery: 0 };
 let passed = 0;
-const watchdog = setTimeout(() => { console.error('GATEWAY_TEST_TIMEOUT'); process.exit(1); }, 20000);
+const watchdog = setTimeout(() => { console.error(JSON.stringify({ failure: 'GATEWAY_TEST_TIMEOUT', completedChecks: passed })); process.exit(1); }, 20000);
 try {
   for (const phase of ['admission', 'body']) for (const stop of [true, false]) {
     const selection = createAgentSelection({ timeoutMs: 10,

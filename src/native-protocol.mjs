@@ -96,7 +96,7 @@ export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-obj
   'item.started', 'item.updated', 'item.completed',
   'message_start', 'message_delta', 'message_stop', 'content_block_start', 'content_block_delta', 'content_block_stop',
   'response.web_search_call.in_progress', 'response.web_search_call.searching', 'response.web_search_call.completed',
-  'unknown-response-event', 'ping', 'rate_limits.updated', 'codex.rate_limits', 'codex.response.metadata', 'responsesapi.websocket_timing', 'response.created', 'response.in_progress', 'response.queued',
+  'unknown-response-event', 'ping', 'keepalive', 'rate_limits.updated', 'codex.rate_limits', 'codex.response.metadata', 'responsesapi.websocket_timing', 'response.created', 'response.in_progress', 'response.queued',
   'response.completed', 'response.failed', 'response.incomplete', 'error',
   'response.output_item.added', 'response.output_item.done', 'response.content_part.added', 'response.content_part.done',
   'response.output_text.delta', 'response.output_text.done', 'response.output_text.annotation.added',
@@ -106,6 +106,7 @@ export const EVENT_DIAGNOSTIC_TYPES = Object.freeze(['other', 'invalid-event-obj
   'response.custom_tool_call_input.delta', 'response.custom_tool_call_input.done']);
 // Finite structural diagnostics only; never retain or hash an unknown event name/body.
 export const EVENT_TYPE_FORMATS = Object.freeze(['missing', 'non-string', 'empty', 'oversized', 'identifier', 'other']);
+export const KEEPALIVE_SHAPES = Object.freeze(['type-only', 'type-sequence', 'other']);
 // Bounded capture of an unmapped upstream event type, kept for the exit diagnostic only.
 // A value passes only in strict identifier shape: lower-case segments of at most
 // 24 characters, at most four dots, 48 characters overall. Anything else stays an unnamed
@@ -799,6 +800,13 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     if (state.finished) throw new NativeError('INVALID_STATE');
     try { return parse(event); } catch (error) {
       try { return fail(error); } catch (failure) {
+        if (object(event) && event.type === 'keepalive') {
+          // Record a fixed structural label only. This does not accept the
+          // event, expose field names/values, or infer its protocol meaning.
+          const keys = Object.keys(event);
+          failure.keepaliveShape = keys.length === 1 && keys[0] === 'type' ? 'type-only'
+            : keys.length === 2 && keys.includes('type') && keys.includes('sequence_number') ? 'type-sequence' : 'other';
+        }
         if (failure.code === 'SNAPSHOT_MISMATCH') {
           failure.snapshotMismatchEvent = EVENT_DIAGNOSTIC_TYPES.includes(event?.type) ? event.type : null;
         }

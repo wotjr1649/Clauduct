@@ -48,6 +48,9 @@ try {
       ledger.record('usage', value);
       record({ event: 'USAGE', usage: { input_tokens: value.inputTokens - previousInput, output_tokens: value.outputTokens - previousOutput } });
       previousInput = value.inputTokens; previousOutput = value.outputTokens;
+    }, onUsageUnobserved: value => {
+      ledger.record('usage-unobserved', value);
+      record({ event: 'USAGE_UNOBSERVED', completions: value.unobservedCompletions });
     } });
     return Object.freeze({ ...guarded, send: async (body, signal, settings = {}) => {
       record({ event: 'REQUEST_STARTED', model: ['gpt-5.6-luna', 'gpt-5.6-sol'].includes(body.model) ? body.model : 'other',

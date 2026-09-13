@@ -9,6 +9,10 @@ for (const extra of [{ model: 'toString' }, { model: ['luna'] }, { model: 'astra
   { continueFrom: 1 }, { continueFrom: 'public', resumeRoot: 'public' }, { continueFrom: 'public', cutOutputAfterPass: true }]) {
   await assert.rejects(verifyNativeDevelopment({ ...base, ...extra }), { message: 'INVALID_ARGUMENTS' }); checks++;
 }
+for (const extra of [{ onReservation: true }, { onReservation: {} }, { executionAccountHash: 'public' },
+  { executionAccountHash: null }, { executionAccountHash: ['a'.repeat(64)] }]) {
+  await assert.rejects(verifyNativeDevelopment({ ...base, ...extra }), { message: 'INVALID_ARGUMENTS' }); checks++;
+}
 await assert.rejects(verifyDevelopmentOutputRecovery({ ...base, localNative: undefined }), { message: 'INVALID_ARGUMENTS' }); checks++;
 await assert.rejects(verifyDevelopmentSequence({ ...base, localNative: undefined }), { message: 'INVALID_ARGUMENTS' }); checks++;
 for (const key of ['priorAttempts','priorElapsedMs','priorInputTokens','priorOutputTokens']) {

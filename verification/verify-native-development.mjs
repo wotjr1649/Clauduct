@@ -30,6 +30,7 @@ function developmentHashes(project, localNative) {
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
+    'verification/execution-account.mjs', 'verification/managed-development.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
     'verification/verify-native-recovery.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/adapter.mjs',
     'src/clauduct.mjs', 'src/native-transport.mjs', 'src/rate-limit-observation.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs', 'src/request-status.mjs',
@@ -38,19 +39,57 @@ function developmentHashes(project, localNative) {
     const path = join(project, name); return [path.slice(project.length + 1), sourceHash(readFileSync(path))];
   }));
 }
-function verifyPriorReservation(root, result, code) {
+function verifyPriorReservation(root, result, code, allowOverrun = false) {
   try {
-    const usage = join(root, 'usage-development'), state = readExecutionReservation(usage);
+    const phase = result.phase;
+    need(['development', 'development-retry', 'development-finish'].includes(phase), code);
+    const usage = join(root, `usage-${phase}`), state = readExecutionReservation(usage);
     const observationPath = join(usage, 'execution-observation.json');
     const observation = JSON.parse(read(observationPath));
-    need(result.executionReservationMatched === true && state.settlementState === 'recorded'
-      && !state.overrun && state.withinLimits && JSON.stringify(state) === JSON.stringify(result.executionReservation)
-      && state.basisHash === sourceHash(readFileSync(join(root, 'budget.json')))
+    need((result.executionReservationMatched === true || allowOverrun && result.reservationBeforeNative === true && (state.overrun || !state.withinLimits))
+      && state.settlementState === 'recorded' && (allowOverrun || !state.overrun && state.withinLimits)
+      && JSON.stringify(state) === JSON.stringify(result.executionReservation)
+      && state.basisHash === sourceHash(readFileSync(join(root, `budget${phase.slice('development'.length)}.json`)))
       && state.evidenceHash === sourceHash(readFileSync(observationPath))
-      && observation.version === 1 && observation.phase === 'development' && observation.sessionId === result.sessionId
+      && observation.version === 1 && observation.phase === phase && observation.sessionId === result.sessionId
       && observation.ownerStopped === true && observation.ledgerMatched === result.ledgerMatched
       && observation.usageUnobservedAttempts === result.usageUnobservedAttempts, code);
+    return { state, observation };
   } catch { need(false, code); }
+}
+
+export function readDevelopmentAccountingEvidence(root, phase) {
+  const code = 'DEVELOPMENT_ACCOUNTING_INVALID', project = dirname(dirname(fileURLToPath(import.meta.url)));
+  need(typeof root === 'string' && ['development', 'development-retry', 'development-finish'].includes(phase), code);
+  root = resolve(root);
+  need(dirname(root).toLowerCase() === join(project, '.tmp').toLowerCase()
+    && /^native-development-[A-Za-z0-9]{6}$/.test(root.slice(root.lastIndexOf('\\') + 1))
+    && !lstatSync(root).isSymbolicLink() && realpathSync(root).toLowerCase() === root.toLowerCase(), code);
+  const suffix = phase.slice('development'.length), resultPath = join(root, `result${suffix}.json`);
+  const result = JSON.parse(read(resultPath)), budget = JSON.parse(read(join(root, `budget${suffix}.json`)));
+  need(result.root === root && result.phase === phase && budget.phase === phase
+    && typeof result.localNative === 'boolean' && result.localNative === budget.localNative
+    && result.model === budget.model && result.effort === budget.effort && result.taskId === budget.taskId
+    && result.sourceUnchanged === true && result.ledgerMatched === true && result.attemptsComplete === true
+    && result.recordedNativeStopped === true && Number.isSafeInteger(result.elapsedMs) && result.elapsedMs >= 0
+    && JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, result.localNative)), code);
+  const rows = read(join(root, `transport-${phase}.jsonl`)).trim().split('\n').filter(Boolean).map(JSON.parse);
+  need(nativeClientsStopped(rows) && rows.filter(row => row.event === 'REQUEST_STARTED').length
+    === rows.filter(row => row.event === 'REQUEST_SETTLED').length, code);
+  const owner = JSON.parse(read(join(root, `process${suffix}.json`), 1024));
+  need(Number.isSafeInteger(owner.pid) && owner.pid > 0 && owner.sessionId === result.sessionId, code);
+  try { process.kill(owner.pid, 0); need(false, code); } catch (error) { need(error.code === 'ESRCH', code); }
+  const usage = readVerificationLedger(join(root, `usage-${phase}`, 'tool-usage.jsonl'));
+  need(usage.version === 2 && usage.finalRecorded && !usage.truncatedTail
+    && usage.requestAttempts === result.attempts && usage.inputTokens === result.inputTokens && usage.outputTokens === result.outputTokens
+    && Number.isSafeInteger(result.usageUnobservedAttempts) && result.usageUnobservedAttempts >= 0
+    && result.usageUnobservedAttempts === Math.max(0, usage.requestAttempts - usage.completions), code);
+  const { observation } = verifyPriorReservation(root, result, code, true);
+  const observed = { attempts: result.attempts, inputTokens: result.usageUnobservedAttempts === 0 ? usage.inputTokens : null,
+    outputTokens: result.usageUnobservedAttempts === 0 ? usage.outputTokens : null, elapsedMs: result.elapsedMs };
+  need(JSON.stringify(observation.observed) === JSON.stringify(observed), code);
+  return { root, phase, model: result.model, effort: result.effort, taskId: result.taskId, localNative: result.localNative,
+    observed, evidenceHash: sourceHash(readFileSync(resultPath)), passed: result.passed === true, failure: result.failure };
 }
 function completedDevelopmentContext(root, model, localNative, taskId) {
   const project = dirname(dirname(fileURLToPath(import.meta.url))), canonical = resolve(root);
@@ -146,12 +185,14 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
   localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16,
-  earlyExitAfterRead = false, resumeIncompleteRoot }) {
+  earlyExitAfterRead = false, resumeIncompleteRoot, onReservation, executionAccountHash }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
     && typeof cutOutputAfterPass === 'boolean' && Number.isSafeInteger(requestLimit) && requestLimit >= 1 && requestLimit <= 16
     && typeof earlyExitAfterRead === 'boolean'
+    && (onReservation === undefined || typeof onReservation === 'function')
+    && (executionAccountHash === undefined || typeof executionAccountHash === 'string' && /^[a-f0-9]{64}$/.test(executionAccountHash))
     && (!earlyExitAfterRead || localNative === true && !cutOutputAfterPass && resumeRoot === undefined && resumeIncompleteRoot === undefined && continueFrom === undefined)
     && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass)
     && (resumeIncompleteRoot === undefined || typeof resumeIncompleteRoot === 'string' && resumeRoot === undefined && !cutOutputAfterPass)
@@ -182,7 +223,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     basis: 'The initial eight-turn code task permits up to sixteen attempts and ten minutes, including source review. An explicitly smaller requestLimit reduces both the reservation and enforced transport budget; it never raises a cumulative cap.',
     oracleHash: fixture.oracleHash, taskHash: fixture.taskHash, mcpHash: sourceHash(read(join(work, '.mcp.json'))),
     ...(context ? { continuedFrom: context.root, previousTaskId: context.previousTaskId, previousSourceSha256: context.sourceSha256 } : {}),
-    hashes: developmentHashes(project, localNative) };
+    ...(executionAccountHash === undefined ? {} : { executionAccountHash }), hashes: developmentHashes(project, localNative) };
   const env = nativeVerificationEnvironment(root);
   if (context) env.CLAUDE_CONFIG_DIR = context.configRoot;
   const controlEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(key => env[key]).map(key => [key, env[key]]));
@@ -214,6 +255,8 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     outputTokens: budget.maxObservedOutputTokens, elapsedMs: phaseMs + 30000 };
   const reservationProof = createExecutionReservation(reservationRoot, { basisHash: sourceHash(readFileSync(join(root, `budget${suffix}.json`))),
     previous: { attempts: 0, inputTokens: 0, outputTokens: 0, elapsedMs: 0 }, limits: phaseAllowance, allowance: phaseAllowance });
+  need(onReservation?.(Object.freeze({ root, phase, budgetHash: reservationProof.basisHash,
+    reservationHash: reservationProof.reservationHash })) === undefined, 'INVALID_RESERVATION_OBSERVER');
   const sessionId = resuming ? fixture.priorOwner.sessionId : context ? context.owner.sessionId : randomUUID(), phaseStart = Date.now();
   const args = ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', String(requestLimit), '-p',
     '--output-format', 'stream-json', '--verbose', '--tools', '', '--allowedTools',

@@ -67,6 +67,8 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 `long-stage-policy.mjs`는 4h→24h×3→72h 순서와 사건 수를 계산한다. 후보·ZIP·판정기·런타임·모델 조합이 같은지, 기본 context 설정, 각 단계의 시간·개발 수, 24h 세 실행의 압축/갱신 합계, 실패·개입·효과 중복·기록 누락·재사용된 개발 증거를 검사한다. 72h의 반복 병렬·취소·장애 복구는 각각 최소2회로 수량화했다. 입력한 관측치의 진위는 이 순수 계산기가 증명하지 않으므로, 모든 수량이 맞아도 `observationsIndependentlyVerified=false`와 `releaseVerdict=HOLD`를 반환한다. 실제 원자료를 대조하는 장기 관리기 연결과 시간 시험은 미완료다.
 
+`auth-owner-protocol.mjs`는 기존 Codex 소유자와의 `initialize`·`account/read` 통신만 처리하는 검증용 경계다. 원문 계정 정보·진단을 반환하지 않고, 다른 home·외부 토큰 모드·도구/승인 요청·아직 보내지 않은 요청의 응답·중복·잘림을 거부한다. [공식 App Server 문서](https://learn.chatgpt.com/docs/app-server)와 설치0.154.0의 schema/help를 대조했다. 38개 순수 검사와 실제 공개 fixture 프로세스9개가 통과했으며, RPC 갱신 응답만으로 정상 token 갱신을 확인했다고 표시하지 않는다. `verify-auth-owner-read.mjs --existing-owner-read-only`는 설치 CLI의 기존 proxy만 사용하며 daemon/thread/refresh/login/config 명령을 시작하지 않는다. 현재 머신의 첫 연결은 초기화 응답 없이exit1로 종료됐고 proxy 회수는 확인했다. 원문 진단을 보존하지 않아 상세 원인은 미확정이며, 실제 소유자 결속·정상 갱신 및 제품 supplier 연결은 미완료다.
+
 Not verified / 제한:
 
 - astra 최초 공개 단문 검사에서 전달 전 upstream error 1건이 있었고 이후 단독 검사는 성공했다. 최초 오류의 원인은 미확정이며 외부 서버 무장애를 보장하지 않는다.

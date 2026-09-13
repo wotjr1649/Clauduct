@@ -293,6 +293,19 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     output: output.evidence, tree: treeEvidence };
   write(join(root, finishing ? 'result-finish.json' : 'result.json'), summary); return summary;
 }
+export function developmentUsageEvidence(first, continuation, continuationFailure) {
+  const continuationUsageUnobserved = continuationFailure !== null;
+  const phases = continuation === null ? [first] : [first, continuation];
+  const countsKnown = phases.every(phase => phase?.attemptsComplete === true && phase.ledgerMatched === true
+    && Number.isSafeInteger(phase.attempts) && phase.attempts >= 0
+    && Number.isSafeInteger(phase.usageUnobservedAttempts) && phase.usageUnobservedAttempts >= 0
+    && phase.usageUnobservedAttempts <= phase.attempts);
+  const total = countsKnown ? phases.reduce((sum, phase) => sum + phase.usageUnobservedAttempts, 0) : null;
+  // A continuation can start requests and then throw before returning evidence.
+  // Its missing result cannot release the reserved usage as an observed zero.
+  return { usageUnobservedAttempts: !continuationUsageUnobserved && Number.isSafeInteger(total) ? total : null,
+    continuationUsageUnobserved };
+}
 export async function verifyDevelopmentSequence({ model, powershell, localNative,
   priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens }) {
   need(typeof localNative === 'boolean', 'INVALID_ARGUMENTS');
@@ -318,10 +331,7 @@ export async function verifyDevelopmentSequence({ model, powershell, localNative
     inputTokens: first.inputTokens + (second?.inputTokens ?? 0), outputTokens: first.outputTokens + (second?.outputTokens ?? 0),
     attemptsComplete: first.attemptsComplete && (first.passed ? second?.attemptsComplete === true : true) && continuationFailure === null,
     actualModelRequests: first.actualModelRequests + (second?.actualModelRequests ?? 0),
-    usageUnobservedAttempts: Number.isSafeInteger(first.usageUnobservedAttempts)
-      && (!second || Number.isSafeInteger(second.usageUnobservedAttempts))
-      ? first.usageUnobservedAttempts + (second?.usageUnobservedAttempts ?? 0) : null,
-    continuationUsageUnobserved: continuationFailure !== null, longStageCounts: 0 };
+    ...developmentUsageEvidence(first, second, continuationFailure), longStageCounts: 0 };
   write(join(first.root, 'sequence-result.json'), result); return result;
 }
 export async function verifyDevelopmentOutputRecovery({ model, powershell, localNative, taskId = DEFAULT_DEVELOPMENT_TASK_ID,
@@ -345,8 +355,9 @@ export async function verifyDevelopmentOutputRecovery({ model, powershell, local
   const result = { suite: localNative ? 'native-development-output-recovery-local' : 'native-development-output-recovery-live',
     root: first.root, model, localNative, passed, scenarioPassed: passed, taskCompleted: passed, first, finish, resumeFailure,
     attempts, elapsedMs, inputTokens: first.inputTokens + (finish?.inputTokens ?? 0), outputTokens: first.outputTokens + (finish?.outputTokens ?? 0),
-    attemptsComplete: first.attemptsComplete && finish?.attemptsComplete === true,
-    actualModelRequests: localNative ? 0 : attempts, ...(localNative ? { actualCredentialReads: 0 } : {}) };
+    attemptsComplete: first.attemptsComplete && finish?.attemptsComplete === true && resumeFailure === null,
+    ...developmentUsageEvidence(first, finish, resumeFailure),
+    actualModelRequests: localNative ? 0 : attempts, ...(localNative ? { actualCredentialReads: 0 } : {}), longStageCounts: 0 };
   write(join(first.root, 'output-recovery-result.json'), result); return result;
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

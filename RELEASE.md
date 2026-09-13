@@ -118,7 +118,13 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 공개 검사에서 sol/low의 세 과제 자동 실행, luna/max의 첫 과제 완료 후 관리기 종료→남은 두 과제 실행, 완료 계획 재조회 시 native 시작0, 소스 쓰기 전 관리기 종료→원래 과제 복구→다음 과제를 확인했다. 기존 예약·같은 세션·과제당 쓰기1회·마감 시각을 대조했다. 관련24files/1068개 확인 항목에는 공개 자식4개의 생성 경쟁/결과 유실, 변경된 계획, 만료된 합성 계획, 부분 기록과 누적 한도 거부가 포함된다. 이 검사는 외부 모델·credential 추가 호출0이며 전원 손실 내구성을 입증하지 않는다.
 
-실행 가능한 catalog는 여전히 `retry-after-seconds`와 `retry-delay-window` 두 고정 과제다. 실제 모드 계획은 같은 과제의 반복을 거부한다. 로컬 반복은 세션·복구 검사에만 사용하며 계획 완료도 `longStageEvidence=false`·출하 HOLD로 보고한다. 임의 개발 과제 공급, 압축·정상 갱신·병렬·취소 등 필수 사건의 원자료 연결, 실제 backend 및 장기 단계 실행은 미완료다.
+기본 과제 `retry-after-seconds`와 `retry-delay-window` 외에 검토한 순수 함수 과제를 등록할 수 있다. `verification/registered-development-tasks.mjs`의 `registerDevelopmentTask(text, expectedHash)`는 canonical JSON에 최종 줄바꿈을 더한 바이트와 SHA256을 대조하고 `registered-<sha256>` ID를 반환한다. 호출자는 등록 전에 전송할 요구사항·기준 소스·검사 데이터를 검토해야 한다. 해시는 바이트의 동일성을 고정하며 권한이나 검토 승인을 대신하지 않는다. 기록은 프로젝트 `.tmp/development-task-registry`에 한 번 생성하고, 기존 기록의 변경·잘림·잘못된 구조는 덮어써 수리하지 않고 거부한다.
+
+등록 형식의 필드는 `version: 1`, `functionName`, `requirements`, `baseline`, `fields`, `numbers`, `strings`, `cases`, `localFixtureSource`다. 전체64KiB·요구사항8KiB·소스8KiB·검사1~128개의 한도가 있다. 각 검사는 고유한 `name`, `inputKind`, `input`, JSON scalar `expected`를 가진다. 입력은 JSON 또는 명시적인 `undefined`/`nan`/`positive-infinity`/`negative-infinity`다. 판정기는 이 데이터를 JSON 문자열로 삽입한 고정 프로그램으로 생성하며 native의 쓰기 범위 밖에 둔다. 등록 데이터로 명령·경로·실행 권한·전송 대상을 선택할 수 없다. 함수의 파일명은 `implementation.mjs`이며 기존 어휘 검사·외부 소스 검토·독립 검사를 모두 유지한다. 실제 과제 정의에는 `localFixtureSource: null`을 쓸 수 있고, 로컬 응답 fixture 시험에는 검토한 참조 소스가 필요하다. 참조 소스는 실제 모델의 과제 프롬프트에 포함하지 않는다.
+
+공개 예약 잔액 과제의 독립37-case 검사와 등록 경로 검사를 추가했다. 관련26files/1170개 확인 항목이 통과했으며 MCP 자식4개에서 기존 Node `--allow-child-process` SecurityWarning4건을 별도로 집계했다. 코드처럼 보이는 JSON 문자열은 실행되지 않았고, 검토 전 실행·입력/전역 변경·임의 명령·예약어 함수명·등록 뒤 기대값 변경을 거부했다. 첫 구현은 함수명 `arguments`를 받아들였으나 실제 module 구문 검사에서 실패했다. 이 실패를 보존하고 기록 전에 거부하도록 수정했다. 재개·완료 대조는 등록 요구사항과 판정기 바이트까지 재검증한다.
+
+실제 모드 계획은 같은 과제의 반복을 거부하며 등록 과제의 설명·검사 이름·검사 순서만 바꾸어도 같은 작업으로 판정한다. 이 비교가 임의 프로그램의 의미적 동일성이나 유의미한 개발 완료를 증명하지는 않는다. 로컬 반복은 세션·복구 검사에만 사용하며 계획 완료도 `longStageEvidence=false`·출하 HOLD로 보고한다. 등록된 순수 함수 과제는 일반 다중 파일 프로젝트 변경의 공급·검토·통합을 완성한 것이 아니다. 압축·정상 갱신·병렬·취소 등 필수 사건의 원자료 연결, 실제 backend 및 장기 단계 실행은 미완료다.
 
 `long-stage-policy.mjs`는 4h→24h×3→72h 순서와 사건 수를 계산한다. 후보·ZIP·판정기·런타임·모델 조합이 같은지, 기본 context 설정, 각 단계의 시간·개발 수, 24h 세 실행의 압축/갱신 합계, 실패·개입·효과 중복·기록 누락·재사용된 개발 증거를 검사한다. 72h의 반복 병렬·취소·장애 복구는 각각 최소2회로 수량화했다. 입력한 관측치의 진위는 이 순수 계산기가 증명하지 않으므로, 모든 수량이 맞아도 `observationsIndependentlyVerified=false`와 `releaseVerdict=HOLD`를 반환한다. 실제 원자료를 대조하는 장기 관리기 연결과 시간 시험은 미완료다.
 

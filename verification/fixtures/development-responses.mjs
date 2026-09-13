@@ -16,7 +16,11 @@ const windowSource = `export function retryDelayWithinBudget(value) {
 }
 `;
 export function publicDevelopmentSource(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
-  developmentTask(taskId);
+  const task = developmentTask(taskId);
+  if (task.registered) {
+    if (task.localFixtureSource === null) throw new Error('DEVELOPMENT_LOCAL_SOURCE_REQUIRED');
+    return task.localFixtureSource;
+  }
   return taskId === DEFAULT_DEVELOPMENT_TASK_ID ? PUBLIC_DEVELOPMENT_SOURCE : windowSource;
 }
 export function publicDevelopmentEvents(model, effort, serial, finish = false, taskId = DEFAULT_DEVELOPMENT_TASK_ID, variant = 'complete', instanceId = '') {
@@ -27,7 +31,7 @@ export function publicDevelopmentEvents(model, effort, serial, finish = false, t
     || typeof finish !== 'boolean' || !Number.isSafeInteger(serial) || serial < 1 || serial > (variant === 'early' ? 2 : finish ? 3 : 5)) throw new Error('DEVELOPMENT_STIMULUS_INVALID');
   const name = (variant === 'early' ? ['mcp__fixture__read_task', null] : finish ? ['mcp__fixture__read_task', 'mcp__fixture__run_tests', null]
     : ['mcp__fixture__read_task', 'mcp__fixture__run_tests', 'mcp__fixture__write_source', 'mcp__fixture__run_tests', null])[serial - 1];
-  const suffix = (instanceId ? `${instanceId}_` : '') + (taskId === DEFAULT_DEVELOPMENT_TASK_ID ? '' : 'window_')
+  const suffix = (instanceId ? `${instanceId}_` : '') + (taskId.startsWith('registered-') ? `${taskId}_` : taskId === DEFAULT_DEVELOPMENT_TASK_ID ? '' : 'window_')
     + (variant === 'complete' ? '' : `${variant}_`) + (finish ? `finish_${serial}` : String(serial));
   const marker = variant === 'early' ? 'PUBLIC_TASK_READ_ONLY' : 'CLAUDUCT_DEVELOPMENT_DONE';
   const responseId = `resp_public_${suffix}`, itemId = `item_public_${suffix}`;

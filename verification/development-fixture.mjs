@@ -1,8 +1,9 @@
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, lstatSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
+import { developmentTask, developmentOracleSource, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
+import { registeredDevelopmentTaskPath } from './registered-development-tasks.mjs';
 
 export const BASELINE_SOURCE = developmentTask().baseline;
 export const DEVELOPMENT_TASK = developmentTask().task;
@@ -25,11 +26,14 @@ export function createDevelopmentFixture({ waitMode = 'wait', holdAfterPass = fa
   const work = join(root, 'work'), control = join(root, 'control');
   writeFileSync(join(work, task.sourceFile), task.baseline, { flag: 'wx' });
   writeFileSync(join(control, 'TASK.md'), task.task, { flag: 'wx' });
-  copyFileSync(join(project, 'verification', 'fixtures', task.oracleFile), join(control, 'oracle.mjs'));
+  writeFileSync(join(control, 'oracle.mjs'), developmentOracleSource(taskId), { flag: 'wx' });
   writeFileSync(join(control, 'review.json'), JSON.stringify({ sha256: sourceHash(task.baseline), approved: true }), { flag: 'wx' });
   const script = join(project, 'verification', 'fixtures', 'development-mcp.mjs');
   const policy = join(project, 'verification', 'development-source-policy.mjs');
   const args = ['--permission', '--allow-child-process', `--allow-fs-read=${script}`, `--allow-fs-read=${policy}`,
+    `--allow-fs-read=${join(project, 'verification', 'development-source-grammar.mjs')}`,
+    `--allow-fs-read=${join(project, 'verification', 'registered-development-tasks.mjs')}`,
+    ...(task.registered ? [`--allow-fs-read=${registeredDevelopmentTaskPath(taskId)}`] : []),
     `--allow-fs-read=${join(project, 'verification', 'development-tasks.mjs')}`, `--allow-fs-read=${work}`, `--allow-fs-read=${control}`,
     `--allow-fs-write=${work}`, script, root, waitMode, taskId,
     ...(holdAfterPass ? ['hold-after-pass'] : holdAfterSourceWrite ? ['hold-after-source'] : holdAfterTaskRead ? ['hold-after-read'] : [])];

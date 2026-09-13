@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const evidence = mkdtempSync(join(project, '.tmp', 'development-initialization-'));
 const files = ['development-fixture.mjs', 'development-tasks.mjs', 'development-source-policy.mjs',
+  'development-source-grammar.mjs', 'registered-development-tasks.mjs',
   'fixtures/development-oracle.mjs', 'fixtures/development-window-oracle.mjs', 'fixtures/development-mcp.mjs'];
 function prepare(name) {
   const root = join(evidence, name);

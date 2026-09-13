@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createDevelopmentFixture, sourceHash } from './development-fixture.mjs';
-import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
+import { developmentTask, developmentOracleSource, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
@@ -29,6 +29,7 @@ function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
+    'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/execution-account.mjs', 'verification/managed-development.mjs', 'verification/managed-ledger-account.mjs', 'verification/managed-plan-entry.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
@@ -77,6 +78,10 @@ export function readDevelopmentAccountingEvidence(root, phase) {
     && result.sourceUnchanged === true && result.ledgerMatched === true && result.attemptsComplete === true
     && result.recordedNativeStopped === true && Number.isSafeInteger(result.elapsedMs) && result.elapsedMs >= 0
     && JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, result.localNative)), code);
+  const task = developmentTask(budget.taskId), control = join(root, 'control');
+  need(budget.taskHash === sourceHash(task.task) && sourceHash(read(join(control, 'TASK.md'))) === budget.taskHash
+    && budget.oracleHash === sourceHash(developmentOracleSource(budget.taskId))
+    && sourceHash(read(join(control, 'oracle.mjs'))) === budget.oracleHash, code);
   const rows = read(join(root, `transport-${phase}.jsonl`)).trim().split('\n').filter(Boolean).map(JSON.parse);
   need(nativeClientsStopped(rows) && rows.filter(row => row.event === 'REQUEST_STARTED').length
     === rows.filter(row => row.event === 'REQUEST_SETTLED').length, code);
@@ -153,7 +158,7 @@ function interruptedDevelopmentState(root, model, localNative, accountHash, even
   need(budget.taskHash === sourceHash(task.task) && sourceHash(read(join(control, 'TASK.md'))) === budget.taskHash
     && sourceHash(read(join(work, '.mcp.json'))) === budget.mcpHash
     && sourceHash(read(join(control, 'oracle.mjs'))) === budget.oracleHash
-    && budget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', task.oracleFile))), code);
+    && budget.oracleHash === sourceHash(developmentOracleSource(budget.taskId)), code);
   const source = read(join(work, task.sourceFile)); checkDevelopmentSource(source, budget.taskId);
   const eventsPath = join(work, 'events.jsonl'); read(eventsPath, 32768);
   const currentSourceHash = sourceHash(source), allEvents = readFileSync(eventsPath);
@@ -304,7 +309,7 @@ function completedDevelopmentContext(root, model, localNative, taskId) {
     && sourceHash(read(join(canonical, 'work', '.mcp.json'))) === budget.mcpHash
     && sourceHash(read(join(canonical, 'control', 'TASK.md'))) === budget.taskHash && budget.taskHash === sourceHash(previousTask.task)
     && sourceHash(read(join(canonical, 'control', 'oracle.mjs'))) === budget.oracleHash
-    && budget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', previousTask.oracleFile))), 'CONTINUATION_ARTIFACT_CHANGED');
+    && budget.oracleHash === sourceHash(developmentOracleSource(budget.taskId)), 'CONTINUATION_ARTIFACT_CHANGED');
   const usage = readVerificationLedger(join(canonical, `usage-${phase}`, 'tool-usage.jsonl'));
   need(usage.version === 2 && usage.finalRecorded && !usage.truncatedTail && usage.requestAttempts === result.attempts
     && usage.unobservedCompletions === 0 && usage.completions === usage.requestAttempts
@@ -340,7 +345,7 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
   need(nativeClientsStopped(read(join(root, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'RESUME_OWNER_UNVERIFIED');
   need(JSON.stringify(priorBudget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'RESUME_SOURCE_CHANGED');
   need(priorBudget.taskHash === sourceHash(task.task)
-    && priorBudget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', task.oracleFile))), 'RESUME_ARTIFACT_CHANGED');
+    && priorBudget.oracleHash === sourceHash(developmentOracleSource(taskId)), 'RESUME_ARTIFACT_CHANGED');
   need(sourceHash(read(join(root, 'work', task.sourceFile))) === first.sourceSha256
     && sourceHash(read(join(root, 'work', '.mcp.json'))) === priorBudget.mcpHash
     && sourceHash(read(join(root, 'control', 'oracle.mjs'))) === priorBudget.oracleHash
@@ -391,6 +396,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && (resumeIncompleteRoot === undefined || typeof resumeIncompleteRoot === 'string' && resumeRoot === undefined && !cutOutputAfterPass)
     && (continueFrom === undefined || typeof continueFrom === 'string' && resumeRoot === undefined && resumeIncompleteRoot === undefined && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
   try { developmentTask(taskId); } catch { need(false, 'INVALID_ARGUMENTS'); }
+  if (localNative) publicDevelopmentSource(taskId);
   for (const value of [priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens]) need(Number.isSafeInteger(value) && value >= 0, 'INVALID_PRIOR_USAGE');
   const recovering = resumeInterruptedRoot !== undefined;
   const interrupted = recovering ? readDevelopmentInterruption(resumeInterruptedRoot) : null;

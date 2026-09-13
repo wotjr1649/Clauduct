@@ -1,3 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readRegisteredDevelopmentTask } from './registered-development-tasks.mjs';
+
 // Public, fixed development requirements. The controller selects a task before
 // starting native; model arguments never select a path, policy or oracle.
 const tasks = {
@@ -63,6 +68,17 @@ for (const task of Object.values(tasks)) {
 Object.freeze(tasks);
 export const DEFAULT_DEVELOPMENT_TASK_ID = 'retry-after-seconds';
 export function developmentTask(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
-  if (typeof taskId !== 'string' || !Object.hasOwn(tasks, taskId)) throw new Error('INVALID_DEVELOPMENT_TASK');
-  return tasks[taskId];
+  if (typeof taskId !== 'string') throw new Error('INVALID_DEVELOPMENT_TASK');
+  if (Object.hasOwn(tasks, taskId)) return tasks[taskId];
+  if (/^registered-[a-f0-9]{64}$/.test(taskId)) return readRegisteredDevelopmentTask(taskId);
+  throw new Error('INVALID_DEVELOPMENT_TASK');
+}
+export function developmentOracleSource(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
+  const task = developmentTask(taskId);
+  return task.registered ? task.oracleSource
+    : readFileSync(join(dirname(dirname(fileURLToPath(import.meta.url))), 'verification', 'fixtures', task.oracleFile), 'utf8');
+}
+export function developmentTaskWorkKey(taskId) {
+  const task = developmentTask(taskId);
+  return task.registered ? `registered:${task.workKey}` : `builtin:${taskId}`;
 }

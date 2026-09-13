@@ -2,9 +2,10 @@ import { readFileSync, writeFileSync, lstatSync, realpathSync, existsSync } from
 import { join, resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sourceHash } from './development-fixture.mjs';
-import { developmentTask } from './development-tasks.mjs';
+import { developmentTask, developmentTaskWorkKey } from './development-tasks.mjs';
 import { readExecutionAccount, reserveExecutionAccount, closeExecutionAccount } from './execution-account.mjs';
 import { readManagedLedgerAccount } from './managed-ledger-account.mjs';
+import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
 import { verifyNativeDevelopment, readDevelopmentAccountingEvidence, prepareDevelopmentInterruption, readDevelopmentInterruption, nativeDevelopmentSourceHashes } from './verify-native-development.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -66,6 +67,7 @@ export async function runManagedDevelopment({ root, model, powershell, taskId = 
     && typeof interruptAfterNativeResult === 'boolean' && (!interruptAfterNativeResult || localNative)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'));
   developmentTask(taskId);
+  if (localNative) publicDevelopmentSource(taskId);
   if (!localNative || existsSync(join(root, 'legacy-ledger.json'))) readManagedLedgerAccount(root, { localNative });
   if (existsSync(join(root, 'development-plan.json')) || plannedStep !== undefined) {
     const state = readManagedPlan(root, { localNative });
@@ -128,8 +130,9 @@ export function createManagedPlan(path, { model, localNative, taskIds, maxDurati
   for (let index = 0; index < taskIds.length; index++) {
     need(Object.hasOwn(taskIds, index) && typeof taskIds[index] === 'string', 'MANAGED_PLAN_INVALID');
     developmentTask(taskIds[index]);
+    if (localNative) publicDevelopmentSource(taskIds[index]);
   }
-  need(localNative || new Set(taskIds).size === taskIds.length, 'MANAGED_PLAN_REPEATED_TASK');
+  need(localNative || new Set(taskIds.map(developmentTaskWorkKey)).size === taskIds.length, 'MANAGED_PLAN_REPEATED_TASK');
   if (!localNative || existsSync(join(root, 'legacy-ledger.json'))) readManagedLedgerAccount(root, { localNative });
   const account = readExecutionAccount(root);
   need(account.entries.length === 0, 'MANAGED_PLAN_ACCOUNT_NOT_EMPTY');
@@ -159,8 +162,9 @@ export function readManagedPlan(path, { localNative } = {}) {
   for (const task of plan.taskIds) {
     need(typeof task === 'string', 'MANAGED_PLAN_INVALID');
     developmentTask(task);
+    if (plan.localNative) publicDevelopmentSource(task);
   }
-  need(plan.localNative || new Set(plan.taskIds).size === plan.taskIds.length, 'MANAGED_PLAN_REPEATED_TASK');
+  need(plan.localNative || new Set(plan.taskIds.map(developmentTaskWorkKey)).size === plan.taskIds.length, 'MANAGED_PLAN_REPEATED_TASK');
   need(encode(plan.sourceHashes) === encode(nativeDevelopmentSourceHashes(plan.localNative)), 'MANAGED_PLAN_SOURCE_CHANGED');
   const account = !plan.localNative || existsSync(join(root, 'legacy-ledger.json'))
     ? readManagedLedgerAccount(root, { localNative: plan.localNative }).account : readExecutionAccount(root);
@@ -234,7 +238,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       actualModelRequests: result.evidence.localNative ? 0 : result.evidence.observed.attempts }));
     process.exitCode = result.passed ? 0 : 1;
   } catch (error) {
-    const known = /^(?:EXECUTION_ACCOUNT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|MANAGED_PLAN_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ACCOUNTING_INVALID)$/;
+    const known = /^(?:EXECUTION_ACCOUNT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|MANAGED_PLAN_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ACCOUNTING_INVALID|REGISTERED_DEVELOPMENT_TASK_INVALID|DEVELOPMENT_LOCAL_SOURCE_REQUIRED|DEVELOPMENT_SOURCE_REJECTED)$/;
     console.log(JSON.stringify({ suite: 'managed-development', passed: false,
       failure: known.test(error.message) ? error.message : 'MANAGED_DEVELOPMENT_FAILED' }));
     process.exitCode = 1;

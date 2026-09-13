@@ -289,6 +289,11 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       let event;
       try { event = JSON.parse(raw); } catch { throw new NativeError('INVALID_SSE'); }
       need(event && typeof event === 'object' && !Array.isArray(event) && typeof event.type === 'string', 'INVALID_SSE');
+      if (event.type === 'keepalive' && Object.keys(event).length === 1) {
+        // JSON.parse collapses duplicate keys. An accepted empty heartbeat
+        // must contain exactly one string pair in the original JSON as well.
+        need(/^\s*\{\s*"(?:[^"\\]|\\.)*"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}\s*$/s.test(raw), 'INVALID_SSE');
+      }
       need(name === undefined || name === event.type, 'INVALID_SSE');
       if (event.sequence_number !== undefined) {
         need(Number.isSafeInteger(event.sequence_number) && event.sequence_number >= 0, 'SEQUENCE_MISMATCH');

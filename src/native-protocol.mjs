@@ -620,6 +620,12 @@ export function createNativeResponse(prepared, { deferText = false } = {}) {
     }
     need(state.responseId, 'MISSING_RESPONSE_START');
     need(event.response_id === undefined || event.response_id === state.responseId, 'SNAPSHOT_MISMATCH');
+    // Codex's SSE consumer ignores unhandled types and still requires a real
+    // completion. Accept only this empty envelope during an active response.
+    if (event.type === 'keepalive') {
+      need(Object.keys(event).length === 1, 'UNSUPPORTED_EVENT');
+      return [];
+    }
     // OpenAI Codex treats this exact event as auxiliary metadata, not response output.
     // Keep the envelope narrow; response/error/tool events still require their own handling.
     if (event.type === 'codex.response.metadata') {

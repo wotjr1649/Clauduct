@@ -898,7 +898,7 @@ try {
       assert.equal(after.failureHistory.records[0].unsupportedEvent, 'unknown-response-event');
       assert.equal(after.failureHistory.omitted, 0);
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
-        failed: 1, auxiliaryMetadataEvents: 0, unsupportedEvents: 1, unsupportedEventNamesWithheld: 1, injectedStreamErrors: 0,
+        failed: 1, auxiliaryMetadataEvents: 0, keepaliveEvents: 0, unsupportedEvents: 1, unsupportedEventNamesWithheld: 1, injectedStreamErrors: 0,
         rejectedBeforeStart: 0, firstRejectedCategory: null, rejectedCategories: {},
         unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
         agentRegistrationsExpired: 0, webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0,
@@ -923,7 +923,7 @@ try {
       assert.equal(status.recentRequests.at(-1).auxiliaryMetadataEvents, 1);
       assert.equal(status.recentRequests.at(-1).success, true);
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
-        failed: 0, auxiliaryMetadataEvents: 1, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
+        failed: 0, auxiliaryMetadataEvents: 1, keepaliveEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
         rejectedBeforeStart: 0, firstRejectedCategory: null, rejectedCategories: {},
         unmappedAgentModels: 0, transportRejections: 0,
         agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, webSearchLinks: 0, webSearchRequests: 0,

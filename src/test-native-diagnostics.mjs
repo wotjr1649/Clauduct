@@ -17,9 +17,15 @@ for (const [event, shape] of [
 ]) {
   const parser = createNativeResponse(prepared);
   parser.push({ type: 'response.created', response: { id: 'public_response' } });
-  assert.throws(() => parser.push(event), error => error.code === 'UNSUPPORTED_EVENT'
-    && error.eventKind === 'keepalive' && error.keepaliveShape === shape && !JSON.stringify(error).includes('SYNTHETIC_PRIVATE'));
-  assert.throws(() => parser.finish(), error => error.code === 'UNSUPPORTED_EVENT'); checks++;
+  if (shape === 'type-only') {
+    assert.deepEqual(parser.push(event), []);
+    assert.throws(() => parser.finish(), error => error.code === 'INCOMPLETE_RESPONSE');
+  } else {
+    assert.throws(() => parser.push(event), error => error.code === 'UNSUPPORTED_EVENT'
+      && error.eventKind === 'keepalive' && error.keepaliveShape === shape && !JSON.stringify(error).includes('SYNTHETIC_PRIVATE'));
+    assert.throws(() => parser.finish(), error => error.code === 'UNSUPPORTED_EVENT');
+  }
+  checks++;
 }
 const projected = requestStatusSnapshot({ recentRequests: [{ unsupportedEvent: 'keepalive', keepaliveShape: 'type-only' },
   { unsupportedEvent: 'SYNTHETIC_PRIVATE', keepaliveShape: 'SYNTHETIC_PRIVATE' }] });
@@ -37,7 +43,7 @@ capture.push('stdout', Buffer.from(JSON.stringify({ type: 'result', is_error: tr
 capture.end('stdout'); capture.end('stderr');
 const diagnostics = nativeOutputDiagnostics(capture.snapshot());
 assert.deepEqual(diagnostics, { requestOutcome: 'has-failures', started: 3, succeeded: 2, failed: 1,
-  failures: [{ category: 'UNSUPPORTED_EVENT', eventKind: 'keepalive', keepaliveShape: 'type-only' }], failure: 'UNSUPPORTED_EVENT' });
+  keepaliveEvents: null, failures: [{ category: 'UNSUPPORTED_EVENT', eventKind: 'keepalive', keepaliveShape: 'type-only' }], failure: 'UNSUPPORTED_EVENT' });
 assert.ok(!JSON.stringify(diagnostics).includes('SYNTHETIC_PRIVATE')); checks++;
 for (const snapshot of [null, {}, { status: 'SYNTHETIC_PRIVATE' }, { status: { requestOutcome: 'SYNTHETIC_PRIVATE',
   lifetime: { started: -1, succeeded: 1.5, failed: 'SYNTHETIC_PRIVATE' }, failureHistory: { records: [null, {
@@ -69,11 +75,13 @@ for (const [event, shape] of [[{ type: 'keepalive' }, 'type-only'], [{ type: 'ke
     assert.equal(reply, 502);
     const projected = requestStatusSnapshot(gateway.diagnostics());
     const evidence = nativeOutputDiagnostics({ status: projected, nativeResult: { is_error: true } });
-    assert.equal(evidence.failure, 'UNSUPPORTED_EVENT');
-    assert.equal(evidence.failures[0].eventKind, 'keepalive');
-    assert.equal(evidence.failures[0].keepaliveShape, shape);
+    const accepted = shape === 'type-only';
+    assert.equal(evidence.failure, accepted ? 'INCOMPLETE_RESPONSE' : 'UNSUPPORTED_EVENT');
+    assert.equal(evidence.failures[0].eventKind, accepted ? null : 'keepalive');
+    assert.equal(evidence.failures[0].keepaliveShape, accepted ? null : shape);
+    assert.equal(evidence.keepaliveEvents, accepted ? 1 : 0);
     assert.ok(!JSON.stringify(evidence).includes('SYNTHETIC_PRIVATE')); checks++;
   } finally { await gateway.close(); }
 }
 console.log(JSON.stringify({ suite: 'native-diagnostics', checks, loopbackRequests,
-  keepaliveAccepted: false, externalRequests: 0, rawPayloadRecorded: false }));
+  emptyKeepaliveAccepted: true, completionStillRequired: true, externalRequests: 0, rawPayloadRecorded: false }));

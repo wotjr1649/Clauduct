@@ -117,6 +117,7 @@ export function nativeOutputDiagnostics(snapshot) {
   }));
   return { requestOutcome,
     started: counter(status?.lifetime?.started), succeeded: counter(status?.lifetime?.succeeded), failed: counter(status?.lifetime?.failed),
+    keepaliveEvents: counter(status?.lifetime?.keepaliveEvents),
     failures,
     failure: requestOutcome === 'has-failures' ? failures.find(row => row.category)?.category ?? 'NATIVE_REQUEST_FAILED'
       : snapshot?.nativeResult?.is_error === true ? 'NATIVE_RESULT_ERROR' : null };

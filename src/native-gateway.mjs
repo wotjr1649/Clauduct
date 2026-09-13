@@ -57,7 +57,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // rejectedBeforeStart counts HTTP-boundary rejections that never became a request record:
   // another route, a local boundary or authorization rejection, a malformed identifier header
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
-  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
+  const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, keepaliveEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
     transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
     webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0 };
@@ -383,6 +383,10 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           if (event.type === 'codex.response.metadata') {
             timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;
             lifetime.auxiliaryMetadataEvents++;
+          }
+          if (event.type === 'keepalive') {
+            timing.keepaliveEvents = (timing.keepaliveEvents ?? 0) + 1;
+            lifetime.keepaliveEvents++;
           }
         };
         const legacyEvents = await transport.send(prepared.body, controller.signal, {

@@ -27,7 +27,7 @@ function rootPath(path) {
 }
 function evidenceFor(entry) {
   const task = read(join(entry.entry, 'task.json')), binding = read(join(entry.entry, 'binding.json'));
-  need(sourceHash(encode(task)) === entry.executionHash && task.version === 1 && ['development', 'development-finish'].includes(binding.phase));
+  need(sourceHash(encode(task)) === entry.executionHash && task.version === 1 && ['development', 'development-finish', 'development-retry'].includes(binding.phase));
   const evidence = binding.phase === 'development' && existsSync(join(binding.root, 'interruption-evidence.json'))
     ? readDevelopmentInterruption(binding.root).evidence : readDevelopmentAccountingEvidence(binding.root, binding.phase);
   const suffix = binding.phase.slice('development'.length);
@@ -51,12 +51,13 @@ export function reconcileManagedDevelopment(path, ownerNonce) {
 }
 
 export async function runManagedDevelopment({ root, model, powershell, taskId = 'retry-after-seconds', localNative = false,
-  continuation = false, interruptAfterNativeResult = false, recoverInterrupted = false, holdAfterSourceWrite = false }) {
+  continuation = false, interruptAfterNativeResult = false, recoverInterrupted = false, holdAfterSourceWrite = false, holdAfterTaskRead = false }) {
   root = rootPath(root);
   need(Object.hasOwn({ luna: 'max', sol: 'low' }, model) && typeof model === 'string'
     && typeof localNative === 'boolean' && typeof continuation === 'boolean'
     && typeof recoverInterrupted === 'boolean' && (!recoverInterrupted || !continuation && !interruptAfterNativeResult)
-    && typeof holdAfterSourceWrite === 'boolean' && (!holdAfterSourceWrite || localNative && !continuation && !recoverInterrupted && !interruptAfterNativeResult)
+    && typeof holdAfterSourceWrite === 'boolean' && typeof holdAfterTaskRead === 'boolean' && !(holdAfterSourceWrite && holdAfterTaskRead)
+    && (!(holdAfterSourceWrite || holdAfterTaskRead) || localNative && !continuation && !recoverInterrupted && !interruptAfterNativeResult)
     && typeof interruptAfterNativeResult === 'boolean' && (!interruptAfterNativeResult || localNative)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'));
   developmentTask(taskId);
@@ -88,7 +89,7 @@ export async function runManagedDevelopment({ root, model, powershell, taskId = 
     attempts: 6, inputTokens: 131072, outputTokens: 32768, elapsedMs: localNative ? 60000 : 660000 } });
   create(join(claim.entry, 'task.json'), task);
   const prior = claim.previous;
-  await verifyNativeDevelopment({ model, powershell, taskId, localNative, requestLimit: 6, holdAfterSourceWrite,
+  await verifyNativeDevelopment({ model, powershell, taskId, localNative, requestLimit: 6, holdAfterSourceWrite, holdAfterTaskRead,
     ...(previous ? { continueFrom: previous.root } : {}),
     ...(interruptedRoot ? { resumeInterruptedRoot: interruptedRoot } : {}),
     priorAttempts: prior.attempts, priorInputTokens: prior.inputTokens, priorOutputTokens: prior.outputTokens, priorElapsedMs: prior.elapsedMs,
@@ -104,11 +105,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const [mode, root, model, powershell, taskId] = process.argv.slice(2);
     need(mode === '--reconcile' ? process.argv.length === 4
-      : ['--local-task', '--local-continue', '--local-interrupt-after-result', '--local-recover', '--local-hold-after-source'].includes(mode) && process.argv.length === 7);
+      : ['--local-task', '--local-continue', '--local-interrupt-after-result', '--local-recover', '--local-hold-after-source', '--local-hold-after-read'].includes(mode) && process.argv.length === 7);
     const result = mode === '--reconcile' ? reconcileManagedDevelopment(root)
       : await runManagedDevelopment({ root, model, powershell, taskId, localNative: true,
         continuation: mode === '--local-continue', interruptAfterNativeResult: mode === '--local-interrupt-after-result',
-        recoverInterrupted: mode === '--local-recover', holdAfterSourceWrite: mode === '--local-hold-after-source' });
+        recoverInterrupted: mode === '--local-recover', holdAfterSourceWrite: mode === '--local-hold-after-source', holdAfterTaskRead: mode === '--local-hold-after-read' });
     console.log(JSON.stringify({ suite: result.suite, root: result.root, nativeRoot: result.nativeRoot, passed: result.passed,
       nativePassed: result.nativePassed, failure: result.failure, entries: result.account.entries.length,
       pending: result.account.pending !== null, initial: result.account.initial, charged: result.account.charged,

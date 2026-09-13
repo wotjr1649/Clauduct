@@ -7,7 +7,7 @@ import { checkDevelopmentSource } from '../development-source-policy.mjs';
 import { developmentTask } from '../development-tasks.mjs';
 
 const [directory, waitMode, taskId, holdMode] = process.argv.slice(2), root = resolve(directory);
-if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && !['hold-after-pass', 'hold-after-source'].includes(holdMode)
+if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && !['hold-after-pass', 'hold-after-source', 'hold-after-read'].includes(holdMode)
   || typeof taskId !== 'string' || process.argv.length > 6) throw new Error('DEVELOPMENT_MODE');
 const task = developmentTask(taskId);
 const work = join(root, 'work'), control = join(root, 'control');
@@ -46,6 +46,10 @@ async function respond(message) {
   if (name === 'read_task') {
     const currentSource = read(source); checkDevelopmentSource(currentSource, taskId);
     record({ event: 'TASK_READ' });
+    if (holdMode === 'hold-after-read') {
+      record({ event: 'TASK_READ_WAIT' });
+      await new Promise(done => setTimeout(done, 5000));
+    }
     return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')), source: currentSource }) };
   }
   if (name === 'write_source') {

@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, lstatSync } fr
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { checkDevelopmentSource } from '../development-source-policy.mjs';
 
 const [directory, waitMode] = process.argv.slice(2), root = resolve(directory);
 if (!['wait', 'check'].includes(waitMode)) throw new Error('DEVELOPMENT_MODE');
@@ -45,6 +46,8 @@ async function respond(message) {
   }
   if (name === 'write_source') {
     if (typeof args.code !== 'string' || Buffer.byteLength(args.code) > 8192) return { ...reply, error: { code: -32602, message: 'INVALID_SOURCE_SIZE' } };
+    try { checkDevelopmentSource(args.code); }
+    catch { return { ...reply, error: { code: -32602, message: 'DEVELOPMENT_SOURCE_REJECTED' } }; }
     read(source); // Reject replaced paths before writing only this task-created file.
     writeFileSync(source, args.code); record({ event: 'SOURCE_WRITTEN', sha256: digest(args.code) });
     return { ...reply, result: textResult({ written: true }) };

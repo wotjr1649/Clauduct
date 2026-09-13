@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { NativeError } from '../src/native-protocol.mjs';
 import { searchRequestBody } from '../src/native-search.mjs';
 import { verifyCompletionRelayTarget } from './completion-relay-target.mjs';
+import { checkDevelopmentSource } from './development-source-policy.mjs';
 
 const need = ok => { if (!ok) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED'); };
 const fields = (value, allowed) => value && typeof value === 'object' && !Array.isArray(value)
@@ -12,7 +13,7 @@ const text = (value, maximum) => typeof value === 'string' && value.length > 0 &
 // reviewed effects may be delivered to the native tools during a live fixture.
 export function createFixtureToolPolicy(policy) {
   need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode', 'phase']) && policy.version === 1
-    && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none', 'recovery'].includes(policy.kind) && text(policy.workingRoot, 1024));
+    && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none', 'recovery', 'development'].includes(policy.kind) && text(policy.workingRoot, 1024));
   if (['agent', 'completion', 'image'].includes(policy.kind)) need(text(policy.readPath, 1024));
   else if (policy.kind === 'workflow') need(text(policy.workflowScript, 8192));
   if (policy.kind === 'completion') need(text(policy.parentPrompt, 8192) && Array.isArray(policy.childPrompts)
@@ -24,6 +25,7 @@ export function createFixtureToolPolicy(policy) {
     : ['mcp__fixture__effect_status', 'mcp__fixture__complete_report'];
   const recoveryIds = new Set();
   let recoveryStep = 0;
+  let developmentRead = false, developmentTests = 0, developmentWrites = 0, developmentLast = '';
   const readPath = ['agent', 'completion', 'image'].includes(policy.kind) ? resolve(policy.readPath).toLowerCase() : null;
   const completionCalls = new Set();
   const completionCallIds = new Map();
@@ -31,7 +33,7 @@ export function createFixtureToolPolicy(policy) {
   return event => {
     if (event?.type !== 'response.completed' || !Array.isArray(event.response?.output)) return;
     need(event.response.output.length <= 64);
-    if (policy.kind === 'recovery') need(event.response.output.filter(item => item?.type === 'function_call').length <= 1);
+    if (['recovery', 'development'].includes(policy.kind)) need(event.response.output.filter(item => item?.type === 'function_call').length <= 1);
     for (const item of event.response.output) {
       if (item?.type !== 'function_call') continue;
       need(policy.kind !== 'none');
@@ -43,6 +45,20 @@ export function createFixtureToolPolicy(policy) {
         need(recoveryStep < recoveryOrder.length && item.name === recoveryOrder[recoveryStep] && Object.keys(input).length === 0
           && typeof item.call_id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(item.call_id) && !recoveryIds.has(item.call_id));
         recoveryIds.add(item.call_id); recoveryStep++;
+      } else if (policy.kind === 'development') {
+        need(typeof item.call_id === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(item.call_id) && !recoveryIds.has(item.call_id));
+        if (item.name === 'mcp__fixture__read_task') {
+          need(!developmentRead && Object.keys(input).length === 0); developmentRead = true;
+        } else if (item.name === 'mcp__fixture__run_tests') {
+          need(developmentRead && ['mcp__fixture__read_task', 'mcp__fixture__write_source'].includes(developmentLast)
+            && developmentTests < 3 && Object.keys(input).length === 0); developmentTests++;
+        } else if (item.name === 'mcp__fixture__write_source') {
+          need(developmentRead && developmentTests > 0 && developmentLast === 'mcp__fixture__run_tests'
+            && developmentWrites < 2 && fields(input, ['code']) && typeof input.code === 'string');
+          try { checkDevelopmentSource(input.code); } catch { need(false); }
+          developmentWrites++;
+        } else need(false);
+        recoveryIds.add(item.call_id); developmentLast = item.name;
       } else if (policy.kind === 'agent' && item.name === 'Agent') {
         need(fields(input, ['description', 'prompt', 'subagent_type', 'run_in_background', 'max_turns'])
           && input.subagent_type === 'clauduct-probe-inherit' && (input.run_in_background === undefined || input.run_in_background === false)

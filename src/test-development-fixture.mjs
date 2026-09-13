@@ -37,6 +37,9 @@ writeFileSync(join(fixture.control, 'review.json'), JSON.stringify({ sha256: sou
 const final = invoke([call(1, 'run_tests')]);
 assert.equal(JSON.parse(final[0].result.content[0].text).passed, true);
 assert.equal(JSON.parse(final[0].result.content[0].text).checks, 28);
-console.log(JSON.stringify({ suite: 'development-fixture', checks: 13, independentOracleCases: 28,
+const rejected = invoke([call(1, 'write_source', { code: 'export function parseRetryAfterSeconds(value) { return process.env; }' })]);
+assert.equal(rejected[0].error.message, 'DEVELOPMENT_SOURCE_REJECTED');
+assert.equal(readFileSync(join(fixture.work, 'retry-after-seconds.mjs'), 'utf8'), reviewedSource);
+console.log(JSON.stringify({ suite: 'development-fixture', checks: 15, independentOracleCases: 28,
   baselineFailed: true, unreviewedExecutionRejected: true, reviewedImplementationPassed: true,
   externalRequests: 0, actualCredentialReads: 0, evidenceRoot: fixture.root }));

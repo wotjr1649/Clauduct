@@ -15,6 +15,7 @@ Return their nonnegative integer duration in milliseconds without a five-second 
 Return null for all other inputs, including empty strings, CR/LF, other whitespace, dates, signs, fractions, exponent/hex syntax, arrays, objects, and multiplication outside Number's safe integer range.
 This bounded task handles delta-seconds only. HTTP-date parsing and request scheduling belong to a later integration task.
 Keep the module pure: no imports, file or network access, process/environment access, dynamic execution, global mutation, logging, dependencies, or asynchronous work.
+The fixture accepts one exported function using if/else, const and return, parameter value, local names seconds/milliseconds/result/ms/digits/trimmed, typeof, Number, Number.isFinite/isSafeInteger, Math.min, .length, .trim(), and the regular expressions /^[ \\t]*[0-9]+[ \\t]*$/ or /[\\r\\n]/. Only the string literal 'string' and numeric literals 0, 1, 128, 1000, 5000 are allowed. Do not add comments or other declarations. This language restriction is checked before a source write; it does not replace the tests or source review.
 Use only read_task, write_source, and run_tests. The independent oracle and execution settings are outside your write scope.
 run_tests waits for the outer developer's source review. Do not alter or bypass that review. After tests pass, reply exactly CLAUDUCT_DEVELOPMENT_DONE.
 `;
@@ -30,7 +31,8 @@ export function createDevelopmentFixture({ waitMode = 'wait' } = {}) {
   copyFileSync(join(project, 'verification', 'fixtures', 'development-oracle.mjs'), join(control, 'oracle.mjs'));
   writeFileSync(join(control, 'review.json'), JSON.stringify({ sha256: sourceHash(BASELINE_SOURCE), approved: true }), { flag: 'wx' });
   const script = join(project, 'verification', 'fixtures', 'development-mcp.mjs');
-  const args = ['--permission', '--allow-child-process', `--allow-fs-read=${script}`, `--allow-fs-read=${work}`, `--allow-fs-read=${control}`,
+  const policy = join(project, 'verification', 'development-source-policy.mjs');
+  const args = ['--permission', '--allow-child-process', `--allow-fs-read=${script}`, `--allow-fs-read=${policy}`, `--allow-fs-read=${work}`, `--allow-fs-read=${control}`,
     `--allow-fs-write=${work}`, script, root, waitMode];
   writeFileSync(join(work, '.mcp.json'), JSON.stringify({ mcpServers: { fixture: { type: 'stdio', command: process.execPath, args,
     env: { ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '', ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } } } }), { flag: 'wx' });

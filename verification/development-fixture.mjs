@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync, lstatSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -11,7 +11,15 @@ export function createDevelopmentFixture({ waitMode = 'wait', holdAfterPass = fa
   if (!['wait', 'check'].includes(waitMode) || typeof holdAfterPass !== 'boolean') throw new Error('INVALID_DEVELOPMENT_MODE');
   const task = developmentTask(taskId);
   const project = dirname(dirname(fileURLToPath(import.meta.url)));
-  const root = mkdtempSync(join(project, '.tmp', 'native-development-'));
+  const temporaryRoot = join(project, '.tmp');
+  for (const path of [project, temporaryRoot]) {
+    if (existsSync(path)) {
+      const info = lstatSync(path);
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('DEVELOPMENT_PATH');
+    } else if (path === temporaryRoot) mkdirSync(path);
+    else throw new Error('DEVELOPMENT_PATH');
+  }
+  const root = mkdtempSync(join(temporaryRoot, 'native-development-'));
   for (const name of ['work', 'control', 'config', 'temp']) mkdirSync(join(root, name));
   const work = join(root, 'work'), control = join(root, 'control');
   writeFileSync(join(work, task.sourceFile), task.baseline, { flag: 'wx' });

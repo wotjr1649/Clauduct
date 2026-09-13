@@ -99,4 +99,4 @@ Workflow의 긴 기록은 작은 조각으로 순차 읽고 해당 자식의 출
 
 `-Live` 검사는 기존 로그인으로 공개 고정 fixture를 실제 전송하며 사용량이 발생한다. 새 작업 전용 프로필을 사용하고 프로세스당 최대 120초로 제한한다. 사용자 대화·프로필을 복사하지 않는다. `failure-resume`은 전달 후 오류를 의도적으로 1회 주입해 보존·복구를 확인하는 별도 사례다.
 
-ZIP 옆 `manifest.json`은 소스 commit, 파일별 크기·SHA256, ZIP SHA256을 기록한다. SHA256은 손상 검사용이며 서명을 대신하지 않는다. 코드·검사·이 안내만 묶고 사용자 상태·프로필·Git 이력·감사 기록·과거 프롬프트·생성된 schema는 포함하지 않는다. 원본 Git checkout에서는 `pwsh -NoProfile -NonInteractive -File verification/build-release.ps1`로 같은 commit의 ZIP을 다시 만들 수 있다. 압축을 푼 배포본에는 Git 이력이 없어 빌더를 실행하지 않는다.
+ZIP 옆 `manifest.json`은 소스 commit, 파일별 크기·SHA256, ZIP SHA256을 기록한다. SHA256은 손상 검사용이며 서명을 대신하지 않는다. 코드·검사·이 안내만 묶고 사용자 상태·프로필·Git 이력·감사 기록·과거 프롬프트·생성된 schema는 포함하지 않는다. 원본 Git checkout에서는 `pwsh -NoProfile -NonInteractive -File verification/build-release.ps1`로 같은 commit의 ZIP을 다시 만들 수 있다. 압축을 푼 배포본에는 Git 이력이 없어 빌더를 실행하지 않는다. 개발 fixture 검증기는 처음 실행할 때 프로젝트의 `.tmp` 디렉터리를 생성하므로 회귀 검사를 먼저 실행할 필요가 없다. 기존 파일은 보존하며 `.tmp`가 일반 파일이나 링크이면 덮어쓰지 않고 거부한다. 디렉터리가 없던 배포본의 `ENOENT` 실패를 재현한 뒤 초기화·기존 작업 보존·일반 파일 충돌을 실제 공개 자식 프로세스로 검사했다. 동적 링크 검사는 기존 정책 차단 상태다.

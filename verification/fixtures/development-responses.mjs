@@ -19,14 +19,17 @@ export function publicDevelopmentSource(taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
   developmentTask(taskId);
   return taskId === DEFAULT_DEVELOPMENT_TASK_ID ? PUBLIC_DEVELOPMENT_SOURCE : windowSource;
 }
-export function publicDevelopmentEvents(model, effort, serial, finish = false, taskId = DEFAULT_DEVELOPMENT_TASK_ID) {
+export function publicDevelopmentEvents(model, effort, serial, finish = false, taskId = DEFAULT_DEVELOPMENT_TASK_ID, variant = 'complete') {
   const source = publicDevelopmentSource(taskId);
   if (!['gpt-5.6-luna', 'gpt-5.6-sol'].includes(model) || effort !== (model.endsWith('luna') ? 'max' : 'low')
-    || typeof finish !== 'boolean' || !Number.isSafeInteger(serial) || serial < 1 || serial > (finish ? 3 : 5)) throw new Error('DEVELOPMENT_STIMULUS_INVALID');
-  const name = (finish ? ['mcp__fixture__read_task', 'mcp__fixture__run_tests', null]
+    || !['complete', 'early', 'retry'].includes(variant) || finish && variant !== 'complete'
+    || typeof finish !== 'boolean' || !Number.isSafeInteger(serial) || serial < 1 || serial > (variant === 'early' ? 2 : finish ? 3 : 5)) throw new Error('DEVELOPMENT_STIMULUS_INVALID');
+  const name = (variant === 'early' ? ['mcp__fixture__read_task', null] : finish ? ['mcp__fixture__read_task', 'mcp__fixture__run_tests', null]
     : ['mcp__fixture__read_task', 'mcp__fixture__run_tests', 'mcp__fixture__write_source', 'mcp__fixture__run_tests', null])[serial - 1];
-  const suffix = (taskId === DEFAULT_DEVELOPMENT_TASK_ID ? '' : 'window_') + (finish ? `finish_${serial}` : String(serial));
-  const marker = 'CLAUDUCT_DEVELOPMENT_DONE', responseId = `resp_public_${suffix}`, itemId = `item_public_${suffix}`;
+  const suffix = (taskId === DEFAULT_DEVELOPMENT_TASK_ID ? '' : 'window_')
+    + (variant === 'complete' ? '' : `${variant}_`) + (finish ? `finish_${serial}` : String(serial));
+  const marker = variant === 'early' ? 'PUBLIC_TASK_READ_ONLY' : 'CLAUDUCT_DEVELOPMENT_DONE';
+  const responseId = `resp_public_${suffix}`, itemId = `item_public_${suffix}`;
   const item = name ? { type: 'function_call', id: itemId, call_id: `call_public_${suffix}`, name,
     arguments: JSON.stringify(!finish && serial === 3 ? { code: source } : {}), status: 'completed' }
     : { type: 'message', id: itemId, role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: marker, annotations: [] }] };

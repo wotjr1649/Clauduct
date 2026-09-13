@@ -7,19 +7,23 @@ import { publicDevelopmentEvents } from './fixtures/development-responses.mjs';
 import { developmentTask } from './development-tasks.mjs';
 
 const finish = process.argv[3] === 'development-finish';
-const budgetPath = join(process.argv[2], finish ? 'budget-finish.json' : 'budget.json');
+const retry = process.argv[3] === 'development-retry';
+const budgetPath = join(process.argv[2], finish ? 'budget-finish.json' : retry ? 'budget-retry.json' : 'budget.json');
 const stat = lstatSync(budgetPath);
 if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16384) throw new Error('DEVELOPMENT_LOCAL_BUDGET');
-const { taskId } = JSON.parse(readFileSync(budgetPath, 'utf8'));
+const { taskId, earlyExitAfterRead } = JSON.parse(readFileSync(budgetPath, 'utf8'));
 developmentTask(taskId);
+if (earlyExitAfterRead !== false && earlyExitAfterRead !== true || earlyExitAfterRead && (finish || retry)) throw new Error('DEVELOPMENT_LOCAL_BUDGET');
+const requestCount = earlyExitAfterRead ? 2 : finish ? 3 : 5;
 let requests = 0, failed = false;
 const server = createServer((req, res) => {
   void (async () => {
-    if (++requests > (finish ? 3 : 5) || req.method !== 'POST' || req.url !== '/backend-api/codex/responses') throw new Error('DEVELOPMENT_LOCAL_REQUEST');
+    if (++requests > requestCount || req.method !== 'POST' || req.url !== '/backend-api/codex/responses') throw new Error('DEVELOPMENT_LOCAL_REQUEST');
     const chunks = []; let bytes = 0;
     for await (const chunk of req) { if ((bytes += chunk.length) > 1048576) throw new Error('DEVELOPMENT_LOCAL_REQUEST'); chunks.push(chunk); }
     const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    const events = publicDevelopmentEvents(body.model, body.reasoning?.effort, requests, finish, taskId);
+    const events = publicDevelopmentEvents(body.model, body.reasoning?.effort, requests, finish, taskId,
+      earlyExitAfterRead ? 'early' : retry ? 'retry' : 'complete');
     // Exercise the exact supported empty envelope through real native HTTP/SSE
     // handling. This public fixture does not assert the shape of a live event.
     events.splice(1, 0, { type: 'keepalive' });
@@ -36,5 +40,5 @@ try {
   });
 } finally {
   server.closeAllConnections(); await new Promise(done => server.close(done));
-  if (failed || requests !== (finish ? 3 : 5)) process.exitCode = 1;
+  if (failed || requests !== requestCount) process.exitCode = 1;
 }

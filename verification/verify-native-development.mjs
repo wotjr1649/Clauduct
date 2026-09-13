@@ -75,7 +75,7 @@ function completedDevelopmentContext(root, model, localNative, taskId) {
   need(Object.values(minimumPrior).every(value => Number.isSafeInteger(value) && value >= 0), 'CONTINUATION_LEDGER_INVALID');
   return { root: canonical, owner, configRoot, previousTaskId: budget.taskId, sourceSha256: result.sourceSha256, minimumPrior };
 }
-function resumeDevelopmentFixture(root, model, localNative, taskId) {
+function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete = false) {
   const task = developmentTask(taskId);
   const project = dirname(dirname(fileURLToPath(import.meta.url))), canonical = resolve(root);
   need(dirname(canonical).toLowerCase() === join(project, '.tmp').toLowerCase()
@@ -83,8 +83,17 @@ function resumeDevelopmentFixture(root, model, localNative, taskId) {
     && realpathSync(canonical).toLowerCase() === canonical.toLowerCase(), 'RESUME_ROOT_INVALID');
   const priorBudget = JSON.parse(read(join(root, 'budget.json'))), first = JSON.parse(read(join(root, 'result.json')));
   const owner = JSON.parse(read(join(root, 'process.json')));
-  need(priorBudget.model === model && priorBudget.localNative === localNative && priorBudget.taskId === taskId && priorBudget.cutOutputAfterPass === true
-    && first.outputCutObserved === true && first.passed === false && first.tree?.stopped === true
+  need(priorBudget.model === model && priorBudget.localNative === localNative && priorBudget.taskId === taskId
+    && (incomplete ? priorBudget.cutOutputAfterPass === false && priorBudget.continuedFrom === undefined
+      && first.root === canonical && first.model === model && first.localNative === localNative && first.taskId === taskId
+      && first.phase === 'development' && first.sessionId === owner.sessionId && first.sourceUnchanged === true
+      && first.recordedNativeStopped === true
+      && first.taskIncompleteBeforeEffect === true && first.failure === 'DEVELOPMENT_TASK_INCOMPLETE'
+      && first.nativeJson === true && first.nativeError === false && first.exitCode === 0 && first.cleanupComplete === true
+      && first.output?.resultCount === 1 && first.output?.statusCount === 1 && first.output?.stdoutEnded === true && first.output?.stderrEnded === true
+      && first.ledgerMatched === true && first.attemptsComplete === true && first.usageUnobservedAttempts === 0
+      : priorBudget.cutOutputAfterPass === true && first.outputCutObserved === true)
+    && first.passed === false && first.tree?.stopped === true
     && /^[0-9a-f-]{36}$/.test(owner.sessionId), 'RESUME_EVIDENCE_INVALID');
   need(nativeClientsStopped(read(join(root, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'RESUME_OWNER_UNVERIFIED');
   need(JSON.stringify(priorBudget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'RESUME_SOURCE_CHANGED');
@@ -95,31 +104,61 @@ function resumeDevelopmentFixture(root, model, localNative, taskId) {
     && sourceHash(read(join(root, 'control', 'oracle.mjs'))) === priorBudget.oracleHash
     && sourceHash(read(join(root, 'control', 'TASK.md'))) === priorBudget.taskHash, 'RESUME_ARTIFACT_CHANGED');
   checkDevelopmentSource(read(join(root, 'work', task.sourceFile)), taskId);
+  if (incomplete) {
+    const events = read(join(root, 'work', 'events.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse);
+    const review = JSON.parse(read(join(root, 'control', 'review.json'), 1024));
+    const usage = readVerificationLedger(join(root, 'usage-development', 'tool-usage.jsonl'));
+    need(events.length === 1 && events[0].event === 'TASK_READ' && Object.keys(events[0]).length === 1
+      && first.sourceSha256 === sourceHash(task.baseline) && review.sha256 === first.sourceSha256 && review.approved === true
+      && usage.version === 2 && usage.finalRecorded && !usage.truncatedTail && usage.requestAttempts === first.attempts
+      && usage.completions === usage.requestAttempts && usage.unobservedCompletions === 0
+      && usage.inputTokens === first.inputTokens && usage.outputTokens === first.outputTokens, 'RESUME_EVIDENCE_INVALID');
+    for (const [priorKey, current, cumulativeKey] of [['priorAttempts', usage.requestAttempts, 'cumulativeAttempts'],
+      ['priorElapsedMs', first.elapsedMs, 'cumulativeElapsedMs'], ['priorInputTokens', usage.inputTokens, 'cumulativeInputTokens'],
+      ['priorOutputTokens', usage.outputTokens, 'cumulativeOutputTokens']]) {
+      need(Number.isSafeInteger(priorBudget[priorKey]) && priorBudget[priorKey] >= 0 && Number.isSafeInteger(current) && current >= 0
+        && Number.isSafeInteger(priorBudget[priorKey] + current) && first[cumulativeKey] === priorBudget[priorKey] + current,
+      'RESUME_USAGE_REGRESSION');
+    }
+  }
   return { project, root, taskId, task, work: join(root, 'work'), control: join(root, 'control'),
     script: join(project, 'verification', 'fixtures', 'development-mcp.mjs'), oracleHash: priorBudget.oracleHash,
-    taskHash: priorBudget.taskHash, priorOwner: owner, priorSourceHash: first.sourceSha256 };
+    taskHash: priorBudget.taskHash, priorOwner: owner, priorSourceHash: first.sourceSha256,
+    ...(incomplete ? { minimumPrior: { priorAttempts: first.cumulativeAttempts, priorElapsedMs: first.cumulativeElapsedMs,
+      priorInputTokens: first.cumulativeInputTokens, priorOutputTokens: first.cumulativeOutputTokens } } : {}) };
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
-  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16 }) {
+  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16,
+  earlyExitAfterRead = false, resumeIncompleteRoot }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
     && typeof cutOutputAfterPass === 'boolean' && Number.isSafeInteger(requestLimit) && requestLimit >= 1 && requestLimit <= 16
+    && typeof earlyExitAfterRead === 'boolean'
+    && (!earlyExitAfterRead || localNative === true && !cutOutputAfterPass && resumeRoot === undefined && resumeIncompleteRoot === undefined && continueFrom === undefined)
     && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass)
-    && (continueFrom === undefined || typeof continueFrom === 'string' && resumeRoot === undefined && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
+    && (resumeIncompleteRoot === undefined || typeof resumeIncompleteRoot === 'string' && resumeRoot === undefined && !cutOutputAfterPass)
+    && (continueFrom === undefined || typeof continueFrom === 'string' && resumeRoot === undefined && resumeIncompleteRoot === undefined && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
   try { developmentTask(taskId); } catch { need(false, 'INVALID_ARGUMENTS'); }
   for (const value of [priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens]) need(Number.isSafeInteger(value) && value >= 0, 'INVALID_PRIOR_USAGE');
-  const finishing = resumeRoot !== undefined, phase = finishing ? 'development-finish' : 'development';
+  const finishing = resumeRoot !== undefined, retrying = resumeIncompleteRoot !== undefined, resuming = finishing || retrying;
+  const suffix = finishing ? '-finish' : retrying ? '-retry' : '', phase = `development${suffix}`;
   const context = continueFrom === undefined ? null : completedDevelopmentContext(continueFrom, model, localNative, taskId);
   if (context) {
     const supplied = { priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens };
     need(Object.entries(context.minimumPrior).every(([key, value]) => supplied[key] >= value), 'CONTINUATION_USAGE_REGRESSION');
   }
-  const fixture = finishing ? resumeDevelopmentFixture(resumeRoot, model, localNative, taskId) : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, taskId });
+  const fixture = resuming ? resumeDevelopmentFixture(resumeRoot ?? resumeIncompleteRoot, model, localNative, taskId, retrying)
+    : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, taskId });
   const { project, root, work, control, task } = fixture;
+  if (retrying) {
+    const supplied = { priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens };
+    need(Object.entries(fixture.minimumPrior).every(([key, value]) => Number.isSafeInteger(value) && value >= 0
+      && supplied[key] >= value), 'RESUME_USAGE_REGRESSION');
+  }
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
   const phaseMs = localNative ? 30000 : finishing ? 120000 : 600000;
-  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
+  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, earlyExitAfterRead, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
     outputBytes: 1048576, mainConcurrency: 1, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
     cumulativeReservedAttempts: priorAttempts + requestLimit, cumulativeReservedMs: priorElapsedMs + phaseMs,
     cumulativeObservedInputLimit: priorInputTokens + 131072, cumulativeObservedOutputLimit: priorOutputTokens + 32768,
@@ -130,14 +169,14 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const env = nativeVerificationEnvironment(root);
   if (context) env.CLAUDE_CONFIG_DIR = context.configRoot;
   const controlEnv = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(key => env[key]).map(key => [key, env[key]]));
-  if (finishing) {
+  if (resuming) {
     const owner = fixture.priorOwner;
     const previous = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(owner.pid),
       '-StartedAfterMs', String(owner.startedAt), '-RunRoot', root],
       { cwd: project, env: controlEnv, windowsHide: true, encoding: 'utf8', timeout: 12000, maxBuffer: 32768 });
     need(!previous.error && previous.status === 0 && JSON.parse(previous.stdout).stopped === true, 'RESUME_OWNER_UNVERIFIED');
     // Exclusive, task-local intent is created before any new child or effect.
-    write(join(root, 'finish-intent.json'), { sessionId: owner.sessionId, sourceSha256: fixture.priorSourceHash });
+    write(join(root, finishing ? 'finish-intent.json' : 'retry-intent.json'), { sessionId: owner.sessionId, sourceSha256: fixture.priorSourceHash });
   }
   if (context) {
     const owner = context.owner;
@@ -149,22 +188,23 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     // native process. An interrupted handoff is not retried as a new task.
     write(join(context.root, 'successor-intent.json'), { root, taskId, sessionId: owner.sessionId, previousSourceSha256: context.sourceSha256 });
   }
-  write(join(root, finishing ? 'budget-finish.json' : 'budget.json'), budget);
+  write(join(root, `budget${suffix}.json`), budget);
   writeFileSync(join(root, `transport-${phase}.jsonl`), '', { flag: 'wx' }); mkdirSync(join(root, `usage-${phase}`));
-  const sessionId = finishing ? fixture.priorOwner.sessionId : context ? context.owner.sessionId : randomUUID(), phaseStart = Date.now();
+  const sessionId = resuming ? fixture.priorOwner.sessionId : context ? context.owner.sessionId : randomUUID(), phaseStart = Date.now();
   const args = ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', String(requestLimit), '-p',
     '--output-format', 'stream-json', '--verbose', '--tools', '', '--allowedTools',
     finishing ? 'mcp__fixture__read_task,mcp__fixture__run_tests' : 'mcp__fixture__read_task,mcp__fixture__write_source,mcp__fixture__run_tests',
-    '--max-turns', '8', finishing || context ? '--resume' : '--session-id', sessionId, '--', finishing
+    '--max-turns', '8', resuming || context ? '--resume' : '--session-id', sessionId, '--', finishing
     ? 'Continue the same public development task after the output receiver lost the final result. The outer manager verified that your source was written once, reviewed and passed the fixed tests. Do not modify it. Read the original requirements and current source once with mcp__fixture__read_task, run mcp__fixture__run_tests once, and after success reply exactly CLAUDUCT_DEVELOPMENT_DONE. Use one tool per response. The original baseline/fix instructions are already fulfilled; only verification and this final report remain.'
-    : (context ? 'The previous public development task is complete. Start the different task in this new working directory; its fixture tools, TASK.md and source are separate from the previous task. ' : '') +
+    : (retrying ? 'Continue the same incomplete public task. Your previous response ended after reading the requirements. The outer manager verified that no baseline test or source write occurred and that the previous owner stopped. Read the requirements once in this execution, then run the baseline tests, write the fix and run the tests. Continue through these tool calls without stopping at a readiness message. '
+      : context ? 'The previous public development task is complete. Start the different task in this new working directory; its fixture tools, TASK.md and source are separate from the previous task. ' : '') +
     'Read the complete TASK.md with mcp__fixture__read_task once and implement its bounded code change. Run the prescribed tests on the baseline, fix the code, then run the tests again. Use one fixture tool per response; the three MCP tools are already available. Follow the task completion marker only after tests pass.'];
   const child = fork(entry, [root, phase, ...args], { cwd: work, env, windowsHide: true, execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   const capture = createNativeOutputCapture({ maxBytes: budget.outputBytes, maxLineBytes: budget.outputBytes, maxRecords: 4096 });
   let finished = false, exitCode = null, failure = null, treeEvidence = null, treeStopAttempted = false, outputCut = false, cutReleased = false;
   const stopped = new Promise(done => { child.once('error', () => { failure = 'PROCESS_START_FAILED'; }); child.once('close', code => { exitCode = code; finished = true; done(); }); });
   capture.watch(child.stdout, 'stdout'); capture.watch(child.stderr, 'stderr');
-  write(join(root, finishing ? 'process-finish.json' : 'process.json'), { pid: child.pid, startedAt: phaseStart, sessionId });
+  write(join(root, `process${suffix}.json`), { pid: child.pid, startedAt: phaseStart, sessionId });
   child.send({ start: true });
   console.log(JSON.stringify({ event: 'DEVELOPMENT_STARTED', root, model, effort, taskId, pid: child.pid }));
   function tree(stop) {
@@ -270,6 +310,14 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const revisedPassed = tests.at(-1)?.passed === true && tests.at(-1)?.sha256 === sha256 && events.some(row => row.event === 'SOURCE_WRITTEN');
   const cleanupComplete = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
   if (!contextMatched) failure ??= 'CONTINUATION_CONTEXT_MISSING';
+  const taskIncompleteBeforeEffect = !failure && !resuming && !context && !cutOutputAfterPass
+    && output.valid === true && exitCode === 0 && result?.is_error === false && result.session_id === sessionId
+    && requestDiagnostics.requestOutcome === 'all-succeeded' && cleanupComplete === true
+    && ledgerMatched && completedUsageObserved && usageUnobservedAttempts === 0 && rateLimitsMatched && sourceUnchanged
+    && treeEvidence?.stopped === true && recordedNativeStopped && routeMatched && requests.length === settled.length
+    && events.length === 1 && events[0].event === 'TASK_READ' && Object.keys(events[0]).length === 1
+    && sha256 === sourceHash(task.baseline) && oracleUnchanged;
+  if (taskIncompleteBeforeEffect) failure = 'DEVELOPMENT_TASK_INCOMPLETE';
   const passed = !failure && nativeOutputCompleted(output, { exitCode, sessionId, resultText: 'CLAUDUCT_DEVELOPMENT_DONE', oraclePassed: independentPassed })
     && ledgerMatched && completedUsageObserved && rateLimitsMatched && sourceUnchanged && treeEvidence?.stopped && recordedNativeStopped
     && routeMatched && requests.length === settled.length && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens
@@ -289,9 +337,9 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     routeMatched, nativeJson: result !== null, nativeError: result?.is_error ?? null, cleanupComplete: cleanupComplete === true,
     baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256,
     sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics, rateLimits, rateLimitsMatched,
-    outputCut, cutReleased, outputCutObserved, recordedNativeStopped,
+    outputCut, cutReleased, outputCutObserved, taskIncompleteBeforeEffect: taskIncompleteBeforeEffect === true, recordedNativeStopped,
     output: output.evidence, tree: treeEvidence };
-  write(join(root, finishing ? 'result-finish.json' : 'result.json'), summary); return summary;
+  write(join(root, `result${suffix}.json`), summary); return summary;
 }
 export function developmentUsageEvidence(first, continuation, continuationFailure) {
   const continuationUsageUnobserved = continuationFailure !== null;
@@ -360,10 +408,44 @@ export async function verifyDevelopmentOutputRecovery({ model, powershell, local
     actualModelRequests: localNative ? 0 : attempts, ...(localNative ? { actualCredentialReads: 0 } : {}), longStageCounts: 0 };
   write(join(first.root, 'output-recovery-result.json'), result); return result;
 }
+export async function verifyDevelopmentIncompleteRecovery({ model, powershell, localNative,
+  taskId = 'retry-delay-window', priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens }) {
+  need(localNative === true, 'LOCAL_INCOMPLETE_STIMULUS_REQUIRED');
+  const first = await verifyNativeDevelopment({ model, powershell, localNative, taskId, earlyExitAfterRead: true, requestLimit: 6,
+    priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens });
+  let retry = null, resumeFailure = null;
+  if (first.taskIncompleteBeforeEffect && first.passed === false) {
+    try {
+      retry = await verifyNativeDevelopment({ model, powershell, localNative, taskId, resumeIncompleteRoot: first.root, requestLimit: 6,
+        priorAttempts: first.cumulativeAttempts, priorElapsedMs: first.cumulativeElapsedMs,
+        priorInputTokens: first.cumulativeInputTokens, priorOutputTokens: first.cumulativeOutputTokens });
+    } catch (error) {
+      resumeFailure = /^RESUME_[A-Z_]+$/.test(error.message) ? error.message : error.code === 'EEXIST'
+        ? 'RESUME_ALREADY_CLAIMED' : 'DEVELOPMENT_RESUME_FAILED';
+    }
+  }
+  const events = read(join(first.root, 'work', 'events.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse);
+  const sourceWrites = events.filter(row => row.event === 'SOURCE_WRITTEN').length;
+  const sameSession = first.sessionId === retry?.sessionId;
+  const passed = first.taskIncompleteBeforeEffect === true && first.passed === false && retry?.passed === true
+    && sameSession && sourceWrites === 1 && resumeFailure === null;
+  const result = { suite: 'native-development-incomplete-recovery-local', root: first.root, model, localNative,
+    passed, scenarioPassed: passed, taskCompleted: passed, first, retry, resumeFailure, sourceWrites, sameSession,
+    attempts: first.attempts + (retry?.attempts ?? 0), elapsedMs: first.elapsedMs + (retry?.elapsedMs ?? 0),
+    inputTokens: first.inputTokens + (retry?.inputTokens ?? 0), outputTokens: first.outputTokens + (retry?.outputTokens ?? 0),
+    attemptsComplete: first.attemptsComplete && retry?.attemptsComplete === true && resumeFailure === null,
+    ...developmentUsageEvidence(first, retry, resumeFailure), actualModelRequests: 0, actualCredentialReads: 0, longStageCounts: 0 };
+  write(join(first.root, 'incomplete-recovery-result.json'), result); return result;
+}
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const [live, model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens] = process.argv.slice(2);
-    if (['--local-sequence', '--live-sequence'].includes(live)) {
+    if (live === '--local-incomplete-recovery') {
+      need(process.argv.length === 5, 'LIVE_ARGUMENTS_REQUIRED');
+      const result = await verifyDevelopmentIncompleteRecovery({ model, powershell, localNative: true,
+        priorAttempts: 0, priorElapsedMs: 0, priorInputTokens: 0, priorOutputTokens: 0 });
+      console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;
+    } else if (['--local-sequence', '--live-sequence'].includes(live)) {
       const localNative = live === '--local-sequence';
       need(process.argv.length === (localNative ? 5 : 9), 'LIVE_ARGUMENTS_REQUIRED');
       const result = await verifyDevelopmentSequence({ model, powershell, localNative,

@@ -29,10 +29,10 @@ export function createDevelopmentContextCheck(previousTaskId) {
 // tools can reach this native child, with a durable reservation before HTTPS.
 export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice(2), openTransport = openUserTransport, transportFactory } = {}) {
   const [runRoot, phase, ...args] = entryArgs;
-  if (typeof runRoot !== 'string' || resolve(runRoot, 'work') !== process.cwd() || !['development', 'development-finish'].includes(phase)
+  if (typeof runRoot !== 'string' || resolve(runRoot, 'work') !== process.cwd() || !['development', 'development-finish', 'development-retry'].includes(phase)
     || !process.send || typeof openTransport !== 'function'
     || transportFactory !== undefined && typeof transportFactory !== 'function') throw new Error('INVALID_DEVELOPMENT_ENTRY');
-  const path = join(runRoot, phase === 'development' ? 'budget.json' : 'budget-finish.json'), info = lstatSync(path);
+  const path = join(runRoot, phase === 'development' ? 'budget.json' : phase === 'development-finish' ? 'budget-finish.json' : 'budget-retry.json'), info = lstatSync(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size > 16384) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const budget = JSON.parse(readFileSync(path, 'utf8'));
   developmentTask(budget.taskId);

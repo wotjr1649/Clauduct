@@ -12,14 +12,18 @@ const created = { type: 'response.created', response: { id: 'resp_test', status:
 const mismatch = { type: 'response.in_progress', response_id: 'wrong' };
 const frame = event => `data: ${JSON.stringify(event)}\n\n`;
 const defer = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
-const watchdog = setTimeout(() => { console.error('CANCEL_SNAPSHOT_TEST_TIMEOUT'); process.exit(1); }, 15000);
-let checks = 0;
+let checks = 0, phase = 'startup';
+const watchdog = setTimeout(() => {
+  console.error(`CANCEL_SNAPSHOT_TEST_TIMEOUT ${JSON.stringify({ phase, checks })}`); process.exit(1);
+}, 15000);
 try {
   // Real downstream disconnect, deterministic ordering at the protocol callback boundary.
   for (const order of ['cancel-first', 'mismatch-first']) {
+    phase = `${order}-setup`;
     const ready = defer(), cancelled = defer();
     const gateway = await startNativeGateway({ admissionOptions: { freeBytes: () => 16 * 1024 ** 3 }, transport: {
       send: async (_body, signal, { onEvent }) => {
+        phase = `${order}-send`;
         signal.addEventListener('abort', cancelled.resolve, { once: true });
         await onEvent(created);
         if (order === 'cancel-first') {
@@ -41,8 +45,11 @@ try {
       req.on('error', resolve); req.end(JSON.stringify(doc));
     });
     try {
-      await ready.promise; controller.abort(); await cancelled.promise; await pending;
+      phase = `${order}-ready`; await ready.promise;
+      phase = `${order}-abort`; controller.abort(); await cancelled.promise;
+      phase = `${order}-client`; await pending;
       // Close joins the in-flight handle without creating another request.
+      phase = `${order}-close`;
       await gateway.close();
       const row = requestStatusSnapshot(gateway.diagnostics()).recentRequests.at(-1);
       assert.equal(row.failureCategory, order === 'cancel-first' ? 'CANCELLED' : 'SNAPSHOT_MISMATCH');
@@ -60,6 +67,7 @@ try {
   }
 
   // Real HTTP/SSE transport must not replace an already-raised validation error with cancellation.
+  phase = 'http-transport';
   const server = createServer((req, res) => { req.resume(); res.end(frame(created) + frame(mismatch)); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const transport = createNativeLoopbackTransport(server.address().port);
@@ -74,6 +82,7 @@ try {
   } finally { await transport.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 
   // Snapshot after native child exit is a pure projection, not a loopback/model request.
+  phase = 'snapshot';
   let sends = 0;
   const gateway = await startNativeGateway({ transport: {
     send: async () => { sends++; throw new Error('UNEXPECTED_SEND'); }, close: async () => {},
@@ -102,6 +111,7 @@ try {
   }
   checks++;
   // Successful keep-alive traffic must be fully closed before native exit returns.
+  phase = 'keep-alive';
   const keepAliveServer = createServer((req, res) => {
     req.resume(); res.end(frame({ type: 'response.completed' }));
   });
@@ -127,6 +137,7 @@ try {
     await new Promise(resolve => keepAliveServer.close(resolve));
   }
   // Real cleanup rejection stays a failure; diagnostics expose fixed booleans, not error text.
+  phase = 'cleanup-rejection';
   const failedGateway = await startNativeGateway({ transport: {
     send: async () => { throw new Error('UNEXPECTED_SEND'); },
     close: async () => { throw new Error('SYNTHETIC_PRIVATE'); },

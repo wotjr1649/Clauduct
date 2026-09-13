@@ -58,6 +58,10 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 `native-output.mjs` 수집기는 JSON/stream-json을 행마다 검사하고 중간 메시지를 누적하지 않는다. 두pipe의 정상 EOF, 유일한result/종료상태, native exit와 독립oracle이 일치해야 완료다. 실제 로컬 자식6개의 느린 소비·32MiB 이상 중간 출력·큰result·과대result·pipe 단절·잘림을 검사했으며, 효과와보고서가 있어도 결과가 누락되면완료=false였다. 소규모 복구 검증기에는 총1MiB·한행1MiB·4096레코드 상한으로 연결했다. 두 조합 설정의 실제 native stream-json에서도 전달 후 장애·오류result·동일 세션 재개·최종result와cleanup을 확인했다. 실제 모델 호출을 쓰는 복구 경로의 앞선 결합 성공은 수집기 교체 전 후보의 증거다. 장기 관리기 전체·native 최종result 직전pipe 단절 후 개발 복구는 아직 미검증이다.
 
+`verify-native-task-isolation.mjs --local-native <model> <alpha|beta> <pwsh.exe>`는 두 고정 background worker 중 지정한 하나만 취소하는 검사다. `luna/max`와 `sol/low` 설정에서 취소 대상을 바꾼 네 사례가 통과했다. 실제 native의 Bash 결과와 call ID를 대조해 TaskStop 대상을 고정하고, 대상 PID 종료 후에도 다른 worker가 살아 있으며 TaskOutput으로 정상 완료되는지 확인했다. 두 worker의 제한된 파일 권한, 정확한 도구 호출, result/상태 각1개와 회수를 함께 검사했다. native가 background ID를 worker의 첫 기록보다 먼저 반환하므로, 아직 없거나 작성 중인 시작 기록만 최대1500ms 기다린다. 이 시험의 모델 응답은 로컬 공개 fixture이며 실제 backend·credential 사용은0이다. 모델을 실행하는 Agent 자식의 취소와 늦은 upstream 응답 격리까지 검증한 것은 아니다.
+
+추가 회귀의 `test-cancel-snapshot.mjs`에서15초 timeout이 한 번 관측됐다. 단계 표시를 넣은 별도 관측본은 기존6개 검사를 통과했지만 원래 실패의 원인은 미확정이다. 원본 검사에도 고정 단계명과 완료 검사 수를 timeout 진단에 추가했으며, 시간 한도와 기존 assertions는 유지했다.
+
 Not verified / 제한:
 
 - astra 최초 공개 단문 검사에서 전달 전 upstream error 1건이 있었고 이후 단독 검사는 성공했다. 최초 오류의 원인은 미확정이며 외부 서버 무장애를 보장하지 않는다.

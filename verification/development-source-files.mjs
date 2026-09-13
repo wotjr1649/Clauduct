@@ -44,6 +44,11 @@ export function writeDevelopmentSource(work, taskId, source, record) {
   requireBatch(before === (previous?.intent.source ?? task.baseline));
   if (previous?.intent.source === source) return { source, writes: 0, confirmed: 0 };
   requireBatch(batches.length < 2 && before !== source);
+  const intermediate = JSON.parse(before).files;
+  for (let index = 0; index < input.files.length; index++) {
+    intermediate[index] = input.files[index];
+    requireBatch(Buffer.byteLength(encode({ files: intermediate })) <= 8192);
+  }
   const files = task.parts.map((part, index) => {
     const path = join(work, part.path), info = lstatSync(path, { bigint: true }), value = read(path, 8192);
     requireBatch(value === JSON.parse(before).files[index].code);
@@ -116,6 +121,11 @@ function sourceStates(work, batch) {
     return 'pending';
   });
 }
+export function readDevelopmentSourceState(work, taskId) {
+  const batches = readDevelopmentSourceBatches(work, taskId), batch = batches.at(-1);
+  requireBatch(batch !== undefined);
+  return { batch, batchCount: batches.length, states: sourceStates(work, batch), source: readDevelopmentSource(work, taskId) };
+}
 function applyBatch(work, taskId, batch, record) {
   const files = JSON.parse(batch.intent.source).files, states = sourceStates(work, batch);
   let writes = 0, confirmed = 0;
@@ -132,20 +142,31 @@ function applyBatch(work, taskId, batch, record) {
   writeFileSync(batchPath(work, batch.intent.index, '-done'), encode({ intentHash: batch.intentHash, sourceHash: hash(batch.intent.source) }), { flag: 'wx' });
   return { source: batch.intent.source, writes, confirmed };
 }
-function recoverDevelopmentSource(work, taskId, record, terminatedOwnerPid) {
+function recoverDevelopmentSource(work, taskId, record, terminatedOwnerPid, expectedSource, expectedIntentHash) {
   const batch = readDevelopmentSourceBatches(work, taskId).at(-1); requireBatch(batch !== undefined);
+  requireBatch(batch.intent.source === expectedSource && batch.intentHash === expectedIntentHash);
   if (batch.done) {
     requireBatch(readDevelopmentSource(work, taskId) === batch.intent.source);
     return { source: batch.intent.source, writes: 0, confirmed: 0 };
   }
-  // The caller owns the exact child handle and observed its deliberate exit.
-  // A PID lookup or a caller-supplied claim of termination is insufficient.
+  // Entrypoints establish termination and bind the exact previously inspected
+  // intent. The MCP path uses its child handle; managed recovery also requires
+  // the native tree's protected interruption proof before reaching this helper.
   requireBatch(batch.intent.ownerPid === terminatedOwnerPid && batch.intent.ownerPid !== process.pid);
   if (batch.recovery) throw new Error('DEVELOPMENT_SOURCE_RECOVERY_UNCERTAIN');
   sourceStates(work, batch); // Reject every unknown target before claiming or writing.
   writeFileSync(batchPath(work, batch.intent.index, '-recovery'), encode({ intentHash: batch.intentHash, ownerPid: process.pid }), { flag: 'wx' });
   record({ event: 'SOURCE_RECOVERY_STARTED', intentHash: batch.intentHash });
   return applyBatch(work, taskId, batch, record);
+}
+export function recoverStoppedDevelopmentSource(work, taskId, record, expectedIntentHash) {
+  const { batch } = readDevelopmentSourceState(work, taskId);
+  requireBatch(batch.intentHash === expectedIntentHash);
+  if (!batch.done) {
+    try { process.kill(batch.intent.ownerPid, 0); throw new Error('SOURCE_OWNER_ACTIVE'); }
+    catch (error) { if (error.code !== 'ESRCH') throw new Error('DEVELOPMENT_SOURCE_OWNER_UNVERIFIED'); }
+  }
+  return recoverDevelopmentSource(work, taskId, record, batch.intent.ownerPid, batch.intent.source, expectedIntentHash);
 }
 export function writeDevelopmentSourceWithRecovery(work, taskId, source, record) {
   requireBatch(taskId === 'retry-project'); developmentSourceArguments(source, taskId);
@@ -161,8 +182,10 @@ export function writeDevelopmentSourceWithRecovery(work, taskId, source, record)
   const child = spawnSync(process.execPath, ['--permission', ...reads.map(path => `--allow-fs-read=${path}`), `--allow-fs-write=${work}`,
     worker, work, taskId], { cwd: work, env, input: source, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 });
   if (child.error || child.signal || child.status !== 71 || child.stdout !== '' || child.stderr !== '') throw new Error('SOURCE_WORKER_UNVERIFIED');
+  const interrupted = readDevelopmentSourceBatches(work, taskId).at(-1);
+  requireBatch(interrupted?.intent.source === source);
   record({ event: 'SOURCE_WORKER_INTERRUPTED', exitCode: 71 });
-  const recovered = recoverDevelopmentSource(work, taskId, record, child.pid);
+  const recovered = recoverDevelopmentSource(work, taskId, record, child.pid, source, interrupted.intentHash);
   requireBatch(recovered.source === source && recovered.writes === 1 && recovered.confirmed === 1);
   return recovered;
 }

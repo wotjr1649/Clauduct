@@ -78,6 +78,9 @@ const negative = [
   ['source-path', 'DEVELOPMENT_SOURCE_BATCH_INVALID', (fixture, intent) => { intent.files[1].path = '../control/oracle.mjs'; }],
   ['source-owner', 'DEVELOPMENT_SOURCE_BATCH_INVALID', (fixture, intent) => { intent.ownerPid = process.pid; }],
   ['work-binding', 'DEVELOPMENT_SOURCE_BATCH_INVALID', (fixture, intent) => { intent.workHash = 'a'.repeat(64); }],
+  ['changed-proposal', 'DEVELOPMENT_SOURCE_BATCH_INVALID', (fixture, intent) => {
+    intent.source = intent.source.replace('value.retryAtMs >= value.deadlineMs', 'value.retryAtMs > value.deadlineMs');
+  }],
   ['first-source', 'DEVELOPMENT_SOURCE_EFFECT_UNKNOWN', fixture => { appendFileSync(join(fixture.work, files[0].path), '\n'); }],
   ['second-source', 'DEVELOPMENT_SOURCE_EFFECT_UNKNOWN', fixture => { appendFileSync(join(fixture.work, files[1].path), '\n'); }],
   ['same-bytes-new-write', 'DEVELOPMENT_SOURCE_EFFECT_UNKNOWN', fixture => {

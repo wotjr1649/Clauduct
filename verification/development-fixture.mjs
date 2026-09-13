@@ -10,11 +10,11 @@ export const BASELINE_SOURCE = developmentTask().baseline;
 export const DEVELOPMENT_TASK = developmentTask().task;
 export const sourceHash = source => createHash('sha256').update(source).digest('hex');
 export function createDevelopmentFixture({ waitMode = 'wait', holdAfterPass = false, holdAfterSourceWrite = false, holdAfterTaskRead = false,
-  recoverAfterFirstSourceWrite = false, taskId = DEFAULT_DEVELOPMENT_TASK_ID } = {}) {
+  holdAfterFirstSourceWrite = false, recoverAfterFirstSourceWrite = false, taskId = DEFAULT_DEVELOPMENT_TASK_ID } = {}) {
   if (!['wait', 'check'].includes(waitMode) || typeof holdAfterPass !== 'boolean' || typeof holdAfterSourceWrite !== 'boolean'
-    || typeof holdAfterTaskRead !== 'boolean' || typeof recoverAfterFirstSourceWrite !== 'boolean'
-    || [holdAfterPass, holdAfterSourceWrite, holdAfterTaskRead, recoverAfterFirstSourceWrite].filter(Boolean).length > 1
-    || recoverAfterFirstSourceWrite && taskId !== 'retry-project') throw new Error('INVALID_DEVELOPMENT_MODE');
+    || typeof holdAfterTaskRead !== 'boolean' || typeof recoverAfterFirstSourceWrite !== 'boolean' || typeof holdAfterFirstSourceWrite !== 'boolean'
+    || [holdAfterPass, holdAfterSourceWrite, holdAfterTaskRead, recoverAfterFirstSourceWrite, holdAfterFirstSourceWrite].filter(Boolean).length > 1
+    || (recoverAfterFirstSourceWrite || holdAfterFirstSourceWrite) && taskId !== 'retry-project') throw new Error('INVALID_DEVELOPMENT_MODE');
   const task = developmentTask(taskId);
   const project = dirname(dirname(fileURLToPath(import.meta.url)));
   const temporaryRoot = join(project, '.tmp');
@@ -43,7 +43,7 @@ export function createDevelopmentFixture({ waitMode = 'wait', holdAfterPass = fa
     `--allow-fs-read=${join(project, 'verification', 'development-tasks.mjs')}`, `--allow-fs-read=${work}`, `--allow-fs-read=${control}`,
     `--allow-fs-write=${work}`, script, root, waitMode, taskId,
     ...(holdAfterPass ? ['hold-after-pass'] : holdAfterSourceWrite ? ['hold-after-source'] : holdAfterTaskRead ? ['hold-after-read']
-      : recoverAfterFirstSourceWrite ? ['recover-after-first-file'] : [])];
+      : recoverAfterFirstSourceWrite ? ['recover-after-first-file'] : holdAfterFirstSourceWrite ? ['hold-after-first-file'] : [])];
   writeFileSync(join(work, '.mcp.json'), JSON.stringify({ mcpServers: { fixture: { type: 'stdio', command: process.execPath, args,
     env: { ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: '', ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '' } } } }), { flag: 'wx' });
   return { project, root, work, control, script, args, taskId, task,

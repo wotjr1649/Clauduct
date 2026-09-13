@@ -6,7 +6,8 @@ import { developmentTask, developmentTaskWorkKey } from './development-tasks.mjs
 import { readExecutionAccount, reserveExecutionAccount, closeExecutionAccount } from './execution-account.mjs';
 import { readManagedLedgerAccount } from './managed-ledger-account.mjs';
 import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
-import { verifyNativeDevelopment, readDevelopmentAccountingEvidence, prepareDevelopmentInterruption, readDevelopmentInterruption, nativeDevelopmentSourceHashes } from './verify-native-development.mjs';
+import { verifyNativeDevelopment, readDevelopmentAccountingEvidence, prepareDevelopmentInterruption, readDevelopmentInterruption,
+  completeDevelopmentPartialInterruption, nativeDevelopmentSourceHashes } from './verify-native-development.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const need = (ok, code = 'MANAGED_DEVELOPMENT_INVALID') => { if (!ok) throw new Error(code); };
@@ -39,6 +40,7 @@ function evidenceFor(entry) {
   need(evidence.model === task.model && evidence.effort === task.effort && evidence.localNative === task.localNative
     && evidence.taskId === task.taskId && budget.executionAccountHash === entry.reservation.reservationHash
     && (budget.recoverAfterFirstSourceWrite ?? false) === (task.recoverAfterFirstSourceWrite ?? false)
+    && (budget.holdAfterFirstSourceWrite ?? false) === (task.holdAfterFirstSourceWrite ?? false)
     && binding.budgetHash === sourceHash(readFileSync(budgetPath))
     && binding.reservationHash === sourceHash(readFileSync(join(evidence.root, `usage-${binding.phase}`, 'execution-reservation.json'))));
   need(!entry.closed || entry.reservation.evidenceHash === evidence.evidenceHash, 'MANAGED_DEVELOPMENT_EVIDENCE_CHANGED');
@@ -69,16 +71,18 @@ export function readManagedDevelopmentResult(path, entryIndex) {
 
 export async function runManagedDevelopment({ root, model, powershell, taskId = 'retry-after-seconds', localNative = false,
   continuation = false, interruptAfterNativeResult = false, recoverInterrupted = false, holdAfterSourceWrite = false, holdAfterTaskRead = false,
-  recoverAfterFirstSourceWrite = false, plannedStep }) {
+  recoverAfterFirstSourceWrite = false, holdAfterFirstSourceWrite = false, plannedStep }) {
   root = rootPath(root);
   need(Object.hasOwn({ luna: 'max', sol: 'low' }, model) && typeof model === 'string'
     && typeof localNative === 'boolean' && typeof continuation === 'boolean'
     && typeof recoverInterrupted === 'boolean' && (!recoverInterrupted || !continuation && !interruptAfterNativeResult)
     && typeof recoverAfterFirstSourceWrite === 'boolean'
     && (!recoverAfterFirstSourceWrite || localNative && taskId === 'retry-project' && !continuation && !recoverInterrupted
-      && !interruptAfterNativeResult && !holdAfterSourceWrite && !holdAfterTaskRead)
-    && typeof holdAfterSourceWrite === 'boolean' && typeof holdAfterTaskRead === 'boolean' && !(holdAfterSourceWrite && holdAfterTaskRead)
-    && (!(holdAfterSourceWrite || holdAfterTaskRead) || localNative && !continuation && !recoverInterrupted && !interruptAfterNativeResult)
+      && !interruptAfterNativeResult && !holdAfterSourceWrite && !holdAfterTaskRead && !holdAfterFirstSourceWrite)
+    && typeof holdAfterSourceWrite === 'boolean' && typeof holdAfterTaskRead === 'boolean' && typeof holdAfterFirstSourceWrite === 'boolean'
+    && [holdAfterSourceWrite, holdAfterTaskRead, holdAfterFirstSourceWrite].filter(Boolean).length <= 1
+    && (!holdAfterFirstSourceWrite || taskId === 'retry-project')
+    && (!(holdAfterSourceWrite || holdAfterTaskRead || holdAfterFirstSourceWrite) || localNative && !continuation && !recoverInterrupted && !interruptAfterNativeResult)
     && typeof interruptAfterNativeResult === 'boolean' && (!interruptAfterNativeResult || localNative)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'));
   developmentTask(taskId);
@@ -104,6 +108,8 @@ export async function runManagedDevelopment({ root, model, powershell, taskId = 
     if (!existsSync(join(binding.root, 'interruption-evidence.json'))) {
       prepareDevelopmentInterruption(binding.root, { model, localNative, powershell, managerPid: last.ownerPid,
         accountHash: last.reservation.reservationHash });
+    } else if (readDevelopmentInterruption(binding.root).partialSource?.pending) {
+      completeDevelopmentPartialInterruption(binding.root);
     }
     const previous = reconcileManagedDevelopment(root);
     need(previous.evidence.failure === 'MANAGER_INTERRUPTED', 'MANAGED_DEVELOPMENT_PREDECESSOR');
@@ -119,13 +125,14 @@ export async function runManagedDevelopment({ root, model, powershell, taskId = 
   }
   const task = { version: 1, model, effort: { luna: 'max', sol: 'low' }[model], localNative, taskId, requestLimit: 6,
     ...(recoverAfterFirstSourceWrite ? { recoverAfterFirstSourceWrite } : {}),
+    ...(holdAfterFirstSourceWrite ? { holdAfterFirstSourceWrite } : {}),
     continuedFrom: previous?.root ?? null, ...(interruptedRoot ? { recoveredFrom: interruptedRoot } : {}),
     ...(plannedStep ? { planHash: plannedStep.planHash, planStep: plannedStep.index } : {}) };
   const claim = reserveExecutionAccount(root, { executionHash: sourceHash(encode(task)), allowance: {
     attempts: 6, inputTokens: 131072, outputTokens: 32768, elapsedMs: localNative ? 60000 : 660000 } });
   create(join(claim.entry, 'task.json'), task);
   const prior = claim.previous;
-  await verifyNativeDevelopment({ model, powershell, taskId, localNative, requestLimit: 6, holdAfterSourceWrite, holdAfterTaskRead, recoverAfterFirstSourceWrite,
+  await verifyNativeDevelopment({ model, powershell, taskId, localNative, requestLimit: 6, holdAfterSourceWrite, holdAfterTaskRead, holdAfterFirstSourceWrite, recoverAfterFirstSourceWrite,
     ...(previous ? { continueFrom: previous.root } : {}),
     ...(interruptedRoot ? { resumeInterruptedRoot: interruptedRoot } : {}),
     priorAttempts: prior.attempts, priorInputTokens: prior.inputTokens, priorOutputTokens: prior.outputTokens, priorElapsedMs: prior.elapsedMs,

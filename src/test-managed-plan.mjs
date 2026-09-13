@@ -21,6 +21,12 @@ for (const options of [{ localNative: false }, { recoverAfterFirstSourceWrite: '
   await assert.rejects(runManagedDevelopment({ root: account.root, model: 'sol', localNative: true, powershell,
     taskId: 'retry-project', recoverAfterFirstSourceWrite: true, ...options }), { message: 'MANAGED_DEVELOPMENT_INVALID' }); checks++;
 }
+for (const options of [{ localNative: false }, { holdAfterFirstSourceWrite: 'true' }, { taskId: 'retry-after-seconds' },
+  { continuation: true }, { recoverInterrupted: true }, { holdAfterTaskRead: true }, { holdAfterSourceWrite: true },
+  { recoverAfterFirstSourceWrite: true }, { interruptAfterNativeResult: true }]) {
+  await assert.rejects(runManagedDevelopment({ root: account.root, model: 'sol', localNative: true, powershell,
+    taskId: 'retry-project', holdAfterFirstSourceWrite: true, ...options }), { message: 'MANAGED_DEVELOPMENT_INVALID' }); checks++;
+}
 equal(plan.completedSteps, 0); equal(plan.done, false); equal(plan.account.charged, account.account.initial);
 equal(plan.plan.deadlineMs - plan.plan.createdAtMs, 180000);
 equal(Object.keys(plan.plan.sourceHashes).length, 40);

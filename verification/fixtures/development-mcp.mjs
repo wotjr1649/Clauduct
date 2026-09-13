@@ -8,10 +8,10 @@ import { developmentTask } from '../development-tasks.mjs';
 import { readDevelopmentSource, writeDevelopmentSource, writeDevelopmentSourceWithRecovery, developmentOracleInvocation } from '../development-source-files.mjs';
 
 const [directory, waitMode, taskId, holdMode] = process.argv.slice(2), root = resolve(directory);
-if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && !['hold-after-pass', 'hold-after-source', 'hold-after-read', 'recover-after-first-file'].includes(holdMode)
+if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && !['hold-after-pass', 'hold-after-source', 'hold-after-read', 'recover-after-first-file', 'hold-after-first-file'].includes(holdMode)
   || typeof taskId !== 'string' || process.argv.length > 6) throw new Error('DEVELOPMENT_MODE');
 const task = developmentTask(taskId);
-if (holdMode === 'recover-after-first-file' && !task.parts) throw new Error('DEVELOPMENT_MODE');
+if (['recover-after-first-file', 'hold-after-first-file'].includes(holdMode) && !task.parts) throw new Error('DEVELOPMENT_MODE');
 const work = join(root, 'work'), control = join(root, 'control');
 for (const path of [work, control]) {
   const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('DEVELOPMENT_PATH');
@@ -72,7 +72,16 @@ async function respond(message) {
     catch { return { ...reply, error: { code: -32602, message: 'DEVELOPMENT_SOURCE_REJECTED' } }; }
     if (holdMode === 'recover-after-first-file') {
       writeDevelopmentSourceWithRecovery(work, taskId, proposed, record);
-    } else writeDevelopmentSource(work, taskId, proposed, record);
+    } else writeDevelopmentSource(work, taskId, proposed, row => {
+      if (holdMode === 'hold-after-first-file' && row.event === 'SOURCE_FILE_WRITTEN' && row.path === task.parts[0].path) {
+        record({ event: 'SOURCE_FIRST_FILE_WAIT' });
+        // Bounded public fault: the controller removes the manager while this
+        // MCP is alive. Expiry also exits before a receipt or the second write.
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
+        process.exit(71);
+      }
+      record(row);
+    });
     if (!task.parts) record({ event: 'SOURCE_WRITTEN', sha256: digest(proposed) });
     if (holdMode === 'hold-after-source') {
       record({ event: 'SOURCE_WRITE_WAIT', sha256: digest(proposed) });

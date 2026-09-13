@@ -22,7 +22,7 @@ const manifest = JSON.parse(read(join(root, 'manifest.json')));
 if (!/^[0-9a-f-]{36}$/.test(manifest.operationId)) throw new Error('SERVICE_ENTRY_ARGUMENTS');
 const evidence = { phase, kind, model, effort, requests: 0, successes: 0, serviceFailures: 0,
   partialFailures: 0, faultAfterReceipt: false, routeMatched: true, issued: [], failure: null,
-  actualModelRequests: 0, credentialReads: 0, serverClosed: false, socketsRemaining: null };
+  deferredAtMs: null, actualModelRequests: 0, credentialReads: 0, serverClosed: false, socketsRemaining: null };
 const issued = new Map(), timers = new Set(), sockets = new Set(), socketClosures = new Set();
 let transport, server, active = 0, serial = phase === 'effect' ? 0 : 16;
 const receiptPath = join(root, 'work', 'operation.json'), reportPath = join(root, 'work', 'report.json');
@@ -82,6 +82,10 @@ async function handle(req, res) {
   if (wire !== null) { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.end(wire); return; }
   if (kind === 'flapping-503') {
     evidence.serviceFailures++; res.writeHead(503, { 'Retry-After': '0' }); res.end(); return;
+  }
+  if (kind === 'deferred-503') {
+    evidence.serviceFailures++; evidence.deferredAtMs = Date.now();
+    res.writeHead(503, { 'Retry-After': '60' }); res.end(); return;
   }
   evidence.partialFailures++;
   const failure = serviceFailureWire(kind);

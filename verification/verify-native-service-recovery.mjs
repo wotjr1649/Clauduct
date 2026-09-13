@@ -24,6 +24,7 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
   need(SERVICE_FAULTS.includes(kind) && ['luna', 'sol'].includes(model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'), 'SERVICE_ARGUMENTS');
   const root = mkdtempSync(join(project, '.tmp', 'native-service-recovery-'));
+  const maxElapsedMs = kind === 'deferred-503' ? 150000 : 90000;
   const manifest = initializeRecovery(root, { taskId: 'public-service-task' });
   const work = join(root, 'work');
   for (const name of ['config', 'temp']) mkdirSync(join(root, name));
@@ -34,6 +35,7 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
   const sourceHashes = Object.fromEntries(sourceNames.map(name => [name, hash(join(project, name))]));
   write(join(root, 'budget.json'), { kind, model, effort: model === 'luna' ? 'max' : 'low', phaseMs: 30000,
     maxPhases: 2, requestLimit: 16, maxTurns: 8, outputBytes: 1048576, treeCheckMs: 12000,
+    maxElapsedMs, retryAfterSeconds: kind === 'deferred-503' ? 60 : 0,
     actualModelRequests: 0, credentialReads: 0, sourceHashes,
     basis: 'Earlier local native Workflow/MCP probes completed within 3 seconds. The default five-retry loop adds at most 3.1 seconds per request; 30 seconds bounds each phase.' });
   write(join(work, '.mcp.json'), { mcpServers: { fixture: { type: 'stdio', command: process.execPath,
@@ -46,6 +48,7 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
   const phases = [], started = Date.now();
   const execute = async (stateRoot, state, records, phase) => {
     need(phases.length < 2, 'SERVICE_PHASE_LIMIT');
+    need(Date.now() - started + 47000 <= maxElapsedMs, 'SERVICE_RUN_BUDGET');
     const phaseStart = Date.now();
     const child = fork(entry, [root, phase, kind, model], { cwd: work, env, execArgv: [],
       windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
@@ -119,9 +122,18 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
         && calls.effect_status === 0 && !recoveryOracle(root), 'SERVICE_FAILURE_NOT_PRESERVED');
       const failures = status.recentRequests.filter(row => row.success === false);
       need(failures.length === 1 && status.lifetime.failed === 1, 'SERVICE_RETRY_AMPLIFICATION');
-      const expected = kind === 'flapping-503' ? 'UPSTREAM_HTTP_ERROR' : kind === 'error-200' ? 'UPSTREAM_ERROR_EVENT'
+      const expected = kind === 'flapping-503' ? 'UPSTREAM_HTTP_ERROR' : kind === 'deferred-503' ? 'UPSTREAM_RETRY_DEFERRED'
+        : kind === 'error-200' ? 'UPSTREAM_ERROR_EVENT'
         : kind === 'truncated' ? 'TRUNCATED_STREAM' : kind === 'invalid-utf8' ? 'INVALID_UTF8' : 'SEQUENCE_MISMATCH';
       need(failures[0].failureCategory === expected && failures[0].attempts.length === (kind === 'flapping-503' ? 6 : 1), 'SERVICE_WRONG_FAILURE');
+      if (kind === 'deferred-503') {
+        need(service.serviceFailures === 1 && service.partialFailures === 0
+          && Number.isSafeInteger(service.deferredAtMs) && Number.isSafeInteger(failures[0].retryAtMs)
+          && failures[0].retryAtMs >= service.deferredAtMs + 60000 && failures[0].retryAtMs <= service.deferredAtMs + 65000
+          && failures[0].attempts[0].status === 503, 'SERVICE_WRONG_STIMULUS');
+        return { completed: false, exitCode, wait: { retryAtMs: failures[0].retryAtMs,
+          category: 'UPSTREAM_RETRY_DEFERRED', httpStatus: 503 } };
+      }
       need(kind === 'flapping-503' ? service.serviceFailures === 8 && service.partialFailures === 0
         : service.serviceFailures === 0 && service.partialFailures === 1 && failures[0].firstTextDeltaMs !== null, 'SERVICE_WRONG_STIMULUS');
     } else need(completed && calls.apply_effect === 1 && calls.effect_status === 1 && calls.complete_report === 1, 'SERVICE_RESUME_FAILED');
@@ -130,12 +142,31 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
   let first = null, final = null, error = null;
   try {
     first = await runRecovery(root, { execute });
-    need(first.state === 'RECOVERING' && !first.taskCompleted, 'SERVICE_BASELINE_FAILED');
+    need(first.state === (kind === 'deferred-503' ? 'WAITING' : 'RECOVERING') && !first.taskCompleted, 'SERVICE_BASELINE_FAILED');
+    if (kind === 'deferred-503') {
+      const journal = read(join(root, 'journal.jsonl'));
+      const early = spawnSync(process.execPath, [join(project, 'verification', 'unattended-recovery.mjs'), root],
+        { cwd: project, env: controlEnv, windowsHide: true, timeout: 5000, maxBuffer: 8192, encoding: 'utf8' });
+      need(!early.error && early.status === 2 && early.stderr === '', 'SERVICE_EARLY_RESUME_FAILED');
+      const check = JSON.parse(early.stdout);
+      need(check.state === 'WAITING' && check.taskCompleted === false && check.retryAtMs === first.retryAtMs
+        && read(join(root, 'journal.jsonl')) === journal && !recoveryOracle(root), 'SERVICE_EARLY_RESUME_FAILED');
+      write(join(root, 'waiting-check.json'), { state: check.state, retryAtMs: check.retryAtMs, checkedAtMs: Date.now(),
+        earlyManagerStopped: true, journalUnchanged: true, newWorkers: 0, actualModelRequests: 0, credentialReads: 0 });
+      while (Date.now() < first.retryAtMs) {
+        need(Date.now() - started + 47000 <= maxElapsedMs, 'SERVICE_RUN_BUDGET');
+        writeFileSync(join(root, 'waiting-progress.json'), JSON.stringify({ state: 'WAITING',
+          retryAtMs: first.retryAtMs, observedAtMs: Date.now(), elapsedMs: Date.now() - started,
+          nativePhases: phases.length, actualModelRequests: 0 }) + '\n');
+        await sleep(Math.min(1000, Math.max(0, first.retryAtMs - Date.now())));
+      }
+    }
     final = await runRecovery(root, { execute });
   } catch (caught) {
     const labels = ['SERVICE_PHASE_FAILED', 'SERVICE_FAILURE_NOT_PRESERVED', 'SERVICE_RETRY_AMPLIFICATION',
       'SERVICE_WRONG_FAILURE', 'SERVICE_WRONG_STIMULUS', 'SERVICE_RESUME_FAILED', 'SERVICE_BASELINE_FAILED',
-      'SERVICE_AUDIT_INVALID', 'SERVICE_TREE_UNVERIFIED', 'SERVICE_STOP_UNVERIFIED', 'SERVICE_EVIDENCE_BOUNDARY'];
+      'SERVICE_AUDIT_INVALID', 'SERVICE_TREE_UNVERIFIED', 'SERVICE_STOP_UNVERIFIED', 'SERVICE_EVIDENCE_BOUNDARY',
+      'SERVICE_RUN_BUDGET', 'SERVICE_EARLY_RESUME_FAILED'];
     error = labels.includes(caught.message) ? caught.message : 'SERVICE_VERIFICATION_FAILED';
   }
   const sourceUnchanged = sourceNames.every(name => hash(join(project, name)) === sourceHashes[name]);

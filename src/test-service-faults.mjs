@@ -16,6 +16,7 @@ for (const kind of SERVICE_FAULTS) {
   const timers = new Set();
   const server = createServer((req, res) => {
     sends++; httpRequests++; req.resume();
+    if (kind === 'deferred-503') { res.writeHead(503, { 'Retry-After': '60' }).end(); return; }
     if (kind === 'flapping-503') {
       if (sends <= 2) { res.writeHead(503).end(); return; }
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -41,11 +42,16 @@ for (const kind of SERVICE_FAULTS) {
       });
       req.once('error', reject); req.end(JSON.stringify(doc));
     });
-    assert.equal(reply.status, 200);
+    assert.equal(reply.status, kind === 'deferred-503' ? 429 : 200);
     const state = await readRequestStatus({ ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.port}`,
       ANTHROPIC_AUTH_TOKEN: gateway.clientHeaders().Authorization.slice(7) });
     const row = state.recentRequests.at(-1);
-    if (kind === 'flapping-503') {
+    if (kind === 'deferred-503') {
+      assert.equal(sends, 1); assert.equal(row.failureCategory, 'UPSTREAM_RETRY_DEFERRED');
+      assert.equal(row.success, false); assert.equal(transport.diagnostics().retries, 0);
+      assert.ok(Number.isSafeInteger(row.retryAtMs) && row.retryAtMs > Date.now());
+      assert.equal(row.attempts[0].status, 503); assert.ok(!reply.text.includes('message_stop'));
+    } else if (kind === 'flapping-503') {
       assert.equal(sends, 3); assert.equal(row.success, true);
       assert.equal(transport.diagnostics().retries, 2);
       assert.ok(reply.text.includes('message_stop')); assert.ok(reply.text.includes('PUBLIC_SERVICE_RECOVERY_COMPLETE'));

@@ -1,5 +1,5 @@
 // Fixed public wire stimuli. This module has no credential or external transport.
-export const SERVICE_FAULTS = Object.freeze(['flapping-503', 'error-200', 'truncated', 'invalid-utf8', 'sequence-gap']);
+export const SERVICE_FAULTS = Object.freeze(['flapping-503', 'deferred-503', 'error-200', 'truncated', 'invalid-utf8', 'sequence-gap']);
 export const SERVICE_MARKER = 'PUBLIC_SERVICE_RECOVERY_COMPLETE';
 export const frame = event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
 
@@ -29,7 +29,7 @@ export function publicServiceEvents(model, effort, serial, name, input = {}) {
 }
 
 export function serviceFailureWire(kind) {
-  if (!SERVICE_FAULTS.includes(kind) || kind === 'flapping-503') throw new Error('SERVICE_STIMULUS_INVALID');
+  if (!SERVICE_FAULTS.includes(kind) || kind.endsWith('-503')) throw new Error('SERVICE_STIMULUS_INVALID');
   const text = 'PUBLIC_REPORT_PENDING';
   const message = { type: 'message', id: 'item_public_partial', role: 'assistant', status: 'completed',
     content: [{ type: 'output_text', text, annotations: [] }] };

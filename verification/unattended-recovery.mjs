@@ -9,13 +9,47 @@ import { fork } from 'node:child_process';
 const workerFile = fileURLToPath(new URL('./fixtures/recovery-worker.mjs', import.meta.url));
 const ORACLE = '{"version":1,"operationCount":1,"report":"effect-reconciled"}\n';
 const MAX_JOURNAL_BYTES = 64 * 1024;
-const events = new Set(['INTENT', 'WORKER', 'INTERRUPTED', 'EFFECT_CONFIRMED', 'COMPLETION_CONFIRMED', 'VERIFIED', 'FIX_NEEDED', 'UNKNOWN_EFFECT']);
+const events = new Set(['INTENT', 'WORKER', 'INTERRUPTED', 'WAITING', 'EFFECT_CONFIRMED', 'COMPLETION_CONFIRMED', 'VERIFIED', 'FIX_NEEDED', 'UNKNOWN_EFFECT']);
 const faults = new Set(['none', 'before-effect', 'after-effect', 'before-record', 'after-record', 'fake-success']);
 const known = new Set(['OWNER_ACTIVE', 'OWNER_UNCERTAIN', 'WORKER_ALIVE', 'JOURNAL_CORRUPT', 'JOURNAL_TRUNCATED',
   'ORACLE_CHANGED', 'MANIFEST_INVALID', 'STATE_IO_ERROR', 'STATE_PATH_REJECTED', 'WORKER_FAILED', 'WORKER_TIMEOUT', 'INVALID_ARGUMENTS']);
 const fail = code => { const error = new Error(code); error.code = code; throw error; };
 const need = (ok, code) => { if (!ok) fail(code); };
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const validExitCode = value => value === null || Number.isInteger(value) && value >= -2147483648 && value <= 4294967295;
+
+function waitFields(value, code) {
+  need(value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 3, code);
+  const { retryAtMs, category, httpStatus } = value;
+  need(Number.isSafeInteger(retryAtMs) && retryAtMs >= 0 && Number.isInteger(httpStatus)
+    && (category === 'UPSTREAM_HTTP_ERROR' && httpStatus >= 500 && httpStatus <= 599
+      || category === 'RATE_LIMITED' && httpStatus === 429
+      || category === 'UPSTREAM_RETRY_DEFERRED' && (httpStatus === 429 || httpStatus >= 500 && httpStatus <= 599)), code);
+  return { retryAtMs, category, httpStatus };
+}
+function executionResult(value) {
+  need(value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).every(key => ['completed', 'exitCode', 'wait'].includes(key)), 'WORKER_FAILED');
+  const { completed, exitCode } = value;
+  need(typeof completed === 'boolean' && validExitCode(exitCode) && (!completed || exitCode === 0), 'WORKER_FAILED');
+  const wait = Object.hasOwn(value, 'wait') ? waitFields(value.wait, 'WORKER_FAILED') : undefined;
+  need(!completed || wait === undefined, 'WORKER_FAILED');
+  return { completed, exitCode, wait };
+}
+const latestDeadline = records => records.filter(row => row.event === 'WAITING')
+  .reduce((latest, row) => !latest || row.retryAtMs > latest.retryAtMs ? row : latest, null);
+const waitingResult = row => ({ state: 'WAITING', scenarioPassed: false, taskCompleted: false,
+  retryAtMs: row.retryAtMs, retryCategory: row.retryCategory, retryStatus: row.retryStatus });
+function interrupted(root, records, result) {
+  if (!result.wait) {
+    append(root, records, 'INTERRUPTED', { exitCode: result.exitCode });
+    return { state: 'RECOVERING', scenarioPassed: false, taskCompleted: false };
+  }
+  // Failure and its deadline are one synced record. A torn record blocks resume.
+  append(root, records, 'WAITING', { exitCode: result.exitCode, retryAtMs: result.wait.retryAtMs,
+    retryCategory: result.wait.category, retryStatus: result.wait.httpStatus });
+  return waitingResult(latestDeadline(records));
+}
 
 function plainFile(path, max = MAX_JOURNAL_BYTES) {
   const stat = lstatSync(path);
@@ -68,9 +102,18 @@ export function readRecoveryJournal(root) {
   });
   for (const [index, row] of records.entries()) {
     need(row && row.seq === index + 1 && events.has(row.event) && Number.isSafeInteger(row.at)
-      && Object.keys(row).every(key => ['seq', 'event', 'at', 'pid', 'phase', 'exitCode'].includes(key)), 'JOURNAL_CORRUPT');
+      && Object.keys(row).every(key => (row.event === 'WAITING'
+        ? ['seq', 'event', 'at', 'exitCode', 'retryAtMs', 'retryCategory', 'retryStatus']
+        : ['seq', 'event', 'at', 'pid', 'phase', 'exitCode']).includes(key)), 'JOURNAL_CORRUPT');
     if (row.event === 'WORKER') need(Number.isInteger(row.pid) && row.pid > 0
       && ['effect', 'finish'].includes(row.phase), 'JOURNAL_CORRUPT');
+    if (row.event === 'WAITING') {
+      need(index > 0 && records.slice(0, index).some(previous => ['INTENT', 'EFFECT_CONFIRMED'].includes(previous.event)), 'JOURNAL_CORRUPT');
+      // Read the earlier two-record fixture format without shortening its deadline.
+      need(Object.hasOwn(row, 'exitCode') ? validExitCode(row.exitCode)
+        : records[index - 1].event === 'INTERRUPTED' && validExitCode(records[index - 1].exitCode), 'JOURNAL_CORRUPT');
+      waitFields({ retryAtMs: row.retryAtMs, category: row.retryCategory, httpStatus: row.retryStatus }, 'JOURNAL_CORRUPT');
+    }
   }
   return records;
 }
@@ -176,23 +219,21 @@ export async function runRecovery(root, { fault = 'none', holdMs = 0, execute = 
       append(root, records, 'UNKNOWN_EFFECT');
       return { state: 'UNKNOWN_EFFECT', scenarioPassed: true, taskCompleted: false };
     }
+    // A process restart or unrelated later record cannot shorten a server deadline.
+    // Returning here creates no worker, credential read, request or journal growth.
+    const waiting = latestDeadline(records);
+    if (waiting && Date.now() < waiting.retryAtMs) return waitingResult(waiting);
     if (!confirmed && !(manifest.mode === 'queryable' && effectReceipt(root, manifest))) {
       append(root, records, 'INTENT');
-      const result = await execute(root, manifest, records, 'effect', fault);
-      if (!result.completed) {
-        append(root, records, 'INTERRUPTED', { exitCode: result.exitCode });
-        return { state: 'RECOVERING', scenarioPassed: false, taskCompleted: false };
-      }
+      const result = executionResult(await execute(root, manifest, records, 'effect', fault));
+      if (!result.completed) return interrupted(root, records, result);
     }
     if (fault === 'before-record') process.exit(71);
     if (!confirmed) append(root, records, 'EFFECT_CONFIRMED');
     if (fault === 'after-record') process.exit(71);
     if (!records.some(row => row.event === 'COMPLETION_CONFIRMED') || !recoveryOracle(root)) {
-      const result = await execute(root, manifest, records, 'finish', fault);
-      if (!result.completed) {
-        append(root, records, 'INTERRUPTED', { exitCode: result.exitCode });
-        return { state: 'RECOVERING', scenarioPassed: false, taskCompleted: false };
-      }
+      const result = executionResult(await execute(root, manifest, records, 'finish', fault));
+      if (!result.completed) return interrupted(root, records, result);
       if (recoveryOracle(root)) append(root, records, 'COMPLETION_CONFIRMED');
     }
     const taskCompleted = recoveryOracle(root);

@@ -55,6 +55,8 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 `verify-native-recovery.mjs --live <model> <pwsh.exe> <prior-attempts> <prior-elapsed-ms> --service-signal`은 기존 로그인으로 실제 모델을 호출하는 별도 검사다. `luna/max`와 `sol/low`에서 효과 영수증 뒤 다음 전송 직전에 합성503 분류를 주입하고, 같은 세션을 자동 재개해 상태 조회와 원래 보고서를 완료했다. 각 조합은 실제 backend4요청, 효과·조회·보고서 각각1회였으며 오류 종료와 최종 성공, 지정 라우팅, 숫자 원장, 프로세스 회수를 대조했다. 주입된 신호는 `backendAttempted=false`로 기록하고 실제 backend HTTP503 응답이나 요청 사용량으로 세지 않는다. 도구 가드는 각 단계의 고정 도구와 빈 인수만 허용한다. 이 짧은 검사는 장기 서비스 중단이나 임의 개발 도구의 복구를 대신하지 않는다.
 
+`native-output.mjs` 수집기는 JSON/stream-json을 행마다 검사하고 중간 메시지를 누적하지 않는다. 두pipe의 정상 EOF, 유일한result/종료상태, native exit와 독립oracle이 일치해야 완료다. 실제 로컬 자식6개의 느린 소비·32MiB 이상 중간 출력·큰result·과대result·pipe 단절·잘림을 검사했으며, 효과와보고서가 있어도 결과가 누락되면완료=false였다. 소규모 복구 검증기에는 총1MiB·한행1MiB·4096레코드 상한으로 연결했다. 두 조합 설정의 실제 native stream-json에서도 전달 후 장애·오류result·동일 세션 재개·최종result와cleanup을 확인했다. 실제 모델 호출을 쓰는 복구 경로의 앞선 결합 성공은 수집기 교체 전 후보의 증거다. 장기 관리기 전체·native 최종result 직전pipe 단절 후 개발 복구는 아직 미검증이다.
+
 Not verified / 제한:
 
 - astra 최초 공개 단문 검사에서 전달 전 upstream error 1건이 있었고 이후 단독 검사는 성공했다. 최초 오류의 원인은 미확정이며 외부 서버 무장애를 보장하지 않는다.

@@ -115,7 +115,7 @@ try {
   const names = phase === 'effect' ? 'ToolSearch,mcp__fixture__apply_effect,mcp__fixture__complete_report'
     : 'ToolSearch,mcp__fixture__effect_status,mcp__fixture__complete_report';
   await main({ args: ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', '16',
-    '-p', '--output-format', 'json', '--tools', 'ToolSearch', '--allowedTools', names, '--max-turns', '8',
+    '-p', '--output-format', 'stream-json', '--verbose', '--tools', 'ToolSearch', '--allowedTools', names, '--max-turns', '8',
     ...(phase === 'effect' ? ['--session-id', manifest.operationId]
       : ['--resume', manifest.operationId, '--disallowedTools', 'mcp__fixture__apply_effect']), '--',
     phase === 'effect' ? 'PUBLIC_SERVICE_TASK: apply the one public fixture effect, complete its report, then return PUBLIC_SERVICE_RECOVERY_COMPLETE.'

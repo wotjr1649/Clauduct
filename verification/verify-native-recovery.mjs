@@ -5,6 +5,7 @@ import { fork, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { initializeRecovery, runRecovery, recordRecoveryWorker, recoveryOracle } from './unattended-recovery.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
+import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const entry = join(project, 'verification', 'native-recovery-entry.mjs');
@@ -46,7 +47,7 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
     cumulativeReservedMs: priorElapsedMs + 2 * phaseMs, mainConcurrency: 1,
     basis: 'Observed text runs used one attempt and 2.87-5.12s. Up to eight tool turns plus the existing retry allowance fit 16 attempts; two phases are reserved.',
     hashes: Object.fromEntries([selectedEntry, mcp, helper, ...['verification/verify-native-recovery.mjs',
-      'verification/unattended-recovery.mjs', 'verification/fixture-tool-policy.mjs', 'verification/verification-ledger.mjs',
+      'verification/unattended-recovery.mjs', 'verification/fixture-tool-policy.mjs', 'verification/verification-ledger.mjs', 'verification/native-output.mjs',
       'verification/manual-http-probe.mjs', 'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-protocol.mjs',
       'src/native-gateway.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/user-session.mjs', 'poc/adapter.mjs']
       .map(name => join(project, name))].map(path => [path.slice(project.length + 1), hash(path)])) };
@@ -77,13 +78,13 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
     const phaseStart = Date.now();
     const child = fork(selectedEntry, [root, phase, ...args], { cwd: work, env, execArgv: [], windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
-    let stdout = '', stderr = '', outputBytes = 0, tooLarge = false, finished = false, exitCode, failure = null;
+    const capture = createNativeOutputCapture({ maxBytes: budget.outputBytes, maxLineBytes: budget.outputBytes, maxRecords: 4096 });
+    let finished = false, exitCode, failure = null;
     const stopped = new Promise(done => {
       child.once('error', () => { failure = 'PROCESS_START_FAILED'; });
       child.once('close', code => { exitCode = code; finished = true; done(); });
     });
-    child.stdout.on('data', chunk => { outputBytes += chunk.length; if (outputBytes <= budget.outputBytes) stdout += chunk.toString(); else tooLarge = true; });
-    child.stderr.on('data', chunk => { outputBytes += chunk.length; if (outputBytes <= budget.outputBytes) stderr += chunk.toString(); else tooLarge = true; });
+    capture.watch(child.stdout, 'stdout'); capture.watch(child.stderr, 'stderr');
     recordRecoveryWorker(stateRoot, records, child.pid, phase);
     child.send({ start: true });
     let stopAttempted = false;
@@ -112,7 +113,9 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
           need(!existsSync(join(work, 'report.json')), 'CRASH_BOUNDARY_MISSED');
           treeEvidence = tree(true); crashInjected = true; break;
         }
-        if (tooLarge || Date.now() - phaseStart >= phaseMs) { failure = tooLarge ? 'OUTPUT_LIMIT' : 'PHASE_TIMEOUT'; treeEvidence = tree(true); break; }
+        if (capture.evidence().failure || Date.now() - phaseStart >= phaseMs) {
+          failure = capture.evidence().failure ?? 'PHASE_TIMEOUT'; treeEvidence = tree(true); break;
+        }
         await sleep(25);
       }
       await waitStopped();
@@ -123,9 +126,8 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
         ? error.message : 'NATIVE_RECOVERY_FAILED';
       if (!finished && !stopAttempted) { treeEvidence = tree(true); await waitStopped(); }
     }
-    let result = null, status = null;
-    try { result = JSON.parse(stdout); } catch { }
-    try { status = JSON.parse(stderr.split(/\r?\n/).filter(line => line.startsWith('CLAUDUCT_REQUEST_STATUS ')).at(-1)?.slice(24)); } catch { }
+    const output = capture.snapshot(), result = output.nativeResult, status = output.status;
+    if (!crashInjected && !output.valid) failure ??= output.evidence.failure ?? 'OUTPUT_INCOMPLETE';
     const rows = read(join(root, `transport-${phase}.jsonl`)).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
     const requests = rows.filter(row => row.event === 'REQUEST_STARTED');
     const settled = rows.filter(row => row.event === 'REQUEST_SETTLED');
@@ -137,11 +139,12 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
     const withinUsageBudget = usage.reduce((sum, row) => sum + (row.input_tokens ?? 0), 0) <= budget.maxObservedInputTokens
       && usage.reduce((sum, row) => sum + (row.output_tokens ?? 0), 0) <= budget.maxObservedOutputTokens;
     const clean = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
-    const completed = !failure && !crashInjected && exitCode === 0 && result?.is_error === false
-      && result.result?.trim() === 'CLAUDUCT_RECOVERY_DONE' && result.session_id === state.operationId
-      && status?.requestOutcome === 'all-succeeded' && clean && routeMatched && withinUsageBudget && treeEvidence?.stopped;
+    const completed = !failure && !crashInjected && nativeOutputCompleted(output, { exitCode,
+      sessionId: state.operationId, resultText: 'CLAUDUCT_RECOVERY_DONE', oraclePassed: recoveryOracle(root) })
+      && routeMatched && withinUsageBudget && treeEvidence?.stopped;
     const summary = { phase, elapsedMs: Date.now() - phaseStart, exitCode, failure, crashInjected, completed: completed === true,
-      routeMatched, attempts, attemptsComplete: requests.length === settled.length, usage, withinUsageBudget, outputBytes,
+      routeMatched, attempts, attemptsComplete: requests.length === settled.length, usage, withinUsageBudget,
+      outputBytes: output.evidence.bytes, outputCapture: output.evidence,
       nativeJson: result !== null, nativeError: result?.is_error ?? null, sameSession: result?.session_id === state.operationId,
       cleanupComplete: clean === true, tree: treeEvidence };
     if (serviceSignal) Object.assign(summary, { syntheticServiceSignals: signals.length, usageLedger });

@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { initializeRecovery, runRecovery, recordRecoveryWorker, recoveryOracle } from './unattended-recovery.mjs';
 import { SERVICE_FAULTS, SERVICE_MARKER } from './fixtures/service-faults.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
+import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const entry = join(project, 'verification', 'native-service-entry.mjs');
@@ -30,7 +31,7 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
   for (const name of ['config', 'temp']) mkdirSync(join(root, name));
   const sourceNames = ['verification/native-service-entry.mjs', 'verification/verify-native-service-recovery.mjs',
     'verification/fixtures/service-faults.mjs', 'verification/fixtures/native-recovery-mcp.mjs',
-    'verification/unattended-recovery.mjs', 'verification/stop-owned-native-tree.ps1',
+    'verification/unattended-recovery.mjs', 'verification/stop-owned-native-tree.ps1', 'verification/native-output.mjs',
     'src/native-transport.mjs', 'src/native-protocol.mjs', 'src/native-gateway.mjs', 'src/clauduct.mjs'];
   const sourceHashes = Object.fromEntries(sourceNames.map(name => [name, hash(join(project, name))]));
   write(join(root, 'budget.json'), { kind, model, effort: model === 'luna' ? 'max' : 'low', phaseMs: 30000,
@@ -52,13 +53,13 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
     const phaseStart = Date.now();
     const child = fork(entry, [root, phase, kind, model], { cwd: work, env, execArgv: [],
       windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
-    let stdout = '', stderr = '', outputBytes = 0, finished = false, exitCode = null, failure = null;
+    const capture = createNativeOutputCapture({ maxBytes: 1048576, maxLineBytes: 1048576, maxRecords: 4096 });
+    let finished = false, exitCode = null, failure = null;
     const stopped = new Promise(done => {
       child.once('error', () => { failure = 'SERVICE_PROCESS_START_FAILED'; });
       child.once('close', code => { finished = true; exitCode = code; done(); });
     });
-    child.stdout.on('data', chunk => { outputBytes += chunk.length; if (outputBytes <= 1048576) stdout += chunk.toString(); });
-    child.stderr.on('data', chunk => { outputBytes += chunk.length; if (outputBytes <= 1048576) stderr += chunk.toString(); });
+    capture.watch(child.stdout, 'stdout'); capture.watch(child.stderr, 'stderr');
     let stopAttempted = false;
     const tree = stop => {
       if (stop) { need(!stopAttempted, 'SERVICE_TREE_UNVERIFIED'); stopAttempted = true; }
@@ -81,9 +82,9 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
     try {
       recordRecoveryWorker(stateRoot, records, child.pid, phase);
       child.send({ start: true });
-      while (!finished && outputBytes <= 1048576 && Date.now() - phaseStart < 30000) await sleep(25);
+      while (!finished && !capture.evidence().failure && Date.now() - phaseStart < 30000) await sleep(25);
       if (!finished) {
-        failure = outputBytes > 1048576 ? 'SERVICE_OUTPUT_LIMIT' : 'SERVICE_PHASE_TIMEOUT';
+        failure = capture.evidence().failure ?? 'SERVICE_PHASE_TIMEOUT';
         treeEvidence = tree(true);
       }
       await waitStopped();
@@ -95,24 +96,23 @@ export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
         await waitStopped();
       }
     }
-    let result, status, service;
-    try { result = JSON.parse(stdout); } catch { failure ??= 'SERVICE_NATIVE_JSON_MISSING'; }
-    const markers = stderr.split(/\r?\n/).filter(line => line.startsWith('CLAUDUCT_REQUEST_STATUS '));
-    try { need(markers.length === 1, 'STATUS'); status = JSON.parse(markers[0].slice(24)); }
-    catch { failure ??= 'SERVICE_STATUS_MISSING'; }
+    const output = capture.snapshot(), result = output.nativeResult, status = output.status;
+    if (!output.valid) failure ??= output.evidence.failure ?? 'SERVICE_OUTPUT_INCOMPLETE';
+    let service;
     try { service = JSON.parse(read(join(root, `service-${phase}.json`))); }
     catch { failure ??= 'SERVICE_WIRE_EVIDENCE_MISSING'; }
     const cleanup = status?.cleanup && Object.keys(status.cleanup).length === 9
       && Object.values(status.cleanup).every(value => value === true);
-    const completed = !failure && exitCode === 0 && result?.is_error === false && result.result === SERVICE_MARKER
-      && result.session_id === state.operationId && status?.requestOutcome === 'all-succeeded' && cleanup === true;
+    const completed = !failure && nativeOutputCompleted(output, { exitCode, sessionId: state.operationId,
+      resultText: SERVICE_MARKER, oraclePassed: recoveryOracle(root) });
     const audit = read(join(work, 'mcp-events.jsonl'), 16384).trim().split('\n').map(line => JSON.parse(line));
     need(audit.every(row => Object.keys(row).length === 1 && ['apply_effect', 'effect_status', 'complete_report'].includes(row.name)), 'SERVICE_AUDIT_INVALID');
     const calls = Object.fromEntries(['apply_effect', 'effect_status', 'complete_report'].map(name => [name, audit.filter(row => row.name === name).length]));
     const summary = { phase, elapsedMs: Date.now() - phaseStart, exitCode, failure, completed: completed === true,
       nativeError: result?.is_error ?? null, sameSession: result?.session_id === state.operationId,
       markerMatched: result?.result === SERVICE_MARKER, requestOutcome: status?.requestOutcome ?? null,
-      cleanupComplete: cleanup === true, outputBytes, calls, service, status, tree: treeEvidence };
+      cleanupComplete: cleanup === true, outputBytes: output.evidence.bytes, outputCapture: output.evidence,
+      calls, service, status, tree: treeEvidence };
     phases.push(summary); write(join(root, `result-${phase}.json`), summary);
     need(!failure && cleanup && treeEvidence.stopped && service?.failure === null
       && service.routeMatched && service.serverClosed && service.socketsRemaining === 0, 'SERVICE_PHASE_FAILED');

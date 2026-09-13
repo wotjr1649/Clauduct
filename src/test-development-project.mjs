@@ -45,9 +45,9 @@ const pending = invoke(fixture, [call(1, 'write_source', input), call(2, 'run_te
 equal(value(pending[0]).written, true); equal(value(pending[1]).testsRun, false); equal(readDevelopmentSource(fixture.work, taskId), source);
 const events = () => readFileSync(join(fixture.work, 'events.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
 equal(events().filter(row => row.event === 'SOURCE_FILE_WRITTEN').map(row => row.path), task.parts.map(part => part.path));
-verifyDevelopmentSourceWrites(source, events(), taskId); checks++;
+verifyDevelopmentSourceWrites(source, events(), taskId, fixture.work); checks++;
 for (const rows of [events().filter(row => row.event !== 'SOURCE_WRITTEN'), events().filter(row => row.event !== 'SOURCE_FILE_WRITTEN')]) {
-  assert.throws(() => verifyDevelopmentSourceWrites(source, rows, taskId), { message: 'DEVELOPMENT_SOURCE_WRITES_INCOMPLETE' }); checks++;
+  assert.throws(() => verifyDevelopmentSourceWrites(source, rows, taskId, fixture.work), { message: 'DEVELOPMENT_SOURCE_WRITES_INCOMPLETE' }); checks++;
 }
 // This constant public source was reviewed above. Approval binds both files.
 writeFileSync(join(fixture.control, 'review.json'), JSON.stringify({ approved: true, sha256: sourceHash(source) }));
@@ -73,7 +73,7 @@ assert.throws(() => writeDevelopmentSource(partial.work, taskId, source, row => 
 }), { message: 'PUBLIC_RECORD_FAILURE' }); checks++;
 const partialFiles = JSON.parse(readDevelopmentSource(partial.work, taskId)).files;
 equal(partialFiles[0].code, input.files[0].code); equal(partialFiles[1].code, developmentTask(task.parts[1].taskId).baseline);
-assert.throws(() => verifyDevelopmentSourceWrites(readDevelopmentSource(partial.work, taskId), partialEvents, taskId),
+assert.throws(() => verifyDevelopmentSourceWrites(readDevelopmentSource(partial.work, taskId), partialEvents, taskId, partial.work),
   { message: 'DEVELOPMENT_SOURCE_WRITES_INCOMPLETE' }); checks++;
 assert.throws(() => classifyDevelopmentInterruption([{ event: 'TASK_READ' }, ...partialEvents], taskId),
   { message: 'INTERRUPTION_EVIDENCE_INVALID' }); checks++;

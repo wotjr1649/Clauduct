@@ -4,13 +4,17 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { developmentTask } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
-import { readDevelopmentSource, readDevelopmentOracle, verifyDevelopmentSourceWrites } from './development-source-files.mjs';
+import { readDevelopmentSource, readDevelopmentOracle, verifyDevelopmentSourceWrites, readDevelopmentSourceWriteEvidence } from './development-source-files.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const fail = () => { throw new Error('DEVELOPMENT_ARTIFACT_CHANGED'); };
 const need = value => { if (!value) fail(); };
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const keys = ['source', 'task', 'oracle', 'review', 'mcp', 'events'];
+export function developmentEventArtifactHash(work, taskId, events) {
+  return hash(developmentTask(taskId).parts ? JSON.stringify({ events,
+    writes: readDevelopmentSourceWriteEvidence(work, taskId) }) + '\n' : events);
+}
 
 // These are the task's bounded local artifacts. Capturing their bytes does not
 // execute code, approve a new source or establish that tests have passed.
@@ -34,11 +38,14 @@ export function readDevelopmentArtifactHashes(root, taskId) {
         && before.size === after.size && before.mtimeNs === after.mtimeNs);
     }
     checkDevelopmentSource(new TextDecoder('utf-8', { fatal: true }).decode(bytes.source), taskId);
-    if (developmentTask(taskId).parts) verifyDevelopmentSourceWrites(bytes.source.toString('utf8'),
-      new TextDecoder('utf-8', { fatal: true }).decode(bytes.events).trim().split('\n').map(JSON.parse), taskId);
+    if (developmentTask(taskId).parts) {
+      verifyDevelopmentSourceWrites(bytes.source.toString('utf8'),
+        new TextDecoder('utf-8', { fatal: true }).decode(bytes.events).trim().split('\n').map(JSON.parse), taskId, join(root, 'work'));
+    }
     const review = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes.review));
     need(review && Object.keys(review).length === 2 && review.approved === true && review.sha256 === hash(bytes.source));
-    return Object.fromEntries(keys.map(key => [key, hash(bytes[key])]));
+    return Object.fromEntries(keys.map(key => [key, key === 'events'
+      ? developmentEventArtifactHash(join(root, 'work'), taskId, bytes.events.toString('utf8')) : hash(bytes[key])]));
   } catch { fail(); }
 }
 

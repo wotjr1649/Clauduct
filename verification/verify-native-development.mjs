@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createDevelopmentFixture, sourceHash } from './development-fixture.mjs';
 import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
-import { readDevelopmentArtifactHashes, verifyDevelopmentArtifacts } from './development-artifacts.mjs';
+import { readDevelopmentArtifactHashes, verifyDevelopmentArtifacts, developmentEventArtifactHash } from './development-artifacts.mjs';
 import { readDevelopmentSource, developmentSourcePaths, readDevelopmentOracle, expectedDevelopmentOracle, developmentOracleInvocation } from './development-source-files.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
@@ -31,7 +31,7 @@ function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
-    'verification/development-source-files.mjs', 'verification/fixtures/development-project-oracle.mjs',
+    'verification/development-source-files.mjs', 'verification/fixtures/development-project-oracle.mjs', 'verification/fixtures/development-write-worker.mjs',
     'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs', 'verification/development-artifacts.mjs', 'verification/development-change.mjs', 'verification/fixtures/development-integration-oracle.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/execution-account.mjs', 'verification/managed-development.mjs', 'verification/managed-ledger-account.mjs', 'verification/managed-plan-entry.mjs',
@@ -383,12 +383,17 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
   localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16,
-  earlyExitAfterRead = false, resumeIncompleteRoot, onReservation, executionAccountHash, resumeInterruptedRoot, holdAfterSourceWrite = false, holdAfterTaskRead = false }) {
+  earlyExitAfterRead = false, resumeIncompleteRoot, onReservation, executionAccountHash, resumeInterruptedRoot, holdAfterSourceWrite = false,
+  holdAfterTaskRead = false, recoverAfterFirstSourceWrite = false }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
     && typeof cutOutputAfterPass === 'boolean' && Number.isSafeInteger(requestLimit) && requestLimit >= 1 && requestLimit <= 16
     && typeof earlyExitAfterRead === 'boolean'
+    && typeof recoverAfterFirstSourceWrite === 'boolean'
+    && (!recoverAfterFirstSourceWrite || localNative && taskId === 'retry-project' && !cutOutputAfterPass && !earlyExitAfterRead
+      && !holdAfterSourceWrite && !holdAfterTaskRead && resumeRoot === undefined && resumeIncompleteRoot === undefined
+      && resumeInterruptedRoot === undefined && continueFrom === undefined)
     && typeof holdAfterSourceWrite === 'boolean' && typeof holdAfterTaskRead === 'boolean' && !(holdAfterSourceWrite && holdAfterTaskRead)
     && (!(holdAfterSourceWrite || holdAfterTaskRead) || localNative && !cutOutputAfterPass && !earlyExitAfterRead
       && resumeRoot === undefined && resumeIncompleteRoot === undefined && resumeInterruptedRoot === undefined && continueFrom === undefined)
@@ -416,7 +421,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   if (interrupted) need(interrupted.evidence.model === model && interrupted.evidence.localNative === localNative
     && interrupted.evidence.taskId === taskId, 'RESUME_INTERRUPTION_INVALID');
   const fixture = interrupted?.fixture ?? (resuming ? resumeDevelopmentFixture(resumeRoot ?? resumeIncompleteRoot, model, localNative, taskId, retrying)
-    : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, holdAfterSourceWrite, holdAfterTaskRead, taskId }));
+    : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, holdAfterSourceWrite, holdAfterTaskRead, recoverAfterFirstSourceWrite, taskId }));
   const { project, root, work, control, task } = fixture;
   if (retrying || recovering) {
     const supplied = { priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens };
@@ -426,7 +431,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
   const phaseMs = localNative ? 30000 : finishing ? 120000 : 600000;
   const configRoot = context?.configRoot ?? fixture.configRoot ?? join(root, 'config');
-  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, earlyExitAfterRead, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
+  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, earlyExitAfterRead, recoverAfterFirstSourceWrite, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
     outputBytes: 1048576, mainConcurrency: 1, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
     cumulativeReservedAttempts: priorAttempts + requestLimit, cumulativeReservedMs: priorElapsedMs + phaseMs,
     cumulativeObservedInputLimit: priorInputTokens + 131072, cumulativeObservedOutputLimit: priorOutputTokens + 32768,
@@ -590,6 +595,13 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const sourceUnchanged = Object.entries(budget.hashes).every(([path, hash]) => sourceHash(readFileSync(join(project, path))) === hash);
   const eventsText = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')) : '';
   const events = eventsText.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  const interruptedWorkers = events.filter(row => row.event === 'SOURCE_WORKER_INTERRUPTED');
+  const sourceWriteRecoveryMatched = !recoverAfterFirstSourceWrite || interruptedWorkers.length === 1
+    && Object.keys(interruptedWorkers[0]).length === 2 && interruptedWorkers[0].exitCode === 71
+    && events.filter(row => row.event === 'SOURCE_FILE_CONFIRMED').length === 1
+    && events.filter(row => row.event === 'SOURCE_FILE_WRITTEN').length === 1
+    && events.filter(row => row.event === 'SOURCE_RECOVERY_STARTED').length === 1;
+  if (!sourceWriteRecoveryMatched) failure ??= 'SOURCE_WRITE_RECOVERY_UNVERIFIED';
   const sha256 = sourceHash(readDevelopmentSource(work, taskId));
   const review = JSON.parse(read(join(control, 'review.json'), 1024));
   const oracleUnchanged = sourceHash(readDevelopmentOracle(control, taskId)) === fixture.oracleHash;
@@ -636,7 +648,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     try {
       artifactHashes = readDevelopmentArtifactHashes(root, taskId);
       verifyDevelopmentArtifacts(root, { taskId, sourceSha256: sha256, artifactHashes }, budget);
-      need(artifactHashes.events === sourceHash(eventsText), 'DEVELOPMENT_ARTIFACT_CHANGED');
+      need(artifactHashes.events === developmentEventArtifactHash(work, taskId, eventsText), 'DEVELOPMENT_ARTIFACT_CHANGED');
     } catch { failure ??= 'DEVELOPMENT_ARTIFACT_CHANGED'; }
   }
   const passed = !failure && nativeOutputCompleted(output, { exitCode, sessionId, resultText: 'CLAUDUCT_DEVELOPMENT_DONE', oraclePassed: independentPassed })
@@ -650,7 +662,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && events.filter(row => row.event === 'SOURCE_WRITTEN').length === 1 && routeMatched && requests.length === settled.length
     && attempts <= budget.requestLimit && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens;
   const summary = { suite: localNative ? 'native-development-local' : 'native-development-live', root, model, effort, taskId, localNative, phase, sessionId,
-    continuedFrom: context?.root ?? null, contextMatched, contextEvidence: contexts[0] ?? null,
+    continuedFrom: context?.root ?? null, contextMatched, contextEvidence: contexts[0] ?? null, sourceWriteRecoveryMatched,
     actualModelRequests: localNative ? 0 : attempts, passed: passed === true, failure, exitCode,
     elapsedMs, attempts, attemptsComplete: requests.length === settled.length, inputTokens, outputTokens,
     cumulativeAttempts: priorAttempts + attempts, cumulativeElapsedMs: priorElapsedMs + elapsedMs,

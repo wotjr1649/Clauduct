@@ -10,6 +10,7 @@ import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
 import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
+import { rateLimitEvidence } from '../src/rate-limit-observation.mjs';
 
 const need = (ok, label) => { if (!ok) throw new Error(label); };
 const sleep = ms => new Promise(done => setTimeout(done, ms));
@@ -30,7 +31,7 @@ function developmentHashes(project, localNative) {
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
     'verification/verify-native-recovery.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/adapter.mjs',
-    'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs', 'src/request-status.mjs',
+    'src/clauduct.mjs', 'src/native-transport.mjs', 'src/rate-limit-observation.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs', 'src/request-status.mjs',
     'poc/user-session.mjs', 'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs'];
   return Object.fromEntries(files.map(name => {
     const path = join(project, name); return [path.slice(project.length + 1), sourceHash(readFileSync(path))];
@@ -243,6 +244,14 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && usageLedger.unobservedCompletions === rows.filter(row => row.event === 'USAGE_UNOBSERVED').length;
   const completedUsageObserved = usageLedger?.version === 2 && usageLedger.unobservedCompletions === 0;
   const usageUnobservedAttempts = usageLedger ? usageLedger.requestAttempts - usageLedger.completions : null;
+  let rateLimits = null;
+  const limitRows = rows.filter(row => row.event === 'RESPONSE_LIMITS');
+  try { rateLimits = rateLimitEvidence(limitRows); }
+  catch { failure ??= 'RATE_LIMIT_EVIDENCE_INVALID'; }
+  const rateLimitsMatched = rateLimits !== null && usageLedger !== null
+    && rateLimits.responseCount >= usageLedger.completions + usageLedger.unobservedCompletions
+    && rateLimits.responseCount <= usageLedger.requestAttempts
+    && limitRows.every(row => row.requestAttempt <= usageLedger.requestAttempts);
   if (usageLedger?.unobservedCompletions > 0) failure ??= 'INVALID_USAGE';
   const sourceUnchanged = Object.entries(budget.hashes).every(([path, hash]) => sourceHash(readFileSync(join(project, path))) === hash);
   const events = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
@@ -262,12 +271,12 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const cleanupComplete = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
   if (!contextMatched) failure ??= 'CONTINUATION_CONTEXT_MISSING';
   const passed = !failure && nativeOutputCompleted(output, { exitCode, sessionId, resultText: 'CLAUDUCT_DEVELOPMENT_DONE', oraclePassed: independentPassed })
-    && ledgerMatched && completedUsageObserved && sourceUnchanged && treeEvidence?.stopped && recordedNativeStopped
+    && ledgerMatched && completedUsageObserved && rateLimitsMatched && sourceUnchanged && treeEvidence?.stopped && recordedNativeStopped
     && routeMatched && requests.length === settled.length && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens
     && events[0]?.event === 'TASK_READ' && baselineFailed && revisedPassed && independentPassed && oracleUnchanged;
   const outputCutObserved = outputCut && cutReleased && output.evidence.failure === 'OUTPUT_PIPE_CLOSED'
     && output.evidence.resultCount === 0 && output.valid === false && treeEvidence?.stopped === true
-    && sourceUnchanged && ledgerMatched && independentPassed && baselineFailed && revisedPassed && recordedNativeStopped
+    && sourceUnchanged && ledgerMatched && rateLimitsMatched && independentPassed && baselineFailed && revisedPassed && recordedNativeStopped
     && events.filter(row => row.event === 'SOURCE_WRITTEN').length === 1 && routeMatched && requests.length === settled.length
     && attempts <= budget.requestLimit && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens;
   const elapsedMs = Date.now() - phaseStart;
@@ -279,7 +288,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     cumulativeInputTokens: priorInputTokens + inputTokens, cumulativeOutputTokens: priorOutputTokens + outputTokens,
     routeMatched, nativeJson: result !== null, nativeError: result?.is_error ?? null, cleanupComplete: cleanupComplete === true,
     baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256,
-    sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics,
+    sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics, rateLimits, rateLimitsMatched,
     outputCut, cutReleased, outputCutObserved, recordedNativeStopped,
     output: output.evidence, tree: treeEvidence };
   write(join(root, finishing ? 'result-finish.json' : 'result.json'), summary); return summary;

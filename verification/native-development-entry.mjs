@@ -56,7 +56,8 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
     }, openTransport: options => {
       const factory = transportFactory ?? options.transportFactory;
       const transport = openTransport({ ...options, transportFactory: configuration => factory({ ...configuration,
-        onAttempt: value => ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }) }) });
+        onAttempt: value => ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }),
+        onResponseLimits: value => { record({ event: 'RESPONSE_LIMITS', ...value }); } }) });
       guarded = guardFixtureTransport(transport, { version: 1, kind: 'development', taskId: budget.taskId, workingRoot: process.cwd(),
         ...(phase === 'development-finish' ? { phase: 'finish' } : {}) }, { onUsage: value => {
         ledger.record('usage', value);

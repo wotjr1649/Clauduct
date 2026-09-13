@@ -6,6 +6,7 @@ import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.
 import { ENDPOINT } from '../poc/adapter.mjs';
 import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, FAILURE_DIAGNOSTIC_CATEGORIES, UPSTREAM_FAILURES, upstreamFailure, searchEnvelope } from './native-protocol.mjs';
 import { parseRetryAfter } from './retry-after.mjs';
+import { observeRateLimitHeaders } from './rate-limit-observation.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -45,12 +46,12 @@ function searchConnectionFailure(error) {
     ? Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: failure.retryable }) : failure;
 }
 
-export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget, onAttempt }) {
+export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget, onAttempt, onResponseLimits }) {
   clientVersionPolicy(clientVersion);
   checkRuntime(process.env, process.execArgv);
   need(typeof credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpsRequest, HttpsAgent, ENDPOINT,
-    { credential, credentialSupplier, clientVersion, synthetic: false, options: { requestBudget, onAttempt } });
+    { credential, credentialSupplier, clientVersion, synthetic: false, options: { requestBudget, onAttempt, onResponseLimits } });
 }
 
 export function createNativeLoopbackTransport(port, options = {}) {
@@ -88,6 +89,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   const requestBudget = options.requestBudget;
   need(requestBudget === undefined || (Number.isSafeInteger(requestBudget) && requestBudget >= 1 && requestBudget <= 4096), 'INVALID_LIMIT');
   need(options.onAttempt === undefined || typeof options.onAttempt === 'function', 'INVALID_OPTIONS');
+  need(options.onResponseLimits === undefined || typeof options.onResponseLimits === 'function', 'INVALID_OPTIONS');
   const compatibility = clientVersionPolicy(clientVersion);
   const settings = {
     maxRetries: NATIVE_TRANSPORT_LIMITS.maxRetries,
@@ -114,6 +116,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   let closed = false, attempts = 0, retries = 0, connectionAttempts = 0;
   let lastCategory = 'NONE', lastStatus = null, responseBytes = 0, totalResponseBytes = 0;
   let retryNotBeforeMs = 0, retryAfterUnrepresentable = false;
+  let responseObserverFailed = false;
 
   function beginAttempt() {
     attempts++;
@@ -121,9 +124,29 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     // any socket is opened. No credentials, destination, headers or body escape.
     try { options.onAttempt?.(Object.freeze({ requestAttempts: attempts })); }
     catch { throw new NativeError('ATTEMPT_OBSERVER_FAILED'); }
+    return attempts;
+  }
+
+  function observeResponseLimits(response, requestAttempt, kind) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
+    if (!options.onResponseLimits) return;
+    try {
+      const result = options.onResponseLimits(Object.freeze({ requestAttempt, kind, httpStatus: response.statusCode,
+        observation: observeRateLimitHeaders(response.rawHeaders) }));
+      // The reservation/evidence callback must finish synchronously, before
+      // response events are released. An async callback cannot attest that.
+      if (result !== undefined) {
+        Promise.resolve(result).catch(() => {});
+        throw new NativeError('RESPONSE_OBSERVER_FAILED');
+      }
+    } catch {
+      responseObserverFailed = true;
+      throw new NativeError('RESPONSE_OBSERVER_FAILED');
+    }
   }
 
   function checkAttemptState(signal) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
     need(!signal.aborted, 'CANCELLED');
     need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
     checkRetryDeadline();
@@ -343,7 +366,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
 
   async function requestOnce(job, raw, current, onEvent, isRetry) {
     checkAttemptState(job.controller.signal);
-    let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
+    let req, response, socket, socketClosed, requestAttempt, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
     const headers = buildHeaders(current, clientVersion, raw);
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
@@ -353,7 +376,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const state = parser({ onEvent, events: collected, timing });
     job.attemptTimings.push(timing);
     try {
-      lastStatus = null; responseBytes = 0; beginAttempt();
+      lastStatus = null; responseBytes = 0; requestAttempt = beginAttempt();
       if (isRetry) retries++;
       response = await new Promise((resolve, reject) => {
         req = request(destination, { method: 'POST', agent, signal: job.controller.signal,
@@ -379,6 +402,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       });
       lastStatus = response.statusCode ?? null;
       timing.status = lastStatus; timing.headersMs = elapsed();
+      observeResponseLimits(response, requestAttempt, 'responses');
       if (response.statusCode !== 200) {
         throw errorForStatus(response);
       }
@@ -437,6 +461,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   }
 
   async function send(body, signal, options = {}) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
     need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
     checkRetryDeadline();
     need(signal instanceof AbortSignal && !signal.aborted, 'CANCELLED');
@@ -517,6 +542,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   const searchSession = randomUUID();
 
   async function search(body, signal) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
     need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
     checkRetryDeadline();
     need(!closed, 'TRANSPORT_CLOSED');
@@ -565,7 +591,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const headers = buildSearchHeaders(credential, clientVersion, raw,
       searchEnvelope().headers['x-codex-turn-metadata']);
     const timeoutMs = Math.min(settings.timeoutMs, 45_000);
-    lastStatus = null; responseBytes = 0; beginAttempt();
+    lastStatus = null; responseBytes = 0; const requestAttempt = beginAttempt();
     if (isRetry) retries++;
     return new Promise((resolveResult, reject) => {
       let settled = false, req;
@@ -577,6 +603,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
         const chunks = [];
         let length = 0;
         lastStatus = res.statusCode ?? 0;
+        try { observeResponseLimits(res, requestAttempt, 'search'); }
+        catch (error) { res.destroy(); req.destroy(); done(reject, error); return; }
         res.on('data', chunk => {
           if ((length += chunk.length) > settings.maxResponseBytes) {
             req.destroy(); done(reject, new NativeError('RESPONSE_TOO_LARGE'));

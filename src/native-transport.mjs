@@ -4,7 +4,7 @@ import { request as httpRequest, Agent as HttpAgent } from 'node:http';
 import { buildHeaders, buildSearchHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
 import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, UPSTREAM_FAILURES, upstreamFailure, searchEnvelope } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, FAILURE_DIAGNOSTIC_CATEGORIES, UPSTREAM_FAILURES, upstreamFailure, searchEnvelope } from './native-protocol.mjs';
 import { parseRetryAfter } from './retry-after.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
@@ -22,6 +22,28 @@ export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
 });
 
 const criticalHeaders = ['content-type', 'content-encoding', 'content-length', 'transfer-encoding'];
+const certificateErrors = new Set(['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'INVALID_CA', 'PATH_LENGTH_EXCEEDED']);
+function connectionFailure(error, timedOut) {
+  // Keep raw Node/OpenSSL messages and unrecognized codes out of diagnostics.
+  // A verification or access denial must not enter the transient I/O retry loop.
+  const code = typeof error?.code === 'string' ? error.code : '';
+  const category = timedOut ? 'UPSTREAM_IDLE_TIMEOUT'
+    : certificateErrors.has(code) || ['CERT_', 'ERR_TLS_', 'ERR_SSL_', 'ERR_OSSL_'].some(prefix => code.startsWith(prefix)) ? 'UPSTREAM_TLS_ERROR'
+    : ['EACCES', 'EPERM'].includes(code) ? 'UPSTREAM_ACCESS_DENIED'
+    : ['EAI_AGAIN', 'ENOTFOUND'].includes(code) ? 'UPSTREAM_DNS_ERROR' : 'UPSTREAM_IO_ERROR';
+  const failure = new NativeError(category);
+  failure.retryable = category === 'UPSTREAM_IDLE_TIMEOUT' || category === 'UPSTREAM_DNS_ERROR'
+    || category === 'UPSTREAM_IO_ERROR' && !code.startsWith('HPE_');
+  return failure;
+}
+function searchConnectionFailure(error) {
+  if (error instanceof NativeError) return error;
+  const failure = connectionFailure(error, false);
+  return failure.code === 'UPSTREAM_IO_ERROR'
+    ? Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: failure.retryable }) : failure;
+}
 
 export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget, onAttempt }) {
   clientVersionPolicy(clientVersion);
@@ -316,7 +338,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     const headers = buildHeaders(current, clientVersion, raw);
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
-      headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false,
+      headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false, failureCategory: null,
       terminalState: 'open', postCompletionFrame: null, postCompletionSequence: null };
     const state = parser({ onEvent, events: collected, timing });
     job.attemptTimings.push(timing);
@@ -362,20 +384,23 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       reusable = true;
       return result;
     } catch (error) {
+      const reject = failure => {
+        timing.failureCategory = FAILURE_DIAGNOSTIC_CATEGORIES.includes(failure.code) ? failure.code : 'OTHER';
+        throw failure;
+      };
       // A validated mismatch predates any cancellation arriving while the callback unwinds.
-      if (error instanceof NativeError && error.code === 'SNAPSHOT_MISMATCH') throw error;
+      if (error instanceof NativeError && error.code === 'SNAPSHOT_MISMATCH') reject(error);
       if (job.controller.signal.aborted) {
         if (timedOut) {
-          const timeout = new NativeError('UPSTREAM_IDLE_TIMEOUT'); timeout.retryable = true; throw timeout;
+          const timeout = new NativeError('UPSTREAM_IDLE_TIMEOUT'); timeout.retryable = true; reject(timeout);
         }
-        throw new NativeError('CANCELLED');
+        reject(new NativeError('CANCELLED'));
       }
-      if (error instanceof NativeError) throw error;
+      if (error instanceof NativeError) reject(error);
       if (streaming) {
-        const truncated = new NativeError('TRUNCATED_STREAM'); truncated.retryable = true; throw truncated;
+        const truncated = new NativeError('TRUNCATED_STREAM'); truncated.retryable = true; reject(truncated);
       }
-      const io = new NativeError(timedOut ? 'UPSTREAM_IDLE_TIMEOUT' : 'UPSTREAM_IO_ERROR');
-      io.retryable = timedOut || !String(error?.code ?? '').startsWith('HPE_'); throw io;
+      reject(connectionFailure(error, timedOut));
     } finally {
       timing.endedMs = elapsed(); timing.completed = reusable;
       if (response?.statusCode === 200) responseBytes = bytes;
@@ -505,11 +530,11 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
         if (error?.retryable === true) {
           await wait(job, retryDelay(1, error));
           need(!job.controller.signal.aborted, 'CANCELLED');
-          return await searchOnce(job, body, current);
+          return await searchOnce(job, body, current, true);
         }
         if (error?.code !== 'UNAUTHENTICATED' || !supplier) throw error;
         current = await resolveCredential(true, account);
-        return await searchOnce(job, body, current);
+        return await searchOnce(job, body, current, true);
       }
     } catch (error) {
       lastCategory = error?.code ?? 'SEARCH_UNAVAILABLE';
@@ -522,7 +547,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     }
   }
 
-  function searchOnce(job, body, credential) {
+  function searchOnce(job, body, credential, isRetry = false) {
     need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
     checkRetryDeadline();
     const raw = JSON.stringify({ ...body, id: searchSession });
@@ -530,12 +555,13 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
       searchEnvelope().headers['x-codex-turn-metadata']);
     const timeoutMs = Math.min(settings.timeoutMs, 45_000);
     lastStatus = null; responseBytes = 0; beginAttempt();
+    if (isRetry) retries++;
     return new Promise((resolveResult, reject) => {
-      let settled = false;
+      let settled = false, req;
       const done = (action, value) => { if (!settled) { settled = true; clearTimeout(timer); action(value); } };
-      const timer = setTimeout(() => { req.destroy(); done(reject, new NativeError('UPSTREAM_IDLE_TIMEOUT')); }, timeoutMs);
+      const timer = setTimeout(() => { req?.destroy(); done(reject, new NativeError('UPSTREAM_IDLE_TIMEOUT')); }, timeoutMs);
       job.timers.add(timer);
-      const req = request(searchDestination, { method: 'POST', agent, headers,
+      try { req = request(searchDestination, { method: 'POST', agent, headers,
         ...(request === httpsRequest && { rejectUnauthorized: true }) }, res => {
         const chunks = [];
         let length = 0;
@@ -573,9 +599,9 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           const error = Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: true });
           req.destroy(error); done(reject, error);
         }
-      });
-      req.on('error', () => done(reject, job.controller.signal.aborted ? new NativeError('CANCELLED')
-        : Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: true })));
+      }); } catch (error) { done(reject, searchConnectionFailure(error)); return; }
+      req.on('error', error => done(reject, job.controller.signal.aborted ? new NativeError('CANCELLED')
+        : searchConnectionFailure(error)));
       job.controller.signal.addEventListener('abort', () => { req.destroy(); done(reject, new NativeError('CANCELLED')); }, { once: true });
       req.end(raw);
     });

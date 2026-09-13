@@ -116,6 +116,7 @@ export function requestStatusSnapshot(value, env = {}) {
     attempts: Array.isArray(row?.attempts) ? row.attempts.slice(0, 6).map(attempt => ({
       ...Object.fromEntries(['attempt', 'startedMs', 'requestFlushedMs', 'headersMs', 'firstBodyMs', 'endedMs', 'status']
         .map(key => [key, number(attempt?.[key])])), completed: attempt?.completed === true,
+      failureCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(attempt?.failureCategory) ? attempt.failureCategory : null,
       terminalState: ['open', 'completed', 'done', ...Object.keys(UPSTREAM_FAILURES)].includes(attempt?.terminalState) ? attempt.terminalState : null,
       postCompletionFrame: [...EVENT_DIAGNOSTIC_TYPES, 'done', 'invalid-json', 'oversized'].includes(attempt?.postCompletionFrame) ? attempt.postCompletionFrame : null,
       postCompletionSequence: ['missing', 'unsequenced', 'invalid', 'expected', 'unexpected'].includes(attempt?.postCompletionSequence) ? attempt.postCompletionSequence : null })) : [] });

@@ -31,3 +31,28 @@ function ConvertFrom-ClauductTransportProgress {
         return @{ records = $records; summary = @{ samples = $records.Count; last = $records[-1] } }
     } catch { throw 'VERIFICATION_PROGRESS_INVALID' }
 }
+
+function ConvertFrom-ClauductConnectionFault {
+    param([string] $Text, [int] $RequestLimit, [object[]] $Attempts)
+    try {
+        if ($Text.Length -gt 262144 -or $RequestLimit -lt 2 -or $RequestLimit -gt 256 -or
+            $Text.Contains('GUARDED_ENTRY VERIFICATION_CONNECTION_FAULT_REJECTED')) { throw 'INVALID' }
+        $prefix = 'CLAUDUCT_CONNECTION_FAULT '
+        $records = @($Text -split "`n" | Where-Object { $_.StartsWith($prefix) })
+        if ($records.Count -ne 1 -or $records[0].Length -gt 1024) { throw 'INVALID' }
+        $value = $records[0].Substring($prefix.Length) | ConvertFrom-Json -AsHashtable
+        if ($value -isnot [Collections.IDictionary] -or $value.Count -ne 3 -or
+            @($value.Keys | Where-Object { $_ -notin @('connectionCalls','injected','restored') }).Count -or
+            ($value.connectionCalls -isnot [int] -and $value.connectionCalls -isnot [long]) -or
+            $value.connectionCalls -lt 2 -or $value.connectionCalls -gt $RequestLimit -or
+            ($value.injected -isnot [int] -and $value.injected -isnot [long]) -or $value.injected -ne 1 -or
+            $value.restored -isnot [bool] -or $value.restored -ne $true -or $Attempts.Count -gt 256) { throw 'INVALID' }
+        $dns = @($Attempts | Where-Object { $_.failureCategory -eq 'UPSTREAM_DNS_ERROR' })
+        $success = @($Attempts | Where-Object { $_.completed -is [bool] -and $_.completed -eq $true -and
+            ($_.status -is [int] -or $_.status -is [long]) -and $_.status -eq 200 })
+        if ($dns.Count -ne 1 -or $dns[0] -isnot [Collections.IDictionary] -or -not $dns[0].Contains('status') -or
+            ($dns[0].attempt -isnot [int] -and $dns[0].attempt -isnot [long]) -or $dns[0].attempt -ne 1 -or
+            $null -ne $dns[0].status -or $dns[0].completed -isnot [bool] -or $dns[0].completed -ne $false -or $success.Count -lt 1) { throw 'INVALID' }
+        return @{ connectionCalls = $value.connectionCalls; injected = 1; restored = $true }
+    } catch { throw 'VERIFICATION_CONNECTION_FAULT_INVALID' }
+}

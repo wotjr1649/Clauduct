@@ -5,12 +5,15 @@ param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 
     [ValidateSet('png', 'jpeg', 'gif', 'webp')][string] $ImageFormat = 'png',
     [ValidateSet('foreground', 'fork', 'relay')][string] $CompletionMode = 'foreground',
     [switch] $StopAfterFirstCompletion,
+    [switch] $FailFirstConnection,
     [ValidateRange(1, 120)][int] $TimeoutSeconds = 90,
     [ValidateRange(1, 256)][int] $RequestLimit = 16)
 
 $ErrorActionPreference = 'Stop'
 if (-not $Live) { throw 'LIVE_FLAG_REQUIRED' }
 if ($StopAfterFirstCompletion -and $Case -ne 'image') { throw 'STOP_FIXTURE_REQUIRES_IMAGE_CASE' }
+if ($FailFirstConnection -and $Case -ne 'text') { throw 'CONNECTION_FAULT_REQUIRES_TEXT_CASE' }
+if ($FailFirstConnection -and $RequestLimit -lt 2) { throw 'CONNECTION_FAULT_REQUEST_LIMIT' }
 if ($CompletionMode -ne 'foreground' -and $Case -ne 'completion') { throw 'COMPLETION_MODE_REQUIRES_COMPLETION_CASE' }
 $completionFork = $Case -eq 'completion' -and $CompletionMode -eq 'fork'
 $completionRelay = $Case -eq 'completion' -and $CompletionMode -eq 'relay'
@@ -170,16 +173,17 @@ $info.Environment['CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY'] = '1'
 if ($completionFork) { $info.Environment['CLAUDE_CODE_FORK_SUBAGENT'] = '1' }
 if ($Case -eq 'build-powershell') { $info.Environment['CLAUDE_CODE_USE_POWERSHELL_TOOL'] = '1' }
 $entryArgs = @((Join-Path $taskRoot 'src/clauduct.mjs'))
-$guardedFixture = $Case -in @('agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch')
+$guardedFixture = $Case -in @('agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch') -or $FailFirstConnection
 if ($guardedFixture) {
     $policyPath = Join-Path $fixtureRoot 'tool-policy.json'
-    $policy = @{ version = 1; kind = $Case; workingRoot = $workingRoot }
+    $policy = @{ version = 1; kind = $(if ($FailFirstConnection) { 'none' } else { $Case }); workingRoot = $workingRoot }
     if ($Case -in @('agent', 'completion')) { $policy.readPath = Join-Path $taskRoot 'src/models.mjs' }
     elseif ($Case -eq 'image') { $policy.readPath = $imagePath }
     elseif ($Case -eq 'workflow') { $policy.workflowScript = $workflowScript }
     if ($Case -eq 'completion') { $policy.parentPrompt = $parentPrompt; $policy.childPrompts = $childPrompts; $policy.completionMode = $CompletionMode }
     [IO.File]::WriteAllText($policyPath, ($policy | ConvertTo-Json -Depth 4))
     $entryArgs = @((Join-Path $taskRoot 'verification/guarded-headless-entry.mjs'), $policyPath)
+    if ($FailFirstConnection) { $entryArgs[0] = Join-Path $taskRoot 'verification/dns-recovery-entry.mjs' }
 }
 $phases = if ($Case -eq 'failure-resume') { @('seed', 'failure', 'resume') } elseif ($Case -eq 'resume') { @('seed', 'resume') } else { @('single') }
 foreach ($phase in $phases) {
@@ -481,6 +485,15 @@ try {
             $passed = $passed -and $featureVerified
         }
     }
+    $connectionFault = $null
+    $connectionFaultVerified = -not $FailFirstConnection
+    if ($FailFirstConnection) {
+        try {
+            $connectionFault = ConvertFrom-ClauductConnectionFault -Text $stderr -RequestLimit $RequestLimit -Attempts @($status.recentRequests | ForEach-Object { $_.attempts })
+            $connectionFaultVerified = $true
+        } catch { $connectionFaultVerified = $false }
+        $passed = $passed -and $connectionFaultVerified
+    }
     $executionClock.Stop()
     $safeUsage = @{}
     foreach ($usageKey in @('input_tokens','output_tokens','cache_read_input_tokens','cache_creation_input_tokens')) {
@@ -490,6 +503,7 @@ try {
     $summary = [ordered]@{ suite = 'native-headless-live'; case = $Case; phase = $phase; passed = $passed; exitCode = $nativeExitCode; timedOut = $timedOut;
         injectedStop = $injectedStop; injectedStopAfterCompletions = $injectedStopAfterCompletions;
         stopControlFailure = $stopControlFailure; stopJournalBoundaryRejected = $stopJournalBoundaryRejected;
+        connectionFaultRequested = [bool]$FailFirstConnection; connectionFaultVerified = $connectionFaultVerified; connectionFault = $connectionFault;
         nativeStopConfirmed = $nativeStopConfirmed; outputSettled = $outputSettled;
         outputCollectionFailed = $outputCollectionFailed;
         elapsedMs = $executionClock.ElapsedMilliseconds; runElapsedMs = $runClock.ElapsedMilliseconds; usage = $safeUsage;

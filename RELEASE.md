@@ -30,6 +30,7 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 - 기본 메인은 `astra/low`다. 명시 모델의 기본 effort는 astra/medium, sol/xhigh, terra/high, luna/max이며 `--effort`가 우선한다.
 - `-p`/`--print`는 비대화형이다. stdout은 native 결과만, wrapper 안내·종료 상태는 stderr다. 명시적 print 없이 파이프로 실행하면 TTY 오류로 종료한다.
 - 텍스트는 스트리밍하고 도구 호출은 정상 완료 검증 뒤 전달한다. 전달 전 일시 I/O·429·5xx는 제한 재시도하며 전달 후 오류는 자동 재실행하지 않는다. 완료된 도구를 반복하지 말고 `--resume`으로 이력을 이어간다.
+- DNS 오류는 `UPSTREAM_DNS_ERROR`로 분류하고 정해진 재시도 한도를 적용한다. 인증서·TLS 오류와 접근 거부는 `UPSTREAM_TLS_ERROR`·`UPSTREAM_ACCESS_DENIED`로 분류하여 즉시 종료한다. 모델과 검색에 같은 분류를 적용하며 인증서 검증은 유지한다. 요청의 `attempts[].failureCategory`는 재시도 후 성공한 요청에도 앞선 실패를 남긴다.
 - 서버의 `Retry-After`가 짧은 대기 예산을 넘으면 `UPSTREAM_RETRY_DEFERRED`와 `retry_at_ms`를 반환한다. 그 시각보다 일찍 재개하지 않는다. 숫자 범위로 표현할 수 없는 유효한 지시는 `UPSTREAM_RETRY_UNREPRESENTABLE`로 표시하고 자동 재시도를 막는다.
 - 메모리 admission은 진행 중 요청을 유지하며 새 요청을 기본 최대 30초 대기시킨다. 기한을 넘으면 upstream 실행 전에 HTTP 503과 `MEMORY_ADMISSION_TIMEOUT`을 반환한다. 상태의 `admission`에 큐 길이·대기 상한·기한 초과 누계가 남으며, 여유 메모리 회복 뒤 다시 요청할 수 있다.
 - JSON `is_error`, 종료 코드, `CLAUDUCT_REQUEST_STATUS`의 `requestOutcome`·`failureHistory`·`cleanup`을 함께 확인한다. exit 0이나 `Clauduct 종료: SUCCESS`만으로 세션 중 모든 요청이 성공했다고 판단하지 않는다.
@@ -45,6 +46,8 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 2026-09-13 작업 중 후보별 실측: `luna/max`와 `sol/low`에서 실제 코드 구현 및 독립28-case 판정, 고정 효과 직후 native tree 중단과 동일 세션 자동 재개, Agent·Workflow 자식 라우팅, PNG/JPEG/GIF/WebP, WebFetch 내부 요약과 WebSearch를 확인했다. JPEG/GIF/WebP는 native Read 결과와 실제 upstream MIME도 각각 일치했다. 모든 기능이 최종 동일 후보에서 재검증된 상태는 아니며, 최초 실패 및 관측기 수정 전 실패를 별도 원장에 보존한다.
 
 짧은 검증기의 guarded fixture는 실제 전송 시도 직전과 완료 사용량을 새 작업 경로의 제한된 숫자 원장에 기록한다. 두 조합에서 정상 종료 출력과 원장이 일치했고, 첫 응답 직후 강제 종료에서도 마지막 숫자를 복구했다. sol의 종료 주입은 잔여 프로세스0까지 통과했다. luna의 즉시 종료 관측은 실패로 보존했으며 이후 잔여0을 확인했다. 진행 중이던 요청의 미관측 사용량은0으로 처리하지 않는다. 전원 손실 내구성이나 장기 streaming 수집을 입증한 것은 아니다.
+
+`-Case text -FailFirstConnection` 검증에서는 첫 연결 전에 DNS 오류를 한 번 주입한다. `luna/max`와 `sol/low` 각각에서2시도 중 실제 모델 응답1개로 원래 요청을 완료했고, 첫 실패 분류·이후 성공·원장·정리를 확인했다. 연결 오류 주입의 로컬51개 검사는 모델과 검색의 TLS/접근 거부 시도1회, DNS 재시도 한도와 고정 진단을 검사했다. 실제 자체 서명 TLS 서버를 사용하는 별도 시험은 준비 단계에서 종료되어 아직 미검증이다.
 
 Not verified / 제한:
 

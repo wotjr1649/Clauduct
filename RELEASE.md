@@ -31,6 +31,7 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 - `-p`/`--print`는 비대화형이다. stdout은 native 결과만, wrapper 안내·종료 상태는 stderr다. 명시적 print 없이 파이프로 실행하면 TTY 오류로 종료한다.
 - 텍스트는 스트리밍하고 도구 호출은 정상 완료 검증 뒤 전달한다. 전달 전 일시 I/O·429·5xx는 제한 재시도하며 전달 후 오류는 자동 재실행하지 않는다. 완료된 도구를 반복하지 말고 `--resume`으로 이력을 이어간다.
 - DNS 오류는 `UPSTREAM_DNS_ERROR`로 분류하고 정해진 재시도 한도를 적용한다. 인증서·TLS 오류와 접근 거부는 `UPSTREAM_TLS_ERROR`·`UPSTREAM_ACCESS_DENIED`로 분류하여 즉시 종료한다. 모델과 검색에 같은 분류를 적용하며 인증서 검증은 유지한다. 요청의 `attempts[].failureCategory`는 재시도 후 성공한 요청에도 앞선 실패를 남긴다.
+- 모델·검색의401 재시도는 취소 여부와 남은 요청 한도를 확인한 뒤 credential을 다시 조회한다. 비동기 조회 중 취소된 검색도 새 전송 전에 중단한다. 공개 합성 cache 파일의 교체·만료·계정 변경과 반복401/403을 로컬 HTTP에서 검사했으며, 실제 사용자 credential이나 정상 OAuth 갱신의 증거와 구분한다.
 - 서버의 `Retry-After`가 짧은 대기 예산을 넘으면 `UPSTREAM_RETRY_DEFERRED`와 `retry_at_ms`를 반환한다. 그 시각보다 일찍 재개하지 않는다. 숫자 범위로 표현할 수 없는 유효한 지시는 `UPSTREAM_RETRY_UNREPRESENTABLE`로 표시하고 자동 재시도를 막는다.
 - 메모리 admission은 진행 중 요청을 유지하며 새 요청을 기본 최대 30초 대기시킨다. 기한을 넘으면 upstream 실행 전에 HTTP 503과 `MEMORY_ADMISSION_TIMEOUT`을 반환한다. 상태의 `admission`에 큐 길이·대기 상한·기한 초과 누계가 남으며, 여유 메모리 회복 뒤 다시 요청할 수 있다.
 - JSON `is_error`, 종료 코드, `CLAUDUCT_REQUEST_STATUS`의 `requestOutcome`·`failureHistory`·`cleanup`을 함께 확인한다. exit 0이나 `Clauduct 종료: SUCCESS`만으로 세션 중 모든 요청이 성공했다고 판단하지 않는다.

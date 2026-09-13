@@ -123,6 +123,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
     catch { throw new NativeError('ATTEMPT_OBSERVER_FAILED'); }
   }
 
+  function checkAttemptState(signal) {
+    need(!signal.aborted, 'CANCELLED');
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
+  }
+
   function diagnostics() {
     const idleSockets = Object.values(agent.freeSockets).reduce((count, list) => count + list.length, 0);
     return { ...compatibility, activeRequests: active.size, activeSockets: sockets.size, idleSockets,
@@ -331,8 +337,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   }
 
   async function requestOnce(job, raw, current, onEvent, isRetry) {
-    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
-    checkRetryDeadline();
+    checkAttemptState(job.controller.signal);
     let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
     const headers = buildHeaders(current, clientVersion, raw);
@@ -472,6 +477,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           const failure = mark(error);
           if (failure.code === 'UNAUTHENTICATED' && !refreshed && supplier && retryCount < settings.maxRetries) {
             if (!await retryAllowed()) throw failure;
+            checkAttemptState(controller.signal);
             const delay = retryDelay(retryCount + 1, failure);
             current = await resolveCredential(true, account); refreshed = true; retryCount++; isRetry = true;
             await onRetry?.(retryCount);
@@ -533,6 +539,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
           return await searchOnce(job, body, current, true);
         }
         if (error?.code !== 'UNAUTHENTICATED' || !supplier) throw error;
+        checkAttemptState(job.controller.signal);
         current = await resolveCredential(true, account);
         return await searchOnce(job, body, current, true);
       }
@@ -548,8 +555,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, c
   }
 
   function searchOnce(job, body, credential, isRetry = false) {
-    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
-    checkRetryDeadline();
+    checkAttemptState(job.controller.signal);
     const raw = JSON.stringify({ ...body, id: searchSession });
     const headers = buildSearchHeaders(credential, clientVersion, raw,
       searchEnvelope().headers['x-codex-turn-metadata']);

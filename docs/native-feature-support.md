@@ -19,7 +19,7 @@ Clauduct의 `--settings` 최상위 키는 `env`, `modelPicker`, `hooks`(3종)다
 
 `--setting-sources`, `--settings`, `--agents`, `--system-prompt`는 사용자 입력에서 차단한다. `--setting-sources`를 Clauduct가 직접 지정하지도 않으므로 기본 소스 집합이 그대로 활성화된다. `CLAUDE_CONFIG_DIR`은 보존한다.
 
-codex `config.toml`은 `poc/user-session.mjs`가 **`cli_auth_credentials_store` 한 줄만** 읽는다. 값이 `file`이 아니면 `CREDENTIAL_STORE_UNSUPPORTED`로 중단한다. 인증 캐시 위치 호환성 검사이며 모델·도구·권한·프롬프트 설정과 무관하다. codex의 `model`, `approval_policy`, `sandbox`, `project_doc_*`, `[profiles]` 같은 항목은 **읽지도 적용되지도 않는다.**
+codex `config.toml`은 `poc/user-session.mjs`가 **루트 `cli_auth_credentials_store` 선택에만 사용한다.** `auth-store-selection.mjs`는 따옴표·escape·주석·여러 줄 문자열·중첩 값과 테이블의 구조를 읽어 해당 키를 찾는다. 명시한 다른 저장소는 `CREDENTIAL_STORE_UNSUPPORTED`, 중복·잘못된 타입·지원하지 않는 인증 설정은 `CONFIG_UNSUPPORTED`로 캐시 조회 전에 중단한다. 전체 TOML 설정 검증기는 아니다. codex의 `model`, `approval_policy`, `sandbox`, `project_doc_*`, `[profiles]` 같은 다른 값은 **구조를 건너뛰며 Clauduct의 모델·도구·권한·프롬프트 설정으로 적용하지 않는다.**
 
 ## 3. Hooks
 

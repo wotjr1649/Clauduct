@@ -8,6 +8,7 @@ import { request } from 'node:https';
 import { createInterface } from 'node:readline/promises';
 import { searchEnvelope } from '../src/native-protocol.mjs';
 import { clientVersionPolicy } from '../src/client-version.mjs';
+import { readAuthStoreSetting } from './auth-store-selection.mjs';
 import { release, arch } from 'node:os';
 import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe } from '../src/runtime-paths.mjs';
 
@@ -54,15 +55,8 @@ export function readSmall(path) {
 }
 
 export function checkStore(config) {
-  // This one-off probe supports simple top-level file-cache configuration only.
-  // Do not silently select a stale file when keyring/auto is explicitly configured.
-  const top = config.split(/^\s*\[/m)[0];
-  const assignments = top.split(/\r?\n/).filter(line => /^\s*cli_auth_credentials_store\s*=/.test(line));
-  if (!assignments.length) return;
-  if (assignments.length !== 1) stop('CONFIG_UNSUPPORTED');
-  const match = assignments[0].match(/^\s*cli_auth_credentials_store\s*=\s*["'](file|keyring|auto)["']\s*(?:#.*)?$/);
-  if (!match) stop('CONFIG_UNSUPPORTED');
-  if (match[1] !== 'file') stop('CREDENTIAL_STORE_UNSUPPORTED');
+  const store = readAuthStoreSetting(config);
+  if (store !== undefined && store !== 'file') stop('CREDENTIAL_STORE_UNSUPPORTED');
 }
 
 export function selectCredential(raw, now = Date.now()) {

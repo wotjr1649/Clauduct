@@ -13,7 +13,8 @@ const worker = join(project, 'verification', 'fixtures', 'retry-recovery-worker.
 const root = mkdtempSync(join(project, '.tmp', 'retry-after-clock-'));
 const write = (name, value) => writeFileSync(join(root, name), JSON.stringify(value) + '\n', { flag: 'wx', flush: true });
 const sourceFiles = ['src/native-transport.mjs', 'src/native-protocol.mjs', 'src/retry-after.mjs', 'src/retry-after-seconds.mjs',
-  'src/client-version.mjs', 'src/models.mjs', 'poc/adapter.mjs', 'verification/manual-http-probe.mjs', 'verification/fixtures/retry-recovery-worker.mjs'];
+  'src/client-version.mjs', 'src/models.mjs', 'poc/adapter.mjs', 'verification/manual-http-probe.mjs',
+  'verification/auth-store-selection.mjs', 'verification/fixtures/retry-recovery-worker.mjs'];
 const hashes = () => Object.fromEntries(sourceFiles.map(path => [path, createHash('sha256').update(readFileSync(join(project, path))).digest('hex')]));
 const sourceHashes = hashes(), started = Date.now();
 write('budget.json', { maxElapsedMs: 330000, maxWorkers: 6, maxUpstreamRequests: 4, workerTimeoutMs: 5000,

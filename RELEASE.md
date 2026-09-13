@@ -21,6 +21,7 @@
 - Windows, PATH의 Node.js. 검증 환경은 Node `24.19.0`, native Claude `2.1.269`, Codex standalone `0.154.0`이다. 다른 조합의 성공을 보장하지 않는다.
 - native Claude는 OS 사용자 홈의 `.local/bin/claude.exe`, Codex는 `AppData/Local/Programs/OpenAI/Codex/bin/codex.exe`를 사용한다. 임의 실행 파일 경로를 설정으로 받지 않는다.
 - 기존 Codex 로그인과 OS 사용자 홈의 `.codex` 파일 credential store가 필요하다. Clauduct는 인증을 직접 갱신하거나 쓰지 않는다. account 변경·다른 `CODEX_HOME`·디버그/TLS 우회 런타임은 거부한다.
+- 인증 값을 읽기 전에 루트 `cli_auth_credentials_store`를 구조적으로 구분한다. [TOML 1.0 키와 문자열 규칙](https://toml.io/en/v1.0.0#keys)에 따라 따옴표·Unicode escape·주석·여러 줄 문자열·중첩 값·테이블을 구분하며, 명시한 다른 저장소를 놓치고 파일 캐시를 읽던 경우를 수정했다. 이 읽기는 다른 설정을 적용하거나 전체 TOML 설정의 유효성을 보증하지 않는다. 입력65536자·중첩64단계·해석한 키/저장소 문자열1024자 한도이며, 모호하거나 지원하지 않는 인증 설정은 캐시 조회 전에 거부한다.
 - PowerShell `7+`는 검증 스크립트에 필요하다. 별도 npm 의존성 설치는 없다.
 
 Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 요청만 `127.0.0.1` gateway를 거쳐 ChatGPT Codex backend로 보낸다. Codex app-server 경로가 아니다. provider/secret 계열 환경 변수는 native 자식에 전달하지 않는다. 이 환경 변수에 의존하는 사용자 도구·MCP는 별도 호환성 확인이 필요하다.

@@ -48,7 +48,7 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
     basis: 'Observed text runs used one attempt and 2.87-5.12s. Up to eight tool turns plus the existing retry allowance fit 16 attempts; two phases are reserved.',
     hashes: Object.fromEntries([selectedEntry, mcp, helper, ...['verification/verify-native-recovery.mjs',
       'verification/unattended-recovery.mjs', 'verification/fixture-tool-policy.mjs', 'verification/verification-ledger.mjs', 'verification/native-output.mjs',
-      'verification/manual-http-probe.mjs', 'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-protocol.mjs',
+      'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs', 'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-protocol.mjs',
       'src/native-gateway.mjs', 'src/models.mjs', 'src/client-version.mjs', 'poc/user-session.mjs', 'poc/adapter.mjs']
       .map(name => join(project, name))].map(path => [path.slice(project.length + 1), hash(path)])) };
   write(join(root, 'budget.json'), budget);

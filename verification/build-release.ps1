@@ -20,7 +20,7 @@ if ($commit -notmatch '^[a-f0-9]{40}$') { throw 'RELEASE_COMMIT_INVALID' }
 # Only this reviewed distribution surface. No profiles, status, prompts, audit
 # transcripts, generated app-server schemas, VCS history, or untracked files.
 $paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md', 'src',
-    'verification/manual-http-probe.mjs', 'verification/test-manual-http-probe.mjs',
+    'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs', 'verification/test-manual-http-probe.mjs',
     'verification/verify-live.mjs', 'verification/verify-native-headless.ps1',
     'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1',
     'verification/development-fixture.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',

@@ -29,7 +29,7 @@ function developmentHashes(project, localNative) {
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/fixtures/development-oracle.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
     'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs',
-    'poc/user-session.mjs', 'verification/manual-http-probe.mjs'];
+    'poc/user-session.mjs', 'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs'];
   return Object.fromEntries(files.map(name => {
     const path = join(project, name); return [path.slice(project.length + 1), sourceHash(readFileSync(path))];
   }));

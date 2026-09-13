@@ -55,6 +55,17 @@ export function reconcileManagedDevelopment(path, ownerNonce) {
     nativePassed: evidence.passed, failure: evidence.failure, account, evidence };
 }
 
+export function readManagedDevelopmentResult(path, entryIndex) {
+  const root = rootPath(path);
+  const account = existsSync(join(root, 'legacy-ledger.json')) ? readManagedLedgerAccount(root).account : readExecutionAccount(root);
+  need(Number.isSafeInteger(entryIndex) && entryIndex >= 1 && entryIndex <= account.entries.length, 'MANAGED_DEVELOPMENT_ENTRY_INVALID');
+  const entry = account.entries[entryIndex - 1];
+  need(entry.closed, 'MANAGED_DEVELOPMENT_ENTRY_PENDING');
+  const evidence = evidenceFor(entry);
+  need(evidence.passed && account.withinLimits, 'MANAGED_DEVELOPMENT_RESULT_INCOMPLETE');
+  return { root, accountHash: account.accountHash, entryIndex, executionHash: entry.executionHash, evidence };
+}
+
 export async function runManagedDevelopment({ root, model, powershell, taskId = 'retry-after-seconds', localNative = false,
   continuation = false, interruptAfterNativeResult = false, recoverInterrupted = false, holdAfterSourceWrite = false, holdAfterTaskRead = false,
   plannedStep }) {

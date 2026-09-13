@@ -3,12 +3,13 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createDevelopmentFixture, sourceHash, DEVELOPMENT_TASK } from './development-fixture.mjs';
+import { createDevelopmentFixture, sourceHash } from './development-fixture.mjs';
+import { developmentTask, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
-import { PUBLIC_DEVELOPMENT_SOURCE } from './fixtures/development-responses.mjs';
+import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
 
 const need = (ok, label) => { if (!ok) throw new Error(label); };
 const sleep = ms => new Promise(done => setTimeout(done, ms));
@@ -25,8 +26,8 @@ function nativeClientsStopped(rows) {
 function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
-    'verification/development-fixture.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
-    'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/fixtures/development-oracle.mjs',
+    'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
+    'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
     'src/clauduct.mjs', 'src/native-transport.mjs', 'src/native-gateway.mjs', 'src/native-protocol.mjs',
     'poc/user-session.mjs', 'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs'];
@@ -34,43 +35,45 @@ function developmentHashes(project, localNative) {
     const path = join(project, name); return [path.slice(project.length + 1), sourceHash(readFileSync(path))];
   }));
 }
-function resumeDevelopmentFixture(root, model, localNative) {
+function resumeDevelopmentFixture(root, model, localNative, taskId) {
+  const task = developmentTask(taskId);
   const project = dirname(dirname(fileURLToPath(import.meta.url))), canonical = resolve(root);
   need(dirname(canonical).toLowerCase() === join(project, '.tmp').toLowerCase()
     && /^native-development-[A-Za-z0-9]{6}$/.test(canonical.slice(canonical.lastIndexOf('\\') + 1))
     && realpathSync(canonical).toLowerCase() === canonical.toLowerCase(), 'RESUME_ROOT_INVALID');
   const priorBudget = JSON.parse(read(join(root, 'budget.json'))), first = JSON.parse(read(join(root, 'result.json')));
   const owner = JSON.parse(read(join(root, 'process.json')));
-  need(priorBudget.model === model && priorBudget.localNative === localNative && priorBudget.cutOutputAfterPass === true
+  need(priorBudget.model === model && priorBudget.localNative === localNative && priorBudget.taskId === taskId && priorBudget.cutOutputAfterPass === true
     && first.outputCutObserved === true && first.passed === false && first.tree?.stopped === true
     && /^[0-9a-f-]{36}$/.test(owner.sessionId), 'RESUME_EVIDENCE_INVALID');
   need(nativeClientsStopped(read(join(root, 'transport-development.jsonl')).trim().split('\n').filter(Boolean).map(JSON.parse)), 'RESUME_OWNER_UNVERIFIED');
   need(JSON.stringify(priorBudget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'RESUME_SOURCE_CHANGED');
-  need(priorBudget.taskHash === sourceHash(DEVELOPMENT_TASK)
-    && priorBudget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', 'development-oracle.mjs'))), 'RESUME_ARTIFACT_CHANGED');
-  need(sourceHash(read(join(root, 'work', 'retry-after-seconds.mjs'))) === first.sourceSha256
+  need(priorBudget.taskHash === sourceHash(task.task)
+    && priorBudget.oracleHash === sourceHash(readFileSync(join(project, 'verification', 'fixtures', task.oracleFile))), 'RESUME_ARTIFACT_CHANGED');
+  need(sourceHash(read(join(root, 'work', task.sourceFile))) === first.sourceSha256
     && sourceHash(read(join(root, 'work', '.mcp.json'))) === priorBudget.mcpHash
     && sourceHash(read(join(root, 'control', 'oracle.mjs'))) === priorBudget.oracleHash
     && sourceHash(read(join(root, 'control', 'TASK.md'))) === priorBudget.taskHash, 'RESUME_ARTIFACT_CHANGED');
-  checkDevelopmentSource(read(join(root, 'work', 'retry-after-seconds.mjs')));
-  return { project, root, work: join(root, 'work'), control: join(root, 'control'),
+  checkDevelopmentSource(read(join(root, 'work', task.sourceFile)), taskId);
+  return { project, root, taskId, task, work: join(root, 'work'), control: join(root, 'control'),
     script: join(project, 'verification', 'fixtures', 'development-mcp.mjs'), oracleHash: priorBudget.oracleHash,
     taskHash: priorBudget.taskHash, priorOwner: owner, priorSourceHash: first.sourceSha256 };
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
-  localNative = false, cutOutputAfterPass = false, resumeRoot }) {
+  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
     && typeof cutOutputAfterPass === 'boolean'
     && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
+  try { developmentTask(taskId); } catch { need(false, 'INVALID_ARGUMENTS'); }
   for (const value of [priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens]) need(Number.isSafeInteger(value) && value >= 0, 'INVALID_PRIOR_USAGE');
   const finishing = resumeRoot !== undefined, phase = finishing ? 'development-finish' : 'development';
-  const fixture = finishing ? resumeDevelopmentFixture(resumeRoot, model, localNative) : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass });
-  const { project, root, work, control } = fixture;
+  const fixture = finishing ? resumeDevelopmentFixture(resumeRoot, model, localNative, taskId) : createDevelopmentFixture({ holdAfterPass: cutOutputAfterPass, taskId });
+  const { project, root, work, control, task } = fixture;
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
   const phaseMs = localNative ? 30000 : finishing ? 120000 : 600000;
-  const budget = { model, effort, localNative, phase, cutOutputAfterPass, phaseMs, requestLimit: 16, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
+  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, phaseMs, requestLimit: 16, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
     outputBytes: 1048576, mainConcurrency: 1, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
     cumulativeReservedAttempts: priorAttempts + 16, cumulativeReservedMs: priorElapsedMs + phaseMs,
     cumulativeObservedInputLimit: priorInputTokens + 131072, cumulativeObservedOutputLimit: priorOutputTokens + 32768,
@@ -95,7 +98,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     '--output-format', 'stream-json', '--verbose', '--tools', '', '--allowedTools',
     finishing ? 'mcp__fixture__read_task,mcp__fixture__run_tests' : 'mcp__fixture__read_task,mcp__fixture__write_source,mcp__fixture__run_tests',
     '--max-turns', '8', finishing ? '--resume' : '--session-id', sessionId, '--', finishing
-    ? 'Continue the same public parser task after the output receiver lost the final result. The outer manager verified that your source was written once, reviewed and passed the fixed tests. Do not modify it. Read the original requirements and current source once with mcp__fixture__read_task, run mcp__fixture__run_tests once, and after success reply exactly CLAUDUCT_DEVELOPMENT_DONE. Use one tool per response. The original baseline/fix instructions are already fulfilled; only verification and this final report remain.'
+    ? 'Continue the same public development task after the output receiver lost the final result. The outer manager verified that your source was written once, reviewed and passed the fixed tests. Do not modify it. Read the original requirements and current source once with mcp__fixture__read_task, run mcp__fixture__run_tests once, and after success reply exactly CLAUDUCT_DEVELOPMENT_DONE. Use one tool per response. The original baseline/fix instructions are already fulfilled; only verification and this final report remain.'
     :
     'Read the complete TASK.md with mcp__fixture__read_task once and implement its bounded code change. Run the prescribed tests on the baseline, fix the code, then run the tests again. Use one fixture tool per response; the three MCP tools are already available. Follow the task completion marker only after tests pass.'];
   const child = fork(entry, [root, phase, ...args], { cwd: work, env, windowsHide: true, execArgv: [], stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
@@ -105,7 +108,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   capture.watch(child.stdout, 'stdout'); capture.watch(child.stderr, 'stderr');
   write(join(root, finishing ? 'process-finish.json' : 'process.json'), { pid: child.pid, startedAt: phaseStart, sessionId });
   child.send({ start: true });
-  console.log(JSON.stringify({ event: 'DEVELOPMENT_STARTED', root, model, effort, pid: child.pid }));
+  console.log(JSON.stringify({ event: 'DEVELOPMENT_STARTED', root, model, effort, taskId, pid: child.pid }));
   function tree(stop) {
     if (stop) { need(!treeStopAttempted, 'TREE_STOP_UNVERIFIED'); treeStopAttempted = true; }
     const result = spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(child.pid),
@@ -126,10 +129,10 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
         if (requested.sha256 !== reviewed.sha256 && requested.sha256 !== reportedReview) {
           reportedReview = requested.sha256;
           if (localNative) {
-            need(requested.sha256 === sourceHash(PUBLIC_DEVELOPMENT_SOURCE)
-              && read(join(work, 'retry-after-seconds.mjs')) === PUBLIC_DEVELOPMENT_SOURCE, 'LOCAL_SOURCE_MISMATCH');
+            need(requested.sha256 === sourceHash(publicDevelopmentSource(taskId))
+              && read(join(work, task.sourceFile)) === publicDevelopmentSource(taskId), 'LOCAL_SOURCE_MISMATCH');
             writeFileSync(join(control, 'review.json'), JSON.stringify({ sha256: requested.sha256, approved: true }), { flush: true });
-          } else console.log(JSON.stringify({ event: 'SOURCE_REVIEW_PENDING', root, sourcePath: join(work, 'retry-after-seconds.mjs'), sha256: requested.sha256 }));
+          } else console.log(JSON.stringify({ event: 'SOURCE_REVIEW_PENDING', root, taskId, sourcePath: join(work, task.sourceFile), sha256: requested.sha256 }));
         }
       }
       if (cutOutputAfterPass && !outputCut && existsSync(join(work, 'events.jsonl'))) {
@@ -176,7 +179,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && usageLedger.requestAttempts === attempts && usageLedger.inputTokens === inputTokens && usageLedger.outputTokens === outputTokens;
   const sourceUnchanged = Object.entries(budget.hashes).every(([path, hash]) => sourceHash(readFileSync(join(project, path))) === hash);
   const events = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
-  const source = join(work, 'retry-after-seconds.mjs'), sha256 = sourceHash(read(source));
+  const source = join(work, task.sourceFile), sha256 = sourceHash(read(source));
   const review = JSON.parse(read(join(control, 'review.json'), 1024));
   const oracleUnchanged = sourceHash(read(join(control, 'oracle.mjs'))) === fixture.oracleHash;
   let independentPassed = false;
@@ -184,7 +187,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     const oracle = join(control, 'oracle.mjs');
     const check = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${oracle}`, `--allow-fs-read=${source}`, oracle, source],
       { cwd: work, env: controlEnv, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
-    try { const verdict = JSON.parse(check.stdout); independentPassed = !check.error && check.status === 0 && verdict.passed && verdict.checks === 28 && verdict.failures.length === 0; } catch { }
+    try { const verdict = JSON.parse(check.stdout); independentPassed = !check.error && check.status === 0 && verdict.passed && verdict.checks === task.checks && verdict.failures.length === 0; } catch { }
   }
   const tests = events.filter(row => row.event === 'TESTS_EXECUTED');
   const baselineFailed = tests.length >= 2 && tests[0].passed === false;
@@ -199,7 +202,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && sourceUnchanged && ledgerMatched && independentPassed && baselineFailed && revisedPassed && recordedNativeStopped
     && events.filter(row => row.event === 'SOURCE_WRITTEN').length === 1 && routeMatched && requests.length === settled.length
     && attempts <= budget.requestLimit && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens;
-  const summary = { suite: localNative ? 'native-development-local' : 'native-development-live', root, model, effort, localNative, phase, sessionId,
+  const summary = { suite: localNative ? 'native-development-local' : 'native-development-live', root, model, effort, taskId, localNative, phase, sessionId,
     actualModelRequests: localNative ? 0 : attempts, passed: passed === true, failure, exitCode,
     elapsedMs: Date.now() - phaseStart, attempts, attemptsComplete: requests.length === settled.length, inputTokens, outputTokens,
     cumulativeAttempts: priorAttempts + attempts, cumulativeElapsedMs: priorElapsedMs + Date.now() - phaseStart,
@@ -210,14 +213,14 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     output: output.evidence, tree: treeEvidence };
   write(join(root, finishing ? 'result-finish.json' : 'result.json'), summary); return summary;
 }
-export async function verifyDevelopmentOutputRecovery({ model, powershell, localNative,
+export async function verifyDevelopmentOutputRecovery({ model, powershell, localNative, taskId = DEFAULT_DEVELOPMENT_TASK_ID,
   priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens }) {
   need(typeof localNative === 'boolean', 'INVALID_ARGUMENTS');
-  const first = await verifyNativeDevelopment({ model, powershell, localNative, cutOutputAfterPass: true,
+  const first = await verifyNativeDevelopment({ model, powershell, localNative, taskId, cutOutputAfterPass: true,
     priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens });
   let finish = null, resumeFailure = null;
   if (first.outputCutObserved && !first.passed) {
-    try { finish = await verifyNativeDevelopment({ model, powershell, localNative,
+    try { finish = await verifyNativeDevelopment({ model, powershell, localNative, taskId,
       resumeRoot: first.root, priorAttempts: priorAttempts + first.attempts, priorElapsedMs: priorElapsedMs + first.elapsedMs,
       priorInputTokens: priorInputTokens + first.inputTokens, priorOutputTokens: priorOutputTokens + first.outputTokens }); }
     catch (error) {
@@ -244,6 +247,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       const result = await verifyDevelopmentOutputRecovery({ model, powershell, localNative,
         priorAttempts: localNative ? 0 : Number(priorAttempts), priorElapsedMs: localNative ? 0 : Number(priorElapsedMs),
         priorInputTokens: localNative ? 0 : Number(priorInputTokens), priorOutputTokens: localNative ? 0 : Number(priorOutputTokens) });
+      console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;
+    } else if (['--local-task', '--live-task'].includes(live)) {
+      const localNative = live === '--local-task';
+      const [, , , taskId, ...prior] = process.argv.slice(2);
+      need(process.argv.length === (localNative ? 6 : 10), 'LIVE_ARGUMENTS_REQUIRED');
+      const result = await verifyNativeDevelopment({ model, powershell, localNative, taskId,
+        priorAttempts: localNative ? 0 : Number(prior[0]), priorElapsedMs: localNative ? 0 : Number(prior[1]),
+        priorInputTokens: localNative ? 0 : Number(prior[2]), priorOutputTokens: localNative ? 0 : Number(prior[3]) });
       console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;
     } else {
     const localNative = ['--local-native', '--local-output-cut'].includes(live), cutOutputAfterPass = live === '--local-output-cut';

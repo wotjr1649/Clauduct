@@ -3,6 +3,7 @@ import { NativeError } from '../src/native-protocol.mjs';
 import { searchRequestBody } from '../src/native-search.mjs';
 import { verifyCompletionRelayTarget } from './completion-relay-target.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
+import { developmentTask } from './development-tasks.mjs';
 
 const need = ok => { if (!ok) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED'); };
 const fields = (value, allowed) => value && typeof value === 'object' && !Array.isArray(value)
@@ -12,7 +13,7 @@ const text = (value, maximum) => typeof value === 'string' && value.length > 0 &
 // Verification-only execution boundary. Model output is data; only these exact
 // reviewed effects may be delivered to the native tools during a live fixture.
 export function createFixtureToolPolicy(policy) {
-  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode', 'phase']) && policy.version === 1
+  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode', 'phase', 'taskId']) && policy.version === 1
     && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none', 'recovery', 'development'].includes(policy.kind) && text(policy.workingRoot, 1024));
   if (['agent', 'completion', 'image'].includes(policy.kind)) need(text(policy.readPath, 1024));
   else if (policy.kind === 'workflow') need(text(policy.workflowScript, 8192));
@@ -22,6 +23,8 @@ export function createFixtureToolPolicy(policy) {
   need(policy.completionMode === undefined || policy.kind === 'completion' && ['foreground', 'fork', 'relay'].includes(policy.completionMode));
   need(policy.kind === 'recovery' ? ['effect', 'finish'].includes(policy.phase)
     : policy.kind === 'development' ? policy.phase === undefined || policy.phase === 'finish' : policy.phase === undefined);
+  need(policy.taskId === undefined || policy.kind === 'development');
+  if (policy.kind === 'development') { try { developmentTask(policy.taskId); } catch { need(false); } }
   const recoveryOrder = policy.phase === 'effect' ? ['mcp__fixture__apply_effect']
     : ['mcp__fixture__effect_status', 'mcp__fixture__complete_report'];
   const recoveryIds = new Set();
@@ -56,7 +59,7 @@ export function createFixtureToolPolicy(policy) {
         } else if (item.name === 'mcp__fixture__write_source') {
           need(policy.phase !== 'finish' && developmentRead && developmentTests > 0 && developmentLast === 'mcp__fixture__run_tests'
             && developmentWrites < 2 && fields(input, ['code']) && typeof input.code === 'string');
-          try { checkDevelopmentSource(input.code); } catch { need(false); }
+          try { checkDevelopmentSource(input.code, policy.taskId); } catch { need(false); }
           developmentWrites++;
         } else need(false);
         recoveryIds.add(item.call_id); developmentLast = item.name;

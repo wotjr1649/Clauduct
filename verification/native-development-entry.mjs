@@ -7,6 +7,7 @@ import { NativeError } from '../src/native-protocol.mjs';
 import { openUserTransport, safeEntryCategory } from '../poc/user-session.mjs';
 import { guardFixtureTransport } from './fixture-tool-policy.mjs';
 import { createVerificationLedger } from './verification-ledger.mjs';
+import { developmentTask } from './development-tasks.mjs';
 
 // Separate from recovery's historical entry: only the reviewed development
 // tools can reach this native child, with a durable reservation before HTTPS.
@@ -18,7 +19,8 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
   const path = join(runRoot, phase === 'development' ? 'budget.json' : 'budget-finish.json'), info = lstatSync(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size > 16384) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const budget = JSON.parse(readFileSync(path, 'utf8'));
-  if (!Object.hasOwn({ luna: 'max', sol: 'low' }, budget.model) || budget.effort !== { luna: 'max', sol: 'low' }[budget.model]
+  developmentTask(budget.taskId);
+  if (typeof budget.taskId !== 'string' || !Object.hasOwn({ luna: 'max', sol: 'low' }, budget.model) || budget.effort !== { luna: 'max', sol: 'low' }[budget.model]
     || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const ledger = createVerificationLedger(join(runRoot, `usage-${phase}`));
   const logPath = join(runRoot, `transport-${phase}.jsonl`);
@@ -38,7 +40,7 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
       const factory = transportFactory ?? options.transportFactory;
       const transport = openTransport({ ...options, transportFactory: configuration => factory({ ...configuration,
         onAttempt: value => ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }) }) });
-      guarded = guardFixtureTransport(transport, { version: 1, kind: 'development', workingRoot: process.cwd(),
+      guarded = guardFixtureTransport(transport, { version: 1, kind: 'development', taskId: budget.taskId, workingRoot: process.cwd(),
         ...(phase === 'development-finish' ? { phase: 'finish' } : {}) }, { onUsage: value => {
         ledger.record('usage', value);
         record({ event: 'USAGE', usage: { input_tokens: value.inputTokens - previousInput, output_tokens: value.outputTokens - previousOutput } });

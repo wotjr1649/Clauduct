@@ -4,7 +4,8 @@ const base = { model: 'luna', powershell: 'C:\\PublicFixture\\pwsh.exe', localNa
   priorAttempts: 0, priorElapsedMs: 0, priorInputTokens: 0, priorOutputTokens: 0 };
 let checks = 0;
 for (const extra of [{ model: 'toString' }, { model: ['luna'] }, { model: 'astra' }, { localNative: 'true' },
-  { cutOutputAfterPass: 'true' }, { resumeRoot: 1 }, { resumeRoot: 'public', cutOutputAfterPass: true }, { powershell: 'cmd.exe' }]) {
+  { cutOutputAfterPass: 'true' }, { resumeRoot: 1 }, { resumeRoot: 'public', cutOutputAfterPass: true }, { powershell: 'cmd.exe' },
+  { taskId: '../control' }, { taskId: ['retry-delay-window'] }, { taskId: 'toString' }, { taskId: null }]) {
   await assert.rejects(verifyNativeDevelopment({ ...base, ...extra }), { message: 'INVALID_ARGUMENTS' }); checks++;
 }
 await assert.rejects(verifyDevelopmentOutputRecovery({ ...base, localNative: undefined }), { message: 'INVALID_ARGUMENTS' }); checks++;

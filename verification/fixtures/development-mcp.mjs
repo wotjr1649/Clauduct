@@ -4,15 +4,17 @@ import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { checkDevelopmentSource } from '../development-source-policy.mjs';
+import { developmentTask } from '../development-tasks.mjs';
 
-const [directory, waitMode, holdMode] = process.argv.slice(2), root = resolve(directory);
+const [directory, waitMode, taskId, holdMode] = process.argv.slice(2), root = resolve(directory);
 if (!['wait', 'check'].includes(waitMode) || holdMode !== undefined && holdMode !== 'hold-after-pass'
-  || process.argv.length > 5) throw new Error('DEVELOPMENT_MODE');
+  || typeof taskId !== 'string' || process.argv.length > 6) throw new Error('DEVELOPMENT_MODE');
+const task = developmentTask(taskId);
 const work = join(root, 'work'), control = join(root, 'control');
 for (const path of [work, control]) {
   const stat = lstatSync(path); if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('DEVELOPMENT_PATH');
 }
-const source = join(work, 'retry-after-seconds.mjs'), oracle = join(control, 'oracle.mjs');
+const source = join(work, task.sourceFile), oracle = join(control, 'oracle.mjs');
 const digest = text => createHash('sha256').update(text).digest('hex');
 function read(path, limit = 16384) {
   const stat = lstatSync(path);
@@ -26,8 +28,8 @@ function record(row) {
 }
 const tools = [
   { name: 'read_task', description: 'Read the complete reviewed TASK.md and the current source for this bounded development task.', properties: {} },
-  { name: 'write_source', description: 'Replace only retry-after-seconds.mjs with the proposed JavaScript source. No other file can be written.', properties: { code: { type: 'string', maxLength: 8192 } } },
-  { name: 'run_tests', description: 'Run the fixed independent 28-case Node test suite. A proposed source is reviewed by the outer developer before execution; this call waits for that review.', properties: {} }
+  { name: 'write_source', description: `Replace only ${task.sourceFile} with the proposed JavaScript source. No other file can be written.`, properties: { code: { type: 'string', maxLength: 8192 } } },
+  { name: 'run_tests', description: `Run the fixed independent ${task.checks}-case Node test suite. A proposed source is reviewed by the outer developer before execution; this call waits for that review.`, properties: {} }
 ];
 const textResult = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
 async function respond(message) {
@@ -42,13 +44,13 @@ async function respond(message) {
   if (message.method !== 'tools/call' || !tools.some(tool => tool.name === name) || !args || typeof args !== 'object' || Array.isArray(args)
     || Object.keys(args).sort().join(',') !== (name === 'write_source' ? 'code' : '')) return { ...reply, error: { code: -32602, message: 'INVALID_DEVELOPMENT_REQUEST' } };
   if (name === 'read_task') {
-    const currentSource = read(source); checkDevelopmentSource(currentSource);
+    const currentSource = read(source); checkDevelopmentSource(currentSource, taskId);
     record({ event: 'TASK_READ' });
     return { ...reply, result: textResult({ task: read(join(control, 'TASK.md')), source: currentSource }) };
   }
   if (name === 'write_source') {
     if (typeof args.code !== 'string' || Buffer.byteLength(args.code) > 8192) return { ...reply, error: { code: -32602, message: 'INVALID_SOURCE_SIZE' } };
-    try { checkDevelopmentSource(args.code); }
+    try { checkDevelopmentSource(args.code, taskId); }
     catch { return { ...reply, error: { code: -32602, message: 'DEVELOPMENT_SOURCE_REJECTED' } }; }
     read(source); // Reject replaced paths before writing only this task-created file.
     writeFileSync(source, args.code); record({ event: 'SOURCE_WRITTEN', sha256: digest(args.code) });
@@ -75,7 +77,7 @@ async function respond(message) {
     oracle, source], { cwd: work, env, windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 16384 });
   let outcome = null;
   try { outcome = JSON.parse(result.stdout); } catch { }
-  if (result.error || result.signal || !outcome || outcome.checks !== 28 || typeof outcome.passed !== 'boolean'
+  if (result.error || result.signal || !outcome || outcome.checks !== task.checks || typeof outcome.passed !== 'boolean'
     || !Array.isArray(outcome.failures) || outcome.failures.some(item => typeof item !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(item))) throw new Error('TEST_EXECUTION_FAILED');
   const passed = result.status === 0 && outcome.passed && outcome.failures.length === 0 && result.stderr === '';
   record({ event: 'TESTS_EXECUTED', sha256, passed, checks: outcome.checks, failures: outcome.failures });

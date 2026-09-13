@@ -10,7 +10,7 @@ try {
     completedSteps: result.completedSteps, totalSteps: result.totalSteps, charged: result.account.charged,
     localNative: result.localNative, longStageEvidence: false, releaseVerdict: 'HOLD' }));
 } catch (error) {
-  const known = /^(?:MANAGED_PLAN_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|EXECUTION_ACCOUNT_[A-Z_]+|INTERRUPTION_[A-Z_]+|REGISTERED_DEVELOPMENT_TASK_INVALID|DEVELOPMENT_LOCAL_SOURCE_REQUIRED|DEVELOPMENT_SOURCE_REJECTED)$/;
+  const known = /^(?:MANAGED_PLAN_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|EXECUTION_ACCOUNT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ARTIFACT_CHANGED|REGISTERED_DEVELOPMENT_TASK_INVALID|DEVELOPMENT_LOCAL_SOURCE_REQUIRED|DEVELOPMENT_SOURCE_REJECTED)$/;
   console.log(JSON.stringify({ suite: 'managed-development-plan', passed: false,
     failure: known.test(error.message) ? error.message : 'MANAGED_PLAN_FAILED' }));
   process.exitCode = 1;

@@ -238,7 +238,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       actualModelRequests: result.evidence.localNative ? 0 : result.evidence.observed.attempts }));
     process.exitCode = result.passed ? 0 : 1;
   } catch (error) {
-    const known = /^(?:EXECUTION_ACCOUNT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|MANAGED_PLAN_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ACCOUNTING_INVALID|REGISTERED_DEVELOPMENT_TASK_INVALID|DEVELOPMENT_LOCAL_SOURCE_REQUIRED|DEVELOPMENT_SOURCE_REJECTED)$/;
+    const known = /^(?:EXECUTION_ACCOUNT_[A-Z_]+|MANAGED_LEDGER_[A-Z_]+|MANAGED_PLAN_[A-Z_]+|MANAGED_DEVELOPMENT_[A-Z_]+|INTERRUPTION_[A-Z_]+|DEVELOPMENT_ACCOUNTING_INVALID|DEVELOPMENT_ARTIFACT_CHANGED|REGISTERED_DEVELOPMENT_TASK_INVALID|DEVELOPMENT_LOCAL_SOURCE_REQUIRED|DEVELOPMENT_SOURCE_REJECTED)$/;
     console.log(JSON.stringify({ suite: 'managed-development', passed: false,
       failure: known.test(error.message) ? error.message : 'MANAGED_DEVELOPMENT_FAILED' }));
     process.exitCode = 1;

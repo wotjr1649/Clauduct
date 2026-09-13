@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { createDevelopmentFixture, sourceHash } from './development-fixture.mjs';
 import { developmentTask, developmentOracleSource, DEFAULT_DEVELOPMENT_TASK_ID } from './development-tasks.mjs';
 import { checkDevelopmentSource } from './development-source-policy.mjs';
+import { readDevelopmentArtifactHashes, verifyDevelopmentArtifacts } from './development-artifacts.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted, nativeOutputDiagnostics } from './native-output.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
@@ -29,7 +30,7 @@ function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
-    'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs',
+    'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs', 'verification/development-artifacts.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
     'verification/execution-account.mjs', 'verification/managed-development.mjs', 'verification/managed-ledger-account.mjs', 'verification/managed-plan-entry.mjs',
     'verification/native-development-entry.mjs', 'verification/fixtures/development-responses.mjs',
@@ -88,6 +89,7 @@ export function readDevelopmentAccountingEvidence(root, phase) {
   const owner = JSON.parse(read(join(root, `process${suffix}.json`), 1024));
   need(Number.isSafeInteger(owner.pid) && owner.pid > 0 && owner.sessionId === result.sessionId, code);
   try { process.kill(owner.pid, 0); need(false, code); } catch (error) { need(error.code === 'ESRCH', code); }
+  if (result.passed === true) verifyDevelopmentArtifacts(root, result, budget);
   const usage = readVerificationLedger(join(root, `usage-${phase}`, 'tool-usage.jsonl'));
   need(usage.version === 2 && usage.finalRecorded && !usage.truncatedTail
     && usage.requestAttempts === result.attempts && usage.inputTokens === result.inputTokens && usage.outputTokens === result.outputTokens
@@ -302,6 +304,7 @@ function completedDevelopmentContext(root, model, localNative, taskId) {
     && result.sessionId === owner.sessionId && /^[0-9a-f-]{36}$/.test(owner.sessionId), 'CONTINUATION_EVIDENCE_INVALID');
   need(!existsSync(join(canonical, 'successor-intent.json')), 'CONTINUATION_ALREADY_STARTED');
   need(JSON.stringify(budget.hashes) === JSON.stringify(developmentHashes(project, localNative)), 'CONTINUATION_SOURCE_CHANGED');
+  verifyDevelopmentArtifacts(canonical, result, budget);
   const source = read(join(canonical, 'work', previousTask.sourceFile));
   checkDevelopmentSource(source, budget.taskId);
   const review = JSON.parse(read(join(canonical, 'control', 'review.json'), 1024));
@@ -582,7 +585,8 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && limitRows.every(row => row.requestAttempt <= usageLedger.requestAttempts);
   if (usageLedger?.unobservedCompletions > 0) failure ??= 'INVALID_USAGE';
   const sourceUnchanged = Object.entries(budget.hashes).every(([path, hash]) => sourceHash(readFileSync(join(project, path))) === hash);
-  const events = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : [];
+  const eventsText = existsSync(join(work, 'events.jsonl')) ? read(join(work, 'events.jsonl')) : '';
+  const events = eventsText.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
   const source = join(work, task.sourceFile), sha256 = sourceHash(read(source));
   const review = JSON.parse(read(join(control, 'review.json'), 1024));
   const oracleUnchanged = sourceHash(read(join(control, 'oracle.mjs'))) === fixture.oracleHash;
@@ -624,6 +628,14 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     && events.length === 1 && events[0].event === 'TASK_READ' && Object.keys(events[0]).length === 1
     && sha256 === sourceHash(task.baseline) && oracleUnchanged;
   if (taskIncompleteBeforeEffect) failure = 'DEVELOPMENT_TASK_INCOMPLETE';
+  let artifactHashes = null;
+  if (independentPassed) {
+    try {
+      artifactHashes = readDevelopmentArtifactHashes(root, taskId);
+      verifyDevelopmentArtifacts(root, { taskId, sourceSha256: sha256, artifactHashes }, budget);
+      need(artifactHashes.events === sourceHash(eventsText), 'DEVELOPMENT_ARTIFACT_CHANGED');
+    } catch { failure ??= 'DEVELOPMENT_ARTIFACT_CHANGED'; }
+  }
   const passed = !failure && nativeOutputCompleted(output, { exitCode, sessionId, resultText: 'CLAUDUCT_DEVELOPMENT_DONE', oraclePassed: independentPassed })
     && ledgerMatched && completedUsageObserved && rateLimitsMatched && sourceUnchanged && treeEvidence?.stopped && recordedNativeStopped
     && routeMatched && requests.length === settled.length && inputTokens <= budget.maxObservedInputTokens && outputTokens <= budget.maxObservedOutputTokens
@@ -641,7 +653,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     cumulativeAttempts: priorAttempts + attempts, cumulativeElapsedMs: priorElapsedMs + elapsedMs,
     cumulativeInputTokens: priorInputTokens + inputTokens, cumulativeOutputTokens: priorOutputTokens + outputTokens,
     routeMatched, nativeJson: result !== null, nativeError: result?.is_error ?? null, cleanupComplete: cleanupComplete === true,
-    baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256,
+    baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256, artifactHashes,
     sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics, rateLimits, rateLimitsMatched,
     executionReservation, executionReservationMatched, reservationBeforeNative,
     outputCut, cutReleased, outputCutObserved, taskIncompleteBeforeEffect: taskIncompleteBeforeEffect === true, recordedNativeStopped,

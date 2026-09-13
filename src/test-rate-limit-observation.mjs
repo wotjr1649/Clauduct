@@ -134,6 +134,29 @@ for (const status of [401, 429]) {
     assert.deepEqual(received.map(value => value.observation.state), ['observed', 'missing']); checks += 2;
   } finally { await model.close(); upstream.closeAllConnections(); await new Promise(done => upstream.close(done)); }
 }
+{
+  let count = 0;
+  const received = [];
+  const upstream = createServer((req, res) => {
+    requests++; count++; req.resume();
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', ...headers, ...(count === 1 ? {
+      'x-public-extra-primary-used-percent': '7', 'x-public-extra-primary-window-minutes': '60',
+      'x-public-extra-primary-reset-at': '1800000000', 'x-public-extra-plan': 'SYNTHETIC_PRIVATE'
+    } : {}) }); res.end(wire);
+  });
+  await new Promise(done => upstream.listen(0, '127.0.0.1', done));
+  const model = createNativeLoopbackTransport(upstream.address().port, { requestBudget: 2,
+    onResponseLimits: value => { received.push(value); } });
+  try {
+    await model.send({}, AbortSignal.timeout(2000)); await model.send({}, AbortSignal.timeout(2000));
+    assert.deepEqual(received[0].observation.otherLimits[0].primary,
+      { usedPercent: 7, windowMinutes: 60, resetAtSeconds: 1800000000 });
+    assert.equal(received[0].observation.otherLimits[0].secondary, null);
+    assert.equal(received[1].observation.otherLimitFamilies, 0);
+    assert.equal(received[1].observation.otherLimits, undefined);
+    assert.ok(!JSON.stringify(received).includes('SYNTHETIC_PRIVATE')); checks += 5;
+  } finally { await model.close(); upstream.closeAllConnections(); await new Promise(done => upstream.close(done)); }
+}
 console.log(JSON.stringify({ suite: 'rate-limit-observation', checks, loopbackRequests: requests,
   productionFactoryOptionCheck: 'BLOCKED_NOT_RUN_DEBUG_RUNTIME_UNSUPPORTED',
   externalRequests: 0, actualCredentialReads: 0 }));

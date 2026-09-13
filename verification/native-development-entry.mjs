@@ -37,7 +37,8 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
   const budget = JSON.parse(readFileSync(path, 'utf8'));
   developmentTask(budget.taskId);
   if (typeof budget.taskId !== 'string' || !Object.hasOwn({ luna: 'max', sol: 'low' }, budget.model) || budget.effort !== { luna: 'max', sol: 'low' }[budget.model]
-    || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768) throw new Error('INVALID_DEVELOPMENT_ENTRY');
+    || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768
+    || !Number.isSafeInteger(budget.requestLimit) || budget.requestLimit < 1 || budget.requestLimit > 16) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const ledger = createVerificationLedger(join(runRoot, `usage-${phase}`));
   const logPath = join(runRoot, `transport-${phase}.jsonl`);
   let guarded, previousInput = 0, previousOutput = 0, contextRecorded = false, contextAllowed = !budget.continuedFrom;
@@ -54,6 +55,7 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
     await main({ args, startClient: (file, nativeArgs, options) => {
       const child = spawn(file, nativeArgs, options); record({ event: 'NATIVE_STARTED', pid: child.pid }); return child;
     }, openTransport: options => {
+      if (options.requestBudget !== budget.requestLimit) throw new Error('INVALID_DEVELOPMENT_ENTRY');
       const factory = transportFactory ?? options.transportFactory;
       const transport = openTransport({ ...options, transportFactory: configuration => factory({ ...configuration,
         onAttempt: value => ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }),

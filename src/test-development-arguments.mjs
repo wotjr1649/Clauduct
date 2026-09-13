@@ -14,6 +14,9 @@ await assert.rejects(verifyDevelopmentSequence({ ...base, localNative: undefined
 for (const key of ['priorAttempts','priorElapsedMs','priorInputTokens','priorOutputTokens']) {
   await assert.rejects(verifyNativeDevelopment({ ...base, [key]: -1 }), { message: 'INVALID_PRIOR_USAGE' }); checks++;
 }
+for (const requestLimit of [null, 0, -1, 17, 1.5, '6', [6], NaN, Infinity]) {
+  await assert.rejects(verifyNativeDevelopment({ ...base, requestLimit }), { message: 'INVALID_ARGUMENTS' }); checks++;
+}
 await assert.rejects(verifyNativeDevelopment({ ...base, resumeRoot: 'C:\\PublicFixture\\outside-root' }), { message: 'RESUME_ROOT_INVALID' }); checks++;
 await assert.rejects(verifyNativeDevelopment({ ...base, continueFrom: 'C:\\PublicFixture\\outside-root' }), { message: 'CONTINUATION_ROOT_INVALID' }); checks++;
 console.log(JSON.stringify({ suite: 'development-arguments', checks, actualNativeExecutions: 0, actualCredentialReads: 0, externalRequests: 0 }));

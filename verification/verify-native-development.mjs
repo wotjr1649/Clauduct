@@ -100,11 +100,11 @@ function resumeDevelopmentFixture(root, model, localNative, taskId) {
     taskHash: priorBudget.taskHash, priorOwner: owner, priorSourceHash: first.sourceSha256 };
 }
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
-  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom }) {
+  localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16 }) {
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
-    && typeof cutOutputAfterPass === 'boolean'
+    && typeof cutOutputAfterPass === 'boolean' && Number.isSafeInteger(requestLimit) && requestLimit >= 1 && requestLimit <= 16
     && (resumeRoot === undefined || typeof resumeRoot === 'string' && !cutOutputAfterPass)
     && (continueFrom === undefined || typeof continueFrom === 'string' && resumeRoot === undefined && !cutOutputAfterPass), 'INVALID_ARGUMENTS');
   try { developmentTask(taskId); } catch { need(false, 'INVALID_ARGUMENTS'); }
@@ -119,11 +119,11 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const { project, root, work, control, task } = fixture;
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
   const phaseMs = localNative ? 30000 : finishing ? 120000 : 600000;
-  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, phaseMs, requestLimit: 16, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
+  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
     outputBytes: 1048576, mainConcurrency: 1, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
-    cumulativeReservedAttempts: priorAttempts + 16, cumulativeReservedMs: priorElapsedMs + phaseMs,
+    cumulativeReservedAttempts: priorAttempts + requestLimit, cumulativeReservedMs: priorElapsedMs + phaseMs,
     cumulativeObservedInputLimit: priorInputTokens + 131072, cumulativeObservedOutputLimit: priorOutputTokens + 32768,
-    basis: 'Prior recovery used four requests and 10.6-12.5s. This eight-turn code task reserves 16 attempts and the authorized initial ten-minute development unit, including source review.',
+    basis: 'The initial eight-turn code task permits up to sixteen attempts and ten minutes, including source review. An explicitly smaller requestLimit reduces both the reservation and enforced transport budget; it never raises a cumulative cap.',
     oracleHash: fixture.oracleHash, taskHash: fixture.taskHash, mcpHash: sourceHash(read(join(work, '.mcp.json'))),
     ...(context ? { continuedFrom: context.root, previousTaskId: context.previousTaskId, previousSourceSha256: context.sourceSha256 } : {}),
     hashes: developmentHashes(project, localNative) };
@@ -152,7 +152,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   write(join(root, finishing ? 'budget-finish.json' : 'budget.json'), budget);
   writeFileSync(join(root, `transport-${phase}.jsonl`), '', { flag: 'wx' }); mkdirSync(join(root, `usage-${phase}`));
   const sessionId = finishing ? fixture.priorOwner.sessionId : context ? context.owner.sessionId : randomUUID(), phaseStart = Date.now();
-  const args = ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', '16', '-p',
+  const args = ['--model', model, '--effort', effort, '--verify-model-route', '--verify-request-limit', String(requestLimit), '-p',
     '--output-format', 'stream-json', '--verbose', '--tools', '', '--allowedTools',
     finishing ? 'mcp__fixture__read_task,mcp__fixture__run_tests' : 'mcp__fixture__read_task,mcp__fixture__write_source,mcp__fixture__run_tests',
     '--max-turns', '8', finishing || context ? '--resume' : '--session-id', sessionId, '--', finishing
@@ -380,8 +380,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     } else if (['--local-task', '--live-task'].includes(live)) {
       const localNative = live === '--local-task';
       const [, , , taskId, ...prior] = process.argv.slice(2);
-      need(process.argv.length === (localNative ? 6 : 10), 'LIVE_ARGUMENTS_REQUIRED');
+      need([localNative ? 6 : 10, localNative ? 7 : 11].includes(process.argv.length), 'LIVE_ARGUMENTS_REQUIRED');
       const result = await verifyNativeDevelopment({ model, powershell, localNative, taskId,
+        requestLimit: localNative ? prior.length === 0 ? 16 : Number(prior[0]) : prior.length === 4 ? 16 : Number(prior[4]),
         priorAttempts: localNative ? 0 : Number(prior[0]), priorElapsedMs: localNative ? 0 : Number(prior[1]),
         priorInputTokens: localNative ? 0 : Number(prior[2]), priorOutputTokens: localNative ? 0 : Number(prior[3]) });
       console.log(JSON.stringify(result)); process.exitCode = result.passed ? 0 : 1;

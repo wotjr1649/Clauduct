@@ -1,5 +1,7 @@
 # Clauduct
 
+다른 머신으로 이관하거나 이전 대화 없이 개발을 재개할 때는 [HANDOFF.md](HANDOFF.md)를 먼저 읽습니다. 무인 연속 개발의 전체 개선·검증 제안과 native memory·세션 이력의 이관 범위를 연결합니다.
+
 Claude Code 인터페이스의 모델 요청을 로컬 게이트웨이를 통해 기존 Codex 로그인으로 라우팅합니다. Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 담당합니다.
 
 현재 추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다. Codex app-server를 호출하거나 실행 중인 Codex 앱의 세션에 요청을 전달하는 구현이 아닙니다. 로그인 자격 증명을 재사용하는 것과 Codex 앱의 실행 엔진·재시도·프로토콜 처리를 재사용하는 것은 다릅니다. 로컬 합성 테스트 통과는 실제 backend 오류가 발생하지 않는다는 보장이 아닙니다.

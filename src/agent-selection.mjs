@@ -43,6 +43,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
   const pending = new Map();
   const workflows = createWorkflowSelection(projectsRoot);
   const verified = new Map();
+  const collected = new Map();
   const startedAt = Date.now();
   const key = (session, call) => `${session}:${call}`;
   async function read(binding, suffix = 'meta.json', fresh = false) {
@@ -96,7 +97,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     const additions = new Map();
     let unmappedModels = 0;
     for (const block of message.content) {
-      if (block.type !== 'tool_use' || !['Agent', 'Task', 'Skill', 'SendMessage', 'Workflow'].includes(block.name)) continue;
+      if (block.type !== 'tool_use' || !['Agent', 'Task', 'Skill', 'SendMessage', 'Workflow', 'TaskOutput'].includes(block.name)) continue;
       if (!validId(block.id)) fail();
       const input = block.input ?? {};
       if (input.model !== undefined) {
@@ -120,17 +121,24 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         skill: typeof input.skill === 'string' && input.skill.length <= 200 ? input.skill : undefined,
         target: block.name === 'SendMessage' && validId(input.to) && typeof input.message === 'string' && input.message.trim() ? input.to : undefined,
         session, created: now };
+      if (block.name === 'TaskOutput' && validId(input.task_id)) {
+        call.target = input.task_id;
+        call.taskRequest = verified.get(key(session, input.task_id))?.request;
+      }
       if (block.name === 'Workflow' && typeof input.script === 'string' && Buffer.byteLength(input.script) <= 524288
         && input.scriptPath === undefined && input.name === undefined && input.resumeFromRunId === undefined) {
         if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
         call.workflow = { digest: workflowDigest(input.script), route: Object.freeze(selectModel(parentRoute?.model, parentRoute?.effort)) };
       }
       // Native peers may address their parent by name; resolve only that verified relationship.
-      if (call.target) {
+      if (call.target && call.tool === 'SendMessage') {
         call.recipient = call.target;
         const sender = verified.get(key(session, parent));
         const owner = sender?.parent && verified.get(key(session, sender.parent));
         if (owner?.name === call.target) call.target = sender.parent;
+        call.results = [...collected.values()].filter(entry => entry.session === session
+          && entry.collector === parent && entry.owner === call.target);
+        if (call.results.length) call.resultParentRequest = verified.get(key(session, call.target))?.request;
       }
       // Bounded outstanding metadata, never a cumulative session execution limit.
       const id = key(session, block.id);
@@ -166,6 +174,77 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     call.resumeConfirmed = true;
     call.resumeParent = previous.parent;
     call.peerResume = Boolean(peer);
+    return true;
+  }
+  async function childResult(binding, child, status) {
+    const receipt = status === 'failed' ? child.failure : child.completion;
+    if (!receipt || !sameIdentity(child, await read(binding))) fail('IDENTITY');
+    const rows = await read(binding, 'jsonl');
+    const final = rows.findLast(row => ['user', 'assistant'].includes(row.type));
+    const at = Date.parse(final?.timestamp);
+    if (final?.type !== 'assistant' || final.sessionId !== binding.sessionId || final.agentId !== binding.id
+      || !Number.isFinite(at) || at < startedAt || at > Date.now()
+      || (status === 'failed' ? final.isApiErrorMessage !== true || !validId(final.message?.id)
+        || final.message.role !== 'assistant' || final.message.stop_reason !== 'stop_sequence' || at < receipt.at
+        : final.isApiErrorMessage === true || final.message?.id !== receipt.id || final.message.stop_reason !== 'end_turn')) fail('IDENTITY');
+    return receipt;
+  }
+  async function linkTaskResult(link, signal) {
+    const callKey = key(link.sessionId, link.toolUseId), call = pending.get(callKey);
+    if (!call || call.tool !== 'TaskOutput' || call.target !== link.id || call.parent !== link.parent) fail('CALL');
+    const childKey = key(link.sessionId, link.id), child = verified.get(childKey);
+    // Ordinary main-agent results need no nested relay. Unknown and unrelated
+    // collectors cannot manufacture one using the text of a tool result.
+    if (!child || child.parent === undefined) { pending.delete(callKey); return false; }
+    if (link.parent !== undefined && link.parent !== child.parent) fail('PARENT');
+    if (!call.taskRequest || call.taskRequest !== child.request) fail('IDENTITY');
+    if (child.completionState === 'CONSUMED') {
+      if (link.parent === undefined && !collected.has(childKey) && collected.size >= 1024) fail('SIZE');
+      pending.delete(callKey);
+      if (link.parent === undefined) collected.set(childKey, { session: link.sessionId, collector: undefined,
+        owner: child.parent, childKey, invalid: true });
+      return false;
+    }
+    const binding = { id: link.id, role: child.role, sessionId: link.sessionId, transcriptPath: child.transcriptPath };
+    const receipt = await childResult(binding, child, link.status);
+    if (!sameIdentity(child, await read(binding))) fail('IDENTITY');
+    signal?.throwIfAborted();
+    if (verified.get(childKey) !== child || child.request !== call.taskRequest
+      || (link.status === 'failed' ? child.failure : child.completion) !== receipt || pending.get(callKey) !== call) fail('IDENTITY');
+    pending.delete(callKey);
+    // A running direct parent has collected the result itself; no automatic
+    // resume is needed. Only main may relay a nested result to its owner.
+    if (link.parent === child.parent) return false;
+    const prior = collected.get(childKey);
+    if (prior?.receipt === receipt) return false;
+    if (!prior && collected.size >= 1024) fail('SIZE');
+    collected.set(childKey, { session: link.sessionId, collector: link.parent, owner: child.parent,
+      childKey, binding, child, request: child.request, receipt, status: link.status });
+    return true;
+  }
+  async function consumeRelay(binding, previous, call, signal) {
+    if (!call.results?.length) return false;
+    if (call.parent !== undefined || !previous.completion || previous.transcriptPath !== binding.transcriptPath
+      || previous.request !== call.resultParentRequest) fail('PARENT');
+    const parentReceipt = previous.completion;
+    for (const entry of call.results) {
+      if (entry.invalid || entry.owner !== binding.id || entry.session !== binding.sessionId || entry.child.transcriptPath !== binding.transcriptPath
+        || entry.child.request !== entry.request || collected.get(entry.childKey) !== entry
+        || await childResult(entry.binding, entry.child, entry.status) !== entry.receipt) fail('IDENTITY');
+    }
+    if (!sameIdentity(previous, await read(binding))) fail('IDENTITY');
+    for (const entry of call.results) if (!sameIdentity(entry.child, await read(entry.binding))) fail('IDENTITY');
+    signal?.throwIfAborted();
+    // No await after the final snapshot check: concurrent resumes consume one
+    // batch at most once, and a newer child request invalidates the old batch.
+    if (verified.get(key(binding.sessionId, binding.id)) !== previous || previous.completion !== parentReceipt
+      || call.results.some(entry => collected.get(entry.childKey) !== entry || verified.get(entry.childKey) !== entry.child
+        || entry.child.request !== entry.request || (entry.status === 'failed' ? entry.child.failure : entry.child.completion) !== entry.receipt)) fail('IDENTITY');
+    for (const entry of call.results) {
+      collected.delete(entry.childKey);
+      entry.child.completion = undefined; entry.child.failure = undefined; entry.child.completionState = 'CONSUMED';
+    }
+    previous.completion = undefined; previous.completionState = 'CONSUMED';
     return true;
   }
   function begin(session, id) {
@@ -383,9 +462,11 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           const inheritedRoute = inherits
             ? (resumeEntry?.[0] === id ? previous.selection.route : call.inheritedRoute) : undefined;
           if (inherits && !inheritedRoute) fail('MODEL');
+          const relayed = resumeEntry?.[0] === id && await consumeRelay(binding, previous, call, signal);
+          if (pending.get(id) !== call && !nativeEntry) fail('CALL');
           pending.delete(id);
           const selection = { route: inheritedRoute ?? route ?? (Object.hasOwn(ROLE_MODELS, binding.role) ? ROLE_MODELS[binding.role] : undefined),
-            source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : inherits ? 'definition-inherit' : definedRoute ? 'definition-model' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
+            source: nativeEntry ? 'native-fork' : relayed ? 'verified-result-relay' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : inherits ? 'definition-inherit' : definedRoute ? 'definition-model' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
             inherits: Boolean(inherits), definedRoute,
             sessionId: binding.sessionId, parent,
             ...(metadata.name === 'code-review' && (nativeEntry || skillEntry || resumeEntry) && { review: true }) };
@@ -418,5 +499,5 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       throw error;
     }
   }
-  return { remember, linkSkill, linkWorkflow, linkResume, begin, delivered, failed, resolve: resolveWithDiagnostics };
+  return { remember, linkSkill, linkWorkflow, linkResume, linkTaskResult, begin, delivered, failed, resolve: resolveWithDiagnostics };
 }

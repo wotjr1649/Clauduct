@@ -14,6 +14,17 @@ export function contextFromEnvironment(source) {
 }
 
 export function bindingFrom(input, source) {
+  if (input?.hook_event_name === 'PostToolUse' && input.tool_name === 'TaskOutput') {
+    const result = input.tool_response, task = result?.task;
+    if (result?.retrieval_status !== 'success' || task?.task_type !== 'local_agent'
+      || !['completed', 'failed'].includes(task.status)) return null;
+    const valid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
+    if (!valid(input.session_id) || !valid(input.tool_use_id) || !valid(task.task_id)
+      || input.tool_input?.task_id !== task.task_id || (input.agent_id !== undefined && !valid(input.agent_id)))
+      throw new Error('INVALID_AGENT_BINDING');
+    return { kind: 'task-result', sessionId: input.session_id, toolUseId: input.tool_use_id,
+      id: task.task_id, status: task.status, ...(input.agent_id && { parent: input.agent_id }) };
+  }
   if (input?.hook_event_name === 'PostToolUse' && input.tool_name === 'Workflow') {
     const result = input.tool_response, script = input.tool_input?.script;
     if (result?.status !== 'async_launched' || result.taskType !== 'local_workflow'

@@ -115,3 +115,11 @@ Verified: 등록된 시험 정의의 모델·effort 상속과 기존 일반 역�
 Verified: test-launcher-native.mjs와 test-agent-selection.mjs 통과. 실제 실행 인자 JSON으로 일반 5개/시험 포함 10개 등록, 기존 설정·환경·메인 선택 불변, 중복/값 첨부 옵션 및 임의 --agents 거부, 정확한 도구 필드, 네 모델별 정의 선택, 일반 inherit·손자 상속·재개를 검사했다. native enum을 유지한 loopback 요청에서 네 일반 모델의 definition-model 및 비기본 effort의 definition-inherit, 기존 일반 역할/Plan 고정값을 각 두 병렬 요청과 status로 확인했다. completion 46개, gateway 24개, native-protocol도 통과했다. 일반/시험 동시 dry-run은 main terra/max 유지, 이름 10개, credentialReads=0, childStarted=false, globalWrites=0이었다.
 
 Not verified: 새 일반용 이름의 실제 native 로딩·작업·쓰기 도구 및 다단계 위임 수행. symlink 검사는 기존 제한으로 미실행이다. 등록 스키마/로컬 프로토콜 검증을 실제 native 도구 실행 증거로 대신하지 않는다. 이전 시험 정의의 실제 성공은 보존하되 새 일반 인터페이스 전체 완료로 확대하지 않는다.
+
+## 2026-09-14 수집한 중첩 결과의 부모 중계
+
+현재 실행에서 `TaskOutput`으로 수집한 중첩 Agent의 성공·실패는 해당 도구 호출 ID, 자식의 현재 요청, native metadata와 마지막 transcript 응답을 대조한다. 직접 부모가 실행 중이면 수집 자체로 처리한다. 메인이 수집하고 `SendMessage`로 같은 부모를 재개하면 `verified-result-relay`로 분류하고 결과 묶음을 한 번만 소비한다. 부모의 모델·effort는 유지한다. 고정 완료 문구나 결과 본문에서 부모 신원을 추정하지 않는다.
+
+중복 수집은 중계 전에는 멱등 처리한다. 소비된 결과의 재중계, 새 요청이 시작된 뒤 도착한 결과, 다른 부모의 자식, 바뀐 metadata/마지막 응답, 사용자 취소, 동시 재개는 허용 증거가 되지 않는다. 임의 `SendMessage`의 내용이 옳다는 보증이나 자동 작업 스케줄러는 아니다. 메인은 native 반환 ID로 결과를 수집하고 명시적으로 같은 부모에게 후속 작업을 전달한다. 기존 단일/다중 native 알림과 일반 SendMessage 재개 경로는 유지한다.
+
+새 로컬 파일 검사29개와 기존 선택·완료·실패 검사를 수행했다. 공개 고정 응답을 사용하는 실제 native에서는 sol/low와 luna/max의 실패 자식 수집·동일 부모 재개·보고서 쓰기를 확인했고, 성공 및 취소 사례도 독립 transcript/파일 대조로 확인했다. 이는 실제 backend 추론과 구분한다. `verification/verify-native-result-relay.ps1`와 `verification/verify-result-relay-evidence.mjs`가 재현 및 독립 검증 진입점이다. Session-29 출하 판정은 Workflow 재개 등 다른 차단이 남아 HOLD다.

@@ -199,7 +199,7 @@ export function interactiveLaunch(gateway, source, cwd, selected = DEFAULT_SELEC
   const nodePath = process.execPath.replaceAll('\\', '/');
   settings.hooks = Object.fromEntries(['SubagentStart', 'SubagentStop'].map(event => [event,
     [{ matcher: '*', hooks: [{ type: 'command', command: `"${nodePath}" "${hookPath}"`, timeout: 5 }] }]]));
-  settings.hooks.PostToolUse = [{ matcher: 'Skill|SendMessage|Workflow', hooks: [{ type: 'command', command: `"${nodePath}" "${hookPath}"`, timeout: 5 }] }];
+  settings.hooks.PostToolUse = [{ matcher: 'Skill|SendMessage|Workflow|TaskOutput', hooks: [{ type: 'command', command: `"${nodePath}" "${hookPath}"`, timeout: 5 }] }];
   Object.assign(env, settings.env);
   const authorization = gateway.clientHeaders().Authorization;
   if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) throw new Error('LOCAL_SESSION_REQUIRED');

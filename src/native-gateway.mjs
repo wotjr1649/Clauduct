@@ -153,6 +153,16 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       }
       if (req.method === 'POST' && path === '/clauduct/agents') {
         const binding = await readBody(req, 4096, controller);
+        if (binding?.kind === 'task-result') {
+          need(agentSelection && Object.keys(binding).every(key => ['kind', 'sessionId', 'toolUseId', 'id', 'status', 'parent'].includes(key))
+            && ['sessionId', 'toolUseId', 'id'].every(key => typeof binding[key] === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding[key]))
+            && ['completed', 'failed'].includes(binding.status)
+            && (binding.parent === undefined || (typeof binding.parent === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding.parent))), 'INVALID_AGENT_BINDING');
+          let linked;
+          try { linked = await agentSelection.linkTaskResult(binding, controller.signal); }
+          catch { throw new NativeError('AGENT_SELECTION_UNVERIFIED_CALL'); }
+          reply(res, 200, { linked }); return;
+        }
         if (binding?.kind === 'workflow-result') {
           need(agentSelection && Object.keys(binding).every(key => ['kind', 'sessionId', 'toolUseId', 'taskId', 'runId',
             'workflowName', 'transcriptPath', 'transcriptDir', 'scriptPath', 'scriptDigest', 'parent'].includes(key))

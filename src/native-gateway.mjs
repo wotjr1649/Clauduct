@@ -9,6 +9,7 @@ import { betaFailure, unknownBetas, judgedBetas } from './native-beta.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
 import { searchSideQuery, searchRequestBody, searchReply } from './native-search.mjs';
 import { installHttpClose } from './http-close.mjs';
+import { transportClientErrorCode } from './native-protocol.mjs';
 
 // Fixed-label diagnostics. A composed local code carries a variable suffix built from
 // this project's own allowlists, never upstream text; keep only its fixed prefix.
@@ -59,7 +60,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // or an agent binding failure. Inference requests are counted by started/succeeded/failed.
   const lifetime = { started: 0, succeeded: 0, failed: 0, auxiliaryMetadataEvents: 0, keepaliveEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
     rejectedBeforeStart: 0, firstRejectedCategory: null, unmappedAgentModels: 0,
-    transportRejections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
+    transportRejections: 0, transportRejectedConnections: 0, agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0,
     webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0 };
   let notifiedUnmappedModel = false, notifiedEventCapture = false, notifiedWebSearchUnused = false;
   const failuresByStage = Object.fromEntries(REQUEST_STAGES.map(stage => [stage, 0]));
@@ -67,6 +68,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   // one label, so a long run reports a number nothing can be read out of. Keys come from
   // diagnosticCategory, which answers inside a fixed vocabulary, so this cannot grow unbounded.
   const rejectedCategories = {};
+  const transportRejectionsByEvent = {}, transportClientErrorsByCode = {};
+  // Count distinct sockets without retaining closed connections or their identifying data.
+  const transportRejectedSockets = new WeakSet();
   // Verification only, and off unless the launcher was told which fallback arm is running.
   // One synthetic upstream error per gateway, after content has already reached the client,
   // because that is the shape the client's stream-failure path actually sees. Never an idle
@@ -81,7 +85,8 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     activeDeliveries, cleanupFailed, admission: admission.diagnostics(), maxObservedInputTokens: { ...maxObservedInputTokens },
     contextPolicy: CONTEXT_POLICY, contextPolicyRuntimeVerified: false,
     correlationScope, lifetime: { ...lifetime, failuresByStage: { ...failuresByStage },
-      rejectedCategories: { ...rejectedCategories } },
+      rejectedCategories: { ...rejectedCategories }, transportRejectionsByEvent: { ...transportRejectionsByEvent },
+      transportClientErrorsByCode: { ...transportClientErrorsByCode } },
     recentRequests: recentRequests.map(copyRecord),
     failureRequests: failureRequests.map(copyRecord),
     unsupportedEventNames: [...unsupportedEventNames], unknownBetaNames: [...unknownBetaNames],
@@ -588,12 +593,23 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       onTimeout: () => { connectionCloseTimeouts++; } }));
     if (closing) socket.resetAndDestroy();
   });
-  // Rejected by the HTTP server before any request handler ran; counted apart from requests.
-  const transportReject = () => { rejected++; lifetime.transportRejections++; };
-  server.on('clientError', (_error, socket) => { transportReject(); socket.destroy(); });
-  for (const event of ['connect', 'upgrade']) server.on(event, (_req, socket) => { transportReject(); socket.destroy(); });
+  // Event count, not failed inference requests: clientError can also follow a partial request.
+  // Only fixed call-site labels and allowlisted codes survive. Never retain the error/request.
+  const transportReject = (event, socket, errorCode) => {
+    rejected++; lifetime.transportRejections++;
+    transportRejectionsByEvent[event] = (transportRejectionsByEvent[event] ?? 0) + 1;
+    if (!transportRejectedSockets.has(socket)) {
+      transportRejectedSockets.add(socket); lifetime.transportRejectedConnections++;
+    }
+    if (event === 'clientError') {
+      const code = transportClientErrorCode(errorCode);
+      transportClientErrorsByCode[code] = (transportClientErrorsByCode[code] ?? 0) + 1;
+    }
+  };
+  server.on('clientError', (error, socket) => { transportReject('clientError', socket, error.code); socket.destroy(); });
+  for (const event of ['connect', 'upgrade']) server.on(event, (_req, socket) => { transportReject(event, socket); socket.destroy(); });
   for (const event of ['checkContinue', 'checkExpectation']) server.on(event, (_req, res) => {
-    transportReject(); reply(res, 417, { type: 'error', error: { type: 'invalid_request_error', message: 'EXPECT_REJECTED' } });
+    transportReject(event, _req.socket); reply(res, 417, { type: 'error', error: { type: 'invalid_request_error', message: 'EXPECT_REJECTED' } });
   });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   port = server.address().port;

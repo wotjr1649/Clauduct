@@ -7,11 +7,15 @@ import { contextFromEnvironment } from './agent-route.mjs';
 import { EVENT_DIAGNOSTIC_TYPES, EVENT_TYPE_FORMATS, REQUEST_STAGES, FAILURE_DIAGNOSTIC_CATEGORIES, REQUEST_FAILURES, UPSTREAM_FAILURES, capturableEventName,
   UPSTREAM_ERROR_CODES, UPSTREAM_ERROR_TYPES, UPSTREAM_INCOMPLETE_REASONS, KEEPALIVE_SHAPES } from './native-protocol.mjs';
 import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION_STATES } from './agent-selection.mjs';
+import { TRANSPORT_REJECTION_EVENTS, TRANSPORT_CLIENT_ERROR_CODES } from './native-protocol.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
   'firstTextDeltaMs', 'firstDownstreamWriteMs', 'transportFinishedMs', 'finishedMs'];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
+const fixedCounts = (value, labels) => value && typeof value === 'object' && !Array.isArray(value)
+  ? Object.fromEntries(labels.filter(label => Object.hasOwn(value, label) && counter(value[label]))
+    .map(label => [label, counter(value[label])])) : null;
 const reference = value => typeof value === 'string' && /^[a-f0-9]{32}$/.test(value) ? value : null;
 const betaName = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value);
 const betaLabels = value => Array.isArray(value)
@@ -144,7 +148,10 @@ export function requestStatusSnapshot(value, env = {}) {
     judgedBetaLabels: betaLabels(value.judgedBetaLabels),
     requestOutcome: failed === null || started === null || succeeded === null ? 'not-observed'
       : failed > 0 ? 'has-failures' : started > succeeded ? 'in-progress' : started === 0 ? 'no-requests' : 'all-succeeded',
-    lifetime: lifetime ? { scope: 'gateway-lifetime', failuresByStage: lifetime.failuresByStage
+    lifetime: lifetime ? { scope: 'gateway-lifetime',
+      transportRejectionsByEvent: fixedCounts(lifetime.transportRejectionsByEvent, TRANSPORT_REJECTION_EVENTS),
+      transportClientErrorsByCode: fixedCounts(lifetime.transportClientErrorsByCode, TRANSPORT_CLIENT_ERROR_CODES),
+      failuresByStage: lifetime.failuresByStage
       ? Object.fromEntries(REQUEST_STAGES.map(stage => [stage, counter(lifetime.failuresByStage[stage])])) : null,
       // Only the fixed vocabulary passes, and a zero is dropped rather than listed.
       rejectedCategories: lifetime.rejectedCategories && typeof lifetime.rejectedCategories === 'object'
@@ -152,7 +159,7 @@ export function requestStatusSnapshot(value, env = {}) {
           .filter(name => counter(lifetime.rejectedCategories[name]))
           .map(name => [name, counter(lifetime.rejectedCategories[name])])) : null, ...Object.fromEntries(
       ['started', 'succeeded', 'failed', 'auxiliaryMetadataEvents', 'keepaliveEvents', 'unsupportedEvents', 'unsupportedEventNamesWithheld', 'injectedStreamErrors', 'rejectedBeforeStart',
-        'unmappedAgentModels', 'transportRejections', 'agentRegistrationsEvicted',
+        'unmappedAgentModels', 'transportRejections', 'transportRejectedConnections', 'agentRegistrationsEvicted',
         'agentRegistrationsExpired', 'webSearchRequests', 'webSearchCalls', 'webSearchLinks'].map(key =>
         [key, counter(lifetime[key])])),
       firstRejectedCategory: FAILURE_DIAGNOSTIC_CATEGORIES.includes(lifetime.firstRejectedCategory)

@@ -900,7 +900,8 @@ try {
       assert.deepEqual(after.lifetime, { scope: 'gateway-lifetime', started: 18, succeeded: 17,
         failed: 1, auxiliaryMetadataEvents: 0, keepaliveEvents: 0, unsupportedEvents: 1, unsupportedEventNamesWithheld: 1, injectedStreamErrors: 0,
         rejectedBeforeStart: 0, firstRejectedCategory: null, rejectedCategories: {},
-        unmappedAgentModels: 0, transportRejections: 0, agentRegistrationsEvicted: 0,
+        unmappedAgentModels: 0, transportRejections: 0, transportRejectedConnections: 0,
+        transportRejectionsByEvent: {}, transportClientErrorsByCode: {}, agentRegistrationsEvicted: 0,
         agentRegistrationsExpired: 0, webSearchRequests: 0, webSearchCalls: 0, webSearchLinks: 0,
         failuresByStage: { ...emptyStages, upstream: 1 } });
       assert.ok(!JSON.stringify(status).includes('SYNTHETIC_PRIVATE')); passed++;
@@ -925,7 +926,8 @@ try {
       assert.deepEqual(status.lifetime, { scope: 'gateway-lifetime', started: 1, succeeded: 1,
         failed: 0, auxiliaryMetadataEvents: 1, keepaliveEvents: 0, unsupportedEvents: 0, unsupportedEventNamesWithheld: 0, injectedStreamErrors: 0,
         rejectedBeforeStart: 0, firstRejectedCategory: null, rejectedCategories: {},
-        unmappedAgentModels: 0, transportRejections: 0,
+        unmappedAgentModels: 0, transportRejections: 0, transportRejectedConnections: 0,
+        transportRejectionsByEvent: {}, transportClientErrorsByCode: {},
         agentRegistrationsEvicted: 0, agentRegistrationsExpired: 0, webSearchLinks: 0, webSearchRequests: 0,
         webSearchCalls: 0, failuresByStage: emptyStages });
       const snapshot = gateway.diagnostics(); snapshot.lifetime.started = -1;

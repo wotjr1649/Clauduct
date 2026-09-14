@@ -1,7 +1,12 @@
 name: tests
 
 on:
+  # push fired on every branch and pull_request fired again for the same commit, so every push
+  # to a branch under review ran the whole suite twice, at once, against identical trees. A pull
+  # request is judged on its pull_request run, and main is the only ref that still needs a push
+  # run of its own. A branch with no pull request open is no longer built; opening one builds it.
   push:
+    branches: [main]
   pull_request:
 
 jobs:

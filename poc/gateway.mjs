@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { OfflineSession, LIMITS, CHAT_REQUESTS, PROTOCOL_ERROR_CODES } from './adapter.mjs';
+import { installHttpClose } from '../src/http-close.mjs';
 
 export const GATEWAY_LIMITS = Object.freeze({ lifetimeMs: 180000, requestMs: 5000,
   upstreamMs: 45000, toolResultMs: 45000, deliveryMs: 5000, requests: 8, connections: 16 });
@@ -68,6 +69,8 @@ export async function startGateway({ transport, headerPolicy = 'strict', limits 
     ...(readMarker === undefined ? {} : { inputPolicy: 'claude-code-read-once', readMarker }) });
   const secret = Buffer.from(`Bearer ${randomBytes(32).toString('base64url')}`);
   const sockets = new Set(), jobs = new Set(), timers = new Set();
+  const connectionClosures = new WeakMap();
+  let pendingConnectionCloses = 0;
   const counts = { receivedRequests: 0, connections: 0, rejected: 0, messages: 0, hello: 0,
     countTokens: 0, malformedHttp: 0, responses: 0, compatibilityApplied: 0, reconstructedToolCalls: 0,
     clientDisconnects: 0, transportErrors: 0, internalErrors: 0,
@@ -89,7 +92,8 @@ export async function startGateway({ transport, headerPolicy = 'strict', limits 
 
   function diagnostics() {
     return { closing, reason, lastRejection, unknownBetaCount, thinkingTokenCountRequested, counts: { ...counts }, activeSockets: sockets.size, activeJobs: jobs.size,
-      activeTimers: timers.size, activeDeliveries, busy, session: session.diagnostics, transport: transport.diagnostics(),
+      activeTimers: timers.size + pendingConnectionCloses, pendingConnectionCloses,
+      activeDeliveries, busy, session: session.diagnostics, transport: transport.diagnostics(),
       toolExecutions: 0, persistedBodies: 0, localSessionSecretCleared: closing };
   }
   function close(why = 'CLOSED_BY_CALLER') {
@@ -99,8 +103,8 @@ export async function startGateway({ transport, headerPolicy = 'strict', limits 
     for (const timer of timers) clearTimeout(timer);
     timers.clear(); session.cancel(); current?.controller.abort();
     const socketClosures = [...sockets].map(socket => new Promise(resolve => socket.once('close', resolve)));
-    const serverClosed = new Promise(resolve => server.close(resolve));
-    for (const socket of sockets) socket.destroy();
+    const serverClosed = Promise.all(socketClosures).then(() => new Promise(resolve => server.close(resolve)));
+    for (const socket of sockets) if (!connectionClosures.get(socket)?.pending) socket.resetAndDestroy();
     void (async () => {
       await transport.close();
       await Promise.all([...socketClosures, serverClosed, ...jobs]);
@@ -242,8 +246,9 @@ export async function startGateway({ transport, headerPolicy = 'strict', limits 
   }
   server.on('connection', socket => {
     counts.connections++; sockets.add(socket);
+    connectionClosures.set(socket, installHttpClose(socket, { onPending: change => { pendingConnectionCloses += change; } }));
     socket.on('error', () => { counts.transportErrors++; }); socket.once('close', () => sockets.delete(socket));
-    if (closing || counts.connections > cap.connections) { socket.destroy(); void close('CONNECTION_BUDGET'); }
+    if (closing || counts.connections > cap.connections) { socket.resetAndDestroy(); void close('CONNECTION_BUDGET'); }
   });
   server.on('clientError', (error, socket) => {
     counts.malformedHttp++;

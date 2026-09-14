@@ -2,23 +2,48 @@ import { open, realpath } from 'node:fs/promises';
 import { resolve, relative, isAbsolute, dirname, basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { selectModel, ROLE_MODELS } from './models.mjs';
+import { createWorkflowSelection, workflowDigest } from './workflow-selection.mjs';
 
 const validId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 export const SELECTION_FAILURES = Object.freeze(['IDENTITY', 'PATH', 'SIZE', 'ACCESS', 'IO', 'MISSING', 'PARSE', 'CALL', 'ROLE', 'PARENT', 'MODEL', 'UNKNOWN']);
+export const COMPLETION_FAILURES = Object.freeze(['PARENT_UNVERIFIED', 'PARENT_IDENTITY', 'REGISTRATION',
+  'PARENT_COMPLETION', 'TRANSCRIPT_BINDING', 'PARENT_TRANSCRIPT_READ', 'NOTIFICATION_ORIGIN',
+  'NOTIFICATION_TIME', 'NOTIFICATION_HEADER', 'NOTIFICATION_BATCH', 'CHILD_COMPLETION', 'CHILD_RELATIONSHIP',
+  'CHILD_METADATA_READ', 'CHILD_IDENTITY', 'CHILD_TRANSCRIPT_READ', 'CHILD_FINAL_RESPONSE',
+  'CHILD_FINAL_TIME', 'PARENT_METADATA_READ', 'IDENTITY_RECHECK', 'EVIDENCE_CHANGED']);
+export const COMPLETION_STATES = Object.freeze(['UNRECORDED', 'REQUEST_STARTED', 'RECORDED', 'FAILED', 'CONSUMED', 'NONTERMINAL', 'INVALID_RESPONSE']);
 const fail = (reason = 'UNKNOWN') => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), { selectionReason: reason }); };
 export const SELECTION_IO_CODES = Object.freeze(['ENOTDIR', 'EISDIR', 'EMFILE', 'ENFILE', 'EBUSY', 'EINVAL', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'OTHER']);
 const failIO = error => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), {
   selectionReason: 'IO', selectionIoCode: SELECTION_IO_CODES.includes(error.code) ? error.code : 'OTHER'
 }); };
-const aliases = Object.freeze({ haiku: 'luna', sonnet: 'luna', opus: 'sol' });
-const model = value => selectModel(Object.hasOwn(aliases, value) ? aliases[value] : value);
+const aliases = Object.freeze({ haiku: 'luna', sonnet: 'luna', opus: 'sol', fable: 'astra' });
+// Native accepts a family alias or a full model id for the same model. Match the family
+// prefix so a version suffix is never pinned here; unknown names still fail closed.
+const families = Object.freeze([['claude-haiku-', 'luna'], ['claude-sonnet-', 'luna'],
+  ['claude-opus-', 'sol'], ['claude-fable-', 'astra']]);
+const alias = value => Object.hasOwn(aliases, value) ? aliases[value]
+  : families.find(([prefix]) => value.startsWith(prefix))?.[1];
+const model = value => selectModel(alias(value) ?? value);
+const mapped = value => { try { model(value); return true; } catch { return false; } };
 const within = (root, path) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith('..\\') && !rel.startsWith('../'); };
+const sameIdentity = (previous, metadata) => previous && metadata && metadata.stoppedByUser !== true
+  && previous.role === metadata.agentType && previous.origin === metadata.toolUseId
+  && previous.model === metadata.model && previous.name === metadata.name
+  && previous.parent === (metadata.parentAgentId ?? undefined);
 
 // Native metadata writes are not awaited before SubagentStart. Only a pending,
 // validated parent tool call can make a metadata snapshot usable for a new start.
-export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1500 } = {}) {
+export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1500, agentDefinitions = {} } = {}) {
+  // Launcher-owned definitions only, never request/transcript-provided configuration.
+  const definedRoutes = new Map(Object.entries(agentDefinitions).map(([role, definition]) => {
+    if (typeof definition?.model !== 'string') fail('MODEL');
+    return [role, definition.model === 'inherit' ? 'inherit' : Object.freeze(selectModel(definition.model, definition.effort))];
+  }));
   const pending = new Map();
+  const workflows = createWorkflowSelection(projectsRoot);
   const verified = new Map();
+  const collected = new Map();
   const startedAt = Date.now();
   const key = (session, call) => `${session}:${call}`;
   async function read(binding, suffix = 'meta.json', fresh = false) {
@@ -36,10 +61,16 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       const stat = await file.stat();
       if (!stat.isFile()) fail();
       if (fresh && stat.birthtimeMs < startedAt) fail('IDENTITY');
-      const buffer = Buffer.alloc(16385);
-      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
-      if (bytesRead > 16384) fail('SIZE');
-      return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead)));
+      const tail = suffix === 'jsonl', limit = tail ? 1048576 : 16384;
+      const offset = tail ? Math.max(0, stat.size - limit) : 0;
+      const buffer = Buffer.alloc(limit + Number(!tail));
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, offset);
+      if (bytesRead > limit) fail('SIZE');
+      // Discard only the partial first line before decoding a bounded UTF-8 tail.
+      const start = offset ? buffer.indexOf(10) + 1 : 0;
+      if (offset && !start) fail('SIZE');
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(start, bytesRead));
+      return tail ? text.trimEnd().split('\n').filter(Boolean).map(line => JSON.parse(line)) : JSON.parse(text);
     } finally { await file.close(); }
   }
   async function nativeFork(binding, metadata) {
@@ -59,31 +90,62 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       || scope?.skillName !== metadata.name || scope.attributionName !== metadata.name) fail('IDENTITY');
     return true;
   }
-  function remember(message, session, parent) {
+  function remember(message, session, parent, parentRoute) {
     if (!validId(session)) return;
     const now = Date.now();
     for (const [id, call] of pending) if (now - call.created > 300000) pending.delete(id);
     const additions = new Map();
+    let unmappedModels = 0;
     for (const block of message.content) {
-      if (block.type !== 'tool_use' || !['Agent', 'Task', 'Skill', 'SendMessage', 'Workflow'].includes(block.name)) continue;
+      if (block.type !== 'tool_use' || !['Agent', 'Task', 'Skill', 'SendMessage', 'Workflow', 'TaskOutput'].includes(block.name)) continue;
       if (!validId(block.id)) fail();
       const input = block.input ?? {};
       if (input.model !== undefined) {
         if (typeof input.model !== 'string') fail();
-        if (input.model !== 'inherit') model(input.model);
+        // A model name this gateway does not map costs only this block's routing evidence.
+        // The turn is still delivered; the child it names fails closed on its first request
+        // because no verified call exists. A structural violation still fails the whole turn.
+        if (input.model !== 'inherit' && !mapped(input.model)) { unmappedModels++; continue; }
       }
       if (input.subagent_type !== undefined && (typeof input.subagent_type !== 'string'
         || input.subagent_type.length === 0 || input.subagent_type.length > 200)) fail();
+      const definedRoute = input.model === undefined && ['Agent', 'Task'].includes(block.name)
+        ? definedRoutes.get(input.subagent_type) : undefined;
+      let inheritedRoute;
+      if (input.model === 'inherit' || definedRoute === 'inherit') {
+        if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
+        inheritedRoute = Object.freeze(selectModel(parentRoute.model, parentRoute.effort));
+      }
       const call = { parent, tool: block.name, role: input.subagent_type,
-        selection: input.model, skill: typeof input.skill === 'string' && input.skill.length <= 200 ? input.skill : undefined,
+        selection: input.model, inheritedRoute, definedRoute: definedRoute === 'inherit' ? undefined : definedRoute,
+        skill: typeof input.skill === 'string' && input.skill.length <= 200 ? input.skill : undefined,
         target: block.name === 'SendMessage' && validId(input.to) && typeof input.message === 'string' && input.message.trim() ? input.to : undefined,
         session, created: now };
+      if (block.name === 'TaskOutput' && validId(input.task_id)) {
+        call.target = input.task_id;
+        call.taskRequest = verified.get(key(session, input.task_id))?.request;
+      }
+      if (block.name === 'Workflow' && typeof input.script === 'string' && Buffer.byteLength(input.script) <= 524288
+        && input.scriptPath === undefined && input.name === undefined && input.resumeFromRunId === undefined) {
+        if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
+        call.workflow = { digest: workflowDigest(input.script), route: Object.freeze(selectModel(parentRoute?.model, parentRoute?.effort)) };
+      }
+      if (block.name === 'Workflow' && input.script === undefined && input.name === undefined
+        && typeof input.scriptPath === 'string' && input.scriptPath.length <= 4096 && isAbsolute(input.scriptPath)
+        && typeof input.resumeFromRunId === 'string' && /^wf_[a-z0-9-]{6,}$/.test(input.resumeFromRunId)) {
+        if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
+        call.workflow = { scriptPath: input.scriptPath, resumeFromRunId: input.resumeFromRunId,
+          route: Object.freeze(selectModel(parentRoute.model, parentRoute.effort)) };
+      }
       // Native peers may address their parent by name; resolve only that verified relationship.
-      if (call.target) {
+      if (call.target && call.tool === 'SendMessage') {
         call.recipient = call.target;
         const sender = verified.get(key(session, parent));
         const owner = sender?.parent && verified.get(key(session, sender.parent));
         if (owner?.name === call.target) call.target = sender.parent;
+        call.results = [...collected.values()].filter(entry => entry.session === session
+          && entry.collector === parent && entry.owner === call.target);
+        if (call.results.length) call.resultParentRequest = verified.get(key(session, call.target))?.request;
       }
       // Bounded outstanding metadata, never a cumulative session execution limit.
       const id = key(session, block.id);
@@ -92,6 +154,7 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     }
     // Validate the whole response before publishing any routing evidence.
     for (const [id, call] of additions) pending.set(id, call);
+    return unmappedModels;
   }
   function linkSkill(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));
@@ -100,6 +163,13 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       || call.parent !== link.parent || (call.child !== undefined && call.child !== link.id)) fail('CALL');
     if ([...pending.values()].some(other => other !== call && other.session === link.sessionId && other.child === link.id)) fail('CALL');
     call.child = link.id;
+  }
+  function linkWorkflow(link, signal) {
+    const id = key(link.sessionId, link.toolUseId), call = pending.get(id);
+    if (!call || call.tool !== 'Workflow') fail('CALL');
+    const done = () => { if (pending.get(id) !== call) fail('CALL'); pending.delete(id); };
+    if (link.resumeFromRunId !== undefined) return workflows.resume(link, call, signal).then(done);
+    workflows.link(link, call); done();
   }
   function linkResume(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));
@@ -114,12 +184,216 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     call.peerResume = Boolean(peer);
     return true;
   }
-  async function resolveSelection(binding, signal) {
+  async function childResult(binding, child, status) {
+    const receipt = status === 'failed' ? child.failure : child.completion;
+    if (!receipt || !sameIdentity(child, await read(binding))) fail('IDENTITY');
+    const rows = await read(binding, 'jsonl');
+    const final = rows.findLast(row => ['user', 'assistant'].includes(row.type));
+    const at = Date.parse(final?.timestamp);
+    if (final?.type !== 'assistant' || final.sessionId !== binding.sessionId || final.agentId !== binding.id
+      || !Number.isFinite(at) || at < startedAt || at > Date.now()
+      || (status === 'failed' ? final.isApiErrorMessage !== true || !validId(final.message?.id)
+        || final.message.role !== 'assistant' || final.message.stop_reason !== 'stop_sequence' || at < receipt.at
+        : final.isApiErrorMessage === true || final.message?.id !== receipt.id || final.message.stop_reason !== 'end_turn')) fail('IDENTITY');
+    return receipt;
+  }
+  async function linkTaskResult(link, signal) {
+    const callKey = key(link.sessionId, link.toolUseId), call = pending.get(callKey);
+    if (!call || call.tool !== 'TaskOutput' || call.target !== link.id || call.parent !== link.parent) fail('CALL');
+    const childKey = key(link.sessionId, link.id), child = verified.get(childKey);
+    // Ordinary main-agent results need no nested relay. Unknown and unrelated
+    // collectors cannot manufacture one using the text of a tool result.
+    if (!child || child.parent === undefined) { pending.delete(callKey); return false; }
+    if (link.parent !== undefined && link.parent !== child.parent) fail('PARENT');
+    if (!call.taskRequest || call.taskRequest !== child.request) fail('IDENTITY');
+    if (child.completionState === 'CONSUMED') {
+      if (link.parent === undefined && !collected.has(childKey) && collected.size >= 1024) fail('SIZE');
+      pending.delete(callKey);
+      if (link.parent === undefined) collected.set(childKey, { session: link.sessionId, collector: undefined,
+        owner: child.parent, childKey, invalid: true });
+      return false;
+    }
+    const binding = { id: link.id, role: child.role, sessionId: link.sessionId, transcriptPath: child.transcriptPath };
+    const receipt = await childResult(binding, child, link.status);
+    if (!sameIdentity(child, await read(binding))) fail('IDENTITY');
+    signal?.throwIfAborted();
+    if (verified.get(childKey) !== child || child.request !== call.taskRequest
+      || (link.status === 'failed' ? child.failure : child.completion) !== receipt || pending.get(callKey) !== call) fail('IDENTITY');
+    pending.delete(callKey);
+    // A running direct parent has collected the result itself; no automatic
+    // resume is needed. Only main may relay a nested result to its owner.
+    if (link.parent === child.parent) return false;
+    const prior = collected.get(childKey);
+    if (prior?.receipt === receipt) return false;
+    if (!prior && collected.size >= 1024) fail('SIZE');
+    collected.set(childKey, { session: link.sessionId, collector: link.parent, owner: child.parent,
+      childKey, binding, child, request: child.request, receipt, status: link.status });
+    return true;
+  }
+  async function consumeRelay(binding, previous, call, signal) {
+    if (!call.results?.length) return false;
+    if (call.parent !== undefined || !previous.completion || previous.transcriptPath !== binding.transcriptPath
+      || previous.request !== call.resultParentRequest) fail('PARENT');
+    const parentReceipt = previous.completion;
+    for (const entry of call.results) {
+      if (entry.invalid || entry.owner !== binding.id || entry.session !== binding.sessionId || entry.child.transcriptPath !== binding.transcriptPath
+        || entry.child.request !== entry.request || collected.get(entry.childKey) !== entry
+        || await childResult(entry.binding, entry.child, entry.status) !== entry.receipt) fail('IDENTITY');
+    }
+    if (!sameIdentity(previous, await read(binding))) fail('IDENTITY');
+    for (const entry of call.results) if (!sameIdentity(entry.child, await read(entry.binding))) fail('IDENTITY');
+    signal?.throwIfAborted();
+    // No await after the final snapshot check: concurrent resumes consume one
+    // batch at most once, and a newer child request invalidates the old batch.
+    if (verified.get(key(binding.sessionId, binding.id)) !== previous || previous.completion !== parentReceipt
+      || call.results.some(entry => collected.get(entry.childKey) !== entry || verified.get(entry.childKey) !== entry.child
+        || entry.child.request !== entry.request || (entry.status === 'failed' ? entry.child.failure : entry.child.completion) !== entry.receipt)) fail('IDENTITY');
+    for (const entry of call.results) {
+      collected.delete(entry.childKey);
+      entry.child.completion = undefined; entry.child.failure = undefined; entry.child.completionState = 'CONSUMED';
+    }
+    previous.completion = undefined; previous.completionState = 'CONSUMED';
+    return true;
+  }
+  function begin(session, id) {
+    const state = verified.get(key(session, id));
+    if (!state) return;
+    state.completion = undefined;
+    state.failure = undefined;
+    state.completionState = 'REQUEST_STARTED';
+    return state.request = {};
+  }
+  function delivered(session, id, request, message) {
+    const state = verified.get(key(session, id));
+    if (state && request && state.request === request && !state.failure) {
+      state.completionState = message.stop_reason !== 'end_turn' ? 'NONTERMINAL' : !validId(message.id) ? 'INVALID_RESPONSE' : 'RECORDED';
+      if (state.completionState === 'RECORDED') state.completion = { id: message.id, at: Date.now() };
+    }
+  }
+  function failed(session, id, request) {
+    const state = verified.get(key(session, id));
+    // Only the currently verified request can leave a failure receipt. A late
+    // callback cannot replace a newer request or a delivered completion.
+    if (state && request && state.request === request && state.completionState === 'REQUEST_STARTED') {
+      state.failure = { at: Date.now() };
+      state.completionState = 'FAILED';
+    }
+  }
+  async function completionResume(binding, previous, signal, evidence) {
+    evidence.parent = previous.completionState ?? 'UNRECORDED';
+    evidence.stage = 'REGISTRATION';
+    if (!projectsRoot || binding.nativeRegistered !== true) return;
+    evidence.stage = 'PARENT_COMPLETION';
+    if (!previous.completion) return;
+    evidence.stage = 'TRANSCRIPT_BINDING';
+    if (previous.transcriptPath !== binding.transcriptPath) return;
+    const parentCompletion = previous.completion;
+    evidence.stage = 'PARENT_TRANSCRIPT_READ';
+    const records = await read(binding, 'jsonl');
+    const messages = records.filter(row => ['user', 'assistant'].includes(row.type));
+    const notifications = [messages.at(-1)];
+    // Separate native records carry separate origins. Never split a result's
+    // text into notifications: quoted or nested headers remain untrusted data.
+    for (let index = messages.length - 2; index >= 0; index--) {
+      const row = messages[index];
+      if (row.type !== 'user' || row.isMeta !== true || row.origin?.kind !== 'task-notification') break;
+      evidence.stage = 'NOTIFICATION_BATCH';
+      if (notifications.length >= 64) return;
+      notifications.unshift(row);
+    }
+    const children = [], notificationIds = new Set();
+    for (const latest of notifications) {
+      evidence.stage = 'NOTIFICATION_ORIGIN';
+      if (latest?.type !== 'user' || latest.isMeta !== true || latest.origin?.kind !== 'task-notification'
+        || latest.sessionId !== binding.sessionId || latest.agentId !== binding.id || !validId(latest.uuid)
+        || latest.uuid === previous.notification || previous.notifications?.has(latest.uuid)
+        || typeof latest.message?.content !== 'string') return;
+      evidence.stage = 'NOTIFICATION_BATCH';
+      if (notificationIds.has(latest.uuid)) return;
+      notificationIds.add(latest.uuid);
+      const at = Date.parse(latest.timestamp);
+      evidence.stage = 'NOTIFICATION_TIME';
+      if (!Number.isFinite(at) || at < parentCompletion.at || at > Date.now() || Date.now() - at > 300000) return;
+      // Native 2.1.266 prepends a harness notice. Only the first outer header is
+      // parsed; quoted result text cannot provide task identity or completion state.
+      const text = latest.message.content;
+      const header = /<task-notification>\s*<task-id>([A-Za-z0-9_-]{1,200})<\/task-id>\s*(?:<tool-use-id>([A-Za-z0-9_-]{1,200})<\/tool-use-id>\s*)?(?:<output-file>[^<]*<\/output-file>\s*)?<status>(completed|failed)<\/status>\s*<summary>/.exec(text);
+      evidence.stage = 'NOTIFICATION_HEADER';
+      if (!header || text.indexOf('<task-notification>') !== header.index
+        || text.indexOf('<task-notification>', header.index + 1) !== -1
+        || !text.trimEnd().endsWith('</task-notification>')) return;
+      const child = verified.get(key(binding.sessionId, header[1]));
+      const childFailed = header[3] === 'failed';
+      // Text alone never turns a failed task into authorization to resume.
+      // Native must corroborate a gateway-observed failure of this child.
+      if (childFailed && !child?.failure) return;
+      evidence.stage = 'NOTIFICATION_BATCH';
+      if (children.some(entry => entry.child === child)) return;
+      const completion = childFailed ? child?.failure : child?.completion;
+      evidence.child = child?.completionState ?? 'UNRECORDED';
+      evidence.stage = 'CHILD_COMPLETION';
+      if (!completion) return;
+      evidence.stage = 'CHILD_RELATIONSHIP';
+      if (child.parent !== binding.id || child.transcriptPath !== binding.transcriptPath
+        || (header[2] !== undefined && header[2] !== child.origin) || completion.at > at) return;
+      const childBinding = { ...binding, id: header[1], role: child.role };
+      evidence.stage = 'CHILD_METADATA_READ';
+      const childMetadata = await read(childBinding);
+      evidence.stage = 'CHILD_IDENTITY';
+      if (!sameIdentity(child, childMetadata)) return;
+      evidence.stage = 'CHILD_TRANSCRIPT_READ';
+      const childRecords = await read(childBinding, 'jsonl');
+      const final = childRecords.findLast(row => ['user', 'assistant'].includes(row.type));
+      evidence.stage = 'CHILD_FINAL_RESPONSE';
+      // Observed native 2.1.269 API errors use an assistant message with a
+      // stop_sequence terminal. A marker on an arbitrary record is insufficient.
+      if (final?.type !== 'assistant' || (childFailed ? final.isApiErrorMessage !== true
+        || !validId(final.message?.id) || final.message.role !== 'assistant' || final.message.stop_reason !== 'stop_sequence'
+        : final.isApiErrorMessage === true)
+        || final.sessionId !== binding.sessionId || final.agentId !== header[1]
+        || (!childFailed && (final.message?.id !== completion.id || final.message.stop_reason !== 'end_turn'))) return;
+      const finalAt = Date.parse(final.timestamp);
+      evidence.stage = 'CHILD_FINAL_TIME';
+      if (!Number.isFinite(finalAt) || finalAt < startedAt || finalAt > at || (childFailed && finalAt < completion.at)) return;
+      children.push({ child, completion, childBinding, childFailed });
+    }
+    // Recheck identities after asynchronous reads; cancellation consumes nothing.
+    evidence.stage = 'PARENT_METADATA_READ';
+    const parentRecheck = await read(binding);
+    for (const { child, childBinding } of children) {
+      evidence.stage = 'CHILD_METADATA_READ';
+      const childRecheck = await read(childBinding);
+      evidence.stage = 'IDENTITY_RECHECK';
+      if (!sameIdentity(previous, parentRecheck) || !sameIdentity(child, childRecheck)) return;
+    }
+    signal?.throwIfAborted();
+    evidence.stage = 'EVIDENCE_CHANGED';
+    if (verified.get(key(binding.sessionId, binding.id)) !== previous
+      || previous.completion !== parentCompletion
+      || children.some(({ child, completion, childBinding, childFailed }) =>
+        verified.get(key(binding.sessionId, childBinding.id)) !== child || (childFailed ? child.failure : child.completion) !== completion)) return;
+    return { children, parentCompletion, notification: notifications.at(-1).uuid, notificationIds };
+  }
+  async function resolveSelection(binding, signal, evidence) {
     if (!validId(binding.sessionId) || !validId(binding.id)) fail('IDENTITY');
     const deadline = Date.now() + timeoutMs;
     let reason = 'MISSING';
     do {
       signal?.throwIfAborted();
+      if (binding.role === 'workflow-subagent') {
+        try { return await workflows.resolve(binding, signal); }
+        catch (error) {
+          signal?.throwIfAborted();
+          if (error.selectionReason && error.selectionReason !== 'MISSING') throw error;
+          if (error.code === 'EACCES' || error.code === 'EPERM') fail('ACCESS');
+          if (!error.selectionReason && error.code !== 'ENOENT' && !(error instanceof SyntaxError)) failIO(error);
+          reason = error instanceof SyntaxError ? 'PARSE' : 'MISSING';
+        }
+        if (Date.now() >= deadline) break;
+        await delay(Math.min(25, deadline - Date.now()), undefined, { signal });
+        continue;
+      }
+      evidence.stage = verified.has(key(binding.sessionId, binding.id)) ? 'PARENT_METADATA_READ' : null;
       let metadata;
       try { metadata = await read(binding); }
       catch (error) {
@@ -143,11 +417,39 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.child === binding.id
           && call.tool === 'Skill' && call.skill === metadata.name) : undefined;
       const previous = verified.get(key(binding.sessionId, binding.id));
-      const resumeEntry = metadata && metadata.stoppedByUser !== true && previous && previous.role === binding.role
-        && previous.origin === metadata.toolUseId && previous.model === metadata.model
-        && previous.name === metadata.name && previous.parent === (metadata.parentAgentId ?? undefined)
+      evidence.stage = previous ? 'PARENT_IDENTITY' : 'PARENT_UNVERIFIED';
+      evidence.parent = previous?.completionState ?? 'UNRECORDED';
+      evidence.child = null;
+      // A pending creation is not permission to restart a user-stopped child.
+      if (metadata?.stoppedByUser === true) fail('IDENTITY');
+      const resumeEntry = sameIdentity(previous, metadata) && previous.role === binding.role
         ? [...pending.entries()].find(([, call]) => call.session === binding.sessionId && call.target === binding.id
           && call.resumeConfirmed && call.resumeParent === previous.parent) : undefined;
+      if (!resumeEntry && sameIdentity(previous, metadata) && previous.role === binding.role) {
+        let completion;
+        try { completion = await completionResume(binding, previous, signal, evidence); }
+        catch (error) {
+          if (error.selectionReason) throw error;
+          if (['EACCES', 'EPERM'].includes(error.code)) fail('ACCESS');
+          if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) {
+            signal?.throwIfAborted(); failIO(error);
+          }
+        }
+        signal?.throwIfAborted();
+        if (completion && completion.children.every(entry => (entry.childFailed ? entry.child.failure : entry.child.completion) === entry.completion)
+          && previous.completion === completion.parentCompletion) {
+          for (const { child } of completion.children) {
+            child.completion = undefined;
+            child.failure = undefined;
+            child.completionState = 'CONSUMED';
+          }
+          previous.completion = undefined;
+          previous.completionState = 'CONSUMED';
+          previous.notification = completion.notification;
+          previous.notifications = completion.notificationIds;
+          return { ...previous.selection, source: 'verified-completion-resume' };
+        }
+      }
       if (metadata && metadata.agentType === binding.role && (validId(metadata.toolUseId) || skillEntry || resumeEntry || nativeEntry)) {
         const id = skillEntry?.[0] ?? (pending.has(key(binding.sessionId, metadata.toolUseId))
           ? key(binding.sessionId, metadata.toolUseId) : resumeEntry?.[0] ?? key(binding.sessionId, metadata.toolUseId));
@@ -159,10 +461,21 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           const selected = metadata.model;
           if ((['Agent', 'Task'].includes(call.tool) || call.selection !== undefined) && call.selection !== selected) fail('MODEL');
           if (selected !== undefined && typeof selected !== 'string') fail('MODEL');
-          const route = selected !== undefined && selected !== 'inherit' ? model(selected) : undefined;
+          const definedRoute = selected === undefined
+            ? (resumeEntry?.[0] === id ? previous.selection.definedRoute : call.definedRoute) : undefined;
+          if (selected !== undefined && selected !== 'inherit' && !mapped(selected)) fail('MODEL');
+          const route = selected !== undefined && selected !== 'inherit' ? model(selected) : definedRoute;
+          const inherits = selected === 'inherit' || (selected === undefined
+            && (resumeEntry?.[0] === id ? previous.selection.inherits : call.inheritedRoute !== undefined));
+          const inheritedRoute = inherits
+            ? (resumeEntry?.[0] === id ? previous.selection.route : call.inheritedRoute) : undefined;
+          if (inherits && !inheritedRoute) fail('MODEL');
+          const relayed = resumeEntry?.[0] === id && await consumeRelay(binding, previous, call, signal);
+          if (pending.get(id) !== call && !nativeEntry) fail('CALL');
           pending.delete(id);
-          const selection = { route: selected === 'inherit' ? undefined : route ?? (Object.hasOwn(ROLE_MODELS, binding.role) ? ROLE_MODELS[binding.role] : undefined),
-            source: nativeEntry ? 'native-fork' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
+          const selection = { route: inheritedRoute ?? route ?? (Object.hasOwn(ROLE_MODELS, binding.role) ? ROLE_MODELS[binding.role] : undefined),
+            source: nativeEntry ? 'native-fork' : relayed ? 'verified-result-relay' : resumeEntry?.[0] === id ? (call.peerResume ? 'verified-peer-resume' : 'verified-resume') : selected === 'inherit' ? 'native-inherit' : inherits ? 'definition-inherit' : definedRoute ? 'definition-model' : route ? 'explicit-metadata' : skillEntry ? 'skill-result' : 'role-default',
+            inherits: Boolean(inherits), definedRoute,
             sessionId: binding.sessionId, parent,
             ...(metadata.name === 'code-review' && (nativeEntry || skillEntry || resumeEntry) && { review: true }) };
           selection.reviewContext = selection.review === true || (resumeEntry?.[0] === id
@@ -172,7 +485,9 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           verified.delete(agentKey);
           if (verified.size >= 1024) verified.delete(verified.keys().next().value);
           verified.set(agentKey, { role: binding.role, origin: metadata.toolUseId, model: metadata.model,
-            name: metadata.name, parent: metadata.parentAgentId ?? undefined, reviewContext: selection.reviewContext });
+            name: metadata.name, parent: metadata.parentAgentId ?? undefined, reviewContext: selection.reviewContext,
+            transcriptPath: binding.transcriptPath, selection, notification: previous?.notification,
+            notifications: previous?.notifications });
           return selection;
         }
       } else if (metadata) reason = metadata.agentType !== binding.role ? 'ROLE' : 'IDENTITY';
@@ -181,5 +496,16 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     } while (true);
     fail(reason);
   }
-  return { remember, linkSkill, linkResume, resolve: resolveSelection };
+  async function resolveWithDiagnostics(binding, signal) {
+    const evidence = { stage: null, parent: null, child: null };
+    try {
+      return await resolveSelection(binding, signal, evidence);
+    } catch (error) {
+      error.completionFailure = evidence.stage;
+      error.completionParentState = evidence.parent;
+      error.completionChildState = evidence.child;
+      throw error;
+    }
+  }
+  return { remember, linkSkill, linkWorkflow, linkResume, linkTaskResult, begin, delivered, failed, resolve: resolveWithDiagnostics };
 }

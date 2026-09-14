@@ -1,9 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { request as httpsRequest, Agent as HttpsAgent } from 'node:https';
 import { request as httpRequest, Agent as HttpAgent } from 'node:http';
-import { buildHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
-import { CLIENT_VERSION } from '../poc/codex-transport.mjs';
+import { buildHeaders, buildSearchHeaders, checkRuntime } from '../verification/manual-http-probe.mjs';
+import { REFERENCE_CLIENT_VERSION, clientVersionPolicy } from './client-version.mjs';
 import { ENDPOINT } from '../poc/adapter.mjs';
-import { NativeError, need, NATIVE_LIMITS } from './native-protocol.mjs';
+import { NativeError, need, NATIVE_LIMITS, EVENT_DIAGNOSTIC_TYPES, FAILURE_DIAGNOSTIC_CATEGORIES, UPSTREAM_FAILURES, upstreamFailure, searchEnvelope } from './native-protocol.mjs';
+import { parseRetryAfter } from './retry-after.mjs';
+import { observeRateLimitHeaders } from './rate-limit-observation.mjs';
 
 export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   maxRetries: 5,
@@ -13,20 +16,42 @@ export const NATIVE_TRANSPORT_LIMITS = Object.freeze({
   timeoutMs: 600_000,
   retryBaseMs: 100,
   retryMaxMs: 2_000,
-  retryAfterMaxMs: 5_000,
+  retryAfterMaxMs: 5_000, // Short in-process wait budget; longer server delays are preserved and deferred.
   maxSockets: Infinity,
   maxFreeSockets: 2,
   idleSocketMs: 600_000
 });
 
 const criticalHeaders = ['content-type', 'content-encoding', 'content-length', 'transfer-encoding'];
+const certificateErrors = new Set(['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'INVALID_CA', 'PATH_LENGTH_EXCEEDED']);
+function connectionFailure(error, timedOut) {
+  // Keep raw Node/OpenSSL messages and unrecognized codes out of diagnostics.
+  // A verification or access denial must not enter the transient I/O retry loop.
+  const code = typeof error?.code === 'string' ? error.code : '';
+  const category = timedOut ? 'UPSTREAM_IDLE_TIMEOUT'
+    : certificateErrors.has(code) || ['CERT_', 'ERR_TLS_', 'ERR_SSL_', 'ERR_OSSL_'].some(prefix => code.startsWith(prefix)) ? 'UPSTREAM_TLS_ERROR'
+    : ['EACCES', 'EPERM'].includes(code) ? 'UPSTREAM_ACCESS_DENIED'
+    : ['EAI_AGAIN', 'ENOTFOUND'].includes(code) ? 'UPSTREAM_DNS_ERROR' : 'UPSTREAM_IO_ERROR';
+  const failure = new NativeError(category);
+  failure.retryable = category === 'UPSTREAM_IDLE_TIMEOUT' || category === 'UPSTREAM_DNS_ERROR'
+    || category === 'UPSTREAM_IO_ERROR' && !code.startsWith('HPE_');
+  return failure;
+}
+function searchConnectionFailure(error) {
+  if (error instanceof NativeError) return error;
+  const failure = connectionFailure(error, false);
+  return failure.code === 'UPSTREAM_IO_ERROR'
+    ? Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: failure.retryable }) : failure;
+}
 
-export function createNativeTransport({ credential, credentialSupplier, clientVersion }) {
-  need(clientVersion === CLIENT_VERSION, 'CLI_VERSION_CHANGED');
+export function createNativeTransport({ credential, credentialSupplier, clientVersion, requestBudget, onAttempt, onResponseLimits }) {
+  clientVersionPolicy(clientVersion);
   checkRuntime(process.env, process.execArgv);
   need(typeof credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpsRequest, HttpsAgent, ENDPOINT,
-    { credential, credentialSupplier, synthetic: false });
+    { credential, credentialSupplier, clientVersion, synthetic: false, options: { requestBudget, onAttempt, onResponseLimits } });
 }
 
 export function createNativeLoopbackTransport(port, options = {}) {
@@ -34,7 +59,7 @@ export function createNativeLoopbackTransport(port, options = {}) {
   const credential = options.credential ?? { accessToken: 'synthetic', account: 'synthetic' };
   need(typeof options.credentialSupplier === 'function' || validCredential(credential), 'INVALID_CREDENTIAL');
   return sender(httpRequest, HttpAgent, `http://127.0.0.1:${port}/backend-api/codex/responses`, {
-    credential, credentialSupplier: options.credentialSupplier, synthetic: true, options
+    credential, credentialSupplier: options.credentialSupplier, clientVersion: options.clientVersion ?? REFERENCE_CLIENT_VERSION, synthetic: true, options
   });
 }
 
@@ -60,7 +85,12 @@ function optionInteger(value, fallback, minimum, maximum) {
   return value === undefined ? fallback : Number.isSafeInteger(value) && value >= minimum && value <= maximum ? value : null;
 }
 
-function sender(request, Agent, destination, { credential, credentialSupplier, synthetic, options = {} }) {
+function sender(request, Agent, destination, { credential, credentialSupplier, clientVersion, synthetic, options = {} }) {
+  const requestBudget = options.requestBudget;
+  need(requestBudget === undefined || (Number.isSafeInteger(requestBudget) && requestBudget >= 1 && requestBudget <= 4096), 'INVALID_LIMIT');
+  need(options.onAttempt === undefined || typeof options.onAttempt === 'function', 'INVALID_OPTIONS');
+  need(options.onResponseLimits === undefined || typeof options.onResponseLimits === 'function', 'INVALID_OPTIONS');
+  const compatibility = clientVersionPolicy(clientVersion);
   const settings = {
     maxRetries: NATIVE_TRANSPORT_LIMITS.maxRetries,
     maxFrameBytes: optionInteger(options.maxFrameBytes, NATIVE_TRANSPORT_LIMITS.maxFrameBytes, 1, 8 * 1024 * 1024),
@@ -85,24 +115,60 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
   let supplier = typeof credentialSupplier === 'function' ? credentialSupplier : undefined;
   let closed = false, attempts = 0, retries = 0, connectionAttempts = 0;
   let lastCategory = 'NONE', lastStatus = null, responseBytes = 0, totalResponseBytes = 0;
+  let retryNotBeforeMs = 0, retryAfterUnrepresentable = false;
+  let responseObserverFailed = false;
+
+  function beginAttempt() {
+    attempts++;
+    // A process-owned synchronous observer can persist this reservation before
+    // any socket is opened. No credentials, destination, headers or body escape.
+    try { options.onAttempt?.(Object.freeze({ requestAttempts: attempts })); }
+    catch { throw new NativeError('ATTEMPT_OBSERVER_FAILED'); }
+    return attempts;
+  }
+
+  function observeResponseLimits(response, requestAttempt, kind) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
+    if (!options.onResponseLimits) return;
+    try {
+      const result = options.onResponseLimits(Object.freeze({ requestAttempt, kind, httpStatus: response.statusCode,
+        observation: observeRateLimitHeaders(response.rawHeaders) }));
+      // The reservation/evidence callback must finish synchronously, before
+      // response events are released. An async callback cannot attest that.
+      if (result !== undefined) {
+        Promise.resolve(result).catch(() => {});
+        throw new NativeError('RESPONSE_OBSERVER_FAILED');
+      }
+    } catch {
+      responseObserverFailed = true;
+      throw new NativeError('RESPONSE_OBSERVER_FAILED');
+    }
+  }
+
+  function checkAttemptState(signal) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
+    need(!signal.aborted, 'CANCELLED');
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
+  }
 
   function diagnostics() {
     const idleSockets = Object.values(agent.freeSockets).reduce((count, list) => count + list.length, 0);
-    return { activeRequests: active.size, activeSockets: sockets.size, idleSockets,
+    return { ...compatibility, activeRequests: active.size, activeSockets: sockets.size, idleSockets,
       requestAttempts: attempts, retries, connectionAttempts, responseBytes, totalResponseBytes, httpStatus: lastStatus,
-      category: lastCategory, synthetic, closed };
+      category: lastCategory, retryNotBeforeMs, retryAfterUnrepresentable, synthetic, closed };
   }
 
   function trackSocket(socket) {
-    if (sockets.has(socket)) return;
+    if (socketDone.has(socket)) return;
+    // ClientRequest emits its socket asynchronously. A socket may have closed
+    // before this observer runs; its close event will never fire a second time.
+    if (socket.closed) { socketDone.set(socket, Promise.resolve()); return; }
     connectionAttempts++;
     sockets.add(socket);
     socket.once('close', () => sockets.delete(socket));
     socket.once('error', () => {});
-    socketDone.set(socket, new Promise(resolve => {
-      if (socket.destroyed) resolve();
-      else socket.once('close', resolve);
-    }));
+    socketDone.set(socket, new Promise(resolve => socket.once('close', resolve)));
   }
 
   async function resolveCredential(force, account) {
@@ -129,18 +195,37 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
     return error;
   }
 
-  function retryAfter(headers) {
-    const value = Array.isArray(headers['retry-after']) ? headers['retry-after'][0] : headers['retry-after'];
-    if (typeof value !== 'string') return 0;
-    const seconds = Number(value.trim());
-    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(settings.retryAfterMaxMs, seconds * 1000);
-    const date = Date.parse(value);
-    return Number.isFinite(date) ? Math.min(settings.retryAfterMaxMs, Math.max(0, date - Date.now())) : 0;
+  function deferred(failure) {
+    return Object.assign(new NativeError('UPSTREAM_RETRY_DEFERRED'), { retryAtMs: retryNotBeforeMs,
+      retryAfterMs: Math.max(0, retryNotBeforeMs - Date.now()), statusCode: failure?.statusCode ?? lastStatus });
+  }
+
+  function checkRetryDeadline() {
+    need(!retryAfterUnrepresentable, 'UPSTREAM_RETRY_UNREPRESENTABLE');
+    if (retryNotBeforeMs > Date.now()) throw deferred();
+  }
+
+  function preserveRetryAfter(error, response) {
+    const parsed = parseRetryAfter(response.headers['retry-after']);
+    if (error.retryable === true && parsed) {
+      if (parsed.unrepresentable) {
+        retryAfterUnrepresentable = true;
+        return Object.assign(new NativeError('UPSTREAM_RETRY_UNREPRESENTABLE'), { retryable: false, statusCode: error.statusCode });
+      }
+      retryNotBeforeMs = Math.max(retryNotBeforeMs, parsed.retryAtMs);
+      error.retryAtMs = retryNotBeforeMs;
+      error.retryAfterMs = Math.max(0, retryNotBeforeMs - Date.now());
+    }
+    return error;
   }
 
   function retryDelay(attempt, failure) {
     const exponential = Math.min(settings.retryMaxMs, settings.retryBaseMs * 2 ** (attempt - 1));
-    return Math.max(exponential, failure.retryAfterMs ?? 0);
+    const minimum = Math.max(failure.retryAfterMs ?? 0, retryNotBeforeMs - Date.now());
+    if (minimum > settings.retryAfterMaxMs) throw deferred(failure);
+    const half = Math.ceil(exponential / 2);
+    const jittered = half + Math.floor(Math.random() * (exponential - half + 1));
+    return Math.max(jittered, minimum);
   }
 
   function errorForStatus(response) {
@@ -148,9 +233,8 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
     const error = new NativeError(status === 401 ? 'UNAUTHENTICATED'
       : status === 429 ? 'RATE_LIMITED' : 'UPSTREAM_HTTP_ERROR');
     error.statusCode = status;
-    error.retryAfterMs = retryAfter(response.headers);
     error.retryable = status === 429 || (status >= 500 && status <= 599);
-    return error;
+    return preserveRetryAfter(error, response);
   }
 
   function validateHeaders(response) {
@@ -170,10 +254,31 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
     return [crlf, 4];
   }
 
-  function parser({ onEvent, events }) {
+  function parser({ onEvent, events, timing }) {
     const decoder = new TextDecoder('utf-8', { fatal: true });
     let pending = '', eventCount = 0, completed = false, sentinel = false;
     let sequenceMode = false, nextSequence = 0;
+
+    // Diagnostic parsing never accepts a rejected frame or retains upstream text.
+    const rejectAfterCompletion = raw => {
+      timing.postCompletionFrame = raw === '[DONE]' ? 'done' : 'invalid-json';
+      if (raw !== '[DONE]') {
+        // Bound diagnostic-only work; large trailers remain rejected and unclassified.
+        if (Buffer.byteLength(raw) > 16384) timing.postCompletionFrame = 'oversized';
+        else {
+          let event;
+          try { event = JSON.parse(raw); } catch { /* Keep fixed invalid-json classification. */ }
+          if (event !== undefined) {
+            timing.postCompletionFrame = EVENT_DIAGNOSTIC_TYPES.includes(event?.type) ? event.type : 'other';
+            const sequence = event?.sequence_number;
+            timing.postCompletionSequence = sequence === undefined ? (sequenceMode ? 'missing' : 'unsequenced')
+              : !Number.isSafeInteger(sequence) || sequence < 0 ? 'invalid'
+                : sequence === nextSequence ? 'expected' : 'unexpected';
+          }
+        }
+      }
+      throw new NativeError('EVENT_AFTER_COMPLETION');
+    };
 
     const deliver = async value => {
       if (onEvent) await onEvent(value);
@@ -195,18 +300,23 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
         } else throw new NativeError('INVALID_SSE');
       }
       if (!data.length) { need(name === undefined, 'INVALID_SSE'); return; }
-      if (sentinel) throw new NativeError('EVENT_AFTER_COMPLETION');
       const raw = data.join('\n');
+      if (sentinel) rejectAfterCompletion(raw);
       if (raw === '[DONE]') {
         need(name === undefined && completed, 'INCOMPLETE_RESPONSE');
-        sentinel = true; return;
+        sentinel = true; timing.terminalState = 'done'; return;
       }
-      need(!completed, 'EVENT_AFTER_COMPLETION');
+      if (completed) rejectAfterCompletion(raw);
       eventCount++;
       need(eventCount <= settings.maxEvents, 'TOO_MANY_EVENTS');
       let event;
       try { event = JSON.parse(raw); } catch { throw new NativeError('INVALID_SSE'); }
       need(event && typeof event === 'object' && !Array.isArray(event) && typeof event.type === 'string', 'INVALID_SSE');
+      if (event.type === 'keepalive' && Object.keys(event).length === 1) {
+        // JSON.parse collapses duplicate keys. An accepted empty heartbeat
+        // must contain exactly one string pair in the original JSON as well.
+        need(/^\s*\{\s*"(?:[^"\\]|\\.)*"\s*:\s*"(?:[^"\\]|\\.)*"\s*\}\s*$/s.test(raw), 'INVALID_SSE');
+      }
       need(name === undefined || name === event.type, 'INVALID_SSE');
       if (event.sequence_number !== undefined) {
         need(Number.isSafeInteger(event.sequence_number) && event.sequence_number >= 0, 'SEQUENCE_MISMATCH');
@@ -214,8 +324,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
         need(event.sequence_number === nextSequence, 'SEQUENCE_MISMATCH');
         nextSequence++;
       } else need(!sequenceMode, 'SEQUENCE_MISMATCH');
+      if (Object.hasOwn(UPSTREAM_FAILURES, event.type)) {
+        timing.terminalState = event.type;
+        throw upstreamFailure(event);
+      }
       if (event.type === 'response.completed') {
-        need(!completed, 'DUPLICATE_COMPLETION'); completed = true;
+        need(!completed, 'DUPLICATE_COMPLETION'); completed = true; timing.terminalState = 'completed';
       }
       await deliver(event);
     };
@@ -251,16 +365,18 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
   }
 
   async function requestOnce(job, raw, current, onEvent, isRetry) {
-    let req, response, socket, socketClosed, timedOut = false, reusable = false, streaming = false, bytes = 0;
+    checkAttemptState(job.controller.signal);
+    let req, response, socket, socketClosed, requestAttempt, timedOut = false, reusable = false, streaming = false, bytes = 0;
     const collected = onEvent ? undefined : [];
-    const state = parser({ onEvent, events: collected });
-    const headers = buildHeaders(current, CLIENT_VERSION, raw);
+    const headers = buildHeaders(current, clientVersion, raw);
     const elapsed = () => Math.round((performance.now() - job.started) * 100) / 100;
     const timing = { attempt: job.attemptTimings.length + 1, startedMs: elapsed(), requestFlushedMs: null,
-      headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false };
+      headersMs: null, firstBodyMs: null, endedMs: null, status: null, completed: false, failureCategory: null,
+      terminalState: 'open', postCompletionFrame: null, postCompletionSequence: null };
+    const state = parser({ onEvent, events: collected, timing });
     job.attemptTimings.push(timing);
     try {
-      attempts++; lastStatus = null; responseBytes = 0;
+      lastStatus = null; responseBytes = 0; requestAttempt = beginAttempt();
       if (isRetry) retries++;
       response = await new Promise((resolve, reject) => {
         req = request(destination, { method: 'POST', agent, signal: job.controller.signal,
@@ -272,6 +388,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
           socket = value;
           trackSocket(socket);
           socketClosed = socketDone.get(socket);
+          // An already-emitted close cannot reject ClientRequest's response
+          // promise. Fail this attempt directly; do not await another event.
+          if (socket.closed) {
+            const error = new NativeError('UPSTREAM_IO_ERROR');
+            req.destroy(error); reject(error);
+          }
         });
         req.setTimeout(settings.timeoutMs, () => {
           timedOut = true; req.destroy(new NativeError('UPSTREAM_IDLE_TIMEOUT'));
@@ -280,6 +402,7 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
       });
       lastStatus = response.statusCode ?? null;
       timing.status = lastStatus; timing.headersMs = elapsed();
+      observeResponseLimits(response, requestAttempt, 'responses');
       if (response.statusCode !== 200) {
         throw errorForStatus(response);
       }
@@ -295,18 +418,23 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
       reusable = true;
       return result;
     } catch (error) {
+      const reject = failure => {
+        timing.failureCategory = FAILURE_DIAGNOSTIC_CATEGORIES.includes(failure.code) ? failure.code : 'OTHER';
+        throw failure;
+      };
+      // A validated mismatch predates any cancellation arriving while the callback unwinds.
+      if (error instanceof NativeError && error.code === 'SNAPSHOT_MISMATCH') reject(error);
       if (job.controller.signal.aborted) {
         if (timedOut) {
-          const timeout = new NativeError('UPSTREAM_IDLE_TIMEOUT'); timeout.retryable = true; throw timeout;
+          const timeout = new NativeError('UPSTREAM_IDLE_TIMEOUT'); timeout.retryable = true; reject(timeout);
         }
-        throw new NativeError('CANCELLED');
+        reject(new NativeError('CANCELLED'));
       }
-      if (error instanceof NativeError) throw error;
+      if (error instanceof NativeError) reject(error);
       if (streaming) {
-        const truncated = new NativeError('TRUNCATED_STREAM'); truncated.retryable = true; throw truncated;
+        const truncated = new NativeError('TRUNCATED_STREAM'); truncated.retryable = true; reject(truncated);
       }
-      const io = new NativeError(timedOut ? 'UPSTREAM_IDLE_TIMEOUT' : 'UPSTREAM_IO_ERROR');
-      io.retryable = timedOut || !String(error?.code ?? '').startsWith('HPE_'); throw io;
+      reject(connectionFailure(error, timedOut));
     } finally {
       timing.endedMs = elapsed(); timing.completed = reusable;
       if (response?.statusCode === 200) responseBytes = bytes;
@@ -333,6 +461,9 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
   }
 
   async function send(body, signal, options = {}) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
     need(signal instanceof AbortSignal && !signal.aborted, 'CANCELLED');
     need(!closed, 'TRANSPORT_CLOSED');
     need(options && typeof options === 'object', 'INVALID_OPTIONS');
@@ -376,17 +507,20 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
           const failure = mark(error);
           if (failure.code === 'UNAUTHENTICATED' && !refreshed && supplier && retryCount < settings.maxRetries) {
             if (!await retryAllowed()) throw failure;
+            checkAttemptState(controller.signal);
+            const delay = retryDelay(retryCount + 1, failure);
             current = await resolveCredential(true, account); refreshed = true; retryCount++; isRetry = true;
             await onRetry?.(retryCount);
-            await wait(job, retryDelay(retryCount, failure));
+            await wait(job, delay);
             continue;
           }
           const transient = failure.retryable === true || (failure.code === 'UPSTREAM_IO_ERROR'
             && failure.retryable !== false) || failure.code === 'UPSTREAM_IDLE_TIMEOUT';
           if (!transient || retryCount >= settings.maxRetries || !await retryAllowed()) throw failure;
+          const delay = retryDelay(retryCount + 1, failure);
           retryCount++; isRetry = true;
           await onRetry?.(retryCount);
-          await wait(job, retryDelay(retryCount, failure));
+          await wait(job, delay);
         }
       }
     } catch (error) {
@@ -400,6 +534,118 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
     }
   }
 
+  // The client's search side query is answered from the backend's standalone search endpoint:
+  // one plain JSON POST, no stream, no model turn. Same host and same credential as a model
+  // request, so nothing new is trusted and no second secret exists.
+  const searchDestination = destination.replace(/\/responses$/, '/alpha/search');
+  need(searchDestination !== destination, 'INVALID_ENDPOINT');
+  const searchSession = randomUUID();
+
+  async function search(body, signal) {
+    need(!responseObserverFailed, 'RESPONSE_OBSERVER_FAILED');
+    need(requestBudget === undefined || attempts < requestBudget, 'REQUEST_BUDGET');
+    checkRetryDeadline();
+    need(!closed, 'TRANSPORT_CLOSED');
+    need(signal instanceof AbortSignal, 'INVALID_OPTIONS');
+    // An already-aborted signal never fires its listener, so check it rather than sending.
+    need(!signal.aborted, 'CANCELLED');
+    const job = { controller: new AbortController(), timers: new Set(), started: performance.now(),
+      attemptTimings: [], finished: Promise.resolve() };
+    let finish;
+    job.finished = new Promise(resolve => { finish = resolve; });
+    const abort = () => job.controller.abort();
+    signal.addEventListener('abort', abort, { once: true });
+    active.add(job);
+    let current;
+    try {
+      current = await resolveCredential(false);
+      const account = current.account;
+      try { return await searchOnce(job, body, current); }
+      catch (error) {
+        // A search is an idempotent read, so one retry cannot duplicate an effect. Exactly one:
+        // a side query the client is waiting on is not the place to spend a retry budget.
+        if (error?.retryable === true) {
+          await wait(job, retryDelay(1, error));
+          need(!job.controller.signal.aborted, 'CANCELLED');
+          return await searchOnce(job, body, current, true);
+        }
+        if (error?.code !== 'UNAUTHENTICATED' || !supplier) throw error;
+        checkAttemptState(job.controller.signal);
+        current = await resolveCredential(true, account);
+        return await searchOnce(job, body, current, true);
+      }
+    } catch (error) {
+      lastCategory = error?.code ?? 'SEARCH_UNAVAILABLE';
+      throw error instanceof NativeError ? error : new NativeError('SEARCH_UNAVAILABLE');
+    } finally {
+      signal.removeEventListener('abort', abort);
+      current = undefined;
+      for (const timer of job.timers) clearTimeout(timer);
+      job.timers.clear(); active.delete(job); finish();
+    }
+  }
+
+  function searchOnce(job, body, credential, isRetry = false) {
+    checkAttemptState(job.controller.signal);
+    const raw = JSON.stringify({ ...body, id: searchSession });
+    const headers = buildSearchHeaders(credential, clientVersion, raw,
+      searchEnvelope().headers['x-codex-turn-metadata']);
+    const timeoutMs = Math.min(settings.timeoutMs, 45_000);
+    lastStatus = null; responseBytes = 0; const requestAttempt = beginAttempt();
+    if (isRetry) retries++;
+    return new Promise((resolveResult, reject) => {
+      let settled = false, req;
+      const done = (action, value) => { if (!settled) { settled = true; clearTimeout(timer); action(value); } };
+      const timer = setTimeout(() => { req?.destroy(); done(reject, new NativeError('UPSTREAM_IDLE_TIMEOUT')); }, timeoutMs);
+      job.timers.add(timer);
+      try { req = request(searchDestination, { method: 'POST', agent, headers,
+        ...(request === httpsRequest && { rejectUnauthorized: true }) }, res => {
+        const chunks = [];
+        let length = 0;
+        lastStatus = res.statusCode ?? 0;
+        try { observeResponseLimits(res, requestAttempt, 'search'); }
+        catch (error) { res.destroy(); req.destroy(); done(reject, error); return; }
+        res.on('data', chunk => {
+          if ((length += chunk.length) > settings.maxResponseBytes) {
+            req.destroy(); done(reject, new NativeError('RESPONSE_TOO_LARGE'));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on('error', () => done(reject, new NativeError('SEARCH_UNAVAILABLE')));
+        res.on('end', () => {
+          responseBytes = length; totalResponseBytes += length;
+          const status = res.statusCode ?? 0;
+          if (status === 401) { done(reject, new NativeError('UNAUTHENTICATED')); return; }
+          // An alpha endpoint that is gone is a different problem from one that is briefly
+          // unwell: the first ends the feature, the second is worth one more try.
+          if (status === 404 || status === 410) { done(reject, new NativeError('SEARCH_UNAVAILABLE')); return; }
+          if (status !== 200) {
+            done(reject, preserveRetryAfter(Object.assign(new NativeError('SEARCH_HTTP_ERROR'),
+              { statusCode: status, retryable: status === 429 || (status >= 500 && status <= 599) }), res));
+            return;
+          }
+          let doc;
+          try { doc = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+          catch { done(reject, new NativeError('SEARCH_RESPONSE_SHAPE')); return; }
+          lastCategory = 'SUCCESS';
+          done(resolveResult, doc);
+        });
+      });
+      req.on('socket', socket => {
+        trackSocket(socket);
+        if (socket.closed) {
+          const error = Object.assign(new NativeError('SEARCH_HTTP_ERROR'), { retryable: true });
+          req.destroy(error); done(reject, error);
+        }
+      }); } catch (error) { done(reject, searchConnectionFailure(error)); return; }
+      req.on('error', error => done(reject, job.controller.signal.aborted ? new NativeError('CANCELLED')
+        : searchConnectionFailure(error)));
+      job.controller.signal.addEventListener('abort', () => { req.destroy(); done(reject, new NativeError('CANCELLED')); }, { once: true });
+      req.end(raw);
+    });
+  }
+
   async function close() {
     if (!closed) {
       closed = true; supplier = undefined; staticCredential = undefined;
@@ -407,12 +653,12 @@ function sender(request, Agent, destination, { credential, credentialSupplier, s
       agent.destroy();
     }
     await Promise.all([...active].map(job => job.finished));
-    await Promise.all([...sockets].map(socket => new Promise(resolve => {
-      if (socket.destroyed) { resolve(); return; }
-      socket.once('close', resolve); socket.destroy();
-    })));
+    await Promise.all([...sockets].map(socket => {
+      socket.destroy();
+      return socketDone.get(socket); // destroyed is not the close event that clears tracking.
+    }));
     return diagnostics();
   }
 
-  return Object.freeze({ send, close, diagnostics });
+  return Object.freeze({ send, search, close, diagnostics });
 }

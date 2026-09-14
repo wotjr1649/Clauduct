@@ -7,6 +7,7 @@ import { readSmall } from '../verification/manual-http-probe.mjs';
 import { MODEL, FIXTURE_PATH, probeProfile } from './adapter.mjs';
 import { createLoopbackCodexTransport } from './codex-transport.mjs';
 import { startGateway } from './gateway.mjs';
+import { installHttpClose } from '../src/http-close.mjs';
 import { entryPolicy, entryOptions, checkUserContext, checkClientVersion, requireConfirmation, credentialFromCache,
   safeEntryCategory, runGatewayRoundtrip, entrySummary, RESULT_MARKER } from './user-session.mjs';
 
@@ -59,11 +60,12 @@ for (const [name, change, code] of [
 await test('confirmation_exact', () => requireConfirmation('SEND'));
 for (const answer of ['', 'send', ' SEND', 'SEND ']) await test(`confirmation_rejected_${answer.length}`, () => rejects(() => requireConfirmation(answer), 'USER_CANCELLED'));
 await test('confirmation_aborted', () => rejects(() => requireConfirmation('SEND', true), 'USER_CANCELLED'));
-await test('version_pin_valid', () => checkClientVersion(version));
-for (const result of [{ status: 0, stdout: 'codex-cli 0.153.5' }, { status: 1, stdout: version.stdout },
-  { ...version, error: new Error('SYNTHETIC_PRIVATE_VALUE') }, { ...version, stdout: version.stdout + 'unexpected' }]) {
-  await test('version_pin_reject', () => rejects(() => checkClientVersion(result), 'CLI_VERSION_CHANGED'));
+await test('version_reference_valid', () => assert.equal(checkClientVersion(version), '0.153.4'));
+await test('version_update_detected', () => assert.equal(checkClientVersion({ status: 0, stdout: 'codex-cli 0.153.5' }), '0.153.5'));
+for (const result of [{ status: 1, stdout: version.stdout }, { ...version, error: new Error('SYNTHETIC_PRIVATE_VALUE') }]) {
+  await test('version_query_reject', () => rejects(() => checkClientVersion(result), 'CLI_VERSION_UNAVAILABLE'));
 }
+await test('version_output_reject', () => rejects(() => checkClientVersion({ ...version, stdout: version.stdout + 'unexpected' }), 'CLI_VERSION_INVALID'));
 await test('cache_memory_selection', () => assert.equal(credentialFromCache('cli_auth_credentials_store = "file"', cache()).account, 'synthetic'));
 for (const store of ['keyring', 'auto']) await test(`cache_${store}_rejected`, () => rejects(
   () => credentialFromCache(`cli_auth_credentials_store = "${store}"`, cache()), 'CREDENTIAL_STORE_UNSUPPORTED'));
@@ -204,7 +206,7 @@ async function session(mode, expected, policy = 'strict', profile = 'astra-xhigh
       res.end(wire(tool, requests.length, mode === 'wrong_marker' ? 'WRONG' : RESULT_MARKER, mode, profile));
     });
   });
-  server.on('connection', socket => { sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => sockets.delete(socket)); });
+  server.on('connection', socket => { installHttpClose(socket); sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => sockets.delete(socket)); });
   await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
   let outcome, category = 'SUCCESS';
   try {

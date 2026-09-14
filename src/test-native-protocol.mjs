@@ -60,11 +60,34 @@ const deferredFollowup = prepareNative(doc([tool('ToolSearch'), tool('Read', tru
   { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_call', content: [{ type: 'tool_reference', tool_name: 'Read' }] }] }
 ]));
 assert.deepEqual(deferredFollowup.body.tools.map(value => value.name), ['ToolSearch', 'Read']);
-assert.throws(() => prepareNative(doc([tool('ToolSearch'), tool('Read', true)], [
+const unknownHistoricalReference = prepareNative(doc([tool('ToolSearch'), tool('Read', true)], [
   { role: 'user', content: 'SYNTHETIC_PROMPT' },
   { role: 'assistant', content: [{ type: 'tool_use', id: 'search_call', name: 'ToolSearch', input: { value: 'Read' } }] },
   { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_call', content: [{ type: 'tool_reference', tool_name: 'Missing' }] }] }
-])));
+]));
+assert.deepEqual(unknownHistoricalReference.body.tools.map(value => value.name), ['ToolSearch']);
+assert.equal(unknownHistoricalReference.names.has('Missing'), false);
+const removedToolHistory = [
+  { role: 'user', content: 'SYNTHETIC_PROMPT' },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 'search_old', name: 'ToolSearch', input: { value: 'mcp__old__read' } }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_old', content: [{ type: 'tool_reference', tool_name: 'mcp__old__read' }] }] },
+  { role: 'assistant', content: [{ type: 'tool_use', id: 'read_old', name: 'mcp__old__read', input: {} }] },
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'read_old', content: 'SYNTHETIC_SAVED_RESULT' }] },
+  { role: 'user', content: 'Continue without tools.' }
+];
+const removedTools = prepareNative(doc([], removedToolHistory));
+assert.deepEqual(removedTools.body.tools, []);
+assert.equal(removedTools.body.tool_choice, 'none');
+assert.equal(removedTools.names.size, 0);
+assert.equal(removedTools.body.input.filter(value => value.type === 'function_call_output').length, 2);
+assert.equal(JSON.stringify(removedTools.body.input).includes('SYNTHETIC_SAVED_RESULT'), true);
+// Historical data does not authorize a new call or forgive a missing/duplicate result.
+assert.throws(() => nativeResponse(responseEvents(removedTools), removedTools), /UNSUPPORTED_TOOL_CALL/);
+assert.throws(() => prepareNative(doc([], removedToolHistory.filter((_, index) => index !== 4))), /MISSING_TOOL_RESULT/);
+assert.throws(() => prepareNative(doc([], [...removedToolHistory, removedToolHistory[4]])), /INVALID_TOOL_RESULT/);
+assert.throws(() => prepareNative(doc([], [{ role: 'assistant', content: [{ type: 'tool_use', id: 'bad', name: '../bad', input: {} }] }])), /INVALID_TOOL_CALL/);
+assert.throws(() => prepareNative(doc([], [{ role: 'user', content: 'X' }, removedToolHistory[1],
+  { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'search_old', content: [{ type: 'tool_reference', tool_name: '../bad' }] }] }])), /INVALID_TOOL_REFERENCE/);
 assert.throws(() => prepareNative(doc([tool('Read', true)])));
 
 const prepared = prepareNative(doc());
@@ -78,6 +101,17 @@ assert.deepEqual(finished.message.content.map(block => block.type), ['text', 'to
 assert.ok(finished.frames.some(frame => JSON.stringify(frame).includes('tool_use')));
 assert.equal(finished.frames.at(-1).type, 'message_stop');
 assert.equal(textFrames.find(frame => frame.type === 'content_block_delta').index, 0);
+// Empty text has no deltas. Its done snapshot must not prevent a following tool call.
+const emptyTextEvents = responseEvents(prepared).filter(event => event.type !== 'response.output_text.delta');
+emptyTextEvents.find(event => event.type === 'response.output_text.done').text = '';
+emptyTextEvents.find(event => event.type === 'response.output_item.done' && event.item.type === 'message').item.content[0].text = '';
+const emptyText = nativeResponse(emptyTextEvents, prepared);
+assert.deepEqual(emptyText.message.content.map(block => block.type), ['text', 'tool_use']);
+assert.equal(emptyText.message.content[0].text, '');
+assert.equal(emptyText.message.stop_reason, 'tool_use');
+assert.equal(emptyText.sse.split('event: content_block_start').length - 1, 2);
+assert.equal(emptyText.sse.split('event: content_block_stop').length - 1, 2);
+assert.throws(() => nativeResponse(responseEvents(prepared).filter(event => event.type !== 'response.output_text.delta'), prepared), /SNAPSHOT_MISMATCH/);
 const streamedFramesBeforeFinish = collect(createNativeResponse(prepared), responseEvents(prepared));
 const serializedTextFrames = streamedFramesBeforeFinish.map(frame => JSON.stringify(frame));
 assert.ok(serializedTextFrames.some(frame => frame.includes('text_delta')));
@@ -107,6 +141,73 @@ assert.equal(reasoningFinished.frames.find(frame => frame.type === 'content_bloc
 assert.equal(reasoningFinished.frames.at(-2).type, 'message_delta');
 assert.deepEqual(reasoningFinished.frames.at(-2).usage,
   { input_tokens: 4, output_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 });
+// Native Workflow 2.1.266 extracts text from the last yielded assistant block.
+// A trailing opaque reasoning block must not replace the final text result.
+function workflowEvents(options = {}) {
+  const events = responseEvents(reasoningPrepared, { reasoning: true, ...options });
+  const filtered = events.filter(event => !event.type.startsWith('response.function_call')
+    && event.item?.type !== 'function_call');
+  filtered.at(-1).response.output = filtered.at(-1).response.output.filter(item => item.type !== 'function_call');
+  return filtered;
+}
+// Native print and child-result consumers keep the last yielded assistant block.
+// Text still streams immediately; its stop must follow opaque reasoning, exactly once.
+const printParser = createNativeResponse(reasoningPrepared);
+const printEarly = collect(printParser, workflowEvents());
+const printFinal = printParser.finish();
+const printFrames = [...printEarly, ...printFinal.frames];
+const printBlocks = new Map(), printYielded = [];
+for (const frame of printFrames) {
+  if (frame.type === 'content_block_start') {
+    assert.equal(printBlocks.has(frame.index), false);
+    printBlocks.set(frame.index, { ...frame.content_block });
+  }
+  if (frame.type === 'content_block_delta') printBlocks.get(frame.index).text += frame.delta.text;
+  if (frame.type === 'content_block_stop') printYielded.push(printBlocks.get(frame.index));
+}
+assert.equal(printEarly.some(frame => frame.type === 'content_block_delta'), true);
+assert.deepEqual(printYielded.map(block => block.type), ['redacted_thinking', 'text']);
+assert.equal(printYielded.at(-1).text, 'hello');
+assert.deepEqual([...printBlocks.values()], printFinal.message.content);
+assert.equal(printFinal.message.content[0].text, 'hello'); // Native WebFetch reads the first block.
+assert.equal(prepareNative(doc([], [{ role: 'user', content: 'SYNTHETIC_PROMPT' },
+  { role: 'assistant', content: printYielded }, { role: 'user', content: 'NEXT' }]))
+  .body.input.find(item => item.type === 'reasoning').encrypted_content, 'OPAQUE_REASONING');
+const workflowParser = createNativeResponse(reasoningPrepared, { deferText: true });
+assert.deepEqual(collect(workflowParser, workflowEvents()), []);
+const workflowFinished = workflowParser.finish();
+assert.deepEqual(workflowFinished.message.content.map(block => block.type), ['redacted_thinking', 'text']);
+assert.equal(workflowFinished.message.content.at(-1).text, 'hello');
+assert.equal(workflowFinished.message.stop_reason, 'end_turn');
+assert.deepEqual(workflowFinished.frames.filter(frame => frame.type === 'content_block_start').map(frame => frame.index), [0, 1]);
+assert.equal(workflowFinished.frames.filter(frame => frame.type === 'content_block_delta').map(frame => frame.delta.text ?? '').join(''), 'hello');
+const restoredWorkflow = prepareNative(doc([], [{ role: 'user', content: 'SYNTHETIC_PROMPT' },
+  { role: 'assistant', content: workflowFinished.message.content }, { role: 'user', content: 'NEXT' }]));
+assert.equal(restoredWorkflow.body.input.find(item => item.type === 'reasoning').encrypted_content, 'OPAQUE_REASONING');
+const rejectedWorkflow = createNativeResponse(reasoningPrepared, { deferText: true });
+assert.deepEqual(collect(rejectedWorkflow, workflowEvents({ failure: true })), []);
+assert.throws(() => rejectedWorkflow.finish(), /INCOMPLETE_RESPONSE/);
+const toolWorkflow = createNativeResponse(reasoningPrepared, { deferText: true });
+assert.deepEqual(collect(toolWorkflow, responseEvents(reasoningPrepared, { reasoning: true })), []);
+assert.deepEqual(toolWorkflow.finish().message.content.map(block => block.type), ['redacted_thinking', 'text', 'tool_use']);
+const multipleTextEvents = workflowEvents();
+const textDonePosition = multipleTextEvents.findIndex(event => event.type === 'response.output_item.done' && event.item.type === 'message');
+multipleTextEvents.splice(textDonePosition, 0,
+  { type: 'response.output_text.delta', output_index: 1, item_id: 'msg_protocol', content_index: 1, delta: 'SECOND' },
+  { type: 'response.output_text.done', output_index: 1, item_id: 'msg_protocol', content_index: 1, text: 'SECOND' });
+multipleTextEvents.find(event => event.type === 'response.output_item.done' && event.item.type === 'message').item.content.push({ type: 'output_text', text: 'SECOND' });
+const multipleText = createNativeResponse(reasoningPrepared, { deferText: true });
+assert.deepEqual(collect(multipleText, multipleTextEvents), []);
+assert.equal(multipleText.finish().message.content.at(-1).text, 'hello\nSECOND');
+const limitedWorkflow = createNativeResponse({ ...reasoningPrepared, outputLimit: 1 }, { deferText: true });
+assert.deepEqual(collect(limitedWorkflow, workflowEvents()), []);
+assert.throws(() => limitedWorkflow.finish(), /OUTPUT_TOKEN_LIMIT_EXCEEDED/);
+const mismatchedWorkflow = workflowEvents();
+mismatchedWorkflow.at(-1).response.output[1] = { ...mismatchedWorkflow.at(-1).response.output[1], content: [{ type: 'output_text', text: 'WRONG' }] };
+const mismatchedParser = createNativeResponse(reasoningPrepared, { deferText: true });
+assert.deepEqual(collect(mismatchedParser, mismatchedWorkflow), []);
+assert.throws(() => mismatchedParser.finish(), /SNAPSHOT_MISMATCH/);
+
 const mergedEvents = responseEvents(reasoningPrepared, { reasoning: true });
 const mergedDone = mergedEvents.find(event => event.type === 'response.output_item.done' && event.item.type === 'reasoning').item;
 mergedDone.summary = [{ type: 'summary_text', text: 'SYNTHETIC_SUMMARY' }];

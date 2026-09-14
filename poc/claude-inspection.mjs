@@ -4,9 +4,10 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startInspector, FIXTURE_MARKER } from './request-inspector.mjs';
 import { ALIAS } from './adapter.mjs';
+import { CLAUDE_EXE } from '../src/runtime-paths.mjs';
 
-export const CLAUDE_EXE = 'C:\\Users\\JS\\.local\\bin\\claude.exe';
-export const TASK_ROOT = 'D:\\AIDEV\\Clauduct';
+export { CLAUDE_EXE };
+export const TASK_ROOT = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const outputLimit = 256 * 1024;
 const inheritedNames = ['SystemRoot', 'WINDIR', 'ComSpec', 'PATH', 'PATHEXT', 'TEMP', 'TMP',
   'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'ProgramData',

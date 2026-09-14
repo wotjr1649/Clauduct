@@ -1,6 +1,10 @@
 // Offline only: imports pure checks; never calls live mode, reads credentials, or opens a socket.
 import assert from 'node:assert/strict';
-import { buildBody, checkStore, selectCredential, summarizeResponse, model, endpoint } from './manual-http-probe.mjs';
+import { buildBody, buildHeaders, checkStore, selectCredential, summarizeResponse, model, endpoint,
+  searchModel, readClientVersion,
+  buildSearchBody, summarizeSearch, searchEndpoint, SEARCH_QUERY } from './manual-http-probe.mjs';
+import { searchEnvelope } from '../src/native-protocol.mjs';
+import { REFERENCE_CLIENT_VERSION } from '../src/client-version.mjs';
 
 let count = 0;
 function check(name, action) { action(); count++; }
@@ -407,5 +411,87 @@ check('duplicate content completion prevents reconstruction', () => {
     part: { type: 'output_text', text: 'OK' } };
   const result = streamSummary([delta('OK', 1), textDone('OK'), part, part, textless]);
   assert.equal(result.passed, false); assert.equal(result.textDiagnostics.streamOrderValid, false);
+});
+// The version is read, not pinned: an unvalidated version is reported, not silently sent and
+// not aborted. Only an unreadable or malformed version stops the run.
+check('installed version reported as unverified', () => {
+  const result = readClientVersion({ status: 0, stdout: 'codex-cli 9.9.9' + String.fromCharCode(10) });
+  assert.equal(result.clientVersion, '9.9.9');
+  assert.equal(result.clientVersionStatus, 'unverified');
+});
+check('baseline version reported as reference', () => {
+  const result = readClientVersion({ status: 0, stdout: `codex-cli ${REFERENCE_CLIENT_VERSION}` });
+  assert.equal(result.clientVersionStatus, 'reference');
+});
+check('unreadable version stops the run', () => {
+  for (const result of [{ status: 1, stdout: 'codex-cli 1.2.3' }, { error: new Error('x'), status: 0, stdout: '' },
+    { status: 0, stdout: 'something else' }, { status: 0, stdout: 'codex-cli 1.2.3 extra' }]) {
+    assert.throws(() => readClientVersion(result), /CLI_VERSION_UNREADABLE/);
+  }
+});
+check('malformed version stops the run', () =>
+  assert.throws(() => readClientVersion({ status: 0, stdout: 'codex-cli not.a.version' }), /CLI_VERSION_INVALID/));
+// A search request identifies itself as the reference client, because the backend picks the
+// instructions — and with them the built-in toolset — from that identity. Everything else keeps
+// the identity the ordinary path has always sent.
+const credential = { accessToken: 'synthetic', account: 'synthetic-account' };
+check('the model request identity is unchanged', () => {
+  const headers = buildHeaders(credential, '1.2.3', '{}');
+  assert.equal(headers.originator, 'codex_cli_rs');
+  assert.equal(headers['User-Agent'], 'codex-cli/1.2.3 (Windows; x64)');
+  assert.equal(headers.Version, '1.2.3');
+  assert.equal(headers['Openai-Beta'], 'responses=experimental');
+  assert.equal(headers.Authorization, 'Bearer synthetic');
+  assert.equal(headers['chatgpt-account-id'], 'synthetic-account');
+  assert.equal(headers.Accept, 'text/event-stream');
+  assert.equal(headers['Content-Length'], 2);
+});
+// The reference client's standalone search endpoint. The request carries one query and no
+// conversation tail, and the summary reports shape and counts, never a result's own text.
+const searchBytes = doc => Buffer.from(JSON.stringify(doc));
+check('search request carries only the query', () => {
+  const body = buildSearchBody(searchEnvelope());
+  assert.deepEqual(body.commands, { search_query: [{ q: SEARCH_QUERY }] });
+  assert.equal(body.input.length, 1);
+  assert.equal(body.input[0].content[0].text, SEARCH_QUERY);
+  assert.equal(body.settings.external_web_access, true);
+  assert.deepEqual(body.settings.allowed_callers, ['direct']);
+  assert.equal(body.model, searchModel);
+  assert.equal(typeof body.id, 'string');
+});
+check('search endpoint is the same host as the model endpoint', () => {
+  assert.equal(searchEndpoint, 'https://chatgpt.com/backend-api/codex/alpha/search');
+  assert.equal(new URL(searchEndpoint).origin, new URL(endpoint).origin);
+});
+check('search results are reported as shape, never as text', () => {
+  const result = summarizeSearch(200, searchBytes({ encrypted_output: 'x', output: 'SYNTHETIC_PRIVATE_CANARY',
+    results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com/SYNTHETIC_PRIVATE_CANARY',
+      title: 'SYNTHETIC_PRIVATE_CANARY' }, { type: 'image_result', ref_id: 'turn0image0', url: 'https://example.com/b' }] }));
+  assert.equal(result.passed, true);
+  assert.equal(result.category, 'SUCCESS');
+  assert.equal(result.resultCount, 2);
+  assert.equal(result.outputChars, 24);
+  assert.equal(result.encryptedOutput, true);
+  assert.deepEqual(result.resultKeys, ['ref_id', 'title', 'type', 'url']);
+  assert.deepEqual(result.resultKinds, ['image_result', 'text_result']);
+  assert.deepEqual(result.topLevelKeys, ['encrypted_output', 'output', 'results']);
+  assert.equal(JSON.stringify(result).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+});
+check('an older endpoint without results still reports its output', () => {
+  const result = summarizeSearch(200, searchBytes({ encrypted_output: null, output: 'abc' }));
+  assert.equal(result.resultCount, 0);
+  assert.equal(result.outputChars, 3);
+  assert.equal(result.encryptedOutput, false);
+  assert.equal(result.passed, true);
+});
+check('a missing endpoint is named, not lumped into HTTP_ERROR', () => {
+  assert.equal(summarizeSearch(404, Buffer.from('nope')).category, 'ENDPOINT_ABSENT');
+  assert.equal(summarizeSearch(401, Buffer.from('SYNTHETIC_PRIVATE_CANARY')).category, 'AUTH_REJECTED');
+  assert.equal(JSON.stringify(summarizeSearch(401, Buffer.from('SYNTHETIC_PRIVATE_CANARY'))).includes('SYNTHETIC_PRIVATE_CANARY'), false);
+});
+check('a non-JSON body fails instead of passing empty', () => {
+  assert.equal(summarizeSearch(200, Buffer.from('<html>')).category, 'INVALID_JSON');
+  assert.equal(summarizeSearch(200, Buffer.from('[]')).category, 'INVALID_JSON');
+  assert.equal(summarizeSearch(200, searchBytes({ output: '' })).passed, false);
 });
 console.log(JSON.stringify({ offlineTests: count, passed: count, credentialReads: 0, networkRequests: 0 }));

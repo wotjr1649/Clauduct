@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
+import { installHttpClose } from './http-close.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -79,6 +80,7 @@ async function fixture(action, { fault, requestBudget = 32, limits = {} } = {}) 
       res.end(fault === 'http400' ? '{}' : wire(received, { overLimit: fault === 'over-limit' }));
     });
   });
+  server.on('connection', socket => installHttpClose(socket));
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   const transport = createLoopbackCodexTransport(server.address().port,
     { profile: 'astra-low', tokenLimitPolicy: 'backend-default', requestBudget });
@@ -111,7 +113,12 @@ async function tests() {
   let passed = 0, failed = 0;
   const watchdog = setTimeout(() => { process.stderr.write('CHAT_SUITE_TIMEOUT\n'); process.exit(1); }, 30000);
   async function test(name, action) {
-    try { await action(); passed++; } catch { failed++; process.stderr.write(JSON.stringify({ failure: name }) + '\n'); }
+    // A bare name sent seven failures into the baseline as "spawn is blocked in this shell",
+    // which was wrong: one of them spawns nothing. Carry the reason, bounded and fixed-shape.
+    try { await action(); passed++; } catch (error) {
+      failed++;
+      process.stderr.write(JSON.stringify({ failure: name, reason: String(error?.message ?? error).slice(0, 200) }) + '\n');
+    }
   }
   await test('three_turns_keep_history_and_gateway_alive', () => fixture(async (gateway, received) => {
     let doc = initial();
@@ -200,6 +207,27 @@ async function tests() {
     const result = await runInteractive(gateway, () => { throw new Error('SYNTHETIC_PRIVATE'); });
     assert.equal(result.category, 'CLIENT_START_FAILED'); assert.equal(result.resourcesClosed, true);
   }));
+  await test('status_projection_failure_keeps_the_report', () => fixture(async gateway => {
+    // This gateway's diagnostics carry no recentRequests, so the projection cannot run. A throw
+    // used to travel out of runInteractive and cost main() the exit line, the status JSON and the
+    // status file at once. The result must still arrive, name the gap, and keep what it can.
+    const result = await runInteractive(gateway, () => { throw new Error('SYNTHETIC_PRIVATE'); });
+    assert.equal(result.requestStatus.statusUnavailable, 'STATUS_UNAVAILABLE');
+    assert.equal(Object.values(result.requestStatus.cleanup).every(value => value === true), true);
+    assert.equal(result.category, 'CLIENT_START_FAILED');
+    assert.ok(!JSON.stringify(result).includes('SYNTHETIC_PRIVATE'));
+  }));
+  await test('status_projection_exception_never_becomes_output', () => fixture(async gateway => {
+    const brokenProjection = { ...gateway, diagnostics: () => {
+      const state = gateway.diagnostics();
+      Object.defineProperty(state, 'recentRequests', { get() { throw new Error('SYNTHETIC_PRIVATE_STATUS'); } });
+      return state;
+    } };
+    const result = await runInteractive(brokenProjection, () => { throw new Error('SYNTHETIC_START_FAILURE'); });
+    assert.equal(result.requestStatus.statusUnavailable, 'STATUS_UNAVAILABLE');
+    assert.ok(!JSON.stringify(result).includes('SYNTHETIC_PRIVATE_STATUS'));
+    assert.ok(Object.values(result.requestStatus.cleanup).every(value => value === true));
+  }));
   await test('spawn_error_event_closes_gateway', () => fixture(async gateway => {
     const result = await runInteractive(gateway, () => spawn(root + '/synthetic-missing-executable', [],
       { shell: false, windowsHide: true, env: {}, stdio: 'ignore' }));
@@ -223,7 +251,11 @@ async function tests() {
     await test(`options_${args[0]}_${args.length}`, () => assert.throws(() => launchOptions(args)));
   }
   await test('model_selection', () => {
-    assert.deepEqual(launchOptions([]).selected, { model: 'gpt-6-astra', effort: 'medium' });
+    // No --model means DEFAULT_SELECTION, which is astra/low — what --help documents and what
+    // test-launcher-native asserts on the launch arguments. astra's own default effort is
+    // medium, and naming the model is what asks for it.
+    assert.deepEqual(launchOptions([]).selected, { model: 'gpt-6-astra', effort: 'low' });
+    assert.deepEqual(launchOptions(['--model', 'astra']).selected, { model: 'gpt-6-astra', effort: 'medium' });
     assert.deepEqual(launchOptions(['--model', 'gpt-5.6-luna']).selected, { model: 'gpt-5.6-luna', effort: 'max' });
   });
   await test('default_poc_budget_unchanged', () => {

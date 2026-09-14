@@ -6,16 +6,35 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { request } from 'node:https';
 import { createInterface } from 'node:readline/promises';
+import { searchEnvelope } from '../src/native-protocol.mjs';
+import { clientVersionPolicy } from '../src/client-version.mjs';
+import { readAuthStoreSetting } from './auth-store-selection.mjs';
+import { release, arch } from 'node:os';
+import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe, CODEX_ARGS as codexArgs } from '../src/runtime-paths.mjs';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
+// The reference client's standalone web search. In the responses-lite envelope it sends no hosted
+// search tool at all — it declares a client-executed web.run tool and answers the call by
+// posting here with the same credential the model requests already use.
+export const searchEndpoint = 'https://chatgpt.com/backend-api/codex/alpha/search';
 export const model = 'gpt-6-astra';
 export const effort = 'xhigh';
-const expectedRoot = 'C:\\Users\\JS\\.codex';
-const codexExe = 'C:\\Users\\JS\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe';
-const testedVersion = '0.153.4';
+// Search mode runs on the cheapest model: it measures whether the endpoint answers and in
+// what shape, not how well a model writes.
+export const searchModel = 'gpt-5.6-luna';
+// The version this probe sends is the installed one, read at run time, exactly as the gateway
+// does. A version the project has not validated end to end is reported as unverified rather
+// than aborted: aborting hides the drift, reporting it puts the drift in the result the user
+// reads before deciding anything. A version that cannot be read or parsed still stops the run.
+export function readClientVersion(result) {
+  if (result.error || result.status !== 0 || typeof result.stdout !== 'string') stop('CLI_VERSION_UNREADABLE');
+  const match = result.stdout.trim().match(/^codex-cli (\S+)$/);
+  if (!match) stop('CLI_VERSION_UNREADABLE');
+  try { return clientVersionPolicy(match[1]); } catch { stop('CLI_VERSION_INVALID'); }
+}
 const limit = 256 * 1024;
 const knownErrors = new Set(['USER_TERMINAL_REQUIRED', 'USER_CANCELLED', 'UNEXPECTED_CODEX_HOME',
-  'CLI_VERSION_CHANGED', 'FILE_CACHE_UNAVAILABLE', 'FILE_TOO_LARGE', 'CONFIG_UNSUPPORTED',
+  'CLI_VERSION_UNREADABLE', 'CLI_VERSION_INVALID', 'FILE_CACHE_UNAVAILABLE', 'FILE_TOO_LARGE', 'CONFIG_UNSUPPORTED',
   'CREDENTIAL_STORE_UNSUPPORTED', 'INVALID_AUTH_CACHE', 'TOKEN_EXPIRED', 'TIMEOUT',
   'RESPONSE_TOO_LARGE', 'NETWORK_OR_TLS_ERROR', 'DEBUG_RUNTIME_UNSUPPORTED', 'TRANSPORT_RUNTIME_UNSUPPORTED']);
 
@@ -36,15 +55,8 @@ export function readSmall(path) {
 }
 
 export function checkStore(config) {
-  // This one-off probe supports simple top-level file-cache configuration only.
-  // Do not silently select a stale file when keyring/auto is explicitly configured.
-  const top = config.split(/^\s*\[/m)[0];
-  const assignments = top.split(/\r?\n/).filter(line => /^\s*cli_auth_credentials_store\s*=/.test(line));
-  if (!assignments.length) return;
-  if (assignments.length !== 1) stop('CONFIG_UNSUPPORTED');
-  const match = assignments[0].match(/^\s*cli_auth_credentials_store\s*=\s*["'](file|keyring|auto)["']\s*(?:#.*)?$/);
-  if (!match) stop('CONFIG_UNSUPPORTED');
-  if (match[1] !== 'file') stop('CREDENTIAL_STORE_UNSUPPORTED');
+  const store = readAuthStoreSetting(config);
+  if (store !== undefined && store !== 'file') stop('CREDENTIAL_STORE_UNSUPPORTED');
 }
 
 export function selectCredential(raw, now = Date.now()) {
@@ -70,6 +82,69 @@ export function buildBody() {
     input: [{ role: 'user', content: [{ type: 'input_text', text: 'Reply with exactly OK.' }] }],
     reasoning: { effort }, tools: [], tool_choice: 'none', stream: true, store: false };
 }
+
+
+// One search command, shaped as the reference client shapes it. No conversation tail is sent:
+// the query is the whole input, so nothing from this machine travels with it.
+export function buildSearchBody(envelope, query = SEARCH_QUERY) {
+  return { id: envelope.cacheKey, model: searchModel,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: query }] }],
+    commands: { search_query: [{ q: query }] },
+    settings: { external_web_access: true, search_context_size: 'medium', allowed_callers: ['direct'] },
+    max_output_tokens: 2500 };
+}
+export const SEARCH_QUERY = 'current top story on Hacker News';
+
+// Counts, field names and result kinds only. A search result's own text never leaves here:
+// this reports the shape the gateway has to map, not what the shape contained.
+const RESULT_KEY = /^[a-z][a-z0-9_]{0,31}$/;
+export function summarizeSearch(status, bytes) {
+  const result = { httpStatus: status, passed: false, category: 'UNEXPECTED_RESPONSE', responseBytes: bytes.length };
+  let text;
+  try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+  catch { return { ...result, category: 'INVALID_UTF8' }; }
+  if (status !== 200) {
+    return { ...result, category: status === 401 ? 'AUTH_REJECTED' : status === 403 ? 'ACCESS_DENIED'
+      : status === 404 ? 'ENDPOINT_ABSENT' : status === 429 ? 'RATE_LIMITED' : 'HTTP_ERROR',
+      rejectedFields: LITE_FIELDS.filter(name => text.includes(name)), ...errorLabels(text) };
+  }
+  let doc;
+  try { doc = JSON.parse(text); } catch { return { ...result, category: 'INVALID_JSON' }; }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return { ...result, category: 'INVALID_JSON' };
+  const results = Array.isArray(doc.results) ? doc.results : [];
+  const keys = new Set(), kinds = new Set();
+  for (const item of results.slice(0, 64)) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    for (const key of Object.keys(item)) if (RESULT_KEY.test(key)) keys.add(key);
+    if (typeof item.type === 'string' && RESULT_KEY.test(item.type)) kinds.add(item.type);
+  }
+  const outputChars = typeof doc.output === 'string' ? Array.from(doc.output).length : null;
+  return { ...result, passed: outputChars > 0 || results.length > 0, category: 'SUCCESS',
+    outputChars, encryptedOutput: typeof doc.encrypted_output === 'string',
+    resultCount: results.length, resultKeys: [...keys].sort().slice(0, 24), resultKinds: [...kinds].sort().slice(0, 12),
+    topLevelKeys: Object.keys(doc).filter(key => RESULT_KEY.test(key)).sort().slice(0, 12) };
+}
+
+// Field names this probe itself sends. Reporting which of our own names an upstream rejection
+// mentions narrows the envelope without echoing the upstream message.
+// A parameter path such as input[0].tools is a name this probe sent back to it, so brackets
+// and indices belong in the shape. No spaces, no punctuation that could carry a sentence.
+const SAFE_LABEL = /^[A-Za-z][A-Za-z0-9_.\[\]-]{0,63}$/;
+function errorLabels(text) {
+  let doc;
+  try { doc = JSON.parse(text); } catch { return {}; }
+  const error = doc?.error;
+  if (!error || typeof error !== 'object' || Array.isArray(error)) return {};
+  const labels = {};
+  for (const key of ['type', 'code', 'param']) {
+    if (typeof error[key] === 'string' && SAFE_LABEL.test(error[key])) labels[key] = error[key];
+  }
+  return Object.keys(labels).length ? { errorLabels: labels } : {};
+}
+
+const LITE_FIELDS = Object.freeze(['instructions', 'tools', 'additional_tools', 'client_metadata',
+  'prompt_cache_key', 'reasoning', 'context', 'text', 'verbosity', 'include', 'tool_choice',
+  'parallel_tool_calls', 'store', 'stream', 'model']);
 
 export function summarizeResponse(status, contentType, bytes, rawHeaders) {
   // Only fixed labels and counts leave this boundary; never echo headers or body snippets.
@@ -112,6 +187,12 @@ export function summarizeResponse(status, contentType, bytes, rawHeaders) {
     // Never echo the upstream message: it may include request headers or account information.
     if (status === 400 && /requires a newer version of Codex/i.test(text)) result.category = 'CLIENT_VERSION_REJECTED';
     else if (status === 400 && /unsupported parameter|unknown parameter|not supported/i.test(text)) result.category = 'REQUEST_NOT_SUPPORTED';
+    // Only names this probe itself sent, never upstream text: enough to say which part of the
+    // envelope the backend objected to without reproducing its message.
+    result.rejectedFields = LITE_FIELDS.filter(name => text.includes(name));
+    // The upstream error's own vocabulary and the name of a parameter this probe sent, both
+    // bounded to a fixed shape. The message text itself is never reproduced.
+    Object.assign(result, errorLabels(text));
     return result;
   }
   if (mediaType !== 'text/event-stream') {
@@ -144,6 +225,7 @@ function joinTextParts(parts) {
 function inspectSse(text) {
   const result = { passed: false, category: 'UNEXPECTED_RESPONSE' };
   let completed, eventCount = 0, failed = false, unexpectedTool = false;
+
   const deltas = new Map();
   const textDone = new Map();
   const itemDoneIndices = new Set();
@@ -316,11 +398,27 @@ export function checkRuntime(env, execArgs) {
   if (env.NODE_USE_ENV_PROXY || env.NODE_TLS_REJECT_UNAUTHORIZED !== undefined) stop('TRANSPORT_RUNTIME_UNSUPPORTED');
 }
 
+// The identity the reference client presents to the standalone search endpoint. A model request
+// keeps the identity it has always sent; only the search request uses this one.
+const searchAgent = version => `codex_exec/${version} (${release()}; ${arch() === 'x64' ? 'x86_64' : arch()}) `
+  + `xterm-256color (codex_exec; ${version})`;
 export function buildHeaders(credential, version, body) {
-  return { Authorization: `Bearer ${credential.accessToken}`, 'chatgpt-account-id': credential.account,
+  const common = { Authorization: `Bearer ${credential.accessToken}`, 'chatgpt-account-id': credential.account,
     'Content-Type': 'application/json', Accept: 'text/event-stream', 'Accept-Encoding': 'identity',
-    Version: version, 'User-Agent': `codex-cli/${version} (Windows; x64)`, originator: 'codex_cli_rs',
-    'Openai-Beta': 'responses=experimental', 'Content-Length': Buffer.byteLength(body) };
+    'Content-Length': Buffer.byteLength(body) };
+  return { ...common, Version: version, 'User-Agent': `codex-cli/${version} (Windows; x64)`,
+    originator: 'codex_cli_rs', 'Openai-Beta': 'responses=experimental' };
+}
+
+// The standalone search endpoint answers plain JSON, and the reference client identifies itself
+// to it the same way it identifies itself for a model request. One builder so the probe and the
+// gateway cannot drift apart on the wire.
+export function buildSearchHeaders(credential, version, body, turnMetadata) {
+  return { Authorization: `Bearer ${credential.accessToken}`, 'ChatGPT-Account-ID': credential.account,
+    'Content-Type': 'application/json', Accept: 'application/json', 'Accept-Encoding': 'identity',
+    originator: 'codex_exec', 'User-Agent': searchAgent(version),
+    ...(turnMetadata && { 'x-codex-turn-metadata': turnMetadata }),
+    'Content-Length': Buffer.byteLength(body) };
 }
 
 export function buildFetchOptions(body, headers, signal) {
@@ -353,6 +451,36 @@ async function sendFetchOnce(credential, version) {
   } catch (error) {
     stop(controller.signal.aborted ? 'TIMEOUT' : error.message === 'RESPONSE_TOO_LARGE' ? error.message : 'NETWORK_OR_TLS_ERROR');
   } finally { clearTimeout(timeout); }
+}
+
+// Plain JSON, not SSE: the reference client posts this one and parses the whole body at once.
+async function sendSearchOnce(credential, version, envelope) {
+  const body = JSON.stringify(buildSearchBody(envelope));
+  const headers = buildSearchHeaders(credential, version, body, envelope.headers['x-codex-turn-metadata']);
+  return new Promise((resolveResult, reject) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000);
+    const req = request(searchEndpoint, { method: 'POST', agent: false, signal: controller.signal,
+      rejectUnauthorized: true, headers }, res => {
+      const chunks = [];
+      let length = 0;
+      res.on('data', chunk => {
+        if ((length += chunk.length) > limit) { req.destroy(new Error('RESPONSE_TOO_LARGE')); return; }
+        chunks.push(chunk);
+      });
+      res.on('error', () => { clearTimeout(timeout); reject(new Error(controller.signal.aborted ? 'TIMEOUT' : 'NETWORK_OR_TLS_ERROR')); });
+      res.on('end', () => {
+        clearTimeout(timeout);
+        try { resolveResult(summarizeSearch(res.statusCode ?? 0, Buffer.concat(chunks))); }
+        catch { reject(new Error('LOCAL_CHECK_FAILED')); }
+      });
+    });
+    req.on('error', error => {
+      clearTimeout(timeout);
+      reject(new Error(controller.signal.aborted ? 'TIMEOUT' : error.message === 'RESPONSE_TOO_LARGE' ? error.message : 'NETWORK_OR_TLS_ERROR'));
+    });
+    req.end(body);
+  });
 }
 
 async function sendOnce(credential, version) {
@@ -389,11 +517,21 @@ async function sendOnce(credential, version) {
 
 async function main() {
   let attempted = false;
-  let transport;
+  let transport, search = false, compatibility;
   try {
-    transport = selectTransport(process.argv.slice(2), process.stdin.isTTY, process.stdout.isTTY);
+    const args = process.argv.slice(2);
+    search = args.includes('--search');
+    transport = selectTransport(args.filter(arg => arg !== '--search'),
+      process.stdin.isTTY, process.stdout.isTTY);
     checkRuntime(process.env, process.execArgv);
-    console.log(`USER-OPERATED TEST: ${model}/${effort}; ${transport}; one request to ${endpoint}`);
+    // Read before the confirmation so a version the project has not validated is on screen
+    // while the user decides, rather than reported after the request has already gone out.
+    compatibility = readClientVersion(spawnSync(codexExe, [...codexArgs, '--version'],
+      { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
+    const target = search ? searchEndpoint : endpoint;
+    console.log(`USER-OPERATED TEST: ${search ? `${searchModel}; standalone web search` : `${model}/${effort}`}; ${transport}; one request to ${target}`);
+    if (search) console.log(`Sends one search query and nothing else: "${SEARCH_QUERY}". No conversation, path or file travels with it.`);
+    console.log(`Client version sent: ${compatibility.clientVersion} (${compatibility.clientVersionStatus}; project baseline ${compatibility.referenceClientVersion}).`);
     console.log('Reads the existing file cache in memory only. No refresh, writes, tool execution, redirects, or retries.');
     console.log('This consumes account usage. The backend compatibility path is not a public API support guarantee.');
     const terminal = createInterface({ input: process.stdin, output: process.stdout });
@@ -402,8 +540,6 @@ async function main() {
     finally { terminal.close(); }
     if (answer !== 'SEND') stop('USER_CANCELLED');
     if (resolve(process.env.CODEX_HOME || expectedRoot).toLowerCase() !== resolve(expectedRoot).toLowerCase()) stop('UNEXPECTED_CODEX_HOME');
-    const cli = spawnSync(codexExe, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 });
-    if (cli.error || cli.status !== 0 || cli.stdout.trim() !== `codex-cli ${testedVersion}`) stop('CLI_VERSION_CHANGED');
     let credential;
     try {
       checkStore(readSmall(join(expectedRoot, 'config.toml')));
@@ -413,14 +549,17 @@ async function main() {
       stop('FILE_CACHE_UNAVAILABLE');
     }
     attempted = true;
-    const result = transport === 'node-fetch' ? await sendFetchOnce(credential, testedVersion) : await sendOnce(credential, testedVersion);
+    const result = search ? await sendSearchOnce(credential, compatibility.clientVersion, searchEnvelope())
+      : transport === 'node-fetch' ? await sendFetchOnce(credential, compatibility.clientVersion)
+        : await sendOnce(credential, compatibility.clientVersion);
     credential = null;
-    console.log(JSON.stringify({ ...result, requestedModel: model, requestedEffort: effort,
-      clientVersion: testedVersion, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
+    console.log(JSON.stringify({ ...result, mode: search ? 'standalone-search' : 'connectivity',
+      requestedModel: search ? searchModel : model, requestedEffort: search ? null : effort,
+      ...compatibility, transport, requestAttempts: 1, credentialWrites: 0, retries: 0 }, null, 2));
     if (!result.passed) process.exitCode = 1;
   } catch (error) {
     console.log(JSON.stringify({ passed: false, category: knownErrors.has(error.message) ? error.message : 'LOCAL_CHECK_FAILED',
-      transport, requestAttempts: attempted ? 1 : 0, credentialWrites: 0, retries: 0 }, null, 2));
+      ...compatibility, transport, requestAttempts: attempted ? 1 : 0, credentialWrites: 0, retries: 0 }, null, 2));
     process.exitCode = 1;
   }
 }

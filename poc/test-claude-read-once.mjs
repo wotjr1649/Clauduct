@@ -9,6 +9,7 @@ import { createLoopbackCodexTransport } from './codex-transport.mjs';
 import { startGateway } from './gateway.mjs';
 import { FIXTURE_PATH } from './adapter.mjs';
 import { syntheticClaudeRequest } from './read-test-client.mjs';
+import { installHttpClose } from '../src/http-close.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 let passed = 0, failed = 0, clients = 0, receivedTotal = 0;
@@ -72,6 +73,7 @@ async function scenario(mode = 'normal', fault = '', signal) {
     });
   });
   try {
+    server.on('connection', socket => installHttpClose(socket));
     await new Promise(done => server.listen(0, '127.0.0.1', done));
     const transport = createLoopbackCodexTransport(server.address().port, { profile: 'astra-low',
       tokenLimitPolicy: fault === 'token400' ? 'preserve' : 'backend-default' });

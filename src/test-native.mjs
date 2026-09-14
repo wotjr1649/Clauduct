@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import { performance } from 'node:perf_hooks';
 import { MODELS, ROLE_MODELS, selectModel, CONTEXT_POLICY } from './models.mjs';
-import { prepareNative, nativeResponse } from './native-protocol.mjs';
+import { prepareNative, nativeResponse, createNativeResponse, searchEnvelope } from './native-protocol.mjs';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 import { startNativeGateway } from './native-gateway.mjs';
 import { bindingFrom, registerBinding, contextFromEnvironment } from './agent-route.mjs';
+import { classifyBetaNames } from './scan-native-features.mjs';
 import { interactiveLaunch, launchOptions, runInteractive } from './clauduct.mjs';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { NATIVE_BETAS, betaFailure } from './native-beta.mjs';
+import { NATIVE_BETAS, betaFailure, judgedBetas } from './native-beta.mjs';
 
 const tool = name => ({ name, description: 'Synthetic tool', input_schema: { type: 'object',
   properties: { value: { type: 'string' } }, required: ['value'], additionalProperties: false } });
@@ -74,18 +75,43 @@ async function fixture(action, { fault, onUnregisteredAgent, responseHeaders = [
   await new Promise(done => server.listen(0, '127.0.0.1', done));
   const transport = createNativeLoopbackTransport(server.address().port), gateway = await startNativeGateway({ transport, onUnregisteredAgent,
     admissionOptions: { freeBytes: () => 16 * 1024 * 1024 * 1024 } });
+  let actionFailure;
   try { await action(gateway, () => received, routes); assert.equal(invalid, false); }
+  catch (error) { actionFailure = error; throw error; }
   finally {
-    const result = await gateway.close(); assert.equal(result.activeJobs, 0); assert.equal(result.activeSockets, 0);
-    assert.equal(result.transport.activeRequests, 0); assert.equal(result.registeredAgents, 0);
-    server.closeAllConnections(); await new Promise(done => server.close(done));
+    const result = await gateway.close();
+    try {
+      assert.equal(result.activeJobs, 0); assert.equal(result.activeSockets, 0);
+      assert.equal(result.transport.activeRequests, 0); assert.equal(result.registeredAgents, 0);
+    } catch (error) {
+      error.fixtureCleanup = { jobs: result.activeJobs, sockets: result.activeSockets, deliveries: result.activeDeliveries,
+        pendingCloses: result.pendingConnectionCloses, transportRequests: result.transport.activeRequests,
+        transportSockets: result.transport.activeSockets, cleanupFailed: result.cleanupFailed,
+        recent: result.recentRequests.slice(-4).map(row => ({ success: row.success, category: row.failureCategory,
+          admittedMs: row.admittedMs, transportStartedMs: row.transportStartedMs, transportFinishedMs: row.transportFinishedMs,
+          firstEventMs: row.firstEventMs, finishedMs: row.finishedMs })),
+        initialCode: ['ABORT_ERR', 'ERR_ASSERTION', 'ECONNRESET'].includes(actionFailure?.code) ? actionFailure.code : null };
+      throw error;
+    } finally { server.closeAllConnections(); await new Promise(done => server.close(done)); }
   }
 }
 let passed = 0, failed = 0;
+const focused = process.argv.includes('--concurrency-only');
 const seconds = Number(process.argv[process.argv.indexOf('--soak-seconds') + 1]) || 0;
 assert.ok(seconds >= 0 && seconds <= 600);
 const watchdog = setTimeout(() => { process.stderr.write('NATIVE_SUITE_TIMEOUT\n'); process.exit(1); }, (seconds + 40) * 1000);
-async function test(name, fn) { try { await fn(); passed++; } catch { failed++; process.stderr.write(JSON.stringify({ failure: name }) + '\n'); } }
+async function test(name, fn) {
+  if (focused && name !== '20_concurrent_agents_and_repeated_release') return;
+  try { await fn(); passed++; }
+  catch (error) {
+    failed++;
+    const codes = ['ERR_ASSERTION', 'ABORT_ERR', 'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT'];
+    const scalar = value => typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) ? value : null;
+    process.stderr.write(JSON.stringify({ failure: name, code: codes.includes(error?.code) ? error.code : 'OTHER',
+      actual: scalar(error?.actual), expected: scalar(error?.expected), fixtureCleanup: error?.fixtureCleanup ?? null,
+      fixtureConcurrency: error?.fixtureConcurrency ?? null }) + '\n');
+  }
+}
 for (const [name, selected] of Object.entries(MODELS)) await test('model_' + name, () => {
   assert.deepEqual(prepareNative(doc(name)).selected, selected);
   assert.equal(prepareNative({ ...doc(name), output_config: { effort: 'low' } }).selected.effort, 'low');
@@ -101,17 +127,17 @@ await test('context_policy_covers_every_main_and_role_model_without_claude_ident
     const launch = interactiveLaunch(gateway, source, process.cwd(), selected);
     const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
     for (const env of [launch.options.env, settings.env]) {
-      assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '500000');
-      assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '500000');
+      assert.equal(env.CLAUDE_CODE_MAX_CONTEXT_TOKENS, '400000');
+      assert.equal(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, '400000');
       const effective = Number(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW) - 20000;
       const trigger = Math.min(Math.floor(effective * (Number(env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE) / 100)), effective - 13000);
-      assert.equal(trigger, 400000);
+      assert.equal(trigger, 320000);
     }
     assert.ok(settings.modelPicker.options.every(row => !Object.hasOwn(row, 'behavesAs')));
     assert.equal(launch.options.env.CLAUDE_CONFIG_DIR, source.CLAUDE_CONFIG_DIR);
   }
   assert.deepEqual(source, before);
-  assert.equal(CONTEXT_POLICY.compactAt, 400000);
+  assert.equal(CONTEXT_POLICY.compactAt, 320000);
 });
 await test('repeated_unused_response_headers_do_not_break_sse', () => fixture(async gateway => {
   const result = await post(gateway, doc());
@@ -135,12 +161,14 @@ await test('native_beta_headers_and_private_unknown', () => {
   assert.equal(betaFailure(NATIVE_BETAS.join(',')), null);
   assert.equal(betaFailure('per-turn-control-2026-07-01,per-turn-control-2026-07-01'), 'INVALID_BETA_HEADER');
   assert.equal(betaFailure(''), 'INVALID_BETA_HEADER');
-  assert.equal(betaFailure('context-hint-2026-04-09,SYNTHETIC_PRIVATE'), 'UNSUPPORTED_BETA known=CONTEXT_HINT unknown=1');
+  // A judged beta is recorded by label, not refused; only a malformed header is refused.
+  assert.equal(betaFailure('context-hint-2026-04-09,SYNTHETIC_PRIVATE'), null);
+  assert.deepEqual(judgedBetas('context-hint-2026-04-09,SYNTHETIC_PRIVATE'), ['CONTEXT_HINT']);
 });
 await test('verified_file_review_rejects_no_diff_completion', async () => {
   const gateway = await startNativeGateway({ agentSelection: {
     resolve: async () => ({ route: MODELS.luna, source: 'native-fork', sessionId: 'review_session', review: true }),
-    remember: () => {} }, transport: {
+    remember: () => {}, begin: () => {}, delivered: () => {} }, transport: {
       send: async body => {
         assert.deepEqual(body.tool_choice, { type: 'function', name: 'Bash' });
         const bash = body.tools.find(tool => tool.name === 'Bash');
@@ -166,8 +194,9 @@ await test('beta_fixture_is_independent_of_implementation_list', () => {
     + 'effort-2025-11-24,redact-thinking-2026-02-12,prompt-caching-scope-2026-01-05,'
     + 'mid-conversation-system-2026-04-07,thinking-token-count-2026-05-13,tool-search-tool-2025-10-19,oauth-2025-04-20';
   assert.equal(betaFailure(header), null);
-  assert.equal(betaFailure('thinking-binding-controls-2026-08-01'), 'UNSUPPORTED_BETA known=THINKING_BINDING unknown=0');
-  assert.equal(betaFailure('cache-diagnosis-2026-04-07,SYNTHETIC_PRIVATE'), 'UNSUPPORTED_BETA known=CACHE_DIAGNOSIS unknown=1');
+  assert.equal(betaFailure('thinking-binding-controls-2026-08-01'), null);
+  assert.deepEqual(judgedBetas('thinking-binding-controls-2026-08-01'), ['THINKING_BINDING']);
+  assert.deepEqual(judgedBetas('cache-diagnosis-2026-04-07,SYNTHETIC_PRIVATE'), ['CACHE_DIAGNOSIS']);
 });
 await test('oauth_beta_does_not_replace_local_auth_or_reach_codex', () => fixture(async (gateway, received) => {
   const headers = { 'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20' };
@@ -175,7 +204,8 @@ await test('oauth_beta_does_not_replace_local_auth_or_reach_codex', () => fixtur
   assert.equal((await post(gateway, doc(), { ...headers, Authorization: 'Bearer SYNTHETIC_WRONG' })).status, 401);
   assert.equal((await post(gateway, doc(), { ...headers, Authorization: '', 'x-api-key': 'SYNTHETIC_WRONG' })).status, 400);
   assert.equal(received(), 1);
-  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'oauth-2025-04-20,SYNTHETIC_PRIVATE' })).status, 400);
+  // A malformed header is still refused before any upstream attempt.
+  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'oauth-2025-04-20,oauth-2025-04-20' })).status, 400);
   assert.equal(received(), 1);
 }));
 await test('tool_search_result_and_turn_effort', () => {
@@ -224,14 +254,24 @@ await test('turn_tool_change_beta_http', () => fixture(async (gateway, received)
   request.messages.push({ role: 'system', content: [{ type: 'tool_addition', tool: { type: 'tool_reference', name: 'Read' } }] });
   assert.equal((await post(gateway, request, header)).status, 200);
   assert.equal((await post(gateway, request)).status, 400);
-  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',SYNTHETIC_PRIVATE' })).status, 400);
+  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',,' })).status, 400);
   assert.equal(received(), 1);
+  assert.equal((await post(gateway, request, { 'anthropic-beta': header['anthropic-beta'] + ',brand-new-turn-2026-10-01' })).status, 200);
+  assert.equal(received(), 2);
 }));
 await test('native_beta_http_accept_and_reject_without_upstream', () => fixture(async (gateway, received) => {
   assert.equal((await post(gateway, doc(), { 'anthropic-beta': NATIVE_BETAS.join(',') })).status, 200);
-  const result = await post(gateway, doc(), { 'anthropic-beta': 'SYNTHETIC_PRIVATE' });
-  assert.equal(result.status, 400); assert.equal(result.text.includes('SYNTHETIC_PRIVATE'), false);
-  assert.ok(result.text.includes('unknown=1')); assert.equal(received(), 1);
+  // A judged beta passes and is recorded by its fixed label; a malformed header is refused.
+  const malformed = await post(gateway, doc(), { 'anthropic-beta': 'files-api-2025-04-14,' });
+  assert.equal(malformed.status, 400);
+  assert.ok(malformed.text.includes('INVALID_BETA_HEADER')); assert.equal(received(), 1);
+  assert.equal((await post(gateway, doc(), { 'anthropic-beta': 'files-api-2025-04-14,brand-new-feature-2026-10-01,SYNTHETIC_PRIVATE' })).status, 200);
+  assert.equal(received(), 2);
+  const state = gateway.diagnostics();
+  assert.deepEqual(state.unknownBetaNames, ['brand-new-feature-2026-10-01']);
+  assert.deepEqual(state.judgedBetaLabels, ['FILES_API']);
+  assert.deepEqual(state.recentRequests.at(-1).judgedBetaLabels, ['FILES_API']);
+  assert.ok(!JSON.stringify(state).includes('SYNTHETIC_PRIVATE'));
 }));
 await test('parallel_tools_reasoning_roundtrip_and_restart', () => {
   const request = doc(), first = prepareNative(request), result = nativeResponse(events(first, ['reasoning', 'text', 'Read', 'Bash', 'Agent', 'mcp__test__read']), first);
@@ -284,7 +324,7 @@ await test('native_launch_preserves_global_profile_and_statusline', () => {
   assert.equal(launch.args.includes('--tools'), false); assert.equal(launch.args.includes('--continue'), true);
   const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
   assert.equal(Object.hasOwn(settings.env, 'CLAUDE_CONFIG_DIR'), false);
-  assert.equal(settings.statusLine.command.includes('clauduct_statusline.sh'), true);
+  assert.equal(Object.hasOwn(settings, 'statusLine'), false); // Preserve native user configuration.
   assert.equal(settings.modelPicker.options.length, 4);
   assert.equal(settings.hooks.SubagentStart.length, 1);
   assert.equal(JSON.stringify(launch.args).includes('SYNTHETIC_TOKEN'), false);
@@ -313,8 +353,93 @@ await test('advisor_disabled_only_in_clauduct_child', () => {
     assert.equal(settings.env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL, '1');
     assert.deepEqual(source, before);
     assert.equal(Object.hasOwn(settings, 'advisorModel'), false);
+    // Anthropic-side reporting is off for this child only; the caller's environment is untouched.
+    assert.equal(launch.options.env.DISABLE_TELEMETRY, '1');
+    assert.equal(launch.options.env.DISABLE_ERROR_REPORTING, '1');
+    assert.equal(settings.env.DISABLE_TELEMETRY, '1');
   }
-  assert.equal(betaFailure('advisor-tool-2026-03-01'), 'UNSUPPORTED_BETA known=ADVISOR_TOOL unknown=0');
+  assert.deepEqual(judgedBetas('advisor-tool-2026-03-01'), ['ADVISOR_TOOL']);
+});
+await test('web_search_is_never_sent_upstream', () => {
+  const base = () => ({ model: 'astra', stream: true, max_tokens: 100,
+    messages: [{ role: 'user', content: 'SYNTHETIC_PROMPT' }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', allowed_domains: ['example.com'] }] });
+  const prepared = prepareNative(base());
+  // Accepted and recorded, never forwarded: the gateway answers that side query from the
+  // backend's standalone search endpoint, and the reference client sends no such tool either.
+  assert.equal(prepared.webSearch, true);
+  assert.equal(prepared.names.size, 0);
+  assert.deepEqual(prepared.body.tools, []);
+  assert.equal(prepared.body.tool_choice, 'none');
+  assert.equal(prepared.upstreamHeaders, undefined);
+  assert.equal(JSON.stringify(prepared.body).includes('web_search'), false);
+  assert.deepEqual(prepared.body.input.map(item => item.role ?? item.type), ['user']);
+  // Client tools alongside it are still declared normally.
+  const withTool = base();
+  withTool.tools.push({ name: 'Bash', description: 'run', input_schema: { type: 'object', properties: {} } });
+  const carried = prepareNative(withTool);
+  assert.deepEqual(carried.body.tools.map(tool => tool.name), ['Bash']);
+  assert.equal(carried.body.tool_choice, 'auto');
+  // A choice naming the server tool is satisfied here only when this request is that side query.
+  const chosen = { ...base(), tool_choice: { type: 'tool', name: 'web_search' } };
+  assert.throws(() => prepareNative(chosen), error => error.code === 'UNSUPPORTED_TOOLS');
+  assert.equal(prepareNative(chosen, { search: true }).body.tool_choice, 'none');
+  // Turn identity for the search request is generated here: nothing is copied from the user's
+  // codex install and no local path, repository or workspace is described.
+  const metadata = JSON.parse(searchEnvelope().metadata);
+  assert.equal(metadata.node_repl_disabled, true);
+  assert.equal(Object.hasOwn(metadata, 'workspaces'), false);
+  assert.ok(!searchEnvelope().metadata.includes(String.fromCharCode(92)));
+  // Both domain lists at once, an unknown field, or a renamed tool stay rejected.
+  for (const mutate of [d => { d.tools[0].blocked_domains = ['x.com']; }, d => { d.tools[0].private = 1; },
+    d => { d.tools[0].name = 'other'; }, d => { d.tools.push({ ...d.tools[0] }); }]) {
+    const doc = base(); mutate(doc); assert.throws(() => prepareNative(doc));
+  }
+  const search = { id: 'ws_1', type: 'web_search_call', status: 'completed',
+    action: { type: 'search', query: 'SYNTHETIC_PRIVATE_QUERY' } };
+  const message = { id: 'msg_0', type: 'message', role: 'assistant', status: 'completed',
+    content: [{ type: 'output_text', text: 'SYNTHETIC_TEXT', annotations: [
+      { type: 'url_citation', url: 'https://example.com', title: 'T', start_index: 0, end_index: 5 }] }] };
+  const events = [
+    { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
+    { type: 'response.output_item.added', output_index: 0, item: { id: 'ws_1', type: 'web_search_call', status: 'in_progress' } },
+    { type: 'response.web_search_call.in_progress', output_index: 0, item_id: 'ws_1' },
+    { type: 'response.web_search_call.searching', output_index: 0, item_id: 'ws_1' },
+    { type: 'response.web_search_call.completed', output_index: 0, item_id: 'ws_1' },
+    { type: 'response.output_item.done', output_index: 0, item: search },
+    { type: 'response.output_item.added', output_index: 1, item: { ...message, content: [], status: 'in_progress' } },
+    { type: 'response.output_text.delta', output_index: 1, item_id: 'msg_0', content_index: 0, delta: 'SYNTHETIC_TEXT' },
+    { type: 'response.output_text.done', output_index: 1, item_id: 'msg_0', content_index: 0, text: 'SYNTHETIC_TEXT' },
+    { type: 'response.output_item.done', output_index: 1, item: message },
+    { type: 'response.completed', response: { id: 'resp_1', status: 'completed', model: prepared.body.model,
+      reasoning: prepared.body.reasoning, output: [search, message],
+      usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8, input_tokens_details: { cached_tokens: 0 } } } }];
+  const counted = createNativeResponse(prepared);
+  for (const event of events.slice(0, -1)) counted.push(event);
+  counted.push(events.at(-1));
+  // Whether the backend actually searched is observable without any query or result.
+  assert.equal(counted.webSearchCalls(), 1);
+  assert.equal(createNativeResponse(prepared).webSearchCalls(), 0);
+  const result = nativeResponse(events, prepared);
+  // The search runs upstream; downstream sees the answer without the query or the source list.
+  assert.deepEqual(result.message.content, [{ type: 'text', text: 'SYNTHETIC_TEXT' }]);
+  assert.equal(result.message.stop_reason, 'end_turn');
+  for (const output of [JSON.stringify(result.message), result.sse]) {
+    assert.ok(!output.includes('SYNTHETIC_PRIVATE_QUERY'));
+    assert.ok(!output.includes('example.com'));
+    assert.ok(!output.includes('web_search'));
+  }
+  // Without the tool requested the same upstream items stay unsupported.
+  const plain = prepareNative({ ...base(), tools: [] });
+  assert.throws(() => nativeResponse(events, plain), error => error.code === 'UNSUPPORTED_OUTPUT');
+});
+await test('feature_scan_classifies_known_names', () => {
+  const report = classifyBetaNames(['web-search-2025-03-05', 'files-api-2025-04-14',
+    'mcp-tunnels-2026-06-22', 'foo-2025-01-01', 'pre-2026-07-28', 'brand-new-feature-2026-10-01']);
+  assert.deepEqual(report.allowed, ['web-search-2025-03-05']);
+  assert.deepEqual(report.judged, ['files-api-2025-04-14']);
+  assert.deepEqual(report.serverDependent, ['mcp-tunnels-2026-06-22']);
+  assert.deepEqual(report.unclassified, ['brand-new-feature-2026-10-01']);
 });
 await test('forward_native_resume_and_effort', () => {
   assert.equal(launchOptions(['--model', 'luna', '--effort', 'high', '--resume', 'SYNTHETIC_SESSION']).selected.effort, 'high');
@@ -422,9 +547,21 @@ await test('20_concurrent_agents_and_repeated_release', () => fixture(async gate
   for (let round = 0; round < 10; round++) {
     await Promise.all(Array.from({ length: 20 }, async (_, i) => {
       const binding = { id: `agent_${round}_${i}`, role: i % 2 ? 'Plan' : 'Explore', stop: false };
-      await registerBinding(binding, source);
-      assert.equal((await post(gateway, doc(), { 'x-claude-code-agent-id': binding.id })).status, 200);
-      await registerBinding({ ...binding, stop: true }, source);
+      let phase = 'register';
+      try {
+        await registerBinding(binding, source);
+        phase = 'inference';
+        assert.equal((await post(gateway, doc(), { 'x-claude-code-agent-id': binding.id })).status, 200);
+        phase = 'unregister';
+        await registerBinding({ ...binding, stop: true }, source);
+      } catch (error) {
+        const state = gateway.diagnostics();
+        error.fixtureConcurrency = { round, worker: i, phase, jobs: state.activeJobs,
+          registered: state.registeredAgents, pendingCloses: state.pendingConnectionCloses,
+          closeTimeouts: state.connectionCloseTimeouts, upstreamAttempts: state.transport.requestAttempts,
+          succeeded: state.lifetime.succeeded, failed: state.lifetime.failed };
+        throw error;
+      }
     }));
     assert.equal(gateway.diagnostics().registeredAgents, 0);
   }
@@ -456,5 +593,6 @@ if (seconds) await test('wall_clock_soak', () => fixture(async (gateway, receive
     rssGrowthBytes: process.memoryUsage().rss - rss, activeJobs: state.activeJobs }) + '\n');
 }));
 clearTimeout(watchdog);
-process.stdout.write(JSON.stringify({ suite: 'native', passed, failed, realClaude: 0, credentialReads: 0, externalRequests: 0 }) + '\n');
+process.stdout.write(JSON.stringify({ suite: 'native', passed, failed, realClaude: 0, credentialReads: 0, externalRequests: 0,
+  notRun: focused ? ['other cases: focused concurrency diagnostic'] : [] }) + '\n');
 process.exitCode = failed ? 1 : 0;

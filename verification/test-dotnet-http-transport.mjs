@@ -41,6 +41,16 @@ const requestBody = JSON.stringify(buildBody());
 const headers = buildHeaders({ accessToken: 'synthetic', account: 'synthetic' }, '0.153.4', requestBody);
 delete headers.Authorization; delete headers['chatgpt-account-id'];
 
+// Hang guards, not timing checks: what the probe deadlines do is asserted from elapsedMs
+// further down. These are sized for a cold CI runner rather than a warm developer box -- run
+// 34907283086 killed the pwsh --self-test at the old 12s bound, a spawn that takes 0.75s here,
+// because every spawn compiles DotnetHttpProbe.cs through Add-Type before it does anything.
+// A run that genuinely hangs still ends, just later; neither value decides whether a case passes.
+const SPAWN_GUARD_MS = 60000;
+// One worker serves every case, and the last one deliberately spends up to 52s establishing the
+// probe 45s deadline, so this has to cover that plus the other 34 cases and a cold start.
+const WORKER_GUARD_MS = 240000;
+
 function child(executable, args) {
   const process = spawn(executable, args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   let stderrBytes = 0;
@@ -54,7 +64,7 @@ async function runOnce(executable, args, input = '') {
   const { process, closed } = child(executable, args);
   let stdout = '';
   process.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > 16384) process.kill(); });
-  const timer = setTimeout(() => process.kill(), 12000);
+  const timer = setTimeout(() => process.kill(), SPAWN_GUARD_MS);
   process.stdin.end(input);
   try { return { ...(await closed), stdout }; }
   finally { clearTimeout(timer); }
@@ -162,7 +172,7 @@ server.setTimeout(60000, socket => socket.destroy());
 await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
 const worker = child(pwsh, ['-NoLogo', '-NoProfile', '-File', script, '--loopback', String(server.address().port)]);
 const lines = createInterface({ input: worker.process.stdout })[Symbol.asyncIterator]();
-const deadline = setTimeout(() => { worker.process.kill(); server.closeAllConnections(); }, 90000);
+const deadline = setTimeout(() => { worker.process.kill(); server.closeAllConnections(); }, WORKER_GUARD_MS);
 const observed = [];
 try {
   for (const testCase of cases) {

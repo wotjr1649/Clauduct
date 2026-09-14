@@ -6,6 +6,8 @@
 
 실패한 자식의 부모 재개 검증은 gateway가 해당 자식의 현재 요청에서 기록한 실패와 native의 `isApiErrorMessage`/`stop_sequence` 기록을 대조하도록 보완했다. 세션·직접 부모 관계·metadata·시간을 재확인하고, 성공·실패 혼합 알림의 증거를 한 번만 소비한다. 단순 실패 문구, 오래된 요청, 위조된 완료, 중단된 자식, 다른 계정·세션의 기록으로 재개하지 않는다. 새23개 검사와 기존 완료·다중 알림·모델 선택·진단 관련5파일 회귀가 통과했다. 실제 native의 공개 응답 시험에서는 sol/low와 luna/max 모두 자식 실패가 메인에 전달됐지만 부모에게 직접 알림이 전달되지 않아 부모 자동 재개는 미완료다. 해당 시험에 실제 backend 요청·credential 읽기는 없다.
 
+추가 공개 native 검사에서는 sol/low·luna/max 각각 두 모델 자식 중 하나를 번갈아 취소한4사례가 통과했다. 실제 Agent 반환 ID·TaskStop·TaskOutput·gateway 실패 기록을 대조했고, 형제 완료·늦은 이벤트 차단·정리9항목·잔여0을 확인했다. 실제 backend 요청은0이다. 사용자 일반 PowerShell과 직접 .NET Socket에서도 TCP 반닫기 응답 유실은 재현되어 출하 HOLD를 유지한다. 최신 범위와 실행 증거는 [출하 목표 기록](docs/release-completion-2026-09-14.md)에 있다.
+
 ## 시작
 
 1. ZIP을 새 폴더에 풀고 `Clauduct` 폴더를 연다. 기존 설치·사용자 프로필에 덮어쓰지 않는다.

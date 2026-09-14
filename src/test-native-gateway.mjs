@@ -754,6 +754,9 @@ try {
       }
       assert.ok(timing.preparedMs >= timing.admittedMs);
       assert.ok(timing.firstDownstreamWriteMs >= timing.firstTextDeltaMs);
+      // The reasoning boundary is recorded on every turn and never after the text it precedes.
+      assert.ok(timing.firstOutputItemMs >= timing.firstEventMs);
+      assert.ok(timing.firstTextDeltaMs >= timing.firstOutputItemMs);
       assert.ok(timing.finishedMs >= timing.firstDownstreamWriteMs);
       assert.equal(timing.success, mode === 'valid' || mode === 'retry');
       assert.ok(!JSON.stringify(timing).includes('SYNTHETIC'));

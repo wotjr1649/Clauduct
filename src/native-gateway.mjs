@@ -256,7 +256,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         parentRef: reference('agent', req.headers['x-claude-code-session-id'], req.headers['x-claude-code-parent-agent-id']),
         subagent: req.headers['x-claude-code-agent-id'] !== undefined,
         admissionStartedMs: elapsed(), admittedMs: null, preparedMs: null, transportStartedMs: null,
-        firstEventMs: null, firstTextDeltaMs: null, firstDownstreamWriteMs: null,
+        firstEventMs: null, firstTextDeltaMs: null, firstOutputItemMs: null, firstDownstreamWriteMs: null,
         transportFinishedMs: null, finishedMs: null, retryScheduledMs: [], attempts: [], success: false };
       recentRequests.push(timing);
       lifetime.started++;
@@ -400,6 +400,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           timing.firstEventMs ??= elapsed();
           timing.lastUpstreamEventMs = elapsed();
           if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
+          // Where reasoning stops and output starts, on EVERY turn. firstTextDeltaMs answers
+          // that only for a turn that ends in text, so a turn ending in a tool call -- most of
+          // them -- left the reasoning span unmeasurable and out of any average taken from it.
+          // The first non-reasoning item is the same boundary and exists whatever follows it.
+          if (event.type === 'response.output_item.added' && event.item?.type !== 'reasoning') {
+            timing.firstOutputItemMs ??= elapsed();
+          }
           await emit(validateResponse('stream', () => response.push(event)));
           if (event.type === 'codex.response.metadata') {
             timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;

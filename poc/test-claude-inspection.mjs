@@ -11,7 +11,7 @@ let checks = 0, passed = 0, failed = 0, clients = 0;
 async function test(name, action) {
   checks++;
   try { await action(); passed++; }
-  catch { failed++; process.stderr.write(JSON.stringify({ failure: name }) + '\n'); }
+  catch (error) { failed++; process.stderr.write(JSON.stringify({ failure: name, error: String(error?.message ?? error).slice(0, 200), at: (error?.stack ?? '').split('\n').map(line => line.trim()).find(line => line.includes(import.meta.url.split('/').pop())) ?? null }) + '\n'); }
 }
 function clean(result) {
   assert.equal(result.diagnosticVersion, 2);

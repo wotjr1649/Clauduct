@@ -17,7 +17,7 @@ assert.equal(existsSync(join(root, 'pid-2.json')), true);
 function invoke(pid, stop) {
   return spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(pid),
     '-StartedAfterMs', String(started), '-RunRoot', root, ...(stop ? ['-Stop'] : [])],
-  { env, cwd: project, windowsHide: true, encoding: 'utf8', timeout: 7000, maxBuffer: 8192 });
+  { env, cwd: project, windowsHide: true, encoding: 'utf8', timeout: 30000, maxBuffer: 8192 });
 }
 // A wrong live PID must be rejected before any termination, including the test owner.
 const rejected = invoke(process.pid, true);

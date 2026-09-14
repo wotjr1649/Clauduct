@@ -18,7 +18,7 @@ function invoke(requests) {
   equal(result.error, undefined); equal(result.status, 0); equal(result.signal, null);
   assert.doesNotMatch(result.stderr, /DEVELOPMENT_FIXTURE_FAILED|ERR_ACCESS_DENIED/); checks++;
   if (result.stderr) {
-    assert.match(result.stderr, /^\(node:\d+\) SecurityWarning: The flag --allow-child-process [^\r\n]+\r?\n\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\r?\n$/);
+    assert.match(result.stderr, /^\(node:\d+\) (?:\[[A-Z0-9]+\] )?SecurityWarning: The flag --allow-child-process [^\r\n]+\r?\n\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)\r?\n$/);
     permissionWarnings++;
   }
   mcpChildren++;

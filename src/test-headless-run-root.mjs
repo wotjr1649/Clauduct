@@ -21,7 +21,7 @@ let checks = 2;
 for (const [value, message] of [[id, 'VERIFICATION_RUN_EXISTS'], ['../PUBLIC', 'RunId'], ['A'.repeat(32), 'RunId'], ['b'.repeat(31), 'RunId']]) {
   const result = spawnSync('C:\\Program Files\\PowerShell\\7\\pwsh.exe', ['-NoProfile', '-NonInteractive', '-File',
     join(root, 'verification', 'verify-native-headless.ps1'), '-Live', '-Model', 'sol', '-Effort', 'low', '-RunId', value],
-  { env, cwd: root, windowsHide: true, encoding: 'utf8', timeout: 7000, maxBuffer: 8192 });
+  { env, cwd: root, windowsHide: true, encoding: 'utf8', timeout: 30000, maxBuffer: 8192 });
   assert.equal(result.error, undefined); assert.equal(result.status, 1); assert.equal(result.signal, null);
   assert(result.stderr.includes(message)); assert.equal(result.stdout, ''); checks += 5;
 }

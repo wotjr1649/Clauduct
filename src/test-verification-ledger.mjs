@@ -11,6 +11,7 @@ import { guardFixtureTransport } from '../verification/fixture-tool-policy.mjs';
 
 const codeRoot = fileURLToPath(new URL('../', import.meta.url));
 const temporaryRoot = join(codeRoot, '.tmp');
+mkdirSync(temporaryRoot, { recursive: true });
 const root = mkdtempSync(join(temporaryRoot, 'verification-ledger-'));
 let checks = 0, workerStopped = true;
 const directory = name => { const path = join(root, name); mkdirSync(path); return path; };

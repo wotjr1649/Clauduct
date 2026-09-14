@@ -5,6 +5,7 @@ import { join, resolve, sep } from 'node:path';
 import { createAgentSelection } from './agent-selection.mjs';
 
 const temporaryRoot = fileURLToPath(new URL('../.tmp/', import.meta.url));
+await mkdir(temporaryRoot, { recursive: true });
 const root = await mkdtemp(join(temporaryRoot, 'completion-batch-'));
 const selected = { model: 'gpt-5.6-luna', effort: 'max' };
 const directory = join(root, 'session', 'subagents');

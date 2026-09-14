@@ -8,6 +8,7 @@ import { registerBinding } from './agent-route.mjs';
 import { NativeError } from './native-protocol.mjs';
 import { request } from 'node:http';
 
+await mkdir(new URL('../.tmp/', import.meta.url), { recursive: true });
 const root = await mkdtemp(fileURLToPath(new URL('../.tmp/failed-completion-', import.meta.url)));
 const directory = join(root, 'session', 'subagents');
 const route = { model: 'gpt-5.6-luna', effort: 'max' };

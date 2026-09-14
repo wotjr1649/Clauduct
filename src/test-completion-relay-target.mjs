@@ -6,6 +6,7 @@ import { verifyCompletionRelayTarget } from '../verification/completion-relay-ta
 import { createFixtureToolPolicy } from '../verification/fixture-tool-policy.mjs';
 
 const temporaryRoot = fileURLToPath(new URL('../.tmp/', import.meta.url));
+mkdirSync(temporaryRoot, { recursive: true });
 const root = mkdtempSync(join(temporaryRoot, 'completion-relay-'));
 const workingRoot = join(root, 'work'), agents = join(root, 'config', 'projects', 'public', 'session', 'subagents');
 mkdirSync(workingRoot); mkdirSync(agents, { recursive: true });

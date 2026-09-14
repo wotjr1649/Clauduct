@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createAgentSelection } from './agent-selection.mjs';
 import { bindingFrom } from './agent-route.mjs';
 
+await mkdir(new URL('../.tmp/', import.meta.url), { recursive: true });
 const root = await mkdtemp(fileURLToPath(new URL('../.tmp/workflow-resume-', import.meta.url)));
 const sessionId = 'public-saved-session', runId = 'wf_public-resume', workflowName = 'public-workflow';
 const transcriptPath = join(root, `${sessionId}.jsonl`), directory = join(root, sessionId, 'subagents/workflows', runId);

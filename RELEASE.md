@@ -22,6 +22,8 @@ TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사
 
 ## 시작
 
+사용자별 설치와 업데이트는 [Windows 설치 안내](docs/installation.md)를 따른다. `install.ps1`은 기존 Node/Claude/Codex를 확인하고 `.local\bin`에 명령을 설치한다. GitHub 온라인 설치는 Release 게시 후 사용할 경로이며 이번 작업에서는 게시하지 않았다. 아래는 ZIP을 직접 풀어 쓰는 방법이다.
+
 1. ZIP을 새 폴더에 풀고 `Clauduct` 폴더를 연다. 기존 설치·사용자 프로필에 덮어쓰지 않는다.
 2. 그 폴더의 PowerShell에서 `./clauduct.cmd --dry-run`으로 인증 없는 구성 검사를 한다.
 3. 작업할 프로젝트로 이동한 뒤 설치 폴더의 `clauduct.cmd`를 실행한다.
@@ -32,12 +34,12 @@ TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사
 & 'D:/Tools/Clauduct/clauduct.cmd' --resume <session-id>
 ```
 
-`D:/Tools/Clauduct`는 예시 설치 위치다. PATH, 전역 설정, 서비스, 인증 파일을 설치기가 생성하거나 수정하지 않는다. 새 버전으로 바꿀 때도 별도 폴더에 풀면 이전 실행기로 되돌릴 수 있다. native 세션·프로필은 별도로 유지되며 두 버전을 같은 세션에 동시에 연결하지 않는다.
+`D:/Tools/Clauduct`는 직접 압축을 푸는 예시 위치다. 이 방식은 PATH를 변경하지 않는다. 별도의 `install.ps1`은 기본적으로 사용자 PATH를 추가하며 `-NoPathUpdate`로 생략할 수 있다. 전역 설정·서비스·인증 파일은 변경하지 않는다. native 세션·프로필은 별도로 유지되며 두 버전을 같은 세션에 동시에 연결하지 않는다.
 
 ## 필요 환경
 
 - Windows, PATH의 Node.js. 이번 최종 소스의 검증 환경은 Node `24.19.0`, native Claude `2.1.270`, Codex standalone `0.154.0`이다. 과거 안내의 Claude `2.1.269`와 구분한다. 이번 실제 세션과 이전 부모 알림 실패 세션의 공개 fixture transcript에서 모두 `2.1.270`을 확인했다. 다른 조합의 성공을 보장하지 않는다.
-- native Claude는 OS 사용자 홈의 `.local/bin/claude.exe`, Codex는 `AppData/Local/Programs/OpenAI/Codex/bin/codex.exe`를 사용한다. 임의 실행 파일 경로를 설정으로 받지 않는다.
+- Node.js 24 이상이 필요하다. native Claude와 Codex는 기존 사용자 설치 위치를 우선하고 절대 PATH를 탐색한다. Codex의 npm 설치도 package metadata를 확인해 Node로 실행한다. [탐색 순서와 설치 제한](docs/installation.md)을 참고한다.
 - 기존 Codex 로그인과 OS 사용자 홈의 `.codex` 파일 credential store가 필요하다. Clauduct는 인증을 직접 갱신하거나 쓰지 않는다. account 변경·다른 `CODEX_HOME`·디버그/TLS 우회 런타임은 거부한다.
 - 인증 값을 읽기 전에 루트 `cli_auth_credentials_store`를 구조적으로 구분한다. [TOML 1.0 키와 문자열 규칙](https://toml.io/en/v1.0.0#keys)에 따라 따옴표·Unicode escape·주석·여러 줄 문자열·중첩 값·테이블을 구분하며, 명시한 다른 저장소를 놓치고 파일 캐시를 읽던 경우를 수정했다. 이 읽기는 다른 설정을 적용하거나 전체 TOML 설정의 유효성을 보증하지 않는다. 입력65536자·중첩64단계·해석한 키/저장소 문자열1024자 한도이며, 모호하거나 지원하지 않는 인증 설정은 캐시 조회 전에 거부한다.
 - PowerShell `7+`는 검증 스크립트에 필요하다. 별도 npm 의존성 설치는 없다.

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([string] $OutputDirectory)
 
 $ErrorActionPreference = 'Stop'
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
@@ -19,11 +19,11 @@ $commit = @(Read-Git -Arguments @('rev-parse', '--verify', 'HEAD'))[0]
 if ($commit -notmatch '^[a-f0-9]{40}$') { throw 'RELEASE_COMMIT_INVALID' }
 # Only this reviewed distribution surface. No profiles, status, prompts, audit
 # transcripts, generated app-server schemas, VCS history, or untracked files.
-$paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md', 'docs/local-use-release-decision.md',
+$paths = @('clauduct.cmd', 'install.ps1', 'RELEASE.md', 'docs/installation.md', 'docs/claude-option-classification.md', 'docs/local-use-release-decision.md',
     'docs/release-completion-2026-09-14.md', 'docs/session-29-release-verdict.md', 'docs/tcp-shell-assessment-2026-09-14.md', 'src',
     'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs', 'verification/test-manual-http-probe.mjs',
     'verification/verify-live.mjs', 'verification/verify-native-headless.ps1',
-    'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1',
+    'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1', 'verification/test-installer.ps1',
     'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/development-source-files.mjs', 'verification/fixture-tool-policy.mjs',
     'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs', 'verification/development-artifacts.mjs', 'verification/development-change.mjs',
     'verification/fixtures/registered-budget-task.mjs',
@@ -67,16 +67,20 @@ $files = @($tree | ForEach-Object {
 } | Sort-Object -Unique)
 if ($files.Count -lt 20 -or $files.Count -gt 256 -or 'RELEASE.md' -notin $files) { throw 'RELEASE_FILES_INCOMPLETE' }
 
-$temporaryRoot = Join-Path $taskRoot '.tmp'
+$temporaryRoot = Join-Path $taskRoot 'output'
 foreach ($boundary in @($taskRoot, $temporaryRoot)) {
     if (Test-Path -LiteralPath $boundary) {
         $item = Get-Item -Force -LiteralPath $boundary
         if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'RELEASE_PATH_BOUNDARY' }
     }
 }
-$outputRoot = Join-Path $temporaryRoot ('release-artifacts-' + [Guid]::NewGuid().ToString('N'))
+$releases = Join-Path $temporaryRoot 'releases'
+if (-not (Test-Path -LiteralPath $releases)) { [void][IO.Directory]::CreateDirectory($releases) }
+if ((Get-Item -LiteralPath $releases -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'RELEASE_PATH_BOUNDARY' }
+$outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $releases ($commit.Substring(0,12) + '-' + [Guid]::NewGuid().ToString('N')) }
+if ([IO.Path]::GetDirectoryName($outputRoot) -ine $releases -or (Test-Path -LiteralPath $outputRoot)) { throw 'RELEASE_OUTPUT_BOUNDARY' }
 [void](New-Item -ItemType Directory -Path $outputRoot)
-$archivePath = Join-Path $outputRoot ('Clauduct-' + $commit.Substring(0, 12) + '.zip')
+$archivePath = Join-Path $outputRoot 'Clauduct-windows-x64.zip'
 $null = Read-Git -Arguments (@('archive', '--format=zip', '--prefix=Clauduct/', ('--output=' + $archivePath), $commit, '--') + $files)
 
 $archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
@@ -102,5 +106,18 @@ $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.T
 $manifest = [ordered]@{ format = 1; sourceCommit = $commit; archive = [IO.Path]::GetFileName($archivePath);
     sha256 = $archiveHash; fileCount = $records.Count; uncompressedBytes = $total; files = $records }
 [IO.File]::WriteAllText((Join-Path $outputRoot 'manifest.json'), ($manifest | ConvertTo-Json -Depth 5) + "`n")
+# Copy the installer from the committed archive, never an untracked workspace file.
+$zip = [IO.Compression.ZipFile]::OpenRead($archivePath)
+try {
+    $entry = $zip.GetEntry('Clauduct/install.ps1')
+    if (-not $entry) { throw 'RELEASE_INSTALLER_MISSING' }
+    $installerStream = $entry.Open(); $file = [IO.File]::Open((Join-Path $outputRoot 'install.ps1'), [IO.FileMode]::CreateNew)
+    try { $installerStream.CopyTo($file) } finally { $file.Dispose(); $installerStream.Dispose() }
+} finally { $zip.Dispose() }
+$sums = @('Clauduct-windows-x64.zip','manifest.json','install.ps1') | ForEach-Object {
+    ((Get-FileHash -LiteralPath (Join-Path $outputRoot $_)).Hash.ToLowerInvariant() + '  ' + $_)
+}
+[IO.File]::WriteAllText((Join-Path $outputRoot 'SHA256SUMS'), ($sums -join "`n") + "`n")
 [ordered]@{ passed = $true; sourceCommit = $commit; fileCount = $records.Count; uncompressedBytes = $total;
-    sha256 = $archiveHash; archive = $archivePath; manifest = (Join-Path $outputRoot 'manifest.json') } | ConvertTo-Json -Compress
+    sha256 = $archiveHash; archive = $archivePath; manifest = (Join-Path $outputRoot 'manifest.json');
+    installer = (Join-Path $outputRoot 'install.ps1'); checksums = (Join-Path $outputRoot 'SHA256SUMS') } | ConvertTo-Json -Compress

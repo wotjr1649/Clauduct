@@ -48,6 +48,20 @@ function optionTests() {
   }
 }
 
+function nativeSettingSourcesTest() {
+  const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
+  for (const source of [{}, { CLAUDE_CONFIG_DIR: 'SYNTHETIC_NATIVE_CONFIG' }]) {
+    const before = JSON.stringify(source), launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT');
+    const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
+    assert.deepEqual(Object.keys(settings).sort(), ['env', 'hooks', 'modelPicker']);
+    assert.equal(Object.hasOwn(settings, 'permissions'), false);
+    assert.equal(launch.args.includes('--permission-mode'), false);
+    assert.equal(launch.args.includes('--setting-sources'), false);
+    assert.equal(launch.options.env.CLAUDE_CONFIG_DIR, source.CLAUDE_CONFIG_DIR);
+    assert.equal(JSON.stringify(source), before);
+  }
+}
+
 function childRetryTest() {
   const source = { CLAUDE_CODE_MAX_RETRIES: '10', CLAUDE_CODE_RETRY_WATCHDOG: '1',
     CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK: '0',
@@ -290,6 +304,7 @@ statusRecordTest();
 documentFirstTest();
 optionTests();
 childRetryTest();
+nativeSettingSourcesTest();
 autoCompactVerificationTest();
 agentModelVerificationTest();
 generalAgentTest();

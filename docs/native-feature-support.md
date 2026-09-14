@@ -4,6 +4,8 @@
 
 2026-09-14 Session-29에서는 Claude2.1.270의 공개 native 중첩 결과 중계와 새 프로세스의 일반 개발 복구를 검사했다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복도 원결과로 대조했다. 정상 Workflow 재개와 다른 잔여 요구의 현재 판정은 [Session-29](session-29-release-verdict.md)에 있으며 전체 HOLD다.
 
+현재 사용자는 이 머신의 전역 `settings.json`에 있는 bypass 모드만 사용한다. 실제 `permissions.defaultMode=bypassPermissions`를 읽어 확인했으며 다른 permission 모드·전환 조합은 Session-29 출하 범위에서 제외한다. 아래 다른 모드에 관한 미검증 설명은 이력이고 현재 차단이 아니다. Clauduct의 launcher는 permissions를 재정의하거나 설정 소스를 대체하지 않는다.
+
 ## 1. 원칙 — 무엇이 바뀌고 무엇이 안 바뀌는가
 
 Clauduct는 **추론 backend만 교체**한다. Claude Code → loopback gateway → 직접 HTTPS Codex responses 엔드포인트다. 따라서 판정은 딱 두 갈래로 갈린다.

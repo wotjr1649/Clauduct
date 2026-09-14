@@ -4,6 +4,8 @@
 
 **현재 사용자 변경:** Session-29 진행 중 디스크 부족 복구를 검증에서 제외했다. F16의 그 부분은 출하 차단에서 제외하며 기록 잘림·기록 오류·미관측 예약 보존과 기존 실패 이력은 유지한다. 시작 시각·deadline·누적 예산은 변경하지 않는다.
 
+**현재 설정 범위:** 사용자는 이 머신의 native Claude 전역 설정에 있는 bypass 모드만 사용한다고 지정했다. `C:\Users\js\.claude\settings.json`을 비밀 노출 없이 읽어 `permissions.defaultMode=bypassPermissions`를 확인했다(`setting.json`은 없음). 다른 모드와 모드 전환 조합은 출하 요구에서 제외한다. Clauduct는 native의 기본 설정 소스/`CLAUDE_CONFIG_DIR`을 보존하고 `--settings`에 permissions를 쓰지 않는다. 전역 설정을 변경하지 않는다. 공개 fixture는 확인한 모드 값만 새 격리 설정에 적용하며 개인 hooks/plugins/env 원문을 복제하거나 전체 개인 profile을 실행한 증거라고 표시하지 않는다.
+
 ## 예산과 실행 경계
 
 기준 원장 `.tmp/release-completion-20260914/live-agent-final/result.json`을 직접 대조했다. 요청 323~327, 보수적 327; 관측 입력 1124010/출력 47690; 미관측 입력 예약 786432/출력 예약 196608; 예약 포함 입력 1910442/출력 244298. 관측 시간 3019404ms와 미관측 160000ms도 유지한다. 추가 한도 요청64/입력400000/출력30000, 누적 상한391/2310442/274298이다. 담당 Codex 사용량과 구분한다.
@@ -69,7 +71,7 @@ F12의 명시적 수집·메인 중계는 제품에 구현했고 현재 요청·
 | F14 정상 Workflow 재개 | **BLOCKED / 현재 버전 NOT_RUN**. native2.1.269의 반환 경로와 인수 일치는 확인했으나 정상 접근 조건은 해결되지 않았다. 2.1.270에서 같은 저장 세션을 새 프로세스로 열어 저장 결과 재사용/필요 agent 재실행/파일 효과 확인을 완료한 증거가 없다. 제품의 scriptPath/resumeFromRunId 및 새 실행 신원 연결도 미구현이다. 다른 경로·inline 복제·추가 읽기 권한으로 거부를 우회하지 않았다. native 전체가 영구적으로 미지원이라고 단정하지 않는다. |
 | F16 디스크 부족 복구 | **사용자 제외**. 미실행 이력은 유지하며 출하 차단에서 제외했다. 원장 잘림·기록 오류·미관측 예약과 부분 파일 효과 검사는 유지한다. 기존 registry 등록 거부도 유지한다. |
 | F18 결합 사건 | **NOT_RUN**. 압축 설정/변환/라우팅과 새 프로세스 복구, 자식 실패를 각각 검사했다. 압축·재시작·자식 실패가 겹친 사건의 효과/기록 보존 증거로 합산하지 않는다. 기본400K/320K 실발동은 별도로 사용자 제외다. |
-| 설정·도구 조합 표의 잔여 | **NOT_RUN**. native 소유의 permission/hooks/MCP 정상·거부 및 현재 launcher 계약 증거는 있다. 기존 표의 프롬프트 캐시 실제 적중, UI/plan/plugin을 포함한 설정 조합 검증은 확보하지 못했으며 자동 면제하지 않는다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복6개는 결과·라우팅·정리와 hash를 대조해 재사용한다. 임의 개인 profile 전체를 새 필수 범위로 확대하지 않는다. |
+| 설정·도구 조합 표의 잔여 | **bypass 범위에 한해 대조**. native 소유의 hooks/MCP 정상·거부 및 현재 launcher 계약 증거는 있다. 프롬프트 캐시 실제 적중과 사용 중인 bypass 환경의 UI/hooks/plugin 통합 증거는 아직 충분하지 않다. 다른 permission 모드나 모드 전환을 요구하지 않는다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복6개는 재사용한다. 임의 개인 profile 전체로 범위를 확대하지 않는다. |
 | 새 모델 실호출 | **BLOCKED**. 사용자가 요구한 사전 출력 상한을 현재 구독 전송에서 보장할 수 없다. 검증된 전송 계약/동작 없이 상한 옵션을 제거하거나 관측 후 판정으로 대체하지 않는다. |
 
 F21/F22의 새 Workflow 재개 모델·effort/세션·오래된 기록 경계도 F14에 의존해 미완료다. 기존 일반 Agent·신규 Workflow·변조 거부의 통과는 유지한다. 이 목록 때문에 최종 커밋과 ZIP의 파일 검증이 성공해도 전체 PASS나 목표 완료를 선언하지 않는다.
@@ -98,13 +100,19 @@ F21/F22의 새 Workflow 재개 모델·effort/세션·오래된 기록 경계도
 | F16 | 낮은 완료 사용량 한도·footer/journal 일치·잘림/예약 보존 | PASS(로컬 검사) / `token-budget-tests.json`, `token-budget-related.json`; registry 등록 기존 거부 보존, 디스크 부족 제외 |
 | F17 | 실제 native 소유 프로세스 종료·cleanup9개·잔여0 | PASS(실행별) / relay 및 개발 복구 결과. 최종 package 실행도 별도 census |
 | F18 | 압축·프로세스 재시작·자식 실패가 겹친 사건 | NOT_RUN. 개별 성공을 결합 성공으로 승격하지 않음; 기본 압축 발동 부분 제외 |
-| F19 | launcher 옵션/hook 계약, native permission/MCP 정상·거부 | 범위 내 PASS, UI/plan/plugin 조합 NOT_RUN. 기존 표 유지 |
+| F19 | 전역 bypass 설정 상속, launcher 옵션/hook 계약, native permission/MCP 정상·거부 | 범위 내 PASS. 다른 모드는 사용자 제외, bypass 환경의 UI/hooks/plugin 통합 증거는 잔여 |
 | F20 | 악성 소스·도구·MCP/외부 전송·oracle 경계, 공격 입력의 로컬 거부 | PASS(검토한 fixture 경계) / `token-budget-tests.json`, `candidate-impact-tests.json`; 임의 일반 프로젝트 전체 보증 없음 |
 | F21 | sol/low·luna/max 일반 Agent/신규 Workflow/개발 과거 실제 호출, 새 공개 relay 라우팅 | PASS(관측 경로). 정상 Workflow 재개 경로 NOT_RUN / `evidence-reuse.json`, `relay-native-verified.json` |
 | F22 | 현재 요청/세션/부모·metadata·journal·정적 경로 위조 거부 | PASS(현재 경로), Workflow 재개 신원 NOT_RUN / 선택·journal 검사; 동적 링크 제외 |
 | F23 | 부분 적용·테스트 삭제·가짜 성공·oracle 변조 거부, 두 파일 독립81개 | PASS(검토한 개발 과제) / `candidate-impact-tests.json`, `evidence-reuse.json` |
-| 기능 표 잔여 | 이미지6왕복 재사용; 일반 background·TaskStop·MCP/WebSearch/WebFetch 기존 증거 유지 | 프롬프트 캐시 실제 적중·UI/plan/plugin 설정 조합 NOT_RUN / `additional-evidence-reuse.json`, 기존 기능·옵션표 |
+| 기능 표 잔여 | 이미지6왕복 재사용; 일반 background·TaskStop·MCP/WebSearch/WebFetch 기존 증거 유지 | 프롬프트 캐시 실제 적중·bypass 환경 UI/hooks/plugin 통합 증거 잔여 / `additional-evidence-reuse.json`, 기존 기능·옵션표 |
 | 새 실호출 예산 | 기본32768 완료 관측값을 실행별 낮은 값으로 연결. 생성 전 상한 요구는 전송 전에 거부 | BLOCKED / `live-preflight-blocked.json`; 새 요청/입력/출력0, 기존 예약 불변 |
 | 로컬 릴리즈 | 커밋 후보의 명시 파일 ZIP·manifest/hash·재현 빌드·새 경로 실행 | 생성 후 `final-package-verified.json`과 `shipping-evidence.json`에서 별도 관측. 전체 HOLD와 구분 |
 
 최종 ZIP은 이 문서를 포함한 tracked clean 커밋에서 생성한다. 동반 manifest는 commit, 파일 목록·크기·SHA256을 담는다. 새 공백 경로 실행과 선택 회귀, 원증거 hash, 현재 요구 상태, 누적 예산 및 프로세스 census는 작업용 `.tmp/session-29-release/`에 보존하며 실행 임시 자료·인증·개인 profile은 ZIP/커밋에 넣지 않는다.
+
+### Bypass 설정 확인 뒤 추가 관측
+
+`verify-native-result-relay.ps1 -UseCurrentGlobalBypass`는 전역 설정의 모드만 제한적으로 읽고 bypass일 때만 공개 fixture를 시작한다. native init과 저장 transcript에서 실제 bypass를 독립 대조한다. 두 모델의 실패·취소4사례가 통과했으며 추가 실제 모델 호출은0이다. `bypass-*-verified.json`에 원결과·파일효과·cleanup9/잔여0을 연결했다. launcher 검사는 permissions 재정의와 설정 소스 대체가 없음을 확인한다.
+
+기존 실제 개발 두 실행에서 관측한 cache-read usage는 각각0이다(`prior-cache-usage.json`). 모드 범위 변경 전 headless plan probe는 native2.1.270이 EnterPlanMode를 노출하지 않은 상태에서1개 공개 요청 후 PROTOCOL_REJECTED로 끝났다. 원파일 불변/잔여0이며 모드 범위 변경 뒤 재시도하지 않는다. 이 실패는 이제 제외된 모드의 이력이다.

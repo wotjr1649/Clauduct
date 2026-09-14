@@ -29,6 +29,14 @@ export function verifyResultRelayEvidence(root) {
   const { project, file } = matches[0], sessionId = basename(file, '.jsonl');
   const rows = path => read(path).trimEnd().split('\n').map(JSON.parse);
   const main = rows(join(project, file));
+  if (prior.globalBypassModeVerified === true) {
+    assert.equal(prior.bypassObserved, true);
+    assert.equal(prior.personalProfileCopied, false); assert.equal(prior.fullPersonalProfileLoaded, false);
+    assert.deepEqual(JSON.parse(read(join(root, 'config', 'settings.json'), 1024)), { permissions: { defaultMode: 'bypassPermissions' } });
+    const init = rows(join(root, 'stdout.txt')).filter(row => row.type === 'system' && row.subtype === 'init');
+    assert.equal(init.length, 1); assert.equal(init[0].permissionMode, 'bypassPermissions');
+    assert.ok(main.some(row => row.permissionMode === 'bypassPermissions'));
+  }
   const agents = join(project, sessionId, 'subagents');
   assert.equal(readdirSync(agents).filter(name => name.endsWith('.meta.json')).length, 3);
   const agentRows = {};
@@ -69,7 +77,9 @@ export function verifyResultRelayEvidence(root) {
   return { root, model, effort, mode, passed: true, source: 'actual-native-fixed-public-responses',
     actualBackendRequests: 0, credentialReads: 0, publicResponses: entry.requests, relayedRequests: relayed.length,
     nativeChildStarts: 2, fileWrites: writes.length, sameParent: true, sameSession: true, failurePreserved: mode === 'failure',
-    parentNotResumedAfterCancel: mode === 'cancel', cleanupChecks: 9, remaining: 0, elapsedMs: prior.elapsedMs };
+    parentNotResumedAfterCancel: mode === 'cancel', cleanupChecks: 9, remaining: 0, elapsedMs: prior.elapsedMs,
+    ...(prior.globalBypassModeVerified === true ? { permissionMode: 'bypassPermissions', globalModeVerified: true,
+      personalProfileCopied: false, fullPersonalProfileLoaded: false } : {}) };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { process.stdout.write(JSON.stringify(verifyResultRelayEvidence(process.argv[2])) + '\n'); }

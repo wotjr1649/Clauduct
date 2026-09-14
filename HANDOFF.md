@@ -138,7 +138,11 @@
 
 프로젝트 안의 `.git`, `src`, `poc`, `verification`, `docs`, `clauduct.cmd`, `bin`, `README.md`, `RELEASE.md`, 이 문서를 함께 보존한다. hidden·untracked 파일이 자동 제외되는 전송 방식인지 확인한다. **상세 리서치와 새 이관 문서는 아직 commit되지 않았으므로 `git clone`이나 기존 릴리즈 ZIP만으로는 따라가지 않는다.**
 
-사용자의 기존 untracked 파일은 임의 삭제·stage·덮어쓰지 않는다. `%SystemDrive%/`, `.tmp/`, `clauduct-check.txt`, `clauduct-agent-validation-*.txt`, 과거 handoff·prompts, `src/agent-selection.review-fixture.mjs`, `verification/dev-sandbox/`에 기존 상태가 있다. 특히 `verification` 아래에는 tracked 자료와 untracked 작업이 함께 있으므로 폴더째 불필요하다고 판단하지 않는다.
+사용자의 기존 untracked 파일은 임의 삭제·stage·덮어쓰지 않는다. `.tmp/`, `clauduct-check.txt`, `clauduct-agent-validation-*.txt`, 과거 handoff·prompts, `src/agent-selection.review-fixture.mjs`, `verification/dev-sandbox/`에 기존 상태가 있다. 특히 `verification` 아래에는 tracked 자료와 untracked 작업이 함께 있으므로 폴더째 불필요하다고 판단하지 않는다.
+
+**단 하나의 예외: 커밋된 문서가 근거로 인용하는 문서는 함께 커밋한다.** 인용과 부재는 공존할 수 없다 — 감사 문서가 근거로 이름을 대는 파일이 저장소에 없으면, 클론한 사람은 그 주장을 검증할 수 없고 그것은 이 문서들이 존재하는 이유를 무너뜨린다. 예외는 여기까지이며, 인용되지 않은 것은 그대로 둔다. 판별은 추측이 아니라 검사로 한다: 추적 중인 모든 문서의 링크와 파일명 인용을 미추적 집합과 대조한다. 2026-09-15에 이 규칙과 기존 인용이 충돌해 프롬프트 5건을 포함한 12건을 커밋했다(PR #5).
+
+`%SystemDrive%/`는 2026-09-15에 사용자 승인 아래 삭제했다. 스크립트가 변수를 확장하지 못해 생긴 폴더였고 안에는 Windows 캐시 DB 사본 4개뿐이었다. 같은 날 `.tmp/unattended-release/published-main` worktree도 제거했다 — `main`을 점유해 주 저장소가 그 브랜치로 전환하지 못했고, 안의 릴리즈 산출물은 GitHub v0.1.0 게시본과 SHA256이 동일해 중복이었다. 남은 worktree 6개는 그대로 둔다.
 
 `.clauduct-profile/`과 `.clauduct-status/`는 Git에서 무시하는 로컬 상태다. `.tmp`에는 시험용 profile·이력·ZIP·linked worktree가 있다. 실제 폴더 복사는 이런 자료도 포함할 수 있지만 Git clone과 68파일 배포 ZIP은 포함하지 않는다. 전체 폴더를 그대로 옮기는 기술적 가능성과 전수 민감정보 검사 완료는 별개다. 현재 폴더를 외부 서비스에 업로드하는 작업은 수행하지 않았다.
 

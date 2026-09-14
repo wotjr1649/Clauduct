@@ -92,7 +92,7 @@ F21/F22의 새 Workflow 재개 모델·effort는 공개 native 두 모델에서 
 | F08 | 합성401·cache 선택/만료·예산 거부 유지 | 기존 회귀 재사용. 정상 인증 갱신은 사용자 제외 |
 | F09 | 반복401/403·다른 계정 혼입·인증 cache 오류 거부 | 기존 회귀 재사용 / `evidence-reuse.json`의 동일 인증/전송 소스 |
 | F10 | 압축 설정·변환·라우팅 회귀 통과 | PASS(정적/합성) / `candidate-impact-tests.json`; 기본400K/320K 실발동 제외 |
-| F11 | 실행 예약·소유자 종료·중복 시작 거부 유지 | PASS(일반 복구), Workflow 이전 활성 자식의 오래된 기록 거부는 로컬 검사 PASS, 실제 worker 생존 중 재개 시험은 NOT_RUN / `token-budget-related.json`, `candidate-impact-tests.json` |
+| F11 | 실행 예약·소유자 종료·중복 시작 거부 유지 | PASS(일반 복구/로컬 활성 기록 거부). native worker 생존 중 재개는 경로 읽기 검사에서 먼저 거부되어 생존 worker 판정 경계는 BLOCKED / `workflow-active-sol-observed.json` |
 | F12 | TaskOutput 원결과를 직접 부모 SendMessage 재개에 결합, 중복·오래된 요청·형제 혼입·취소 거부 | PASS / `relay-first-tests.json`, `relay-selection-final.json`, `relay-native-verified.json` |
 | F13 | 취소 후 재개0·형제 완료·늦은 이벤트 차단 | PASS / 새 relay 취소와 이전 공개 native4사례, 선택 회귀 |
 | F14 | 동일 저장 세션/새 프로세스/원본 script로 저장 결과 재사용·실패 agent 재실행·원래 파일 작업 마감 | PASS(짧은 공개 native 과제) / `workflow-clean-sol-verified.json`, `workflow-stored-sol-complete.json`, `workflow-stored-luna-finish.json`; 과거 거부·실패 이력 유지 |
@@ -128,3 +128,9 @@ F21/F22의 새 Workflow 재개 모델·effort는 공개 native 두 모델에서 
 sol/low 원래 공개 과제는 초기 관측기 실패 및 제품 연결 실패를 보존한 뒤 complete 단계에서 마감했고, luna/max도 처음 실패한 과제를 finish 단계에서 마감했다. 각각 같은 checkpoint와 저장 결과를 유지했다. 최종 소스의 깨끗한 first/resume 두 단계 sol 시험은 `workflow-clean-sol-verified.json`에서12개 공개 transport 호출, cached agent 실행1회, retry 실행2회(최초 실패 포함), 최종12, checkpoint 쓰기1/report 쓰기1, 매 단계 cleanup9/잔여0을 확인했다. 추가 backend 요청/인증 읽기는 모두0이다. 두 모델의 최종 배포본 증거는 후속 artifact에 연결한다.
 
 재현 진입점은 `verification/verify-native-workflow-resume.ps1`이다. `-Model sol -Phase first`가 반환한 정확한 RunRoot로 `-Model sol -Phase resume -RunRoot <returned-root>`를 실행한다(luna도 동일). 각 단계 요청12/30초, source hash 불변·이전 worker 종료·최초 효과 독립 대조 후에만 다음 프로세스를 시작한다. `verification/verify-workflow-resume-evidence.mjs`는 native 원자료와 파일 효과를 별도로 판정한다. 이는 고정 응답을 이용한 실제 native 동작이며 실모델의 계획·개발 능력 증거로 바꾸어 세지 않는다. plain-text 저장 결과는 로컬 검사만 있고, 공개 native 과제는 StructuredOutput을 쓴다.
+
+### 살아 있는 Workflow worker의 추가 음성 관측
+
+현재2.1.270 bypass의 별도 공개 sol/low 과제에서 저장 단계가5를 반환하고 다음 agent 요청이 실제로 진행 중인 상태를 만들었다. 같은 프로세스에서 정확한 반환 scriptPath/runId로 중복 재개를 요청했으나 native가 scriptPath 읽기 범위 검사에서 먼저 거부했다. 거부 전후 원래 agent는 계속 활성 상태였고 새 자식은 시작되지 않았다. 이후 원래 taskId를 TaskStop으로 취소하고 TaskOutput의 killed, cleanup9/잔여0을 확인했다. 원본 script·구조화 반환 경로와 실제 재호출 인수의 일치를 독립 대조했다.
+
+`workflow-active-sol-observed.json`은 관측 확인 true/수용 기준 통과 false다. 이 결과를 살아 있는 worker를 정확히 판별한 성공으로 세지 않는다. 해당 경로 거부를 다른 인수·권한·프로세스로 재현하지 않으며 동일 효과의 추가 모델 시험도 보류한다. 이미 검증한 이전 worker 종료 후 새 프로세스의 저장 Workflow 재개 성공과는 다른 조건이다. 첫 fixture의 meta.description 누락으로 시작 전 실패한2개 공개 요청도 보존했고, 보완된 시험은7개 공개 요청/실제 backend0이었다.

@@ -22,7 +22,7 @@ TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사
 
 ## 시작
 
-사용자별 설치와 업데이트는 [Windows 설치 안내](docs/installation.md)를 따른다. `install.ps1`은 기존 Node/Claude/Codex를 확인하고 `.local\bin`에 명령을 설치한다. GitHub 온라인 설치는 Release 게시 후 사용할 경로이며 이번 작업에서는 게시하지 않았다. 아래는 ZIP을 직접 풀어 쓰는 방법이다.
+사용자별 설치와 업데이트는 [Windows 설치 안내](docs/installation.md)를 따른다. `install.ps1`은 기존 Node/Claude/Codex를 확인하고 `.local\bin`에 명령을 설치한다. GitHub 온라인 설치에는 해당 Release의 게시된 asset이 필요하다. 아래는 ZIP을 직접 풀어 쓰는 방법이다.
 
 1. ZIP을 새 폴더에 풀고 `Clauduct` 폴더를 연다. 기존 설치·사용자 프로필에 덮어쓰지 않는다.
 2. 그 폴더의 PowerShell에서 `./clauduct.cmd --dry-run`으로 인증 없는 구성 검사를 한다.

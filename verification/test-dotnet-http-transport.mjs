@@ -175,20 +175,25 @@ try {
     assert(!line.value.includes(canary), testCase.name);
     const result = JSON.parse(line.value);
     const elapsedMs = Math.round(performance.now() - started);
-    assert.equal(result.passed, testCase.passed ?? false, testCase.name);
-    assert.equal(result.category, testCase.category ?? 'SUCCESS', testCase.name);
-    assert.equal(received, before + 1, testCase.name);
-    assert.equal(connections, beforeConnections + 1, testCase.name);
-    assert.equal(result.requestAttempts, 1, testCase.name);
-    assert.equal(result.connectionAttempts, 1, testCase.name);
-    assert.equal(result.reconnectBlocked, false, testCase.name);
+    // The name alone does not say why a case failed. passed is asserted before category, so a
+    // failure printed the case and stopped, and reading it took a trip through the probe to
+    // learn whether the run timed out, was cancelled, or lost its parser. Both are in the
+    // message now, and the elapsed time with them: a spawn that ran long says so on its own.
+    const caseLabel = `${testCase.name} (category=${result.category}, ${elapsedMs}ms)`;
+    assert.equal(result.passed, testCase.passed ?? false, caseLabel);
+    assert.equal(result.category, testCase.category ?? 'SUCCESS', caseLabel);
+    assert.equal(received, before + 1, caseLabel);
+    assert.equal(connections, beforeConnections + 1, caseLabel);
+    assert.equal(result.requestAttempts, 1, caseLabel);
+    assert.equal(result.connectionAttempts, 1, caseLabel);
+    assert.equal(result.reconnectBlocked, false, caseLabel);
     assert.equal(result.retries, 0); assert.equal(result.credentialWrites, 0);
     if (!testCase.transportFailure) {
-      assert.equal(result.transportDiagnostics.contentTypePresent, testCase.type !== undefined, testCase.name);
-      assert.equal(result.headerDiagnostics.normalizedContentTypeNonEmpty, Boolean(testCase.type?.trim()), testCase.name);
+      assert.equal(result.transportDiagnostics.contentTypePresent, testCase.type !== undefined, caseLabel);
+      assert.equal(result.headerDiagnostics.normalizedContentTypeNonEmpty, Boolean(testCase.type?.trim()), caseLabel);
       assert.equal(result.headerDiagnostics.rawHeadersAvailable, false);
       assert.equal(result.headerDiagnostics.rawContentTypePresent, null);
-      assert.equal(result.responseBytes, (testCase.payload ?? body).length, testCase.name);
+      assert.equal(result.responseBytes, (testCase.payload ?? body).length, caseLabel);
     }
     if (testCase.passed || testCase.category === 'MISSING_CONTENT_TYPE') {
       assert.equal((result.sseDiagnostics ?? result).passed, true);

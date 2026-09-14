@@ -41,6 +41,51 @@ try {
   await writeJournal(launched + startLine);
   assert.deepEqual((await selector().resolve(binding)).route, route); passed++;
 
+  // Editing a completed run must not invalidate an independent run's child.
+  // Its journal still participates in the ownership/duplicate-origin check.
+  {
+    const nextId = 'independent-child', nextRunId = 'wf_journal-02';
+    const nextDirectory = join(root, session, 'subagents', 'workflows', nextRunId);
+    const nextScriptPath = join(root, session, 'workflows', 'scripts', `journal-${nextRunId}.js`);
+    const nextScript = 'export const meta = { name: "journal" }; return 2;';
+    const nextRoute = { model: 'gpt-5.6-sol', effort: 'low' };
+    const nextLink = { ...link, runId: nextRunId, taskId: 'independent-task', transcriptDir: nextDirectory,
+      scriptPath: nextScriptPath, scriptDigest: workflowDigest(nextScript) };
+    const nextBinding = { ...binding, id: nextId, requestedModel: 'sol' };
+    const nextStart = { ...started, agentId: nextId, label: 'independent child' };
+    const nextStartLine = JSON.stringify(nextStart) + '\n';
+    const completedOld = launched + startLine + JSON.stringify({ type: 'result', agentId, result: 'PUBLIC_DONE' }) + '\n';
+    const add = (current, value, selected) => current.link(value,
+      { session, created: 0, workflow: { digest: value.scriptDigest, route: selected } });
+    await mkdir(nextDirectory, { recursive: true }); await writeFile(nextScriptPath, nextScript);
+    await writeFile(join(nextDirectory, 'journal.jsonl'), launched + nextStartLine);
+    const nextMetadata = JSON.stringify({ agentType: 'workflow-subagent', description: nextStart.label, spawnDepth: 1 });
+    const nextTranscript = JSON.stringify({ type: 'user', sessionId: session,
+      agentId: nextId, timestamp: new Date().toISOString(), message: { role: 'user', content: 'PUBLIC_INDEPENDENT_TASK' } }) + '\n';
+    // Both origins have otherwise valid sidecars when the duplicate is injected.
+    for (const target of [directory, nextDirectory]) {
+      await writeFile(join(target, `agent-${nextId}.meta.json`), nextMetadata);
+      await writeFile(join(target, `agent-${nextId}.jsonl`), nextTranscript);
+    }
+    await writeJournal(completedOld); await writeFile(scriptPath, script + '\n// PUBLIC_EDIT_AFTER_COMPLETION');
+    for (const reverse of [false, true]) {
+      const current = createWorkflowSelection(root);
+      for (const [value, selected] of (reverse ? [[nextLink, nextRoute], [link, route]] : [[link, route], [nextLink, nextRoute]])) add(current, value, selected);
+      assert.deepEqual((await current.resolve(nextBinding)).route, nextRoute); passed++;
+      await writeFile(nextScriptPath, nextScript + '\n// PUBLIC_CHANGED_ACTIVE_RUN');
+      await assert.rejects(current.resolve(nextBinding), error => error.selectionReason === 'IDENTITY'); passed++;
+      await writeFile(nextScriptPath, nextScript);
+      await writeJournal(completedOld + nextStartLine);
+      await assert.rejects(current.resolve(nextBinding), error => error.selectionReason === 'IDENTITY'); passed++;
+      await writeFile(scriptPath, script);
+      await assert.rejects(current.resolve(nextBinding), error => error.selectionReason === 'IDENTITY'); passed++;
+      await writeJournal(launched + '{"type":');
+      await assert.rejects(current.resolve(nextBinding)); passed++;
+      await writeJournal(completedOld); await writeFile(scriptPath, script + '\n// PUBLIC_EDIT_AFTER_COMPLETION');
+    }
+    await writeFile(scriptPath, script); await writeJournal(launched + startLine);
+  }
+
   // More than 128 KiB of completed siblings must not hide a valid new child.
   assert.ok(Buffer.byteLength(history) > 131072);
   await writeJournal(launched + history + startLine);

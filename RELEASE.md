@@ -8,6 +8,10 @@
 
 추가 공개 native 검사에서는 sol/low·luna/max 각각 두 모델 자식 중 하나를 번갈아 취소한4사례가 통과했다. 실제 Agent 반환 ID·TaskStop·TaskOutput·gateway 실패 기록을 대조했고, 형제 완료·늦은 이벤트 차단·정리9항목·잔여0을 확인했다. 실제 backend 요청은0이다. 사용자 일반 PowerShell과 직접 .NET Socket에서도 TCP 반닫기 응답 유실은 재현되어 출하 HOLD를 유지한다. 최신 범위와 실행 증거는 [출하 목표 기록](docs/release-completion-2026-09-14.md)에 있다.
 
+TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사례도 있지만, 특정 연결 종료 조건에서는 응답 유실이나 리셋으로 턴·자식 작업이 중단될 수 있고 일부 연결 정리는 약1초 지연될 수 있다. 발생 빈도와 원인 구성요소는 미확정이다. [실사용 영향과 근거](docs/tcp-shell-assessment-2026-09-14.md#실제-clauduct-사용에-미치는-영향)를 기록했으며 추가 OS 진단은 보류한다.
+
+완료된 이전 Workflow의 script 편집이 별개 신규 Workflow 자식을 IDENTITY로 차단하던 검증 순서를 수정했다. 실제 소속 run의 script·metadata·journal 검증과 중복 신원 거부를 유지하며, sol/low·luna/max의 공개 native 연속 Workflow 실행이 통과했다. 캐시 없는 재개는 별도 미완료다.
+
 ## 시작
 
 1. ZIP을 새 폴더에 풀고 `Clauduct` 폴더를 연다. 기존 설치·사용자 프로필에 덮어쓰지 않는다.

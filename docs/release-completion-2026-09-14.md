@@ -9,7 +9,7 @@
 | 순서 | 남은 범위 | 현재 상태 | 필요한 증거 |
 |---|---|---|---|
 | 1 | gateway·HTTP 종료·취소·동시 실행 | 반닫기 FAIL 보존 / OS 원인 추적 보류 | CMD에서도 동일 EOF. 환경 한계로 기록하고 독립 작업 진행; 관련 HTTP 회귀 전체의 원인이 확정된 것은 아님 |
-| 2 | 부모·자식 알림/실패/취소, Workflow 적용 가능한 계약 | 자식 취소 local-native 4사례 PASS / 나머지 미완료 | 실제 backend 결합과 직접 부모 알림·Workflow 미완료는 별도 유지 |
+| 2 | 부모·자식 알림/실패/취소, Workflow 적용 가능한 계약 | 자식 취소4사례·독립 신규 Workflow 연속 실행 두 조합 PASS / 재개 미완료 | 실제 backend 결합과 직접 부모 알림·Workflow cache-miss 미완료는 별도 유지 |
 | 3 | 실제 개발·소유/사용량·효과 대조·파일 적용·복구 | 부분 검증 | 현재 실제 경로의 좁은 개발·독립 oracle·중복/유실/거짓 완료 0 |
 | 4 | 남은 설정·도구·권한·변조·기록 경계 | 부분 검증/특정 차단 | 요구별 정상·거부 증거. 기존 guard 거부는 우회하지 않음 |
 | 5 | 동일 최종 후보 회귀·실제 실행·로컬 ZIP | 미완료 | 관련/전체 회귀, 필요한 실제 luna/max·sol/low, 재현 ZIP/hash/새 경로/회수 |
@@ -67,3 +67,22 @@
 - 특정 효과 BLOCKED: 실제 원장 registry FileSystemWrite, Workflow scriptPath 재개, 동적 링크·worker fsync 등 기존 거부. 구형 PowerShell 검사는 선택적 진단의 추가 거부이며 제품 기능 전체 차단으로 확대하지 않는다.
 - 남은 구현·증거: 실제 개발/복구·소유 대조의 적용 범위, 허용된 구성별 기능/권한 경계, 같은 최종 후보의 필요한 실제 실행과 릴리즈. 과거 후보의 PASS와 이번 고정 응답 PASS를 통합 실호출 PASS로 복사하지 않는다.
 - 다음 작업 순서: Workflow 재개 계약의 안전한 구현 범위를 기존 native 거부와 분리해 확정하고, 실제 원장 연결 차단이 해소되기 전까지 독립 로컬 회귀를 마무리한다. TCP 비교의 추가 반복이나 실행 정책 변경, 장기 시험, 새 실제 요청 예산 확대는 예약하지 않았다.
+
+## 후속 구현: 이전 Workflow 편집과 새 실행의 격리
+
+사용자의 실제 TCP/HTTP 사용 영향 질문은 [실사용 영향](tcp-shell-assessment-2026-09-14.md#실제-clauduct-사용에-미치는-영향)에 반영했다. 정상 사용 성공과 종료/반닫기 위험을 분리하고 추가 OS 진단 없이 출하 구현을 계속했다.
+
+기존 workflow-selection은 같은 세션에 연결된 모든 run의 스크립트 digest를 먼저 검사했다. 완료된 이전 run의 스크립트를 편집하면, journal에 새 자식이 전혀 없는 그 이전 run에서 IDENTITY가 발생하여 별개 신규 run의 자식까지 차단됐다. `workflow-isolation-baseline.json`은 이 실제 구현의 실패다.
+
+수정은 모든 후보 journal에서 자식의 소속/중복을 먼저 조사하고, 해당 자식의 소속 run에 대해서만 기존 script digest·metadata·새 transcript·시간·경로·재검사를 수행하도록 순서를 옮긴 것이다. 중복 origin과 깨진 journal은 계속 거부한다. 새로운 native 접근 권한이나 재개 호출은 추가하지 않았다.
+
+`test-workflow-journal`에 등록 순서 양방향, 무관한 스크립트 편집, 실제 소속 스크립트 변조, 두 run의 중복 신원, 잘린 journal의10사례를 추가하여 총30개가 통과했다. 첫 수정 검사에서는 중복 fixture의 sidecar가 빠져 ENOENT로 먼저 거부됐다. sidecar를 갖춘 두 유효 origin을 준비해 중복 신원 자체의 IDENTITY 거부를 검사하도록 fixture를 보완했다. 최초 실패도 `workflow-isolation-fixed.json`에 보존했다. 최종 `workflow-isolation-fixture-corrected.json`은30개 PASS다. 같은 제품 소스에서 Workflow 선택36개·admission 및 agent-selection·completion-selection46개도 통과해 관련5파일을 검증했다. native resume·동적 링크 NOT_RUN은 유지한다.
+
+실제 native 비교는 두 개의 **서로 다른 신규 inline Workflow**다. 첫 산술 과제 sum5 완료 뒤 그 저장 script에 공개 주석을 추가하고, 둘째 산술 과제 sum7을 새 run으로 시작했다. 기존에 거부된 scriptPath/resumeFromRunId 입력은 발행하지 않았다. 첫 fixture는 native의 설명 속 경로를 JSON 문자열로 잘못 해석해 실패했다(`native-workflow-isolation-a882a8a7dd9c4c8282db4a1833dce891`). 해당 호출의 전용 Script file 행을 읽고 작업 root·실제 파일 내용과 대조하도록 고친 뒤 아래 두 실행을 수행했다.
+
+| 조합 | 실행 디렉터리(.tmp 하위) | 결과 |
+|---|---|---|
+| sol/low | native-workflow-isolation-4257c8d14ea3493483e73e55020f1423 | 7개 고정 공개 응답·2254ms·PASS |
+| luna/max | native-workflow-isolation-0ad07009d08440999fcaa64357e90fb7 | 7개 고정 공개 응답·2479ms·PASS |
+
+독립 검사기 `workflow-isolation-native-verified.json`은 native 도구 호출과 두 run/task ID, script 편집, journal의 실제5/7 결과, 자식별 workflow-result 라우팅·정확한 model/effort, gateway 실패0, 메인 최종 결과, 정리9항목·잔여0을 대조했다. 합계14개 공개 응답/4733ms이며 외부 모델/인증 읽기는0이다. 검사한 workflow-selection.mjs의 SHA256은 `b47378ebcaf5b9f7215f7a6db493193ba8aed36c976957d0ddc8c63236c3bea9`다. 이는 실제 backend 및 cache-miss resume의 성공으로 세지 않는다. 다음 미완료는 실제 재개 계약의 신원 연결·native 경계와 그 뒤 동일 후보 릴리즈 검증이다.

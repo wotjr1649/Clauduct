@@ -108,12 +108,15 @@ export function createWorkflowSelection(projectsRoot) {
     let match;
     for (const run of candidates) {
       signal?.throwIfAborted();
-      const script = await read(run.script, 524288);
-      if (workflowDigest(script) !== run.scriptDigest) fail('IDENTITY');
       const journalPath = join(run.directory, 'journal.jsonl');
       const journal = await readJournal(journalPath, binding.id, signal, deadline);
       if (!journal.entry) continue;
       if (match) fail('IDENTITY');
+      // A completed run's script can be edited before an independent run starts.
+      // Check every journal for duplicate origins, then validate the script of
+      // the run that actually owns this child. Its digest must still match.
+      const script = await read(run.script, 524288);
+      if (workflowDigest(script) !== run.scriptDigest) fail('IDENTITY');
       const path = join(run.directory, `agent-${binding.id}.meta.json`);
       const metadataRaw = await read(path, 16384), metadata = JSON.parse(metadataRaw);
       if (metadata.agentType !== 'workflow-subagent' || metadata.toolUseId !== undefined

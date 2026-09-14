@@ -29,6 +29,24 @@ exit0은 검사 프로세스의 수집·정리가 완료됐다는 뜻이며, 반
 
 [Microsoft shutdown 문서](https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-shutdown)는 SD_SEND가 송신만 끝내고 소켓을 닫지는 않는다고 설명한다. [WFP 구조](https://learn.microsoft.com/en-us/windows/win32/fwp/windows-filtering-platform-architecture-overview)는 통신 필터에 사용자 모드와 커널 모드 구성요소가 있음을 설명하며, 특정 필터가 이번 원인이라는 증거는 아니다. [WSL 비교 문서](https://learn.microsoft.com/en-us/windows/wsl/compare-versions)는 WSL2의 실제 Linux 커널 사용을 설명한다.
 
+## 실제 Clauduct 사용에 미치는 영향
+
+사용자가 실제 사용에 큰 문제가 되는지 물었고, 영향이 있으면 문서에 남기고 다음 출하 작업을 계속하도록 요청했다. 판정은 **일반 사용이 항상 실패하는 상태라는 증거는 없지만, 특정 통신 종료 조건에서 작업을 끊을 수 있는 중요한 안정성 제약**이다. 발생 빈도와 영향받는 사용 비율은 측정하지 못했다. 추가 OS 진단은 보류한다.
+
+일반 HTTP 요청의 본문 완료와 TCP 송신 방향의 종료는 다르다. HTTP는 Content-Length나 chunked framing으로 본문 끝을 표현하므로, 요청 뒤 즉시 TCP FIN을 보내는 공개 반닫기 probe가 모든 정상 요청을 대표하지는 않는다. 이는 [RFC 9112의 본문 길이 규칙](https://www.rfc-editor.org/rfc/rfc9112.html#name-message-body-length)과 현재 HTTP 구현의 구분이다. 기존 실제 모델 개발·text/stream-json의 성공, native 자식 취소4사례 및 후속 신규 Workflow 실행의 성공도 정상 사용 경로가 존재한다는 증거다. 장기간 안정성이나 낮은 장애율의 증명은 아니다.
+
+| 영향 | 관측과 실제 사용에서의 의미 |
+|---|---|
+| 응답 유실 | 공개 TCP/HTTP 반닫기 검사에서 응답0바이트를 확인했다. 같은 종료 조건에 들어가면 답변·도구 결과를 받지 못하고 해당 턴이 실패할 수 있다 |
+| 종료 지연 | 현재 종료 처리의1000ms fallback이 공개 HTTP 비교3회 중2회 작동했고 전체 응답은 수신했다. 이 경우 연결 정리가 약1초 늦어질 수 있다. 지속적인 지연 빈도는 미측정이다 |
+| 리셋·자식 시작 실패 | 과거 HTTP/native 동시성 검사에 ECONNRESET이 있었다. 자식 등록 응답이 실패하면 해당 자식의 라우팅 검증/시작이 실패할 수 있다. TCP 반닫기가 그 모든 실패의 원인이라고 확정하지 않았다. 철회한 FIN 실험에서의 등록 실패도 현재 코드의 실패율로 세지 않는다 |
+| 무인 작업의 중단·복구 | 응답 단절은 자동 작업 진행을 멈추게 할 수 있다. 코드의 전달 후 자동 재시도 금지와 실패 기록은 유지한다. 이미 완료된 파일/도구 효과가 있을 수 있으므로 응답 부재를 작업 미실행으로 가정할 수 없다 |
+| 파일·결과의 무결성 | 이번 TCP 문제로 사용자 파일이 손상됐다는 관측은 없다. 임의 Bash/MCP 효과의 중복·유실이 모두 방지된다는 보증도 없다. 기존 효과 대조와 독립 완료 판정을 별도로 유지한다 |
+
+사용 중 오류가 나면 native is_error·Clauduct requestOutcome/failureHistory/cleanup과 실제 산출물을 함께 확인해야 한다. exit0 또는 일부 답변만으로 전체 작업 완료를 판단하지 않는다. 같은 세션을 재개하더라도 이미 발생한 효과의 확인이 선행되어야 한다. 정상 HTTP 일부 성공이나 이번 Workflow 수정의 PASS로 기존 통신 FAIL을 덮지 않는다.
+
 ## 후속 작업
 
 TCP/셸 변경 조사는 보류하고 Workflow 재개 계약을 다음 대상으로 삼았다. 현재 코드의 agent-route.bindingFrom과 agent-selection.remember는 scriptPath 또는 resumeFromRunId 입력을 라우팅 근거로 수용하지 않는다. 기존 native scriptPath 재개 거부는 그보다 앞선 별개 경계다. native의 접근 거부를 우회하지 않고, 필요한 재개 신원·이전 run 연결과 현재 제품의 라우팅 공백을 구분하여 다음 구현 범위를 정한다. 기존7파일 회귀와 자식 취소4사례의 PASS는 유지하고 전체 출하 판정은 아직 HOLD다.
+
+후속 조사에서는 이전 Workflow 스크립트 편집이 별개의 신규 Workflow 자식까지 막는 결함을 재현·수정했다. 새 journal10사례와 기존20사례, 관련 선택 회귀 및 실제 native sol/low·luna/max의 신규 Workflow 두 개 연속 실행이 통과했다. 이 수정은 TCP 문제 해결이나 cache-miss resume 성공의 증거가 아니다. 세부 결과는 [현재 출하 기록](release-completion-2026-09-14.md)에 있다.

@@ -130,3 +130,27 @@ const baselineFailed = tests.length >= 2 && tests[0].passed === false;
 `testsUnrun:2`는 승인 대기가 두 번 만료됐다는 뜻으로, 전송 기록에서 관측한180초 대기2회와 일치한다. 수정 전이었다면 이 실행도 `passed:false`·`failure:null`로 끝나 같은 역추적과 같은 오독을 반복했을 것이다.
 
 나머지8개 live 모드는 실행하지 않았다.
+
+## CI 범위 확장과 남은 1건
+
+처음 넣은 CI는 `src/test-*.mjs`만 돌렸다. 실제 test는111개이며 `verification/`(mjs4·ps1 1), `poc/`(mjs6), `src/`(ps1 5)가 빠져 있었다. 확장하면서 세 가지가 드러났다.
+
+- `verification/test-dotnet-http-transport.mjs`가 PowerShell을 특정 머신의 Store 빌드 경로에 버전까지 고정하고 있었다. 그 경로는 이 개발 머신에도 없어 **어디서도 통과할 수 없는 상태**였다. 일반 설치 경로로 바꿔 CI에서 통과한다.
+- `verification/`과 `poc/`의 test는 `execArgv`가 채워지면 `DEBUG_RUNTIME_UNSUPPORTED`로 거부한다. `node --test`가 항상 그렇게 하므로 test runner가 이들을 담을 수 없다. 개별 실행으로 분리했다.
+- `.ps1`이 `exit`를 호출하지 않으면 `$LASTEXITCODE`가 이전 값을 유지한다. 이를 판정에 쓰면 통과한 test가 실패로 보고된다.
+
+로컬에서 실패하던 `verification/test-http-transport.mjs`와 `test-dotnet-http-transport.mjs`는 CI에서 통과한다. 로컬 실패는 loopback filter 때문이었다.
+
+### 미해결: poc/test-claude-read-once.mjs의 `read_extra_normal`
+
+CI에서만 실패하며 로컬은33/0으로 통과한다. CI에서 이 파일을 제외했고 나머지110개가 관문을 지킨다.
+
+확정된 것:
+
+- 실패 지점은 `poc/test-claude-read-once.mjs:90`의 `assert.equal(result.resourcesClosed, true)`다.
+- `extra` 모드는 gateway 종료 시점에 요청을 한 번 더 보낸다(`poc/read-test-client.mjs:85`). 느린 환경에서만 재현된다.
+- `finishMs`를1000에서120으로 줄여도 이 사례는 재현되지 않았다. `late-cli`가 먼저 걸린다. 단순한 시간 부족이 아니다.
+
+미확정: `resourcesClosed`는 `activeSockets`·`activeJobs`·`activeTimers`·`activeDeliveries`·`busy`·`transport.activeRequests`·`transport.activeSockets`·`localSessionSecretCleared`·자식 종료의 논리곱인데(`poc/claude-read-once.mjs:117`), **어느 조건이 false인지 기록하지 않는다.** 이어받을 때는 그 진단부터 넣는 것이 순서다.
+
+시도했다가 되돌린 것: `poc/gateway.mjs`의 종료 순서를 바꿔 `server.close()`를 소켓 정리보다 먼저 호출했다. 늦게 들어온 연결이 `socketClosures`에 포함되지 않는 창을 없애려는 의도였으나, gateway·claude-read-once·user-session·request-inspector 네 suite에서28건이 깨져 되돌렸다. 원래 순서에는 확인하지 못한 이유가 있다.

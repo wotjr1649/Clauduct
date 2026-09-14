@@ -91,9 +91,9 @@ const baselineFailed = tests.length >= 2 && tests[0].passed === false;
 
 "과거32-case 대 이번1"은 **서로 다른 축의 비교였다**. 32는 `task.checks`로 한 번의 `TESTS_EXECUTED` 안의 케이스 수이고(development-tasks.mjs:38), `testsExecuted`는 오라클이 돌아간 횟수로 정상 최대값이2다.
 
-### 발견된 코드 건전성 문제2건
+### 코드 건전성 문제2건을 수정했다
 
-수정하지 않았다. 둘 다 이번 오독의 직접 원인이다.
+둘 다 이번 오독의 직접 원인이었다.
 
 - `baselineFailed`는 `tests[0]`이 실제 기준선인지 해시로 확인하지 않는다. 같은 파일의 중단 분류기(`:133`,`:146`)는 `baselineHash`를 검사하는데 판정 경로는 하지 않는다.
 - "검토 미승인 → 테스트 미실행"에 대응하는 failure 코드가 없다. 그래서 `passed:false`·`failure:null`이라는 무진단 실패가 나오고 사유는 `work/events.jsonl`의 `TESTS_UNRUN` 행에만 남는다.
@@ -115,5 +115,18 @@ const baselineFailed = tests.length >= 2 && tests[0].passed === false;
 시간이16배 줄어든 것은180초 검토 대기2회가 사라졌기 때문이다. 요청 수5는 `RELEASE.md:101`이 기록한 과거 성공 사례와 정확히 일치한다. **무인 실행이 통과하지 못한 원인이 승인 게이트라는 진단이 입증됐다.**
 
 승인 주체는 사람이 아니라 에이전트였다. 모델이 쓴 소스는 `retryDelayWithinBudget` 순수 함수로 외부 접근·무한 루프가 없었고, oracle의32-case를 통과했다. 이 실행은 "무인 가능"을 뜻하지 않는다. 검토자가 있을 때 live 경로가 끝까지 동작함을 보인 것이다.
+
+### 수정 검증
+
+`--local-task`와 승인 대행 live는 수정 뒤에도 `passed:true`이고 `testsUnrun:0`이다. 전체130건 회귀도 없다(잔여 실패5건은 별개의 loopback filter 사안).
+
+미승인 경로는 무인 live1회로 직접 관측했다.
+
+| 항목 | 수정 전 | 수정 후 |
+|---|---|---|
+| failure | `null` | **`SOURCE_REVIEW_UNAPPROVED`** |
+| testsUnrun | 없음 | **2** |
+
+`testsUnrun:2`는 승인 대기가 두 번 만료됐다는 뜻으로, 전송 기록에서 관측한180초 대기2회와 일치한다. 수정 전이었다면 이 실행도 `passed:false`·`failure:null`로 끝나 같은 역추적과 같은 오독을 반복했을 것이다.
 
 나머지8개 live 모드는 실행하지 않았다.

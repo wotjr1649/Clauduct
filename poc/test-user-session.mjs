@@ -15,7 +15,7 @@ let passed = 0, failed = 0, sessions = 0, received = 0;
 const watchdog = setTimeout(() => { process.stderr.write('USER_SESSION_TEST_TIMEOUT\n'); process.exit(1); }, 20000);
 async function test(name, action) {
   try { await action(); passed++; }
-  catch (error) { failed++; process.stderr.write(JSON.stringify({ failure: name, error: String(error?.message ?? error).slice(0, 300) }) + '\n'); }
+  catch (error) { failed++; process.stderr.write(JSON.stringify({ failure: name, error: String(error?.message ?? error).slice(0, 200), at: (error?.stack ?? '').split('\n').map(line => line.trim()).find(line => line.includes(import.meta.url.split('/').pop())) ?? null }) + '\n'); }
 }
 const rejects = (action, code) => assert.throws(action, error => safeEntryCategory(error) === code);
 const context = { stdinTTY: true, stdoutTTY: true, env: {}, execArgs: [] };

@@ -25,9 +25,12 @@ for (const model of Object.values(MODELS)) {
   assert.equal(result.purpose, 'compact-template'); assert.equal(JSON.stringify(input), before);
   assert.equal(prepareNative(doc(model.model, 'Ordinary task')).selected.effort, model.effort);
 }
+// The compact cap lowers high/xhigh/max to medium and leaves low/medium alone; assert the
+// rule, not the coincidence that every role default once sat above medium.
 for (const route of Object.values(ROLE_MODELS)) {
   const compact = prepareNative(doc('astra'), { subagent: true, route });
-  assert.equal(compact.selected.model, route.model); assert.equal(compact.selected.effort, 'medium');
+  assert.equal(compact.selected.model, route.model);
+  assert.equal(compact.selected.effort, ['low', 'medium'].includes(route.effort) ? route.effort : 'medium');
   assert.equal(prepareNative(doc('astra', 'Ordinary task'), { subagent: true, route }).selected.effort, route.effort);
 }
 assert.equal(prepareNative(doc('luna', compactPrompt, 'low')).selected.effort, 'low');

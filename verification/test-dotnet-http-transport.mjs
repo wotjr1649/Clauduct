@@ -5,12 +5,29 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { buildBody, buildHeaders, model, effort, checkRuntime } from './manual-http-probe.mjs';
 
 checkRuntime(process.env, process.execArgv);
 const script = fileURLToPath(new URL('./manual-http-probe.ps1', import.meta.url));
 const parser = fileURLToPath(new URL('./summarize-dotnet-response.mjs', import.meta.url));
-const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+const PACKAGE = /^Microsoft[.]PowerShell_7[.][0-9.]+_x64__8wekyb3d8bbwe$/;
+// MSI keeps one stable path; MSIX renames its folder on every update, so the version is
+// discovered rather than pinned here. Absolute candidates only: PATH is never searched.
+function findPowerShell(programFiles = process.env.ProgramFiles) {
+  if (typeof programFiles !== 'string' || !programFiles) throw new Error('POWERSHELL_7_NOT_FOUND');
+  const msi = join(programFiles, 'PowerShell', '7', 'pwsh.exe');
+  if (existsSync(msi)) return msi;
+  const store = join(programFiles, 'WindowsApps');
+  let packages = [];
+  try { packages = readdirSync(store); } catch { packages = []; }
+  const msix = packages.filter(name => PACKAGE.test(name)).sort().reverse()
+    .map(name => join(store, name, 'pwsh.exe')).find(existsSync);
+  if (!msix) throw new Error('POWERSHELL_7_NOT_FOUND');
+  return msix;
+}
+const pwsh = findPowerShell();
 const canary = 'SYNTHETIC_PRIVATE_CANARY';
 const limit = 256 * 1024;
 const event = value => `data: ${JSON.stringify(value)}\r\n\r\n`;

@@ -3,8 +3,8 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try {
-    if ($PSVersionTable.PSVersion.ToString() -cne '7.6.5' -or
-        [System.Environment]::Version.ToString() -cne '10.0.11') { throw 'TRANSPORT_RUNTIME_UNSUPPORTED' }
+    if ($PSVersionTable.PSVersion.ToString() -cne '7.6.6' -or
+        [System.Environment]::Version.ToString() -cne '10.0.12') { throw 'TRANSPORT_RUNTIME_UNSUPPORTED' }
     $taskMode = if ($args.Count -ge 1) { $args[0] } else { '' }
     if ($taskMode -ceq '--live') {
         if ($args.Count -ne 1 -or [Console]::IsInputRedirected -or [Console]::IsOutputRedirected -or

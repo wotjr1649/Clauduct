@@ -185,7 +185,8 @@ async function tests() {
     assert.equal(launch.args.includes('-p'), false); assert.equal(launch.args.includes('--tools'), false);
     assert.equal(launch.options.env.CLAUDE_CODE_OAUTH_TOKEN, '');
     assert.equal(JSON.stringify(launch.args).includes(launch.options.env.ANTHROPIC_AUTH_TOKEN), false);
-    const settings = JSON.parse(launch.args.at(-1));
+    // --agents now always follows --settings, so locate the value instead of taking the tail.
+    const settings = JSON.parse(launch.args[launch.args.indexOf('--settings') + 1]);
     assert.equal(settings.modelPicker.options[0].model, MODEL);
     assert.equal(settings.modelPicker.replaceBuiltInOptions, true);
     assert.equal(Object.hasOwn(settings.env, 'ANTHROPIC_AUTH_TOKEN'), false);

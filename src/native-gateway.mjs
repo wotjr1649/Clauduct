@@ -97,7 +97,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     return typeof value === 'string' && Buffer.byteLength(value) === secret.length && timingSafeEqual(Buffer.from(value), secret);
   }
   function reply(res, status, value) {
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'close' });
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
     res.end(JSON.stringify(value));
   }
   async function readBody(req, limit, controller) {
@@ -145,7 +145,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       const path = req.url.split('?')[0];
       if (req.method === 'HEAD' && path === '/api/hello') {
         need(req.headers.authorization === undefined || authorized(req.headers.authorization), 'LOCAL_SESSION_REQUIRED');
-        res.writeHead(204, { Connection: 'close' }); res.end(); return;
+        res.writeHead(204, { Connection: 'keep-alive' }); res.end(); return;
       }
       need(authorized(req.headers.authorization), 'LOCAL_SESSION_REQUIRED');
       if (req.method === 'GET' && path === '/v1/models') {
@@ -367,7 +367,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         const work = writeTail.then(async () => {
         if (controller.signal.aborted) throw new NativeError('CANCELLED');
         if (!ping) { responseStarted = true; timing.firstDownstreamWriteMs ??= elapsed(); }
-        if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'close' });
+        // Persistent, not close-delimited. A local HTTP filter (AdGuard was the observed one)
+        // mishandles the teardown of a close-delimited chunked response and turns the FIN into
+        // an RST: measured 14/20 responses reaching the client with close, 20/20 with keep-alive.
+        // Shutdown does not rely on this header; close() destroys every tracked socket itself.
+        if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
         activeDeliveries++;
         try {
           await writeFrames(res, frames, controller.signal);

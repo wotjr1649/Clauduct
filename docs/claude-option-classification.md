@@ -21,7 +21,7 @@ Clauduct는 자식 Claude에게 `ANTHROPIC_BASE_URL`을 로컬 게이트웨이�
 | `--verify-auto-compact` | 축소 창(100K) 검증 |
 | `--verify-agent-models` | 모델 진입점 프로브 등록 |
 | `--verify-fallback blocked\|allowed` | 스트림 오류 주입 + fallback 설정 팔. 인자 없이는 안 돈다 |
-| `--gpt-agents` `--document-first` | 래퍼 전용 |
+| `--document-first` | 래퍼 전용 |
 | `-p` / `--print` | 래퍼가 비대화형 진입·stdout 분리를 선택하고 같은 flag는 native에 전달 |
 
 ## 3. B — 차단해야 함: 경유 이탈 (도움말이 스스로 말함)

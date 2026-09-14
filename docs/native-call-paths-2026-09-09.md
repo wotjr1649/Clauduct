@@ -22,7 +22,7 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | Read/Edit/Write/Bash | 실행은 native, 선택·결과를 읽는 모델 요청은 gateway | M/A, tool_use_id ↔ tool_result | 프로토콜 합성 검사, 실제 Read/Bash 부분 증거. 도구 자체를 모델 호출로 세지 않음 |
 | ToolSearch·지연 도구 | 검색 실행 native, 현재 도구 목록을 gateway가 변환 | M/A, tool_reference 및 turn tool addition/removal | 로컬 검사 통과, 설치된 모든 도구별 실제 미검증 |
 | Agent/Task: Explore/general-purpose | native 생성·hook·metadata → gateway | A, 원래 부모/호출 ID 검증 | 순차·병렬 실제 부분 통과 |
-| Agent: clauduct-astra/sol/terra/luna/inherit | 세션 한정 정의·native 생성·hook·metadata → gateway | definition-model / definition-inherit, 직접 부모 snapshot | 네 GPT 직접 선택, 직접 부모 기준 손자·비기본 effort 및 완료 복귀 실제 확인. [범위별 증거](audit-2026-09-10-agent-acceptance.md). 모든 조합·Task 도구 실제 실행 증거는 아님 |
+| Agent: clauduct-<모델>-<effort> 14개 | 세션 한정 정의·native 생성·hook·metadata → gateway | definition-model / definition-inherit, 직접 부모 snapshot | 네 GPT 직접 선택, 직접 부모 기준 손자·비기본 effort 및 완료 복귀 실제 확인. [범위별 증거](audit-2026-09-10-agent-acceptance.md). 모든 조합·Task 도구 실제 실행 증거는 아님 |
 | Agent/Task: Plan | 동일 | 기본 sol/xhigh | c94bb0ac request 10/11에서 무명시 Plan/role-default/sol/xhigh 실제 통과. [근거](audit-2026-09-09-plan-lifetime-success.md) |
 | native role=claude | HIGH-03 metadata에서 실제 확인 | 요청 모델, 부모 연결 유지 | 78986b2에서 status whitelist 보완, 새 표시의 실제 출력은 미검증 |
 | inline Skill | native가 스킬 내용을 모델 문맥에 제공 | M/A, 별도 fork가 없으면 현재 요청 정책 | 일반 변환 지원, 개별 skill 전체 실행 미검증 |

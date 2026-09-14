@@ -16,10 +16,10 @@ const metadata = (toolUseId, model, extra = {}) => ({ agentType: 'general-purpos
   ...(model === undefined ? {} : { model }), ...extra });
 let snapshots = new Map();
 const probeLaunch = interactiveLaunch({ port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) },
-  {}, 'D:/SYNTHETIC_PROJECT', MODELS.luna, [], { verifyAgentModels: true, gptAgents: true });
+  {}, 'D:/SYNTHETIC_PROJECT', MODELS.luna, [], { verifyAgentModels: true });
 const agentDefinitions = JSON.parse(probeLaunch.args[probeLaunch.args.indexOf('--agents') + 1]);
 // A delayed first request must not start a child already stopped by the user.
-for (const tool of ['Agent', 'Task']) for (const role of ['general-purpose', 'clauduct-sol', 'clauduct-inherit']) {
+for (const tool of ['Agent', 'Task']) for (const role of ['general-purpose', 'clauduct-sol-xhigh', 'clauduct-inherit']) {
   const stopped = createAgentSelection({ agentDefinitions, timeoutMs: 10,
     readMetadata: async () => metadata('stopped_creation', undefined, { agentType: role, stoppedByUser: true }) });
   const creation = call('stopped_creation', undefined, role);
@@ -33,7 +33,7 @@ for (const definition of [{}, { model: null }, { model: 'unknown' }, { model: MO
 const probeRole = 'clauduct-probe-inherit';
 const definitionSelection = createAgentSelection({ agentDefinitions, timeoutMs: 10, readMetadata: async b => snapshots.get(b.id) });
 for (const [name, expected] of Object.entries(MODELS)) {
-  const id = `general_${name}`, role = `clauduct-${name}`;
+  const id = `general_${name}`, role = `clauduct-${name}-${expected.effort}`;
   definitionSelection.remember(call(id, undefined, role), 'session', undefined, { model: MODELS.luna.model, effort: 'low' });
   snapshots.set(id, metadata(id, undefined, { agentType: role }));
   const chosen = await definitionSelection.resolve(binding(id, { role }));
@@ -46,7 +46,7 @@ assert.deepEqual((await definitionSelection.resolve(binding('general_leaf', { ro
 definitionSelection.remember({ content: [{ type: 'tool_use', id: 'general_resume', name: 'SendMessage',
   input: { to: 'general_sol', message: 'SYNTHETIC' } }] }, 'session', undefined, MODELS.luna);
 definitionSelection.linkResume({ sessionId: 'session', toolUseId: 'general_resume', id: 'general_sol' });
-assert.deepEqual((await definitionSelection.resolve(binding('general_sol', { role: 'clauduct-sol' }))).route, MODELS.sol);
+assert.deepEqual((await definitionSelection.resolve(binding('general_sol', { role: 'clauduct-sol-xhigh' }))).route, MODELS.sol);
 definitionSelection.remember(call('definition_origin', undefined, probeRole), 'session', undefined,
   { model: 'gpt-5.6-luna', effort: 'high' });
 snapshots.set('definition_child', metadata('definition_origin', undefined, { agentType: probeRole }));
@@ -182,7 +182,7 @@ for (const [id, chosen, expected] of [
   ['explicit_sol', 'sol', { model: 'gpt-5.6-sol', effort: 'xhigh' }],
   ['explicit_terra', 'terra', { model: 'gpt-5.6-terra', effort: 'high' }],
   ['explicit_plan', 'luna', { model: 'gpt-5.6-luna', effort: 'max' }],
-  ['default_plan', undefined, { model: 'gpt-5.6-sol', effort: 'xhigh' }]
+  ['default_plan', undefined, { model: 'gpt-6-astra', effort: 'low' }]
 ]) {
   selection.remember(call(id, chosen, 'Plan'), 'session', undefined, parentRoute);
   snapshots.set(id, metadata(id, chosen, { agentType: 'Plan' }));
@@ -553,9 +553,9 @@ try {
   for (const [index, role, expected, effort, selectionSource] of [
     [0, probeRole, 'gpt-5.6-luna', 'high', 'definition-inherit'],
     [1, 'general-purpose', 'gpt-5.6-luna', 'max', 'role-default'],
-    [2, 'Plan', 'gpt-5.6-sol', 'xhigh', 'role-default'],
+    [2, 'Plan', 'gpt-6-astra', 'low', 'role-default'],
     [3, 'clauduct-inherit', 'gpt-5.6-luna', 'high', 'definition-inherit'],
-    ...Object.entries(MODELS).map(([name, model], i) => [i + 4, `clauduct-${name}`, model.model, model.effort, 'definition-model'])
+    ...Object.entries(MODELS).map(([name, model], i) => [i + 4, `clauduct-${name}-${model.effort}`, model.model, model.effort, 'definition-model'])
   ]) {
     const id = `definition_gateway_${index}`;
     gatewayCall = { id, role };

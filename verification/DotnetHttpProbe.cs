@@ -35,7 +35,7 @@ namespace ClauductVerification
 
         public static void CheckRuntime()
         {
-            Require(Environment.Version.ToString() == "10.0.11" && OperatingSystem.IsWindows(), "TRANSPORT_RUNTIME_UNSUPPORTED");
+            Require(Environment.Version.ToString() == "10.0.12" && OperatingSystem.IsWindows(), "TRANSPORT_RUNTIME_UNSUPPORTED");
             Require(!Debugger.IsAttached, "DEBUG_RUNTIME_UNSUPPORTED");
             // Reject, never clear, runtime injection, trace or TLS overrides. Proxy is disabled per handler.
             foreach (string name in new[] { "NODE_OPTIONS", "NODE_DEBUG", "NODE_USE_ENV_PROXY", "NODE_TLS_REJECT_UNAUTHORIZED",
@@ -145,8 +145,10 @@ namespace ClauductVerification
             result["requestedModel"] = "gpt-6-astra";
             result["requestedEffort"] = "xhigh";
             result["clientVersion"] = "0.153.4";
-            result["powerShellVersion"] = "7.6.5";
-            result["dotnetVersion"] = "10.0.11";
+            // The .NET version is measured; CheckRuntime refuses any other. The PowerShell
+            // version has no in-process source here and stays a literal, gated by the .ps1.
+            result["powerShellVersion"] = "7.6.6";
+            result["dotnetVersion"] = Environment.Version.ToString();
             result["requestAttempts"] = attempts; // SendAsync calls; not proof the server received it.
             result["credentialWrites"] = 0;
             result["retries"] = 0; // No second HTTP send is permitted; blocked reconnects have a separate field.

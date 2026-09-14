@@ -14,7 +14,7 @@ clauduct -p --output-format json --max-turns 3 "Summarize the current task"
 
 Windows 설치는 [설치 안내](docs/installation.md)를 따른다. Node.js 24 이상, Claude Code, Codex CLI와 기존 Codex 로그인이 필요하다. Release의 `install.ps1`은 현재 사용자 홈 `.local\bin`에 명령을 설치한다. 설치 후 새 터미널에서 프로젝트로 이동해 실행한다. 소스 ZIP을 직접 푼 경우에는 해당 폴더의 `clauduct.cmd` 전체 경로를 사용한다.
 
-메인 기본 실행은 **astra/low**입니다. 명시적 모델 선택의 기본값(astra/medium, sol/xhigh, terra/high, luna/max)과 고정 agent 정의는 보존합니다. `--effort`로 지정한 값이 우선합니다. 실행 중 `/model` 선택을 사용하며, 모델 미지정 Explore와 일반 역할은 luna/max, Plan은 sol/xhigh로 연결합니다. 자식 메타데이터와 부모 호출 ID로 확인한 명시 모델이 역할 기본값보다 우선합니다. 실제 실행에서 연결을 확인할 수 없으면 AGENT_SELECTION_UNVERIFIED로 중단하며 다른 모델로 추정 배정하지 않습니다.
+메인 기본 실행은 **astra/low**입니다. 명시적 모델 선택의 기본값(astra/medium, sol/xhigh, terra/high, luna/max)과 고정 agent 정의는 보존합니다. `--effort`로 지정한 값이 우선합니다. 실행 중 `/model` 선택을 사용하며, 모델 미지정 Explore와 일반 역할은 luna/max, Plan은 astra/low로 연결합니다. 자식 메타데이터와 부모 호출 ID로 확인한 명시 모델이 역할 기본값보다 우선합니다. 실제 실행에서 연결을 확인할 수 없으면 AGENT_SELECTION_UNVERIFIED로 중단하며 다른 모델로 추정 배정하지 않습니다.
 
 - 텍스트는 생성 중 스트리밍하고, 도구 호출은 응답 완료 검증 뒤에 전달합니다.
 - 기존 Codex가 갱신한 인증을 재읽습니다. 직접 OAuth 갱신이나 인증 파일 쓰기는 하지 않습니다.

@@ -15,4 +15,7 @@ export function selectModel(value = 'astra', effort) {
   if (!selected || (effort !== undefined && !EFFORTS.includes(effort))) throw new Error('UNSUPPORTED_MODEL_OR_EFFORT');
   return { model: selected.model, effort: effort ?? selected.effort };
 }
-export const ROLE_MODELS = Object.freeze({ Explore: MODELS.luna, Plan: MODELS.sol, 'general-purpose': MODELS.luna });
+// Plan states its own route; it deliberately does not alias DEFAULT_SELECTION, which is the
+// main startup value and must stay independently changeable.
+export const ROLE_MODELS = Object.freeze({ Explore: MODELS.luna,
+  Plan: Object.freeze({ model: MODELS.astra.model, effort: 'low' }), 'general-purpose': MODELS.luna });

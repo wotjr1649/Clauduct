@@ -268,11 +268,23 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 **판정: keep-alive 변경 이후 실사용 경로는 AdGuard를 켜도 동작한다.** 개발용 테스트 전수는 여전히 필터를 꺼야 한다(위 3건).
 
-#### 이 실행에서 드러난 별개 결함 1건
+#### 이 실행에서 드러난 별개 결함 1건 — 이후 고쳤다
 
-두 실행 모두 req 3이 `prepare` 단계에서 `OUTPUT_CONFIG_FIELDS` / `UNSUPPORTED_REQUEST`로 실패했다. native의 `generate_session_title` 요청이 `output_config`에 `effort` 외의 필드를 실어 보내는데 `src/native-protocol.mjs:242`가 `effort`만 허용한다. `judgedBetaLabels: ["STRUCTURED_OUTPUTS"]`가 함께 기록됐다.
+두 실행 모두 req 3이 `prepare` 단계에서 `OUTPUT_CONFIG_FIELDS` / `UNSUPPORTED_REQUEST`로 실패했다. native의 세션 제목 생성 요청이 `output_config`에 `format`을 싣는데 `src/native-protocol.mjs:242`가 `effort`만 허용했다. 본 작업은 정상 완료되지만 `requestOutcome`이 `has-failures`가 되어 무인 판정을 오염시킨다.
 
-**AdGuard와 무관하고 이번 변경과도 무관하다**(`native-protocol.mjs`는 건드리지 않았다). 감지된 client 0.154.0이 reference 0.153.4보다 새로워 생긴 기존 호환 공백이다. 세션 제목 생성만 실패하고 본 작업은 정상 완료되지만, `requestOutcome`이 `has-failures`가 되므로 무인 판정에서 오해를 부를 수 있다. **이번 작업 범위 밖이며 별도 판단이 필요하다.**
+**클라이언트가 보내는 것** (claude.exe 2.1.270 정적 분석, side-query 빌더): `output_config: { format: { type:'json_schema', schema:{…} } }`. 제목 스키마는 `{title:string}` 하나이고 응답은 **클라이언트가 직접 파싱한다** — 게이트웨이가 `parsed_output`을 만들 필요는 없다.
+
+**상류가 요구하는 것** ([Responses API structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs)): `text: { format: { type, name, schema, strict } }`. `name`과 `strict`는 필수인데 **클라이언트는 둘 다 보내지 않는다.**
+
+수정: 전송 계층이 둘을 채우고 `output_config.format` → `text.format`으로 옮긴다. **schema는 읽지 않고 통과시킨다** — JSON Schema 의미론은 상류 소관이고, 여기에 두 번째 약한 검증기를 두면 결정권을 가진 쪽과 어긋난다. 거부는 기존 설계대로 클라이언트에 `UNSUPPORTED_REQUEST` 고정 라벨만 나가고 진단에만 사유(`OUTPUT_FORMAT_SHAPE`/`FIELDS`/`TYPE`/`SCHEMA`/`NAME`)가 남는다.
+
+| 검증 | 결과 |
+|---|---|
+| `src/test-native-protocol.mjs` 회귀 12건 | 변환 결과·schema 객체 동일성·effort 독립성·format 없을 때 body 불변·거부 6종 |
+| 전수 (필터 OFF) | **33/33 + PowerShell PASS**, 회귀 0 |
+| **실제 `clauduct -p` 실행** | **`requestOutcome: all-succeeded`, started 2 / succeeded 2 / failed 0** |
+
+실제 실행의 req 3은 `judgedBetaLabels: ["STRUCTURED_OUTPUTS"]`와 함께 `success: true`였고 상류 오류가 없었다. **Codex backend가 `text.format`을 수용한다는 실측이다** — 합성 검사로는 얻을 수 없는 증거이고, 이 매핑의 유일한 미지수였다.
 
 ### 배경 — 실사용 경로가 아니다
 

@@ -11,7 +11,7 @@ export const COMPLETION_FAILURES = Object.freeze(['PARENT_UNVERIFIED', 'PARENT_I
   'NOTIFICATION_TIME', 'NOTIFICATION_HEADER', 'NOTIFICATION_BATCH', 'CHILD_COMPLETION', 'CHILD_RELATIONSHIP',
   'CHILD_METADATA_READ', 'CHILD_IDENTITY', 'CHILD_TRANSCRIPT_READ', 'CHILD_FINAL_RESPONSE',
   'CHILD_FINAL_TIME', 'PARENT_METADATA_READ', 'IDENTITY_RECHECK', 'EVIDENCE_CHANGED']);
-export const COMPLETION_STATES = Object.freeze(['UNRECORDED', 'REQUEST_STARTED', 'RECORDED', 'CONSUMED', 'NONTERMINAL', 'INVALID_RESPONSE']);
+export const COMPLETION_STATES = Object.freeze(['UNRECORDED', 'REQUEST_STARTED', 'RECORDED', 'FAILED', 'CONSUMED', 'NONTERMINAL', 'INVALID_RESPONSE']);
 const fail = (reason = 'UNKNOWN') => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), { selectionReason: reason }); };
 export const SELECTION_IO_CODES = Object.freeze(['ENOTDIR', 'EISDIR', 'EMFILE', 'ENFILE', 'EBUSY', 'EINVAL', 'ERR_ENCODING_INVALID_ENCODED_DATA', 'OTHER']);
 const failIO = error => { throw Object.assign(new Error('AGENT_SELECTION_UNVERIFIED'), {
@@ -172,14 +172,24 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     const state = verified.get(key(session, id));
     if (!state) return;
     state.completion = undefined;
+    state.failure = undefined;
     state.completionState = 'REQUEST_STARTED';
     return state.request = {};
   }
   function delivered(session, id, request, message) {
     const state = verified.get(key(session, id));
-    if (state && request && state.request === request) {
+    if (state && request && state.request === request && !state.failure) {
       state.completionState = message.stop_reason !== 'end_turn' ? 'NONTERMINAL' : !validId(message.id) ? 'INVALID_RESPONSE' : 'RECORDED';
       if (state.completionState === 'RECORDED') state.completion = { id: message.id, at: Date.now() };
+    }
+  }
+  function failed(session, id, request) {
+    const state = verified.get(key(session, id));
+    // Only the currently verified request can leave a failure receipt. A late
+    // callback cannot replace a newer request or a delivered completion.
+    if (state && request && state.request === request && state.completionState === 'REQUEST_STARTED') {
+      state.failure = { at: Date.now() };
+      state.completionState = 'FAILED';
     }
   }
   async function completionResume(binding, previous, signal, evidence) {
@@ -220,15 +230,19 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       // Native 2.1.266 prepends a harness notice. Only the first outer header is
       // parsed; quoted result text cannot provide task identity or completion state.
       const text = latest.message.content;
-      const header = /<task-notification>\s*<task-id>([A-Za-z0-9_-]{1,200})<\/task-id>\s*(?:<tool-use-id>([A-Za-z0-9_-]{1,200})<\/tool-use-id>\s*)?(?:<output-file>[^<]*<\/output-file>\s*)?<status>completed<\/status>\s*<summary>/.exec(text);
+      const header = /<task-notification>\s*<task-id>([A-Za-z0-9_-]{1,200})<\/task-id>\s*(?:<tool-use-id>([A-Za-z0-9_-]{1,200})<\/tool-use-id>\s*)?(?:<output-file>[^<]*<\/output-file>\s*)?<status>(completed|failed)<\/status>\s*<summary>/.exec(text);
       evidence.stage = 'NOTIFICATION_HEADER';
       if (!header || text.indexOf('<task-notification>') !== header.index
         || text.indexOf('<task-notification>', header.index + 1) !== -1
         || !text.trimEnd().endsWith('</task-notification>')) return;
       const child = verified.get(key(binding.sessionId, header[1]));
+      const childFailed = header[3] === 'failed';
+      // Text alone never turns a failed task into authorization to resume.
+      // Native must corroborate a gateway-observed failure of this child.
+      if (childFailed && !child?.failure) return;
       evidence.stage = 'NOTIFICATION_BATCH';
       if (children.some(entry => entry.child === child)) return;
-      const completion = child?.completion;
+      const completion = childFailed ? child?.failure : child?.completion;
       evidence.child = child?.completionState ?? 'UNRECORDED';
       evidence.stage = 'CHILD_COMPLETION';
       if (!completion) return;
@@ -244,13 +258,17 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       const childRecords = await read(childBinding, 'jsonl');
       const final = childRecords.findLast(row => ['user', 'assistant'].includes(row.type));
       evidence.stage = 'CHILD_FINAL_RESPONSE';
-      if (final?.type !== 'assistant' || final.isApiErrorMessage === true
+      // Observed native 2.1.269 API errors use an assistant message with a
+      // stop_sequence terminal. A marker on an arbitrary record is insufficient.
+      if (final?.type !== 'assistant' || (childFailed ? final.isApiErrorMessage !== true
+        || !validId(final.message?.id) || final.message.role !== 'assistant' || final.message.stop_reason !== 'stop_sequence'
+        : final.isApiErrorMessage === true)
         || final.sessionId !== binding.sessionId || final.agentId !== header[1]
-        || final.message?.id !== completion.id || final.message.stop_reason !== 'end_turn') return;
+        || (!childFailed && (final.message?.id !== completion.id || final.message.stop_reason !== 'end_turn'))) return;
       const finalAt = Date.parse(final.timestamp);
       evidence.stage = 'CHILD_FINAL_TIME';
-      if (!Number.isFinite(finalAt) || finalAt < startedAt || finalAt > at) return;
-      children.push({ child, completion, childBinding });
+      if (!Number.isFinite(finalAt) || finalAt < startedAt || finalAt > at || (childFailed && finalAt < completion.at)) return;
+      children.push({ child, completion, childBinding, childFailed });
     }
     // Recheck identities after asynchronous reads; cancellation consumes nothing.
     evidence.stage = 'PARENT_METADATA_READ';
@@ -265,8 +283,8 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     evidence.stage = 'EVIDENCE_CHANGED';
     if (verified.get(key(binding.sessionId, binding.id)) !== previous
       || previous.completion !== parentCompletion
-      || children.some(({ child, completion, childBinding }) =>
-        verified.get(key(binding.sessionId, childBinding.id)) !== child || child.completion !== completion)) return;
+      || children.some(({ child, completion, childBinding, childFailed }) =>
+        verified.get(key(binding.sessionId, childBinding.id)) !== child || (childFailed ? child.failure : child.completion) !== completion)) return;
     return { children, parentCompletion, notification: notifications.at(-1).uuid, notificationIds };
   }
   async function resolveSelection(binding, signal, evidence) {
@@ -331,10 +349,11 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
           }
         }
         signal?.throwIfAborted();
-        if (completion && completion.children.every(entry => entry.child.completion === entry.completion)
+        if (completion && completion.children.every(entry => (entry.childFailed ? entry.child.failure : entry.child.completion) === entry.completion)
           && previous.completion === completion.parentCompletion) {
           for (const { child } of completion.children) {
             child.completion = undefined;
+            child.failure = undefined;
             child.completionState = 'CONSUMED';
           }
           previous.completion = undefined;
@@ -399,5 +418,5 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
       throw error;
     }
   }
-  return { remember, linkSkill, linkWorkflow, linkResume, begin, delivered, resolve: resolveWithDiagnostics };
+  return { remember, linkSkill, linkWorkflow, linkResume, begin, delivered, failed, resolve: resolveWithDiagnostics };
 }

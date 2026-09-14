@@ -118,7 +118,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
   }
   async function handle(req, res, controller) {
     requests++;
-    let release, activeAgent, upstream = false, timing, heartbeat, heartbeatPending = false, responseStarted = false;
+    let release, activeAgent, selectionRequest, upstream = false, timing, heartbeat, heartbeatPending = false, responseStarted = false;
     let writeTail = Promise.resolve(), deliveryError, stage = 'request';
     const stopHeartbeat = () => { if (heartbeat) { clearInterval(heartbeat); heartbeat = undefined; activeHeartbeats--; } };
     const started = performance.now();
@@ -297,7 +297,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         need(agentBinding.selection.sessionId === req.headers['x-claude-code-session-id']
           && agentBinding.selection.parent === req.headers['x-claude-code-parent-agent-id'], 'AGENT_SELECTION_UNVERIFIED');
       }
-      const selectionRequest = agentSelection?.begin(req.headers['x-claude-code-session-id'], agent);
+      selectionRequest = agentSelection?.begin(req.headers['x-claude-code-session-id'], agent);
       const route = agentSelection ? agentBinding?.selection?.route : Object.hasOwn(ROLE_MODELS, role) ? ROLE_MODELS[role] : undefined;
       stage = 'prepare';
       // The client's search side query is a server tool call addressed to this gateway, not a
@@ -472,6 +472,9 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       rejected++;
       // Only locally constructed fixed categories cross this diagnostic boundary.
       const category = error instanceof NativeError ? error.code : upstream ? 'PROTOCOL_REJECTED' : 'INVALID_REQUEST';
+      if (!controller.signal.aborted && !closing && !['CANCELLED', 'CLIENT_DISCONNECTED'].includes(category)) {
+        agentSelection?.failed?.(req.headers['x-claude-code-session-id'], req.headers['x-claude-code-agent-id'], selectionRequest);
+      }
       if (!timing) {
         lifetime.rejectedBeforeStart++;
         const rejectedLabel = diagnosticCategory(category);

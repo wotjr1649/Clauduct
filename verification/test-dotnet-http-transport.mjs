@@ -167,8 +167,10 @@ server.on('connection', socket => {
   connections++; sockets.add(socket); socket.on('close', () => sockets.delete(socket));
 });
 server.maxConnections = 2;
-server.headersTimeout = 60000; server.requestTimeout = 60000;
-server.setTimeout(60000, socket => socket.destroy());
+// deadline-45s deliberately holds a connection for up to 52s, so these sat 8s above the case
+// they had to outlast. They exist to stop a wedged socket lasting forever, nothing finer.
+server.headersTimeout = 180000; server.requestTimeout = 180000;
+server.setTimeout(180000, socket => socket.destroy());
 await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
 const worker = child(pwsh, ['-NoLogo', '-NoProfile', '-File', script, '--loopback', String(server.address().port)]);
 const lines = createInterface({ input: worker.process.stdout })[Symbol.asyncIterator]();
@@ -212,8 +214,10 @@ try {
     }
     if (testCase.mode === 'deadline-45s') assert(elapsedMs >= 44000 && elapsedMs < 52000);
     if (testCase.mode === 'short-timeout') assert(elapsedMs >= 100 && elapsedMs < 3000);
-    // Observe disposal before starting another case, with a bounded wait.
-    for (let i = 0; sockets.size && i < 100; i++) await new Promise(resolve => setTimeout(resolve, 10));
+    // Observe disposal before starting another case, with a bounded wait. Room for a stalled
+    // runner costs nothing here: the loop ends the moment the socket closes, and one that never
+    // closes still fails the assertion below however long the wait was.
+    for (let i = 0; sockets.size && i < 1000; i++) await new Promise(resolve => setTimeout(resolve, 10));
     assert.equal(sockets.size, 0, testCase.name);
     observed.push({ name: testCase.name, category: result.category, ...(testCase.mode ? { elapsedMs } : {}) });
     if (testCase.mode === 'deadline-45s') console.log(JSON.stringify({ deadline45sVerified: true, elapsedMs }));

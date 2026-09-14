@@ -307,7 +307,9 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 - **Plan을 astra/low로 내린 계획 품질 영향은 미측정이다.** 이득도 손실도 근거가 없다는 점을 확인한 뒤의 선택으로 기록한다. 되돌리려면 `src/models.mjs:18-21` 한 곳이다.
 - Explore=luna/max, general-purpose=luna/max는 그대로다. 이 경로의 effort 하향 근거는 여전히 없다.
-- `verification/test-dotnet-http-transport.mjs`의 `pwsh.exe` spawn 실패는 baseline과 동일한 기존 문제다. 이번 작업 대상이 아니다.
+- **`verification/test-dotnet-http-transport.mjs`의 런타임 핀 — 하나로 둘 수 없다는 것이 CI에서 드러났다.** 처음엔 `pwsh.exe` spawn ENOENT였고(Store 설치 경로에 버전이 박혀 있어 PowerShell 업데이트로 무효화), 경로를 MSI·MSIX 양쪽 탐색으로 바꾸고 핀을 7.6.6/10.0.12로 올렸다. 그러자 **CI가 `:82`에서 실패**했다 — `offline.code` 1≠0, 스크립트가 `TRANSPORT_RUNTIME_UNSUPPORTED`로 종료. `origin/main`(5956453)의 CI는 초록불이고 main의 핀은 7.6.5/10.0.11이므로 **CI 러너는 7.6.5/10.0.11**이다. 제 머신은 7.6.6/10.0.12다. 한쪽만 보고 올린 것이 회귀를 만들었다.
+
+  수정: 핀을 **검증된 런타임 집합**으로 바꿨다 — PowerShell `{7.6.5, 7.6.6}`, .NET `{10.0.11, 10.0.12}`. 완화가 아니다. 목록 밖 런타임은 여전히 거부하며, 목록에 넣는 조건은 "그 런타임에서 probe를 실제로 돌려 관측을 확인했을 것"으로 기존 핀의 의도와 같다. 7.6.5는 main의 CI 초록불이, 7.6.6은 이번 35 loopback 케이스 실행이 근거다. 결과의 `powerShellVersion`도 리터럴에서 **실측값**으로 바꿨다 — 측정하지 않은 값을 단언하지 않는다.
 - 프로젝트 `.claude/agents/*.md` 정의의 effort는 여전히 게이트웨이에 도달하지 않는다(`src/clauduct.mjs:315`가 런처 주입 정의만 넘긴다). 미관측.
 - **effort A/B는 하지 않기로 했다.** 적대적 검토에서 셋이 걸렸다. ① 지연 수치가 바꿀 결정이 없다 — 메인 effort는 사용자 지정이고 역할 기본값은 지연·품질 트레이드오프라 지연만으로 정할 수 없다. ② 같은 성격 요청의 관측 편차가 1.5~33초라 n=3은 노이즈에 묻힌다. ③ 텍스트 종료 턴을 강제하는 설계는 이 문서가 지적한 편향을 오히려 고착시킨다. 대신 계측을 고쳐 실사용에서 비용 없이 쌓이게 했다.
 - Plan을 astra/low로 내린 계획 품질은 자동 판정 기준이 없어 A/B 대상이 아니다. 실사용에서 나빠졌다고 느끼면 `src/models.mjs:18-21` 한 곳으로 되돌린다.

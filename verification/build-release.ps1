@@ -20,7 +20,7 @@ if ($commit -notmatch '^[a-f0-9]{40}$') { throw 'RELEASE_COMMIT_INVALID' }
 # Only this reviewed distribution surface. No profiles, status, prompts, audit
 # transcripts, generated app-server schemas, VCS history, or untracked files.
 $paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md',
-    'docs/release-completion-2026-09-14.md', 'docs/tcp-shell-assessment-2026-09-14.md', 'src',
+    'docs/release-completion-2026-09-14.md', 'docs/session-29-release-verdict.md', 'docs/tcp-shell-assessment-2026-09-14.md', 'src',
     'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs', 'verification/test-manual-http-probe.mjs',
     'verification/verify-live.mjs', 'verification/verify-native-headless.ps1',
     'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1',
@@ -37,6 +37,7 @@ $paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md',
     'verification/completion-relay-target.mjs',
     'verification/native-result-relay-entry.mjs', 'verification/verify-native-result-relay.ps1', 'verification/verify-result-relay-evidence.mjs',
     'verification/read-transport-progress.ps1',
+    'verification/fixture-token-budget.mjs',
     'verification/guarded-headless-entry.mjs', 'verification/native-recovery-entry.mjs',
     'verification/native-development-entry.mjs',
     'verification/native-development-local-entry.mjs', 'verification/fixtures/development-responses.mjs',

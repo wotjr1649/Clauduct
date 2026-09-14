@@ -4,6 +4,7 @@ import { searchRequestBody } from '../src/native-search.mjs';
 import { verifyCompletionRelayTarget } from './completion-relay-target.mjs';
 import { developmentSourceFromArguments } from './development-source-policy.mjs';
 import { developmentTask } from './development-tasks.mjs';
+import { fixtureTokenBudget } from './fixture-token-budget.mjs';
 
 const need = ok => { if (!ok) throw new NativeError('VERIFICATION_TOOL_INPUT_REJECTED'); };
 const fields = (value, allowed) => value && typeof value === 'object' && !Array.isArray(value)
@@ -13,8 +14,10 @@ const text = (value, maximum) => typeof value === 'string' && value.length > 0 &
 // Verification-only execution boundary. Model output is data; only these exact
 // reviewed effects may be delivered to the native tools during a live fixture.
 export function createFixtureToolPolicy(policy) {
-  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode', 'phase', 'taskId']) && policy.version === 1
+  need(fields(policy, ['version', 'kind', 'workingRoot', 'readPath', 'workflowScript', 'parentPrompt', 'childPrompts', 'completionMode', 'phase', 'taskId', 'tokenBudget']) && policy.version === 1
     && ['agent', 'completion', 'workflow', 'image', 'webfetch', 'websearch', 'none', 'recovery', 'development'].includes(policy.kind) && text(policy.workingRoot, 1024));
+  need(policy.tokenBudget === undefined || fields(policy.tokenBudget, ['maxInputTokens', 'maxOutputTokens', 'requirePreGenerationLimit']));
+  fixtureTokenBudget(policy.tokenBudget);
   if (['agent', 'completion', 'image'].includes(policy.kind)) need(text(policy.readPath, 1024));
   else if (policy.kind === 'workflow') need(text(policy.workflowScript, 8192));
   if (policy.kind === 'completion') need(text(policy.parentPrompt, 8192) && Array.isArray(policy.childPrompts)
@@ -119,6 +122,7 @@ export function createFixtureToolPolicy(policy) {
 
 export function guardFixtureTransport(transport, policy, { onUsage, onUsageUnobserved } = {}) {
   const check = createFixtureToolPolicy(policy);
+  const limits = fixtureTokenBudget(policy.tokenBudget);
   need(onUsage === undefined || typeof onUsage === 'function');
   need(onUsageUnobserved === undefined || typeof onUsageUnobserved === 'function');
   const active = new Set();
@@ -133,7 +137,7 @@ export function guardFixtureTransport(transport, policy, { onUsage, onUsageUnobs
         sawCompletion: ['completed', 'done'].includes(timing?.terminalState) };
     }) });
   const usage = { inputTokens: 0, outputTokens: 0, completions: 0, unobservedCompletions: 0,
-    maxInputTokens: 131072, maxOutputTokens: 32768, imageFormatMask: 0 };
+    maxInputTokens: limits.maxInputTokens, maxOutputTokens: limits.maxOutputTokens, imageFormatMask: 0 };
   const snapshot = () => ({ ...usage, requestAttempts: transport.diagnostics?.().requestAttempts ?? null });
   const inspect = event => {
     if (event?.type === 'response.completed') {

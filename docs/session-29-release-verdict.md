@@ -48,3 +48,10 @@
 - F12 제품: TaskOutput 구조화 결과를 원본 호출/현재 child request/metadata/마지막 응답에 결합하고, 메인의 동일 부모 SendMessage 재개에서 원자적으로 소비한다. 29개 새 검사 및 기존 선택/실패/다중알림 검사가 통과했다. 공개 native sol 실패·성공, luna 실패·취소4사례는 같은 부모/세션, 자식 시작2개, 보고서 쓰기1회, cleanup9/잔여0을 독립 대조했다. `.tmp/session-29-release/relay-native-verified.json`. 최초 wrapper의 상태 필드명 오류/검증기 project 디렉터리 가정 실패는 유지하고 원자료를 재검증했다.
 - 넓힌 gateway 검사는 22개 뒤20초 watchdog에서 실패했다. 변경 전 f425cf0을 별도 새 디렉터리에 추출한 기준선도 정확히 같은22개 뒤 watchdog 실패다. `.tmp/session-29-release/gateway-baseline.json`과 `relay-related-tests.json`. 이를 새 코드의 회귀 PASS나 HTTP 수정 완료로 표시하지 않는다.
 - F14 원자료 대조: 이전 공개 probe의 구조화 반환 scriptPath와 실제 재호출 인수는 문자 단위 동일(356자, backslash14개)했다. 정확한 반환 경로를 native 허용 읽기 범위 검사가 거부했다. 오류를 경로 파싱 착오라고 추정해 재시도하지 않는다. 새 프로세스 동일 저장 세션 정상 Workflow 재개는 아직 입증할 수 없어 차단 상태다.
+- F12 변경 커밋: `2ac9963a3ea18fad09686031f7d6da4ccc3b4033`.
+- 출력32768 고정값을 낮출 수 있게 headless/development 실행·예약·fixture 사용량·PowerShell 판독의 한도를 연결했다. 기본값과 과거 원장은 유지한다. `-MaxOutputTokens 30000 -RequirePreGenerationLimit`는 현재 전송의 한계를 명시적으로 거부한다. 실제 headless 진입 preflight에서 실행 디렉터리 생성0/native시작0/credential0/실요청0을 확인했고 `.tmp/session-29-release/live-preflight-blocked.json`에 남겼다. 이 옵션을 빼고 같은 실호출을 진행하지 않는다.
+- 예산 검사19개, PowerShell 한도 판독3개 및 기존 관련10파일이 통과했다. 낮은 한도(각 단계 입력10000/출력3000)로 두 조합의 공개 native 출력 단절→이전 worker 종료→새 프로세스 동일 세션 개발 마감을 확인했다. 각8개 고정 응답, sol5805ms/luna5497ms, 묶음 쓰기1/파일 쓰기2, 최초 OUTPUT_PIPE_CLOSED 보존, 실제 backend0이다. `lower-budget-recovery-sol.json`/`lower-budget-recovery-luna.json` 및 first/finish 원자료가 근거다. 일반 저장 세션 재개 성공이며 Workflow 재개 성공으로 대체하지 않는다.
+
+### 예산 인터페이스
+
+`verification/verify-native-headless.ps1`의 `-MaxInputTokens`/`-MaxOutputTokens`와 `verifyNativeDevelopment()`의 `maxObservedInputTokens`/`maxObservedOutputTokens`는 기존 한도 이하의 **완료 사용량 제한**이다. `-RequirePreGenerationLimit` 또는 `requirePreGenerationLimit: true`는 현재 `VERIFICATION_PREGENERATION_LIMIT_UNAVAILABLE`로 실행 전 거부된다. 관측 한도를 설정했다고 생성량이 그 값에서 멈춘다고 주장하지 않는다. 일반 Responses API의 [max_output_tokens 정의](https://developers.openai.com/api/reference/typescript/resources/responses/methods/create)는 공개 API 계약이며 구독 backend가 이를 지원한다는 증거는 아니다.

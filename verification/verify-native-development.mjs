@@ -15,6 +15,7 @@ import { readVerificationLedger } from './verification-ledger.mjs';
 import { publicDevelopmentSource } from './fixtures/development-responses.mjs';
 import { rateLimitEvidence } from '../src/rate-limit-observation.mjs';
 import { createExecutionReservation, settleExecutionReservation, readExecutionReservation } from './execution-reservation.mjs';
+import { fixtureTokenBudget } from './fixture-token-budget.mjs';
 
 const need = (ok, label) => { if (!ok) throw new Error(label); };
 const sleep = ms => new Promise(done => setTimeout(done, ms));
@@ -31,7 +32,7 @@ function nativeClientsStopped(rows) {
 function developmentHashes(project, localNative) {
   const files = [localNative ? 'verification/native-development-local-entry.mjs' : 'verification/native-development-entry.mjs',
     'verification/stop-owned-native-tree.ps1', 'verification/fixtures/development-mcp.mjs', 'verification/verify-native-development.mjs',
-    'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs',
+    'verification/development-fixture.mjs', 'verification/development-tasks.mjs', 'verification/development-source-policy.mjs', 'verification/fixture-tool-policy.mjs', 'verification/fixture-token-budget.mjs',
     'verification/development-source-files.mjs', 'verification/fixtures/development-project-oracle.mjs', 'verification/fixtures/development-write-worker.mjs',
     'verification/development-source-grammar.mjs', 'verification/registered-development-tasks.mjs', 'verification/development-artifacts.mjs', 'verification/development-change.mjs', 'verification/fixtures/development-integration-oracle.mjs',
     'verification/native-output.mjs', 'verification/verification-ledger.mjs', 'verification/execution-reservation.mjs', 'verification/fixtures/development-oracle.mjs', 'verification/fixtures/development-window-oracle.mjs',
@@ -456,7 +457,9 @@ function resumeDevelopmentFixture(root, model, localNative, taskId, incomplete =
 export async function verifyNativeDevelopment({ model, powershell, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
   localNative = false, cutOutputAfterPass = false, resumeRoot, taskId = DEFAULT_DEVELOPMENT_TASK_ID, continueFrom, requestLimit = 16,
   earlyExitAfterRead = false, resumeIncompleteRoot, onReservation, executionAccountHash, resumeInterruptedRoot, holdAfterSourceWrite = false,
-  holdAfterTaskRead = false, holdAfterFirstSourceWrite = false, recoverAfterFirstSourceWrite = false }) {
+  holdAfterTaskRead = false, holdAfterFirstSourceWrite = false, recoverAfterFirstSourceWrite = false,
+  maxObservedInputTokens = 131072, maxObservedOutputTokens = 32768, requirePreGenerationLimit = false }) {
+  fixtureTokenBudget({ maxInputTokens: maxObservedInputTokens, maxOutputTokens: maxObservedOutputTokens, requirePreGenerationLimit });
   const effort = { luna: 'max', sol: 'low' }[model];
   need(typeof model === 'string' && Object.hasOwn({ luna: 'max', sol: 'low' }, model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe') && typeof localNative === 'boolean'
@@ -506,10 +509,10 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
   const entry = join(project, 'verification', localNative ? 'native-development-local-entry.mjs' : 'native-development-entry.mjs'), helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
   const phaseMs = localNative ? 30000 : finishing ? 120000 : 600000;
   const configRoot = context?.configRoot ?? fixture.configRoot ?? join(root, 'config');
-  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, earlyExitAfterRead, holdAfterFirstSourceWrite, recoverAfterFirstSourceWrite, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens: 131072, maxObservedOutputTokens: 32768,
+  const budget = { model, effort, taskId, localNative, phase, cutOutputAfterPass, earlyExitAfterRead, holdAfterFirstSourceWrite, recoverAfterFirstSourceWrite, phaseMs, requestLimit, maxTurns: 8, maxObservedInputTokens, maxObservedOutputTokens,
     outputBytes: 1048576, mainConcurrency: 1, priorAttempts, priorElapsedMs, priorInputTokens, priorOutputTokens,
     cumulativeReservedAttempts: priorAttempts + requestLimit, cumulativeReservedMs: priorElapsedMs + phaseMs,
-    cumulativeObservedInputLimit: priorInputTokens + 131072, cumulativeObservedOutputLimit: priorOutputTokens + 32768,
+    cumulativeObservedInputLimit: priorInputTokens + maxObservedInputTokens, cumulativeObservedOutputLimit: priorOutputTokens + maxObservedOutputTokens,
     basis: 'The initial eight-turn code task permits up to sixteen attempts and ten minutes, including source review. An explicitly smaller requestLimit reduces both the reservation and enforced transport budget; it never raises a cumulative cap.',
     oracleHash: fixture.oracleHash, taskHash: fixture.taskHash, mcpHash: sourceHash(read(join(work, '.mcp.json'))),
     ...(context ? { continuedFrom: context.root, previousTaskId: context.previousTaskId, previousSourceSha256: context.sourceSha256 } : {}),

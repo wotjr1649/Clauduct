@@ -8,7 +8,10 @@ param([switch] $Live, [ValidateSet('text', 'stream-json', 'read-edit', 'agent', 
     [switch] $FailFirstConnection,
     [ValidatePattern('(?-i)^(?:[a-f0-9]{32})?$')][string] $RunId = '',
     [ValidateRange(1, 120)][int] $TimeoutSeconds = 90,
-    [ValidateRange(1, 256)][int] $RequestLimit = 16)
+    [ValidateRange(1, 256)][int] $RequestLimit = 16,
+    [ValidateRange(1,131072)][int] $MaxInputTokens = 131072,
+    [ValidateRange(1,32768)][int] $MaxOutputTokens = 32768,
+    [switch] $RequirePreGenerationLimit)
 
 $ErrorActionPreference = 'Stop'
 if (-not $Live) { throw 'LIVE_FLAG_REQUIRED' }
@@ -21,6 +24,10 @@ $completionRelay = $Case -eq 'completion' -and $CompletionMode -eq 'relay'
 $runClock = [Diagnostics.Stopwatch]::StartNew()
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).ProviderPath
+$tokenPreflight = & (Get-Command node.exe -CommandType Application | Select-Object -First 1).Source (Join-Path $taskRoot 'verification/fixture-token-budget.mjs') ([string]$MaxInputTokens) ([string]$MaxOutputTokens) ($RequirePreGenerationLimit.IsPresent.ToString().ToLowerInvariant())
+if ($LASTEXITCODE -ne 0) { throw 'VERIFICATION_TOKEN_PREFLIGHT_FAILED' }
+$null = $tokenPreflight | ConvertFrom-Json -AsHashtable
+if (($MaxInputTokens -ne 131072 -or $MaxOutputTokens -ne 32768) -and $Case -notin @('text','stream-json','agent','completion','workflow','image','webfetch','websearch')) { throw 'VERIFICATION_TOKEN_LIMIT_CASE_UNSUPPORTED' }
 . (Join-Path $taskRoot 'verification/read-transport-progress.ps1')
 $temporaryRoot = Join-Path $taskRoot '.tmp'
 foreach ($boundary in @($taskRoot, $temporaryRoot)) {
@@ -179,6 +186,7 @@ $guardedFixture = $Case -in @('text', 'stream-json', 'agent', 'completion', 'wor
 if ($guardedFixture) {
     $policyPath = Join-Path $fixtureRoot 'tool-policy.json'
     $policy = @{ version = 1; kind = $(if ($Case -in @('text', 'stream-json') -or $FailFirstConnection) { 'none' } else { $Case }); workingRoot = $workingRoot }
+    $policy.tokenBudget = @{ maxInputTokens = $MaxInputTokens; maxOutputTokens = $MaxOutputTokens }
     if ($Case -in @('agent', 'completion')) { $policy.readPath = Join-Path $taskRoot 'src/models.mjs' }
     elseif ($Case -eq 'image') { $policy.readPath = $imagePath }
     elseif ($Case -eq 'workflow') { $policy.workflowScript = $workflowScript }
@@ -449,7 +457,7 @@ try {
                 if ($readerText.Length -lt 2048) {
                     try {
                         if ($readerErr.GetAwaiter().GetResult().Length -ne 0) { throw 'VERIFICATION_LEDGER_READER_STDERR' }
-                        $accounting = ConvertFrom-ClauductFixtureAccounting -UsageText $stderr -JournalText $readerText -RequestLimit $RequestLimit
+                        $accounting = ConvertFrom-ClauductFixtureAccounting -UsageText $stderr -JournalText $readerText -RequestLimit $RequestLimit -MaxInputTokens $MaxInputTokens -MaxOutputTokens $MaxOutputTokens
                         $fixtureUsage = $accounting.usage; $fixtureUsageSource = $accounting.source
                         $fixtureJournal = $accounting.journal; $fixtureJournalState = 'valid'
                     } catch { }
@@ -461,7 +469,7 @@ try {
         } finally { if ($null -ne $reader) { $reader.Dispose() } }
         $passed = $passed -and $null -ne $fixtureUsage -and $fixtureUsage.completions -gt 0 -and
             $fixtureUsage.unobservedCompletions -eq 0 -and $fixtureJournal.version -eq 2 -and
-            $fixtureUsage.inputTokens -le 131072 -and $fixtureUsage.outputTokens -le 32768 -and
+            $fixtureUsage.inputTokens -le $MaxInputTokens -and $fixtureUsage.outputTokens -le $MaxOutputTokens -and
             $fixtureUsage.requestAttempts -gt 0 -and $fixtureUsage.requestAttempts -le $RequestLimit -and
             $ledgerReaderStopped -eq $true -and $null -ne $fixtureJournal -and $fixtureJournal.finalRecorded -and -not $fixtureJournal.truncatedTail -and $fixtureJournal.matchedFooter -ne $false
         if ($Case -eq 'image') {

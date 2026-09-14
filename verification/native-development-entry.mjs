@@ -10,6 +10,7 @@ import { guardFixtureTransport } from './fixture-tool-policy.mjs';
 import { createVerificationLedger } from './verification-ledger.mjs';
 import { developmentTask, developmentFunctionNames } from './development-tasks.mjs';
 import { readExecutionReservation } from './execution-reservation.mjs';
+import { fixtureTokenBudget } from './fixture-token-budget.mjs';
 
 export function createDevelopmentContextCheck(previousTaskId) {
   const previousFunctions = developmentFunctionNames(previousTaskId);
@@ -37,9 +38,11 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
   const path = join(runRoot, phase === 'development' ? 'budget.json' : phase === 'development-finish' ? 'budget-finish.json' : 'budget-retry.json'), info = lstatSync(path);
   if (!info.isFile() || info.isSymbolicLink() || info.size > 16384) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const budget = JSON.parse(readFileSync(path, 'utf8'));
+  fixtureTokenBudget({ maxInputTokens: budget.maxObservedInputTokens, maxOutputTokens: budget.maxObservedOutputTokens,
+    requirePreGenerationLimit: budget.requirePreGenerationLimit ?? false });
   developmentTask(budget.taskId);
   if (typeof budget.taskId !== 'string' || !Object.hasOwn({ luna: 'max', sol: 'low' }, budget.model) || budget.effort !== { luna: 'max', sol: 'low' }[budget.model]
-    || budget.maxObservedInputTokens !== 131072 || budget.maxObservedOutputTokens !== 32768
+    || !Number.isSafeInteger(budget.maxObservedInputTokens) || !Number.isSafeInteger(budget.maxObservedOutputTokens)
     || !Number.isSafeInteger(budget.requestLimit) || budget.requestLimit < 1 || budget.requestLimit > 16) throw new Error('INVALID_DEVELOPMENT_ENTRY');
   const reservation = readExecutionReservation(join(runRoot, `usage-${phase}`));
   const expectedAllowance = { attempts: budget.requestLimit, inputTokens: budget.maxObservedInputTokens,
@@ -71,6 +74,7 @@ export async function runNativeDevelopmentEntry({ entryArgs = process.argv.slice
         onAttempt: value => ledger.record('attempt', { ...guarded?.fixtureUsage(), requestAttempts: value.requestAttempts }),
         onResponseLimits: value => { record({ event: 'RESPONSE_LIMITS', ...value }); } }) });
       guarded = guardFixtureTransport(transport, { version: 1, kind: 'development', taskId: budget.taskId, workingRoot: process.cwd(),
+        tokenBudget: { maxInputTokens: budget.maxObservedInputTokens, maxOutputTokens: budget.maxObservedOutputTokens },
         ...(phase === 'development-finish' ? { phase: 'finish' } : {}) }, { onUsage: value => {
         ledger.record('usage', value);
         record({ event: 'USAGE', usage: { input_tokens: value.inputTokens - previousInput, output_tokens: value.outputTokens - previousOutput } });

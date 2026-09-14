@@ -1,5 +1,6 @@
 function ConvertFrom-ClauductFixtureAccounting {
-    param([string] $UsageText, [string] $JournalText, [int] $RequestLimit)
+    param([string] $UsageText, [string] $JournalText, [int] $RequestLimit,
+        [ValidateRange(1,131072)][int] $MaxInputTokens = 131072, [ValidateRange(1,32768)][int] $MaxOutputTokens = 32768)
     try {
         if ($UsageText.Length -gt 256KB -or $JournalText.Length -gt 2048 -or $RequestLimit -lt 1 -or $RequestLimit -gt 256) { throw 'INVALID' }
         $parse = {
@@ -29,7 +30,7 @@ function ConvertFrom-ClauductFixtureAccounting {
         $prefix = 'CLAUDUCT_FIXTURE_USAGE '
         $lines = @($UsageText -split '\r?\n' | Where-Object { $_.StartsWith($prefix) })
         if ($lines.Count -gt 1 -or ($lines.Count -eq 1 -and $lines[0].Length -gt 1024)) { throw 'INVALID' }
-        $usage = @{ maxInputTokens = 131072; maxOutputTokens = 32768 }
+        $usage = @{ maxInputTokens = $MaxInputTokens; maxOutputTokens = $MaxOutputTokens }
         foreach ($key in $counters) { $usage[$key] = $journal[$key] }
         $matched = $null; $source = 'journal'
         if ($lines.Count -eq 1) {

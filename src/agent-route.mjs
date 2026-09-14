@@ -27,19 +27,26 @@ export function bindingFrom(input, source) {
   }
   if (input?.hook_event_name === 'PostToolUse' && input.tool_name === 'Workflow') {
     const result = input.tool_response, script = input.tool_input?.script;
+    // Native expands scriptPath into script before PostToolUse. The model call
+    // remains path-only; the selector verifies that separate pending call.
+    const resume = typeof script === 'string' && input.tool_input?.name === undefined
+      && typeof input.tool_input?.scriptPath === 'string' && typeof input.tool_input?.resumeFromRunId === 'string';
     if (result?.status !== 'async_launched' || result.taskType !== 'local_workflow'
-      || typeof script !== 'string' || input.tool_input.scriptPath !== undefined
-      || input.tool_input.name !== undefined || input.tool_input.resumeFromRunId !== undefined) return null;
+      || !resume && (typeof script !== 'string' || input.tool_input.scriptPath !== undefined
+      || input.tool_input.name !== undefined || input.tool_input.resumeFromRunId !== undefined)) return null;
     const valid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);
     if (!valid(input.session_id) || !valid(input.tool_use_id) || !valid(result.taskId)
       || typeof result.runId !== 'string' || !/^wf_[a-z0-9-]{6,}$/.test(result.runId)
       || typeof result.workflowName !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(result.workflowName)
       || ![input.transcript_path, result.transcriptDir, result.scriptPath].every(value => typeof value === 'string' && value.length <= 4096)
-      || (input.agent_id !== undefined && !valid(input.agent_id)) || Buffer.byteLength(script) > 524288) throw new Error('INVALID_AGENT_BINDING');
+      || (input.agent_id !== undefined && !valid(input.agent_id)) || Buffer.byteLength(script) > 524288
+      || resume && (input.tool_input.resumeFromRunId !== result.runId || input.tool_input.scriptPath !== result.scriptPath)) throw new Error('INVALID_AGENT_BINDING');
     return { kind: 'workflow-result', sessionId: input.session_id, toolUseId: input.tool_use_id,
       taskId: result.taskId, runId: result.runId, workflowName: result.workflowName,
       transcriptPath: input.transcript_path, transcriptDir: result.transcriptDir, scriptPath: result.scriptPath,
-      scriptDigest: createHash('sha256').update(script).digest('hex'), ...(input.agent_id && { parent: input.agent_id }) };
+      ...(resume ? { resumeFromRunId: input.tool_input.resumeFromRunId, resumedScriptDigest: createHash('sha256').update(script).digest('hex') }
+        : { scriptDigest: createHash('sha256').update(script).digest('hex') }),
+      ...(input.agent_id && { parent: input.agent_id }) };
   }
   if (input?.hook_event_name === 'PostToolUse' && input.tool_name === 'SendMessage') {
     const valid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value);

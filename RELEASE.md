@@ -1,6 +1,6 @@
 # Clauduct — Windows 릴리즈 안내
 
-현재 후보의 무인 개발 출하 판정은 **HOLD**다. 중첩 자식의 수집 결과·실패를 같은 부모의 재개에 연결하는 제품 경로를 추가했다. Workflow 정상 재개는 native의 반환 경로 접근 거부와 재개 신원 연결 공백이 남아 있다. 압축·재시작·자식 실패의 결합 및 기존 요구 표의 일부 설정 조합도 충분한 증거가 없다. 추가 실호출은 출력30000의 생성 전 상한을 보장하지 못해 시작 전 차단했다. [Session-29 판정](docs/session-29-release-verdict.md)에 적용 범위와 근거를 기록했다. 로컬 ZIP은 검토 가능한 커밋 후보이며 출하 승인이나 외부 배포를 뜻하지 않는다.
+현재 후보의 무인 개발 출하 판정은 **HOLD**다. 중첩 자식의 수집 결과·실패를 같은 부모의 재개에 연결하는 제품 경로를 추가했다. 동일 저장 세션의 새 프로세스에서 Workflow의 저장 결과를 재사용하고 실패한 단계만 새 agent로 실행하는 경로도 구현했다. 현재 native2.1.270 bypass의 공개 응답 시험에서 두 모델 모두 원래 파일 작업을 마쳤다. 압축·재시작·자식 실패의 결합 및 기존 요구 표의 일부 설정 조합도 충분한 증거가 없다. 추가 실호출은 출력30000의 생성 전 상한을 보장하지 못해 시작 전 차단했다. [Session-29 판정](docs/session-29-release-verdict.md)에 적용 범위와 근거를 기록했다. 로컬 ZIP은 검토 가능한 커밋 후보이며 출하 승인이나 외부 배포를 뜻하지 않는다.
 
 HTTP/TCP 안정성, 동적 symlink/junction 실행 검사, 디스크 부족 복구 검증은 사용자 지시로 출하 판정에서 제외한다. 기존 보호와 실패 이력은 유지한다. 과거 실제 두 조합의 일반 Agent·신규 Workflow·두 파일 개발 증거는 변경 영향을 대조한 범위에서 재사용한다. 새 중계·복구 시험은 실제 native에 고정 공개 응답을 공급한 검사로, 새 backend 추론을 실행한 결과와 구분한다.
 
@@ -14,7 +14,7 @@ HTTP/TCP 안정성, 동적 symlink/junction 실행 검사, 디스크 부족 복�
 
 TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사례도 있지만, 특정 연결 종료 조건에서는 응답 유실이나 리셋으로 턴·자식 작업이 중단될 수 있고 일부 연결 정리는 약1초 지연될 수 있다. 발생 빈도와 원인 구성요소는 미확정이다. [실사용 영향과 근거](docs/tcp-shell-assessment-2026-09-14.md#실제-clauduct-사용에-미치는-영향)를 기록했으며 추가 OS 진단은 보류한다.
 
-완료된 이전 Workflow의 script 편집이 별개 신규 Workflow 자식을 IDENTITY로 차단하던 검증 순서를 수정했다. 실제 소속 run의 script·metadata·journal 검증과 중복 신원 거부를 유지하며, sol/low·luna/max의 공개 native 연속 Workflow 실행이 통과했다. 캐시 없는 재개는 별도 미완료다.
+완료된 이전 Workflow의 script 편집이 별개 신규 Workflow 자식을 IDENTITY로 차단하던 검증 순서를 수정했다. 실제 소속 run의 script·metadata·journal 검증과 중복 신원 거부를 유지하며, sol/low·luna/max의 공개 native 연속 Workflow 실행이 통과했다. 현재 동일한 원본 script의 저장 세션 재개는 완료된 단계 재사용과 실패 단계 재실행을 지원한다. 기록 전체 소실의 자동 복원이나 편집한 script의 재개는 보증하지 않는다.
 
 ## 시작
 
@@ -58,7 +58,7 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 
 ## 확인된 기능과 남는 한계
 
-2026-09-14 최종 제품 소스: 선택한 회귀68파일과 배포본 관련5파일, 실제 메인/Agent/신규 Workflow 라우팅, 두 파일 개발의 독립81개 판정을 sol/low·luna/max에서 확인했다. 실제6실행/26요청·입력111655/출력4653토큰이며 기존 실패·미관측 예약을 유지한다. 같은 배포본의 출력 단절→동일 세션 복구 두 사례는 고정 공개 응답16개로 검사했고 최초 실패·파일 묶음 쓰기1회·파일 쓰기2회·회수를 대조했다. 복구 주입 사례 자체에 실제 backend 요청은 없다. 상세 증거와 남는 F12/F14/F22는 [출하 기록](docs/release-completion-2026-09-14.md)에 있다.
+2026-09-14 최종 제품 소스: 선택한 회귀68파일과 배포본 관련5파일, 실제 메인/Agent/신규 Workflow 라우팅, 두 파일 개발의 독립81개 판정을 sol/low·luna/max에서 확인했다. 실제6실행/26요청·입력111655/출력4653토큰이며 기존 실패·미관측 예약을 유지한다. 같은 배포본의 출력 단절→동일 세션 복구 두 사례는 고정 공개 응답16개로 검사했고 최초 실패·파일 묶음 쓰기1회·파일 쓰기2회·회수를 대조했다. 복구 주입 사례 자체에 실제 backend 요청은 없다. 당시 증거와 실패 이력은 [출하 기록](docs/release-completion-2026-09-14.md)에 있다.
 
 이전 후보의 실측: 비대화형 JSON·stream-json, Read/Edit, Bash·PowerShell, stdio MCP, PNG 입력, WebFetch·WebSearch, Agent 선택, inline Workflow·StructuredOutput·부모 복귀, background 도구 결과 회수·TaskStop 뒤 worker 종료, 새 프로세스 resume, 실패 후 도구 미중복·이력 보존·정리를 확인했다. 모델 네 종류의 low 요청도 당시 성공했다. 이전 후보의 결과를 이번 후보 전체의 회귀 통과로 복사하지 않는다.
 
@@ -182,7 +182,7 @@ Not verified / 제한:
 - 두 조합 각각의 4시간 → 24시간 3회 → 72시간 단계는 시작하지 않았다. 기본 메인·자식 압축, 정상 인증 갱신과 원래 개발 과제 완료의 필수 사건 수를 모두 채워야 하며 짧은 기능 검사로 대체하지 않는다.
 - native Bash 명령의 허용·거부 경계는 새 공개 fixture에서 확인했다. `verify-native-permissions.mjs --local-native sol <pwsh.exe 경로>` 및 luna 설정 각각에서 허용 worker 시작/효과1회, 명시적 거부 도구 결과, 거부 worker 시작/효과0회와 종료 상태를 대조했다. 실제 native와 loopback 응답을 사용하며 모델·credential 호출은0이다. runtime 제한·native 권한 검사·기존 hooks는 유지한다. 이 결과는 해당 명령 규칙의 증거이며 hooks·MCP·UI의 모든 권한 조합을 입증하지 않는다.
 - 취소·등록 교체·형제 격리의 합성 검사는 통과했지만 UI 취소 시점까지 연결한 전체 실측은 조건부다. 동적 symlink/junction 검사는 정책 차단으로 실행하지 않았다.
-- 단일 completed 알림 자동 복귀에는 기존 실측이 있다. 연속된 독립 completed 알림은 최대64개를 모두 검증한 뒤 완료 증거를 함께 소비하도록 보완했으며, 앞 자식 증거의 재사용·중복·위조·중간 취소에 대한 합성 검사를 통과했다. 이번 `-p`의 foreground/background/fork 비교에서는 자식 알림이 부모에 도착하지 않아 실패했다. 별도 `CompletionMode relay` 검증은 대기하는 메인 응답을 끝내 다음 native 알림을 받고, 두 자식 완료를 확인한 뒤 정확한 부모에게 SendMessage1회와 TaskOutput1회로 이어진다. 두 조합에서 같은 부모의 verified-resume·최종 완료·정리를 확인했다. 이 결과는 메인이 조정한 재개의 증거이며, 직접 native 다중·실패·취소 알림 자동 복귀는 미완료다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 캐시 미적중 resume·중첩·custom agentType은 미완료다.
+- 단일 completed 알림 자동 복귀에는 기존 실측이 있다. 연속된 독립 completed 알림은 최대64개를 모두 검증한 뒤 완료 증거를 함께 소비하도록 보완했으며, 앞 자식 증거의 재사용·중복·위조·중간 취소에 대한 합성 검사를 통과했다. 이번 `-p`의 foreground/background/fork 비교에서는 자식 알림이 부모에 도착하지 않아 실패했다. 별도 `CompletionMode relay` 검증은 대기하는 메인 응답을 끝내 다음 native 알림을 받고, 두 자식 완료를 확인한 뒤 정확한 부모에게 SendMessage1회와 TaskOutput1회로 이어진다. 두 조합에서 같은 부모의 verified-resume·최종 완료·정리를 확인했다. 이 결과는 메인이 조정한 재개의 증거이며, 직접 native 다중·실패·취소 알림 자동 복귀는 미완료다. Workflow는 inline 신규 실행과 이미 완료된 캐시 재사용의 증거가 있으며, 저장 기록이 있는 동일 script의 실패 단계 resume는 Session-29에서 추가 검증했다. 중첩 Workflow·custom agentType은 미완료다.
 - Anthropic 서버 전용 기능, 비스트리밍 API, 서버 실행 도구·첨부/PDF·미지원 context edit·sampling 필드는 지원하지 않는다. 신규 native 버전과 Codex 비공개 backend 변경은 재검증이 필요하다. `CLI_VERSION_UNVERIFIED` 안내를 숨기지 않는다.
 
 ## 검증과 무결성
@@ -196,7 +196,7 @@ pwsh -NoProfile -NonInteractive -File verification/verify-native-headless.ps1 -L
 
 첫 명령은 검토된 로컬 회귀이며 실제 backend를 호출하지 않는다. 기본 러너의 `review-diff`는 PATH 부재로 notRun을 표시한다. 별도 검토된 Git 경로의 제한 환경에서는 실제 검사가 통과했다. native Workflow와 symlink의 합성 suite notRun을 실검사 성공으로 세지 않는다.
 
-Workflow의 긴 기록은 작은 조각으로 순차 읽고 해당 자식의 출처를 끝까지 검증한다. 단일 journal 레코드128KiB, snapshot16MiB·65536레코드와 선택 전체1초의 읽기 작업 한도가 있으며, 중복·실패 기록과 재검증 사이의 기존 기록 변경은 거부한다. 자식 transcript는 최대1MiB의 첫 레코드로 신원을 검증한다. 긴 journal·transcript 및 위조·잘림·취소에 대한 로컬 검사를 통과했지만, 실제 긴 Workflow의 cache-miss resume는 아직 미완료다.
+Workflow의 긴 기록은 작은 조각으로 순차 읽고 해당 자식의 출처를 끝까지 검증한다. 단일 journal 레코드128KiB, snapshot16MiB·65536레코드와 선택 전체1초의 읽기 작업 한도가 있으며, 중복·실패 기록과 재검증 사이의 기존 기록 변경은 거부한다. 자식 transcript는 최대1MiB의 첫 레코드로 신원을 검증한다. 긴 journal·transcript 및 위조·잘림·취소에 대한 로컬 검사를 통과했지만, 긴 기록 재개의 실제 native 시험은 미완료다. 짧은 공개 Workflow의 저장 결과 재사용·실패 단계 재실행은 별도 검증했으며, 두 범위를 구분한다.
 
 `-Live` 검사는 기존 로그인으로 공개 고정 fixture를 실제 전송하며 사용량이 발생한다. 새 작업 전용 프로필을 사용하고 프로세스당 최대 120초로 제한한다. 사용자 대화·프로필을 복사하지 않는다. `failure-resume`은 전달 후 오류를 의도적으로 1회 주입해 보존·복구를 확인하는 별도 사례다.
 

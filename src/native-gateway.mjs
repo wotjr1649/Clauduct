@@ -165,12 +165,14 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         }
         if (binding?.kind === 'workflow-result') {
           need(agentSelection && Object.keys(binding).every(key => ['kind', 'sessionId', 'toolUseId', 'taskId', 'runId',
-            'workflowName', 'transcriptPath', 'transcriptDir', 'scriptPath', 'scriptDigest', 'parent'].includes(key))
+            'workflowName', 'transcriptPath', 'transcriptDir', 'scriptPath', 'scriptDigest', 'resumeFromRunId', 'resumedScriptDigest', 'parent'].includes(key))
             && ['sessionId', 'toolUseId', 'taskId', 'runId', 'workflowName'].every(key => typeof binding[key] === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding[key]))
             && ['transcriptPath', 'transcriptDir', 'scriptPath'].every(key => typeof binding[key] === 'string' && binding[key].length <= 4096)
-            && typeof binding.scriptDigest === 'string' && /^[a-f0-9]{64}$/.test(binding.scriptDigest)
+            && (binding.resumeFromRunId === undefined ? binding.resumedScriptDigest === undefined && typeof binding.scriptDigest === 'string' && /^[a-f0-9]{64}$/.test(binding.scriptDigest)
+              : binding.scriptDigest === undefined && typeof binding.resumeFromRunId === 'string' && binding.resumeFromRunId === binding.runId
+                && typeof binding.resumedScriptDigest === 'string' && /^[a-f0-9]{64}$/.test(binding.resumedScriptDigest))
             && (binding.parent === undefined || (typeof binding.parent === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(binding.parent))), 'INVALID_AGENT_BINDING');
-          try { agentSelection.linkWorkflow(binding); } catch { throw new NativeError('AGENT_SELECTION_UNVERIFIED_CALL'); }
+          try { await agentSelection.linkWorkflow(binding, controller.signal); } catch { throw new NativeError('AGENT_SELECTION_UNVERIFIED_CALL'); }
           reply(res, 200, { linked: true }); return;
         }
         if (binding?.kind === 'resume-result') {

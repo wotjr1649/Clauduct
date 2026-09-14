@@ -2,7 +2,7 @@
 
 현행 대조일 2026-09-12. 실제 검증 버전은 Claude `2.1.269`, Codex standalone `0.154.0`이다. 2026-09-11의 정적 조사에 새 비대화형 실행 증거를 반영했다. [릴리즈 검증](release-readiness.md)에 성공·실패·미검증 범위를 나누어 기록한다.
 
-2026-09-14 Session-29에서는 Claude2.1.270의 공개 native 중첩 결과 중계와 새 프로세스의 일반 개발 복구를 검사했다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복도 원결과로 대조했다. 정상 Workflow 재개와 다른 잔여 요구의 현재 판정은 [Session-29](session-29-release-verdict.md)에 있으며 전체 HOLD다.
+2026-09-14 Session-29에서는 Claude2.1.270의 공개 native 중첩 결과 중계와 새 프로세스의 일반 개발 복구를 검사했다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복도 원결과로 대조했다. 동일 저장 세션에서의 Workflow 재개도 현재 bypass에서 두 모델의 공개 응답으로 확인했다. 저장 결과를 재사용하고 실패 단계만 재실행했다. 다른 잔여 요구의 현재 판정은 [Session-29](session-29-release-verdict.md)에 있으며 전체 HOLD다.
 
 현재 사용자는 이 머신의 전역 `settings.json`에 있는 bypass 모드만 사용한다. 실제 `permissions.defaultMode=bypassPermissions`를 읽어 확인했으며 다른 permission 모드·전환 조합은 Session-29 출하 범위에서 제외한다. 아래 다른 모드에 관한 미검증 설명은 이력이고 현재 차단이 아니다. Clauduct의 launcher는 permissions를 재정의하거나 설정 소스를 대체하지 않는다.
 

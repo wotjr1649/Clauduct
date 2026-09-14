@@ -130,6 +130,13 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
         if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
         call.workflow = { digest: workflowDigest(input.script), route: Object.freeze(selectModel(parentRoute?.model, parentRoute?.effort)) };
       }
+      if (block.name === 'Workflow' && input.script === undefined && input.name === undefined
+        && typeof input.scriptPath === 'string' && input.scriptPath.length <= 4096 && isAbsolute(input.scriptPath)
+        && typeof input.resumeFromRunId === 'string' && /^wf_[a-z0-9-]{6,}$/.test(input.resumeFromRunId)) {
+        if (typeof parentRoute?.model !== 'string' || typeof parentRoute?.effort !== 'string') fail('MODEL');
+        call.workflow = { scriptPath: input.scriptPath, resumeFromRunId: input.resumeFromRunId,
+          route: Object.freeze(selectModel(parentRoute.model, parentRoute.effort)) };
+      }
       // Native peers may address their parent by name; resolve only that verified relationship.
       if (call.target && call.tool === 'SendMessage') {
         call.recipient = call.target;
@@ -157,11 +164,12 @@ export function createAgentSelection({ projectsRoot, readMetadata, timeoutMs = 1
     if ([...pending.values()].some(other => other !== call && other.session === link.sessionId && other.child === link.id)) fail('CALL');
     call.child = link.id;
   }
-  function linkWorkflow(link) {
+  function linkWorkflow(link, signal) {
     const id = key(link.sessionId, link.toolUseId), call = pending.get(id);
     if (!call || call.tool !== 'Workflow') fail('CALL');
-    workflows.link(link, call);
-    pending.delete(id);
+    const done = () => { if (pending.get(id) !== call) fail('CALL'); pending.delete(id); };
+    if (link.resumeFromRunId !== undefined) return workflows.resume(link, call, signal).then(done);
+    workflows.link(link, call); done();
   }
   function linkResume(link) {
     const call = pending.get(key(link.sessionId, link.toolUseId));

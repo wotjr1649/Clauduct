@@ -122,4 +122,9 @@ Not verified: 새 일반용 이름의 실제 native 로딩·작업·쓰기 도�
 
 중복 수집은 중계 전에는 멱등 처리한다. 소비된 결과의 재중계, 새 요청이 시작된 뒤 도착한 결과, 다른 부모의 자식, 바뀐 metadata/마지막 응답, 사용자 취소, 동시 재개는 허용 증거가 되지 않는다. 임의 `SendMessage`의 내용이 옳다는 보증이나 자동 작업 스케줄러는 아니다. 메인은 native 반환 ID로 결과를 수집하고 명시적으로 같은 부모에게 후속 작업을 전달한다. 기존 단일/다중 native 알림과 일반 SendMessage 재개 경로는 유지한다.
 
-새 로컬 파일 검사29개와 기존 선택·완료·실패 검사를 수행했다. 공개 고정 응답을 사용하는 실제 native에서는 sol/low와 luna/max의 실패 자식 수집·동일 부모 재개·보고서 쓰기를 확인했고, 성공 및 취소 사례도 독립 transcript/파일 대조로 확인했다. 이는 실제 backend 추론과 구분한다. `verification/verify-native-result-relay.ps1`와 `verification/verify-result-relay-evidence.mjs`가 재현 및 독립 검증 진입점이다. Session-29 출하 판정은 Workflow 재개 등 다른 차단이 남아 HOLD다.
+새 로컬 파일 검사29개와 기존 선택·완료·실패 검사를 수행했다. 공개 고정 응답을 사용하는 실제 native에서는 sol/low와 luna/max의 실패 자식 수집·동일 부모 재개·보고서 쓰기를 확인했고, 성공 및 취소 사례도 독립 transcript/파일 대조로 확인했다. 이는 실제 backend 추론과 구분한다. `verification/verify-native-result-relay.ps1`와 `verification/verify-result-relay-evidence.mjs`가 재현 및 독립 검증 진입점이다. Session-29 출하 판정은 결합 복구·실모델 예산 등 다른 필수 증거가 남아 HOLD다.
+
+
+## 동일 저장 Workflow의 재개
+
+현재 path-only Workflow 호출과 native가 정규화한 script digest를 분리해 검증한다. 같은 session의 원본 inline 호출/반환, immutable script, journal, 저장 결과의 실제 native 자식 성공 기록이 일치할 때 재개 run을 연결한다. 새 자식은 현재 호출 이후에 생성된 metadata/transcript로 다시 검증하며 원래 model/effort 선택 계약을 유지한다. 오래된 활성 자식, 외부 session/parent, 취소, 변조·기록 소실과 동시 중복은 거부한다. 자세한 관측 범위와 남은 제한은 [Session-29 판정](session-29-release-verdict.md)에 있다.

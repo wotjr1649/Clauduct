@@ -1,6 +1,6 @@
 # 변경된 출하 목표와 작업 판정
 
-**Session-29 진행:** 현재 필수 요구와 예산은 `docs/session-29-release-verdict.md`에 재대조했다. TaskOutput으로 확인한 중첩 자식 결과/실패를 같은 부모의 SendMessage 재개에 연결하는 제품 경로를 추가했다. 새29개 및 관련 선택/완료/실패/Workflow/admission 검사 통과, 공개 native의 sol/low·luna/max 실패 처리와 성공/취소 총4사례에서 자식 재실행0·보고서 쓰기1·cleanup9·잔여0을 독립 확인했다. 실제 backend 추가0이다. 기존 gateway 전체 검사의22개 뒤 watchdog 실패는 f425cf0 기준선에서도 같아 이력으로 유지한다. Workflow 반환 경로와 재호출 경로는 정확히 같았는데 native가 거부했음을 확인했다. 정상 재개 및 다른 필수 공백이 남아 전체 HOLD다.
+**Session-29 진행:** 현재 필수 요구와 예산은 `docs/session-29-release-verdict.md`에 재대조했다. TaskOutput으로 확인한 중첩 자식 결과/실패를 같은 부모의 SendMessage 재개에 연결하는 제품 경로를 추가했다. 새29개 및 관련 선택/완료/실패/Workflow/admission 검사 통과, 공개 native의 sol/low·luna/max 실패 처리와 성공/취소 총4사례에서 자식 재실행0·보고서 쓰기1·cleanup9·잔여0을 독립 확인했다. 실제 backend 추가0이다. 기존 gateway 전체 검사의22개 뒤 watchdog 실패는 f425cf0 기준선에서도 같아 이력으로 유지한다. 과거 native2.1.269의 정확한 반환 경로 거부는 이력으로 보존했다. 현재2.1.270 bypass의 새 공개 과제에서는 정상 반환 경로를 허용했고, 저장 결과와 원본 실행 기록을 대조하는 제품 연결을 구현해 두 모델 모두 새 프로세스에서 원래 작업을 마쳤다. 결합 복구·실모델 예산 등 다른 필수 공백이 남아 전체 HOLD다.
 
 Session-29 예산 보완은 낮은 완료 사용량 한도를 실행/원장/판독에 연결한다. 생성 전 한도는 현재 구독 전송에서 보장하지 못하므로 엄격한 preflight로 거부한다. 두 조합 공개 native의 낮은 예산 개발 복구는 새 프로세스/동일 session/쓰기 미중복을 확인했으며, 추가 backend 요청은0이다. 새 Workflow 정상 재개와 구분한다. 자세한 조건·최신 증거는 [Session-29 판정](session-29-release-verdict.md)에 있다.
 

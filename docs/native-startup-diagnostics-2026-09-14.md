@@ -59,3 +59,13 @@ Clauduct는 MAX_OUTPUT_TOKENS를 임의로 덮어쓰지 않으며 native가 보�
 독립 HTTP 관측은 `.tmp/test-http-observation.mjs`에 남겼다. 이것은 사건 관측 도구이며 exit0이 HTTP 전달 성공을 뜻하지 않는다. 실제 두 경고를 다시 발생시킨 native 실행, 기본400K/320K, 설치26검사 재실행은 하지 않았다. 설치 코드 변경은 없다.
 
 후속 확인에는 새 진단이 포함된 실제 native 실행의 허용된 요약과, public wire가 변형되지 않는 것으로 확인된 환경의 strict regression 결과가 필요하다. 실제 모델 호출의 범위·비용 상한은 이번에 새로 부여되지 않았다. 현재 증거로 원래 두 거부의 목적·발신자를 확정하거나 경고 해소/배포 준비 완료를 주장할 수 없다. 실패를 유지한 로컬 커밋은 검토용 후보이며 원격 배포 승인이 아니다.
+
+## 후속(2026-09-14): 세 FAIL의 원인은 loopback HTTP filter였다
+
+원인은 이 개발 머신의 AdGuard가 loopback HTTP를 가로챈 것이다. 보호를 끄자 transport-rejections는9/9 PASS, 공식 실행기 구성(`--test-concurrency=1`)의15파일 묶음은23/23 PASS, 앞서20초 watchdog에 걸리던 native-gateway 전체 검사도62 checks 완주했다. 확정 근거는 세 가지다. raw TCP listener가 받은 byte에서 비표준 `Expect` header만 사라졌고, 잘못된 method 요청에는 AdGuard의 `blocking-pages` HTML400이 돌아왔으며(32,879~171,633byte), filter가 닿지 않는 named pipe 대조군에서는 셋 다 기대대로 동작했다. 주소(127.0.0.1/127.0.0.2/`::1`)와 port15종 전부 가로채져 code 수준 우회는 불가능하다.
+
+**판별법**: 로컬 HTTP 검사가 `401 LOCAL_SESSION_REQUIRED`나4096byte 초과 응답으로 실패하면 loopback HTTP filter를 의심한다. 이때 실패는 test가 의도적으로 보내는 기형 HTTP(잘못된 method, 비표준 `Expect`,17000byte header)에 filter가 반응한 것이며 gateway의 결함이 아니다.
+
+**실사용 경로는 영향이 없다.** filter를 켠 상태에서 측정했다. chunked SSE stream은8/8 frame이200~207ms 간격으로 도착했고 변형·Content-Length 주입이 없었다. heartbeat 주기15초를 넘기는16초 간격 유휴 stream도3/3 도착에 socket error 없이 정상 종료했다. filter가 건드리는 것은 기형 요청뿐이다.
+
+`close()`의 산발적 약1000ms는 `http-close.mjs`의 peer-drain deadline이며, filter가 peer의 FIN 전달을 지연시킨 결과다. 보호를 끄면 발화가0/10으로 사라진다. gateway 결함이 아니다.

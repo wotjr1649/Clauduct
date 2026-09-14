@@ -42,14 +42,24 @@ async function head(gateway) {
 }
 async function fixture(action) {
   const gateway = await createGateway();
+  let failure;
   try { await action(gateway); }
-  finally {
-    const closed = await gateway.close();
-    assert.equal(closed.cleanupFailed, false);
-    assert.equal(closed.activeSockets, 0);
-    assert.equal(closed.activeJobs, 0);
-    assert.equal(closed.activeTimers, 0);
+  catch (error) { failure = error; }
+  // Cleanup still runs on failure, but its assertions must not replace the original
+  // error: a masked failure sends the next reader to the wrong layer.
+  let closed;
+  try { closed = await gateway.close(); }
+  catch (error) { failure ??= error; }
+  if (failure) {
+    if (closed && failure instanceof Error) failure.cleanup = { cleanupFailed: closed.cleanupFailed,
+      activeSockets: closed.activeSockets, activeJobs: closed.activeJobs, activeTimers: closed.activeTimers,
+      connectionCloseTimeouts: closed.connectionCloseTimeouts };
+    throw failure;
   }
+  assert.equal(closed.cleanupFailed, false);
+  assert.equal(closed.activeSockets, 0);
+  assert.equal(closed.activeJobs, 0);
+  assert.equal(closed.activeTimers, 0);
 }
 function fixtures(gateway) {
   const host = `Host: 127.0.0.1:${gateway.port}\r\n`;

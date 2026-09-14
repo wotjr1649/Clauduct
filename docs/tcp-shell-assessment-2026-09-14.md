@@ -50,3 +50,18 @@ exit0은 검사 프로세스의 수집·정리가 완료됐다는 뜻이며, 반
 TCP/셸 변경 조사는 보류하고 Workflow 재개 계약을 다음 대상으로 삼았다. 현재 코드의 agent-route.bindingFrom과 agent-selection.remember는 scriptPath 또는 resumeFromRunId 입력을 라우팅 근거로 수용하지 않는다. 기존 native scriptPath 재개 거부는 그보다 앞선 별개 경계다. native의 접근 거부를 우회하지 않고, 필요한 재개 신원·이전 run 연결과 현재 제품의 라우팅 공백을 구분하여 다음 구현 범위를 정한다. 기존7파일 회귀와 자식 취소4사례의 PASS는 유지하고 전체 출하 판정은 아직 HOLD다.
 
 후속 조사에서는 이전 Workflow 스크립트 편집이 별개의 신규 Workflow 자식까지 막는 결함을 재현·수정했다. 새 journal10사례와 기존20사례, 관련 선택 회귀 및 실제 native sol/low·luna/max의 신규 Workflow 두 개 연속 실행이 통과했다. 이 수정은 TCP 문제 해결이나 cache-miss resume 성공의 증거가 아니다. 세부 결과는 [현재 출하 기록](release-completion-2026-09-14.md)에 있다.
+
+## 원인 확정(2026-09-14 후속): loopback HTTP 필터
+
+위 "구성요소 미확정"은 해소됐다. 원인은 이 PC에 설치된 AdGuard의 loopback 필터이며, OS나 셸 문제가 아니다. 같은 반닫기 fixture를 보호 on/off로 비교했다.
+
+| 보호 | IPv4 반닫기 | IPv6 반닫기 |
+|---|---|---|
+| on | 9ms에EOF·응답0바이트 | 2ms에EOF·응답0바이트 |
+| off | 405ms·응답1바이트 | 405ms·응답1바이트 |
+
+일반 연결은 양쪽 모두1바이트로 정상이며, 차이는 반닫기에서만 나타난다. 보호를 끈 상태에서 `test-http-close`는 roundtrip20·`halfClosedClientReply` true·pending0으로 통과했고, `test-chat`은28/28 통과했다. 같은 필터가 비표준 `Expect` header를 제거하고 잘못된 method에 자체400 page를 반환하는 것도 확인했다. 근거와 판별법은 [native 시작 진단](native-startup-diagnostics-2026-09-14.md)에 있다.
+
+실사용 경로는 이 필터가 켜져 있어도 영향이 없다. 필터를 켠 상태에서 chunked SSE stream8/8 frame이200~207ms 간격으로 변형 없이 도착했고, heartbeat 주기를 넘기는16초 간격 유휴 stream도3/3 도착에 socket error 없이 종료했다. 필터가 건드리는 것은 기형 HTTP 요청과 TCP 반닫기다.
+
+`close()`의 산발적 약1000ms 지연도 같은 원인이다. `http-close.mjs`의 peer-drain deadline이 필터 때문에 지연된 FIN을 기다리다 발화하며, 보호를 끄면 발화가0/10으로 사라진다. 이 항목들은 제품 결함이 아니다. 다만 다른 머신의 보안·백신 제품에서 같은 계열 간섭이 재발할 수 있으므로 위험 자체가 사라졌다고 보지는 않는다.

@@ -2,6 +2,8 @@
 
 시작: 2026-09-14T04:14:56Z. 마감: 2026-09-14T07:14:56Z. 초기 후보 `f425cf0ead479a7914ce9b4381bbcff854fae13f`, branch `work/unattended-release-2026-09-13`. 현재 판정 **HOLD**. 구현 worktree의 tracked 상태는 clean이었다. 사용자 루트 README +2/-0와 기존 untracked 자료는 보존한다. 되돌림은 이번 작업의 개별 커밋/이해한 diff 단위로만 가능하며 사용자 branch에 통합하지 않는다.
 
+**현재 사용자 변경:** Session-29 진행 중 디스크 부족 복구를 검증에서 제외했다. F16의 그 부분은 출하 차단에서 제외하며 기록 잘림·기록 오류·미관측 예약 보존과 기존 실패 이력은 유지한다. 시작 시각·deadline·누적 예산은 변경하지 않는다.
+
 ## 예산과 실행 경계
 
 기준 원장 `.tmp/release-completion-20260914/live-agent-final/result.json`을 직접 대조했다. 요청 323~327, 보수적 327; 관측 입력 1124010/출력 47690; 미관측 입력 예약 786432/출력 예약 196608; 예약 포함 입력 1910442/출력 244298. 관측 시간 3019404ms와 미관측 160000ms도 유지한다. 추가 한도 요청64/입력400000/출력30000, 누적 상한391/2310442/274298이다. 담당 Codex 사용량과 구분한다.
@@ -47,7 +49,7 @@
 - 추가 실제 요청/입력/출력: 0/0/0. 이전 미관측 예약은 그대로다.
 - F12 제품: TaskOutput 구조화 결과를 원본 호출/현재 child request/metadata/마지막 응답에 결합하고, 메인의 동일 부모 SendMessage 재개에서 원자적으로 소비한다. 29개 새 검사 및 기존 선택/실패/다중알림 검사가 통과했다. 공개 native sol 실패·성공, luna 실패·취소4사례는 같은 부모/세션, 자식 시작2개, 보고서 쓰기1회, cleanup9/잔여0을 독립 대조했다. `.tmp/session-29-release/relay-native-verified.json`. 최초 wrapper의 상태 필드명 오류/검증기 project 디렉터리 가정 실패는 유지하고 원자료를 재검증했다.
 - 넓힌 gateway 검사는 22개 뒤20초 watchdog에서 실패했다. 변경 전 f425cf0을 별도 새 디렉터리에 추출한 기준선도 정확히 같은22개 뒤 watchdog 실패다. `.tmp/session-29-release/gateway-baseline.json`과 `relay-related-tests.json`. 이를 새 코드의 회귀 PASS나 HTTP 수정 완료로 표시하지 않는다.
-- F14 원자료 대조: 이전 공개 probe의 구조화 반환 scriptPath와 실제 재호출 인수는 문자 단위 동일(356자, backslash14개)했다. 정확한 반환 경로를 native 허용 읽기 범위 검사가 거부했다. 오류를 경로 파싱 착오라고 추정해 재시도하지 않는다. 새 프로세스 동일 저장 세션 정상 Workflow 재개는 아직 입증할 수 없어 차단 상태다.
+- F14 원자료 대조: 이전 공개 probe의 구조화 반환 scriptPath와 실제 재호출 인수는 문자 단위 동일(356자, backslash14개)했다. native2.1.269가 정확한 반환 경로를 허용 읽기 범위 검사에서 거부했다. 현재 native2.1.270의 실행 파일 hash와 새 공개 시험의 버전은 대조했으나 정상 재개는 NOT_RUN이다. 과거 실패를 현재 버전의 재현 결과로 표시하지 않는다. 경로 파싱 착오나 단순 버전 차이를 정상 접근 조건의 근거로 삼아 거부를 재시도하지 않았다. 새 프로세스 동일 저장 세션 정상 Workflow 재개는 아직 입증할 수 없다.
 - F12 변경 커밋: `2ac9963a3ea18fad09686031f7d6da4ccc3b4033`.
 - 출력32768 고정값을 낮출 수 있게 headless/development 실행·예약·fixture 사용량·PowerShell 판독의 한도를 연결했다. 기본값과 과거 원장은 유지한다. `-MaxOutputTokens 30000 -RequirePreGenerationLimit`는 현재 전송의 한계를 명시적으로 거부한다. 실제 headless 진입 preflight에서 실행 디렉터리 생성0/native시작0/credential0/실요청0을 확인했고 `.tmp/session-29-release/live-preflight-blocked.json`에 남겼다. 이 옵션을 빼고 같은 실호출을 진행하지 않는다.
 - 예산 검사19개, PowerShell 한도 판독3개 및 기존 관련10파일이 통과했다. 낮은 한도(각 단계 입력10000/출력3000)로 두 조합의 공개 native 출력 단절→이전 worker 종료→새 프로세스 동일 세션 개발 마감을 확인했다. 각8개 고정 응답, sol5805ms/luna5497ms, 묶음 쓰기1/파일 쓰기2, 최초 OUTPUT_PIPE_CLOSED 보존, 실제 backend0이다. `lower-budget-recovery-sol.json`/`lower-budget-recovery-luna.json` 및 first/finish 원자료가 근거다. 일반 저장 세션 재개 성공이며 Workflow 재개 성공으로 대체하지 않는다.
@@ -64,12 +66,45 @@ F12의 명시적 수집·메인 중계는 제품에 구현했고 현재 요청·
 
 | 현재 차단/미검증 | 판정과 필요한 근거 |
 |---|---|
-| F14 정상 Workflow 재개 | **BLOCKED**. 반환 경로와 인수의 완전 일치에도 native가 거부했다. 같은 저장 세션을 새 프로세스로 열어 저장 결과 재사용/필요 agent 재실행/파일 효과 확인을 완료한 증거가 없다. 제품의 scriptPath/resumeFromRunId 및 새 실행 신원 연결도 미구현이다. 다른 경로·inline 복제·추가 읽기 권한으로 거부를 우회하지 않았다. native 전체가 영구적으로 미지원이라고 단정하지 않는다. |
-| F16 디스크 부족 복구 | **NOT_RUN**. 원장 잘림·기록 오류·미관측 예약과 부분 파일 효과의 검사는 있지만, 저장 공간 부족 사건에서 같은 불변식을 확인한 충분한 증거는 없다. 기존 registry 등록 거부도 유지한다. |
+| F14 정상 Workflow 재개 | **BLOCKED / 현재 버전 NOT_RUN**. native2.1.269의 반환 경로와 인수 일치는 확인했으나 정상 접근 조건은 해결되지 않았다. 2.1.270에서 같은 저장 세션을 새 프로세스로 열어 저장 결과 재사용/필요 agent 재실행/파일 효과 확인을 완료한 증거가 없다. 제품의 scriptPath/resumeFromRunId 및 새 실행 신원 연결도 미구현이다. 다른 경로·inline 복제·추가 읽기 권한으로 거부를 우회하지 않았다. native 전체가 영구적으로 미지원이라고 단정하지 않는다. |
+| F16 디스크 부족 복구 | **사용자 제외**. 미실행 이력은 유지하며 출하 차단에서 제외했다. 원장 잘림·기록 오류·미관측 예약과 부분 파일 효과 검사는 유지한다. 기존 registry 등록 거부도 유지한다. |
 | F18 결합 사건 | **NOT_RUN**. 압축 설정/변환/라우팅과 새 프로세스 복구, 자식 실패를 각각 검사했다. 압축·재시작·자식 실패가 겹친 사건의 효과/기록 보존 증거로 합산하지 않는다. 기본400K/320K 실발동은 별도로 사용자 제외다. |
-| 설정·도구 조합 표의 잔여 | **NOT_RUN**. native 소유의 permission/hooks/MCP 정상·거부 및 현재 launcher 계약 증거는 있다. 기존 표의 UI/plan/plugin을 포함한 설정 조합 전체 검증은 확보하지 못했으며 자동 면제하지 않는다. 임의 개인 profile 전체를 새 필수 범위로 확대하지도 않는다. |
+| 설정·도구 조합 표의 잔여 | **NOT_RUN**. native 소유의 permission/hooks/MCP 정상·거부 및 현재 launcher 계약 증거는 있다. 기존 표의 프롬프트 캐시 실제 적중, UI/plan/plugin을 포함한 설정 조합 검증은 확보하지 못했으며 자동 면제하지 않는다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복6개는 결과·라우팅·정리와 hash를 대조해 재사용한다. 임의 개인 profile 전체를 새 필수 범위로 확대하지 않는다. |
 | 새 모델 실호출 | **BLOCKED**. 사용자가 요구한 사전 출력 상한을 현재 구독 전송에서 보장할 수 없다. 검증된 전송 계약/동작 없이 상한 옵션을 제거하거나 관측 후 판정으로 대체하지 않는다. |
 
 F21/F22의 새 Workflow 재개 모델·effort/세션·오래된 기록 경계도 F14에 의존해 미완료다. 기존 일반 Agent·신규 Workflow·변조 거부의 통과는 유지한다. 이 목록 때문에 최종 커밋과 ZIP의 파일 검증이 성공해도 전체 PASS나 목표 완료를 선언하지 않는다.
+
+### 전체 요구의 최종 적용 대조
+
+아래 근거 파일명은 구현 worktree의 `.tmp/session-29-release/` 기준이다. PASS는 적힌 동작과 관측 범위에 한한다. 초기 표의 오래된 차단 문구보다 이 표와 위 현재 차단 목록을 우선한다.
+
+| 요구 | 현재 동작과 관측 | 상태 / 근거 |
+|---|---|---|
+| F01 | 공개 DNS·연결 오류/복구와 오류 분류 유지. HTTP/TCP는 사용자 제외이며 TLS 실제 준비 실패 이력은 보존 | 범위 내 기존 증거 재사용, TLS 실제 검사는 NOT_RUN / `evidence-reuse.json`, 기존 통합 manifest |
+| F02 | Retry-After defer·새 프로세스 복구, 재시도 핵심 소스 동일 | PASS / `evidence-reuse.json` |
+| F03 | 반복503, 두 조합 공개 native 실패와 원래 과제 복구 | PASS / `evidence-reuse.json` |
+| F04 | HTTP200 오류 본문, 미완료 도구 차단·복구 | PASS / `evidence-reuse.json` |
+| F05 | 단절·UTF-8·순서 오류의 전달 후 실패 보존 및 재개 | PASS / `evidence-reuse.json` |
+| F06 | 부분 효과 대조·검사 intent/미확정 분리, 두 파일 개발의 새 프로세스 마감 | PASS(관측한 경계) / `candidate-impact-tests.json`, `lower-budget-recovery-sol.json`, `lower-budget-recovery-luna.json` |
+| F07 | 출력 단절 뒤 동일 session·source hash, 묶음 쓰기1/파일 쓰기2 보존 | PASS / 두 `lower-budget-recovery-*.json`; 기존 실제 개발 두 모델 독립81개도 재사용 |
+| F08 | 합성401·cache 선택/만료·예산 거부 유지 | 기존 회귀 재사용. 정상 인증 갱신은 사용자 제외 |
+| F09 | 반복401/403·다른 계정 혼입·인증 cache 오류 거부 | 기존 회귀 재사용 / `evidence-reuse.json`의 동일 인증/전송 소스 |
+| F10 | 압축 설정·변환·라우팅 회귀 통과 | PASS(정적/합성) / `candidate-impact-tests.json`; 기본400K/320K 실발동 제외 |
+| F11 | 실행 예약·소유자 종료·중복 시작 거부 유지 | PASS(일반 복구), Workflow 생존 worker 경계 NOT_RUN / `token-budget-related.json`, `candidate-impact-tests.json` |
+| F12 | TaskOutput 원결과를 직접 부모 SendMessage 재개에 결합, 중복·오래된 요청·형제 혼입·취소 거부 | PASS / `relay-first-tests.json`, `relay-selection-final.json`, `relay-native-verified.json` |
+| F13 | 취소 후 재개0·형제 완료·늦은 이벤트 차단 | PASS / 새 relay 취소와 이전 공개 native4사례, 선택 회귀 |
+| F14 | 정상 Workflow 재개 신원 연결·저장 결과/재실행·파일 효과 대조 | BLOCKED/NOT_RUN / `workflow-denial-evidence.json`, `additional-evidence-reuse.json` |
+| F15 | admission 대기 기한과 회복 통과 | PASS(독립 admission). gateway22개 뒤 watchdog는 기준선도 동일 실패 / `relay-selection-final.json`, `gateway-baseline.json`; HTTP/TCP 제외 |
+| F16 | 낮은 완료 사용량 한도·footer/journal 일치·잘림/예약 보존 | PASS(로컬 검사) / `token-budget-tests.json`, `token-budget-related.json`; registry 등록 기존 거부 보존, 디스크 부족 제외 |
+| F17 | 실제 native 소유 프로세스 종료·cleanup9개·잔여0 | PASS(실행별) / relay 및 개발 복구 결과. 최종 package 실행도 별도 census |
+| F18 | 압축·프로세스 재시작·자식 실패가 겹친 사건 | NOT_RUN. 개별 성공을 결합 성공으로 승격하지 않음; 기본 압축 발동 부분 제외 |
+| F19 | launcher 옵션/hook 계약, native permission/MCP 정상·거부 | 범위 내 PASS, UI/plan/plugin 조합 NOT_RUN. 기존 표 유지 |
+| F20 | 악성 소스·도구·MCP/외부 전송·oracle 경계, 공격 입력의 로컬 거부 | PASS(검토한 fixture 경계) / `token-budget-tests.json`, `candidate-impact-tests.json`; 임의 일반 프로젝트 전체 보증 없음 |
+| F21 | sol/low·luna/max 일반 Agent/신규 Workflow/개발 과거 실제 호출, 새 공개 relay 라우팅 | PASS(관측 경로). 정상 Workflow 재개 경로 NOT_RUN / `evidence-reuse.json`, `relay-native-verified.json` |
+| F22 | 현재 요청/세션/부모·metadata·journal·정적 경로 위조 거부 | PASS(현재 경로), Workflow 재개 신원 NOT_RUN / 선택·journal 검사; 동적 링크 제외 |
+| F23 | 부분 적용·테스트 삭제·가짜 성공·oracle 변조 거부, 두 파일 독립81개 | PASS(검토한 개발 과제) / `candidate-impact-tests.json`, `evidence-reuse.json` |
+| 기능 표 잔여 | 이미지6왕복 재사용; 일반 background·TaskStop·MCP/WebSearch/WebFetch 기존 증거 유지 | 프롬프트 캐시 실제 적중·UI/plan/plugin 설정 조합 NOT_RUN / `additional-evidence-reuse.json`, 기존 기능·옵션표 |
+| 새 실호출 예산 | 기본32768 완료 관측값을 실행별 낮은 값으로 연결. 생성 전 상한 요구는 전송 전에 거부 | BLOCKED / `live-preflight-blocked.json`; 새 요청/입력/출력0, 기존 예약 불변 |
+| 로컬 릴리즈 | 커밋 후보의 명시 파일 ZIP·manifest/hash·재현 빌드·새 경로 실행 | 생성 후 `final-package-verified.json`과 `shipping-evidence.json`에서 별도 관측. 전체 HOLD와 구분 |
 
 최종 ZIP은 이 문서를 포함한 tracked clean 커밋에서 생성한다. 동반 manifest는 commit, 파일 목록·크기·SHA256을 담는다. 새 공백 경로 실행과 선택 회귀, 원증거 hash, 현재 요구 상태, 누적 예산 및 프로세스 census는 작업용 `.tmp/session-29-release/`에 보존하며 실행 임시 자료·인증·개인 profile은 ZIP/커밋에 넣지 않는다.

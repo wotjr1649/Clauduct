@@ -2,6 +2,8 @@
 
 현행 대조일 2026-09-12. 실제 검증 버전은 Claude `2.1.269`, Codex standalone `0.154.0`이다. 2026-09-11의 정적 조사에 새 비대화형 실행 증거를 반영했다. [릴리즈 검증](release-readiness.md)에 성공·실패·미검증 범위를 나누어 기록한다.
 
+2026-09-14 Session-29에서는 Claude2.1.270의 공개 native 중첩 결과 중계와 새 프로세스의 일반 개발 복구를 검사했다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복도 원결과로 대조했다. 정상 Workflow 재개와 다른 잔여 요구의 현재 판정은 [Session-29](session-29-release-verdict.md)에 있으며 전체 HOLD다.
+
 ## 1. 원칙 — 무엇이 바뀌고 무엇이 안 바뀌는가
 
 Clauduct는 **추론 backend만 교체**한다. Claude Code → loopback gateway → 직접 HTTPS Codex responses 엔드포인트다. 따라서 판정은 딱 두 갈래로 갈린다.
@@ -35,7 +37,7 @@ Clauduct가 추가하는 것은 3종뿐이다.
 |---|---|---|
 | SubagentStart | `*` | 자식 등록과 역할·컨텍스트 정책 전달 |
 | SubagentStop | `*` | 등록 해제 |
-| PostToolUse | `Skill|SendMessage|Workflow` | skill fork·재개·workflow 결과 연결 |
+| PostToolUse | `Skill|SendMessage|Workflow|TaskOutput` | skill fork·재개·workflow 및 수집한 자식 결과 연결 |
 
 SubagentStart/Stop이 실제로 발화한다는 증거는 실사용 세션의 `roleRegistered=true`와 `agentContextPolicy.evidence=subagent-start-hook-environment`다. 2026-09-12 새 프로필의 실제 Agent도 `definition-model` 라우팅과 정상 종료를 확인했다. 임의 사용자 hook 각각의 발화는 별도 미검증이다.
 
@@ -128,7 +130,7 @@ Clauduct에서 이 헤더는 **upstream으로 전달되지 않는다.** upstream
 
 ## 9. 미검증으로 남는 것
 
-사용자 hook 각각의 발화, JPEG/GIF/WebP 실제 왕복, 프롬프트 캐시의 실제 적중, plan mode·permission mode의 UI 동작, 설치된 skill·plugin 각각의 실제 실행은 미검증이다. 로컬 stdio MCP와 PNG 입력은 새 프로필의 실제 왕복으로 확인했다. 외부 계정·서버 기능과 [차단된 symlink 검사](remaining-verification.md)는 통과로 표시하지 않는다.
+JPEG/GIF/WebP는 sol/low·luna/max 각각 실제 왕복의 결과·modelMatched·featureVerified·cleanupComplete를 2026-09-14 재대조했다. 사용자 hook 각각의 발화, 프롬프트 캐시의 실제 적중, plan mode·permission mode의 UI 동작, 설치된 skill·plugin 각각의 실제 실행은 미검증이다. 로컬 stdio MCP와 PNG 입력의 기존 실제 왕복도 유지한다. 외부 계정·서버 기능과 [차단된 symlink 검사](remaining-verification.md)는 통과로 표시하지 않는다.
 
 ## 10. 추가 확정 사항 — 2026-09-11 2차 조사
 

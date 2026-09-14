@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, lstatSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
@@ -7,6 +7,7 @@ import { initializeRecovery, runRecovery, recordRecoveryWorker, recoveryOracle }
 import { SERVICE_FAULTS, SERVICE_MARKER } from './fixtures/service-faults.mjs';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
+import { temporaryDir } from './temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const entry = join(project, 'verification', 'native-service-entry.mjs');
@@ -24,7 +25,7 @@ const sleep = ms => new Promise(done => setTimeout(done, ms));
 export async function verifyNativeServiceRecovery({ kind, model, powershell }) {
   need(SERVICE_FAULTS.includes(kind) && ['luna', 'sol'].includes(model)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'), 'SERVICE_ARGUMENTS');
-  const root = mkdtempSync(join(project, '.tmp', 'native-service-recovery-'));
+  const root = temporaryDir(project, 'native-service-recovery-');
   const maxElapsedMs = kind === 'deferred-503' ? 150000 : 90000;
   const manifest = initializeRecovery(root, { taskId: 'public-service-task' });
   const work = join(root, 'work');

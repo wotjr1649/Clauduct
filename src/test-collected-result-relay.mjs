@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createAgentSelection } from './agent-selection.mjs';
 import { bindingFrom } from './agent-route.mjs';
 
+await mkdir(new URL('../.tmp/', import.meta.url), { recursive: true });
 const root = await mkdtemp(fileURLToPath(new URL('../.tmp/collected-relay-', import.meta.url)));
 const directory = join(root, 'session', 'subagents');
 const route = { model: 'gpt-5.6-sol', effort: 'low' };

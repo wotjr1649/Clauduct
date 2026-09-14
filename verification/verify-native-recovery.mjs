@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fork, spawnSync } from 'node:child_process';
@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { initializeRecovery, runRecovery, recordRecoveryWorker, recoveryOracle } from './unattended-recovery.mjs';
 import { readVerificationLedger } from './verification-ledger.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
+import { temporaryDir } from './temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const entry = join(project, 'verification', 'native-recovery-entry.mjs');
@@ -38,7 +39,7 @@ export async function verifyNativeRecovery({ model, powershell, priorAttempts, p
   const selectedEntry = serviceSignal ? join(project, 'verification', 'native-service-live-entry.mjs') : entry;
   need(Number.isSafeInteger(priorAttempts) && priorAttempts >= 0 && Number.isSafeInteger(priorElapsedMs) && priorElapsedMs >= 0, 'INVALID_PRIOR_USAGE');
   need(phaseMs === 120000 && requestLimit === 16, 'INVALID_BUDGET');
-  const root = mkdtempSync(join(project, '.tmp', 'native-recovery-'));
+  const root = temporaryDir(project, 'native-recovery-');
   const manifest = initializeRecovery(root), work = join(root, 'work'), config = join(root, 'config'), temp = join(root, 'temp');
   mkdirSync(config); mkdirSync(temp);
   const budget = { model, effort: combinations[model], phaseMs, requestLimit, maxPhases: 2, maxTurns: 8, failureMode,

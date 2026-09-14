@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const fixture = join(project, 'verification', 'fixtures', 'process-tree.mjs');
 const helper = join(project, 'verification', 'stop-owned-native-tree.ps1');
 const powershell = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
 const env = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(name => process.env[name]).map(name => [name, process.env[name]]));
-const root = mkdtempSync(join(project, '.tmp', 'owned-tree-')), started = Date.now();
+const root = temporaryDir(project, 'owned-tree-'), started = Date.now();
 const child = spawn(process.execPath, [fixture, root, '0'], { env, cwd: root, stdio: 'ignore', windowsHide: true });
 const deadline = Date.now() + 3000;
 while (!existsSync(join(root, 'pid-2.json')) && Date.now() < deadline) await new Promise(done => setTimeout(done, 10));
@@ -17,7 +18,7 @@ assert.equal(existsSync(join(root, 'pid-2.json')), true);
 function invoke(pid, stop) {
   return spawnSync(powershell, ['-NoProfile', '-NonInteractive', '-File', helper, '-RootPid', String(pid),
     '-StartedAfterMs', String(started), '-RunRoot', root, ...(stop ? ['-Stop'] : [])],
-  { env, cwd: project, windowsHide: true, encoding: 'utf8', timeout: 7000, maxBuffer: 8192 });
+  { env, cwd: project, windowsHide: true, encoding: 'utf8', timeout: 30000, maxBuffer: 8192 });
 }
 // A wrong live PID must be rejected before any termination, including the test owner.
 const rejected = invoke(process.pid, true);

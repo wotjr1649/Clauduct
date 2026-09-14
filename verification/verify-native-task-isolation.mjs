@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, readdirSync, lstatSync } from 'node:fs';
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
@@ -6,6 +6,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { nativeVerificationEnvironment } from './verify-native-recovery.mjs';
 import { createNativeOutputCapture, nativeOutputCompleted } from './native-output.mjs';
 import { createBackgroundTaskBindings } from './background-task-id.mjs';
+import { temporaryDir } from './temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const hash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -55,7 +56,7 @@ function toolEvidence(root, manifest) {
 export async function verifyNativeTaskIsolation({ model, cancelled, powershell }) {
   need(['luna', 'sol'].includes(model) && ['alpha', 'beta'].includes(cancelled)
     && typeof powershell === 'string' && powershell.endsWith('pwsh.exe'), 'TASK_ARGUMENTS');
-  const root = mkdtempSync(join(project, '.tmp', 'native-task-isolation-'));
+  const root = temporaryDir(project, 'native-task-isolation-');
   for (const name of ['work', 'config', 'temp']) mkdirSync(join(root, name));
   const names = ['verification/native-task-entry.mjs', 'verification/verify-native-task-isolation.mjs',
     'verification/fixtures/native-task-worker.mjs', 'verification/background-task-id.mjs',

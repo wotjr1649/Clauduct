@@ -29,7 +29,7 @@ for (const options of [{ localNative: false }, { holdAfterFirstSourceWrite: 'tru
 }
 equal(plan.completedSteps, 0); equal(plan.done, false); equal(plan.account.charged, account.account.initial);
 equal(plan.plan.deadlineMs - plan.plan.createdAtMs, 180000);
-equal(Object.keys(plan.plan.sourceHashes).length, 40);
+equal(Object.keys(plan.plan.sourceHashes).length, 41);
 equal(plan.plan.sourceHashes[join('verification', 'fixtures', 'development-integration-oracle.mjs')],
   sourceHash(readFileSync(join(project, 'verification/fixtures/development-integration-oracle.mjs'))));
 equal(readManagedPlan(account.root).planHash, plan.planHash);

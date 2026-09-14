@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { initializeRecovery, recoveryOracle } from '../verification/unattended-recovery.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const script = join(project, 'verification', 'fixtures', 'native-recovery-mcp.mjs');
-const root = mkdtempSync(join(project, '.tmp', 'native-recovery-mcp-'));
+const root = temporaryDir(project, 'native-recovery-mcp-');
 const manifest = initializeRecovery(root), work = join(root, 'work');
 const call = (id, name, args = {}) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
 const requests = [
@@ -35,7 +36,7 @@ assert.equal(replies[10].error.code, -32602);
 assert.equal(recoveryOracle(root), true);
 let checks = 16;
 for (const shape of ['normal', 'oversized', 'directory']) {
-  const auditRoot = mkdtempSync(join(project, '.tmp', 'native-recovery-mcp-audit-'));
+  const auditRoot = temporaryDir(project, 'native-recovery-mcp-audit-');
   const state = initializeRecovery(auditRoot), auditWork = join(auditRoot, 'work');
   const path = join(auditWork, 'mcp-events.jsonl');
   if (shape === 'oversized') writeFileSync(path, 'x'.repeat(16384));

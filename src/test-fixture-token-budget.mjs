@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { fixtureTokenBudget } from '../verification/fixture-token-budget.mjs';
 import { guardFixtureTransport } from '../verification/fixture-tool-policy.mjs';
 import { verifyNativeDevelopment } from '../verification/verify-native-development.mjs';
-import { readdirSync } from 'node:fs';
+import { readdirSync, mkdirSync } from 'node:fs';
 
 let checks = 0;
 assert.deepEqual(fixtureTokenBudget(), { maxInputTokens: 131072, maxOutputTokens: 32768, outputTokenLimitPolicy: 'usage-enforced-completion' }); checks++;
@@ -32,6 +32,7 @@ for (const streaming of [false, true]) {
   await assert.rejects(guarded.send({}, AbortSignal.timeout(1000)), { code: 'REQUEST_BUDGET' });
   assert.equal(sends, before); assert.equal(delivered, 0); checks++;
 }
+mkdirSync(new URL('../.tmp/', import.meta.url), { recursive: true });
 const before = readdirSync(new URL('../.tmp/', import.meta.url));
 let reservations = 0;
 await assert.rejects(verifyNativeDevelopment({ model: 'sol', powershell: 'C:\\PUBLIC_FIXTURE\\pwsh.exe',

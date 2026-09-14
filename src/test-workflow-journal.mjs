@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createWorkflowSelection, workflowDigest } from './workflow-selection.mjs';
 
+await mkdir(new URL('../.tmp/', import.meta.url), { recursive: true });
 const root = await mkdtemp(fileURLToPath(new URL('../.tmp/workflow-journal-', import.meta.url)));
 const session = 'synthetic-journal-session', agentId = 'synthetic-child', runId = 'wf_journal-01';
 const transcriptPath = join(root, `${session}.jsonl`);

@@ -691,8 +691,15 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     try { const verdict = JSON.parse(check.stdout); independentPassed = !check.error && check.status === 0 && verdict.passed && verdict.checks === task.checks && verdict.failures.length === 0; } catch { }
   }
   const tests = events.filter(row => row.event === 'TESTS_EXECUTED');
-  const baselineFailed = tests.length >= 2 && tests[0].passed === false;
+  // tests[0] is only the baseline if it hashes to it; the interruption classifier
+  // binds the same way. Without this, any first run would count as the baseline.
+  const baselineFailed = tests.length >= 2 && tests[0].passed === false
+    && tests[0].sha256 === sourceHash(task.baseline);
   const revisedPassed = tests.at(-1)?.passed === true && tests.at(-1)?.sha256 === sha256 && events.some(row => row.event === 'SOURCE_WRITTEN');
+  // run_tests refused for want of an approval: without this the verdict is
+  // passed:false with failure:null and the reason survives only in events.jsonl.
+  const testsUnrun = events.filter(row => row.event === 'TESTS_UNRUN').length;
+  if (testsUnrun > 0 && !revisedPassed) failure ??= 'SOURCE_REVIEW_UNAPPROVED';
   const cleanupComplete = status?.cleanup && Object.keys(status.cleanup).length === 9 && Object.values(status.cleanup).every(value => value === true);
   if (!contextMatched) failure ??= 'CONTINUATION_CONTEXT_MISSING';
   const elapsedMs = Date.now() - phaseStart;
@@ -746,7 +753,7 @@ export async function verifyNativeDevelopment({ model, powershell, priorAttempts
     cumulativeAttempts: priorAttempts + attempts, cumulativeElapsedMs: priorElapsedMs + elapsedMs,
     cumulativeInputTokens: priorInputTokens + inputTokens, cumulativeOutputTokens: priorOutputTokens + outputTokens,
     routeMatched, nativeJson: result !== null, nativeError: result?.is_error ?? null, cleanupComplete: cleanupComplete === true,
-    baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, sourceSha256: sha256, artifactHashes,
+    baselineFailed, revisedPassed, independentPassed, oracleUnchanged, testsExecuted: tests.length, testsUnrun, sourceSha256: sha256, artifactHashes,
     sourceUnchanged, ledgerMatched, completedUsageObserved, usageUnobservedAttempts, usageLedger, requestDiagnostics, rateLimits, rateLimitsMatched,
     executionReservation, executionReservationMatched, reservationBeforeNative,
     outputCut, cutReleased, outputCutObserved, taskIncompleteBeforeEffect: taskIncompleteBeforeEffect === true, recordedNativeStopped,

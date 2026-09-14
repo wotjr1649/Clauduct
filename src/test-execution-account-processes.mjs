@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createExecutionAccount, readExecutionAccount, closeExecutionAccount } from '../verification/execution-account.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
-const project = fileURLToPath(new URL('../', import.meta.url)), root = mkdtempSync(join(project, '.tmp', 'execution-account-processes-'));
+const project = fileURLToPath(new URL('../', import.meta.url)), root = temporaryDir(project, 'execution-account-processes-');
 const worker = join(project, 'verification', 'fixtures', 'account-worker.mjs');
 const modules = ['execution-account.mjs', 'execution-reservation.mjs'].map(name => join(project, 'verification', name));
 const env = Object.fromEntries(['SystemRoot', 'WINDIR'].filter(key => process.env[key]).map(key => [key, process.env[key]]));

@@ -6,6 +6,14 @@ import { selectModel } from './models.mjs';
 import { reasoningSnapshot, reasoningEvent, mergeReasoning } from '../poc/adapter.mjs';
 import { inspectCompactTemplate } from './compact-policy.mjs';
 export const REQUEST_STAGES = Object.freeze(['request', 'selection', 'prepare', 'review', 'upstream', 'output-validation', 'delivery']);
+// HTTP server diagnostics only; unknown Node codes collapse to OTHER, never raw text.
+export const TRANSPORT_REJECTION_EVENTS = Object.freeze(['clientError', 'connect', 'upgrade', 'checkContinue', 'checkExpectation']);
+export const TRANSPORT_CLIENT_ERROR_CODES = Object.freeze(['HPE_INVALID_METHOD', 'HPE_INVALID_URL',
+  'HPE_INVALID_VERSION', 'HPE_INVALID_HEADER_TOKEN', 'HPE_INVALID_CONTENT_LENGTH',
+  'HPE_UNEXPECTED_CONTENT_LENGTH', 'HPE_INVALID_CHUNK_SIZE', 'HPE_INVALID_EOF_STATE',
+  'HPE_HEADER_OVERFLOW', 'HPE_LF_EXPECTED', 'HPE_CR_EXPECTED', 'HPE_CLOSED_CONNECTION',
+  'ERR_HTTP_REQUEST_TIMEOUT', 'ECONNRESET', 'OTHER']);
+export const transportClientErrorCode = code => TRANSPORT_CLIENT_ERROR_CODES.includes(code) ? code : 'OTHER';
 // Fixed labels only: never expose rejected field names, values or request bodies.
 export const REQUEST_FAILURES = Object.freeze([
   'OBJECT_FIELDS', 'REQUEST_FIELDS', 'REQUEST_SHAPE', 'OUTPUT_CONFIG_FIELDS',

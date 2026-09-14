@@ -28,7 +28,11 @@ Agent·서브에이전트 정의의 `model` 값은 네 별칭과 전체 모델 I
 
 그 뒤에도 남는 경우를 위해 등록표는 최대 1024개로 제한합니다. SubagentStop이 오지 않아 등록이 쌓이면 가장 오래 쓰이지 않은 **유휴** 등록을 제거하며, 진행 중인 요청이 있는 등록은 절대 제거하지 않습니다. 모두 사용 중이면 새 등록을 `AGENT_BINDING_LIMIT`으로 거부합니다. 제거 횟수는 `lifetime.agentRegistrationsEvicted`, 현재 값은 `registeredAgents`/`maxAgents`입니다.
 
-`lifetime.transportRejections`는 요청 처리기에 도달하기 전에 HTTP 서버가 직접 거부한 수입니다. 깨진 클라이언트 바이트, CONNECT, upgrade, `Expect` 처리가 여기 들어가며 `rejectedBeforeStart`나 요청 성패 카운터와 섞이지 않습니다.
+`lifetime.transportRejections`는 HTTP 서버의 거부 이벤트 수입니다. 깨진 클라이언트 바이트, CONNECT, upgrade, `Expect` 처리가 여기 들어가며 `rejectedBeforeStart`나 요청 성패 카운터와 섞이지 않습니다. `clientError`는 부분 요청 뒤에도 발생할 수 있으므로 모든 사건이 요청 처리기 실행 전이라고 단정하지 않습니다.
+
+`lifetime.transportRejectionsByEvent`는 `clientError`, `connect`, `upgrade`, `checkContinue`, `checkExpectation`별 횟수이며, `transportClientErrorsByCode`는 허용 목록의 Node 오류 code별 횟수입니다. 알 수 없는 code는 `OTHER`로 집계합니다. 원문 오류·주소·헤더·URL·body는 기록하지 않습니다. `transportRejectedConnections`는 거부가 관측된 서로 다른 socket 수로, 같은 연결에서 두 이벤트가 발생하면 기존 합계는 2, 연결 수는 1입니다. 이 수치는 발신 프로세스나 요청 목적을 식별하지 않습니다. 이전 status의 새 필드는 `null`(미관측), 새 gateway에서 사건이 없으면 빈 객체와 0입니다.
+
+Claude `2.1.270`의 `[claude-code:unrecognized_model]`은 요청 모델 ID를 native의 알려진 모델로 해석하지 못했다는 진단입니다. custom picker와 `/v1/models`에 GPT ID가 있어도 native identity 인식과는 별개이며, 진단 자체가 요청 실패나 모델 전환을 뜻하지 않습니다. Clauduct는 GPT ID와 경고를 유지합니다. 모델 fallback 영향 및 제한된 로컬 검증 결과는 [2026-09-14 진단 기록](native-startup-diagnostics-2026-09-14.md)에 정리했습니다.
 
 `WebSearch`의 native side query는 Codex의 standalone 검색 endpoint로 변환합니다. 모델 요청에 hosted search 도구를 추가하지 않습니다. 질의와 도메인 필터를 검색 요청으로 보내고 `server_tool_use`, `web_search_tool_result` 링크 목록, 결과 텍스트로 native에 답합니다. 이 내용은 진단에는 기록하지 않습니다. `WebFetch`는 native가 웹 페이지를 가져온 뒤 모델 요청으로 처리합니다. 두 경로의 실제 비대화형 왕복은 [릴리즈 검증](release-readiness.md)에 있습니다.
 

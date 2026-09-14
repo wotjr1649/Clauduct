@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { readExecutionReservation } from '../verification/execution-reservation.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = fileURLToPath(new URL('../', import.meta.url));
-const root = mkdtempSync(join(project, '.tmp', 'execution-reservation-crash-'));
+const root = temporaryDir(project, 'execution-reservation-crash-');
 const worker = join(project, 'verification', 'fixtures', 'reservation-worker.mjs');
 const module = join(project, 'verification', 'execution-reservation.mjs');
 const env = Object.fromEntries(['SystemRoot', 'WINDIR'].filter(key => process.env[key]).map(key => [key, process.env[key]]));

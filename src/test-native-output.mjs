@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createNativeOutputCapture, nativeOutputCompleted } from '../verification/native-output.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const self = fileURLToPath(import.meta.url), project = dirname(dirname(self));
 const sessionId = '10000000-0000-4000-8000-000000000001', marker = 'PUBLIC_OUTPUT_COMPLETE';
@@ -99,7 +100,7 @@ if (process.argv[2] === '--producer') {
     assert.equal(capture.evidence().failure, 'OUTPUT_RECORD_LIMIT'); checks++;
   }
   for (const kind of ['slow', 'flood', 'large', 'oversize', 'cut', 'truncated']) {
-    const root = mkdtempSync(join(project, '.tmp', 'native-output-'));
+    const root = temporaryDir(project, 'native-output-');
     const capture = createNativeOutputCapture({ maxBytes: 50331648, maxLineBytes: 1048576, maxRecords: 8192 });
     const env = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(name => process.env[name]).map(name => [name, process.env[name]]));
     const child = spawn(process.execPath, ['--permission', `--allow-fs-read=${project}`, `--allow-fs-write=${root}`,

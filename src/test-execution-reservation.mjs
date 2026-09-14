@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createExecutionReservation, settleExecutionReservation, readExecutionReservation } from '../verification/execution-reservation.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = fileURLToPath(new URL('../', import.meta.url));
-const root = mkdtempSync(join(project, '.tmp', 'execution-reservation-'));
+const root = temporaryDir(project, 'execution-reservation-');
 const folder = name => { const path = join(root, name); mkdirSync(path); return path; };
 const details = () => ({ basisHash: 'a'.repeat(64),
   previous: { attempts: 10, inputTokens: 100, outputTokens: 20, elapsedMs: 1000 },

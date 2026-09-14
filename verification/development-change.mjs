@@ -1,4 +1,4 @@
-import { writeFileSync, existsSync, lstatSync, realpathSync, mkdtempSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
+import { writeFileSync, existsSync, lstatSync, realpathSync, openSync, readSync, fstatSync, closeSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -6,6 +6,7 @@ import { sourceHash } from './development-fixture.mjs';
 import { developmentTask, developmentOracleSource } from './development-tasks.mjs';
 import { readManagedDevelopmentResult } from './managed-development.mjs';
 import { readDevelopmentSource } from './development-source-files.mjs';
+import { temporaryDir } from './temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const encode = value => JSON.stringify(value) + '\n';
@@ -70,7 +71,7 @@ export function prepareDevelopmentChange(options) {
   const target = targetPath(options.targetRoot, options.targetPath), before = bytes(target, 8192);
   need(sourceHash(before) === options.expectedBeforeHash && options.expectedBeforeHash === sourceHash(task.baseline), 'DEVELOPMENT_CHANGE_TARGET_CHANGED');
   need(sourceHash(source) === options.expectedAfterHash && options.expectedAfterHash !== options.expectedBeforeHash, 'DEVELOPMENT_CHANGE_SOURCE_CHANGED');
-  const root = mkdtempSync(join(project, '.tmp', 'development-change-'));
+  const root = temporaryDir(project, 'development-change-');
   const record = { version: options.sourcePath === undefined ? 1 : 2, rootHash: sourceHash(root.toLowerCase()), accountRoot: managed.root, entryIndex: managed.entryIndex,
     accountHash: managed.accountHash, executionHash: managed.executionHash, evidenceHash: managed.evidence.evidenceHash,
     taskId: managed.evidence.taskId, localNative: managed.evidence.localNative,
@@ -233,7 +234,7 @@ export function prepareDevelopmentChangeSet(options) {
   need(changes.every(change => change.state === 'not-applied'), 'DEVELOPMENT_CHANGE_SET_BASELINE');
   const compiled = integrationSpecification(options.integration, changes);
   const oracle = bytes(join(project, 'verification', 'fixtures', 'development-integration-oracle.mjs'), 16384);
-  const root = mkdtempSync(join(project, '.tmp', 'development-change-set-'));
+  const root = temporaryDir(project, 'development-change-set-');
   const record = { version: 1, rootHash: sourceHash(root.toLowerCase()), accountRoot: changes[0].record.accountRoot,
     targetRoot: changes[0].record.targetRoot, changes: changes.map(change => ({ root: change.root, changeHash: change.changeHash,
       targetPath: change.record.targetPath })), definitionHash: sourceHash(encode(options.integration)),

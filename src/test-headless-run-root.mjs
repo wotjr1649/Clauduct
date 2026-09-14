@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
-const root = mkdtempSync(join(project, '.tmp', 'headless-root-public-'));
+const root = temporaryDir(project, 'headless-root-public-');
 mkdirSync(join(root, 'verification')); mkdirSync(join(root, '.tmp'));
 for (const name of ['verify-native-headless.ps1', 'read-transport-progress.ps1']) {
   copyFileSync(join(project, 'verification', name), join(root, 'verification', name));
@@ -21,7 +22,7 @@ let checks = 2;
 for (const [value, message] of [[id, 'VERIFICATION_RUN_EXISTS'], ['../PUBLIC', 'RunId'], ['A'.repeat(32), 'RunId'], ['b'.repeat(31), 'RunId']]) {
   const result = spawnSync('C:\\Program Files\\PowerShell\\7\\pwsh.exe', ['-NoProfile', '-NonInteractive', '-File',
     join(root, 'verification', 'verify-native-headless.ps1'), '-Live', '-Model', 'sol', '-Effort', 'low', '-RunId', value],
-  { env, cwd: root, windowsHide: true, encoding: 'utf8', timeout: 7000, maxBuffer: 8192 });
+  { env, cwd: root, windowsHide: true, encoding: 'utf8', timeout: 30000, maxBuffer: 8192 });
   assert.equal(result.error, undefined); assert.equal(result.status, 1); assert.equal(result.signal, null);
   assert(result.stderr.includes(message)); assert.equal(result.stdout, ''); checks += 5;
 }

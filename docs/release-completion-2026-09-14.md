@@ -2,13 +2,15 @@
 
 2026-09-14 사용자가 정상 인증 갱신·기본 압축 실호출·장기 시험을 제외하고 남은 작업의 구현과 로컬 출하를 요청했다. 목표는 약속된 비-Anthropic 서버 전용 기능과 제한된 실제 개발·복구를 완성하고 동일 최종 후보의 증거로 로컬 출하 PASS를 판정하는 것이다. 외부 게시·배포는 포함하지 않는다.
 
+**최신 사용자 지시:** HTTP/TCP를 출하 판정에서 제외하고 나머지를 끝까지 수행한다. 아래 HTTP/TCP HOLD 이력은 알려진 제약으로 보존하며 더 이상 해당 항목의 해결을 출하 선행 조건으로 삼지 않는다. 기능 검증에 필요한 정상 HTTP 왕복 자체를 금지하거나 프로토콜·인증·도구의 오류 처리를 제거하는 뜻으로 해석하지 않는다. 중간 승인/continue 질문과 기능 하나마다의 최종 보고 없이 전체 잔여 범위를 처리한다. 실행하지 못한 필수 항목이나 차단을 PASS로 바꾸지는 않는다.
+
 정상 갱신 판단은 사용자 Codex CLI 로그인 기준, 기본 400K/320K 압축 발동은 사용자 실사용 검증, 4h/24h×3/72h 단계는 범위밖이다. 기존 설정·변환·라우팅·오류·권한 검사는 유지하며, 제외를 PASS로 기록하지 않는다. 원래 명세와 F01~F23 중 제외된 부분 이외의 필수 요구는 유지한다.
 
-기준 후보는 `6c728afa39bd5d5166dd82ba981d6b366fe03580`, 구현 위치는 `.tmp/unattended-release/implementation`, 전용 branch는 `work/unattended-release-2026-09-13`이다. 사용자 루트의 README +2/-0와 기존 untracked 상태를 보존한다. 수정은 이해한 작업 diff만으로 되돌릴 수 있게 분리한다.
+최신 제품 소스 기준은 `da073556a5a333c9f01c799016a2d8da1a9fbf7e`이며, 후속 문서·패키징 변경은 이 소스를 유지한다. 구현 위치는 `.tmp/unattended-release/implementation`, 전용 branch는 `work/unattended-release-2026-09-13`이다. 사용자 루트의 README +2/-0와 기존 untracked 상태를 보존한다. 수정은 이해한 작업 diff만으로 되돌릴 수 있게 분리한다.
 
 | 순서 | 남은 범위 | 현재 상태 | 필요한 증거 |
 |---|---|---|---|
-| 1 | gateway·HTTP 종료·취소·동시 실행 | 반닫기 FAIL 보존 / OS 원인 추적 보류 | CMD에서도 동일 EOF. 환경 한계로 기록하고 독립 작업 진행; 관련 HTTP 회귀 전체의 원인이 확정된 것은 아님 |
+| 1 | 알려진 HTTP/TCP 안정성 문제 | 사용자 지시로 출하 판정 제외 | FAIL 이력과 실사용 위험 보존. 정상 기능 검증은 유지 |
 | 2 | 부모·자식 알림/실패/취소, Workflow 적용 가능한 계약 | 자식 취소4사례·독립 신규 Workflow 연속 실행 두 조합 PASS / 재개 미완료 | 실제 backend 결합과 직접 부모 알림·Workflow cache-miss 미완료는 별도 유지 |
 | 3 | 실제 개발·소유/사용량·효과 대조·파일 적용·복구 | 부분 검증 | 현재 실제 경로의 좁은 개발·독립 oracle·중복/유실/거짓 완료 0 |
 | 4 | 남은 설정·도구·권한·변조·기록 경계 | 부분 검증/특정 차단 | 요구별 정상·거부 증거. 기존 guard 거부는 우회하지 않음 |
@@ -21,6 +23,16 @@
 구현 영향 회귀는 30초 runner 안에서 수행했고, 새 native 비교는 실행 전 별도 budget.json에 각 30초/16개 공개 응답 상한을 기록했다. 장기 시험으로 확대하지 않았다.
 
 목표 도구의 기존 목표는 blocked이며 새 objective 등록은 `unfinished goal` 때문에 거부됐다. 완료되지 않은 예전 목표를 완료로 변경하지 않았다. 이 문서가 사용자의 최신 범위를 반영한 현재 로컬 목표다. 사용자 재개 요청으로 개발 권한 차단은 해소되었고, 기존 개별 guard 차단은 유지한다. 현재 출하 판정은 HOLD다.
+
+## 최신 후보의 마감 검사
+
+HTTP/TCP 제외 후 선택한 회귀68파일의 실행 범위를 확인했다. 최초 contracts40파일 묶음은60143ms에 전체60초 상한으로 종료했다. 그 전에35파일(이 중 fixture-usage는 개별 node:test21개)이 성공했고 assertion 실패는 없었다. 해당 결과와 종료를 보존하고 완료되지 않은5파일만 실행해21681ms/exit0을 확인했다. 개발·효과·복구·원장 관련28파일은13047ms/exit0이었다. timeout 기록 자체를 성공으로 바꾸지 않는다. 모든 내부 NOT_RUN/BLOCKED와 MCP permission warning 집계는 원결과에 보존한다.
+
+증거는 `.tmp/release-completion-20260914/candidate-regression-contracts.json`, `candidate-regression-contracts-remaining.json`, `candidate-regression-development.json`이다. 이 실행은 실제 backend와 사용자 credential 읽기0이다. 단위/loopback 합격을 전체 native 기능의 합격으로 확대하지 않는다.
+
+RELEASE.md의 문서 링크 두 개가 ZIP의 명시적 포함 목록에서 빠져 있었으므로 `build-release.ps1`의 해당 두 경로를 추가했다. 전체 docs나 임시 증거·profile을 묶지 않는다. 최종 ZIP에는 원래 파일별 SHA256 manifest와 함께 알려진 TCP 제약 및 이 판정 범위를 포함한다. 실제 ZIP hash·새 경로 검증·제한된 실제 Workflow 요청 결과는 작업 루트의 `docs/unattended-release-progress.md`와 해당 실행 증거에서 이어 기록한다.
+
+현재 근거만으로 HTTP/TCP 이외 전체를 OK/PASS/FINAL로 표시할 수는 없다. F12의 유효한 미지원 알림 경로, F14의 기대 성공 Workflow 재개, F22의 정책상 불가한 동적 링크 보안 검사는 원문에서도 미완료/차단 보존을 요구한다. 기존 native scriptPath 접근 거부를 다른 경로로 재현하거나 라우팅 신원 검사를 완화하지 않는다. 모든 사용자 profile 조합, 자연 발생 backend 장애, 장기 전용 관리기 확장, 전원 손실의 전면 보증을 추가 출하 기준으로 만들지도 않는다.
 
 ## 재개 후 관측과 구현
 

@@ -19,7 +19,8 @@ $commit = @(Read-Git -Arguments @('rev-parse', '--verify', 'HEAD'))[0]
 if ($commit -notmatch '^[a-f0-9]{40}$') { throw 'RELEASE_COMMIT_INVALID' }
 # Only this reviewed distribution surface. No profiles, status, prompts, audit
 # transcripts, generated app-server schemas, VCS history, or untracked files.
-$paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md', 'src',
+$paths = @('clauduct.cmd', 'RELEASE.md', 'docs/claude-option-classification.md',
+    'docs/release-completion-2026-09-14.md', 'docs/tcp-shell-assessment-2026-09-14.md', 'src',
     'verification/manual-http-probe.mjs', 'verification/auth-store-selection.mjs', 'verification/test-manual-http-probe.mjs',
     'verification/verify-live.mjs', 'verification/verify-native-headless.ps1',
     'verification/fixtures/native-mcp.mjs', 'verification/build-release.ps1',

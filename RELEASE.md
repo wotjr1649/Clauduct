@@ -1,6 +1,6 @@
 # Clauduct — Windows 릴리즈 안내
 
-현재 후보의 무인 개발 출하 판정은 **HOLD**다. HTTP/TCP 안정성 문제는 최신 사용자 지시에 따라 출하 판정에서 제외한다. 남은 이유는 Workflow 재개와 일부 부모 알림 경로의 미완료, 필수 보안 검사의 차단, 동일 후보 실제 backend 검증의 공백이다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 과거 HTTP/TCP 검사 실패와 실사용 제약은 아래 문서에 보존한다.
+현재 후보의 무인 개발 출하 판정은 **HOLD**다. HTTP/TCP 안정성 문제는 최신 사용자 지시에 따라 출하 판정에서 제외한다. 남은 이유는 Workflow 재개와 일부 부모 알림 경로의 미완료, 필수 동적 링크 보안 검사의 차단이다. 메인·일반 Agent·신규 Workflow의 지정 라우팅과 실제 두 파일 개발은 두 조합에서 통과했다. 로컬 ZIP 생성은 파일 구성·무결성 검사이며 전체 출하 검증의 통과를 뜻하지 않는다. 과거 HTTP/TCP 검사 실패와 실사용 제약은 아래 문서에 보존한다.
 
 2026-09-14 변경된 출하 범위에서 정상 인증 갱신 판단은 사용자 Codex CLI 로그인 기준으로 분리하고, 기본 400K/320K 압축 발동은 실사용 검증으로 이관했으며, 4h/24h×3/72h 장기 시험은 제외했다. 아래 과거 검증 설명의 이 세 항목은 현재 출하 보류 사유가 아니다. `CLI_VERSION_UNVERIFIED`도 기존 기준 버전과 다르다는 비차단 안내이며, 그 안내 자체를 실패로 세지 않는다. 그 밖의 필수 기능 실패와 검증 차단은 유지한다.
 
@@ -28,7 +28,7 @@ TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사
 
 ## 필요 환경
 
-- Windows, PATH의 Node.js. 검증 환경은 Node `24.19.0`, native Claude `2.1.269`, Codex standalone `0.154.0`이다. 다른 조합의 성공을 보장하지 않는다.
+- Windows, PATH의 Node.js. 이번 최종 소스의 검증 환경은 Node `24.19.0`, native Claude `2.1.270`, Codex standalone `0.154.0`이다. 과거 안내의 Claude `2.1.269`와 구분한다. 이번 실제 세션과 이전 부모 알림 실패 세션의 공개 fixture transcript에서 모두 `2.1.270`을 확인했다. 다른 조합의 성공을 보장하지 않는다.
 - native Claude는 OS 사용자 홈의 `.local/bin/claude.exe`, Codex는 `AppData/Local/Programs/OpenAI/Codex/bin/codex.exe`를 사용한다. 임의 실행 파일 경로를 설정으로 받지 않는다.
 - 기존 Codex 로그인과 OS 사용자 홈의 `.codex` 파일 credential store가 필요하다. Clauduct는 인증을 직접 갱신하거나 쓰지 않는다. account 변경·다른 `CODEX_HOME`·디버그/TLS 우회 런타임은 거부한다.
 - 인증 값을 읽기 전에 루트 `cli_auth_credentials_store`를 구조적으로 구분한다. [TOML 1.0 키와 문자열 규칙](https://toml.io/en/v1.0.0#keys)에 따라 따옴표·Unicode escape·주석·여러 줄 문자열·중첩 값·테이블을 구분하며, 명시한 다른 저장소를 놓치고 파일 캐시를 읽던 경우를 수정했다. 이 읽기는 다른 설정을 적용하거나 전체 TOML 설정의 유효성을 보증하지 않는다. 입력65536자·중첩64단계·해석한 키/저장소 문자열1024자 한도이며, 모호하거나 지원하지 않는 인증 설정은 캐시 조회 전에 거부한다.
@@ -53,6 +53,8 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 [CLI 옵션 경계](docs/claude-option-classification.md)에 차단·전달 범위를 정리했다. 차단 옵션이나 Anthropic 전용 서비스는 지원 기능으로 간주하지 않는다.
 
 ## 확인된 기능과 남는 한계
+
+2026-09-14 최종 제품 소스: 선택한 회귀68파일과 배포본 관련5파일, 실제 메인/Agent/신규 Workflow 라우팅, 두 파일 개발의 독립81개 판정을 sol/low·luna/max에서 확인했다. 실제6실행/26요청·입력111655/출력4653토큰이며 기존 실패·미관측 예약을 유지한다. 같은 배포본의 출력 단절→동일 세션 복구 두 사례는 고정 공개 응답16개로 검사했고 최초 실패·파일 묶음 쓰기1회·파일 쓰기2회·회수를 대조했다. 복구 주입 사례 자체에 실제 backend 요청은 없다. 상세 증거와 남는 F12/F14/F22는 [출하 기록](docs/release-completion-2026-09-14.md)에 있다.
 
 이전 후보의 실측: 비대화형 JSON·stream-json, Read/Edit, Bash·PowerShell, stdio MCP, PNG 입력, WebFetch·WebSearch, Agent 선택, inline Workflow·StructuredOutput·부모 복귀, background 도구 결과 회수·TaskStop 뒤 worker 종료, 새 프로세스 resume, 실패 후 도구 미중복·이력 보존·정리를 확인했다. 모델 네 종류의 low 요청도 당시 성공했다. 이전 후보의 결과를 이번 후보 전체의 회귀 통과로 복사하지 않는다.
 

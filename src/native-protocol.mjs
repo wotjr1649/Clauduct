@@ -21,6 +21,7 @@ export const REQUEST_FAILURES = Object.freeze([
   'REQUEST_MESSAGES_INVALID', 'REQUEST_MESSAGES_EMPTY',
   'THINKING_FIELDS', 'THINKING_TYPE', 'THINKING_BUDGET', 'CONTEXT_FIELDS',
   'TOOLS_SHAPE', 'TOOL_FIELDS', 'TOOL_CHOICE_FIELDS', 'MESSAGE_FIELDS', 'MESSAGE_EFFORT_ROLE',
+  'OUTPUT_FORMAT_SHAPE', 'OUTPUT_FORMAT_FIELDS', 'OUTPUT_FORMAT_TYPE', 'OUTPUT_FORMAT_SCHEMA', 'OUTPUT_FORMAT_NAME',
   'TEXT_SHAPE', 'TEXT_FIELDS', 'TEXT_VALUE', 'CACHE_FIELDS', 'CACHE_VALUE',
   'IMAGE_FIELDS', 'IMAGE_SOURCE_FIELDS', 'IMAGE_ROLE', 'TOOL_CHANGE_FIELDS', 'TOOL_REFERENCE_FIELDS',
   'TOOL_USE_FIELDS', 'TOOL_RESULT_FIELDS', 'TOOL_RESULT_SHAPE', 'REDACTED_FIELDS', 'REDACTED_ROLE', 'REASONING_FIELDS'
@@ -255,7 +256,23 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   requestNeed(Array.isArray(doc.messages), 'REQUEST_MESSAGES_INVALID');
   requestNeed(doc.messages.length > 0, 'REQUEST_MESSAGES_EMPTY');
   let selected = route ?? selectModel(doc.model, subagent ? undefined : doc.output_config?.effort);
-  if (doc.output_config !== undefined) keys(doc.output_config, ['effort'], 'OUTPUT_CONFIG_FIELDS');
+  if (doc.output_config !== undefined) keys(doc.output_config, ['effort', 'format'], 'OUTPUT_CONFIG_FIELDS');
+  // Structured output. The client states the schema and nothing else -- it sends neither the
+  // name nor the strict flag the backend's field requires, so the transport supplies both, and
+  // strict is what makes the field a structured output rather than a hint.
+  // The schema is carried through unread: JSON Schema semantics belong to the backend, and a
+  // second, weaker validator here would only disagree with the one that decides.
+  let outputFormat;
+  if (doc.output_config?.format !== undefined) {
+    const format = doc.output_config.format;
+    requestNeed(object(format), 'OUTPUT_FORMAT_SHAPE');
+    keys(format, ['type', 'schema', 'name'], 'OUTPUT_FORMAT_FIELDS');
+    requestNeed(format.type === 'json_schema', 'OUTPUT_FORMAT_TYPE');
+    requestNeed(object(format.schema), 'OUTPUT_FORMAT_SCHEMA');
+    requestNeed(format.name === undefined || id(format.name), 'OUTPUT_FORMAT_NAME');
+    outputFormat = { type: 'json_schema', name: format.name ?? 'structured_output',
+      schema: format.schema, strict: true };
+  }
   need(Number.isSafeInteger(doc.max_tokens) && doc.max_tokens > 0, 'INVALID_OUTPUT_LIMIT');
   if (doc.thinking !== undefined) {
     keys(doc.thinking, ['type', 'display', 'budget_tokens'], 'THINKING_FIELDS');
@@ -409,6 +426,7 @@ export function prepareNative(doc, { subagent = false, route, turnToolChanges = 
   const body = { model: selected.model,
     instructions: 'Follow the developer instructions in the conversation.', input, tools, tool_choice: toolChoice,
     parallel_tool_calls: parallel, reasoning: { effort: selected.effort },
+    ...(outputFormat && { text: { format: outputFormat } }),
     include: ['reasoning.encrypted_content'], stream: true, store: false };
   // This process-owned test configuration is never accepted from a request body.
   // Search is a separately classified side query with no model execution.

@@ -97,7 +97,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
     return typeof value === 'string' && Buffer.byteLength(value) === secret.length && timingSafeEqual(Buffer.from(value), secret);
   }
   function reply(res, status, value) {
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'close' });
+    res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
     res.end(JSON.stringify(value));
   }
   async function readBody(req, limit, controller) {
@@ -145,7 +145,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
       const path = req.url.split('?')[0];
       if (req.method === 'HEAD' && path === '/api/hello') {
         need(req.headers.authorization === undefined || authorized(req.headers.authorization), 'LOCAL_SESSION_REQUIRED');
-        res.writeHead(204, { Connection: 'close' }); res.end(); return;
+        res.writeHead(204, { Connection: 'keep-alive' }); res.end(); return;
       }
       need(authorized(req.headers.authorization), 'LOCAL_SESSION_REQUIRED');
       if (req.method === 'GET' && path === '/v1/models') {
@@ -256,7 +256,7 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         parentRef: reference('agent', req.headers['x-claude-code-session-id'], req.headers['x-claude-code-parent-agent-id']),
         subagent: req.headers['x-claude-code-agent-id'] !== undefined,
         admissionStartedMs: elapsed(), admittedMs: null, preparedMs: null, transportStartedMs: null,
-        firstEventMs: null, firstTextDeltaMs: null, firstDownstreamWriteMs: null,
+        firstEventMs: null, firstTextDeltaMs: null, firstOutputItemMs: null, firstDownstreamWriteMs: null,
         transportFinishedMs: null, finishedMs: null, retryScheduledMs: [], attempts: [], success: false };
       recentRequests.push(timing);
       lifetime.started++;
@@ -367,7 +367,11 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
         const work = writeTail.then(async () => {
         if (controller.signal.aborted) throw new NativeError('CANCELLED');
         if (!ping) { responseStarted = true; timing.firstDownstreamWriteMs ??= elapsed(); }
-        if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'close' });
+        // Persistent, not close-delimited. A local HTTP filter (AdGuard was the observed one)
+        // mishandles the teardown of a close-delimited chunked response and turns the FIN into
+        // an RST: measured 14/20 responses reaching the client with close, 20/20 with keep-alive.
+        // Shutdown does not rely on this header; close() destroys every tracked socket itself.
+        if (!res.headersSent) res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
         activeDeliveries++;
         try {
           await writeFrames(res, frames, controller.signal);
@@ -396,6 +400,13 @@ export async function startNativeGateway({ transport, onUnregisteredAgent, onUnm
           timing.firstEventMs ??= elapsed();
           timing.lastUpstreamEventMs = elapsed();
           if (event.type === 'response.output_text.delta') timing.firstTextDeltaMs ??= elapsed();
+          // Where reasoning stops and output starts, on EVERY turn. firstTextDeltaMs answers
+          // that only for a turn that ends in text, so a turn ending in a tool call -- most of
+          // them -- left the reasoning span unmeasurable and out of any average taken from it.
+          // The first non-reasoning item is the same boundary and exists whatever follows it.
+          if (event.type === 'response.output_item.added' && event.item?.type !== 'reasoning') {
+            timing.firstOutputItemMs ??= elapsed();
+          }
           await emit(validateResponse('stream', () => response.push(event)));
           if (event.type === 'codex.response.metadata') {
             timing.auxiliaryMetadataEvents = (timing.auxiliaryMetadataEvents ?? 0) + 1;

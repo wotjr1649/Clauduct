@@ -2,7 +2,7 @@
 
 ## 실행과 모델
 
-모델·effort 옵션 없는 메인 시작값은 GPT-6 Astra/low입니다. `--effort` 명시값이 우선하며, `--model`을 명시하고 effort를 생략하면 아래 모델별 기본값을 사용합니다. 예를 들어 `--model astra`는 기존 medium, 옵션 없는 실행은 low입니다. 고정 clauduct-astra/sol/terra/luna 정의는 변경하지 않으며 clauduct-inherit는 생성 시점 직접 부모의 실제 모델·effort를 따릅니다.
+모델·effort 옵션 없는 메인 시작값은 GPT-6 Astra/low입니다. `--effort` 명시값이 우선하며, `--model`을 명시하고 effort를 생략하면 아래 모델별 기본값을 사용합니다. 예를 들어 `--model astra`는 기존 medium, 옵션 없는 실행은 low입니다. 일반 작업 agent 정의는 모든 실행에 등록되는 `clauduct-<모델>-<effort>` 14개이며 clauduct-inherit는 생성 시점 직접 부모의 실제 모델·effort를 따릅니다.
 
 ### 모델 요청 없는 종료 진단
 
@@ -65,7 +65,7 @@ D:\AIDEV\Clauduct\clauduct.cmd -p --output-format json --max-turns 3 -- "Summari
 
 ### 작업 문서 선로드
 
-`clauduct --gpt-agents --document-first`는 이 native 자식 세션에만 고정 문서 선로드 지침을 `--append-system-prompt`로 전달합니다. 사용자가 작업 문서를 읽고 이어가라고 요청하면, 선택적 Skill/workflow·셸 준비·위임보다 먼저 문서를 Read로 읽고 범위와 중단 조건을 확정하도록 합니다. 문서 내용에 독립적인 권한을 부여하지 않습니다.
+`clauduct --document-first`는 이 native 자식 세션에만 고정 문서 선로드 지침을 `--append-system-prompt`로 전달합니다. 사용자가 작업 문서를 읽고 이어가라고 요청하면, 선택적 Skill/workflow·셸 준비·위임보다 먼저 문서를 Read로 읽고 범위와 중단 조건을 확정하도록 합니다. 문서 내용에 독립적인 권한을 부여하지 않습니다.
 
 기본 실행은 바꾸지 않으며 옵션 없이 새로 시작하면 지침을 추가하지 않습니다. 전역 설정·plugin·자동 hook·권한 검사·모델·effort·agent 정의는 그대로입니다. 이것은 모델 행동 지침이지 강제 sandbox나 tool gate가 아닙니다. 실제 첫 도구가 Read인지, 범위 밖 쓰기가 없는지는 native 세션에서 별도로 검증해야 합니다. 기존 세션에 소급 적용되지 않습니다.
 
@@ -73,17 +73,23 @@ D:\AIDEV\Clauduct\clauduct.cmd -p --output-format json --max-turns 3 -- "Summari
 
 ### GPT 선택용 일반 작업 agent
 
-`clauduct --gpt-agents`로 시작하면 해당 자식 세션에만 일반 작업 agent 5개를 추가합니다. 메인 모델·effort는 평소처럼 실행 옵션이나 세션 안에서 선택하며, 이 옵션이 메인 값을 강제하지 않습니다. 일반 실행에는 추가하지 않으며 옵션 없이 다시 시작하면 추가 등록하지 않습니다. 전역 agent 파일은 생성하지 않습니다.
+`clauduct`는 **모든 실행에서** 해당 자식 세션에만 일반 작업 agent 14개를 등록합니다. 별도 옵션은 없습니다(과거의 `--gpt-agents`는 제거됐고, 옛 명령줄이 claude.exe로 흘러가지 않도록 `INVALID_ARGUMENTS`로 거부합니다). 메인 모델·effort는 평소처럼 실행 옵션이나 세션 안에서 선택하며 이 등록이 메인 값을 강제하지 않습니다. 전역 agent 파일은 생성하지 않습니다.
+
+사용자의 `.claude/agents/`·`~/.claude/agents/` 정의를 대체하지 않습니다. [공식 subagents 문서](https://code.claude.com/docs/en/sub-agents) 확인(2026-09-15): `--agents`는 우선순위 2로 프로젝트(3)·사용자(4)보다 높지만 **이름이 같을 때만** 이깁니다. 등록 이름이 전부 `clauduct-` 접두사라 충돌 경로가 없습니다. 모델이 매 턴 보는 목록은 약 1,886자(≈540 토큰)이며 `--agents` JSON은 9,736 bytes, 전체 cmdline은 11,685 / 32767로 측정했습니다.
+
+이름은 모두 `clauduct-<모델>-<effort>` 형태이며 총 14개입니다. `max`는 luna 전용이고 astra/sol/terra는 low~xhigh를 노출합니다.
 
 | subagent_type | 모델·effort | selectionSource |
 |---|---|---|
-| clauduct-astra | astra/medium | definition-model |
-| clauduct-sol | sol/xhigh | definition-model |
-| clauduct-terra | terra/high | definition-model |
-| clauduct-luna | luna/max | definition-model |
+| clauduct-astra-low / -medium / -high / -xhigh | astra + 해당 effort | definition-model |
+| clauduct-sol-low / -medium / -high / -xhigh | sol + 해당 effort | definition-model |
+| clauduct-terra-low / -medium / -high / -xhigh | terra + 해당 effort | definition-model |
+| clauduct-luna-max | luna/max | definition-model |
 | clauduct-inherit | 생성 시점 직접 부모의 실제 모델·effort | definition-inherit |
 
-Agent에서 위 subagent_type을 선택하고 model 인수는 생략합니다. 예: `Agent(subagent_type="clauduct-sol", description="Review implementation", prompt="...")`. 이들은 자체 지침을 사용하는 일반 작업 agent이며 내장 Plan/Explore의 복제본이 아닙니다. 기존 Explore/general-purpose=luna/max, Plan=sol/xhigh는 그대로입니다. 기존 명시 model 인수가 있는 호출의 우선순위도 변경하지 않습니다.
+Agent에서 위 subagent_type을 선택하고 model 인수는 생략합니다. 예: `Agent(subagent_type="clauduct-sol-xhigh", description="Review implementation", prompt="...")`. 이들은 자체 지침을 사용하는 일반 작업 agent이며 내장 Plan/Explore의 복제본이 아닙니다. 기존 Explore/general-purpose=luna/max는 그대로이고 Plan은 astra/low입니다. 기존 명시 model 인수가 있는 호출의 우선순위도 변경하지 않습니다.
+
+**정의 설명문은 선택을 유도하지 않습니다.** "그 모델 선택이 요청되었을 때 고르라"고만 적혀 있으므로, 사용자가 이름을 지정하지 않으면 모델이 스스로 낮은 effort 변종을 고르지 않습니다. 이 확장은 사용자가 쓸 수 있는 명시 채널을 넓힌 것이지 자동 effort 절감이 아닙니다.
 
 도구 목록은 Read, Grep, Glob, Bash, Edit, Write, Agent, TaskOutput, SendMessage입니다. native가 현재 문맥에서 제공하는 도구와 기존 권한 검사 아래에서만 사용할 수 있습니다. permissionMode, hook, MCP, 전역 설정을 추가/완화하지 않습니다. 상속 모델과 작업 권한의 상속은 다른 문제이며 도구가 보인다고 외부 쓰기가 허용되는 것은 아닙니다. 임의 --agents 입력은 계속 차단합니다.
 
@@ -102,7 +108,7 @@ Agent에서 위 subagent_type을 선택하고 model 인수는 생략합니다. �
 | gpt-5.6-terra | high |
 | gpt-5.6-luna | max |
 
-메인은 선택한 모델과 effort를 존중합니다. 모델 미지정 Explore/일반 작업은 luna/max, Plan은 sol/xhigh를 사용합니다. 기존 Haiku/Sonnet 별칭은 luna, Opus는 sol로 변환하지만 현재 GPT 직접 선택 계약의 대체 검증에는 사용하지 않습니다. 검증된 부모 호출과 자식 metadata의 명시 모델이 역할 기본값보다 우선하며 선택 모델의 기본 effort를 적용합니다. gateway의 명시 inherit 처리는 생성 호출에 기록한 직접 부모의 실제 모델·effort를 유지하며 snapshot이 없으면 거부합니다. 설치 native Agent 입력 스키마의 GPT/inherit 지원은 아직 미해결입니다. [현재 계약과 검증](gpt-agent-selection-contract.md). 실제 계정에서 모든 조합이 수락되는지는 합성 검사로 입증되지 않습니다. 아래 과거 세션의 sol/high 통과 기록은 변경 전 증거이며 sol/xhigh의 실제 검증으로 확대하지 않습니다.
+메인은 선택한 모델과 effort를 존중합니다. 모델 미지정 Explore/일반 작업은 luna/max, Plan은 astra/low를 사용합니다. 기존 Haiku/Sonnet 별칭은 luna, Opus는 sol로 변환하지만 현재 GPT 직접 선택 계약의 대체 검증에는 사용하지 않습니다. 검증된 부모 호출과 자식 metadata의 명시 모델이 역할 기본값보다 우선하며 선택 모델의 기본 effort를 적용합니다. gateway의 명시 inherit 처리는 생성 호출에 기록한 직접 부모의 실제 모델·effort를 유지하며 snapshot이 없으면 거부합니다. 설치 native Agent 입력 스키마의 GPT/inherit 지원은 아직 미해결입니다. [현재 계약과 검증](gpt-agent-selection-contract.md). 실제 계정에서 모든 조합이 수락되는지는 합성 검사로 입증되지 않습니다. 아래 과거 세션의 sol/high 통과 기록은 변경 전 증거이며 sol/xhigh의 실제 검증으로 확대하지 않습니다.
 
 **메타데이터 준비와 검증:** 설치 native는 sidecar 저장 완료를 기다리지 않고 SubagentStart로 진행합니다. 실제 기록에서 sidecar는 hook 반환 뒤에 생성됐으므로 hook 안에서 파일을 기다리지 않습니다. gateway는 검증 완료 후 전달하는 Agent/Task/Skill/SendMessage/Workflow 호출의 ID와 모델·역할·부모 ID만 메모리에 남깁니다. 기존 SubagentStart hook은 세션 ID와 transcript 위치를 등록하고 즉시 반환합니다. 첫 자식 모델 요청에서 gateway가 설정된 Claude projects 루트 안의 해당 agent metadata만 최대 16KiB 읽습니다. 동시 첫 요청은 같은 검증 Promise를 공유합니다. 부모 호출·역할·부모 agent가 일치해야 배정하며 사용한 호출 ID는 소비합니다. 파일 누락·쓰기 중 JSON은 최대 1.5초 재확인하고, 권한 거부는 재시도하지 않습니다. 확인 실패 시 AGENT_SELECTION_UNVERIFIED와 고정 원인 코드로 upstream 전송 전에 중단합니다. 이전 snapshot을 새 재개 호출로 재사용하지 않습니다. 파일·prompt·인증 원문은 진단에 포함하지 않습니다.
 

@@ -3,8 +3,15 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 try {
-    if ($PSVersionTable.PSVersion.ToString() -cne '7.6.5' -or
-        [System.Environment]::Version.ToString() -cne '10.0.11') { throw 'TRANSPORT_RUNTIME_UNSUPPORTED' }
+    # One pin cannot hold on two machines: CI runs 7.6.5/10.0.11 and a developer box that has
+    # taken a PowerShell update runs 7.6.6/10.0.12. The set is not a relaxation -- an
+    # unlisted runtime is still refused. A version joins it only after this probe has been
+    # run on it and its observations confirmed, which is what the pin was always for.
+    if ($PSVersionTable.PSVersion.ToString() -cnotin @('7.6.5', '7.6.6') -or
+        [System.Environment]::Version.ToString() -cnotin @('10.0.11', '10.0.12')) { throw 'TRANSPORT_RUNTIME_UNSUPPORTED' }
+    # The probe reports what ran rather than a literal it cannot measure. The gate above is
+    # what decides; this only carries the value into the result.
+    $env:CLAUDUCT_PWSH_VERSION = $PSVersionTable.PSVersion.ToString()
     $taskMode = if ($args.Count -ge 1) { $args[0] } else { '' }
     if ($taskMode -ceq '--live') {
         if ($args.Count -ne 1 -or [Console]::IsInputRedirected -or [Console]::IsOutputRedirected -or

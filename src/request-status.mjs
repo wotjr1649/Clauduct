@@ -10,7 +10,7 @@ import { SELECTION_FAILURES, SELECTION_IO_CODES, COMPLETION_FAILURES, COMPLETION
 import { TRANSPORT_REJECTION_EVENTS, TRANSPORT_CLIENT_ERROR_CODES } from './native-protocol.mjs';
 
 const times = ['admissionStartedMs', 'admittedMs', 'preparedMs', 'transportStartedMs', 'firstEventMs',
-  'firstTextDeltaMs', 'firstDownstreamWriteMs', 'transportFinishedMs', 'finishedMs'];
+  'firstTextDeltaMs', 'firstOutputItemMs', 'firstDownstreamWriteMs', 'transportFinishedMs', 'finishedMs'];
 const number = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const fixedCounts = (value, labels) => value && typeof value === 'object' && !Array.isArray(value)

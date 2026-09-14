@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createNativeResponse, nativeResponse, prepareNative } from './native-protocol.mjs';
+import { createNativeResponse, nativeResponse, prepareNative, REQUEST_FAILURES } from './native-protocol.mjs';
 import { mergeReasoning } from '../poc/adapter.mjs';
 
 const tool = (name, defer_loading) => ({ name, description: 'Synthetic tool', ...(defer_loading ? { defer_loading: true } : {}),
@@ -285,5 +285,39 @@ const doneReasoning = { type: 'reasoning', id: 'rs_merge', status: 'completed',
   summary: [{ type: 'summary_text', text: 'SYNTHETIC_SUMMARY' }], encrypted_content: 'SYNTHETIC_DONE' };
 const mergedReasoning = mergeReasoning(doneReasoning, { type: 'reasoning', id: doneReasoning.id, encrypted_content: 'SYNTHETIC_FINAL' });
 assert.equal(mergedReasoning.summary[0].text, 'SYNTHETIC_SUMMARY');
+
+// Structured output. The host's session-title side query sends a schema and nothing else, so
+// the transport supplies the name and strict flag the backend requires and carries the schema
+// through unread. Before this the whole request was refused and the title never generated.
+const titleFormat = { type: 'json_schema', schema: { type: 'object',
+  properties: { title: { type: 'string' } }, required: ['title'], additionalProperties: false } };
+const structured = prepareNative({ ...doc(), output_config: { format: titleFormat } });
+assert.deepEqual(structured.body.text, { format: { type: 'json_schema', name: 'structured_output',
+  schema: titleFormat.schema, strict: true } });
+// The schema object is carried, not rebuilt: a copy that drops a keyword is a different schema.
+assert.equal(structured.body.text.format.schema, titleFormat.schema);
+// effort and format travel independently; neither displaces the other.
+const withEffort = prepareNative({ ...doc(), output_config: { effort: 'low', format: titleFormat } });
+assert.equal(withEffort.body.reasoning.effort, 'low');
+assert.equal(withEffort.body.text.format.strict, true);
+// A client-supplied name wins over the transport's placeholder.
+assert.equal(prepareNative({ ...doc(), output_config: { format: { ...titleFormat, name: 'session_title' } } })
+  .body.text.format.name, 'session_title');
+// No format, no field: an ordinary turn is byte-identical to before.
+assert.equal(prepareNative({ ...doc(), output_config: { effort: 'low' } }).body.text, undefined);
+assert.equal(prepareNative(doc()).body.text, undefined);
+// Every rejection keeps the client-facing code fixed and names the reason only in diagnostics.
+for (const [config, requestFailure] of [
+  [{ format: 'SYNTHETIC' }, 'OUTPUT_FORMAT_SHAPE'],
+  [{ format: { ...titleFormat, strict: true } }, 'OUTPUT_FORMAT_FIELDS'],
+  [{ format: { type: 'text', schema: {} } }, 'OUTPUT_FORMAT_TYPE'],
+  [{ format: { type: 'json_schema' } }, 'OUTPUT_FORMAT_SCHEMA'],
+  [{ format: { ...titleFormat, name: 'not an id' } }, 'OUTPUT_FORMAT_NAME'],
+  [{ format: titleFormat, unknown: 1 }, 'OUTPUT_CONFIG_FIELDS']
+]) {
+  assert.throws(() => prepareNative({ ...doc(), output_config: config }), error =>
+    error.code === 'UNSUPPORTED_REQUEST' && error.requestFailure === requestFailure
+    && REQUEST_FAILURES.includes(error.requestFailure));
+}
 
 process.stdout.write(JSON.stringify({ suite: 'native-protocol', passed: true, externalRequests: 0, credentialReads: 0 }) + '\n');

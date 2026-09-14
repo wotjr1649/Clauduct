@@ -502,11 +502,11 @@ await test('stopped_agent_can_resume_without_registration_and_later_rebind', () 
   const binding = { id: 'resumed', role: 'Plan', stop: false };
   await registerBinding(binding, source);
   const headers = { 'x-claude-code-agent-id': binding.id };
-  assert.ok((await post(gateway, doc('terra'), headers)).text.includes(MODELS.sol.model));
+  assert.ok((await post(gateway, doc('terra'), headers)).text.includes(ROLE_MODELS.Plan.model));
   await registerBinding({ ...binding, stop: true }, source);
   assert.ok((await post(gateway, doc('terra'), headers)).text.includes(MODELS.terra.model));
   await registerBinding(binding, source);
-  assert.ok((await post(gateway, doc('terra'), headers)).text.includes(MODELS.sol.model));
+  assert.ok((await post(gateway, doc('terra'), headers)).text.includes(ROLE_MODELS.Plan.model));
   assert.equal(gateway.diagnostics().unregisteredAgentRequests, 1);
 }));
 await test('unregistered_agent_still_requires_auth_valid_model_and_ids', () => fixture(async (gateway, received) => {
@@ -538,7 +538,7 @@ await test('actual_hook_process_filters_input_and_registers_role', () => fixture
     transcript_path: 'SYNTHETIC_PRIVATE', last_assistant_message: 'SYNTHETIC_PRIVATE' }));
   assert.equal(await done, 0); assert.equal(output, '');
   const result = await post(gateway, doc(), { 'x-claude-code-agent-id': 'hook_agent' });
-  assert.equal(result.status, 200); assert.ok(result.text.includes(MODELS.sol.model));
+  assert.equal(result.status, 200); assert.ok(result.text.includes(ROLE_MODELS.Plan.model));
   assert.deepEqual(gateway.diagnostics().recentRequests.at(-1).agentContextPolicy,
     { window: 500000, autoCompactWindow: 500000, compactPercent: 83.33333333333334 });
 }));

@@ -6,7 +6,7 @@
 
 ## 선택 의미
 
-아래 표는 Agent 선택 정책이다. 지원된 native 입력은 세션 한정 clauduct-astra/sol/terra/luna/inherit의 subagent_type 선택이며 Agent의 model enum을 확장한 것이 아니다. 별도 Workflow의 model/effort 생략 정책과 혼동하지 않는다.
+아래 표는 Agent 선택 정책이다. 지원된 native 입력은 세션 한정 clauduct-<모델>-<effort> 14개(astra/sol/terra는 low~xhigh, luna는 max, inherit 포함)의 subagent_type 선택이며 Agent의 model enum을 확장한 것이 아니다. 별도 Workflow의 model/effort 생략 정책과 혼동하지 않는다.
 
 | 입력 | 적용 규칙 |
 |---|---|
@@ -27,7 +27,7 @@ Agent 스키마, native 입력 처리, 자식 metadata, gateway 선택과 실제
 
 ## 현재 상태
 
-Verified: src/agent-selection.mjs는 생성 호출의 직접 부모 model/effort를 불변 snapshot으로 보관하고 src/native-gateway.mjs는 실제 prepared.selected를 해당 호출에 전달한다. --gpt-agents 등록 정의 선택과 일반 역할 기본값은 별도 분기다. 이 구현을 단순 native 요청 모델 유지 분기로 설명한 아래 과거 조사 내용은 현재 코드 설명이 아니다.
+Verified: src/agent-selection.mjs는 생성 호출의 직접 부모 model/effort를 불변 snapshot으로 보관하고 src/native-gateway.mjs는 실제 prepared.selected를 해당 호출에 전달한다. 등록 정의 선택과 일반 역할 기본값은 별도 분기다. 이 구현을 단순 native 요청 모델 유지 분기로 설명한 아래 과거 조사 내용은 현재 코드 설명이 아니다.
 
 직접 부모 기준 손자 상속은 [gateway 통합 검사](audit-2026-09-10-direct-parent-inherit.md)와 [실제 native 실행](audit-2026-09-10-direct-parent-success.md)으로 확인했다. 실제 메인 sol/high와 다른 부모 terra/high를 손자가 상속했고 완료 알림 후 부모 복귀도 성공했다. Workflow의 단일·순차·병렬 혼합 경로는 [별도 사용자 실행](audit-2026-09-10-workflow-parallel-success.md)으로 확인했다.
 
@@ -108,7 +108,7 @@ Verified: 등록된 시험 정의의 모델·effort 상속과 기존 일반 역�
 
 ## 승인된 일반 작업용 인터페이스 구현
 
-사용자가 위 별도 활성화 옵션과 일반 개발 도구 제공을 승인했다. --gpt-agents가 세션 한정 일반 작업용 정의 5개를 생성하며, 사용법·도구 목록·권한 범위는 [native 경로 문서](native.md)의 일반 작업 agent 절에 정리했다. 기존 내장 역할이나 Read 전용 시험 정의를 교체하지 않는다.
+사용자가 일반 개발 도구 제공을 승인했다. 처음에는 --gpt-agents 옵션에서만 정의 5개를 생성했으나, 2026-09-15에 사용자가 기본 사용 방식을 기본 `clauduct` 단일 실행으로 확정해 옵션을 제거하고 `clauduct-<모델>-<effort>` 14개를 모든 실행에 등록하도록 바꿨다. 사용법·도구 목록·권한 범위는 [native 경로 문서](native.md)의 일반 작업 agent 절에 정리했다. 기존 내장 역할이나 Read 전용 시험 정의를 교체하지 않는다.
 
 선택기는 시작 시 등록 정의의 명시 모델·effort를 검증·불변 복사하고, 그 정의를 선택한 Agent/Task 생성 호출에 연결한다. 기존 metadata.model과 원본 호출 선택값의 일치 검사는 유지한다. 정의 기반 직접 선택은 definition-model, 부모 snapshot 상속은 definition-inherit로 출력한다. SendMessage 재개와 완료 복귀는 원래 선택을 보존한다. 새 라이브러리, plugin/MCP/hook/permissionMode 또는 전역 설정은 추가하지 않았다.
 

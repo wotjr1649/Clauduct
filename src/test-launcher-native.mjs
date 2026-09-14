@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { interactiveLaunch, launchOptions, recordRequestStatus } from './clauduct.mjs';
-import { MODELS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
+import { MODELS, EFFORTS, ROLE_MODELS, CONTEXT_POLICY } from './models.mjs';
 import { prepareNative } from './native-protocol.mjs';
 import { createNativeCredentialSupplier } from '../poc/user-session.mjs';
 
@@ -15,13 +15,13 @@ const cache = (account, marker) => JSON.stringify({ auth_mode: 'chatgpt', tokens
 
 function optionTests() {
   assert.deepEqual(launchOptions([]).selected, { model: 'gpt-6-astra', effort: 'low' });
-  assert.deepEqual(launchOptions(['--gpt-agents', '--document-first']).selected, { model: 'gpt-6-astra', effort: 'low' });
+  assert.deepEqual(launchOptions(['--document-first']).selected, { model: 'gpt-6-astra', effort: 'low' });
   assert.deepEqual(launchOptions(['--effort', 'max']).selected, { model: 'gpt-6-astra', effort: 'max' });
   assert.deepEqual(launchOptions(['--model', 'astra']).selected, MODELS.astra);
   assert.deepEqual(launchOptions(['--model', 'sol']).selected, { model: 'gpt-5.6-sol', effort: 'xhigh' });
   const request = { model: 'sol', stream: true, max_tokens: 100, messages: [{ role: 'user', content: 'SYNTHETIC' }] };
   assert.equal(prepareNative(request, { subagent: true }).body.reasoning.effort, 'xhigh');
-  assert.equal(prepareNative({ ...request, model: 'luna' }, { subagent: true, route: ROLE_MODELS.Plan }).body.reasoning.effort, 'xhigh');
+  assert.equal(prepareNative({ ...request, model: 'luna' }, { subagent: true, route: ROLE_MODELS.Plan }).body.reasoning.effort, 'low');
   const launch = interactiveLaunch({ port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) },
     {}, 'D:/SYNTHETIC_PROJECT', MODELS.sol);
   assert.equal(launch.args[launch.args.indexOf('--effort') + 1], 'xhigh');
@@ -130,10 +130,15 @@ function agentModelVerificationTest() {
   const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
   const options = launchOptions(['--verify-agent-models', '--model', 'astra', '--effort', 'max']);
   assert.equal(options.verifyAgentModels, true); assert.deepEqual(options.forward, []);
+  // The work agents ship on every run; only the Read-only probes need the option.
   const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected);
-  assert.equal(normal.args.includes('--agents'), false);
+  const normalAgents = JSON.parse(normal.args[normal.args.indexOf('--agents') + 1]);
+  assert.equal(Object.keys(normalAgents).length, 14);
+  assert.ok(Object.keys(normalAgents).every(name => !name.startsWith('clauduct-probe-')));
   const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, options.forward, options);
-  const agents = JSON.parse(launch.args[launch.args.indexOf('--agents') + 1]);
+  const all = JSON.parse(launch.args[launch.args.indexOf('--agents') + 1]);
+  assert.equal(Object.keys(all).length, 19);
+  const agents = Object.fromEntries(Object.entries(all).filter(([name]) => name.startsWith('clauduct-probe-')));
   assert.deepEqual(Object.keys(agents), ['astra', 'sol', 'terra', 'luna', 'inherit'].map(name => `clauduct-probe-${name}`));
   for (const [name, agent] of Object.entries(agents)) {
     const chosen = name.slice('clauduct-probe-'.length);
@@ -199,44 +204,56 @@ async function credentialTests() {
 function generalAgentTest() {
   const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
   const source = { CLAUDE_CONFIG_DIR: 'SYNTHETIC_NATIVE_CONFIG' }, before = JSON.stringify(source);
-  const options = launchOptions(['--gpt-agents', '--model', 'terra', '--effort', 'max']);
-  assert.equal(options.gptAgents, true); assert.deepEqual(options.forward, []);
+  const options = launchOptions(['--model', 'terra', '--effort', 'max']);
+  assert.deepEqual(options.forward, []);
+  // The work agents are registered on every run; --agents is always present.
   const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected);
-  assert.equal(normal.args.includes('--agents'), false);
+  assert.equal(normal.args.includes('--agents'), true);
   for (const verifyAgentModels of [false, true]) {
     const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, [], { ...options, verifyAgentModels });
     const definitions = JSON.parse(launch.args[launch.args.indexOf('--agents') + 1]);
     assert.equal(launch.args.filter(value => value === '--agents').length, 1);
-    assert.equal(Object.keys(definitions).length, verifyAgentModels ? 10 : 5);
+    assert.equal(Object.keys(definitions).length, verifyAgentModels ? 19 : 14);
     assert.deepEqual(launch.options, normal.options);
     assert.equal(launch.args[launch.args.indexOf('--settings') + 1], normal.args[normal.args.indexOf('--settings') + 1]);
     assert.equal(launch.args[launch.args.indexOf('--model') + 1], MODELS.terra.model);
     assert.equal(launch.args[launch.args.indexOf('--effort') + 1], 'max');
-    for (const name of ['astra', 'sol', 'terra', 'luna', 'inherit']) {
+    // max stays luna-only; every other model exposes low through xhigh under an explicit name.
+    const variants = [...Object.entries(MODELS).flatMap(([name, route]) =>
+      (name === 'luna' ? ['max'] : EFFORTS.filter(effort => effort !== 'max'))
+        .map(effort => [`${name}-${effort}`, route.model, effort])), ['inherit', 'inherit', undefined]];
+    assert.equal(variants.length, 14);
+    for (const [name, model, effort] of variants) {
       const definition = definitions[`clauduct-${name}`];
-      assert.deepEqual(Object.keys(definition).sort(), ['description', 'prompt', 'tools', 'model', ...(name === 'inherit' ? [] : ['effort'])].sort());
+      assert.deepEqual(Object.keys(definition).sort(), ['description', 'prompt', 'tools', 'model', ...(effort === undefined ? [] : ['effort'])].sort());
       assert.deepEqual(definition.tools, ['Read', 'Grep', 'Glob', 'Bash', 'Edit', 'Write', 'Agent', 'TaskOutput', 'SendMessage']);
-      assert.equal(definition.model, name === 'inherit' ? name : MODELS[name].model);
-      assert.equal(definition.effort, name === 'inherit' ? undefined : MODELS[name].effort);
+      assert.equal(definition.model, model);
+      assert.equal(definition.effort, effort);
       assert.equal(definition.prompt.includes('MODEL-PROBE-COMPLETED'), false);
+    }
+    // Bare model names are gone from the work agents; the Read-only probes keep them.
+    for (const name of ['astra', 'sol', 'terra', 'luna']) {
+      assert.equal(Object.hasOwn(definitions, `clauduct-${name}`), false);
       if (verifyAgentModels) assert.deepEqual(definitions[`clauduct-probe-${name}`].tools, ['Read']);
     }
+    if (verifyAgentModels) assert.deepEqual(definitions['clauduct-probe-inherit'].tools, ['Read']);
     assert.ok(['Explore', 'Plan', 'general-purpose'].every(role => !Object.hasOwn(definitions, role)));
   }
   assert.equal(JSON.stringify(source), before);
-  for (const args of [['--gpt-agents', '--gpt-agents'], ['--gpt-agents=1'], ['--gpt-agents', '--agents={}'],
-    ['--gpt-agents', '--settings={}'], ['--gpt-agents', '--system-prompt', 'SYNTHETIC']]) assert.throws(() => launchOptions(args));
-  assert.equal(launchOptions(['--', '--gpt-agents']).gptAgents, undefined);
+  // The retired option is refused here rather than forwarded to claude.exe.
+  for (const args of [['--gpt-agents'], ['--gpt-agents=1'], ['--agents={}'],
+    ['--settings={}'], ['--system-prompt', 'SYNTHETIC']]) assert.throws(() => launchOptions(args));
+  assert.deepEqual(launchOptions(['--', '--gpt-agents']).forward, ['--', '--gpt-agents']);
 }
 
 function documentFirstTest() {
   const gateway = { port: 12345, clientHeaders: () => ({ Authorization: 'Bearer SYNTHETIC' }) };
   const source = { CLAUDE_CONFIG_DIR: 'SYNTHETIC_NATIVE_CONFIG' };
   const before = JSON.stringify(source);
-  const options = launchOptions(['--document-first', '--gpt-agents', '--model', 'terra', '--effort', 'xhigh']);
+  const options = launchOptions(['--document-first', '--model', 'terra', '--effort', 'xhigh']);
   assert.equal(options.documentFirst, true);
   assert.deepEqual(options.forward, []);
-  const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, [], { gptAgents: true });
+  const normal = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, []);
   const launch = interactiveLaunch(gateway, source, 'D:/SYNTHETIC_PROJECT', options.selected, options.forward, options);
   const index = launch.args.indexOf('--append-system-prompt');
   assert.equal(launch.args.filter(value => value === '--append-system-prompt').length, 1);

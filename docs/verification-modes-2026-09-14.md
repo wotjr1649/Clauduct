@@ -98,6 +98,22 @@ const baselineFailed = tests.length >= 2 && tests[0].passed === false;
 - `baselineFailed`는 `tests[0]`이 실제 기준선인지 해시로 확인하지 않는다. 같은 파일의 중단 분류기(`:133`,`:146`)는 `baselineHash`를 검사하는데 판정 경로는 하지 않는다.
 - "검토 미승인 → 테스트 미실행"에 대응하는 failure 코드가 없다. 그래서 `passed:false`·`failure:null`이라는 무진단 실패가 나오고 사유는 `work/events.jsonl`의 `TESTS_UNRUN` 행에만 남는다.
 
-### 다음 실행의 성공 기준
+### 승인 대행 실행: 가설 입증
 
-경로 완주를 기준으로 삼는다. 승인 게이트가 풀려 `testsExecuted:2`·`baselineFailed:true`가 나오면 승인→재검사→판정이 끝까지 돌았다는 증거다. `revisedPassed`는 모델 답의 정오이므로 성공 조건에 넣지 않는다. 승인 주체는 결과에 명시한다. 나머지8개 live 모드는 실행하지 않았다.
+같은 조합(`--live-task sol/low`, `retry-delay-window`)을 감시 스크립트와 함께 한 번 더 실행했다. 스크립트는 `SOURCE_REVIEW_PENDING`을 감시하다 모델이 쓴 소스를 읽고 **실행 안전성만** 검사한 뒤 `control/review.json`에 승인을 기록한다. 정답 대조는 하지 않는다 — 그것은 oracle의 역할이고 가져오면 live 실행의 의미가 사라진다.
+
+| 항목 | 무인 실행 | 승인 대행 실행 |
+|---|---|---|
+| passed | false | **true** |
+| testsExecuted | 1 | **2** |
+| baselineFailed | false | **true** |
+| revisedPassed / independentPassed | false / false | **true / true** |
+| 요청 | 6 | 5 |
+| 입력·출력 토큰 | 17,274 /1,050 | 13,977 /559 |
+| elapsedMs | 425,444 | **26,585** |
+
+시간이16배 줄어든 것은180초 검토 대기2회가 사라졌기 때문이다. 요청 수5는 `RELEASE.md:101`이 기록한 과거 성공 사례와 정확히 일치한다. **무인 실행이 통과하지 못한 원인이 승인 게이트라는 진단이 입증됐다.**
+
+승인 주체는 사람이 아니라 에이전트였다. 모델이 쓴 소스는 `retryDelayWithinBudget` 순수 함수로 외부 접근·무한 루프가 없었고, oracle의32-case를 통과했다. 이 실행은 "무인 가능"을 뜻하지 않는다. 검토자가 있을 때 live 경로가 끝까지 동작함을 보인 것이다.
+
+나머지8개 live 모드는 실행하지 않았다.

@@ -58,8 +58,17 @@ function nativeSettingSourcesTest() {
     assert.equal(launch.args.includes('--permission-mode'), false);
     assert.equal(launch.args.includes('--setting-sources'), false);
     assert.equal(launch.options.env.CLAUDE_CONFIG_DIR, source.CLAUDE_CONFIG_DIR);
+    assert.equal(launch.options.cwd, 'D:\\SYNTHETIC_PROJECT');
+    // Native loads the user/project output setting. The adapter's JSON overlay
+    // must leave that key unset so a local project override can still win.
+    assert.equal(Object.hasOwn(settings.env, 'CLAUDE_CODE_MAX_OUTPUT_TOKENS'), false);
     assert.equal(JSON.stringify(source), before);
   }
+  const prepared = prepareNative({ model: 'sol', stream: true, max_tokens: 64000,
+    messages: [{ role: 'user', content: 'SYNTHETIC_OUTPUT_SETTING' }] });
+  assert.equal(prepared.outputLimit, 64000);
+  assert.equal(prepared.outputTokenLimitPolicy, 'usage-enforced-completion');
+  assert.equal(Object.hasOwn(prepared.body, 'max_output_tokens'), false);
 }
 
 function childRetryTest() {

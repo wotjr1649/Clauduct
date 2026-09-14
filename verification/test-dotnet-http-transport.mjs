@@ -10,7 +10,7 @@ import { buildBody, buildHeaders, model, effort, checkRuntime } from './manual-h
 checkRuntime(process.env, process.execArgv);
 const script = fileURLToPath(new URL('./manual-http-probe.ps1', import.meta.url));
 const parser = fileURLToPath(new URL('./summarize-dotnet-response.mjs', import.meta.url));
-const pwsh = 'C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.5.0_x64__8wekyb3d8bbwe\\pwsh.exe';
+const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
 const canary = 'SYNTHETIC_PRIVATE_CANARY';
 const limit = 256 * 1024;
 const event = value => `data: ${JSON.stringify(value)}\r\n\r\n`;

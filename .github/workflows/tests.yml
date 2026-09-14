@@ -9,15 +9,28 @@ jobs:
     # Windows-only for now: the verification harness uses PowerShell scripts and
     # fixed Windows fixture paths. Product code under src/ is already portable.
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Run test suite
-        # bash so the glob expands; --test-concurrency=1 matches run-node-tests.ps1.
-        # .tmp is deliberately not pre-created here: fixtures create it themselves
-        # via verification/temporary-dir.mjs, and this run proves it.
+      - name: Node tests
+        # bash so the globs expand; --test-concurrency=1 matches run-node-tests.ps1.
+        # .tmp is deliberately not pre-created: fixtures create it themselves via
+        # verification/temporary-dir.mjs, and this run proves it.
         shell: bash
-        run: node --test --test-concurrency=1 src/test-*.mjs
+        run: node --test --test-concurrency=1 src/test-*.mjs verification/test-*.mjs poc/test-*.mjs
+      - name: PowerShell tests
+        # always() so a Node failure still surfaces these; the job fails either way.
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $failed = @()
+          foreach ($test in Get-ChildItem -Path src, verification -Filter 'test-*.ps1' | Sort-Object FullName) {
+            Write-Host "--- $($test.Name)"
+            & $test.FullName
+            if ($LASTEXITCODE -ne 0) { $failed += $test.Name }
+          }
+          if ($failed.Count -gt 0) { throw "PowerShell tests failed: $($failed -join ', ')" }

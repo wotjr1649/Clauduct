@@ -15,7 +15,7 @@ const root = dirname(fileURLToPath(import.meta.url));
 let passed = 0, failed = 0, clients = 0, receivedTotal = 0;
 const watchdog = setTimeout(() => { process.stderr.write('READ_SUITE_TIMEOUT\n'); process.exit(1); }, 30000);
 async function test(name, action) {
-  try { await action(); passed++; } catch { failed++; process.stderr.write(JSON.stringify({ failure: name }) + '\n'); }
+  try { await action(); passed++; } catch (error) { failed++; process.stderr.write(JSON.stringify({ failure: name, error: String(error?.message ?? error).slice(0, 300) }) + '\n'); }
 }
 function response(number, value, { outputTokens = 5, noTool = false, cached = false } = {}) {
   const tool = number === 1 && !noTool;

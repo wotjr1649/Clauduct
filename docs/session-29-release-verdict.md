@@ -8,7 +8,7 @@
 
 기존 fixture의 입력131072/출력32768은 완료 후 검사다. `src/native-protocol.mjs`는 `usage-enforced-completion`을 선언하고 upstream에 출력 토큰 상한을 보내지 않는다. 일반 Responses API의 `max_output_tokens` 문서는 Codex 구독 endpoint의 지원 증거가 아니다. 기존 PoC에는 해당 인수를 backend가 거부하는 계약/실패 이력이 있다. 생성 중 reasoning을 포함하는 출력 상한을 사전 보장하지 못하므로 새 실호출은 보류한다. 완료 후 관측, 짧은 prompt, 연결 중단을 소비량 상한의 증거로 쓰지 않는다. 관련 독립 로컬 작업은 계속한다.
 
-## 현재 요구 대조
+## 시작 시 요구 대조
 
 과거 F 표의 IN_PROGRESS를 최신 범위에 그대로 복사하지 않는다. 아래 PASS는 명시된 검사 범위에 한하며 기능 전체나 다른 후보의 결과를 뜻하지 않는다. 실행 근거의 hash와 변경 영향은 최종 artifact에 추가한다.
 
@@ -57,3 +57,19 @@
 ### 예산 인터페이스
 
 `verification/verify-native-headless.ps1`의 `-MaxInputTokens`/`-MaxOutputTokens`와 `verifyNativeDevelopment()`의 `maxObservedInputTokens`/`maxObservedOutputTokens`는 기존 한도 이하의 **완료 사용량 제한**이다. `-RequirePreGenerationLimit` 또는 `requirePreGenerationLimit: true`는 현재 `VERIFICATION_PREGENERATION_LIMIT_UNAVAILABLE`로 실행 전 거부된다. 관측 한도를 설정했다고 생성량이 그 값에서 멈춘다고 주장하지 않는다. 일반 Responses API의 [max_output_tokens 정의](https://developers.openai.com/api/reference/typescript/resources/responses/methods/create)는 공개 API 계약이며 구독 backend가 이를 지원한다는 증거는 아니다.
+
+## 후보 판정 — HOLD
+
+F12의 명시적 수집·메인 중계는 제품에 구현했고 현재 요청·부모·결과 신원/중복·실패·취소를 검증했다. F15의 admission 기한·정상 회복도 현재 후보에서 통과했다. 기존 native 동시성/HTTP timeout은 제외된 HTTP/TCP 이력으로 보존한다. 수정이 원래 gateway timeout을 해결했다는 주장은 하지 않는다.
+
+| 현재 차단/미검증 | 판정과 필요한 근거 |
+|---|---|
+| F14 정상 Workflow 재개 | **BLOCKED**. 반환 경로와 인수의 완전 일치에도 native가 거부했다. 같은 저장 세션을 새 프로세스로 열어 저장 결과 재사용/필요 agent 재실행/파일 효과 확인을 완료한 증거가 없다. 제품의 scriptPath/resumeFromRunId 및 새 실행 신원 연결도 미구현이다. 다른 경로·inline 복제·추가 읽기 권한으로 거부를 우회하지 않았다. native 전체가 영구적으로 미지원이라고 단정하지 않는다. |
+| F16 디스크 부족 복구 | **NOT_RUN**. 원장 잘림·기록 오류·미관측 예약과 부분 파일 효과의 검사는 있지만, 저장 공간 부족 사건에서 같은 불변식을 확인한 충분한 증거는 없다. 기존 registry 등록 거부도 유지한다. |
+| F18 결합 사건 | **NOT_RUN**. 압축 설정/변환/라우팅과 새 프로세스 복구, 자식 실패를 각각 검사했다. 압축·재시작·자식 실패가 겹친 사건의 효과/기록 보존 증거로 합산하지 않는다. 기본400K/320K 실발동은 별도로 사용자 제외다. |
+| 설정·도구 조합 표의 잔여 | **NOT_RUN**. native 소유의 permission/hooks/MCP 정상·거부 및 현재 launcher 계약 증거는 있다. 기존 표의 UI/plan/plugin을 포함한 설정 조합 전체 검증은 확보하지 못했으며 자동 면제하지 않는다. 임의 개인 profile 전체를 새 필수 범위로 확대하지도 않는다. |
+| 새 모델 실호출 | **BLOCKED**. 사용자가 요구한 사전 출력 상한을 현재 구독 전송에서 보장할 수 없다. 검증된 전송 계약/동작 없이 상한 옵션을 제거하거나 관측 후 판정으로 대체하지 않는다. |
+
+F21/F22의 새 Workflow 재개 모델·effort/세션·오래된 기록 경계도 F14에 의존해 미완료다. 기존 일반 Agent·신규 Workflow·변조 거부의 통과는 유지한다. 이 목록 때문에 최종 커밋과 ZIP의 파일 검증이 성공해도 전체 PASS나 목표 완료를 선언하지 않는다.
+
+최종 ZIP은 이 문서를 포함한 tracked clean 커밋에서 생성한다. 동반 manifest는 commit, 파일 목록·크기·SHA256을 담는다. 새 공백 경로 실행과 선택 회귀, 원증거 hash, 현재 요구 상태, 누적 예산 및 프로세스 census는 작업용 `.tmp/session-29-release/`에 보존하며 실행 임시 자료·인증·개인 profile은 ZIP/커밋에 넣지 않는다.

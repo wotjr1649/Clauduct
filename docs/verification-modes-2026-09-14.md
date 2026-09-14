@@ -23,24 +23,24 @@
 
 `verify-native-service-recovery`의 `SERVICE_FAULTS`는 `flapping-503`·`deferred-503`·`error-200`·`truncated`·`invalid-utf8`·`sequence-gap`6종이며 이번에는 `error-200`만 실행했다. 나머지5종은 미실행이다.
 
-## 로컬 모드: 미판정4개
+## managed 계열 네 모드의 재현 절차
 
-아래 네 모드는 **실행에 실패한 것이 아니라 필요한 선행 상태를 만들지 못했다**. 각 거부는 잘못된 상태에서 실행을 막는 설계된 방어이며 제품 결함의 증거가 아니다.
+`--local-continue`·`--local-recover`·`--local-interrupt-after-result`·`--local-interrupt-after-step`은 처음에 선행 상태를 만들지 못해 세 번 거부됐다. 이후 조건을 코드에서 확인해 **네 모드 모두 `passed:true`로 실행했다**. 전부 `actualModelRequests:0`이다.
 
-| 모드 | 요구 조건 | 근거 |
+**거부의 실제 원인**은 계획 파일이었다. CLI 단발 경로는 `plannedStep`을 전달하지 않는데(managed-development.mjs:254-257) `:91`은 root에 `development-plan.json`이 있기만 하면 `plannedStep` 검증에 진입한다. 따라서 **계획이 있는 root에서는 `--local-task`를 포함한 모든 단발 모드가 `MANAGED_PLAN_STEP_INVALID`로 거부된다**. 계획을 만들어 해결하려던 시도가 오히려 원인이었다.
+
+| 모드 | 선행 조건 | 근거 |
 |---|---|---|
-| `--local-continue` | 계획의 2번째 단계 이상(`plannedStep.index > 0`) | managed-development.mjs:99 |
-| `--local-recover` | 직전 증거가 `MANAGER_INTERRUPTED` | managed-development.mjs:116 |
-| `--local-interrupt-after-result` | — | 출력 마지막 행이 결과가 아니라 event 행이어서 판정 실패 |
-| `--local-interrupt-after-step` | — | 위와 동일. 2844ms에 오류 없이 종료했다 |
+| `--local-continue` | 계획 **없는** root. 마지막 entry가 닫히고 `passed`, 같은 model·localNative, **다른 taskId**, `account.pending === null` | managed-development.mjs:119,121-126 |
+| `--local-recover` | 계획 없는 root. 중단된 native root에 **`result.json`이 없어야** 한다. taskId·model은 중단된 실행과 동일 | :104-107, verify-native-development.mjs:262 |
+| `--local-interrupt-after-result` | 특별한 선행 상태 없음. `--local-task`와 동일 | :144 |
+| `--local-interrupt-after-step` | root에 `development-plan.json`과 `development-plan-ready.json`, `count ≤ 전체 단계 수` | managed-plan-entry.mjs:5 |
 
-세 가지 구성을 시도했고 매번 다른 거부가 나왔다.
+`--local-recover`는 CLI 단독으로 구성할 수 없다. `result.json`은 관리기만 쓰고(verify-native-development.mjs:754) hold 모드는 native만 붙잡을 뿐 관리기는 완주하므로, 그냥 두면 항상 `result.json`이 생겨 `INTERRUPTION_RESULT_PRESENT`로 영구 회수 불가가 된다. **hold 창 안에서 관리기 프로세스만 외부에서 종료**해야 한다. hold 마커는 `<nativeRoot>/work/events.jsonl`의 `SOURCE_WRITE_WAIT`다.
 
-1. 빈 계정에 직접 실행 → `MANAGED_DEVELOPMENT_EMPTY`
-2. 같은 계정에서 `--local-task` 뒤 체인 → `MANAGED_DEVELOPMENT_PREDECESSOR`, `INTERRUPTION_RESULT_PRESENT`
-3. 계획 생성 후 단계 진행 → `MANAGED_PLAN_STEP_INVALID`
+두 interrupt 모드는 **판정 행을 출력하지 않는다**. `process.exit(73)`이 `console.log`보다 먼저 실행된다. **exit code73이 주입 성공 신호**이고 판정은 후속 명령에서 읽는다 — `--local-interrupt-after-result`는 `--reconcile <root>`, `--local-interrupt-after-step`은 `--local-plan <root> <pwsh>`의 마지막 행이다.
 
-계획·단계·원장·바인딩 검증이 서로 물려 있어 정확한 상태 재현에는 이 도구의 상태 모델을 먼저 파악해야 한다. 해당 로직 자체는 `src/test-managed-plan.mjs`가 함수 수준에서 거부 사례를 다수 검증한다. 미검증으로 남는 범위는 **CLI 진입점의 상태 전이 시나리오**다.
+계정과 계획 생성에는 CLI가 없어 `createManagedLedgerAccount`·`createManagedPlan`을 `node -e`로 호출해야 한다.
 
 ## CI 도입에서 드러난 환경 가정
 
@@ -65,14 +65,39 @@ Windows CI(`.github/workflows/tests.yml`)를 넣자 이 개발 머신에서는 �
 | 예산 한도 | attempts16, 입력131072, 출력32768, 시간630000ms |
 | 한도 내 | true |
 
-첫 시도는420초 제한으로 끊겼다. 제품이 멈춘 것이 아니라 단계 예산이 `phaseMs=600000`(verify-native-development.mjs:510)이어서 제한 자체가 부족했다. 요청 사이에180초 대기가 두 번 있었고 문서가 이미 기록한 외부 소스 검토 대기로 보인다.
+첫 시도는420초 제한으로 끊겼다. 제품이 멈춘 것이 아니라 단계 예산이 `phaseMs=600000`(verify-native-development.mjs:510)이어서 제한 자체가 부족했다.
 
-**판정은 `passed:false`다.** 전송 경로 지표는 모두 정상이었다 — `contextMatched`·`routeMatched`·`nativeJson`·`attemptsComplete`·`cleanupComplete`·`completedUsageObserved` 모두 true이고 `nativeError`는 false다. 미달한 것은 과제 판정뿐이다.
+판정은 `passed:false`였고 전송 계층 지표는 모두 정상이었다 — `contextMatched`·`routeMatched`·`nativeJson`·`attemptsComplete`·`cleanupComplete`·`completedUsageObserved` 모두 true, `nativeError` false.
 
+## live 판정 실패의 원인: 무인 실행은 구조적으로 통과할 수 없다
+
+`run_tests`는 `control/review.json`의 승인을 요구한다(development-mcp.mjs:92-107). fixture는 **기준 소스 해시로만 사전 승인**되어 있어(development-fixture.mjs:35) 모델이 소스를 쓰는 순간 해시가 어긋나고, 이후 모든 `run_tests`는 새 승인을 최대180초 기다리다 `TESTS_UNRUN`을 남기고 `SOURCE_REVIEW_REQUIRED`로 끝난다.
+
+그 승인을 기록하는 코드는 `verify-native-development.mjs:601-604`의 **`if (localNative)` 안에만** 있다. live는 `:605`에서 `SOURCE_REVIEW_PENDING`을 stdout에 출력만 하며, **이 이벤트를 소비하는 코드는 저장소에 존재하지 않는다**. 관측된180초 대기 두 번이 이것이다. `RELEASE.md:101`의 "시간에는 외부 소스 검토 대기가 포함된다"는 과거 live 성공 시 사람이 승인했음을 뜻한다.
+
+**따라서 무인 live 개발 모드는 몇 번을 돌려도 통과할 수 없다.** 제품 전송 경로의 결함이 아니라 검증 절차가 사람 개입을 전제로 설계된 것이다.
+
+### 앞선 판독 두 가지를 정정한다
+
+`baselineFailed`는 "기준선이 통과했다"는 뜻이 **아니다**.
+
+```js
+// verify-native-development.mjs:693-694
+const tests = events.filter(row => row.event === 'TESTS_EXECUTED');
+const baselineFailed = tests.length >= 2 && tests[0].passed === false;
 ```
-baselineFailed:false  revisedPassed:false  independentPassed:false  testsExecuted:1
-```
 
-기준선이 실패해야 과제가 성립하는데 통과했고, 실행된 검사는1건이다(과거 기록은32-case). 모델은606byte 소스를 작성했다. 원인은 규명하지 못했다. 제품 전송 경로의 결함이라는 증거는 없으며, 과제 판정 경로나 fixture 상태 쪽을 먼저 봐야 한다.
+`TESTS_EXECUTED`가2건 미만이면 무조건 false다. 이번은 `testsExecuted:1`이었으므로 **길이 조건에서 걸린 것**이고, 실행된 그 한 건은 사전 승인된 기준선이며 실패했을 가능성이 높다. 이 값만으로는 "기준선 통과"와 "테스트 미실행"을 구분할 수 없다.
 
-나머지8개 live 모드는 실행하지 않았다. 이1회 실측 기준으로9모드×2모델은 약110요청·2시간 이상이며, 같은 판정 실패가 반복될 수 있으므로 원인 규명 전에는 확대하지 않는다.
+"과거32-case 대 이번1"은 **서로 다른 축의 비교였다**. 32는 `task.checks`로 한 번의 `TESTS_EXECUTED` 안의 케이스 수이고(development-tasks.mjs:38), `testsExecuted`는 오라클이 돌아간 횟수로 정상 최대값이2다.
+
+### 발견된 코드 건전성 문제2건
+
+수정하지 않았다. 둘 다 이번 오독의 직접 원인이다.
+
+- `baselineFailed`는 `tests[0]`이 실제 기준선인지 해시로 확인하지 않는다. 같은 파일의 중단 분류기(`:133`,`:146`)는 `baselineHash`를 검사하는데 판정 경로는 하지 않는다.
+- "검토 미승인 → 테스트 미실행"에 대응하는 failure 코드가 없다. 그래서 `passed:false`·`failure:null`이라는 무진단 실패가 나오고 사유는 `work/events.jsonl`의 `TESTS_UNRUN` 행에만 남는다.
+
+### 다음 실행의 성공 기준
+
+경로 완주를 기준으로 삼는다. 승인 게이트가 풀려 `testsExecuted:2`·`baselineFailed:true`가 나오면 승인→재검사→판정이 끝까지 돌았다는 증거다. `revisedPassed`는 모델 답의 정오이므로 성공 조건에 넣지 않는다. 승인 주체는 결과에 명시한다. 나머지8개 live 모드는 실행하지 않았다.

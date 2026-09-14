@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { initializeRecovery, recoveryOracle, readRecoveryJournal, runRecovery } from '../verification/unattended-recovery.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const manager = join(root, 'verification', 'unattended-recovery.mjs');
@@ -11,7 +12,7 @@ const env = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(ke
 const created = [];
 let checks = 0;
 function fixture(mode = 'queryable') {
-  const dir = mkdtempSync(join(root, '.tmp', 'recovery-'));
+  const dir = temporaryDir(root, 'recovery-');
   initializeRecovery(dir, { mode }); created.push(dir); return dir;
 }
 function run(dir, fault = 'none') {

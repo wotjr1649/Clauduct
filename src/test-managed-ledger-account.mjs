@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -7,6 +7,7 @@ import { createPublicLegacyLedger } from '../verification/fixtures/legacy-ledger
 import { projectLegacyExecutionLedger, readLegacyExecutionLedger, createManagedLedgerAccount, readManagedLedgerAccount, openManagedLedgerSource } from '../verification/managed-ledger-account.mjs';
 import { createExecutionAccount, reserveExecutionAccount, closeExecutionAccount } from '../verification/execution-account.mjs';
 import { runManagedDevelopment } from '../verification/managed-development.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 const project = dirname(dirname(fileURLToPath(import.meta.url))), hash = bytes => createHash('sha256').update(bytes).digest('hex');
 let checks = 0;
 const equal = (a, b) => { assert.deepEqual(a, b); checks++; };
@@ -34,7 +35,7 @@ equal(finished.account.charged, { attempts: 38, inputTokens: 400226, outputToken
 equal(finished.components, components);
 denied(() => createManagedLedgerAccount(input), 'MANAGED_LEDGER_SCOPE_REQUIRED');
 denied(() => createManagedLedgerAccount({ ...input, localNative: true, scopeRoot: input.sourceDirectory }), 'MANAGED_LEDGER_SCOPE_INVALID');
-const foreign = mkdtempSync(join(project, '.tmp', 'managed-development-'));
+const foreign = temporaryDir(project, 'managed-development-');
 createExecutionAccount(foreign, { basisHash: before.basisHash, previous: before.projection.initial, limits: before.projection.limits });
 await assert.rejects(runManagedDevelopment({ root: foreign, model: 'sol', localNative: false,
   powershell: 'C:\\PublicFixture\\pwsh.exe' }), { message: 'MANAGED_LEDGER_BINDING_REQUIRED' }); checks++;

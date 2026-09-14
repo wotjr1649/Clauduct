@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CODEX_EXE, CODEX_ROOT } from '../src/runtime-paths.mjs';
 import { createAuthOwnerProtocol } from './auth-owner-protocol.mjs';
+import { temporaryDir } from './temporary-dir.mjs';
 
 // Read-only inspection through the installed CLI's existing control-socket
 // proxy. No daemon start, thread, model turn, refresh, login or config command.
@@ -11,7 +12,7 @@ if (process.argv.length !== 3 || process.argv[2] !== '--existing-owner-read-only
 if (process.env.CODEX_HOME && resolve(process.env.CODEX_HOME).toLowerCase() !== resolve(CODEX_ROOT).toLowerCase()
   || process.env.USERPROFILE && resolve(process.env.USERPROFILE).toLowerCase() !== dirname(CODEX_ROOT).toLowerCase()) throw new Error('OWNER_READ_HOME_MISMATCH');
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
-const root = mkdtempSync(join(project, '.tmp', 'auth-owner-read-'));
+const root = temporaryDir(project, 'auth-owner-read-');
 const env = Object.fromEntries(['SystemRoot','WINDIR','USERPROFILE','HOMEDRIVE','HOMEPATH','APPDATA','LOCALAPPDATA']
   .filter(key => process.env[key]).map(key => [key, process.env[key]]));
 const protocol = createAuthOwnerProtocol({ expectedCodexHome: CODEX_ROOT, refresh: false });

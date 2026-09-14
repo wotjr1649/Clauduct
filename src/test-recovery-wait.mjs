@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { initializeRecovery, runRecovery, readRecoveryJournal, recoveryOracle } from '../verification/unattended-recovery.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const manager = join(project, 'verification', 'unattended-recovery.mjs');
 const env = Object.fromEntries(['SystemRoot', 'WINDIR', 'TEMP', 'TMP'].filter(key => process.env[key]).map(key => [key, process.env[key]]));
 const fixture = (mode = 'queryable') => {
-  const root = mkdtempSync(join(project, '.tmp', 'recovery-wait-')); initializeRecovery(root, { mode }); return root;
+  const root = temporaryDir(project, 'recovery-wait-'); initializeRecovery(root, { mode }); return root;
 };
 const run = root => {
   const result = spawnSync(process.execPath, [manager, root], { cwd: project, env, windowsHide: true,

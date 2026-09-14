@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, writeFileSync, renameSync } from 'node:fs';
+import { writeFileSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createNativeLoopbackTransport } from './native-transport.mjs';
 import { createNativeCredentialSupplier } from '../poc/user-session.mjs';
 import { readSmall } from '../verification/manual-http-probe.mjs';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
-const root = mkdtempSync(join(project, '.tmp', 'credential-recovery-'));
+const root = temporaryDir(project, 'credential-recovery-');
 const now = 1800000000000;
 // Deliberately invalid synthetic signatures. Only the loopback fixture accepts
 // these public values; no user auth file, real token or OAuth endpoint is used.

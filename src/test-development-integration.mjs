@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 mkdirSync(join(project, '.tmp'), { recursive: true });
-const root = mkdtempSync(join(project, '.tmp', 'integration-public-'));
+const root = temporaryDir(project, 'integration-public-');
 const module = join(root, 'identity.mjs'), oracle = join(project, 'verification', 'fixtures', 'development-integration-oracle.mjs');
 writeFileSync(module, 'export function identity(value) { return value; }\n', { flag: 'wx' });
 const input = index => ({ kind: 'input', index });

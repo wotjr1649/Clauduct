@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, copyFileSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
-const root = mkdtempSync(join(project, '.tmp', 'headless-root-public-'));
+const root = temporaryDir(project, 'headless-root-public-');
 mkdirSync(join(root, 'verification')); mkdirSync(join(root, '.tmp'));
 for (const name of ['verify-native-headless.ps1', 'read-transport-progress.ps1']) {
   copyFileSync(join(project, 'verification', name), join(root, 'verification', name));

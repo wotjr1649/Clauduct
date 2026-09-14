@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { temporaryDir } from './temporary-dir.mjs';
 
 // Explicit wall-clock test: two fixed public jobs, no credentials or external requests.
 assert.deepEqual(process.argv.slice(2), ['--live-clock']);
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
 const worker = join(project, 'verification', 'fixtures', 'retry-recovery-worker.mjs');
-const root = mkdtempSync(join(project, '.tmp', 'retry-after-clock-'));
+const root = temporaryDir(project, 'retry-after-clock-');
 const write = (name, value) => writeFileSync(join(root, name), JSON.stringify(value) + '\n', { flag: 'wx', flush: true });
 const sourceFiles = ['src/native-transport.mjs', 'src/native-protocol.mjs', 'src/retry-after.mjs', 'src/retry-after-seconds.mjs',
   'src/client-version.mjs', 'src/models.mjs', 'poc/adapter.mjs', 'verification/manual-http-probe.mjs',

@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { temporaryDir } from '../verification/temporary-dir.mjs';
 
 const project = dirname(dirname(fileURLToPath(import.meta.url)));
-const evidence = mkdtempSync(join(project, '.tmp', 'development-initialization-'));
+const evidence = temporaryDir(project, 'development-initialization-');
 const files = ['development-fixture.mjs', 'development-tasks.mjs', 'development-source-policy.mjs',
   'development-source-files.mjs', 'development-source-grammar.mjs', 'registered-development-tasks.mjs',
   'fixtures/development-oracle.mjs', 'fixtures/development-window-oracle.mjs', 'fixtures/development-project-oracle.mjs', 'fixtures/development-mcp.mjs'];

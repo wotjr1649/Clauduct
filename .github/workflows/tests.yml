@@ -17,9 +17,7 @@ jobs:
           node-version: '24'
       - name: Run test suite
         # bash so the glob expands; --test-concurrency=1 matches run-node-tests.ps1.
-        # That runner also creates .tmp before starting, and fixtures mkdtemp into
-        # it without creating it themselves, so prepare it here too.
+        # .tmp is deliberately not pre-created here: fixtures create it themselves
+        # via verification/temporary-dir.mjs, and this run proves it.
         shell: bash
-        run: |
-          mkdir -p .tmp
-          node --test --test-concurrency=1 src/test-*.mjs
+        run: node --test --test-concurrency=1 src/test-*.mjs

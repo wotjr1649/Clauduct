@@ -15,22 +15,39 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '24'
-      - name: Node tests
-        # bash so the globs expand; --test-concurrency=1 matches run-node-tests.ps1.
+
+      - name: Node tests (test runner)
+        # bash so the glob expands; --test-concurrency=1 matches run-node-tests.ps1.
         # .tmp is deliberately not pre-created: fixtures create it themselves via
         # verification/temporary-dir.mjs, and this run proves it.
         shell: bash
-        run: node --test --test-concurrency=1 src/test-*.mjs verification/test-*.mjs poc/test-*.mjs
+        run: node --test --test-concurrency=1 src/test-*.mjs
+
+      - name: Node tests (standalone)
+        # These refuse to run under a populated execArgv (DEBUG_RUNTIME_UNSUPPORTED),
+        # so the test runner cannot host them. Run each directly instead.
+        if: always()
+        shell: bash
+        run: |
+          status=0
+          for file in verification/test-*.mjs poc/test-*.mjs; do
+            echo "--- $file"
+            node "$file" || status=1
+          done
+          exit $status
+
       - name: PowerShell tests
-        # always() so a Node failure still surfaces these; the job fails either way.
+        # A .ps1 that never calls exit leaves $LASTEXITCODE at its previous value,
+        # so reset it per test and treat a throw as the failure it is.
         if: always()
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
           $failed = @()
           foreach ($test in Get-ChildItem -Path src, verification -Filter 'test-*.ps1' | Sort-Object FullName) {
             Write-Host "--- $($test.Name)"
-            & $test.FullName
+            $global:LASTEXITCODE = 0
+            try { & $test.FullName } catch { $failed += $test.Name; continue }
             if ($LASTEXITCODE -ne 0) { $failed += $test.Name }
           }
-          if ($failed.Count -gt 0) { throw "PowerShell tests failed: $($failed -join ', ')" }
+          if ($failed.Count -gt 0) { throw ("PowerShell tests failed: " + ($failed -join ', ')) }

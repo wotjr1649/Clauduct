@@ -8,7 +8,7 @@
 
 | 순서 | 남은 범위 | 현재 상태 | 필요한 증거 |
 |---|---|---|---|
-| 1 | gateway·HTTP 종료·취소·동시 실행 | 반닫기 실패 재현 / 미해결 | 사용자 터미널·IPv4/IPv6·직접 Socket 읽기에서도 EOF 유실. 환경 원인 확인과 수정 뒤 관련 회귀 |
+| 1 | gateway·HTTP 종료·취소·동시 실행 | 반닫기 FAIL 보존 / OS 원인 추적 보류 | CMD에서도 동일 EOF. 환경 한계로 기록하고 독립 작업 진행; 관련 HTTP 회귀 전체의 원인이 확정된 것은 아님 |
 | 2 | 부모·자식 알림/실패/취소, Workflow 적용 가능한 계약 | 자식 취소 local-native 4사례 PASS / 나머지 미완료 | 실제 backend 결합과 직접 부모 알림·Workflow 미완료는 별도 유지 |
 | 3 | 실제 개발·소유/사용량·효과 대조·파일 적용·복구 | 부분 검증 | 현재 실제 경로의 좁은 개발·독립 oracle·중복/유실/거짓 완료 0 |
 | 4 | 남은 설정·도구·권한·변조·기록 경계 | 부분 검증/특정 차단 | 요구별 정상·거부 증거. 기존 guard 거부는 우회하지 않음 |
@@ -58,6 +58,8 @@
 합계28개 고정 공개 응답/7827ms, 각 exit0·정리9항목 true·잔여 프로세스0이다. 최초 `native-agent-cancel-610b33977b2b4a92bce3e45fefaaedfd`는 동작을 완료했지만 fixture transport의 activeSockets/activeRequests 계수 누락으로 cleanup 검증이 실패하여 exit1이었다. 실제 진행 중 요청 계수를 추가한 뒤 위4사례를 실행했으며 최초 실패를 보존했다. 실제 backend 추가 요청과 credential 읽기는 전 과정0이다. 실행 전 각30초/12요청, 자식 대기10초 한도를 고정했다. 개인정보·기존 profile·과거 세션 원문을 fixture로 복제하지 않았다.
 
 선택 변경에 필요한 추가 회귀 `selection-required-regression.json`은 Workflow 선택36개와 admission 기한/취소/압력 회복의2파일 PASS/3759.5433ms다. 기존5파일과 합쳐 해당 선택 변경의 관련7파일이 통과했다. Workflow 내부 native 실행·symlink NOT_RUN은 유지하며 실제 Workflow 재개 성공으로 세지 않는다.
+
+사용자 요청의 셸 비교는 [TCP/셸 판정](tcp-shell-assessment-2026-09-14.md)에 기록했다. 같은 Node·검사·최소 환경에서 PowerShell 직접 실행과 cmd.exe 실행 모두 반닫기4ms/0바이트 EOF, 일반 응답1바이트·회수0이었다. CMD 전환은 해결책이 아니며 Windows 전체 결함 또는 사용자 설정 실수로 단정하지 않는다. 현재 Windows 환경의 미해결 제약으로 기록하고 추가 OS 진단을 보류한 채 Workflow 재개 작업으로 진행한다.
 
 현재 새 ZIP 생성과 목표 완료 처리는 하지 않았다. 차단과 미완료를 다음처럼 구분한다.
 

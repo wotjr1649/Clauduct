@@ -51,6 +51,8 @@
 - F12 변경 커밋: `2ac9963a3ea18fad09686031f7d6da4ccc3b4033`.
 - 출력32768 고정값을 낮출 수 있게 headless/development 실행·예약·fixture 사용량·PowerShell 판독의 한도를 연결했다. 기본값과 과거 원장은 유지한다. `-MaxOutputTokens 30000 -RequirePreGenerationLimit`는 현재 전송의 한계를 명시적으로 거부한다. 실제 headless 진입 preflight에서 실행 디렉터리 생성0/native시작0/credential0/실요청0을 확인했고 `.tmp/session-29-release/live-preflight-blocked.json`에 남겼다. 이 옵션을 빼고 같은 실호출을 진행하지 않는다.
 - 예산 검사19개, PowerShell 한도 판독3개 및 기존 관련10파일이 통과했다. 낮은 한도(각 단계 입력10000/출력3000)로 두 조합의 공개 native 출력 단절→이전 worker 종료→새 프로세스 동일 세션 개발 마감을 확인했다. 각8개 고정 응답, sol5805ms/luna5497ms, 묶음 쓰기1/파일 쓰기2, 최초 OUTPUT_PIPE_CLOSED 보존, 실제 backend0이다. `lower-budget-recovery-sol.json`/`lower-budget-recovery-luna.json` 및 first/finish 원자료가 근거다. 일반 저장 세션 재개 성공이며 Workflow 재개 성공으로 대체하지 않는다.
+- 예산 보완 커밋: `762b5e41562c3b24bba51f32a79a34c32d0ebd06`. 후속 영향 검사10파일 중9개 통과, headless 기존 실행 디렉터리 거부 검사가 실패했다. 새 토큰 preflight가 기존 경로 검사보다 먼저 실행된 것이 원인이다. 기존 경로/충돌 검사를 먼저 유지하고 파일 생성 전 토큰 preflight를 수행하도록 순서를 바로잡았다. 해당24개 검사와 예산19개 재검증 통과. 실패한 최초 묶음은 `candidate-impact-tests.json`, 수정 검사는 `preflight-order-fixed.json`에 보존한다.
+- 기존 증거 manifest12개 hash가 일치했다. 과거 실모델 개발 두 실행의 wrapper 결과 hash·실행 결과·events hash를 대조했고 각각 독립81개 성공을 확인했다. 이전 서비스 오류 native 증거의6종류×2조합도 확인했다. 관련 핵심 전송·프로토콜·모델·admission·소스/oracle11파일은 f425cf0과 동일하다. `.tmp/session-29-release/evidence-reuse.json`에 재사용 범위를 제한했다. 최초 대조의 evidenceHash 대상 파일 착오는 수집기 원문을 읽고 바로잡았으며 실제 실행을 반복하지 않았다.
 
 ### 예산 인터페이스
 

@@ -24,9 +24,6 @@ $completionRelay = $Case -eq 'completion' -and $CompletionMode -eq 'relay'
 $runClock = [Diagnostics.Stopwatch]::StartNew()
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'POWERSHELL_7_REQUIRED' }
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).ProviderPath
-$tokenPreflight = & (Get-Command node.exe -CommandType Application | Select-Object -First 1).Source (Join-Path $taskRoot 'verification/fixture-token-budget.mjs') ([string]$MaxInputTokens) ([string]$MaxOutputTokens) ($RequirePreGenerationLimit.IsPresent.ToString().ToLowerInvariant())
-if ($LASTEXITCODE -ne 0) { throw 'VERIFICATION_TOKEN_PREFLIGHT_FAILED' }
-$null = $tokenPreflight | ConvertFrom-Json -AsHashtable
 if (($MaxInputTokens -ne 131072 -or $MaxOutputTokens -ne 32768) -and $Case -notin @('text','stream-json','agent','completion','workflow','image','webfetch','websearch')) { throw 'VERIFICATION_TOKEN_LIMIT_CASE_UNSUPPORTED' }
 . (Join-Path $taskRoot 'verification/read-transport-progress.ps1')
 $temporaryRoot = Join-Path $taskRoot '.tmp'
@@ -37,6 +34,9 @@ foreach ($boundary in @($taskRoot, $temporaryRoot)) {
 }
 $fixtureRoot = Join-Path $temporaryRoot ('native-headless-' + $(if ($RunId) { $RunId } else { [Guid]::NewGuid().ToString('N') }))
 if (Test-Path -LiteralPath $fixtureRoot) { throw 'VERIFICATION_RUN_EXISTS' }
+$tokenPreflight = & (Get-Command node.exe -CommandType Application | Select-Object -First 1).Source (Join-Path $taskRoot 'verification/fixture-token-budget.mjs') ([string]$MaxInputTokens) ([string]$MaxOutputTokens) ($RequirePreGenerationLimit.IsPresent.ToString().ToLowerInvariant())
+if ($LASTEXITCODE -ne 0) { throw 'VERIFICATION_TOKEN_PREFLIGHT_FAILED' }
+$null = $tokenPreflight | ConvertFrom-Json -AsHashtable
 $profileRoot = Join-Path $fixtureRoot 'config'
 $workingRoot = Join-Path $fixtureRoot 'work'
 $tempRoot = Join-Path $fixtureRoot 'temp'

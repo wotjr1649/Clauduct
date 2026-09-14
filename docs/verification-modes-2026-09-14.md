@@ -52,6 +52,27 @@ Windows CI(`.github/workflows/tests.yml`)를 넣자 이 개발 머신에서는 �
 
 `src/test-managed-plan.mjs`의 낡은 기대값(40 대 41)도 전체 실행으로 드러났다. `7972f2f`가 목록에 파일을 추가하면서 갱신하지 않은 것으로 main에도 있었다. 자동 회귀 관문이 없던 기간의 산물이다.
 
-## live 모드
+## live 모드: 1회 실측
 
-미완이다. 결과는 확보하지 못했다.
+`--live-task sol/low`,taskId `retry-delay-window`를1회 완주했다. 출력 상한은 fixture의 기본32768이다. settings.json의 `CLAUDE_CODE_MAX_OUTPUT_TOKENS=64000`을 적용하려 했으나 `fixture-token-budget.mjs:13`이32768을 하드 상한으로 강제해 거부된다(`VERIFICATION_TOKEN_BUDGET_INVALID`). 그 상한을 완화해 통과시키지 않았다.
+
+| 항목 | 실측 |
+|---|---|
+| 벽시계 | 425,476ms |
+| 요청 | 6 |
+| 입력 토큰 | 17,274 |
+| 출력 토큰 | 1,050 |
+| 예산 한도 | attempts16, 입력131072, 출력32768, 시간630000ms |
+| 한도 내 | true |
+
+첫 시도는420초 제한으로 끊겼다. 제품이 멈춘 것이 아니라 단계 예산이 `phaseMs=600000`(verify-native-development.mjs:510)이어서 제한 자체가 부족했다. 요청 사이에180초 대기가 두 번 있었고 문서가 이미 기록한 외부 소스 검토 대기로 보인다.
+
+**판정은 `passed:false`다.** 전송 경로 지표는 모두 정상이었다 — `contextMatched`·`routeMatched`·`nativeJson`·`attemptsComplete`·`cleanupComplete`·`completedUsageObserved` 모두 true이고 `nativeError`는 false다. 미달한 것은 과제 판정뿐이다.
+
+```
+baselineFailed:false  revisedPassed:false  independentPassed:false  testsExecuted:1
+```
+
+기준선이 실패해야 과제가 성립하는데 통과했고, 실행된 검사는1건이다(과거 기록은32-case). 모델은606byte 소스를 작성했다. 원인은 규명하지 못했다. 제품 전송 경로의 결함이라는 증거는 없으며, 과제 판정 경로나 fixture 상태 쪽을 먼저 봐야 한다.
+
+나머지8개 live 모드는 실행하지 않았다. 이1회 실측 기준으로9모드×2모델은 약110요청·2시간 이상이며, 같은 판정 실패가 반복될 수 있으므로 원인 규명 전에는 확대하지 않는다.

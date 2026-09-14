@@ -38,7 +38,7 @@
 
 - 최종 작업 커밋: `fea90000ef014013b8044a71510ca3cdce56295c`, branch `work/unattended-release-2026-09-13`.
 - [최종 ZIP](../.tmp/unattended-release/implementation/.tmp/release-artifacts-7c475d04656848a8940a9ec69ed5d502/Clauduct-fea90000ef01.zip), SHA256 `72068e06b257973e92eea01801f465dbbaa21f352c2a501d5f7a0c957435e3a8`.
-- [독립 통합 판정 JSON](../.tmp/unattended-release/implementation/.tmp/release-completion-20260914/shipping-evidence.json), [실행별 설명](../.tmp/unattended-release/implementation/docs/release-completion-2026-09-14.md), [TCP 영향](../.tmp/unattended-release/implementation/docs/tcp-shell-assessment-2026-09-14.md).
+- [독립 통합 판정 JSON](../.tmp/unattended-release/implementation/.tmp/release-completion-20260914/shipping-evidence.json), [실행별 설명](release-completion-2026-09-14.md), [TCP 영향](tcp-shell-assessment-2026-09-14.md).
 - 실제 실행한 ZIP의 commit은 `91e72bd72e828431b4896de0546c1389eabbc4be`다. 최종 ZIP과 달라진 것은 RELEASE와 결과 문서 두 개뿐이며, 나머지206파일이 동일 바이트임을 [대조 증거](../.tmp/unattended-release/implementation/.tmp/release-completion-20260914/final-runtime-equivalence.json)로 확인했다. 문서 변경 후 같은 모델 요청을 다시 소비하지 않았다.
 - 실제 환경: Node24.19.0, Claude2.1.270, transport에서 관측한 Codex0.154.0. `CLI_VERSION_UNVERIFIED`는 기존 비차단 진단이다. 부모 알림 실패의 공개 fixture도 Claude2.1.270이었음을 다시 확인했다.
 

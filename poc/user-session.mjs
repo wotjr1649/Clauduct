@@ -10,7 +10,7 @@ import { ALIAS, FIXTURE_PATH, readTool, PROTOCOL_ERROR_CODES, protocolDiagnostic
 import { createCodexTransport } from './codex-transport.mjs';
 import { clientVersionPolicy, isClientVersion } from '../src/client-version.mjs';
 import { startGateway } from './gateway.mjs';
-import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe } from '../src/runtime-paths.mjs';
+import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe, CODEX_ARGS as codexArgs } from '../src/runtime-paths.mjs';
 
 const configPath = join(expectedRoot, 'config.toml');
 const credentialPath = join(expectedRoot, 'auth.json');
@@ -218,7 +218,7 @@ export function openUserTransport({ profile = 'astra-low', tokenLimitPolicy = 'r
   checkUserContext({ stdinTTY: process.stdin.isTTY, stdoutTTY: process.stdout.isTTY,
     env: process.env, execArgs: process.execArgv, nonInteractive });
   requireThat(!signal?.aborted, 'USER_CANCELLED');
-  const clientVersion = checkClientVersion(spawnSync(codexExe, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
+  const clientVersion = checkClientVersion(spawnSync(codexExe, [...codexArgs, '--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
   const compatibility = clientVersionPolicy(clientVersion);
   if (compatibility.clientVersionStatus === 'unverified') {
     process.stderr.write(`Clauduct: CLI_VERSION_UNVERIFIED detected=${clientVersion} reference=${compatibility.referenceClientVersion}; protocol checks remain active.\n`);

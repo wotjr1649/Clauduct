@@ -10,7 +10,7 @@ import { searchEnvelope } from '../src/native-protocol.mjs';
 import { clientVersionPolicy } from '../src/client-version.mjs';
 import { readAuthStoreSetting } from './auth-store-selection.mjs';
 import { release, arch } from 'node:os';
-import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe } from '../src/runtime-paths.mjs';
+import { CODEX_ROOT as expectedRoot, CODEX_EXE as codexExe, CODEX_ARGS as codexArgs } from '../src/runtime-paths.mjs';
 
 export const endpoint = 'https://chatgpt.com/backend-api/codex/responses';
 // The reference client's standalone web search. In the responses-lite envelope it sends no hosted
@@ -526,7 +526,7 @@ async function main() {
     checkRuntime(process.env, process.execArgv);
     // Read before the confirmation so a version the project has not validated is on screen
     // while the user decides, rather than reported after the request has already gone out.
-    compatibility = readClientVersion(spawnSync(codexExe, ['--version'],
+    compatibility = readClientVersion(spawnSync(codexExe, [...codexArgs, '--version'],
       { windowsHide: true, encoding: 'utf8', timeout: 5000, maxBuffer: 4096 }));
     const target = search ? searchEndpoint : endpoint;
     console.log(`USER-OPERATED TEST: ${search ? `${searchModel}; standalone web search` : `${model}/${effort}`}; ${transport}; one request to ${target}`);

@@ -81,6 +81,9 @@ try {
     $changed = Join-Path $two.versionPath 'src/clauduct.mjs'; [IO.File]::AppendAllText($changed, '// PUBLIC_MODIFICATION')
     Rejected { Install-ClauductPackage @second -BinRoot $bin -Node $node } 'INSTALL_EXISTING_VERSION_CHANGED'
     Need ((Get-ClauductHash (Join-Path $bin 'clauduct.cmd')) -ceq $stable) 'MODIFIED_VERSION_COMMAND_PRESERVED'
+    # Restore cwd before emitting pipeline output so relative report paths resolve
+    # in the caller's directory, not the temporary command-launch fixture.
+    Set-Location -LiteralPath $oldCwd
     [ordered]@{passed=$true;checks=$checks;publicFixture=$true;actualModelRequests=0;credentialReads=0;userPathWrites=0;root=$root} | ConvertTo-Json -Compress
 } finally {
     $env:Path = $oldPath; Set-Location -LiteralPath $oldCwd

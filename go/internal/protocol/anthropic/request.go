@@ -1,0 +1,448 @@
+// Package anthropic decodes the requests the native client sends and emits the events it
+// expects back. It is the Claude side of the wire and knows nothing about the backend.
+//
+// The validation here is an allowlist, not a filter. A field nobody recognises is refused
+// rather than dropped, because dropping it would mean acting on a request while ignoring
+// part of what it asked for — and the part ignored could be the part that made a tool call
+// safe. Every refusal carries a fixed category so a failure is diagnosable without logging
+// request content.
+package anthropic
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
+)
+
+// The fields a request may carry, ported from the Node baseline. The measured claude
+// 2.1.272 sends ten of them on every inference call.
+var requestFields = []string{
+	"model", "messages", "system", "max_tokens", "stream",
+	"tools", "tool_choice", "thinking", "metadata",
+	"output_config", "context_management",
+	"temperature", "top_p", "stop_sequences",
+}
+
+// Fixed refusal categories, matching the baseline's names so a client sees the same
+// vocabulary from either implementation.
+const (
+	CodeRequestFields      = "REQUEST_FIELDS"
+	CodeRequestShape       = "REQUEST_SHAPE"
+	CodeStreamFalse        = "REQUEST_STREAM_FALSE"
+	CodeStreamMissing      = "REQUEST_STREAM_MISSING"
+	CodeStreamInvalid      = "REQUEST_STREAM_INVALID"
+	CodeMessagesInvalid    = "REQUEST_MESSAGES_INVALID"
+	CodeMessagesEmpty      = "REQUEST_MESSAGES_EMPTY"
+	CodeInvalidOutputLimit = "INVALID_OUTPUT_LIMIT"
+	CodeOutputConfigFields = "OUTPUT_CONFIG_FIELDS"
+	CodeOutputFormatShape  = "OUTPUT_FORMAT_SHAPE"
+	CodeOutputFormatFields = "OUTPUT_FORMAT_FIELDS"
+	CodeOutputFormatType   = "OUTPUT_FORMAT_TYPE"
+	CodeOutputFormatSchema = "OUTPUT_FORMAT_SCHEMA"
+	CodeOutputFormatName   = "OUTPUT_FORMAT_NAME"
+	CodeThinkingFields     = "THINKING_FIELDS"
+	CodeThinkingType       = "THINKING_TYPE"
+	CodeThinkingBudget     = "THINKING_BUDGET"
+	CodeContextFields      = "CONTEXT_FIELDS"
+	CodeUnsupportedEdit    = "UNSUPPORTED_CONTEXT_EDIT"
+	CodeUnsupportedSample  = "UNSUPPORTED_SAMPLING"
+	CodeToolsShape         = "TOOLS_SHAPE"
+	CodeMessageFields      = "MESSAGE_FIELDS"
+	CodeMessageRole        = "MESSAGE_ROLE"
+	CodeUnsupportedContent = "UNSUPPORTED_CONTENT"
+	CodeInvalidModel       = "INVALID_MODEL"
+
+	// Not a defect in the request: a shape this build has not implemented yet. Named
+	// separately so "you sent something wrong" and "we have not built that" never read as
+	// the same answer, and so a capability gap can never pass as a silent success.
+	CodeToolUseUnsupported = "TOOL_USE_UNSUPPORTED"
+)
+
+// RequestError is a refusal with a fixed category.
+type RequestError struct {
+	Code string
+	// Field names the offending member when one is identifiable. It is a name this
+	// package chose or a key from the allowlist, never a value from the request.
+	Field string
+}
+
+func (e *RequestError) Error() string {
+	if e.Field != "" {
+		return e.Code + " " + e.Field
+	}
+	return e.Code
+}
+
+func refuse(code, field string) error { return &RequestError{Code: code, Field: field} }
+
+// identifier matches the baseline's id() shape, used for names the backend will echo.
+var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
+
+// Block is one piece of message content. Raw keeps the bytes so nothing is lost for the
+// blocks this build does not yet interpret.
+type Block struct {
+	Type string
+	Text string
+	Raw  json.RawMessage
+}
+
+// Message is one turn.
+type Message struct {
+	Role   string
+	Blocks []Block
+}
+
+// Request is a decoded inference request. Unparsed members stay in Fields so a later
+// package can read them without this one having to guess what they mean.
+type Request struct {
+	Model     string
+	MaxTokens int64
+	Messages  []Message
+	System    json.RawMessage
+	Effort    string
+	ToolCount int
+	Fields    map[string]json.RawMessage
+}
+
+// maxSafeInteger is JavaScript's Number.MAX_SAFE_INTEGER. The baseline validates against
+// it, and a client that round-trips a larger value through a JSON number cannot be relied
+// on to have sent what it meant.
+const maxSafeInteger = int64(1)<<53 - 1
+
+// DecodeRequest validates an inference request and returns what this build understands.
+//
+// It refuses rather than repairs. A stream flag that is missing, a sampling parameter this
+// bridge cannot honour, an unknown top-level field: each gets its own category, because
+// "the request was malformed" and "we do not support that" lead a user to different
+// actions.
+func DecodeRequest(body []byte) (*Request, error) {
+	fields, err := wire.Fields(body, requestFields)
+	if err != nil {
+		return nil, translateFieldError(err)
+	}
+
+	request := &Request{Fields: fields}
+
+	// stream. Three distinct answers, because a client that omitted it and one that asked
+	// for a non-streaming response have different problems.
+	switch value, presence := wire.Of(fields, "stream"); {
+	case presence == wire.Absent:
+		return nil, refuse(CodeStreamMissing, "stream")
+	case string(value) == "true":
+		// the only accepted form
+	case string(value) == "false":
+		return nil, refuse(CodeStreamFalse, "stream")
+	default:
+		return nil, refuse(CodeStreamInvalid, "stream")
+	}
+
+	// Sampling controls the backend does not honour. Accepting and ignoring them would
+	// hand back output that silently disobeyed the request.
+	for _, name := range []string{"temperature", "top_p", "stop_sequences"} {
+		if _, presence := wire.Of(fields, name); presence != wire.Absent {
+			return nil, refuse(CodeUnsupportedSample, name)
+		}
+	}
+
+	if err := decodeModel(fields, request); err != nil {
+		return nil, err
+	}
+	if err := decodeMaxTokens(fields, request); err != nil {
+		return nil, err
+	}
+	if err := decodeMessages(fields, request); err != nil {
+		return nil, err
+	}
+	if err := decodeOutputConfig(fields, request); err != nil {
+		return nil, err
+	}
+	if err := decodeThinking(fields); err != nil {
+		return nil, err
+	}
+	if err := decodeContextManagement(fields); err != nil {
+		return nil, err
+	}
+	if err := decodeTools(fields, request); err != nil {
+		return nil, err
+	}
+
+	if value, presence := wire.Of(fields, "system"); presence == wire.Present {
+		request.System = value
+	}
+	return request, nil
+}
+
+func translateFieldError(err error) error {
+	var fieldErr *wire.FieldError
+	if errors.As(err, &fieldErr) {
+		return refuse(CodeRequestFields, fieldErr.Field)
+	}
+	return refuse(CodeRequestShape, "")
+}
+
+func decodeModel(fields map[string]json.RawMessage, request *Request) error {
+	value, presence := wire.Of(fields, "model")
+	if presence != wire.Present {
+		return refuse(CodeInvalidModel, "model")
+	}
+	if err := json.Unmarshal(value, &request.Model); err != nil || request.Model == "" {
+		return refuse(CodeInvalidModel, "model")
+	}
+	return nil
+}
+
+func decodeMaxTokens(fields map[string]json.RawMessage, request *Request) error {
+	value, presence := wire.Of(fields, "max_tokens")
+	if presence != wire.Present {
+		return refuse(CodeInvalidOutputLimit, "max_tokens")
+	}
+	number, err := exactInteger(value)
+	if err != nil || number <= 0 || number > maxSafeInteger {
+		return refuse(CodeInvalidOutputLimit, "max_tokens")
+	}
+	request.MaxTokens = number
+	return nil
+}
+
+func decodeMessages(fields map[string]json.RawMessage, request *Request) error {
+	value, presence := wire.Of(fields, "messages")
+	if presence != wire.Present {
+		return refuse(CodeMessagesInvalid, "messages")
+	}
+	var raw []json.RawMessage
+	if err := json.Unmarshal(value, &raw); err != nil {
+		return refuse(CodeMessagesInvalid, "messages")
+	}
+	if len(raw) == 0 {
+		return refuse(CodeMessagesEmpty, "messages")
+	}
+	for _, entry := range raw {
+		message, err := decodeMessage(entry)
+		if err != nil {
+			return err
+		}
+		request.Messages = append(request.Messages, message)
+	}
+	return nil
+}
+
+func decodeMessage(raw json.RawMessage) (Message, error) {
+	fields, err := wire.Fields(raw, []string{"role", "content"})
+	if err != nil {
+		return Message{}, refuse(CodeMessageFields, "messages")
+	}
+
+	var message Message
+	roleValue, presence := wire.Of(fields, "role")
+	if presence != wire.Present || json.Unmarshal(roleValue, &message.Role) != nil {
+		return Message{}, refuse(CodeMessageRole, "role")
+	}
+	if message.Role != "user" && message.Role != "assistant" {
+		return Message{}, refuse(CodeMessageRole, message.Role)
+	}
+
+	contentValue, presence := wire.Of(fields, "content")
+	if presence != wire.Present {
+		return Message{}, refuse(CodeMessageFields, "content")
+	}
+
+	// A bare string is shorthand for a single text block. It is expanded here rather than
+	// left for every reader to remember.
+	var text string
+	if json.Unmarshal(contentValue, &text) == nil {
+		message.Blocks = []Block{{Type: "text", Text: text, Raw: contentValue}}
+		return message, nil
+	}
+
+	var blocks []json.RawMessage
+	if err := json.Unmarshal(contentValue, &blocks); err != nil {
+		return Message{}, refuse(CodeMessageFields, "content")
+	}
+	for _, entry := range blocks {
+		block, err := decodeBlock(entry)
+		if err != nil {
+			return Message{}, err
+		}
+		message.Blocks = append(message.Blocks, block)
+	}
+	return message, nil
+}
+
+func decodeBlock(raw json.RawMessage) (Block, error) {
+	fields, err := wire.Fields(raw, nil)
+	if err != nil {
+		return Block{}, refuse(CodeUnsupportedContent, "content")
+	}
+	typeValue, presence := wire.Of(fields, "type")
+	var kind string
+	if presence != wire.Present || json.Unmarshal(typeValue, &kind) != nil {
+		return Block{}, refuse(CodeUnsupportedContent, "content")
+	}
+
+	if kind != "text" {
+		// Images, documents, tool_use, tool_result, reasoning. Each is a real shape this
+		// build has not implemented, and naming it is what keeps the gap visible instead
+		// of turning a request into a shorter one that happens to succeed.
+		if kind == "tool_use" || kind == "tool_result" {
+			return Block{}, refuse(CodeToolUseUnsupported, kind)
+		}
+		return Block{}, refuse(CodeUnsupportedContent, kind)
+	}
+
+	block := Block{Type: kind, Raw: raw}
+	textValue, presence := wire.Of(fields, "text")
+	if presence != wire.Present || json.Unmarshal(textValue, &block.Text) != nil {
+		return Block{}, refuse(CodeUnsupportedContent, "text")
+	}
+	return block, nil
+}
+
+func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) error {
+	value, presence := wire.Of(fields, "output_config")
+	if presence != wire.Present {
+		return nil
+	}
+	config, err := wire.Fields(value, []string{"effort", "format"})
+	if err != nil {
+		return refuse(CodeOutputConfigFields, "output_config")
+	}
+	if effort, present := wire.Of(config, "effort"); present == wire.Present {
+		if err := json.Unmarshal(effort, &request.Effort); err != nil {
+			return refuse(CodeOutputConfigFields, "effort")
+		}
+	}
+
+	formatValue, present := wire.Of(config, "format")
+	if present != wire.Present {
+		return nil
+	}
+	format, err := wire.Fields(formatValue, []string{"type", "schema", "name"})
+	if err != nil {
+		if errors.Is(err, wire.ErrNotObject) {
+			return refuse(CodeOutputFormatShape, "format")
+		}
+		return refuse(CodeOutputFormatFields, "format")
+	}
+	kindValue, present := wire.Of(format, "type")
+	var kind string
+	if present != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "json_schema" {
+		return refuse(CodeOutputFormatType, "type")
+	}
+	// The schema is carried through unread. JSON Schema semantics belong to the backend,
+	// and a second, weaker validator here would only disagree with the one that decides.
+	schemaValue, present := wire.Of(format, "schema")
+	if present != wire.Present {
+		return refuse(CodeOutputFormatSchema, "schema")
+	}
+	if _, err := wire.Fields(schemaValue, nil); err != nil {
+		return refuse(CodeOutputFormatSchema, "schema")
+	}
+	if nameValue, present := wire.Of(format, "name"); present == wire.Present {
+		var name string
+		if json.Unmarshal(nameValue, &name) != nil || !identifier.MatchString(name) {
+			return refuse(CodeOutputFormatName, "name")
+		}
+	}
+	return nil
+}
+
+func decodeThinking(fields map[string]json.RawMessage) error {
+	value, presence := wire.Of(fields, "thinking")
+	if presence != wire.Present {
+		return nil
+	}
+	thinking, err := wire.Fields(value, []string{"type", "display", "budget_tokens"})
+	if err != nil {
+		return refuse(CodeThinkingFields, "thinking")
+	}
+	kindValue, present := wire.Of(thinking, "type")
+	var kind string
+	if present != wire.Present || json.Unmarshal(kindValue, &kind) != nil {
+		return refuse(CodeThinkingType, "type")
+	}
+	if kind != "adaptive" && kind != "enabled" && kind != "disabled" {
+		return refuse(CodeThinkingType, kind)
+	}
+	if budget, present := wire.Of(thinking, "budget_tokens"); present == wire.Present {
+		number, err := exactInteger(budget)
+		if err != nil || number <= 0 || number > maxSafeInteger {
+			return refuse(CodeThinkingBudget, "budget_tokens")
+		}
+	}
+	return nil
+}
+
+// The one context edit the baseline consumes is a semantic no-op. Anything else changes
+// what the model is asked to remember, and honouring an edit this bridge has not
+// implemented would quietly alter the conversation.
+func decodeContextManagement(fields map[string]json.RawMessage) error {
+	value, presence := wire.Of(fields, "context_management")
+	if presence != wire.Present {
+		return nil
+	}
+	management, err := wire.Fields(value, []string{"edits"})
+	if err != nil {
+		return refuse(CodeContextFields, "context_management")
+	}
+	editsValue, present := wire.Of(management, "edits")
+	if present != wire.Present {
+		return refuse(CodeContextFields, "edits")
+	}
+	var edits []json.RawMessage
+	if err := json.Unmarshal(editsValue, &edits); err != nil || len(edits) != 1 {
+		return refuse(CodeUnsupportedEdit, "edits")
+	}
+	edit, err := wire.Fields(edits[0], []string{"type", "keep"})
+	if err != nil {
+		return refuse(CodeUnsupportedEdit, "edits")
+	}
+	kind, _ := wire.Of(edit, "type")
+	keep, _ := wire.Of(edit, "keep")
+	if string(kind) != `"clear_thinking_20251015"` || string(keep) != `"all"` {
+		return refuse(CodeUnsupportedEdit, "edits")
+	}
+	return nil
+}
+
+// decodeTools validates the shape and then refuses, because tool use is WP04.
+//
+// Shape first so a malformed tools array is reported as malformed rather than as an
+// unimplemented capability: those are different problems with different fixes.
+func decodeTools(fields map[string]json.RawMessage, request *Request) error {
+	value, presence := wire.Of(fields, "tools")
+	if presence != wire.Present {
+		if _, choice := wire.Of(fields, "tool_choice"); choice != wire.Absent {
+			return refuse(CodeToolUseUnsupported, "tool_choice")
+		}
+		return nil
+	}
+	var tools []json.RawMessage
+	if err := json.Unmarshal(value, &tools); err != nil {
+		return refuse(CodeToolsShape, "tools")
+	}
+	request.ToolCount = len(tools)
+	if len(tools) == 0 {
+		return nil
+	}
+	return refuse(CodeToolUseUnsupported, "tools")
+}
+
+// exactInteger reads a JSON number from its literal text.
+//
+// Not via json.Number: unmarshalling into one accepts the JSON *string* "1024" as the
+// number 1024, so a client sending a quoted value would have been read as if it had sent
+// a number. Measured, not assumed — a test caught it. Parsing the literal also refuses
+// 1.5, 1e100 and anything past int64, none of which are integers a caller asked for.
+func exactInteger(value json.RawMessage) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(string(value)), 10, 64)
+}
+
+func (r *Request) String() string {
+	return fmt.Sprintf("anthropic.Request{model:%q messages:%d tools:%d}",
+		r.Model, len(r.Messages), r.ToolCount)
+}

@@ -319,10 +319,16 @@ func TestConcurrentSessionsDoNotInterfere(t *testing.T) {
 	}
 }
 
-// worktreeModified reports whether git sees uncommitted tracked changes.
+// worktreeModified reports modified in the sense the Go toolchain uses.
+//
+// That includes untracked files. The first version of this passed --untracked-files=no and
+// then compared the answer against the toolchain's stamp, which counts them -- so writing a
+// new file made the binary say dirty while this said clean, and the test failed for a
+// disagreement about the word rather than about the worktree. Two definitions of the same
+// term is how a comparison becomes noise.
 func worktreeModified(t *testing.T) bool {
 	t.Helper()
-	cmd := exec.Command("git", "status", "--porcelain", "--untracked-files=no")
+	cmd := exec.Command("git", "status", "--porcelain")
 	cmd.Dir = moduleRoot(t)
 	raw, err := cmd.Output()
 	if err != nil {

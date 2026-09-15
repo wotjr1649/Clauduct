@@ -1,0 +1,13 @@
+# Go source is LF everywhere, including on Windows checkouts.
+#
+# gofmt treats a CRLF file as unformatted, so with core.autocrlf=true a Windows checkout
+# fails `gofmt -l .` on every file in the module. Nothing local shows it: the files written
+# here are already LF and git does not rewrite them until it checks them out again. CI on
+# windows-latest checked out fresh and flagged all of them, which is the first thing that
+# run found.
+#
+# Scoped to this directory rather than the repository root: the Node baseline's checkout
+# behaviour is not this branch's to change.
+*.go text eol=lf
+go.mod text eol=lf
+go.sum text eol=lf

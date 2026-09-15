@@ -6,6 +6,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -33,6 +34,16 @@ func (e *RefusedOptionError) Error() string { return "OPTION_REFUSED " + e.Optio
 type Process interface {
 	Wait() error
 	ExitCode() int
+	// Stop ends the process.
+	//
+	// Only this process. The handle came from starting it, so nothing else can be reached
+	// through it -- no name is looked up and nothing is enumerated, which is what keeps a
+	// cancelled session from touching a Claude or MCP process belonging to someone else.
+	//
+	// Its limit, stated rather than discovered later: on Windows a grandchild the native
+	// client started does not die with it. Binding the tree together needs a Job Object
+	// and that is LIFE11, which is not done.
+	Stop() error
 }
 
 // Options are the session inputs. Every external dependency is injectable, which is what
@@ -142,7 +153,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	result.NativeStarted = true
 
-	waitErr := process.Wait()
+	waitErr := waitFor(ctx, process)
 	result.NativeExitCode = process.ExitCode()
 
 	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
@@ -154,6 +165,35 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return result, waitErr
 	}
 	return result, nil
+}
+
+// waitFor waits for the child, or stops it when the caller gives up.
+//
+// Run took a context from the first version of this package and ignored it: the child was
+// waited on unconditionally, so a caller with a deadline had no way to end a session. In
+// production nothing noticed, because main passes context.Background. It surfaced when a
+// fixture was mutated into answering the same tool call forever and the client looped --
+// every test timeout in this package had been decorative until then.
+func waitFor(ctx context.Context, process Process) error {
+	done := make(chan error, 1)
+	go func() { done <- process.Wait() }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		stopErr := process.Stop()
+		// Reaped regardless, so the handles are really released. The wait error from a
+		// process that was just killed is expected and says nothing, which is why it is
+		// discarded rather than returned: reporting it would make a session the caller
+		// ended look like a session the child ended, and Run treats an ExitError as the
+		// native process's own answer.
+		<-done
+		if stopErr != nil {
+			return fmt.Errorf("stopping the child after %w: %v", ctx.Err(), stopErr)
+		}
+		return ctx.Err()
+	}
 }
 
 func closeGateway(gw *gateway.Gateway, timeout time.Duration) error {
@@ -205,6 +245,14 @@ func (o Options) withDefaults() Options {
 type osProcess struct{ cmd *exec.Cmd }
 
 func (p *osProcess) Wait() error { return p.cmd.Wait() }
+
+// Stop kills this process by the handle that started it.
+func (p *osProcess) Stop() error {
+	if p.cmd.Process == nil {
+		return nil
+	}
+	return p.cmd.Process.Kill()
+}
 
 func (p *osProcess) ExitCode() int { return p.cmd.ProcessState.ExitCode() }
 

@@ -116,9 +116,15 @@ func TestAZeroBudgetAuthorisesNothing(t *testing.T) {
 // is a visible edit rather than a quiet one.
 func TestTheApprovedBudgetIsTheOneThatWasAuthorised(t *testing.T) {
 	got := ApprovedBudget()
-	want := Budget{Model: "gpt-5.6-luna", Effort: "low", Limit: 20}
+	want := Budget{Model: "gpt-5.6-luna", Effort: "low", Limit: 100}
 	if got != want {
-		t.Fatalf("ApprovedBudget() = %+v, want %+v — raising this is a decision, not a fix", got, want)
+		t.Fatalf("ApprovedBudget() = %+v, want %+v — changing this is a decision, not a fix", got, want)
+	}
+	// The count is the user's to raise. The route is the part they said to ask about, so it
+	// is stated separately: a model change must fail this even if the count is right.
+	if got.Model != "gpt-5.6-luna" || got.Effort != "low" {
+		t.Fatalf("route = %s/%s. astra is the most expensive model and needs asking first.",
+			got.Model, got.Effort)
 	}
 }
 

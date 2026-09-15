@@ -4,10 +4,10 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **585개 통과** (subtest 포함), 11 package |
-| mutation 검증 | **174건 주입** (battery 9개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
+| 실행한 V2 Go 테스트 | **663개 통과** (subtest 포함), 11 package. NATIVE_SYNTH 9개 포함 |
+| mutation 검증 | **184건 주입** (battery 10개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
 | 실모델 호출 | **17회.** `gpt-5.6-luna` / effort `low`. 1.3절(상한) · 1.4절(wire) |
-| 잔여 승인 예산 | **3회** (누적 승인 20회 중 17회 사용) |
+| 잔여 승인 예산 | **83회** (2026-09-15 사용자가 누적 100회로 상향, 경로는 luna/low 그대로) |
 
 ### 1.1 실행한 것
 
@@ -246,6 +246,97 @@ reading      SOUND — request, tool call and recorded result all survive the re
 
 compiler-only 1건도 있었다 — 교차검사 mutation이 컴파일되지 않았다. 컴파일되는 두 형태로 나눴다. 재실행: **21건 주입, 미검출 0, compiler-only 0.**
 
+### 1.5 NATIVE_SYNTH — 실제 클라이언트가 처음으로 V2를 통과했다
+
+WP06은 **실제 `claude.exe`를 fixture backend에 붙인다.** 지금까지 실제 클라이언트를 붙이면 언제나 `400 NO_UPSTREAM_TRANSPORT`로 끝났다. 이번에 처음으로 세션이 성립했고, 모델 호출은 **0회**다.
+
+```
+text  reply reaches stdout   1초
+```
+
+fixture가 replay하는 것은 **1.4절에서 실측한 wire 모양**이다 — `output_item.added` → delta → `output_item.done` → `completed`(빈 output 배열). 그럴듯한 모양을 쓰면 WP04에서 저지른 실수를 그대로 반복한다.
+
+#### 1.5.1 격리는 가정이 아니라 측정이다
+
+실제 클라이언트는 `~/.claude/`를 읽고 쓰며, 사용자 설정에 MCP 서버가 있으면 **그것을 띄운다.** 테스트가 사람의 Slack이나 DB 서버를 시작하는 것은 어떤 정의로도 격리가 아니다.
+
+| 장치 | 확인 |
+|---|---|
+| `CLAUDE_CONFIG_DIR`을 임시 디렉터리로 | **실측**: 클라이언트가 존중한다. `.claude.json`·`backups/`·`projects/`·`sessions/`가 전부 그쪽에 생겼다 |
+| `--strict-mcp-config` 상시 | "Only use MCP servers from --mcp-config" — 사용자 MCP가 도달할 경로를 구조적으로 없앤다 |
+| 임시 작업 디렉터리 | project 수준 설정 파일이 끼어들 수 없다 |
+
+**`--bare`는 일부러 기본값이 아니다.** hooks·plugin·CLAUDE.md 탐색을 건너뛰는데, 그것들이야말로 몇몇 테스트가 관찰하려는 대상이다. 기본으로 켜면 모든 결과가 보통 세션을 대표하지 못한다.
+
+**남는 위험을 적어둔다**: 시스템 전역 managed settings 파일은 여전히 적용되며 이 harness는 그것을 격리하지 않는다.
+
+#### 1.5.2 leak 테스트는 overlay가 덮는 이름으로는 성립하지 않는다
+
+WP01이 이미 한 번 걸린 함정이다. overlay는 5개 `ANTHROPIC_*` 이름을 **무조건 덮어쓰므로**, 그 5개만 leak 표지로 쓰는 테스트는 denylist를 통째로 지워도 초록이다.
+
+그래서 canary는 **overlay가 설정하지 않는 이름**을 쓴다 — `ANTHROPIC_MODEL`. 새면 클라이언트가 그 값으로 동작하고, 동작한 결과는 **backend 요청 본문에 나타난다.** fixture가 그 본문을 기록하므로 읽을 수 있다.
+
+mutation이 확인한다: denylist를 지워도, **overlay 이름만 남기도록 좁혀도** 둘 다 잡힌다.
+
+#### 1.5.3 덮은 테스트 ID
+
+| ID | 상태 | 어디서 |
+|---|---|---|
+| ARG06 unknown 옵션 전달·native 오류 보존 | PASS | 실제 클라이언트가 자기 오류를 낸다. launcher는 옵션을 소유하지 않으므로 의견이 없다 |
+| ARG07 help/version이 real auth 없이 | PASS | exit 0, **backend 호출 0회**. 버전 질문이 추론 비용을 내면 안 된다 |
+| ENV04 사용자 `CLAUDE_CONFIG_DIR` 보존 | PASS | 합성 디렉터리에 클라이언트 자체 상태가 실제로 쌓인다 |
+| ENV06 사용자 hook·agent 덮어쓰기 없음 | PASS | 미리 놓은 agent와 settings가 **바이트 단위로** 그대로다 |
+| ENV07 BASE_URL 충돌 | **부분 — 기록된 gap** | 덮어쓰기는 동작한다. **진단은 하지 않는다.** 테스트가 그 부재를 고정해, 구현되면 실패하고 다시 쓰이게 했다 |
+| ENV08/ENV02 다른 credential 재주입 | PASS | 1.5.2절의 canary |
+| ENV10 native 쓰기와 wrapper 쓰기 구분 | PASS | 프로젝트 **옆**에 아무것도 생기지 않는다. 안쪽은 native의 몫이므로 제외한다 |
+| CAP04 기본 실행에 agent·hook 주입 0 | PASS | 합성 config 전체와 `.claude.json` 본문에 이 wrapper의 흔적이 없다 |
+| CAP10 `--bare`에서도 기본 연결 | PASS | 아래 |
+
+#### 1.5.4 `--bare` — 예측이 틀렸고 측정이 맞았다
+
+`--bare`의 도움말은 이렇게 말한다: *"Anthropic auth is strictly ANTHROPIC_API_KEY or apiKeyHelper (OAuth and keychain are never read)."*
+
+이 overlay는 `ANTHROPIC_AUTH_TOKEN`을 넣고 `ANTHROPIC_API_KEY`를 **빈 문자열로 만든다.** 그 문장만 읽으면 실패를 예측하게 된다. 나도 그렇게 예측했다.
+
+**측정: 연결된다.** 그래서 이것이 문단이 아니라 테스트다.
+
+#### 1.5.5 mutation — 10건, 전부 잡혔다
+
+launcher를 깨뜨려 이 9개 테스트가 실패할 수 있는지 확인했다.
+
+| 주입 | 잡은 테스트 |
+|---|---|
+| `CLAUDE_CONFIG_DIR` 드롭 | ENV04 |
+| ANTHROPIC denylist 삭제 | ENV08 canary |
+| denylist를 overlay 이름으로만 좁힘 | ENV08 canary — **WP01의 거짓 초록 시나리오** |
+| 프로젝트 옆에 status 파일 쓰기 | ENV10 |
+| 사용자 settings 덮어쓰기 / agents 삭제 | ENV06 |
+| endpoint·token을 자식에게 안 넘김 | CAP10·세션 |
+| launcher가 모르는 옵션을 거부 | ARG06 |
+| argv를 전달하지 않음 | ARG06·ARG07 |
+
+앞선 시도에서 "전체 부모 환경 드롭" 주입은 **suite를 멈추게 했다.** 처음에 그것을 `caught`로 적었는데 틀렸다 — **timeout은 테스트 실패가 아니다.** 아무 단언도 발화하지 않았다. harness를 고쳐 `HUNG`으로 따로 세고 실패로 계산하게 했고, 그 주입은 아무것도 말해주지 않으므로 뺐다. 대신 같은 성질을 단언으로 잡는 denylist 주입 둘을 넣었다.
+
+세션 timeout도 25초로 줄였다. fixture 세션은 1초에 끝나므로 넉넉하고, launcher가 깨지면 실제 클라이언트가 재시도에 들어가므로 긴 상한은 mutation 실행을 **실패가 아니라 대기**로 만든다.
+
+#### 1.5.6 아직 안 한 것 — 전부 C 등급
+
+| ID | 왜 |
+|---|---|
+| ENV05 user/project/managed 설정 우선순위 | 세 층을 만들어야 한다. managed 층은 시스템 전역이라 이 harness가 격리하지 못하는 바로 그것이다 |
+| TOOL09 MCP config·schema·service env | MCP 서버를 실제로 띄워야 한다. `--strict-mcp-config`로 막아둔 것을 의도적으로 여는 작업이고 별도 설계가 필요하다 |
+| TOOL10 plugin·skill·hook discovery | 합성 plugin 디렉터리가 필요하다 |
+| TOOL11 worktree 생성·사용·cleanup | git worktree를 만드는 세션이며 cleanup 의미가 별도 판정 대상이다 |
+| CAP05·CAP07·CAP08·CAP09 | custom agent·overlay on/off·resume·Node 세션 호환. resume 두 건은 세션을 남긴 뒤 두 번째 실행이 필요하다 |
+
+전부 `C`(capability) 등급이고 `P`/`S`는 남기지 않았다. **미실행은 통과가 아니다.**
+
+#### 1.5.7 이번 WP에서 실행한 Node 기준선
+
+`test-launcher-native` · `test-native-diagnostics` · `test-development-arguments` · `test-development-change-arguments` · `test-request-diagnostics` · `test-unsupported-event-diagnostics` · `test-agent-selection`
+
+**7개 전부 exit 0.** 기준선 worktree는 tracked 변경 0으로 남아 있다.
+
 ## 2. 네 단계 실행 강도
 
 | Level | 내용 | 실모델 호출 |
@@ -299,7 +390,7 @@ compiler-only 1건도 있었다 — 교차검사 mutation이 컴파일되지 않
 | G2 격리 | **완료** | 2026-09-15 사용자 승인. worktree `Clauduct-go-v2`, 의존 0 Go module, 기준선 tracked 변경 0 | offline vertical slice |
 | G3 최소 실행 | **산출물 완료** | WP01·WP02. argv/env/cwd 사양, loopback lifecycle, cleanup. 알려진 한계는 5.2절 | protocol 구현 |
 | G4 기본 wire | **산출물 완료** | WP03·WP04. text·tool·JSON·SSE·error·cancel offline P/S, limit registry 확정 | native synthetic 통합 |
-| G5 host parity | 미착수 | 선택한 native 기능·환경·permissions·worktree 증거. **WP06** | real backend 검증 계획 확정 |
+| G5 host parity | **부분** | WP06이 P/S 범위(ARG06–07, ENV04·06·07·08·10, CAP04·10)를 덮었다. C 범위(MCP·plugin·worktree·resume)는 5.9.4절에 미착수로 명시 | real backend 검증 계획 확정 |
 | G6 transport 안전 | **부분** | WP05가 auth·attempt cap·retry·leak을 덮었다. **process boundary(LIFE11·LIFE12)가 남았고 그것은 WP06이다** | 아래 G7 조건 |
 | G7 live integration | 미착수 | 명시적 한정 예산 안의 실제 버전 조합 검증 | release 후보 판단 |
 | G8 package | 미착수 | build provenance·설치·반복 실행·rollback·문서 | 기본 전환 판단 요청 |

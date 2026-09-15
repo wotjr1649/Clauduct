@@ -47,6 +47,13 @@ func errorType(status int) string {
 	}
 }
 
+// refuseCategory refuses with a category decided by the caller. The category is always a
+// constant from one of the protocol packages, never a value read out of a request or an
+// upstream body.
+func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category string) {
+	g.refuse(w, refusal{category: category, status: status})
+}
+
 func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
 	g.refused.Add(1)
 	w.Header().Set("Content-Type", "application/json")

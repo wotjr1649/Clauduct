@@ -151,7 +151,9 @@ func (o Options) withDefaults() Options {
 		o.Stderr = os.Stderr
 	}
 	if o.StartGateway == nil {
-		o.StartGateway = gateway.Start
+		// No transport: WP05 builds it. Until then an inference request fails with
+		// NO_UPSTREAM_TRANSPORT, which is the accurate answer rather than a silent one.
+		o.StartGateway = func() (*gateway.Gateway, error) { return gateway.Start(nil) }
 	}
 	if o.StartProcess == nil {
 		o.StartProcess = startOSProcess

@@ -53,7 +53,12 @@ const (
 	CodeUnsupportedSample  = "UNSUPPORTED_SAMPLING"
 	CodeToolsShape         = "TOOLS_SHAPE"
 	CodeMessageFields      = "MESSAGE_FIELDS"
-	CodeMessageRole        = "MESSAGE_ROLE"
+	CodeUnsupportedMessage = "UNSUPPORTED_MESSAGES"
+	CodeMessageEffortRole  = "MESSAGE_EFFORT_ROLE"
+	CodeTextFields         = "TEXT_FIELDS"
+	CodeTextValue          = "TEXT_VALUE"
+	CodeCacheFields        = "CACHE_FIELDS"
+	CodeCacheValue         = "CACHE_VALUE"
 	CodeUnsupportedContent = "UNSUPPORTED_CONTENT"
 	CodeInvalidModel       = "INVALID_MODEL"
 
@@ -92,8 +97,12 @@ type Block struct {
 }
 
 // Message is one turn.
+//
+// Effort is the per-turn override the client sends on a system turn. It is carried rather
+// than flattened away because a turn that asked for a different effort asked for it.
 type Message struct {
 	Role   string
+	Effort string
 	Blocks []Block
 }
 
@@ -232,7 +241,7 @@ func decodeMessages(fields map[string]json.RawMessage, request *Request) error {
 }
 
 func decodeMessage(raw json.RawMessage) (Message, error) {
-	fields, err := wire.Fields(raw, []string{"role", "content"})
+	fields, err := wire.Fields(raw, []string{"role", "content", "output_config"})
 	if err != nil {
 		return Message{}, refuse(CodeMessageFields, "messages")
 	}
@@ -240,10 +249,30 @@ func decodeMessage(raw json.RawMessage) (Message, error) {
 	var message Message
 	roleValue, presence := wire.Of(fields, "role")
 	if presence != wire.Present || json.Unmarshal(roleValue, &message.Role) != nil {
-		return Message{}, refuse(CodeMessageRole, "role")
+		return Message{}, refuse(CodeUnsupportedMessage, "role")
 	}
-	if message.Role != "user" && message.Role != "assistant" {
-		return Message{}, refuse(CodeMessageRole, message.Role)
+	// Three roles, not two. The measured client sends system turns, and a decoder that
+	// knew only user and assistant refused a real session at the first request — which is
+	// how this list was corrected.
+	if message.Role != "user" && message.Role != "assistant" && message.Role != "system" {
+		return Message{}, refuse(CodeUnsupportedMessage, "role")
+	}
+
+	// A per-turn effort override. It rides on a system turn only: an override attached to
+	// a user or assistant turn is a request nobody defined, not one to interpret loosely.
+	if config, present := wire.Of(fields, "output_config"); present != wire.Absent {
+		if message.Role != "system" {
+			return Message{}, refuse(CodeMessageEffortRole, "output_config")
+		}
+		turn, err := wire.Fields(config, []string{"effort"})
+		if err != nil {
+			return Message{}, refuse(CodeOutputConfigFields, "output_config")
+		}
+		if effort, present := wire.Of(turn, "effort"); present == wire.Present {
+			if json.Unmarshal(effort, &message.Effort) != nil {
+				return Message{}, refuse(CodeOutputConfigFields, "effort")
+			}
+		}
 	}
 
 	contentValue, presence := wire.Of(fields, "content")
@@ -274,11 +303,13 @@ func decodeMessage(raw json.RawMessage) (Message, error) {
 }
 
 func decodeBlock(raw json.RawMessage) (Block, error) {
-	fields, err := wire.Fields(raw, nil)
+	// The type is read from a loose parse first, so that an unimplemented block is named
+	// as unimplemented rather than as having the wrong fields for a text block.
+	loose, err := wire.Fields(raw, nil)
 	if err != nil {
 		return Block{}, refuse(CodeUnsupportedContent, "content")
 	}
-	typeValue, presence := wire.Of(fields, "type")
+	typeValue, presence := wire.Of(loose, "type")
 	var kind string
 	if presence != wire.Present || json.Unmarshal(typeValue, &kind) != nil {
 		return Block{}, refuse(CodeUnsupportedContent, "content")
@@ -294,12 +325,45 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 		return Block{}, refuse(CodeUnsupportedContent, kind)
 	}
 
+	fields, err := wire.Fields(raw, []string{"type", "text", "cache_control"})
+	if err != nil {
+		return Block{}, refuse(CodeTextFields, "content")
+	}
 	block := Block{Type: kind, Raw: raw}
 	textValue, presence := wire.Of(fields, "text")
 	if presence != wire.Present || json.Unmarshal(textValue, &block.Text) != nil {
-		return Block{}, refuse(CodeUnsupportedContent, "text")
+		return Block{}, refuse(CodeTextValue, "text")
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return Block{}, err
+		}
 	}
 	return block, nil
+}
+
+// checkCacheControl validates a caching hint without acting on it.
+//
+// Caching is the backend's policy, so this build carries no cache behaviour — but a
+// malformed hint is still a malformed request, and accepting one silently would be
+// agreeing to something nobody read. The accepted shape matches the baseline.
+func checkCacheControl(raw json.RawMessage) error {
+	fields, err := wire.Fields(raw, []string{"type", "ttl", "scope"})
+	if err != nil {
+		return refuse(CodeCacheFields, "cache_control")
+	}
+	kindValue, present := wire.Of(fields, "type")
+	var kind string
+	if present != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "ephemeral" {
+		return refuse(CodeCacheValue, "cache_control")
+	}
+	if ttlValue, present := wire.Of(fields, "ttl"); present == wire.Present {
+		var ttl string
+		if json.Unmarshal(ttlValue, &ttl) != nil || (ttl != "5m" && ttl != "1h") {
+			return refuse(CodeCacheValue, "ttl")
+		}
+	}
+	return nil
 }
 
 func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) error {

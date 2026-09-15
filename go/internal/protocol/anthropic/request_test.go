@@ -152,8 +152,8 @@ func TestMessagesValidation(t *testing.T) {
 		"string":          {`"x"`, CodeMessagesInvalid},
 		"null":            {`null`, CodeMessagesInvalid},
 		"empty":           {`[]`, CodeMessagesEmpty},
-		"unknown role":    {`[{"role":"system","content":"x"}]`, CodeMessageRole},
-		"missing role":    {`[{"content":"x"}]`, CodeMessageRole},
+		"unknown role":    {`[{"role":"tool","content":"x"}]`, CodeUnsupportedMessage},
+		"missing role":    {`[{"content":"x"}]`, CodeUnsupportedMessage},
 		"missing content": {`[{"role":"user"}]`, CodeMessageFields},
 		"extra member":    {`[{"role":"user","content":"x","extra":1}]`, CodeMessageFields},
 		"duplicate role":  {`[{"role":"user","role":"assistant","content":"x"}]`, CodeMessageFields},
@@ -167,13 +167,17 @@ func TestMessagesValidation(t *testing.T) {
 func TestUnimplementedContentBlocksAreNamed(t *testing.T) {
 	head := `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":[`
 	for name, tc := range map[string]struct{ block, code string }{
-		"image":        {`{"type":"image","source":{}}`, CodeUnsupportedContent},
-		"document":     {`{"type":"document","source":{}}`, CodeUnsupportedContent},
-		"thinking":     {`{"type":"thinking","thinking":"x"}`, CodeUnsupportedContent},
-		"tool_use":     {`{"type":"tool_use","id":"t","name":"Read","input":{}}`, CodeToolUseUnsupported},
-		"tool_result":  {`{"type":"tool_result","tool_use_id":"t","content":"x"}`, CodeToolUseUnsupported},
-		"no type":      {`{"text":"x"}`, CodeUnsupportedContent},
-		"text no text": {`{"type":"text"}`, CodeUnsupportedContent},
+		"image":       {`{"type":"image","source":{}}`, CodeUnsupportedContent},
+		"document":    {`{"type":"document","source":{}}`, CodeUnsupportedContent},
+		"thinking":    {`{"type":"thinking","thinking":"x"}`, CodeUnsupportedContent},
+		"tool_use":    {`{"type":"tool_use","id":"t","name":"Read","input":{}}`, CodeToolUseUnsupported},
+		"tool_result": {`{"type":"tool_result","tool_use_id":"t","content":"x"}`, CodeToolUseUnsupported},
+		"no type":     {`{"text":"x"}`, CodeUnsupportedContent},
+		// A text block missing its text is a malformed text block, not an unimplemented
+		// kind. The categories are different because the fixes are.
+		"text no text":      {`{"type":"text"}`, CodeTextValue},
+		"text not a string": {`{"type":"text","text":42}`, CodeTextValue},
+		"text extra member": {`{"type":"text","text":"x","surprise":1}`, CodeTextFields},
 	} {
 		t.Run(name, func(t *testing.T) { mustRefuse(t, head+tc.block+`]}]}`, tc.code) })
 	}
@@ -371,4 +375,67 @@ func fieldOf(request *Request, name string) (json.RawMessage, int) {
 		return value, 1
 	}
 	return value, 2
+}
+
+// The measured client sends system turns. A decoder that knew only user and assistant
+// refused a real session at its first request, which is how this was found.
+func TestSystemTurnsAreAccepted(t *testing.T) {
+	request, refusal := decode(t, `{"model":"m","max_tokens":1,"stream":true,"messages":[
+	  {"role":"system","content":[{"type":"text","text":"You are Claude Code."}]},
+	  {"role":"user","content":"ping"}]}`)
+	if refusal != nil {
+		t.Fatalf("refused: %v", refusal)
+	}
+	if len(request.Messages) != 2 || request.Messages[0].Role != "system" {
+		t.Fatalf("messages = %+v", request.Messages)
+	}
+}
+
+// A per-turn effort override rides on a system turn only. Attached to any other role it is
+// a request nobody defined, and interpreting it loosely would apply a setting the caller
+// did not ask for there.
+func TestPerTurnEffortRidesOnSystemTurnsOnly(t *testing.T) {
+	head := `{"model":"m","max_tokens":1,"stream":true,"messages":[`
+
+	request, refusal := decode(t, head+`{"role":"system","content":"x","output_config":{"effort":"high"}}]}`)
+	if refusal != nil {
+		t.Fatalf("refused: %v", refusal)
+	}
+	if request.Messages[0].Effort != "high" {
+		t.Fatalf("Effort = %q, want high", request.Messages[0].Effort)
+	}
+
+	for _, role := range []string{"user", "assistant"} {
+		mustRefuse(t, head+`{"role":"`+role+`","content":"x","output_config":{"effort":"high"}}]}`,
+			CodeMessageEffortRole)
+	}
+	mustRefuse(t, head+`{"role":"system","content":"x","output_config":{"effort":"high","extra":1}}]}`,
+		CodeOutputConfigFields)
+}
+
+// A caching hint is validated without being acted on. This build carries no cache
+// behaviour, but a malformed hint is still a malformed request and accepting one silently
+// would be agreeing to something nobody read.
+func TestCacheControlIsValidatedButNotActedOn(t *testing.T) {
+	head := `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":[`
+	for _, control := range []string{
+		`{"type":"ephemeral"}`,
+		`{"type":"ephemeral","ttl":"5m"}`,
+		`{"type":"ephemeral","ttl":"1h"}`,
+	} {
+		if _, refusal := decode(t, head+`{"type":"text","text":"x","cache_control":`+control+`}]}]}`); refusal != nil {
+			t.Errorf("%s refused: %v", control, refusal)
+		}
+	}
+	for name, tc := range map[string]struct{ control, code string }{
+		"unknown type":   {`{"type":"persistent"}`, CodeCacheValue},
+		"missing type":   {`{"ttl":"5m"}`, CodeCacheValue},
+		"unknown ttl":    {`{"type":"ephemeral","ttl":"7d"}`, CodeCacheValue},
+		"unknown member": {`{"type":"ephemeral","surprise":1}`, CodeCacheFields},
+		"not an object":  {`"ephemeral"`, CodeCacheFields},
+	} {
+		t.Run(name, func(t *testing.T) {
+			mustRefuse(t, head+`{"type":"text","text":"x","cache_control":`+tc.control+`}]}]}`, tc.code)
+		})
+	}
 }

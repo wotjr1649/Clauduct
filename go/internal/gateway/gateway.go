@@ -17,7 +17,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
-	"io"
 	"mime"
 	"net"
 	"net/http"
@@ -25,6 +24,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
 // The largest request body accepted, matching the Node baseline's requestBytes. A measured
@@ -49,12 +50,13 @@ var bannedProxyHeaders = []string{"Origin", "Sec-Fetch-Site", "Forwarded"}
 // Gateway is one session's listener. Two concurrent sessions share nothing: separate
 // listener, separate port, separate token, separate request registry.
 type Gateway struct {
-	listener net.Listener
-	server   *http.Server
-	token    string
-	expected string // the exact Host this session answers to
-	requests *registry
-	served   chan error
+	listener  net.Listener
+	server    *http.Server
+	token     string
+	expected  string // the exact Host this session answers to
+	requests  *registry
+	transport upstream.Transport
+	served    chan error
 
 	received atomic.Int64
 	refused  atomic.Int64
@@ -65,11 +67,15 @@ type Gateway struct {
 
 // Start binds 127.0.0.1 on a port the operating system chooses and begins serving.
 //
+// A nil transport means none is configured, and every inference request then fails with
+// NO_UPSTREAM_TRANSPORT. That is deliberate: a build with nowhere to send a request must
+// say so at the point of use rather than appear to work.
+//
 // The port comes from bind, never from a search. Probing for a free port and closing it
 // before rebinding opens a window where another process takes it; asking for :0 and
 // keeping the listener has no such window. The caller passes the resulting address to the
 // child, so there is never a guess about which port is live.
-func Start() (*Gateway, error) {
+func Start(transport upstream.Transport) (*Gateway, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -79,12 +85,16 @@ func Start() (*Gateway, error) {
 		listener.Close()
 		return nil, err
 	}
+	if transport == nil {
+		transport = upstream.None{}
+	}
 	g := &Gateway{
-		listener: listener,
-		token:    token,
-		expected: listener.Addr().String(),
-		requests: newRegistry(),
-		served:   make(chan error, 1),
+		listener:  listener,
+		token:     token,
+		expected:  listener.Addr().String(),
+		requests:  newRegistry(),
+		transport: transport,
+		served:    make(chan error, 1),
 	}
 	g.server = &http.Server{
 		Handler: http.HandlerFunc(g.handle),
@@ -230,73 +240,6 @@ func (g *Gateway) authorized(r *http.Request) bool {
 		return false
 	}
 	return g.tokenEquals(rest)
-}
-
-func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		g.refuse(w, refuseMethod)
-		return
-	}
-	if !isJSON(r.Header.Get("Content-Type")) {
-		g.refuse(w, refuseMediaType)
-		return
-	}
-
-	// Admission happens before the body is read, so a request that cannot be served does
-	// not first cost the memory of its own payload.
-	_, ctx, release, err := g.requests.admit(r.Context())
-	if err != nil {
-		if errors.Is(err, errGatewayClosed) {
-			g.refuse(w, refuseClosed)
-			return
-		}
-		g.refuse(w, refuseBusy)
-		return
-	}
-	defer release()
-
-	// Cancelling a context does not interrupt a blocking read of the request body: the
-	// handler would sit in io.Copy while shutdown waited for it, which is what a 30s
-	// Close deadline measured before this was here. The Node baseline reaches the same
-	// place by destroying the socket. The stdlib equivalent is a read deadline, so the
-	// deadline is both the cancellation mechanism and the ceiling on how long a client
-	// may take to finish a body it has already started.
-	control := http.NewResponseController(w)
-	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-	watcherDone := make(chan struct{})
-	defer close(watcherDone)
-	go func() {
-		select {
-		case <-ctx.Done():
-			// Expire the read immediately. The copy below returns, sees ctx.Err and
-			// reports the request as cancelled rather than as a malformed body.
-			_ = control.SetReadDeadline(time.Now())
-		case <-watcherDone:
-		}
-	}()
-
-	// The body is read and discarded rather than ignored. Reading enforces the size
-	// ceiling for real, and leaving a client mid-upload to receive a response it did not
-	// finish asking for produces a reset rather than an answer. Decoding it is WP03's job.
-	limited := http.MaxBytesReader(w, r.Body, maxRequestBytes)
-	if _, err := io.Copy(io.Discard, limited); err != nil {
-		var tooLarge *http.MaxBytesError
-		switch {
-		case errors.As(err, &tooLarge):
-			g.refuse(w, refuseTooLarge)
-		case ctx.Err() != nil:
-			// The client went away. Nothing will read this, but the status is recorded
-			// so a cancelled request is counted as cancelled rather than as a success.
-			g.refuse(w, refuseCancelled)
-		default:
-			g.refuse(w, refuseHeader)
-		}
-		return
-	}
-
-	// The query is preserved and available; the measured client sends ?beta=true. Deciding
-	// what a beta means is protocol work and belongs with the code that reads the body.
-	g.refuse(w, refuseUnimplemented)
 }
 
 func isJSON(contentType string) bool {

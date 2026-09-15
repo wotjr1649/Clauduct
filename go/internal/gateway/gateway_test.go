@@ -8,11 +8,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
-func start(t *testing.T) *Gateway {
+func start(t *testing.T) *Gateway { return startWith(t, nil) }
+
+func startWith(t *testing.T, transport upstream.Transport) *Gateway {
 	t.Helper()
-	g, err := Start()
+	g, err := Start(transport)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -174,14 +178,16 @@ func TestAuthenticationRefusals(t *testing.T) {
 	}
 }
 
-func TestValidTokenReachesTheRoute(t *testing.T) {
+// The route is authenticated and its body is decoded. A decode refusal is the proof that
+// the boundary, the credential, the method and the media type all passed first.
+func TestValidTokenReachesTheDecoder(t *testing.T) {
 	g := start(t)
 	resp := do(t, g, messages(strings.NewReader(`{"model":"x"}`)))
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want 501: the route is recognised and authenticated, its body handling is WP03", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 from the request decoder", resp.StatusCode)
 	}
-	if body := bodyText(t, resp); !strings.Contains(body, "NOT_IMPLEMENTED") {
-		t.Fatalf("body = %q", body)
+	if body := bodyText(t, resp); !strings.Contains(body, "REQUEST_STREAM_MISSING") {
+		t.Fatalf("body = %q, want the decoder's own category", body)
 	}
 }
 
@@ -196,8 +202,8 @@ func TestSameTokenInBothHeadersIsAccepted(t *testing.T) {
 	rq.headers["X-Api-Key"] = g.Token()
 
 	resp := do(t, g, rq)
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want the route to be reached; the same token twice is still one credential", resp.StatusCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want the decoder to be reached; the same token twice is still one credential", resp.StatusCode)
 	}
 }
 
@@ -318,8 +324,8 @@ func TestMethodAndMediaTypeBoundaries(t *testing.T) {
 	// A charset parameter is ordinary and must not be treated as a different media type.
 	rq := messages(strings.NewReader("{}"))
 	rq.headers["Content-Type"] = "application/json; charset=utf-8"
-	if resp := do(t, g, rq); resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("application/json; charset=utf-8 = %d, want the route to be reached", resp.StatusCode)
+	if resp := do(t, g, rq); resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("application/json; charset=utf-8 = %d, want the decoder to be reached", resp.StatusCode)
 	}
 }
 
@@ -361,8 +367,8 @@ func TestQueryStringDoesNotChangeRouting(t *testing.T) {
 		rq := messages(strings.NewReader("{}"))
 		rq.path = path
 		resp := do(t, g, rq)
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Errorf("%s = %d, want the route to be reached", path, resp.StatusCode)
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s = %d, want the decoder to be reached", path, resp.StatusCode)
 		}
 	}
 }
@@ -493,7 +499,7 @@ func TestAbandonedRequestIsCancelledAndDrains(t *testing.T) {
 // Shutdown cancels what it owns rather than waiting for it. A bare Shutdown would block on
 // a request stuck reading until the deadline expired.
 func TestCloseCancelsInFlightRatherThanWaiting(t *testing.T) {
-	g, err := Start()
+	g, err := Start(nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -519,7 +525,7 @@ func TestCloseCancelsInFlightRatherThanWaiting(t *testing.T) {
 }
 
 func TestCloseIsIdempotentAndReleasesThePort(t *testing.T) {
-	g, err := Start()
+	g, err := Start(nil)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

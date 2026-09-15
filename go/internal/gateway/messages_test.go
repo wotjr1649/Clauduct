@@ -1,0 +1,253 @@
+package gateway
+
+import (
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/wotjr1649/Clauduct/go/internal/upstream"
+)
+
+// A request this build accepts: text only, no tools.
+const validRequest = `{"model":"gpt-6-astra","max_tokens":1024,"stream":true,
+  "messages":[{"role":"user","content":"ping"}]}`
+
+func sse(lines ...string) string {
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString("data: " + line + "\n\n")
+	}
+	return b.String()
+}
+
+const (
+	created   = `{"type":"response.created","response":{"id":"resp_1"}}`
+	completed = `{"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":5,"output_tokens":2}}}`
+)
+
+func delta(text string) string {
+	return `{"type":"response.output_text.delta","item_id":"i","content_index":0,"delta":"` + text + `"}`
+}
+
+func done(text string) string {
+	return `{"type":"response.output_text.done","item_id":"i","content_index":0,"text":"` + text + `"}`
+}
+
+func post(t *testing.T, g *Gateway, body string) *http.Response {
+	t.Helper()
+	return do(t, g, messages(strings.NewReader(body)))
+}
+
+// The whole path: HTTP boundary, credential, decode, convert, execute, parse, translate,
+// emit. Nothing here reaches a network — the fixture replays bytes.
+func TestTextRoundTripReachesTheClient(t *testing.T) {
+	fixture := &upstream.Fixture{SSE: sse(created, delta("Hel"), delta("lo"), done("Hello"), completed, "[DONE]")}
+	g := startWith(t, fixture)
+
+	resp := post(t, g, validRequest)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Errorf("Content-Type = %q", got)
+	}
+
+	body := bodyText(t, resp)
+	for _, want := range []string{
+		"event: message_start", "event: content_block_start",
+		"event: content_block_delta", "event: content_block_stop",
+		"event: message_delta", "event: message_stop",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q in:\n%s", want, body)
+		}
+	}
+	if !strings.Contains(body, `"text":"Hel"`) || !strings.Contains(body, `"text":"lo"`) {
+		t.Errorf("the deltas did not reach the client:\n%s", body)
+	}
+	if !strings.Contains(body, `"input_tokens":5`) {
+		t.Errorf("usage did not reach the client:\n%s", body)
+	}
+
+	if fixture.Calls() != 1 {
+		t.Errorf("backend calls = %d, want exactly 1", fixture.Calls())
+	}
+}
+
+// What the backend was actually asked for, not what the bridge meant to ask for.
+func TestTheBackendRequestIsWhatWasBuilt(t *testing.T) {
+	fixture := &upstream.Fixture{SSE: sse(created, delta("x"), done("x"), completed)}
+	g := startWith(t, fixture)
+
+	if resp := post(t, g, validRequest); resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	sent := fixture.LastRequest()
+	for _, want := range []string{`"model":"gpt-6-astra"`, `"max_output_tokens":1024`, `"stream":true`, `"ping"`} {
+		if !strings.Contains(sent, want) {
+			t.Errorf("missing %q in the backend request:\n%s", want, sent)
+		}
+	}
+}
+
+// Chunk boundaries carry no meaning across the real HTTP path either.
+func TestByteAtATimeUpstreamStillProducesTheSameAnswer(t *testing.T) {
+	stream := sse(created, delta("one"), delta("two"), done("onetwo"), completed, "[DONE]")
+	g := startWith(t, &upstream.Fixture{SSE: stream, ChunkSize: 1})
+
+	resp := post(t, g, validRequest)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	body := bodyText(t, resp)
+	if !strings.Contains(body, `"text":"one"`) || !strings.Contains(body, `"text":"two"`) {
+		t.Fatalf("body:\n%s", body)
+	}
+}
+
+// With no transport configured the answer says so. A build with nowhere to send a request
+// must not look like one that answered.
+func TestNoTransportIsReportedNotSilentlyEmpty(t *testing.T) {
+	g := start(t)
+	resp := post(t, g, validRequest)
+
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	}
+	if body := bodyText(t, resp); !strings.Contains(body, "NO_UPSTREAM_TRANSPORT") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+// A request this build cannot serve is named before anything is sent anywhere. The
+// measured client puts tools on every call, so this is the answer a real session gets
+// today — and it must be an answer, not a silent success.
+func TestToolRequestIsRefusedWithoutContactingTheBackend(t *testing.T) {
+	fixture := &upstream.Fixture{SSE: sse(created, completed)}
+	g := startWith(t, fixture)
+
+	resp := post(t, g, `{"model":"m","max_tokens":1,"stream":true,
+	  "messages":[{"role":"user","content":"x"}],
+	  "tools":[{"name":"Read","input_schema":{"type":"object"}}]}`)
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	if body := bodyText(t, resp); !strings.Contains(body, "TOOL_USE_UNSUPPORTED") {
+		t.Fatalf("body = %q", body)
+	}
+	if fixture.Calls() != 0 {
+		t.Fatalf("backend calls = %d; a request refused here must cost nothing upstream", fixture.Calls())
+	}
+}
+
+// Before any byte of the response is written, a failure is a status the client can act on.
+func TestUpstreamFailureBeforeAnyOutputIsAStatus(t *testing.T) {
+	for name, tc := range map[string]struct{ stream, category string }{
+		"backend reported failure": {sse(created, `{"type":"response.failed"}`), "UPSTREAM_RESPONSE_FAILED"},
+		"backend error event":      {sse(created, `{"type":"error"}`), "UPSTREAM_ERROR_EVENT"},
+		"malformed frame":          {"data: not json\n\n", "INVALID_SSE"},
+		"unknown event":            {sse(created, `{"type":"response.output_audio.delta"}`), "UNSUPPORTED_EVENT"},
+		"no terminal event":        {sse(created), "INCOMPLETE_RESPONSE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := startWith(t, &upstream.Fixture{SSE: tc.stream})
+			resp := post(t, g, validRequest)
+			if resp.StatusCode != http.StatusBadGateway {
+				t.Fatalf("status = %d, want 502", resp.StatusCode)
+			}
+			if body := bodyText(t, resp); !strings.Contains(body, tc.category) {
+				t.Fatalf("body = %q, want %s", body, tc.category)
+			}
+		})
+	}
+}
+
+// After output has been committed the status is already sent, so the only honest signal
+// left is a terminal error event. Letting the stream simply stop would look to the client
+// like a short answer rather than a failure.
+func TestFailureAfterOutputBecomesATerminalErrorEvent(t *testing.T) {
+	// A delta commits the response; the snapshot then contradicts it.
+	g := startWith(t, &upstream.Fixture{SSE: sse(created, delta("partial"), done("something else"))})
+
+	resp := post(t, g, validRequest)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: the response was already committed when the failure arrived", resp.StatusCode)
+	}
+	body := bodyText(t, resp)
+	if !strings.Contains(body, "event: error") || !strings.Contains(body, "TEXT_MISMATCH") {
+		t.Fatalf("the stream ended without saying why:\n%s", body)
+	}
+	if !strings.Contains(body, "event: content_block_delta") {
+		t.Fatalf("the committed output is missing:\n%s", body)
+	}
+	if strings.Contains(body, "event: message_stop") {
+		t.Fatalf("a failed response claimed a clean end:\n%s", body)
+	}
+}
+
+// Nothing from an upstream body reaches the client. A backend that echoes attacker bytes
+// must not have them pass through into a payload another tool reads.
+func TestUpstreamContentIsNotEchoedInARefusal(t *testing.T) {
+	const marker = "UPSTREAM-CONTROLLED-MARKER"
+	g := startWith(t, &upstream.Fixture{
+		SSE: sse(created, `{"type":"response.failed","error":{"message":"`+marker+`"}}`),
+	})
+
+	resp := post(t, g, validRequest)
+	if body := bodyText(t, resp); strings.Contains(body, marker) {
+		t.Fatalf("upstream content was echoed: %s", body)
+	}
+}
+
+// The request ceiling still applies now that the body is read for real rather than
+// discarded.
+func TestOversizedBodyIsStillRefused(t *testing.T) {
+	g := startWith(t, &upstream.Fixture{SSE: sse(created, completed)})
+	resp := do(t, g, messages(io.LimitReader(endlessReader{}, maxRequestBytes+1024)))
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", resp.StatusCode)
+	}
+}
+
+// The registry must drain whichever way a request ended.
+func TestRequestsDrainAfterEveryOutcome(t *testing.T) {
+	for name, tc := range map[string]struct {
+		transport upstream.Transport
+		body      string
+	}{
+		"success":        {&upstream.Fixture{SSE: sse(created, delta("x"), done("x"), completed)}, validRequest},
+		"decode refusal": {&upstream.Fixture{SSE: sse(created, completed)}, `{"model":"x"}`},
+		"upstream error": {&upstream.Fixture{SSE: "data: not json\n\n"}, validRequest},
+		"no transport":   {nil, validRequest},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := startWith(t, tc.transport)
+			post(t, g, tc.body)
+			waitForActive(t, g, 0, "every outcome must release its admission slot")
+		})
+	}
+}
+
+// A transport that drops after delivering a complete-looking body has still failed, and the
+// parser is told so rather than being asked to judge well-formed framing.
+//
+// Added after a mutation run: reporting every read end as a clean one left the suite green,
+// because nothing could produce a non-EOF failure.
+func TestConnectionDropAfterACompleteBodyIsNotASuccess(t *testing.T) {
+	g := startWith(t, &upstream.Fixture{
+		SSE:     sse(created, delta("x"), done("x"), completed),
+		ReadErr: errors.New("connection reset by peer"),
+	})
+
+	resp := post(t, g, validRequest)
+	body := bodyText(t, resp)
+	if resp.StatusCode == http.StatusOK && !strings.Contains(body, "TRUNCATED_STREAM") {
+		t.Fatalf("a dropped connection was reported as a clean response:\n%s", body)
+	}
+	if resp.StatusCode != http.StatusOK && !strings.Contains(body, "TRUNCATED_STREAM") {
+		t.Fatalf("status %d without naming the truncation: %s", resp.StatusCode, body)
+	}
+}

@@ -1,0 +1,62 @@
+name: go
+
+# A separate workflow file rather than another job inside tests.yml. The Node baseline's
+# workflow is the evidence for the shipped product, and a Go failure must not be readable
+# as a Node regression. Keeping them apart also means this file can be added without
+# editing a tracked file the comparison depends on.
+
+on:
+  push:
+    branches: [main, 'redesign/**']
+    paths:
+      - 'go/**'
+      - '.github/workflows/go.yml'
+  pull_request:
+    paths:
+      - 'go/**'
+      - '.github/workflows/go.yml'
+
+defaults:
+  run:
+    working-directory: go
+
+jobs:
+  go:
+    # Windows because the product is Windows-only today: internal/platform has a
+    # windows-tagged file and no other, so this module does not build elsewhere. That is
+    # deliberate — a non-Windows target is new design under V2-04, not a port.
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          # Pinned to the version the work was done on. `latest` would let a toolchain
+          # change arrive without anyone deciding to take it.
+          go-version: '1.27.0'
+          cache: false
+
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test
+        run: go test -count=1 ./...
+
+      - name: test (race)
+        # The race detector needs cgo and a C toolchain. If this step fails because the
+        # runner has neither, fix the runner: an unrun race check is NOT_RUN, never a pass.
+        env:
+          CGO_ENABLED: '1'
+        run: go test -count=1 -race ./...

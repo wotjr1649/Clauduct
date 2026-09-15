@@ -149,16 +149,19 @@ WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 �
 | 근거 | PoC가 한 번 거부를 기록. 문서상 "미검증" | 2026-09-15 실측. 두 값, 두 번의 대조군 |
 | 상태 | 전송 계약이 상한을 보장하는지 **모른다** | 이 backend는 상한 파라미터를 **받지 않는다** |
 
-**따라서 "사전 출력 상한을 보장하는 전송 계약"을 기다리는 것은 오지 않을 것을 기다리는 것이다.** 이 구독 전송으로는 생성을 미리 자를 방법이 없다. 사용할 수 있는 것은 기준선과 동일한 `usage-enforced-completion` 하나뿐이다 — 완료 후 보고된 usage로 검사하고 초과면 거부한다. 토큰은 이미 쓰였고, 거부가 막는 것은 "요청한 것과 다른 답을 건네는 것"뿐이다.
+이 구독 전송으로는 생성을 미리 자를 방법이 없다. 사용할 수 있는 것은 기준선과 동일한 `usage-enforced-completion` 하나뿐이다 — 완료 후 보고된 usage로 검사하고 초과면 거부한다. 토큰은 이미 쓰였고, 거부가 막는 것은 "요청한 것과 다른 답을 건네는 것"뿐이다.
 
-**이것은 사용자 결정 사항이다.** 둘 중 하나다.
+#### 이 실측이 내 것이 아니라 확인이라는 점
 
-| 선택 | 결과 |
-|---|---|
-| 선행 조건을 `usage-enforced-completion`으로 완화 | G7이 열린다. 기준선과 동일한 보호 수준이고, 그 이상은 이 backend에 존재하지 않는다 |
-| 선행 조건 유지 | 프로젝트는 영구히 BLOCKED다. 조건을 충족시킬 방법이 backend 쪽에 없다 |
+`poc/codex-transport.mjs:121`은 backend의 오류를 `code: unsupported_parameter` / `param: max_output_tokens`로 파싱한다. **"모르는 키" 거부가 아니라 이름을 알면서 지원하지 않는다는 응답이다.** 설치된 Codex CLI(0.154.0)에도 출력 상한 옵션이 없다. 즉 이 결론은 기존 증거가 이미 지지하고 있었고, 5회는 그것을 현재 시점에서 **확인**했다. 새로 발견한 것이 아니다.
 
-이 문서는 어느 쪽도 고르지 않는다. 측정만 기록한다.
+#### 그래서 무엇이 바뀌는가 — 게이트 조건이다, 제품이 아니다
+
+4.1절을 보라. "사전 출력 상한"을 G6→G7 전이 조건으로 적은 것은 이 문서의 오독이었고, 정정했다. 제품 동작은 바뀌지 않는다 — WP05의 구현이 이미 2026-09-08 처방과 같다.
+
+#### 죽은 대안 하나를 기록한다
+
+"스트리밍 중 상한에 닿으면 중단"을 검토했다. 기준선보다 나은 답처럼 보였다. **usage는 `response.completed`와 `response.incomplete`에만 실린다** — 스트리밍 중에는 토큰 수를 알 방법이 없으므로, 문자 수 추정으로 자르면 정상 응답을 자를 수 있다. 그리고 폭주 방어는 이미 있다(`stream.Limits`의 frame·event 상한, `ErrResponseTooLarge`). **정밀한 상한은 불가능하고 폭주 방어는 이미 존재하므로 만들 것이 남아 있지 않다.**
 
 ## 4. 게이트
 
@@ -166,15 +169,41 @@ WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 �
 |---|---|---|---|
 | G0 현황 | **완료** | 기준선 JSON, 전수 manifest 738/738, toolchain 실측 | 설계의 로컬 적합성 판단 |
 | G1 설계 | **완료** | [DECISION.md](DECISION.md), [ARCHITECTURE.md](ARCHITECTURE.md), [MIGRATION.md](MIGRATION.md), 이 문서 | 위임 범위에 따른 구현 준비 |
-| G2 격리 | **대기 — 사용자 권한 필요** | 새 worktree·Go module·기준선 hash·root 변경 allowlist | offline vertical slice |
-| G3 최소 실행 | 미착수 | fake Claude argv/env/cwd·loopback lifecycle·cleanup | protocol 구현 |
-| G4 기본 wire | 미착수 | text/tool/JSON/SSE/error/cancel offline P/S + limit registry 확정 | native synthetic 통합 |
-| G5 host parity | 미착수 | 선택한 native 기능·환경·permissions·worktree 증거 | real backend 검증 계획 확정 |
-| G6 transport 안전 | 미착수 | auth synthetic·attempt cap·retry·leak·process boundary | **+ 사전 출력 상한 전송 계약** 이 있어야 예산 요청 가능 |
-| G7 live integration | 미착수 | 명시적 cap 안의 실제 버전 조합 검증 | release 후보 판단 |
+| G2 격리 | **완료** | 2026-09-15 사용자 승인. worktree `Clauduct-go-v2`, 의존 0 Go module, 기준선 tracked 변경 0 | offline vertical slice |
+| G3 최소 실행 | **산출물 완료** | WP01·WP02. argv/env/cwd 사양, loopback lifecycle, cleanup. 알려진 한계는 5.2절 | protocol 구현 |
+| G4 기본 wire | **산출물 완료** | WP03·WP04. text·tool·JSON·SSE·error·cancel offline P/S, limit registry 확정 | native synthetic 통합 |
+| G5 host parity | 미착수 | 선택한 native 기능·환경·permissions·worktree 증거. **WP06** | real backend 검증 계획 확정 |
+| G6 transport 안전 | **부분** | WP05가 auth·attempt cap·retry·leak을 덮었다. **process boundary(LIFE11·LIFE12)가 남았고 그것은 WP06이다** | 아래 G7 조건 |
+| G7 live integration | 미착수 | 명시적 한정 예산 안의 실제 버전 조합 검증 | release 후보 판단 |
 | G8 package | 미착수 | build provenance·설치·반복 실행·rollback·문서 | 기본 전환 판단 요청 |
 | G9 기본 전환 | 미착수 | 사용자 승인·정확한 artifact·target 확인 | 새 실행의 기본 binary 변경 |
 | G10 선택적 archive | **DEFERRED** | [MIGRATION.md](MIGRATION.md) 6장 M3. 권고는 하지 않음 | 승인된 구조 정리 |
+
+**산출물 완료**와 **게이트 통과**를 구분한다. 앞의 것은 "그 게이트가 요구한 증거가 만들어졌다"는 사실이고, 뒤의 것은 사용자 판단이다. 이 표는 앞의 것만 기록한다.
+
+### 4.1 G6→G7 조건 — 2026-09-15 수정
+
+이 전이 조건에 "사전 출력 상한을 보장하는 전송 계약"을 넣었던 것은 **G1에서 내가 출처를 과하게 읽은 것**이다. 원문은 그렇게 말하지 않는다.
+
+| 출처 | 실제 범위 |
+|---|---|
+| `docs/remaining-verification.md` 3.2 | BLOCKED 대상은 **"새 모델 실호출 예산"** — 검증용 예산이다 |
+| `docs/session-29-release-verdict.md:77` | "상한 옵션을 제거하거나 **관측 후 판정으로 대체하지 않는다**" — 주장 위생 규칙이다 |
+| `docs/audit-2026-09-08.md:180` | 처방은 이미 있었다: 완료 usage 검사 유지, 미지원 필드 추가 안 함, **한계 명시** |
+| `docs/native.md:209` | Node 제품은 그 한계를 명시한 채 **이미 출하돼 있다** |
+
+즉 WP05가 구현한 것이 2026-09-08 처방과 같다. 게이트에 "충족 불가로 측정된 조건"을 걸어두면 Node 제품까지 소급해 출하 불가가 되므로, 기존 판정과 정면으로 충돌한다.
+
+**수정된 조건 (2026-09-15 사용자 결정).**
+
+| # | 조건 |
+|---|---|
+| 1 | **명시적 한정 예산이 있을 것** — 경로(model+effort)와 횟수를 함께 정한다. 사전 토큰 상한이 불가능하므로 이것이 실재하는 유일한 통제다 |
+| 2 | **사전 상한을 주장하는 검증은 거부한다** — 기준선의 `VERIFICATION_PREGENERATION_LIMIT_UNAVAILABLE`과 같은 자리. "짧은 응답을 관측했으니 출력이 묶인다"는 추론을 금지한다 |
+| 3 | `OUTPUT_TOKEN_LIMIT_EXCEEDED` 유지 — 상한 옵션을 제거하지 않는다 |
+| 4 | 한계를 사용자 문서에 명시 — `docs/native.md:209`가 Node에서 하는 것과 같게 |
+
+조건 2는 **미래 코드에 대한 규칙이므로 지금 코드로 만들지 않았다.** V2에는 아직 검증 harness가 없어 호출자가 없고, 호출자 없는 상수는 유지보수할 죽은 코드다. G7에서 harness를 만들 때 이 표가 구현 대상이다. 지금 존재하는 방어는 `TestTheOutputLimitIsNotSentUpstream`과 mutation battery의 `max_output_tokens sent again`이다.
 
 G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만으로 사용자 설치를 교체하지 않는다. `READY_FOR_USER_DECISION`과 `RELEASED`를 분리한다.
 

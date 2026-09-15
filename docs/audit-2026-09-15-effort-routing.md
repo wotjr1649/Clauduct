@@ -2,26 +2,28 @@
 
 2026-09-15. 판정: **기록된 요청의 `high`/`max`는 결함이 아니라 사용자가 실행 시 지정한 값이다.** 다만 사용자가 지정하지 않는 자리에 effort를 최댓값으로 올리는 경로가 별개로 존재하며, 그중 하나는 "명시적으로 싼 모델을 고른 자식이 가장 비싼 effort를 받는다"는 형태다.
 
+이 문서의 `파일:줄` 인용은 main `e75051e` 기준으로 전수 확인했다.
+
 1~2장은 판정만 기록한다. 3장의 후보 중 사용자가 채택한 것은 6장에 적용 결과를 적었다.
 
 ## 1. effort가 정해지는 자리 — 전수
 
 | # | 지점 | 코드 | effort의 출처 |
 |---|---|---|---|
-| 1 | 런처 시작값 | `src/clauduct.mjs:121` | `--effort` 명시값 > (`--model` 명시 시) 모델 기본값 > `DEFAULT_SELECTION.effort='low'` |
-| 2 | 런처→native 전달 | `src/clauduct.mjs:193` | 1의 결과를 `--effort <값>`으로 claude.exe에 넘긴다 |
-| 3 | 메인 요청 | `src/native-protocol.mjs:241` | `doc.output_config.effort` (native가 보낸 값) ?? 모델 기본값 |
-| 4 | 턴별 재지정 | `src/native-protocol.mjs:313-315` | system 메시지의 `output_config.effort`. `!subagent && !route`일 때만 적용 |
-| 5 | 자식 요청 | `src/native-protocol.mjs:241`의 `subagent ? undefined : ...` | **`doc.output_config.effort`를 무시한다.** route가 있으면 route, 없으면 모델 기본값 |
-| 6 | 자식 route — 명시 모델 | `src/agent-selection.mjs:335`의 `model(selected)` → `src/models.mjs:13-16` | effort 인자 없이 `selectModel` 호출 → **해당 모델의 기본 effort** |
+| 1 | 런처 시작값 | `src/clauduct.mjs:128` | `--effort` 명시값 > (`--model` 명시 시) 모델 기본값 > `DEFAULT_SELECTION.effort='low'` |
+| 2 | 런처→native 전달 | `src/clauduct.mjs:213` | 1의 결과를 `--effort <값>`으로 claude.exe에 넘긴다 |
+| 3 | 메인 요청 | `src/native-protocol.mjs:258` | `doc.output_config.effort` (native가 보낸 값) ?? 모델 기본값 |
+| 4 | 턴별 재지정 | `src/native-protocol.mjs:345-347` | system 메시지의 `output_config.effort`. `!subagent && !route`일 때만 적용 |
+| 5 | 자식 요청 | `src/native-protocol.mjs:258`의 `subagent ? undefined : ...` | **`doc.output_config.effort`를 무시한다.** route가 있으면 route, 없으면 모델 기본값 |
+| 6 | 자식 route — 명시 모델 | `src/agent-selection.mjs:467`의 `model(selected)` → `src/models.mjs:13-16` | effort 인자 없이 `selectModel` 호출 → **해당 모델의 기본 effort** |
 | 7 | 자식 route — 정의/상속 | `src/agent-selection.mjs:41, 116` | 런처 `--agents` 정의값 / 부모 route 그대로 |
-| 8 | 자식 route — 역할 기본값 | `src/agent-selection.mjs:342` → `src/models.mjs:18` | `ROLE_MODELS`: Explore=luna/**max**, Plan=sol/**xhigh**, general-purpose=luna/**max**. Plan은 6장에서 astra/low로 바꿨다 |
-| 9 | Workflow 자식 | `src/workflow-selection.mjs:89-90` | 요청 effort ?? (모델이 부모와 같으면) 부모 effort |
-| 10 | compact 템플릿 | `src/native-protocol.mjs:389-391` | **유일한 하향.** `purpose==='compact-template'`이고 effort가 low/medium이 아니면 medium으로 낮춘다 |
+| 8 | 자식 route — 역할 기본값 | `src/agent-selection.mjs:476` → `src/models.mjs:20` | `ROLE_MODELS`: Explore=luna/**max**, Plan=sol/**xhigh**, general-purpose=luna/**max**. Plan은 6장에서 astra/low로 바꿨다 |
+| 9 | Workflow 자식 | `src/workflow-selection.mjs:293-294` | 요청 effort ?? (모델이 부모와 같으면) 부모 effort |
+| 10 | compact 템플릿 | `src/native-protocol.mjs:423-424` | **유일한 하향.** `purpose==='compact-template'`이고 effort가 low/medium이 아니면 medium으로 낮춘다 |
 
 **코드베이스 전체에 effort를 올리는 무조건 분기는 없다.** 10번만이 조건부 하향이다. `high`/`max`는 전부 "지정된 값" 또는 "모델·역할 기본값"이다.
 
-프롬프트가 참조한 `docs/audit-2026-09-08.md:266`의 서술(일반 routing 이후 high/xhigh/max를 medium으로 낮춘다)은 **위치가 낡았다.** 현재 `src/compact-policy.mjs`에는 effort 로직이 없고 템플릿 형태 판별(`inspectCompactTemplate`)만 있다. 하향 로직은 `src/native-protocol.mjs:389-391`로 옮겨져 있으며 동작 자체는 그대로다.
+프롬프트가 참조한 `docs/audit-2026-09-08.md:266`의 서술(일반 routing 이후 high/xhigh/max를 medium으로 낮춘다)은 **위치가 낡았다.** 현재 `src/compact-policy.mjs`에는 effort 로직이 없고 템플릿 형태 판별(`inspectCompactTemplate`)만 있다. 하향 로직은 `src/native-protocol.mjs:423-424`로 옮겨져 있으며 동작 자체는 그대로다.
 
 ## 2. 관측된 16건의 `high` — 판정: 의도된 값
 
@@ -56,7 +58,7 @@ sol의 기본값은 `xhigh`다(`src/models.mjs:6`). 관측값이 `high`라는 �
 | gpt-5.6-terra | high → high | 1 | workflow-result (부모 effort 상속) |
 | gpt-5.6-luna | (미완료) | 4 | model 미기록 |
 
-`DEFAULT_SELECTION.effort='low'`는 `--model`과 `--effort`를 **둘 다** 생략했을 때만 적용된다(`src/clauduct.mjs:121`). 34건 전부 `--model`이 명시된 실행이므로 애초에 적용 대상이 아니다. 이 규칙은 `README.md:17`, `docs/native.md:5`, `RELEASE.md:28`에 동일하게 문서화돼 있다.
+`DEFAULT_SELECTION.effort='low'`는 `--model`과 `--effort`를 **둘 다** 생략했을 때만 적용된다(`src/clauduct.mjs:128`). 34건 전부 `--model`이 명시된 실행이므로 애초에 적용 대상이 아니다. 이 규칙은 `README.md:17`, `docs/native.md:5`, `RELEASE.md:28`에 동일하게 문서화돼 있다.
 
 `requestedEffort`와 `effort`가 34건 전부 같다 — 게이트웨이는 아무것도 바꾸지 않았다. 10번 하향도 발동하지 않았다(전부 `purpose: conversation`).
 
@@ -68,7 +70,7 @@ sol의 기본값은 `xhigh`다(`src/models.mjs:6`). 관측값이 `high`라는 �
 
 ### 3-1. 자식이 명시 모델을 고르면 그 모델의 기본 effort가 붙는다 — 개선 후보 1순위
 
-`src/native-protocol.mjs:241`의 `subagent ? undefined : doc.output_config?.effort`가 자식 요청의 effort를 버리고, `src/agent-selection.mjs:335`의 `model(selected)`가 effort 인자 없이 `selectModel`을 부른다. 결과는 모델 기본값이다.
+`src/native-protocol.mjs:258`의 `subagent ? undefined : doc.output_config?.effort`가 자식 요청의 effort를 버리고, `src/agent-selection.mjs:467`의 `model(selected)`가 effort 인자 없이 `selectModel`을 부른다. 결과는 모델 기본값이다.
 
 실측(합성 요청, 모델 호출 없음):
 
@@ -84,9 +86,9 @@ prepareNative({ model:'gpt-5.6-luna', output_config:{ effort:'low' }, ... })
 
 ### 3-2. 역할 기본값이 전부 최상단이다 — Plan은 6장에서 변경했다
 
-`src/models.mjs:18` — Explore=luna/**max**, general-purpose=luna/**max**, Plan=sol/**xhigh**.
+`src/models.mjs:20` — Explore=luna/**max**, general-purpose=luna/**max**, Plan=sol/**xhigh**.
 
-Explore는 읽기 전용 검색 에이전트다. grep/glob 훑기에 `max`가 필요하다는 근거는 없다. 역할별 하향의 선례는 이미 코드에 있다 — compact 템플릿은 `medium`으로 내린다(`src/native-protocol.mjs:390-391`).
+Explore는 읽기 전용 검색 에이전트다. grep/glob 훑기에 `max`가 필요하다는 근거는 없다. 역할별 하향의 선례는 이미 코드에 있다 — compact 템플릿은 `medium`으로 내린다(`src/native-protocol.mjs:423-424`).
 
 **단 이 경로는 기록된 34건에서 한 번도 발동하지 않았다**(role이 전부 null 또는 workflow-subagent). 실측 근거 없음, 코드 근거만 있다.
 
@@ -213,8 +215,8 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 ### 왜 실사용에 닿는가
 
-- `src/native-gateway.mjs:339`가 **모든** SSE 응답에 `Connection: close`를 붙인다. 오류 응답(`:87`)과 204(`:130`)도 같다. 조건부가 아니다.
-- `src/clauduct.mjs:168`이 `CLAUDE_CODE_MAX_RETRIES: '0'`을 설정한다. **재시도가 없다.**
+- `src/native-gateway.mjs:374`가 **모든** SSE 응답에 `Connection: close`를 붙이고 있었다. 오류 응답(`:100`)과 204(`:148`)도 같았다. 조건부가 아니었다. 줄 번호는 아래에서 고친 뒤의 현재 위치다.
+- `src/clauduct.mjs:177`이 `CLAUDE_CODE_MAX_RETRIES: '0'`을 설정한다. **재시도가 없다.**
 
 실제 게이트웨이로 확인했다 — 게이트웨이는 `started 5 / succeeded 5 / failed 0`으로 전부 성공 기록을 남겼는데 **클라이언트는 3/5만 받았다.** 게이트웨이의 성공 카운터는 이 손실을 보지 못한다.
 
@@ -226,7 +228,7 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 ### 적용한 수정 — `Connection: close` → keep-alive
 
-사용자가 범용 호환 계층 대신 이 한 곳을 고치기로 정했다. `src/native-gateway.mjs`의 세 곳(:87 오류 응답, :130 204, :343 SSE)을 `keep-alive`로 바꿨다.
+사용자가 범용 호환 계층 대신 이 한 곳을 고치기로 정했다. `src/native-gateway.mjs`의 세 곳(`:100` 오류 응답, `:148` 204, `:374` SSE)을 `keep-alive`로 바꿨다.
 
 **원래 의도는 기록이 없다.** `git log -S`로 추적하면 최초 baseline 커밋 `cd84c9e`부터 존재하며 주석도 근거 문서도 없다.
 
@@ -248,11 +250,11 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 **`test-client-version` — 고쳤다가 되돌렸다.** `poc/codex-transport.mjs:91`의 `agent: false`가 원인이었다(Node가 일회성 연결에 `Connection: close`를 붙인다). keepAlive agent로 바꾸자 0/5 → 5/5가 됐다. 그러나 필터를 끄고 전수를 돌리니 `poc/test-claude-read-once.mjs`의 `read_normal_truncated`가 깨졌다(원복 후 3/3 통과로 확인).
 
-그 시험(`:70`)은 Content-Length를 실제 본문보다 10바이트 크게 선언한다. `Connection: close`로 연결이 닫히기 때문에 짧은 본문이 `UPSTREAM_IO_ERROR`로 잡힌다. keep-alive면 남은 10바이트를 계속 기다린다. **`agent: false`는 절단 탐지를 떠받치는 동작이었다.** 필터 호환을 위해 실제 결함 탐지를 없애는 거래이므로 되돌렸다. 운영 transport(`src/native-transport.mjs:83`)는 이미 `keepAlive: true`이고 다른 방식으로 절단을 검증한다.
+그 시험(`poc/test-claude-read-once.mjs:71`)은 Content-Length를 실제 본문보다 10바이트 크게 선언한다. `Connection: close`로 연결이 닫히기 때문에 짧은 본문이 `UPSTREAM_IO_ERROR`로 잡힌다. keep-alive면 남은 10바이트를 계속 기다린다. **`agent: false`는 절단 탐지를 떠받치는 동작이었다.** 필터 호환을 위해 실제 결함 탐지를 없애는 거래이므로 되돌렸다. 운영 transport(`src/native-transport.mjs:111`)는 이미 `keepAlive: true`이고 다른 방식으로 절단을 검증한다.
 
-**`test-chat` — PoC 게이트웨이가 구조적으로 요청당 1연결이다.** `poc/gateway.mjs:88`이 현재 요청의 소켓이 아닌 것을 전부 `destroy()`하고 `:246`에 연결 예산이 있다. 헤더만 keep-alive로 바꾸면 **더 나빠진다** — 실측 4건 실패 → 8건, `socket hang up`. keep-alive를 광고하면서 소켓을 닫으니 클라이언트가 죽은 소켓을 재사용한다. 고치려면 PoC의 연결 모델 재설계가 필요하고 운영 코드가 아니다.
+**`test-chat` — PoC 게이트웨이가 구조적으로 요청당 1연결이다.** `poc/gateway.mjs:91`이 현재 요청의 소켓이 아닌 것을 전부 `destroy()`하고 `:9`에 연결 예산이 있다. 헤더만 keep-alive로 바꾸면 **더 나빠진다** — 실측 4건 실패 → 8건, `socket hang up`. keep-alive를 광고하면서 소켓을 닫으니 클라이언트가 죽은 소켓을 재사용한다. 고치려면 PoC의 연결 모델 재설계가 필요하고 운영 코드가 아니다.
 
-**`test-native-gateway:362` — 원리적으로 불가능하다.** `transportRejections`의 정확한 개수를 단언하는데 필터가 같은 포트로 자기 트래픽을 보낸다. 델타 단언으로 바꿔도 실패가 362행 → 370행으로 옮겨갈 뿐이다(delta actual 2, expected 1) — 필터 트래픽이 측정 구간 안에도 들어온다. 임의의 다른 트래픽이 같은 포트에 도달하는 한 "내 행위가 만든 거부 수"는 셀 수 없다. `>= 1`로 낮추면 통과하지만 "정확히 하나"라는 검증이 사라진다. 이득 없이 단언만 약해지므로 되돌렸다.
+**`src/test-native-gateway.mjs:383` — 원리적으로 불가능하다.** `transportRejections`의 정확한 개수를 단언하는데 필터가 같은 포트로 자기 트래픽을 보낸다. 델타 단언으로 바꿔도 실패가 다른 줄로 옮겨갈 뿐이다(delta actual 2, expected 1) — 필터 트래픽이 측정 구간 안에도 들어온다. 임의의 다른 트래픽이 같은 포트에 도달하는 한 "내 행위가 만든 거부 수"는 셀 수 없다. `>= 1`로 낮추면 통과하지만 "정확히 하나"라는 검증이 사라진다. 이득 없이 단언만 약해지므로 되돌렸다.
 
 **결론: 이 3건은 필터가 켜진 환경이 오염됐다는 사실을 정직하게 드러내는 것이며 제품 결함이 아니다.** 개발 중에는 필터를 끄는 것이 맞다.
 
@@ -273,7 +275,7 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 #### 이 실행에서 드러난 별개 결함 1건 — 이후 고쳤다
 
-두 실행 모두 req 3이 `prepare` 단계에서 `OUTPUT_CONFIG_FIELDS` / `UNSUPPORTED_REQUEST`로 실패했다. native의 세션 제목 생성 요청이 `output_config`에 `format`을 싣는데 `src/native-protocol.mjs:242`가 `effort`만 허용했다. 본 작업은 정상 완료되지만 `requestOutcome`이 `has-failures`가 되어 무인 판정을 오염시킨다.
+두 실행 모두 req 3이 `prepare` 단계에서 `OUTPUT_CONFIG_FIELDS` / `UNSUPPORTED_REQUEST`로 실패했다. native의 세션 제목 생성 요청이 `output_config`에 `format`을 싣는데 `src/native-protocol.mjs:259`가 `effort`만 허용했다. 본 작업은 정상 완료되지만 `requestOutcome`이 `has-failures`가 되어 무인 판정을 오염시킨다.
 
 **클라이언트가 보내는 것** (claude.exe 2.1.270 정적 분석, side-query 빌더): `output_config: { format: { type:'json_schema', schema:{…} } }`. 제목 스키마는 `{title:string}` 하나이고 응답은 **클라이언트가 직접 파싱한다** — 게이트웨이가 `parsed_output`을 만들 필요는 없다.
 
@@ -299,7 +301,7 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 
 ### 만들지 않은 것
 
-범용 호환 계층(간섭 감지 후 전송 자동 전환·재시도)은 만들지 않았다. 알려진 실사용 실패 모드가 이 하나뿐이고 헤더 한 줄로 끝나기 때문이다. 나머지 알려진 필터 효과(비표준 `Expect` 제거, 잘못된 method에 400 페이지)는 test가 일부러 보내는 기형 요청에만 해당한다. 재시도 계층은 `src/clauduct.mjs:168`의 `CLAUDE_CODE_MAX_RETRIES: '0'`과 충돌하며, 이미 도구 효과가 발생한 뒤의 재전송은 중복 실행 위험을 만든다.
+범용 호환 계층(간섭 감지 후 전송 자동 전환·재시도)은 만들지 않았다. 알려진 실사용 실패 모드가 이 하나뿐이고 헤더 한 줄로 끝나기 때문이다. 나머지 알려진 필터 효과(비표준 `Expect` 제거, 잘못된 method에 400 페이지)는 test가 일부러 보내는 기형 요청에만 해당한다. 재시도 계층은 `src/clauduct.mjs:177`의 `CLAUDE_CODE_MAX_RETRIES: '0'`과 충돌하며, 이미 도구 효과가 발생한 뒤의 재전송은 중복 실행 위험을 만든다.
 
 판별 스크립트는 `.tmp/adguard-loopback-check.mjs`, `.tmp/adguard-close.mjs`에 있다(추적하지 않음).
 
@@ -310,7 +312,7 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 - **`verification/test-dotnet-http-transport.mjs`의 런타임 핀 — 하나로 둘 수 없다는 것이 CI에서 드러났다.** 처음엔 `pwsh.exe` spawn ENOENT였고(Store 설치 경로에 버전이 박혀 있어 PowerShell 업데이트로 무효화), 경로를 MSI·MSIX 양쪽 탐색으로 바꾸고 핀을 7.6.6/10.0.12로 올렸다. 그러자 **CI가 `:82`에서 실패**했다 — `offline.code` 1≠0, 스크립트가 `TRANSPORT_RUNTIME_UNSUPPORTED`로 종료. `origin/main`(5956453)의 CI는 초록불이고 main의 핀은 7.6.5/10.0.11이므로 **CI 러너는 7.6.5/10.0.11**이다. 제 머신은 7.6.6/10.0.12다. 한쪽만 보고 올린 것이 회귀를 만들었다.
 
   수정: 핀을 **검증된 런타임 집합**으로 바꿨다 — PowerShell `{7.6.5, 7.6.6}`, .NET `{10.0.11, 10.0.12}`. 완화가 아니다. 목록 밖 런타임은 여전히 거부하며, 목록에 넣는 조건은 "그 런타임에서 probe를 실제로 돌려 관측을 확인했을 것"으로 기존 핀의 의도와 같다. 7.6.5는 main의 CI 초록불이, 7.6.6은 이번 35 loopback 케이스 실행이 근거다. 결과의 `powerShellVersion`도 리터럴에서 **실측값**으로 바꿨다 — 측정하지 않은 값을 단언하지 않는다.
-- 프로젝트 `.claude/agents/*.md` 정의의 effort는 여전히 게이트웨이에 도달하지 않는다(`src/clauduct.mjs:315`가 런처 주입 정의만 넘긴다). 미관측.
+- 프로젝트 `.claude/agents/*.md` 정의의 effort는 여전히 게이트웨이에 도달하지 않는다(`src/clauduct.mjs:214`가 런처 주입 정의만 넘긴다). 미관측.
 - **effort A/B는 하지 않기로 했다.** 적대적 검토에서 셋이 걸렸다. ① 지연 수치가 바꿀 결정이 없다 — 메인 effort는 사용자 지정이고 역할 기본값은 지연·품질 트레이드오프라 지연만으로 정할 수 없다. ② 같은 성격 요청의 관측 편차가 1.5~33초라 n=3은 노이즈에 묻힌다. ③ 텍스트 종료 턴을 강제하는 설계는 이 문서가 지적한 편향을 오히려 고착시킨다. 대신 계측을 고쳐 실사용에서 비용 없이 쌓이게 했다.
 - Plan을 astra/low로 내린 계획 품질은 자동 판정 기준이 없어 A/B 대상이 아니다. 실사용에서 나빠졌다고 느끼면 `src/models.mjs:18-21` 한 곳으로 되돌린다.
-- `docs/audit-2026-09-08.md:266`의 compact 하향 위치 서술이 낡았다(현재 `src/native-protocol.mjs:389-391`).
+- `docs/audit-2026-09-08.md:266`의 compact 하향 위치 서술이 낡았다(현재 `src/native-protocol.mjs:423-424`).

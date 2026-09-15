@@ -74,7 +74,11 @@ namespace ClauductVerification
             foreach (string argument in arguments) start.ArgumentList.Add(argument);
             using var process = new Process { StartInfo = start };
             using var timer = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-            timer.CancelAfter(7000);
+            // Generous on purpose: the caller's deadline is the one meant to decide, and at 7000
+            // this preempted it. A loopback case came back LOCAL_CHECK_FAILED at 11361ms because
+            // the parser spawn outlasted 7s on a runner that stalls process starts, and the mode
+            // budget above never got to rule. The linked token still ends this with the caller.
+            timer.CancelAfter(60000);
             Require(process.Start(), "LOCAL_CHECK_FAILED");
             try
             {

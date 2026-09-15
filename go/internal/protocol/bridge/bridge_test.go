@@ -261,10 +261,15 @@ func TestReasoningContentIsNotEmitted(t *testing.T) {
 func TestUnknownEventIsRefused(t *testing.T) {
 	for _, kind := range []string{
 		"response.output_audio.delta",
-		"response.function_call_arguments.delta",
 		"thread.started",
 		"",
 		"response.",
+		// Still refused on purpose. Each carries content this build does not support, so
+		// accepting and dropping one would produce a reply short by exactly that part.
+		"response.refusal.delta",
+		"response.output_text.annotation.added",
+		"response.custom_tool_call_input.delta",
+		"item.started",
 	} {
 		if _, err := run(t, event(kind, `{"type":"x"}`)); !errors.Is(err, ErrUnsupportedEvent) {
 			t.Errorf("%q: err = %v, want UNSUPPORTED_EVENT", kind, err)
@@ -559,4 +564,128 @@ func TestAbsentEffortSendsNoReasoningParameter(t *testing.T) {
 	if strings.Contains(string(encoded), `"reasoning":`) {
 		t.Fatalf("an absent effort became a field: %s", encoded)
 	}
+}
+
+// A tool request streams its arguments before the call exists. This build does not build
+// calls from those events -- a call comes only from response.completed -- but they arrive on
+// every tool request, and refusing one kills the request.
+//
+// Measured 2026-09-15 against the real backend: a request carrying a tool definition was
+// refused as UNSUPPORTED_EVENT before any call came back. The test above previously listed
+// response.function_call_arguments.delta as an event that should be refused, and it passed.
+// A green test asserting the defect is what offline checking looks like when it agrees with
+// itself.
+func TestStreamedToolArgumentsAreAccountedForNotRefused(t *testing.T) {
+	translator := NewTranslatorFor(callable("Read"))
+
+	// Every streaming argument event, and not one client frame. This is the delivery
+	// barrier stated as a measurement: before response.completed there is nothing to
+	// deliver, so a stream that failed here could not have handed anything to execute.
+	for _, e := range []stream.Event{
+		argsDelta("fc_1", `{"file_`),
+		argsDelta("fc_1", `path":"a.txt"}`),
+		argsDone("fc_1", `{"file_path":"a.txt"}`),
+	} {
+		frames, err := translator.Accept(e)
+		if err != nil {
+			t.Fatalf("Accept(%s): %v", e.Type, err)
+		}
+		if len(frames) != 0 {
+			t.Fatalf("%s produced %d client frames before completion: %v", e.Type, len(frames), frames)
+		}
+	}
+
+	// And then the call arrives whole, from the completed output.
+	frames, err := translator.Accept(
+		completedWith(functionCall("call_1", "Read", `{"file_path":"a.txt"}`)))
+	if err != nil {
+		t.Fatalf("Accept(completed): %v", err)
+	}
+	whole := false
+	for _, frame := range frames {
+		if strings.Contains(string(frame.Data), `{\"file_path\":\"a.txt\"}`) {
+			whole = true
+		}
+	}
+	if !whole {
+		t.Fatalf("the call's arguments never reached the client: %v", frames)
+	}
+}
+
+// The backend's finished arguments against what it streamed. A tool call is executed by the
+// client, so two accounts disagreeing is where this stops rather than picking one.
+func TestArgumentsThatDisagreeWithTheStreamAreRefused(t *testing.T) {
+	for name, tc := range map[string]struct {
+		deltas []string
+		done   string
+	}{
+		"a delta went missing": {[]string{`{"file_`}, `{"file_path":"a.txt"}`},
+		"a delta was invented": {[]string{`{"file_path":"a.txt"}`, `extra`}, `{"file_path":"a.txt"}`},
+		"the value differs":    {[]string{`{"file_path":"b.txt"}`}, `{"file_path":"a.txt"}`},
+		"nothing streamed":     {nil, `{"file_path":"a.txt"}`},
+		"whitespace differs":   {[]string{`{"file_path": "a.txt"}`}, `{"file_path":"a.txt"}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			events := []stream.Event{}
+			for _, delta := range tc.deltas {
+				events = append(events, argsDelta("fc_1", delta))
+			}
+			events = append(events, argsDone("fc_1", tc.done))
+			if _, err := run(t, events...); !errors.Is(err, ErrArgumentsMismatch) {
+				t.Fatalf("err = %v, want %v", err, ErrArgumentsMismatch)
+			}
+		})
+	}
+}
+
+// Two calls stream at once and their fragments interleave. Keying by item is what keeps one
+// call's arguments from being checked against another's.
+func TestInterleavedArgumentStreamsStayApart(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		argsDelta("fc_1", `{"a":`), argsDelta("fc_2", `{"b":`),
+		argsDelta("fc_1", `1}`), argsDelta("fc_2", `2}`),
+		argsDone("fc_1", `{"a":1}`), argsDone("fc_2", `{"b":2}`),
+		completedWith(
+			functionCall("call_1", "Read", `{"a":1}`),
+			functionCall("call_2", "Read", `{"b":2}`)))
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+}
+
+// Informational events carry no part of the answer, so ignoring one cannot make a reply
+// short by the part nobody read -- which is the reason the default is to refuse.
+func TestInformationalEventsAreKnownAndCarryNothing(t *testing.T) {
+	for _, kind := range []string{
+		codex.RateLimitsUpdated, codex.CodexRateLimits,
+		codex.CodexMetadata, codex.WebsocketTiming,
+		codex.ReasoningTextDelta, codex.ReasoningTextDone,
+	} {
+		t.Run(kind, func(t *testing.T) {
+			frames, err := run(t,
+				event(kind, `{"type":"x","anything":1}`),
+				textDelta(0, "ok"), textDone(0, "ok"),
+				event(codex.Completed, completedOK))
+			if err != nil {
+				t.Fatalf("Accept: %v", err)
+			}
+			for _, frame := range frames {
+				if strings.Contains(string(frame.Data), "anything") {
+					t.Fatalf("%s reached the client: %s", kind, frame.Data)
+				}
+			}
+		})
+	}
+}
+
+func argsDelta(itemID, delta string) stream.Event {
+	body, _ := json.Marshal(map[string]any{
+		"type": codex.FuncArgsDelta, "item_id": itemID, "delta": delta})
+	return stream.Event{Type: codex.FuncArgsDelta, Raw: body}
+}
+
+func argsDone(itemID, arguments string) stream.Event {
+	body, _ := json.Marshal(map[string]any{
+		"type": codex.FuncArgsDone, "item_id": itemID, "arguments": arguments})
+	return stream.Event{Type: codex.FuncArgsDone, Raw: body}
 }

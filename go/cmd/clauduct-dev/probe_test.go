@@ -22,15 +22,19 @@ func capture(t *testing.T, f func(out, errOut io.Writer) int) (code int, stdout,
 // commands with no flags to see what they do.
 func TestTheProbeSendsNothingWithoutExplicitConsent(t *testing.T) {
 	for name, args := range map[string][]string{
-		"no arguments":        {},
-		"an empty argument":   {""},
-		"a different flag":    {"--dry-run"},
-		"a near miss":         {"--sent"},
-		"the flag misspelled": {"-send"},
-		"a prefix":            {"--send-it"},
-		"the flag twice":      {"--send", "--send"},
-		"extra arguments":     {"--send", "now"},
-		"something before it": {"now", "--send"},
+		"no arguments":          {},
+		"a name and no flag":    {"limit"},
+		"a flag and no name":    {"--send"},
+		"an empty name":         {"", "--send"},
+		"an unknown name":       {"tools", "--send"},
+		"a near miss on name":   {"limits", "--send"},
+		"a near miss on flag":   {"limit", "--sent"},
+		"the flag misspelled":   {"limit", "-send"},
+		"a prefix of the flag":  {"limit", "--send-it"},
+		"the flag twice":        {"limit", "--send", "--send"},
+		"extra arguments":       {"limit", "--send", "now"},
+		"the order reversed":    {"--send", "limit"},
+		"a name that is a flag": {"--send", "--send"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			code, stdout, _ := capture(t, func(out, errOut io.Writer) int {
@@ -51,9 +55,13 @@ func TestTheProbeSendsNothingWithoutExplicitConsent(t *testing.T) {
 func TestTheNoticeStatesWhatItWouldSpend(t *testing.T) {
 	_, stdout, _ := capture(t, func(out, errOut io.Writer) int { return probe(nil, out, errOut) })
 	budget := upstream.ApprovedBudget()
-	for _, want := range []string{budget.Model, budget.Effort, upstream.Endpoint, "max_output_tokens"} {
-		if !strings.Contains(stdout, want) {
-			t.Fatalf("the notice does not mention %q:\n%s", want, stdout)
+	want := []string{budget.Model, budget.Effort, upstream.Endpoint, "max_output_tokens"}
+	for name := range probes {
+		want = append(want, name)
+	}
+	for _, text := range want {
+		if !strings.Contains(stdout, text) {
+			t.Fatalf("the notice does not mention %q:\n%s", text, stdout)
 		}
 	}
 }
@@ -61,9 +69,18 @@ func TestTheNoticeStatesWhatItWouldSpend(t *testing.T) {
 // One run may not spend the whole authorisation. Repeating the command has to be a visible
 // decision rather than a way to drift past twenty without noticing.
 func TestOneRunCannotSpendTheWholeAuthorisation(t *testing.T) {
-	if probeAttempts >= upstream.ApprovedBudget().Limit {
-		t.Fatalf("probeAttempts = %d against a cumulative cap of %d",
-			probeAttempts, upstream.ApprovedBudget().Limit)
+	total := 0
+	for name, p := range probes {
+		if p.attempts >= upstream.ApprovedBudget().Limit {
+			t.Fatalf("probe %q claims %d attempts against a cumulative cap of %d",
+				name, p.attempts, upstream.ApprovedBudget().Limit)
+		}
+		total += p.attempts
+	}
+	// Running every probe once must also stay inside the authorisation.
+	if total > upstream.ApprovedBudget().Limit {
+		t.Fatalf("all probes together claim %d attempts against a cap of %d", total,
+			upstream.ApprovedBudget().Limit)
 	}
 }
 

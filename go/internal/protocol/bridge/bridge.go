@@ -269,6 +269,10 @@ type Translator struct {
 	// outputLimit is the caller's max_tokens. Nothing asks the backend to stop at it, so
 	// it is checked here against what the backend says it spent.
 	outputLimit int64
+	// streamedArgs accumulates tool call arguments as they stream, keyed by the item they
+	// belong to. Nothing is built from them; they exist to be checked against the snapshot
+	// the backend sends when it finishes writing them.
+	streamedArgs map[string]string
 }
 
 // NewTranslatorFor builds a translator for one request: which tools a new call may name,
@@ -292,6 +296,11 @@ var ErrOutputLimitExceeded = errors.New("OUTPUT_TOKEN_LIMIT_EXCEEDED")
 // there is nothing to check the caller's limit against, and reporting success would be
 // claiming a check that never ran.
 var ErrUsageUnknown = errors.New("INVALID_USAGE")
+
+// ErrArgumentsMismatch means the backend's finished tool arguments disagree with what it
+// streamed. The client executes what a tool call says, so the two accounts disagreeing is
+// where this stops rather than picking one.
+var ErrArgumentsMismatch = errors.New("ARGUMENTS_MISMATCH")
 
 func (t *Translator) checkOutputLimit(usage codex.Usage) error {
 	if t.outputLimit <= 0 {
@@ -334,6 +343,30 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			return nil, err
 		}
 		return t.builder.AppendText(delta.ContentIndex, delta.Delta)
+
+	case codex.FuncArgsDelta:
+		delta, err := codex.DecodeArgumentsDelta(event.Raw)
+		if err != nil {
+			return nil, err
+		}
+		if t.streamedArgs == nil {
+			t.streamedArgs = map[string]string{}
+		}
+		t.streamedArgs[delta.ItemID] += delta.Delta
+		return nil, nil
+
+	case codex.FuncArgsDone:
+		done, err := codex.DecodeArgumentsDone(event.Raw)
+		if err != nil {
+			return nil, err
+		}
+		// The backend's own account of what it wrote, against what arrived. A tool call is
+		// executed by the client, so a stream nobody can account for is not one to build a
+		// call from -- even though the call itself comes from the completed output.
+		if t.streamedArgs[done.ItemID] != done.Arguments {
+			return nil, ErrArgumentsMismatch
+		}
+		return nil, nil
 
 	case codex.TextDone:
 		done, err := codex.DecodeTextDone(event.Raw)
@@ -389,7 +422,9 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	case codex.InProgress, codex.Queued,
 		codex.OutputItemAdd, codex.OutputItemDone,
 		codex.ContentPartAdd, codex.ContentPartDon,
-		codex.Keepalive, codex.Ping:
+		codex.Keepalive, codex.Ping,
+		codex.RateLimitsUpdated, codex.CodexRateLimits,
+		codex.CodexMetadata, codex.WebsocketTiming:
 		// Structural or keepalive events. They carry no client-visible content, and a
 		// keepalive in particular is not progress — reading one as progress is how a
 		// stalled upstream keeps a request alive forever.
@@ -397,7 +432,8 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 
 	case codex.ReasoningPartAdd, codex.ReasoningPartDone,
 		codex.ReasoningSummaryAdd, codex.ReasoningSummaryDone,
-		codex.ReasoningSummaryTxtD, codex.ReasoningSummaryTxtF:
+		codex.ReasoningSummaryTxtD, codex.ReasoningSummaryTxtF,
+		codex.ReasoningTextDelta, codex.ReasoningTextDone:
 		// Known, and deliberately invisible. Reasoning arriving before text must not
 		// disturb the order of what the client does see, which is why these produce no
 		// frames rather than being treated as content of an unknown kind.

@@ -6,8 +6,8 @@
 |---|---|
 | 실행한 V2 Go 테스트 | **585개 통과** (subtest 포함), 11 package |
 | mutation 검증 | **153건 주입** (battery 8개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 WP 절에 기록했다 |
-| 실모델 호출 | **5회.** `gpt-5.6-luna` / effort `low`. 사용자 승인 하에 probe 2회 실행 — 1.3절 |
-| 잔여 승인 예산 | **15회** (누적 승인 20회 중 5회 사용) |
+| 실모델 호출 | **11회.** `gpt-5.6-luna` / effort `low`. 1.3절(상한) · 1.4절(wire) |
+| 잔여 승인 예산 | **9회** (누적 승인 20회 중 11회 사용) |
 
 ### 1.1 실행한 것
 
@@ -117,7 +117,83 @@ WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 �
 
 **1. WP05의 `max_output_tokens` 제거는 기준선 parity가 아니라 출시 차단 결함의 수정이었다.** WP03·WP04가 만든 본문은 그 키를 항상 보내고 있었다. 즉 **이 bridge를 통한 모든 추론 요청이 400으로 끝났을 것이다.** 기준선 대조가 아니었으면 실호출을 붙이는 순간에야 발견됐다.
 
-**2. Go bridge의 wire 형식이 실제 backend에서 처음으로 검증됐다.** 대조군 두 번 모두 `response.completed`까지 도달했다. SSE parser가 실제 스트림을 오류 없이 파싱했고, `codex.Completed`가 매칭됐고, `DecodeUsage`가 카운트를 읽었다. fixture가 아닌 실제 바이트에서다.
+**2. 응답 경로가 실제 바이트에서 처음 동작했다.** `stream.Parser`가 실제 스트림을 오류 없이 파싱했고 `DecodeUsage`가 카운트를 읽었다.
+
+**다만 이때 "wire 형식이 검증됐다"고 쓴 것은 과장이었다.** 이 probe는 본문을 **손으로 만든다.** `bridge.BuildRequest`는 한 번도 실행되지 않았다. 검증된 것은 endpoint가 그 모양을 받는다는 사실이지 이 모듈이 그 모양을 만든다는 사실이 아니다. 요청 경로 검증은 1.4절이다.
+
+### 1.4 wire probe — 제품 경로를 실제 backend에 걸었고, WP04가 무너졌다
+
+1.3절의 probe는 본문을 손으로 만들었으므로 이 모듈의 인코딩을 검증하지 않았다. `probe wire`는 **제품 경로 그대로** 돈다 — `anthropic.DecodeRequest` → `bridge.BuildRequest` → 전송 → `stream.Parser` → `bridge.Translator`. 손으로 쓴 본문도 손으로 읽은 이벤트도 없다.
+
+| 실행 | 결과 |
+|---|---|
+| 1차 | text **6 프레임 정상** / tool `UNSUPPORTED_EVENT` |
+| 2차 (어휘 수정 후) | text 정상 / tool `EMPTY_REPLY` |
+| 3차 (`tool_choice` 강제 + 계측) | text 정상 / tool `EMPTY_REPLY`, **원인 확정** |
+
+#### 결함 1 — 도구 요청이 통째로 죽었다
+
+```
+tool call  REFUSED TRANSLATE: UNSUPPORTED_EVENT
+```
+
+`response.function_call_arguments.delta`/`.done`이다. **모든 도구 요청에 반드시 오는 이벤트인데 V2가 모른다.** barrier 설계는 "호출은 `completed`에서만 만든다"였고 그것은 맞았지만, **그 이벤트들이 여전히 도착한다는 것을 잊었다.** 모르는 이벤트는 거부하는 것이 V2의 의도된 기본값이므로 요청 전체가 죽는다.
+
+**오프라인 테스트가 이 결함을 명시적으로 주장하고 있었다.** `TestUnknownEventIsRefused`가 `response.function_call_arguments.delta`를 "거부되어야 하는 이벤트" 목록에 넣고 초록이었다. 테스트가 자기를 쓴 사람과 합의한 것이다.
+
+고치면서 기준선이 이 이벤트로 무엇을 하는지 봤다. 무시하지 않는다 — 스트리밍된 arguments를 누적해 `.done` 스냅샷과 대조한다(`SNAPSHOT_MISMATCH`). V2가 텍스트에 하는 것과 같은 검사다. 도구 호출은 클라이언트가 **실행**하므로, 두 진술이 어긋나면 하나를 고르는 것이 아니라 멈춘다. `ARGUMENTS_MISMATCH`로 포팅했다.
+
+이벤트를 추가할 때 기준선 목록을 통째로 베끼지 않고 원칙을 세웠다.
+
+| 처리 | 대상 | 이유 |
+|---|---|---|
+| 알고 누적·검증 | `function_call_arguments.delta`/`.done` | 실측으로 도착이 확인됐고 대조할 내용이 있다 |
+| 알고 무시 | `rate_limits.updated`, `codex.rate_limits`, `codex.response.metadata`, `responsesapi.websocket_timing`, `reasoning_text.delta`/`.done` | 답의 일부를 싣지 않으므로 무시해도 응답이 짧아질 수 없다 |
+| **계속 거부** | `refusal.*`, `output_text.annotation.added`, `custom_tool_call_input.*`, `web_search_call.*`, `item.*` | 전부 V2가 지원하지 않는 **내용**을 싣는다. 받아서 버리면 정확히 그만큼 짧은 응답이 된다 |
+
+기준선이 이름을 안다는 것은 **도착할 수 있다는 증거**이지 무엇을 해야 하는지의 증거가 아니다. 내용에 대해 처리를 추측하는 것이 응답이 조용히 한 부분을 잃는 방식이다.
+
+#### 결함 2 — barrier가 채워지지 않는 배열을 읽고 있다
+
+어휘를 고치자 `EMPTY_REPLY`가 나왔다. `tool_choice`로 호출을 강제하고 계측을 붙였다.
+
+```
+saw [response.created response.in_progress response.output_item.added
+     response.function_call_arguments.delta response.function_call_arguments.done
+     response.output_item.done response.completed]
+output items [empty output array]
+```
+
+**도구 호출은 분명히 일어났다.** 그런데 `response.completed`의 `output` 배열이 **비어 있다** — 키는 있고 배열이 빈 것이다. 텍스트 요청에서도 똑같이 비어 있다.
+
+WP04의 barrier는 이렇게 구현돼 있다.
+
+> 호출은 스트리밍 이벤트가 아니라 `response.completed`의 `output` 배열에서만 나온다.
+
+**이 backend는 그 배열을 채우지 않는다. 따라서 V2는 도구 호출을 영원히 만들 수 없다.**
+
+기준선은 `output_item.added`의 스냅샷으로 item을 만들고 `output_item.done`으로 대조한다(`native-protocol.mjs:596`). `completed`는 종결 회계를 한다. V2는 `output_item.*`를 **구조적 이벤트로 분류해 통째로 무시**하고 있었다.
+
+같은 이유로 조용히 죽어 있던 것이 하나 더 있다. `checkStreamedText`는 completed output의 `message` item에 대해서만 돈다. 그 item이 오지 않으므로 **V2의 텍스트 스냅샷 검사도 이 backend에서 한 번도 실행된 적이 없다.**
+
+#### 왜 offline으로는 절대 못 찾는가
+
+fixture를 쓴 사람이 `completed.output`에 item을 넣었고, 디코더가 그것을 읽었고, 테스트가 통과했다. **fixture는 그것을 쓴 사람과 합의한다.** 세 층(fixture·디코더·테스트)이 전부 같은 잘못된 전제를 공유하면 오프라인에서 초록은 정보가 아니다.
+
+`max_output_tokens`와 정확히 같은 모양의 결함이고, 실호출 1회에 드러났다. 이것이 WP06 착수 전에 도구 wire를 실호출로 검증하자고 한 이유이며, 판단은 맞았다.
+
+#### 고칠 방향 — barrier 원칙은 살아 있다
+
+barrier가 보장하는 것은 **"완료 전에는 클라이언트에 아무것도 전달되지 않는다"**이고 그것은 유지된다. 바뀌는 것은 데이터의 **출처**다.
+
+| | 현재 | 수정 |
+|---|---|---|
+| item 생성 | `completed.output` (비어 있음) | `output_item.added` 스냅샷 |
+| item 확정 | — | `output_item.done` 스냅샷과 대조 |
+| arguments | `completed.output` | 누적 + `.done` 대조 (이미 구현) |
+| **전달 시점** | `completed` | **`completed` — 바뀌지 않는다** |
+
+즉 barrier는 구조적(만들어지는 자리가 뒤)에서 시간적(만들어지되 붙잡아 둠)으로 바뀐다. 기준선이 하는 방식이다. **이것은 WP04 핵심의 재작업이므로 사용자에게 보고하고 진행한다.**
 
 ## 2. 네 단계 실행 강도
 
@@ -350,6 +426,7 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 | TOOL08 inactive historical tool과 신규 inactive call 구분 | PASS | 철회된 도구를 이름으로 가진 기록은 해독되고, 그 이름의 **새 호출**은 거부 |
 | WIRE11 malformed tool arguments 미전달 | PASS | 8종(비JSON·잘림·배열·문자열·숫자·trailing·중복 key·빈 값) |
 | LIFE10 semantic delivery 이후 자동 replay 0 | PASS | WP05에서 재판정했다. `MaxGatewayRetries = 0`이고 `Direct.Execute`에 재시도 루프가 없다 |
+| TOOL03·TOOL04·WIRE11 (fixture 기준) | **재판정 필요** | 1.4절. fixture가 `completed.output`에 item을 넣어 전제를 공유하고 있었다. 실제 backend는 그 배열을 비운다 |
 | TOOL01 Read/Edit/Write/Bash 실제 왕복 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
 | TOOL02 permission 거부가 실행으로 바뀌지 않음 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
 | TOOL06 전달 후 실패 시 자동 재실행 0 | `NOT_RUN` | NATIVE_SYNTH. WP06 |

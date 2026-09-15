@@ -8,7 +8,6 @@ import (
 	"io"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,11 +31,6 @@ import (
 // without --send. A probe that can be triggered by a typo is a probe that spends money by
 // accident.
 
-// probeAttempts is what one --send run may spend. The cumulative authorisation is twenty;
-// this bounds a single invocation so that repeating the command is a visible decision
-// rather than a way to drift past the cap without noticing.
-const probeAttempts = 3
-
 // probePrompt has to want to produce more than probeLimit allows.
 //
 // A two-word answer would finish inside the cap either way, and both a backend that
@@ -58,24 +52,43 @@ const probeInstruction = "You are a test fixture. Answer exactly what is asked, 
 // so a backend that accepts the parameter at all has to truncate at it.
 var probeLimits = []int{16, 48}
 
+// The probes and what each one costs. A name is required because "probe" alone must not
+// choose which question to spend money on.
+var probes = map[string]struct {
+	measures string
+	attempts int
+}{
+	"limit": {"whether the backend accepts max_output_tokens", 3},
+	"wire":  {"whether this module's own request encoding survives the real backend", 3},
+}
+
 func usageProbe(out io.Writer) int {
 	budget := upstream.ApprovedBudget()
 	fmt.Fprintln(out, "probe sends real requests and spends real money. Nothing is sent without --send.")
 	fmt.Fprintln(out)
 	fmt.Fprintf(out, "  route      %s at %s effort\n", budget.Model, budget.Effort)
-	fmt.Fprintf(out, "  this run   up to %d attempts\n", probeAttempts)
 	fmt.Fprintf(out, "  authorised %d attempts cumulatively, 2026-09-15\n", budget.Limit)
 	fmt.Fprintf(out, "  endpoint   %s\n", upstream.Endpoint)
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "  measures   whether the backend accepts max_output_tokens")
-	fmt.Fprintln(out, "  prompt     "+strconv.Quote(probePrompt))
+	for _, name := range probeNames() {
+		p := probes[name]
+		fmt.Fprintf(out, "  %-6s %d attempts — %s\n", name, p.attempts, p.measures)
+	}
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "run: clauduct-dev probe --send")
+	fmt.Fprintln(out, "run: clauduct-dev probe <name> --send")
 	return 2
 }
 
+// probeNames lists the probes in a fixed order. Map iteration is random and this text is
+// read by a person deciding what to spend.
+func probeNames() []string { return []string{"limit", "wire"} }
+
 func probe(args []string, out, errOut io.Writer) int {
-	if len(args) != 1 || args[0] != "--send" {
+	if len(args) != 2 || args[1] != "--send" {
+		return usageProbe(out)
+	}
+	selected, known := probes[args[0]]
+	if !known {
 		return usageProbe(out)
 	}
 
@@ -103,10 +116,22 @@ func probe(args []string, out, errOut io.Writer) int {
 	fmt.Fprintf(out, "client  codex-cli %s (%s)\n", version, status)
 
 	budget := upstream.ApprovedBudget()
-	budget.Limit = probeAttempts
+	budget.Limit = selected.attempts
 	ledger := upstream.NewLedger(budget)
 	transport := upstream.NewDirect(provider, ledger, version, budget.Model, budget.Effort)
 
+	code := 0
+	if args[0] == "wire" {
+		code = wireProbe(transport, budget, out)
+	} else {
+		code = limitProbe(transport, budget, out)
+	}
+	attempts, inferences, refused := ledger.Spent()
+	fmt.Fprintf(out, "spent   %d attempts, %d inferences, %d refused\n", attempts, inferences, refused)
+	return code
+}
+
+func limitProbe(transport upstream.Transport, budget upstream.Budget, out io.Writer) int {
 	// The control first. If the shape the baseline has always sent does not work today,
 	// nothing the other cases report means anything.
 	control := send(transport, budget, 0)
@@ -119,8 +144,6 @@ func probe(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(out, "%-28s %s\n", fmt.Sprintf("max_output_tokens: %d", limit), result)
 	}
 
-	attempts, inferences, refused := ledger.Spent()
-	fmt.Fprintf(out, "spent   %d attempts, %d inferences, %d refused\n", attempts, inferences, refused)
 	fmt.Fprintf(out, "reading %s\n", verdict(control, capped))
 
 	// A backend that refuses the parameter is an answer, not a failure. What would make

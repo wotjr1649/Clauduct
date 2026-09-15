@@ -68,7 +68,15 @@ func Status(version string) string {
 func readInstalledVersion() (string, error) {
 	// Through the same resolver that finds claude.exe. A version taken from a directory an
 	// attacker can prepend to PATH would let them choose what this bridge claims to be.
-	path, found, err := platform.Resolver{}.Codex()
+	return versionFrom(platform.Resolver{}.Codex)
+}
+
+// versionFrom takes the resolver as an argument so the not-installed path can be tested on
+// a machine where it is installed. That path is a packaging fact -- this binary needs the
+// Codex CLI to send anything at all -- and a requirement nobody has exercised is a
+// requirement nobody has checked.
+func versionFrom(resolve func() (string, bool, error)) (string, error) {
+	path, found, err := resolve()
 	if err != nil {
 		return "", err
 	}

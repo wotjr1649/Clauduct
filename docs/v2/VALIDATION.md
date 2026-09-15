@@ -4,8 +4,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **700개 통과** (subtest 포함), 11 package. NATIVE_SYNTH 11개 포함 |
-| mutation 검증 | **205건 주입** (battery 11개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
+| 실행한 V2 Go 테스트 | **718개 통과** (subtest 포함), 12 package. NATIVE_SYNTH·패키징 포함 |
+| mutation 검증 | **213건 주입** (battery 12개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
 | 실모델 호출 | **26회.** 1.3절(상한) · 1.4절(wire) · 1.6절(G7 실세션) |
 | 잔여 승인 예산 | **74회** (2026-09-15 사용자가 누적 100회로 상향) |
 
@@ -442,6 +442,71 @@ Result reported 0/0 against the ledger's 2/2
 
 **7개 전부 exit 0.** CAP01의 계약(`models.mjs`·`agent-selection.mjs`)을 가져온 파일들이다. 기준선 worktree는 tracked 변경 0으로 남아 있다.
 
+### 1.7 G8 — 출하되는 것을 검사한다
+
+컴파일되는 것이 아니라 **나가는 것**을 본다. 산출물은 [PACKAGING.md](PACKAGING.md)이고, 아래는 그것을 뒷받침하는 측정이다.
+
+| ID | 상태 | 어디서 |
+|---|---|---|
+| REL05 재현 빌드·checksum·OS/arch | PASS | 같은 소스를 **두 번 빌드해 SHA256이 같다.** 신원은 toolchain VCS stamp에서 나오고 HEAD와 대조한다 |
+| REL04 package에 secret 없음 | PASS | **두 바이너리 모두** JWT 서명(`eyJ…`)과 명시 표지로 스캔 |
+| REL03 런타임 의존 | PASS + **새 사실** | Node·.NET 의존 0은 그대로. 다만 G7이 `codex.exe` 의존을 추가했다 — 아래 |
+| REL06 독립 디렉터리·설치 경로 | PASS | 설치 디렉터리에 **아무것도 쓰지 않는다.** 실행 전후를 비교한다 |
+| REL07 Node와 Go 동시 실행 | PASS | 아래 |
+| REL09 문서 인용 검증 | PASS | Go 테스트로 옮겼다. 18 citation · 35 link · 7 문서 |
+| LIFE14 연속 실행 자원 증가 | PASS | 5세션 후 goroutine 증가가 상한 내 |
+| REL10 CI 분리 보고 | **`NOT_RUN`** | `.github/workflows/go.yml`은 작성돼 있고 한 번도 실행된 적이 없다. push가 별도 승인 사항이다 |
+| REL08 기본 전환·rollback | 해당 없음 | 기본 전환은 G9이고 요청하지 않았다. 이름이 다르므로 되돌릴 상태가 아직 없다 |
+
+#### 1.7.1 REL03을 정직하게 다시 적는다
+
+REL03은 "Node adapter·.NET probe에 runtime 의존하지 않음"을 묻는다. 그 둘은 실제로 없고 스캐너가 막는다. **하지만 그것이 런타임 의존 0이라는 뜻은 아니다.**
+
+G7이 하나를 추가했다: 제품이 `codex.exe`를 exec한다. 그 버전이 모든 요청의 header에 들어가므로 **없으면 보낼 것을 만들 수 없다.**
+
+이 머신에는 설치돼 있으므로 그 경로를 타본 적이 없었다. resolver를 주입 가능하게 만들어 테스트했다 — **아무도 실행해본 적 없는 요구사항은 아무도 확인해본 적 없는 요구사항이다.** PACKAGING.md 2장이 셋을 전부 적는다.
+
+#### 1.7.2 재현성이 checksum을 의미 있게 만든다
+
+"이 commit에서 빌드했다"는 **바이너리가 자기에 대해 하는 주장**이다. 두 빌드의 해시가 같다는 것은 **누구나 확인할 수 있는 주장**이다. 후자가 없으면 공개된 checksum은 아무것도 보장하지 않는다.
+
+같은 소스·같은 Go 버전에서 `-trimpath`로 두 번 빌드해 바이트가 같음을 확인했다.
+
+#### 1.7.3 Node와 Go — 그리고 뜻밖의 교차 확인
+
+```
+node exit=0   go exit=0   (동시 실행)
+```
+
+Node 기준선(`clauduct.cmd --dry-run -p`)과 Go 바이너리를 동시에 돌려 둘 다 exit 0이다. 모델 호출 0회(`credentialReads: 0`, `childStarted: false`).
+
+Go 세션끼리의 격리는 별도 테스트다 — 3개를 동시에 돌려 **각자 다른 listener를 얻고** 각자의 답을 받는다.
+
+그리고 Node dry-run이 자기 카탈로그를 출력했다.
+
+```
+"models":{"astra":{"model":"gpt-6-astra","effort":"medium"},"sol":{"model":"gpt-5.6-sol","effort":"xhigh"},
+          "terra":{"model":"gpt-5.6-terra","effort":"high"},"luna":{"model":"gpt-5.6-luna","effort":"max"}}
+```
+
+**1.6.4절에서 구현한 것과 정확히 일치한다.** 소스를 읽어서가 아니라 **돌고 있는 기준선이** 확인해준 것이다.
+
+#### 1.7.4 mutation — 8건, 3건이 살아남았고 셋 다 다른 문제였다
+
+| 살아남은 것 | 진짜 원인 | 조치 |
+|---|---|---|
+| credential이 제품에 컴파일됨 | 두 가지가 겹쳤다. **(1)** 참조되지 않은 상수는 링커가 버린다 — 주입이 바이너리를 바꾸지 않았다. **(2)** 고쳐서 실제 사용되는 상수를 바꾸자, 이번엔 **테스트가 `clauduct-go`만 스캔**하고 있었다. 그 바이너리는 `buildinfo`를 import하지도 않는다 | 주입을 현실적으로 바꾸고, **두 바이너리 모두** 스캔하게 했다. 패키지는 둘을 내보낸다 |
+| commit stamp를 지어냄 | `buildinfo`에 **단위 테스트가 하나도 없었다.** 순수 함수인데도 | 직접 테스트 추가 |
+| 수정된 worktree가 그 사실을 숨김 | 더 나빴다. 신원 테스트가 **`+dirty`일 때 skip**하고 있었다 — 즉 그 선언이 필요한 바로 그 상황에서 검사가 물러섰다. 주입이 `+dirty`를 지우자 테스트가 skip을 멈추고 **통과**했다 | skip을 없애고 **양방향으로 단언**한다. 바이너리가 말하는 dirty 여부와 git이 말하는 것이 일치해야 한다 |
+
+세 번째가 이 배터리에서 가장 값진 것이다. **가장 필요한 순간에 건너뛰는 검사는 검사가 아니다.**
+
+넓힌 스캔이 실제 적중도 하나 냈다 — `clauduct-dev`에 `BUILD-TOKEN`. probe의 fixture 값이 product 파일에 있어 정말로 출하된다. 다만 그것은 모델에게 되풀이하게 시키는 지어낸 값이고 **비밀성이 0이다.** 표지가 틀렸지 바이너리가 틀린 게 아니다. **방금 발화한 어설션을 지우는 것은 검사를 멈추는 방법이므로** 지운 이유를 코드에 적었다.
+
+#### 1.7.5 REL09 — 검사를 스크래치 밖으로
+
+문서 인용 검증이 재설계 내내 `.tmp`의 Python 스크립트로만 있었다. 즉 **누가 기억할 때만 돌았다.** Go 테스트로 옮겼고 이제 `go test ./...`에 포함되며 Python이 필요 없다.
+
 ## 2. 네 단계 실행 강도
 
 | Level | 내용 | 실모델 호출 |
@@ -498,7 +563,7 @@ Result reported 0/0 against the ledger's 2/2
 | G5 host parity | **부분** | WP06이 P/S 범위(ARG06–07, ENV04·06·07·08·10, CAP04·10)를 덮었다. C 범위(MCP·plugin·worktree·resume)는 5.9.4절에 미착수로 명시 | real backend 검증 계획 확정 |
 | G6 transport 안전 | **부분** | WP05가 auth·attempt cap·retry·leak을 덮었다. **process boundary(LIFE11·LIFE12)가 남았고 그것은 WP06이다** | 아래 G7 조건 |
 | G7 live integration | **완료** | 1.6절. 실제 claude.exe → 제품 빌드 → 실제 backend 왕복. 출하 바이너리로도 확인 | release 후보 판단 |
-| G8 package | 미착수 | build provenance·설치·반복 실행·rollback·문서 | 기본 전환 판단 요청 |
+| G8 package | **완료** | 1.7절. 재현 빌드·신원·설치·동시 실행·자원 증가·문서. [PACKAGING.md](PACKAGING.md) | 기본 전환 판단 요청 |
 | G9 기본 전환 | 미착수 | 사용자 승인·정확한 artifact·target 확인 | 새 실행의 기본 binary 변경 |
 | G10 선택적 archive | **DEFERRED** | [MIGRATION.md](MIGRATION.md) 6장 M3. 권고는 하지 않음 | 승인된 구조 정리 |
 

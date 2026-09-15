@@ -2,7 +2,7 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01–WP06, G7 연결됨
+## 현재 범위 — WP01–WP06, G7 연결됨, G8 패키징
 
 동작하는 것:
 
@@ -31,6 +31,8 @@
 **동작하지 않는 것:**
 
 - 이미지·문서·hosted search·structured output 결과 검증·`/v1/models` discovery
+
+설치·런타임 요구사항·되돌리기는 [docs/v2/PACKAGING.md](../docs/v2/PACKAGING.md)가 소유한다.
 
 ## ⚠ 이 바이너리는 실제로 과금된다
 
@@ -100,6 +102,6 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 | `internal/upstream` | backend 실행 인터페이스, fixture, 그리고 실제 HTTPS 전송. 이 모듈에서 네트워크에 닿는 **유일한** 곳이다 |
 | `internal/auth` | 읽기 전용 credential provider. 아무것도 쓰지 않고 갱신하지 않는다 |
 | `internal/platform` | OS 경계. 실행 파일 해석 |
-| `internal/buildinfo` | 바이너리 신원 |
+| `internal/buildinfo` | 바이너리 신원. commit을 지어내지 않고, 수정된 worktree는 반드시 그렇게 말한다 |
 
 `app`, `gateway`, `protocol`, `upstream` 등 나머지 책임 분해도는 `docs/v2/ARCHITECTURE.md` 3장에 있다. 빈 package를 미리 만들지 않는다.

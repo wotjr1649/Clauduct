@@ -2,22 +2,28 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01
+## 현재 범위 — WP01 + WP02
 
 동작하는 것:
 
 - 설치된 `claude.exe` 해석 (standalone 우선, PATH fallback)
 - `127.0.0.1:0` 임시 listener + 세션 token 생성
 - native 실행: argv 그대로 전달, stdio 상속, cwd 보존, exit code 반환
-- 세션 종료 시 owned listener 해제
-- `HEAD /api/hello` readiness 응답
+- `HEAD /api/hello` readiness — 무인증 204, 잘못된 인증은 401
+- 요청 경계: 정확한 Host, loopback 원격 주소, 중복 header 거부, proxy/browser header 거부, `cookie`·`proxy-authorization` 거부
+- 인증: `Authorization: Bearer` 상수시간 비교. `x-api-key`는 같은 세션 token일 때만 허용
+- `POST /v1/messages`: method·content-type·32 MiB 본문 상한 검사, 요청 등록, 취소·300s 상한
+- 요청 registry: 요청별 취소, 형제 비전파, 멱등 해제, 동시 실행 상한 64
+- 종료: 새 요청 거부 → in-flight 취소 → drain → listener 해제
 
 **동작하지 않는 것 (아직 구현이 없다):**
 
-- `POST /v1/messages` — 404 `UNSUPPORTED_ROUTE`를 돌려준다
-- upstream 연결, 인증, 프로토콜 변환, SSE, 도구 왕복, 모델 라우팅
+- `/v1/messages` 본문 해석 — 검사를 통과한 뒤 501 `NOT_IMPLEMENTED`
+- `/v1/models` discovery, upstream 연결, 프로토콜 변환, SSE, 도구 왕복, 모델 라우팅
 
-따라서 **대화형 세션은 아직 성립하지 않는다.** 첫 모델 요청에서 404를 받는다. `--version`·`--help`처럼 모델을 호출하지 않는 native 명령은 정상 통과한다.
+따라서 **대화형 세션은 아직 성립하지 않는다.** `--version`·`--help`처럼 모델을 호출하지 않는 native 명령은 정상 통과한다.
+
+이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 `docs/v2/VALIDATION.md` 1.1.2에 있다.
 
 ## 명령
 
@@ -58,7 +64,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 | `cmd/clauduct-dev` | Clauduct 자신의 명령. native 옵션과 절대 충돌하지 않도록 별도 바이너리다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |
-| `internal/gateway` | loopback listener와 endpoint |
+| `internal/gateway` | loopback listener, 요청 경계·인증·registry |
 | `internal/platform` | OS 경계. 실행 파일 해석 |
 | `internal/buildinfo` | 바이너리 신원 |
 

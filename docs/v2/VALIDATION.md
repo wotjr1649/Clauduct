@@ -4,8 +4,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **42개 통과** (4 package: app 15 / launch 10 / gateway 9 / platform 8) |
-| mutation 검증 | 3건 주입, 3건 모두 해당 테스트가 실패함 |
+| 실행한 V2 Go 테스트 | **73개 통과** (subtest 포함. app 15 / launch 10 / gateway 28 / platform 8) |
+| mutation 검증 | WP01 3건 + WP02 8건 주입, **11건 전부 해당 테스트가 실패함** |
 | 실모델 호출 | **0회.** upstream 코드가 존재하지 않아 구조적으로 불가능하다 |
 | 잔여 승인 예산 | **0. 그리고 별도로 BLOCKED다** — 3장 |
 
@@ -27,7 +27,7 @@
 | `gofmt -l .` | 출력 없음 |
 | `go vet ./...` | 통과 |
 | `go build ./...` | 통과 |
-| `go test -count=1 ./...` | **4 package 통과**, 42 테스트 |
+| `go test -count=1 ./...` | **4 package 통과**, 73 테스트 |
 | `go build -trimpath` 후 `version` | VCS stamp 확인: `bfbdf238…+dirty`, go1.27.0 windows/amd64 |
 | `clauduct-dev doctor` | exit 0. claude.exe 해석 성공, 82 parent vars → 87 child vars, credential 읽기 0 |
 | `clauduct-go --version` | exit 0. 실제 claude.exe가 `2.1.272 (Claude Code)` 출력 |
@@ -35,6 +35,22 @@
 마지막 항목은 실제 사용자 프로필에서의 기회적 관측이지 통제된 `NATIVE_SYNTH` 실행이 아니다. ARG06·ARG07의 증거로 승격하지 않는다.
 
 **실호출이 0인 근거는 관측이 아니라 구조다.** 이 빌드에는 upstream 클라이언트가 존재하지 않는다. `internal/gateway`는 `POST /v1/messages`를 구현하지 않고 아웃바운드 HTTP를 전혀 만들지 않으므로, 모델 요청은 "일어나지 않았다"가 아니라 "일어날 경로가 없다".
+
+### 1.1.2 실측 — claude 2.1.272가 실제로 보내는 것
+
+WP02의 인증·경계 규칙을 Node 기준선의 규칙과 핸드오프 경고만 보고 설계할 뻔했다. 그것은 근거가 아니라 회상이다. upstream이 없는 일회용 listener에 실제 `claude.exe`를 붙여 측정했다. **모델 호출 0회** — 이 probe에도 upstream이 없어 경로 자체가 없다.
+
+| 관측 | 값 | 설계에 미친 영향 |
+|---|---|---|
+| readiness | `HEAD /api/hello`, **Authorization 없음** (`User-Agent: Bun/1.4.3`) | 무인증 readiness가 옳다. 단, 인증을 제시하면 검증한다 |
+| 인증 header | **`Authorization: Bearer` 하나뿐.** `x-api-key` 없음, 중복 header 없음 | HTTP06의 "복수 auth header"는 현재 native가 만들지 않는다. 그래도 전방 호환으로 구현하고 **측정된 미발생**을 기록한다 |
+| `GET /v1/models` | **호출되지 않음** | discovery는 `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` opt-in이다. 이 키는 WP01 overlay에 없다. `/v1/models` 구현은 WP07 |
+| query | `?beta=true` | HTTP05 fixture의 근거 |
+| `-p "ping"` 한 번의 본문 | **119,312 bytes**, 최상위 키: `context_management max_tokens messages metadata model output_config stream system thinking tools` | 32 MiB 상한의 근거이자 WP03 envelope의 실물 |
+| 그 밖의 header | `Anthropic-Beta`(다건), `Anthropic-Version: 2023-06-01`, `X-Claude-Code-Session-Id`, `X-Stainless-Retry-Count`, `X-Stainless-Timeout: 600` | session id는 CAP06 correlation 후보. retry-count는 R07 입력 |
+| **400 응답에 대한 반응** | **동일 POST 2회** | 기준선의 `CLAUDE_CODE_MAX_RETRIES: '0'`가 왜 있는지 설명된다. gateway가 오류를 내면 클라이언트가 시도를 늘린다 — LIVE 예산 산정 시 **cap은 socket을 열기 전 우리 쪽에서** 걸어야 한다는 직접 증거 |
+
+마지막 행은 예산 항목이다. G6→G7 전이 검토 시 이 관측을 근거로 쓴다.
 
 ### 1.1.1 mutation 검증 — 초록이 진짜인지
 
@@ -55,7 +71,7 @@
 | Node 회귀 113개 파일 | `NOT_RUN` | 기준선 신원은 commit SHA이지 통과 개수가 아니다. HANDOFF.md 4장 4단계가 무검토 glob 실행을 금지한다. 비교 기준으로 필요해지는 시점은 G4 이후. 요청 시 파일 단위 offline 실행 가능 |
 | `go test -race` | **`NOT_RUN`** | 이 머신에 cgo·C 툴체인이 없다(`-race requires cgo`, gcc 부재). CI 워크플로가 담당한다. **미실행은 통과가 아니다** |
 | Go CI 워크플로 | **`NOT_RUN`** | `.github/workflows/go.yml`을 작성했으나 실행된 적이 없다. push는 별도 승인 사항이라 하지 않았다 |
-| 대화형 세션 | `NOT_RUN` | `POST /v1/messages`가 없어 성립하지 않는다. 실행하면 첫 모델 요청에서 404를 받는다 |
+| 대화형 세션 | `NOT_RUN` | `/v1/messages`는 인증·경계까지만 통과하고 501을 돌려준다. 본문 처리는 WP03 |
 | native synthetic 통합 (NATIVE_SYNTH) | `NOT_RUN` | 격리 fixture profile을 아직 만들지 않았다. WP06 |
 | 실모델 호출 | `NOT_AUTHORIZED` | 3장 |
 
@@ -106,7 +122,8 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 |---|---|---|
 | WP00 | 기준선·인벤토리·설계 정합성 | **완료** — REL01(738/738, 0/0/0/0) |
 | WP01 | Go workspace, launcher skeleton, fake child | **완료** — 아래 5.1 |
-| **WP02** | ephemeral HTTP·생명주기 | HTTP02–HTTP07 잔여, HTTP09, HTTP11, LIFE06–LIFE07 |
+| WP02 | ephemeral HTTP·생명주기 | **완료** — 아래 5.3 |
+| **WP03** | 최소 text request/response protocol | WIRE01–WIRE10, WIRE12–WIRE15 |
 | WP03 | 최소 text protocol | WIRE01–WIRE10, WIRE12–WIRE15 |
 | WP04 | tool round-trip·delivery barrier | TOOL01–TOOL08, LIFE10, WIRE11 |
 | WP05 | direct transport·read-only auth | AUTH01–AUTH08, LIFE08–LIFE10, LIFE13, REL12 |
@@ -116,7 +133,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | WP09 | live validation·패키징 | 해당 P/S의 live 연계, REL04–REL10. G7–G9 구분 |
 | WP10 | 선택적 archive | REL01, REL09, REL11. **DEFERRED** |
 
-한 번에 모두 착수하지 않는다. 다음 하나는 WP02다.
+한 번에 모두 착수하지 않는다. 다음 하나는 WP03다.
 
 ### 5.1 WP01이 실제로 덮은 테스트 ID
 
@@ -150,6 +167,29 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 가짜 native client는 테스트 바이너리를 재실행한 것이다. 디스크의 실제 실행 파일이고 실제 Windows 커맨드라인을 받으므로 프로세스 생성 왕복은 진짜다. 다만 **양쪽 끝이 Go**라서 측정하는 것은 Go의 quoting 대 Go의 parsing이다.
 
 다른 규칙으로 커맨드라인을 파싱하는 native 바이너리는 이 fixture가 닿지 못한다. 그것이 ARG09이며 `NATIVE_SYNTH` 수준의 질문이다. WP01의 통과를 "실제 claude.exe에서 argv가 보존된다"로 읽지 않는다.
+
+### 5.3 WP02가 실제로 덮은 테스트 ID
+
+| ID | 상태 | 어디서 |
+|---|---|---|
+| HTTP02 동시 두 세션의 port/token/request 격리 | PASS | 주소·token 상이 + registry 분리 확인 |
+| HTTP03 잘못된 token·재사용 token 거부 | PASS | 8개 케이스(부재·빈 Bearer·오타·scheme 누락·소문자 scheme·이중 공백·접미사·**타 세션 token**) |
+| HTTP04 Host/method/content type/payload 경계 | PASS | 405·415·413(실제 32 MiB 초과 전송)·중복 header 400 |
+| HTTP05 `?beta=true` 등 query 처리 | PASS | 측정된 query 포함 4종이 라우팅을 바꾸지 않음 |
+| HTTP06 동일 token 복수 auth header | PASS | 전방 호환. **현재 native는 이 상황을 만들지 않는다**(1.1.2) |
+| HTTP07 서로 다른 auth header 값 거부 | PASS | 타 세션 token·외부 키·Bearer 접두 3종 전부 403 |
+| HTTP09 warmup 응답에 secret 없음 | PASS | 본문 공백, header에 token 부재 |
+| HTTP11 실제 provider 접속 0 | PASS(구조) | upstream 클라이언트 코드가 존재하지 않는다 |
+| LIFE06 한 요청 취소가 형제에 전파되지 않음 | PASS | registry 단위에서 결정적으로. HTTP 층은 등록·해제 배선만 확인 |
+| LIFE07 중복 close·취소 race·닫힌 channel | PASS | 멱등 release, 미등록 cancel=false, 50-goroutine 동시 race |
+| HTTP07 임의 redirect 거부 | `NOT_RUN` | upstream 클라이언트가 없다. WP05 |
+| HTTP08 `/v1/models` query·cache·picker | `NOT_RUN` | discovery 미구현. WP07 |
+
+### 5.4 WP02에서 고친 실제 결함 하나
+
+`Close`가 30초 deadline을 다 쓰고 실패했다. **context 취소는 blocking body read를 풀지 못한다** — handler는 `io.Copy` 안에 있고 `Shutdown`은 그 handler를 기다린다. Node 기준선은 소켓을 destroy해서 이 지점을 통과한다(`readBody`의 `resetAndDestroy`). Go의 대응물은 read deadline이고, `http.ResponseController`로 취소 시 즉시 만료시킨다. 같은 메커니즘이 body 완료 상한(300s, 기준선과 동일)도 함께 맡는다.
+
+`Shutdown`이 그래도 실패하면 `server.Close()`로 강제 해제하되, **원래 실패를 성공으로 덮지 않고 그대로 보고한다.**
 
 ## 6. 기존 Node 증거와의 대응
 

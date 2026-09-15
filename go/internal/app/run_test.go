@@ -345,8 +345,9 @@ func TestChildEnvironmentMatchesTheAcceptedRule(t *testing.T) {
 	}
 	// The address handed to the child is one the child can actually reach. Binding and
 	// telling are two different things and only this asserts the second.
-	if s.report.ReadinessCode != http.StatusOK {
-		t.Errorf("child readiness probe = %d, want 200", s.report.ReadinessCode)
+	// 204, matching what the measured claude 2.1.272 receives from the Node baseline.
+	if s.report.ReadinessCode != http.StatusNoContent {
+		t.Errorf("child readiness probe = %d, want 204", s.report.ReadinessCode)
 	}
 }
 

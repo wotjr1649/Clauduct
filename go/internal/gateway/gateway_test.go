@@ -24,13 +24,24 @@ func start(t *testing.T) *Gateway {
 	return g
 }
 
-func do(t *testing.T, g *Gateway, method, path string, headers map[string]string) *http.Response {
+type request struct {
+	method  string
+	path    string
+	headers map[string]string
+	body    io.Reader
+	noAuth  bool
+}
+
+func do(t *testing.T, g *Gateway, rq request) *http.Response {
 	t.Helper()
-	req, err := http.NewRequest(method, g.BaseURL()+path, nil)
+	req, err := http.NewRequest(rq.method, g.BaseURL()+rq.path, rq.body)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
-	for k, v := range headers {
+	if !rq.noAuth {
+		req.Header.Set("Authorization", "Bearer "+g.Token())
+	}
+	for k, v := range rq.headers {
 		if k == "Host" {
 			req.Host = v
 			continue
@@ -39,14 +50,46 @@ func do(t *testing.T, g *Gateway, method, path string, headers map[string]string
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("Do: %v", err)
+		t.Fatalf("Do %s %s: %v", rq.method, rq.path, err)
 	}
 	t.Cleanup(func() { resp.Body.Close() })
 	return resp
 }
 
-// HTTP01: the listener is on loopback, on an OS-chosen port, and is actually accepting
-// before anyone is told about it.
+func bodyText(t *testing.T, resp *http.Response) string {
+	t.Helper()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	return string(raw)
+}
+
+func messages(body io.Reader) request {
+	return request{
+		method:  http.MethodPost,
+		path:    "/v1/messages?beta=true",
+		headers: map[string]string{"Content-Type": "application/json"},
+		body:    body,
+	}
+}
+
+func waitForActive(t *testing.T, g *Gateway, want int64, why string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, _, active := g.Stats(); active == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	_, _, active := g.Stats()
+	t.Fatalf("active = %d, want %d (%s)", active, want, why)
+}
+
+// --- bind and readiness -------------------------------------------------------------------
+
+// HTTP01: loopback, OS-chosen port, accepting before anyone is told about it.
 func TestBindsLoopbackEphemeralPort(t *testing.T) {
 	g := start(t)
 
@@ -60,12 +103,329 @@ func TestBindsLoopbackEphemeralPort(t *testing.T) {
 	if port == "0" {
 		t.Fatalf("port still 0; the child would be told an address it cannot dial")
 	}
-	if resp := do(t, g, http.MethodHead, "/api/hello", nil); resp.StatusCode != http.StatusOK {
-		t.Fatalf("readiness returned %d before the child was started", resp.StatusCode)
+}
+
+// Measured against claude 2.1.272: readiness arrives as HEAD with no Authorization at all,
+// and the Node baseline answers 204 with keep-alive. Both are contract, not preference.
+func TestReadinessMatchesTheMeasuredClient(t *testing.T) {
+	g := start(t)
+	resp := do(t, g, request{method: http.MethodHead, path: "/api/hello", noAuth: true})
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("status = %d, want 204", resp.StatusCode)
+	}
+	if body := bodyText(t, resp); body != "" {
+		t.Errorf("body = %q, want empty; readiness answers without a credential so it must reveal nothing", body)
+	}
+	for name, values := range resp.Header {
+		if strings.Contains(strings.Join(values, " "), g.Token()) {
+			t.Fatalf("session token appeared in header %s", name)
+		}
 	}
 }
 
-// The listener must not be reachable from another interface on this machine.
+// Readiness does not require a credential, but a wrong one is never quietly accepted.
+func TestReadinessRefusesAWrongCredential(t *testing.T) {
+	g := start(t)
+	resp := do(t, g, request{
+		method:  http.MethodHead,
+		path:    "/api/hello",
+		noAuth:  true,
+		headers: map[string]string{"Authorization": "Bearer not-the-session-token"},
+	})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// --- HTTP03: token -------------------------------------------------------------------------
+
+func TestAuthenticationRefusals(t *testing.T) {
+	g := start(t)
+	other := start(t)
+
+	for _, tc := range []struct{ name, header string }{
+		{"missing", ""},
+		{"empty bearer", "Bearer "},
+		{"wrong token", "Bearer " + strings.Repeat("a", len(g.Token()))},
+		{"no scheme", g.Token()},
+		{"wrong scheme", "Basic " + g.Token()},
+		{"lowercase scheme", "bearer " + g.Token()},
+		// Not "Bearer <token> ": RFC 7230 optional whitespace is not part of a field
+		// value and net/http strips it, so that case asserts the transport, not this code.
+		{"double space after scheme", "Bearer  " + g.Token()},
+		{"token with a suffix", "Bearer " + g.Token() + "x"},
+		{"another session's token", "Bearer " + other.Token()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rq := messages(strings.NewReader("{}"))
+			rq.noAuth = true
+			if tc.header != "" {
+				rq.headers["Authorization"] = tc.header
+			}
+			resp := do(t, g, rq)
+			if resp.StatusCode != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", resp.StatusCode)
+			}
+			if body := bodyText(t, resp); !strings.Contains(body, "LOCAL_SESSION_REQUIRED") {
+				t.Fatalf("body = %q, want the fixed category", body)
+			}
+		})
+	}
+}
+
+func TestValidTokenReachesTheRoute(t *testing.T) {
+	g := start(t)
+	resp := do(t, g, messages(strings.NewReader(`{"model":"x"}`)))
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501: the route is recognised and authenticated, its body handling is WP03", resp.StatusCode)
+	}
+	if body := bodyText(t, resp); !strings.Contains(body, "NOT_IMPLEMENTED") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+// --- HTTP06, HTTP07: more than one credential header ----------------------------------------
+
+// Forward compatibility, measured as not-yet-needed: claude 2.1.272 sends exactly one
+// Authorization header and no x-api-key. A future version presenting the same session
+// token in both must not have discovery broken over it.
+func TestSameTokenInBothHeadersIsAccepted(t *testing.T) {
+	g := start(t)
+	rq := messages(strings.NewReader("{}"))
+	rq.headers["X-Api-Key"] = g.Token()
+
+	resp := do(t, g, rq)
+	if resp.StatusCode != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want the route to be reached; the same token twice is still one credential", resp.StatusCode)
+	}
+}
+
+// HTTP07: a second header carrying anything else is a foreign credential.
+func TestDifferentCredentialInSecondHeaderIsRefused(t *testing.T) {
+	g := start(t)
+	other := start(t)
+
+	for name, value := range map[string]string{
+		"X-Api-Key with a foreign key":   "sk-ant-not-this-session",
+		"X-Api-Key with another session": other.Token(),
+		"X-Api-Key with a bearer prefix": "Bearer " + g.Token(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			rq := messages(strings.NewReader("{}"))
+			rq.headers["X-Api-Key"] = value
+			resp := do(t, g, rq)
+			if resp.StatusCode != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", resp.StatusCode)
+			}
+			if body := bodyText(t, resp); !strings.Contains(body, "UNEXPECTED_CREDENTIAL_SOURCE") {
+				t.Fatalf("body = %q", body)
+			}
+		})
+	}
+}
+
+func TestCookieAndProxyAuthorizationAreRefused(t *testing.T) {
+	g := start(t)
+	for _, name := range []string{"Cookie", "Proxy-Authorization"} {
+		rq := messages(strings.NewReader("{}"))
+		rq.headers[name] = "anything"
+		resp := do(t, g, rq)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status = %d, want 403", name, resp.StatusCode)
+		}
+	}
+}
+
+// --- boundary --------------------------------------------------------------------------------
+
+// DNS rebinding sends a loopback request carrying an attacker's Host. The comparison is to
+// the exact address this session bound, not to "something loopback-ish".
+func TestForeignHostRefused(t *testing.T) {
+	g := start(t)
+	for _, host := range []string{"evil.example", "localhost:1", "127.0.0.1", "[::1]:80"} {
+		rq := messages(strings.NewReader("{}"))
+		rq.headers["Host"] = host
+		resp := do(t, g, rq)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("Host %q: status = %d, want 403", host, resp.StatusCode)
+		}
+	}
+}
+
+func TestProxyAndBrowserHeadersRefused(t *testing.T) {
+	g := start(t)
+	for _, name := range []string{"Origin", "Sec-Fetch-Site", "Forwarded", "X-Forwarded-For", "X-Forwarded-Host"} {
+		rq := messages(strings.NewReader("{}"))
+		rq.headers[name] = "http://evil.example"
+		resp := do(t, g, rq)
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("%s: status = %d, want 403", name, resp.StatusCode)
+		}
+		if body := bodyText(t, resp); !strings.Contains(body, "LOCAL_BOUNDARY_REJECTED") {
+			t.Errorf("%s: body = %q", name, body)
+		}
+	}
+}
+
+// A repeated header name is where request smuggling hides a second value behind the one a
+// reader checks. The measured client repeats nothing.
+func TestDuplicateHeaderNameRefused(t *testing.T) {
+	g := start(t)
+	conn, err := net.Dial("tcp", g.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	raw := "POST /v1/messages HTTP/1.1\r\n" +
+		"Host: " + g.Addr() + "\r\n" +
+		"Authorization: Bearer " + g.Token() + "\r\n" +
+		"Content-Type: application/json\r\n" +
+		"Content-Type: text/plain\r\n" +
+		"Content-Length: 2\r\n" +
+		"\r\n{}"
+	if _, err := conn.Write([]byte(raw)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	got := make([]byte, 256)
+	n, _ := conn.Read(got)
+	if !strings.Contains(string(got[:n]), "400") {
+		t.Fatalf("response = %q, want a 400 for the duplicated header name", got[:n])
+	}
+}
+
+// --- HTTP04: method, media type, payload ------------------------------------------------------
+
+func TestMethodAndMediaTypeBoundaries(t *testing.T) {
+	g := start(t)
+
+	resp := do(t, g, request{method: http.MethodGet, path: "/v1/messages"})
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET /v1/messages = %d, want 405", resp.StatusCode)
+	}
+
+	for _, contentType := range []string{"", "text/plain", "application/x-www-form-urlencoded", "application/jsonx"} {
+		rq := messages(strings.NewReader("{}"))
+		rq.headers["Content-Type"] = contentType
+		resp := do(t, g, rq)
+		if resp.StatusCode != http.StatusUnsupportedMediaType {
+			t.Errorf("Content-Type %q = %d, want 415", contentType, resp.StatusCode)
+		}
+	}
+
+	// A charset parameter is ordinary and must not be treated as a different media type.
+	rq := messages(strings.NewReader("{}"))
+	rq.headers["Content-Type"] = "application/json; charset=utf-8"
+	if resp := do(t, g, rq); resp.StatusCode != http.StatusNotImplemented {
+		t.Errorf("application/json; charset=utf-8 = %d, want the route to be reached", resp.StatusCode)
+	}
+}
+
+type endlessReader struct{}
+
+func (endlessReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = ' '
+	}
+	return len(p), nil
+}
+
+// The ceiling is enforced by reading, not by trusting Content-Length. A measured "ping"
+// body is already 119 KB, so the limit has to be far above that and still be a limit.
+func TestPayloadCeilingIsEnforced(t *testing.T) {
+	g := start(t)
+
+	resp := do(t, g, messages(io.LimitReader(endlessReader{}, maxRequestBytes+1024)))
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413", resp.StatusCode)
+	}
+	if body := bodyText(t, resp); !strings.Contains(body, "INPUT_TOO_LARGE") {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+// --- HTTP05: query ------------------------------------------------------------------------------
+
+// Measured: the client sends ?beta=true. Deciding what a beta means is protocol work, but
+// the query must not make the request unroutable in the meantime.
+func TestQueryStringDoesNotChangeRouting(t *testing.T) {
+	g := start(t)
+	for _, path := range []string{
+		"/v1/messages",
+		"/v1/messages?beta=true",
+		"/v1/messages?beta=true&unknown=1",
+		"/v1/messages?",
+	} {
+		rq := messages(strings.NewReader("{}"))
+		rq.path = path
+		resp := do(t, g, rq)
+		if resp.StatusCode != http.StatusNotImplemented {
+			t.Errorf("%s = %d, want the route to be reached", path, resp.StatusCode)
+		}
+	}
+}
+
+// --- routes ---------------------------------------------------------------------------------------
+
+func TestUnknownRoutesRefuseExplicitly(t *testing.T) {
+	g := start(t)
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/v1/models"}, // discovery is opt-in and unimplemented; not a silent 200
+		{http.MethodPost, "/clauduct/agents"},
+		{http.MethodGet, "/clauduct/status"},
+		{http.MethodGet, "/api/hello"}, // readiness is HEAD only, matching the baseline
+		{http.MethodGet, "/"},
+		{http.MethodPost, "/v1/messages/count_tokens"},
+	} {
+		resp := do(t, g, request{method: tc.method, path: tc.path})
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s %s = %d, want 404", tc.method, tc.path, resp.StatusCode)
+		}
+		if body := bodyText(t, resp); !strings.Contains(body, "UNSUPPORTED_ROUTE") {
+			t.Errorf("%s %s body = %q", tc.method, tc.path, body)
+		}
+	}
+}
+
+// A refusal must not echo the request. Otherwise a crafted path places attacker bytes into
+// a response some other tool may read.
+func TestRefusalDoesNotEchoRequest(t *testing.T) {
+	g := start(t)
+	const marker = "ATTACKER-CONTROLLED-MARKER"
+	resp := do(t, g, request{
+		method:  http.MethodGet,
+		path:    "/" + marker + "?q=" + marker,
+		headers: map[string]string{"X-Probe": marker},
+	})
+	if body := bodyText(t, resp); strings.Contains(body, marker) {
+		t.Fatalf("refusal echoed request content: %q", body)
+	}
+}
+
+// --- HTTP02: isolation ---------------------------------------------------------------------------------
+
+func TestConcurrentSessionsAreIsolated(t *testing.T) {
+	first, second := start(t), start(t)
+
+	if first.Addr() == second.Addr() {
+		t.Fatalf("two sessions bound the same address %s", first.Addr())
+	}
+	if first.Token() == second.Token() {
+		t.Fatalf("two sessions share a token")
+	}
+	if len(first.Token()) < 32 {
+		t.Fatalf("token is %d chars; too short to resist guessing", len(first.Token()))
+	}
+
+	// The registries are separate too: work on one must not appear in the other's counts.
+	do(t, first, messages(strings.NewReader("{}")))
+	if _, _, active := second.Stats(); active != 0 {
+		t.Errorf("second session reports %d active after work on the first", active)
+	}
+}
+
 func TestNotReachableOffLoopback(t *testing.T) {
 	g := start(t)
 	_, port, _ := net.SplitHostPort(g.Addr())
@@ -87,95 +447,78 @@ func TestNotReachableOffLoopback(t *testing.T) {
 	}
 }
 
-// Readiness answers without a credential, so it has to be empty. A body here would be a
-// place for account or upstream state to leak to anything that can reach the port.
-func TestReadinessRevealsNothing(t *testing.T) {
-	g := start(t)
-	resp := do(t, g, http.MethodHead, "/api/hello", nil)
+// --- lifecycle --------------------------------------------------------------------------------------------
 
-	body, _ := io.ReadAll(resp.Body)
-	if len(body) != 0 {
-		t.Fatalf("readiness body = %q, want empty", body)
+// slowUpload starts a request whose body never finishes, so there is a genuine in-flight
+// request to cancel. Reading the body is production work, not a hook added for the test.
+func slowUpload(t *testing.T, g *Gateway) (cancel func(), done chan struct{}) {
+	t.Helper()
+	reader, writer := io.Pipe()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.BaseURL()+"/v1/messages", reader)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
 	}
-	for name, values := range resp.Header {
-		joined := strings.Join(values, " ")
-		if strings.Contains(joined, g.Token()) {
-			t.Fatalf("session token appeared in header %s", name)
+	req.Header.Set("Authorization", "Bearer "+g.Token())
+	req.Header.Set("Content-Type", "application/json")
+
+	done = make(chan struct{})
+	go func() {
+		defer close(done)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
 		}
-	}
+	}()
+	go func() { writer.Write([]byte(`{"messages":[`)) }()
+
+	return func() { cancelCtx(); writer.Close() }, done
 }
 
-// A browser attaches Origin. The native client does not, so refusing it costs nothing.
-func TestBrowserOriginRefused(t *testing.T) {
+// The HTTP wiring of LIFE06: an abandoned request is cancelled and leaves the registry.
+// Sibling isolation itself is proved deterministically in the registry tests; what this
+// adds is that the handler is actually registered and actually released.
+func TestAbandonedRequestIsCancelledAndDrains(t *testing.T) {
 	g := start(t)
-	resp := do(t, g, http.MethodHead, "/api/hello", map[string]string{"Origin": "http://evil.example"})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("Origin request returned %d, want 403", resp.StatusCode)
+
+	cancel, done := slowUpload(t, g)
+	waitForActive(t, g, 1, "the slow upload should be registered while its body is read")
+
+	cancel()
+	<-done
+	waitForActive(t, g, 0, "an abandoned request must leave the registry")
+}
+
+// Shutdown cancels what it owns rather than waiting for it. A bare Shutdown would block on
+// a request stuck reading until the deadline expired.
+func TestCloseCancelsInFlightRatherThanWaiting(t *testing.T) {
+	g, err := Start()
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	addr := g.Addr()
+
+	cancel, done := slowUpload(t, g)
+	defer func() { cancel(); <-done }()
+	waitForActive(t, g, 1, "the slow upload should be in flight before Close")
+
+	ctx, cancelCtx := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancelCtx()
+	started := time.Now()
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 10*time.Second {
+		t.Errorf("Close took %v; it waited for the stuck request instead of cancelling it", elapsed)
+	}
+	if conn, err := net.DialTimeout("tcp", addr, 2*time.Second); err == nil {
+		conn.Close()
+		t.Fatalf("%s still accepting after Close", addr)
 	}
 }
 
-// DNS rebinding sends a loopback request carrying an attacker's Host.
-func TestNonLoopbackHostRefused(t *testing.T) {
-	g := start(t)
-	resp := do(t, g, http.MethodHead, "/api/hello", map[string]string{"Host": "evil.example"})
-	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("foreign Host returned %d, want 403", resp.StatusCode)
-	}
-}
-
-// Nothing else is implemented yet and the gateway has to say so. A silent 200 would let a
-// caller believe a route works; forwarding an unknown path would make this an open relay.
-func TestUnimplementedRoutesRefuseExplicitly(t *testing.T) {
-	g := start(t)
-	for _, tc := range []struct{ method, path string }{
-		{http.MethodPost, "/v1/messages"},
-		{http.MethodGet, "/v1/models"},
-		{http.MethodPost, "/clauduct/agents"},
-		{http.MethodGet, "/api/hello"}, // readiness is HEAD only, matching the baseline
-		{http.MethodGet, "/"},
-		{http.MethodGet, "/../etc/passwd"},
-	} {
-		resp := do(t, g, tc.method, tc.path, nil)
-		if resp.StatusCode != http.StatusNotFound {
-			t.Errorf("%s %s returned %d, want 404", tc.method, tc.path, resp.StatusCode)
-		}
-		body, _ := io.ReadAll(resp.Body)
-		if !strings.Contains(string(body), "UNSUPPORTED_ROUTE") {
-			t.Errorf("%s %s body = %q, want a fixed UNSUPPORTED_ROUTE code", tc.method, tc.path, body)
-		}
-	}
-}
-
-// A refusal must not echo the request back. Otherwise a crafted path places attacker bytes
-// into a response some other tool may read.
-func TestRefusalDoesNotEchoRequest(t *testing.T) {
-	g := start(t)
-	const marker = "ATTACKER-CONTROLLED-MARKER"
-	resp := do(t, g, http.MethodGet, "/"+marker, map[string]string{"X-Probe": marker})
-	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), marker) {
-		t.Fatalf("refusal echoed request content: %q", body)
-	}
-}
-
-// HTTP02: two sessions share nothing. Same-token reuse across sessions is a separate test
-// once a route actually checks the token; what must hold now is that they are different.
-func TestConcurrentSessionsAreIsolated(t *testing.T) {
-	first, second := start(t), start(t)
-
-	if first.Addr() == second.Addr() {
-		t.Fatalf("two sessions bound the same address %s", first.Addr())
-	}
-	if first.Token() == second.Token() {
-		t.Fatalf("two sessions share a token")
-	}
-	if len(first.Token()) < 32 {
-		t.Fatalf("token is %d chars; too short to resist guessing", len(first.Token()))
-	}
-}
-
-// LIFE03: after Close the port is released, not merely unreferenced.
-func TestCloseReleasesThePort(t *testing.T) {
+func TestCloseIsIdempotentAndReleasesThePort(t *testing.T) {
 	g, err := Start()
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -187,12 +530,11 @@ func TestCloseReleasesThePort(t *testing.T) {
 	if err := g.Close(ctx); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if err := g.Close(ctx); err == nil {
-		t.Log("second Close returned nil; idempotent close is acceptable")
+	if err := g.Close(ctx); err != nil {
+		t.Fatalf("second Close: %v", err)
 	}
 
-	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-	if err == nil {
+	if conn, err := net.DialTimeout("tcp", addr, 2*time.Second); err == nil {
 		conn.Close()
 		t.Fatalf("%s still accepting after Close", addr)
 	}

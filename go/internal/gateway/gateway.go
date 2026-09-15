@@ -1,29 +1,63 @@
 // Package gateway owns the ephemeral loopback listener the native client talks to.
 //
-// WP01 scope: bind, hand out a session token, answer readiness, and refuse everything
-// else with a fixed code. There is no /v1/messages here yet and no upstream at all, so
-// this package cannot make a network request even by mistake.
+// WP02 scope: bind, session token, request boundary, authentication, per-request
+// cancellation and shutdown. The routes it recognises answer with a fixed category rather
+// than content — there is still no upstream client anywhere in this module, so a model
+// request is not merely absent, it has no code path to travel.
+//
+// The rules here were measured against the installed claude 2.1.272 rather than recalled:
+// readiness arrives as HEAD /api/hello with no credential at all, inference arrives as
+// POST /v1/messages?beta=true carrying exactly one Authorization: Bearer header, and a
+// trivial prompt already produces a 119 KB body.
 package gateway
 
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"io"
+	"mime"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
+// The largest request body accepted, matching the Node baseline's requestBytes. A measured
+// "ping" is already 119 KB of system prompt and tool schemas, so the ceiling has to leave
+// room for images and long histories while still being a ceiling.
+const maxRequestBytes = 32 * 1024 * 1024
+
+// How long a client may take to finish a body it has already begun. PROPOSED, matching the
+// Node baseline's 300s. Without a ceiling a client that opens a request and stops writing
+// holds its admission slot forever, and enough of those exhaust the cap without ever
+// sending anything.
+const requestBodyTimeout = 300 * time.Second
+
+// Header names that may never appear. cookie and proxy-authorization carry credentials
+// this gateway did not issue and has no use for; a client that sends one is either not the
+// client we think it is or is being driven by something that is not.
+var bannedCredentialHeaders = []string{"Cookie", "Proxy-Authorization"}
+
+// Header names that mean the request did not come straight from the local child.
+var bannedProxyHeaders = []string{"Origin", "Sec-Fetch-Site", "Forwarded"}
+
 // Gateway is one session's listener. Two concurrent sessions share nothing: separate
-// listener, separate port, separate token.
+// listener, separate port, separate token, separate request registry.
 type Gateway struct {
 	listener net.Listener
 	server   *http.Server
 	token    string
+	expected string // the exact Host this session answers to
+	requests *registry
 	served   chan error
+
+	received atomic.Int64
+	refused  atomic.Int64
 
 	closeOnce sync.Once
 	closeErr  error
@@ -45,13 +79,20 @@ func Start() (*Gateway, error) {
 		listener.Close()
 		return nil, err
 	}
-	g := &Gateway{listener: listener, token: token, served: make(chan error, 1)}
+	g := &Gateway{
+		listener: listener,
+		token:    token,
+		expected: listener.Addr().String(),
+		requests: newRegistry(),
+		served:   make(chan error, 1),
+	}
 	g.server = &http.Server{
 		Handler: http.HandlerFunc(g.handle),
 		// Header deadline only. A global WriteTimeout would eventually cut a long
 		// streaming response, and this server is going to carry exactly that. The
 		// per-phase deadlines that replace it belong with the streaming code.
 		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return context.Background() },
 	}
 	go func() {
 		err := g.server.Serve(listener)
@@ -81,54 +122,197 @@ func (g *Gateway) BaseURL() string { return "http://" + g.Addr() }
 // and never written to an error string.
 func (g *Gateway) Token() string { return g.token }
 
+// Stats reports counts only. Nothing here is derived from request content.
+func (g *Gateway) Stats() (received, refused, active int64) {
+	return g.received.Load(), g.refused.Load(), int64(g.requests.count())
+}
+
 func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
-	// A browser attaches Origin; the native client does not. Refusing it costs nothing and
-	// closes the drive-by path where a page on localhost talks to this port.
-	if r.Header.Get("Origin") != "" {
-		refuse(w, http.StatusForbidden, "ORIGIN_REFUSED")
+	g.received.Add(1)
+
+	if bad, ok := g.checkBoundary(r); !ok {
+		g.refuse(w, bad)
 		return
 	}
-	if !loopbackHost(r.Host) {
-		refuse(w, http.StatusForbidden, "HOST_REFUSED")
-		return
-	}
-	// Readiness answers without a credential on purpose, so it stays usable before the
-	// child has anything, and therefore it must reveal nothing: no body, no token, no port
-	// beyond the one the caller already dialled, no account, no upstream state.
+
+	// Readiness answers without a credential because that is what the client sends: the
+	// measured probe carries no Authorization at all. It must therefore reveal nothing —
+	// no body, no token, no account, no upstream state. A credential is still validated
+	// when one is offered, so a wrong token is never quietly accepted anywhere.
 	if r.Method == http.MethodHead && r.URL.Path == "/api/hello" {
-		w.WriteHeader(http.StatusOK)
+		if r.Header.Get("Authorization") != "" && !g.authorized(r) {
+			g.refuse(w, refuseSession)
+			return
+		}
+		w.Header().Set("Connection", "keep-alive")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// Everything else is genuinely not implemented yet. Saying so with a fixed code is the
+
+	if !g.authorized(r) {
+		g.refuse(w, refuseSession)
+		return
+	}
+
+	if r.URL.Path == "/v1/messages" {
+		g.handleMessages(w, r)
+		return
+	}
+
+	// Everything else is genuinely not a route here. Saying so with a fixed code is the
 	// point: a silent 200 would let a caller believe a route works, and forwarding an
-	// unknown path upstream would be an open relay.
-	refuse(w, http.StatusNotFound, "UNSUPPORTED_ROUTE")
+	// unknown path upstream would make this an open relay.
+	g.refuse(w, refuseRoute)
 }
 
-func refuse(w http.ResponseWriter, status int, code string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	// Fixed strings only. Nothing from the request is echoed, so a crafted path or header
-	// cannot place attacker bytes into a response another tool might read.
-	w.Write([]byte(`{"error":{"type":"` + code + `"}}`))
+// checkBoundary establishes that this request came from the local child over the loopback
+// address this session owns, and carries no credential this gateway did not issue.
+func (g *Gateway) checkBoundary(r *http.Request) (refusal, bool) {
+	// A repeated header name is how request smuggling hides a second value behind the one
+	// a reader checks. Nothing the measured client sends repeats, so refusing costs
+	// nothing real and removes the whole class.
+	for _, values := range r.Header {
+		if len(values) > 1 {
+			return refuseHeader, false
+		}
+	}
+	for name := range r.Header {
+		if strings.HasPrefix(strings.ToLower(name), "x-forwarded-") {
+			return refuseBoundary, false
+		}
+	}
+	for _, name := range bannedProxyHeaders {
+		if r.Header.Get(name) != "" {
+			return refuseBoundary, false
+		}
+	}
+	// Host is compared to the exact address this session bound, not to "something
+	// loopback-ish". A request naming any other host reached this socket by a route the
+	// child does not use, which is what DNS rebinding looks like from in here.
+	if r.Host != g.expected {
+		return refuseBoundary, false
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err != nil || !isLoopback(host) {
+		return refuseBoundary, false
+	}
+	for _, name := range bannedCredentialHeaders {
+		if r.Header.Get(name) != "" {
+			return refuseCredential, false
+		}
+	}
+	// x-api-key is the other place the Anthropic protocol carries a credential. The
+	// measured client does not send it, so this is forward compatibility, not an observed
+	// need: a future version may present the same session token in both headers and
+	// discovery must not break over that. A value that is not this session's token is a
+	// foreign credential and is refused — it is never compared loosely and never
+	// forwarded anywhere.
+	if key := r.Header.Get("X-Api-Key"); key != "" && !g.tokenEquals(key) {
+		return refuseCredential, false
+	}
+	return refusal{}, true
 }
 
-func loopbackHost(host string) bool {
-	name := host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		name = h
-	}
-	name = strings.Trim(name, "[]")
-	if strings.EqualFold(name, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(name)
+func isLoopback(host string) bool {
+	ip := net.ParseIP(strings.Trim(host, "[]"))
 	return ip != nil && ip.IsLoopback()
 }
 
-// Close stops accepting, waits for in-flight handlers up to the context deadline, and
-// releases the listener. It reports a cleanup failure as its own error so a caller can
-// keep it separate from whatever the native process did.
+// tokenEquals compares in constant time. A length-dependent early exit would let a caller
+// on this machine learn the token one byte at a time.
+func (g *Gateway) tokenEquals(candidate string) bool {
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(g.token)) == 1
+}
+
+func (g *Gateway) authorized(r *http.Request) bool {
+	header := r.Header.Get("Authorization")
+	rest, found := strings.CutPrefix(header, "Bearer ")
+	if !found {
+		return false
+	}
+	return g.tokenEquals(rest)
+}
+
+func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		g.refuse(w, refuseMethod)
+		return
+	}
+	if !isJSON(r.Header.Get("Content-Type")) {
+		g.refuse(w, refuseMediaType)
+		return
+	}
+
+	// Admission happens before the body is read, so a request that cannot be served does
+	// not first cost the memory of its own payload.
+	_, ctx, release, err := g.requests.admit(r.Context())
+	if err != nil {
+		if errors.Is(err, errGatewayClosed) {
+			g.refuse(w, refuseClosed)
+			return
+		}
+		g.refuse(w, refuseBusy)
+		return
+	}
+	defer release()
+
+	// Cancelling a context does not interrupt a blocking read of the request body: the
+	// handler would sit in io.Copy while shutdown waited for it, which is what a 30s
+	// Close deadline measured before this was here. The Node baseline reaches the same
+	// place by destroying the socket. The stdlib equivalent is a read deadline, so the
+	// deadline is both the cancellation mechanism and the ceiling on how long a client
+	// may take to finish a body it has already started.
+	control := http.NewResponseController(w)
+	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
+	watcherDone := make(chan struct{})
+	defer close(watcherDone)
+	go func() {
+		select {
+		case <-ctx.Done():
+			// Expire the read immediately. The copy below returns, sees ctx.Err and
+			// reports the request as cancelled rather than as a malformed body.
+			_ = control.SetReadDeadline(time.Now())
+		case <-watcherDone:
+		}
+	}()
+
+	// The body is read and discarded rather than ignored. Reading enforces the size
+	// ceiling for real, and leaving a client mid-upload to receive a response it did not
+	// finish asking for produces a reset rather than an answer. Decoding it is WP03's job.
+	limited := http.MaxBytesReader(w, r.Body, maxRequestBytes)
+	if _, err := io.Copy(io.Discard, limited); err != nil {
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.As(err, &tooLarge):
+			g.refuse(w, refuseTooLarge)
+		case ctx.Err() != nil:
+			// The client went away. Nothing will read this, but the status is recorded
+			// so a cancelled request is counted as cancelled rather than as a success.
+			g.refuse(w, refuseCancelled)
+		default:
+			g.refuse(w, refuseHeader)
+		}
+		return
+	}
+
+	// The query is preserved and available; the measured client sends ?beta=true. Deciding
+	// what a beta means is protocol work and belongs with the code that reads the body.
+	g.refuse(w, refuseUnimplemented)
+}
+
+func isJSON(contentType string) bool {
+	if contentType == "" {
+		return false
+	}
+	media, _, err := mime.ParseMediaType(contentType)
+	return err == nil && media == "application/json"
+}
+
+// Close stops accepting, cancels the requests this gateway owns, waits for handlers up to
+// the context deadline, and releases the listener.
+//
+// The order is the contract: refuse new work, then cancel what is in flight, then wait. A
+// bare Shutdown waits for handlers to finish on their own, so one request blocked on a
+// slow read would hold the whole exit open until the deadline expired.
 //
 // Idempotent, and it has to be: shutdown can be reached from a normal exit and from a
 // cancellation path at the same time, and the serve result can only be received once. A
@@ -136,7 +320,14 @@ func loopbackHost(host string) bool {
 // cleanup it was trying to perform.
 func (g *Gateway) Close(ctx context.Context) error {
 	g.closeOnce.Do(func() {
+		g.requests.closeAll(errShuttingDown)
 		shutdownErr := g.server.Shutdown(ctx)
+		if shutdownErr != nil {
+			// A handler that will not return must not keep the port bound. Force the
+			// connections closed so the resource is released, and still report the
+			// graceful failure rather than replacing it with a success.
+			g.server.Close()
+		}
 		serveErr := <-g.served
 		if shutdownErr != nil {
 			g.closeErr = shutdownErr

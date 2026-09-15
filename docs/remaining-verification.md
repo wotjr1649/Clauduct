@@ -11,7 +11,7 @@
 | 미검증 | 증거가 없다. 통과로 표시하지 않는다 |
 | 복구 불가 | 당시 필요한 증거가 보존되지 않아 과거 원인을 확정할 수 없다. 수정 완료나 정상 동작을 뜻하지 않는다 |
 | 차단 | guard·권한·정책으로 검사를 실행할 수 없다. 우회하지 않고 미검증으로 남긴다 |
-| 범위밖 | 사용자가 이번 목표에서 제외했다 |
+| 범위밖·이관 | 사용자가 이번 목표의 자동 시험에서 뺐거나 사용자 실사용 확인으로 넘겼다. PASS로 바꾸지 않고 제외·이관으로 기록한다 |
 
 감독하 판정은 2026-09-11 **PASS**다. 조건이던 "실제 실패 1회와 그 복구 관측"이 세션 46b6af24에서 충족됐다. [실사용 검증 기록](audit-2026-09-11-live-session-verification.md).
 
@@ -64,7 +64,7 @@
 | native fallback 차단 | 완료 | 통제 실험 — 같은 주입 자극에 설정만 다른 두 세션에서 대조군만 `REQUEST_STREAM_FALSE`를 냈다(prepare 실패 1 대 0). [실험 기록](audit-2026-09-12-fallback-arms.md). 자식 env·settings 동시 적용은 `test-launcher-native`, 주입 경로는 `test-fallback-verification` 19개 | 여전히 효과의 관측이지 바이너리 안 분기의 직접 관측은 아니다. 이 클라이언트 버전(0.154.0)에 대한 판정이며 조건식이 바뀌면 다시 돌려야 한다 | `--verify-fallback blocked\|allowed`로 재현한다. 클라이언트가 올라가면 다시 본다 |
 | 내용 전달 후 재시도 금지(도구 중복 실행 방지) | 완료 | `test-native-gateway` 재시도 울타리 2건. 울타리를 제거하면 실패하는 것을 확인 | downstream 전달 전 재시도는 유지되므로 upstream 계산은 중복될 수 있다 | 없음 |
 | 요청 형식 거부에서 upstream 미시도 | 완료 | `test-request-diagnostics` 69개 검사 / loopback 34회, `sends=0` | 없음 | 없음 |
-| 취소·등록 교체·형제 격리 | 조건부 | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개. run-04 취소 3건 중 자식 2건은 `clientDisconnected: false`, 1건은 클라이언트 선이탈. 2026-09-12 인수인계에 보존된 사용자 보고: UI에서 직접 취소했고 오류가 없었다 | 사용자 UI 보고의 세션·요청 ID·취소 시각은 미기록이다. 이 관측을 등록 교체·형제 격리 전체의 실제 검증으로 확대하지 않는다. 원격 계산 중단과 전송 데이터 회수는 보장하지 않는다 | 릴리즈 검증에서는 UI 관측과 gateway 취소·격리 증거를 각각 판정한다 |
+| 취소·등록 교체·형제 격리 | 조건부 — **유지**(2026-09-14 범위 변경이 건드리지 않음) | [취소 감사](audit-2026-09-10-active-agent-cancellation.md), `test-agent-selection`, `test-completion-selection` 46개. run-04 취소 3건 중 자식 2건은 `clientDisconnected: false`, 1건은 클라이언트 선이탈. 2026-09-12 인수인계에 보존된 사용자 보고: UI에서 직접 취소했고 오류가 없었다 | 사용자 UI 보고의 세션·요청 ID·취소 시각은 미기록이다. 이 관측을 등록 교체·형제 격리 전체의 실제 검증으로 확대하지 않는다. 원격 계산 중단과 전송 데이터 회수는 보장하지 않는다 | 취소와 형제 격리는 F12 후속의 최소 수용 사례에서 함께 판정한다(3.1절). 등록 교체와 UI 관측은 별도로 남는다 |
 | 정상 종료 자원 정리 | 완료 | [정리 경합 감사](audit-2026-09-11-cleanup-close-race.md), `test-cancel-snapshot` 6개, 세션 0d5d6174의 cleanup 9개 true | 창을 강제 종료하면 종료 JSON이 남는다고 보장하지 않는다 | 없음 |
 | 비대화형 작업·재개·오류 복구 | 완료 | [릴리즈 검증](release-readiness.md): 실제 새 프로세스의 session ID 일치·공개 코드 회상, MCP 1회 실행 후 응답 중 오류·명시적 재개·도구 미중복·정리 9개 true | 모든 서버 장애의 무중단 처리를 보장하지 않는다. 전달 후 오류는 명시적 재개가 필요하다 | 최종 릴리즈 구성으로 회귀·배포 검증 |
 | native background 작업·TaskStop | 완료 | 같은 릴리즈 검증: 실제 Bash background 1회·TaskOutput 1회, 별도 TaskStop 뒤 worker PID 종료 확인 | 사용자 UI 키 입력 시각·Agent 등록 교체·형제 격리 전체의 실제 검증은 아님 | 기존 취소·형제 격리 조건부 판정 유지 |
@@ -78,20 +78,56 @@
 | Claude 별칭·전체 모델 ID 매핑 | 완료 | [감사](audit-2026-09-11-unmapped-agent-model.md), `test-agent-selection`의 8개 route 확인과 블록 단위 생략 검사 | 사용자가 구형 모델을 쓰지 않기로 해 구형 명명 위험은 닫혔다. 새 계열이 나오면 그 자식만 fail-closed 되고 턴은 보존된다 | 없음 |
 | 신규 beta 헤더 내성 | 완료 | `test-native.mjs`의 통과·기록 검사. 이름만으로는 거부하지 않고 형식 오류만 거부한다. 판정 27개는 `judgedBetaLabels`로 기록 | 알 수 없는 beta가 실제로 계약을 바꾸면 더 뒤 단계에서 거부된다. 그 beta가 켜졌다고 가정한 클라이언트 동작은 보장하지 않는다 | 종료 JSON의 `unknownBetaNames`를 보고 allowlist를 보완한다 |
 | Workflow 자식 선택 | 완료 | 992c0794 병렬 성공, `test-workflow-selection` 36개, 그리고 실제 실행 관측 — 자식 둘에 명시한 `luna`/`terra`가 각각 `gpt-5.6-luna`/`gpt-5.6-terra`로 도달했다(자식 metadata와 transcript 직접 대조). [라우팅 관측](audit-2026-09-12-workflow-routing.md) | 중첩은 경로가 없다 — Workflow 자식에게 Agent 도구가 없어 `StructuredOutput`만 쓴다. 커스텀 agentType은 적용 지점이 그 중첩뿐이라 미검증으로 남고, Workflow 자식 자체는 `workflow-subagent`로 고정이라 타입을 받지 않는다. resume은 캐시 적중 경로만 확인했다. effort는 스크립트가 주지 않고 부모에게서 상속된다(`effort: high` 실측) | 커스텀 agentType 라우팅과 캐시 미적중 resume은 정상 사용 중 관측되면 기록한다. 새 시험을 만들지 않는다 |
-| 자동 압축 실제 발동(400K / 320K) | 미검증 | 축소 창(100000)에서의 발동은 메인 3건·자식 1건이 실측됐다(아래 관측 기록). 현재 기본값에서의 발동 증거는 없다 | 현재 기본값(400K/320K)에서의 발동과 압축 후 기억·도구 이력 보존이 미확인. 자식별 압축은 1건 실측으로 더 이상 전면 미확인이 아니다 | 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
+| 자동 압축 실제 발동(400K / 320K) | **이관** — 사용자 실사용 검증 | 축소 창(100000)에서의 발동은 메인 3건·자식 1건이 실측됐다(아래 관측 기록). 현재 기본값에서의 발동 증거는 없다 | 현재 기본값(400K/320K)에서의 발동과 압축 후 기억·도구 이력 보존은 여전히 미확인이며 이관은 PASS가 아니다. 2장의 설정값과 변환·라우팅 검사는 유지한다 | 출하 전 자동 시험에서 제외한다. 정상 개발 중 `compact_boundary`가 관측되면 기록한다. 채우기용 반복 생성은 하지 않는다 |
 | 웹 검색 경로 | 완료 | [브리지 감사](audit-2026-09-11-web-search-bridge.md). 실사용 세션 a6e7f1ad 요청 13: `webSearchAnswered=true`, `webSearchCalls=1`, `webSearchLinks=15`, `firstContentBlock=server_tool_use`, 모델이 출처를 인용 | 게이트웨이가 side query를 직접 답한다. `alpha/`는 알파 경로라 사라지거나 모양이 바뀔 수 있다. 그때는 `SEARCH_UNAVAILABLE`·`SEARCH_HTTP_ERROR`·`SEARCH_RESPONSE_SHAPE`로 이름이 붙어 실패하며 조용한 빈 결과가 되지 않는다 | 탐지가 빗나가면 세션당 1회 stderr 통지가 뜬다. 그때 실제 요청 모양을 확보한다 |
 | WebFetch | 완료 | 세션 4851a91a에서 `https://example.com` 정상 성공. 요청 3개(결정·apply·후속) 중 `effort: high`인 apply 호출이 텍스트를 반환 | 이전 한 번의 `No response from model`은 대상 URL 미기록으로 재현 불가. 게이트웨이는 거부한 적이 없다 | 재발 시 `effort: high` 요청의 타이밍으로 귀속한다 |
 | 신규 기능 감지 | 완료 | `src/scan-native-features.mjs`, 현재 관측 50 / 미분류 0 | 바이너리 문자열 기반이라 동적 기능은 잡지 못한다 | Claude 업데이트 후 한 번 실행 |
 | 장기 자원 안정성 | 완료 | run-04(2c4ceab9) 종료 JSON 실측 — 2시간 37분·408요청·자식 9명 뒤 `cleanup` 9개 전부 true, `gatewayIdle` true, `agentRegistrationsEvicted` 0, `agentRegistrationsExpired` 1. [종료 진단 분석](audit-2026-09-11-run-04-exit-diagnostics.md). 합성 근거는 `test-native` 47개, `test-request-admission` | admission이 메모리 기반이라 같은 부하에서 요청 4건이 6~7분 대기 끝에 클라이언트 이탈로 끝났다. 죽지는 않았으나 지연은 실재한다 | socket·timer·listener를 OS 수준에서 별도 실측하지는 않았다 |
 | HTTP 서버 수준 거부 집계 | 완료 | `lifetime.transportRejections`, `test-native-gateway`의 Expect 검사 | 연결 단계에서 끊긴 바이트의 원인까지는 남기지 않는다 | 없음 |
 | native 기능 지원 범위 | 완료 | [전수 대조](native-feature-support.md), [릴리즈 검증](release-readiness.md)의 실제 Read/Edit·Bash·PowerShell·stdio MCP·PNG·WebFetch·WebSearch | 모든 사용자 plugin·hook·UI 조합을 실측한 것은 아님 | 남은 개별 범위를 완료와 구분 |
-| 인증·계정 경계 | 조건부 | `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 실계정 회전과 프로세스 내 계정 변경 거부는 합성 검사만 통과했다 | 인증 파일을 조회하지 않는다 |
-| 보안 경계(위조·재사용·중단·경로) | 조건부 | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md) | 아래 차단 항목 참조 | 없음 |
-| 동적 symlink·junction 검사 | 차단 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고 | 실제 링크 우회 방어는 미검증으로 남는다 | 다른 셸·경로로 재현하지 않는다 |
+| 인증·계정 경계 | 갈림 — 정상 갱신 판정은 **제외**, 401/403·재시도·비밀·계정 혼입 경계는 **유지**(조건부) | 2026-09-15 실행한 `src/test-credential-recovery.mjs` 23개 검사 exit 0: `401-stable`→`UNAUTHENTICATED`, `403`→`UPSTREAM_HTTP_ERROR`/`SEARCH_HTTP_ERROR`, `limited-401`→`REQUEST_BUDGET`, `401-account-change`·`changed-between-requests`→`CREDENTIAL_ACCOUNT_CHANGED`, 23행 전부 `secretFieldsAbsent` true, `actualCredentialReads` 0. 같은 결과가 제외 범위를 `normalOAuthRefresh: NOT_RUN`으로 스스로 보고한다. 그 밖에 `test-client-version` loopback 12회, [요청 형식 감사](audit-2026-09-11-request-shape.md)의 계정 경계 절 | 정상 갱신(실계정 회전)은 사용자 Codex CLI 로그인 확인으로 제외됐다. 유지 범위인 프로세스 내 계정 변경 거부는 합성 loopback 검사만 통과했다 | 인증 파일을 조회하지 않는다. 제외된 정상 갱신을 PASS로 적지 않는다 |
+| 보안 경계(위조·재사용·중단·경로) | 조건부 — **유지**(사유 교체) | `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, [중단 metadata 수정](audit-2026-09-10-stopped-agent-selection.md). 차단된 것은 이 행 전체가 아니라 동적 링크 한 갈래다 — `src/test-completion-selection.mjs`의 `--symlink` 블록은 단일 assertion이고 위조·재사용·중단 검사는 기본 실행에서 돈다 | 위조·재사용·중단은 로컬 합성 검사로만 판정했다. 동적 링크 우회 방어는 출하 선행 조건에서 빠졌을 뿐 미검증으로 남는다(아래 행) | 없음. 차단 항목이 범위밖이 됐다는 이유로 완료로 올리지 않는다 |
+| 동적 symlink·junction 검사 | **범위밖** — 2026-09-14 사용자 지시로 제외 | `test-completion-selection --symlink`와 `test-workflow-selection`이 `notRun`으로 보고. 제외 근거는 [필수성 판단](release-priority-assessment-2026-09-14.md) | 실제 링크 우회 방어는 미검증으로 남는다. 차단 이력을 PASS로 바꾸지 않으며 제품의 경로·신원·기록 재사용 보호 코드는 유지한다 | 다른 셸·경로로 재현하지 않는다 |
 | SDD 무인 3주기 | 완료 | run-04(2c4ceab9)이 THREE-CYCLE-PASS — [run-04 감사](audit-2026-09-11-three-cycle-run-04.md). 커밋 3개, 독립 재실행 63/63 pass, 자식 9명, 개입 0. 종료 JSON도 확보해 [분석](audit-2026-09-11-run-04-exit-diagnostics.md)했고, 보존된 자식 행은 전부 `model: gpt-5.6-luna` / `effort: max`이며 `requestedModel`·`requestedEffort`와 일치한다 | 게이트웨이가 보낸 라우팅까지가 관측이다. upstream이 그 effort로 실제 추론했는지는 이쪽에서 관측할 수 없다. 자식 9명이 개별로 다 보존된 것도 아니다(보존은 first-8·last-8과 최근 요청) | 없음 |
 | Claude 모델 전체 지원·app-server 전환·버전 pin | 범위밖 | 사용자 지정. 별칭·전체 ID 매핑은 2026-09-11에 사용자가 별도 승인했다 | — | — |
 | 실제 인증 갱신·수시간 연속 실행 | 범위밖 | 사용자 지정 | — | — |
 | 코드 리팩토링(파일 분리·추상화) | 범위밖 | 재현 결함이나 측정 근거가 없어 수행하지 않았다 | 큰 함수의 결합도는 남아 있다 | 결함이나 측정 근거가 생기면 그때 착수한다 |
+
+### 3.1 2026-09-14 범위 변경 대조 (2026-09-15 정리)
+
+권위 있는 출처는 [필수성 판단](release-priority-assessment-2026-09-14.md)의 판단표다. 아래는 그 판단을 위 표에 반영한 결과다. **HOLD 해제도 출하 PASS 표기도 아니다** — 근거만 모으고 선언은 사용자가 한다.
+
+**먼저 시간 순서.** [진행 기록](unattended-release-progress.md)은 최신 문단이 위에 쌓이는 구조라 파일 순서가 시간 순서가 아니다. `docs/unattended-release-progress.md:11`의 "F12·F14·F22로 전체 HOLD"는 그보다 **나중**인 `docs/unattended-release-progress.md:7`의 범위 변경 이전 문단이다. 같은 파일 `docs/unattended-release-progress.md:5`가 "아래 이전 마감의 F22 포함 '세 공백'은 범위 변경 전 이력"이라고 직접 표시하고, 뒤쪽 문단이 스스로를 "후속 사용자 변경"이라 부른다. 두 표시가 일치한다. 문단 하나만 읽고 HOLD 사유를 세면 틀린다.
+
+| 행 | 판정 | 근거 |
+|---|---|---|
+| 자동 압축 실제 발동(400K/320K) | **이관** | `docs/unattended-release-progress.md:17` — 사용자 실사용 검증으로 이관하고 기본 압축 발동을 요구하는 F10·F18 및 다른 행의 해당 부분을 출하 전 자동 시험에서 제외한다. 설정값·변환·라우팅 검사는 유지하므로 2장의 계약 값은 그대로다 |
+| 동적 symlink·junction 검사 | **제외(범위밖)** | `docs/unattended-release-progress.md:7`, `docs/release-completion-2026-09-14.md:11`. 판단표는 "F22 전체의 신원·경로·기록 재사용 검증을 없애는 뜻은 아니다"라고 못박으므로 차단 이력과 제품 경로 보호는 보존한다 |
+| 인증·계정 경계 | **갈림 — 제외 + 유지** | `docs/unattended-release-progress.md:17`이 정상 갱신 판정과 갱신 주체 구현·검증을 제외하고, `docs/unattended-release-progress.md:11`이 401/403·인증 부재의 정확한 보고, 무한 재시도 금지, 비밀 미노출, 다른 계정 혼입 차단을 유지로 못박는다. 2026-09-15 `src/test-credential-recovery.mjs` 실행이 유지 범위를 23개 검사로 확인했고, 같은 결과가 제외 범위를 `normalOAuthRefresh: NOT_RUN`으로 보고한다 |
+| 보안 경계(위조·재사용·중단·경로) | **유지 — 사유 교체** | 조건부 사유였던 "아래 차단 항목 참조"는 그 항목이 범위밖이 되면서 **출하 선행 조건으로서는** 사라졌다. 그래도 완료로 올리지 않는다: 판단표가 차단 이력을 PASS로 바꾸지 말라고 적고, 이 행의 "경로" 하위 범위에는 동적 링크 증거가 여전히 없다. 확인한 사실은 차단 범위가 좁다는 것이다 — `--symlink` 블록은 단일 assertion이고 나머지 위조·재사용·중단 검사는 기본 실행에서 돈다 |
+| 취소·등록 교체·형제 격리 | **유지** | 범위 변경이 건드리지 않았다. 다만 판단표의 F12 최소 수용 사례가 "형제 혼입"과 "사용자 취소"를 명시하므로 이 두 하위 범위는 F12 후속에서 함께 판정하고 따로 추적하지 않는다. 등록 교체는 "오래된 요청 알림"과 겹칠 뿐 같지 않아 별도로 남는다 |
+
+사용자 UI 취소의 세션·요청 ID와 취소 시각은 클라이언트 측 정보라 gateway 기록으로 복원되지 않는다. F12의 명시적 수집(`TaskOutput`)·메인 중계로 옮기면 취소가 gateway 자기 기록에 남아 UI 보고 의존이 줄어들 것으로 **추정**한다 — 측정하지 않았다. 원격 계산 중단과 전송 데이터 회수의 미보장은 F12와 무관하게 남는다.
+
+### 3.2 지금 남은 필수
+
+2026-09-14 변경을 모두 반영하면 출하 선행 조건으로 남는 것은 **둘**이다. F 정의는 [심층 리서치](research-2026-09-12-unattended-release-gates.md)의 F01~F23 표를 기준으로 하며 요약을 기준으로 삼지 않는다.
+
+| 남은 필수 | 왜 남았나 | 무엇이면 닫히나 |
+|---|---|---|
+| F12 중 자식 결과·실패를 올바른 작업에 연결 | 판단표는 **전달 방식**(native가 중간 부모에게 보내는 직접 알림)은 필수가 아니라고 정했지만 결과 회수·실패 보존·중복 처리 방지는 필수로 유지했다. 기존 메인 중계 성공은 고정 공개 성공 fixture라 일반 실패·취소까지 완료로 확대하지 않는다 | 정상 성공, 자식 실패, 중복 알림, 오래된 요청 알림, 형제 혼입, 사용자 취소의 여섯 사례. 고정 공개 응답과 native로 먼저 본다 |
+| F14 중 저장 기록이 남은 Workflow 정상 재개 | 일반 편집·Agent 사용에 필수는 아니나 기존 Workflow 지원과 장애 후 개발 지속 약속을 유지하려면 해결 대상으로 남는다 | 정상 접근 조건 확정과 실행 세대별 신원 연결. `nothing to resume`을 기록 전체 소실과 같은 뜻으로 쓰지 않는다 |
+
+출하 선행 조건이 **아닌** 것은 다음과 같다. 전부 PASS가 아니라 제외·이관으로 기록한다.
+
+| 항목 | 기록 |
+|---|---|
+| F22 동적 링크 실행 검사 | 범위밖(사용자 지시). 차단 이력 보존, 제품 경로 보호 유지 |
+| 알려진 HTTP/TCP 안정성 | 범위밖(사용자 지시). FAIL 이력과 실사용 위험 보존 |
+| 정상 인증 갱신 | 제외 — 사용자가 Codex CLI 로그인 기준으로 확인 |
+| 기본 400K/320K 압축 발동 | 이관 — 사용자 실사용 검증 |
+| 4h → 24h×3 → 72h 단계와 장기 시험 전용 실행 | 범위밖 |
+| Workflow 기록 전체 소실 뒤 자동 복원 | 필수 아님 — native도 자동으로 다시 시작하지 않는다 |
 
 ## 4. 최신 증거
 

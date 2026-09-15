@@ -125,10 +125,12 @@
 
 | 남은 항목 | 상태 | 왜 남았나 |
 |---|---|---|
-| F18 압축·재시작·자식 실패의 **결합** 사건 | NOT_RUN | 셋을 각각 검사했으나 겹친 사건의 효과·기록 보존 증거로 합산하지 않는다. 기본 압축 발동 부분은 이미 제외돼 있다 |
+| F18 압축·재시작·자식 실패의 **결합** 사건 | 조건부 | 2026-09-15에 selection 계층의 결합 검사를 넣었다 — `src/test-combined-compaction-event.mjs` 35개 통과. 셋을 겹쳐도 각 다리의 판정이 바뀌지 않고(자식 실패 여부가 어떤 후행 기록 형태의 결과도 바꾸지 않음), 거짓 완료·relay 0이며, 재시작은 디스크 기록만으로 재개하지 않는다(`reject:CALL`). 남은 것은 native가 실제로 쓰는 압축 기록의 형태이며 그것은 실측이 필요하다. 기본 압축 발동 부분은 이미 제외돼 있다 |
 | 새 모델 실호출 예산 | BLOCKED | 사용자가 요구한 사전 출력 상한을 현재 구독 전송이 보장하지 못한다. 검증된 전송 계약 없이 상한 옵션을 제거하지 않는다 |
 | bypass 환경의 UI·hooks·plugin 통합, 프롬프트 캐시 실제 적중 | 잔여 | native 소유 hooks/MCP 정상·거부와 launcher 계약 증거는 있으나 통합 관측이 없다 |
 | F01 TLS 실제 검사 | NOT_RUN | 범위 내 기존 증거는 재사용했고 TLS 실제 준비 실패 이력은 보존한다 |
+
+F18 결합 검사가 드러낸 것 하나를 따로 적는다. 부모 transcript 말미에 압축이 **`system` 경계 행**으로 남으면 복귀 스캔의 user/assistant 필터에 걸러져 자식 완료 알림이 그대로 읽힌다. 그러나 압축 요약이 **`user`나 `assistant` 행**으로 남으면 그 행이 알림을 밀어내 복귀가 `CALL`로 막힌다. 거짓 완료를 만들지 않으므로 안전한 방향의 실패이고, 이 경우 명시적 재개가 기존 대체 경로다(3장 "비대화형 작업·재개·오류 복구" 행). **native가 둘 중 어느 형태로 쓰는지는 측정하지 않았다** — 전자면 영향이 없고 후자면 압축 뒤 알림 기반 복귀가 막힌다. 실측 전까지 이 둘을 구분해 말한다.
 
 출하 선행 조건이 **아닌** 것은 다음과 같다. 전부 PASS가 아니라 제외·이관으로 기록한다.
 
@@ -205,7 +207,7 @@ Invoke-ClauductNodeTests -Root D:/AIDEV/Clauduct -TimeoutSeconds 60 -TestFiles @
   'src/test-cancel-snapshot.mjs', 'src/test-client-version.mjs', 'src/test-compact-policy.mjs')
 ```
 
-모든 `src/test-*.mjs`를 무검토 glob으로 실행하지 않는다. fixture·자식 프로세스·네트워크·쓰기 대상을 먼저 확인하고 필요한 파일만 나열한다. 선택·완료·Workflow·보안 표면을 수정했으면 `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, `test-request-admission`을 포함한다. 이 실행기는 환경 allowlist·시간 제한·단일 concurrency를 제공하지만 OS 보안 sandbox가 아니다.
+모든 `src/test-*.mjs`를 무검토 glob으로 실행하지 않는다. fixture·자식 프로세스·네트워크·쓰기 대상을 먼저 확인하고 필요한 파일만 나열한다. 선택·완료·Workflow·보안 표면을 수정했으면 `test-agent-selection`, `test-completion-selection`, `test-workflow-selection`, `test-request-admission`, `test-combined-compaction-event`를 포함한다. 이 실행기는 환경 allowlist·시간 제한·단일 concurrency를 제공하지만 OS 보안 sandbox가 아니다.
 
 ### 5.2 실제 실행 후 증거 수집
 

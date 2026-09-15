@@ -157,3 +157,81 @@ func TestOnlyARecognisedVersionLineIsAccepted(t *testing.T) {
 		})
 	}
 }
+
+// verdict is the only place the probe results are compared, so it is the only place the
+// conclusion is drawn. A wrong reading here is a wrong answer to the question the run cost
+// real money to ask.
+func TestTheVerdictFollowsFromTheResults(t *testing.T) {
+	ok := func(o outcome) outcome { o.ok = true; return o }
+	good := ok(outcome{terminal: "response.completed", outputTokens: 83})
+	refused := outcome{category: "UPSTREAM_HTTP_ERROR", status: 400}
+
+	for name, tc := range map[string]struct {
+		control string
+		capped  []outcome
+		want    string
+	}{
+		"the control failed": {"bad", []outcome{good, good}, "INVALID"},
+
+		// One value refused says nothing: it may be below a minimum. Two do.
+		"refused at every value": {"good", []outcome{refused, refused}, "REJECTED"},
+
+		// The case this third request exists for. Sixteen refused, forty-eight honoured
+		// would mean the parameter works and only the small value did not.
+		"refused small, honoured larger": {"good", []outcome{refused,
+			ok(outcome{terminal: "response.incomplete", outputTokens: 48, reason: "max_output_tokens"})},
+			"HONOURED at 48"},
+
+		"honoured at the first value": {"good", []outcome{
+			ok(outcome{terminal: "response.incomplete", outputTokens: 16, reason: "max_output_tokens"}),
+			good}, "HONOURED at 16"},
+
+		"accepted and then exceeded": {"good", []outcome{
+			ok(outcome{terminal: "response.completed", outputTokens: 83}), good}, "IGNORED at 16"},
+
+		"accepted but never reached": {"good", []outcome{
+			ok(outcome{terminal: "response.completed", outputTokens: 9}), good}, "INCONCLUSIVE"},
+
+		"refused for another reason": {"good", []outcome{
+			outcome{category: "RATE_LIMITED", status: 429},
+			outcome{category: "RATE_LIMITED", status: 429}}, "INCONCLUSIVE"},
+
+		"stopped for another reason": {"good", []outcome{
+			ok(outcome{terminal: "response.incomplete", outputTokens: 9, reason: "content_filter"}),
+			good}, "INCONCLUSIVE"},
+
+		"nothing was sent": {"good", nil, "INCONCLUSIVE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			control := outcome{category: "UPSTREAM_HTTP_ERROR", status: 500}
+			if tc.control == "good" {
+				control = good
+			}
+			got := verdict(control, tc.capped)
+			if !strings.HasPrefix(got, tc.want) {
+				t.Fatalf("verdict = %q, want it to start %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The cap has to be smaller than what the prompt will produce, or both worlds return
+// response.completed and the run measures nothing.
+func TestThePromptWantsToSayMoreThanTheCapAllows(t *testing.T) {
+	// Not a token count -- a floor. Forty comma-separated numbers cannot be forty-eight
+	// tokens whatever the tokeniser, so every cap tried is guaranteed to be reached.
+	for _, limit := range probeLimits {
+		if limit >= 60 {
+			t.Fatalf("a cap of %d against a prompt asking for 40 numbers may never be reached", limit)
+		}
+	}
+	// Two values, or one refusal cannot be told from a minimum.
+	if len(probeLimits) < 2 {
+		t.Fatalf("probeLimits = %v; one value cannot distinguish a refused parameter from a "+
+			"value below the minimum", probeLimits)
+	}
+	if !strings.Contains(probePrompt, "40") {
+		t.Fatalf("probePrompt = %q no longer asks for a long answer; re-check it against probeLimit",
+			probePrompt)
+	}
+}

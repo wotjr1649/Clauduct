@@ -44,6 +44,10 @@ func (d Disposition) String() string {
 type Failure struct {
 	Category    string
 	Disposition Disposition
+	// Status is the HTTP status this came from, or zero for a connection-level failure.
+	// The category says what kind of failure it was; the number says which one, and two
+	// failures in the same category can need different answers.
+	Status int
 	// RetryAfter is the delay the server asked for, when it named one. Zero means it did
 	// not, not that it asked for none.
 	RetryAfter time.Duration
@@ -70,6 +74,15 @@ const MaxGatewayRetries = 0
 //
 // now is supplied so the deferred deadline is computed from one reading of the clock.
 func ClassifyStatus(status int, header http.Header, now time.Time) Failure {
+	return classify(status, header, now).withStatus(status)
+}
+
+func (f Failure) withStatus(status int) Failure {
+	f.Status = status
+	return f
+}
+
+func classify(status int, header http.Header, now time.Time) Failure {
 	switch {
 	case status == http.StatusUnauthorized:
 		// The credential may have been refreshed by the user's own tool between attempts,

@@ -209,3 +209,24 @@ type url_error struct{ Err error }
 
 func (u *url_error) Error() string { return u.Err.Error() }
 func (u *url_error) Unwrap() error { return u.Err }
+
+// A category says what kind of failure it was; the number says which one. Two failures in
+// the same category can need different answers, and the probe's whole purpose is telling a
+// 400 from a 429.
+func TestTheStatusIsCarriedOnTheRefusal(t *testing.T) {
+	for _, status := range []int{400, 401, 403, 404, 408, 409, 413, 429, 500, 502, 503, 504} {
+		got := ClassifyStatus(status, header(), base)
+		if got.Status != status {
+			t.Fatalf("ClassifyStatus(%d).Status = %d, want %d", status, got.Status, status)
+		}
+	}
+	// A named delay must not lose it either.
+	if got := ClassifyStatus(429, header("Retry-After", "30"), base); got.Status != 429 {
+		t.Fatalf("a deferred failure reported status %d, want 429", got.Status)
+	}
+	// A connection-level failure has no status, and zero must mean "none" rather than a
+	// number someone might compare against.
+	if got := ClassifyTransport(context.Canceled); got.Status != 0 {
+		t.Fatalf("a transport failure reported status %d, want 0", got.Status)
+	}
+}

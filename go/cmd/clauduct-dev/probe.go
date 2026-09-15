@@ -37,13 +37,26 @@ import (
 // rather than a way to drift past the cap without noticing.
 const probeAttempts = 3
 
-// probePrompt is the shortest thing that still requires the model to generate. Anything
-// longer costs more and measures the same thing.
-const probePrompt = "reply ok"
+// probePrompt has to want to produce more than probeLimit allows.
+//
+// A two-word answer would finish inside the cap either way, and both a backend that
+// honoured the cap and one that ignored it would send response.completed — the measurement
+// would come back identical in both worlds. Counting to forty is a few hundred tokens on
+// the cheapest route and makes the difference visible.
+const probePrompt = "Count from 1 to 40, separated by commas. Numbers only."
 
-// probeLimit is the cap under test. Sixteen is small enough that a backend honouring it
-// must truncate a normal reply, which is what makes the difference observable.
-const probeLimit = 16
+// probeInstruction is the developer turn. The baseline always sends one, and the fixed
+// top-level instructions string points at it, so a request without one is not the request
+// this bridge actually makes.
+const probeInstruction = "You are a test fixture. Answer exactly what is asked, nothing else."
+
+// probeLimits are the caps under test, and there are two of them for a reason.
+//
+// A single value cannot tell "the parameter is refused" from "that value is below the
+// minimum". Sixteen is the smallest value the public Responses API documents; forty-eight
+// is comfortably above any plausible floor and still well under what the prompt produces,
+// so a backend that accepts the parameter at all has to truncate at it.
+var probeLimits = []int{16, 48}
 
 func usageProbe(out io.Writer) int {
 	budget := upstream.ApprovedBudget()
@@ -95,25 +108,66 @@ func probe(args []string, out, errOut io.Writer) int {
 	transport := upstream.NewDirect(provider, ledger, version, budget.Model, budget.Effort)
 
 	// The control first. If the shape the baseline has always sent does not work today,
-	// nothing the second case reports means anything.
-	failures := 0
-	for _, run := range []struct {
-		label string
-		limit int
-	}{
-		{"without max_output_tokens", 0},
-		{"with max_output_tokens", probeLimit},
-	} {
-		result := send(transport, budget, run.limit)
-		fmt.Fprintf(out, "%-26s %s\n", run.label, result)
-		if !result.ok {
-			failures++
-		}
+	// nothing the other cases report means anything.
+	control := send(transport, budget, 0)
+	fmt.Fprintf(out, "%-28s %s\n", "no max_output_tokens", control)
+
+	var capped []outcome
+	for _, limit := range probeLimits {
+		result := send(transport, budget, limit)
+		capped = append(capped, result)
+		fmt.Fprintf(out, "%-28s %s\n", fmt.Sprintf("max_output_tokens: %d", limit), result)
 	}
 
 	attempts, inferences, refused := ledger.Spent()
 	fmt.Fprintf(out, "spent   %d attempts, %d inferences, %d refused\n", attempts, inferences, refused)
-	return failures
+	fmt.Fprintf(out, "reading %s\n", verdict(control, capped))
+
+	// A backend that refuses the parameter is an answer, not a failure. What would make
+	// this run worthless is the control not working.
+	if !control.ok {
+		return 1
+	}
+	return 0
+}
+
+// verdict states what the run established. It is the only place the results are compared,
+// so the reasoning sits here rather than in whoever reads the output.
+//
+// The capped cases are read in order and the first informative one wins: one value being
+// refused says nothing on its own, because it may simply be below a minimum, but one value
+// being honoured settles the question for all of them.
+func verdict(control outcome, capped []outcome) string {
+	if !control.ok {
+		return "INVALID — the baseline request shape did not work, so nothing else here says anything"
+	}
+	if len(capped) == 0 {
+		return "INCONCLUSIVE — nothing was sent with the parameter"
+	}
+
+	refusedAll := true
+	for i, result := range capped {
+		limit := probeLimits[i]
+		switch {
+		case result.ok && result.reason == "max_output_tokens":
+			return fmt.Sprintf("HONOURED at %d — the backend stopped at the cap. "+
+				"A pre-generation limit is available", limit)
+		case result.ok && result.outputTokens > int64(limit):
+			return fmt.Sprintf("IGNORED at %d — accepted and then exceeded. "+
+				"The parameter is not a cap", limit)
+		case result.ok:
+			return fmt.Sprintf("INCONCLUSIVE — accepted at %d but the answer fit inside it, "+
+				"so the cap was never reached", limit)
+		}
+		if result.status != 400 {
+			refusedAll = false
+		}
+	}
+	if refusedAll {
+		return "REJECTED — the backend refuses max_output_tokens at every value tried, " +
+			"so this is the parameter and not a minimum. The baseline is right not to send it"
+	}
+	return "INCONCLUSIVE — the capped requests failed for reasons other than the parameter"
 }
 
 // outcome is what one probe request established. Every field is a number or a value from a
@@ -149,10 +203,13 @@ func send(transport upstream.Transport, budget upstream.Budget, limit int) outco
 	body := map[string]any{
 		"model":        budget.Model,
 		"instructions": "Follow the developer instructions in the conversation.",
-		"input": []any{map[string]any{
-			"role":    "user",
-			"content": []any{map[string]any{"type": "input_text", "text": probePrompt}},
-		}},
+		"input": []any{
+			map[string]any{"role": "developer", "content": probeInstruction},
+			map[string]any{
+				"role":    "user",
+				"content": []any{map[string]any{"type": "input_text", "text": probePrompt}},
+			},
+		},
 		"reasoning": map[string]any{"effort": budget.Effort},
 		"include":   []string{"reasoning.encrypted_content"},
 		"stream":    true,
@@ -173,7 +230,7 @@ func send(transport upstream.Transport, budget upstream.Budget, limit int) outco
 	if err != nil {
 		var failure upstream.Failure
 		if errors.As(err, &failure) {
-			return outcome{category: failure.Category}
+			return outcome{category: failure.Category, status: failure.Status}
 		}
 		if category := auth.CategoryOf(err); category != "" {
 			return outcome{category: category}
@@ -211,9 +268,15 @@ func read(response *upstream.Response) outcome {
 					// it was told to, and the reason says so.
 					result.terminal = "response.incomplete"
 					result.reason = incompleteReason(event.Raw)
+					if usage, err := codex.DecodeUsage(event.Raw); err == nil {
+						result.outputTokens = usage.OutputTokens
+					}
 				case codex.Failed:
 					result.ok = false
 					result.terminal = "response.failed"
+				case codex.ErrorEvent:
+					result.ok = false
+					result.terminal = "error event"
 				}
 			}
 		}

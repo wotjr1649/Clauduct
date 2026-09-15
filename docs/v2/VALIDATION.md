@@ -5,9 +5,9 @@
 | 항목 | 값 |
 |---|---|
 | 실행한 V2 Go 테스트 | **585개 통과** (subtest 포함), 11 package |
-| mutation 검증 | **153건 주입** (battery 8개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 WP 절에 기록했다 |
-| 실모델 호출 | **11회.** `gpt-5.6-luna` / effort `low`. 1.3절(상한) · 1.4절(wire) |
-| 잔여 승인 예산 | **9회** (누적 승인 20회 중 11회 사용) |
+| mutation 검증 | **174건 주입** (battery 9개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
+| 실모델 호출 | **17회.** `gpt-5.6-luna` / effort `low`. 1.3절(상한) · 1.4절(wire) |
+| 잔여 승인 예산 | **3회** (누적 승인 20회 중 17회 사용) |
 
 ### 1.1 실행한 것
 
@@ -182,7 +182,7 @@ fixture를 쓴 사람이 `completed.output`에 item을 넣었고, 디코더가 �
 
 `max_output_tokens`와 정확히 같은 모양의 결함이고, 실호출 1회에 드러났다. 이것이 WP06 착수 전에 도구 wire를 실호출로 검증하자고 한 이유이며, 판단은 맞았다.
 
-#### 고칠 방향 — barrier 원칙은 살아 있다
+#### 수정 완료 — barrier 원칙은 살아 있다
 
 barrier가 보장하는 것은 **"완료 전에는 클라이언트에 아무것도 전달되지 않는다"**이고 그것은 유지된다. 바뀌는 것은 데이터의 **출처**다.
 
@@ -193,7 +193,58 @@ barrier가 보장하는 것은 **"완료 전에는 클라이언트에 아무것�
 | arguments | `completed.output` | 누적 + `.done` 대조 (이미 구현) |
 | **전달 시점** | `completed` | **`completed` — 바뀌지 않는다** |
 
-즉 barrier는 구조적(만들어지는 자리가 뒤)에서 시간적(만들어지되 붙잡아 둠)으로 바뀐다. 기준선이 하는 방식이다. **이것은 WP04 핵심의 재작업이므로 사용자에게 보고하고 진행한다.**
+즉 barrier는 구조적(만들어지는 자리가 뒤)에서 시간적(만들어지되 붙잡아 둠)으로 바뀐다. 기준선이 하는 방식이다.
+
+#### 1.4.1 재작업 결과 — 4차 실행에서 SOUND
+
+사용자 승인(2026-09-15) 후 재작업했다.
+
+```
+text         6 frames, reply 2 chars
+tool call    6 frames, call_id 29 chars, arguments {}
+tool result  13 frames, reply 16 chars, tool result reached the model
+reading      SOUND — request, tool call and recorded result all survive the real backend
+```
+
+**세 번째 줄이 결정적이다.** 도구가 돌려준 값 `BUILD-TOKEN-7Q4M`(정확히 16자)를 모델이 되풀이했다. 모델이 **다른 방법으로는 알 수 없는 값**이므로, `function_call` + `function_call_output` 인코딩이 실제로 모델에 도달했다는 뜻이다. 인코딩은 `native-protocol.mjs:378`·`397`과 대조해 동일함을 확인했다.
+
+재작업의 내용은 다음과 같다.
+
+| 항목 | 내용 |
+|---|---|
+| item 생성 | `output_item.added` 스냅샷에서. index는 조밀·오름차순이어야 하고 id는 중복될 수 없다 |
+| item 확정 | `output_item.done`이 권위 있는 최종본이되, **같은 item이어야 한다** — id·kind가 바뀌면 둘 중 하나가 다른 것을 말하고 있다 |
+| 여는 스냅샷의 관대함 | 열리는 item은 신원만 있어도 된다(arguments는 뒤에 흐른다). 닫히는 것은 완전해야 한다. 기준선의 `functionSnapshot(first, true)` 구분과 같다 |
+| arguments | 누적 후 `.done` 이벤트와, 그리고 item의 최종 스냅샷과 **둘 다** 대조. 흐른 적이 없으면 불일치가 아니다 — backend는 통째로 줄 권리가 있다 |
+| **전달 시점** | `response.completed`. **바뀌지 않았다** |
+| 미완료 item | 응답이 끝났는데 item이 열려 있으면 거부한다. 부분만 전달하면 backend가 썼다고 말한 적 없는 것을 건네는 것이다 |
+| completion 교차검사 | 빈 배열은 모순이 아니다(아무것도 말하지 않은 것). 비어 있지 않은데 스트림과 다르면 거부 |
+| 보류 상한 | `maxOutputItems = 1024`. Builder는 **방출된 것**을 묶지만 보류는 그 앞이다 |
+
+#### 1.4.2 fixture가 세 층에서 같은 거짓말을 하고 있었다
+
+재작업하면서 fixture를 실제 wire로 바꿨다. 그러자 기존 테스트가 무더기로 깨졌다 — **그것이 요점이다.**
+
+| 깨진 것 | 무엇을 담고 있었나 |
+|---|---|
+| `completedWith(...)` | `completed.output`에 item을 넣었다. 실제로는 빈 배열이고 item은 `output_item.*`로 온다 |
+| `event(codex.OutputItemAdd, '{"type":"response.output_item.added"}')` | `output_index`도 `item`도 없는 **자리표시자**다. 이벤트가 무시되고 있었으므로 아무것도 주장하지 않았다 |
+| `functionCall(...)` | item `id`가 없었다. 실제 item은 client가 결과를 보내는 `call_id`와 **별개의 id**를 갖고, arguments 스트림은 그 id로 묶인다 |
+| `TestUnknownEventIsRefused` | `function_call_arguments.delta`를 "거부되어야 함"으로 명시했다 |
+| `TestRepeatedCallIdentifierIsRefused` | 같은 call_id에 같은 item id를 써서, item 중복 방어와 call_id 방어를 구분하지 못했다 |
+
+마지막 것은 고치면서 **테스트가 둘로 갈렸다.** item 중복(backend 자체 장부)과 call_id 중복(client가 주소를 지정할 수 있는가)은 다른 방어다.
+
+#### 1.4.3 mutation — 21건, 4건이 살아남았다
+
+| 살아남은 결함 | 왜 | 조치 |
+|---|---|---|
+| completion이 다른 **개수**를 말해도 통과 | 교차검사 테스트가 전부 1:1이라 개수가 어긋나는 경우가 없었다 | 2개 vs 1개 사례 추가 |
+| 닫히는 item이 arguments를 빠뜨려도 통과 | 여는 스냅샷의 관대함만 테스트했고 **닫는 쪽의 엄격함**은 아무도 안 봤다 | call_id·name·arguments·content 누락 4종 추가 |
+| 음수 output_index 허용 | **중복 검사였다.** `openItem`의 `Index != len(t.order)`가 음수를 전부 잡으므로 디코더의 검사는 결과를 바꿀 수 없다 | 테스트가 아니라 **중복을 삭제했다.** 닿을 수 없는 guard는 guard가 아니다 |
+| `item`이 없는 이벤트 허용 | 빈 item을 보류하면 그 index가 무엇이었든 응답이 그만큼 짧아진다 | item 없음·null·kind 없음·index 없음 4종 추가 |
+
+compiler-only 1건도 있었다 — 교차검사 mutation이 컴파일되지 않았다. 컴파일되는 두 형태로 나눴다. 재실행: **21건 주입, 미검출 0, compiler-only 0.**
 
 ## 2. 네 단계 실행 강도
 
@@ -426,7 +477,7 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 | TOOL08 inactive historical tool과 신규 inactive call 구분 | PASS | 철회된 도구를 이름으로 가진 기록은 해독되고, 그 이름의 **새 호출**은 거부 |
 | WIRE11 malformed tool arguments 미전달 | PASS | 8종(비JSON·잘림·배열·문자열·숫자·trailing·중복 key·빈 값) |
 | LIFE10 semantic delivery 이후 자동 replay 0 | PASS | WP05에서 재판정했다. `MaxGatewayRetries = 0`이고 `Direct.Execute`에 재시도 루프가 없다 |
-| TOOL03·TOOL04·WIRE11 (fixture 기준) | **재판정 필요** | 1.4절. fixture가 `completed.output`에 item을 넣어 전제를 공유하고 있었다. 실제 backend는 그 배열을 비운다 |
+| TOOL03·TOOL04·WIRE11 | **재판정 완료** | 1.4.1절. fixture를 실제 wire로 바꿔 재작성했고, 도구 왕복이 실제 backend에서 통과했다 |
 | TOOL01 Read/Edit/Write/Bash 실제 왕복 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
 | TOOL02 permission 거부가 실행으로 바뀌지 않음 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
 | TOOL06 전달 후 실패 시 자동 재실행 0 | `NOT_RUN` | NATIVE_SYNTH. WP06 |

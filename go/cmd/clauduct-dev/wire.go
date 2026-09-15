@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -104,6 +105,14 @@ type exchange struct {
 	// result actually reached the model is that it could say something it had no other way
 	// to know.
 	echoed bool
+	// reply accumulates the text so the search runs once over the whole thing.
+	//
+	// Deltas arrive in fragments, and a sixteen-character token splits across them as
+	// readily as not. Testing each delta on its own reported PARTIAL for a round trip that
+	// had in fact worked -- a probe that cannot see the answer is not evidence about the
+	// answer. Bounded because it is a buffer holding backend bytes; nothing prints it.
+	reply  []byte
+	replyN int
 }
 
 func (e exchange) String() string {
@@ -127,6 +136,7 @@ func (e exchange) String() string {
 	if e.callID != "" {
 		text += fmt.Sprintf(", call_id %d chars, arguments %s", len(e.callID), e.arguments)
 	}
+	text += fmt.Sprintf(", reply %d chars", e.replyN)
 	if e.echoed {
 		text += ", tool result reached the model"
 	}
@@ -232,6 +242,8 @@ func translate(response *upstream.Response, request *anthropic.Request) exchange
 		}
 		if readErr != nil {
 			if readErr == io.EOF {
+				result.echoed = bytes.Contains(result.reply, []byte(probeToolResult))
+				result.reply = nil
 				return result
 			}
 			result.category = upstream.ClassifyTransport(readErr).Category
@@ -266,8 +278,11 @@ func readFrame(frame anthropic.Frame, result *exchange) {
 		result.callID = body.ContentBlock.ID
 		result.arguments = argumentShape(body.ContentBlock.Input)
 	}
-	if strings.Contains(body.Delta.Text, probeToolResult) {
-		result.echoed = true
+	if body.Delta.Text != "" {
+		result.replyN += len(body.Delta.Text)
+		if len(result.reply) < maxReplyScan {
+			result.reply = append(result.reply, body.Delta.Text...)
+		}
 	}
 }
 
@@ -350,3 +365,7 @@ func safeName(value string) string {
 	}
 	return value
 }
+
+// maxReplyScan bounds the buffer the token is looked for in. Far more than enough to find a
+// short token near the start of an answer, and a fixed ceiling on backend bytes held.
+const maxReplyScan = 64 * 1024

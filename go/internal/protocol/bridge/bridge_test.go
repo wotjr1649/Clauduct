@@ -3,6 +3,7 @@ package bridge
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -33,18 +34,27 @@ const minimalRequest = `{"model":"gpt-6-astra","max_tokens":100000,"stream":true
 	`"messages":[{"role":"user","content":"ping"}]}`
 
 // run feeds a whole event sequence and collects the frames it produced.
-func run(t *testing.T, events ...stream.Event) ([]anthropic.Frame, error) {
+func run(t *testing.T, parts ...any) ([]anthropic.Frame, error) {
 	t.Helper()
-	translator := NewTranslatorFor(decodeRequest(t, minimalRequest))
-	var frames []anthropic.Frame
-	for _, e := range events {
-		produced, err := translator.Accept(e)
-		if err != nil {
-			return frames, err
+	return runFor(t, decodeRequest(t, minimalRequest), parts...)
+}
+
+// flatten lets a fixture be one event or a sequence of them. A completed response is
+// several events on the wire, and a helper that can only return one cannot reproduce it.
+func flatten(t *testing.T, parts []any) []stream.Event {
+	t.Helper()
+	var events []stream.Event
+	for _, part := range parts {
+		switch value := part.(type) {
+		case stream.Event:
+			events = append(events, value)
+		case []stream.Event:
+			events = append(events, value...)
+		default:
+			t.Fatalf("not an event or a sequence of them: %T", part)
 		}
-		frames = append(frames, produced...)
 	}
-	return frames, nil
+	return events
 }
 
 func frameTypes(frames []anthropic.Frame) []string {
@@ -71,11 +81,65 @@ const completedOK = `{"type":"response.completed","response":{"id":"resp_1",` + 
 
 const completedNoUsage = `{"type":"response.completed","response":{"id":"resp_1"}}`
 
-// completedWith builds a completed payload carrying the given output items.
-func completedWith(items ...string) stream.Event {
+// completedWith produces the events a backend actually sends to deliver items.
+//
+// It used to build one response.completed carrying an output array. Measured 2026-09-15:
+// this backend's completed output array is empty on every response, and items arrive as
+// output_item.added / output_item.done around the stream. The old fixture agreed with the
+// decoder that read it and with the tests that checked it -- three layers, one wrong
+// premise -- so it is now the real shape.
+func completedWith(items ...string) []stream.Event {
+	var events []stream.Event
+	for i, item := range items {
+		events = append(events, itemAdded(i, openingOf(item)), itemDone(i, item))
+	}
+	return append(events, stream.Event{Type: codex.Completed, Raw: []byte(
+		`{"type":"response.completed","response":{"id":"resp_1",` + usageReported + `,"output":[]}}`)})
+}
+
+// completedStating builds a completion that does state its output, which this backend never
+// does. It exists to check that a backend contradicting its own stream is refused.
+func completedStating(items ...string) stream.Event {
 	return stream.Event{Type: codex.Completed, Raw: []byte(
 		`{"type":"response.completed","response":{"id":"resp_1",` + usageReported + `,"output":[` +
 			strings.Join(items, ",") + `]}}`)}
+}
+
+// messageItem is the backend's finished account of a text item.
+func messageItem(id string, texts ...string) string {
+	parts := make([]any, 0, len(texts))
+	for _, text := range texts {
+		parts = append(parts, map[string]any{"type": "output_text", "text": text})
+	}
+	encoded, _ := json.Marshal(map[string]any{"id": id, "type": "message", "content": parts})
+	return string(encoded)
+}
+
+func itemAdded(index int, item string) stream.Event {
+	return stream.Event{Type: codex.OutputItemAdd, Raw: []byte(fmt.Sprintf(
+		`{"type":"response.output_item.added","output_index":%d,"item":%s}`, index, item))}
+}
+
+func itemDone(index int, item string) stream.Event {
+	return stream.Event{Type: codex.OutputItemDone, Raw: []byte(fmt.Sprintf(
+		`{"type":"response.output_item.done","output_index":%d,"item":%s}`, index, item))}
+}
+
+// openingOf is the same item as the backend first announces it: identity, and none of the
+// content that has not been written yet.
+func openingOf(item string) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(item), &fields) != nil {
+		return item
+	}
+	opening := map[string]json.RawMessage{}
+	for _, name := range []string{"id", "type"} {
+		if value, ok := fields[name]; ok {
+			opening[name] = value
+		}
+	}
+	encoded, _ := json.Marshal(opening)
+	return string(encoded)
 }
 
 // callable builds a request whose tool definitions make the given names callable.
@@ -97,11 +161,11 @@ func callable(names ...string) *anthropic.Request {
 }
 
 // runFor feeds events through a translator that knows what is callable.
-func runFor(t *testing.T, request *anthropic.Request, events ...stream.Event) ([]anthropic.Frame, error) {
+func runFor(t *testing.T, request *anthropic.Request, parts ...any) ([]anthropic.Frame, error) {
 	t.Helper()
 	translator := NewTranslatorFor(request)
 	var frames []anthropic.Frame
-	for _, e := range events {
+	for _, e := range flatten(t, parts) {
 		produced, err := translator.Accept(e)
 		if err != nil {
 			return frames, err
@@ -116,11 +180,15 @@ func TestTextResponseProducesTheClientSequence(t *testing.T) {
 	frames, err := run(t,
 		event(codex.Created, `{"type":"response.created","response":{"id":"resp_abc"}}`),
 		event(codex.InProgress, `{"type":"response.in_progress"}`),
-		event(codex.OutputItemAdd, `{"type":"response.output_item.added"}`),
+		itemAdded(0, `{"id":"msg_1","type":"message"}`),
 		event(codex.ContentPartAdd, `{"type":"response.content_part.added"}`),
 		textDelta(0, "Hel"),
 		textDelta(0, "lo"),
 		textDone(0, "Hello"),
+		// The item closes before the response does, and its finished text is checked
+		// against what streamed. Against the real backend this check had never run: it
+		// only fired for a message item in the completed output, and none ever arrives.
+		itemDone(0, messageItem("msg_1", "Hello")),
 		event(codex.Completed, `{"type":"response.completed","response":{"id":"resp_abc","usage":{"input_tokens":12,"output_tokens":3}}}`),
 	)
 	if err != nil {
@@ -185,7 +253,7 @@ func TestSnapshotMustMatchTheDeltas(t *testing.T) {
 			t.Fatalf("Accept: %v", err)
 		}
 	})
-	for name, events := range map[string][]stream.Event{
+	for name, events := range map[string][]any{
 		"snapshot longer than the deltas":  {textDelta(0, "ab"), textDone(0, "abcd")},
 		"snapshot shorter than the deltas": {textDelta(0, "abcd"), textDone(0, "ab")},
 		"snapshot differs entirely":        {textDelta(0, "abcd"), textDone(0, "wxyz")},
@@ -596,10 +664,13 @@ func TestStreamedToolArgumentsAreAccountedForNotRefused(t *testing.T) {
 	}
 
 	// And then the call arrives whole, from the completed output.
-	frames, err := translator.Accept(
-		completedWith(functionCall("call_1", "Read", `{"file_path":"a.txt"}`)))
-	if err != nil {
-		t.Fatalf("Accept(completed): %v", err)
+	var frames []anthropic.Frame
+	for _, e := range completedWith(functionCall("call_1", "Read", `{"file_path":"a.txt"}`)) {
+		produced, err := translator.Accept(e)
+		if err != nil {
+			t.Fatalf("Accept(%s): %v", e.Type, err)
+		}
+		frames = append(frames, produced...)
 	}
 	whole := false
 	for _, frame := range frames {
@@ -626,7 +697,7 @@ func TestArgumentsThatDisagreeWithTheStreamAreRefused(t *testing.T) {
 		"whitespace differs":   {[]string{`{"file_path": "a.txt"}`}, `{"file_path":"a.txt"}`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			events := []stream.Event{}
+			events := []any{}
 			for _, delta := range tc.deltas {
 				events = append(events, argsDelta("fc_1", delta))
 			}

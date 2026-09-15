@@ -3,6 +3,7 @@ package bridge
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -14,12 +15,19 @@ import (
 // functionCall builds one output item. The id and name are JSON-encoded rather than
 // interpolated, so a hostile identifier produces well-formed JSON carrying a bad id —
 // which is what puts the identifier check under test instead of the JSON decoder.
-func functionCall(id, name, arguments string) string {
-	encodedID, _ := json.Marshal(id)
-	encodedName, _ := json.Marshal(name)
-	encodedArgs, _ := json.Marshal(arguments)
-	return `{"type":"function_call","call_id":` + string(encodedID) +
-		`,"name":` + string(encodedName) + `,"arguments":` + string(encodedArgs) + `}`
+// functionCall is a finished tool call item. Real items carry an id of their own, distinct
+// from the call_id the client addresses a result to, and the streaming argument events are
+// keyed by it -- so a fixture without one cannot reproduce the wire.
+func functionCall(callID, name, arguments string) string {
+	return functionItem("item_"+callID, callID, name, arguments)
+}
+
+func functionItem(id, callID, name, arguments string) string {
+	encoded, _ := json.Marshal(map[string]any{
+		"id": id, "type": "function_call", "call_id": callID,
+		"name": name, "arguments": arguments,
+	})
+	return string(encoded)
 }
 
 func blockAt(t *testing.T, frames []anthropic.Frame, kind string, nth int) map[string]any {
@@ -52,10 +60,10 @@ func TestNoToolFrameEscapesBeforeCompletion(t *testing.T) {
 	for _, e := range []stream.Event{
 		event(codex.Created, `{"type":"response.created","response":{"id":"r"}}`),
 		event(codex.InProgress, `{"type":"response.in_progress"}`),
-		event(codex.OutputItemAdd, `{"type":"response.output_item.added"}`),
+		itemAdded(0, `{"id":"msg_1","type":"message"}`),
 		textDelta(0, "let me look"),
 		textDone(0, "let me look"),
-		event(codex.OutputItemDone, `{"type":"response.output_item.done"}`),
+		itemDone(0, messageItem("msg_1", "let me look")),
 	} {
 		frames, err := translator.Accept(e)
 		if err != nil {
@@ -217,12 +225,26 @@ func TestNewCallMustNameACallableTool(t *testing.T) {
 // A repeated call identifier makes two calls indistinguishable, and a result addressed to
 // it could be matched to either.
 func TestRepeatedCallIdentifierIsRefused(t *testing.T) {
+	// Two distinct items, so the item-level duplicate guard cannot be what refuses them.
+	// This has to reach the call identifier itself.
 	_, err := runFor(t, callable("Read"),
 		completedWith(
-			functionCall("call_1", "Read", `{}`),
-			functionCall("call_1", "Read", `{}`)))
+			functionItem("item_a", "call_1", "Read", `{}`),
+			functionItem("item_b", "call_1", "Read", `{}`)))
 	if !errors.Is(err, anthropic.ErrUnsupportedToolCall) {
 		t.Fatalf("err = %v, want UNSUPPORTED_TOOL_CALL", err)
+	}
+}
+
+// And a repeated item is refused before it gets that far. The two guards are separate: one
+// is about the backend's own bookkeeping, the other about what the client can address.
+func TestRepeatedOutputItemIsRefused(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		completedWith(
+			functionItem("item_a", "call_1", "Read", `{}`),
+			functionItem("item_a", "call_2", "Read", `{}`)))
+	if !errors.Is(err, ErrOutputItemOrder) {
+		t.Fatalf("err = %v, want INVALID_OUTPUT_ITEM", err)
 	}
 }
 
@@ -543,8 +565,8 @@ func TestCallIdentifierShapeIsChecked(t *testing.T) {
 func TestStreamingItemEventsProduceNoToolFrames(t *testing.T) {
 	translator := NewTranslatorFor(callable("Read"))
 	for _, e := range []stream.Event{
-		event(codex.OutputItemAdd, `{"type":"response.output_item.added","item":{"type":"function_call","call_id":"call_1","name":"Read","arguments":"{}"}}`),
-		event(codex.OutputItemDone, `{"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_1","name":"Read","arguments":"{}"}}`),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{}`)),
 		event(codex.ContentPartDon, `{"type":"response.content_part.done"}`),
 	} {
 		frames, err := translator.Accept(e)
@@ -556,5 +578,271 @@ func TestStreamingItemEventsProduceNoToolFrames(t *testing.T) {
 				t.Fatalf("%s released a tool frame before completion: %s", e.Type, frame.Data)
 			}
 		}
+	}
+}
+
+// --- the barrier, after the 2026-09-15 rework -------------------------------------------
+//
+// The guarantee is unchanged: nothing reaches the client before response.completed. What
+// changed is where the items come from. They used to be read out of the completion's output
+// array, which this backend leaves empty on every response, so no tool call could ever be
+// built. They now accumulate from the output_item events and are held until the completion
+// releases them.
+
+// The barrier stated as a measurement. Every event a tool call produces, and not one client
+// frame, until the completion arrives.
+func TestNothingIsReleasedUntilTheResponseCompletes(t *testing.T) {
+	translator := NewTranslatorFor(callable("Read"))
+
+	for _, e := range []stream.Event{
+		event(codex.Created, `{"type":"response.created","response":{"id":"r"}}`),
+		event(codex.InProgress, `{"type":"response.in_progress"}`),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+		argsDelta("fc_1", `{"file_`),
+		argsDelta("fc_1", `path":"a.txt"}`),
+		argsDone("fc_1", `{"file_path":"a.txt"}`),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"file_path":"a.txt"}`)),
+	} {
+		frames, err := translator.Accept(e)
+		if err != nil {
+			t.Fatalf("Accept(%s): %v", e.Type, err)
+		}
+		if len(frames) != 0 {
+			t.Fatalf("%s released %d frames before completion: %v", e.Type, len(frames), frames)
+		}
+	}
+
+	frames, err := translator.Accept(stream.Event{Type: codex.Completed,
+		Raw: []byte(`{"type":"response.completed","response":{"id":"r",` + usageReported + `,"output":[]}}`)})
+	if err != nil {
+		t.Fatalf("Accept(completed): %v", err)
+	}
+	if len(frames) == 0 {
+		t.Fatal("the completion released nothing; the call never reached the client")
+	}
+	start := blockAt(t, frames, "content_block_start", 0)
+	block := start["content_block"].(map[string]any)
+	if block["type"] != "tool_use" || block["id"] != "call_1" || block["name"] != "Read" {
+		t.Fatalf("content_block = %v", block)
+	}
+}
+
+// The measured shape: a completion whose output array is empty still delivers, because the
+// items came from the stream. A build that reads only the completion delivers nothing.
+func TestAnEmptyCompletionOutputStillDelivers(t *testing.T) {
+	frames, err := runFor(t, callable("Read"),
+		completedWith(functionCall("call_1", "Read", `{"file_path":"a.txt"}`)))
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	start := blockAt(t, frames, "content_block_start", 0)
+	if block := start["content_block"].(map[string]any); block["type"] != "tool_use" ||
+		block["id"] != "call_1" {
+		t.Fatalf("content_block = %v", block)
+	}
+}
+
+// A response that finishes while an item is still open is short by exactly that item.
+// Taking the partial one would deliver something the backend never said it had written.
+func TestACompletionWithAnUnfinishedItemIsRefused(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+		stream.Event{Type: codex.Completed, Raw: []byte(
+			`{"type":"response.completed","response":{"id":"r",` + usageReported + `,"output":[]}}`)})
+	if !errors.Is(err, ErrOutputItemOrder) {
+		t.Fatalf("err = %v, want INVALID_OUTPUT_ITEM", err)
+	}
+}
+
+// Indices are the backend's own numbering. A gap means an item was opened that nobody saw.
+func TestOutputItemIndicesMustBeDenseAndAscending(t *testing.T) {
+	for name, events := range map[string][]any{
+		"starts at one":   {itemAdded(1, `{"id":"a","type":"message"}`)},
+		"skips an index":  {itemAdded(0, `{"id":"a","type":"message"}`), itemAdded(2, `{"id":"b","type":"message"}`)},
+		"goes backwards":  {itemAdded(0, `{"id":"a","type":"message"}`), itemAdded(0, `{"id":"b","type":"message"}`)},
+		"negative":        {itemAdded(-1, `{"id":"a","type":"message"}`)},
+		"closes unopened": {itemDone(0, messageItem("a", "x"))},
+		"closes twice": {itemAdded(0, `{"id":"a","type":"message"}`),
+			itemDone(0, messageItem("a", "")), itemDone(0, messageItem("a", ""))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := runFor(t, callable("Read"), events...); err == nil {
+				t.Fatal("accepted an item sequence that cannot be accounted for")
+			}
+		})
+	}
+}
+
+// Two accounts of the same item that disagree. The final snapshot is authoritative for
+// content, but it has to be about the same item.
+func TestItemSnapshotsThatDisagreeAreRefused(t *testing.T) {
+	for name, tc := range map[string]struct{ opening, final string }{
+		"the id changed": {`{"id":"fc_1","type":"function_call"}`,
+			functionItem("fc_2", "call_1", "Read", `{}`)},
+		"the kind changed": {`{"id":"fc_1","type":"function_call"}`,
+			messageItem("fc_1", "text instead")},
+		"the call id changed": {functionItem("fc_1", "call_1", "Read", `{}`),
+			functionItem("fc_1", "call_2", "Read", `{}`)},
+		"the name changed": {functionItem("fc_1", "call_1", "Read", `{}`),
+			functionItem("fc_1", "call_1", "Write", `{}`)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runFor(t, callable("Read", "Write"),
+				itemAdded(0, tc.opening), itemDone(0, tc.final))
+			if !errors.Is(err, ErrItemSnapshotMismatch) {
+				t.Fatalf("err = %v, want SNAPSHOT_MISMATCH", err)
+			}
+		})
+	}
+}
+
+// The finished arguments against what streamed, checked at the item as well as at the
+// arguments event. A tool call is executed by the client.
+func TestAnItemWhoseArgumentsDisagreeWithTheStreamIsRefused(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+		argsDelta("fc_1", `{"file_path":"a.txt"}`),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"file_path":"b.txt"}`)))
+	if !errors.Is(err, ErrArgumentsMismatch) {
+		t.Fatalf("err = %v, want ARGUMENTS_MISMATCH", err)
+	}
+}
+
+// An item whose arguments never streamed is not a mismatch. The backend is entitled to
+// deliver them whole, and refusing that would refuse a legitimate response.
+func TestArgumentsDeliveredWholeAreAccepted(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"file_path":"a.txt"}`)),
+		stream.Event{Type: codex.Completed, Raw: []byte(
+			`{"type":"response.completed","response":{"id":"r",` + usageReported + `,"output":[]}}`)})
+	if err != nil {
+		t.Fatalf("a call whose arguments did not stream was refused: %v", err)
+	}
+}
+
+// This backend never states its output in the completion. If one ever does and contradicts
+// its own stream, that is the moment to stop rather than pick an account.
+func TestACompletionContradictingItsOwnStreamIsRefused(t *testing.T) {
+	for name, stated := range map[string]string{
+		"different arguments": functionItem("item_call_1", "call_1", "Read", `{"file_path":"elsewhere"}`),
+		"a different call":    functionItem("item_call_1", "call_9", "Read", `{"file_path":"a.txt"}`),
+		"a different tool":    functionItem("item_call_1", "call_1", "Write", `{"file_path":"a.txt"}`),
+		"a different item":    functionItem("item_other", "call_1", "Read", `{"file_path":"a.txt"}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runFor(t, callable("Read", "Write"),
+				itemAdded(0, `{"id":"item_call_1","type":"function_call"}`),
+				itemDone(0, functionItem("item_call_1", "call_1", "Read", `{"file_path":"a.txt"}`)),
+				completedStating(stated))
+			if !errors.Is(err, ErrItemSnapshotMismatch) {
+				t.Fatalf("err = %v, want SNAPSHOT_MISMATCH", err)
+			}
+		})
+	}
+
+	// And one that agrees is accepted.
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"item_call_1","type":"function_call"}`),
+		itemDone(0, functionItem("item_call_1", "call_1", "Read", `{"file_path":"a.txt"}`)),
+		completedStating(functionItem("item_call_1", "call_1", "Read", `{"file_path":"a.txt"}`)))
+	if err != nil {
+		t.Fatalf("a completion agreeing with its own stream was refused: %v", err)
+	}
+}
+
+// Held items are bounded. The builder bounds what is released, but items are held before
+// they reach it, so without this a backend could accumulate here without ever completing.
+func TestHeldItemsAreBounded(t *testing.T) {
+	events := make([]any, 0, maxOutputItems+1)
+	for i := 0; i <= maxOutputItems; i++ {
+		events = append(events, itemAdded(i, fmt.Sprintf(`{"id":"m_%d","type":"message"}`, i)))
+	}
+	if _, err := runFor(t, callable("Read"), events...); !errors.Is(err, anthropic.ErrResponseTooLarge) {
+		t.Fatalf("err = %v, want RESPONSE_TOO_LARGE", err)
+	}
+}
+
+// An item event has to carry an item. Without one there is nothing to hold, and holding
+// nothing under an index means the response is short by whatever that item was.
+//
+// Added after a mutation run: returning an empty item left the suite green.
+func TestAnItemEventWithoutAnItemIsRefused(t *testing.T) {
+	for name, raw := range map[string]string{
+		"no item at all":     `{"type":"response.output_item.added","output_index":0}`,
+		"a null item":        `{"type":"response.output_item.added","output_index":0,"item":null}`,
+		"an item of no kind": `{"type":"response.output_item.added","output_index":0,"item":{"id":"a"}}`,
+		"no index":           `{"type":"response.output_item.added","item":{"id":"a","type":"message"}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := runFor(t, callable("Read"),
+				stream.Event{Type: codex.OutputItemAdd, Raw: []byte(raw)}); err == nil {
+				t.Fatal("accepted an item event carrying no usable item")
+			}
+		})
+	}
+}
+
+// A closing item is the backend's finished account and must be complete. An opening one is
+// allowed to be a bare identity, and that tolerance must not leak to the close.
+//
+// Added after a mutation run: making arguments optional at close left the suite green.
+func TestAClosingToolItemMustCarryItsArguments(t *testing.T) {
+	for name, final := range map[string]string{
+		"no arguments": `{"id":"fc_1","type":"function_call","call_id":"call_1","name":"Read"}`,
+		"no call id":   `{"id":"fc_1","type":"function_call","name":"Read","arguments":"{}"}`,
+		"no name":      `{"id":"fc_1","type":"function_call","call_id":"call_1","arguments":"{}"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runFor(t, callable("Read"),
+				itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+				itemDone(0, final))
+			if !errors.Is(err, codex.ErrEventShape) {
+				t.Fatalf("err = %v, want EVENT_SHAPE", err)
+			}
+		})
+	}
+
+	// And a closing message item must carry its content for the same reason.
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"msg_1","type":"message"}`),
+		itemDone(0, `{"id":"msg_1","type":"message"}`))
+	if !errors.Is(err, codex.ErrEventShape) {
+		t.Fatalf("err = %v, want EVENT_SHAPE", err)
+	}
+}
+
+// A completion that states a different number of items than arrived is contradicting the
+// stream just as surely as one that states different content.
+//
+// Added after a mutation run: the count check had no case where the counts differed.
+func TestACompletionStatingADifferentCountIsRefused(t *testing.T) {
+	for name, stated := range map[string][]string{
+		"states two, one arrived": {
+			functionItem("item_call_1", "call_1", "Read", `{}`),
+			functionItem("item_call_2", "call_2", "Read", `{}`)},
+		"states none of the one that arrived": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if len(stated) == 0 {
+				// An empty array is what this backend always sends and is not a
+				// contradiction: it states nothing rather than something else.
+				_, err := runFor(t, callable("Read"),
+					itemAdded(0, `{"id":"item_call_1","type":"function_call"}`),
+					itemDone(0, functionItem("item_call_1", "call_1", "Read", `{}`)),
+					completedStating())
+				if err != nil {
+					t.Fatalf("an empty output array was treated as a contradiction: %v", err)
+				}
+				return
+			}
+			_, err := runFor(t, callable("Read"),
+				itemAdded(0, `{"id":"item_call_1","type":"function_call"}`),
+				itemDone(0, functionItem("item_call_1", "call_1", "Read", `{}`)),
+				completedStating(stated...))
+			if !errors.Is(err, ErrItemSnapshotMismatch) {
+				t.Fatalf("err = %v, want SNAPSHOT_MISMATCH", err)
+			}
+		})
 	}
 }

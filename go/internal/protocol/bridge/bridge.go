@@ -273,7 +273,30 @@ type Translator struct {
 	// belong to. Nothing is built from them; they exist to be checked against the snapshot
 	// the backend sends when it finishes writing them.
 	streamedArgs map[string]string
+	// held is the response being assembled, by output index, and order is the sequence the
+	// backend declared them in.
+	//
+	// This is the delivery barrier. The items exist here from the moment the backend opens
+	// them, and nothing in this map reaches the client until response.completed arrives --
+	// so a stream that fails midway has still handed the client nothing to execute. The
+	// barrier is when they are released, not where they come from.
+	held  map[int]*heldItem
+	order []int
+	ids   map[string]bool
 }
+
+// heldItem is one output item and whether the backend has finished writing it.
+type heldItem struct {
+	item codex.OutputItem
+	done bool
+}
+
+// maxOutputItems bounds what one response may open before it completes.
+//
+// The Builder bounds what is released, but items are held before they reach it, so without
+// this a backend could accumulate memory here without ever completing. Chosen to be far
+// above any plausible response and far below anything that matters.
+const maxOutputItems = 1024
 
 // NewTranslatorFor builds a translator for one request: which tools a new call may name,
 // and the output limit that request asked for.
@@ -301,6 +324,14 @@ var ErrUsageUnknown = errors.New("INVALID_USAGE")
 // streamed. The client executes what a tool call says, so the two accounts disagreeing is
 // where this stops rather than picking one.
 var ErrArgumentsMismatch = errors.New("ARGUMENTS_MISMATCH")
+
+// ErrOutputItemOrder means the backend's items did not arrive as a dense ascending sequence
+// that closes before the response does. A response missing an item it declared is short by
+// exactly the part nobody read.
+var ErrOutputItemOrder = errors.New("INVALID_OUTPUT_ITEM")
+
+// ErrItemSnapshotMismatch means two accounts of the same item disagree.
+var ErrItemSnapshotMismatch = errors.New("SNAPSHOT_MISMATCH")
 
 func (t *Translator) checkOutputLimit(usage codex.Usage) error {
 	if t.outputLimit <= 0 {
@@ -344,6 +375,20 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		}
 		return t.builder.AppendText(delta.ContentIndex, delta.Delta)
 
+	case codex.OutputItemAdd:
+		event, err := codex.DecodeOutputItem(event.Raw, false)
+		if err != nil {
+			return nil, err
+		}
+		return nil, t.openItem(event)
+
+	case codex.OutputItemDone:
+		event, err := codex.DecodeOutputItem(event.Raw, true)
+		if err != nil {
+			return nil, err
+		}
+		return nil, t.closeItem(event)
+
 	case codex.FuncArgsDelta:
 		delta, err := codex.DecodeArgumentsDelta(event.Raw)
 		if err != nil {
@@ -381,29 +426,19 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			return nil, err
 		}
 		t.usage = usage
-		// The completed payload is where tool calls come from. Reading them here rather
-		// than from the streaming argument events is the delivery barrier: a call exists
-		// only once the backend has said the response finished, so a stream that failed
-		// midway cannot have handed the client something to execute.
-		items, present, err := codex.DecodeCompletedOutput(event.Raw)
-		if err != nil {
+		// The completion is what releases the held items. Until this arrives nothing
+		// assembled above has reached the client, which is the delivery barrier: a stream
+		// that failed midway cannot have handed the client something to execute.
+		//
+		// The payload's own output array is checked rather than read. It is empty on this
+		// backend -- measured, on every response -- so reading from it read nothing; a
+		// backend that starts filling it and contradicts its own stream is worth stopping
+		// for.
+		if err := t.crossCheckCompleted(event.Raw); err != nil {
 			return nil, err
 		}
-		if present {
-			for _, item := range items {
-				switch item.Type {
-				case codex.ItemFunctionCall:
-					if err := t.builder.AddToolCall(item.CallID, item.Name, item.Arguments); err != nil {
-						return nil, err
-					}
-				case codex.ItemMessage:
-					// The backend's own account of what it said, checked against what was
-					// streamed. A disagreement means a delta went missing.
-					if err := t.checkStreamedText(item.Text); err != nil {
-						return nil, err
-					}
-				}
-			}
+		if err := t.release(); err != nil {
+			return nil, err
 		}
 		// Checked here, after the response itself has been read. A malformed call or an
 		// empty reply is a defect in what arrived; the limit is a policy question about a
@@ -420,7 +455,6 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		})
 
 	case codex.InProgress, codex.Queued,
-		codex.OutputItemAdd, codex.OutputItemDone,
 		codex.ContentPartAdd, codex.ContentPartDon,
 		codex.Keepalive, codex.Ping,
 		codex.RateLimitsUpdated, codex.CodexRateLimits,
@@ -441,6 +475,119 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	}
 
 	return nil, ErrUnsupportedEvent
+}
+
+// openItem records an item the backend has started writing.
+//
+// Indices are the backend's own numbering and must be dense and ascending: a gap means an
+// item was opened that nobody saw, and a response missing an item it declared is one short
+// by exactly the part nobody read.
+func (t *Translator) openItem(event codex.OutputItemEvent) error {
+	if t.held == nil {
+		t.held = map[int]*heldItem{}
+		t.ids = map[string]bool{}
+	}
+	if event.Index != len(t.order) {
+		return ErrOutputItemOrder
+	}
+	if len(t.order) >= maxOutputItems {
+		return anthropic.ErrResponseTooLarge
+	}
+	// One id, one item. A repeated id would let a later snapshot be checked against the
+	// wrong item, and the arguments stream is keyed by it.
+	if event.Item.ID != "" && t.ids[event.Item.ID] {
+		return ErrOutputItemOrder
+	}
+	t.ids[event.Item.ID] = true
+	t.held[event.Index] = &heldItem{item: event.Item}
+	t.order = append(t.order, event.Index)
+	return nil
+}
+
+// closeItem takes the backend's final account of an item and checks it against the first.
+//
+// The final snapshot is authoritative -- it is what the response actually contains -- but it
+// has to be the same item. An id or a kind changing between the two accounts means one of
+// them is about something else.
+func (t *Translator) closeItem(event codex.OutputItemEvent) error {
+	held, open := t.held[event.Index]
+	if !open || held.done {
+		return ErrOutputItemOrder
+	}
+	final := event.Item
+	if final.ID != held.item.ID || final.Type != held.item.Type {
+		return ErrItemSnapshotMismatch
+	}
+	if final.Type == codex.ItemFunctionCall {
+		// Only what the opening snapshot actually named. It is entitled to have carried an
+		// identity and nothing else; it is not entitled to have named something different.
+		if held.item.CallID != "" && final.CallID != held.item.CallID {
+			return ErrItemSnapshotMismatch
+		}
+		if held.item.Name != "" && final.Name != held.item.Name {
+			return ErrItemSnapshotMismatch
+		}
+		// Against what actually streamed, when anything did. An item whose arguments never
+		// streamed is not a mismatch: the backend is entitled to deliver them whole.
+		if streamed, saw := t.streamedArgs[final.ID]; saw && streamed != string(final.Arguments) {
+			return ErrArgumentsMismatch
+		}
+	}
+	held.item = final
+	held.done = true
+	return nil
+}
+
+// release hands the assembled response to the builder. It runs once, on completion.
+func (t *Translator) release() error {
+	for _, index := range t.order {
+		held := t.held[index]
+		if !held.done {
+			// The backend said the response finished while an item was still open. Taking
+			// the partial one would deliver something it never said it had written.
+			return ErrOutputItemOrder
+		}
+		switch held.item.Type {
+		case codex.ItemFunctionCall:
+			if err := t.builder.AddToolCall(held.item.CallID, held.item.Name, held.item.Arguments); err != nil {
+				return err
+			}
+		case codex.ItemMessage:
+			// The backend's own account of what it said, checked against what was
+			// streamed. A disagreement means a delta went missing.
+			if err := t.checkStreamedText(held.item.Text); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// crossCheckCompleted compares the completion's output array with what was assembled.
+//
+// The array is empty on this backend, so this normally checks nothing. It exists because
+// tool calls are executed by the client: if the backend ever does state its output here and
+// states it differently, that is the moment to stop rather than pick one account.
+func (t *Translator) crossCheckCompleted(raw []byte) error {
+	items, present, err := codex.DecodeCompletedOutput(raw)
+	if err != nil {
+		return err
+	}
+	if !present || len(items) == 0 {
+		return nil
+	}
+	if len(items) != len(t.order) {
+		return ErrItemSnapshotMismatch
+	}
+	for i, stated := range items {
+		held := t.held[t.order[i]].item
+		if stated.Type != held.Type || stated.ID != held.ID ||
+			stated.CallID != held.CallID || stated.Name != held.Name ||
+			string(stated.Arguments) != string(held.Arguments) {
+			return ErrItemSnapshotMismatch
+		}
+	}
+	return nil
 }
 
 // checkStreamedText compares the completed payload's message text with what the deltas

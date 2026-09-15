@@ -49,6 +49,8 @@ delete headers.Authorization; delete headers['chatgpt-account-id'];
 const SPAWN_GUARD_MS = 60000;
 // One worker serves every case, and the last one deliberately spends up to 52s establishing the
 // probe 45s deadline, so this has to cover that plus the other 34 cases and a cold start.
+// It outlasts one case stalling to the full 120s normal budget (120 + 52 + the rest), not two.
+// A second stall in the same run kills the worker instead, and the failure names that, not a case.
 const WORKER_GUARD_MS = 240000;
 
 function child(executable, args) {

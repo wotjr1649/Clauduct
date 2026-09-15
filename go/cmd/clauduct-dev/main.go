@@ -4,12 +4,14 @@
 // never be confused with passing an option to the native client. clauduct-go --version is
 // the native client's version; clauduct-dev version is this bridge's.
 //
-// Nothing here reads a credential or opens a socket to anything but the local filesystem.
-// doctor exists to answer "can this machine even start a session" without starting one.
+// version and doctor read no credential and open no socket: doctor exists to answer "can
+// this machine even start a session" without starting one. probe is the exception and says
+// so — it sends real requests, and it refuses to do anything at all without --send.
 package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strings"
@@ -23,7 +25,7 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout, stderr *os.File) int {
+func run(args []string, stdout, stderr io.Writer) int {
 	command := ""
 	if len(args) > 0 {
 		command = args[0]
@@ -33,13 +35,15 @@ func run(args []string, stdout, stderr *os.File) int {
 		return version(stdout)
 	case "doctor":
 		return doctor(stdout)
+	case "probe":
+		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct-dev [version|doctor]")
+		fmt.Fprintln(stderr, "usage: clauduct-dev [version|doctor|probe]")
 		return 2
 	}
 }
 
-func version(out *os.File) int {
+func version(out io.Writer) int {
 	info := buildinfo.Read()
 	fmt.Fprintf(out, "clauduct-go %s\n", info.Version)
 	fmt.Fprintf(out, "commit       %s\n", info.CommitOrUnknown())
@@ -52,7 +56,7 @@ func version(out *os.File) int {
 // Counts, not names. A dropped variable's name is chosen by the user and can itself carry
 // information; the rule that produced the count is printed instead, which is the part a
 // reader actually needs to check.
-func doctor(out *os.File) int {
+func doctor(out io.Writer) int {
 	status := 0
 
 	path, found, err := platform.Resolver{}.Claude()

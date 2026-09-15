@@ -139,17 +139,24 @@ func comparableDir(dir string) string {
 // When it is not found the returned path is still the standalone install location. That is
 // the address of the problem a user has to fix, and returning it lets a caller report where
 // it looked without a second lookup. A caller must not spawn a path whose found is false.
-func (r Resolver) Claude() (path string, found bool, err error) {
+func (r Resolver) Claude() (path string, found bool, err error) { return r.find("claude.exe") }
+
+// Codex reports the Codex CLI, found the same way and with the same defences. Its version
+// is what a backend request identifies itself as, so reading it from a directory an
+// attacker can prepend to PATH would let them choose what this bridge claims to be.
+func (r Resolver) Codex() (path string, found bool, err error) { return r.find("codex.exe") }
+
+func (r Resolver) find(name string) (path string, found bool, err error) {
 	r, err = r.resolved()
 	if err != nil {
 		return "", false, err
 	}
-	standalone := filepath.Join(r.Home, ".local", "bin", "claude.exe")
+	standalone := filepath.Join(r.Home, ".local", "bin", name)
 	if r.IsFile(standalone) {
 		return standalone, true, nil
 	}
 	for _, dir := range searchDirs(pathValue(r.Env), r.Cwd) {
-		candidate := filepath.Join(dir, "claude.exe")
+		candidate := filepath.Join(dir, name)
 		if r.IsFile(candidate) {
 			return candidate, true, nil
 		}

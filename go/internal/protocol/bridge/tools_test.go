@@ -238,7 +238,7 @@ func TestStopReasonSaysWhetherAToolIsPending(t *testing.T) {
 		t.Errorf("stop_reason = %v, want tool_use", got)
 	}
 
-	textOnly, err := run(t, textDelta(0, "done"), textDone(0, "done"), event(codex.Completed, completedNoUsage))
+	textOnly, err := run(t, textDelta(0, "done"), textDone(0, "done"), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}

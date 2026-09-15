@@ -2,7 +2,7 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01 + WP02 + WP03 + WP04
+## 현재 범위 — WP01 + WP02 + WP03 + WP04 + WP05
 
 동작하는 것:
 
@@ -21,13 +21,27 @@
 - text 경로 end-to-end: 요청 → backend 요청 → SSE 파싱 → Anthropic 프레임 스트리밍
 - 도구 왕복: 정의·`tool_choice`·기록된 호출과 결과, 그리고 backend 호출의 검증과 방출
 - delivery barrier: 호출은 `response.completed`의 output에서만 만들어진다 — 중간에 실패한 스트림은 실행할 것을 건넨 적이 없다
+- 읽기 전용 credential provider: `auth.json` 해독, 세션 내 계정 고정, 만료 여백 60초, 어디서 출력해도 token은 가려진다
+- 실제 HTTPS 전송: 인증서 검증 불가역, redirect 거부, 압축 비요청, phase별 timeout
+- attempt 원장: 경로(model+effort)와 누적 횟수를 함께 승인한다. 예약이 credential 읽기보다도 먼저다
+- 실패 분류: 상태 코드와 연결 오류를 terminal/retryable/deferred로 나눈다. `Retry-After`는 두 형식 모두
 
-**동작하지 않는 것 (아직 구현이 없다):**
+**동작하지 않는 것:**
 
-- **transport.** 제품 빌드는 `upstream.None`을 쓰므로 모든 추론 요청이 `400 NO_UPSTREAM_TRANSPORT`로 끝난다. WP05
 - 이미지·문서·hosted search·structured output 결과 검증·`/v1/models` discovery·모델 라우팅
 
+**전송은 있지만 제품 빌드에 연결돼 있지 않다.** `internal/app`이 `gateway.Start(nil)`을 호출하므로 gateway는 `upstream.None`을 쓰고, 모든 추론 요청은 `400 NO_UPSTREAM_TRANSPORT`로 끝난다. 연결은 G7 사항이다 — 지금 연결하면 모든 세션이 실호출 세션이 된다.
+
 따라서 **대화형 세션은 아직 성립하지 않는다.** `--version`·`--help`처럼 모델을 호출하지 않는 native 명령은 정상 통과한다.
+
+### 실호출에 닿는 유일한 경로
+
+```powershell
+clauduct-dev probe          # 무엇을 쓸지 출력하고 아무것도 보내지 않는다 (exit 2)
+clauduct-dev probe --send   # 실제 요청 2회. gpt-5.6-luna / low
+```
+
+`--send`가 정확히 하나의 인자일 때만 보낸다. 오타도 접두사도 추가 인자도 전부 무동의로 취급한다. 승인된 예산은 누적 20회이고 한 실행은 3회를 넘지 않는다.
 
 이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 `docs/v2/VALIDATION.md` 1.1.2에 있다.
 
@@ -79,7 +93,8 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 | `internal/protocol/anthropic` | Claude 쪽 요청 해독과 이벤트 방출 |
 | `internal/protocol/codex` | backend 쪽 이벤트 어휘 |
 | `internal/protocol/bridge` | 두 형식 사이 변환. 양쪽을 import하는 유일한 package |
-| `internal/upstream` | backend 실행 인터페이스와 fixture. 네트워크 클라이언트는 없다 |
+| `internal/upstream` | backend 실행 인터페이스, fixture, 그리고 실제 HTTPS 전송. 이 모듈에서 네트워크에 닿는 **유일한** 곳이다 |
+| `internal/auth` | 읽기 전용 credential provider. 아무것도 쓰지 않고 갱신하지 않는다 |
 | `internal/platform` | OS 경계. 실행 파일 해석 |
 | `internal/buildinfo` | 바이너리 신원 |
 

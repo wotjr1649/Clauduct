@@ -27,13 +27,37 @@ type Request struct {
 	Model       string          `json:"model"`
 	Instruction string          `json:"instructions,omitempty"`
 	Input       []InputEntry    `json:"input"`
-	MaxTokens   int64           `json:"max_output_tokens"`
 	Stream      bool            `json:"stream"`
 	Effort      *ReasoningParam `json:"reasoning,omitempty"`
 	Tools       []ToolSpec      `json:"tools,omitempty"`
 	ToolChoice  any             `json:"tool_choice,omitempty"`
 	Parallel    *bool           `json:"parallel_tool_calls,omitempty"`
+	Include     []string        `json:"include,omitempty"`
+	// Store is always false and never omitted. Asking the backend not to retain the
+	// conversation is a property of every request this bridge makes, so it is stated
+	// rather than left to a default that could change on the other side.
+	Store bool `json:"store"`
 }
+
+// Instruction is what every request sends as its top-level instructions.
+//
+// It is a fixed string, not the caller's system prompt. The system prompt is a developer
+// turn inside the conversation, where per-turn effort and cache markers apply to it the
+// same way they apply to any other turn. Hoisting it up here would move it out of the
+// conversation the caller described.
+const Instruction = "Follow the developer instructions in the conversation."
+
+// Include asks for the reasoning the backend would otherwise keep to itself. It is
+// requested because a multi-turn tool exchange needs it carried forward, not because it is
+// shown to anyone: nothing downstream hands it to the client.
+var Include = []string{"reasoning.encrypted_content"}
+
+// MaxOutputTokens is deliberately absent from Request.
+//
+// The baseline never sends max_output_tokens, and the PoC recorded the backend rejecting
+// it. The client's max_tokens is enforced instead at completion, against the usage the
+// backend reports — see Translator.outputLimit. That is a check after the fact rather than
+// a cap on generation, and the difference is recorded here rather than papered over.
 
 // InputEntry is one element of the backend's input array. A conversation turn, a recorded
 // call and a recorded result are three different shapes in the same list, so the members
@@ -41,9 +65,12 @@ type Request struct {
 type InputEntry struct {
 	Type string `json:"type,omitempty"`
 
-	// message
-	Role    string      `json:"role,omitempty"`
-	Content []InputPart `json:"content,omitempty"`
+	// message. Content is either []InputPart for a conversation turn or a plain string
+	// for the developer turn carrying the system prompt — the two shapes the baseline
+	// sends, kept distinct because the wire has never been verified to accept one for the
+	// other.
+	Role    string `json:"role,omitempty"`
+	Content any    `json:"content,omitempty"`
 
 	// function_call
 	CallID    string `json:"call_id,omitempty"`
@@ -87,15 +114,19 @@ type ReasoningParam struct {
 // than skipped.
 func BuildRequest(request *anthropic.Request) (*Request, error) {
 	out := &Request{
-		Model:     request.Model,
-		MaxTokens: request.MaxTokens,
-		Stream:    true,
+		Model:       request.Model,
+		Instruction: Instruction,
+		Stream:      true,
+		Include:     Include,
+		Store:       false,
 	}
 	if request.Effort != "" {
 		out.Effort = &ReasoningParam{Effort: request.Effort}
 	}
+	// The system prompt leads the conversation as a developer turn. Its content is a plain
+	// string here rather than a list of parts, which is the shape the baseline sends.
 	if text, ok := systemText(request.System); ok {
-		out.Instruction = text
+		out.Input = append(out.Input, InputEntry{Role: "developer", Content: text})
 	}
 
 	// Only the definitions that are callable now go upstream. A deferred tool nobody has
@@ -139,19 +170,18 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 		// A turn's text is one message entry; each recorded call and result is its own
 		// entry, in the order they appeared, so the backend sees the same sequence the
 		// client recorded.
-		var turn InputEntry
+		var parts []InputPart
 		flush := func() {
-			if len(turn.Content) > 0 {
-				out.Input = append(out.Input, turn)
+			if len(parts) > 0 {
+				out.Input = append(out.Input, InputEntry{Role: role, Content: parts})
 			}
-			turn = InputEntry{}
+			parts = nil
 		}
-		turn = InputEntry{Role: role}
 
 		for _, block := range message.Blocks {
 			switch block.Type {
 			case "text":
-				turn.Content = append(turn.Content, InputPart{Type: kind, Text: block.Text})
+				parts = append(parts, InputPart{Type: kind, Text: block.Text})
 			case "tool_use":
 				flush()
 				out.Input = append(out.Input, InputEntry{
@@ -160,7 +190,6 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 					Name:      block.Name,
 					Arguments: string(block.Input),
 				})
-				turn = InputEntry{Role: role}
 			case "tool_result":
 				flush()
 				out.Input = append(out.Input, InputEntry{
@@ -168,7 +197,6 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 					CallID: block.ToolUseID,
 					Output: resultParts(block),
 				})
-				turn = InputEntry{Role: role}
 			default:
 				return nil, fmt.Errorf("bridge: decoder passed a %q block to the text path", block.Type)
 			}
@@ -238,18 +266,44 @@ func systemText(raw json.RawMessage) (string, bool) {
 type Translator struct {
 	builder *anthropic.Builder
 	usage   codex.Usage
+	// outputLimit is the caller's max_tokens. Nothing asks the backend to stop at it, so
+	// it is checked here against what the backend says it spent.
+	outputLimit int64
 }
 
-func NewTranslator(model string) *Translator {
-	return &Translator{builder: anthropic.NewBuilder(model)}
-}
-
-// NewTranslatorFor builds a translator that knows which tools a new call may name.
+// NewTranslatorFor builds a translator for one request: which tools a new call may name,
+// and the output limit that request asked for.
 func NewTranslatorFor(request *anthropic.Request) *Translator {
-	t := &Translator{builder: anthropic.NewBuilder(request.Model)}
+	t := &Translator{builder: anthropic.NewBuilder(request.Model), outputLimit: request.MaxTokens}
 	callable := request.CallableNames()
 	t.builder.SetCallable(func(name string) bool { return callable[name] })
 	return t
+}
+
+// ErrOutputLimitExceeded means the backend generated more than the caller allowed.
+//
+// The caller's max_tokens never reached the backend — it is not a parameter this wire
+// accepts — so it cannot have been a cap on generation. Enforcing it here means an
+// oversized response is refused after the fact rather than truncated during it, which is
+// the baseline's behaviour and the only one available.
+var ErrOutputLimitExceeded = errors.New("OUTPUT_TOKEN_LIMIT_EXCEEDED")
+
+// ErrUsageUnknown means the backend finished without saying what it spent. With no count
+// there is nothing to check the caller's limit against, and reporting success would be
+// claiming a check that never ran.
+var ErrUsageUnknown = errors.New("INVALID_USAGE")
+
+func (t *Translator) checkOutputLimit(usage codex.Usage) error {
+	if t.outputLimit <= 0 {
+		return nil
+	}
+	if !usage.OutputKnown {
+		return ErrUsageUnknown
+	}
+	if usage.OutputTokens > t.outputLimit {
+		return ErrOutputLimitExceeded
+	}
+	return nil
 }
 
 // Builder exposes the response under construction, for a caller that needs what was
@@ -317,6 +371,13 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 					}
 				}
 			}
+		}
+		// Checked here, after the response itself has been read. A malformed call or an
+		// empty reply is a defect in what arrived; the limit is a policy question about a
+		// response that was otherwise fine, and answering the policy question first would
+		// report a limit breach for a response that was never usable.
+		if err := t.checkOutputLimit(usage); err != nil {
+			return nil, err
 		}
 		return t.builder.Complete(anthropic.Usage{
 			InputTokens:  usage.InputTokens,

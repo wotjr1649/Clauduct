@@ -4,9 +4,9 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **349개 통과** (subtest 포함) |
-| mutation 검증 | **88건 주입** (battery 5개). 10건이 처음에 살아남았고 열 다 테스트를 보강해 잡았다 |
-| 실모델 호출 | **0회.** upstream 코드가 존재하지 않아 구조적으로 불가능하다 |
+| 실행한 V2 Go 테스트 | **585개 통과** (subtest 포함), 11 package |
+| mutation 검증 | **153건 주입** (battery 8개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 WP 절에 기록했다 |
+| 실모델 호출 | **0회.** 다만 WP05부터는 구조가 아니라 **경로 제한**이다 — 아래 |
 | 잔여 승인 예산 | **0. 그리고 별도로 BLOCKED다** — 3장 |
 
 ### 1.1 실행한 것
@@ -46,7 +46,16 @@
 
 마지막 항목은 실제 사용자 프로필에서의 기회적 관측이지 통제된 `NATIVE_SYNTH` 실행이 아니다. ARG06·ARG07의 증거로 승격하지 않는다.
 
-**실호출이 0인 근거는 관측이 아니라 구조다.** 이 빌드에는 upstream 클라이언트가 존재하지 않는다. `internal/gateway`는 `POST /v1/messages`를 구현하지 않고 아웃바운드 HTTP를 전혀 만들지 않으므로, 모델 요청은 "일어나지 않았다"가 아니라 "일어날 경로가 없다".
+**WP05 전까지 실호출 0의 근거는 구조였다.** upstream 클라이언트가 존재하지 않았으므로 모델 요청은 "일어나지 않았다"가 아니라 "일어날 경로가 없다"였다.
+
+**WP05부터는 그 문장을 쓸 수 없다.** 실제 HTTPS 전송이 `internal/upstream.Direct`로 존재한다. 대신 더 약하지만 정확한 주장이 남는다.
+
+| 근거 | 확인 방법 |
+|---|---|
+| 제품 빌드는 실제 전송에 닿지 않는다 | `internal/app/run.go`가 `gateway.Start(nil)`을 호출하고, gateway는 nil을 `upstream.None`으로 바꾼다. `Direct`를 참조하는 곳이 `cmd/clauduct-dev` 밖에 없다 |
+| `Direct`는 예산 없이 소켓을 열지 않는다 | `Reserve`가 credential 읽기보다 먼저다. 테스트는 클라이언트 반환값이 아니라 **listener가 센 요청 수**로 확인한다 |
+| 유일한 도달 경로가 명시적 동의를 요구한다 | `clauduct-dev probe`는 `--send` 없이는 아무것도 보내지 않는다. 오타·접두사·인자 추가 9종을 테스트가 덮는다 |
+| probe는 아직 실행하지 않았다 | 이 세션에서 `--send`를 한 번도 붙이지 않았다. 원장 누적 0 |
 
 ### 1.1.2 실측 — claude 2.1.272가 실제로 보내는 것
 
@@ -87,7 +96,8 @@ WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 �
 | Node 회귀 나머지 83개 | `NOT_RUN` | 패키지별 직전 검증 정책. WP06·WP07이 그 계약을 가져올 때 돌린다. WP03 관련 30개는 위 1.1에서 통과했다 |
 | `go test -race` | **`NOT_RUN`** | 이 머신에 cgo·C 툴체인이 없다(`-race requires cgo`, gcc 부재). CI 워크플로가 담당한다. **미실행은 통과가 아니다** |
 | Go CI 워크플로 | **`NOT_RUN`** | `.github/workflows/go.yml`을 작성했으나 실행된 적이 없다. push는 별도 승인 사항이라 하지 않았다 |
-| 대화형 세션 | `NOT_RUN` | `/v1/messages`는 인증·경계까지만 통과하고 501을 돌려준다. 본문 처리는 WP03 |
+| 대화형 세션 | `NOT_RUN` | 제품 빌드에 실제 전송이 연결돼 있지 않다. 연결은 G7 사항이다 |
+| `clauduct-dev probe --send` | **`NOT_RUN`** | 구현·테스트 완료. 실행하면 luna/low로 **실제 요청 2회**를 보낸다. 사용자 재확인 전까지 돌리지 않았다 |
 | native synthetic 통합 (NATIVE_SYNTH) | `NOT_RUN` | 격리 fixture profile을 아직 만들지 않았다. WP06 |
 | 실모델 호출 | `NOT_AUTHORIZED` | 3장 |
 
@@ -151,7 +161,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | WP09 | live validation·패키징 | 해당 P/S의 live 연계, REL04–REL10. G7–G9 구분 |
 | WP10 | 선택적 archive | REL01, REL09, REL11. **DEFERRED** |
 
-한 번에 모두 착수하지 않는다. 다음 하나는 WP05다.
+한 번에 모두 착수하지 않는다. 다음 하나는 WP06이다.
 
 ### 5.1 WP01이 실제로 덮은 테스트 ID
 
@@ -200,7 +210,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | HTTP11 실제 provider 접속 0 | PASS(구조) | upstream 클라이언트 코드가 존재하지 않는다 |
 | LIFE06 한 요청 취소가 형제에 전파되지 않음 | PASS | registry 단위에서 결정적으로. HTTP 층은 등록·해제 배선만 확인 |
 | LIFE07 중복 close·취소 race·닫힌 channel | PASS | 멱등 release, 미등록 cancel=false, 50-goroutine 동시 race |
-| HTTP07 임의 redirect 거부 | `NOT_RUN` | upstream 클라이언트가 없다. WP05 |
+| HTTP07 임의 redirect 거부 | PASS | WP05. `CheckRedirect`가 항상 거부한다. 301·302·303·307·308 각각에 대해 **redirect 대상 서버가 요청을 0건 받았음**을 확인 |
 | HTTP08 `/v1/models` query·cache·picker | `NOT_RUN` | discovery 미구현. WP07 |
 
 ### 5.4 WP02에서 고친 실제 결함 하나
@@ -213,7 +223,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 
 text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 돌려주지 않는다: 요청을 해독하고, backend 요청으로 변환하고, transport로 실행하고, 돌아온 SSE를 파싱해 Anthropic 프레임으로 내보낸다.
 
-**다만 transport가 없다.** 제품 빌드에는 `upstream.None`이 들어가 있어 모든 추론 요청이 `NO_UPSTREAM_TRANSPORT`(503)로 끝난다. 실제 전송은 WP05다. 이것은 관측이 아니라 구조다 — 이 모듈 어디에도 네트워크 클라이언트가 없다.
+**다만 제품 빌드에 transport가 연결돼 있지 않다.** `upstream.None`이 들어가 있어 모든 추론 요청이 `NO_UPSTREAM_TRANSPORT`(400)로 끝난다. WP05가 실제 전송을 만들었지만 **연결하지는 않았다** — 연결은 G7 사항이고, 지금 연결하면 모든 세션이 실호출 세션이 된다.
 
 | ID | 상태 | 어디서 |
 |---|---|---|
@@ -229,8 +239,8 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 | WIRE10 `[DONE]`·완료 후 trailing data | PASS | parser 단위 |
 | WIRE12 reasoning 뒤 최종 text 순서 | PASS | reasoning 선행이 client가 보는 순서를 바꾸지 않음. reasoning 내용은 전달되지 않음 |
 | WIRE13 느린 downstream backpressure | 부분 | 프레임 단위 flush는 있으나 느린 client 압력 실측은 없다. WP08 |
-| WIRE14 ping과 upstream idle timeout 구분 | 부분 | keepalive를 진전으로 읽지 않는 것은 고정. idle timeout은 transport 계층(WP05) |
-| WIRE15 gzip/encoding 지원 여부와 크기 상한 | `NOT_RUN` | transport 계층. WP05 |
+| WIRE14 ping과 upstream idle timeout 구분 | PASS | keepalive를 진전으로 읽지 않는 것에 더해, WP05가 phase별 timeout을 붙였다(handshake 30초, 응답 헤더 120초). 하나의 전체 deadline이면 "오래 생각하는 응답"과 "멈춘 연결"을 같은 순간에 자른다 |
+| WIRE15 gzip/encoding 지원 여부와 크기 상한 | PASS | WP05. 압축을 **요청하지 않는다**(`Accept-Encoding: identity` + `DisableCompression`). 요청하지 않은 압축은 풀 일이 없고, 풀 일이 없으면 상한을 정할 크기도 압축 폭탄도 없다 |
 | TOOL01–TOOL08 | `NOT_RUN` | 도구는 명시적으로 거부된다. WP04 |
 
 ### 5.5.1 실측이 계약을 두 번 고쳤다
@@ -254,7 +264,7 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 
 ### 5.6 WP03이 남긴 것
 
-`/v1/messages`는 구현됐지만 **보낼 곳이 없다.** `upstream.Transport` 인터페이스와 fixture는 있고 실제 전송은 WP05다. 그때까지 제품 빌드는 `NO_UPSTREAM_TRANSPORT`로 답한다.
+`/v1/messages`는 구현됐지만 **보낼 곳이 연결돼 있지 않다.** WP05가 실제 전송을 만들었고, 제품 빌드는 여전히 `upstream.None`을 쓴다. 연결은 G7이다.
 
 도구는 WP04다. 측정된 실제 요청은 `tools`를 **항상** 포함하므로, 도구 지원 전까지 실제 세션은 성립하지 않는다. 그 사실이 침묵이 아니라 명시된 오류로 나타나는 것이 WP03이 보장하는 것이다.
 
@@ -272,7 +282,7 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 | TOOL07 optional enum 생략·null·값 구분 | PASS | `{}` / `{"isolation":null}` / `{"isolation":"worktree"}`가 셋으로 도달 |
 | TOOL08 inactive historical tool과 신규 inactive call 구분 | PASS | 철회된 도구를 이름으로 가진 기록은 해독되고, 그 이름의 **새 호출**은 거부 |
 | WIRE11 malformed tool arguments 미전달 | PASS | 8종(비JSON·잘림·배열·문자열·숫자·trailing·중복 key·빈 값) |
-| LIFE10 semantic delivery 이후 자동 replay 0 | PASS(구조) | gateway 내부 재시도가 0이다. WP05에서 전송 계층과 함께 재판정 |
+| LIFE10 semantic delivery 이후 자동 replay 0 | PASS | WP05에서 재판정했다. `MaxGatewayRetries = 0`이고 `Direct.Execute`에 재시도 루프가 없다 |
 | TOOL01 Read/Edit/Write/Bash 실제 왕복 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
 | TOOL02 permission 거부가 실행으로 바뀌지 않음 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
 | TOOL06 전달 후 실패 시 자동 재실행 0 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
@@ -297,3 +307,95 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 ### 5.7.2 WP04에서 고친 것 하나
 
 WP03은 아무것도 만들지 않은 응답에 빈 assistant 메시지를 내보내고 있었다. 기준선은 `EMPTY_REPLY`로 거부한다. 빈 메시지는 "모델이 아무 말도 안 했다"는 **그럴듯한 답**처럼 읽히므로 실패를 답으로 위장한다. 거부로 바꿨고, 도구 호출만 있는 응답은 무언가를 만들었으므로 비어 있지 않다.
+
+### 5.8 WP05 — 완료
+
+실제 HTTPS 전송, 읽기 전용 credential provider, attempt 원장, 실패 분류가 들어왔다. **제품 빌드에는 연결하지 않았다.**
+
+#### 5.8.1 예산 정책은 개수가 아니라 경로다
+
+사용자 승인(2026-09-15): **`gpt-5.6-luna` / effort `low` / 누적 20회.**
+
+처음에 나는 astra를 가장 싼 모델로 가정하고 제안했다. 사용자가 정정했다 — *"astra모델은 최상위 모델로 fable 급이다 제일 비싸다."* 이 정정이 정책의 모양을 바꿨다. **개수만으로는 아무것도 승인되지 않는다.** 가장 싼 모델의 가장 낮은 effort 20회와 최상위 모델의 최고 effort 20회는 같은 숫자로 전혀 다른 금액이다. reasoning token도 비용에 들어가므로 effort까지 고정한다.
+
+그래서 `Budget`은 `{Model, Effort, Limit}` 셋이 모두 있어야 무엇이든 허가한다. 셋 중 하나라도 비면 `Reserve`도 `Remaining()`도 0을 답한다 — 이 둘이 서로 다른 조건을 쓰고 있던 것이 이 절을 쓰다가 테스트로 잡힌 결함이다.
+
+| 결정 | 이유 |
+|---|---|
+| 예약이 소켓보다 먼저 | 사후 집계는 상한이 아니라 보고서다. 상한 대상이 이미 일어난 뒤에 보고서가 써진다 |
+| credential 읽기보다도 먼저 | 아무도 승인하지 않은 요청이 credential 파일을 읽을 이유가 없다 |
+| attempt와 inference를 따로 셈 | 재시도 2회를 곁들인 1 추론은 1 추론이고 3 attempt다. 한 단위로 정하고 다른 단위로 재면 상한이 아니다 |
+| 완료된 attempt를 돌려주지 않음 | 요청은 이미 나갔다. 끝난 일을 환불하는 상한은 아무것도 막지 못한다 |
+| `MaxGatewayRetries = 0` | 5.7.1의 실측이다. 설치된 클라이언트가 모든 5xx를 스스로 재시도하므로 여기서 또 재시도하면 곱해진다. 그러면 "attempt 단위 상한"이 사용자가 청구받는 금액을 묶지 못한다 |
+
+#### 5.8.2 기준선과 어긋난 요청 본문 셋을 고쳤다
+
+WP03·WP04가 만든 upstream 본문을 `src/native-protocol.mjs:427-430`과 대조했다.
+
+| 항목 | V2가 보내던 것 | 기준선 | 조치 |
+|---|---|---|---|
+| `max_output_tokens` | 클라이언트의 `max_tokens`를 그대로 전달 | **보내지 않음** | 제거 |
+| `instructions` | 클라이언트 system prompt를 승격 | 고정 문자열 + system은 `input`의 `developer` 턴 | 기준선과 동일하게 |
+| `include` / `store` | 둘 다 없음 | `['reasoning.encrypted_content']` / `false` | 추가 |
+
+**`max_output_tokens` 제거는 혼자 올 수 없었다.** 그냥 빼면 클라이언트의 `max_tokens`를 강제하는 것이 아무것도 남지 않는다 — 검증을 약화시켜 통과하는 쪽이다. 기준선이 어떻게 하는지 찾았다: `native-protocol.mjs:800`이 완료 시점에 `usage.output_tokens <= outputLimit`을 검사하고 `OUTPUT_TOKEN_LIMIT_EXCEEDED`로 거부한다. `OUTPUT_TOKEN_LIMIT_POLICY = 'usage-enforced-completion'`이 그 이름이다.
+
+**이것은 생성 상한이 아니라 사후 검사다.** 토큰은 이미 쓰였고, 거부는 "요청한 것과 다른 답을 건네지 않는다"는 의미밖에 없다. 3장의 BLOCKED가 말하는 "사전 출력 상한을 보장하는 전송 계약"이 없다는 것은 여전히 사실이고, WP05는 그것을 해결하지 않았다 — **정확히 기술했을 뿐이다.**
+
+연쇄가 하나 더 있었다. 상한을 usage로 검사하려면 usage가 있어야 한다. 기준선의 `nativeUsage`는 세 카운트가 모두 없으면 `INVALID_USAGE`로 거부한다. Go 쪽은 "없으면 모르는 것"으로 두고 있었으므로, usage를 생략하는 backend가 상한을 그냥 통과하게 된다. 거부로 바꿨다. fixture 다수가 usage 없는 `response.completed`를 쓰고 있었고 전부 고쳤다.
+
+검사 **순서**도 측정해서 맞췄다. 처음에는 완료 이벤트를 받자마자 상한을 봤는데, 그러면 malformed tool call이 `INVALID_TOOL_CALL` 대신 `OUTPUT_TOKEN_LIMIT_EXCEEDED`로 보고된다. 기준선은 응답 자체를 먼저 검증하고 상한은 마지막이다. 도착한 것의 결함과 정상 응답에 대한 정책 질문은 다른 것이다.
+
+#### 5.8.3 테스트 ID
+
+| ID | 상태 | 어디서 |
+|---|---|---|
+| AUTH01–AUTH08 | PASS | WP05a. `internal/auth`. mutation 18건 전수 |
+| LIFE08 429/5xx retry와 총 attempt cap | PASS | 상한 도달 후 **listener가 센 요청 수**가 멈춘다. 재시도는 attempt를 쓰되 inference를 쓰지 않는다 |
+| LIFE09 긴 Retry-After deferred·시각 계산 | PASS | delta-seconds 3형식 + HTTP-date 3형식. 마감은 분류 시점의 시계 **한 번**에서 계산한다 |
+| LIFE10 semantic delivery 이후 자동 replay 0 | PASS | `MaxGatewayRetries = 0`. `Execute`에 재시도 루프 없음 |
+| LIFE13 네트워크/DNS/TLS 오류 분류와 retry 경계 | PASS | 11종. 인증서 실패는 terminal이고 terminal로 남는다 |
+| REL12 예산 0에서 real attempts 0 | PASS | 증거가 반환값이 아니라 **서버가 센 수**다. 예산 0 / ledger 없음 / probe 무동의 세 경로 |
+| HTTP07 임의 redirect 거부 | PASS | 5개 상태 코드, redirect 대상 서버 요청 0건 |
+| WIRE15 encoding 상한 | PASS | 압축을 요청하지 않는다 |
+
+#### 5.8.4 mutation — 39건 주입, 3건이 살아남았다
+
+| 살아남은 결함 | 왜 초록이었나 | 조치 |
+|---|---|---|
+| 403 arm 무력화 | 403 분기가 아래 일반 4xx 분기와 **행동이 완전히 같았다.** 구분할 수 없는 두 분기는 한 분기와 주석이다 | 분기를 지우고 이유를 일반 분기 주석에 합쳤다. 이제 그 분기를 바꾸면 잡힌다 |
+| `max_output_tokens` 재도입 | 주입이 필드만 추가하고 채우지 않아 wire에 나타나지 않았다. **무의미한 주입이 살아남은 것이지 커버리지 구멍이 아니다** | battery가 한 mutation에 여러 편집을 허용하도록 고쳤다. 필드 추가와 대입을 함께 넣으니 잡힌다 |
+| 버전 문자열 검사 제거 | `installedCodexVersion`이 subprocess와 붙어 있어 아무 테스트도 닿지 못했다. 순수한 파싱만 따로 테스트되고 있었다 | 파싱을 `parseCodexVersion`으로 분리하고 이 머신이 내지 않는 출력 11종으로 테스트 |
+
+compiler-only 1건도 있었다 — redirect 주입이 존재하지 않는 변수를 썼다. 컴파일되는 형태로 고쳤고 잡힌다. **컴파일러가 거부한 것은 테스트 증거가 아니다.**
+
+재실행 결과: **39건 주입, 미검출 0, compiler-only 0.**
+
+#### 5.8.5 probe — 만들었고 돌리지 않았다
+
+3장의 BLOCKED를 푸는 데 필요한 사실은 하나다: **backend가 `max_output_tokens`를 받아들이는가.** 기준선은 보내지 않고 PoC는 거부를 기록했지만, "한 번 거부됐다"와 "오늘 거부된다"는 다른 주장이다.
+
+`clauduct-dev probe --send`가 그것을 측정한다. luna/low로 두 요청 — 하나는 기준선과 같은 본문(대조군), 하나는 `max_output_tokens: 16`. `response.incomplete`에 `reason: max_output_tokens`가 오면 backend가 지킨 것이고, `response.completed`가 오면 무시한 것이고, 400이면 거부한 것이다.
+
+| 안전장치 | 내용 |
+|---|---|
+| `--send` 없이는 아무것도 보내지 않음 | 정확히 `["--send"]` 하나일 때만. 오타·접두사·중복·앞뒤 인자 9종 테스트 |
+| 무동의 시 가격을 화면에 출력 | 모델·effort·이 실행의 상한·누적 승인량·endpoint. 가격을 말하지 않는 동의는 동의가 아니다 |
+| 한 실행의 상한 3회 < 누적 20회 | 반복 실행이 눈에 보이는 결정이 되게 한다 |
+| 모델 출력을 읽지도 출력하지도 않음 | 이벤트 타입과 카운트만. 출력되는 `reason`은 고정 집합 밖이면 `unrecognised` |
+
+**아직 한 번도 `--send`를 붙이지 않았다.** 원장 누적 0회다. 실행은 사용자 결정 사항이다.
+
+#### 5.8.6 이번 WP에서 지운 것
+
+`SyntheticOnly` wrapper를 썼다가 지웠다. fixture transport는 credential을 읽지 않으므로 실제 credential이 거기 도달할 경로가 **없다.** 도달할 수 없는 경로를 지키는 wrapper는 일어날 수 없는 경우를 위해 유지보수할 코드다. 반대 방향 — 합성 credential이 실제 소켓에 가는 것 — 은 경로가 있으므로 `Direct`가 검사하고 테스트가 덮는다.
+
+`Ledger.Reserve`가 돌려주던 `release` 클로저도 지웠다. 본문이 비어 있었다. 아무것도 하지 않는 것을 호출자가 반드시 호출해야 하는 구조는 의식(儀式)이다.
+
+#### 5.8.7 이번 WP에서 실행한 Node 기준선
+
+패키지별 직전 검증 정책에 따라, WP05가 계약을 가져온 파일들의 Node 테스트 17개를 돌렸다.
+
+`test-additional-rate-limits` · `test-auth-owner-pipes` · `test-auth-owner-protocol` · `test-client-version` · `test-connection-fault` · `test-credential-recovery` · `test-credential-store-selection` · `test-fixture-token-budget` · `test-fixture-transport-progress` · `test-fixture-usage` · `test-http-close` · `test-http-retry-status` · `test-keepalive-transport` · `test-native-transport` · `test-rate-limit-headers` · `test-rate-limit-observation` · `test-transport-rejections`
+
+**17개 전부 exit 0.** 기준선 worktree는 tracked 변경 0으로 남아 있다.

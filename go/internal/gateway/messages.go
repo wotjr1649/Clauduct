@@ -227,6 +227,10 @@ func categoryFor(err error) string {
 		return "INVALID_TOOL_CALL"
 	case errors.Is(err, anthropic.ErrEmptyReply):
 		return "EMPTY_REPLY"
+	case errors.Is(err, bridge.ErrOutputLimitExceeded):
+		return "OUTPUT_TOKEN_LIMIT_EXCEEDED"
+	case errors.Is(err, bridge.ErrUsageUnknown):
+		return "INVALID_USAGE"
 	case errors.Is(err, anthropic.ErrResponseTooLarge), errors.Is(err, stream.ErrResponseTooLarge):
 		return "RESPONSE_TOO_LARGE"
 	case errors.Is(err, stream.ErrInvalidSSE):

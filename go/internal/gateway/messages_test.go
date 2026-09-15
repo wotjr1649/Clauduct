@@ -85,7 +85,14 @@ func TestTheBackendRequestIsWhatWasBuilt(t *testing.T) {
 		t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
 	}
 	sent := fixture.LastRequest()
-	for _, want := range []string{`"model":"gpt-6-astra"`, `"max_output_tokens":1024`, `"stream":true`, `"ping"`} {
+	for _, want := range []string{
+		`"model":"gpt-6-astra"`,
+		`"instructions":"Follow the developer instructions in the conversation."`,
+		`"stream":true`,
+		`"include":["reasoning.encrypted_content"]`,
+		`"store":false`,
+		`"ping"`,
+	} {
 		if !strings.Contains(sent, want) {
 			t.Errorf("missing %q in the backend request:\n%s", want, sent)
 		}
@@ -169,6 +176,35 @@ func TestUpstreamFailureBeforeAnyOutputIsAStatus(t *testing.T) {
 			}
 			if body := bodyText(t, resp); !strings.Contains(body, tc.category) {
 				t.Fatalf("body = %q, want %s", body, tc.category)
+			}
+		})
+	}
+}
+
+// The client's max_tokens never reaches the backend — this wire has no parameter for it —
+// so it is enforced at completion against the count the backend reports. Both answers
+// arrive after text has streamed, which is what makes them terminal error events rather
+// than statuses: a limit breach can only be known once the backend says what it spent.
+func TestTheOutputLimitIsEnforcedAtCompletion(t *testing.T) {
+	for name, tc := range map[string]struct{ completion, category string }{
+		"over the caller's limit": {
+			`{"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":5,"output_tokens":99999}}}`,
+			"OUTPUT_TOKEN_LIMIT_EXCEEDED"},
+		"no count to check against": {
+			`{"type":"response.completed","response":{"id":"resp_1"}}`,
+			"INVALID_USAGE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := startWith(t, &upstream.Fixture{SSE: sse(created, delta("x"), done("x"), tc.completion)})
+			resp := post(t, g, validRequest)
+			body := bodyText(t, resp)
+			if !strings.Contains(body, "event: error") || !strings.Contains(body, tc.category) {
+				t.Fatalf("body = %q, want a terminal %s", body, tc.category)
+			}
+			// And the response never reached message_stop: the client must not read the
+			// partial answer as a finished one.
+			if strings.Contains(body, "event: message_stop") {
+				t.Fatalf("a refused response still ended cleanly: %s", body)
 			}
 		})
 	}

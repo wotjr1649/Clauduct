@@ -3,6 +3,7 @@ package bridge
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -25,10 +26,16 @@ func textDone(index int, text string) stream.Event {
 	return stream.Event{Type: codex.TextDone, Raw: body}
 }
 
+// minimalRequest is the smallest request the decoder accepts. Its max_tokens is large
+// enough that the completion check never fires by accident; the tests that mean to exercise
+// that check set their own.
+const minimalRequest = `{"model":"gpt-6-astra","max_tokens":100000,"stream":true,` +
+	`"messages":[{"role":"user","content":"ping"}]}`
+
 // run feeds a whole event sequence and collects the frames it produced.
 func run(t *testing.T, events ...stream.Event) ([]anthropic.Frame, error) {
 	t.Helper()
-	translator := NewTranslator("gpt-6-astra")
+	translator := NewTranslatorFor(decodeRequest(t, minimalRequest))
 	var frames []anthropic.Frame
 	for _, e := range events {
 		produced, err := translator.Accept(e)
@@ -56,18 +63,24 @@ func joined(frames []anthropic.Frame) string {
 	return b.String()
 }
 
+// The backend reports what it spent on every completion, and the caller's max_tokens is
+// checked against that count. A completion without it is its own case, below.
+const usageReported = `"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}`
+
+const completedOK = `{"type":"response.completed","response":{"id":"resp_1",` + usageReported + `}}`
+
 const completedNoUsage = `{"type":"response.completed","response":{"id":"resp_1"}}`
 
 // completedWith builds a completed payload carrying the given output items.
 func completedWith(items ...string) stream.Event {
 	return stream.Event{Type: codex.Completed, Raw: []byte(
-		`{"type":"response.completed","response":{"id":"resp_1","output":[` +
+		`{"type":"response.completed","response":{"id":"resp_1",` + usageReported + `,"output":[` +
 			strings.Join(items, ",") + `]}}`)}
 }
 
 // callable builds a request whose tool definitions make the given names callable.
 func callable(names ...string) *anthropic.Request {
-	body := `{"model":"gpt-6-astra","max_tokens":1,"stream":true,
+	body := `{"model":"gpt-6-astra","max_tokens":100000,"stream":true,
 	  "messages":[{"role":"user","content":"x"}],"tools":[`
 	for i, name := range names {
 		if i > 0 {
@@ -137,7 +150,7 @@ func TestTextResponseProducesTheClientSequence(t *testing.T) {
 // type matches the event name. A client reads both.
 func TestFramesAreWellFormedSSE(t *testing.T) {
 	frames, err := run(t,
-		textDelta(0, "x"), textDone(0, "x"), event(codex.Completed, completedNoUsage))
+		textDelta(0, "x"), textDone(0, "x"), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -193,7 +206,7 @@ func TestSnapshotMustMatchTheDeltas(t *testing.T) {
 // It is not a mismatch and it is also not an answer. The empty part is accepted here; the
 // response it belongs to is refused at completion for having produced nothing at all.
 func TestEmptySnapshotWithNoDeltasIsNotAMismatch(t *testing.T) {
-	_, err := run(t, textDone(0, ""), event(codex.Completed, completedNoUsage))
+	_, err := run(t, textDone(0, ""), event(codex.Completed, completedOK))
 	if errors.Is(err, anthropic.ErrTextMismatch) {
 		t.Fatalf("an empty part with no deltas was read as a mismatch: %v", err)
 	}
@@ -213,7 +226,7 @@ func TestReasoningBeforeTextDoesNotDisplaceTheAnswer(t *testing.T) {
 		event(codex.ReasoningPartDone, `{"type":"response.reasoning_part.done"}`),
 		textDelta(0, "the answer"),
 		textDone(0, "the answer"),
-		event(codex.Completed, completedNoUsage),
+		event(codex.Completed, completedOK),
 	)
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -234,7 +247,7 @@ func TestReasoningContentIsNotEmitted(t *testing.T) {
 	frames, err := run(t,
 		event(codex.ReasoningSummaryTxtD, `{"type":"response.reasoning_summary_text.delta","delta":"SECRET-REASONING"}`),
 		textDelta(0, "answer"), textDone(0, "answer"),
-		event(codex.Completed, completedNoUsage))
+		event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -296,7 +309,7 @@ func TestMalformedPayloadsAreRefused(t *testing.T) {
 // An empty delta is a real delta: the backend said something happened and produced no
 // characters. Absent is a different thing and is refused above.
 func TestEmptyDeltaIsCarried(t *testing.T) {
-	frames, err := run(t, textDelta(0, ""), textDone(0, ""), event(codex.Completed, completedNoUsage))
+	frames, err := run(t, textDelta(0, ""), textDone(0, ""), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -310,7 +323,7 @@ func TestEmptyDeltaIsCarried(t *testing.T) {
 // empty assistant message would make that failure look like the model having said nothing,
 // which is a plausible answer rather than the failure it is.
 func TestEmptyResponseIsRefused(t *testing.T) {
-	_, err := run(t, event(codex.Completed, completedNoUsage))
+	_, err := run(t, event(codex.Completed, completedOK))
 	if !errors.Is(err, anthropic.ErrEmptyReply) {
 		t.Fatalf("err = %v, want EMPTY_REPLY", err)
 	}
@@ -333,7 +346,7 @@ func TestToolOnlyResponseIsNotEmpty(t *testing.T) {
 // A block left open at completion is closed first, so a client reading sequentially never
 // sees a message end with a block outstanding.
 func TestOpenBlocksAreClosedAtCompletion(t *testing.T) {
-	frames, err := run(t, textDelta(0, "unfinished"), event(codex.Completed, completedNoUsage))
+	frames, err := run(t, textDelta(0, "unfinished"), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -352,11 +365,55 @@ func TestOpenBlocksAreClosedAtCompletion(t *testing.T) {
 	}
 }
 
+// The caller's max_tokens never reaches the backend, so it is checked at completion
+// against the count the backend reports. A completion that reports no count leaves nothing
+// to check it against, and reporting success would be claiming a check that never ran.
+func TestACompletionWithNoUsageIsRefused(t *testing.T) {
+	_, err := run(t, textDelta(0, "x"), textDone(0, "x"), event(codex.Completed, completedNoUsage))
+	if !errors.Is(err, ErrUsageUnknown) {
+		t.Fatalf("err = %v, want %v", err, ErrUsageUnknown)
+	}
+}
+
+// A response larger than the caller allowed is refused rather than trimmed. Nothing asked
+// the backend to stop, so by the time this is known the tokens are already spent — but
+// handing the client more than it asked for would be answering a different request.
+func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
+	translator := NewTranslatorFor(decodeRequest(t,
+		`{"model":"m","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	for _, e := range []stream.Event{textDelta(0, "x"), textDone(0, "x")} {
+		if _, err := translator.Accept(e); err != nil {
+			t.Fatalf("Accept: %v", err)
+		}
+	}
+	// The fixture reports three output tokens against a limit of two.
+	_, err := translator.Accept(event(codex.Completed, completedOK))
+	if !errors.Is(err, ErrOutputLimitExceeded) {
+		t.Fatalf("err = %v, want %v", err, ErrOutputLimitExceeded)
+	}
+}
+
+// Exactly at the limit is within it. An off-by-one here refuses a response the caller asked
+// for and paid for.
+func TestAResponseExactlyAtTheLimitIsAccepted(t *testing.T) {
+	translator := NewTranslatorFor(decodeRequest(t,
+		`{"model":"m","max_tokens":3,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	for _, e := range []stream.Event{textDelta(0, "x"), textDone(0, "x")} {
+		if _, err := translator.Accept(e); err != nil {
+			t.Fatalf("Accept: %v", err)
+		}
+	}
+	if _, err := translator.Accept(event(codex.Completed, completedOK)); err != nil {
+		t.Fatalf("a response exactly at the limit was refused: %v", err)
+	}
+}
+
 // Unknown counts stay unknown. Writing 0 would turn "we do not know what this cost" into
 // "it cost nothing", and a budget built on that number would be wrong in the cheap
-// direction.
+// direction. Output is reported here because the limit check needs it; input is not.
 func TestUnknownUsageIsOmittedNotZeroed(t *testing.T) {
-	frames, err := run(t, textDelta(0, "x"), textDone(0, "x"), event(codex.Completed, completedNoUsage))
+	frames, err := run(t, textDelta(0, "x"), textDone(0, "x"), event(codex.Completed,
+		`{"type":"response.completed","response":{"id":"resp_1","usage":{"output_tokens":3}}}`))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -370,8 +427,8 @@ func TestUnknownUsageIsOmittedNotZeroed(t *testing.T) {
 		if err := json.Unmarshal(frame.Data, &body); err != nil {
 			t.Fatalf("message_delta: %v", err)
 		}
-		if len(body.Usage) != 0 {
-			t.Fatalf("usage = %v, want empty when the backend reported none", body.Usage)
+		if _, present := body.Usage["input_tokens"]; present {
+			t.Fatalf("usage = %v, want no input count when the backend reported none", body.Usage)
 		}
 		return
 	}
@@ -389,6 +446,17 @@ func decodeRequest(t *testing.T, body string) *anthropic.Request {
 	return request
 }
 
+// parts reads a conversation turn's content. The system turn carries a string instead, so
+// asking for parts where there are none is itself the assertion.
+func parts(t *testing.T, entry InputEntry) []InputPart {
+	t.Helper()
+	got, ok := entry.Content.([]InputPart)
+	if !ok {
+		t.Fatalf("turn content = %T (%v), want []InputPart", entry.Content, entry.Content)
+	}
+	return got
+}
+
 func TestBuildRequestCarriesTheConversation(t *testing.T) {
 	request := decodeRequest(t, `{"model":"gpt-6-astra","max_tokens":2048,"stream":true,
 	  "system":[{"type":"text","text":"You are Claude Code."}],
@@ -402,24 +470,51 @@ func TestBuildRequestCarriesTheConversation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
-	if out.Model != "gpt-6-astra" || out.MaxTokens != 2048 || !out.Stream {
+	if out.Model != "gpt-6-astra" || !out.Stream {
 		t.Fatalf("envelope = %+v", out)
 	}
-	if out.Instruction != "You are Claude Code." {
-		t.Fatalf("instructions = %q", out.Instruction)
+	if out.Instruction != Instruction {
+		t.Fatalf("instructions = %q, want the fixed string", out.Instruction)
 	}
 	if out.Effort == nil || out.Effort.Effort != "high" {
 		t.Fatalf("effort = %+v", out.Effort)
 	}
-	if len(out.Input) != 3 {
-		t.Fatalf("input = %d turns, want 3", len(out.Input))
+	// Four entries: the system prompt leads as a developer turn, then the three messages.
+	if len(out.Input) != 4 {
+		t.Fatalf("input = %d entries, want 4", len(out.Input))
+	}
+	if out.Input[0].Role != "developer" || out.Input[0].Content != "You are Claude Code." {
+		t.Fatalf("system turn = %+v", out.Input[0])
 	}
 	// The backend distinguishes text the user supplied from text the model produced.
-	if out.Input[0].Content[0].Type != "input_text" || out.Input[1].Content[0].Type != "output_text" {
-		t.Fatalf("part types = %q %q", out.Input[0].Content[0].Type, out.Input[1].Content[0].Type)
+	if parts(t, out.Input[1])[0].Type != "input_text" || parts(t, out.Input[2])[0].Type != "output_text" {
+		t.Fatalf("part types = %q %q",
+			parts(t, out.Input[1])[0].Type, parts(t, out.Input[2])[0].Type)
 	}
-	if out.Input[2].Content[0].Text != "second" {
-		t.Fatalf("last turn = %q", out.Input[2].Content[0].Text)
+	if parts(t, out.Input[3])[0].Text != "second" {
+		t.Fatalf("last turn = %q", parts(t, out.Input[3])[0].Text)
+	}
+}
+
+// The client's max_tokens never reaches the backend. Sending it was measured to be
+// rejected, and the baseline has never sent it.
+func TestTheOutputLimitIsNotSentUpstream(t *testing.T) {
+	out, err := BuildRequest(decodeRequest(t,
+		`{"model":"m","max_tokens":2048,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	encoded, _ := json.Marshal(out)
+	for _, forbidden := range []string{"max_output_tokens", "max_tokens", "2048"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("the backend request carries %q: %s", forbidden, encoded)
+		}
+	}
+	// And the two settings that are always sent, are.
+	for _, want := range []string{`"include":["reasoning.encrypted_content"]`, `"store":false`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("missing %s: %s", want, encoded)
+		}
 	}
 }
 
@@ -434,8 +529,16 @@ func TestSystemPromptShapesAgree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
-	if fromString.Instruction != fromBlocks.Instruction || fromString.Instruction != "instructions" {
-		t.Fatalf("%q vs %q", fromString.Instruction, fromBlocks.Instruction)
+	// Both arrive as the leading developer turn, not as the top-level instructions.
+	if fromString.Instruction != Instruction || fromBlocks.Instruction != Instruction {
+		t.Fatalf("instructions = %q / %q, want the fixed string",
+			fromString.Instruction, fromBlocks.Instruction)
+	}
+	if !reflect.DeepEqual(fromString.Input[0], fromBlocks.Input[0]) {
+		t.Fatalf("%+v vs %+v", fromString.Input[0], fromBlocks.Input[0])
+	}
+	if fromString.Input[0].Role != "developer" || fromString.Input[0].Content != "instructions" {
+		t.Fatalf("system turn = %+v", fromString.Input[0])
 	}
 }
 
@@ -451,7 +554,9 @@ func TestAbsentEffortSendsNoReasoningParameter(t *testing.T) {
 		t.Fatalf("effort = %+v, want nil", out.Effort)
 	}
 	encoded, _ := json.Marshal(out)
-	if strings.Contains(string(encoded), "reasoning") {
+	// "reasoning" also appears inside include, which is sent on every request. The field
+	// this must not gain is the parameter.
+	if strings.Contains(string(encoded), `"reasoning":`) {
 		t.Fatalf("an absent effort became a field: %s", encoded)
 	}
 }

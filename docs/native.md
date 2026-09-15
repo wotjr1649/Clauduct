@@ -227,6 +227,6 @@ node --permission --allow-fs-read=D:\AIDEV\Clauduct --allow-child-process src/te
 
 **Not verified:** 실제 기본 400K/320K 압축·복귀, 모든 모델/effort 조합, 실제 계정 회전, 모든 사용자 hook/plugin/UI 조합과 수일 운영입니다. opaque reasoning·직접 부모 상속·축소 창의 압축·장기 실행은 각각 관측 범위가 있으므로 위 현행 기준표를 따릅니다. 2026-09-12에는 사용자 요청에 따라 명시적 비대화형 경로에서 공개 fixture의 실제 Claude 왕복을 실행했습니다. 이것을 과거 거부된 PTY 경로의 통과로 해석하지 않습니다. **Blocked by:** 동적 symlink/junction 검사는 거부를 유지하며 다른 경로로 재현하지 않습니다.
 
-합성 부하 검사로 누적 카운터 한도·작업/소켓 정리·메모리 추이를 저비용으로 검사할 수 있지만 장기간 무결함을 입증하지는 못합니다. 기존 shell 측정 중 생성된 `%SystemDrive%` 폴더는 삭제 guard가 거부하여 그대로 보존했습니다.
+합성 부하 검사로 누적 카운터 한도·작업/소켓 정리·메모리 추이를 저비용으로 검사할 수 있지만 장기간 무결함을 입증하지는 못합니다. 기존 shell 측정 중 생성된 `%SystemDrive%` 폴더는 당시 삭제 guard가 거부하여 보존했습니다. 그 폴더는 이후 사용자 승인 아래 제거되어 지금은 없습니다.
 
 공식 근거: [환경 변수](https://code.claude.com/docs/en/env-vars), [재시도 오류 처리](https://code.claude.com/docs/en/errors), [hooks](https://code.claude.com/docs/en/hooks), [서브에이전트](https://code.claude.com/docs/en/sub-agents), [Advisor 비활성화](https://code.claude.com/docs/en/advisor#turn-the-advisor-off), [HTTP 필드 중복 규칙](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.3).

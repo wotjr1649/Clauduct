@@ -64,13 +64,15 @@ HEAD, 테스트 수, 통과 개수는 여기 적지 않는다. 아래 명령이 
    .\clauduct.cmd --dry-run -p
    ```
 
-   exit 0, `mode=print`, `model=gpt-6-astra`, `effort=low`, `credentialReads=0`, `childStarted=false`, `globalWrites=0`이 기준이다. backend 접속 시험이 아니다.
+   JSON 한 줄과 exit 0이면 wrapper 기동과 옵션 해석이 정상이다. `model`·`effort`가 [현행 검증표](docs/remaining-verification.md) 2장의 무옵션 시작값과 같은지 본다.
+
+   같은 출력의 `credentialReads`·`childStarted`·`globalWrites`는 **이 분기가 쓰는 고정값이라 아무것도 증명하지 않는다.** dry-run이 credential·소켓·자식을 열지 않는다는 것은 `src/clauduct.mjs`의 해당 분기가 즉시 반환한다는 코드 사실이며, 그 분기 위로 무언가 옮겨가도 출력은 계속 0을 말한다. 이 세 값을 무접속의 증거로 인용하지 않는다.
 
 4. 실행 범위를 먼저 검토한 뒤 로컬 회귀를 돌린다. 무검토 glob으로 전부 실행하지 않는다 — fixture·자식 프로세스·네트워크·쓰기 대상을 먼저 확인하고 필요한 파일만 나열한다. 대상 선택은 [현행 검증표](docs/remaining-verification.md) 5.1절을 따른다.
 
    ```powershell
    . ./src/run-node-tests.ps1
-   Invoke-ClauductNodeTests -Root . -TimeoutSeconds 60 -TestFiles @('src/test-native-gateway.mjs')
+   Invoke-ClauductNodeTests -Root . -TestFiles @('src/test-native-gateway.mjs')
    ```
 
    파일 단위 통과 안의 `notRun`을 실행 성공으로 세지 않는다. 이 실행기는 환경 allowlist·시간 제한·단일 concurrency를 주지만 OS 보안 sandbox가 아니다.
@@ -92,7 +94,7 @@ HEAD, 테스트 수, 통과 개수는 여기 적지 않는다. 아래 명령이 
 |---|---|
 | OS·도구 | Windows, PowerShell 7+, Git, Node, Claude, Codex |
 | 실행 파일 위치 | 사용자 홈의 `.local/bin/claude.exe`, `AppData/Local/Programs/OpenAI/Codex/bin/codex.exe`. Node는 PATH에서 찾는다 |
-| 검증된 버전 조합 | 실행별로 [현행 검증표](docs/remaining-verification.md) 2·4장이 적는다. 버전 번호만으로 bridge 호환성을 확정하지 않는다 |
+| 검증된 버전 조합 | 실행별로 [현행 검증표](docs/remaining-verification.md) 4장이 적는다. 2장은 Codex clientVersion 계약만 다룬다. 버전 번호만으로 bridge 호환성을 확정하지 않는다 |
 | 환경 지침 | global guidance·hooks·permissions·plugins·MCP는 대상 머신 쪽 설정으로 유지한다 |
 | secret 환경 변수 | provider/secret 계열 env는 Clauduct 자식에 전달하지 않는 기존 계약을 유지한다 |
 

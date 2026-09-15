@@ -287,16 +287,16 @@ func TestAChildThatWillNotStopIsReportedRatherThanWaitedOn(t *testing.T) {
 		t.Skipf("starting a test process: %v", err)
 	}
 	pid := cmd.Process.Pid
-	t.Cleanup(func() {
-		killTree(pid)
-		_ = cmd.Wait()
-	})
+	// No Wait here. The session's own wait is still running on this Cmd -- that is the
+	// whole point of a child that will not stop -- and two concurrent Wait calls on one Cmd
+	// is a data race, which is what the race detector reported.
+	t.Cleanup(func() { killTree(pid) })
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	started := time.Now()
-	_, err := Run(ctx, Options{
+	result, err := Run(ctx, Options{
 		Args:          []string{"x"},
 		Env:           isolatedEnv(t),
 		Cwd:           os.TempDir(),
@@ -318,6 +318,14 @@ func TestAChildThatWillNotStopIsReportedRatherThanWaitedOn(t *testing.T) {
 	// Bounded by the deadline plus the grace, not by the child's lifetime.
 	if elapsed > 2*time.Second+stopGrace {
 		t.Fatalf("took %v; the caller was held by a child that would not go", elapsed)
+	}
+
+	// And the exit code is unknown rather than zero. The wait is still running, so there is
+	// no status to report: reading one is the data race the detector found in CI, and zero
+	// would read as a session that finished successfully.
+	if result.NativeExitCode != ExitCodeUnknown {
+		t.Fatalf("NativeExitCode = %d for a child that was never reaped, want %d",
+			result.NativeExitCode, ExitCodeUnknown)
 	}
 }
 

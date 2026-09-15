@@ -91,6 +91,13 @@ type Result struct {
 	Inferences int
 }
 
+// ExitCodeUnknown is NativeExitCode when the child was never reaped.
+//
+// It happens when a stopped child does not exit within the grace: the wait is still running
+// somewhere, so there is no exit status yet and reading one would be both a data race and an
+// answer to a question nobody can answer. Zero would read as success, which it is not.
+const ExitCodeUnknown = -1
+
 const defaultShutdownTimeout = 5 * time.Second
 
 // stopGrace is how long a stopped child is given to actually exit.
@@ -160,8 +167,15 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	result.NativeStarted = true
 
-	waitErr := waitFor(ctx, process)
-	result.NativeExitCode = process.ExitCode()
+	waitErr, reaped := waitFor(ctx, process)
+	if reaped {
+		result.NativeExitCode = process.ExitCode()
+	} else {
+		// The wait is still in flight and writing the process state as it finishes.
+		// Reading the exit code here is a data race -- found by the race detector on its
+		// first run in CI -- and the value would mean nothing anyway.
+		result.NativeExitCode = ExitCodeUnknown
+	}
 
 	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 
@@ -181,13 +195,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 // production nothing noticed, because main passes context.Background. It surfaced when a
 // fixture was mutated into answering the same tool call forever and the client looped --
 // every test timeout in this package had been decorative until then.
-func waitFor(ctx context.Context, process Process) error {
+func waitFor(ctx context.Context, process Process) (err error, reaped bool) {
 	done := make(chan error, 1)
 	go func() { done <- process.Wait() }()
 
 	select {
-	case err := <-done:
-		return err
+	case waitErr := <-done:
+		return waitErr, true
 	case <-ctx.Done():
 		stopErr := process.Stop()
 
@@ -204,13 +218,13 @@ func waitFor(ctx context.Context, process Process) error {
 		case <-done:
 		case <-time.After(stopGrace):
 			return fmt.Errorf("the child did not exit within %v of being stopped after %w",
-				stopGrace, ctx.Err())
+				stopGrace, ctx.Err()), false
 		}
 
 		if stopErr != nil {
-			return fmt.Errorf("stopping the child after %w: %v", ctx.Err(), stopErr)
+			return fmt.Errorf("stopping the child after %w: %v", ctx.Err(), stopErr), true
 		}
-		return ctx.Err()
+		return ctx.Err(), true
 	}
 }
 

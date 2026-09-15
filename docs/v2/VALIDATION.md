@@ -662,7 +662,24 @@ LIFE11 테스트는 **정리가 실패하는 것을 단언한다.** 일부러다
 
 단언도 `Contains`에서 **정확한 일치**로 바꿨다. 감싼 오류를 포함으로 재면 두 경로를 구분하지 못한다.
 
-#### 1.10.3 mutation — 4건, 전부 잡힌다
+#### 1.10.3 `-race`가 제품 race를 잡았다
+
+CI에서 처음으로 무언가를 잡았다. `TestAChildThatWillNotStopIsReportedRatherThanWaitedOn`에서 **DATA RACE 셋**이고 둘은 제품이다.
+
+```
+Read  at ... osProcess.ExitCode()  run.go:275   (Run)
+Write at ... os/exec.(*Cmd).Wait()              (buried goroutine)
+```
+
+grace 경로로 빠져나오면 **`Wait()`가 아직 돌고 있다.** 그 상태에서 `Run`이 `ExitCode()`를 읽으면 `ProcessState`를 쓰는 중인 goroutine과 경쟁한다. 로컬에서는 보이지 않는다 — 이 머신에 C 툴체인이 없어 `-race`를 돌릴 수 없다.
+
+고쳤다. `waitFor`가 **reap 여부를 함께 반환**하고, reap하지 못했으면 `Run`이 exit 코드를 **읽지 않는다.** 값은 `ExitCodeUnknown`(-1)이다 — **0은 성공한 세션처럼 읽힌다.**
+
+셋째는 테스트가 같은 `Cmd`에 `Wait()`를 중복 호출한 것이다. 제거했다.
+
+그리고 `-race` 없이도 서는 단언을 남겼다: reap 못 한 세션의 `NativeExitCode`는 `ExitCodeUnknown`이어야 한다.
+
+#### 1.10.4 mutation — 4건, 전부 잡힌다
 
 `CREATE_NEW_PROCESS_GROUP` 주입 · 클라이언트 exit 코드를 launcher 오류로 바꾸기 · exit 코드를 보고하지 않기 · 취소가 오류를 내지 않기. **console event를 쏘는 변이는 넣지 않았다.**
 

@@ -141,16 +141,18 @@ const baselineFailed = tests.length >= 2 && tests[0].passed === false;
 
 로컬에서 실패하던 `verification/test-http-transport.mjs`와 `test-dotnet-http-transport.mjs`는 CI에서 통과한다. 로컬 실패는 loopback filter 때문이었다.
 
-### 미해결: poc/test-claude-read-once.mjs의 `read_extra_normal`
+### 해결: poc/test-claude-read-once.mjs의 `read_extra_normal`
 
-CI에서만 실패하며 로컬은33/0으로 통과한다. CI에서 이 파일을 제외했고 나머지110개가 관문을 지킨다.
+**2026-09-15 닫혔다.** CI 제외를 걷어냈고 111개 전부가 관문을 지킨다.
 
-확정된 것:
+원인은 `poc/gateway.mjs:105`가 소켓 **스냅샷**을 잡는다는 것이었다. `close()`는 그 스냅샷의 `close` 이벤트만 기다리는데, 리스너는 `server.close()`가 끝날 때까지 살아 있으므로 `extra` 모드가 종료 중에 보내는 연결(`poc/read-test-client.mjs:85`)이 **스냅샷 이후에** 도착한다. 그 소켓은 도착 즉시 `resetAndDestroy()`되지만 `close` 이벤트가 `diagnostics()` 뒤에 떨어져 `activeSockets`가 1로 남았다.
 
-- 실패 지점은 `poc/test-claude-read-once.mjs:90`의 `assert.equal(result.resourcesClosed, true)`다.
-- `extra` 모드는 gateway 종료 시점에 요청을 한 번 더 보낸다(`poc/read-test-client.mjs:85`). 느린 환경에서만 재현된다.
-- `finishMs`를1000에서120으로 줄여도 이 사례는 재현되지 않았다. `late-cli`가 먼저 걸린다. 단순한 시간 부족이 아니다.
+수정은 스냅샷을 기다린 뒤 **남은 소켓을 한 번 더 비우는** 것이다(`poc/gateway.mjs:115`). `server.close()`가 이미 끝난 뒤라 새 연결이 들어올 수 없어 이 루프는 한 바퀴로 끝난다. 종료 **순서**는 건드리지 않았다 — 순서를 바꾸는 시도는 아래대로 28건을 깼다.
 
-미확정: `resourcesClosed`는 `activeSockets`·`activeJobs`·`activeTimers`·`activeDeliveries`·`busy`·`transport.activeRequests`·`transport.activeSockets`·`localSessionSecretCleared`·자식 종료의 논리곱인데(`poc/claude-read-once.mjs:117`), **어느 조건이 false인지 기록하지 않는다.** 이어받을 때는 그 진단부터 넣는 것이 순서다.
+**먼저 진단을 넣은 것이 이걸 열었다.** `resourcesClosed`는 9개 조건의 논리곱이라 실패가 "무언가 열려 있다"까지만 말했다. 조건 이름 배열 `openResources`로 바꾸자(`poc/claude-read-once.mjs:120`) 실패가 `open: sockets`라고 스스로 말했고, 그 지점부터는 찾을 곳이 하나였다.
+
+덤으로 드러난 것: 이 결함은 **이제 로컬에서도 결정적으로 재현된다**(수정 전 5회 연속 실패). "CI에서만 실패"는 낡은 기록이었다. main의 원본 코드를 별도 worktree에서 돌려 대조 확인했다.
+
+검증: 종료 경로를 공유하는 네 스위트 전부 통과 — claude-read-once 33/0, gateway 74/0, user-session 89/0, request-inspector 90/0. read-once는 5회 연속 33/0.
 
 시도했다가 되돌린 것: `poc/gateway.mjs`의 종료 순서를 바꿔 `server.close()`를 소켓 정리보다 먼저 호출했다. 늦게 들어온 연결이 `socketClosures`에 포함되지 않는 창을 없애려는 의도였으나, gateway·claude-read-once·user-session·request-inspector 네 suite에서28건이 깨져 되돌렸다. 원래 순서에는 확인하지 못한 이유가 있다.

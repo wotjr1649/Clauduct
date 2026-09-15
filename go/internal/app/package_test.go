@@ -196,8 +196,16 @@ func TestTheInstallDirectoryIsNotWrittenTo(t *testing.T) {
 	// Run from somewhere else entirely, so nothing resolves relative to the install.
 	cmd.Dir = t.TempDir()
 	cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+t.TempDir())
-	if raw, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("running from %s: %v\n%s", install, err, raw)
+	raw, err := cmd.CombinedOutput()
+
+	// Exit status is not the question. A machine without claude.exe answers CLAUDE_NOT_FOUND
+	// and exits 1, which is correct -- and is the stronger case for this test, because the
+	// binary still must not have written anything. CI found this: the runner has no client
+	// installed and the first version of the test demanded exit 0.
+	//
+	// What would matter is the binary failing to run at all, which shows up as no output.
+	if err != nil && len(bytes.TrimSpace(raw)) == 0 {
+		t.Fatalf("the binary produced nothing when run from %s: %v", install, err)
 	}
 
 	if appeared := added(before, tree(t, install)); len(appeared) != 0 {

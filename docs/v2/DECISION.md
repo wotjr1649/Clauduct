@@ -212,8 +212,8 @@ go/internal/buildinfo/
 이 세션에서 자율로 정할 수 없고, 답에 따라 다음 작업이 달라지는 것만 적는다.
 
 1. **G2 실행 권한.** 새 branch `redesign/go-v2-native-host`와 sibling worktree를 만들어도 되는가. 만들지 않고 현재 작업 트리의 `go/`에서 진행하는 것도 가능하지만, 그러면 비교 실행 시 두 구현이 같은 작업 트리를 공유한다.
-2. **정책 옵션 10개의 pass-through 여부** (2.6). `--permission-mode` `--mcp-config` `--plugin-dir` `--worktree` `--restricted` `--betas` `--prompt-suggestions` `--dangerously-skip-permissions` 계열. 핸드오프 13.1절의 목표 사용례는 이들이 열려야 성립한다. 기술적 장애는 없고 권한 정책 판단이다.
-3. **`review-diff` 기능의 처분** (2.3). Go 하위 명령으로 재구현할지, capability 미지원으로 선언할지.
+2. ~~정책 옵션 10개의 pass-through 여부~~ — **해결됨(2026-09-15).** 권한 해제 2개만 거부하고 나머지 28개는 전달한다. 근거와 전체 표는 [COMPATIBILITY.md](COMPATIBILITY.md) 3장.
+3. ~~`review-diff` 기능의 처분~~ — **해결됨(2026-09-15).** WP07까지 미지원으로 명시한다. 근거와 되살릴 조건은 [COMPATIBILITY.md](COMPATIBILITY.md) 3.1.
 4. **Node 회귀 기준선을 지금 찍을지** (U3). 113개 파일의 offline 실행은 가능하다. 비교 기준으로 필요해지는 시점은 G4 이후라 지금은 보류했다.
 
 `docs/v2/`와 `comparison/` 산출물의 stage·commit 여부도 사용자 판단으로 남긴다 — 이번 세션은 파일 생성까지만 했다.

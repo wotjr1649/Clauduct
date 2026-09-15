@@ -42,6 +42,15 @@ func run() int {
 	})
 
 	if err != nil {
+		var refused *app.RefusedOptionError
+		if errors.As(err, &refused) {
+			// Name the option and say why. A refusal the user cannot act on reads as a
+			// bug, and this one is a deliberate policy with a short list behind it.
+			fmt.Fprintf(os.Stderr,
+				"clauduct: %s is not forwarded; it turns off permission checks for the whole session.\n"+
+					"          Every other native option is passed through unchanged.\n", refused.Option)
+			return 1
+		}
 		if errors.Is(err, app.ErrClaudeNotFound) {
 			// Name where it looked. A user who installed elsewhere can act on this;
 			// "not found" alone sends them guessing.

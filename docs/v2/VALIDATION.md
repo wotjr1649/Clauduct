@@ -4,8 +4,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **73개 통과** (subtest 포함. app 15 / launch 10 / gateway 28 / platform 8) |
-| mutation 검증 | WP01 3건 + WP02 8건 주입, **11건 전부 해당 테스트가 실패함** |
+| 실행한 V2 Go 테스트 | **81개 통과** (subtest 포함) |
+| mutation 검증 | 16건 주입. 2건이 처음에 살아남았고 둘 다 테스트를 보강해 잡았다 |
 | 실모델 호출 | **0회.** upstream 코드가 존재하지 않아 구조적으로 불가능하다 |
 | 잔여 승인 예산 | **0. 그리고 별도로 BLOCKED다** — 3장 |
 
@@ -27,7 +27,7 @@
 | `gofmt -l .` | 출력 없음 |
 | `go vet ./...` | 통과 |
 | `go build ./...` | 통과 |
-| `go test -count=1 ./...` | **4 package 통과**, 73 테스트 |
+| `go test -count=1 ./...` | **4 package 통과**, 81 테스트 |
 | `go build -trimpath` 후 `version` | VCS stamp 확인: `bfbdf238…+dirty`, go1.27.0 windows/amd64 |
 | `clauduct-dev doctor` | exit 0. claude.exe 해석 성공, 82 parent vars → 87 child vars, credential 읽기 0 |
 | `clauduct-go --version` | exit 0. 실제 claude.exe가 `2.1.272 (Claude Code)` 출력 |
@@ -63,6 +63,10 @@ WP02의 인증·경계 규칙을 Node 기준선의 규칙과 핸드오프 경고
 | 실행 파일 해석보다 gateway bind를 먼저 수행 | `TestMissingExecutableBindsNothing` 실패 |
 
 첫 행이 이 절을 쓰는 이유다. 보강 전 그 테스트는 초록이었지만 아무것도 지키지 못하고 있었다.
+
+WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 취소·read deadline·멱등 release·close 순서·동시 실행 상한)은 전부 즉시 잡혔다.
+
+옵션 거부 도입 시 5건을 더 주입했고 **1건이 살아남았다** — `app.Run`에서 거부 호출을 통째로 지워도 초록이었다. `internal/launch`의 테스트가 `Refused()`를 직접 호출하기 때문이다. 규칙을 아는 곳에만 테스트가 있고 **그것을 강제하는 곳**에는 없었다. 같은 실패 유형이 두 번째다. 강제 지점 테스트를 추가한 뒤 잡힌다.
 
 ### 1.2 실행하지 않은 것
 

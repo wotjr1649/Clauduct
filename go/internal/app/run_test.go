@@ -481,3 +481,60 @@ func TestSessionTokenIsNotWrittenToStdioOrError(t *testing.T) {
 		t.Error("session token appeared in a cleanup error")
 	}
 }
+
+// A refused option must be refused by the thing that launches, not only by the package
+// that knows the list. A mutation that deleted the check from Run survived until this
+// existed: internal/launch's own tests stayed green because they call Refused directly.
+func TestRefusedOptionStopsBeforeAnythingIsAcquired(t *testing.T) {
+	resolved, spawned := false, false
+
+	result, err := Run(context.Background(), Options{
+		Args:   []string{"-p", "hello", "--dangerously-skip-permissions"},
+		Cwd:    t.TempDir(),
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+		ResolveClaude: func() (string, bool, error) {
+			resolved = true
+			return os.Args[0], true, nil
+		},
+		StartProcess: func(launch.Spec, io.Reader, io.Writer, io.Writer) (Process, error) {
+			spawned = true
+			return nil, nil
+		},
+	})
+
+	var refused *RefusedOptionError
+	if !errors.As(err, &refused) {
+		t.Fatalf("err = %v, want a RefusedOptionError", err)
+	}
+	if refused.Option != "--dangerously-skip-permissions" {
+		t.Errorf("Option = %q", refused.Option)
+	}
+	if resolved {
+		t.Error("an executable lookup happened for a session that was never going to start")
+	}
+	if spawned {
+		t.Error("the child was started with an option that turns off permission checks")
+	}
+	if result.GatewayAddr != "" {
+		t.Errorf("a port was bound: %s", result.GatewayAddr)
+	}
+	if result.NativeStarted {
+		t.Error("result claims the native process started")
+	}
+}
+
+// Every other option the baseline refused must still reach the child. This is the target
+// usage the redesign exists for, checked at the launcher rather than in the rule alone.
+func TestConfigurationOptionsStillReachTheChild(t *testing.T) {
+	args := []string{"--mcp-config", `.\mcp.json`, "--plugin-dir", `.\plugin`,
+		"--worktree", "experiment", "--permission-mode", "plan", "--restricted"}
+	s := runSession(t, sessionOptions{args: args})
+	if s.err != nil {
+		t.Fatalf("Run: %v", s.err)
+	}
+	if !reflect.DeepEqual(s.report.Argv, args) {
+		t.Fatalf("child argv\n got: %#v\nwant: %#v", s.report.Argv, args)
+	}
+}

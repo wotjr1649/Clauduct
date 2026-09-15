@@ -13,6 +13,7 @@
 - 요청 경계: 정확한 Host, loopback 원격 주소, 중복 header 거부, proxy/browser header 거부, `cookie`·`proxy-authorization` 거부
 - 인증: `Authorization: Bearer` 상수시간 비교. `x-api-key`는 같은 세션 token일 때만 허용
 - `POST /v1/messages`: method·content-type·32 MiB 본문 상한 검사, 요청 등록, 취소·300s 상한
+- 옵션 거부: `--dangerously-skip-permissions` 계열 2개만. 나머지 native 옵션은 전부 전달
 - 요청 registry: 요청별 취소, 형제 비전파, 멱등 해제, 동시 실행 상한 64
 - 종료: 새 요청 거부 → in-flight 취소 → drain → listener 해제
 
@@ -49,7 +50,8 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 
 ## 지켜야 할 계약
 
-- **제품 launcher는 인자를 해석하지 않는다.** parser가 없으므로 옵션 값이 옵션으로 오인될 수 없다. 나중에 특정 native 옵션을 거부하기로 결정하더라도, 그것은 별도 테스트를 동반한 의도적 추가여야지 굴러다니는 parser의 부작용이면 안 된다.
+- **제품 launcher는 인자를 해석하지 않는다.** `launch.Build`는 argv를 그대로 복사한다. 유일한 예외는 `launch.Refused`의 옵션 2개(`--dangerously-skip-permissions` 계열)이며, 값을 먹지 않는 옵션이라 인자 단위 정확 일치만으로 충분하다 — 값 추적이 없으므로 값이 옵션으로 오인되는 경로가 생기지 않는다. 목록을 늘리려면 그 성질이 유지되는지 먼저 확인한다.
+- **거부는 아무것도 얻기 전에 일어난다.** 실행 파일 조회도, bind도 하지 않는다. `internal/app`에 그 순서를 지키는 테스트가 있다.
 - **Node·.NET·PowerShell에 runtime 의존하지 않는다.** `internal/app`의 소스 스캔 테스트가 문자열 리터럴 수준에서 이를 강제한다. Node 기준선이 `<node.exe> <repo>/src/review-diff.mjs` 형태의 명령을 native에 넘기던 패턴이 다시 들어오면 그 자리에서 실패한다.
 - **제3자 의존성 0.** `go.sum`이 생기거나 `go.mod`에 `require`가 생기면 테스트가 실패한다. 의존성을 추가하려면 `docs/v2/ARCHITECTURE.md` 14장의 허용 기준을 통과시키고 그 결정을 기록한다.
 - **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 `docs/v2/DECISION.md`. Clauduct는 추가 secret 장벽이 아니다.

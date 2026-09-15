@@ -19,6 +19,13 @@ import (
 // nothing was started, so there is nothing to clean up.
 var ErrClaudeNotFound = errors.New("CLAUDE_NOT_FOUND")
 
+// RefusedOptionError names a native option this launcher will not forward. Only the
+// permission-bypass options qualify; see internal/launch for why the list is two entries
+// and not the baseline's thirty.
+type RefusedOptionError struct{ Option string }
+
+func (e *RefusedOptionError) Error() string { return "OPTION_REFUSED " + e.Option }
+
 // Process is the part of a running child this package uses. The interface exists so a test
 // can supply a child that fails in a chosen way at a chosen moment.
 type Process interface {
@@ -74,6 +81,12 @@ const defaultShutdownTimeout = 5 * time.Second
 //	release  — owned listener and connections, and only those (LIFE03)
 func Run(ctx context.Context, o Options) (Result, error) {
 	o = o.withDefaults()
+
+	// First, before anything is resolved or bound. A refused session must not cost an
+	// executable lookup or a port, and must not leave either to be cleaned up.
+	if option, refused := launch.Refused(o.Args); refused {
+		return Result{}, &RefusedOptionError{Option: option}
+	}
 
 	exe, found, err := o.ResolveClaude()
 	if err != nil {

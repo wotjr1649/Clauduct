@@ -4,8 +4,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **81개 통과** (subtest 포함) |
-| mutation 검증 | 16건 주입. 2건이 처음에 살아남았고 둘 다 테스트를 보강해 잡았다 |
+| 실행한 V2 Go 테스트 | **137개 통과** (subtest 포함) |
+| mutation 검증 | **32건 주입.** 3건이 처음에 살아남았고 셋 다 테스트를 보강해 잡았다 |
 | 실모델 호출 | **0회.** upstream 코드가 존재하지 않아 구조적으로 불가능하다 |
 | 잔여 승인 예산 | **0. 그리고 별도로 BLOCKED다** — 3장 |
 
@@ -20,6 +20,18 @@
 
 두 번째 명령의 `credentialReads`·`childStarted`·`globalWrites`는 HANDOFF.md 3장이 "이 분기가 쓰는 고정값이라 아무것도 증명하지 않는다"고 못박은 값이다. 무접속의 증거로 인용하지 않는다.
 
+**Node 기준선 — 패키지별 직전 검증 (2026-09-15 확정 정책)**
+
+하나의 큰 스냅샷 대신, 각 WP는 자기가 계약을 가져올 파일들의 Node 테스트를 착수 직전에 돌린다. 소스는 동결돼 있으므로(D02, tracked 변경 0) 시점은 환경에만 의존하고, 이 방식은 스냅샷이 낡을 일이 구조적으로 없다.
+
+| 대상 | 결과 |
+|---|---|
+| WP03 관련 30개 (`native-protocol`·`native-delivery`·`native-transport` 의존) | **44 pass / 0 fail / 1 skip, 11.6초** |
+
+각 suite가 자체 보고한 값: `externalRequests: 0`, `credentialReads: 0`, `actualClaudeExecutions: 0`. 실행 전 범위를 검토했다 — `https://` 참조는 전부 fixture 문자열(`example.com` 등)이고 `interactiveLaunch`는 spec을 만들 뿐 spawn하지 않는다.
+
+나머지 83개는 WP06·WP07이 그 계약을 가져올 때 그때의 환경에서 돌린다.
+
 **Go V2 (WP01)**
 
 | 검사 | 결과 |
@@ -27,7 +39,7 @@
 | `gofmt -l .` | 출력 없음 |
 | `go vet ./...` | 통과 |
 | `go build ./...` | 통과 |
-| `go test -count=1 ./...` | **4 package 통과**, 81 테스트 |
+| `go test -count=1 ./...` | **5 package 통과**, 137 테스트 |
 | `go build -trimpath` 후 `version` | VCS stamp 확인: `bfbdf238…+dirty`, go1.27.0 windows/amd64 |
 | `clauduct-dev doctor` | exit 0. claude.exe 해석 성공, 82 parent vars → 87 child vars, credential 읽기 0 |
 | `clauduct-go --version` | exit 0. 실제 claude.exe가 `2.1.272 (Claude Code)` 출력 |
@@ -72,7 +84,7 @@ WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 �
 
 | 대상 | 상태 | 이유 |
 |---|---|---|
-| Node 회귀 113개 파일 | `NOT_RUN` | 기준선 신원은 commit SHA이지 통과 개수가 아니다. HANDOFF.md 4장 4단계가 무검토 glob 실행을 금지한다. 비교 기준으로 필요해지는 시점은 G4 이후. 요청 시 파일 단위 offline 실행 가능 |
+| Node 회귀 나머지 83개 | `NOT_RUN` | 패키지별 직전 검증 정책. WP06·WP07이 그 계약을 가져올 때 돌린다. WP03 관련 30개는 위 1.1에서 통과했다 |
 | `go test -race` | **`NOT_RUN`** | 이 머신에 cgo·C 툴체인이 없다(`-race requires cgo`, gcc 부재). CI 워크플로가 담당한다. **미실행은 통과가 아니다** |
 | Go CI 워크플로 | **`NOT_RUN`** | `.github/workflows/go.yml`을 작성했으나 실행된 적이 없다. push는 별도 승인 사항이라 하지 않았다 |
 | 대화형 세션 | `NOT_RUN` | `/v1/messages`는 인증·경계까지만 통과하고 501을 돌려준다. 본문 처리는 WP03 |
@@ -127,7 +139,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | WP00 | 기준선·인벤토리·설계 정합성 | **완료** — REL01(738/738, 0/0/0/0) |
 | WP01 | Go workspace, launcher skeleton, fake child | **완료** — 아래 5.1 |
 | WP02 | ephemeral HTTP·생명주기 | **완료** — 아래 5.3 |
-| **WP03** | 최소 text request/response protocol | WIRE01–WIRE10, WIRE12–WIRE15 |
+| **WP03** | 최소 text request/response protocol | **진행 중** — SSE parser 완료, 아래 5.5 |
 | WP03 | 최소 text protocol | WIRE01–WIRE10, WIRE12–WIRE15 |
 | WP04 | tool round-trip·delivery barrier | TOOL01–TOOL08, LIFE10, WIRE11 |
 | WP05 | direct transport·read-only auth | AUTH01–AUTH08, LIFE08–LIFE10, LIFE13, REL12 |
@@ -194,6 +206,35 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 `Close`가 30초 deadline을 다 쓰고 실패했다. **context 취소는 blocking body read를 풀지 못한다** — handler는 `io.Copy` 안에 있고 `Shutdown`은 그 handler를 기다린다. Node 기준선은 소켓을 destroy해서 이 지점을 통과한다(`readBody`의 `resetAndDestroy`). Go의 대응물은 read deadline이고, `http.ResponseController`로 취소 시 즉시 만료시킨다. 같은 메커니즘이 body 완료 상한(300s, 기준선과 동일)도 함께 맡는다.
 
 `Shutdown`이 그래도 실패하면 `server.Close()`로 강제 해제하되, **원래 실패를 성공으로 덮지 않고 그대로 보고한다.**
+
+### 5.5 WP03 진행 상황 — SSE parser 완료
+
+`internal/stream`이 backend가 말하는 SSE를 파싱한다. 규칙은 SSE 명세가 아니라 **기준선 파서의 이식**이다 — 기준선이 명세보다 엄격한 자리(`id:`·`retry:` 거부, bare `\r` 거부, 설명하지 못하는 frame 거부)는 전부 의도된 것이다. 애매한 바이트열을 그럴듯한 이벤트로 바꾸는 bridge는 backend가 만들지 않은 도구 호출을 클라이언트에 건넬 수 있다.
+
+| ID | 상태 | 어디서 |
+|---|---|---|
+| WIRE02 큰 정수·ID·정밀도 보존 | PASS | payload를 **재직렬화하지 않는다**. `Event.Raw`는 도착한 바이트 그대로 |
+| WIRE03 duplicate key·trailing JSON·비정상 UTF-8 | PASS | top-level 중복 key 전면 거부, 객체 뒤 두 번째 값 거부, 잘못된 UTF-8은 U+FFFD로 대체하지 않고 거부 |
+| WIRE04 SSE 한 byte 단위 fragmentation | PASS | 한국어·이모지·CRLF·JSON token을 모두 가로지르는 1바이트 분할 |
+| WIRE05 CRLF/LF·멀티라인 data·comment/ping | PASS | 두 줄바꿈 혼용, `data:` 다중 줄 결합, `:` 주석 |
+| WIRE06 64 KiB 초과 합법 frame과 최대 경계 | PASS | 256 KiB frame 보존 + 상한 초과 거부 + **미완결 frame도 상한에 계상** |
+| WIRE07 event 수·총 bytes 상한 | PASS | `TOO_MANY_EVENTS`·`RESPONSE_TOO_LARGE` |
+| WIRE09 terminal 누락·조기 EOF·중복 terminal | PASS | 6종 순서 위반 + 전송 조기 종료 |
+| WIRE10 `[DONE]`·완료 후 trailing data | PASS | terminal 없는 `[DONE]` 거부, `[DONE]` 이후 frame 거부, 중복 `[DONE]` 거부 |
+| WIRE01 JSON missing/null/empty 구분 | 부분 | frame 계층에서는 `type` 유무만. 본문 field의 presence 의미는 `protocol/anthropic`에서 |
+| WIRE08 text delta와 completion snapshot 일관성 | `NOT_RUN` | emitter 미구현 |
+| WIRE12 reasoning/opaque block 뒤 최종 text 순서 | `NOT_RUN` | 같음 |
+| WIRE13 느린 downstream backpressure | `NOT_RUN` | 같음 |
+| WIRE14 ping과 upstream idle timeout 구분 | `NOT_RUN` | 같음 |
+| WIRE15 gzip/encoding 지원 여부와 크기 상한 | `NOT_RUN` | transport 계층. WP05 |
+
+기준선에 없던 것을 하나 더 엄격하게 했다. 기준선은 `keepalive` 한 건에만 원문 정규식으로 중복 key를 막는다. V2는 **top-level 중복 key를 일반 규칙으로 거부**하고, 그 결과 기준선의 정규식은 도달 불가능한 분기가 되어 이식하지 않았다. 규칙 하나가 특수 사례를 흡수한다.
+
+### 5.6 남은 WP03 범위
+
+`internal/protocol/anthropic`(요청 decode + presence 의미 + capability gate), `internal/protocol/codex`, `internal/protocol/bridge`, Anthropic SSE emitter, fixture upstream, 그리고 gateway의 501 자리 교체. 실측한 실물 envelope(최상위 키 10개, 119 KB)가 입력 사양이다.
+
+주의: 측정된 실제 요청은 `tools`·`thinking`·`context_management`·`output_config`를 **항상** 포함한다. text-only 구현은 모든 실제 요청을 거부하게 된다. 핸드오프 16.3절대로 **silent drop이 아니라 명확한 capability 오류**로 실패해야 한다.
 
 ## 6. 기존 Node 증거와의 대응
 

@@ -2,7 +2,7 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01 + WP02
+## 현재 범위 — WP01 + WP02 + WP03(진행 중)
 
 동작하는 것:
 
@@ -14,6 +14,7 @@
 - 인증: `Authorization: Bearer` 상수시간 비교. `x-api-key`는 같은 세션 token일 때만 허용
 - `POST /v1/messages`: method·content-type·32 MiB 본문 상한 검사, 요청 등록, 취소·300s 상한
 - 옵션 거부: `--dangerously-skip-permissions` 계열 2개만. 나머지 native 옵션은 전부 전달
+- SSE parser: frame 경계·UTF-8·중복 key·trailing JSON·terminal 순서·`[DONE]`·크기와 개수 상한
 - 요청 registry: 요청별 취소, 형제 비전파, 멱등 해제, 동시 실행 상한 64
 - 종료: 새 요청 거부 → in-flight 취소 → drain → listener 해제
 
@@ -67,6 +68,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |
 | `internal/gateway` | loopback listener, 요청 경계·인증·registry |
+| `internal/stream` | backend SSE 파싱과 전달 상태. 의미 해석은 하지 않는다 |
 | `internal/platform` | OS 경계. 실행 파일 해석 |
 | `internal/buildinfo` | 바이너리 신원 |
 

@@ -8,8 +8,8 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 |---|---|
 | 세대 | V2 — Go Native-Host-Preserving Bridge |
 | 완료한 게이트 | **G0(현황) · G1(설계) · G2(격리)** |
-| 완료한 작업 패키지 | **WP01** launcher skeleton · **WP02** ephemeral HTTP·생명주기 |
-| 다음 게이트 | **G3 최소 실행 완료.** 다음은 G4 기본 wire, 패키지는 WP03 |
+| 완료한 작업 패키지 | **WP01** launcher · **WP02** HTTP·생명주기 · **WP03 진행 중** (SSE parser 완료) |
+| 다음 게이트 | G3 완료. G4 기본 wire 진행 중 |
 | 기준선 | `node-bfbdf23-g0` (commit `bfbdf2385175…`, tree `9cd96d660959…`) |
 | 개발 branch | `redesign/go-v2-native-host`, worktree `D:/AIDEV/Clauduct-go-v2` |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.0, 제3자 의존성 0 |
@@ -48,7 +48,7 @@ ARCHIVAL_MOVE:      DEFERRED
 
 전체 핸드오프를 매번 다시 읽지 않는다. 이 파일 → [DECISION.md](DECISION.md) → 착수할 작업 패키지의 해당 절만 읽는다.
 
-다음 하나의 bounded work package는 **WP03 — 최소 text request/response protocol**이다. WP02가 인증·경계·취소까지 끝내고 `/v1/messages`를 501로 남겨 두었으므로, WP03은 그 자리에 본문 해석과 synthetic SSE 변환을 넣는다. 우선 테스트는 WIRE01–WIRE10, WIRE12–WIRE15.
+**WP03 진행 중.** SSE parser(`internal/stream`)가 끝났고 WIRE02–WIRE07, WIRE09, WIRE10을 덮는다. 남은 것은 요청 decode·capability gate·Anthropic emitter·fixture upstream, 그리고 gateway의 501 자리 교체다. 상세는 [VALIDATION.md](VALIDATION.md) 5.5–5.6.
 
 실물 envelope는 이미 측정해 두었다 — 최상위 키 10개와 119 KB라는 현실적 크기는 [VALIDATION.md](VALIDATION.md) 1.1.2에 있다.
 

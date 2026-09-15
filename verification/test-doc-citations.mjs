@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, relative, resolve as resolvePath, isAbsolute } from 'node:path';
+import { dirname, join, relative, resolve as resolvePath, isAbsolute, sep } from 'node:path';
 
 // A citation is a backticked repo-relative path with a line, or a line range. The extension is
 // required: without it a branch name like `docs/handoff-citation-exception` reads as a citation.
@@ -18,7 +18,9 @@ const stripFences = text => text.replace(/```[\s\S]*?```/g, '');
 // A markdown link target. Only the path matters here, so an optional title is dropped and an
 // anchor is cut off: resolving #heading needs GitHub's slug rules, and guessing them would report
 // links that work. Skipped targets are counted rather than dropped, so the number stays visible.
-const LINK = /\[[^\]\n]*\]\(\s*<?([^)>\s]+)>?(?:\s+"[^"\n]*")?\s*\)/g;
+// The <> form exists so a target can hold spaces, and one in this repository does. Matching it
+// with the bare form would leave that link unmatched, which reads as "checked and fine".
+const LINK = /\[[^\]\n]*\]\(\s*(?:<([^>\n]*)>|([^)<>\s]+))(?:\s+"[^"\n]*")?\s*\)/g;
 // A scheme, a protocol-relative host, or a same-document anchor. None of these is a path on disk,
 // and checking a URL would mean a network request, which this suite does not make.
 const NOT_A_PATH = /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/|#)/;
@@ -26,9 +28,14 @@ const NOT_A_PATH = /^(?:[A-Za-z][A-Za-z0-9+.-]*:|\/\/|#)/;
 // Links are resolved from the document's own directory, the way a markdown reader resolves them.
 // A target that climbs out of the repository is counted and skipped, not failed: docs reference a
 // sibling `_ref` checkout that does not exist in CI, so a verdict on it would be noise either way.
+// Inside the repository the question is whether the path is tracked, not whether it is on this
+// disk. Scratch under .tmp/ is ignored and present only on the machine that made it, so an
+// existence check would pass here and fail in CI -- and a link nobody else can follow is the
+// defect this exists to catch.
 function linkFailures(text, base, exists) {
   const failures = [], counts = { links: 0, checked: 0 };
-  for (const [, target] of stripFences(text).matchAll(LINK)) {
+  for (const [, angled, bare] of stripFences(text).matchAll(LINK)) {
+    const target = angled ?? bare;
     counts.links++;
     if (NOT_A_PATH.test(target)) continue;
     let path = target.split('#')[0];
@@ -102,6 +109,8 @@ expectLink('[a](here.md#heading)', [], 1, 1);
 expectLink('[a](gone.md#heading)', ['MISSING_LINK_TARGET'], 1, 1);
 expectLink('[a](here.md "title")', [], 1, 1);
 expectLink('[a](<here.md>)', [], 1, 1);
+expectLink('[a](<has space.md>)', ['MISSING_LINK_TARGET'], 1, 1);
+expectLink('[a](<>)', [], 1, 0);
 expectLink('[a](he%72e.md)', [], 1, 1);
 // Counted but not checked: no scheme resolves to a path, and the sibling tree is not in the repo.
 expectLink('[a](https://example.invalid/gone)', [], 1, 0);
@@ -114,11 +123,15 @@ expectLink('```\n[a](gone.md)\n```', [], 0, 0);
 expectLink('[a](here.md) and [b](gone.md)', ['MISSING_LINK_TARGET'], 2, 2);
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
-const listed = spawnSync('git', ['-C', root, 'ls-files', '-z', '*.md'], {
-  encoding: 'utf8', timeout: 60000, maxBuffer: 4 * 1024 * 1024, windowsHide: true });
+const listed = spawnSync('git', ['-C', root, 'ls-files', '-z'], {
+  encoding: 'utf8', timeout: 60000, maxBuffer: 16 * 1024 * 1024, windowsHide: true });
 assert.equal(listed.error, undefined); assert.equal(listed.status, 0); assert.equal(listed.stderr, '');
-const documents = listed.stdout.split('\0').filter(Boolean);
+const tracked = new Set(listed.stdout.split('\0').filter(Boolean));
+const documents = [...tracked].filter(file => file.toLowerCase().endsWith('.md'));
 assert.ok(documents.length > 0, 'NO_TRACKED_MARKDOWN');
+// A link may name a directory, and git lists only files, so the directories are the prefixes.
+const trackedDirectories = new Set();
+for (const file of tracked) for (let dir = dirname(file); dir !== '.'; dir = dirname(dir)) trackedDirectories.add(dir);
 
 const cache = new Map();
 function locate(file) {
@@ -132,11 +145,10 @@ function locate(file) {
   return found;
 }
 function safeIsFile(target) { try { return statSync(target).isFile(); } catch { return false; } }
-// A link may name a directory, so existence is the question, not file-ness.
-function linkExists(base, path) {
-  const target = resolvePath(root, base, path);
-  if (relative(root, target).startsWith('..')) return 'outside';
-  try { statSync(target); return true; } catch { return false; }
+function linkTracked(base, path) {
+  const inside = relative(root, resolvePath(root, base, path)).split(sep).join('/');
+  if (inside.startsWith('..')) return 'outside';
+  return inside === '' || tracked.has(inside) || trackedDirectories.has(inside);
 }
 
 const failures = [];
@@ -147,7 +159,7 @@ for (const document of documents) {
   const result = citationFailures(text, locate);
   citations += result.citations;
   for (const item of result.failures) failures.push({ document, ...item });
-  const linked = linkFailures(text, dirname(document), linkExists);
+  const linked = linkFailures(text, dirname(document), linkTracked);
   links.links += linked.counts.links; links.checked += linked.counts.checked;
   for (const item of linked.failures) failures.push({ document, ...item });
 }

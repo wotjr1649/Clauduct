@@ -4,7 +4,7 @@
 
 사용자의 “현재 작업만 마무리하고 지금까지의 작업을 정리하라”는 요청에 따라 **현재 수정 건을 마감하고 새 개발을 중단했다. 전체 출하는 HOLD이며 목표는 미완료다.** 마지막 수정은 `6c728af`에 커밋했고 로컬 ZIP과 해당 변경의 검증을 마쳤다. 다음에 예정했던 gateway 종료 지연 조사는 착수하지 않았다. 이 브리핑을 만드는 동안 새 모델 호출, 개발 시험, 릴리즈 생성은 하지 않았다.
 
-브리핑 마감 당시 목표 도구는 `active`로 남겼다. 이후 두 자동 계속 turn에서도 개발 재개를 허용하는 새 사용자 지시가 없어, 최초 중단 요청을 포함한 세 turn의 권한 차단을 확인하고 목표 도구를 **`blocked`로 변경했다.** 전체 목표를 `complete`로 표시하지 않았다. 추가 개발·시험·실제 호출 없이 도구 상태와 기록만 정리했다. [차단 감사 기록](../.tmp/unattended-release/user-stop-20260914/goal-blocked-audit.json), [중단 기록](../.tmp/unattended-release/user-stop-20260914/status.json), [진행 기록](unattended-release-progress.md)에 현재 상태를 남겼다.
+브리핑 마감 당시 목표 도구는 `active`로 남겼다. 이후 두 자동 계속 turn에서도 개발 재개를 허용하는 새 사용자 지시가 없어, 최초 중단 요청을 포함한 세 turn의 권한 차단을 확인하고 목표 도구를 **`blocked`로 변경했다.** 전체 목표를 `complete`로 표시하지 않았다. 추가 개발·시험·실제 호출 없이 도구 상태와 기록만 정리했다. 차단 감사 기록(`../.tmp/unattended-release/user-stop-20260914/goal-blocked-audit.json`), 중단 기록(`../.tmp/unattended-release/user-stop-20260914/status.json`), [진행 기록](unattended-release-progress.md)에 현재 상태를 남겼다.
 
 한두 개의 마지막 테스트만 남은 상태는 아니다. **정상 인증 갱신, 기본 설정의 반복 압축, 일반 프로젝트에서의 장기 무인 개발이라는 핵심 경로가 아직 완성되지 않았다.** 세부 복구 검증과 관리기 확장에 많은 작업을 했지만 이것을 전체 제품 완료와 혼동해서는 안 된다.
 
@@ -25,7 +25,7 @@
 
 전체 설계에 대한 현재 판단은 **전면 폐기·재작성을 해야 한다는 근거는 없지만, 현재 경로만으로 목표가 이미 성립하는 것도 아니다**이다. `Claude Code → loopback gateway → Codex backend 직접 HTTPS`의 변환·전달·resume 부분은 실제로 작동했다. 반면 정상 인증 갱신 주체를 연결하지 않았고, 임의 Bash/MCP 효과를 모두 조회·대조하는 계층도 없다. 필요한 최소 방향은 작동하는 변환 경로를 유지하면서 정상 갱신의 책임과 일반 프로젝트의 효과 대조·완료 판단을 완성하는 것이다. 이번 중단 이후 그 구현에는 착수하지 않았다.
 
-누적 변경은 기준 `aa317c7..6c728af`에서 **41개 커밋, 168개 파일, 12,513줄 추가 / 225줄 삭제**다. 분류는 파일 경로 기준이며 `src/run-node-tests.ps1`은 테스트에 포함했다. [변경 파일 전체 목록](../.tmp/unattended-release/user-stop-20260914/changed-files.tsv)과 [41개 커밋 전체 목록](../.tmp/unattended-release/user-stop-20260914/commits.tsv)에 빠짐없이 기록했다.
+누적 변경은 기준 `aa317c7..6c728af`에서 **41개 커밋, 168개 파일, 12,513줄 추가 / 225줄 삭제**다. 분류는 파일 경로 기준이며 `src/run-node-tests.ps1`은 테스트에 포함했다. 변경 파일 전체 목록(`../.tmp/unattended-release/user-stop-20260914/changed-files.tsv`)과 41개 커밋 전체 목록(`../.tmp/unattended-release/user-stop-20260914/commits.tsv`)에 빠짐없이 기록했다.
 
 | 분류 | 파일 수 | 추가 / 삭제 | 의미 |
 |---|---:|---:|---|
@@ -64,7 +64,7 @@
 
 이 표의 상대경로는 구현 worktree의 `.tmp/` 아래다. 실행별 후보와 상세 이력은 [진행 기록](unattended-release-progress.md)에 있다. 최신 실제 backend 검증 후보는 `3903e0a`이며 text/stream-json을 두 조합에서 4회 성공했다. 최신 `6c728af`의 복구 시험은 실제 native에 공개 loopback 응답을 공급한 시험으로, **최신 ZIP의 전체 backend 검증은 아직 아니다.**
 
-실제 호출의 최신 누적 근거는 [원장](../.tmp/unattended-release/live-stream-3903e0a-20260914/result.json)과 [실행 manifest](../.tmp/unattended-release/live-stream-3903e0a-20260914/manifest.json)다.
+실제 호출의 최신 누적 근거는 원장(`../.tmp/unattended-release/live-stream-3903e0a-20260914/result.json`)과 실행 manifest(`../.tmp/unattended-release/live-stream-3903e0a-20260914/manifest.json`)다.
 
 | 실제 원장 항목 | 값과 한계 |
 |---|---|
@@ -86,7 +86,7 @@
 
 12사례는 보수적 예약을 포함해 97,944ms로 정한 900,000ms 안에 끝났다. 부분 적용 거부, 두 파일의 개별 28/32개 및 통합 21개, 변조 거부, 출력 단절 복구를 확인했다. 관련 회귀는 **28파일/1,534 checks, 실패 0, skip 0**이었고 기존 MCP permissionWarnings 4건은 별도로 보존했다. 이것은 해당 변경의 검사 집합이며 프로젝트의 모든 테스트가 통과했다는 뜻은 아니다.
 
-로컬 후보는 [Clauduct-6c728afa39bd.zip](../.tmp/unattended-release/implementation/.tmp/release-artifacts-5e5d8e5035764354bf3c6a9e404f4c4f/Clauduct-6c728afa39bd.zip)이다. SHA256은 `25a7b3d0cb724b17fb7f2af058165954ad56120f333baae9c70c6933c26d638e`이며 이번 브리핑에서도 파일 hash를 재확인했다. 두 번 만든 ZIP이 같았고, 내용은 205파일/압축 해제 1,961,735bytes다. 새 실행 경로는 `D:\AIDEV\Clauduct\.tmp\unattended-release\p 939fd22d\Clauduct`다. [최종 증거](<../.tmp/unattended-release/p 939fd22d/Clauduct/.tmp/development-recovery-reentry-20260914/artifact-final.json>)는 배포 파일 불변, 실행 소스 40개 hash와 manifest 일치, 149개 소유 확인 범위의 잔여 0, 실제 원장 불변을 기록한다. 그 파일 자체도 `releaseVerdict: HOLD`, `archiveActualBackendVerified: false`, `wholeProjectVerified: false`, `longStageEvidence: false`로 남아 있다.
+로컬 후보는 Clauduct-6c728afa39bd.zip(`../.tmp/unattended-release/implementation/.tmp/release-artifacts-5e5d8e5035764354bf3c6a9e404f4c4f/Clauduct-6c728afa39bd.zip`)이다. SHA256은 `25a7b3d0cb724b17fb7f2af058165954ad56120f333baae9c70c6933c26d638e`이며 이번 브리핑에서도 파일 hash를 재확인했다. 두 번 만든 ZIP이 같았고, 내용은 205파일/압축 해제 1,961,735bytes다. 새 실행 경로는 `D:\AIDEV\Clauduct\.tmp\unattended-release\p 939fd22d\Clauduct`다. 최종 증거(`../.tmp/unattended-release/p 939fd22d/Clauduct/.tmp/development-recovery-reentry-20260914/artifact-final.json`)는 배포 파일 불변, 실행 소스 40개 hash와 manifest 일치, 149개 소유 확인 범위의 잔여 0, 실제 원장 불변을 기록한다. 그 파일 자체도 `releaseVerdict: HOLD`, `archiveActualBackendVerified: false`, `wholeProjectVerified: false`, `longStageEvidence: false`로 남아 있다.
 
 출하를 막는 일은 다음처럼 구분된다.
 
@@ -107,7 +107,7 @@
 
 차단은 해당 효과에만 적용했다. 주요 기록은 실제 원장 registry의 FileSystemWrite 거부, 과거 `f57` 사후검사의 Node Permission Model/process 조회 경계, 동적 링크 시험, worker fsync의 전원 손실 내구성 시험, Workflow cache-miss 경로, 실제 auth-owner proxy 초기화, 일부 공식 문서/런타임 다운로드 접근이다. 권한을 제거하거나 다른 도구·경로·인증 파일 편집으로 같은 거부 효과를 재현하지 않았다. 이 중 일부는 출하 증거 수집을 직접 막고 일부는 선택한 조사 수단의 차단이다. 모든 차단이 전 제품 개발 불가능을 뜻하지 않으며, 실제 독립 로컬 작업은 계속 진행했다. 이번에는 사용자가 작업 중단을 요청했으므로 더 진행하지 않는다.
 
-사용자가 수동 종료한 인증 검사 사건은 **현재 차단 원인이 아니다.** 제가 만든 `auth-owner-public-2AlpMb` 검사에서 JSON escape된 Windows 경로와 자동 소유권 비교가 맞지 않아 회수를 확인하지 못했고, 제공한 수동 스크립트에서도 `IDENTITY_MISMATCH`가 발생했다. 사용자 관리자 실행 후 [종료 확인](../.tmp/unattended-release/implementation/.tmp/auth-owner-public-2AlpMb/manual-stop-final-check.json)은 원래 PID 12752/11068/23148 인스턴스가 없고 `stopped: true`, 잔여 0임을 기록했다. 사용자에게 부정확한 종료 안내로 추가 부담을 준 것은 검사기·안내의 문제였다. 현재 추가 종료 조치는 요구하지 않는다.
+사용자가 수동 종료한 인증 검사 사건은 **현재 차단 원인이 아니다.** 제가 만든 `auth-owner-public-2AlpMb` 검사에서 JSON escape된 Windows 경로와 자동 소유권 비교가 맞지 않아 회수를 확인하지 못했고, 제공한 수동 스크립트에서도 `IDENTITY_MISMATCH`가 발생했다. 사용자 관리자 실행 후 종료 확인(`../.tmp/unattended-release/implementation/.tmp/auth-owner-public-2AlpMb/manual-stop-final-check.json`)은 원래 PID 12752/11068/23148 인스턴스가 없고 `stopped: true`, 잔여 0임을 기록했다. 사용자에게 부정확한 종료 안내로 추가 부담을 준 것은 검사기·안내의 문제였다. 현재 추가 종료 조치는 요구하지 않는다.
 
 명세의 F01~F23 전체 판정은 아래와 같다. 부분 PASS가 있어도 필수 전체 범위가 닫히지 않은 행은 완료로 표시하지 않았다. 최신 복구와 ZIP 증거를 반영했으므로 진행 기록 상단의 오래된 일부 예시보다 이 표의 마감 판정이 최신이다.
 

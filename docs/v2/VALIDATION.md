@@ -94,8 +94,8 @@ WP02의 8건(Host 고정·두 번째 credential 검사·중복 header·종료 �
 | 대상 | 상태 | 이유 |
 |---|---|---|
 | Node 회귀 나머지 83개 | `NOT_RUN` | 패키지별 직전 검증 정책. WP06·WP07이 그 계약을 가져올 때 돌린다. WP03 관련 30개는 위 1.1에서 통과했다 |
-| `go test -race` | **`NOT_RUN`** | 이 머신에 cgo·C 툴체인이 없다(`-race requires cgo`, gcc 부재). CI 워크플로가 담당한다. **미실행은 통과가 아니다** |
-| Go CI 워크플로 | **실행됨, 1차 실패** | 2026-09-15 사용자 승인 후 push. 첫 실행이 **로컬에서 찾을 수 없는 결함**을 잡았다 — 1.8.4절 |
+| `go test -race` | **PASS** | 2026-09-15 CI에서 `CGO_ENABLED=1`로 실행, 12 package 통과. 이 머신에는 C 툴체인이 없어 로컬에서는 여전히 불가하다 |
+| Go CI 워크플로 | **PASS** | 2026-09-15 사용자 승인 후 push. 3회 실행, 첫 두 번의 실패가 각각 진짜 결함이었다 — 1.8.4절·1.8.6절 |
 | 대화형 세션 | `NOT_RUN` | 제품 빌드에 실제 전송이 연결돼 있지 않다. 연결은 G7 사항이다 |
 | native synthetic 통합 (NATIVE_SYNTH) | `NOT_RUN` | 격리 fixture profile을 아직 만들지 않았다. WP06 |
 | 실모델 호출 | `NOT_AUTHORIZED` | 3장 |
@@ -455,7 +455,7 @@ Result reported 0/0 against the ledger's 2/2
 | REL07 Node와 Go 동시 실행 | PASS | 아래 |
 | REL09 문서 인용 검증 | PASS | Go 테스트로 옮겼다. 18 citation · 35 link · 7 문서 |
 | LIFE14 연속 실행 자원 증가 | PASS | 5세션 후 goroutine 증가가 상한 내 |
-| REL10 CI 분리 보고 | **`NOT_RUN`** | `.github/workflows/go.yml`은 작성돼 있고 한 번도 실행된 적이 없다. push가 별도 승인 사항이다 |
+| REL10 CI 분리 보고 | **PASS** | Node workflow와 별도 파일로 실행된다. Go 실패가 Node 회귀로 읽히지 않는다 |
 | REL08 기본 전환·rollback | 해당 없음 | 기본 전환은 G9이고 요청하지 않았다. 이름이 다르므로 되돌릴 상태가 아직 없다 |
 
 #### 1.7.1 REL03을 정직하게 다시 적는다
@@ -554,6 +554,23 @@ request 3:  3,780 bytes  tools=0
 `core.autocrlf=true`이고 `.gitattributes`가 없어, Windows 체크아웃마다 `.go`가 CRLF가 된다. **gofmt는 CRLF를 미포맷으로 본다.** 로컬 파일은 LF라서 통과했고, git이 다시 체크아웃하기 전까지는 영원히 통과했을 것이다.
 
 `go/.gitattributes`에 `*.go text eol=lf`를 넣었다. **저장소 루트가 아니라 `go/` 하위에만** — Node 기준선의 체크아웃 동작은 이 브랜치가 바꿀 것이 아니다.
+
+#### 1.8.6 CI 2차 — 이번엔 내 테스트의 가정이 틀렸다
+
+`gofmt`는 통과했다. `TestTheInstallDirectoryIsNotWrittenTo`가 실패했다 — runner에 `claude.exe`가 없어 `CLAUDE_NOT_FOUND`로 exit 1인데 테스트가 exit 0을 요구했다.
+
+**exit 코드는 애초에 질문이 아니었다.** 검사 대상은 "바이너리를 실행하면 설치 디렉터리에 아무것도 쓰지 않는다"이고, 그것은 클라이언트 유무와 무관하다 — 오히려 **없을 때 더 강한 검사다.** 출력이 전혀 없을 때만 실패하도록 고쳤다. 그것이 "실행되지 않았다"의 실제 모습이다.
+
+3차에서 **전부 통과**했고, 그것이 `-race`와 REL10을 동시에 닫았다.
+
+#### 1.8.7 `go test -race` — 처음으로 실행됐다
+
+```
+Run go test -count=1 -race ./...   CGO_ENABLED: 1
+12 package 통과
+```
+
+registry·ledger·gateway의 동시성이 **한 번도 race 검사를 받은 적이 없었다.** 이 머신에는 C 툴체인이 없어 로컬에서는 여전히 불가능하고, 앞으로도 CI가 담당한다.
 
 #### 1.8.5 `Run`이 context를 받아놓고 쓰지 않고 있었다
 

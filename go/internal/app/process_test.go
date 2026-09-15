@@ -104,9 +104,22 @@ func decoy(t *testing.T) int {
 // expires.
 func runOwning(ctx context.Context, t *testing.T, onStart func(pid int)) (Result, error) {
 	t.Helper()
-	shell, err := exec.LookPath("cmd")
+	return runOwningCommand(ctx, t, "cmd", sleeperArgs, onStart)
+}
+
+// runOwningCommand is the same with the subject chosen.
+//
+// Which subject matters more than it looks. `cmd /c ping` leaves a grandchild holding the
+// pipes the child inherited, so Wait does not return when the child is killed -- the
+// cancellation path then ends in the stop grace rather than in the deadline, and a test
+// asserting only "some error" cannot tell the two apart. A subject with no children of its
+// own exercises the clean path.
+func runOwningCommand(ctx context.Context, t *testing.T, command string, args []string,
+	onStart func(pid int)) (Result, error) {
+	t.Helper()
+	shell, err := exec.LookPath(command)
 	if err != nil {
-		t.Skipf("cmd: %v", err)
+		t.Skipf("%s: %v", command, err)
 	}
 
 	pid := 0
@@ -126,7 +139,7 @@ func runOwning(ctx context.Context, t *testing.T, onStart func(pid int)) (Result
 	}
 	done := make(chan finished, 1)
 	go func() {
-		result, runErr := runOwnedSession(ctx, t, shell, &pid, onStart)
+		result, runErr := runOwnedSession(ctx, t, shell, args, &pid, onStart)
 		done <- finished{result, runErr}
 	}()
 
@@ -145,10 +158,10 @@ func runOwning(ctx context.Context, t *testing.T, onStart func(pid int)) (Result
 	}
 }
 
-func runOwnedSession(ctx context.Context, t *testing.T, shell string, pid *int,
-	onStart func(pid int)) (Result, error) {
+func runOwnedSession(ctx context.Context, t *testing.T, shell string, args []string,
+	pid *int, onStart func(pid int)) (Result, error) {
 	return Run(ctx, Options{
-		Args: sleeperArgs,
+		Args: args,
 		Env:  isolatedEnv(t),
 		// Not a t.TempDir: a running process holds its working directory open, and the
 		// framework's own removal would race the kill and fail.

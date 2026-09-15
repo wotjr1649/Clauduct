@@ -11,8 +11,10 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
 // ErrClaudeNotFound means the native executable was not located. Nothing was bound and
@@ -45,9 +47,15 @@ type Options struct {
 
 	// ResolveClaude returns the native executable and whether it was found.
 	ResolveClaude func() (string, bool, error)
-	// StartGateway brings up the loopback listener. Zero uses the real one; a test
-	// substitutes a failing one to prove the child is never started without a gateway.
+	// StartGateway brings up the loopback listener. Zero uses the real one, with the real
+	// transport behind it; a test substitutes a fixture, or a failing one to prove the
+	// child is never started without a gateway.
 	StartGateway func() (*gateway.Gateway, error)
+	// Ledger records what a session spent. Zero allocates an unrestricted one.
+	//
+	// It is exposed so a caller can read the count rather than estimate it. A verification
+	// run has to say exactly what it cost, and "roughly a few requests" is not a number.
+	Ledger *upstream.Ledger
 	// StartProcess spawns the child described by spec.
 	StartProcess func(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (Process, error)
 	// ShutdownTimeout bounds the gateway drain. Zero uses a default.
@@ -65,6 +73,11 @@ type Result struct {
 	NativeExitCode int
 	GatewayAddr    string
 	CleanupErr     error
+	// Attempts and Inferences are what the session spent upstream. One inference retried
+	// twice is one inference and three attempts, and a claim about cost needs the unit it
+	// was measured in.
+	Attempts   int
+	Inferences int
 }
 
 const defaultShutdownTimeout = 5 * time.Second
@@ -79,7 +92,7 @@ const defaultShutdownTimeout = 5 * time.Second
 //	spawn    — if the child cannot start, the listener is released (LIFE02)
 //	wait     — the child owns the console for as long as it lives
 //	release  — owned listener and connections, and only those (LIFE03)
-func Run(ctx context.Context, o Options) (Result, error) {
+func Run(ctx context.Context, o Options) (result Result, err error) {
 	o = o.withDefaults()
 
 	// First, before anything is resolved or bound. A refused session must not cost an
@@ -92,6 +105,7 @@ func Run(ctx context.Context, o Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+
 	if !found {
 		return Result{}, ErrClaudeNotFound
 	}
@@ -103,7 +117,15 @@ func Run(ctx context.Context, o Options) (Result, error) {
 		// session ends here and the child is never spawned.
 		return Result{}, err
 	}
-	result := Result{GatewayAddr: gw.Addr()}
+	result = Result{GatewayAddr: gw.Addr()}
+	ledger := o.Ledger
+	// Named return values, and deliberately: a deferred write to an unnamed one is
+	// discarded, so the count would always have been zero.
+	defer func() {
+		// Read at the end whatever happened, including a failed start: a request that was
+		// sent before something went wrong still cost what it cost.
+		result.Attempts, result.Inferences, _ = ledger.Spent()
+	}()
 
 	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{
 		BaseURL:   gw.BaseURL(),
@@ -150,10 +172,26 @@ func (o Options) withDefaults() Options {
 	if o.Stderr == nil {
 		o.Stderr = os.Stderr
 	}
+	if o.Ledger == nil {
+		o.Ledger = upstream.NewLedger(upstream.Unlimited())
+	}
 	if o.StartGateway == nil {
-		// No transport: WP05 builds it. Until then an inference request fails with
-		// NO_UPSTREAM_TRANSPORT, which is the accurate answer rather than a silent one.
-		o.StartGateway = func() (*gateway.Gateway, error) { return gateway.Start(nil) }
+		// G7: the real transport. Every inference in a session started by this binary now
+		// reaches the user's Codex subscription.
+		//
+		// Nothing is read or spawned here. The credential provider opens auth.json on the
+		// first request, and the client version runs codex --version on the first request,
+		// so `clauduct-go --version` still costs neither -- which is ARG07 and would break
+		// if either were resolved eagerly.
+		//
+		// The budget is unrestricted, and deliberately: a route is what the client asked
+		// for, and a count cap would stop a long session partway through. The verification
+		// budget is a separate thing and lives in clauduct-dev probe.
+		ledger := o.Ledger
+		o.StartGateway = func() (*gateway.Gateway, error) {
+			return gateway.Start(upstream.NewDirect(
+				&auth.Provider{}, ledger, upstream.InstalledVersion(), "", ""))
+		}
 	}
 	if o.StartProcess == nil {
 		o.StartProcess = startOSProcess

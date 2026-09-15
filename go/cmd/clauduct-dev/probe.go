@@ -6,13 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
-	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
 	"github.com/wotjr1649/Clauduct/go/internal/stream"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -104,21 +100,17 @@ func probe(args []string, out, errOut io.Writer) int {
 		return 1
 	}
 
-	version, err := installedCodexVersion()
+	version, err := upstream.InstalledVersion()()
 	if err != nil {
 		fmt.Fprintf(errOut, "probe   REFUSED %s\n", err)
 		return 1
 	}
-	status := "unverified"
-	if version == referenceCodexVersion {
-		status = "reference"
-	}
-	fmt.Fprintf(out, "client  codex-cli %s (%s)\n", version, status)
+	fmt.Fprintf(out, "client  codex-cli %s (%s)\n", version, upstream.Status(version))
 
 	budget := upstream.ApprovedBudget()
 	budget.Limit = selected.attempts
 	ledger := upstream.NewLedger(budget)
-	transport := upstream.NewDirect(provider, ledger, version, budget.Model, budget.Effort)
+	transport := upstream.NewDirect(provider, ledger, upstream.Fixed(version), budget.Model, budget.Effort)
 
 	code := 0
 	if args[0] == "wire" {
@@ -332,62 +324,4 @@ func incompleteReason(raw []byte) string {
 		}
 	}
 	return "unrecognised"
-}
-
-// referenceCodexVersion is the version this project measured the wire against. It is
-// evidence, not a pin: a different installed version still runs, and is reported as
-// unverified so the difference is in front of whoever reads the result.
-const referenceCodexVersion = "0.153.4"
-
-var codexVersionLine = regexp.MustCompile(`^codex-cli (\S+)$`)
-
-// A version is what a request identifies itself as, so it is read from the installed
-// executable rather than chosen here, and it is found through the same resolver that finds
-// claude.exe — a version taken from a directory an attacker can prepend to PATH would let
-// them choose what this bridge claims to be.
-func installedCodexVersion() (string, error) {
-	path, found, err := platform.Resolver{}.Codex()
-	if err != nil {
-		return "", err
-	}
-	if !found {
-		return "", errors.New("CODEX_NOT_FOUND")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	// Output, not CombinedOutput: a warning on stderr must not become part of a version
-	// string that goes on the wire.
-	raw, err := exec.CommandContext(ctx, path, "--version").Output()
-	if err != nil {
-		return "", errors.New("CLI_VERSION_UNREADABLE")
-	}
-	return parseCodexVersion(string(raw))
-}
-
-// parseCodexVersion reads a version out of what the executable printed.
-//
-// Separate from running it so that what goes on the wire can be tested against output this
-// machine does not produce. Whatever is printed, only a short printable token is accepted:
-// this value becomes a request header.
-func parseCodexVersion(raw string) (string, error) {
-	match := codexVersionLine.FindStringSubmatch(strings.TrimSpace(raw))
-	if match == nil || !plausibleVersion(match[1]) {
-		return "", errors.New("CLI_VERSION_INVALID")
-	}
-	return match[1], nil
-}
-
-// plausibleVersion bounds what may go into a header. A version is a short token with no
-// whitespace; anything else is refused rather than sent.
-func plausibleVersion(value string) bool {
-	if value == "" || len(value) > 96 {
-		return false
-	}
-	for _, r := range value {
-		if r <= ' ' || r > '~' {
-			return false
-		}
-	}
-	return true
 }

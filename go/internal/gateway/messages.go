@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
@@ -252,6 +253,15 @@ func categoryFor(err error) string {
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "CANCELLED"
 	}
+	// The real transport's own categories. Each is a constant chosen in this project, never
+	// a string from a backend body, so passing one through carries nothing out with it.
+	if category := auth.CategoryOf(err); category != "" {
+		return category
+	}
+	var failure upstream.Failure
+	if errors.As(err, &failure) && failure.Category != "" {
+		return failure.Category
+	}
 	return "UPSTREAM_FAILURE"
 }
 
@@ -276,6 +286,48 @@ func statusForUpstream(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return refuseCancelled.status
+	}
+
+	// A credential problem is answered the way the Node baseline answers it
+	// (src/native-gateway.mjs:557): 503, so a client that keeps asking recovers the moment
+	// the user logs in again. Retrying costs nothing upstream -- the failure happens before
+	// the socket -- and the category in the message says what to fix.
+	switch auth.CategoryOf(err) {
+	case auth.CategoryUnavailable, auth.CategoryTokenExpired, auth.CategoryAccountChanged,
+		auth.CategoryInvalidCache, auth.CategoryFileUnavailable:
+		return http.StatusServiceUnavailable
+	case "":
+	default:
+		// A runtime or store refusal is about this machine's configuration and will not
+		// change by asking again.
+		return http.StatusBadRequest
+	}
+
+	var failure upstream.Failure
+	if errors.As(err, &failure) {
+		switch failure.Disposition {
+		case upstream.Deferred:
+			// The server named a time. 429 is the one status this client backs off from
+			// properly rather than hammering.
+			return http.StatusTooManyRequests
+		case upstream.Retryable:
+			return http.StatusBadGateway
+		default:
+			// Measured against claude 2.1.272: every 5xx is retried, eight requests in
+			// sixty seconds and still going. Answering a terminal failure with 502 buys the
+			// same refusal eight times on the user's subscription. A 4xx ends the turn.
+			//
+			// This is a deliberate departure from the baseline, which answers 502 for every
+			// upstream failure. The measurement is the reason, and the category in the
+			// message still says exactly what happened.
+			return http.StatusBadRequest
+		}
+	}
+
+	// A rate limit with no parsable delay still deserves the status that makes a client
+	// wait rather than the one that makes it hurry.
+	if failure.Category == "RATE_LIMITED" {
+		return http.StatusTooManyRequests
 	}
 	return http.StatusBadGateway
 }

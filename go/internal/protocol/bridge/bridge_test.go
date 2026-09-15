@@ -453,7 +453,7 @@ func TestACompletionWithNoUsageIsRefused(t *testing.T) {
 // handing the client more than it asked for would be answering a different request.
 func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
-		`{"model":"m","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+		`{"model":"sonnet","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	for _, e := range []stream.Event{textDelta(0, "x"), textDone(0, "x")} {
 		if _, err := translator.Accept(e); err != nil {
 			t.Fatalf("Accept: %v", err)
@@ -470,7 +470,7 @@ func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 // for and paid for.
 func TestAResponseExactlyAtTheLimitIsAccepted(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
-		`{"model":"m","max_tokens":3,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+		`{"model":"sonnet","max_tokens":3,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	for _, e := range []stream.Event{textDelta(0, "x"), textDone(0, "x")} {
 		if _, err := translator.Accept(e); err != nil {
 			t.Fatalf("Accept: %v", err)
@@ -573,7 +573,7 @@ func TestBuildRequestCarriesTheConversation(t *testing.T) {
 // rejected, and the baseline has never sent it.
 func TestTheOutputLimitIsNotSentUpstream(t *testing.T) {
 	out, err := BuildRequest(decodeRequest(t,
-		`{"model":"m","max_tokens":2048,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+		`{"model":"sonnet","max_tokens":2048,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
@@ -593,7 +593,7 @@ func TestTheOutputLimitIsNotSentUpstream(t *testing.T) {
 
 // A string system prompt and a block-array one must reach the backend the same way.
 func TestSystemPromptShapesAgree(t *testing.T) {
-	head := `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}],"system":`
+	head := `{"model":"sonnet","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}],"system":`
 	fromString, err := BuildRequest(decodeRequest(t, head+`"instructions"}`))
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
@@ -615,22 +615,44 @@ func TestSystemPromptShapesAgree(t *testing.T) {
 	}
 }
 
-// No effort asked for means no reasoning parameter sent. An omitted choice must not become
-// a default the caller never made.
-func TestAbsentEffortSendsNoReasoningParameter(t *testing.T) {
+// An effort the caller did not name is the model's own, not the backend's choice.
+//
+// This test used to assert the opposite -- that an absent effort sends no reasoning
+// parameter. That was never the baseline's behaviour: the catalogue supplies a default, so
+// src/native-protocol.mjs:429 sends reasoning.effort unconditionally and the backend is
+// never left to pick. The fixture named a model that did not exist, which is how the
+// question went unasked.
+func TestAnAbsentEffortComesFromTheModelNotTheBackend(t *testing.T) {
+	for name, tc := range map[string]struct{ model, want string }{
+		"sonnet runs luna at its own default": {"sonnet", "max"},
+		"opus runs sol at its own default":    {"opus", "xhigh"},
+		"fable runs astra at its own default": {"fable", "medium"},
+		"a versioned id resolves the same":    {"claude-opus-5", "xhigh"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			out, err := BuildRequest(decodeRequest(t,
+				`{"model":"`+tc.model+`","max_tokens":1,"stream":true,`+
+					`"messages":[{"role":"user","content":"x"}]}`))
+			if err != nil {
+				t.Fatalf("BuildRequest: %v", err)
+			}
+			if out.Effort == nil || out.Effort.Effort != tc.want {
+				t.Fatalf("effort = %+v, want %q", out.Effort, tc.want)
+			}
+		})
+	}
+}
+
+// An effort the caller did name wins over the model's default.
+func TestAnExplicitEffortWins(t *testing.T) {
 	out, err := BuildRequest(decodeRequest(t,
-		`{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+		`{"model":"sonnet","max_tokens":1,"stream":true,"output_config":{"effort":"low"},`+
+			`"messages":[{"role":"user","content":"x"}]}`))
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
-	if out.Effort != nil {
-		t.Fatalf("effort = %+v, want nil", out.Effort)
-	}
-	encoded, _ := json.Marshal(out)
-	// "reasoning" also appears inside include, which is sent on every request. The field
-	// this must not gain is the parameter.
-	if strings.Contains(string(encoded), `"reasoning":`) {
-		t.Fatalf("an absent effort became a field: %s", encoded)
+	if out.Effort == nil || out.Effort.Effort != "low" {
+		t.Fatalf("effort = %+v, want low", out.Effort)
 	}
 }
 

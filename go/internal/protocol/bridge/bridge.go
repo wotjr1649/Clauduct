@@ -113,15 +113,23 @@ type ReasoningParam struct {
 // text reaching this point would be a decoder defect, and it is reported as one rather
 // than skipped.
 func BuildRequest(request *anthropic.Request) (*Request, error) {
+	// The client asks for a Claude model; the backend has never heard of one. Resolved
+	// here rather than forwarded, and refused rather than defaulted -- see route.go.
+	route, err := SelectRoute(request.Model, request.Effort)
+	if err != nil {
+		return nil, err
+	}
+
 	out := &Request{
-		Model:       request.Model,
+		Model:       route.Model,
 		Instruction: Instruction,
 		Stream:      true,
 		Include:     Include,
 		Store:       false,
-	}
-	if request.Effort != "" {
-		out.Effort = &ReasoningParam{Effort: request.Effort}
+		// Always sent. The catalogue supplies an effort when the request does not name
+		// one, so there is no case where the backend is left to pick, and the baseline
+		// sends it unconditionally for the same reason.
+		Effort: &ReasoningParam{Effort: route.Effort},
 	}
 	// The system prompt leads the conversation as a developer turn. Its content is a plain
 	// string here rather than a list of parts, which is the shape the baseline sends.

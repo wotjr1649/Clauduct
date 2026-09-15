@@ -511,3 +511,62 @@ func TestAConflictingBaseURLIsOverriddenButNotYetDiagnosed(t *testing.T) {
 			"rewritten to require it rather than to record its absence.")
 	}
 }
+
+// countingTransport reserves against a ledger and then replays, which is what the real
+// transport does either side of the network. It exists so the recorded spend can be checked
+// without spending anything.
+type countingTransport struct {
+	ledger *upstream.Ledger
+	inner  *upstream.Fixture
+}
+
+func (c countingTransport) Execute(ctx context.Context, body []byte) (*upstream.Response, error) {
+	if err := c.ledger.Reserve("any", "any", false); err != nil {
+		return nil, err
+	}
+	return c.inner.Execute(ctx, body)
+}
+
+// What a session cost is reported, not estimated.
+//
+// Added after a mutation run: deleting the ledger read left the suite green, because the
+// only thing checking it was the live test and that is skipped unless money is authorised.
+// The live run had already caught the same field reading zero -- a deferred write to an
+// unnamed return value goes nowhere -- and nothing offline would have.
+func TestASessionReportsWhatItSpent(t *testing.T) {
+	exe := nativeAvailable(t)
+
+	ledger := upstream.NewLedger(upstream.Unlimited())
+	fixture := &upstream.Fixture{SSE: measuredStream("ok")}
+	parent, cwd := workspace(t)
+	_ = parent
+
+	var stdout, stderr bytes.Buffer
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNativeTimeout)
+	defer cancel()
+
+	result, err := Run(ctx, Options{
+		Args:          []string{"-p", "say ok", "--strict-mcp-config"},
+		Env:           isolatedEnv(t),
+		Cwd:           cwd,
+		Stdout:        &stdout,
+		Stderr:        &stderr,
+		Ledger:        ledger,
+		ResolveClaude: func() (string, bool, error) { return exe, true, nil },
+		StartGateway: func() (*gateway.Gateway, error) {
+			return gateway.Start(countingTransport{ledger: ledger, inner: fixture})
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	attempts, inferences, _ := ledger.Spent()
+	if attempts == 0 {
+		t.Fatalf("the session sent nothing: %s%s", stdout.String(), stderr.String())
+	}
+	if result.Attempts != attempts || result.Inferences != inferences {
+		t.Fatalf("Result reported %d attempts / %d inferences against the ledger's %d / %d",
+			result.Attempts, result.Inferences, attempts, inferences)
+	}
+}

@@ -27,6 +27,9 @@ var (
 	// ErrRedirected means the backend tried to move the request elsewhere. A redirect
 	// carrying a credential to a new origin is the thing this refuses.
 	ErrRedirected = errors.New("UPSTREAM_REDIRECT_REFUSED")
+	// ErrNoClientVersion means nothing can say what this client is. Every request
+	// identifies itself, and inventing a version would be claiming to be something else.
+	ErrNoClientVersion = errors.New("CLI_VERSION_UNREADABLE")
 )
 
 // Timeouts are per phase. One overall deadline would cut a long thinking response at the
@@ -46,9 +49,10 @@ type Direct struct {
 	Credentials *auth.Provider
 	// Ledger authorises and records each attempt.
 	Ledger *Ledger
-	// ClientVersion is what the Codex CLI reports. It identifies this client to the
-	// backend exactly as the reference client does.
-	ClientVersion string
+	// Version reports what the installed Codex CLI calls itself. It is a function and not
+	// a string because resolving it runs a subprocess, and a session that only ran
+	// --version must not spawn one. Nothing is read until a request is actually sent.
+	Version func() (string, error)
 	// Route is the model and effort each request declares, checked against the budget.
 	Model  string
 	Effort string
@@ -70,15 +74,21 @@ func (d *Direct) target() string {
 
 // NewDirect builds a transport with a client that cannot be talked out of verifying a
 // certificate or following a redirect.
-func NewDirect(credentials *auth.Provider, ledger *Ledger, version, model, effort string) *Direct {
+func NewDirect(credentials *auth.Provider, ledger *Ledger, version func() (string, error),
+	model, effort string) *Direct {
 	return &Direct{
-		Credentials:   credentials,
-		Ledger:        ledger,
-		ClientVersion: version,
-		Model:         model,
-		Effort:        effort,
-		Client:        newClient(),
+		Credentials: credentials,
+		Ledger:      ledger,
+		Version:     version,
+		Model:       model,
+		Effort:      effort,
+		Client:      newClient(),
 	}
+}
+
+// Fixed returns a version function for a value already in hand.
+func Fixed(version string) func() (string, error) {
+	return func() (string, error) { return version, nil }
 }
 
 // One client for the process. Its configuration does not vary by caller, and sharing it
@@ -143,11 +153,19 @@ func (d *Direct) Execute(ctx context.Context, body []byte) (*Response, error) {
 		return nil, ErrSyntheticMixing
 	}
 
+	if d.Version == nil {
+		return nil, ErrNoClientVersion
+	}
+	version, err := d.Version()
+	if err != nil {
+		return nil, err
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.target(), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	applyHeaders(request, credential, d.ClientVersion, len(body))
+	applyHeaders(request, credential, version, len(body))
 
 	response, err := d.client().Do(request)
 	if err != nil {

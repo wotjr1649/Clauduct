@@ -317,7 +317,7 @@ func TestCompletedTextAgreeingWithTheStreamIsAccepted(t *testing.T) {
 // --- request construction ----------------------------------------------------------------
 
 func TestToolDefinitionsReachTheBackend(t *testing.T) {
-	request := decodeRequest(t, `{"model":"m","max_tokens":1,"stream":true,
+	request := decodeRequest(t, `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "messages":[{"role":"user","content":"x"}],
 	  "tools":[{"name":"Read","description":"read a file","input_schema":{"type":"object",
 	    "properties":{"file_path":{"type":"string"}},"required":["file_path"]}}]}`)
@@ -343,7 +343,7 @@ func TestToolDefinitionsReachTheBackend(t *testing.T) {
 // A deferred tool is held back until the conversation has named it. That is what deferring
 // is for: a tool nobody has mentioned costs schema on every request.
 func TestDeferredToolsAreHeldBackUntilDiscovered(t *testing.T) {
-	head := `{"model":"m","max_tokens":1,"stream":true,"tools":[
+	head := `{"model":"sonnet","max_tokens":1,"stream":true,"tools":[
 	  {"name":"Read","input_schema":{"type":"object"}},
 	  {"name":"Rare","defer_loading":true,"input_schema":{"type":"object"}}],"messages":`
 
@@ -370,7 +370,7 @@ func TestDeferredToolsAreHeldBackUntilDiscovered(t *testing.T) {
 // TOOL08, the half that protects the transcript: completed history survives a changed tool
 // set. A conversation recorded when Write existed still decodes after it is withdrawn.
 func TestHistoryNamingAWithdrawnToolStillDecodes(t *testing.T) {
-	request := decodeRequest(t, `{"model":"m","max_tokens":1,"stream":true,
+	request := decodeRequest(t, `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "tools":[{"name":"Read","input_schema":{"type":"object"}}],
 	  "messages":[
 	    {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Write","input":{"path":"a"}}]},
@@ -401,7 +401,7 @@ func TestHistoryNamingAWithdrawnToolStillDecodes(t *testing.T) {
 
 // A recorded call's arguments cross unchanged, for the same reason a new call's do.
 func TestRecordedArgumentsCrossUnchanged(t *testing.T) {
-	out, err := BuildRequest(decodeRequest(t, `{"model":"m","max_tokens":1,"stream":true,
+	out, err := BuildRequest(decodeRequest(t, `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "tools":[{"name":"Agent","input_schema":{"type":"object"}}],
 	  "messages":[
 	    {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Agent","input":{"isolation":null,"big":9007199254740993}}]},
@@ -426,7 +426,7 @@ func TestRecordedArgumentsCrossUnchanged(t *testing.T) {
 
 // A failed result is announced rather than left to be inferred from its text.
 func TestFailedResultIsAnnounced(t *testing.T) {
-	out, err := BuildRequest(decodeRequest(t, `{"model":"m","max_tokens":1,"stream":true,
+	out, err := BuildRequest(decodeRequest(t, `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "tools":[{"name":"Bash","input_schema":{"type":"object"}}],
 	  "messages":[
 	    {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]},
@@ -448,7 +448,7 @@ func TestFailedResultIsAnnounced(t *testing.T) {
 
 // tool_choice crosses in the backend's own vocabulary.
 func TestToolChoiceIsTranslated(t *testing.T) {
-	head := `{"model":"m","max_tokens":1,"stream":true,
+	head := `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "messages":[{"role":"user","content":"x"}],
 	  "tools":[{"name":"Read","input_schema":{"type":"object"}}],"tool_choice":`
 
@@ -477,7 +477,7 @@ func TestToolChoiceIsTranslated(t *testing.T) {
 }
 
 func TestDisableParallelToolUseCrosses(t *testing.T) {
-	head := `{"model":"m","max_tokens":1,"stream":true,
+	head := `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "messages":[{"role":"user","content":"x"}],
 	  "tools":[{"name":"Read","input_schema":{"type":"object"}}],"tool_choice":`
 
@@ -500,7 +500,7 @@ func TestDisableParallelToolUseCrosses(t *testing.T) {
 
 // The recorded order of a turn's text, calls and results is what the backend sees.
 func TestRecordedOrderIsPreserved(t *testing.T) {
-	out, err := BuildRequest(decodeRequest(t, `{"model":"m","max_tokens":1,"stream":true,
+	out, err := BuildRequest(decodeRequest(t, `{"model":"sonnet","max_tokens":1,"stream":true,
 	  "tools":[{"name":"Read","input_schema":{"type":"object"}}],
 	  "messages":[
 	    {"role":"user","content":"start"},

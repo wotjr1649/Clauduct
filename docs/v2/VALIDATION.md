@@ -4,10 +4,10 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **663개 통과** (subtest 포함), 11 package. NATIVE_SYNTH 9개 포함 |
-| mutation 검증 | **184건 주입** (battery 10개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
-| 실모델 호출 | **17회.** `gpt-5.6-luna` / effort `low`. 1.3절(상한) · 1.4절(wire) |
-| 잔여 승인 예산 | **83회** (2026-09-15 사용자가 누적 100회로 상향, 경로는 luna/low 그대로) |
+| 실행한 V2 Go 테스트 | **700개 통과** (subtest 포함), 11 package. NATIVE_SYNTH 11개 포함 |
+| mutation 검증 | **205건 주입** (battery 11개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
+| 실모델 호출 | **26회.** 1.3절(상한) · 1.4절(wire) · 1.6절(G7 실세션) |
+| 잔여 승인 예산 | **74회** (2026-09-15 사용자가 누적 100회로 상향) |
 
 ### 1.1 실행한 것
 
@@ -337,6 +337,111 @@ launcher를 깨뜨려 이 9개 테스트가 실패할 수 있는지 확인했다
 
 **7개 전부 exit 0.** 기준선 worktree는 tracked 변경 0으로 남아 있다.
 
+### 1.6 G7 — 제품 빌드를 실제로 연결했고, 첫 시도는 실패했다
+
+사용자 승인(2026-09-15). `internal/app`이 `upstream.None` 대신 `upstream.Direct`를 쓴다. **이제 이 바이너리가 시작한 모든 추론이 사용자의 Codex 구독에 도달한다.**
+
+#### 1.6.1 연결 전에 정해야 했던 것 셋
+
+| 문제 | 왜 그냥 연결하면 안 되는가 | 결정 |
+|---|---|---|
+| 예산 | `ApprovedBudget()`은 **내가 검증에 쓸 수 있는 양**이지 사용자 세션의 요청 수가 아니다. 100으로 묶으면 긴 세션이 중간에 멈춘다 | `Budget.Unrestricted` — 제품 세션 전용. 별도 필드라서 산술로 도달할 수 없고, 0값 Budget은 여전히 아무것도 허가하지 않는다 |
+| 경로 고정 | `Direct`는 생성 시 model/effort에 고정된다. **제품은 클라이언트가 요청한 모델을 보내야 한다** | Unrestricted는 경로를 검사하지 않는다 |
+| 지연 해석 | credential 읽기나 `codex --version`을 시작 시 하면 **ARG07이 깨진다** — `--version`이 자식 프로세스와 credential 읽기를 유발한다 | 둘 다 첫 요청에서만. `InstalledVersionFunc`가 once로 감싼다 |
+
+#### 1.6.2 상태 코드는 Disposition을 본다 — 실측 때문이다
+
+5.7.1절의 실측: **클라이언트는 모든 5xx를 재시도한다** (60초에 8회, 계속). 실전송이 붙은 지금 그것은 **같은 거절을 여덟 번 사는 것**이다.
+
+| Disposition | 상태 | 이유 |
+|---|---|---|
+| Deferred | **429** | 서버가 시각을 말했다. 클라이언트가 두드리지 않고 기다리는 유일한 상태다 |
+| Retryable | 502 | 재시도가 정말 성공할 수 있다 |
+| Terminal | **400** | 재시도가 같은 답을 실제 돈 주고 다시 산다 |
+| credential 계열 | 503 | 기준선과 동일(`native-gateway.mjs:557`). 사용자가 다시 로그인하면 회복되고, 소켓 이전에 실패하므로 재시도가 upstream 비용 0이다 |
+| runtime·store 거부 | 400 | 이 머신의 설정이고 다시 물어도 바뀌지 않는다 |
+
+**Terminal→400은 기준선에서 의도적으로 벗어난 것이다.** 기준선은 모든 upstream 실패를 502로 답한다. 실측이 근거이고, 범주는 메시지에 그대로 실려 무엇이 일어났는지 말한다.
+
+#### 1.6.3 첫 실호출이 실패했고, 그것이 CAP01을 찾아냈다
+
+```
+live session: 3 attempts, 3 inferences, 0 refused
+stdout: "API Error: 400 UPSTREAM_HTTP_ERROR"
+```
+
+**3 attempts.** 400으로 매핑한 덕에 8회 폭주 대신 3회에서 멈췄다 — 매핑이 설계대로 동작한 첫 증거다.
+
+원인은 **무료로** 확정했다. fixture 세션에서 V2가 실제로 보내는 본문을 읽었다.
+
+```
+{"model":"claude-opus-5","instructions":"Follow the developer instructions...
+```
+
+**V2가 Anthropic 모델 이름을 Codex backend에 그대로 넘기고 있었다.** 그런 모델이 없으니 400이다. 이것이 `CAP01`(Claude alias → Codex model ID mapping, **P 등급**)이고 구현되어 있지 않았다.
+
+오프라인으로는 영원히 못 찾는다. **모든 fixture가 Codex 모델 이름을 직접 적었다** — fixture를 쓴 사람이 어느 이름을 적어야 하는지 알고 있었기 때문이다. `"model":"m"`이라고 적은 것도 여럿 있었는데, 모델이 전달만 되던 때는 아무거나 되었다.
+
+#### 1.6.4 CAP01·CAP02 — 매핑은 발명하지 않았다
+
+`src/models.mjs`와 `src/agent-selection.mjs:23-27`에서 읽었다. **어느 모델로 도느냐가 곧 청구액이므로 추측할 자리가 아니다.**
+
+| Claude | Codex | 기본 effort |
+|---|---|---|
+| `haiku`·`sonnet`·`claude-haiku-*`·`claude-sonnet-*` | `gpt-5.6-luna` | max |
+| `opus`·`claude-opus-*` | `gpt-5.6-sol` | xhigh |
+| `fable`·`claude-fable-*` | `gpt-6-astra` | medium |
+| `terra` | `gpt-5.6-terra` | high |
+
+가족 접두사로 맞추므로 **버전 접미사를 고정하지 않는다** — `claude-opus-5`와 `claude-opus-4-1`이 같은 경로이고, 새 릴리스에 코드 변경이 필요 없다.
+
+**effort는 모델마다 다르고 평준화하면 안 된다.** 같게 만들면 모든 요청의 비용이 바뀐다. 테스트가 그것을 고정한다.
+
+**CAP02**: 모르는 모델·effort는 **거부하지 기본값으로 대체하지 않는다.** 대체하면 사용자가 요청하지 않은 모델로 돌리고 그 값을 청구한다. 사용자가 보고 고칠 수 있는 실패가 청구서에서 발견하는 실패보다 낫다.
+
+연쇄로 하나가 더 드러났다. 기준선은 `reasoning.effort`를 **무조건** 보낸다(`native-protocol.mjs:429`) — 카탈로그가 기본값을 채우므로 backend가 고를 일이 없다. V2는 없으면 생략하고 있었고, `TestAbsentEffortSendsNoReasoningParameter`가 **그 잘못된 동작을 주장**하고 있었다. fixture가 존재하지 않는 모델을 적었기 때문에 이 질문이 제기되지 않았다.
+
+#### 1.6.5 실세션 — 성공
+
+```
+live session: 2 attempts, 2 inferences, 0 refused
+stdout: "pineapple"
+```
+
+실제 `claude.exe` → 제품 빌드 → 실제 Codex backend → 모델의 답이 클라이언트에 도달했다. 요청한 그대로다.
+
+**출하 바이너리로도 확인했다.** `clauduct-go -p "Reply with exactly the word: marmalade"` → `marmalade`, exit 0. 테스트가 검증한 것과 같은 코드 경로지만, 실제로 나가는 산출물을 한 번은 돌려봐야 한다.
+
+두 실행 모두 `CLAUDE_CONFIG_DIR`를 임시로 돌렸다. 검증이 사용자의 실제 Claude 상태에 쓰는 것은 검증의 몫이 아니다.
+
+#### 1.6.6 실세션이 내 버그를 하나 잡았다
+
+두 번째 실행은 답을 받고도 실패했다.
+
+```
+stdout: "pineapple"
+Result reported 0/0 against the ledger's 2/2
+```
+
+`Result.Attempts`가 언제나 0이었다. **이름 없는 반환값에 대한 `defer` 쓰기는 버려진다** — Go의 고전적 함정이다. 테스트가 `Result`를 ledger와 **대조**했기 때문에 잡혔다. 한쪽만 로그로 찍었다면 언제나 0을 보고하는 계수기를 출하했을 것이다.
+
+그리고 mutation이 더 깊은 구멍을 드러냈다. ledger 읽기를 통째로 지워도 초록이었다 — **그것을 검사하는 유일한 테스트가 live였고 live는 기본 skip이다.** 오프라인 테스트를 추가했다.
+
+#### 1.6.7 mutation — 21건, 2건이 살아남았다
+
+| 살아남은 것 | 왜 | 조치 |
+|---|---|---|
+| 세션 지출이 기록되지 않음 | 검사하는 테스트가 live 하나뿐이고 기본 skip | ledger를 실제로 예약하는 fixture transport로 오프라인 테스트 추가 |
+| 버전이 매 요청 해석됨 | **compiler-only였다.** `once`가 미사용이 되어 컴파일 실패 | `once.Do(func() {})`를 남겨 컴파일되게 고쳤다. 컴파일러가 거부한 것은 테스트 증거가 아니다 |
+
+재실행: **21건 주입, 미검출 0, compiler-only 0.**
+
+#### 1.6.8 이번에 실행한 Node 기준선
+
+`test-agent-selection` · `test-compact-policy` · `test-completion-relay-target` · `test-fixture-tool-policy` · `test-launcher-native` · `test-native` · `test-verification-route`
+
+**7개 전부 exit 0.** CAP01의 계약(`models.mjs`·`agent-selection.mjs`)을 가져온 파일들이다. 기준선 worktree는 tracked 변경 0으로 남아 있다.
+
 ## 2. 네 단계 실행 강도
 
 | Level | 내용 | 실모델 호출 |
@@ -392,7 +497,7 @@ launcher를 깨뜨려 이 9개 테스트가 실패할 수 있는지 확인했다
 | G4 기본 wire | **산출물 완료** | WP03·WP04. text·tool·JSON·SSE·error·cancel offline P/S, limit registry 확정 | native synthetic 통합 |
 | G5 host parity | **부분** | WP06이 P/S 범위(ARG06–07, ENV04·06·07·08·10, CAP04·10)를 덮었다. C 범위(MCP·plugin·worktree·resume)는 5.9.4절에 미착수로 명시 | real backend 검증 계획 확정 |
 | G6 transport 안전 | **부분** | WP05가 auth·attempt cap·retry·leak을 덮었다. **process boundary(LIFE11·LIFE12)가 남았고 그것은 WP06이다** | 아래 G7 조건 |
-| G7 live integration | 미착수 | 명시적 한정 예산 안의 실제 버전 조합 검증 | release 후보 판단 |
+| G7 live integration | **완료** | 1.6절. 실제 claude.exe → 제품 빌드 → 실제 backend 왕복. 출하 바이너리로도 확인 | release 후보 판단 |
 | G8 package | 미착수 | build provenance·설치·반복 실행·rollback·문서 | 기본 전환 판단 요청 |
 | G9 기본 전환 | 미착수 | 사용자 승인·정확한 artifact·target 확인 | 새 실행의 기본 binary 변경 |
 | G10 선택적 archive | **DEFERRED** | [MIGRATION.md](MIGRATION.md) 6장 M3. 권고는 하지 않음 | 승인된 구조 정리 |
@@ -508,7 +613,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 
 text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 돌려주지 않는다: 요청을 해독하고, backend 요청으로 변환하고, transport로 실행하고, 돌아온 SSE를 파싱해 Anthropic 프레임으로 내보낸다.
 
-**다만 제품 빌드에 transport가 연결돼 있지 않다.** `upstream.None`이 들어가 있어 모든 추론 요청이 `NO_UPSTREAM_TRANSPORT`(400)로 끝난다. WP05가 실제 전송을 만들었지만 **연결하지는 않았다** — 연결은 G7 사항이고, 지금 연결하면 모든 세션이 실호출 세션이 된다.
+**2026-09-15 G7에서 연결했다.** WP05가 만든 실제 전송이 제품 빌드에 들어가 있고, 이 바이너리가 시작한 모든 추론은 사용자의 Codex 구독에 도달한다. 1.6절.
 
 | ID | 상태 | 어디서 |
 |---|---|---|
@@ -549,7 +654,7 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 
 ### 5.6 WP03이 남긴 것
 
-`/v1/messages`는 구현됐지만 **보낼 곳이 연결돼 있지 않다.** WP05가 실제 전송을 만들었고, 제품 빌드는 여전히 `upstream.None`을 쓴다. 연결은 G7이다.
+`/v1/messages`는 구현됐고 **G7에서 실제 전송에 연결됐다.** 1.6절.
 
 도구는 WP04다. 측정된 실제 요청은 `tools`를 **항상** 포함하므로, 도구 지원 전까지 실제 세션은 성립하지 않는다. 그 사실이 침묵이 아니라 명시된 오류로 나타나는 것이 WP03이 보장하는 것이다.
 

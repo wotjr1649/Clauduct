@@ -78,7 +78,7 @@ func (l *listener) header(name string) string {
 // direct builds a transport aimed at a local listener rather than at the real endpoint.
 func direct(t *testing.T, l *listener, p *auth.Provider, budget Budget) *Direct {
 	t.Helper()
-	d := NewDirect(p, NewLedger(budget), "0.48.0", "gpt-5.6-luna", "low")
+	d := NewDirect(p, NewLedger(budget), Fixed("0.48.0"), "gpt-5.6-luna", "low")
 	if l != nil {
 		d.endpoint = l.URL
 	}
@@ -311,7 +311,7 @@ func TestACancelledContextStopsTheRequest(t *testing.T) {
 	defer server.Close()
 	defer close(release)
 
-	d := NewDirect(credentialStore(t, false), NewLedger(approved()), "0.48.0", "gpt-5.6-luna", "low")
+	d := NewDirect(credentialStore(t, false), NewLedger(approved()), Fixed("0.48.0"), "gpt-5.6-luna", "low")
 	d.endpoint = server.URL
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -383,5 +383,147 @@ func TestNoRefusalCarriesTheToken(t *testing.T) {
 				t.Fatalf("the refusal carries part of the access token: %v", err)
 			}
 		})
+	}
+}
+
+// The version goes into a header on every request, so a transport that cannot say what it
+// is must not send one. Inventing a version would be claiming to be something else.
+func TestARequestWithNoKnowableVersionIsNotSent(t *testing.T) {
+	l := serve(t, &listener{})
+
+	for name, version := range map[string]func() (string, error){
+		"no resolver at all": nil,
+		"a resolver that fails": func() (string, error) {
+			return "", ErrCodexNotFound
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			d := direct(t, l, credentialStore(t, false), approved())
+			d.Version = version
+			if _, err := d.Execute(context.Background(), []byte(`{}`)); err == nil {
+				t.Fatal("a request was sent without a version to identify it")
+			}
+			if n := l.hits.Load(); n != 0 {
+				t.Fatalf("the backend saw %d requests, want 0", n)
+			}
+		})
+	}
+}
+
+// Nothing is resolved until a request needs it. A session that only asked --version must
+// not have spawned a subprocess, and one that sends a hundred requests must not spawn a
+// hundred.
+func TestTheVersionIsResolvedLazilyAndOnce(t *testing.T) {
+	var calls int
+	resolve := InstalledVersionFunc(func() (string, error) {
+		calls++
+		return "0.48.0", nil
+	})
+	if calls != 0 {
+		t.Fatalf("building the resolver already ran it %d times", calls)
+	}
+
+	l := serve(t, &listener{payload: "data: {}\n\n"})
+	d := direct(t, l, credentialStore(t, false), approved())
+	d.Version = resolve
+	for i := 0; i < 3; i++ {
+		response, err := d.Execute(context.Background(), []byte(`{}`))
+		if err != nil {
+			t.Fatalf("attempt %d: %v", i+1, err)
+		}
+		response.Body.Close()
+	}
+	if calls != 1 {
+		t.Fatalf("three requests resolved the version %d times, want 1", calls)
+	}
+}
+
+// Whatever the installed executable prints, only a version this recognises goes into a
+// header.
+func TestOnlyARecognisedVersionLineIsAccepted(t *testing.T) {
+	for name, tc := range map[string]struct {
+		printed string
+		want    string
+	}{
+		"the ordinary line":       {"codex-cli 0.153.4\n", "0.153.4"},
+		"with carriage returns":   {"codex-cli 0.153.4\r\n", "0.153.4"},
+		"with surrounding blanks": {"  codex-cli 0.153.4  \n", "0.153.4"},
+
+		"a different tool":     {"codex 0.153.4\n", ""},
+		"no version":           {"codex-cli\n", ""},
+		"two versions":         {"codex-cli 0.153.4 0.153.5\n", ""},
+		"a second line":        {"codex-cli 0.153.4\nwarning: something\n", ""},
+		"nothing at all":       {"", ""},
+		"a shell prompt":       {"$ codex-cli 0.153.4\n", ""},
+		"an unprintable token": {"codex-cli 0.153.\x014\n", ""},
+		"far too long":         {"codex-cli " + strings.Repeat("9", 97) + "\n", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := ParseVersion(tc.printed)
+			if tc.want == "" {
+				if err == nil {
+					t.Fatalf("ParseVersion(%q) = %q, want a refusal", tc.printed, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseVersion(%q): %v", tc.printed, err)
+			}
+			if got != tc.want {
+				t.Fatalf("ParseVersion(%q) = %q, want %q", tc.printed, got, tc.want)
+			}
+		})
+	}
+}
+
+// A version is reported against the one the wire was measured with, and reported only. The
+// header carries what is installed whatever this says, because refusing to run on an
+// unverified version would break on every Codex release.
+func TestAnUnverifiedVersionIsNamedNotRefused(t *testing.T) {
+	if Status(ReferenceClientVersion) != "reference" {
+		t.Fatalf("the reference version reports %q", Status(ReferenceClientVersion))
+	}
+	if Status("0.154.0") != "unverified" {
+		t.Fatalf("a different version reports %q", Status("0.154.0"))
+	}
+}
+
+// A product session is not capped by the verification budget, and is not pinned to one
+// route: the model is whatever the client asked for.
+func TestAnUnlimitedBudgetAuthorisesAnyRoute(t *testing.T) {
+	ledger := NewLedger(Unlimited())
+	for _, route := range [][2]string{
+		{"gpt-5.6-luna", "low"}, {"gpt-6-astra", "xhigh"}, {"anything", "at-all"},
+	} {
+		if err := ledger.Reserve(route[0], route[1], false); err != nil {
+			t.Fatalf("Reserve(%q, %q): %v", route[0], route[1], err)
+		}
+	}
+	// And far past any verification cap.
+	for i := 0; i < ApprovedBudget().Limit+10; i++ {
+		if err := ledger.Reserve("gpt-6-astra", "xhigh", false); err != nil {
+			t.Fatalf("attempt %d: %v", i+1, err)
+		}
+	}
+	if ledger.Remaining() != -1 {
+		t.Fatalf("Remaining = %d. An unrestricted ledger has no ceiling to report, and a "+
+			"number would invite a caller to treat it as one.", ledger.Remaining())
+	}
+	if attempts, _, refused := ledger.Spent(); refused != 0 || attempts == 0 {
+		t.Fatalf("spent = %d attempts / %d refused", attempts, refused)
+	}
+}
+
+// Unrestricted has to be asked for. A budget nobody filled in still authorises nothing,
+// because a product session and an empty struct must not be the same thing.
+func TestUnrestrictedIsNeverTheDefault(t *testing.T) {
+	if (Budget{}).authorises() {
+		t.Fatal("a zero Budget authorises spending")
+	}
+	if ApprovedBudget().Unrestricted {
+		t.Fatal("the verification budget is unrestricted")
+	}
+	if !Unlimited().Unrestricted {
+		t.Fatal("Unlimited is restricted")
 	}
 }

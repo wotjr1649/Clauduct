@@ -2,7 +2,7 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01 + WP02 + WP03 + WP04 + WP05
+## 현재 범위 — WP01–WP06, G7 연결됨
 
 동작하는 것:
 
@@ -26,22 +26,26 @@
 - attempt 원장: 경로(model+effort)와 누적 횟수를 함께 승인한다. 예약이 credential 읽기보다도 먼저다
 - 실패 분류: 상태 코드와 연결 오류를 terminal/retryable/deferred로 나눈다. `Retry-After`는 두 형식 모두
 
+- 모델 라우팅: Claude alias·버전 id → Codex 모델. 모르는 모델·effort는 **거부하지 기본값으로 대체하지 않는다**
+
 **동작하지 않는 것:**
 
-- 이미지·문서·hosted search·structured output 결과 검증·`/v1/models` discovery·모델 라우팅
+- 이미지·문서·hosted search·structured output 결과 검증·`/v1/models` discovery
 
-**전송은 있지만 제품 빌드에 연결돼 있지 않다.** `internal/app`이 `gateway.Start(nil)`을 호출하므로 gateway는 `upstream.None`을 쓰고, 모든 추론 요청은 `400 NO_UPSTREAM_TRANSPORT`로 끝난다. 연결은 G7 사항이다 — 지금 연결하면 모든 세션이 실호출 세션이 된다.
+## ⚠ 이 바이너리는 실제로 과금된다
 
-따라서 **대화형 세션은 아직 성립하지 않는다.** `--version`·`--help`처럼 모델을 호출하지 않는 native 명령은 정상 통과한다.
+**2026-09-15 G7**: `clauduct-go`가 시작한 모든 추론 요청은 사용자의 Codex 구독에 도달한다. 제품 세션에는 요청 수 상한이 없다 — Node 기준선에도 없고, 상한을 두면 긴 세션이 중간에 멈춘다.
 
-### 실호출에 닿는 유일한 경로
+모델을 호출하지 않는 명령은 여전히 아무것도 쓰지 않는다. `--version`·`--help`는 credential을 읽지 않고 `codex --version`도 띄우지 않는다. 둘 다 첫 **요청**에서만 일어난다.
+
+### 검증용 실호출은 별개의 예산이다
 
 ```powershell
 clauduct-dev probe          # 무엇을 쓸지 출력하고 아무것도 보내지 않는다 (exit 2)
-clauduct-dev probe --send   # 실제 요청 2회. gpt-5.6-luna / low
+clauduct-dev probe <name> --send
 ```
 
-`--send`가 정확히 하나의 인자일 때만 보낸다. 오타도 접두사도 추가 인자도 전부 무동의로 취급한다. 승인된 예산은 누적 20회이고 한 실행은 3회를 넘지 않는다.
+probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-5.6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다.
 
 이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 `docs/v2/VALIDATION.md` 1.1.2에 있다.
 
@@ -92,7 +96,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 | `internal/wire` | 두 wire 형식이 공유하는 JSON 엄격성. 중복 key 거부가 한 곳에만 있다 |
 | `internal/protocol/anthropic` | Claude 쪽 요청 해독과 이벤트 방출 |
 | `internal/protocol/codex` | backend 쪽 이벤트 어휘 |
-| `internal/protocol/bridge` | 두 형식 사이 변환. 양쪽을 import하는 유일한 package |
+| `internal/protocol/bridge` | 두 형식 사이 변환과 모델 라우팅. 양쪽을 import하는 유일한 package |
 | `internal/upstream` | backend 실행 인터페이스, fixture, 그리고 실제 HTTPS 전송. 이 모듈에서 네트워크에 닿는 **유일한** 곳이다 |
 | `internal/auth` | 읽기 전용 credential provider. 아무것도 쓰지 않고 갱신하지 않는다 |
 | `internal/platform` | OS 경계. 실행 파일 해석 |

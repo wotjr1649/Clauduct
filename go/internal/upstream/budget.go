@@ -29,12 +29,34 @@ type Budget struct {
 	Effort string
 	// Limit is the cumulative ceiling on attempts for the whole process.
 	Limit int
+	// Unrestricted authorises any route and any number of attempts.
+	//
+	// This is what a product session runs under, and it is a different kind of thing from
+	// the verification budget above. That one exists to stop this project from spending a
+	// person's money while developing against their account. A session the user started
+	// themselves is them using the product on their own subscription, and capping it would
+	// be inventing a restriction the Node baseline does not have -- a long session would
+	// simply stop working partway through.
+	//
+	// Pinning a route would be worse than useless here: the model comes from the client's
+	// request, so a fixed route would refuse every model but one.
+	//
+	// It is a separate field rather than a sentinel value so that it cannot be arrived at
+	// by arithmetic. A zero Budget still authorises nothing.
+	Unrestricted bool
 }
+
+// Unlimited is the budget a product session runs under. Named so that granting it is a
+// visible act at the call site rather than a struct literal nobody reads.
+func Unlimited() Budget { return Budget{Unrestricted: true} }
 
 // authorises reports whether this budget permits anything at all. A budget missing any of
 // its three parts authorises nothing: a count with no route names no price, and a route
 // with no count names no ceiling.
 func (b Budget) authorises() bool {
+	if b.Unrestricted {
+		return true
+	}
 	return b.Model != "" && b.Effort != "" && b.Limit > 0
 }
 
@@ -87,13 +109,15 @@ func (l *Ledger) Reserve(model, effort string, retry bool) error {
 		l.refused++
 		return ErrBudgetExhausted
 	}
-	if model != l.budget.Model || effort != l.budget.Effort {
-		l.refused++
-		return ErrRouteNotAuthorised
-	}
-	if l.attempts >= l.budget.Limit {
-		l.refused++
-		return ErrBudgetExhausted
+	if !l.budget.Unrestricted {
+		if model != l.budget.Model || effort != l.budget.Effort {
+			l.refused++
+			return ErrRouteNotAuthorised
+		}
+		if l.attempts >= l.budget.Limit {
+			l.refused++
+			return ErrBudgetExhausted
+		}
 	}
 
 	// Counted here rather than after the response, because the cost is the request, not
@@ -119,7 +143,15 @@ func (l *Ledger) Spent() (attempts, inferences, refused int) {
 func (l *Ledger) Remaining() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if !l.budget.authorises() || l.budget.Limit <= l.attempts {
+	if !l.budget.authorises() {
+		return 0
+	}
+	if l.budget.Unrestricted {
+		// Not a number. Reporting a large one would invite a caller to treat it as a
+		// ceiling, and there is not one.
+		return -1
+	}
+	if l.budget.Limit <= l.attempts {
 		return 0
 	}
 	return l.budget.Limit - l.attempts
@@ -127,6 +159,10 @@ func (l *Ledger) Remaining() int {
 
 func (l *Ledger) String() string {
 	attempts, inferences, refused := l.Spent()
+	if l.budget.Unrestricted {
+		return fmt.Sprintf("upstream.Ledger{route:any attempts:%d inferences:%d refused:%d}",
+			attempts, inferences, refused)
+	}
 	return fmt.Sprintf("upstream.Ledger{route:%s/%s attempts:%d/%d inferences:%d refused:%d}",
 		l.budget.Model, l.budget.Effort, attempts, l.budget.Limit, inferences, refused)
 }

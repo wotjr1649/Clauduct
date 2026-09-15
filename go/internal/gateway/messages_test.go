@@ -1,12 +1,15 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -294,5 +297,107 @@ func TestConnectionDropAfterACompleteBodyIsNotASuccess(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK && !strings.Contains(body, "TRUNCATED_STREAM") {
 		t.Fatalf("status %d without naming the truncation: %s", resp.StatusCode, body)
+	}
+}
+
+// --- G7: what a real transport's failures look like to the client -------------------------
+//
+// These matter because of a measurement, not a preference. Against claude 2.1.272 every 5xx
+// is retried -- eight requests in sixty seconds and still going -- so answering a permanent
+// upstream refusal with 502 buys the same answer eight times on the user's subscription.
+
+// failingTransport refuses every request with a chosen error, standing in for a backend
+// that answered badly without needing one.
+type failingTransport struct{ err error }
+
+func (f failingTransport) Execute(context.Context, []byte) (*upstream.Response, error) {
+	return nil, f.err
+}
+
+func TestUpstreamFailuresMapToStatusesTheClientActsOnCorrectly(t *testing.T) {
+	deferred := upstream.ClassifyStatus(429,
+		http.Header{"Retry-After": {"120"}}, time.Now())
+
+	for name, tc := range map[string]struct {
+		err      error
+		status   int
+		category string
+	}{
+		// A named delay. 429 is the one status this client waits on rather than hammers.
+		"rate limited with a delay": {deferred, http.StatusTooManyRequests, "RATE_LIMITED"},
+
+		// Retrying could genuinely succeed, so the class that retries is right.
+		"a server fault": {
+			upstream.ClassifyStatus(503, http.Header{}, time.Now()),
+			http.StatusBadGateway, "UPSTREAM_HTTP_ERROR"},
+		"a credential that may have been refreshed": {
+			upstream.ClassifyStatus(401, http.Header{}, time.Now()),
+			http.StatusBadGateway, "UNAUTHENTICATED"},
+
+		// Permanent. Retrying spends real money to receive the same refusal.
+		"a policy refusal": {
+			upstream.ClassifyStatus(403, http.Header{}, time.Now()),
+			http.StatusBadRequest, "UPSTREAM_HTTP_ERROR"},
+		"a request the backend would not accept": {
+			upstream.ClassifyStatus(400, http.Header{}, time.Now()),
+			http.StatusBadRequest, "UPSTREAM_HTTP_ERROR"},
+		"a certificate that does not verify": {
+			upstream.Failure{Category: "TLS_VERIFICATION_FAILED", Disposition: upstream.Terminal},
+			http.StatusBadRequest, "TLS_VERIFICATION_FAILED"},
+		"a host that does not exist": {
+			upstream.Failure{Category: "DNS_NOT_FOUND", Disposition: upstream.Terminal},
+			http.StatusBadRequest, "DNS_NOT_FOUND"},
+
+		// The credential. 503 so a client that keeps asking recovers the moment the user
+		// logs in again, and retrying costs nothing upstream.
+		"no credential": {
+			&auth.Error{Category: auth.CategoryUnavailable},
+			http.StatusServiceUnavailable, auth.CategoryUnavailable},
+		"an expired token": {
+			&auth.Error{Category: auth.CategoryTokenExpired},
+			http.StatusServiceUnavailable, auth.CategoryTokenExpired},
+		"the account changed mid-session": {
+			&auth.Error{Category: auth.CategoryAccountChanged},
+			http.StatusServiceUnavailable, auth.CategoryAccountChanged},
+
+		// This machine's configuration. Asking again will not change it.
+		"TLS key logging is on": {
+			&auth.Error{Category: auth.CategoryRuntimeUnsupported},
+			http.StatusBadRequest, auth.CategoryRuntimeUnsupported},
+		"the credentials live in a keyring": {
+			&auth.Error{Category: auth.CategoryStoreUnsupported},
+			http.StatusBadRequest, auth.CategoryStoreUnsupported},
+
+		// The wrapper's own refusals.
+		"no budget": {upstream.ErrBudgetExhausted, http.StatusBadGateway, "UPSTREAM_FAILURE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			g := startWith(t, failingTransport{err: tc.err})
+			resp := post(t, g, validRequest)
+			if resp.StatusCode != tc.status {
+				t.Fatalf("status = %d, want %d: %s", resp.StatusCode, tc.status, bodyText(t, resp))
+			}
+			if body := bodyText(t, resp); !strings.Contains(body, tc.category) {
+				t.Fatalf("body = %q, want %s", body, tc.category)
+			}
+		})
+	}
+
+	// The deferred case must carry its delay, or 429 is just a number.
+	if deferred.RetryAfter != 2*time.Minute {
+		t.Fatalf("the fixture's own delay is %v", deferred.RetryAfter)
+	}
+}
+
+// Nothing a backend wrote reaches the client. Every category above is a constant chosen in
+// this project, and a refusal is not a channel for backend text.
+func TestAnUpstreamFailureCarriesNoBackendText(t *testing.T) {
+	g := startWith(t, failingTransport{err: upstream.Failure{
+		Category: "UPSTREAM_HTTP_ERROR", Disposition: upstream.Terminal, Status: 403}})
+	body := bodyText(t, post(t, g, validRequest))
+	for _, forbidden := range []string{"403", "Retry-After", "http"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("the refusal leaked %q: %s", forbidden, body)
+		}
 	}
 }

@@ -134,4 +134,4 @@ if (testCase.mode === 'deadline-45s') assert(elapsedMs >= 44000 && elapsedMs < 5
 
 ## 참고
 
-- `docs/verification-modes-2026-09-14.md` — CI 도입에서 드러난 환경 가정과, 이 문서와 별개로 열려 있는 `poc/test-claude-read-once.mjs`의 CI 전용 실패
+- `docs/verification-modes-2026-09-14.md` — CI 도입에서 드러난 환경 가정과, `poc/test-claude-read-once.mjs`의 CI 전용 실패(2026-09-15 닫힘. 원인은 이 문서의 기동 지연과 무관한 gateway 종료 경로였다)

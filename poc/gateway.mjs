@@ -108,6 +108,11 @@ export async function startGateway({ transport, headerPolicy = 'strict', limits 
     void (async () => {
       await transport.close();
       await Promise.all([...socketClosures, serverClosed, ...jobs]);
+      // The snapshot above is taken before the listener stops, so a connection can still be
+      // accepted after it. Such a socket is destroyed on arrival but its close event lands after
+      // this point, and reporting it as an open resource is what read_extra_normal was failing on.
+      // server.close has already run here, so nothing new can arrive and this drains once.
+      while (sockets.size) await Promise.all([...sockets].map(socket => new Promise(resolve => socket.once('close', resolve))));
       resolveDone(diagnostics());
     })().catch(() => { reason = 'CLEANUP_FAILED'; resolveDone(diagnostics()); });
     return done;

@@ -13,7 +13,10 @@ import { installHttpClose } from '../src/http-close.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 let passed = 0, failed = 0, clients = 0, receivedTotal = 0;
-const watchdog = setTimeout(() => { process.stderr.write('READ_SUITE_TIMEOUT\n'); process.exit(1); }, 30000);
+// Hang guard, not a timing check. Sized for a runner that stalls process starts rather than this
+// box: every case spawns a client, and READ_SUITE_TIMEOUT here would replace the diagnostic below
+// with no information at all. Nothing in the suite decides pass or fail from it.
+const watchdog = setTimeout(() => { process.stderr.write('READ_SUITE_TIMEOUT\n'); process.exit(1); }, 120000);
 async function test(name, action) {
   try { await action(); passed++; } catch (error) { failed++; process.stderr.write(JSON.stringify({ failure: name, error: String(error?.message ?? error).slice(0, 200), at: (error?.stack ?? '').split('\n').map(line => line.trim()).find(line => line.includes(import.meta.url.split('/').pop())) ?? null }) + '\n'); }
 }
@@ -87,7 +90,11 @@ async function scenario(mode = 'normal', fault = '', signal) {
       return spawn(process.execPath, ['--permission', `--allow-fs-read=${root}`,
         join(root, 'read-test-client.mjs'), String(endpoint.port), mode], launch.options);
     }, fixture.marker, { signal, finishMs: 1000 });
-    assert.equal(invalid, false); assert.equal(result.resourcesClosed, true);
+    // Asserted through openResources rather than the boolean: a failure here has only ever
+    // reproduced in CI, so the message has to name the condition that stayed open by itself.
+    assert.equal(invalid, false);
+    assert.deepEqual(result.openResources, [], `open: ${result.openResources.join(', ')}`);
+    assert.equal(result.resourcesClosed, true);
     const serialized = JSON.stringify(result);
     for (const forbidden of [fixture.marker, 'SYNTHETIC_PRIVATE', 'Bearer ']) assert.equal(serialized.includes(forbidden), false);
     return { result, requests, state: gateway.diagnostics() };

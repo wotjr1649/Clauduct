@@ -114,9 +114,16 @@ export async function runReadClient(gateway, startClient, marker, { signal, fini
         outputMatches = result.type === 'result' && result.subtype === 'success' && result.is_error === false && result.result === marker;
       } catch { failure ??= 'CLI_OUTPUT_INVALID'; }
     }
-    const resourcesClosed = (!child || closed) && state.activeSockets === 0 && state.activeJobs === 0
-      && state.activeTimers === 0 && state.activeDeliveries === 0 && state.busy === false
-      && state.transport.activeRequests === 0 && state.transport.activeSockets === 0 && state.localSessionSecretCleared;
+    // resourcesClosed was a nine-way conjunction, so a failure said only that something stayed
+    // open. read_extra_normal has failed this in CI and not locally since 2026-09-14 and the log
+    // could not name which one. These are fixed strings chosen here; no observed value is echoed.
+    const openResources = Object.entries({
+      child: !child || closed, sockets: state.activeSockets === 0, jobs: state.activeJobs === 0,
+      timers: state.activeTimers === 0, deliveries: state.activeDeliveries === 0, busy: state.busy === false,
+      transportRequests: state.transport.activeRequests === 0,
+      transportSockets: state.transport.activeSockets === 0, sessionSecret: state.localSessionSecretCleared,
+    }).filter(([, settled]) => !settled).map(([name]) => name);
+    const resourcesClosed = openResources.length === 0;
     const completed = state.reason === 'COMPLETE' && state.session.state === 'COMPLETE'
       && state.session.readCalls === 1 && state.session.readResults === 1 && state.session.exactMarker === true
       && state.transport.requestAttempts === 2 && outputMatches && exitCode === 0;
@@ -124,7 +131,7 @@ export async function runReadClient(gateway, startClient, marker, { signal, fini
       : state.reason !== 'COMPLETE' ? safe({ code: state.lastRejection !== 'NONE' ? state.lastRejection : state.reason }) : 'CLI_FAILED');
     return { diagnosticVersion: 3, category, passed: category === 'SUCCESS',
       clientKind: 'caller-supplied', clientStarted: started, clientClosed: closed, clientExitCode: exitCode,
-      resourcesClosed, readCalls: state.session.readCalls, linkedReadResults: state.session.readResults,
+      resourcesClosed, openResources, readCalls: state.session.readCalls, linkedReadResults: state.session.readResults,
       gatewayExactMarker: state.session.exactMarker, claudeExactMarker: outputMatches,
       requestAttempts: state.transport.requestAttempts, connectionAttempts: state.transport.connectionAttempts,
       tokenLimitPolicy: state.transport.tokenLimitPolicy, httpStatus: state.transport.httpStatus,

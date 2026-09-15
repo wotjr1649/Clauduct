@@ -4,8 +4,8 @@
 //
 // The invariant under test is that combining the legs changes no leg's verdict: for every
 // trailing-record shape the outcome is identical whether the child ended cleanly or failed,
-// and a restart never resumes from on-disk records alone. The compaction summary text is
-// synthetic, so this covers what an unrecognised trailing record does, not native's bytes.
+// and a restart never resumes from on-disk records alone. The record shapes come from 15
+// real compactions read structurally on 2026-09-15; only the summary text is synthetic.
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -34,23 +34,27 @@ const notification = (status = 'completed') => ({ type: 'user', sessionId: 'sess
 const toolCall = id => ({ content: [{ type: 'tool_use', id: `call_${id}`, name: 'Agent',
   input: { subagent_type: binding(id).role, ...(id === 'child' ? { model: 'haiku' } : {}) } }] });
 
-// A compaction can only reach this layer as a record appended to the parent transcript.
-// `system-boundary` is dropped by the user/assistant filter the resume scan applies; the
-// summary shapes are not, and so displace the notification the scan reads last.
+// A compaction can only reach this layer as records appended to the parent transcript.
+// `measured-pair` is the sequence observed in 15 real compactions on this machine: a
+// system boundary the resume scan's user/assistant filter drops, immediately followed by
+// a plain user record it keeps. The other entries isolate one shape at a time.
+const boundary = () => ({ type: 'system', subtype: 'compact_boundary', sessionId: 'session',
+  uuid: 'compact_3', timestamp: new Date().toISOString(), compactMetadata: { trigger: 'auto', preTokens: 98097 } });
+const summary = () => ({ type: 'user', sessionId: 'session', agentId: 'parent', uuid: 'compact_1',
+  timestamp: new Date().toISOString(),
+  message: { role: 'user', content: '<analysis>SYNTHETIC</analysis>\n<summary>SYNTHETIC</summary>' } });
 const trailingRows = {
-  none: null,
-  'user-summary': () => ({ type: 'user', sessionId: 'session', agentId: 'parent', uuid: 'compact_1',
+  none: () => [],
+  'user-summary': () => [summary()],
+  'user-meta-summary': () => [{ ...summary(), uuid: 'compact_1b', isMeta: true }],
+  'assistant-summary': () => [{ type: 'assistant', sessionId: 'session', agentId: 'parent', uuid: 'compact_2',
     timestamp: new Date().toISOString(),
-    message: { role: 'user', content: '<analysis>SYNTHETIC</analysis>\n<summary>SYNTHETIC</summary>' } }),
-  'user-meta-summary': () => ({ type: 'user', sessionId: 'session', agentId: 'parent', uuid: 'compact_1b',
-    isMeta: true, timestamp: new Date().toISOString(),
-    message: { role: 'user', content: '<analysis>SYNTHETIC</analysis>\n<summary>SYNTHETIC</summary>' } }),
-  'assistant-summary': () => ({ type: 'assistant', sessionId: 'session', agentId: 'parent', uuid: 'compact_2',
-    timestamp: new Date().toISOString(),
-    message: { id: 'msg_compact', role: 'assistant', stop_reason: 'end_turn', content: [] } }),
-  'system-boundary': () => ({ type: 'system', subtype: 'compact_boundary', sessionId: 'session',
-    uuid: 'compact_3', timestamp: new Date().toISOString(), compactMetadata: { trigger: 'auto', preTokens: 98097 } }),
+    message: { id: 'msg_compact', role: 'assistant', stop_reason: 'end_turn', content: [] } }],
+  'system-boundary': () => [boundary()],
+  'measured-pair': () => [boundary(), summary()],
 };
+// Only a boundary with nothing after it leaves the notification last. The measured pair
+// does not, so a compaction in a parent agent's transcript blocks this resume.
 const resumes = ['none', 'system-boundary'];
 
 let checks = 0;
@@ -87,7 +91,7 @@ try {
   await mkdir(dir, { recursive: true });
   for (const childFailed of [false, true]) {
     for (const [name, row] of Object.entries(trailingRows)) {
-      const selection = await setup({ childFailed, trailing: row ? [row()] : [] });
+      const selection = await setup({ childFailed, trailing: row() });
       const live = await outcome(selection);
       // Restart: a new process holds no receipts and must not rebuild one from the records.
       const restarted = await outcome(createAgentSelection({ projectsRoot: root, timeoutMs: 35 }));
@@ -113,4 +117,5 @@ process.stdout.write(JSON.stringify({ suite: 'combined-compaction-event', checks
   resumePreservedBy: resumes, resumeBlockedBy: Object.keys(trailingRows).filter(name => !resumes.includes(name)),
   restartResumedFromRecordsAlone: 0, failureChangedAnyVerdict: false,
   externalRequests: 0, actualCredentialReads: 0, actualClaude: 0,
-  notRun: ['native compaction record shape', 'default 400K/320K compaction firing'] }) + '\n');
+  measuredPairBlocksResume: true, subagentCompactionsObservedOnThisMachine: 0,
+  notRun: ['compaction inside a parent agent transcript', 'default 400K/320K compaction firing'] }) + '\n');

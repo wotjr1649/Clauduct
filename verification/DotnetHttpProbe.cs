@@ -204,9 +204,11 @@ namespace ClauductVerification
             // measurement: short-timeout at 150ms and deadline-45s are what establish that the
             // deadline fires at all. The budget also has to cover the parser process started
             // below, which is a spawn rather than a round trip, and CI has stalled spawns past
-            // 30s -- a loopback case came back TIMEOUT at 6411ms against the old 5000.
+            // 30s -- sse-fixed came back TIMEOUT at 6411ms against the old 5000, then again at
+            // 31486ms against 30000 (run 34914204688). 30000 was out of line with the sibling
+            // spawn guards, which PR #9 sized at 120000 for the same stalls; this matches them.
             return Send(new Uri($"http://127.0.0.1:{port}/probe"), null, null,
-                mode == "deadline-45s" ? 45000 : mode == "short-timeout" ? 150 : 30000, mode == "cancel-after-headers");
+                mode == "deadline-45s" ? 45000 : mode == "short-timeout" ? 150 : 120000, mode == "cancel-after-headers");
         }
 
         async Task<string> Send(Uri uri, string access, string account, int timeoutMs, bool cancelAfterHeaders)

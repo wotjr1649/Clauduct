@@ -93,6 +93,13 @@ type Result struct {
 
 const defaultShutdownTimeout = 5 * time.Second
 
+// stopGrace is how long a stopped child is given to actually exit.
+//
+// It is not the shutdown timeout: that one bounds draining the listener, which this build
+// controls. This one bounds something it does not control at all, and the answer to a child
+// that will not go is to say so rather than to keep waiting.
+const stopGrace = 5 * time.Second
+
 // Run starts one session and returns when the native process has exited and everything
 // this run owns has been released.
 //
@@ -183,12 +190,23 @@ func waitFor(ctx context.Context, process Process) error {
 		return err
 	case <-ctx.Done():
 		stopErr := process.Stop()
-		// Reaped regardless, so the handles are really released. The wait error from a
-		// process that was just killed is expected and says nothing, which is why it is
-		// discarded rather than returned: reporting it would make a session the caller
-		// ended look like a session the child ended, and Run treats an ExitError as the
+
+		// Reaped so the handles are really released, but not waited on forever. A Stop that
+		// did not work would otherwise block here for as long as the child chose to live,
+		// which defeats the deadline that got us into this branch -- found by mutating Stop
+		// into a no-op and watching the suite hang instead of fail.
+		//
+		// The wait error from a process that was just killed is expected and says nothing.
+		// It is discarded rather than returned because reporting it would make a session
+		// the caller ended look like one the child ended: Run treats an ExitError as the
 		// native process's own answer.
-		<-done
+		select {
+		case <-done:
+		case <-time.After(stopGrace):
+			return fmt.Errorf("the child did not exit within %v of being stopped after %w",
+				stopGrace, ctx.Err())
+		}
+
 		if stopErr != nil {
 			return fmt.Errorf("stopping the child after %w: %v", ctx.Err(), stopErr)
 		}

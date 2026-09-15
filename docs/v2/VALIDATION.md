@@ -4,10 +4,10 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **723개 통과** (subtest 포함), 12 package |
-| mutation 검증 | **222건 주입** (battery 13개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
-| 실모델 호출 | **26회.** 1.3절(상한) · 1.4절(wire) · 1.6절(G7 실세션) |
-| 잔여 승인 예산 | **74회** (2026-09-15 사용자가 누적 100회로 상향) |
+| 실행한 V2 Go 테스트 | **726개 통과** (subtest 포함), 12 package |
+| mutation 검증 | **226건 주입** (battery 14개). 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
+| 실모델 호출 | **27회.** 1.3절(상한) · 1.4절(wire) · 1.6절(G7 실세션) · 1.9절(LIFE17) |
+| 잔여 승인 예산 | **73회** (2026-09-15 사용자가 누적 100회로 상향) |
 
 ### 1.1 실행한 것
 
@@ -588,6 +588,50 @@ registry·ledger·gateway의 동시성이 **한 번도 race 검사를 받은 적
 
 부수 효과가 하나 있다. context가 자식에 닿으니 **무한 루프가 멈춤이 아니라 실패가 된다** — 앞서 `HUNG`으로 셌던 mutation이 이제 단언으로 잡힌다.
 
+### 1.9 프로세스 경계 — 소유한 것과 남는 것
+
+핸드오프가 이 셋을 어떻게 다루라고 했는지가 먼저다(1085–1087, 1101행): **Job Object 등을 검토해 이 실행이 소유한 트리만 정리하고, 지원이 불가능한 조합은 정확히 보고하되 정책 우회로 해결하지 않으며, child `Wait`만으로 손자가 종료됐다고 단정하지 않는다.**
+
+그래서 측정하고 보고했다. 이름에 Job Object가 들어 있다고 넣은 것이 아니다.
+
+**모든 테스트가 자기가 띄운 프로세스만, PID로만 다룬다.** 이 머신에는 작성 중에도 사용자의 claude.exe가 셋 떠 있었고 그중 하나가 작성하던 세션이다. **이름으로 죽이는 테스트였다면 셋 다 죽였다.**
+
+| ID | 상태 | 측정 |
+|---|---|---|
+| LIFE12 다른 프로세스 불간섭 | **PASS** | 미끼 2개가 세션 종료 후에도 살아 있다. 자기 자식은 끝난다 |
+| LIFE11 손자 정리 | **PASS(한계 기록)** | 손자 **1/1이 살아남았다.** 아래 |
+| LIFE17 부모 비정상 종료 | **PASS(한계 기록)** | launcher를 죽이면 claude.exe 자식이 **1/1 살아남는다** |
+
+#### 1.9.1 한계를 단언으로 적었다
+
+LIFE11 테스트는 **정리가 실패하는 것을 단언한다.** 일부러다. Windows에서 프로세스를 죽이면 그 프로세스만 죽고 자식은 핸들에 없다. 기준선도 같다 — `clauduct.mjs:261`이 맨 `child.kill()` 하나다. **그렇지 않은 척하는 테스트는 검사가 아니라 주장이다.**
+
+트리가 함께 죽게 되면 이 테스트가 **실패한다.** 그때 다시 쓰는 것이 작업이다.
+
+#### 1.9.2 Job Object를 넣지 않기로 한 이유
+
+검토는 했다. 넣지 않는다.
+
+| 근거 | 내용 |
+|---|---|
+| 제품이 그 경로를 타지 않는다 | `Stop()`은 **context가 취소될 때만** 실행되고, `main`은 `context.Background`를 넘긴다. 오늘 제품에서 호출되는 일이 없다 |
+| 새 의존과 새 실패 양식 | Job Object는 syscall wrapper를, `taskkill /T`는 외부 프로세스를 끌어들인다. **아무도 타지 않는 경로를 위해** |
+| 명세가 그렇게 말한다 | "지원이 불가능한 조합은 정확히 보고하고 **정책 우회로 해결하지 않는다**" |
+
+**다시 볼 조건**: `main`이 신호 처리를 갖게 되어(Ctrl+C → cancel) `Stop()`이 실제로 도는 경로가 생기면, 그때 트리 문제가 살아난다.
+
+`--bg`도 고려했다. kill-on-close job이면 `clauduct-go --bg`가 시작한 백그라운드 세션을 launcher 종료와 함께 죽인다. 다만 `--bg`는 claude.exe가 곧바로 끝나므로 `Stop()`이 아예 호출되지 않는다 — 오늘은 무관하고, Job Object를 넣는다면 그때 실재하는 비용이다.
+
+#### 1.9.3 mutation이 셋을 드러냈고 둘은 내 테스트가 아니라 제품 문제였다
+
+**(1) 테스트가 제품의 정리 경로를 타지 않고 있었다.** LIFE11·LIFE12가 `Process` 스텁을 주입했는데 **스텁은 자기 `Stop`을 가져온다.** 그래서 `osProcess.Stop`을 "핸들 밖으로 손을 뻗도록" 바꾼 변이와 "트리 전체를 죽이도록" 바꾼 변이가 **둘 다 살아남았고 테스트는 통과했다.** 실제 spawn 경로를 타도록 고쳤다 — 무해한 sleeper를 자식으로 띄운다.
+
+**(2) `waitFor`가 Stop 실패에 영원히 막혔다.** `Stop()`을 no-op으로 바꾸는 변이가 suite를 **멈추게** 했다. 원인은 Stop 뒤의 무조건 `<-done`이다. **Stop이 듣지 않는 자식이 호출자의 마감을 무력화한다** — 권한 거부, 보안 제품 개입, 핸들이 더 이상 그것을 통제하지 못하는 경우. `stopGrace` 5초를 두고 넘기면 **기다리는 대신 말한다.**
+
+**(3) 멈춤은 실패가 아니다.** "context를 다시 무시" 변이가 여전히 HUNG이었다. `runOwning`에 watchdog을 넣어 **단언으로 바꿨다** — 이제 `Run did not return within 33s. The child never exits on its own, so the context is not reaching it.`로 실패한다.
+
+재실행: **4건 주입, 미검출 0, HUNG 0.**
+
 ## 2. 네 단계 실행 강도
 
 | Level | 내용 | 실모델 호출 |
@@ -642,7 +686,7 @@ registry·ledger·gateway의 동시성이 **한 번도 race 검사를 받은 적
 | G3 최소 실행 | **산출물 완료** | WP01·WP02. argv/env/cwd 사양, loopback lifecycle, cleanup. 알려진 한계는 5.2절 | protocol 구현 |
 | G4 기본 wire | **산출물 완료** | WP03·WP04. text·tool·JSON·SSE·error·cancel offline P/S, limit registry 확정 | native synthetic 통합 |
 | G5 host parity | **부분** | WP06이 P/S 범위(ARG06–07, ENV04·06·07·08·10, CAP04·10)를 덮었다. C 범위(MCP·plugin·worktree·resume)는 5.9.4절에 미착수로 명시 | real backend 검증 계획 확정 |
-| G6 transport 안전 | **부분** | WP05가 auth·attempt cap·retry·leak을 덮었다. **process boundary(LIFE11·LIFE12)가 남았고 그것은 WP06이다** | 아래 G7 조건 |
+| G6 transport 안전 | **완료** | WP05가 auth·attempt cap·retry·leak을, 1.9절이 process boundary(LIFE11·LIFE12·LIFE17)를 덮었다 | 아래 G7 조건 |
 | G7 live integration | **완료** | 1.6절. 실제 claude.exe → 제품 빌드 → 실제 backend 왕복. 출하 바이너리로도 확인 | release 후보 판단 |
 | G8 package | **완료** | 1.7절. 재현 빌드·신원·설치·동시 실행·자원 증가·문서. [PACKAGING.md](PACKAGING.md) | 기본 전환 판단 요청 |
 | G9 기본 전환 | 미착수 | 사용자 승인·정확한 artifact·target 확인 | 새 실행의 기본 binary 변경 |

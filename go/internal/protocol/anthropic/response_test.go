@@ -2,6 +2,7 @@ package anthropic
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -171,5 +172,41 @@ func TestErrorFrameCarriesOnlyTheCategory(t *testing.T) {
 	frame.WriteTo(&body)
 	if !strings.HasPrefix(body.String(), "event: error\ndata: ") {
 		t.Fatalf("framing = %q", body.String())
+	}
+}
+
+// The ceiling applies to tool arguments too. A backend sending enormous arguments holds
+// memory here just as text does, and the arguments are additionally about to be handed to
+// something that will act on them.
+//
+// Added after a mutation run: the ceiling check exists in two places and only one was
+// under test, so deleting the other left the suite green.
+func TestToolArgumentsCountAgainstTheResponseCeiling(t *testing.T) {
+	builder := NewBuilder("m")
+	builder.SetCallable(func(string) bool { return true })
+
+	// A megabyte of arguments per call, each a well-formed object.
+	arguments := []byte(`{"path":"` + strings.Repeat("x", 1<<20) + `"}`)
+
+	var err error
+	for i := 0; i < 32 && err == nil; i++ {
+		err = builder.AddToolCall("call_"+strconv.Itoa(i), "Read", arguments)
+	}
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("err = %v, want RESPONSE_TOO_LARGE before 32 MiB of arguments", err)
+	}
+}
+
+// And the count of calls is bounded, not only their size.
+func TestToolCallCountIsBounded(t *testing.T) {
+	builder := NewBuilder("m")
+	builder.SetCallable(func(string) bool { return true })
+
+	var err error
+	for i := 0; i < maxTextParts+2 && err == nil; i++ {
+		err = builder.AddToolCall("call_"+strconv.Itoa(i), "Read", []byte(`{}`))
+	}
+	if !errors.Is(err, ErrResponseTooLarge) {
+		t.Fatalf("err = %v, want RESPONSE_TOO_LARGE past the call ceiling", err)
 	}
 }

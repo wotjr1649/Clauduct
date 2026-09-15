@@ -2,7 +2,7 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01 + WP02 + WP03
+## 현재 범위 — WP01 + WP02 + WP03 + WP04
 
 동작하는 것:
 
@@ -19,12 +19,13 @@
 - 종료: 새 요청 거부 → in-flight 취소 → drain → listener 해제
 - 요청 해독: top-level 허용목록, absent/null/present 구분, 미지원 기능의 명시적 거부
 - text 경로 end-to-end: 요청 → backend 요청 → SSE 파싱 → Anthropic 프레임 스트리밍
+- 도구 왕복: 정의·`tool_choice`·기록된 호출과 결과, 그리고 backend 호출의 검증과 방출
+- delivery barrier: 호출은 `response.completed`의 output에서만 만들어진다 — 중간에 실패한 스트림은 실행할 것을 건넨 적이 없다
 
 **동작하지 않는 것 (아직 구현이 없다):**
 
-- **transport.** 제품 빌드는 `upstream.None`을 쓰므로 모든 추론 요청이 `NO_UPSTREAM_TRANSPORT`(503)로 끝난다. WP05
-- **도구.** `tools`나 `tool_choice`가 있으면 `TOOL_USE_UNSUPPORTED`(400). 측정된 실제 클라이언트는 항상 도구를 싣는다. WP04
-- 이미지·문서·structured output 결과 검증·`/v1/models` discovery·모델 라우팅
+- **transport.** 제품 빌드는 `upstream.None`을 쓰므로 모든 추론 요청이 `400 NO_UPSTREAM_TRANSPORT`로 끝난다. WP05
+- 이미지·문서·hosted search·structured output 결과 검증·`/v1/models` discovery·모델 라우팅
 
 따라서 **대화형 세션은 아직 성립하지 않는다.** `--version`·`--help`처럼 모델을 호출하지 않는 native 명령은 정상 통과한다.
 
@@ -60,6 +61,8 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 - **제3자 의존성 0.** `go.sum`이 생기거나 `go.mod`에 `require`가 생기면 테스트가 실패한다. 의존성을 추가하려면 `docs/v2/ARCHITECTURE.md` 14장의 허용 기준을 통과시키고 그 결정을 기록한다.
 - **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 `docs/v2/DECISION.md`. Clauduct는 추가 secret 장벽이 아니다.
 - **세션 token은 로그·커맨드라인·오류 문자열에 넣지 않는다.**
+- **tool call은 `response.completed` 이전에 만들어지지 않는다.** 스트리밍 이벤트에서 호출을 조립하는 arm을 추가하면 barrier가 사라진다. `internal/protocol/bridge`에 그것을 잡는 테스트가 있다.
+- **상태 코드 계열은 재시도 지시다.** 측정상 5xx는 종류를 가리지 않고 재시도된다. 영구적인 로컬 조건은 4xx로 답한다.
 - **Windows 전용이다.** `internal/platform`에 `_windows.go` 파일만 있어 다른 OS에서는 빌드되지 않는다. 의도된 것이다 — 다른 OS는 이관이 아니라 신규 설계(V2-04)다.
 
 ## 패키지

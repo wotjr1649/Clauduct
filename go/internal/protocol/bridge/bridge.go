@@ -26,16 +26,46 @@ var ErrUnsupportedEvent = errors.New("UNSUPPORTED_EVENT")
 type Request struct {
 	Model       string          `json:"model"`
 	Instruction string          `json:"instructions,omitempty"`
-	Input       []InputMessage  `json:"input"`
+	Input       []InputEntry    `json:"input"`
 	MaxTokens   int64           `json:"max_output_tokens"`
 	Stream      bool            `json:"stream"`
 	Effort      *ReasoningParam `json:"reasoning,omitempty"`
+	Tools       []ToolSpec      `json:"tools,omitempty"`
+	ToolChoice  any             `json:"tool_choice,omitempty"`
+	Parallel    *bool           `json:"parallel_tool_calls,omitempty"`
 }
 
-// InputMessage is one turn in the backend's vocabulary.
-type InputMessage struct {
-	Role    string      `json:"role"`
-	Content []InputPart `json:"content"`
+// InputEntry is one element of the backend's input array. A conversation turn, a recorded
+// call and a recorded result are three different shapes in the same list, so the members
+// that do not apply are omitted rather than sent empty.
+type InputEntry struct {
+	Type string `json:"type,omitempty"`
+
+	// message
+	Role    string      `json:"role,omitempty"`
+	Content []InputPart `json:"content,omitempty"`
+
+	// function_call
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+
+	// function_call_output
+	Output []InputPart `json:"output,omitempty"`
+}
+
+// ToolSpec is a callable definition in the backend's vocabulary.
+type ToolSpec struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+// NamedTool constrains the choice to one tool.
+type NamedTool struct {
+	Type string `json:"type"`
+	Name string `json:"name"`
 }
 
 // InputPart is one piece of a turn. The backend distinguishes input from output text.
@@ -68,6 +98,32 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 		out.Instruction = text
 	}
 
+	// Only the definitions that are callable now go upstream. A deferred tool nobody has
+	// mentioned costs schema on every request, which is what deferring is for.
+	for _, tool := range request.ActiveTools() {
+		out.Tools = append(out.Tools, ToolSpec{
+			Type:        "function",
+			Name:        tool.Name,
+			Description: tool.Description,
+			Parameters:  tool.InputSchema,
+		})
+	}
+	if choice := request.ToolChoice; choice.Present {
+		switch choice.Type {
+		case "any":
+			// The two vocabularies disagree on the name for the same instruction.
+			out.ToolChoice = "required"
+		case "tool":
+			out.ToolChoice = NamedTool{Type: "function", Name: choice.Name}
+		default:
+			out.ToolChoice = choice.Type
+		}
+		if choice.DisableParallelToolUse {
+			parallel := false
+			out.Parallel = &parallel
+		}
+	}
+
 	for _, message := range request.Messages {
 		// The backend calls a system turn a developer turn. Mapping it here rather than in
 		// the decoder keeps each protocol package speaking only its own vocabulary.
@@ -75,20 +131,73 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 		if role == "system" {
 			role = "developer"
 		}
-		converted := InputMessage{Role: role}
 		kind := "input_text"
 		if message.Role == "assistant" {
 			kind = "output_text"
 		}
+
+		// A turn's text is one message entry; each recorded call and result is its own
+		// entry, in the order they appeared, so the backend sees the same sequence the
+		// client recorded.
+		var turn InputEntry
+		flush := func() {
+			if len(turn.Content) > 0 {
+				out.Input = append(out.Input, turn)
+			}
+			turn = InputEntry{}
+		}
+		turn = InputEntry{Role: role}
+
 		for _, block := range message.Blocks {
-			if block.Type != "text" {
+			switch block.Type {
+			case "text":
+				turn.Content = append(turn.Content, InputPart{Type: kind, Text: block.Text})
+			case "tool_use":
+				flush()
+				out.Input = append(out.Input, InputEntry{
+					Type:      "function_call",
+					CallID:    block.ID,
+					Name:      block.Name,
+					Arguments: string(block.Input),
+				})
+				turn = InputEntry{Role: role}
+			case "tool_result":
+				flush()
+				out.Input = append(out.Input, InputEntry{
+					Type:   "function_call_output",
+					CallID: block.ToolUseID,
+					Output: resultParts(block),
+				})
+				turn = InputEntry{Role: role}
+			default:
 				return nil, fmt.Errorf("bridge: decoder passed a %q block to the text path", block.Type)
 			}
-			converted.Content = append(converted.Content, InputPart{Type: kind, Text: block.Text})
 		}
-		out.Input = append(out.Input, converted)
+		flush()
 	}
 	return out, nil
+}
+
+// resultParts flattens a tool result for the backend.
+//
+// A failed result is announced rather than left to be inferred from its text: the client
+// said the tool failed, and dropping that flag would present the failure as output.
+func resultParts(block anthropic.Block) []InputPart {
+	parts := make([]InputPart, 0, len(block.Result)+1)
+	if block.IsError {
+		parts = append(parts, InputPart{Type: "input_text", Text: "Tool execution failed:"})
+	}
+	for _, part := range block.Result {
+		switch part.Type {
+		case "tool_reference":
+			// A historical reference is data, not a definition that can reactivate a tool.
+			parts = append(parts, InputPart{Type: "input_text",
+				Text: `{"type":"tool_reference","tool_name":"` + part.Name + `"}`})
+		default:
+			parts = append(parts, InputPart{Type: "input_text", Text: part.Text})
+		}
+	}
+	return parts
 }
 
 // systemText flattens the system prompt, which arrives either as a string or as an array
@@ -135,6 +244,14 @@ func NewTranslator(model string) *Translator {
 	return &Translator{builder: anthropic.NewBuilder(model)}
 }
 
+// NewTranslatorFor builds a translator that knows which tools a new call may name.
+func NewTranslatorFor(request *anthropic.Request) *Translator {
+	t := &Translator{builder: anthropic.NewBuilder(request.Model)}
+	callable := request.CallableNames()
+	t.builder.SetCallable(func(name string) bool { return callable[name] })
+	return t
+}
+
 // Builder exposes the response under construction, for a caller that needs what was
 // accumulated rather than the frames.
 func (t *Translator) Builder() *anthropic.Builder { return t.builder }
@@ -177,6 +294,30 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			return nil, err
 		}
 		t.usage = usage
+		// The completed payload is where tool calls come from. Reading them here rather
+		// than from the streaming argument events is the delivery barrier: a call exists
+		// only once the backend has said the response finished, so a stream that failed
+		// midway cannot have handed the client something to execute.
+		items, present, err := codex.DecodeCompletedOutput(event.Raw)
+		if err != nil {
+			return nil, err
+		}
+		if present {
+			for _, item := range items {
+				switch item.Type {
+				case codex.ItemFunctionCall:
+					if err := t.builder.AddToolCall(item.CallID, item.Name, item.Arguments); err != nil {
+						return nil, err
+					}
+				case codex.ItemMessage:
+					// The backend's own account of what it said, checked against what was
+					// streamed. A disagreement means a delta went missing.
+					if err := t.checkStreamedText(item.Text); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
 		return t.builder.Complete(anthropic.Usage{
 			InputTokens:  usage.InputTokens,
 			OutputTokens: usage.OutputTokens,
@@ -205,5 +346,22 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	return nil, ErrUnsupportedEvent
 }
 
+// checkStreamedText compares the completed payload's message text with what the deltas
+// built. It is the same property the per-part snapshot checks, one level up: if the two
+// accounts of the answer differ, neither can be handed on.
+func (t *Translator) checkStreamedText(parts []string) error {
+	joined := ""
+	for _, part := range parts {
+		joined += part
+	}
+	if joined != t.builder.Text() {
+		return anthropic.ErrTextMismatch
+	}
+	return nil
+}
+
 // Text reports what the response accumulated.
 func (t *Translator) Text() string { return t.builder.Text() }
+
+// ToolCallCount reports how many calls the completed response released.
+func (t *Translator) ToolCallCount() int { return t.builder.ToolCallCount() }

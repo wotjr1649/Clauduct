@@ -8,8 +8,8 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 |---|---|
 | 세대 | V2 — Go Native-Host-Preserving Bridge |
 | 완료한 게이트 | **G0(현황) · G1(설계) · G2(격리)** |
-| 완료한 작업 패키지 | **WP01** launcher · **WP02** HTTP·생명주기 · **WP03** text protocol |
-| 다음 게이트 | **G4 기본 wire 완료** (도구 제외). 다음은 WP04 |
+| 완료한 작업 패키지 | **WP01** launcher · **WP02** HTTP·생명주기 · **WP03** text protocol · **WP04** tool 왕복 |
+| 다음 게이트 | **G4 기본 wire 완료.** 다음은 WP05 (transport) |
 | 기준선 | `node-bfbdf23-g0` (commit `bfbdf2385175…`, tree `9cd96d660959…`) |
 | 개발 branch | `redesign/go-v2-native-host`, worktree `D:/AIDEV/Clauduct-go-v2` |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.0, 제3자 의존성 0 |
@@ -48,14 +48,15 @@ ARCHIVAL_MOVE:      DEFERRED
 
 전체 핸드오프를 매번 다시 읽지 않는다. 이 파일 → [DECISION.md](DECISION.md) → 착수할 작업 패키지의 해당 절만 읽는다.
 
-다음 하나의 bounded work package는 **WP04 — tool round-trip과 delivery barrier**다. text 경로가 끝에서 끝까지 동작하고, 실제 `claude.exe`가 이 빌드에 대해 남기는 유일한 오류가 `TOOL_USE_UNSUPPORTED`다. 우선 테스트는 TOOL01–TOOL08, LIFE10, WIRE11.
+다음 하나의 bounded work package는 **WP05 — direct transport와 read-only auth provider**다. 파이프라인은 완성됐고 보낼 곳만 없다: 실제 `claude.exe`가 이 빌드에 대해 남기는 유일한 오류가 `NO_UPSTREAM_TRANSPORT`다. 우선 테스트는 AUTH01–AUTH08, LIFE08–LIFE10, LIFE13, REL12.
 
-delivery barrier가 WP04의 핵심이다 — 검증 전 `tool_use`를 내보내면 사용자 파일에 중복·잘못된 부작용이 생긴다. 상세는 [ARCHITECTURE.md](ARCHITECTURE.md) 8장.
+WP05에서 함께 판정할 것이 하나 있다: **5xx는 종류를 가리지 않고 클라이언트가 재시도한다**(측정값은 [VALIDATION.md](VALIDATION.md) 5.7.1). 클라이언트 재시도와 이 bridge의 재시도가 곱해지지 않도록 소유권을 정해야 하고, 실호출 cap은 socket을 열기 **전에** 걸려야 한다.
 
 ## 4. 이 시점에 아직 사실이 아닌 것
 
-- **대화형 세션이 성립하지 않는다.** 두 가지가 막는다: 측정된 실제 요청은 항상 도구를 싣고(→ `TOOL_USE_UNSUPPORTED`), 제품 빌드에는 transport가 없다(→ `NO_UPSTREAM_TRANSPORT`). 둘 다 침묵이 아니라 명시된 오류다.
-- upstream 전송(WP05), 도구 왕복(WP04), 모델 라우팅(WP07), `/v1/models` discovery(WP07)는 아직 없다.
+- **대화형 세션이 성립하지 않는다.** 이제 막는 것은 하나뿐이다: 제품 빌드에 transport가 없다(→ `400 NO_UPSTREAM_TRANSPORT`, 4.5초에 종료). 침묵이 아니라 명시된 오류다.
+- upstream 전송(WP05), 모델 라우팅(WP07), `/v1/models` discovery(WP07), 이미지·문서·hosted search는 아직 없다.
+- TOOL01·TOOL02·TOOL06은 실제 native 실행이 필요해 `NOT_RUN`이다(WP06).
 - 성능·지연·메모리 비교 수치는 측정한 적이 없다.
 - host parity는 미검증이다. 통제된 synthetic profile 실행(NATIVE_SYNTH)은 아직 하지 않았다.
 - `-race`는 이 머신에서 **NOT_RUN**이다 — cgo와 C 툴체인이 없다. CI가 담당하며 미실행은 통과가 아니다.

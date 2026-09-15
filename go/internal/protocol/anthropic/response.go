@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"strconv"
+
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 // Fixed refusal categories for response construction.
@@ -17,6 +19,15 @@ var (
 	ErrStreamOrder = errors.New("STREAM_ORDER")
 	// ErrResponseTooLarge means the accumulated response passed its ceiling.
 	ErrResponseTooLarge = errors.New("RESPONSE_TOO_LARGE")
+	// ErrUnsupportedToolCall means the backend called a tool that is not callable now.
+	// History may name a tool that has since been withdrawn; a new call may not.
+	ErrUnsupportedToolCall = errors.New("UNSUPPORTED_TOOL_CALL")
+	// ErrInvalidToolCall means a call's arguments could not be read as an object. It is
+	// refused rather than repaired: a tool is about to run with them.
+	ErrInvalidToolCall = errors.New("INVALID_TOOL_CALL")
+	// ErrEmptyReply means the backend completed having produced nothing at all. Handing
+	// the client an empty assistant message would make a failure look like an answer.
+	ErrEmptyReply = errors.New("EMPTY_REPLY")
 )
 
 // Ceilings on one response. The byte ceiling matches the baseline's responseBytes; the
@@ -55,6 +66,13 @@ type textPart struct {
 	closed  bool
 }
 
+// toolCall is a validated call waiting for the completion that releases it.
+type toolCall struct {
+	id    string
+	name  string
+	input []byte
+}
+
 // Builder turns semantic calls into the client's event sequence.
 //
 // It knows nothing about the backend. The bridge translates backend events into these
@@ -68,10 +86,82 @@ type Builder struct {
 	nextIndex  int
 	parts      map[int]*textPart
 	totalBytes int
+
+	// Calls are held here until Complete releases them. Nothing writes a tool_use frame
+	// before that point, which is the whole delivery barrier: a stream that fails midway
+	// cannot have handed the client something to execute.
+	calls    []toolCall
+	callIDs  map[string]bool
+	callable func(name string) bool
 }
 
 func NewBuilder(model string) *Builder {
-	return &Builder{model: model, parts: make(map[int]*textPart, 4)}
+	return &Builder{
+		model:    model,
+		parts:    make(map[int]*textPart, 4),
+		callIDs:  make(map[string]bool, 4),
+		callable: func(string) bool { return false },
+	}
+}
+
+// SetCallable supplies the names a new tool call may use. It is the current definitions
+// only: a conversation's history may name a tool that has since been withdrawn, but a new
+// call may not, because the client is about to be asked to run it.
+func (b *Builder) SetCallable(callable func(name string) bool) {
+	if callable != nil {
+		b.callable = callable
+	}
+}
+
+// AddToolCall validates a call and holds it.
+//
+// It returns no frames on purpose. A tool call is the one thing in a response that causes
+// side effects outside this process, so it is released only by Complete, after the backend
+// has said the response finished. Arguments are kept as the bytes that arrived — an
+// omitted optional, an explicit null and a chosen value are three different instructions
+// to whatever runs the tool, and a decode-and-re-encode round trip loses two of them.
+func (b *Builder) AddToolCall(id, name string, arguments []byte) error {
+	if b.completed {
+		return ErrStreamOrder
+	}
+	// The id has to be addressable: a result comes back naming it, and an id outside this
+	// shape produces a result nothing can be matched to. The name is checked for the same
+	// shape as defence in depth — a name outside it can never be a defined tool, so the
+	// callable check below would refuse it anyway.
+	if !identifier.MatchString(id) || !identifier.MatchString(name) {
+		return ErrUnsupportedToolCall
+	}
+	if b.callIDs[id] {
+		// One identifier, one call: a result addressed to a repeated id could be matched
+		// to either of them.
+		return ErrUnsupportedToolCall
+	}
+	if !b.callable(name) {
+		return ErrUnsupportedToolCall
+	}
+	if !isJSONObject(arguments) {
+		return ErrInvalidToolCall
+	}
+
+	b.totalBytes += len(arguments)
+	if b.totalBytes > maxResponseBytes {
+		return ErrResponseTooLarge
+	}
+	if len(b.calls) >= maxTextParts {
+		return ErrResponseTooLarge
+	}
+	b.callIDs[id] = true
+	b.calls = append(b.calls, toolCall{id: id, name: name, input: append([]byte(nil), arguments...)})
+	return nil
+}
+
+// ToolCallCount reports how many calls are held. Used by a caller that needs to know a
+// response carried tool use without inspecting the frames.
+func (b *Builder) ToolCallCount() int { return len(b.calls) }
+
+func isJSONObject(raw []byte) bool {
+	_, err := wire.Fields(raw, nil)
+	return err == nil
 }
 
 // SetResponseID records the identifier the backend assigned. It must arrive before any
@@ -180,8 +270,8 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 
 	var frames []Frame
 	if !b.started {
-		// A response with no text at all still needs its message frames, or the client
-		// is left waiting for a message that never started.
+		// A response that produced only tool calls still needs its message frames, or the
+		// client is left waiting for a message that never started.
 		b.started = true
 		frames = append(frames, b.messageStart())
 	}
@@ -206,8 +296,44 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		frames = append(frames, contentBlockStop(part.index))
 	}
 
-	frames = append(frames, messageDelta(usage), Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)})
+	// Every text block is closed before the first tool block opens. A client reading
+	// sequentially must not see a tool call arrive inside an unfinished answer.
+	for _, call := range b.calls {
+		index := b.nextIndex
+		b.nextIndex++
+		frames = append(frames,
+			toolBlockStart(index, call),
+			toolBlockDelta(index, call.input),
+			contentBlockStop(index))
+	}
+
+	// A response that produced neither text nor a call produced nothing. Emitting an empty
+	// assistant message would make that failure look like an answer.
+	if len(b.parts) == 0 && len(b.calls) == 0 {
+		return nil, ErrEmptyReply
+	}
+
+	frames = append(frames, messageDelta(usage, len(b.calls) > 0),
+		Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)})
 	return frames, nil
+}
+
+func toolBlockStart(index int, call toolCall) Frame {
+	// The block opens with empty input and the arguments follow as a delta, matching how
+	// the client reads a streamed tool call.
+	return frame("content_block_start", map[string]any{
+		"type": "content_block_start", "index": index,
+		"content_block": map[string]any{
+			"type": "tool_use", "id": call.id, "name": call.name, "input": map[string]any{},
+		},
+	})
+}
+
+func toolBlockDelta(index int, input []byte) Frame {
+	return frame("content_block_delta", map[string]any{
+		"type": "content_block_delta", "index": index,
+		"delta": map[string]any{"type": "input_json_delta", "partial_json": string(input)},
+	})
 }
 
 // Text reports what was accumulated, for a caller that needs the whole answer rather than
@@ -266,7 +392,12 @@ func contentBlockStop(index int) Frame {
 	return frame("content_block_stop", map[string]any{"type": "content_block_stop", "index": index})
 }
 
-func messageDelta(usage Usage) Frame {
+func messageDelta(usage Usage, toolUse bool) Frame {
+	reason := "end_turn"
+	if toolUse {
+		// The client reads this to know the turn is waiting on it rather than finished.
+		reason = "tool_use"
+	}
 	counts := map[string]any{}
 	// Unknown stays unknown. Writing 0 for a count the backend never reported would turn
 	// "we do not know what this cost" into "it cost nothing".
@@ -278,7 +409,7 @@ func messageDelta(usage Usage) Frame {
 	}
 	return frame("message_delta", map[string]any{
 		"type":  "message_delta",
-		"delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil},
+		"delta": map[string]any{"stop_reason": reason, "stop_sequence": nil},
 		"usage": counts,
 	})
 }

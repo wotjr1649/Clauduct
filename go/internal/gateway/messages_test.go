@@ -109,33 +109,42 @@ func TestByteAtATimeUpstreamStillProducesTheSameAnswer(t *testing.T) {
 
 // With no transport configured the answer says so. A build with nowhere to send a request
 // must not look like one that answered.
-func TestNoTransportIsReportedNotSilentlyEmpty(t *testing.T) {
+//
+// And it must not look like one worth retrying. Measured against claude 2.1.272, every 5xx
+// is retried — eight requests in sixty seconds against a condition that is permanent for
+// the life of the process. The status class is the retry instruction, so a permanent local
+// condition is reported in the class that stops.
+func TestNoTransportIsReportedAndNotRetryable(t *testing.T) {
 	g := start(t)
 	resp := post(t, g, validRequest)
 
-	if resp.StatusCode != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", resp.StatusCode)
+	if resp.StatusCode >= 500 {
+		t.Fatalf("status = %d; a 5xx tells the client to keep retrying a permanent condition", resp.StatusCode)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
 	if body := bodyText(t, resp); !strings.Contains(body, "NO_UPSTREAM_TRANSPORT") {
 		t.Fatalf("body = %q", body)
 	}
 }
 
-// A request this build cannot serve is named before anything is sent anywhere. The
-// measured client puts tools on every call, so this is the answer a real session gets
-// today — and it must be an answer, not a silent success.
-func TestToolRequestIsRefusedWithoutContactingTheBackend(t *testing.T) {
+// A request this build cannot serve is named before anything is sent anywhere. The hosted
+// search tool is executed by the backend rather than by the client, so it is a different
+// capability with its own budget and result semantics — and it must be an answer, not a
+// silent success that quietly drops the tool from the list.
+func TestUnsupportedCapabilityIsRefusedWithoutContactingTheBackend(t *testing.T) {
 	fixture := &upstream.Fixture{SSE: sse(created, completed)}
 	g := startWith(t, fixture)
 
 	resp := post(t, g, `{"model":"m","max_tokens":1,"stream":true,
 	  "messages":[{"role":"user","content":"x"}],
-	  "tools":[{"name":"Read","input_schema":{"type":"object"}}]}`)
+	  "tools":[{"type":"web_search_20250305","name":"web_search"}]}`)
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
-	if body := bodyText(t, resp); !strings.Contains(body, "TOOL_USE_UNSUPPORTED") {
+	if body := bodyText(t, resp); !strings.Contains(body, "HOSTED_TOOL_UNSUPPORTED") {
 		t.Fatalf("body = %q", body)
 	}
 	if fixture.Calls() != 0 {

@@ -112,16 +112,18 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer response.Body.Close()
 
-	g.relay(ctx, w, control, response, request.Model)
+	g.relay(ctx, w, control, response, request)
 }
 
 // relay reads the backend stream and writes client frames as they are produced.
 func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *http.ResponseController,
-	response *upstream.Response, model string) {
+	response *upstream.Response, request *anthropic.Request) {
 
 	parser := stream.NewParser(stream.DefaultLimits())
 	parser.IsTerminal = codex.Terminal
-	translator := bridge.NewTranslator(model)
+	// The translator is told which tools are callable now, so a call naming a withdrawn
+	// tool is refused rather than passed to a client that would try to run it.
+	translator := bridge.NewTranslatorFor(request)
 
 	committed := false
 	emit := func(frames []anthropic.Frame) error {
@@ -219,6 +221,12 @@ func categoryFor(err error) string {
 		return "TEXT_MISMATCH"
 	case errors.Is(err, anthropic.ErrStreamOrder):
 		return "STREAM_ORDER"
+	case errors.Is(err, anthropic.ErrUnsupportedToolCall):
+		return "UNSUPPORTED_TOOL_CALL"
+	case errors.Is(err, anthropic.ErrInvalidToolCall):
+		return "INVALID_TOOL_CALL"
+	case errors.Is(err, anthropic.ErrEmptyReply):
+		return "EMPTY_REPLY"
 	case errors.Is(err, anthropic.ErrResponseTooLarge), errors.Is(err, stream.ErrResponseTooLarge):
 		return "RESPONSE_TOO_LARGE"
 	case errors.Is(err, stream.ErrInvalidSSE):
@@ -243,12 +251,25 @@ func categoryFor(err error) string {
 	return "UPSTREAM_FAILURE"
 }
 
-// statusForUpstream follows the baseline's mapping so a client cannot tell the two
-// implementations apart by status alone.
+// statusForUpstream picks the status class, and the class is a retry instruction as much
+// as a blame assignment.
+//
+// Measured against claude 2.1.272: a 4xx ends the turn after two attempts, while 501, 502
+// and 503 are all retried — eight requests in sixty seconds and still going. So the class
+// has to follow whether retrying could ever help, not only whose fault the failure was.
+//
+// No transport configured is permanent for the life of the process. Answering it with any
+// 5xx leaves the client backing off against a condition that will never change, so it is
+// reported in the class that stops. The category says what actually happened; a reader who
+// needs the cause reads that rather than the number.
+//
+// A genuine upstream failure stays 502. Retrying one can succeed, and whether the client's
+// retries and this bridge's should both exist is a question the real transport has to
+// settle rather than one to pre-empt here.
 func statusForUpstream(err error) int {
 	switch {
 	case errors.Is(err, upstream.ErrNoTransport):
-		return http.StatusServiceUnavailable
+		return http.StatusBadRequest
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return refuseCancelled.status
 	}

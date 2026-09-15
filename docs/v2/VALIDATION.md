@@ -4,8 +4,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **309개 통과** (subtest 포함) |
-| mutation 검증 | **71건 주입.** 7건이 처음에 살아남았고 일곱 다 테스트를 보강해 잡았다 |
+| 실행한 V2 Go 테스트 | **349개 통과** (subtest 포함) |
+| mutation 검증 | **88건 주입** (battery 5개). 10건이 처음에 살아남았고 열 다 테스트를 보강해 잡았다 |
 | 실모델 호출 | **0회.** upstream 코드가 존재하지 않아 구조적으로 불가능하다 |
 | 잔여 승인 예산 | **0. 그리고 별도로 BLOCKED다** — 3장 |
 
@@ -39,7 +39,7 @@
 | `gofmt -l .` | 출력 없음 |
 | `go vet ./...` | 통과 |
 | `go build ./...` | 통과 |
-| `go test -count=1 ./...` | **8 package 통과**, 309 테스트 |
+| `go test -count=1 ./...` | **8 package 통과**, 349 테스트 |
 | `go build -trimpath` 후 `version` | VCS stamp 확인: `bfbdf238…+dirty`, go1.27.0 windows/amd64 |
 | `clauduct-dev doctor` | exit 0. claude.exe 해석 성공, 82 parent vars → 87 child vars, credential 읽기 0 |
 | `clauduct-go --version` | exit 0. 실제 claude.exe가 `2.1.272 (Claude Code)` 출력 |
@@ -140,7 +140,8 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | WP01 | Go workspace, launcher skeleton, fake child | **완료** — 아래 5.1 |
 | WP02 | ephemeral HTTP·생명주기 | **완료** — 아래 5.3 |
 | WP03 | 최소 text request/response protocol | **완료** — 아래 5.5 |
-| **WP04** | tool round-trip과 delivery barrier | TOOL01–TOOL08, LIFE10, WIRE11 |
+| WP04 | tool round-trip과 delivery barrier | **완료** — 아래 5.7 |
+| **WP05** | direct transport와 read-only auth | AUTH01–AUTH08, LIFE08–LIFE10, LIFE13, REL12 |
 | WP03 | 최소 text protocol | WIRE01–WIRE10, WIRE12–WIRE15 |
 | WP04 | tool round-trip·delivery barrier | TOOL01–TOOL08, LIFE10, WIRE11 |
 | WP05 | direct transport·read-only auth | AUTH01–AUTH08, LIFE08–LIFE10, LIFE13, REL12 |
@@ -150,7 +151,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | WP09 | live validation·패키징 | 해당 P/S의 live 연계, REL04–REL10. G7–G9 구분 |
 | WP10 | 선택적 archive | REL01, REL09, REL11. **DEFERRED** |
 
-한 번에 모두 착수하지 않는다. 다음 하나는 WP04다.
+한 번에 모두 착수하지 않는다. 다음 하나는 WP05다.
 
 ### 5.1 WP01이 실제로 덮은 테스트 ID
 
@@ -256,3 +257,43 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 `/v1/messages`는 구현됐지만 **보낼 곳이 없다.** `upstream.Transport` 인터페이스와 fixture는 있고 실제 전송은 WP05다. 그때까지 제품 빌드는 `NO_UPSTREAM_TRANSPORT`로 답한다.
 
 도구는 WP04다. 측정된 실제 요청은 `tools`를 **항상** 포함하므로, 도구 지원 전까지 실제 세션은 성립하지 않는다. 그 사실이 침묵이 아니라 명시된 오류로 나타나는 것이 WP03이 보장하는 것이다.
+
+### 5.7 WP04 — 완료
+
+도구 왕복이 끝났다. 요청은 정의·`tool_choice`·기록된 호출과 결과를 받아들이고, 응답은 backend의 호출을 검증해 `tool_use` 블록으로 내보낸다.
+
+**barrier는 설계의 결과이지 덧댄 검사가 아니다.** 호출은 스트리밍 이벤트가 아니라 `response.completed`의 `output` 배열에서만 나온다. 따라서 중간에 실패한 스트림은 클라이언트에게 실행할 것을 건넨 적이 없다 — 막는 코드가 있어서가 아니라 만들어지는 자리가 그 뒤이기 때문이다.
+
+| ID | 상태 | 어디서 |
+|---|---|---|
+| TOOL03 name·ID·arguments·result 연결 보존 | PASS | id·name이 그대로 도달, arguments는 재직렬화 없음 |
+| TOOL04 복수 tool call의 순서·결과 대응 | PASS | 3개 호출의 순서와 blockindex 단조 증가 |
+| TOOL05 completion 전 tool side effect 0 | PASS | 스트리밍 이벤트에서 프레임 0, 실패한 스트림에서 호출 0 |
+| TOOL07 optional enum 생략·null·값 구분 | PASS | `{}` / `{"isolation":null}` / `{"isolation":"worktree"}`가 셋으로 도달 |
+| TOOL08 inactive historical tool과 신규 inactive call 구분 | PASS | 철회된 도구를 이름으로 가진 기록은 해독되고, 그 이름의 **새 호출**은 거부 |
+| WIRE11 malformed tool arguments 미전달 | PASS | 8종(비JSON·잘림·배열·문자열·숫자·trailing·중복 key·빈 값) |
+| LIFE10 semantic delivery 이후 자동 replay 0 | PASS(구조) | gateway 내부 재시도가 0이다. WP05에서 전송 계층과 함께 재판정 |
+| TOOL01 Read/Edit/Write/Bash 실제 왕복 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
+| TOOL02 permission 거부가 실행으로 바뀌지 않음 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
+| TOOL06 전달 후 실패 시 자동 재실행 0 | `NOT_RUN` | NATIVE_SYNTH. WP06 |
+
+### 5.7.1 측정이 상태 코드를 바꿨다
+
+도구 지원 후 실제 `claude.exe`를 다시 붙였더니 **150초를 매달렸다.** transport가 없어 `NO_UPSTREAM_TRANSPORT`(당시 503)를 돌려주는데, 클라이언트가 재시도를 반복하고 있었다.
+
+일회용 listener로 상태 코드별 재시도를 측정했다. 모델 호출 0회다.
+
+| 응답 | 60초 동안의 요청 수 | 자식 종료 |
+|---|---|---|
+| 400 | **3** (readiness 1 + POST 2) | 즉시 |
+| 501 | **8**, 계속 | 종료 안 함 |
+| 502 | **8**, 계속 | 종료 안 함 |
+| 503 | **8**, 계속 | 종료 안 함 |
+
+**5xx는 종류를 가리지 않고 재시도된다.** 상태 코드 계열은 책임 소재이기 전에 **재시도 지시**다. "transport가 설정되지 않음"은 프로세스 수명 내내 영구적이므로, 5xx로 답하면 절대 바뀌지 않을 조건을 향해 클라이언트가 무한히 backoff한다. 400으로 바꾸니 같은 명령이 **4.5초**에 `400 NO_UPSTREAM_TRANSPORT`로 끝난다.
+
+진짜 upstream 실패는 502로 남겼다 — 재시도가 성공할 수 있는 조건이다. 다만 클라이언트 재시도와 이 bridge의 재시도가 곱해지는지는 실제 전송이 생기는 WP05에서 판정한다. 위 수치가 그 판정의 입력이다.
+
+### 5.7.2 WP04에서 고친 것 하나
+
+WP03은 아무것도 만들지 않은 응답에 빈 assistant 메시지를 내보내고 있었다. 기준선은 `EMPTY_REPLY`로 거부한다. 빈 메시지는 "모델이 아무 말도 안 했다"는 **그럴듯한 답**처럼 읽히므로 실패를 답으로 위장한다. 거부로 바꿨고, 도구 호출만 있는 응답은 무언가를 만들었으므로 비어 있지 않다.

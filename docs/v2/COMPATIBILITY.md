@@ -17,6 +17,9 @@
 | 역할별 effort 배정 | hook 등록된 자식에 역할별 effort 적용 | **잃는다.** Claude가 요청한 모델과 그 모델 기본 effort를 쓴다 | 아래 2장 |
 | 차단 옵션 수 | 30 | **2** (권한 해제 계열만) | 아래 3장 |
 | `review-diff` 헬퍼 | gateway가 주입·검증 | **미지원** (WP07까지) | 아래 3.1 |
+| hosted `web_search` 도구 | backend가 실행, 결과를 변환 | **미지원** — `HOSTED_TOOL_UNSUPPORTED`로 명시 거부. WP07 |
+| 빈 응답 | `EMPTY_REPLY`로 거부 | 동일하게 거부 | 빈 assistant 메시지는 실패를 답으로 위장한다 |
+| 영구적 로컬 실패의 상태 코드 | 대부분 400 | 400 — 5xx는 클라이언트가 무한 재시도한다(실측) | VALIDATION 5.7.1 |
 | 제품 상태 위치 | `<repo>/.clauduct-status/` (설치 디렉터리 안) | OS 사용자별 state 경로 | V2-01 |
 | `review-diff` 도구 명령 | `<node.exe> <repo>/src/review-diff.mjs <target>` | **미지원으로 확정 (WP07 재검토)** | V2-02, 아래 3.1 |
 | agent registration endpoint | `POST /clauduct/agents`, 기본 실행에 필수 | overlay 전용 | [ARCHITECTURE.md](ARCHITECTURE.md) 6장 |

@@ -58,6 +58,46 @@ func joined(frames []anthropic.Frame) string {
 
 const completedNoUsage = `{"type":"response.completed","response":{"id":"resp_1"}}`
 
+// completedWith builds a completed payload carrying the given output items.
+func completedWith(items ...string) stream.Event {
+	return stream.Event{Type: codex.Completed, Raw: []byte(
+		`{"type":"response.completed","response":{"id":"resp_1","output":[` +
+			strings.Join(items, ",") + `]}}`)}
+}
+
+// callable builds a request whose tool definitions make the given names callable.
+func callable(names ...string) *anthropic.Request {
+	body := `{"model":"gpt-6-astra","max_tokens":1,"stream":true,
+	  "messages":[{"role":"user","content":"x"}],"tools":[`
+	for i, name := range names {
+		if i > 0 {
+			body += ","
+		}
+		body += `{"name":"` + name + `","input_schema":{"type":"object"}}`
+	}
+	body += `]}`
+	request, err := anthropic.DecodeRequest([]byte(body))
+	if err != nil {
+		panic(err)
+	}
+	return request
+}
+
+// runFor feeds events through a translator that knows what is callable.
+func runFor(t *testing.T, request *anthropic.Request, events ...stream.Event) ([]anthropic.Frame, error) {
+	t.Helper()
+	translator := NewTranslatorFor(request)
+	var frames []anthropic.Frame
+	for _, e := range events {
+		produced, err := translator.Accept(e)
+		if err != nil {
+			return frames, err
+		}
+		frames = append(frames, produced...)
+	}
+	return frames, nil
+}
+
 // The ordinary text round trip, end to end through the two vocabularies.
 func TestTextResponseProducesTheClientSequence(t *testing.T) {
 	frames, err := run(t,
@@ -149,14 +189,16 @@ func TestSnapshotMustMatchTheDeltas(t *testing.T) {
 
 // The one allowed case, and the reason it is allowed: the baseline once failed on an empty
 // done with no deltas, and a part that legitimately produced nothing is not a mismatch.
-func TestEmptySnapshotWithNoDeltasIsAccepted(t *testing.T) {
-	frames, err := run(t, textDone(0, ""), event(codex.Completed, completedNoUsage))
-	if err != nil {
-		t.Fatalf("an empty part with no deltas was refused: %v", err)
+//
+// It is not a mismatch and it is also not an answer. The empty part is accepted here; the
+// response it belongs to is refused at completion for having produced nothing at all.
+func TestEmptySnapshotWithNoDeltasIsNotAMismatch(t *testing.T) {
+	_, err := run(t, textDone(0, ""), event(codex.Completed, completedNoUsage))
+	if errors.Is(err, anthropic.ErrTextMismatch) {
+		t.Fatalf("an empty part with no deltas was read as a mismatch: %v", err)
 	}
-	// It opened no block, so the client sees a message that started and stopped.
-	if got := frameTypes(frames); strings.Join(got, ",") != "message_start,message_delta,message_stop" {
-		t.Fatalf("frames = %v", got)
+	if !errors.Is(err, anthropic.ErrEmptyReply) {
+		t.Fatalf("err = %v, want EMPTY_REPLY", err)
 	}
 }
 
@@ -264,14 +306,26 @@ func TestEmptyDeltaIsCarried(t *testing.T) {
 	}
 }
 
-// A response that produced nothing at all still needs its message frames, or the client
-// waits for a message that never started.
-func TestEmptyResponseStillOpensAndClosesTheMessage(t *testing.T) {
-	frames, err := run(t, event(codex.Completed, completedNoUsage))
+// A response that produced neither text nor a call produced nothing. Handing the client an
+// empty assistant message would make that failure look like the model having said nothing,
+// which is a plausible answer rather than the failure it is.
+func TestEmptyResponseIsRefused(t *testing.T) {
+	_, err := run(t, event(codex.Completed, completedNoUsage))
+	if !errors.Is(err, anthropic.ErrEmptyReply) {
+		t.Fatalf("err = %v, want EMPTY_REPLY", err)
+	}
+}
+
+// A response carrying only a tool call has produced something, so it is not empty.
+func TestToolOnlyResponseIsNotEmpty(t *testing.T) {
+	frames, err := runFor(t, callable("Read"),
+		event(codex.Created, `{"type":"response.created","response":{"id":"r"}}`),
+		completedWith(`{"type":"function_call","call_id":"call_1","name":"Read","arguments":"{}"}`))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
-	if got := frameTypes(frames); strings.Join(got, ",") != "message_start,message_delta,message_stop" {
+	want := "message_start,content_block_start,content_block_delta,content_block_stop,message_delta,message_stop"
+	if got := frameTypes(frames); strings.Join(got, ",") != want {
 		t.Fatalf("frames = %v", got)
 	}
 }
@@ -302,7 +356,7 @@ func TestOpenBlocksAreClosedAtCompletion(t *testing.T) {
 // "it cost nothing", and a budget built on that number would be wrong in the cheap
 // direction.
 func TestUnknownUsageIsOmittedNotZeroed(t *testing.T) {
-	frames, err := run(t, event(codex.Completed, completedNoUsage))
+	frames, err := run(t, textDelta(0, "x"), textDone(0, "x"), event(codex.Completed, completedNoUsage))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}

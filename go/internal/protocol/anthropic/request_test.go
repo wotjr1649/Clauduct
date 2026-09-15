@@ -51,10 +51,9 @@ func TestTextOnlyRequestIsAccepted(t *testing.T) {
 	}
 }
 
-// The shape the measured claude 2.1.272 actually sends. Every top-level field it uses must
-// be recognised — a REQUEST_FIELDS refusal here would mean the allowlist is wrong, not that
-// the client is. What it must not do is quietly succeed while ignoring the tools.
-func TestTheMeasuredClientEnvelopeIsRecognisedAndToolsAreNamed(t *testing.T) {
+// The shape the measured claude 2.1.272 actually sends, tools included. A refusal here
+// would mean the allowlist is wrong, not that the client is.
+func TestTheMeasuredClientEnvelopeIsAccepted(t *testing.T) {
 	body := `{
 	  "model":"gpt-6-astra","max_tokens":32000,"stream":true,
 	  "messages":[{"role":"user","content":[{"type":"text","text":"ping"}]}],
@@ -65,18 +64,17 @@ func TestTheMeasuredClientEnvelopeIsRecognisedAndToolsAreNamed(t *testing.T) {
 	  "context_management":{"edits":[{"type":"clear_thinking_20251015","keep":"all"}]},
 	  "tools":[{"name":"Read","description":"read a file","input_schema":{"type":"object"}}]
 	}`
-	_, refusal := decode(t, body)
-	if refusal == nil {
-		t.Fatal("accepted a request carrying tools; WP03 has no tool support and must say so")
+	request, refusal := decode(t, body)
+	if refusal != nil {
+		t.Fatalf("refused: %v", refusal)
 	}
-	if refusal.Code != CodeToolUseUnsupported {
-		t.Fatalf("code = %s, want %s — every other field in the measured envelope must be recognised",
-			refusal.Code, CodeToolUseUnsupported)
+	if request.ToolCount() != 1 || request.Tools[0].Name != "Read" {
+		t.Fatalf("tools = %+v", request.Tools)
 	}
 }
 
-// Dropping the tools and keeping everything else must be accepted, which is what proves
-// the refusal above was about tools and not about some other field being unrecognised.
+// The same envelope without tools, which isolates the rest of the fields from the tool path
+// when one of them regresses.
 func TestTheMeasuredEnvelopeWithoutToolsIsAccepted(t *testing.T) {
 	body := `{
 	  "model":"gpt-6-astra","max_tokens":32000,"stream":true,
@@ -167,12 +165,14 @@ func TestMessagesValidation(t *testing.T) {
 func TestUnimplementedContentBlocksAreNamed(t *testing.T) {
 	head := `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":[`
 	for name, tc := range map[string]struct{ block, code string }{
-		"image":       {`{"type":"image","source":{}}`, CodeUnsupportedContent},
-		"document":    {`{"type":"document","source":{}}`, CodeUnsupportedContent},
-		"thinking":    {`{"type":"thinking","thinking":"x"}`, CodeUnsupportedContent},
-		"tool_use":    {`{"type":"tool_use","id":"t","name":"Read","input":{}}`, CodeToolUseUnsupported},
-		"tool_result": {`{"type":"tool_result","tool_use_id":"t","content":"x"}`, CodeToolUseUnsupported},
-		"no type":     {`{"text":"x"}`, CodeUnsupportedContent},
+		"image":    {`{"type":"image","source":{}}`, CodeUnsupportedContent},
+		"document": {`{"type":"document","source":{}}`, CodeUnsupportedContent},
+		"thinking": {`{"type":"thinking","thinking":"x"}`, CodeUnsupportedContent},
+		// A recorded call on a user turn is not a recorded assistant call.
+		"tool_use on a user turn": {`{"type":"tool_use","id":"t","name":"Read","input":{}}`, CodeInvalidToolCall},
+		// A result with nothing to answer.
+		"unmatched tool_result": {`{"type":"tool_result","tool_use_id":"t","content":"x"}`, CodeInvalidToolResult},
+		"no type":               {`{"text":"x"}`, CodeUnsupportedContent},
 		// A text block missing its text is a malformed text block, not an unimplemented
 		// kind. The categories are different because the fixes are.
 		"text no text":      {`{"type":"text"}`, CodeTextValue},
@@ -183,10 +183,16 @@ func TestUnimplementedContentBlocksAreNamed(t *testing.T) {
 	}
 }
 
-// tool_choice without tools is still a request for tool use.
-func TestToolChoiceAloneIsRefused(t *testing.T) {
-	mustRefuse(t, `{"model":"m","max_tokens":1,"stream":true,
-	  "messages":[{"role":"user","content":"x"}],"tool_choice":{"type":"auto"}}`, CodeToolUseUnsupported)
+// tool_choice with no definitions constrains nothing, which is not an error — auto over an
+// empty set simply means no tool will be chosen. Naming a tool that does not exist is a
+// different matter and is refused.
+func TestToolChoiceWithoutDefinitions(t *testing.T) {
+	head := `{"model":"m","max_tokens":1,"stream":true,
+	  "messages":[{"role":"user","content":"x"}],"tool_choice":`
+	if _, refusal := decode(t, head+`{"type":"auto"}}`); refusal != nil {
+		t.Fatalf("auto over an empty set refused: %v", refusal)
+	}
+	mustRefuse(t, head+`{"type":"tool","name":"Nonexistent"}}`, CodeUnsupportedTools)
 }
 
 // A malformed tools array is a malformed request, not an unimplemented capability. They
@@ -203,8 +209,8 @@ func TestEmptyToolsArrayIsAccepted(t *testing.T) {
 	if refusal != nil {
 		t.Fatalf("refused: %v", refusal)
 	}
-	if request.ToolCount != 0 {
-		t.Fatalf("ToolCount = %d", request.ToolCount)
+	if request.ToolCount() != 0 {
+		t.Fatalf("ToolCount = %d", request.ToolCount())
 	}
 }
 

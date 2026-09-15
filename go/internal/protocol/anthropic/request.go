@@ -31,36 +31,38 @@ var requestFields = []string{
 // Fixed refusal categories, matching the baseline's names so a client sees the same
 // vocabulary from either implementation.
 const (
-	CodeRequestFields      = "REQUEST_FIELDS"
-	CodeRequestShape       = "REQUEST_SHAPE"
-	CodeStreamFalse        = "REQUEST_STREAM_FALSE"
-	CodeStreamMissing      = "REQUEST_STREAM_MISSING"
-	CodeStreamInvalid      = "REQUEST_STREAM_INVALID"
-	CodeMessagesInvalid    = "REQUEST_MESSAGES_INVALID"
-	CodeMessagesEmpty      = "REQUEST_MESSAGES_EMPTY"
-	CodeInvalidOutputLimit = "INVALID_OUTPUT_LIMIT"
-	CodeOutputConfigFields = "OUTPUT_CONFIG_FIELDS"
-	CodeOutputFormatShape  = "OUTPUT_FORMAT_SHAPE"
-	CodeOutputFormatFields = "OUTPUT_FORMAT_FIELDS"
-	CodeOutputFormatType   = "OUTPUT_FORMAT_TYPE"
-	CodeOutputFormatSchema = "OUTPUT_FORMAT_SCHEMA"
-	CodeOutputFormatName   = "OUTPUT_FORMAT_NAME"
-	CodeThinkingFields     = "THINKING_FIELDS"
-	CodeThinkingType       = "THINKING_TYPE"
-	CodeThinkingBudget     = "THINKING_BUDGET"
-	CodeContextFields      = "CONTEXT_FIELDS"
-	CodeUnsupportedEdit    = "UNSUPPORTED_CONTEXT_EDIT"
-	CodeUnsupportedSample  = "UNSUPPORTED_SAMPLING"
-	CodeToolsShape         = "TOOLS_SHAPE"
-	CodeMessageFields      = "MESSAGE_FIELDS"
-	CodeUnsupportedMessage = "UNSUPPORTED_MESSAGES"
-	CodeMessageEffortRole  = "MESSAGE_EFFORT_ROLE"
-	CodeTextFields         = "TEXT_FIELDS"
-	CodeTextValue          = "TEXT_VALUE"
-	CodeCacheFields        = "CACHE_FIELDS"
-	CodeCacheValue         = "CACHE_VALUE"
-	CodeUnsupportedContent = "UNSUPPORTED_CONTENT"
-	CodeInvalidModel       = "INVALID_MODEL"
+	CodeRequestFields        = "REQUEST_FIELDS"
+	CodeRequestShape         = "REQUEST_SHAPE"
+	CodeStreamFalse          = "REQUEST_STREAM_FALSE"
+	CodeStreamMissing        = "REQUEST_STREAM_MISSING"
+	CodeStreamInvalid        = "REQUEST_STREAM_INVALID"
+	CodeMessagesInvalid      = "REQUEST_MESSAGES_INVALID"
+	CodeMessagesEmpty        = "REQUEST_MESSAGES_EMPTY"
+	CodeInvalidOutputLimit   = "INVALID_OUTPUT_LIMIT"
+	CodeOutputConfigFields   = "OUTPUT_CONFIG_FIELDS"
+	CodeOutputFormatShape    = "OUTPUT_FORMAT_SHAPE"
+	CodeOutputFormatFields   = "OUTPUT_FORMAT_FIELDS"
+	CodeOutputFormatType     = "OUTPUT_FORMAT_TYPE"
+	CodeOutputFormatSchema   = "OUTPUT_FORMAT_SCHEMA"
+	CodeOutputFormatName     = "OUTPUT_FORMAT_NAME"
+	CodeThinkingFields       = "THINKING_FIELDS"
+	CodeThinkingType         = "THINKING_TYPE"
+	CodeThinkingBudget       = "THINKING_BUDGET"
+	CodeContextFields        = "CONTEXT_FIELDS"
+	CodeUnsupportedEdit      = "UNSUPPORTED_CONTEXT_EDIT"
+	CodeUnsupportedSample    = "UNSUPPORTED_SAMPLING"
+	CodeToolsShape           = "TOOLS_SHAPE"
+	CodeMessageFields        = "MESSAGE_FIELDS"
+	CodeUnsupportedMessage   = "UNSUPPORTED_MESSAGES"
+	CodeMessageEffortRole    = "MESSAGE_EFFORT_ROLE"
+	CodeTextFields           = "TEXT_FIELDS"
+	CodeTextValue            = "TEXT_VALUE"
+	CodeCacheFields          = "CACHE_FIELDS"
+	CodeCacheValue           = "CACHE_VALUE"
+	CodeUnsupportedContent   = "UNSUPPORTED_CONTENT"
+	CodeInvalidModel         = "INVALID_MODEL"
+	CodeToolUseFieldsCode    = "TOOL_USE_FIELDS"
+	CodeToolResultFieldsCode = "TOOL_RESULT_FIELDS"
 
 	// Not a defect in the request: a shape this build has not implemented yet. Named
 	// separately so "you sent something wrong" and "we have not built that" never read as
@@ -90,10 +92,24 @@ var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 
 // Block is one piece of message content. Raw keeps the bytes so nothing is lost for the
 // blocks this build does not yet interpret.
+//
+// Input is the bytes of a tool call's arguments, never a decoded map. Re-encoding one would
+// collapse {} , {"isolation":null} and {"isolation":"worktree"} into fewer readings than
+// the caller wrote, and a "default tidy-up" is how a deliberate choice disappears.
 type Block struct {
 	Type string
 	Text string
 	Raw  json.RawMessage
+
+	// tool_use
+	ID    string
+	Name  string
+	Input json.RawMessage
+
+	// tool_result
+	ToolUseID string
+	IsError   bool
+	Result    []ResultPart
 }
 
 // Message is one turn.
@@ -114,9 +130,18 @@ type Request struct {
 	Messages  []Message
 	System    json.RawMessage
 	Effort    string
-	ToolCount int
 	Fields    map[string]json.RawMessage
+
+	// Tools are the definitions as sent. Discovered additionally holds every name the
+	// conversation has already used, which is what lets a transcript recorded under a
+	// different tool set decode without making those tools callable again.
+	Tools      []Tool
+	ToolChoice ToolChoice
+	Discovered map[string]bool
 }
+
+// ToolCount reports how many definitions were supplied.
+func (r *Request) ToolCount() int { return len(r.Tools) }
 
 // maxSafeInteger is JavaScript's Number.MAX_SAFE_INTEGER. The baseline validates against
 // it, and a client that round-trips a larger value through a JSON number cannot be relied
@@ -164,8 +189,20 @@ func DecodeRequest(body []byte) (*Request, error) {
 	if err := decodeMaxTokens(fields, request); err != nil {
 		return nil, err
 	}
+	if err := decodeTools(fields, request); err != nil {
+		return nil, err
+	}
+	if err := decodeToolChoice(fields, request); err != nil {
+		return nil, err
+	}
 	if err := decodeMessages(fields, request); err != nil {
 		return nil, err
+	}
+	if request.ToolChoice.Present && request.ToolChoice.Type == "tool" {
+		// Naming a tool that is not callable asks for something that cannot happen.
+		if !request.CallableNames()[request.ToolChoice.Name] {
+			return nil, refuse(CodeUnsupportedTools, "tool_choice")
+		}
 	}
 	if err := decodeOutputConfig(fields, request); err != nil {
 		return nil, err
@@ -176,10 +213,6 @@ func DecodeRequest(body []byte) (*Request, error) {
 	if err := decodeContextManagement(fields); err != nil {
 		return nil, err
 	}
-	if err := decodeTools(fields, request); err != nil {
-		return nil, err
-	}
-
 	if value, presence := wire.Of(fields, "system"); presence == wire.Present {
 		request.System = value
 	}
@@ -230,17 +263,21 @@ func decodeMessages(fields map[string]json.RawMessage, request *Request) error {
 	if len(raw) == 0 {
 		return refuse(CodeMessagesEmpty, "messages")
 	}
+	state := newToolState()
 	for _, entry := range raw {
-		message, err := decodeMessage(entry)
+		message, err := decodeMessage(entry, state)
 		if err != nil {
 			return err
 		}
 		request.Messages = append(request.Messages, message)
 	}
+	// A call the conversation never answered is left pending on purpose: the client is
+	// mid-turn and the backend is being asked to continue, which is ordinary.
+	request.Discovered = state.discovered
 	return nil
 }
 
-func decodeMessage(raw json.RawMessage) (Message, error) {
+func decodeMessage(raw json.RawMessage, state *toolState) (Message, error) {
 	fields, err := wire.Fields(raw, []string{"role", "content", "output_config"})
 	if err != nil {
 		return Message{}, refuse(CodeMessageFields, "messages")
@@ -293,13 +330,38 @@ func decodeMessage(raw json.RawMessage) (Message, error) {
 		return Message{}, refuse(CodeMessageFields, "content")
 	}
 	for _, entry := range blocks {
-		block, err := decodeBlock(entry)
+		block, err := decodeContentBlock(entry, message.Role, state)
 		if err != nil {
 			return Message{}, err
 		}
 		message.Blocks = append(message.Blocks, block)
 	}
 	return message, nil
+}
+
+// decodeContentBlock dispatches on the block kind. Tool blocks need the conversation's
+// identifier bookkeeping; a text block does not, which is why decodeBlock stays a pure
+// function that other readers can call.
+func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Block, error) {
+	loose, err := wire.Fields(raw, nil)
+	if err != nil {
+		return Block{}, refuse(CodeUnsupportedContent, "content")
+	}
+	kindValue, present := wire.Of(loose, "type")
+	var kind string
+	if present != wire.Present || json.Unmarshal(kindValue, &kind) != nil {
+		return Block{}, refuse(CodeUnsupportedContent, "content")
+	}
+	switch kind {
+	case "tool_use":
+		return decodeToolUse(raw, role, state)
+	case "tool_result":
+		return decodeToolResult(raw, role, state)
+	case "tool_addition", "tool_removal":
+		// Mid-conversation tool changes ride on a beta this build does not implement.
+		return Block{}, refuse(CodeUnsupportedChange, kind)
+	}
+	return decodeBlock(raw)
 }
 
 func decodeBlock(raw json.RawMessage) (Block, error) {
@@ -316,12 +378,9 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 	}
 
 	if kind != "text" {
-		// Images, documents, tool_use, tool_result, reasoning. Each is a real shape this
-		// build has not implemented, and naming it is what keeps the gap visible instead
-		// of turning a request into a shorter one that happens to succeed.
-		if kind == "tool_use" || kind == "tool_result" {
-			return Block{}, refuse(CodeToolUseUnsupported, kind)
-		}
+		// Images, documents, reasoning. Each is a real shape this build has not
+		// implemented, and naming it is what keeps the gap visible instead of turning a
+		// request into a shorter one that happens to succeed.
 		return Block{}, refuse(CodeUnsupportedContent, kind)
 	}
 
@@ -473,29 +532,6 @@ func decodeContextManagement(fields map[string]json.RawMessage) error {
 	return nil
 }
 
-// decodeTools validates the shape and then refuses, because tool use is WP04.
-//
-// Shape first so a malformed tools array is reported as malformed rather than as an
-// unimplemented capability: those are different problems with different fixes.
-func decodeTools(fields map[string]json.RawMessage, request *Request) error {
-	value, presence := wire.Of(fields, "tools")
-	if presence != wire.Present {
-		if _, choice := wire.Of(fields, "tool_choice"); choice != wire.Absent {
-			return refuse(CodeToolUseUnsupported, "tool_choice")
-		}
-		return nil
-	}
-	var tools []json.RawMessage
-	if err := json.Unmarshal(value, &tools); err != nil {
-		return refuse(CodeToolsShape, "tools")
-	}
-	request.ToolCount = len(tools)
-	if len(tools) == 0 {
-		return nil
-	}
-	return refuse(CodeToolUseUnsupported, "tools")
-}
-
 // exactInteger reads a JSON number from its literal text.
 //
 // Not via json.Number: unmarshalling into one accepts the JSON *string* "1024" as the
@@ -508,5 +544,5 @@ func exactInteger(value json.RawMessage) (int64, error) {
 
 func (r *Request) String() string {
 	return fmt.Sprintf("anthropic.Request{model:%q messages:%d tools:%d}",
-		r.Model, len(r.Messages), r.ToolCount)
+		r.Model, len(r.Messages), len(r.Tools))
 }

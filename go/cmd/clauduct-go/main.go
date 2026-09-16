@@ -34,13 +34,21 @@ func run() int {
 		return 1
 	}
 
+	env := environMap()
 	resolve := platform.Resolver{}.Claude
 	result, err := app.Run(context.Background(), app.Options{
 		Args:          os.Args[1:],
-		Env:           environMap(),
+		Env:           env,
 		Cwd:           cwd,
 		ResolveClaude: resolve,
 	})
+
+	// What the session did, said once, at the end. The native client owns the terminal
+	// while it runs, so anything written during a session lands in the prompt box -- and
+	// nothing goes to stdout, which belongs to the answer `claude -p` was asked for.
+	if result.NativeStarted || result.Category != "" {
+		app.Report(result, os.Stderr, env)
+	}
 
 	if err != nil {
 		var refused *app.RefusedOptionError

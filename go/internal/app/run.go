@@ -99,6 +99,10 @@ type Result struct {
 	// was measured in.
 	Attempts   int
 	Inferences int
+	// Category is how the session ended, as the exit report names it.
+	Category string
+	// Diagnostics is what the gateway saw, read before the gateway was closed.
+	Diagnostics gateway.Diagnostics
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -196,6 +200,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// The child never ran, so the port it was going to use must not outlive the
 		// attempt. Cleanup failure here is reported alongside the start failure rather
 		// than replacing it: the start failure is the cause.
+		result.Diagnostics = gw.Diagnose()
+		result.Category = CategoryStartFailed
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		return result, startErr
 	}
@@ -211,6 +217,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.NativeExitCode = ExitCodeUnknown
 	}
 
+	// Read before the gateway is closed: shutting it down is what ends the session, and an
+	// account taken afterwards would be an account of a gateway that is no longer serving.
+	result.Diagnostics = gw.Diagnose()
+	result.Category = endedAs(ctx, result, ledger)
 	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 
 	// A non-zero native exit is the native process's answer, not this bridge's error. Only

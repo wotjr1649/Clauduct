@@ -239,7 +239,7 @@ func TestTheFiledAccountCarriesNothingFromTheSession(t *testing.T) {
 // there would break `> out.txt` and break `| jq` while every test above still passed, so the
 // thing that must not change is checked where it is written rather than where it is used.
 func TestTheReportIsNeverSentToStdout(t *testing.T) {
-	path := filepath.Join(moduleRoot(t), "cmd", "clauduct-go", "main.go")
+	path := filepath.Join(moduleRoot(t), "cmd", "clauduct", "main.go")
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatalf("parse %s: %v", path, err)

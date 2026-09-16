@@ -1,7 +1,7 @@
 // Command clauduct-dev holds Clauduct's own commands.
 //
 // It is a separate binary from the product launcher so that asking Clauduct a question can
-// never be confused with passing an option to the native client. clauduct-go --version is
+// never be confused with passing an option to the native client. clauduct --version is
 // the native client's version; clauduct-dev version is this bridge's.
 //
 // version and doctor read no credential and open no socket: doctor exists to answer "can
@@ -45,7 +45,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 func version(out io.Writer) int {
 	info := buildinfo.Read()
-	fmt.Fprintf(out, "clauduct-go %s\n", info.Version)
+	fmt.Fprintf(out, "clauduct     %s\n", info.Version)
 	fmt.Fprintf(out, "commit       %s\n", info.CommitOrUnknown())
 	fmt.Fprintf(out, "go           %s\n", strings.TrimSpace(info.GoVersion+" "+runtime.GOOS+"/"+runtime.GOARCH))
 	return 0

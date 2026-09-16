@@ -36,7 +36,7 @@
 
 ## ⚠ 이 바이너리는 실제로 과금된다
 
-**2026-09-15 G7**: `clauduct-go`가 시작한 모든 추론 요청은 사용자의 Codex 구독에 도달한다. 제품 세션에는 요청 수 상한이 없다 — Node 기준선에도 없고, 상한을 두면 긴 세션이 중간에 멈춘다.
+**2026-09-15 G7**: `clauduct`가 시작한 모든 추론 요청은 사용자의 Codex 구독에 도달한다. 제품 세션에는 요청 수 상한이 없다 — Node 기준선에도 없고, 상한을 두면 긴 세션이 중간에 멈춘다.
 
 모델을 호출하지 않는 명령은 여전히 아무것도 쓰지 않는다. `--version`·`--help`는 credential을 읽지 않고 `codex --version`도 띄우지 않는다. 둘 다 첫 **요청**에서만 일어난다.
 
@@ -89,7 +89,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 
 | 경로 | 책임 |
 |---|---|
-| `cmd/clauduct-go` | 제품 launcher. 인자를 해석하지 않는다 |
+| `cmd/clauduct` | 제품 launcher. 인자를 해석하지 않는다 |
 | `cmd/clauduct-dev` | Clauduct 자신의 명령. native 옵션과 절대 충돌하지 않도록 별도 바이너리다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |

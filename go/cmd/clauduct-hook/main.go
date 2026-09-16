@@ -5,7 +5,7 @@
 // started. That is the only way the gateway can know a subagent exists, because the client
 // is what starts one.
 //
-// A separate binary, and not a subcommand of clauduct-go, for the reason clauduct-dev is
+// A separate binary, and not a subcommand of clauduct, for the reason clauduct-dev is
 // separate too: the launcher forwards every argument to the native client, so a subcommand
 // there could collide with a native option or a native option's value.
 //

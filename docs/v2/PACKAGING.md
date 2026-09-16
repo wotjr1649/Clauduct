@@ -2,22 +2,25 @@
 
 이 문서는 **출하되는 것**을 기술한다. 설계는 [ARCHITECTURE.md](ARCHITECTURE.md), 증거는 [VALIDATION.md](VALIDATION.md)가 소유한다.
 
-G8 단계이며 **기본 전환(G9)은 아직 요청하지 않았다.** `clauduct-go`는 `clauduct`가 아니고, 이름을 공유하기 전까지는 PATH 순서가 어느 구현이 도는지 결정할 일이 없다.
+**G9 완료 2026-09-17: 기본이 Go다.** 설치된 `clauduct`는 이 빌드이고, Node 구현은 `clauduct-node`로 남는다. 그 전까지 이름을 나눠 둔 이유는 이름을 공유하면 PATH 순서가 어느 구현이 도는지 결정하기 때문이었다. 이제 그건 결정 사항이고, 이름이 그 결정의 답이다.
 
 ## 1. 나가는 것
 
 | 파일 | 하는 일 |
 |---|---|
-| `clauduct-go.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다 |
+| `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다 |
+| `clauduct-hook.exe` | 클라이언트가 subagent 시작·종료에 실행한다. 게이트웨이에 역할을 보고한다 |
 | `clauduct-dev.exe` | 이 프로젝트 자신의 명령. `version` · `doctor` · `probe` |
 
-두 개뿐이다. 설정 파일도, 스크립트도, 데이터 디렉터리도 없다.
+세 개뿐이다. 설정 파일도, 스크립트도, 데이터 디렉터리도 없다.
 
-**이름이 둘인 이유**는 `clauduct-go`가 아무 옵션도 소유하지 않기 때문이다. 모든 인자가 native로 그대로 간다 — `--version`과 `--help`를 포함해서. 그래서 이 빌드 자신에 대한 질문은 **다른 바이너리**로 물어야 하고, 그러면 native 옵션이나 그 값과 충돌할 수 없다.
+**`clauduct-hook`은 `clauduct` 옆에 있어야 한다.** `findHook()`이 실행 파일 옆만 본다 — PATH를 뒤지면 이 빌드가 내보내지 않은 동명 프로그램을 찾을 수 있고, 클라이언트는 그 결과를 실행하라는 말을 듣게 된다. 옆에 없으면 hook이 설치되지 않고, **역할별 라우팅과 위임 메뉴의 effort가 조용히 동작하지 않는다.**
+
+**`clauduct-dev`가 따로 있는 이유**는 `clauduct`가 아무 옵션도 소유하지 않기 때문이다. 모든 인자가 native로 그대로 간다 — `--version`과 `--help`를 포함해서. 그래서 이 빌드 자신에 대한 질문은 **다른 바이너리**로 물어야 하고, 그러면 native 옵션이나 그 값과 충돌할 수 없다.
 
 ## 2. 실행에 필요한 것
 
-`clauduct-go`는 단일 정적 Go 바이너리지만 **혼자 동작하지는 않는다.**
+`clauduct`는 단일 정적 Go 바이너리지만 **혼자 동작하지는 않는다.**
 
 | 필요한 것 | 왜 | 없으면 |
 |---|---|---|
@@ -31,7 +34,7 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 
 ## 3. ⚠ 이 바이너리는 실제로 과금된다
 
-**2026-09-15 G7부터** `clauduct-go`가 시작한 모든 추론 요청은 사용자의 Codex 구독에 도달한다. 제품 세션에는 **요청 수 상한이 없다** — Node 기준선에도 없고, 상한을 두면 긴 세션이 중간에 멈춘다.
+**2026-09-15 G7부터** `clauduct`가 시작한 모든 추론 요청은 사용자의 Codex 구독에 도달한다. 제품 세션에는 **요청 수 상한이 없다** — Node 기준선에도 없고, 상한을 두면 긴 세션이 중간에 멈춘다.
 
 모델을 호출하지 않는 명령은 아무것도 쓰지 않는다. `--version`·`--help`는 credential을 읽지 않고 `codex --version`도 띄우지 않는다. 둘 다 **첫 요청**에서만 일어난다. 테스트가 그것을 고정한다.
 
@@ -41,15 +44,16 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 
 ```powershell
 cd go
-go build -trimpath -o clauduct-go.exe  ./cmd/clauduct-go
-go build -trimpath -o clauduct-dev.exe ./cmd/clauduct-dev
+go build -trimpath -o clauduct.exe      ./cmd/clauduct
+go build -trimpath -o clauduct-hook.exe ./cmd/clauduct-hook
+go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
 ```
 
 `-trimpath`는 빌드 머신의 디렉터리 배치가 바이너리에 남지 않게 한다. commit stamp는 Go toolchain의 VCS 기록에서 나오므로 **릴리스 스크립트가 잊을 수 없다.**
 
 ```powershell
 clauduct-dev version
-# clauduct-go 0.0.0-wp01
+# clauduct     0.0.0-wp01
 # commit       <40자 hash>
 # go           go1.27.0 windows/amd64
 ```
@@ -72,12 +76,15 @@ PATH에 있는 디렉터리에 두 파일을 복사한다. 그게 전부다.
 
 ## 6. 되돌리기
 
-**이름이 다르므로 되돌릴 것이 없다.** `clauduct`(Node)와 `clauduct-go`는 서로를 가리지 않고, 동시에 실행된다 — 측정으로 확인했다(VALIDATION.md).
+**두 파일 이름을 바꾸면 끝난다.** Node 구현은 지워지지 않았고 `clauduct-node`로 그대로 있다.
 
 | 상황 | 하는 일 |
 |---|---|
-| Go 빌드를 쓰고 싶지 않다 | 바이너리를 지운다. Node `clauduct`는 건드려지지 않았다 |
-| 기본 전환 후 되돌리고 싶다 | **아직 그런 상태가 없다.** 기본 전환은 G9이고 요청하지 않았다 |
+| Node로 되돌린다 | `clauduct.exe`를 치우고 `clauduct-node.cmd`를 `clauduct.cmd`로 되돌린다. Go 바이너리는 지울 필요도 없다 |
+| 둘 다 쓴다 | 그대로 둔다. 이름이 다르므로 서로를 가리지 않고 동시에 실행된다 — 측정으로 확인했다(VALIDATION.md) |
+| Go 빌드를 완전히 뺀다 | 세 바이너리를 지우고 위의 되돌리기를 한다 |
+
+Windows `PATHEXT`는 `.EXE`를 `.CMD`보다 먼저 본다. 같은 디렉터리에 `clauduct.exe`와 `clauduct.cmd`가 동시에 있으면 `.exe`가 이긴다 — 그래서 되돌릴 때는 **`clauduct.exe`를 치우는 것이 필수**이고, `.cmd`를 되살리는 것만으로는 부족하다.
 
 기준선 소스는 이 작업 내내 tracked 변경 0으로 유지됐다. 비교 기준이 바뀌면 비교가 아니다.
 

@@ -29,7 +29,7 @@ Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는
 ```text
 go/
 ├── go.mod                    module github.com/wotjr1649/Clauduct/go, go 1.27.0
-├── cmd/clauduct-go/          제품 launcher (승격 전 이름)
+├── cmd/clauduct/             제품 launcher
 ├── cmd/clauduct-dev/         doctor / plan / compare
 └── internal/
     ├── app/                  구성·생명주기 조립

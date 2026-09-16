@@ -1,14 +1,15 @@
-// Command clauduct-go starts the installed native Claude Code with its model requests
-// routed through an ephemeral loopback gateway.
+// Command clauduct starts the installed native Claude Code with its model requests routed
+// through an ephemeral loopback gateway.
 //
 // It parses nothing. Every argument goes to the native executable exactly as given,
 // including --help and --version, so their meaning stays the native one. Clauduct's own
 // build identity is a question for clauduct-dev, which is a separate binary precisely so
 // that asking it can never collide with a native option or a native option's value.
 //
-// The name is clauduct-go, not clauduct, for as long as the Node implementation is the
-// installed product. Sharing a name before a promotion decision would make PATH order
-// decide which implementation a user runs.
+// The name was clauduct-go until the Node implementation stopped being the installed
+// product. Sharing a name before that decision would have made PATH order decide which
+// implementation a user runs; now the decision has been made and the name is the answer to
+// it. The Node build keeps its own name, so going back is renaming two files.
 package main
 
 import (

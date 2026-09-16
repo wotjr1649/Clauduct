@@ -297,7 +297,7 @@ func (o Options) withDefaults() Options {
 		//
 		// Nothing is read or spawned here. The credential provider opens auth.json on the
 		// first request, and the client version runs codex --version on the first request,
-		// so `clauduct-go --version` still costs neither -- which is ARG07 and would break
+		// so `clauduct --version` still costs neither -- which is ARG07 and would break
 		// if either were resolved eagerly.
 		//
 		// The budget is unrestricted, and deliberately: a route is what the client asked

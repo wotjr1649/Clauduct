@@ -54,8 +54,8 @@ func TestTheBuildIsReproducible(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the product twice")
 	}
-	first := sha256File(t, buildProduct(t, t.TempDir(), "clauduct-go"))
-	second := sha256File(t, buildProduct(t, t.TempDir(), "clauduct-go"))
+	first := sha256File(t, buildProduct(t, t.TempDir(), "clauduct"))
+	second := sha256File(t, buildProduct(t, t.TempDir(), "clauduct"))
 	if first != second {
 		t.Fatalf("two builds of the same source differ:\n  %s\n  %s\n"+
 			"A published checksum means nothing if the build is not reproducible.",
@@ -129,11 +129,11 @@ func TestNoCredentialShapedStringShipsInAnyBinary(t *testing.T) {
 	}
 
 	// Both of them. The package ships two binaries, and the first version of this test
-	// scanned only clauduct-go -- which does not even import buildinfo, so a mutation that
+	// scanned only clauduct -- which does not even import buildinfo, so a mutation that
 	// put a token in a shipped constant survived by landing in the half nobody looked at.
 	// clauduct-dev is also the one that reads a credential.
 	dir := t.TempDir()
-	for _, command := range []string{"clauduct-go", "clauduct-dev"} {
+	for _, command := range []string{"clauduct", "clauduct-dev"} {
 		t.Run(command, func(t *testing.T) {
 			raw, err := os.ReadFile(buildProduct(t, dir, command))
 			if err != nil {
@@ -187,7 +187,7 @@ func TestTheInstallDirectoryIsNotWrittenTo(t *testing.T) {
 	if err := os.MkdirAll(install, 0o700); err != nil {
 		t.Fatalf("install dir: %v", err)
 	}
-	exe := buildProduct(t, install, "clauduct-go")
+	exe := buildProduct(t, install, "clauduct")
 	before := tree(t, install)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

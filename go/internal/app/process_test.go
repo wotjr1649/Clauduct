@@ -355,7 +355,7 @@ func TestWhatSurvivesTheLauncherBeingKilled(t *testing.T) {
 	}
 	nativeAvailable(t)
 
-	exe := buildProduct(t, t.TempDir(), "clauduct-go")
+	exe := buildProduct(t, t.TempDir(), "clauduct")
 	launcher := exec.Command(exe, "-p", "Count from 1 to 300, one number per line.",
 		"--strict-mcp-config")
 	launcher.Dir = os.TempDir()
@@ -409,7 +409,7 @@ func TestWhatSurvivesTheLauncherBeingKilled(t *testing.T) {
 	// Recorded, not demanded. Windows does not reap a child when its parent dies, so the
 	// native client outliving an abruptly killed launcher is the operating system rather
 	// than a defect here, and the Node baseline behaves the same way. What matters is that
-	// it is written down: a user who ends clauduct-go from Task Manager is left with a
+	// it is written down: a user who ends clauduct from Task Manager is left with a
 	// client whose gateway has gone, and nothing in this build cleans that up.
 	t.Logf("after killing the launcher: %d of %d owned processes still running (%v)",
 		len(survivors), len(owned), survivors)

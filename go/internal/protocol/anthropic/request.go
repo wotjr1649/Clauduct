@@ -155,6 +155,10 @@ type Request struct {
 	Tools      []Tool
 	ToolChoice ToolChoice
 	Discovered map[string]bool
+	// Removed holds the names a mid-conversation tool_removal withdrew. A withdrawn tool
+	// is not sent upstream, so the backend cannot call something the client has just said
+	// it will not run.
+	Removed map[string]bool
 
 	// HostedSearch is the server-side search tool, when the request carried one.
 	//
@@ -190,7 +194,22 @@ const maxSafeInteger = int64(1)<<53 - 1
 // bridge cannot honour, an unknown top-level field: each gets its own category, because
 // "the request was malformed" and "we do not support that" lead a user to different
 // actions.
-func DecodeRequest(body []byte) (*Request, error) {
+// Options are the facts about a request that do not live in its body.
+//
+// A struct rather than a parameter so that adding the next one does not touch every caller
+// again, and variadic so that the callers who have nothing to say stay unchanged.
+type Options struct {
+	// ToolChanges is whether the request carried the mid-conversation tool changes beta.
+	// Without it a tool_addition or tool_removal block is a request for a capability the
+	// caller did not negotiate, which is refused rather than honoured quietly.
+	ToolChanges bool
+}
+
+func DecodeRequest(body []byte, options ...Options) (*Request, error) {
+	var settings Options
+	if len(options) > 0 {
+		settings = options[0]
+	}
 	fields, err := wire.Fields(body, requestFields)
 	if err != nil {
 		return nil, translateFieldError(err)
@@ -231,7 +250,7 @@ func DecodeRequest(body []byte) (*Request, error) {
 	if err := decodeToolChoice(fields, request); err != nil {
 		return nil, err
 	}
-	if err := decodeMessages(fields, request); err != nil {
+	if err := decodeMessages(fields, request, settings); err != nil {
 		return nil, err
 	}
 	if request.ToolChoice.Present && request.ToolChoice.Type == "tool" {
@@ -287,7 +306,7 @@ func decodeMaxTokens(fields map[string]json.RawMessage, request *Request) error 
 	return nil
 }
 
-func decodeMessages(fields map[string]json.RawMessage, request *Request) error {
+func decodeMessages(fields map[string]json.RawMessage, request *Request, settings Options) error {
 	value, presence := wire.Of(fields, "messages")
 	if presence != wire.Present {
 		return refuse(CodeMessagesInvalid, "messages")
@@ -300,6 +319,13 @@ func decodeMessages(fields map[string]json.RawMessage, request *Request) error {
 		return refuse(CodeMessagesEmpty, "messages")
 	}
 	state := newToolState()
+	state.toolChanges = settings.ToolChanges
+	// The baseline lets a change name only a tool this request already defines, which is
+	// what keeps a removal from withdrawing something that was never there and an addition
+	// from conjuring a definition out of a name.
+	for _, tool := range request.Tools {
+		state.defined[tool.Name] = true
+	}
 	for _, entry := range raw {
 		message, err := decodeMessage(entry, state)
 		if err != nil {
@@ -310,6 +336,7 @@ func decodeMessages(fields map[string]json.RawMessage, request *Request) error {
 	// A call the conversation never answered is left pending on purpose: the client is
 	// mid-turn and the backend is being asked to continue, which is ordinary.
 	request.Discovered = state.discovered
+	request.Removed = state.removed
 	return nil
 }
 
@@ -401,8 +428,7 @@ func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Blo
 	case "tool_result":
 		return decodeToolResult(raw, role, state)
 	case "tool_addition", "tool_removal":
-		// Mid-conversation tool changes ride on a beta this build does not implement.
-		return Block{}, refuse(CodeUnsupportedChange, kind)
+		return decodeToolChange(raw, kind, role, state)
 	}
 	return decodeBlock(raw)
 }

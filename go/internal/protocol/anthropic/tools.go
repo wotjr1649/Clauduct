@@ -18,6 +18,7 @@ const (
 	CodeToolRefFields     = "TOOL_REFERENCE_FIELDS"
 	CodeInvalidToolRef    = "INVALID_TOOL_REFERENCE"
 	CodeUnsupportedChange = "UNSUPPORTED_TOOL_CHANGE"
+	CodeToolChangeFields  = "TOOL_CHANGE_FIELDS"
 	CodeHostedToolUnsupp  = "HOSTED_TOOL_UNSUPPORTED"
 )
 
@@ -347,6 +348,12 @@ type toolState struct {
 	used       map[string]bool
 	pending    map[string]bool
 	discovered map[string]bool
+	// defined is every name this request supplied a definition for.
+	defined map[string]bool
+	// removed is every name a tool_removal withdrew.
+	removed map[string]bool
+	// toolChanges is whether the beta that carries mid-conversation changes was negotiated.
+	toolChanges bool
 }
 
 func newToolState() *toolState {
@@ -354,6 +361,8 @@ func newToolState() *toolState {
 		used:       make(map[string]bool, 8),
 		pending:    make(map[string]bool, 8),
 		discovered: make(map[string]bool, 8),
+		defined:    make(map[string]bool, 8),
+		removed:    make(map[string]bool, 8),
 	}
 }
 
@@ -365,6 +374,9 @@ func newToolState() *toolState {
 func (r *Request) ActiveTools() []Tool {
 	active := make([]Tool, 0, len(r.Tools))
 	for _, tool := range r.Tools {
+		if r.Removed[tool.Name] {
+			continue
+		}
 		if tool.DeferLoading && !r.Discovered[tool.Name] {
 			continue
 		}
@@ -433,4 +445,54 @@ func searchDomains(fields map[string]json.RawMessage, key string) []string {
 		list = list[:maxSearchDomains]
 	}
 	return list
+}
+
+// decodeToolChange reads a mid-conversation tool_addition or tool_removal.
+//
+// Three conditions before anything is honoured, and each refuses for its own reason. The
+// beta has to have been negotiated, because a capability the caller did not ask for is not
+// one to grant silently. The turn has to be a system turn, because a tool set is the
+// session's to change and not the model's or the user's. And the name has to be one this
+// request already defines: a removal cannot withdraw what was never there, and an addition
+// cannot conjure a definition out of a name.
+func decodeToolChange(raw json.RawMessage, kind, role string, state *toolState) (Block, error) {
+	if !state.toolChanges || role != "system" {
+		return Block{}, refuse(CodeUnsupportedChange, kind)
+	}
+	fields, err := wire.Fields(raw, []string{"type", "tool", "cache_control"})
+	if err != nil {
+		return Block{}, refuse(CodeToolChangeFields, kind)
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return Block{}, err
+		}
+	}
+	toolValue, present := wire.Of(fields, "tool")
+	if present != wire.Present {
+		return Block{}, refuse(CodeToolChangeFields, "tool")
+	}
+	reference, err := wire.Fields(toolValue, []string{"type", "name"})
+	if err != nil {
+		return Block{}, refuse(CodeToolRefFields, "tool")
+	}
+
+	var refType, name string
+	typeValue, ok := wire.Of(reference, "type")
+	if ok != wire.Present || json.Unmarshal(typeValue, &refType) != nil || refType != "tool_reference" {
+		return Block{}, refuse(CodeInvalidToolRef, "tool")
+	}
+	nameValue, ok := wire.Of(reference, "name")
+	if ok != wire.Present || json.Unmarshal(nameValue, &name) != nil ||
+		!identifier.MatchString(name) || !state.defined[name] {
+		return Block{}, refuse(CodeInvalidToolRef, "name")
+	}
+
+	if kind == "tool_addition" {
+		state.discovered[name] = true
+		delete(state.removed, name)
+	} else {
+		state.removed[name] = true
+	}
+	return Block{Type: kind, Raw: raw, Name: name}, nil
 }

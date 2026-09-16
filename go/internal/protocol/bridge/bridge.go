@@ -224,6 +224,10 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 					Type:     "input_image",
 					ImageURL: anthropic.ImageURL(block.MediaType, block.Data),
 				}}})
+			case "tool_addition", "tool_removal":
+				// Nothing travels. A tool change edits which definitions go upstream, which
+				// ActiveTools has already applied; putting the block itself in the input
+				// would be describing the edit to the model as though it were content.
 			case "tool_use":
 				flush()
 				out.Input = append(out.Input, InputEntry{

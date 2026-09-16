@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
@@ -78,7 +79,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := anthropic.DecodeRequest(body)
+	request, err := anthropic.DecodeRequest(body, anthropic.Options{
+		ToolChanges: negotiated(r, betaToolChanges),
+	})
 	if err != nil {
 		var refusal *anthropic.RequestError
 		if errors.As(err, &refusal) {
@@ -525,4 +528,25 @@ func statusForUpstream(err error) int {
 		return http.StatusTooManyRequests
 	}
 	return http.StatusBadGateway
+}
+
+// betaToolChanges is the beta that carries mid-conversation tool changes.
+const betaToolChanges = "mid-conversation-tool-changes-2026-07-01"
+
+// negotiated reports whether the request's anthropic-beta header named a feature.
+//
+// Presence only. A beta name is never refused here and that is measured rather than
+// chosen: the Node baseline records refusing one breaking WebFetch in a real session,
+// because refusing a header fails the whole request while the feature it names is already
+// inert against this backend. So the header is read for what it enables and for nothing
+// else.
+func negotiated(r *http.Request, feature string) bool {
+	for _, header := range r.Header.Values("Anthropic-Beta") {
+		for _, name := range strings.Split(header, ",") {
+			if strings.TrimSpace(name) == feature {
+				return true
+			}
+		}
+	}
+	return false
 }

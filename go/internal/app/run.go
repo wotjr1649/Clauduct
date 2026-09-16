@@ -62,6 +62,9 @@ type Options struct {
 	// transport behind it; a test substitutes a fixture, or a failing one to prove the
 	// child is never started without a gateway.
 	StartGateway func() (*gateway.Gateway, error)
+	// Session is what this session tells the native child about itself, beyond the endpoint
+	// and the credential. Empty leaves the child on its own defaults.
+	Session map[string]string
 	// Ledger records what a session spent. Zero allocates an unrestricted one.
 	//
 	// It is exposed so a caller can read the count rather than estimate it. A verification
@@ -152,9 +155,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.Attempts, result.Inferences, _ = ledger.Spent()
 	}()
 
+	// The session values, unless the caller supplied its own set. A test that means to
+	// measure one key does not want the other fifteen arriving with it.
+	session := o.Session
+	if session == nil {
+		session = sessionEnvironment()
+	}
 	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{
 		BaseURL:   gw.BaseURL(),
 		AuthToken: gw.Token(),
+		Session:   session,
+		Enforced:  sessionRequirements(),
 	})
 
 	process, startErr := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)

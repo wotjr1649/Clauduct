@@ -80,8 +80,9 @@ type Gateway struct {
 	transport upstream.Transport
 	served    chan error
 
-	received atomic.Int64
-	refused  atomic.Int64
+	received   atomic.Int64
+	modelLists atomic.Int64
+	refused    atomic.Int64
 
 	closeOnce sync.Once
 	closeErr  error
@@ -155,6 +156,14 @@ func (g *Gateway) BaseURL() string { return "http://" + g.Addr() }
 func (g *Gateway) Token() string { return g.token }
 
 // Stats reports counts only. Nothing here is derived from request content.
+// ModelLists reports how many times the client asked for the model list.
+//
+// Counted separately from the rest because it answers a question nothing else can: whether
+// the client has gateway discovery on at all. Without it the user's picker is the built-in
+// Anthropic one, and the only difference visible from here is that this request never
+// arrives.
+func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
+
 func (g *Gateway) Stats() (received, refused, active int64) {
 	return g.received.Load(), g.refused.Load(), int64(g.requests.count())
 }
@@ -192,6 +201,7 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+		g.modelLists.Add(1)
 		g.handleModels(w)
 		return
 	}

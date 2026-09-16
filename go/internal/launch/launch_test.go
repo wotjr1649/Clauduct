@@ -300,3 +300,70 @@ func TestNothingHereSelectsASettingsLayer(t *testing.T) {
 		}
 	}
 }
+
+// A requirement is not a preference, and the difference has to survive an environment that
+// disagrees with it.
+//
+// The session values are defaults: a name the user already set wins, which is how they keep
+// the effort choice the Node baseline hands out as --effort. The enforced ones are not, and
+// the only one is the guard that keeps the client from falling back to a request this build
+// refuses -- a broken turn rather than a slower answer.
+func TestASessionPreferenceYieldsButARequirementDoesNot(t *testing.T) {
+	source := map[string]string{
+		"CLAUDE_CODE_EFFORT_LEVEL":                  "max",
+		"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "0",
+		"DISABLE_TELEMETRY":                         "0",
+	}
+	spec := Build("claude.exe", nil, source, `C:\work`, Overlay{
+		BaseURL:   "http://127.0.0.1:1",
+		AuthToken: "t",
+		Session: map[string]string{
+			"CLAUDE_CODE_EFFORT_LEVEL": "low",
+			"DISABLE_TELEMETRY":        "1",
+			"ANTHROPIC_MODEL":          "gpt-6-astra",
+		},
+		Enforced: map[string]string{"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1"},
+	})
+
+	for name, want := range map[string]string{
+		// The user said so, so the user wins.
+		"CLAUDE_CODE_EFFORT_LEVEL": "max",
+		"DISABLE_TELEMETRY":        "0",
+		// They said nothing, so the session's default applies.
+		"ANTHROPIC_MODEL": "gpt-6-astra",
+		// They said so and it does not matter.
+		"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1",
+		// And the connection is settled by neither of them.
+		"ANTHROPIC_BASE_URL":   "http://127.0.0.1:1",
+		"ANTHROPIC_AUTH_TOKEN": "t",
+	} {
+		got, present := envValue(spec, name)
+		if !present || got != want {
+			t.Errorf("%s = %q (present=%v), want %q", name, got, present, want)
+		}
+	}
+}
+
+// A session preference must not be able to move the endpoint or replace the credential.
+func TestASessionPreferenceCannotMoveTheConnection(t *testing.T) {
+	spec := Build("claude.exe", nil, nil, "", Overlay{
+		BaseURL:   "http://127.0.0.1:1",
+		AuthToken: "real",
+		Session: map[string]string{
+			"ANTHROPIC_BASE_URL":   "http://elsewhere.invalid",
+			"ANTHROPIC_AUTH_TOKEN": "stolen",
+			"ANTHROPIC_API_KEY":    "smuggled",
+		},
+		Enforced: map[string]string{"ANTHROPIC_BASE_URL": "http://also-elsewhere.invalid"},
+	})
+	for name, want := range map[string]string{
+		"ANTHROPIC_BASE_URL":   "http://127.0.0.1:1",
+		"ANTHROPIC_AUTH_TOKEN": "real",
+		"ANTHROPIC_API_KEY":    "",
+	} {
+		if got, _ := envValue(spec, name); got != want {
+			t.Errorf("%s = %q, want %q. A value that can move the endpoint is a way to "+
+				"send the credential somewhere else.", name, got, want)
+		}
+	}
+}

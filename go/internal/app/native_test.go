@@ -107,6 +107,9 @@ type nativeRun struct {
 	// fixture lets a test keep the backend handle and read what was actually sent. Zero
 	// allocates one from Reply.
 	fixture *upstream.Fixture
+	// transport replaces the fixture entirely, for a test that needs to see the calls
+	// rather than the bytes.
+	transport upstream.Transport
 }
 
 // workspace is a working directory with a parent nobody else writes to.
@@ -129,8 +132,14 @@ type nativeOutcome struct {
 	err            error
 	stdout, stderr string
 	backendCalls   int64
-	configDir      string
-	cwd            string
+	// received is every request the gateway answered, which is more than the inferences
+	// when the client asks for anything else -- the model list, for instance.
+	received int64
+	// modelLists is how many times the client asked for the model list, which is the only
+	// thing visible from here that says whether gateway discovery is on.
+	modelLists int64
+	configDir  string
+	cwd        string
 	// parentBefore and parentAfter bracket the directory containing the working directory,
 	// so anything the wrapper leaves beside a project is visible by comparison rather than
 	// by guessing at its name.
@@ -175,6 +184,11 @@ func (s nativeRun) run(t *testing.T) nativeOutcome {
 	if fixture == nil {
 		fixture = &upstream.Fixture{SSE: s.Reply}
 	}
+	var transport upstream.Transport = fixture
+	if s.transport != nil {
+		transport = s.transport
+	}
+	var started *gateway.Gateway
 	var stdout, stderr bytes.Buffer
 
 	timeout := s.Timeout
@@ -191,12 +205,18 @@ func (s nativeRun) run(t *testing.T) nativeOutcome {
 		Stdout:        &stdout,
 		Stderr:        &stderr,
 		ResolveClaude: func() (string, bool, error) { return exe, true, nil },
-		StartGateway:  func() (*gateway.Gateway, error) { return gateway.Start(fixture) },
+		StartGateway: func() (*gateway.Gateway, error) {
+			g, err := gateway.Start(transport)
+			started = g
+			return g, err
+		},
 	})
 	return nativeOutcome{
 		result: result, err: err,
 		stdout: stdout.String(), stderr: stderr.String(),
-		backendCalls: fixture.Calls(), configDir: configDir, cwd: cwd,
+		backendCalls: fixture.Calls(), received: receivedBy(started),
+		modelLists: modelListsBy(started),
+		configDir:  configDir, cwd: cwd,
 		parent: parent, parentBefore: before, parentAfter: tree(t, parent),
 	}
 }

@@ -570,15 +570,51 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | A3 | `GET /v1/models` **완료 2026-09-16**. `modelPicker`+`ENABLE_GATEWAY_MODEL_DISCOVERY`는 B1과 함께 | 2, 5.3 | 예 — 피커 확인 |
 | A4 | ~~`tool_addition`/`tool_removal`, `redacted_thinking`~~ **오프라인 완료 2026-09-16.** 돌연변이 21/21 | 3.1, 3.4 | 예 |
 
-### B. launcher 층 — 한 덩어리
+### B. launcher 층 — 측정이 계획을 바꿨다
+
+**2026-09-16: B1 완료. B2·B3는 필요 없어졌다.**
+
+계획은 기준선처럼 `--model`·`--effort`·`--settings`를 argv로 주입하고, 그 결과로 네 옵션을 차단하는
+것이었다(B2·B3). 그러려면 **어떤 native 옵션이 뒤따르는 값을 소비하는지 추적하는 파서**가 필요하다 —
+기준선의 차단 목록이 30개로 자라고도 `--name --model`을 혼동한 그 추적이다.
+
+실제 클라이언트로 재보니(fixture backend, 추론 비용 0) **전부 환경변수로 된다**:
+
+| 잰 것 | 결과 |
+|---|---|
+| `ANTHROPIC_MODEL` | 클라이언트가 그 모델을 요청한다 |
+| `CLAUDE_CODE_EFFORT_LEVEL` | effort가 그 값이 된다(`high` → `low`) |
+| `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` | 요청이 2→3. **클라이언트가 `/v1/models`를 실제로 부른다** |
+| `ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL` | 클라이언트가 Claude 이름 대신 backend 모델을 직접 부른다 |
+| **`--model` vs `ANTHROPIC_MODEL`** | **`--model`이 이긴다** |
+
+마지막 줄이 결정적이다. 사용자의 `--model`이 이미 이기므로 **아무것도 파싱하지 않고도 사용자가 선택을
+유지한다.** 그래서 argv 주입도, 파서도, 차단 목록도 필요 없다. ARG05(옵션 값 안의 모델명)도 그대로
+성립한다 — 실제 클라이언트로 확인했다.
+
+**세션 값은 명령이 아니라 기본값이다.** 사용자가 이미 설정한 이름이 이긴다. 기준선은 settings 블록을
+환경에 무조건 덮어쓰고 그 대신 `--effort`를 제공하는데, 여기서는 `--effort`가 클라이언트 옵션이 아님이
+측정으로 확인됐다(`--effort max`가 무시됐다). 사용자 환경이 이기게 하면 파서 없이 effort 선택이
+돌아온다 — `CLAUDE_CODE_EFFORT_LEVEL=max`로 실제 확인했다.
+
+예외 하나만 **요구사항**이다: `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK`. 이 빌드는 non-streaming
+요청을 거부하므로, fallback을 허용하면 느린 답이 아니라 **깨진 턴**이 된다.
+
+시작 route는 기준선의 `DEFAULT_SELECTION`과 같은 **astra/low**다. 지금까지 Go는 아무것도 주지 않아
+클라이언트 기본값(opus→sol/high)으로 돌았다.
+
+| # | 작업 | 상태 |
+|---|---|---|
 
 | # | 작업 | 근거 |
 |---|---|---|
-| B1 | `settings.env` 11개 키 추가 (모델 기본값·telemetry·advisor·non-streaming fallback·watchdog·resume) | 5.2 |
-| B2 | `--settings` JSON 주입 + `--model`/`--effort` 소유·해석 | 5.1 |
-| B3 | `--settings`·`--setting-sources`·`--agents`·`--system-prompt` 거부 **(B2의 필연)** | 10.1 |
-| B4 | `settings.hooks` 3종 + Go판 `agent-route` (바인딩 전송 주체) | 5.4, 4 |
-| B5 | `--agents` 정의 생성 (`clauduct-<family>-<effort>`, `clauduct-inherit`) | 5.5 |
+| B1 | 세션 환경 14개 키 | **완료.** 돌연변이 9/9 |
+| B2 | ~~`--settings` 주입 + `--model`/`--effort` 소유~~ | **불필요.** env로 충분하고 `--model`이 이긴다 |
+| B3 | ~~네 옵션 차단~~ | **불필요.** B2가 없으므로 충돌이 없다 |
+| B4 | `settings.hooks` + Go판 `agent-route` | 남음. C1(`/clauduct/agents`)이 먼저다 |
+| B5 | `--agents` 정의 생성 | 남음. `--settings`/`--agents` 주입이 필요한 유일한 항목 |
+
+남은 B4·B5는 argv 주입을 다시 요구하므로, 그때 B3의 차단이 필연이 된다. 그 시점에 다시 판단한다.
 
 ### C. agent/workflow 선택 층
 

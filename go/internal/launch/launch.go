@@ -26,6 +26,22 @@ type Spec struct {
 type Overlay struct {
 	BaseURL   string
 	AuthToken string
+	// Session is what this build would like the child to run with, and a name the user
+	// already set in their own environment wins over it.
+	//
+	// Defaults rather than orders, which is where this parts company with the Node
+	// baseline: that one assigns its whole settings block over the inherited environment
+	// unconditionally, and compensates by owning --model and --effort on the command line.
+	// Owning an option means knowing which native options consume a following value, which
+	// is the tracking its own blocklist needed and still got wrong. Measured 2026-09-16: a
+	// --model on the command line already beats ANTHROPIC_MODEL, so the user keeps that
+	// choice without anything here parsing an argument -- and letting their environment win
+	// gives them the effort choice too, which the baseline hands out as --effort.
+	Session map[string]string
+	// Enforced is what the child does not get to run without, whatever the environment
+	// says. Kept apart from Session because "we prefer this" and "this build cannot
+	// function otherwise" are different claims and should not be made by the same map.
+	Enforced map[string]string
 }
 
 // denied reports whether a parent environment entry must not reach the native child.
@@ -89,6 +105,22 @@ func buildEnv(source map[string]string, overlay Overlay) []string {
 		key := strings.ToUpper(name)
 		folded[key] = name
 		kept[key] = source[name]
+	}
+
+	// Preferences, and only where the user expressed none.
+	for name, value := range overlay.Session {
+		key := strings.ToUpper(name)
+		if _, already := kept[key]; already {
+			continue
+		}
+		folded[key] = name
+		kept[key] = value
+	}
+	// Requirements, whatever the environment says.
+	for name, value := range overlay.Enforced {
+		key := strings.ToUpper(name)
+		folded[key] = name
+		kept[key] = value
 	}
 
 	// The session values. The three blanks are the second half of ENV02: a name that is

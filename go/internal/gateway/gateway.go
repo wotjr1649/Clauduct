@@ -77,6 +77,7 @@ type Gateway struct {
 	token     string
 	expected  string // the exact Host this session answers to
 	requests  *registry
+	agents    *agentRegistry
 	transport upstream.Transport
 	served    chan error
 
@@ -116,6 +117,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		token:     token,
 		expected:  listener.Addr().String(),
 		requests:  newRegistry(),
+		agents:    newAgentRegistry(),
 		transport: transport,
 		served:    make(chan error, 1),
 	}
@@ -197,6 +199,11 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/v1/messages" {
 		g.handleMessages(w, r)
+		return
+	}
+
+	if r.URL.Path == "/clauduct/agents" {
+		g.handleAgents(w, r)
 		return
 	}
 

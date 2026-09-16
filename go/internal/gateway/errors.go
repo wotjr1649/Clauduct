@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -27,10 +28,23 @@ var (
 	refuseEncoding   = refusal{"UNSUPPORTED_ENCODING", http.StatusUnsupportedMediaType}
 	refuseVersion    = refusal{"UNSUPPORTED_VERSION", http.StatusBadRequest}
 	refuseSessionID  = refusal{"INVALID_SESSION_ID", http.StatusBadRequest}
-	refuseTooLarge   = refusal{"INPUT_TOO_LARGE", http.StatusRequestEntityTooLarge}
-	refuseBusy       = refusal{"TOO_MANY_REQUESTS", http.StatusTooManyRequests}
-	refuseClosed     = refusal{"GATEWAY_CLOSED", http.StatusServiceUnavailable}
-	refuseCancelled  = refusal{"CANCELLED", 499} // client went away; nothing will read this
+)
+
+// Refusals a subagent registration can produce. Errors rather than refusals because the
+// registry raises them and the handler decides the status.
+var (
+	// errInvalidBinding means the hook reported something that is not a binding.
+	errInvalidBinding = errors.New("INVALID_AGENT_BINDING")
+	// errBindingConflict means the same identifier arrived with a different role. Two
+	// different subagents wearing one name, and either answer about which one the next
+	// request belongs to would be a guess.
+	errBindingConflict = errors.New("AGENT_BINDING_CONFLICT")
+	// errBindingLimit means the table is full of registrations that are all busy.
+	errBindingLimit = errors.New("AGENT_BINDING_LIMIT")
+	refuseTooLarge  = refusal{"INPUT_TOO_LARGE", http.StatusRequestEntityTooLarge}
+	refuseBusy      = refusal{"TOO_MANY_REQUESTS", http.StatusTooManyRequests}
+	refuseClosed    = refusal{"GATEWAY_CLOSED", http.StatusServiceUnavailable}
+	refuseCancelled = refusal{"CANCELLED", 499} // client went away; nothing will read this
 	// The route exists and is intended, but its implementation lands in a later package.
 	// Distinct from UNSUPPORTED_ROUTE on purpose: "not built yet" and "never going to be
 	// answered here" are different facts and a reader should not have to guess which.

@@ -87,12 +87,25 @@ func TestAuxiliaryServiceTrafficIsNeverTakenForAModelRequest(t *testing.T) {
 	ledger := upstream.NewLedger(upstream.Unlimited())
 	g := startWith(t, fixture)
 
-	for _, path := range []string{"/clauduct/agents", "/clauduct/agents?beta=true", "/v1/complete"} {
+	// The auxiliary endpoint answers now, and that is the point: it answers as itself.
+	registered := do(t, g, request{
+		method:  http.MethodPost,
+		path:    "/clauduct/agents",
+		headers: map[string]string{"Content-Type": "application/json"},
+		body:    strings.NewReader(`{"id":"agent_1","role":"Explore","stop":false}`),
+	})
+	if registered.StatusCode != http.StatusOK {
+		t.Fatalf("POST /clauduct/agents = %d, want 200: %s",
+			registered.StatusCode, bodyText(t, registered))
+	}
+
+	// And a path that is genuinely not a route here still says so.
+	for _, path := range []string{"/v1/complete", "/clauduct/status"} {
 		resp := do(t, g, request{
 			method:  http.MethodPost,
 			path:    path,
 			headers: map[string]string{"Content-Type": "application/json"},
-			body:    strings.NewReader(`{"kind":"task-result","id":"t1"}`),
+			body:    strings.NewReader(`{}`),
 		})
 		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("POST %s = %d, want 404: %s", path, resp.StatusCode, bodyText(t, resp))

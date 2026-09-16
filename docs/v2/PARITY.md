@@ -57,7 +57,7 @@ non-streaming 요청은 기준선도 `REQUEST_STREAM_FALSE`로 거부한다(`nat
 | `POST /v1/messages` | 본체 | 본체 | 3절 |
 | `GET /v1/models` | `MODELS` 4종을 `{id, object, owned_by:'openai'}`로 | **구현 완료 2026-09-16** | 동등 |
 | `GET /clauduct/status` | `diagnostics()`, upstream 이름은 보류 | **404** | **격차** |
-| `POST /clauduct/agents` | `linkTaskResult`/`linkWorkflow`/`linkResume`/`linkSkill` | **404** | **격차** — 4절 |
+| `POST /clauduct/agents` | `linkTaskResult`/`linkWorkflow`/`linkResume`/`linkSkill` | **등록/해제 구현 완료.** 완료 연결은 보류 | 부분 |
 | 그 밖 | `UNSUPPORTED_ROUTE` | 동일 | 동등 |
 
 `/clauduct/agents`를 "Go는 overlay를 주입하지 않으니 호출자가 없다"로 넘길 수 없다.
@@ -646,11 +646,25 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 
 | # | 작업 | 근거 |
 |---|---|---|
-| C1 | `POST /clauduct/agents` + 바인딩 검증 4종 | 2, 4 |
+| C1 | `POST /clauduct/agents` **완료 2026-09-16** (SubagentStart/Stop). 완료 연결 바인딩 4종은 보류 | 2, 4 |
 | C2 | agent-selection: 메타데이터 읽기·symlink 경계·역할별 모델(`ROLE_MODELS`) | 4, 3.3 |
 | C3 | `x-claude-code-*` 모양 검사 **완료**. 바인딩 대조는 C1·C2와 함께 | 8, 4 |
 | C4 | workflow-selection: 저널 검증·다이제스트·resume | 6.7 |
 | C5 | `Route.Source`에 역할 재지정 근거값 추가 | 3.3, CAP03 |
+
+### C. agent/workflow 선택 층 — 범위를 좁혔다 (2026-09-16 결정)
+
+사용자 결정: **역할별 라우팅까지만.** 기준선의 메타데이터 identity 검증(symlink 경계·재확인·실패 코드
+12종)과 C4(workflow 저널 검증)는 보류한다.
+
+결정의 근거가 된 사실 둘. **B1이 이미 티어별 라우팅을 가져왔다** — 서브에이전트는 이제
+`ANTHROPIC_DEFAULT_*`를 따라 sonnet→terra, haiku→luna, opus→sol로 간다. C2의 *추가* 가치는 역할별
+강제 재지정(`ROLE_MODELS`)과 모델을 고르는 에이전트 타입 노출이다. 그리고 **검증 실패가 서브에이전트
+턴을 죽인다**(기준선의 `AGENT_SELECTION_UNVERIFIED_CALL`) — 완전한 메타데이터 검증 없이 그 동작을
+가져오면 얻는 것 없이 실패 경로만 늘어난다.
+
+그래서 이 빌드에서는 **선택 실패가 턴을 죽이지 않는다.** 등록을 못 찾거나 역할을 모르면 클라이언트가
+요청한 모델로 간다 — 재지정을 못 했을 뿐이지 잘못된 것을 한 게 아니다.
 
 ### D. 진단과 관찰
 

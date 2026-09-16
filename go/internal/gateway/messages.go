@@ -127,6 +127,41 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	g.relay(ctx, w, control, response, request)
 }
 
+// chunkedWriter hands the response out in bounded pieces, refreshing the write deadline
+// before each one.
+//
+// Per batch was not enough, and the WIRE13 measurements ran into why: when the backend
+// delivers faster than the parser is drained, one batch can be megabytes, and a single
+// write that large cannot finish inside any bound a live client deserves. The bound then
+// refuses a client that was keeping up. Splitting the write is what makes "one write may
+// block for writeStall" a statement about a bounded amount of data.
+//
+// The size is the Node baseline's: native-delivery.mjs writes 16 KiB at a time and awaits
+// backpressure per chunk, against the same 30 s timeout. This arrived at the timeout
+// independently and missed the chunking, which is the half that gives it its meaning.
+type chunkedWriter struct {
+	to      io.Writer
+	control *http.ResponseController
+}
+
+func (c *chunkedWriter) Write(p []byte) (int, error) {
+	written := 0
+	for len(p) > 0 {
+		size := len(p)
+		if size > writeChunk {
+			size = writeChunk
+		}
+		_ = c.control.SetWriteDeadline(time.Now().Add(writeStall))
+		n, err := c.to.Write(p[:size])
+		written += n
+		if err != nil {
+			return written, err
+		}
+		p = p[size:]
+	}
+	return written, nil
+}
+
 // abortOnCancel expires the read deadline when the client goes away while the handler is
 // still reading, and never after the handler is done.
 //
@@ -184,18 +219,17 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			header.Set("Connection", "keep-alive")
 			w.WriteHeader(http.StatusOK)
 		}
-		// Per batch, not per response. A global WriteTimeout would end a long answer that
-		// is being delivered perfectly well; this bounds how long one write may block,
-		// which is a different thing. A client that keeps reading resets it every batch and
-		// never meets it.
+		// Bounded per chunk, not per batch and certainly not per response. A global
+		// WriteTimeout would end a long answer that is being delivered perfectly well;
+		// this bounds how long one write may block, which is a different thing. A client
+		// that keeps reading resets it constantly and never meets it.
 		//
 		// Without it a client that stops reading blocks the write once the socket buffer
 		// fills, and holds a goroutine, the upstream connection and a request that is still
 		// running on the user's subscription -- for as long as it likes.
-		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
-
+		bounded := &chunkedWriter{to: w, control: control}
 		for _, frame := range frames {
-			if _, err := frame.WriteTo(w); err != nil {
+			if _, err := frame.WriteTo(bounded); err != nil {
 				return err
 			}
 		}

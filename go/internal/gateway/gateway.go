@@ -54,6 +54,13 @@ const requestBodyTimeout = 300 * time.Second
 // suite people start skipping. Nothing outside a test assigns to it.
 var writeStall = 30 * time.Second
 
+// writeChunk is how much of the response goes out under one deadline.
+//
+// The Node baseline's number: native-delivery.mjs writes 16 KiB at a time and waits for
+// backpressure on each piece. Without a split, a batch large enough to exceed the bound
+// gets a live client cut off for the sender's pacing rather than its own.
+const writeChunk = 16 * 1024
+
 // Header names that may never appear. cookie and proxy-authorization carry credentials
 // this gateway did not issue and has no use for; a client that sends one is either not the
 // client we think it is or is being driven by something that is not.

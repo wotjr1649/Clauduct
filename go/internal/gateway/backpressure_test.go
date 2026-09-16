@@ -183,6 +183,7 @@ func TestTheBoundIsResetBeforeEveryWrite(t *testing.T) {
 type recordingWriter struct {
 	header http.Header
 	events []string
+	bytes  int
 }
 
 func (r *recordingWriter) Header() http.Header {
@@ -192,7 +193,10 @@ func (r *recordingWriter) Header() http.Header {
 	return r.header
 }
 
-func (r *recordingWriter) Write(p []byte) (int, error) { return len(p), nil }
+func (r *recordingWriter) Write(p []byte) (int, error) {
+	r.bytes += len(p)
+	return len(p), nil
+}
 
 func (r *recordingWriter) WriteHeader(int) {}
 
@@ -223,4 +227,49 @@ func TestTheShippedWriteBoundIsActuallyABound(t *testing.T) {
 		t.Fatalf("writeStall = %v. A client that stopped reading would hold a goroutine, "+
 			"the backend connection and a running request for that long.", writeStall)
 	}
+}
+
+// A frame larger than one chunk must be written under more than one deadline.
+//
+// The bound says "one write may block for writeStall". That is only a statement about a
+// bounded amount of data if the writes are bounded, and they are not by default: when the
+// backend delivers faster than the parser drains, a single batch reaches megabytes. The
+// WIRE13 measurements hit exactly that -- a live client cut off for the sender's pacing.
+func TestALargeFrameIsWrittenUnderMoreThanOneBound(t *testing.T) {
+	g := start(t)
+	// Ten chunks' worth of text in one delta, delivered whole so the parser produces it
+	// as a single frame. Anything less than two chunks would pass on unchunked writes.
+	const parts = 10
+	fixture := &upstream.Fixture{SSE: sse(created,
+		delta(strings.Repeat("x", parts*writeChunk)),
+		done(strings.Repeat("x", parts*writeChunk)), completed, "[DONE]")}
+	response, err := fixture.Execute(context.Background(), upstream.Call{})
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	request, err := anthropic.DecodeRequest([]byte(validRequest))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	w := &recordingWriter{}
+	g.relay(context.Background(), w, http.NewResponseController(w), response, request)
+
+	bounds := 0
+	for _, event := range w.events {
+		if event == "bound" {
+			bounds++
+		}
+	}
+	// The text alone is ten chunks, and it is carried in one frame. Anything close to the
+	// number of frames means the writes were not split.
+	if bounds < parts {
+		t.Fatalf("%d bounds for a response carrying at least %d chunks of text in one "+
+			"frame. A write that large cannot finish inside the bound, so the bound would "+
+			"refuse a client that was keeping up. Sequence: %v", bounds, parts, w.events)
+	}
+	if w.bytes < parts*writeChunk {
+		t.Fatalf("only %d bytes written, want at least %d", w.bytes, parts*writeChunk)
+	}
+	t.Logf("%d bytes went out under %d bounds of %d bytes each", w.bytes, bounds, writeChunk)
 }

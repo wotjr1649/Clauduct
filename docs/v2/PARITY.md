@@ -251,10 +251,11 @@ WebFetch가 깨지는 것을 관찰했다.** 그래서 거부하는 것은 **형
 **Go의 `writeStall = 30 * time.Second`는 기준선의 `timeoutMs = 30000`과 같은 값이다.** WIRE13에서
 고른 값이 기준선과 독립적으로 일치했다. 그 값의 근거가 하나 늘었다.
 
-**남은 차이 하나: 청킹.** `anthropic/response.go:49` `Frame.WriteTo`는 프레임 전체를 `w.Write` **한 번**에
-쓴다. 기준선은 16 KiB로 쪼개고 각 조각마다 backpressure를 기다린다. 이것이 WIRE13 실측에서 만난
-"배치 하나가 메가바이트가 되면 단일 쓰기가 bound를 넘는다"는 문제의 기준선 쪽 해답이다.
-**16 KiB 청킹을 넣으면 bound의 의미가 기준선과 같아진다.**
+**남은 차이였던 청킹은 닫았다(2026-09-16).** `gateway/messages.go`의 `chunkedWriter`가 16 KiB마다
+쓰기 데드라인을 새로 걸고 그만큼씩 내보낸다. 실측: 164,645 바이트가 16 KiB짜리 bound 16번으로 나갔다.
+
+이 수정 전에는 "전체 응답에 한 번만 건다" 돌연변이가 **0.5 ms 차이로** 겨우 잡히고 있었다.
+이제는 결정적으로 잡힌다 — 프레임 하나가 열 청크를 넘으면 bound 수가 곧바로 달라진다.
 
 ### 6.4 `compact-policy.mjs` — 압축 요청 식별
 
@@ -484,7 +485,7 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 |---|---|---|
 | E1 | `anthropic-version === '2023-06-01'` 검사 | 8 |
 | E2 | `content-encoding` 부재/identity 검사 | 8 |
-| E3 | `Frame.WriteTo` 16 KiB 청킹 — WIRE13 bound의 의미를 기준선과 일치시킨다 | 6.3 |
+| E3 | ~~`Frame.WriteTo` 16 KiB 청킹~~ **완료 2026-09-16.** `chunkedWriter`, 돌연변이 6/6 | 6.3 |
 | E4 | compact 템플릿 식별 | 6.4 |
 | E5 | 전체 요청 timeout 10분 (phase별 위에 추가) | 7.1 |
 

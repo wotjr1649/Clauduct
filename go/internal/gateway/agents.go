@@ -133,6 +133,30 @@ func (a *agentRegistry) roleOf(id string) (string, bool) {
 	return state.role, true
 }
 
+// begin claims a registration for the duration of one request.
+//
+// The count is what makes "never sweep something with work in progress" true rather than
+// intended. Without it the sweep and the cap are deciding about entries they cannot see the
+// state of.
+func (a *agentRegistry) begin(id string) (role string, release func(), ok bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	state, known := a.byID[id]
+	if !known {
+		return "", func() {}, false
+	}
+	state.active++
+	state.lastUsed = time.Now()
+	return state.role, func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if state.active > 0 {
+			state.active--
+		}
+		state.lastUsed = time.Now()
+	}, true
+}
+
 // Registered reports how many subagent registrations are live.
 func (a *agentRegistry) Registered() int {
 	a.mu.Lock()

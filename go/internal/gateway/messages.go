@@ -113,7 +113,33 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backendRequest, err := bridge.BuildRequest(request)
+	// A subagent's role decides where it runs, whatever model the client asked for. The
+	// registration comes from the client's own hook, so this is the client telling us what
+	// it started rather than this build inferring it.
+	//
+	// Every way this can fail leaves the client's own choice in place. A header that is
+	// absent, a registration that has not arrived yet, a role nobody has a route for: none
+	// of them is a reason to end a turn. The baseline refuses the request in some of these
+	// cases, and that is defensible there because it verifies the subagent's identity
+	// against the client's own metadata first. Without that verification the same refusal
+	// would only add a way to fail.
+	var override []bridge.Route
+	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
+		role, release, registered := g.agents.begin(agent)
+		defer release()
+		switch {
+		case !registered:
+			g.unregisteredAgents.Add(1)
+		default:
+			if route, known := bridge.RoleRoute(role); known {
+				override = append(override, route)
+			} else {
+				g.unroutedRoles.Add(1)
+			}
+		}
+	}
+
+	backendRequest, err := bridge.BuildRequest(request, override...)
 	if err != nil {
 		// CAP06: a model this build cannot route is the caller's answerable problem, not
 		// an internal failure. Reporting it as a 500 was wrong twice over -- it told the

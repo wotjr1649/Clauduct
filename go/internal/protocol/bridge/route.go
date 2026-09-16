@@ -80,6 +80,29 @@ func Catalogue() []Route {
 	return out
 }
 
+// roleRoutes is where a subagent of a given role runs, whatever model the client asked for.
+//
+// The Node baseline's ROLE_MODELS. The point of it is that a role's cost is a property of
+// the role: exploring a repository and planning a change are not the same work, and neither
+// is the model the conversation happens to be using. Plan runs on the top model at the
+// cheapest effort because a plan is short and wants judgement; the other two run on the
+// cheapest model at its own default.
+var roleRoutes = map[string]Route{
+	"Explore":         {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
+	"Plan":            {Model: "gpt-6-astra", Effort: "low", Source: "role"},
+	"general-purpose": {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
+}
+
+// RoleRoute reports where a subagent of this role runs.
+//
+// A role nobody has a route for is not an error and not a guess: the caller keeps the model
+// the client asked for. Inventing one would run the user's work somewhere they did not
+// choose, and refusing would end a turn over a routing preference.
+func RoleRoute(role string) (Route, bool) {
+	route, known := roleRoutes[role]
+	return route, known
+}
+
 // ForAlias reports the model a Claude tier belongs to.
 //
 // The launcher needs this to tell the client which backend model stands in for each of its

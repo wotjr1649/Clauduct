@@ -681,10 +681,10 @@ launcher가 더하는 것은 고정 접두사이지 인자 사이에 끼어드�
 | # | 작업 | 근거 |
 |---|---|---|
 | C1 | `POST /clauduct/agents` **완료 2026-09-16** (SubagentStart/Stop). 완료 연결 바인딩 4종은 보류 | 2, 4 |
-| C2 | agent-selection: 메타데이터 읽기·symlink 경계·역할별 모델(`ROLE_MODELS`) | 4, 3.3 |
+| C2 | 역할별 모델(`ROLE_MODELS`) **완료 2026-09-16**. 메타데이터 identity 검증은 보류 | 4, 3.3 |
 | C3 | `x-claude-code-*` 모양 검사 **완료**. 바인딩 대조는 C1·C2와 함께 | 8, 4 |
 | C4 | workflow-selection: 저널 검증·다이제스트·resume | 6.7 |
-| C5 | `Route.Source`에 역할 재지정 근거값 추가 | 3.3, CAP03 |
+| C5 | `Route.Source = "role"` **완료 2026-09-16** | 3.3, CAP03 |
 
 ### C. agent/workflow 선택 층 — 범위를 좁혔다 (2026-09-16 결정)
 
@@ -699,6 +699,20 @@ launcher가 더하는 것은 고정 접두사이지 인자 사이에 끼어드�
 
 그래서 이 빌드에서는 **선택 실패가 턴을 죽이지 않는다.** 등록을 못 찾거나 역할을 모르면 클라이언트가
 요청한 모델로 간다 — 재지정을 못 했을 뿐이지 잘못된 것을 한 게 아니다.
+
+**구현 2026-09-16.** `bridge.roleRoutes` 3개(`Explore`→luna/max, `Plan`→astra/low,
+`general-purpose`→luna/max), `BuildRequest(request, override ...Route)`, gateway가
+`X-Claude-Code-Agent-Id`로 등록을 찾아 override를 얹는다. 실패 3경로는 각각 카운터로 남는다
+(`unregisteredAgents` / `unroutedRoles`) — "조용히 아무것도 안 했다"가 침묵이 아니라 숫자가 된다.
+
+`begin(id)`가 요청 1건 동안 등록을 붙잡는다. **이게 있어야** "진행 중인 작업은 쓸지 않는다"가 의도가
+아니라 사실이 된다 — 변이(`state.active++` 제거)는 lastUsed 갱신만으로 살아남았고, 그래서 테스트를
+*요청이 idle 창보다 오래 사는* 경우로 고쳤다. 한 턴이 agentIdle보다 길어지는 서브에이전트가 바로
+그 경우다.
+
+변이 13건 전부 잡힘: 역할→모델/effort 오배정 2, `Source` 미기록 1, 미등록 역할의 zero-route 1,
+`begin`/release/정지 판정 3, sweep·cap의 active 무시 2, 헤더 없는 요청을 카운트 1, override 미적용 1,
+카운터 미증가 2.
 
 ### D. 진단과 관찰
 

@@ -178,12 +178,17 @@ type ReasoningParam struct {
 // within what the build supports, so anything arriving here is text. A block that is not
 // text reaching this point would be a decoder defect, and it is reported as one rather
 // than skipped.
-func BuildRequest(request *anthropic.Request) (*Request, error) {
+func BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
 	// The client asks for a Claude model; the backend has never heard of one. Resolved
 	// here rather than forwarded, and refused rather than defaulted -- see route.go.
 	route, err := SelectRoute(request.Model, request.Effort)
 	if err != nil {
 		return nil, err
+	}
+	// An override replaces that entirely and carries its own source, so a reader of the
+	// record can tell a route the client chose from one this build reassigned.
+	if len(override) > 0 {
+		route = override[0]
 	}
 
 	out := &Request{

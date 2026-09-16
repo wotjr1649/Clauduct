@@ -83,7 +83,12 @@ type Gateway struct {
 
 	received   atomic.Int64
 	modelLists atomic.Int64
-	refused    atomic.Int64
+	// Counted rather than refused. A subagent whose registration has not arrived, or whose
+	// role has no route, runs on what the client asked for -- and these are how often that
+	// happened, so "routing quietly did nothing" is a number rather than a silence.
+	unregisteredAgents atomic.Int64
+	unroutedRoles      atomic.Int64
+	refused            atomic.Int64
 
 	closeOnce sync.Once
 	closeErr  error
@@ -165,6 +170,12 @@ func (g *Gateway) Token() string { return g.token }
 // Anthropic one, and the only difference visible from here is that this request never
 // arrives.
 func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
+
+// Unrouted reports the subagent requests that kept the client's own model: one count for a
+// registration that never arrived, one for a role with no route.
+func (g *Gateway) Unrouted() (unregistered, unrouted int64) {
+	return g.unregisteredAgents.Load(), g.unroutedRoles.Load()
+}
 
 func (g *Gateway) Stats() (received, refused, active int64) {
 	return g.received.Load(), g.refused.Load(), int64(g.requests.count())

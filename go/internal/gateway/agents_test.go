@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
 func binding(body string) request {
@@ -218,5 +220,154 @@ func TestTheBindingEndpointNeedsTheSessionCredentialAndIsNotAModelRoute(t *testi
 	oversized := do(t, g, binding(`{"id":"agent_1","role":"`+strings.Repeat("r", 8192)+`","stop":false}`))
 	if oversized.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized = %d, want 413: %s", oversized.StatusCode, bodyText(t, oversized))
+	}
+}
+
+// withAgent is a request from a registered subagent.
+func withAgent(agent, body string) request {
+	rq := messages(strings.NewReader(body))
+	rq.headers["X-Claude-Code-Agent-Id"] = agent
+	return rq
+}
+
+// C2. A subagent's role decides where it runs, whatever model the client asked for.
+//
+// Exploring a repository and planning a change are not the same work, and neither is the
+// model the conversation happens to be using.
+func TestASubagentsRoleDecidesWhereItRuns(t *testing.T) {
+	for _, c := range []struct{ role, model, effort string }{
+		{"Explore", "gpt-5.6-luna", "max"},
+		{"Plan", "gpt-6-astra", "low"},
+		{"general-purpose", "gpt-5.6-luna", "max"},
+	} {
+		t.Run(c.role, func(t *testing.T) {
+			seen := make(chan upstream.Call, 1)
+			g := startWith(t, &recordingTransport{
+				sse:  sse(created, delta("ok"), done("ok"), completed, "[DONE]"),
+				seen: seen,
+			})
+			if resp := do(t, g, binding(`{"id":"agent_1","role":"`+c.role+`","stop":false}`)); resp.StatusCode != http.StatusOK {
+				t.Fatalf("register: %s", bodyText(t, resp))
+			}
+
+			// The client asks for opus, which would ordinarily route to sol.
+			resp := do(t, g, withAgent("agent_1", `{"model":"claude-opus-5","max_tokens":16,
+			  "stream":true,"messages":[{"role":"user","content":"x"}]}`))
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+			}
+
+			call := <-seen
+			if call.Model != c.model || call.Effort != c.effort {
+				t.Fatalf("ran on %s/%s, want %s/%s", call.Model, call.Effort, c.model, c.effort)
+			}
+			// CAP03: the record keeps both halves and says which rule reassigned it.
+			if call.Requested != "claude-opus-5" {
+				t.Errorf("Requested = %q; the client's own choice is the half a billing "+
+					"record cannot reconstruct", call.Requested)
+			}
+			if call.Source != "role" {
+				t.Errorf("Source = %q, want role. A reader who sees a model the client did "+
+					"not ask for needs to know what reassigned it.", call.Source)
+			}
+		})
+	}
+}
+
+// Every way this can fail leaves the client's own choice in place.
+//
+// A turn is not worth ending over a routing preference. The baseline refuses some of these,
+// which is defensible there because it verifies the subagent's identity against the
+// client's own metadata first; without that, the same refusal only adds a way to fail.
+func TestRoutingThatCannotHappenDoesNotEndTheTurn(t *testing.T) {
+	for _, c := range []struct {
+		name, register, agent string
+		wantUnregistered      int64
+		wantUnrouted          int64
+	}{
+		{name: "no registration arrived yet", agent: "agent_unknown", wantUnregistered: 1},
+		{name: "a role with no route",
+			register: `{"id":"agent_1","role":"some-custom-agent","stop":false}`,
+			agent:    "agent_1", wantUnrouted: 1},
+		{name: "the subagent was already stopped",
+			register: `{"id":"agent_1","role":"Explore","stop":true}`,
+			agent:    "agent_1", wantUnregistered: 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			seen := make(chan upstream.Call, 1)
+			g := startWith(t, &recordingTransport{
+				sse:  sse(created, delta("ok"), done("ok"), completed, "[DONE]"),
+				seen: seen,
+			})
+			if c.register != "" {
+				do(t, g, binding(c.register))
+			}
+
+			resp := do(t, g, withAgent(c.agent, `{"model":"claude-opus-5","max_tokens":16,
+			  "stream":true,"messages":[{"role":"user","content":"x"}]}`))
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want the turn to go through: %s",
+					resp.StatusCode, bodyText(t, resp))
+			}
+			call := <-seen
+			if call.Model != "gpt-5.6-sol" || call.Source != "family" {
+				t.Fatalf("ran on %s (%s), want the client's own choice", call.Model, call.Source)
+			}
+
+			// Counted, so "routing quietly did nothing" is a number rather than a silence.
+			unregistered, unrouted := g.Unrouted()
+			if unregistered != c.wantUnregistered || unrouted != c.wantUnrouted {
+				t.Fatalf("counts = (%d, %d), want (%d, %d)",
+					unregistered, unrouted, c.wantUnregistered, c.wantUnrouted)
+			}
+		})
+	}
+}
+
+// A request with no subagent header is an ordinary request and is not counted as a miss.
+func TestAnOrdinaryRequestIsNotASubagentThatWentUnrouted(t *testing.T) {
+	seen := make(chan upstream.Call, 1)
+	g := startWith(t, &recordingTransport{
+		sse:  sse(created, delta("ok"), done("ok"), completed, "[DONE]"),
+		seen: seen,
+	})
+	post(t, g, `{"model":"claude-opus-5","max_tokens":16,"stream":true,
+	  "messages":[{"role":"user","content":"x"}]}`)
+	<-seen
+	if unregistered, unrouted := g.Unrouted(); unregistered != 0 || unrouted != 0 {
+		t.Fatalf("counts = (%d, %d) for a request that named no subagent", unregistered, unrouted)
+	}
+}
+
+// A registration with a request in flight is not a leftover.
+func TestARegistrationInUseIsHeldAgainstTheSweep(t *testing.T) {
+	registry := newAgentRegistry()
+	if _, err := registry.register(agentBinding{ID: "busy", Role: "Explore"}, time.Now().Add(-2*agentIdle)); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	role, release, ok := registry.begin("busy")
+	if !ok || role != "Explore" {
+		t.Fatalf("begin = %q, %v", role, ok)
+	}
+	// A request that outlives the idle window. Refreshing lastUsed is not what protects
+	// this -- a subagent can spend longer than agentIdle inside a single turn, and at that
+	// point the only thing that knows the entry is still wanted is the count.
+	registry.byID["busy"].lastUsed = time.Now().Add(-2 * agentIdle)
+
+	if _, err := registry.register(agentBinding{ID: "other", Role: "Plan"}, time.Now()); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if _, known := registry.roleOf("busy"); !known {
+		t.Fatal("a registration with a request in flight was swept")
+	}
+
+	// And once the request is done it becomes a candidate like any other.
+	release()
+	registry.byID["busy"].lastUsed = time.Now().Add(-2 * agentIdle)
+	if _, err := registry.register(agentBinding{ID: "later", Role: "Plan"}, time.Now()); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if _, known := registry.roleOf("busy"); known {
+		t.Fatal("a registration that finished and went idle was never released")
 	}
 }

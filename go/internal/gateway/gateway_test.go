@@ -384,8 +384,8 @@ func TestQueryStringDoesNotChangeRouting(t *testing.T) {
 func TestUnknownRoutesRefuseExplicitly(t *testing.T) {
 	g := start(t)
 	for _, tc := range []struct{ method, path string }{
-		{http.MethodGet, "/clauduct/status"},
-		{http.MethodGet, "/api/hello"}, // readiness is HEAD only, matching the baseline
+		{http.MethodPost, "/clauduct/status"}, // the account is read, never written
+		{http.MethodGet, "/api/hello"},        // readiness is HEAD only, matching the baseline
 		{http.MethodGet, "/"},
 		{http.MethodPost, "/v1/messages/count_tokens"},
 	} {

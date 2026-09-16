@@ -123,6 +123,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// cases, and that is defensible there because it verifies the subagent's identity
 	// against the client's own metadata first. Without that verification the same refusal
 	// would only add a way to fail.
+	entry := recordOf(w)
+	entry.at(stageSelection)
+
 	var override []bridge.Route
 	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
 		role, release, registered := g.agents.begin(agent)
@@ -139,6 +142,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	entry.at(stagePrepare)
 	backendRequest, err := bridge.BuildRequest(request, override...)
 	if err != nil {
 		// CAP06: a model this build cannot route is the caller's answerable problem, not
@@ -161,6 +165,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// Requested and effective are handed over separately and deliberately. The user is
 	// billed for the second one, and a record that only keeps it cannot answer whether the
 	// session ran what was asked for.
+	entry.route(request.Model, backendRequest.Model,
+		backendRequest.Effort.Effort, backendRequest.Source)
+	entry.at(stageUpstream)
 	response, err := g.transport.Execute(ctx, upstream.Call{
 		Body:      encoded,
 		Requested: request.Model,
@@ -174,6 +181,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer response.Body.Close()
 
+	entry.at(stageDelivery)
 	g.relay(ctx, w, control, response, request)
 }
 

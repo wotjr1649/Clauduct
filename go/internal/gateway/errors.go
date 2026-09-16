@@ -73,6 +73,7 @@ func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category str
 
 func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
 	g.refused.Add(1)
+	recordOf(w).refusedWith(r.status, r.category)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.status)
 	body, err := json.Marshal(map[string]any{

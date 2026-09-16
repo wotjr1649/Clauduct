@@ -80,6 +80,7 @@ type Gateway struct {
 	agents    *agentRegistry
 	transport upstream.Transport
 	served    chan error
+	ring      *ring
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -125,6 +126,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		agents:    newAgentRegistry(),
 		transport: transport,
 		served:    make(chan error, 1),
+		ring:      newRing(),
 	}
 	g.server = &http.Server{
 		Handler: http.HandlerFunc(g.handle),
@@ -184,6 +186,18 @@ func (g *Gateway) Stats() (received, refused, active int64) {
 func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	g.received.Add(1)
 
+	// The record opens before anything is checked, so a refused boundary, version or
+	// encoding is a diagnosed failure rather than an unrecorded 400. The Node baseline
+	// orders it this way on purpose and the reason survives the rewrite.
+	//
+	// Reading the diagnostics is not traffic. Sixteen status reads would otherwise erase
+	// every record of what the session did, which is the one thing the reader came for.
+	if r.URL.Path != statusPath {
+		entry := g.ring.open(r.Method, r.URL.Path)
+		defer entry.finish()
+		w = &tracked{ResponseWriter: w, rec: entry}
+	}
+
 	if bad, ok := g.checkBoundary(r); !ok {
 		g.refuse(w, bad)
 		return
@@ -215,6 +229,11 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "/clauduct/agents" {
 		g.handleAgents(w, r)
+		return
+	}
+
+	if r.Method == http.MethodGet && r.URL.Path == statusPath {
+		g.handleStatus(w)
 		return
 	}
 

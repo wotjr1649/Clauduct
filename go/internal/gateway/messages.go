@@ -123,6 +123,11 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// cases, and that is defensible there because it verifies the subagent's identity
 	// against the client's own metadata first. Without that verification the same refusal
 	// would only add a way to fail.
+	// Classified, never refused -- see betas.go. Observed after the body is decoded so the
+	// header of a request that never became one is not counted as a feature the session
+	// asked for.
+	g.betas.observe(r.Header.Get("Anthropic-Beta"))
+
 	entry := recordOf(w)
 	entry.at(stageSelection)
 

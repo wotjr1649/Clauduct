@@ -237,6 +237,7 @@ type Diagnostics struct {
 	UptimeMs int64           `json:"uptimeMs"`
 	Requests RequestCounts   `json:"requests"`
 	Agents   AgentCounts     `json:"agents"`
+	Betas    BetaReport      `json:"betas"`
 	Recent   []RequestRecord `json:"recent"`
 }
 
@@ -268,6 +269,7 @@ func (g *Gateway) Diagnose() Diagnostics {
 			Unregistered: unregistered,
 			Unrouted:     unrouted,
 		},
+		Betas:  g.betas.report(),
 		Recent: g.ring.recent(),
 	}
 }

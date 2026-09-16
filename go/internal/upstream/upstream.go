@@ -24,13 +24,36 @@ type Response struct {
 	Body io.ReadCloser
 }
 
+// Call is one backend request together with how its route was decided.
+//
+// The route travels with the call because it belongs to the call. It used to be a pair of
+// fields on the transport, which is only true when every request in a session runs on the
+// same model -- and none do: a single `claude -p` run sends the conversation on the model
+// the user chose and a session title on whatever the client picks for that. The product
+// transport was built with both fields empty and reserved every attempt against a blank
+// route, so the ledger counted the spending without recording what it was spent on.
+type Call struct {
+	// Body is the encoded backend request, exactly as it will be sent.
+	Body []byte
+	// Requested is the model the client named, before any alias or family rule.
+	Requested string
+	// Model and Effort are what the backend will actually run, which is what the user is
+	// billed for. CAP03 and H09 ask for these kept apart from Requested rather than
+	// collapsed into one "model" field: a session that silently ran something other than
+	// what was asked for is exactly the thing a reader needs to be able to see.
+	Model, Effort string
+	// Source names the rule that produced Model — catalogue, alias, family or direct. A
+	// reader who sees a surprising model needs to know which rule produced it.
+	Source string
+}
+
 // Transport executes one backend request.
 //
 // The context governs cancellation: a caller that gives up must be able to stop work
 // rather than wait for it, and an implementation that ignores the context turns a
 // cancelled request into one that runs to completion unobserved.
 type Transport interface {
-	Execute(ctx context.Context, body []byte) (*Response, error)
+	Execute(ctx context.Context, call Call) (*Response, error)
 }
 
 // Fixture replays a fixed byte sequence. It exists so the whole pipeline can be driven end
@@ -56,9 +79,9 @@ type Fixture struct {
 
 // Execute returns the canned body. It records the request so a test can assert what the
 // bridge actually asked for rather than what it meant to ask for.
-func (f *Fixture) Execute(ctx context.Context, body []byte) (*Response, error) {
+func (f *Fixture) Execute(ctx context.Context, call Call) (*Response, error) {
 	f.calls.Add(1)
-	f.lastBody.Store(string(body))
+	f.lastBody.Store(string(call.Body))
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -110,4 +133,4 @@ func (r *replay) Read(p []byte) (int, error) {
 // configured fails loudly at the point of use rather than appearing to work.
 type None struct{}
 
-func (None) Execute(context.Context, []byte) (*Response, error) { return nil, ErrNoTransport }
+func (None) Execute(context.Context, Call) (*Response, error) { return nil, ErrNoTransport }

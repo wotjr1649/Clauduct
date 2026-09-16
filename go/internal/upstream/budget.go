@@ -3,6 +3,7 @@ package upstream
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -92,6 +93,28 @@ type Ledger struct {
 	attempts   int
 	inferences int
 	refused    int
+	// routes tallies what was actually run, keyed by the whole tuple so that the same
+	// model reached by two different rules stays two entries. CAP03.
+	routes map[RouteRecord]int
+}
+
+// Attempt describes one request about to be sent, the way the ledger records it.
+type Attempt struct {
+	// Requested is the model the client named. Model and Effort are what will run and what
+	// will be billed. Separate fields because they are separate facts, and a reader who
+	// only ever sees the second one cannot tell whether they got what they asked for.
+	Requested, Model, Effort, Source string
+	// Retry says this attempt continues an inference already counted.
+	Retry bool
+}
+
+// RouteRecord is one distinct route a session used.
+type RouteRecord struct {
+	Requested, Model, Effort, Source string
+}
+
+func (r RouteRecord) String() string {
+	return fmt.Sprintf("%s -> %s/%s (%s)", r.Requested, r.Model, r.Effort, r.Source)
 }
 
 func NewLedger(budget Budget) *Ledger { return &Ledger{budget: budget} }
@@ -101,7 +124,7 @@ func NewLedger(budget Budget) *Ledger { return &Ledger{budget: budget} }
 // retry says this attempt continues an inference already counted, so the inference is not
 // counted twice. It still consumes an attempt: a retry costs a request whether or not it
 // is a new question.
-func (l *Ledger) Reserve(model, effort string, retry bool) error {
+func (l *Ledger) Reserve(a Attempt) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -110,7 +133,7 @@ func (l *Ledger) Reserve(model, effort string, retry bool) error {
 		return ErrBudgetExhausted
 	}
 	if !l.budget.Unrestricted {
-		if model != l.budget.Model || effort != l.budget.Effort {
+		if a.Model != l.budget.Model || a.Effort != l.budget.Effort {
 			l.refused++
 			return ErrRouteNotAuthorised
 		}
@@ -124,10 +147,34 @@ func (l *Ledger) Reserve(model, effort string, retry bool) error {
 	// the answer. An attempt that fails, times out or is cancelled mid-flight still reached
 	// the backend, so nothing is ever given back.
 	l.attempts++
-	if !retry {
+	if !a.Retry {
 		l.inferences++
 	}
+	if l.routes == nil {
+		l.routes = make(map[RouteRecord]int)
+	}
+	l.routes[RouteRecord{Requested: a.Requested, Model: a.Model, Effort: a.Effort, Source: a.Source}]++
 	return nil
+}
+
+// Routes reports every distinct route this session spent on, ordered so two readings of the
+// same ledger agree. A refused attempt is not here: nothing was spent on it.
+func (l *Ledger) Routes() []RouteRecord {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]RouteRecord, 0, len(l.routes))
+	for route := range l.routes {
+		out = append(out, route)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].String() < out[j].String() })
+	return out
+}
+
+// Attempts reports how many attempts ran on one route.
+func (l *Ledger) Attempts(route RouteRecord) int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.routes[route]
 }
 
 // Spent reports the ledger. A budget claim rests on these numbers, so they are readable

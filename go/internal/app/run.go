@@ -262,7 +262,7 @@ func (o Options) withDefaults() Options {
 		ledger := o.Ledger
 		o.StartGateway = func() (*gateway.Gateway, error) {
 			return gateway.Start(upstream.NewDirect(
-				&auth.Provider{}, ledger, upstream.InstalledVersion(), "", ""))
+				&auth.Provider{}, ledger, upstream.InstalledVersion()))
 		}
 	}
 	if o.StartProcess == nil {

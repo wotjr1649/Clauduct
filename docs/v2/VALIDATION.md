@@ -290,6 +290,9 @@ mutation이 확인한다: denylist를 지워도, **overlay 이름만 남기도�
 | ENV08/ENV02 다른 credential 재주입 | PASS | 1.5.2절의 canary |
 | ENV10 native 쓰기와 wrapper 쓰기 구분 | PASS | 프로젝트 **옆**에 아무것도 생기지 않는다. 안쪽은 native의 몫이므로 제외한다 |
 | CAP04 기본 실행에 agent·hook 주입 0 | PASS | 합성 config 전체와 `.claude.json` 본문에 이 wrapper의 흔적이 없다 |
+| CAP03 requested/effective route·근거 기록 | PASS | 1.6.6절. ledger가 `(requested, model, effort, source)`로 센다. 고정 route 두 필드가 제품 경로에서 **빈 문자열**이던 결함을 고쳤다 |
+| CAP06 correlation header 부재와 route 모호성 구분 | PASS | 1.6.7절. header 부재는 정상 요청, 라우팅 불가는 400 `UNSUPPORTED_MODEL_OR_EFFORT`, 경로 없음은 404 `UNSUPPORTED_ROUTE` |
+| HTTP12 보조 서비스 통신과 모델 route 구분 | PASS | 1.6.8절. `POST /clauduct/agents`는 404, backend 호출 0, attempt 0 |
 | CAP10 `--bare`에서도 기본 연결 | PASS | 아래 |
 
 #### 1.5.4 `--bare` — 예측이 틀렸고 측정이 맞았다
@@ -400,6 +403,24 @@ stdout: "API Error: 400 UPSTREAM_HTTP_ERROR"
 **CAP02**: 모르는 모델·effort는 **거부하지 기본값으로 대체하지 않는다.** 대체하면 사용자가 요청하지 않은 모델로 돌리고 그 값을 청구한다. 사용자가 보고 고칠 수 있는 실패가 청구서에서 발견하는 실패보다 낫다.
 
 연쇄로 하나가 더 드러났다. 기준선은 `reasoning.effort`를 **무조건** 보낸다(`native-protocol.mjs:429`) — 카탈로그가 기본값을 채우므로 backend가 고를 일이 없다. V2는 없으면 생략하고 있었고, `TestAbsentEffortSendsNoReasoningParameter`가 **그 잘못된 동작을 주장**하고 있었다. fixture가 존재하지 않는 모델을 적었기 때문에 이 질문이 제기되지 않았다.
+
+#### 1.6.6 CAP03 — 기록이 비어 있었다 (2026-09-16)
+
+route는 요청마다 다르다. 실측: 한 번의 `claude -p`가 대화와 세션 제목을 서로 다른 모델로 보낸다. 그런데 route가 **transport의 고정 필드 두 개**였고, 제품 transport는 그 둘을 빈 문자열로 만들고 있었다(`NewDirect(..., "", "")`). 그래서 실제 세션의 모든 attempt가 **빈 route로 예약**됐다. 횟수는 셌지만 무엇에 썼는지는 남지 않았다.
+
+route를 요청에 실었다(`upstream.Call`). gateway만이 양쪽을 안다 — 클라이언트가 부른 이름과 실제로 돌아갈 backend 모델 — 그래서 gateway가 둘을 **따로** 넘기고, ledger가 `(requested, model, effort, source)` 단위로 센다. `claude-opus-5 -> gpt-5.6-sol/xhigh (family)`. 하나로 합치면 "요청한 것으로 돌았는가"라는 질문 자체가 답할 수 없게 된다.
+
+예산 검사는 **실제로 보낼 본문**과 대조한다. 옆에 붙은 선언만 믿으면, 그 선언이 틀린 바로 그 경우에 검사가 통과한다.
+
+#### 1.6.7 CAP06 — 라우팅 불가를 500으로 보고하고 있었다 (2026-09-16)
+
+`bridge.BuildRequest` 실패가 전부 **500 `REQUEST_CONVERSION_FAILED`**였다. 두 가지가 틀렸다. 사용자가 할 수 있는 일이 없고, **측정된 이 클라이언트는 모든 5xx를 재시도한다**(1분에 8회). 성공할 수 없는 요청이 여덟 번 나간다. 라우팅할 수 없는 모델은 400 `UNSUPPORTED_MODEL_OR_EFFORT`다.
+
+CAP06이 요구하는 구분은 이것이다: correlation header(`X-Claude-Code-Session-Id`)의 **부재는 문제가 아니고**, 라우팅 불가는 호출자가 고칠 문제다. 둘이 같은 답으로 도착하면 안 된다. 경로 거부(`UNSUPPORTED_ROUTE`, 404)와도 이름이 갈린다.
+
+#### 1.6.8 HTTP12 — 보조 서비스는 모델 요청이 아니다
+
+기준선의 `agent-route.mjs`는 subagent binding을 **같은 gateway의** `POST /clauduct/agents`로 보낸다(`ANTHROPIC_BASE_URL` + 세션 토큰). 이 빌드는 그 엔드포인트를 구현하지 않으며, 요구사항도 구현이 아니다 — **모델 요청으로 착각되지 않는 것**이다. 실측: 404로 거부되고, backend 호출 0, attempt 0.
 
 #### 1.6.5 실세션 — 성공
 

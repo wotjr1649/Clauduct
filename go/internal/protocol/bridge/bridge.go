@@ -29,10 +29,14 @@ type Request struct {
 	Input       []InputEntry    `json:"input"`
 	Stream      bool            `json:"stream"`
 	Effort      *ReasoningParam `json:"reasoning,omitempty"`
-	Tools       []ToolSpec      `json:"tools,omitempty"`
-	ToolChoice  any             `json:"tool_choice,omitempty"`
-	Parallel    *bool           `json:"parallel_tool_calls,omitempty"`
-	Include     []string        `json:"include,omitempty"`
+	// Source names the rule that resolved Model — catalogue, alias, family or direct. Not
+	// part of the wire format: it is how the answer was reached, not part of the question.
+	// It travels here so the ledger can record what a request was actually run on (CAP03).
+	Source     string     `json:"-"`
+	Tools      []ToolSpec `json:"tools,omitempty"`
+	ToolChoice any        `json:"tool_choice,omitempty"`
+	Parallel   *bool      `json:"parallel_tool_calls,omitempty"`
+	Include    []string   `json:"include,omitempty"`
 	// Store is always false and never omitted. Asking the backend not to retain the
 	// conversation is a property of every request this bridge makes, so it is stated
 	// rather than left to a default that could change on the other side.
@@ -130,6 +134,7 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 		// one, so there is no case where the backend is left to pick, and the baseline
 		// sends it unconditionally for the same reason.
 		Effort: &ReasoningParam{Effort: route.Effort},
+		Source: route.Source,
 	}
 	// The system prompt leads the conversation as a developer turn. Its content is a plain
 	// string here rather than a list of parts, which is the shape the baseline sends.

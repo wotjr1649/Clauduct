@@ -520,11 +520,11 @@ type countingTransport struct {
 	inner  *upstream.Fixture
 }
 
-func (c countingTransport) Execute(ctx context.Context, body []byte) (*upstream.Response, error) {
-	if err := c.ledger.Reserve("any", "any", false); err != nil {
+func (c countingTransport) Execute(ctx context.Context, call upstream.Call) (*upstream.Response, error) {
+	if err := c.ledger.Reserve(upstream.Attempt{Requested: "any", Model: "any", Effort: "any", Source: "test"}); err != nil {
 		return nil, err
 	}
-	return c.inner.Execute(ctx, body)
+	return c.inner.Execute(ctx, call)
 }
 
 // What a session cost is reported, not estimated.

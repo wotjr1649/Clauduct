@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -53,9 +54,6 @@ type Direct struct {
 	// a string because resolving it runs a subprocess, and a session that only ran
 	// --version must not spawn one. Nothing is read until a request is actually sent.
 	Version func() (string, error)
-	// Route is the model and effort each request declares, checked against the budget.
-	Model  string
-	Effort string
 	// Client is the HTTP client. Zero uses the shared one, which verifies certificates and
 	// refuses redirects.
 	Client *http.Client
@@ -74,14 +72,11 @@ func (d *Direct) target() string {
 
 // NewDirect builds a transport with a client that cannot be talked out of verifying a
 // certificate or following a redirect.
-func NewDirect(credentials *auth.Provider, ledger *Ledger, version func() (string, error),
-	model, effort string) *Direct {
+func NewDirect(credentials *auth.Provider, ledger *Ledger, version func() (string, error)) *Direct {
 	return &Direct{
 		Credentials: credentials,
 		Ledger:      ledger,
 		Version:     version,
-		Model:       model,
-		Effort:      effort,
 		Client:      newClient(),
 	}
 }
@@ -132,11 +127,23 @@ func newClient() *http.Client {
 // anything is dialled: a request that is not authorised must not cost a credential read,
 // let alone a socket. Nothing in this function retries — see MaxGatewayRetries for the
 // measurement behind that.
-func (d *Direct) Execute(ctx context.Context, body []byte) (*Response, error) {
+func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 	if d.Ledger == nil {
 		return nil, ErrBudgetExhausted
 	}
-	if err := d.Ledger.Reserve(d.Model, d.Effort, false); err != nil {
+	// Authorised against what is actually in the body, not only against what the caller
+	// says the route is. The budget exists to stop a request running on a model nobody
+	// approved, and a check that trusts a claim beside the payload rather than the payload
+	// would be satisfied by the one mistake it is there to catch.
+	if err := agreesWithBody(call); err != nil {
+		return nil, err
+	}
+	if err := d.Ledger.Reserve(Attempt{
+		Requested: call.Requested,
+		Model:     call.Model,
+		Effort:    call.Effort,
+		Source:    call.Source,
+	}); err != nil {
 		return nil, err
 	}
 
@@ -161,11 +168,11 @@ func (d *Direct) Execute(ctx context.Context, body []byte) (*Response, error) {
 		return nil, err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.target(), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.target(), bytes.NewReader(call.Body))
 	if err != nil {
 		return nil, err
 	}
-	applyHeaders(request, credential, version, len(body))
+	applyHeaders(request, credential, version, len(call.Body))
 
 	response, err := d.client().Do(request)
 	if err != nil {
@@ -196,4 +203,28 @@ func applyHeaders(request *http.Request, credential auth.Credential, version str
 	request.Header.Set("User-Agent", "codex-cli/"+version+" (Windows; x64)")
 	request.Header.Set("originator", "codex_cli_rs")
 	request.Header.Set("Openai-Beta", "responses=experimental")
+}
+
+// ErrRouteMismatch means the declared route is not the one the body would run on.
+var ErrRouteMismatch = errors.New("ROUTE_MISMATCH")
+
+// agreesWithBody checks the declared route against the request that will be sent.
+func agreesWithBody(call Call) error {
+	var declared struct {
+		Model     string `json:"model"`
+		Reasoning *struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
+	}
+	if err := json.Unmarshal(call.Body, &declared); err != nil {
+		return ErrRouteMismatch
+	}
+	effort := ""
+	if declared.Reasoning != nil {
+		effort = declared.Reasoning.Effort
+	}
+	if declared.Model != call.Model || effort != call.Effort {
+		return ErrRouteMismatch
+	}
+	return nil
 }

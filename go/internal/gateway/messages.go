@@ -91,6 +91,14 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	backendRequest, err := bridge.BuildRequest(request)
 	if err != nil {
+		// CAP06: a model this build cannot route is the caller's answerable problem, not
+		// an internal failure. Reporting it as a 500 was wrong twice over -- it told the
+		// user nothing they could act on, and the measured client retries every 5xx, so a
+		// request that can never succeed was sent eight times in a minute.
+		if errors.Is(err, bridge.ErrUnsupportedRoute) {
+			g.refuseCategory(w, http.StatusBadRequest, "UNSUPPORTED_MODEL_OR_EFFORT")
+			return
+		}
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_CONVERSION_FAILED")
 		return
 	}
@@ -100,7 +108,16 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := g.transport.Execute(ctx, encoded)
+	// Requested and effective are handed over separately and deliberately. The user is
+	// billed for the second one, and a record that only keeps it cannot answer whether the
+	// session ran what was asked for.
+	response, err := g.transport.Execute(ctx, upstream.Call{
+		Body:      encoded,
+		Requested: request.Model,
+		Model:     backendRequest.Model,
+		Effort:    backendRequest.Effort.Effort,
+		Source:    backendRequest.Source,
+	})
 	if err != nil {
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 		return

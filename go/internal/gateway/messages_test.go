@@ -310,7 +310,7 @@ func TestConnectionDropAfterACompleteBodyIsNotASuccess(t *testing.T) {
 // that answered badly without needing one.
 type failingTransport struct{ err error }
 
-func (f failingTransport) Execute(context.Context, []byte) (*upstream.Response, error) {
+func (f failingTransport) Execute(context.Context, upstream.Call) (*upstream.Response, error) {
 	return nil, f.err
 }
 

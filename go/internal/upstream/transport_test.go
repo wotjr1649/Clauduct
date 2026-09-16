@@ -75,10 +75,31 @@ func (l *listener) header(name string) string {
 	return ""
 }
 
+// routedBody is the smallest body naming the approved route. These tests are about the
+// transport, not the payload, but the payload has to name a route the budget allows now
+// that the route is read from what will actually be sent.
+const routedBody = `{"model":"gpt-5.6-luna","reasoning":{"effort":"low"}}`
+
+// call pairs a body with the route it declares, which is what the gateway hands over.
+func call(body string) Call {
+	var declared struct {
+		Model     string `json:"model"`
+		Reasoning *struct {
+			Effort string `json:"effort"`
+		} `json:"reasoning"`
+	}
+	_ = json.Unmarshal([]byte(body), &declared)
+	c := Call{Body: []byte(body), Requested: declared.Model, Model: declared.Model, Source: "direct"}
+	if declared.Reasoning != nil {
+		c.Effort = declared.Reasoning.Effort
+	}
+	return c
+}
+
 // direct builds a transport aimed at a local listener rather than at the real endpoint.
 func direct(t *testing.T, l *listener, p *auth.Provider, budget Budget) *Direct {
 	t.Helper()
-	d := NewDirect(p, NewLedger(budget), Fixed("0.48.0"), "gpt-5.6-luna", "low")
+	d := NewDirect(p, NewLedger(budget), Fixed("0.48.0"))
 	if l != nil {
 		d.endpoint = l.URL
 	}
@@ -91,7 +112,7 @@ func TestAnUnauthorisedBudgetOpensNoSocket(t *testing.T) {
 	l := serve(t, &listener{})
 	d := direct(t, l, credentialStore(t, true), Budget{})
 
-	if _, err := d.Execute(context.Background(), []byte(`{}`)); !errors.Is(err, ErrBudgetExhausted) {
+	if _, err := d.Execute(context.Background(), call(routedBody)); !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("Execute = %v, want %v", err, ErrBudgetExhausted)
 	}
 	if n := l.hits.Load(); n != 0 {
@@ -106,13 +127,13 @@ func TestTheCapBoundsWhatReachesTheBackend(t *testing.T) {
 	d := direct(t, l, credentialStore(t, false), Budget{Model: "gpt-5.6-luna", Effort: "low", Limit: 2})
 
 	for i := 0; i < 2; i++ {
-		response, err := d.Execute(context.Background(), []byte(`{}`))
+		response, err := d.Execute(context.Background(), call(routedBody))
 		if err != nil {
 			t.Fatalf("attempt %d: %v", i+1, err)
 		}
 		response.Body.Close()
 	}
-	if _, err := d.Execute(context.Background(), []byte(`{}`)); !errors.Is(err, ErrBudgetExhausted) {
+	if _, err := d.Execute(context.Background(), call(routedBody)); !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("the third attempt = %v, want %v", err, ErrBudgetExhausted)
 	}
 	if n := l.hits.Load(); n != 2 {
@@ -131,7 +152,7 @@ func TestTheBudgetIsCheckedBeforeAnythingIsRead(t *testing.T) {
 	}
 	d := direct(t, serve(t, &listener{}), provider, Budget{})
 
-	if _, err := d.Execute(context.Background(), []byte(`{}`)); !errors.Is(err, ErrBudgetExhausted) {
+	if _, err := d.Execute(context.Background(), call(routedBody)); !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("Execute = %v, want %v", err, ErrBudgetExhausted)
 	}
 	if n := reads.Load(); n != 0 {
@@ -146,7 +167,7 @@ func TestASyntheticCredentialIsNeverSent(t *testing.T) {
 	l := serve(t, &listener{})
 	d := direct(t, l, credentialStore(t, true), approved())
 
-	_, err := d.Execute(context.Background(), []byte(`{}`))
+	_, err := d.Execute(context.Background(), call(routedBody))
 	if !errors.Is(err, ErrSyntheticMixing) {
 		t.Fatalf("Execute = %v, want %v", err, ErrSyntheticMixing)
 	}
@@ -167,7 +188,7 @@ func TestAnUnreadableCredentialStopsTheRequest(t *testing.T) {
 	l := serve(t, &listener{})
 	d := direct(t, l, &auth.Provider{Home: t.TempDir(), Environ: map[string]string{}}, approved())
 
-	_, err := d.Execute(context.Background(), []byte(`{}`))
+	_, err := d.Execute(context.Background(), call(routedBody))
 	if got := auth.CategoryOf(err); got != auth.CategoryUnavailable {
 		t.Fatalf("Execute = %v (category %q), want %s", err, got, auth.CategoryUnavailable)
 	}
@@ -182,7 +203,7 @@ func TestTheRequestCarriesTheReferenceClientIdentity(t *testing.T) {
 	l := serve(t, &listener{payload: "data: {}\n\n"})
 	d := direct(t, l, credentialStore(t, false), approved())
 
-	response, err := d.Execute(context.Background(), []byte(`{"model":"gpt-5.6-luna"}`))
+	response, err := d.Execute(context.Background(), call(routedBody))
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -203,7 +224,7 @@ func TestTheRequestCarriesTheReferenceClientIdentity(t *testing.T) {
 			t.Fatalf("%s = %q, want %q", name, got, want)
 		}
 	}
-	if got, _ := l.body.Load().(string); got != `{"model":"gpt-5.6-luna"}` {
+	if got, _ := l.body.Load().(string); got != routedBody {
 		t.Fatalf("body = %q, want the bytes passed to Execute", got)
 	}
 }
@@ -233,7 +254,7 @@ func TestARedirectIsRefusedRatherThanFollowed(t *testing.T) {
 			l := serve(t, &listener{status: status, headers: http.Header{"Location": {elsewhere.URL}}})
 			d := direct(t, l, credentialStore(t, false), approved())
 
-			if _, err := d.Execute(context.Background(), []byte(`{}`)); !errors.Is(err, ErrRedirected) {
+			if _, err := d.Execute(context.Background(), call(routedBody)); !errors.Is(err, ErrRedirected) {
 				t.Fatalf("Execute = %v, want %v", err, ErrRedirected)
 			}
 			if n := elsewhere.hits.Load() - before; n != 0 {
@@ -289,7 +310,7 @@ func TestANonSuccessStatusIsClassified(t *testing.T) {
 			l := serve(t, &listener{status: tc.status, payload: "an error page, not an event stream"})
 			d := direct(t, l, credentialStore(t, false), approved())
 
-			_, err := d.Execute(context.Background(), []byte(`{}`))
+			_, err := d.Execute(context.Background(), call(routedBody))
 			var failure Failure
 			if !errors.As(err, &failure) {
 				t.Fatalf("Execute = %v, want a Failure", err)
@@ -311,7 +332,7 @@ func TestACancelledContextStopsTheRequest(t *testing.T) {
 	defer server.Close()
 	defer close(release)
 
-	d := NewDirect(credentialStore(t, false), NewLedger(approved()), Fixed("0.48.0"), "gpt-5.6-luna", "low")
+	d := NewDirect(credentialStore(t, false), NewLedger(approved()), Fixed("0.48.0"))
 	d.endpoint = server.URL
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -320,7 +341,7 @@ func TestACancelledContextStopsTheRequest(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := d.Execute(ctx, []byte(`{}`))
+	_, err := d.Execute(ctx, call(routedBody))
 	var failure Failure
 	if !errors.As(err, &failure) || failure.Category != "CANCELLED" {
 		t.Fatalf("Execute = %v, want CANCELLED", err)
@@ -333,7 +354,7 @@ func TestATransportWithNoLedgerRefuses(t *testing.T) {
 	l := serve(t, &listener{})
 	d := &Direct{Credentials: credentialStore(t, false), endpoint: l.URL}
 
-	if _, err := d.Execute(context.Background(), []byte(`{}`)); !errors.Is(err, ErrBudgetExhausted) {
+	if _, err := d.Execute(context.Background(), call(routedBody)); !errors.Is(err, ErrBudgetExhausted) {
 		t.Fatalf("Execute = %v, want %v", err, ErrBudgetExhausted)
 	}
 	if n := l.hits.Load(); n != 0 {
@@ -347,24 +368,24 @@ func TestNoRefusalCarriesTheToken(t *testing.T) {
 	cases := map[string]func(t *testing.T) error{
 		"budget": func(t *testing.T) error {
 			d := direct(t, serve(t, &listener{}), credentialStore(t, false), Budget{})
-			_, err := d.Execute(context.Background(), []byte(`{}`))
+			_, err := d.Execute(context.Background(), call(routedBody))
 			return err
 		},
 		"synthetic": func(t *testing.T) error {
 			d := direct(t, serve(t, &listener{}), credentialStore(t, true), approved())
-			_, err := d.Execute(context.Background(), []byte(`{}`))
+			_, err := d.Execute(context.Background(), call(routedBody))
 			return err
 		},
 		"status": func(t *testing.T) error {
 			l := serve(t, &listener{status: 403, payload: testToken})
 			d := direct(t, l, credentialStore(t, false), approved())
-			_, err := d.Execute(context.Background(), []byte(`{}`))
+			_, err := d.Execute(context.Background(), call(routedBody))
 			return err
 		},
 		"redirect": func(t *testing.T) error {
 			l := serve(t, &listener{status: 302, headers: http.Header{"Location": {"https://elsewhere.example/"}}})
 			d := direct(t, l, credentialStore(t, false), approved())
-			_, err := d.Execute(context.Background(), []byte(`{}`))
+			_, err := d.Execute(context.Background(), call(routedBody))
 			return err
 		},
 	}
@@ -400,7 +421,7 @@ func TestARequestWithNoKnowableVersionIsNotSent(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d := direct(t, l, credentialStore(t, false), approved())
 			d.Version = version
-			if _, err := d.Execute(context.Background(), []byte(`{}`)); err == nil {
+			if _, err := d.Execute(context.Background(), call(routedBody)); err == nil {
 				t.Fatal("a request was sent without a version to identify it")
 			}
 			if n := l.hits.Load(); n != 0 {
@@ -427,7 +448,7 @@ func TestTheVersionIsResolvedLazilyAndOnce(t *testing.T) {
 	d := direct(t, l, credentialStore(t, false), approved())
 	d.Version = resolve
 	for i := 0; i < 3; i++ {
-		response, err := d.Execute(context.Background(), []byte(`{}`))
+		response, err := d.Execute(context.Background(), call(routedBody))
 		if err != nil {
 			t.Fatalf("attempt %d: %v", i+1, err)
 		}
@@ -495,13 +516,13 @@ func TestAnUnlimitedBudgetAuthorisesAnyRoute(t *testing.T) {
 	for _, route := range [][2]string{
 		{"gpt-5.6-luna", "low"}, {"gpt-6-astra", "xhigh"}, {"anything", "at-all"},
 	} {
-		if err := ledger.Reserve(route[0], route[1], false); err != nil {
+		if err := ledger.Reserve(Attempt{Model: route[0], Effort: route[1]}); err != nil {
 			t.Fatalf("Reserve(%q, %q): %v", route[0], route[1], err)
 		}
 	}
 	// And far past any verification cap.
 	for i := 0; i < ApprovedBudget().Limit+10; i++ {
-		if err := ledger.Reserve("gpt-6-astra", "xhigh", false); err != nil {
+		if err := ledger.Reserve(Attempt{Model: "gpt-6-astra", Effort: "xhigh"}); err != nil {
 			t.Fatalf("attempt %d: %v", i+1, err)
 		}
 	}

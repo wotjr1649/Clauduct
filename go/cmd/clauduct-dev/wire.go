@@ -173,7 +173,13 @@ func roundTrip(transport upstream.Transport, out io.Writer, label, requestJSON s
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
-	response, err := transport.Execute(ctx, body)
+	response, err := transport.Execute(ctx, upstream.Call{
+		Body:      body,
+		Requested: request.Model,
+		Model:     backend.Model,
+		Effort:    backend.Effort.Effort,
+		Source:    backend.Source,
+	})
 	if err != nil {
 		result := exchange{category: categoryOf(err)}
 		var failure upstream.Failure

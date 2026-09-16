@@ -24,7 +24,7 @@ type watchedTransport struct {
 	once   sync.Once
 }
 
-func (w *watchedTransport) Execute(context.Context, []byte) (*upstream.Response, error) {
+func (w *watchedTransport) Execute(context.Context, upstream.Call) (*upstream.Response, error) {
 	// Handed over in small pieces on purpose. A reader that returns the whole answer in
 	// one call makes the relay emit it as one enormous batch, and then a single write is
 	// megabytes long -- which a per-write bound will refuse, correctly, at a slow enough
@@ -144,7 +144,7 @@ func TestTheBoundIsResetBeforeEveryWrite(t *testing.T) {
 		SSE:       sse(created, delta("a"), delta("b"), delta("c"), done("abc"), completed, "[DONE]"),
 		ChunkSize: 1,
 	}
-	response, err := fixture.Execute(context.Background(), nil)
+	response, err := fixture.Execute(context.Background(), upstream.Call{})
 	if err != nil {
 		t.Fatalf("fixture: %v", err)
 	}

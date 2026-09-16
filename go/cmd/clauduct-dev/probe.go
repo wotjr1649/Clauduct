@@ -110,7 +110,7 @@ func probe(args []string, out, errOut io.Writer) int {
 	budget := upstream.ApprovedBudget()
 	budget.Limit = selected.attempts
 	ledger := upstream.NewLedger(budget)
-	transport := upstream.NewDirect(provider, ledger, upstream.Fixed(version), budget.Model, budget.Effort)
+	transport := upstream.NewDirect(provider, ledger, upstream.Fixed(version))
 
 	code := 0
 	if args[0] == "wire" {
@@ -241,7 +241,16 @@ func send(transport upstream.Transport, budget upstream.Budget, limit int) outco
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	response, err := transport.Execute(ctx, encoded)
+	// The probe names a backend model outright, so requested and effective are the same
+	// string and the source is "direct". Stating it rather than leaving it blank keeps the
+	// ledger's record of a spending run as readable as the product's.
+	response, err := transport.Execute(ctx, upstream.Call{
+		Body:      encoded,
+		Requested: budget.Model,
+		Model:     budget.Model,
+		Effort:    budget.Effort,
+		Source:    "direct",
+	})
 	if err != nil {
 		var failure upstream.Failure
 		if errors.As(err, &failure) {

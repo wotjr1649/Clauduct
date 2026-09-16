@@ -9,9 +9,21 @@ import (
 
 func approved() Budget { return Budget{Model: "gpt-5.6-luna", Effort: "low", Limit: 3} }
 
+// onApprovedRoute is an attempt on the route the budget authorises, named the way the
+// gateway names it: a Claude alias as requested, the backend model as effective.
+func onApprovedRoute(retry bool) Attempt {
+	return Attempt{
+		Requested: "claude-haiku-4-5-20251001",
+		Model:     "gpt-5.6-luna",
+		Effort:    "low",
+		Source:    "family",
+		Retry:     retry,
+	}
+}
+
 func reserve(t *testing.T, l *Ledger) error {
 	t.Helper()
-	return l.Reserve("gpt-5.6-luna", "low", false)
+	return l.Reserve(onApprovedRoute(false))
 }
 
 // LIFE08: the cap is a limit, not a report. The attempt after the last one is refused.
@@ -43,10 +55,10 @@ func TestTheCapStopsAtTheApprovedCount(t *testing.T) {
 // and measured in inferences would let a retry loop spend past it.
 func TestARetryCostsAnAttemptButNotAnInference(t *testing.T) {
 	ledger := NewLedger(approved())
-	if err := ledger.Reserve("gpt-5.6-luna", "low", false); err != nil {
+	if err := ledger.Reserve(onApprovedRoute(false)); err != nil {
 		t.Fatalf("first attempt: %v", err)
 	}
-	if err := ledger.Reserve("gpt-5.6-luna", "low", true); err != nil {
+	if err := ledger.Reserve(onApprovedRoute(true)); err != nil {
 		t.Fatalf("retry: %v", err)
 	}
 	attempts, inferences, _ := ledger.Spent()
@@ -73,7 +85,7 @@ func TestOnlyTheApprovedRouteIsAllowed(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ledger := NewLedger(approved())
-			err := ledger.Reserve(route.model, route.effort, false)
+			err := ledger.Reserve(Attempt{Requested: route.model, Model: route.model, Effort: route.effort, Source: "direct"})
 			if !errors.Is(err, ErrRouteNotAuthorised) {
 				t.Fatalf("Reserve(%q, %q) = %v, want %v", route.model, route.effort, err, ErrRouteNotAuthorised)
 			}
@@ -139,7 +151,7 @@ func TestTheCapHoldsUnderConcurrentReservation(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := ledger.Reserve("gpt-5.6-luna", "low", false); err == nil {
+			if err := ledger.Reserve(onApprovedRoute(false)); err == nil {
 				granted <- struct{}{}
 			}
 		}()

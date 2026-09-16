@@ -54,11 +54,11 @@ func Conversation(body string) bool { return strings.Contains(body, `"tools":[`)
 // SideRequest matches a request that carries no tools.
 func SideRequest(body string) bool { return !Conversation(body) }
 
-func (s *Script) Execute(ctx context.Context, body []byte) (*Response, error) {
+func (s *Script) Execute(ctx context.Context, call Call) (*Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	text := string(body)
+	text := string(call.Body)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

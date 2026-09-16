@@ -548,3 +548,162 @@ func TestUnrestrictedIsNeverTheDefault(t *testing.T) {
 		t.Fatal("Unlimited is restricted")
 	}
 }
+
+// E5. The overall deadline covers the body, so it must outlive Execute.
+//
+// The obvious way to write this -- a context with a timeout and a deferred cancel -- cuts
+// every stream at its first byte, because Execute returns while the body is still arriving.
+// The test that catches it is one where the body arrives after Execute has returned.
+func TestTheDeadlineOutlivesExecuteAndEndsWithTheBody(t *testing.T) {
+	sent := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		<-sent
+		_, _ = w.Write([]byte("data: late\n\n"))
+	}))
+	defer server.Close()
+
+	d := NewDirect(credentialStore(t, false), NewLedger(approved()), Fixed("0.48.0"))
+	d.endpoint = server.URL
+
+	response, err := d.Execute(context.Background(), call(routedBody))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// Execute has returned. A deadline released here would have killed the stream.
+	close(sent)
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("the stream was cut after Execute returned: %v", err)
+	}
+	if !strings.Contains(string(body), "late") {
+		t.Fatalf("body = %q", body)
+	}
+
+	// And closing releases it, twice over without complaint: a body can be closed by a
+	// defer and by the caller, and a release that ran twice would panic.
+	if err := response.Body.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if err := response.Body.Close(); err != nil && !errors.Is(err, http.ErrBodyReadAfterClose) {
+		t.Errorf("second Close: %v", err)
+	}
+}
+
+// A request that never ends is ended.
+//
+// The phase deadlines cannot do this one: a backend that keeps sending meets none of them,
+// and a request that never ends holds a goroutine, a connection and the user's subscription
+// for as long as it likes. Measured with a short deadline rather than the real ten minutes.
+func TestABackendThatKeepsSendingIsStillEnded(t *testing.T) {
+	stop := make(chan struct{})
+	defer close(stop)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-r.Context().Done():
+				return
+			default:
+			}
+			if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			time.Sleep(time.Millisecond)
+		}
+	}))
+	defer server.Close()
+
+	d := NewDirect(credentialStore(t, false), NewLedger(approved()), Fixed("0.48.0"))
+	d.endpoint = server.URL
+
+	// The caller's own deadline stands in for the ten minute one. What is under test is
+	// that the body read ends at a deadline at all rather than running forever.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	response, err := d.Execute(ctx, call(routedBody))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	defer response.Body.Close()
+
+	done := make(chan error, 1)
+	go func() { _, err := io.Copy(io.Discard, response.Body); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a stream that never ends returned without an error")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("the read never ended")
+	}
+}
+
+// The bound is the baseline's, and is stated rather than left to be read off a call site.
+func TestTheOverallDeadlineIsTheBaselines(t *testing.T) {
+	if overallTimeout != 10*time.Minute {
+		t.Fatalf("overallTimeout = %v, want 10m", overallTimeout)
+	}
+	if overallTimeout <= headerTimeout {
+		t.Fatal("an overall bound at or below the header deadline replaces it rather than " +
+			"backing it up")
+	}
+}
+
+// The bound is this build's own, not the caller's.
+//
+// A caller that sets no deadline is the ordinary case -- the gateway's request context ends
+// when the client disconnects, and a client can sit there. Without a bound of its own a
+// backend that keeps sending would run until one of them gave up.
+func TestTheRequestIsBoundedWithoutAnyDeadlineFromTheCaller(t *testing.T) {
+	stop := make(chan struct{})
+	defer close(stop)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-r.Context().Done():
+				return
+			default:
+			}
+			if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			time.Sleep(time.Millisecond)
+		}
+	}))
+	defer server.Close()
+
+	d := NewDirect(credentialStore(t, false), NewLedger(approved()), Fixed("0.48.0"))
+	d.endpoint = server.URL
+	d.overallFor = 200 * time.Millisecond
+
+	// context.Background(): no deadline of any kind from the caller.
+	response, err := d.Execute(context.Background(), call(routedBody))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	defer response.Body.Close()
+
+	done := make(chan error, 1)
+	go func() { _, err := io.Copy(io.Discard, response.Body); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a stream that never ends returned without an error")
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("nothing bounded the request but the caller, and the caller set nothing")
+	}
+}

@@ -251,6 +251,12 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 	if len(override) > 0 {
 		route = override[0]
 	}
+	// Last, because it is a cost guard rather than a choice of where to run. A compaction
+	// keeps whichever model it was going to use and drops to medium if it was dearer; see
+	// compact.go for why that is the one request worth capping.
+	if route.Effort != "low" && route.Effort != compactEffort && IsCompactTemplate(textOf(request)) {
+		route.Effort, route.Source = compactEffort, "compact"
+	}
 
 	out := &Request{
 		Model:       route.Model,

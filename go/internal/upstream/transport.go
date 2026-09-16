@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"sync"
@@ -39,6 +40,18 @@ var (
 const (
 	connectTimeout = 30 * time.Second
 	headerTimeout  = 120 * time.Second
+	// overallTimeout bounds one backend request from dial to last byte.
+	//
+	// The phase deadlines above are the better instrument and stay: a single overall clock
+	// cannot tell a backend that never answered from one answering slowly, and cutting a
+	// long correct answer is a worse failure than waiting for it. But they leave one case
+	// open. A backend that keeps sending -- a keepalive every few seconds, a token a
+	// minute -- meets no phase deadline and never ends, and a request that never ends holds
+	// a goroutine, a connection and the user's subscription for as long as it likes.
+	//
+	// Ten minutes is the Node baseline's, and the longest measured answer here is far
+	// short of it.
+	overallTimeout = 10 * time.Minute
 )
 
 // Direct is the real transport.
@@ -65,6 +78,8 @@ type Direct struct {
 	// endpoint overrides Endpoint. Unexported and set only by this package's tests: the
 	// destination stays unreachable from configuration, which is the point of the constant.
 	endpoint string
+	// overallFor replaces the ten minute bound in a test. Zero is the product.
+	overallFor time.Duration
 }
 
 func (d *Direct) target() string {
@@ -172,14 +187,21 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 		return nil, err
 	}
 
+	// The deadline covers the body too, so it cannot be released when this returns. It is
+	// released when the caller closes the body, which is the one event that means the
+	// request is over however it ended.
+	ctx, cancel := context.WithTimeout(ctx, d.overall())
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.target(), bytes.NewReader(call.Body))
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 	applyHeaders(request, credential, version, len(call.Body))
 
 	response, err := d.client().Do(request)
 	if err != nil {
+		cancel()
 		if errors.Is(err, ErrRedirected) {
 			return nil, ErrRedirected
 		}
@@ -188,9 +210,38 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 	if response.StatusCode != http.StatusOK {
 		failure := ClassifyStatus(response.StatusCode, response.Header, time.Now())
 		response.Body.Close()
+		cancel()
 		return nil, failure
 	}
-	return &Response{Body: response.Body, Header: response.Header}, nil
+	return &Response{
+		Body:   &releaseOnClose{ReadCloser: response.Body, release: cancel},
+		Header: response.Header,
+	}, nil
+}
+
+// releaseOnClose lets go of the request's deadline when its body is closed.
+//
+// Without it the deadline leaks a timer and a goroutine for every request, and with a naive
+// defer it would fire the moment Execute returns and cut every stream at its first byte.
+type releaseOnClose struct {
+	io.ReadCloser
+	once    sync.Once
+	release context.CancelFunc
+}
+
+func (r *releaseOnClose) Close() error {
+	err := r.ReadCloser.Close()
+	r.once.Do(r.release)
+	return err
+}
+
+// overall is the bound on one request. Overridable so the property can be tested in a
+// second rather than in ten minutes; the product never sets it.
+func (d *Direct) overall() time.Duration {
+	if d.overallFor > 0 {
+		return d.overallFor
+	}
+	return overallTimeout
 }
 
 // applyHeaders builds the identity the reference client presents. It is one function so a

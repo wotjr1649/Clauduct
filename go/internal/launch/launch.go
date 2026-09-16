@@ -38,6 +38,13 @@ type Overlay struct {
 	// choice without anything here parsing an argument -- and letting their environment win
 	// gives them the effort choice too, which the baseline hands out as --effort.
 	Session map[string]string
+	// Settings is a settings blob to hand the child, or empty for none.
+	//
+	// It goes ahead of the forwarded arguments, which is the only ordering that could work:
+	// measured, a second --settings replaces the first rather than merging with it, so
+	// anything after this would take its place. That is also why the launcher refuses the
+	// options that would arrive after it -- see refuse.go.
+	Settings string
 	// Enforced is what the child does not get to run without, whatever the environment
 	// says. Kept apart from Session because "we prefer this" and "this build cannot
 	// function otherwise" are different claims and should not be made by the same map.
@@ -73,8 +80,11 @@ func denied(key string) bool {
 // decision to refuse some native options has to be a deliberate, separately tested
 // addition rather than a side effect of having a parser lying around.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
-	args := make([]string, len(forward))
-	copy(args, forward)
+	args := make([]string, 0, len(forward)+2)
+	if overlay.Settings != "" {
+		args = append(args, "--settings", overlay.Settings)
+	}
+	args = append(args, forward...)
 
 	return Spec{
 		File: exe,

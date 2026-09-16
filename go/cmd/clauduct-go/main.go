@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/app"
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
@@ -47,8 +48,9 @@ func run() int {
 			// Name the option and say why. A refusal the user cannot act on reads as a
 			// bug, and this one is a deliberate policy with a short list behind it.
 			fmt.Fprintf(os.Stderr,
-				"clauduct: %s is not forwarded; it turns off permission checks for the whole session.\n"+
-					"          Every other native option is passed through unchanged.\n", refused.Option)
+				"clauduct: %s is not forwarded, because %s.\n"+
+					"          Every other native option is passed through unchanged.\n",
+				refused.Option, launch.Reason(refused.Option))
 			return 1
 		}
 		if errors.Is(err, app.ErrClaudeNotFound) {

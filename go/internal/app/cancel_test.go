@@ -69,6 +69,7 @@ func TestStdinEndingIsTheClientsAnswerNotAnError(t *testing.T) {
 	defer cancel()
 
 	result, err := Run(ctx, Options{
+		Settings: &noSettings,
 		// No prompt. With stdin already at end the client has nothing to work from.
 		Args:          []string{"--strict-mcp-config"},
 		Env:           isolatedEnv(t),

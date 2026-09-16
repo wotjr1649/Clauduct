@@ -16,10 +16,25 @@ import "strings"
 // Those are the user's own configuration and letting them work is the point of the
 // redesign. These two are different in kind: they remove a safety control for the whole
 // session, and nothing downstream can put it back.
-var refusedOptions = []string{
-	"--dangerously-skip-permissions",
-	"--allow-dangerously-skip-permissions",
+var refusedOptions = map[string]string{
+	"--dangerously-skip-permissions":       reasonPermission,
+	"--allow-dangerously-skip-permissions": reasonPermission,
+	// Consequences of injecting a settings blob rather than policy choices. Measured: a
+	// second --settings replaces the first instead of merging, so one of the two would be
+	// silently lost -- and if it were this build's, the subagent hooks would never install
+	// and nothing would say so.
+	"--settings":        reasonSettings,
+	"--setting-sources": reasonSettings,
 }
+
+const (
+	reasonPermission = "it turns off permission checks for the whole session"
+	reasonSettings   = "this launcher supplies the session's own settings, and a second " +
+		"--settings replaces the first rather than adding to it"
+)
+
+// Reason reports why an option is not forwarded.
+func Reason(option string) string { return refusedOptions[option] }
 
 // Refused reports the first option this launcher will not forward.
 //
@@ -37,7 +52,7 @@ var refusedOptions = []string{
 func Refused(args []string) (string, bool) {
 	for _, arg := range args {
 		name, _, _ := strings.Cut(arg, "=")
-		for _, refused := range refusedOptions {
+		for refused := range refusedOptions {
 			if strings.EqualFold(name, refused) {
 				return refused, true
 			}

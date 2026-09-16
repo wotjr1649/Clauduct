@@ -180,6 +180,25 @@ func runSession(t *testing.T, so sessionOptions) *session {
 
 // --- ARG: what the child actually received ----------------------------------------------
 
+// forwarded is what the user typed, taken out of what the child received.
+//
+// The launcher puts its own --settings in front now, because a hook is a settings entry and
+// has no environment form. What ARG01 is about survives that and is what this checks: the
+// user's arguments arrive unchanged, in their order, contiguously, and at the end. Anything
+// the launcher adds is a fixed prefix, never something interleaved with them.
+func forwarded(t *testing.T, argv []string) []string {
+	t.Helper()
+	for len(argv) >= 2 && argv[0] == "--settings" {
+		argv = argv[2:]
+	}
+	for _, arg := range argv {
+		if arg == "--settings" {
+			t.Fatalf("the launcher's own option turned up among the forwarded arguments: %#v", argv)
+		}
+	}
+	return argv
+}
+
 // ARG01 through a real spawn: order, count and values survive process creation.
 func TestChildReceivesArgvUnchanged(t *testing.T) {
 	args := []string{"--resume", "session-abc", "-p", "first", "second"}
@@ -187,8 +206,8 @@ func TestChildReceivesArgvUnchanged(t *testing.T) {
 	if s.err != nil {
 		t.Fatalf("Run: %v", s.err)
 	}
-	if !reflect.DeepEqual(s.report.Argv, args) {
-		t.Fatalf("child argv\n got: %#v\nwant: %#v", s.report.Argv, args)
+	if got := forwarded(t, s.report.Argv); !reflect.DeepEqual(got, args) {
+		t.Fatalf("child argv\n got: %#v\nwant: %#v", got, args)
 	}
 }
 
@@ -210,17 +229,18 @@ func TestChildReceivesHostileArgvUnchanged(t *testing.T) {
 	if s.err != nil {
 		t.Fatalf("Run: %v", s.err)
 	}
-	if !reflect.DeepEqual(s.report.Argv, args) {
+	got := forwarded(t, s.report.Argv)
+	if !reflect.DeepEqual(got, args) {
 		for i := range args {
-			if i >= len(s.report.Argv) {
+			if i >= len(got) {
 				t.Errorf("arg %d missing: %q", i, args[i])
 				continue
 			}
-			if s.report.Argv[i] != args[i] {
-				t.Errorf("arg %d\n got: %q\nwant: %q", i, s.report.Argv[i], args[i])
+			if got[i] != args[i] {
+				t.Errorf("arg %d\n got: %q\nwant: %q", i, got[i], args[i])
 			}
 		}
-		t.Fatalf("argv count got %d want %d", len(s.report.Argv), len(args))
+		t.Fatalf("argv count got %d want %d", len(got), len(args))
 	}
 }
 
@@ -231,8 +251,8 @@ func TestChildReceivesOptionLookalikeValues(t *testing.T) {
 	if s.err != nil {
 		t.Fatalf("Run: %v", s.err)
 	}
-	if !reflect.DeepEqual(s.report.Argv, args) {
-		t.Fatalf("child argv\n got: %#v\nwant: %#v", s.report.Argv, args)
+	if got := forwarded(t, s.report.Argv); !reflect.DeepEqual(got, args) {
+		t.Fatalf("child argv\n got: %#v\nwant: %#v", got, args)
 	}
 }
 
@@ -243,8 +263,8 @@ func TestEmptyArgumentSurvives(t *testing.T) {
 	if s.err != nil {
 		t.Fatalf("Run: %v", s.err)
 	}
-	if !reflect.DeepEqual(s.report.Argv, args) {
-		t.Fatalf("child argv\n got: %#v\nwant: %#v", s.report.Argv, args)
+	if got := forwarded(t, s.report.Argv); !reflect.DeepEqual(got, args) {
+		t.Fatalf("child argv\n got: %#v\nwant: %#v", got, args)
 	}
 }
 
@@ -534,7 +554,7 @@ func TestConfigurationOptionsStillReachTheChild(t *testing.T) {
 	if s.err != nil {
 		t.Fatalf("Run: %v", s.err)
 	}
-	if !reflect.DeepEqual(s.report.Argv, args) {
-		t.Fatalf("child argv\n got: %#v\nwant: %#v", s.report.Argv, args)
+	if got := forwarded(t, s.report.Argv); !reflect.DeepEqual(got, args) {
+		t.Fatalf("child argv\n got: %#v\nwant: %#v", got, args)
 	}
 }

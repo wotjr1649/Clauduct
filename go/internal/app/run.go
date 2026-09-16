@@ -65,6 +65,11 @@ type Options struct {
 	// Session is what this session tells the native child about itself, beyond the endpoint
 	// and the credential. Empty leaves the child on its own defaults.
 	Session map[string]string
+	// Settings overrides the settings blob handed to the child. Nil builds the session's
+	// own; a pointer to the empty string sends none, which is what a caller launching
+	// something other than the native client wants -- a settings option means nothing to
+	// it and would arrive as an argument it does not understand.
+	Settings *string
 	// Ledger records what a session spent. Zero allocates an unrestricted one.
 	//
 	// It is exposed so a caller can read the count rather than estimate it. A verification
@@ -161,11 +166,21 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if session == nil {
 		session = sessionEnvironment()
 	}
+	// The hook program, when this build shipped one beside itself. Without it the settings
+	// carry the picker and nothing else, which is the right answer: a hook pointing at a
+	// program that is not there fails on every subagent the client starts.
+	settings := ""
+	if o.Settings != nil {
+		settings = *o.Settings
+	} else if built, ok := sessionSettings(findHook()); ok {
+		settings = built
+	}
 	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{
 		BaseURL:   gw.BaseURL(),
 		AuthToken: gw.Token(),
 		Session:   session,
 		Enforced:  sessionRequirements(),
+		Settings:  settings,
 	})
 
 	process, startErr := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)

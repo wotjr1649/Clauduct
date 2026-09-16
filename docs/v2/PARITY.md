@@ -635,12 +635,46 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | # | 작업 | 근거 |
 |---|---|---|
 | B1 | 세션 환경 14개 키 | **완료.** 돌연변이 9/9 |
-| B2 | ~~`--settings` 주입 + `--model`/`--effort` 소유~~ | **불필요.** env로 충분하고 `--model`이 이긴다 |
-| B3 | ~~네 옵션 차단~~ | **불필요.** B2가 없으므로 충돌이 없다 |
-| B4 | `settings.hooks` + Go판 `agent-route` | 남음. C1(`/clauduct/agents`)이 먼저다 |
+| B2 | `--settings` 주입 (hook·picker만) | **완료 2026-09-16.** `--model`/`--effort` 소유는 여전히 불필요 |
+| B3 | `--settings`·`--setting-sources` 차단 | **완료.** 두 개뿐 — `--agents`/`--system-prompt`는 주입하지 않으므로 그대로 통과 |
+| B4 | `settings.hooks` + `clauduct-hook` | **완료 2026-09-16.** 실세션 subagent 검증은 남음 |
 | B5 | `--agents` 정의 생성 | 남음. `--settings`/`--agents` 주입이 필요한 유일한 항목 |
 
 남은 B4·B5는 argv 주입을 다시 요구하므로, 그때 B3의 차단이 필연이 된다. 그 시점에 다시 판단한다.
+
+### B.1 측정이 또 두 가지를 바꿨다 (2026-09-16)
+
+**`--settings` 두 개는 합쳐지지 않는다. 마지막 것만 적용된다.** 첫 번째의 `env`가 통째로 사라졌다.
+그래서 이 빌드가 하나를 주입하는 순간, 사용자가 준 `--settings`가 **우리 것을 조용히 대체하고 hook이
+설치되지 않는다.** B3의 차단은 정책이 아니라 주입의 **결과**다. `--setting-sources`도 어떤 소스가
+로드되는지를 정하므로 함께 막는다.
+
+`--agents`·`--system-prompt`는 **막지 않는다.** 주입하지 않으므로 충돌이 없다. B5(에이전트 정의)를
+하면 그때 `--agents`가 필연이 된다.
+
+**그리고 B1이 만든 회귀를 찾았다.** `ANTHROPIC_MODEL`이 Codex 모델을 가리키자 클라이언트가
+stderr에 이렇게 말했다:
+
+```
+"gpt-6-astra" isn't described by this version's model catalog ...
+Until then auto-compact keeps this session within 200k tokens (the context window it assumes)
+```
+
+**모든 세션이 실제의 절반에서 압축된다.** 기준선 `CONTEXT_POLICY`의 값(400000 / 320000 / 20000
+reserve)을 `CLAUDE_CODE_MAX_CONTEXT_TOKENS`·`CLAUDE_CODE_AUTO_COMPACT_WINDOW`·
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`로 알려주자 경고가 사라졌다.
+
+남은 `[claude-code:unrecognized_model]` 한 줄은 `modelPicker`의 `behavesAs`로 없앨 수 있다 —
+**실측했다.** 다만 그것이 **effort까지 가져간다**(low로 고정한 세션이 medium으로 돌아왔다). 창 문제는
+이미 해결됐으므로 쓰지 않는다. 사용자가 고르지 않은 비용 변화를 한 줄의 로그와 바꾸지 않는다.
+
+### B.2 ARG01의 결론이 바뀌었다
+
+`launch.Build`가 이제 `--settings <JSON>`을 **앞에** 붙인다. "자식의 argv가 전달 인자와 정확히
+같다"는 더 이상 참이 아니다.
+
+살아남는 성질을 다시 썼다: **사용자가 친 인자는 바뀌지 않고, 순서대로, 끊기지 않고, 맨 뒤에 도착한다.**
+launcher가 더하는 것은 고정 접두사이지 인자 사이에 끼어드는 것이 아니다. 테스트가 그것을 확인한다.
 
 ### C. agent/workflow 선택 층
 

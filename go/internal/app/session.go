@@ -1,6 +1,10 @@
 package app
 
-import "github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+import (
+	"strconv"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+)
 
 // The child is told about this session through its environment and through nothing else.
 //
@@ -19,6 +23,22 @@ import "github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 // The baseline's DEFAULT_SELECTION, and deliberately not an alias of the catalogue defaults:
 // it is the main startup value and has to stay independently changeable.
 var startupModel = struct{ Model, Effort string }{Model: "gpt-6-astra", Effort: "low"}
+
+// The context window these models actually have, and what the client does with it.
+//
+// The Node baseline's CONTEXT_POLICY. Told to the client because it has no catalogue entry
+// for a Codex model and otherwise assumes two hundred thousand tokens -- half of what is
+// there -- and compacts the session against that assumption.
+const (
+	contextWindow = 400000
+	compactAt     = 320000
+	outputReserve = 20000
+)
+
+// compactPercent is where compaction lands once the output reserve is taken out.
+func compactPercent() float64 {
+	return float64(compactAt) / float64(contextWindow-outputReserve) * 100
+}
 
 // sessionEnvironment is what this build tells the native child about the session.
 //
@@ -49,6 +69,19 @@ func sessionEnvironment() map[string]string {
 
 		// The advisor runs on Anthropic's servers and cannot execute against this backend.
 		"CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "1",
+
+		// The context window, because the client does not know these models.
+		//
+		// Measured 2026-09-16, and it is a defect this session introduced: once
+		// ANTHROPIC_MODEL names a Codex model the client says so on stderr and falls back
+		// to assuming two hundred thousand tokens, so auto-compact fires at half the
+		// context there actually is. The numbers are the Node baseline's CONTEXT_POLICY:
+		// a four hundred thousand window, compaction at three hundred and twenty
+		// thousand, and twenty thousand reserved for output -- which is what makes the
+		// percentage 320000/(400000-20000).
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  strconv.Itoa(contextWindow),
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": strconv.Itoa(compactAt),
+		"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": strconv.FormatFloat(compactPercent(), 'f', -1, 64),
 	}
 
 	// The client's own tiers, pointed at the models they belong to. Measured: with these

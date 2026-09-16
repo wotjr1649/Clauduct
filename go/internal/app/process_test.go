@@ -161,8 +161,9 @@ func runOwningCommand(ctx context.Context, t *testing.T, command string, args []
 func runOwnedSession(ctx context.Context, t *testing.T, shell string, args []string,
 	pid *int, onStart func(pid int)) (Result, error) {
 	return Run(ctx, Options{
-		Args: args,
-		Env:  isolatedEnv(t),
+		Settings: &noSettings,
+		Args:     args,
+		Env:      isolatedEnv(t),
 		// Not a t.TempDir: a running process holds its working directory open, and the
 		// framework's own removal would race the kill and fail.
 		Cwd:           os.TempDir(),
@@ -297,6 +298,7 @@ func TestAChildThatWillNotStopIsReportedRatherThanWaitedOn(t *testing.T) {
 
 	started := time.Now()
 	result, err := Run(ctx, Options{
+		Settings:      &noSettings,
 		Args:          []string{"x"},
 		Env:           isolatedEnv(t),
 		Cwd:           os.TempDir(),
@@ -416,3 +418,6 @@ func TestWhatSurvivesTheLauncherBeingKilled(t *testing.T) {
 			"a job object, or the environment -- and this record needs rewriting to require it.")
 	}
 }
+
+// noSettings is the empty settings blob, for a subject that is not the native client.
+var noSettings = ""

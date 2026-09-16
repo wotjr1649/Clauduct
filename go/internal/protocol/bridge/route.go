@@ -99,8 +99,44 @@ var roleRoutes = map[string]Route{
 // the client asked for. Inventing one would run the user's work somewhere they did not
 // choose, and refusing would end a turn over a routing preference.
 func RoleRoute(role string) (Route, bool) {
-	route, known := roleRoutes[role]
-	return route, known
+	if route, known := roleRoutes[role]; known {
+		return route, true
+	}
+	return menuRoute(role)
+}
+
+// MenuPrefix begins the name of every agent type this build defines.
+const MenuPrefix = "clauduct-"
+
+// menuRoute reads a route out of an agent type's own name.
+//
+// The launcher defines agent types called clauduct-<model>-<effort> so the user can send a
+// piece of work to a chosen model. Measured 2026-09-16: an agent definition can name a model
+// and the client honours it, but *nothing in a definition sets the effort* -- not effort,
+// effortLevel, reasoningEffort nor reasoning_effort, and an {level: ...} object makes the
+// definition invalid outright. The child runs at whatever the session is on.
+//
+// So the effort comes from here instead. The name already carries it, the hook already
+// reports the name, and the request already arrives with the identifier that finds it. The
+// definition keeps its model so the client's own accounting is right; this decides what the
+// backend is actually asked for.
+//
+// clauduct-inherit has no effort in its name and gets no route, which is the whole point of
+// it: the child keeps the parent's.
+func menuRoute(role string) (Route, bool) {
+	if !strings.HasPrefix(role, MenuPrefix) {
+		return Route{}, false
+	}
+	key, effort, split := strings.Cut(strings.TrimPrefix(role, MenuPrefix), "-")
+	if !split || !efforts[effort] {
+		return Route{}, false
+	}
+	for _, model := range Models {
+		if model.Key == key {
+			return Route{Model: model.ID, Effort: effort, Source: "role"}, true
+		}
+	}
+	return Route{}, false
 }
 
 // ForAlias reports the model a Claude tier belongs to.
@@ -117,12 +153,21 @@ func ForAlias(alias string) (Model, bool) {
 	return Model{}, false
 }
 
-// efforts is the set the backend accepts. An effort outside it is refused rather than
-// clamped: clamping "max" down to "high" would quietly produce a cheaper, worse answer than
-// the one that was asked for.
-var efforts = map[string]bool{
-	"low": true, "medium": true, "high": true, "xhigh": true, "max": true,
-}
+// Efforts is what the backend accepts, cheapest first. An effort outside it is refused
+// rather than clamped: clamping "max" down to "high" would quietly produce a cheaper, worse
+// answer than the one that was asked for.
+//
+// Ordered, because the delegation menu is built from it and a menu whose order changes
+// between runs is a menu nobody can learn.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+var efforts = func() map[string]bool {
+	set := make(map[string]bool, len(Efforts))
+	for _, effort := range Efforts {
+		set[effort] = true
+	}
+	return set
+}()
 
 // SelectRoute resolves what the client asked for into what the backend understands.
 //

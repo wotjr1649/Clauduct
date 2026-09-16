@@ -638,9 +638,44 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | B2 | `--settings` 주입 (hook·picker만) | **완료 2026-09-16.** `--model`/`--effort` 소유는 여전히 불필요 |
 | B3 | `--settings`·`--setting-sources` 차단 | **완료.** 두 개뿐 — `--agents`/`--system-prompt`는 주입하지 않으므로 그대로 통과 |
 | B4 | `settings.hooks` + `clauduct-hook` | **완료 2026-09-16.** 실세션 subagent 검증은 남음 |
-| B5 | `--agents` 정의 생성 | 남음. `--settings`/`--agents` 주입이 필요한 유일한 항목 |
+| B5 | `--agents` 정의 생성 | **완료 2026-09-16.** 14종 + 게이트웨이가 effort를 맡는다 |
 
-남은 B4·B5는 argv 주입을 다시 요구하므로, 그때 B3의 차단이 필연이 된다. 그 시점에 다시 판단한다.
+### B.5 위임 메뉴 — 측정이 설계를 절반 바꿨다 (2026-09-16)
+
+`clauduct-<model>-<effort>` 13종 + `clauduct-inherit`. 전부 `bridge.Models`/`bridge.Efforts`에서
+파생되므로 모델이 늘면 메뉴도 늘고 아무도 이 파일을 안 고친다. max는 max가 기본인 모델의 것이다
+(`(정의.effort == max) == (모델.effort == max)`) — 양방향으로 테스트한다.
+
+**잰 것 넷:**
+
+| 질문 | 답 |
+|---|---|
+| settings 블록의 `agents` 키 | **안 먹는다.** 타입이 정의되지 않고 호출이 버려진다 |
+| `--agents` | **먹는다.** `agent:custom:clauduct-terra-high` → terra |
+| `--agents` 두 개 | **합쳐지지 않는다.** 마지막 것만 — `--settings`와 같다 |
+| 주입 vs 사용자의 `.claude/agents/*.md` | **합쳐진다.** 사용자의 reviewer가 자기 파일이 정한 모델로 그대로 돈다 |
+
+마지막 줄이 B5를 감당 가능하게 만든다. 그래서 **`--agents`는 막지 않는다.** 우리 것을 앞에 두면
+사용자가 직접 준 `--agents`가 이긴다 — 세션 환경과 같은 규칙이다. `--settings`와 다른 이유는 잃는
+것이 다르기 때문이다: settings를 잃으면 hook이 조용히 설치되지 않지만, 메뉴를 잃으면 사용자가 방금
+원하지 않는다고 말한 메뉴를 잃을 뿐이고 클라이언트 자신의 subagent는 여전히 게이트웨이에서
+역할로 라우팅된다.
+
+**그리고 절반이 안 됐다. agent 정의로는 effort를 정할 수 없다.** `effort`, `effortLevel`,
+`reasoningEffort`, `reasoning_effort` 넷 다 무시되고(모델만 옮겨간다), `{"level":"high"}` 객체는
+정의 자체를 무효로 만든다. `model: "gpt-5.6-terra:high"` 같은 접미사도 안 된다. 자식은 세션의
+effort로 돈다.
+
+그래서 **effort는 게이트웨이가 맡는다.** 이름이 이미 그것을 싣고(`clauduct-terra-high`), hook이 이미
+그 이름을 보고, 요청이 이미 그 id를 들고 온다. `bridge.RoleRoute`가 `clauduct-` 접두사를 파싱한다.
+정의는 model을 그대로 유지한다 — 클라이언트 자신의 회계가 맞아야 하므로. 실측: `terra/high`로 나간다.
+
+**이 연결의 대가**: 메뉴의 effort 절반은 hook이 설치돼야 동작한다. hook이 없으면 모델만 옮겨가고
+effort는 세션 값으로 남는다. 테스트가 hook을 실제로 빌드해서 그 경로로만 확인한다.
+
+돌연변이 11건 전부 잡힘. 그중 하나(`max`를 모든 모델에 제공)는 **처음에 살아남았다** — `want`를
+`agentEfforts`로 만들어서 테스트가 자기 자신과 동의했기 때문이다. 규칙을 테스트 안에 따로 쓰고 나서야
+잡혔다.
 
 ### B.1 측정이 또 두 가지를 바꿨다 (2026-09-16)
 

@@ -188,11 +188,11 @@ func runSession(t *testing.T, so sessionOptions) *session {
 // the launcher adds is a fixed prefix, never something interleaved with them.
 func forwarded(t *testing.T, argv []string) []string {
 	t.Helper()
-	for len(argv) >= 2 && argv[0] == "--settings" {
+	for len(argv) >= 2 && (argv[0] == "--settings" || argv[0] == "--agents") {
 		argv = argv[2:]
 	}
 	for _, arg := range argv {
-		if arg == "--settings" {
+		if arg == "--settings" || arg == "--agents" {
 			t.Fatalf("the launcher's own option turned up among the forwarded arguments: %#v", argv)
 		}
 	}

@@ -65,10 +65,12 @@ type Options struct {
 	// Session is what this session tells the native child about itself, beyond the endpoint
 	// and the credential. Empty leaves the child on its own defaults.
 	Session map[string]string
-	// Settings overrides the settings blob handed to the child. Nil builds the session's
-	// own; a pointer to the empty string sends none, which is what a caller launching
-	// something other than the native client wants -- a settings option means nothing to
-	// it and would arrive as an argument it does not understand.
+	// Settings decides whether this launcher injects options of its own at all.
+	//
+	// Nil builds the session's settings blob and its delegation menu. A pointer sends that
+	// value as the settings blob and no menu, which is what a caller launching something
+	// other than the native client wants -- neither option means anything to it and both
+	// would arrive as arguments it does not understand.
 	Settings *string
 	// Ledger records what a session spent. Zero allocates an unrestricted one.
 	//
@@ -169,11 +171,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// The hook program, when this build shipped one beside itself. Without it the settings
 	// carry the picker and nothing else, which is the right answer: a hook pointing at a
 	// program that is not there fails on every subagent the client starts.
-	settings := ""
+	settings, agents := "", ""
 	if o.Settings != nil {
 		settings = *o.Settings
-	} else if built, ok := sessionSettings(findHook()); ok {
-		settings = built
+	} else {
+		if built, ok := sessionSettings(findHook()); ok {
+			settings = built
+		}
+		if menu, ok := sessionAgents(); ok {
+			agents = menu
+		}
 	}
 	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{
 		BaseURL:   gw.BaseURL(),
@@ -181,6 +188,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		Session:   session,
 		Enforced:  sessionRequirements(),
 		Settings:  settings,
+		Agents:    agents,
 	})
 
 	process, startErr := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)

@@ -45,6 +45,14 @@ type Overlay struct {
 	// anything after this would take its place. That is also why the launcher refuses the
 	// options that would arrive after it -- see refuse.go.
 	Settings string
+	// Agents is the delegation menu to hand the child, or empty for none.
+	//
+	// Also ahead of the forwarded arguments, and for the opposite reason to Settings.
+	// Measured: two --agents do not merge either, so a user who passes their own replaces
+	// this one -- and that is the wanted outcome here. Settings has to survive because
+	// losing it silently uninstalls the subagent hooks; losing this loses a menu the user
+	// has just said they do not want.
+	Agents string
 	// Enforced is what the child does not get to run without, whatever the environment
 	// says. Kept apart from Session because "we prefer this" and "this build cannot
 	// function otherwise" are different claims and should not be made by the same map.
@@ -80,9 +88,12 @@ func denied(key string) bool {
 // decision to refuse some native options has to be a deliberate, separately tested
 // addition rather than a side effect of having a parser lying around.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
-	args := make([]string, 0, len(forward)+2)
+	args := make([]string, 0, len(forward)+4)
 	if overlay.Settings != "" {
 		args = append(args, "--settings", overlay.Settings)
+	}
+	if overlay.Agents != "" {
+		args = append(args, "--agents", overlay.Agents)
 	}
 	args = append(args, forward...)
 

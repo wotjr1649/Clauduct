@@ -184,3 +184,45 @@ func TestEveryModelIsReachableByAClaudeName(t *testing.T) {
 		}
 	}
 }
+
+// A name that looks like a menu entry and is not one resolves to nothing.
+//
+// Nothing resolves to a guess. A subagent whose type this build does not recognise keeps the
+// model the client chose, which is the same answer every other routing failure gives.
+func TestANameThatIsNotAMenuEntryRoutesNowhere(t *testing.T) {
+	for _, role := range []string{
+		"clauduct-inherit",       // deliberate: the child keeps the parent's route
+		"clauduct-terra",         // no effort
+		"clauduct-terra-",        // an empty one
+		"clauduct-terra-extreme", // not an effort this backend has
+		"clauduct-venus-high",    // not a model in the catalogue
+		"clauduct-",
+		"clauduct",
+		"terra-high",              // the prefix is what says this build defined it
+		"CLAUDUCT-TERRA-HIGH",     // and it is not case-insensitive
+		"gpt-5.6-terra",           // a model name is not an agent type
+		"some-users-own-agent",    // theirs, and theirs to route
+		"clauduct-terra-high-ish", // effort is the rest of the name, not a prefix of it
+	} {
+		if route, known := RoleRoute(role); known {
+			t.Errorf("%q resolved to %s/%s", role, route.Model, route.Effort)
+		}
+	}
+}
+
+// And one that is resolves to exactly what its name says.
+func TestAMenuEntryResolvesToWhatItsNameSays(t *testing.T) {
+	for role, want := range map[string]Route{
+		"clauduct-terra-high":  {Model: "gpt-5.6-terra", Effort: "high", Source: "role"},
+		"clauduct-astra-low":   {Model: "gpt-6-astra", Effort: "low", Source: "role"},
+		"clauduct-luna-max":    {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
+		"clauduct-sol-xhigh":   {Model: "gpt-5.6-sol", Effort: "xhigh", Source: "role"},
+		"clauduct-terra-low":   {Model: "gpt-5.6-terra", Effort: "low", Source: "role"},
+		"clauduct-astra-xhigh": {Model: "gpt-6-astra", Effort: "xhigh", Source: "role"},
+	} {
+		route, known := RoleRoute(role)
+		if !known || route != want {
+			t.Errorf("%q = %+v (%v), want %+v", role, route, known, want)
+		}
+	}
+}

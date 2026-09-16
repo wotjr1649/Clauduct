@@ -239,6 +239,7 @@ type Diagnostics struct {
 	Agents   AgentCounts      `json:"agents"`
 	Betas    BetaReport       `json:"betas"`
 	Limits   *RateLimitReport `json:"rateLimit,omitempty"`
+	Events   EventReport      `json:"events"`
 	Recent   []RequestRecord  `json:"recent"`
 }
 
@@ -272,6 +273,7 @@ func (g *Gateway) Diagnose() Diagnostics {
 		},
 		Betas:  g.betas.report(),
 		Limits: g.limits.report(),
+		Events: g.events.report(),
 		Recent: g.ring.recent(),
 	}
 }

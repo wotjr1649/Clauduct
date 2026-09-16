@@ -435,6 +435,13 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}
 
 	fail := func(err error) {
+		// An event this build could not read is the one failure whose cause is a name, and
+		// the name is the whole fix. Recorded here because this is where every stream
+		// failure funnels, so no path can stop a response without the account knowing.
+		var unsupported *bridge.UnsupportedEvent
+		if errors.As(err, &unsupported) {
+			g.events.observe(unsupported)
+		}
 		// Its own deadline: the path that got here may be the write that just stalled, and
 		// an error frame must not inherit a deadline that has already passed.
 		_ = control.SetWriteDeadline(time.Now().Add(writeStall))

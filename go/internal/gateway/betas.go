@@ -153,11 +153,11 @@ func (b *betaLedger) observe(header string) {
 		switch {
 		case nativeBetas[name]:
 		case judgedBetas[name] != "":
-			add(b.judged, judgedBetas[name])
+			add(b.judged, judgedBetas[name], betaNames)
 		case serverDependentBetas[name]:
-			add(b.serverDependent, name)
+			add(b.serverDependent, name, betaNames)
 		case betaNameShape.MatchString(name):
-			add(b.unknown, name)
+			add(b.unknown, name, betaNames)
 		default:
 			// An empty item, or text that is not a name at all. Counted and not written
 			// down: there is nothing safe to record about it. Still not refused.
@@ -171,8 +171,8 @@ func (b *betaLedger) observe(header string) {
 
 // add keeps a bounded set. Past the bound a new name is dropped rather than evicting one,
 // so what a reader sees is the first names the session met and not a window that slid.
-func add(set map[string]bool, name string) {
-	if len(set) >= betaNames && !set[name] {
+func add(set map[string]bool, name string, bound int) {
+	if len(set) >= bound && !set[name] {
 		return
 	}
 	set[name] = true

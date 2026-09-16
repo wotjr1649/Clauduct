@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
@@ -21,6 +22,66 @@ import (
 // ErrUnsupportedEvent means the backend sent an event type this build does not understand.
 // It is refused rather than skipped: the unread event may be the one carrying the result.
 var ErrUnsupportedEvent = errors.New("UNSUPPORTED_EVENT")
+
+// How an unsupported event's name was judged. Only the first of these carries a name.
+//
+// The Node baseline has six formats and three of them -- missing, non-string, empty -- are
+// impossible here: the SSE parser refuses a frame without a usable type before it ever
+// reaches this, with its own error, so a reader still learns. Naming a category that cannot
+// occur would put a zero in the account forever.
+const (
+	// EventNamed means the name was safe to record and is in Name.
+	EventNamed = "identifier"
+	// EventOversized means the type was too long to be a name.
+	EventOversized = "oversized"
+	// EventOther means a non-empty string that is not shaped like a name.
+	EventOther = "other"
+)
+
+// eventNameShape is what may be written down.
+//
+// Lowercase segments, at most five of them, each bounded. The backend chooses this string
+// and it reaches a file that outlives the session, so what leaves here is either a name of
+// this shape or a fixed label.
+//
+// The dot is optional, and that is the baseline's own recorded mistake: requiring one lost
+// the names this protocol actually uses without dots -- error, ping, message_start -- so a
+// run classified the type as an identifier and left the list empty, missing the one name
+// the capture exists for.
+var eventNameShape = regexp.MustCompile(`^[a-z0-9_]{1,24}(\.[a-z0-9_]{1,24}){0,4}$`)
+
+// eventNameMax bounds the whole name whatever its segments say.
+const eventNameMax = 48
+
+// UnsupportedEvent is the refusal, carrying what can safely be said about the event.
+//
+// The whole point of the type: without it a session that meets a new backend event fails
+// every turn and says only UNSUPPORTED_EVENT, and the fix is one constant that nobody can
+// name. This has already happened once -- see the note on the function-call arguments
+// events in package codex.
+type UnsupportedEvent struct {
+	// Name is the event type, when it was safe to record. Empty otherwise.
+	Name string
+	// Format says how the type was judged, and is one of the three above.
+	Format string
+}
+
+func (e *UnsupportedEvent) Error() string { return "UNSUPPORTED_EVENT" }
+
+// Unwrap keeps errors.Is(err, ErrUnsupportedEvent) answering as it did.
+func (e *UnsupportedEvent) Unwrap() error { return ErrUnsupportedEvent }
+
+// unsupportedEvent judges an event type and refuses it.
+func unsupportedEvent(eventType string) error {
+	switch {
+	case len(eventType) > eventNameMax:
+		return &UnsupportedEvent{Format: EventOversized}
+	case eventNameShape.MatchString(eventType):
+		return &UnsupportedEvent{Name: eventType, Format: EventNamed}
+	default:
+		return &UnsupportedEvent{Format: EventOther}
+	}
+}
 
 // Request is what the backend is asked for. It is assembled here from a decoded Anthropic
 // request so that neither protocol package has to know the other's shape.
@@ -582,7 +643,7 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		return nil, nil
 	}
 
-	return nil, ErrUnsupportedEvent
+	return nil, unsupportedEvent(event.Type)
 }
 
 // openItem records an item the backend has started writing.

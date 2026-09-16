@@ -83,6 +83,7 @@ type Gateway struct {
 	ring      *ring
 	betas     *betaLedger
 	limits    *limitLedger
+	events    *eventLedger
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -131,6 +132,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		ring:      newRing(),
 		betas:     newBetaLedger(),
 		limits:    newLimitLedger(),
+		events:    newEventLedger(),
 	}
 	g.server = &http.Server{
 		Handler: http.HandlerFunc(g.handle),

@@ -82,6 +82,7 @@ type Gateway struct {
 	served    chan error
 	ring      *ring
 	betas     *betaLedger
+	limits    *limitLedger
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -129,6 +130,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		served:    make(chan error, 1),
 		ring:      newRing(),
 		betas:     newBetaLedger(),
+		limits:    newLimitLedger(),
 	}
 	g.server = &http.Server{
 		Handler: http.HandlerFunc(g.handle),

@@ -186,6 +186,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	defer response.Body.Close()
 
+	// What the backend volunteered about the quota. Read, never acted on.
+	g.limits.observe(response.Header)
+
 	entry.at(stageDelivery)
 	g.relay(ctx, w, control, response, request)
 }

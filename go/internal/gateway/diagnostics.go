@@ -234,11 +234,12 @@ func recordOf(w http.ResponseWriter) *record {
 
 // Diagnostics is the whole account, as GET /clauduct/status answers it.
 type Diagnostics struct {
-	UptimeMs int64           `json:"uptimeMs"`
-	Requests RequestCounts   `json:"requests"`
-	Agents   AgentCounts     `json:"agents"`
-	Betas    BetaReport      `json:"betas"`
-	Recent   []RequestRecord `json:"recent"`
+	UptimeMs int64            `json:"uptimeMs"`
+	Requests RequestCounts    `json:"requests"`
+	Agents   AgentCounts      `json:"agents"`
+	Betas    BetaReport       `json:"betas"`
+	Limits   *RateLimitReport `json:"rateLimit,omitempty"`
+	Recent   []RequestRecord  `json:"recent"`
 }
 
 type RequestCounts struct {
@@ -270,6 +271,7 @@ func (g *Gateway) Diagnose() Diagnostics {
 			Unrouted:     unrouted,
 		},
 		Betas:  g.betas.report(),
+		Limits: g.limits.report(),
 		Recent: g.ring.recent(),
 	}
 }

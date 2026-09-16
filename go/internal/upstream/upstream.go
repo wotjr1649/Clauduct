@@ -92,6 +92,10 @@ type Fixture struct {
 	// connection that drops after a complete-looking body is still a failed transfer, and
 	// without a way to produce one nothing checks that the difference is noticed.
 	ReadErr error
+	// Header is what the replayed response carries alongside its body. A real response has
+	// headers and the rate limit reading is taken from them, so a fixture that cannot have
+	// any could only test that path by going around it.
+	Header http.Header
 
 	calls      atomic.Int64
 	searches   atomic.Int64
@@ -111,7 +115,10 @@ func (f *Fixture) Execute(ctx context.Context, call Call) (*Response, error) {
 	if f.Err != nil {
 		return nil, f.Err
 	}
-	return &Response{Body: io.NopCloser(&replay{source: f.SSE, size: f.ChunkSize, end: f.ReadErr})}, nil
+	return &Response{
+		Body:   io.NopCloser(&replay{source: f.SSE, size: f.ChunkSize, end: f.ReadErr}),
+		Header: f.Header,
+	}, nil
 }
 
 // Search replays a canned search answer and records the request.

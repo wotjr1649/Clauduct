@@ -128,7 +128,82 @@ alias만 거쳐 그대로 쓴다. Explore 서브에이전트가 기준선에서�
 `POST /clauduct/agents`로 보낸다. 대상 hook: `PostToolUse`(TaskOutput·Workflow·SendMessage·Skill),
 `SubagentStart`, `SubagentStop`.
 
-## 5. 다음
+## 5. launcher — 가장 큰 격차이고, Go가 의도적으로 미뤄둔 것
+
+`clauduct.mjs:180-218` 대 `launch/launch.go`.
+
+Go는 argv를 **그대로** 넘기고 환경변수 5개만 덮는다. 기준선은 그렇지 않다.
+
+### 5.1 자식 argv에 주입하는 것
+
+```
+--model <codex 모델>  --effort <effort>
+--settings <JSON>     --agents <JSON>
+[--append-system-prompt DOCUMENT_FIRST_PROMPT]
+...사용자 인자
+```
+
+`--settings`·`--agents`는 **argv JSON이지 파일이 아니다.** 그래서 기준선도 CAP04(사용자 설정 파일에
+쓰지 않음)를 만족한다. Go의 "주입 0"은 CAP04가 요구한 것보다 더 나아간 상태다.
+
+`--model`/`--effort`는 launcher가 자기 옵션으로 소비해서(`ownedOptions`) **해석된 Codex 모델로 바꿔**
+자식에게 다시 준다. `clauduct --model sol` → 자식은 `--model gpt-5.6-sol --effort xhigh`.
+
+### 5.2 `settings.env` — Go의 5개 대 기준선의 16개
+
+| 키 | 기준선 | Go | 효과 |
+|---|---|---|---|
+| `ANTHROPIC_BASE_URL` | 설정 | **설정** | 동등 |
+| `ANTHROPIC_AUTH_TOKEN` | 설정 | **설정** | 동등 |
+| `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_CUSTOM_HEADERS` | 빈 문자열 | **동일** | 동등 (ENV02) |
+| `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1` | 설정 | 없음 | **격차 — 3.2절 재검토** |
+| `CLAUDE_CODE_RETRY_WATCHDOG=0` | 설정 | 없음 | 격차 |
+| `DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1` | 설정 | 없음 | **격차 — Anthropic 쪽 보고는 여기서 갈 곳이 없다** |
+| `CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0` | 설정 | 없음 | 격차 |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL` = luna | 설정 | 없음 | 격차 |
+| `ANTHROPIC_DEFAULT_SONNET_MODEL` = luna | 설정 | 없음 | 격차 |
+| `ANTHROPIC_DEFAULT_OPUS_MODEL` = sol | 설정 | 없음 | 격차 |
+| `ANTHROPIC_CUSTOM_MODEL_OPTION(+_NAME,_DESCRIPTION)` | 설정 | 없음 | 격차 — 모델 피커 |
+| `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` | 설정 | 없음 | **격차 — `GET /v1/models`가 불리는 이유** |
+| `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` | 설정 | 없음 | **격차 — advisor는 Codex backend에서 실행될 수 없다** |
+
+**3.2절 정정.** "기준선도 non-streaming을 거부하니 동등"이라고 적었는데 절반만 맞다. 기준선은
+거부하는 데 더해 **클라이언트의 non-streaming fallback 자체를 꺼둔다.** Go는 끄지 않으므로,
+클라이언트가 fallback을 시도하면 Go 세션은 거부를 만나고 기준선 세션은 애초에 시도하지 않는다.
+같은 거부가 아니다.
+
+### 5.3 `settings.modelPicker`
+
+`replaceBuiltInOptions: true`에 4개 Codex 모델을 채운다. 없으면 사용자의 `/model` 목록은 이 backend에
+존재하지 않는 Anthropic 모델들이다. **HTTP08(`/v1/models`)은 여기에 묶여 있다.**
+
+### 5.4 `settings.hooks`
+
+`SubagentStart`·`SubagentStop`·`PostToolUse(Skill|SendMessage|Workflow|TaskOutput)` →
+`"<node>" "<agent-route.mjs>"`, timeout 5. 이것이 4절의 바인딩을 보내는 주체다.
+
+### 5.5 `--agents` 정의 생성
+
+`sessionAgentDefinitions()`가 모델×effort 조합마다 `clauduct-<family>-<effort>` 에이전트를 만들고
+`clauduct-inherit`도 만든다. 각각 description·prompt·tools를 갖는다. 즉 **사용자에게 모델을 고르는
+에이전트 타입이 노출된다.**
+
+### 5.6 이것이 WP01의 결론을 바꾸는가
+
+바꾼다. `launch.Build`의 주석은 "제품 launcher는 어떤 옵션도 소유하지 않는다"이고, 그 밑에
+"context window·model defaults·retry·telemetry·compaction은 게이트웨이가 아직 구현하지 않은 정책이라
+지금 키를 넣으면 코드가 뒷받침하지 않는 동작을 주장하게 된다"라고 적혀 있다.
+
+**그건 유예였지 최종 설계가 아니었다.** 이제 게이트웨이가 그만큼 왔으므로 유예를 푸는 것이 맞다.
+
+살아남는 것: ARG05(옵션 값 안의 모델명을 가로채지 않음)는 파서가 생겨도 유지된다 — 기준선도
+파서를 갖고 그 구분을 한다(`nativeValueOptions`·`optionalNativeValueOptions`). 전달 인자의
+argv 충실성(ARG01–03, ARG09–10)도 그대로다.
+
+바뀌는 것: "파서가 없으므로 구조적으로 성립"이라는 **근거**는 더 이상 쓸 수 없다. 파서가 생기면
+그 성질들은 파서가 지켜야 하고, 테스트가 다시 그것을 증명해야 한다.
+
+## 6. 다음
 
 - [ ] `native-transport.mjs` 664줄 대조
 - [ ] `native-gateway.mjs` 나머지(진단·admission·http-close) 대조
@@ -137,7 +212,7 @@ alias만 거쳐 그대로 쓴다. Explore 서브에이전트가 기준선에서�
 - [ ] `workflow-selection.mjs`, `request-status.mjs`, `rate-limit-observation.mjs`, `native-search.mjs`, `native-beta.mjs`, `compact-policy.mjs`
 - [ ] 위가 끝나면 WP07을 이 원장으로 다시 정의하고, 예산 필요량을 산정한다
 
-## 6. Go 런타임 — 미해결 상류 결함
+## 7. Go 런타임 — 미해결 상류 결함
 
 기록만 한다. 조치는 실측 후.
 

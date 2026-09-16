@@ -326,8 +326,22 @@ launcher를 깨뜨려 이 9개 테스트가 실패할 수 있는지 확인했다
 
 | ID | 왜 |
 |---|---|
-| ENV05 user/project/managed 설정 우선순위 | 세 층을 만들어야 한다. managed 층은 시스템 전역이라 이 harness가 격리하지 못하는 바로 그것이다 |
+| ENV05 user/project/managed 설정 우선순위 | **부분 처리됨 — 1.5.7절.** wrapper 몫은 덮었고, managed 층 자체는 시스템 전역이라 `NOT_RUN`으로 남는다 |
 | TOOL09 MCP config·schema·service env | MCP 서버를 실제로 띄워야 한다. `--strict-mcp-config`로 막아둔 것을 의도적으로 여는 작업이고 별도 설계가 필요하다 |
+
+#### 1.5.7 ENV05 — wrapper의 몫과 남는 것 (2026-09-16)
+
+세 층을 이 wrapper가 결정하지 않는다. 결정하는 것은 native client다. 그러므로 검증할 명제는 "우선순위가 맞는가"가 아니라 **"wrapper가 그 결정에 끼어들지 않는가"**이다. 그건 잴 수 있다.
+
+| 층 | 어디서 찾는가 | 증거 |
+|---|---|---|
+| user | `CLAUDE_CONFIG_DIR`·`USERPROFILE`·`HOME` | `TestTheUsersConfigDirChoiceIsPreserved` — 합성 config dir에 **실제 클라이언트가 자기 상태를 썼다**. `TestNothingHereSelectsASettingsLayer` — 세 이름이 사용자가 정한 값 그대로 도착한다 |
+| project | 작업 디렉터리 | `TestStdioCwdAndExitCodeAreCarried` + `TestNothingHereSelectsASettingsLayer` — `Dir`가 바뀌면 어떤 `.claude/settings.json`이 적용되는지가 조용히 달라진다 |
+| managed | 시스템 전역 경로 | **`NOT_RUN`** |
+
+managed 층을 만들려면 이 머신의 시스템 전역 상태를 바꿔야 하고, 그러면 **이 머신에서 도는 사용자 자신의 모든 claude 세션에 영향이 간다.** 돌리지 않았다. 미실행은 통과가 아니다.
+
+인자 쪽도 같은 명제다: 인자 파서가 없으므로 사용자가 친 `--settings`는 그대로 도착하고, wrapper가 **인자를 추가할 수 없으므로 권한을 넓히는 인자도 추가할 수 없다**(H06). mutation으로 확인했다 — `--settings` 주입과 `Dir` 교체 둘 다 잡힌다.
 | TOOL10 plugin·skill·hook discovery | 합성 plugin 디렉터리가 필요하다 |
 | TOOL11 worktree 생성·사용·cleanup | git worktree를 만드는 세션이며 cleanup 의미가 별도 판정 대상이다 |
 | CAP05·CAP07·CAP08·CAP09 | custom agent·overlay on/off·resume·Node 세션 호환. resume 두 건은 세션을 남긴 뒤 두 번째 실행이 필요하다 |
@@ -829,6 +843,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | ARG04 `--` 이후 positional | PASS | `launch` 단위 + spawn 왕복 |
 | ARG05 옵션 값 내부 모델명 미가로채기 | PASS | parser가 없어 구조적으로 성립. 그래도 assert한다 |
 | ARG08 stdin/stdout/stderr·cwd·exit code | PASS | 실제 spawn, exit 7 왕복 |
+| ARG09 실제 native exe·shim quoting | **PASS(한계 기록)** | 5.1.1절. 17개 hostile shape가 **node.exe**를 왕복해 그대로 돌아온다. shim은 해석기가 `claude.exe`만 받으므로 경로에 없다 |
 | ARG10 shell metacharacter가 명령이 되지 않음 | PASS | 앰퍼샌드·파이프·리다이렉트·캐럿·퍼센트·느낌표·세미콜론·명령치환 fixture |
 | ENV01 일반 MCP/service 환경변수 보존 | PASS | 사용자 결정 반영 |
 | ENV02 Anthropic credential 유출 방지 | PASS | mutation으로 보강 후 |
@@ -841,7 +856,7 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 | REL03 Node·.NET runtime 의존 없음 | PASS | AST 문자열 리터럴 스캔 + 의존성 0 검사 |
 | ARG06 unknown native 옵션 전달 | `NOT_RUN` | NATIVE_SYNTH 필요. WP06 |
 | ARG07 native help/version이 auth 없이 실행 | `NOT_RUN` | 기회적 관측은 있으나 통제된 실행이 아니다 |
-| ARG09 실제 native exe·shim quoting | `NOT_RUN` | 현재 fixture는 Go에서 Go로의 왕복이다. 아래 5.2 |
+| ARG09 실제 native exe·shim quoting | **재판정: PASS(한계 기록)** | 5.1.1절 |
 | REL02 Node source hash 대조 | `NOT_RUN` | manifest는 있으나 대조 harness를 아직 만들지 않았다 |
 
 ### 5.2 argv fixture의 알려진 한계
@@ -849,6 +864,14 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 가짜 native client는 테스트 바이너리를 재실행한 것이다. 디스크의 실제 실행 파일이고 실제 Windows 커맨드라인을 받으므로 프로세스 생성 왕복은 진짜다. 다만 **양쪽 끝이 Go**라서 측정하는 것은 Go의 quoting 대 Go의 parsing이다.
 
 다른 규칙으로 커맨드라인을 파싱하는 native 바이너리는 이 fixture가 닿지 못한다. 그것이 ARG09이며 `NATIVE_SYNTH` 수준의 질문이다. WP01의 통과를 "실제 claude.exe에서 argv가 보존된다"로 읽지 않는다.
+
+#### 5.2.1 ARG09 — 제3자에게 물었다 (2026-09-16)
+
+한계를 닫았다. `node.exe`로 17개 hostile shape를 왕복시킨다. 편해서 고른 것이 아니다 — **이 launcher가 띄우는 클라이언트가 Node 바이너리**이므로, node가 커맨드라인에 적용하는 규칙이 실제 자식이 적용하는 규칙이다. 빈 문자열·앞뒤 공백·중첩 따옴표·trailing backslash·`&|<>^`·`%PATH%`·`!DELAYED!`·한국어·이모지·탭이 전부 그대로 돌아온다.
+
+**처음 고른 제3자는 틀렸고, 그것이 발견이다.** `cscript.exe`를 먼저 썼는데 모든 따옴표를 뭉갰다 — `he said "hi"`가 `he said \hi\`로 도착한다. Windows Script Host는 C 런타임 방식으로 커맨드라인을 해체하지 않는다. 즉 **CRT 규칙을 쓰지 않는 native host는 실제로 인자를 망친다.**
+
+그래서 shim 쪽 답은 "구현했다"가 아니라 **"경로에 없다"**이다. 해석기는 `claude.exe`만 찾는다. `.cmd`·`.bat`·`.ps1`은 cmd.exe나 PowerShell이 한 번 더 파싱하며, 그건 Go가 quoting한 규칙이 아니다. 그 정책을 테스트가 고정한다: shim만 존재하는 PATH에서 해석기는 **아무것도 찾지 못한다**.
 
 ### 5.3 WP02가 실제로 덮은 테스트 ID
 

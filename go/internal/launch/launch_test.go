@@ -251,3 +251,52 @@ func TestOverlayAddsExactlyFiveKeys(t *testing.T) {
 		t.Fatalf("overlay changed\n got: %#v\nwant: %#v", spec.Env, want)
 	}
 }
+
+// ENV05: the wrapper selects no settings layer and intercepts no flag that selects one.
+//
+// The three layers — managed, project, user — are resolved by the native client. This
+// launcher's whole contribution to that is to stay out of it: it adds no argument, so a
+// --settings the user typed arrives intact, and it renames no environment variable, so the
+// ones that move a layer arrive intact too. H06 turns on the same fact from the other
+// side: a wrapper that cannot add an argument cannot add a permission-widening one.
+func TestNothingHereSelectsASettingsLayer(t *testing.T) {
+	forward := []string{
+		"--settings", `C:\work\.claude\settings.json`,
+		"--add-dir", `C:\other`,
+		"-p", "go",
+	}
+	source := map[string]string{
+		"CLAUDE_CONFIG_DIR":      `C:\synthetic\config`,
+		"USERPROFILE":            `C:\Users\someone`,
+		"HOME":                   `C:\Users\someone`,
+		"CLAUDE_CODE_ENTRYPOINT": "cli",
+	}
+	spec := Build("claude.exe", forward, source, `C:\work`, Overlay{BaseURL: "http://127.0.0.1:1", AuthToken: "t"})
+
+	if !reflect.DeepEqual(spec.Args, forward) {
+		t.Fatalf("args changed\n got: %#v\nwant: %#v", spec.Args, forward)
+	}
+	// The project layer is found relative to the working directory, so changing it would
+	// silently change which settings file applies.
+	if spec.Dir != `C:\work` {
+		t.Fatalf("Dir = %q; the project settings layer resolves from here", spec.Dir)
+	}
+	// The user layer moves with these. All three must arrive as the user set them.
+	for name, want := range map[string]string{
+		"CLAUDE_CONFIG_DIR": `C:\synthetic\config`,
+		"USERPROFILE":       `C:\Users\someone`,
+		"HOME":              `C:\Users\someone`,
+	} {
+		got, ok := envValue(spec, name)
+		if !ok || got != want {
+			t.Fatalf("%s = %q (present=%v), want %q. The user settings layer is found "+
+				"through this.", name, got, ok, want)
+		}
+	}
+	// And nothing was invented. Five added names, none of which names a settings file.
+	for _, name := range envNames(spec) {
+		if strings.Contains(strings.ToUpper(name), "SETTINGS") {
+			t.Fatalf("the launcher put %s in the child environment", name)
+		}
+	}
+}

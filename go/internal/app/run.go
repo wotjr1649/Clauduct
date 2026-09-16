@@ -101,6 +101,8 @@ type Result struct {
 	Inferences int
 	// Category is how the session ended, as the exit report names it.
 	Category string
+	// HookInstalled is whether the subagent hook was found beside this executable.
+	HookInstalled bool
 	// Diagnostics is what the gateway saw, read before the gateway was closed.
 	Diagnostics gateway.Diagnostics
 }
@@ -179,7 +181,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
-		if built, ok := sessionSettings(findHook()); ok {
+		hook := findHook()
+		result.HookInstalled = hook != ""
+		if built, ok := sessionSettings(hook); ok {
 			settings = built
 		}
 		if menu, ok := sessionAgents(); ok {

@@ -54,6 +54,13 @@ type SessionFacts struct {
 	CompactPercent        float64 `json:"compactPercent"`
 	NonStreamingFallback  bool    `json:"nonStreamingFallbackDisabled"`
 	DelegationMenuEntries int     `json:"delegationMenuEntries"`
+	// HookInstalled is whether the subagent hook was found beside this executable.
+	//
+	// Reported because its absence is silent otherwise. findHook looks beside the binary
+	// and nowhere else, so a package that shipped without clauduct-hook runs perfectly --
+	// and role routing never happens, and the delegation menu moves the model without the
+	// effort. That is a failure nobody would think to look for.
+	HookInstalled bool `json:"hookInstalled"`
 }
 
 // Status is the whole account of one session.
@@ -81,6 +88,7 @@ func Account(result Result) Status {
 			CompactPercent:        compactPercent(),
 			NonStreamingFallback:  sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
 			DelegationMenuEntries: len(agentDefinitions()),
+			HookInstalled:         result.HookInstalled,
 		},
 		Gateway: result.Diagnostics,
 	}
@@ -89,6 +97,7 @@ func Account(result Result) Status {
 // noteworthy reports whether this session has anything a reader would want the detail of.
 func (s Status) noteworthy() bool {
 	return s.Category != CategorySuccess ||
+		!s.Session.HookInstalled ||
 		s.Gateway.Requests.Refused > 0 ||
 		s.Gateway.Events.Unsupported > 0 ||
 		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 ||

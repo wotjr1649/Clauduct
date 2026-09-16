@@ -957,6 +957,23 @@ goroutine·연결·사용자 구독을 원하는 만큼 붙잡는다. 10분은 �
 - 전체 deadline을 **호출자 deadline으로만** 재고 있었다. 호출자가 아무것도 안 걸면 무엇이
   막는지 아무도 안 보고 있었다
 
+### G9 기본 전환 — 완료 (2026-09-17)
+
+사용자 결정: **지금 전환.** `clauduct`는 Go 빌드이고 Node는 `clauduct-node`로 남는다.
+
+설치된 것은 세 개다. `clauduct.exe` · `clauduct-hook.exe` · `clauduct-dev.exe`.
+PACKAGING.md는 **두 개**라고 적고 있었다 — `clauduct-hook`이 빠져 있었고, 그건 선택 사항이 아니다.
+`findHook()`은 실행 파일 **옆만** 보므로, 없으면 hook이 설치되지 않고 역할별 라우팅과 위임 메뉴의
+effort가 **조용히** 동작하지 않는다.
+
+그래서 **계정이 그걸 말하게 했다**: `session.hookInstalled`. 아무도 찾아볼 생각을 안 할 실패를
+매 세션이 스스로 보고한다. hook이 없으면 "보고할 게 있는 세션"이 되어 전체 JSON이 찍힌다.
+실설치 확인: `hookInstalled: true`.
+
+되돌리기는 **두 파일 이름 바꾸기**다. 그리고 쉽게 틀리는 부분을 문서에 적었다 — Windows `PATHEXT`는
+`.EXE`를 `.CMD`보다 먼저 보므로, `clauduct-node.cmd`를 `clauduct.cmd`로 되살리는 것만으로는
+부족하고 **`clauduct.exe`를 치워야** 한다.
+
 ### F. 결정 완료 (2026-09-16)
 
 | # | 항목 | 결정 |

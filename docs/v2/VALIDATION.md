@@ -491,7 +491,7 @@ Result reported 0/0 against the ledger's 2/2
 | REL09 문서 인용 검증 | PASS | Go 테스트로 옮겼다. 18 citation · 35 link · 7 문서 |
 | LIFE14 연속 실행 자원 증가 | PASS | 5세션 후 goroutine 증가가 상한 내 |
 | REL10 CI 분리 보고 | **PASS** | Node workflow와 별도 파일로 실행된다. Go 실패가 Node 회귀로 읽히지 않는다 |
-| REL08 기본 전환·rollback | 해당 없음 | 기본 전환은 G9이고 요청하지 않았다. 이름이 다르므로 되돌릴 상태가 아직 없다 |
+| REL08 기본 전환·rollback | **PASS 2026-09-17** | G9 완료. `clauduct`=Go, `clauduct-node`=Node. 되돌리기는 두 파일 이름 바꾸기이고 PACKAGING.md 6장이 `.EXE`가 `.CMD`보다 먼저 풀리는 것까지 적는다. 실측: `where`가 셋을 각각 풀고, `clauduct --version`이 `2.1.273 (Claude Code)`+exit 0, `clauduct-node`는 Node 자신의 `USER_TERMINAL_REQUIRED`로 응답한다(살아 있다) |
 
 #### 1.7.1 REL03을 정직하게 다시 적는다
 
@@ -777,7 +777,7 @@ exit-코드 변이는 처음에 compiler-only였다 — `errors.As`를 지우면
 | G6 transport 안전 | **완료** | WP05가 auth·attempt cap·retry·leak을, 1.9절이 process boundary(LIFE11·LIFE12·LIFE17)를 덮었다 | 아래 G7 조건 |
 | G7 live integration | **완료** | 1.6절. 실제 claude.exe → 제품 빌드 → 실제 backend 왕복. 출하 바이너리로도 확인 | release 후보 판단 |
 | G8 package | **완료** | 1.7절. 재현 빌드·신원·설치·동시 실행·자원 증가·문서. [PACKAGING.md](PACKAGING.md) | 기본 전환 판단 요청 |
-| G9 기본 전환 | 미착수 | 사용자 승인·정확한 artifact·target 확인 | 새 실행의 기본 binary 변경 |
+| G9 기본 전환 | **완료 2026-09-17** | 사용자 승인("지금 전환"). 설치 실측: `clauduct`→Go, `clauduct-node`→Node, `clauduct-hook` 동거. 상태 파일이 `hookInstalled: true` | 새 실행의 기본 binary 변경 |
 | G10 선택적 archive | **DEFERRED** | [MIGRATION.md](MIGRATION.md) 6장 M3. 권고는 하지 않음 | 승인된 구조 정리 |
 
 **산출물 완료**와 **게이트 통과**를 구분한다. 앞의 것은 "그 게이트가 요구한 증거가 만들어졌다"는 사실이고, 뒤의 것은 사용자 판단이다. 이 표는 앞의 것만 기록한다.

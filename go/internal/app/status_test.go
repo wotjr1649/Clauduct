@@ -49,7 +49,7 @@ func reported(t *testing.T, result Result, env map[string]string) (string, Statu
 // D2. A clean session says one line, and the detail is on disk rather than in the way.
 func TestACleanSessionSaysOneLine(t *testing.T) {
 	text, filed := reported(t, Result{
-		Category: CategorySuccess, Attempts: 5, Inferences: 4,
+		Category: CategorySuccess, Attempts: 5, Inferences: 4, HookInstalled: true,
 		Diagnostics: gateway.Diagnostics{
 			Requests: gateway.RequestCounts{Received: 12},
 		},
@@ -76,20 +76,26 @@ func TestACleanSessionSaysOneLine(t *testing.T) {
 	if !filed.Session.NonStreamingFallback {
 		t.Error("the one setting this build cannot run without is not recorded")
 	}
+	if !filed.Session.HookInstalled {
+		t.Error("the hook was installed and the account says it was not")
+	}
 }
 
 // A session with something to say says it, without being asked.
 func TestASessionWithSomethingToSaySaysIt(t *testing.T) {
 	for name, result := range map[string]Result{
-		"a request was refused": {Category: CategorySuccess, Diagnostics: gateway.Diagnostics{
+		"a request was refused": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
 			Requests: gateway.RequestCounts{Received: 2, Refused: 1}}},
-		"an event could not be read": {Category: CategorySuccess, Diagnostics: gateway.Diagnostics{
+		"an event could not be read": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
 			Events: gateway.EventReport{Unsupported: 1, Names: []string{"response.new_thing"}}}},
-		"a subagent went unrouted": {Category: CategorySuccess, Diagnostics: gateway.Diagnostics{
+		"a subagent went unrouted": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
 			Agents: gateway.AgentCounts{Unrouted: 1}}},
-		"a beta this build does not do": {Category: CategorySuccess, Diagnostics: gateway.Diagnostics{
+		"a beta this build does not do": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
 			Betas: gateway.BetaReport{Requests: 1, Judged: []string{"STRUCTURED_OUTPUTS"}}}},
-		"the client failed": {Category: CategoryClientFail, NativeExitCode: 2},
+		"the client failed": {Category: CategoryClientFail, NativeExitCode: 2, HookInstalled: true},
+		// The one failure nobody would think to look for: the package shipped without
+		// the hook, everything works, and role routing silently never happens.
+		"the hook is not there": {Category: CategorySuccess},
 	} {
 		t.Run(name, func(t *testing.T) {
 			text, _ := reported(t, result, nil)
@@ -102,7 +108,8 @@ func TestASessionWithSomethingToSaySaysIt(t *testing.T) {
 
 // Asking for it always gets it.
 func TestAskingForTheAccountAlwaysGetsIt(t *testing.T) {
-	text, _ := reported(t, Result{Category: CategorySuccess}, map[string]string{statusEnv: "1"})
+	text, _ := reported(t, Result{Category: CategorySuccess, HookInstalled: true},
+		map[string]string{statusEnv: "1"})
 	if !strings.Contains(text, "CLAUDUCT_REQUEST_STATUS {") {
 		t.Fatalf("CLAUDUCT_STATUS=1 did not print it:\n%s", text)
 	}
@@ -120,7 +127,7 @@ func TestWhenTheFileFailsThePrintedLineIsTheOnlyCopy(t *testing.T) {
 	t.Setenv("TEMP", blocked)
 
 	var errOut bytes.Buffer
-	Report(Result{Category: CategorySuccess}, &errOut, nil)
+	Report(Result{Category: CategorySuccess, HookInstalled: true}, &errOut, nil)
 	text := errOut.String()
 	if !strings.Contains(text, "status=none") {
 		t.Fatalf("it claimed to have filed the account:\n%s", text)
@@ -274,4 +281,47 @@ func render(node ast.Node) string {
 	var out strings.Builder
 	_ = printer.Fprint(&out, token.NewFileSet(), node)
 	return out.String()
+}
+
+// The account's answer about the hook is the real findHook, not a flag someone set.
+//
+// Both arms matter. Without the present arm nothing checks that a shipped hook is ever
+// found; without the absent arm the report could be a constant.
+func TestTheAccountSaysWhetherTheHookWasActuallyFound(t *testing.T) {
+	for _, present := range []bool{true, false} {
+		name := "the hook is beside the binary"
+		if !present {
+			name = "the hook was not shipped"
+		}
+		t.Run(name, func(t *testing.T) {
+			if present {
+				buildHook(t)
+			} else if path := hookPath(t); path != "" {
+				os.Remove(path)
+			}
+
+			exe := nativeAvailable(t)
+			script := &upstream.Script{Default: textStream("side", "ok")}
+			_, cwd := workspace(t)
+			var stdout, stderr bytes.Buffer
+			ctx, cancel := context.WithTimeout(context.Background(), defaultNativeTimeout)
+			defer cancel()
+
+			result, err := Run(ctx, Options{
+				Args:          []string{"-p", "say ok", "--strict-mcp-config"},
+				Env:           isolatedEnv(t),
+				Cwd:           cwd,
+				Stdout:        &stdout,
+				Stderr:        &stderr,
+				ResolveClaude: func() (string, bool, error) { return exe, true, nil },
+				StartGateway:  func() (*gateway.Gateway, error) { return gateway.Start(script) },
+			})
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if got := Account(result).Session.HookInstalled; got != present {
+				t.Fatalf("hookInstalled = %v, want %v", got, present)
+			}
+		})
+	}
 }

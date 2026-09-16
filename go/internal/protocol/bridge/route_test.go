@@ -226,3 +226,20 @@ func TestAMenuEntryResolvesToWhatItsNameSays(t *testing.T) {
 		}
 	}
 }
+
+// A role that inherits is known, and is not the same answer as a role nobody has looked at.
+func TestAnInheritingRoleIsKnownWithoutHavingARoute(t *testing.T) {
+	if !InheritsParent("workflow-subagent") {
+		t.Error("the role every Workflow agent reports is not recognised")
+	}
+	if route, known := RoleRoute("workflow-subagent"); known {
+		t.Errorf("it was reassigned to %s/%s; inheriting means not reassigning",
+			route.Model, route.Effort)
+	}
+	for _, role := range []string{"Explore", "Plan", "general-purpose",
+		"clauduct-terra-high", "some-users-own-agent", ""} {
+		if InheritsParent(role) {
+			t.Errorf("%q was treated as a deliberate inherit", role)
+		}
+	}
+}

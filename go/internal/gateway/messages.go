@@ -139,9 +139,13 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		case !registered:
 			g.unregisteredAgents.Add(1)
 		default:
-			if route, known := bridge.RoleRoute(role); known {
+			switch route, known := bridge.RoleRoute(role); {
+			case known:
 				override = append(override, route)
-			} else {
+			case bridge.InheritsParent(role):
+				// Known, and deliberately left alone. Counting it as a miss would report
+				// every session that ran a workflow as having something wrong with it.
+			default:
 				g.unroutedRoles.Add(1)
 			}
 		}

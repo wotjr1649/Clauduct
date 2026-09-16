@@ -93,6 +93,27 @@ var roleRoutes = map[string]Route{
 	"general-purpose": {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
 }
 
+// inheritRoles are roles this build knows about and deliberately does not reassign.
+//
+// Measured 2026-09-17: an agent started by the Workflow tool reports agent_type
+// "workflow-subagent" -- one fixed name for all of them. The Node baseline gives those the
+// parent's own route, which it works out by reading and verifying a run journal on disk.
+// Keeping the client's model is the same answer arrived at by not doing that, because the
+// client already sends the parent's model.
+//
+// Named rather than left to fall through, because falling through is counted as a routing
+// miss. Every workflow agent would bump that counter, every session that used one would be
+// reported as having something wrong with it, and a diagnostic that cries wolf on ordinary
+// use stops being read -- which is the failure it exists to prevent. This is the same
+// distinction the beta report makes between a name nobody has classified and one that has
+// been looked at.
+var inheritRoles = map[string]bool{
+	"workflow-subagent": true,
+}
+
+// InheritsParent reports whether this role deliberately keeps the model the client chose.
+func InheritsParent(role string) bool { return inheritRoles[role] }
+
 // RoleRoute reports where a subagent of this role runs.
 //
 // A role nobody has a route for is not an error and not a guess: the caller keeps the model

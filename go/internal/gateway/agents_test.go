@@ -289,6 +289,14 @@ func TestRoutingThatCannotHappenDoesNotEndTheTurn(t *testing.T) {
 		{name: "a role with no route",
 			register: `{"id":"agent_1","role":"some-custom-agent","stop":false}`,
 			agent:    "agent_1", wantUnrouted: 1},
+		// Measured 2026-09-17: every agent the Workflow tool starts reports this one name.
+		// It keeps the client's model on purpose, which is the same answer the baseline
+		// reaches by reading and verifying a run journal on disk. Counting it as a miss
+		// would report every session that ran a workflow as having something wrong, and a
+		// diagnostic that cries wolf on ordinary use stops being read.
+		{name: "a role that deliberately keeps the parent's model",
+			register: `{"id":"agent_1","role":"workflow-subagent","stop":false}`,
+			agent:    "agent_1"},
 		{name: "the subagent was already stopped",
 			register: `{"id":"agent_1","role":"Explore","stop":true}`,
 			agent:    "agent_1", wantUnregistered: 1},

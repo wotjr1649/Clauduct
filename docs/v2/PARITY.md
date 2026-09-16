@@ -76,7 +76,7 @@ non-streaming 요청은 기준선도 `REQUEST_STREAM_FALSE`로 거부한다(`nat
 | `tool_use` / `tool_result` | 지원 | 지원 | 동등 (TOOL01–08) |
 | `image` | base64 png/jpeg/gif/webp → `input_image` 데이터 URL. user role 강제 | **구현 완료 2026-09-16** | 동등. 돌연변이 8/8 |
 | `tool_addition` / `tool_removal` | 지원 (`:359,365`) | **구현 완료 2026-09-16** | 동등. 베타 게이트 포함 |
-| `redacted_thinking` | 지원 (`:398`) | **해독 완료 2026-09-16.** 생성(응답측)은 남음 | 부분 — 3.4절 |
+| `redacted_thinking` | 지원 (`:398`) | **완료 2026-09-16** (해독·생성 양쪽) | 동등 — 3.4절 |
 | `tool_reference` (tool_result 안) | 지원 (`:387`) | **이미 지원됨** (`tools.go:304`) | 동등 — 최초 기재가 틀렸다 |
 | `thinking` + `summary_text` | 지원 (`:234`) | 미확인 | **미조사** |
 
@@ -98,9 +98,18 @@ Go는 `include:["reasoning.encrypted_content"]`를 **요청하면서 돌아온 �
 - **해독(요청측) 완료.** 봉투·base64url·내부 JSON·`summary_text` 파트까지 전부 검사하고, assistant
   턴이 아니면 거부한다. 이것만으로도 **Node가 기록한 전사를 Go에서 이어받을 수 있다**(CAP09) —
   이전에는 `UNSUPPORTED_CONTENT`로 전사 전체가 거부됐다.
-- **생성(응답측) 미착수.** 기준선은 reasoning 항목에 `encrypted_content`가 없는데 내용이 있으면
-  `MISSING_ENCRYPTED_REASONING`으로 거부한다 — 보존할 수 없는 사고를 조용히 잃지 않는다. 그 규칙과
-  블록 생성이 남았다. 응답 경로는 delivery barrier가 있는 가장 민감한 곳이라 별도로 진행한다.
+- **생성(응답측) 완료.** reasoning 항목을 봉투에 담아 `redacted_thinking` 블록으로 내보낸다.
+  순서는 기준선과 같은 **text → reasoning → tools**이고, tool call과 같은 **delivery barrier 안**에
+  있다 — 중간에 실패한 스트림이 모델의 사고 기록 일부를 전사에 남기면 다음 턴이 그것을 완전한 것처럼
+  되돌려 보낸다.
+- `encrypted_content`가 없는데 summary나 content가 있으면 `MISSING_ENCRYPTED_REASONING`으로 거부한다.
+  보존할 수 없는 사고를 조용히 버리면 답은 평범해 보이고 다음 턴은 있어야 할 것보다 적게 시작한다 —
+  거부보다 조용하고, 그래서 더 나쁘다.
+- **쓴 것을 곧바로 읽어본다.** 쓰는 쪽과 읽는 쪽은 세션 하나만큼 떨어져 있어서, 눈으로 맞춰본 것은
+  맞춰본 것이 아니다. 돌연변이에서 이 자체검사를 빼면 살아남았고, 디코더가 받지 않는 id를 주는
+  테스트를 추가해 잡았다.
+- **사고만 있고 답이 없는 응답은 빈 응답이다.** 불투명한 기록 하나만 든 메시지를 내보내면 사용자에게는
+  빈 답이 보이고 클라이언트에게는 성공한 턴으로 보인다.
 
 봉투 접두사는 **interop 계약**이다. 한쪽이 바꾸면 다른 쪽이 기록한 사고가 전부 읽히지 않는다.
 리터럴을 직접 단언하는 테스트가 있다 — 모든 다른 테스트는 상수를 써서 만들기 때문에 상수가
@@ -521,7 +530,7 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | A1 | ~~`image` 블록~~ **오프라인 완료 2026-09-16.** 실세션 검증은 남음 | 3.1 | 예 — 실제 이미지 왕복 |
 | A2 | ~~hosted WebSearch~~ **오프라인 완료 2026-09-16.** 실세션 검증 남음. 돌연변이 15/15 | 6.1 | 예 |
 | A3 | `GET /v1/models` **완료 2026-09-16**. `modelPicker`+`ENABLE_GATEWAY_MODEL_DISCOVERY`는 B1과 함께 | 2, 5.3 | 예 — 피커 확인 |
-| A4 | `tool_addition`/`tool_removal` **완료**, `redacted_thinking` **해독 완료·생성 남음** | 3.1, 3.4 | 예 |
+| A4 | ~~`tool_addition`/`tool_removal`, `redacted_thinking`~~ **오프라인 완료 2026-09-16.** 돌연변이 21/21 | 3.1, 3.4 | 예 |
 
 ### B. launcher 층 — 한 덩어리
 

@@ -303,3 +303,9 @@ func SearchID() string {
 	}
 	return hex.EncodeToString(raw)
 }
+
+// ErrMissingEncryptedReasoning means the backend produced a thought this build cannot keep.
+//
+// Refused rather than dropped. A turn that quietly lost the model's reasoning produces an
+// answer that looks ordinary and a next turn that begins from less than it should.
+var ErrMissingEncryptedReasoning = errors.New("MISSING_ENCRYPTED_REASONING")

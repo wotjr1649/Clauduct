@@ -712,6 +712,27 @@ func (r *Request) String() string {
 // was needed.
 const ReasoningPrefix = "clauduct-reasoning-v1:"
 
+// DecodeRecordedThought reads back an envelope this bridge wrote.
+//
+// Exported so the side that writes one can read it straight back and find out immediately
+// if the two halves have drifted, rather than a session later when a transcript is resumed.
+func DecodeRecordedThought(data string) (*Reasoning, error) {
+	block, err := decodeRedactedThinking(json.RawMessage(
+		`{"type":"redacted_thinking","data":` + quoteJSON(data) + `}`))
+	if err != nil {
+		return nil, err
+	}
+	return block.Reasoning, nil
+}
+
+func quoteJSON(value string) string {
+	out, err := json.Marshal(value)
+	if err != nil {
+		return `""`
+	}
+	return string(out)
+}
+
 // decodeRedactedThinking reads back a chain of thought this bridge recorded.
 //
 // Everything about the envelope is checked before anything is believed. What it carries is

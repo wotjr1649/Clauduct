@@ -8,6 +8,7 @@
 package bridge
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -660,8 +661,55 @@ func (t *Translator) release() error {
 			if err := t.checkStreamedText(held.item.Text); err != nil {
 				return err
 			}
+		case codex.ItemReasoning:
+			if err := t.recordThought(held.item); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
+}
+
+// recordThought turns a reasoning item into the block that carries it back next turn.
+//
+// This request asked for reasoning.encrypted_content. What comes back is opaque and is
+// never read here; what happens to it is that it is kept, in an envelope the next turn's
+// decoder can open, so the model does not begin its thinking again every turn.
+//
+// A reasoning item with no encrypted content is only acceptable when it carried nothing
+// else either. The alternative would be dropping a thought the model did produce and
+// letting the next turn proceed as though it had not -- a quieter failure than refusing,
+// and a worse one, because the answer it leads to looks ordinary.
+func (t *Translator) recordThought(item codex.OutputItem) error {
+	if !item.HasEncrypted {
+		if item.HasContent || len(item.Summary) > 0 {
+			return ErrMissingEncryptedReasoning
+		}
+		return nil
+	}
+
+	summary := make([]ReasoningPart, 0, len(item.Summary))
+	for _, part := range item.Summary {
+		summary = append(summary, ReasoningPart{Type: part.Type, Text: part.Text})
+	}
+	saved, err := json.Marshal(struct {
+		Type      string          `json:"type"`
+		ID        string          `json:"id"`
+		Summary   []ReasoningPart `json:"summary"`
+		Encrypted string          `json:"encrypted_content"`
+	}{"reasoning", item.ID, summary, item.Encrypted})
+	if err != nil {
+		return ErrMissingEncryptedReasoning
+	}
+	data := anthropic.ReasoningPrefix + base64.RawURLEncoding.EncodeToString(saved)
+
+	// Read back what was just written. The envelope is only worth anything if the decoder
+	// on the other side of the next turn can open it, and the two halves are far enough
+	// apart -- a whole session apart -- that agreeing by inspection is not agreeing.
+	if _, err := anthropic.DecodeRecordedThought(data); err != nil {
+		return err
+	}
+	t.builder.AddThought(data)
 	return nil
 }
 

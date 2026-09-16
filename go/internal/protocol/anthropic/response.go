@@ -93,7 +93,24 @@ type Builder struct {
 	calls    []toolCall
 	callIDs  map[string]bool
 	callable func(name string) bool
+
+	// Thoughts are held beside the calls and for the same reason. A stream that fails
+	// midway must not have handed the client a partial record of the model's reasoning,
+	// which the next turn would then send back as though it were complete.
+	thoughts []string
 }
+
+// AddThought records a chain of thought to emit when the response completes.
+//
+// The data is this bridge's own envelope, already built and already checked by the caller.
+// Held rather than written, so the delivery barrier covers it: nothing about a response
+// that fails halfway reaches the transcript.
+func (b *Builder) AddThought(data string) {
+	b.thoughts = append(b.thoughts, data)
+}
+
+// ThoughtCount reports how many were recorded.
+func (b *Builder) ThoughtCount() int { return len(b.thoughts) }
 
 func NewBuilder(model string) *Builder {
 	return &Builder{
@@ -296,6 +313,16 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		frames = append(frames, contentBlockStop(part.index))
 	}
 
+	// After the text and before the tools, which is the order the Node baseline emits and
+	// therefore the order a transcript recorded by either implementation has. A thought is
+	// not an answer, so it does not come first; it is not an instruction, so it does not
+	// come between a call and its result.
+	for _, data := range b.thoughts {
+		index := b.nextIndex
+		b.nextIndex++
+		frames = append(frames, thoughtBlockStart(index, data), contentBlockStop(index))
+	}
+
 	// Every text block is closed before the first tool block opens. A client reading
 	// sequentially must not see a tool call arrive inside an unfinished answer.
 	for _, call := range b.calls {
@@ -316,6 +343,15 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 	frames = append(frames, messageDelta(usage, len(b.calls) > 0),
 		Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)})
 	return frames, nil
+}
+
+// thoughtBlockStart opens a redacted_thinking block, which carries its data inline rather
+// than streaming it: there is nothing to render progressively in an opaque record.
+func thoughtBlockStart(index int, data string) Frame {
+	return frame("content_block_start", map[string]any{
+		"type": "content_block_start", "index": index,
+		"content_block": map[string]any{"type": "redacted_thinking", "data": data},
+	})
 }
 
 func toolBlockStart(index int, call toolCall) Frame {

@@ -28,6 +28,20 @@ type OutputItem struct {
 	Name      string
 	Arguments json.RawMessage
 	Text      []string
+
+	// reasoning. Encrypted is what makes a chain of thought replayable on the next turn;
+	// Summary is the visible part that travels beside it. Content is read only to tell a
+	// reasoning item that carried nothing from one whose record cannot be kept.
+	Encrypted    string
+	Summary      []SummaryPart
+	HasContent   bool
+	HasEncrypted bool
+}
+
+// SummaryPart is one piece of a reasoning summary.
+type SummaryPart struct {
+	Type string
+	Text string
 }
 
 // OutputItemEvent is one response.output_item.added or response.output_item.done payload.
@@ -149,6 +163,43 @@ func decodeItem(raw json.RawMessage, final bool) (OutputItem, error) {
 			return OutputItem{}, ErrEventShape
 		}
 		item.Arguments = json.RawMessage(encoded)
+
+	case ItemReasoning:
+		if value, presence := wire.Of(fields, "encrypted_content"); presence == wire.Present {
+			if json.Unmarshal(value, &item.Encrypted) != nil {
+				return OutputItem{}, ErrEventShape
+			}
+			item.HasEncrypted = true
+		}
+		if value, presence := wire.Of(fields, "summary"); presence == wire.Present {
+			var parts []json.RawMessage
+			if json.Unmarshal(value, &parts) != nil {
+				return OutputItem{}, ErrEventShape
+			}
+			for _, part := range parts {
+				partFields, err := wire.Fields(part, nil)
+				if err != nil {
+					return OutputItem{}, ErrEventShape
+				}
+				var summary SummaryPart
+				if err := stringField(partFields, "type", &summary.Type); err != nil {
+					return OutputItem{}, err
+				}
+				if value, presence := wire.Of(partFields, "text"); presence == wire.Present {
+					if json.Unmarshal(value, &summary.Text) != nil {
+						return OutputItem{}, ErrEventShape
+					}
+				}
+				item.Summary = append(item.Summary, summary)
+			}
+		}
+		if value, presence := wire.Of(fields, "content"); presence == wire.Present {
+			var parts []json.RawMessage
+			if json.Unmarshal(value, &parts) != nil {
+				return OutputItem{}, ErrEventShape
+			}
+			item.HasContent = len(parts) > 0
+		}
 
 	case ItemMessage:
 		content, presence := wire.Of(fields, "content")

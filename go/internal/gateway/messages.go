@@ -60,13 +60,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
 	watcherDone := make(chan struct{})
 	defer close(watcherDone)
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = control.SetReadDeadline(time.Now())
-		case <-watcherDone:
-		}
-	}()
+	go abortOnCancel(ctx, watcherDone, func() { _ = control.SetReadDeadline(time.Now()) })
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 	if err != nil {
@@ -114,6 +108,31 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 
 	g.relay(ctx, w, control, response, request)
+}
+
+// abortOnCancel expires the read deadline when the client goes away while the handler is
+// still reading, and never after the handler is done.
+//
+// The re-check is the whole point. By the time this goroutine first runs, both channels
+// are usually closed already: done by the handler's defer, ctx by net/http the instant the
+// handler returns. A plain two-case select picks between closed channels at random, so
+// half the time it expired the deadline on a connection the handler no longer owned. The
+// response was still sitting in the server's write buffer at that moment, and the expired
+// deadline tore the connection down before the flush, so the client saw a reset instead of
+// its reply. That was a real intermittent failure in this suite, on fast requests only.
+//
+// done is closed by a defer, which runs strictly before net/http cancels ctx, so checking
+// it again here is exact rather than another guess.
+func abortOnCancel(ctx context.Context, done <-chan struct{}, expire func()) {
+	select {
+	case <-ctx.Done():
+		select {
+		case <-done:
+		default:
+			expire()
+		}
+	case <-done:
+	}
 }
 
 // relay reads the backend stream and writes client frames as they are produced.

@@ -191,6 +191,11 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+		g.handleModels(w)
+		return
+	}
+
 	// Everything else is genuinely not a route here. Saying so with a fixed code is the
 	// point: a silent 200 would let a caller believe a route works, and forwarding an
 	// unknown path upstream would make this an open relay.

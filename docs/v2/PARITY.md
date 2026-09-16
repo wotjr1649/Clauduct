@@ -55,7 +55,7 @@ non-streaming 요청은 기준선도 `REQUEST_STREAM_FALSE`로 거부한다(`nat
 |---|---|---|---|
 | `HEAD /api/hello` | 204, 인증 선택적 | 동일 | 동등 |
 | `POST /v1/messages` | 본체 | 본체 | 3절 |
-| `GET /v1/models` | `MODELS` 4종을 `{id, object, owned_by:'openai'}`로 | **404** | **격차** |
+| `GET /v1/models` | `MODELS` 4종을 `{id, object, owned_by:'openai'}`로 | **구현 완료 2026-09-16** | 동등 |
 | `GET /clauduct/status` | `diagnostics()`, upstream 이름은 보류 | **404** | **격차** |
 | `POST /clauduct/agents` | `linkTaskResult`/`linkWorkflow`/`linkResume`/`linkSkill` | **404** | **격차** — 4절 |
 | 그 밖 | `UNSUPPORTED_ROUTE` | 동일 | 동등 |
@@ -91,6 +91,46 @@ non-streaming 요청은 기준선도 `REQUEST_STREAM_FALSE`로 거부한다(`nat
 WIRE16("non-streaming을 지원하면")은 전제가 성립하지 않으므로 구현 대상이 아니다.
 
 ### 3.3 모델 선택 — 여기가 생각보다 크다
+
+**2026-09-16: alias 표를 고쳤고, 표 세 개를 하나로 합쳤다.**
+
+기준선의 표는 Claude 4개 tier를 backend 3개 모델에 얹는다 — `sonnet`과 `haiku`가 **둘 다 luna**로
+가고, **terra에는 Claude 이름이 하나도 없다.** 그래서 사용자 피커의 두 항목이 같은 경로로 돌고
+네 번째 모델은 선택 자체가 불가능했다. 사용자 결정으로 `sonnet → terra`로 고쳤다. 기준선과의
+**의도적 divergence**이며 `route_test.go` 주석에 사유를 적었다.
+
+```
+opus   → sol   (xhigh)      sonnet → terra (high)
+haiku  → luna  (max)        fable  → astra (medium)
+```
+
+그리고 카탈로그·alias·family가 각각 다른 표에 있던 것을 `bridge.Models` **한 슬라이스**로 합쳤다.
+라우팅 표·발행 순서·클라이언트 모델 목록·클라이언트 tier 기본값이 전부 거기서 파생된다. backend에
+모델이 추가되면 **줄 하나만 늘리면 된다.** 표가 갈라져 있었다는 것이 애초에 terra가 고아가 된 이유다.
+
+`TestEveryModelIsReachableByAClaudeName`이 그 불변식을 지킨다: 모든 모델은 Claude 이름으로 도달
+가능해야 하고, 두 모델이 같은 이름을 공유해서는 안 된다. 돌연변이로 확인 — sonnet을 luna로
+되돌리거나 이름 없는 모델을 추가하면 잡힌다.
+
+**배경 tier의 effort는 기준선 그대로 둔다(사용자 결정).** `haiku → luna/max`. 실측상 클라이언트는
+일반 턴에 effort를 직접 보내므로(`source=family+effort`) 카탈로그 기본값은 폴백이다.
+
+#### 3.3.1 실측 — 클라이언트가 실제로 보내는 것 (2026-09-16)
+
+실제 `claude -p`를 fixture backend에 붙여 잰 것이고 추론 비용은 0이다.
+
+```
+REQ 0 requested=claude-opus-5  -> gpt-5.6-sol/high  source=family+effort  tools=false  3.8 KB
+REQ 1 requested=claude-opus-5  -> gpt-5.6-sol/high  source=family+effort  tools=true  78.6 KB
+```
+
+두 가지가 나왔다. **클라이언트는 effort를 직접 보낸다** — sol의 카탈로그 기본값은 `xhigh`인데
+실제로 온 것은 `high`다. 그리고 **보조 요청(3.8 KB)도 주 모델로 간다.** 기준선은
+`ANTHROPIC_DEFAULT_HAIKU_MODEL`을 luna로 두어 그것을 싸게 만드는데, Go는 `ANTHROPIC_*`를 전부
+떨어뜨리므로 그 키를 설정할 수 없다. **제목 생성 같은 버리는 작업이 가장 비싼 모델에서 돈다.**
+B1이 닫는다.
+
+
 
 `models.mjs`가 Go에 없는 것 셋:
 
@@ -450,7 +490,7 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 |---|---|---|---|
 | A1 | ~~`image` 블록~~ **오프라인 완료 2026-09-16.** 실세션 검증은 남음 | 3.1 | 예 — 실제 이미지 왕복 |
 | A2 | hosted WebSearch: side query 탐지 + 별도 search 엔드포인트 + 응답 합성 | 6.1 | 예 |
-| A3 | `GET /v1/models` + `modelPicker.replaceBuiltInOptions` + `ENABLE_GATEWAY_MODEL_DISCOVERY` | 2, 5.3 | 예 — 피커 확인 |
+| A3 | `GET /v1/models` **완료 2026-09-16**. `modelPicker`+`ENABLE_GATEWAY_MODEL_DISCOVERY`는 B1과 함께 | 2, 5.3 | 예 — 피커 확인 |
 | A4 | `tool_addition`/`tool_removal`, `redacted_thinking` (`tool_reference`는 이미 지원) | 3.1 | 예 |
 
 ### B. launcher 층 — 한 덩어리

@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -168,4 +170,80 @@ func (r *recordingTransport) Execute(_ context.Context, call upstream.Call) (*up
 	default:
 	}
 	return (&upstream.Fixture{SSE: r.sse}).Execute(context.Background(), call)
+}
+
+// HTTP08 / A3. The client's model list comes from here, and it names what will run.
+//
+// Without it the user's /model picker is the client's built-in Anthropic list: names that
+// do not exist on this backend. Picking "Opus 5" ran gpt-5.6-sol, "Sonnet 5" and
+// "Haiku 4.5" both ran gpt-5.6-luna, and gpt-5.6-terra could not be reached at all.
+func TestTheModelListNamesWhatWillActuallyRun(t *testing.T) {
+	fixture := &upstream.Fixture{}
+	g := startWith(t, fixture)
+
+	resp := do(t, g, request{method: http.MethodGet, path: "/v1/models"})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	if got := resp.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q", got)
+	}
+
+	var list struct {
+		Object string `json:"object"`
+		Data   []struct {
+			ID      string `json:"id"`
+			Object  string `json:"object"`
+			OwnedBy string `json:"owned_by"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(bodyText(t, resp)), &list); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if list.Object != "list" {
+		t.Errorf("object = %q, want list", list.Object)
+	}
+
+	// The published order, and every backend model this build can route to. terra is in it
+	// because the whole point is that the picker can reach it.
+	want := []string{"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"}
+	if len(list.Data) != len(want) {
+		t.Fatalf("%d models, want %d: %+v", len(list.Data), len(want), list.Data)
+	}
+	for i, id := range want {
+		if list.Data[i].ID != id {
+			t.Errorf("data[%d].id = %q, want %q", i, list.Data[i].ID, id)
+		}
+		if list.Data[i].Object != "model" || list.Data[i].OwnedBy != "openai" {
+			t.Errorf("data[%d] = %+v", i, list.Data[i])
+		}
+	}
+
+	// Every name it publishes must route. A list naming something this build refuses would
+	// be an invitation to pick a model that then fails.
+	for _, item := range list.Data {
+		if _, err := bridge.SelectRoute(item.ID, ""); err != nil {
+			t.Errorf("the list offers %q but routing it fails: %v", item.ID, err)
+		}
+	}
+	if fixture.Calls() != 0 {
+		t.Errorf("the model list reached the backend %d times; it is a constant of this build",
+			fixture.Calls())
+	}
+}
+
+// And it is not an open endpoint.
+func TestTheModelListNeedsTheSessionCredential(t *testing.T) {
+	g := start(t)
+	resp := do(t, g, request{method: http.MethodGet, path: "/v1/models", noAuth: true})
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+	// POST is not a model list.
+	post := do(t, g, request{method: http.MethodPost, path: "/v1/models",
+		headers: map[string]string{"Content-Type": "application/json"},
+		body:    strings.NewReader(`{}`)})
+	if post.StatusCode != http.StatusNotFound {
+		t.Fatalf("POST /v1/models = %d, want 404", post.StatusCode)
+	}
 }

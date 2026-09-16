@@ -624,10 +624,11 @@ func TestSystemPromptShapesAgree(t *testing.T) {
 // question went unasked.
 func TestAnAbsentEffortComesFromTheModelNotTheBackend(t *testing.T) {
 	for name, tc := range map[string]struct{ model, want string }{
-		"sonnet runs luna at its own default": {"sonnet", "max"},
-		"opus runs sol at its own default":    {"opus", "xhigh"},
-		"fable runs astra at its own default": {"fable", "medium"},
-		"a versioned id resolves the same":    {"claude-opus-5", "xhigh"},
+		"sonnet runs terra at its own default": {"sonnet", "high"},
+		"haiku runs luna at its own default":   {"haiku", "max"},
+		"opus runs sol at its own default":     {"opus", "xhigh"},
+		"fable runs astra at its own default":  {"fable", "medium"},
+		"a versioned id resolves the same":     {"claude-opus-5", "xhigh"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			out, err := BuildRequest(decodeRequest(t,

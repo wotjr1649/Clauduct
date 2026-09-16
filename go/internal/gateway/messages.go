@@ -127,6 +127,40 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	g.relay(ctx, w, control, response, request)
 }
 
+// handleModels answers the client's model discovery.
+//
+// The client only asks when CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY is set, and until it
+// is answered the user's /model list is the client's built-in Anthropic one: names that do
+// not exist on this backend, two of which used to resolve to the same route, and one
+// backend model -- terra -- that no entry could reach. Answering here is what lets the
+// picker name what will actually run.
+//
+// Nothing about the account, the credential or the session appears in the reply. It is the
+// build's own catalogue, which is a constant.
+func (g *Gateway) handleModels(w http.ResponseWriter) {
+	type entry struct {
+		ID      string `json:"id"`
+		Object  string `json:"object"`
+		OwnedBy string `json:"owned_by"`
+	}
+	routes := bridge.Catalogue()
+	data := make([]entry, 0, len(routes))
+	for _, route := range routes {
+		data = append(data, entry{ID: route.Model, Object: "model", OwnedBy: "openai"})
+	}
+	body, err := json.Marshal(struct {
+		Object string  `json:"object"`
+		Data   []entry `json:"data"`
+	}{Object: "list", Data: data})
+	if err != nil {
+		g.refuseCategory(w, http.StatusInternalServerError, "MODEL_LIST_ENCODE_FAILED")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
 // chunkedWriter hands the response out in bounded pieces, refreshing the write deadline
 // before each one.
 //

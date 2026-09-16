@@ -31,34 +31,67 @@ type Route struct {
 	Source string
 }
 
-// catalogue is the set of models this backend offers, with the effort each one runs at when
-// the request does not say. The efforts are the baseline's: they are not uniform, and
-// normalising them would change what a request costs.
-var catalogue = map[string]Route{
-	"astra": {Model: "gpt-6-astra", Effort: "medium"},
-	"sol":   {Model: "gpt-5.6-sol", Effort: "xhigh"},
-	"terra": {Model: "gpt-5.6-terra", Effort: "high"},
-	"luna":  {Model: "gpt-5.6-luna", Effort: "max"},
-}
-
-// aliases are the short names the native client accepts.
-var aliases = map[string]string{
-	"haiku":  "luna",
-	"sonnet": "luna",
-	"opus":   "sol",
-	"fable":  "astra",
-}
-
-// families match a versioned Claude model id by prefix.
+// Model is one backend model this build can route to, with every name that reaches it.
 //
-// By prefix so that no version suffix is pinned here: claude-opus-5 and claude-opus-4-1
-// route the same way, and a new release does not need a code change to work. An unknown
-// name still fails closed.
-var families = []struct{ prefix, key string }{
-	{"claude-haiku-", "luna"},
-	{"claude-sonnet-", "luna"},
-	{"claude-opus-", "sol"},
-	{"claude-fable-", "astra"},
+// One entry per model and one place to edit. The routing table, the published order, the
+// client's model list and the client's own tier defaults are all derived from this slice,
+// so adding a model when the backend ships one is adding a line here and nothing else.
+// Before this was a single list the same facts lived in three tables, and they drifted:
+// sonnet and haiku both pointed at luna while terra had no Claude name at all, so two
+// entries in the user's picker ran the identical route and a fourth model could not be
+// selected. TestEveryModelIsReachableByAClaudeName now fails if that happens again.
+type Model struct {
+	// Key is the short catalogue name, which the client may also send outright.
+	Key string
+	// ID is what the backend calls this model.
+	ID string
+	// Effort is what it runs at when the request names none. The efforts are not uniform
+	// and normalising them would change what a request costs.
+	Effort string
+	// Alias is the Claude tier that belongs here.
+	Alias string
+	// Family is the versioned Claude prefix for that tier. Matched by prefix so no version
+	// is pinned: claude-opus-5 and claude-opus-4-1 route the same way and a new release
+	// needs no code change. An unknown name still fails closed.
+	Family string
+}
+
+// Models is the catalogue in published order.
+//
+// The values came from the Node baseline's src/models.mjs and src/agent-selection.mjs:23-27
+// rather than from a convention that looked reasonable, with one deliberate divergence
+// recorded above: sonnet routes to terra here and to luna there.
+var Models = []Model{
+	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Alias: "fable", Family: "claude-fable-"},
+	{Key: "sol", ID: "gpt-5.6-sol", Effort: "xhigh", Alias: "opus", Family: "claude-opus-"},
+	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Alias: "sonnet", Family: "claude-sonnet-"},
+	{Key: "luna", ID: "gpt-5.6-luna", Effort: "max", Alias: "haiku", Family: "claude-haiku-"},
+}
+
+// Catalogue lists the routes this build offers, in published order.
+//
+// Returned as a copy so a caller that serves this list to a client cannot edit what the
+// router resolves against.
+func Catalogue() []Route {
+	out := make([]Route, 0, len(Models))
+	for _, model := range Models {
+		out = append(out, Route{Model: model.ID, Effort: model.Effort, Source: "catalogue"})
+	}
+	return out
+}
+
+// ForAlias reports the model a Claude tier belongs to.
+//
+// The launcher needs this to tell the client which backend model stands in for each of its
+// own tiers, and deriving it here rather than repeating the pairs there is what keeps the
+// two from disagreeing.
+func ForAlias(alias string) (Model, bool) {
+	for _, model := range Models {
+		if model.Alias == alias {
+			return model, true
+		}
+	}
+	return Model{}, false
 }
 
 // efforts is the set the backend accepts. An effort outside it is refused rather than
@@ -78,12 +111,11 @@ func SelectRoute(requested, effort string) (Route, error) {
 		return Route{}, ErrUnsupportedRoute
 	}
 
-	key, source := resolveKey(requested)
-	if key == "" {
+	model, source := resolveKey(requested)
+	if source == "" {
 		return Route{}, ErrUnsupportedRoute
 	}
-	route := catalogue[key]
-	route.Source = source
+	route := Route{Model: model.ID, Effort: model.Effort, Source: source}
 	if effort != "" {
 		route.Effort = effort
 		route.Source = source + "+effort"
@@ -92,29 +124,33 @@ func SelectRoute(requested, effort string) (Route, error) {
 }
 
 // resolveKey names the catalogue entry a requested model refers to, and the rule that said
-// so. The order is the baseline's: an exact alias, then a family prefix, then a Codex model
-// id named directly.
-func resolveKey(requested string) (key, source string) {
+// so. The order is the baseline's: an exact catalogue key, then an alias, then a family
+// prefix, then a Codex model id named directly.
+func resolveKey(requested string) (model Model, source string) {
 	if requested == "" {
-		return "", ""
+		return Model{}, ""
 	}
-	if _, known := catalogue[requested]; known {
-		return requested, "catalogue"
+	for _, candidate := range Models {
+		if candidate.Key == requested {
+			return candidate, "catalogue"
+		}
 	}
-	if mapped, known := aliases[requested]; known {
-		return mapped, "alias"
+	for _, candidate := range Models {
+		if candidate.Alias == requested {
+			return candidate, "alias"
+		}
 	}
-	for _, family := range families {
-		if strings.HasPrefix(requested, family.prefix) {
-			return family.key, "family"
+	for _, candidate := range Models {
+		if candidate.Family != "" && strings.HasPrefix(requested, candidate.Family) {
+			return candidate, "family"
 		}
 	}
 	// A request naming a backend model outright. Accepted because the native client can be
 	// pointed at one, and refusing would break a route the baseline allows.
-	for name, route := range catalogue {
-		if route.Model == requested {
-			return name, "direct"
+	for _, candidate := range Models {
+		if candidate.ID == requested {
+			return candidate, "direct"
 		}
 	}
-	return "", ""
+	return Model{}, ""
 }

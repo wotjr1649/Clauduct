@@ -47,6 +47,15 @@ type Call struct {
 	Source string
 }
 
+// Searcher is a transport that can answer the client's search side query.
+//
+// Optional on purpose. A fixture that replays one inference has no business pretending it
+// can reach a search endpoint, and a gateway that finds a transport cannot search says so
+// rather than answering the query out of nothing.
+type Searcher interface {
+	Search(ctx context.Context, body []byte) ([]byte, error)
+}
+
 // Transport executes one backend request.
 //
 // The context governs cancellation: a caller that gives up must be able to stop work
@@ -68,13 +77,20 @@ type Fixture struct {
 	// drives the parser one byte at a time, which is how the framing tests establish that
 	// chunk boundaries carry no meaning.
 	ChunkSize int
+	// SearchJSON is what Search replays. Empty makes a search request an error, which is
+	// the right default for a fixture that was not set up to answer one.
+	SearchJSON string
+	// SearchErr, when set, is returned instead of SearchJSON.
+	SearchErr error
 	// ReadErr is returned in place of io.EOF once the body has been delivered. A
 	// connection that drops after a complete-looking body is still a failed transfer, and
 	// without a way to produce one nothing checks that the difference is noticed.
 	ReadErr error
 
-	calls    atomic.Int64
-	lastBody atomic.Value
+	calls      atomic.Int64
+	searches   atomic.Int64
+	lastSearch atomic.Value
+	lastBody   atomic.Value
 }
 
 // Execute returns the canned body. It records the request so a test can assert what the
@@ -90,6 +106,33 @@ func (f *Fixture) Execute(ctx context.Context, call Call) (*Response, error) {
 		return nil, f.Err
 	}
 	return &Response{Body: io.NopCloser(&replay{source: f.SSE, size: f.ChunkSize, end: f.ReadErr})}, nil
+}
+
+// Search replays a canned search answer and records the request.
+func (f *Fixture) Search(ctx context.Context, body []byte) ([]byte, error) {
+	f.searches.Add(1)
+	f.lastSearch.Store(string(body))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if f.SearchErr != nil {
+		return nil, f.SearchErr
+	}
+	if f.SearchJSON == "" {
+		return nil, ErrSearchUnavailable
+	}
+	return []byte(f.SearchJSON), nil
+}
+
+// Searches reports how many search round trips this fixture answered.
+func (f *Fixture) Searches() int64 { return f.searches.Load() }
+
+// LastSearch reports the most recent search request body.
+func (f *Fixture) LastSearch() string {
+	if value, ok := f.lastSearch.Load().(string); ok {
+		return value
+	}
+	return ""
 }
 
 // Calls reports how many times this fixture was asked to execute. A budget claim rests on

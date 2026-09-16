@@ -155,6 +155,25 @@ type Request struct {
 	Tools      []Tool
 	ToolChoice ToolChoice
 	Discovered map[string]bool
+
+	// HostedSearch is the server-side search tool, when the request carried one.
+	//
+	// Recorded rather than refused here, and kept out of Tools: it is not a definition the
+	// client can be told to call, it is a request for this gateway to perform a search
+	// itself. Whether that is what the request actually is takes more than the tool's
+	// presence to decide, so the decision belongs to the caller that can see the whole
+	// shape. Nothing puts this in the tool list sent upstream.
+	HostedSearch *HostedSearch
+}
+
+// HostedSearch is a server-side search tool definition.
+type HostedSearch struct {
+	Type string
+	Name string
+	// Allowed and Blocked are the domain filters, already bounded. Nil means the request
+	// named none, which is different from naming an empty list.
+	Allowed []string
+	Blocked []string
 }
 
 // ToolCount reports how many definitions were supplied.

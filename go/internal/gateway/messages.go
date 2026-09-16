@@ -89,6 +89,22 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The client's search side query is a server tool call addressed to this gateway, not a
+	// model request. Answered before conversion so the model path stays untouched.
+	if request.HostedSearch != nil {
+		query, ok := bridge.SideQuery(request)
+		if !ok {
+			// The tool is here but the request is not the side query the client sends. The
+			// Node baseline drops the tool and answers from the model without search
+			// results; this refuses instead. A WebSearch that quietly returns nothing is
+			// worse than one that says it broke, because only the second gets fixed.
+			g.refuseCategory(w, http.StatusBadRequest, anthropic.CodeHostedToolUnsupp)
+			return
+		}
+		g.searchFor(ctx, w, control, request, query)
+		return
+	}
+
 	backendRequest, err := bridge.BuildRequest(request)
 	if err != nil {
 		// CAP06: a model this build cannot route is the caller's answerable problem, not
@@ -125,6 +141,59 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 
 	g.relay(ctx, w, control, response, request)
+}
+
+// searchFor answers one side query from the backend's search endpoint.
+//
+// No model turn and no inference: one JSON round trip, then the blocks the client reduces.
+// Nothing from the conversation travels with the query -- only the query does.
+func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
+	control *http.ResponseController, request *anthropic.Request, query bridge.SearchQuery) {
+
+	searcher, ok := g.transport.(upstream.Searcher)
+	if !ok {
+		// Saying so beats answering the query out of nothing. A reply with no results is
+		// indistinguishable from a web that had nothing to say.
+		g.refuseCategory(w, http.StatusNotImplemented, "SEARCH_UNSUPPORTED")
+		return
+	}
+
+	route, err := bridge.SelectRoute(request.Model, request.Effort)
+	if err != nil {
+		g.refuseCategory(w, http.StatusBadRequest, "UNSUPPORTED_MODEL_OR_EFFORT")
+		return
+	}
+	body, err := json.Marshal(bridge.BuildSearchRequest(route.Model, query))
+	if err != nil {
+		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")
+		return
+	}
+
+	raw, err := searcher.Search(ctx, body)
+	if err != nil {
+		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
+		return
+	}
+	results, err := bridge.DecodeSearchResults(raw)
+	if err != nil {
+		g.refuseCategory(w, http.StatusBadGateway, err.Error())
+		return
+	}
+
+	header := w.Header()
+	header.Set("Content-Type", "text/event-stream")
+	header.Set("Cache-Control", "no-cache")
+	header.Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	bounded := &chunkedWriter{to: w, control: control}
+	defer func() { _ = control.SetWriteDeadline(time.Time{}) }()
+	for _, frame := range bridge.SearchFrames(route.Model, query, results, bridge.SearchID) {
+		if _, err := frame.WriteTo(bounded); err != nil {
+			return
+		}
+	}
+	_ = control.Flush()
 }
 
 // handleModels answers the client's model discovery.

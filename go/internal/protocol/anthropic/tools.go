@@ -74,7 +74,15 @@ func decodeTools(fields map[string]json.RawMessage, request *Request) error {
 		if kindValue, present := wire.Of(loose, "type"); present == wire.Present {
 			var kind string
 			if json.Unmarshal(kindValue, &kind) == nil && hostedSearchTool.MatchString(kind) {
-				return refuse(CodeHostedToolUnsupp, kind)
+				hosted, err := decodeHostedSearch(entry, kind)
+				if err != nil {
+					return err
+				}
+				if request.HostedSearch != nil {
+					return refuse(CodeUnsupportedTools, kind)
+				}
+				request.HostedSearch = hosted
+				continue
 			}
 		}
 
@@ -372,4 +380,57 @@ func (r *Request) CallableNames() map[string]bool {
 		names[tool.Name] = true
 	}
 	return names
+}
+
+// searchDomainLimits bound a filter list. The baseline's numbers: at most thirty-two
+// domains, each at most the length a DNS name can be.
+const (
+	maxSearchDomains    = 32
+	maxSearchDomainName = 253
+)
+
+// decodeHostedSearch reads the server-side search tool.
+//
+// The domain filters are bounded here rather than where they are used, because they travel
+// to the backend and a list the client did not bound is a list this build would be sending
+// on its behalf. A malformed filter drops to nil rather than failing the request: the
+// baseline treats an unusable filter as no filter, and refusing the whole search over one
+// would take away the feature to protect a narrowing nobody can act on.
+func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error) {
+	fields, err := wire.Fields(raw, []string{"type", "name", "allowed_domains", "blocked_domains",
+		"max_uses", "cache_control"})
+	if err != nil {
+		return nil, refuse(CodeToolFields, "tools")
+	}
+	var name string
+	nameValue, present := wire.Of(fields, "name")
+	if present != wire.Present || json.Unmarshal(nameValue, &name) != nil || name == "" {
+		return nil, refuse(CodeToolFields, "name")
+	}
+	return &HostedSearch{
+		Type:    kind,
+		Name:    name,
+		Allowed: searchDomains(fields, "allowed_domains"),
+		Blocked: searchDomains(fields, "blocked_domains"),
+	}, nil
+}
+
+func searchDomains(fields map[string]json.RawMessage, key string) []string {
+	value, present := wire.Of(fields, key)
+	if present != wire.Present {
+		return nil
+	}
+	var list []string
+	if json.Unmarshal(value, &list) != nil || len(list) == 0 {
+		return nil
+	}
+	for _, name := range list {
+		if name == "" || len(name) > maxSearchDomainName {
+			return nil
+		}
+	}
+	if len(list) > maxSearchDomains {
+		list = list[:maxSearchDomains]
+	}
+	return list
 }

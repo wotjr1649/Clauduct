@@ -266,9 +266,18 @@ url 2048, output 100000)로 묶고 제어문자를 걸러내며 http/https만 �
 
 쿼리만 올라간다 — 클라이언트가 함께 보낼 수 있는 대화 꼬리는 **의도적으로 뺀다.**
 
-**Go**: `anthropic/tools.go:76-78`이 `^web_search_20\d{6}$`를 만나면 `HOSTED_TOOL_UNSUPPORTED`로
-거부한다. 즉 사용자가 WebSearch를 쓰면 **요청이 실패한다.** (`codex/events.go:83`에
-`response.web_search_call.*`를 "deferred to WP07"로 적어둔 그 항목이다.)
+**Go: 구현 완료(2026-09-16).** `bridge/search.go`가 탐지·요청 생성·결과 검증·응답 합성을 하고,
+`upstream/search.go`가 `/responses` → `/alpha/search`로 **유도한** 주소에 `originator: codex_exec`로
+보낸다. 유도가 실패하면(엔드포인트가 그 경로로 끝나지 않으면) 추측하지 않고 `INVALID_ENDPOINT`로
+거부한다 — 검색이 추론 엔드포인트로 가는 것이 돌연변이 중 **테스트 없이는 잡히지 않던 항목**이었다.
+
+재시도는 정확히 1회, 그것도 통과할 수 있는 실패에만. 404/410은 alpha 엔드포인트가 사라진 것이므로
+기능의 끝이고 재시도하지 않는다. **ledger를 건드리지 않는다** — 검색은 추론이 아니고, 추론 단위로
+표현된 상한이 검색을 세면 그 상한은 더 이상 그 뜻이 아니다.
+
+**의도적 divergence 하나.** 도구는 실렸는데 side query 모양이 아닌 요청을 기준선은 **도구를 떨어뜨리고
+모델로 보내 검색 결과 없이 성공**시킨다(notice만 남긴다). Go는 `HOSTED_TOOL_UNSUPPORTED`로 거부한다.
+조용히 아무것도 못 찾는 WebSearch보다 깨졌다고 말하는 쪽이 낫다 — 후자만 고쳐지기 때문이다.
 
 ### 6.2 `native-beta.mjs` — 베타 이름은 절대 거부하지 않는다
 
@@ -489,7 +498,7 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | # | 작업 | 근거 | 라이브 필요 |
 |---|---|---|---|
 | A1 | ~~`image` 블록~~ **오프라인 완료 2026-09-16.** 실세션 검증은 남음 | 3.1 | 예 — 실제 이미지 왕복 |
-| A2 | hosted WebSearch: side query 탐지 + 별도 search 엔드포인트 + 응답 합성 | 6.1 | 예 |
+| A2 | ~~hosted WebSearch~~ **오프라인 완료 2026-09-16.** 실세션 검증 남음. 돌연변이 15/15 | 6.1 | 예 |
 | A3 | `GET /v1/models` **완료 2026-09-16**. `modelPicker`+`ENABLE_GATEWAY_MODEL_DISCOVERY`는 B1과 함께 | 2, 5.3 | 예 — 피커 확인 |
 | A4 | `tool_addition`/`tool_removal`, `redacted_thinking` (`tool_reference`는 이미 지원) | 3.1 | 예 |
 

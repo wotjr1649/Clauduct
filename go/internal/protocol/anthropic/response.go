@@ -414,6 +414,10 @@ func messageDelta(usage Usage, toolUse bool) Frame {
 	})
 }
 
+// Frames exports the frame constructor for the search path, which synthesises a whole
+// reply rather than translating a stream.
+func Frames(kind string, body map[string]any) Frame { return frame(kind, body) }
+
 func frame(kind string, body map[string]any) Frame {
 	data, err := json.Marshal(body)
 	if err != nil {

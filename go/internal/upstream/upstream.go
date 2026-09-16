@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"sync/atomic"
 )
 
@@ -22,6 +23,11 @@ var ErrNoTransport = errors.New("NO_UPSTREAM_TRANSPORT")
 // is responsible for closing it.
 type Response struct {
 	Body io.ReadCloser
+	// Header is what the backend sent alongside the body, or nil from a transport that has
+	// none. The rate limit observation reads six numeric fields out of it and nothing else;
+	// it is kept whole here rather than digested because a transport is not the place to
+	// decide which of them a reader is allowed to see.
+	Header http.Header
 }
 
 // Call is one backend request together with how its route was decided.

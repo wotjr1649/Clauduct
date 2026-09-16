@@ -190,7 +190,7 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 		response.Body.Close()
 		return nil, failure
 	}
-	return &Response{Body: response.Body}, nil
+	return &Response{Body: response.Body, Header: response.Header}, nil
 }
 
 // applyHeaders builds the identity the reference client presents. It is one function so a

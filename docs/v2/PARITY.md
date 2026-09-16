@@ -360,6 +360,23 @@ upstream 응답 **헤더**에서 `*-{primary,secondary}-{used-percent,window-min
 **Go**: `codex` 이벤트에 `rate_limits.updated`/`CodexRateLimits`가 있다. 그건 **SSE 이벤트**이고
 기준선이 읽는 것은 **HTTP 응답 헤더**다. 출처가 다르다. 헤더 관찰은 없음.
 
+**실측 2026-09-17 (`probe headers --send`, 1회, 누적 35/100).** 응답 헤더 39개. 결과 다섯:
+
+1. **여섯 필드가 전부 온다.** `x-codex-{primary,secondary}-{used-percent,window-minutes,reset-at}`.
+   기준선이 남의 소스 트리에서 읽어온 이름이 실제로 맞다.
+2. **`x-codex-secondary-reset-at`의 값이 비어 있다.** 그런데 기준선의 정규식은 빈 값을
+   `numeric-format`으로 판정하고 관측 전체를 `invalid`로 만든다 — **실제 응답마다 매번 invalid가
+   된다.** 빈 값은 망가진 게 아니라 없는 것이다. 그래서 여기서는 빈 값을 부재로 다룬다.
+   실측 기준 결과는 `partial`(6개 중 5개)이다.
+3. **두 번째 family가 실제로 있다**: `x-codex-bengalfox-*` 여섯 필드 전부. "다른 family" 개념은
+   추측이 아니었다.
+4. **`x-codex-active-limit`이 있다** — 어느 쪽이 실제로 걸려 있는지 말해준다. 기준선은 안 읽는다.
+   두 family를 나란히 보고하고 독자에게 추측을 맡기는 것보다 이걸 읽는 쪽이 모호하지 않다.
+5. **`set-cookie`가 온다.** 값을 통째로 찍지 않기로 한 결정이 추측이 아니라 필요였다.
+
+기준선이 안 읽는 것: `-primary-over-secondary-limit-percent`, `-primary-reset-after-seconds`,
+`x-codex-plan-type`, `x-codex-credits-*`, `x-codex-turn-state`.
+
 ### 6.6 `request-status.mjs` — 종료 JSON
 
 `CLAUDUCT_REQUEST_STATUS` 한 줄로 나가는 세션 요약. 담는 것:

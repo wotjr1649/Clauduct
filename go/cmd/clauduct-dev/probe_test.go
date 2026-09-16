@@ -106,3 +106,25 @@ func TestTheIncompleteReasonIsNeverEchoed(t *testing.T) {
 		})
 	}
 }
+
+// D5. A probe that prints response headers must not print the values of headers that carry
+// credentials, and a real response carries one: set-cookie arrived on the measured run.
+func TestTheHeaderProbePrintsValuesOnlyForRateLimitFields(t *testing.T) {
+	for name, isField := range map[string]bool{
+		"x-codex-primary-used-percent":             true,
+		"x-codex-secondary-reset-at":               true,
+		"x-codex-bengalfox-primary-window-minutes": true,
+		"set-cookie":                                      false,
+		"authorization":                                   false,
+		"x-codex-credits-balance":                         false,
+		"x-codex-plan-type":                               false,
+		"x-codex-primary-reset-after-seconds":             false,
+		"x-codex-primary-over-secondary-limit-percent":    false,
+		"x-oai-request-id":                                false,
+		"x-codex-primary-used-percent-and-something-else": false,
+	} {
+		if got := rateLimitField.MatchString(name); got != isField {
+			t.Errorf("%q = %v, want %v", name, got, isField)
+		}
+	}
+}

@@ -62,6 +62,9 @@ var probes = map[string]struct {
 	// The search endpoint is not an inference and spends no attempt, so it can be run on
 	// its own as often as diagnosing it takes.
 	"search": {"whether the standalone search endpoint answers in the expected shape", 0},
+	// One request, and the answer is entirely in the response headers. The body is read
+	// and thrown away.
+	"headers": {"whether the backend sends the rate limit headers D5 would read", 1},
 }
 
 func usageProbe(out io.Writer) int {
@@ -83,7 +86,7 @@ func usageProbe(out io.Writer) int {
 
 // probeNames lists the probes in a fixed order. Map iteration is random and this text is
 // read by a person deciding what to spend.
-func probeNames() []string { return []string{"limit", "wire", "parity", "search"} }
+func probeNames() []string { return []string{"limit", "wire", "parity", "search", "headers"} }
 
 func probe(args []string, out, errOut io.Writer) int {
 	if len(args) != 2 || args[1] != "--send" {
@@ -124,6 +127,8 @@ func probe(args []string, out, errOut io.Writer) int {
 		code = wireProbe(transport, budget, out)
 	case "parity":
 		code = parityProbe(transport, budget, out)
+	case "headers":
+		code = headersProbe(transport, budget, out)
 	case "search":
 		if !searchProbe(transport, budget, out) {
 			code = 1

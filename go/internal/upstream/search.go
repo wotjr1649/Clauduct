@@ -3,6 +3,8 @@ package upstream
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -79,6 +81,12 @@ func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	// The reference client puts a session identity in the body and overrides whatever the
+	// caller put there. Injected rather than asked for: the session belongs to the
+	// transport, which is the thing that has one, and the caller that builds the query has
+	// no business inventing an identity for a connection it does not own.
+	body = withSearchSession(body, d.searchSessionID())
+
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
 
@@ -115,6 +123,10 @@ func (d *Direct) searchOnce(ctx context.Context, target string, body []byte,
 	request.Header.Set("Originator", "codex_exec")
 	request.Header.Set("User-Agent", "codex_exec/"+version+" (Windows; x86_64) xterm-256color (codex_exec; "+version+")")
 	request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	// The turn envelope the reference client sends. Generated for this process and
+	// describing nothing local: no path, no repository, no workspace, and nothing copied
+	// from the user's own codex installation.
+	request.Header.Set("x-codex-turn-metadata", searchTurnMetadata(time.Now()))
 
 	response, err := d.client().Do(request)
 	if err != nil {
@@ -155,3 +167,81 @@ func (d *Direct) searchOnce(ctx context.Context, target string, body []byte,
 
 // maxSearchResponseBytes matches the streamed ceiling: 16 MiB.
 const maxSearchResponseBytes = 16 * 1024 * 1024
+
+// searchSessionID is one identity per transport, matching the reference client: a session
+// is a session, and minting a fresh one per query would describe every search as the first.
+func (d *Direct) searchSessionID() string {
+	d.sessionOnce.Do(func() { d.session = randomUUID() })
+	return d.session
+}
+
+// withSearchSession puts the identity at the front of the body.
+//
+// By prefix rather than by re-encoding. Round-tripping the JSON would reorder every key,
+// and this is an alpha endpoint that has already answered 400 once for a body it did not
+// recognise -- there is no reason to hand it a shape that differs from the reference
+// client's in any way this build can avoid.
+func withSearchSession(body []byte, session string) []byte {
+	if len(body) == 0 || body[0] != '{' {
+		return body
+	}
+	prefix := `{"id":"` + session + `",`
+	if len(body) == 2 { // "{}"
+		prefix = `{"id":"` + session + `"`
+	}
+	out := make([]byte, 0, len(prefix)+len(body)-1)
+	out = append(out, prefix...)
+	return append(out, body[1:]...)
+}
+
+// searchTurnMetadata is the codex-shaped turn envelope the search endpoint expects.
+//
+// The field set and its order are the reference client's, read from the Node baseline's
+// searchEnvelope. Every identifier is generated here for this call; nothing describes this
+// machine, this repository or this user.
+func searchTurnMetadata(now time.Time) string {
+	session, turn := randomUUID(), randomUUID()
+	envelope := struct {
+		InstallationID  string `json:"installation_id"`
+		SessionID       string `json:"session_id"`
+		ThreadID        string `json:"thread_id"`
+		AgentName       string `json:"agent_name"`
+		TurnID          string `json:"turn_id"`
+		RootTurnID      string `json:"root_turn_id"`
+		WindowID        string `json:"window_id"`
+		WindowNumber    int    `json:"window_number"`
+		ContextWindowID string `json:"context_window_id"`
+		RequestKind     string `json:"request_kind"`
+		ThreadSource    string `json:"thread_source"`
+		Sandbox         string `json:"sandbox"`
+		SandboxMode     string `json:"sandbox_mode"`
+		AutoReview      bool   `json:"auto_review_enabled"`
+		ReplAutoReview  bool   `json:"node_repl_auto_review_required"`
+		ReplDisabled    bool   `json:"node_repl_disabled"`
+		StartedAt       int64  `json:"turn_started_at_unix_ms"`
+	}{
+		InstallationID: randomUUID(), SessionID: session, ThreadID: session,
+		AgentName: "/root", TurnID: turn, RootTurnID: turn,
+		WindowID: session + ":0", WindowNumber: 0, ContextWindowID: randomUUID(),
+		RequestKind: "turn", ThreadSource: "user", Sandbox: "none", SandboxMode: "read-only",
+		AutoReview: false, ReplAutoReview: false, ReplDisabled: true,
+		StartedAt: now.UnixMilli(),
+	}
+	encoded, err := json.Marshal(envelope)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+// randomUUID is a version 4 UUID in the dashed form the reference client sends.
+func randomUUID() string {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "00000000-0000-4000-8000-000000000000"
+	}
+	raw[6] = (raw[6] & 0x0f) | 0x40
+	raw[8] = (raw[8] & 0x3f) | 0x80
+	hexed := hex.EncodeToString(raw)
+	return hexed[0:8] + "-" + hexed[8:12] + "-" + hexed[12:16] + "-" + hexed[16:20] + "-" + hexed[20:32]
+}

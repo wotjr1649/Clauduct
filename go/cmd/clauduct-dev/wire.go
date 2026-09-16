@@ -42,8 +42,7 @@ const probeToolPrompt = "What is this build's verification token? Use the tool."
 const probeToolResult = "BUILD-TOKEN-7Q4M"
 
 func wireProbe(transport upstream.Transport, budget upstream.Budget, out io.Writer) int {
-	head := fmt.Sprintf(`{"model":%q,"max_tokens":2048,"stream":true,`+
-		`"system":"You are a verification fixture. Be brief.",`, budget.Model)
+	head := probeHead(budget, 2048)
 
 	// 1. Text. Establishes that what BuildRequest produces is accepted at all, which every
 	//    later case depends on.
@@ -88,8 +87,12 @@ func wireProbe(transport upstream.Transport, budget upstream.Budget, out io.Writ
 // exchange is what one round trip established. Like outcome, every field is a count, a
 // fixed value, or something this build itself sent -- never the model's words.
 type exchange struct {
-	ok        bool
-	category  string
+	ok       bool
+	category string
+	// thought is the envelope a redacted_thinking block carried. This build wrote it and
+	// nothing decrypts or prints it; keeping it is what lets the next turn send it back,
+	// which is the only way to find out whether the backend accepts its own record.
+	thought   string
 	status    int
 	frames    int
 	kinds     []string
@@ -136,11 +139,28 @@ func (e exchange) String() string {
 	if e.callID != "" {
 		text += fmt.Sprintf(", call_id %d chars, arguments %s", len(e.callID), e.arguments)
 	}
+	if e.thought != "" {
+		text += fmt.Sprintf(", thought %d chars", len(e.thought))
+	}
 	text += fmt.Sprintf(", reply %d chars", e.replyN)
 	if e.echoed {
 		text += ", tool result reached the model"
 	}
 	return text
+}
+
+// probeHead is the request prefix every probe shares.
+//
+// The effort is stated rather than left out, and that is a correction. Without it
+// SelectRoute supplies the model's catalogue default -- max for luna -- while the approved
+// budget is luna at low. The wire probe was spending at max effort under an approval for
+// low, and reasoning tokens are most of what a call costs. Nothing caught it until the
+// route began being authorised against the body that will actually be sent.
+func probeHead(budget upstream.Budget, maxTokens int) string {
+	return fmt.Sprintf(`{"model":%q,"max_tokens":%d,"stream":true,`+
+		`"output_config":{"effort":%q},`+
+		`"system":"You are a verification fixture. Be brief.",`,
+		budget.Model, maxTokens, budget.Effort)
 }
 
 // roundTrip runs one request through the whole product path: decode the Anthropic request,
@@ -150,8 +170,10 @@ func (e exchange) String() string {
 // Nothing here hand-writes a backend body or hand-reads a backend event. A defect anywhere
 // in that chain shows up as a refusal rather than as a probe that quietly agrees with
 // itself.
-func roundTrip(transport upstream.Transport, out io.Writer, label, requestJSON string) exchange {
-	request, err := anthropic.DecodeRequest([]byte(requestJSON))
+func roundTrip(transport upstream.Transport, out io.Writer, label, requestJSON string,
+	options ...anthropic.Options) exchange {
+
+	request, err := anthropic.DecodeRequest([]byte(requestJSON), options...)
 	if err != nil {
 		result := exchange{category: "REQUEST_DECODE: " + err.Error()}
 		fmt.Fprintf(out, "%-14s %s\n", label, result)
@@ -272,6 +294,7 @@ func readFrame(frame anthropic.Frame, result *exchange) {
 			ID    string          `json:"id"`
 			Name  string          `json:"name"`
 			Input json.RawMessage `json:"input"`
+			Data  string          `json:"data"`
 		} `json:"content_block"`
 		Delta struct {
 			Text string `json:"text"`
@@ -283,6 +306,9 @@ func readFrame(frame anthropic.Frame, result *exchange) {
 	if body.ContentBlock.Type == "tool_use" && result.callID == "" {
 		result.callID = body.ContentBlock.ID
 		result.arguments = argumentShape(body.ContentBlock.Input)
+	}
+	if body.ContentBlock.Type == "redacted_thinking" && result.thought == "" {
+		result.thought = body.ContentBlock.Data
 	}
 	if body.Delta.Text != "" {
 		result.replyN += len(body.Delta.Text)

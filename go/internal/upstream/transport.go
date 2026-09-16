@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
@@ -50,6 +51,9 @@ type Direct struct {
 	Credentials *auth.Provider
 	// Ledger authorises and records each attempt.
 	Ledger *Ledger
+	// The search session identity, one per transport and minted on first use.
+	sessionOnce sync.Once
+	session     string
 	// Version reports what the installed Codex CLI calls itself. It is a function and not
 	// a string because resolving it runs a subprocess, and a session that only ran
 	// --version must not spawn one. Nothing is read until a request is actually sent.

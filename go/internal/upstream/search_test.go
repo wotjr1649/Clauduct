@@ -2,6 +2,7 @@ package upstream
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -133,5 +134,82 @@ func TestASearchReplyThatIsNotJSONIsRefused(t *testing.T) {
 	_, err := d.Search(context.Background(), []byte(`{}`))
 	if err == nil || !strings.Contains(err.Error(), "SEARCH_RESPONSE_SHAPE") {
 		t.Fatalf("Search = %v, want SEARCH_RESPONSE_SHAPE", err)
+	}
+}
+
+// The identity the endpoint expects, which offline agreement could not have shown.
+//
+// Measured 2026-09-16: without these the endpoint answered HTTP 400. It is not a 404, so
+// the address and the credential were right and the body was not -- and every offline test
+// passed the whole time, because a fixture accepts whatever it is handed.
+func TestASearchCarriesTheIdentityTheEndpointExpects(t *testing.T) {
+	l := serveSearch(t, &listener{payload: `{"output":"ok","results":[]}`})
+	d := direct(t, l.listener, credentialStore(t, false), approved())
+	d.endpoint = l.URL + "/responses"
+
+	if _, err := d.Search(context.Background(), []byte(`{"model":"gpt-5.6-luna"}`)); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	sent, _ := l.body.Load().(string)
+
+	// First in the body, which is where the reference client puts it. The order is kept
+	// rather than re-encoded: this endpoint has already refused one body it did not
+	// recognise, and there is no reason to differ from the client it was built for.
+	if !strings.HasPrefix(sent, `{"id":"`) {
+		t.Fatalf("no session identity leads the body: %s", sent)
+	}
+	if !strings.Contains(sent, `"model":"gpt-5.6-luna"`) {
+		t.Fatalf("the caller's body did not survive the injection: %s", sent)
+	}
+
+	header, _ := l.last.Load().(http.Header)
+	raw := header.Get("x-codex-turn-metadata")
+	if raw == "" {
+		t.Fatal("the turn envelope was not sent")
+	}
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		t.Fatalf("the turn envelope is not JSON: %v", err)
+	}
+	for _, field := range []string{"installation_id", "session_id", "thread_id", "agent_name",
+		"turn_id", "root_turn_id", "window_id", "window_number", "context_window_id",
+		"request_kind", "thread_source", "sandbox", "sandbox_mode", "auto_review_enabled",
+		"node_repl_auto_review_required", "node_repl_disabled", "turn_started_at_unix_ms"} {
+		if _, present := envelope[field]; !present {
+			t.Errorf("the turn envelope has no %s", field)
+		}
+	}
+	// Nothing in it describes this machine. It is generated per call and says so.
+	if envelope["agent_name"] != "/root" || envelope["sandbox"] != "none" {
+		t.Errorf("the envelope does not match the reference client's: %v", envelope)
+	}
+}
+
+// One session per transport, a fresh turn per request. A new session every query would
+// describe every search as the first one.
+func TestASearchKeepsOneSessionAndMintsAFreshTurn(t *testing.T) {
+	l := serveSearch(t, &listener{payload: `{"output":"ok","results":[]}`})
+	d := direct(t, l.listener, credentialStore(t, false), approved())
+	d.endpoint = l.URL + "/responses"
+
+	identity := func() (string, string) {
+		if _, err := d.Search(context.Background(), []byte(`{"model":"m"}`)); err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		sent, _ := l.body.Load().(string)
+		header, _ := l.last.Load().(http.Header)
+		var envelope map[string]any
+		_ = json.Unmarshal([]byte(header.Get("x-codex-turn-metadata")), &envelope)
+		turn, _ := envelope["turn_id"].(string)
+		return sent[:len(`{"id":"`)+36], turn
+	}
+
+	firstSession, firstTurn := identity()
+	secondSession, secondTurn := identity()
+	if firstSession != secondSession {
+		t.Errorf("the session changed between queries: %q then %q", firstSession, secondSession)
+	}
+	if firstTurn == "" || firstTurn == secondTurn {
+		t.Errorf("the turn did not change between queries: %q then %q", firstTurn, secondTurn)
 	}
 }

@@ -384,6 +384,44 @@ transportClientErrorsByCode …).
 
 **Go**: 없음.
 
+## 6.8 실세션 검증 — A그룹 (2026-09-16)
+
+`clauduct-dev probe parity --send`. luna/low, 추론 4회 + 검색 1회. 누적 34/100.
+
+```
+image          6 frames, reply 5 chars
+tool change    8 frames, thought 2104 chars, reply 2 chars
+reasoning out  7 frames, reply 6 chars
+reasoning back 7 frames, reply 12 chars
+search         31989 bytes back, 20 links over 14 hosts, 10149 chars of text, 11 frames out
+reading all five reached the backend and came back in the shape this build expects
+```
+
+**`reasoning back`이 핵심이다.** backend가 **우리 봉투에 담긴 자기 암호화 기록을 되받았다.** 그건
+fixture로 확인할 수 있는 종류의 것이 아니다.
+
+### 6.8.1 라이브가 또 오프라인이 못 본 것을 찾았다
+
+**검색이 HTTP 400이었다.** 404가 아니므로 주소와 자격증명은 맞았고 **본문이 틀렸다.** 두 가지가
+빠져 있었다:
+
+- 본문 맨 앞의 `id` — 프로세스당 세션 UUID. 기준선은 호출자가 넣은 것을 **덮어쓴다**
+- `x-codex-turn-metadata` 헤더 — 17개 필드짜리 codex 형 turn 봉투
+
+둘 다 넣자 통과했다. **오프라인 테스트 15개는 그동안 전부 초록이었다** — fixture는 건네받은 것을
+그대로 받아들이기 때문이다. 이 프로젝트에서 세 번째다.
+
+회귀 테스트를 달았고 돌연변이 6/6이 잡는다. 세션은 transport당 하나, turn은 요청마다 새로 만든다 —
+매번 새 세션을 만들면 모든 검색이 첫 검색으로 보인다.
+
+### 6.8.2 그리고 probe가 승인보다 비싸게 쓰고 있었다
+
+`wire` probe의 요청에 effort가 없어서 `SelectRoute`가 luna의 카탈로그 기본값 **max**를 썼다. 승인된
+예산은 luna **low**다. 추론 토큰이 호출 비용의 대부분이므로 이건 실제 과지출이다.
+
+CAP03에서 넣은 **"본문과 대조해서 인가한다"** 검사가 이걸 드러냈다. 그 전에는 transport의 고정
+필드(luna/low)로 예약하고 본문에는 max를 실어 보냈다. probe가 effort를 명시하도록 고쳤다.
+
 ## 7. `native-transport.mjs` — 재시도와 한계값
 
 ### 7.1 한계값 대조

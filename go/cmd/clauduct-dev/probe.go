@@ -56,6 +56,12 @@ var probes = map[string]struct {
 }{
 	"limit": {"whether the backend accepts max_output_tokens", 3},
 	"wire":  {"whether this module's own request encoding survives the real backend", 3},
+	// Four inferences and one search. The search is a different endpoint and is not an
+	// attempt; it is named here so what is spent is visible before it is spent.
+	"parity": {"whether images, tool changes, the reasoning round trip and search work", 4},
+	// The search endpoint is not an inference and spends no attempt, so it can be run on
+	// its own as often as diagnosing it takes.
+	"search": {"whether the standalone search endpoint answers in the expected shape", 0},
 }
 
 func usageProbe(out io.Writer) int {
@@ -77,7 +83,7 @@ func usageProbe(out io.Writer) int {
 
 // probeNames lists the probes in a fixed order. Map iteration is random and this text is
 // read by a person deciding what to spend.
-func probeNames() []string { return []string{"limit", "wire"} }
+func probeNames() []string { return []string{"limit", "wire", "parity", "search"} }
 
 func probe(args []string, out, errOut io.Writer) int {
 	if len(args) != 2 || args[1] != "--send" {
@@ -113,9 +119,16 @@ func probe(args []string, out, errOut io.Writer) int {
 	transport := upstream.NewDirect(provider, ledger, upstream.Fixed(version))
 
 	code := 0
-	if args[0] == "wire" {
+	switch args[0] {
+	case "wire":
 		code = wireProbe(transport, budget, out)
-	} else {
+	case "parity":
+		code = parityProbe(transport, budget, out)
+	case "search":
+		if !searchProbe(transport, budget, out) {
+			code = 1
+		}
+	default:
 		code = limitProbe(transport, budget, out)
 	}
 	attempts, inferences, refused := ledger.Spent()

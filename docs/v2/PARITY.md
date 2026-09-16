@@ -203,7 +203,103 @@ argv 충실성(ARG01–03, ARG09–10)도 그대로다.
 바뀌는 것: "파서가 없으므로 구조적으로 성립"이라는 **근거**는 더 이상 쓸 수 없다. 파서가 생기면
 그 성질들은 파서가 지켜야 하고, 테스트가 다시 그것을 증명해야 한다.
 
-## 6. 다음
+## 6. 기능 모듈
+
+### 6.1 `native-search.mjs` — WebSearch가 Go에서 동작하지 않는다
+
+기준선은 클라이언트의 WebSearch **side query를 가로채 직접 답한다.** 그 요청은 추론이 아니라
+backend의 **별도 standalone search 엔드포인트**로 가는 검색 왕복이다.
+
+탐지 조건(`searchSideQuery`)은 전부 클라이언트가 스스로 만드는 모양이라 근접 오탐이 일반 경로로
+빠진다: `tools` 길이 1 · `type: web_search_20250305` · `name: web_search` · `tool_choice`가
+undefined/auto/해당 tool · 메시지 1개 user · 본문이 `"Perform a web search for the query: "`로 시작.
+
+응답은 `server_tool_use` + `web_search_tool_result` + 텍스트 블록으로 **합성**한다. 검색 결과는
+정의상 공격자 영향 아래 있는 웹 콘텐츠이므로 `SEARCH_LIMITS`(query 2048, results 20, title 512,
+url 2048, output 100000)로 묶고 제어문자를 걸러내며 http/https만 통과시킨다. 링크도 텍스트도 없는
+응답은 **빈 검색이 아니라 실패한 검색**으로 처리한다(`SEARCH_RESULTS_EMPTY`).
+
+쿼리만 올라간다 — 클라이언트가 함께 보낼 수 있는 대화 꼬리는 **의도적으로 뺀다.**
+
+**Go**: `anthropic/tools.go:76-78`이 `^web_search_20\d{6}$`를 만나면 `HOSTED_TOOL_UNSUPPORTED`로
+거부한다. 즉 사용자가 WebSearch를 쓰면 **요청이 실패한다.** (`codex/events.go:83`에
+`response.web_search_call.*`를 "deferred to WP07"로 적어둔 그 항목이다.)
+
+### 6.2 `native-beta.mjs` — 베타 이름은 절대 거부하지 않는다
+
+측정된 규칙이다: **베타 이름 하나를 거부하면 기능이 꺼지는 게 아니라 요청 전체가 죽는다 — 실세션에서
+WebFetch가 깨지는 것을 관찰했다.** 그래서 거부하는 것은 **형식이 깨진 헤더뿐**(`INVALID_BETA_HEADER`:
+빈 항목 또는 중복). 대신 세 목록으로 분류만 한다.
+
+- `NATIVE_BETAS` — 통과로 아는 것(+ `poc/gateway.mjs`의 `READ_BRIDGED_BETAS`)
+- `UNSUPPORTED_BETAS` — 27개, 이름 → 고정 라벨(`STRUCTURED_OUTPUTS`, `MCP_SERVERS`, `FILES_API`,
+  `ADVISOR_TOOL`, `TOKEN_COUNTING` …). 진단용이며 거부하지 않는다
+- `SERVER_DEPENDENT_BETAS` — 7개, Anthropic 서버가 있어야 동작하므로 이 backend에서는 이미 무력.
+  feature scan이 신규로 보고하지 않도록 목록에만 올린다
+
+**Go**: `anthropic-beta` 헤더를 **읽지 않는다.** 금지 헤더 목록에도 없으므로 통과한다. 결과적으로
+"거부하지 않는다"는 안전 규칙은 **누락으로 만족**하지만, `INVALID_BETA_HEADER` 검사도 없고
+판정/미지 베타 진단도 없다. 동등이 아니라 우연한 일치다.
+
+### 6.3 `native-delivery.mjs` — WIRE13의 기준선 대응물이고, 값이 일치한다
+
+```
+청크 16 KiB → 쓰기 → false면 drain 대기 → 타임아웃 30000 ms → DELIVERY_TIMEOUT
+매 청크마다 signal.aborted(CANCELLED)·response.destroyed(CLIENT_DISCONNECTED) 확인
+```
+
+**Go의 `writeStall = 30 * time.Second`는 기준선의 `timeoutMs = 30000`과 같은 값이다.** WIRE13에서
+고른 값이 기준선과 독립적으로 일치했다. 그 값의 근거가 하나 늘었다.
+
+**남은 차이 하나: 청킹.** `anthropic/response.go:49` `Frame.WriteTo`는 프레임 전체를 `w.Write` **한 번**에
+쓴다. 기준선은 16 KiB로 쪼개고 각 조각마다 backpressure를 기다린다. 이것이 WIRE13 실측에서 만난
+"배치 하나가 메가바이트가 되면 단일 쓰기가 bound를 넘는다"는 문제의 기준선 쪽 해답이다.
+**16 KiB 청킹을 넣으면 bound의 의미가 기준선과 같아진다.**
+
+### 6.4 `compact-policy.mjs` — 압축 요청 식별
+
+Claude 2.1.263이 압축 요청을 감싸는 정확한 접두/접미 문구를 공백 정규화 후 대조해
+`{lastRole, textBlocks, mixedBlocks, prefixMatches, suffixMatches, matches}`를 낸다.
+`<system-reminder>`로만 이루어진 텍스트 블록은 제외하고, **과거 요약·assistant 텍스트·도구 출력은
+라우팅 목적으로 들여다보지 않는다.** 원본 프롬프트는 재작성하지 않는다.
+
+**Go**: 없음.
+
+### 6.5 `rate-limit-observation.mjs` — 관찰이지 예산이 아니다
+
+upstream 응답 **헤더**에서 `*-{primary,secondary}-{used-percent,window-minutes,reset-at}`을 읽어
+`missing`/`partial`/`observed`/`invalid` 상태와 무효 사유(`header-shape`·`duplicate`·
+`numeric-format`·`numeric-range`)를 낸다. 다른 family는 최대 8개까지 이름만 센다.
+**지출을 승인하지도, 남은 토큰을 추정하지도, 요청 예산을 바꾸지도 않는다.**
+
+**Go**: `codex` 이벤트에 `rate_limits.updated`/`CodexRateLimits`가 있다. 그건 **SSE 이벤트**이고
+기준선이 읽는 것은 **HTTP 응답 헤더**다. 출처가 다르다. 헤더 관찰은 없음.
+
+### 6.6 `request-status.mjs` — 종료 JSON
+
+`CLAUDUCT_REQUEST_STATUS` 한 줄로 나가는 세션 요약. 담는 것:
+
+clientVersion/referenceClientVersion/status · clientContextPolicy(window·autoCompactWindow·
+compactPercent, 환경에서 상속) · clientExecutionPolicy(nonStreamingFallbackDisabled) ·
+correlationScope · admission(active·queued·queuedTotal·timedOutTotal·maxWaitMs·oldestWaitMs) ·
+unsupportedEventNames · unknownBetaNames · judgedBetaLabels · requestOutcome(not-observed/
+has-failures/in-progress/no-requests/all-succeeded) · lifetime(transportRejectionsByEvent,
+transportClientErrorsByCode …).
+
+세션 중에는 `readRequestStatus(env)`가 `GET /clauduct/status`로 읽는다. 단 **캡처한 upstream 이벤트
+이름은 in-session API가 의도적으로 보류**하므로 stdout의 종료 줄이 그 유일한 사본이다.
+
+**Go**: `app.Result`에 Attempts·Inferences·NativeExitCode·ExitCodeUnknown뿐. 종료 JSON 없음.
+
+### 6.7 `workflow-selection.mjs` — workflow 실행 검증
+
+`projectsRoot` 아래 저널을 읽어 workflow 실행의 출처·저장된 결과·자식 경로를 검증한다.
+스크립트는 sha256 다이제스트로 고정하고(`workflowDigest`), resume은 `resumeFromRunId`와
+`scriptPath` 일치를 요구한다. `agent-selection`의 `linkWorkflow`가 이것을 부른다.
+
+**Go**: 없음.
+
+## 7. 다음
 
 - [ ] `native-transport.mjs` 664줄 대조
 - [ ] `native-gateway.mjs` 나머지(진단·admission·http-close) 대조
@@ -212,7 +308,7 @@ argv 충실성(ARG01–03, ARG09–10)도 그대로다.
 - [ ] `workflow-selection.mjs`, `request-status.mjs`, `rate-limit-observation.mjs`, `native-search.mjs`, `native-beta.mjs`, `compact-policy.mjs`
 - [ ] 위가 끝나면 WP07을 이 원장으로 다시 정의하고, 예산 필요량을 산정한다
 
-## 7. Go 런타임 — 미해결 상류 결함
+## 8. Go 런타임 — 미해결 상류 결함
 
 기록만 한다. 조치는 실측 후.
 

@@ -764,6 +764,34 @@ exit-코드 변이는 처음에 compiler-only였다 — `errors.As`를 지우면
 
 "스트리밍 중 상한에 닿으면 중단"을 검토했다. 기준선보다 나은 답처럼 보였다. **usage는 `response.completed`와 `response.incomplete`에만 실린다** — 스트리밍 중에는 토큰 수를 알 방법이 없으므로, 문자 수 추정으로 자르면 정상 응답을 자를 수 있다. 그리고 폭주 방어는 이미 있다(`stream.Limits`의 frame·event 상한, `ErrResponseTooLarge`). **정밀한 상한은 불가능하고 폭주 방어는 이미 존재하므로 만들 것이 남아 있지 않다.**
 
+### 1.10 G5 C 범위 — argv 도달은 동작이 아니다 (2026-09-17)
+
+기준선이 막던 옵션들이 이 재설계의 **정당화**인데, 증거는 `TestConfigurationOptionsStillReachTheChild`
+하나뿐이었다 — 자식 argv에 그대로 도착한다는 것. 그건 "동작한다"와 다른 주장이다. 근거가
+**"파서가 없으니 당연히 된다"는 구성 논증**이었고, 이 프로젝트에서 구성 논증은 다섯 번 뒤집혔다.
+
+전부 추론 0회, 스크립트 백엔드 + 실제 클라이언트로 측정했다.
+
+| 옵션 | 무엇을 확인했나 | 결과 |
+|---|---|---|
+| `--mcp-config` | stub MCP 서버가 뜨고, 툴이 모델에게 제공되고, 호출이 브리지를 왕복하고, **서버의 상속 환경이 살아남는가** | 통과 |
+| `--resume` | 세션 1의 단어가 **세션 2의 요청 본문에** 실려 오는가 | 통과 |
+| `--permission-mode plan` | 세션 내용이 실제로 달라지고 plan mode를 명시하는가 | 통과 |
+| `--worktree` | `git worktree list`에 실제로 생겼는가 | 통과 |
+| `--plugin-dir` | 플러그인의 skill 이름이 세션이 보내는 것에 들어 있는가 | 통과 |
+
+**다섯 개 전부 옵션을 빼면 실패한다.** 확인했다 — 빼도 통과하는 테스트는 아무것도 측정하지 않는다.
+
+**MCP가 가장 값진 측정이다.** 기준선은 자식 환경에서 `TOKEN`·`SECRET`을 포함한 **모든** 이름을
+지웠고, 그래서 MCP 서버가 동작하지 않았다. 이 빌드는 `ANTHROPIC_*`과 OAuth 토큰만 지운다.
+stub 서버의 툴이 `MCP_STUB_SECRET_TOKEN`(기준선 규칙의 두 문자열을 모두 포함)을 보고한다:
+
+- 이 빌드: `PRESENT:the-servers-own-credential`
+- `denied()`에 기준선 규칙을 넣은 변이: **`ABSENT`**
+
+재설계가 고쳤다고 주장하던 것이 이제 논증이 아니라 측정이다.
+
+
 ## 4. 게이트
 
 | Gate | 상태 | 산출물·증거 | 통과 후 허용 |
@@ -773,7 +801,7 @@ exit-코드 변이는 처음에 compiler-only였다 — `errors.As`를 지우면
 | G2 격리 | **완료** | 2026-09-15 사용자 승인. worktree `Clauduct-go-v2`, 의존 0 Go module, 기준선 tracked 변경 0 | offline vertical slice |
 | G3 최소 실행 | **산출물 완료** | WP01·WP02. argv/env/cwd 사양, loopback lifecycle, cleanup. 알려진 한계는 5.2절 | protocol 구현 |
 | G4 기본 wire | **산출물 완료** | WP03·WP04. text·tool·JSON·SSE·error·cancel offline P/S, limit registry 확정 | native synthetic 통합 |
-| G5 host parity | **부분** | WP06이 P/S 범위(ARG06–07, ENV04·06·07·08·10, CAP04·10)를 덮었다. C 범위(MCP·plugin·worktree·resume)는 5.9.4절에 미착수로 명시 | real backend 검증 계획 확정 |
+| G5 host parity | **완료 2026-09-17** | WP06이 P/S 범위를 덮었고, C 범위(MCP·plugin·worktree·resume·permission-mode)가 **기능으로** 닫혔다 — argv 도달이 아니라 동작. 아래 1.10절 | real backend 검증 계획 확정 |
 | G6 transport 안전 | **완료** | WP05가 auth·attempt cap·retry·leak을, 1.9절이 process boundary(LIFE11·LIFE12·LIFE17)를 덮었다 | 아래 G7 조건 |
 | G7 live integration | **완료** | 1.6절. 실제 claude.exe → 제품 빌드 → 실제 backend 왕복. 출하 바이너리로도 확인 | release 후보 판단 |
 | G8 package | **완료** | 1.7절. 재현 빌드·신원·설치·동시 실행·자원 증가·문서. [PACKAGING.md](PACKAGING.md) | 기본 전환 판단 요청 |

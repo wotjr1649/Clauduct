@@ -9,6 +9,7 @@
 package anthropic
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -64,6 +65,10 @@ const (
 	CodeImageSourceFields    = "IMAGE_SOURCE_FIELDS"
 	CodeUnsupportedImage     = "UNSUPPORTED_IMAGE"
 	CodeImageRole            = "IMAGE_ROLE"
+	CodeRedactedFields       = "REDACTED_FIELDS"
+	CodeRedactedRole         = "REDACTED_ROLE"
+	CodeReasoningFields      = "REASONING_FIELDS"
+	CodeUnsupportedThinking  = "UNSUPPORTED_THINKING"
 	CodeInvalidModel         = "INVALID_MODEL"
 	CodeToolUseFieldsCode    = "TOOL_USE_FIELDS"
 	CodeToolResultFieldsCode = "TOOL_RESULT_FIELDS"
@@ -118,6 +123,28 @@ type Block struct {
 	// image
 	MediaType string
 	Data      string
+
+	// redacted_thinking
+	Reasoning *Reasoning
+}
+
+// Reasoning is the model's own chain of thought, recorded in the client's transcript so it
+// can be handed back on the next turn.
+//
+// The content is encrypted and this build never reads it. What it does is keep it intact:
+// the request asks the backend for reasoning.encrypted_content, and throwing away what
+// comes back would mean asking for something and discarding it, leaving the model to start
+// its thinking again every turn.
+type Reasoning struct {
+	ID        string
+	Summary   []SummaryText
+	Encrypted string
+}
+
+// SummaryText is one part of the visible summary that travels beside the encrypted content.
+type SummaryText struct {
+	Type string
+	Text string
 }
 
 // ImageURL is the data URL the backend reads an image from.
@@ -429,6 +456,13 @@ func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Blo
 		return decodeToolResult(raw, role, state)
 	case "tool_addition", "tool_removal":
 		return decodeToolChange(raw, kind, role, state)
+	case "redacted_thinking":
+		// Only an assistant turn has a chain of thought. One attached to a user turn is a
+		// transcript that has been edited, not a request to honour.
+		if role != "assistant" {
+			return Block{}, refuse(CodeRedactedRole, "redacted_thinking")
+		}
+		return decodeRedactedThinking(raw)
 	}
 	return decodeBlock(raw)
 }
@@ -668,4 +702,90 @@ func exactInteger(value json.RawMessage) (int64, error) {
 func (r *Request) String() string {
 	return fmt.Sprintf("anthropic.Request{model:%q messages:%d tools:%d}",
 		r.Model, len(r.Messages), len(r.Tools))
+}
+
+// ReasoningPrefix marks a redacted_thinking block as this bridge's own envelope.
+//
+// The exact string the Node baseline uses, and that is an interop contract rather than a
+// detail: a transcript recorded under one implementation is resumed under the other, and a
+// different prefix would make every recorded thought unreadable at exactly the moment it
+// was needed.
+const ReasoningPrefix = "clauduct-reasoning-v1:"
+
+// decodeRedactedThinking reads back a chain of thought this bridge recorded.
+//
+// Everything about the envelope is checked before anything is believed. What it carries is
+// opaque and stays opaque -- the encrypted content is never read here, only kept whole --
+// but the envelope around it is this build's own, so a malformed one is a transcript that
+// has been tampered with or truncated rather than something to pass on to the backend.
+func decodeRedactedThinking(raw json.RawMessage) (Block, error) {
+	fields, err := wire.Fields(raw, []string{"type", "data", "cache_control"})
+	if err != nil {
+		return Block{}, refuse(CodeRedactedFields, "redacted_thinking")
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return Block{}, err
+		}
+	}
+	var data string
+	value, present := wire.Of(fields, "data")
+	if present != wire.Present || json.Unmarshal(value, &data) != nil ||
+		!strings.HasPrefix(data, ReasoningPrefix) {
+		return Block{}, refuse(CodeUnsupportedThinking, "data")
+	}
+	// base64url without padding, which is what Node's 'base64url' encoding produces. The
+	// padding is tolerated on the way in because a transcript is written by something else.
+	decoded, err := base64.RawURLEncoding.DecodeString(
+		strings.TrimRight(data[len(ReasoningPrefix):], "="))
+	if err != nil {
+		return Block{}, refuse(CodeUnsupportedThinking, "data")
+	}
+
+	saved, err := wire.Fields(decoded, []string{"type", "id", "summary", "encrypted_content"})
+	if err != nil {
+		return Block{}, refuse(CodeReasoningFields, "reasoning")
+	}
+	var kind, id, encrypted string
+	kindValue, ok := wire.Of(saved, "type")
+	if ok != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "reasoning" {
+		return Block{}, refuse(CodeUnsupportedThinking, "type")
+	}
+	idValue, ok := wire.Of(saved, "id")
+	if ok != wire.Present || json.Unmarshal(idValue, &id) != nil || !identifier.MatchString(id) {
+		return Block{}, refuse(CodeUnsupportedThinking, "id")
+	}
+	encryptedValue, ok := wire.Of(saved, "encrypted_content")
+	if ok != wire.Present || json.Unmarshal(encryptedValue, &encrypted) != nil {
+		return Block{}, refuse(CodeUnsupportedThinking, "encrypted_content")
+	}
+
+	// Always a list, never absent and never null: the backend is handed back exactly the
+	// shape it produced, and an empty summary is a summary with nothing in it.
+	summary := []SummaryText{}
+	summaryValue, ok := wire.Of(saved, "summary")
+	if ok != wire.Present {
+		return Block{}, refuse(CodeUnsupportedThinking, "summary")
+	}
+	var parts []json.RawMessage
+	if json.Unmarshal(summaryValue, &parts) != nil {
+		return Block{}, refuse(CodeUnsupportedThinking, "summary")
+	}
+	for _, entry := range parts {
+		part, err := wire.Fields(entry, []string{"type", "text"})
+		if err != nil {
+			return Block{}, refuse(CodeUnsupportedThinking, "summary")
+		}
+		var partType, text string
+		typeValue, has := wire.Of(part, "type")
+		textValue, hasText := wire.Of(part, "text")
+		if has != wire.Present || json.Unmarshal(typeValue, &partType) != nil || partType != "summary_text" ||
+			hasText != wire.Present || json.Unmarshal(textValue, &text) != nil {
+			return Block{}, refuse(CodeUnsupportedThinking, "summary")
+		}
+		summary = append(summary, SummaryText{Type: partType, Text: text})
+	}
+
+	return Block{Type: "redacted_thinking", Raw: raw,
+		Reasoning: &Reasoning{ID: id, Summary: summary, Encrypted: encrypted}}, nil
 }

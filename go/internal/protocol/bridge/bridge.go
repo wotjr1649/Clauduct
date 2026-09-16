@@ -83,6 +83,46 @@ type InputEntry struct {
 
 	// function_call_output
 	Output []InputPart `json:"output,omitempty"`
+
+	// reasoning. Carried apart from the rest because its shape shares no field with them
+	// and because an empty summary has to travel as an empty list rather than vanish.
+	Reasoning *Reasoning `json:"-"`
+}
+
+// Reasoning is a chain of thought going back to the model that produced it.
+type Reasoning struct {
+	ID        string          `json:"id"`
+	Summary   []ReasoningPart `json:"summary"`
+	Encrypted string          `json:"encrypted_content"`
+}
+
+// ReasoningPart is one piece of the visible summary.
+type ReasoningPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// MarshalJSON writes a reasoning entry in its own shape and everything else unchanged.
+//
+// The summary is written even when empty. omitempty would drop it, and the backend is
+// being handed back exactly what it produced -- an empty summary is a summary with nothing
+// in it, which is not the same as no summary at all.
+func (e InputEntry) MarshalJSON() ([]byte, error) {
+	if e.Reasoning != nil {
+		summary := e.Reasoning.Summary
+		if summary == nil {
+			summary = []ReasoningPart{}
+		}
+		return json.Marshal(struct {
+			Type      string          `json:"type"`
+			ID        string          `json:"id"`
+			Summary   []ReasoningPart `json:"summary"`
+			Encrypted string          `json:"encrypted_content"`
+		}{"reasoning", e.Reasoning.ID, summary, e.Reasoning.Encrypted})
+	}
+	// The alias stops this from calling itself and keeps the existing shape exactly.
+	type plain InputEntry
+	return json.Marshal(plain(e))
 }
 
 // ToolSpec is a callable definition in the backend's vocabulary.
@@ -224,6 +264,19 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 					Type:     "input_image",
 					ImageURL: anthropic.ImageURL(block.MediaType, block.Data),
 				}}})
+			case "redacted_thinking":
+				// Its own entry, handed straight back. The content is encrypted and this
+				// build has never read it; what it does is not lose it.
+				flush()
+				summary := make([]ReasoningPart, 0, len(block.Reasoning.Summary))
+				for _, part := range block.Reasoning.Summary {
+					summary = append(summary, ReasoningPart{Type: part.Type, Text: part.Text})
+				}
+				out.Input = append(out.Input, InputEntry{Reasoning: &Reasoning{
+					ID:        block.Reasoning.ID,
+					Summary:   summary,
+					Encrypted: block.Reasoning.Encrypted,
+				}})
 			case "tool_addition", "tool_removal":
 				// Nothing travels. A tool change edits which definitions go upstream, which
 				// ActiveTools has already applied; putting the block itself in the input

@@ -39,6 +39,21 @@ const maxRequestBytes = 32 * 1024 * 1024
 // sending anything.
 const requestBodyTimeout = 300 * time.Second
 
+// writeStall is how long one write to the client may block before the session gives up on
+// it.
+//
+// Not a limit on how long a response may take. It is reset before every batch, so a client
+// that keeps reading never meets it however long the answer runs -- which is the design the
+// handoff asks for and the reason a single global WriteTimeout is the wrong tool.
+//
+// What it bounds is a client that stopped reading. The socket buffer fills, the next write
+// blocks, and without this it blocks forever while an upstream request keeps running.
+//
+// A var rather than a const so a test can shorten it. The mechanism is the same at three
+// seconds as at thirty, and a suite that spends half a minute per case proving it is a
+// suite people start skipping. Nothing outside a test assigns to it.
+var writeStall = 30 * time.Second
+
 // Header names that may never appear. cookie and proxy-authorization carry credentials
 // this gateway did not issue and has no use for; a client that sends one is either not the
 // client we think it is or is being driven by something that is not.

@@ -852,6 +852,14 @@ G7 통과가 G9 승인을 뜻하지 않는다. CI가 초록이라는 사실만�
 
 `Shutdown`이 그래도 실패하면 `server.Close()`로 강제 해제하되, **원래 실패를 성공으로 덮지 않고 그대로 보고한다.**
 
+**2026-09-16, 그 메커니즘이 실어 나른 결함 하나.** gateway suite가 절반쯤 `"An existing connection was forcibly closed by the remote host"`로 깨졌다. 매번 다른 테스트였고, 빠른 테스트만 걸렸다. 포트 재사용도 커넥션 풀링도 아니었다 — trace는 전부 `reused=false`였고 포트 이력은 단조 증가했다.
+
+범인은 취소 감시 goroutine이었다. `select`가 `ctx.Done()`과 handler의 done channel을 함께 기다리는데, 빠른 요청에서는 goroutine이 처음 스케줄될 때 **둘 다 이미 닫혀 있다**(net/http는 handler가 리턴하는 즉시 요청 context를 취소한다). Go는 준비된 case 둘 중 하나를 무작위로 고른다. 그 절반은 handler가 이미 손을 뗀 커넥션에 만료된 read deadline을 걸었고, 응답은 그때 아직 서버 쓰기 버퍼에 있었다. client는 답 대신 reset을 받았다. **테스트만의 문제가 아니다.**
+
+추론이 아니라 측정으로 좁혔다. 감시 goroutine만 빼고 300초 deadline은 그대로 둔 6회 실행에서 reset 0건, deadline을 통째로 뺀 6회에서도 0건. done channel은 defer로 닫히므로 `ctx.Done()`이 오기 **전에** 반드시 닫힌다 — 다시 확인하는 것은 또 하나의 추측이 아니라 확정이다. 수정 후 gateway 22회·모듈 전체 6회 통과.
+
+이 결함이 드러난 이유 자체가 기록할 만하다. **suite를 처음으로 연속해서 돌렸기 때문이다.** 한 번 초록인 것은 초록이라는 증거가 아니다.
+
 ### 5.5 WP03 — 완료
 
 text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 돌려주지 않는다: 요청을 해독하고, backend 요청으로 변환하고, transport로 실행하고, 돌아온 SSE를 파싱해 Anthropic 프레임으로 내보낸다.
@@ -871,7 +879,7 @@ text 경로가 끝에서 끝까지 동작한다. `POST /v1/messages`는 501을 �
 | WIRE09 terminal 누락·조기 EOF·중복 terminal | PASS | 6종 순서 위반 + 전송 조기 종료 + **EOF 아닌 read 실패** |
 | WIRE10 `[DONE]`·완료 후 trailing data | PASS | parser 단위 |
 | WIRE12 reasoning 뒤 최종 text 순서 | PASS | reasoning 선행이 client가 보는 순서를 바꾸지 않음. reasoning 내용은 전달되지 않음 |
-| WIRE13 느린 downstream backpressure | 부분 | 프레임 단위 flush는 있으나 느린 client 압력 실측은 없다. WP08 |
+| WIRE13 느린 downstream backpressure | PASS | 쓰기마다 갱신되는 30초 deadline(`writeStall`). 읽기를 멈춘 client는 **3.01초**(테스트용 3초 bound)만에 놓여났다 — 그 전에는 goroutine·backend 연결·과금 중인 요청을 무한정 붙잡았다. 전체 응답 timeout이 아니라는 것은 `SetWriteDeadline`/`Flush` 순서를 직접 기록해 확정했다. 경계: bound는 **쓰기 하나**에 걸린다. 수신 버퍼를 8 KB씩 비우는 client는 정상 코드에서도 잘리는 것이 실측됐는데, 원인은 gateway가 아니라 TCP다(수신측이 8 KB마다 window 재통지를 하지 않는다). 30초 기준으로는 초당 10 KB 미만으로 소비하는 client에 해당한다 |
 | WIRE14 ping과 upstream idle timeout 구분 | PASS | keepalive를 진전으로 읽지 않는 것에 더해, WP05가 phase별 timeout을 붙였다(handshake 30초, 응답 헤더 120초). 하나의 전체 deadline이면 "오래 생각하는 응답"과 "멈춘 연결"을 같은 순간에 자른다 |
 | WIRE15 gzip/encoding 지원 여부와 크기 상한 | PASS | WP05. 압축을 **요청하지 않는다**(`Accept-Encoding: identity` + `DisableCompression`). 요청하지 않은 압축은 풀 일이 없고, 풀 일이 없으면 상한을 정할 크기도 압축 폭탄도 없다 |
 | TOOL01–TOOL08 | `NOT_RUN` | 도구는 명시적으로 거부된다. WP04 |

@@ -139,6 +139,15 @@ func abortOnCancel(ctx context.Context, done <-chan struct{}, expire func()) {
 func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *http.ResponseController,
 	response *upstream.Response, request *anthropic.Request) {
 
+	// Cleared when this response ends, and that is not tidiness.
+	//
+	// A deadline set through the ResponseController lives on the connection, not on the
+	// request, and this server configures no WriteTimeout of its own, so nothing else
+	// resets it. Left in place it is still counting down when the next request arrives on
+	// the same keep-alive connection, and that request inherits whatever is left of a
+	// bound it never earned.
+	defer func() { _ = control.SetWriteDeadline(time.Time{}) }()
+
 	parser := stream.NewParser(stream.DefaultLimits())
 	parser.IsTerminal = codex.Terminal
 	// The translator is told which tools are callable now, so a call naming a withdrawn
@@ -158,6 +167,16 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			header.Set("Connection", "keep-alive")
 			w.WriteHeader(http.StatusOK)
 		}
+		// Per batch, not per response. A global WriteTimeout would end a long answer that
+		// is being delivered perfectly well; this bounds how long one write may block,
+		// which is a different thing. A client that keeps reading resets it every batch and
+		// never meets it.
+		//
+		// Without it a client that stops reading blocks the write once the socket buffer
+		// fills, and holds a goroutine, the upstream connection and a request that is still
+		// running on the user's subscription -- for as long as it likes.
+		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
+
 		for _, frame := range frames {
 			if _, err := frame.WriteTo(w); err != nil {
 				return err
@@ -169,6 +188,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}
 
 	fail := func(err error) {
+		// Its own deadline: the path that got here may be the write that just stalled, and
+		// an error frame must not inherit a deadline that has already passed.
+		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
 		if !committed {
 			g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 			return

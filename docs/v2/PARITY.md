@@ -492,6 +492,32 @@ Go: `Failure{Category, Disposition}`, LIFE13에서 11종 PASS. 대체로 대응�
 Go의 `checkBoundary`는 금지 헤더(Cookie·Proxy-Authorization·Origin·Sec-Fetch-Site·Forwarded)와
 토큰만 본다. 버전·인코딩·세션 ID 모양은 보지 않는다.
 
+### 8.1 실제 클라이언트가 보내는 헤더 (2026-09-16 실측)
+
+fixture backend에 붙인 실제 `claude -p`, 추론 비용 0. 클라이언트는 claude-cli/2.1.273.
+
+```
+HEAD /api/hello   User-Agent=Bun/1.4.3, Authorization 없음
+GET  /v1/models   Anthropic-Version=2023-06-01, Authorization 있음, Anthropic-Beta 없음
+POST /v1/messages Anthropic-Version=2023-06-01 | Content-Encoding 없음
+                  X-Claude-Code-Session-Id=<UUID> | X-App=cli | X-Stainless-* 7종
+                  Anthropic-Beta=claude-code-20250219, interleaved-thinking-2025-05-14,
+                    thinking-token-count-2026-05-13, context-management-2025-06-27,
+                    prompt-caching-scope-2026-01-05, mid-conversation-system-2026-04-07,
+                    mid-conversation-tool-changes-2026-07-01, effort-2025-11-24
+```
+
+세 가지가 나왔다.
+
+**`mid-conversation-tool-changes-2026-07-01`을 기본으로 보낸다.** A4a의 베타 게이트는 실제 세션에서
+항상 열려 있다 — 구현하지 않았다면 도구 변경이 매번 거부됐을 것이다.
+
+**경계 검사를 넣어도 안전하다.** 버전은 정확히 `2023-06-01`, `Content-Encoding`은 아예 없고,
+세션 id는 UUID다. 추측으로 넣었다면 모든 요청이 깨졌을 수 있다 — 그래서 먼저 쟀다.
+
+**`/v1/models`에는 `Anthropic-Beta`가 없다.** 버전 검사를 그 경로에도 걸면 통과하지만, 기준선처럼
+`/v1/messages` 안에서만 검사한다.
+
 ## 9. 응답 경로 — 진단 어휘
 
 `EVENT_DIAGNOSTIC_TYPES` 약 60개. 여기에는 Codex `ThreadEvent` 태그(`thread.started`,
@@ -622,7 +648,7 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 |---|---|---|
 | C1 | `POST /clauduct/agents` + 바인딩 검증 4종 | 2, 4 |
 | C2 | agent-selection: 메타데이터 읽기·symlink 경계·역할별 모델(`ROLE_MODELS`) | 4, 3.3 |
-| C3 | `x-claude-code-{session,agent,parent-agent}-id` 모양 검사와 대조 | 8, 4 |
+| C3 | `x-claude-code-*` 모양 검사 **완료**. 바인딩 대조는 C1·C2와 함께 | 8, 4 |
 | C4 | workflow-selection: 저널 검증·다이제스트·resume | 6.7 |
 | C5 | `Route.Source`에 역할 재지정 근거값 추가 | 3.3, CAP03 |
 
@@ -641,8 +667,8 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 
 | # | 작업 | 근거 |
 |---|---|---|
-| E1 | `anthropic-version === '2023-06-01'` 검사 | 8 |
-| E2 | `content-encoding` 부재/identity 검사 | 8 |
+| E1 | ~~`anthropic-version` 검사~~ **완료 2026-09-16** | 8 |
+| E2 | ~~`content-encoding` 검사~~ **완료 2026-09-16** | 8 |
 | E3 | ~~`Frame.WriteTo` 16 KiB 청킹~~ **완료 2026-09-16.** `chunkedWriter`, 돌연변이 6/6 | 6.3 |
 | E4 | compact 템플릿 식별 | 6.4 |
 | E5 | 전체 요청 timeout 10분 (phase별 위에 추가) | 7.1 |

@@ -247,3 +247,76 @@ func TestTheModelListNeedsTheSessionCredential(t *testing.T) {
 		t.Fatalf("POST /v1/models = %d, want 404", post.StatusCode)
 	}
 }
+
+// C3 and the boundary checks the baseline makes.
+//
+// Each refuses for what is actually wrong. A version this build does not speak, a body it
+// cannot read, and an identifier that is not one are three different problems, and a caller
+// told only "bad request" cannot act on any of them.
+func TestTheRequestBoundaryIsCheckedBeforeAnythingIsRead(t *testing.T) {
+	for _, c := range []struct {
+		name, header, value, code string
+		status                    int
+	}{
+		{"a version nobody here implements", "Anthropic-Version", "2024-10-22",
+			"UNSUPPORTED_VERSION", http.StatusBadRequest},
+		{"no version at all", "Anthropic-Version", "",
+			"UNSUPPORTED_VERSION", http.StatusBadRequest},
+		{"a body this build cannot decompress", "Content-Encoding", "gzip",
+			"UNSUPPORTED_ENCODING", http.StatusUnsupportedMediaType},
+		{"a session identifier that is not one", "X-Claude-Code-Session-Id", "has spaces",
+			"INVALID_SESSION_ID", http.StatusBadRequest},
+		{"an agent identifier that is not one", "X-Claude-Code-Agent-Id", "../../etc",
+			"INVALID_SESSION_ID", http.StatusBadRequest},
+		{"a parent identifier that is not one", "X-Claude-Code-Parent-Agent-Id",
+			strings.Repeat("a", 201), "INVALID_SESSION_ID", http.StatusBadRequest},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			fixture := &upstream.Fixture{SSE: sse(created, completed, "[DONE]")}
+			g := startWith(t, fixture)
+
+			rq := messages(strings.NewReader(validRequest))
+			if c.value == "" {
+				delete(rq.headers, c.header)
+			} else {
+				rq.headers[c.header] = c.value
+			}
+			resp := do(t, g, rq)
+
+			if resp.StatusCode != c.status {
+				t.Fatalf("status = %d, want %d: %s", resp.StatusCode, c.status, bodyText(t, resp))
+			}
+			if body := bodyText(t, resp); !strings.Contains(body, c.code) {
+				t.Fatalf("body = %s, want %s", body, c.code)
+			}
+			if fixture.Calls() != 0 {
+				t.Errorf("a request refused at the boundary reached the backend %d times",
+					fixture.Calls())
+			}
+		})
+	}
+}
+
+// And the shapes a real session actually sends are carried, not refused.
+//
+// The values here are the ones measured off the installed client: a UUID session id,
+// identity encoding stated explicitly, and correlation identifiers that are absent because
+// no subagent is running.
+func TestTheShapesARealSessionSendsAreAccepted(t *testing.T) {
+	for _, c := range []struct{ name, header, value string }{
+		{"a uuid session id", "X-Claude-Code-Session-Id", "1b0b3297-ade4-4aa4-86c8-80eaf43db0a3"},
+		{"an agent id beside it", "X-Claude-Code-Agent-Id", "agent_01ABCdef-ghi"},
+		{"identity encoding stated", "Content-Encoding", "identity"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			g := startWith(t, &upstream.Fixture{
+				SSE: sse(created, delta("ok"), done("ok"), completed, "[DONE]")})
+			rq := messages(strings.NewReader(validRequest))
+			rq.headers[c.header] = c.value
+			resp := do(t, g, rq)
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+			}
+		})
+	}
+}

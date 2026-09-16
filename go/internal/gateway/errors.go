@@ -24,6 +24,9 @@ var (
 	refuseRoute      = refusal{"UNSUPPORTED_ROUTE", http.StatusNotFound}
 	refuseMethod     = refusal{"UNSUPPORTED_METHOD", http.StatusMethodNotAllowed}
 	refuseMediaType  = refusal{"UNSUPPORTED_MEDIA_TYPE", http.StatusUnsupportedMediaType}
+	refuseEncoding   = refusal{"UNSUPPORTED_ENCODING", http.StatusUnsupportedMediaType}
+	refuseVersion    = refusal{"UNSUPPORTED_VERSION", http.StatusBadRequest}
+	refuseSessionID  = refusal{"INVALID_SESSION_ID", http.StatusBadRequest}
 	refuseTooLarge   = refusal{"INPUT_TOO_LARGE", http.StatusRequestEntityTooLarge}
 	refuseBusy       = refusal{"TOO_MANY_REQUESTS", http.StatusTooManyRequests}
 	refuseClosed     = refusal{"GATEWAY_CLOSED", http.StatusServiceUnavailable}

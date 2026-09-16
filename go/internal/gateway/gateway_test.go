@@ -69,12 +69,18 @@ func bodyText(t *testing.T, resp *http.Response) string {
 	return string(raw)
 }
 
+// messages is a request shaped like the ones a real client sends. The version header is
+// not decoration: measured 2026-09-16, the installed client puts it on every request, and a
+// helper that leaves it off would be testing a client nobody runs.
 func messages(body io.Reader) request {
 	return request{
-		method:  http.MethodPost,
-		path:    "/v1/messages?beta=true",
-		headers: map[string]string{"Content-Type": "application/json"},
-		body:    body,
+		method: http.MethodPost,
+		path:   "/v1/messages?beta=true",
+		headers: map[string]string{
+			"Content-Type":      "application/json",
+			"Anthropic-Version": anthropicVersion,
+		},
+		body: body,
 	}
 }
 
@@ -466,6 +472,7 @@ func slowUpload(t *testing.T, g *Gateway) (cancel func(), done chan struct{}) {
 	}
 	req.Header.Set("Authorization", "Bearer "+g.Token())
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Anthropic-Version", anthropicVersion)
 
 	done = make(chan struct{})
 	go func() {

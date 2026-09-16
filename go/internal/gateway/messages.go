@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +36,10 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if !isJSON(r.Header.Get("Content-Type")) {
 		g.refuse(w, refuseMediaType)
+		return
+	}
+	if bad, ok := checkRequestHeaders(r); !ok {
+		g.refuse(w, bad)
 		return
 	}
 
@@ -144,6 +149,49 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 
 	g.relay(ctx, w, control, response, request)
+}
+
+// correlationHeaders are the identifiers the client uses to tie a request to the session
+// and the subagent that made it. Measured 2026-09-16: a real session sends the session id
+// as a UUID and sends the other two only when a subagent is running.
+var correlationHeaders = []string{
+	"X-Claude-Code-Session-Id",
+	"X-Claude-Code-Agent-Id",
+	"X-Claude-Code-Parent-Agent-Id",
+}
+
+// correlationShape is what one of those identifiers may look like. The baseline's.
+var correlationShape = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
+
+// anthropicVersion is the only version of the message API this build speaks.
+//
+// Measured: the installed client sends exactly this. Checking it is not ceremony -- a
+// client speaking a version nobody here implements would otherwise be answered as though
+// it had been understood.
+const anthropicVersion = "2023-06-01"
+
+// checkRequestHeaders applies the boundary checks the Node baseline makes and this build
+// did not.
+//
+// Absence is not a failure for the correlation identifiers: CAP06 separates "no identifier"
+// from "an identifier that is not one", because the first is an ordinary request and the
+// second is a malformed one. A shape that is not the client's is refused rather than
+// carried, since these values are what a later binding would be matched against.
+func checkRequestHeaders(r *http.Request) (refusal, bool) {
+	for _, name := range correlationHeaders {
+		if value := r.Header.Get(name); value != "" && !correlationShape.MatchString(value) {
+			return refuseSessionID, false
+		}
+	}
+	if r.Header.Get("Anthropic-Version") != anthropicVersion {
+		return refuseVersion, false
+	}
+	// Nothing here decompresses, so a body that arrives compressed is one this build would
+	// read as gibberish. Measured: the client sends no Content-Encoding at all.
+	if encoding := r.Header.Get("Content-Encoding"); encoding != "" && encoding != "identity" {
+		return refuseEncoding, false
+	}
+	return refusal{}, true
 }
 
 // searchFor answers one side query from the backend's search endpoint.

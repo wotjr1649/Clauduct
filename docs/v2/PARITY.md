@@ -299,16 +299,221 @@ transportClientErrorsByCode …).
 
 **Go**: 없음.
 
-## 7. 다음
+## 7. `native-transport.mjs` — 재시도와 한계값
 
-- [ ] `native-transport.mjs` 664줄 대조
-- [ ] `native-gateway.mjs` 나머지(진단·admission·http-close) 대조
-- [ ] `native-protocol.mjs` 응답 경로 대조
-- [ ] `clauduct.mjs` 378줄 — 종료 JSON·notice·옵션
-- [ ] `workflow-selection.mjs`, `request-status.mjs`, `rate-limit-observation.mjs`, `native-search.mjs`, `native-beta.mjs`, `compact-policy.mjs`
-- [ ] 위가 끝나면 WP07을 이 원장으로 다시 정의하고, 예산 필요량을 산정한다
+### 7.1 한계값 대조
 
-## 8. Go 런타임 — 미해결 상류 결함
+| | 기준선 `NATIVE_TRANSPORT_LIMITS` | Go |
+|---|---|---|
+| `maxFrameBytes` | 8 MiB | 8 MiB — 동등 |
+| `maxEvents` | 100,000 | 100,000 — 동등 |
+| `maxResponseBytes` | `NATIVE_LIMITS.responseBytes` (16 MiB) | 16 MiB — 동등 |
+| `timeoutMs` | 600,000 (전체) | **없음.** 대신 phase별(handshake 30s, 응답 헤더 120s) |
+| `maxRetries` | **5** | **0** — 7.2절 |
+| `retryBaseMs`/`retryMaxMs` | 100 / 2,000 | 해당 없음 |
+| `retryAfterMaxMs` | 5,000 (in-process 대기 상한) | 자지 않고 **보고**한다 (Deferred) |
+| `maxSockets`/`maxFreeSockets`/`idleSocketMs` | ∞ / 2 / 600,000 | `DefaultTransport` 기본값 |
+
+Go에 **전체 timeout이 없다**는 점은 기록해 둔다. WIRE14는 phase별이 하나의 전체 deadline보다 낫다고
+판정했고 그건 유효하지만, 기준선에는 그 위에 10분 상한이 또 있다. 둘은 배타적이지 않다.
+
+### 7.2 재시도 — 설계 차이지 단순 격차가 아니다
+
+기준선은 **연결 실패**를 최대 5회 재시도한다(100ms→2000ms). 재시도 대상은
+`UPSTREAM_IDLE_TIMEOUT`·`UPSTREAM_DNS_ERROR`·`UPSTREAM_IO_ERROR`(단 `HPE_` 접두 제외)이고,
+TLS 오류·권한 거부는 **재시도 루프에 들어가지 않는다**(`connectionFailure`의 `retryable`).
+
+Go는 `MaxGatewayRetries = 0`이고 그 근거가 측정이다: 설치된 claude 2.1.272가 **5xx를 스스로
+재시도한다(60초에 8회)**. 게이트웨이가 또 재시도하면 곱해진다.
+
+두 근거 모두 유효하다. 결과 차이는 **비용의 위치**다. 일시적 DNS 장애에서 기준선은 한 요청 안에서
+조용히 회복하고, Go는 503을 돌려주어 클라이언트가 8번 재시도한다. 회복은 양쪽 다 되지만 시도 수가
+다르다. **누가 재시도를 소유하는가는 결정 사항이고, 이 원장은 그 결정이 미결임을 기록한다.**
+
+### 7.3 실패 분류
+
+기준선: `UPSTREAM_IDLE_TIMEOUT` / `UPSTREAM_TLS_ERROR` / `UPSTREAM_ACCESS_DENIED` /
+`UPSTREAM_DNS_ERROR` / `UPSTREAM_IO_ERROR`. 인증서 코드 7종을 명시 집합으로 갖고, 그 밖에
+`CERT_`·`ERR_TLS_`·`ERR_SSL_`·`ERR_OSSL_` 접두도 TLS로 본다. **원본 Node/OpenSSL 메시지와
+미인식 코드는 진단에 넣지 않는다.**
+
+Go: `Failure{Category, Disposition}`, LIFE13에서 11종 PASS. 대체로 대응하나 이름이 다르고
+1:1 대조는 **미완**이다.
+
+검색 전용 분류도 있다: `searchConnectionFailure`가 `UPSTREAM_IO_ERROR`를 `SEARCH_HTTP_ERROR`로
+바꾼다. Go에는 검색 경로 자체가 없다(6.1절).
+
+## 8. `native-gateway.mjs` — 요청 파이프라인
+
+`REQUEST_STAGES` = `request` → `selection` → `prepare` → `review` → `upstream` →
+`output-validation` → `delivery`. Go에는 stage 개념이 없다.
+
+`POST /v1/messages`가 순서대로 하는 일(`:248-300`) 중 Go에 **없는** 것:
+
+| 단계 | 기준선 | Go |
+|---|---|---|
+| `x-claude-code-{session,agent,parent-agent}-id` 모양 검사 | `INVALID_SESSION_ID` | **읽지 않음** |
+| `anthropic-version === '2023-06-01'` | `UNSUPPORTED_VERSION` | **검사 없음** |
+| `anthropic-beta` 형식 검사 + 미지/판정 베타 수집 | 있음 | **없음** (6.2절) |
+| `content-encoding` 부재 또는 `identity` | `UNSUPPORTED_ENCODING` | **검사 없음** (content-type만) |
+| 요청별 timing 10개 스탬프 + attempts[] + retryScheduledMs[] | 있음 | **없음** |
+| `sessionRef`/`agentRef`/`parentRef` 해시 참조 | 있음 | **없음** |
+| 최근 요청 16개 링 버퍼 | 있음 | **없음** |
+| agent 등록 고정(LRU) 후 admission | 있음 | **없음** |
+| `stage = 'selection'` → `agentSelection.resolve()` | 있음 | **없음** (4절) |
+| `timing.requestedModel` 기록 | 있음 | CAP03로 **부분 대응** |
+
+**헤더 검사 순서가 의도적이다.** 요청을 `recentRequests`에 먼저 넣고 나서 버전·베타·인코딩을 본다 —
+"거부된 버전·베타·인코딩이 **기록되지 않은 400**이 아니라 진단된 실패가 되도록."
+
+Go의 `checkBoundary`는 금지 헤더(Cookie·Proxy-Authorization·Origin·Sec-Fetch-Site·Forwarded)와
+토큰만 본다. 버전·인코딩·세션 ID 모양은 보지 않는다.
+
+## 9. 응답 경로 — 진단 어휘
+
+`EVENT_DIAGNOSTIC_TYPES` 약 60개. 여기에는 Codex `ThreadEvent` 태그(`thread.started`,
+`turn.*`, `item.*`)도 들어 있는데 **라벨일 뿐이고 게이트웨이는 그것들을 여전히 거부한다** —
+thread/turn/item 지원을 함의하지 않는다.
+
+- `EVENT_TYPE_FORMATS` 6종: `missing`·`non-string`·`empty`·`oversized`·`identifier`·`other`
+- `KEEPALIVE_SHAPES` 3종: `type-only`·`type-sequence`·`other`
+- `capturableEventName`: 미매핑 이벤트 **이름만** 제한 캡처. 소문자 세그먼트 24자 이하, 점 최대 4개,
+  전체 48자. **본문·해시·부분값·이미 라벨이 있는 이름은 절대 담지 않는다.**
+
+주석에 실패 기록이 남아 있다: 점을 필수로 했더니 run-04에서 타입이 `identifier`로 분류되고
+목록은 비어서, 이 캡처가 존재하는 이유인 그 이름을 놓쳤다. 이 프로토콜 어휘 자체가 점 없는 이름
+(`error`·`ping`·`message_start`)을 쓰기 때문이다.
+
+**Go**: `codex/events.go`에 이벤트 24개. 진단 어휘는 없고, 미지 이벤트는 `UNSUPPORTED_EVENT`로
+요청을 실패시킨다. 캡처도 분류도 없다.
+
+## 10. 옵션 정책과 종료
+
+### 10.1 거부 옵션 — 여기서 "동등"은 후퇴다
+
+| | 기준선 | Go |
+|---|---|---|
+| 거부 목록 | **30개** | **2개** |
+| 근거 | gateway 경로를 벗어나거나 wrapper 계약을 깨는 것 | 세션 전체의 안전 장치를 제거하고 아래에서 되돌릴 수 없는 것 |
+
+Go의 주석이 기준선의 이력을 근거로 든다: 목록이 30개로 자랐는데도 **`--name --model`을 혼동했다** —
+어떤 옵션이 뒤따르는 값을 소비하는지 추적해야 했기 때문이다. Go가 고른 둘은 값을 소비하지 않으므로
+그 추적이 필요 없고, "값이 옵션으로 오인되지 않는다"는 성질이 온전히 남는다.
+
+그리고 기준선이 막는 `--mcp-config`·`--plugin-dir`·`--worktree`·`--permission-mode`·`--restricted`·
+`--betas`는 **사용자 자신의 설정이고, 그게 동작하게 하는 것이 이 재설계의 목적**이다. `--bare`도
+기준선은 막지만 Go는 통과시키고 CAP10이 실제로 연결됨을 측정했다.
+
+**그러므로 이 항목은 기준선에 맞추지 않는다.** 단 조건이 하나 붙는다:
+
+> 5절의 launcher 층을 이식하면 `--settings`·`--setting-sources`·`--agents`·`--system-prompt`
+> **네 개는 반드시 막아야 한다.** wrapper가 직접 써서 주입하므로 사용자 값과 충돌한다.
+> 지금은 주입하지 않으므로 통과시켜도 되지만, 주입을 켜는 순간 이 넷은 정책이 아니라 **필연**이다.
+
+### 10.2 종료 코드 — 서로 다르다
+
+| | 기준선 | Go |
+|---|---|---|
+| 종료 코드 | `SUCCESS ? 0 : 1` | **자식의 exit code 그대로** |
+
+Go는 `cmd/clauduct-go/main.go`가 `result.NativeExitCode`를 반환하고 ARG08이 exit 7 왕복을 고정했다.
+launcher로서는 Go 쪽이 맞다고 본다 — 스크립트가 자식 코드에 의존한다. 그래도 차이는 차이이므로
+**결정 사항으로 남긴다.**
+
+### 10.3 종료 출력 — Go에는 없다
+
+```
+Clauduct 종료: <category>                       # SUCCESS|CLIENT_FAILED|CLIENT_START_FAILED|REQUEST_BUDGET|USER_CANCELLED
+CLAUDUCT_REQUEST_STATUS <json>                  # 6.6절
+CLAUDUCT_REQUEST_STATUS_FILE <경로|none>         # launcher 자신의 무시 디렉터리
+```
+
+세션 중 모은 notice는 여기서 stderr로 나간다 — **native가 터미널을 소유하므로 세션 중에 쓰면
+프롬프트 입력 상자 안에 떨어지기 때문이다.** 상태 파일 기록 실패는 치명적이지 않고, 그때는
+stdout의 그 한 줄이 유일한 사본이라고 알린다.
+
+**Go**: 종료 출력 없음. `CleanupErr`만 stderr로 나간다.
+
+## 11. WP07 — 원장에서 다시 정의한 작업 목록
+
+조사 완료. "C 등급 19건" 대신 이것이 작업 목록이다. 각 항목은 이 문서의 절을 근거로 갖는다.
+
+### A. 사용자가 매일 닿는 것
+
+| # | 작업 | 근거 | 라이브 필요 |
+|---|---|---|---|
+| A1 | `image` 블록 (base64 png/jpeg/gif/webp → `input_image`, user role 강제) | 3.1 | 예 — 실제 이미지 왕복 |
+| A2 | hosted WebSearch: side query 탐지 + 별도 search 엔드포인트 + 응답 합성 | 6.1 | 예 |
+| A3 | `GET /v1/models` + `modelPicker.replaceBuiltInOptions` + `ENABLE_GATEWAY_MODEL_DISCOVERY` | 2, 5.3 | 예 — 피커 확인 |
+| A4 | `tool_addition`/`tool_removal`, `redacted_thinking`, `tool_reference` | 3.1 | 예 |
+
+### B. launcher 층 — 한 덩어리
+
+| # | 작업 | 근거 |
+|---|---|---|
+| B1 | `settings.env` 11개 키 추가 (모델 기본값·telemetry·advisor·non-streaming fallback·watchdog·resume) | 5.2 |
+| B2 | `--settings` JSON 주입 + `--model`/`--effort` 소유·해석 | 5.1 |
+| B3 | `--settings`·`--setting-sources`·`--agents`·`--system-prompt` 거부 **(B2의 필연)** | 10.1 |
+| B4 | `settings.hooks` 3종 + Go판 `agent-route` (바인딩 전송 주체) | 5.4, 4 |
+| B5 | `--agents` 정의 생성 (`clauduct-<family>-<effort>`, `clauduct-inherit`) | 5.5 |
+
+### C. agent/workflow 선택 층
+
+| # | 작업 | 근거 |
+|---|---|---|
+| C1 | `POST /clauduct/agents` + 바인딩 검증 4종 | 2, 4 |
+| C2 | agent-selection: 메타데이터 읽기·symlink 경계·역할별 모델(`ROLE_MODELS`) | 4, 3.3 |
+| C3 | `x-claude-code-{session,agent,parent-agent}-id` 모양 검사와 대조 | 8, 4 |
+| C4 | workflow-selection: 저널 검증·다이제스트·resume | 6.7 |
+| C5 | `Route.Source`에 역할 재지정 근거값 추가 | 3.3, CAP03 |
+
+### D. 진단과 관찰
+
+| # | 작업 | 근거 |
+|---|---|---|
+| D1 | `GET /clauduct/status` + `diagnostics()` | 2, 6.6 |
+| D2 | 종료 JSON `CLAUDUCT_REQUEST_STATUS` + 상태 파일 + notice 지연 출력 | 10.3, 6.6 |
+| D3 | 요청별 timing 10 스탬프 + 최근 16개 링 + stage 7종 | 8 |
+| D4 | `anthropic-beta` 형식 검사 + 판정/미지 베타 분류 (**이름은 거부하지 않는다**) | 6.2 |
+| D5 | rate-limit **헤더** 관찰 (SSE 이벤트와 다른 출처) | 6.5 |
+| D6 | 이벤트 진단 어휘 + `capturableEventName` 제한 캡처 | 9 |
+
+### E. 프로토콜 경계
+
+| # | 작업 | 근거 |
+|---|---|---|
+| E1 | `anthropic-version === '2023-06-01'` 검사 | 8 |
+| E2 | `content-encoding` 부재/identity 검사 | 8 |
+| E3 | `Frame.WriteTo` 16 KiB 청킹 — WIRE13 bound의 의미를 기준선과 일치시킨다 | 6.3 |
+| E4 | compact 템플릿 식별 | 6.4 |
+| E5 | 전체 요청 timeout 10분 (phase별 위에 추가) | 7.1 |
+
+### F. 결정이 필요한 것 — 구현 전에 사용자 판단
+
+| # | 항목 | 왜 결정인가 |
+|---|---|---|
+| F1 | 재시도를 누가 소유하는가 (기준선 5회 vs Go 0회) | 양쪽 근거가 모두 측정에 기반한다. 7.2 |
+| F2 | 종료 코드 (자식 코드 전파 vs 0/1) | Go 쪽이 launcher로서 맞아 보이나 차이다. 10.2 |
+| F3 | 거부 옵션 목록 (기준선 30 vs Go 2) | **기준선에 맞추면 후퇴다.** B3만 필연. 10.1 |
+| F4 | Go 1.27.2 게이트 | 실측 후 판단으로 합의됨. 12절 |
+
+### 순서 제안
+
+B → C가 한 덩어리이므로 함께 간다. A1·A3·E3은 독립이고 사용자 체감이 커서 먼저 해도 된다.
+D는 B·C가 만든 상태를 보고하는 층이라 뒤에 온다.
+
+권장: **E3 → A1 → A3 → A4 → A2 → (F 결정) → B → C → D**
+
+E3을 맨 앞에 두는 이유는 이미 측정된 결함을 닫기 때문이다(6.3). A2(검색)를 A 안에서 마지막에 두는
+이유는 별도 엔드포인트·별도 실패 분류가 붙어 가장 크기 때문이다.
+
+### 예산
+
+라이브가 필요한 것은 A 전체와 C2(역할별 라우팅 실제 확인), D5(실제 rate-limit 헤더 관찰).
+남은 73회로 **A는 충분하다**(항목당 2–4회 예상). B·C·D까지 포함한 산정은 A를 마친 뒤
+실제 소모를 보고 다시 낸다. 지금 숫자를 부르면 근거 없는 숫자다.
+
+## 12. Go 런타임 — 미해결 상류 결함
 
 기록만 한다. 조치는 실측 후.
 

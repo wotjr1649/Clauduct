@@ -74,11 +74,16 @@ non-streaming 요청은 기준선도 `REQUEST_STREAM_FALSE`로 거부한다(`nat
 |---|---|---|---|
 | `text` | 지원 | 지원 | 동등 |
 | `tool_use` / `tool_result` | 지원 | 지원 | 동등 (TOOL01–08) |
-| `image` | base64 png/jpeg/gif/webp → `input_image` 데이터 URL. user role 강제 | `UNSUPPORTED_CONTENT` | **격차 — 사용자가 매일 닿는다** |
+| `image` | base64 png/jpeg/gif/webp → `input_image` 데이터 URL. user role 강제 | **구현 완료 2026-09-16** | 동등. 돌연변이 8/8 |
 | `tool_addition` / `tool_removal` | 지원 (`:359,365`) | `UNSUPPORTED_CONTEXT_CHANGE` | **격차** |
 | `redacted_thinking` | 지원 (`:398`) | `UNSUPPORTED_CONTENT` | **격차** |
-| `tool_reference` (tool_result 안) | 지원 (`:387`) | `UNSUPPORTED_CONTENT` | **격차** |
+| `tool_reference` (tool_result 안) | 지원 (`:387`) | **이미 지원됨** (`tools.go:304`) | 동등 — 최초 기재가 틀렸다 |
 | `thinking` + `summary_text` | 지원 (`:234`) | 미확인 | **미조사** |
+
+**텍스트 블록 묶음이 다르다(2026-09-16 발견).** 기준선은 텍스트 블록 **하나마다** input 항목을
+따로 만든다(`native-protocol.mjs:356`). Go는 한 턴의 텍스트를 모아 항목 하나로 보낸다. 모델이 보는
+내용은 같고 실세션이 통과했으므로 깨지지는 않지만, wire 모양은 다르다. 이미지는 기준선의 검증된
+모양을 그대로 따랐다 — flush 후 자기 항목, role은 user.
 
 ### 3.2 스트리밍
 
@@ -443,10 +448,10 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 
 | # | 작업 | 근거 | 라이브 필요 |
 |---|---|---|---|
-| A1 | `image` 블록 (base64 png/jpeg/gif/webp → `input_image`, user role 강제) | 3.1 | 예 — 실제 이미지 왕복 |
+| A1 | ~~`image` 블록~~ **오프라인 완료 2026-09-16.** 실세션 검증은 남음 | 3.1 | 예 — 실제 이미지 왕복 |
 | A2 | hosted WebSearch: side query 탐지 + 별도 search 엔드포인트 + 응답 합성 | 6.1 | 예 |
 | A3 | `GET /v1/models` + `modelPicker.replaceBuiltInOptions` + `ENABLE_GATEWAY_MODEL_DISCOVERY` | 2, 5.3 | 예 — 피커 확인 |
-| A4 | `tool_addition`/`tool_removal`, `redacted_thinking`, `tool_reference` | 3.1 | 예 |
+| A4 | `tool_addition`/`tool_removal`, `redacted_thinking` (`tool_reference`는 이미 지원) | 3.1 | 예 |
 
 ### B. launcher 층 — 한 덩어리
 
@@ -489,7 +494,16 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | E4 | compact 템플릿 식별 | 6.4 |
 | E5 | 전체 요청 timeout 10분 (phase별 위에 추가) | 7.1 |
 
-### F. 결정이 필요한 것 — 구현 전에 사용자 판단
+### F. 결정 완료 (2026-09-16)
+
+| # | 항목 | 결정 |
+|---|---|---|
+| F1 | 재시도 소유권 | **응답 전 연결 실패만 재시도.** DNS·IO·idle timeout 3회(100→800ms). TLS·권한 거부 제외. 상태를 내보낸 뒤에는 재시도하지 않는다 — 측정된 곱셈 위험은 **클라이언트가 보는 상태**에만 성립하고, 이 분류는 클라이언트가 볼 일이 없다 |
+| F2 | 종료 코드 | **자식 코드 전파 유지 + category 줄 추가.** 기준선의 0/1은 스크립트가 쓰는 정보를 버리고, Go에는 사람이 읽을 이름이 없다. 둘은 배타적이지 않다 |
+| F3 | 거부 옵션 | **Go의 2개 유지.** 기준선 목록을 따라가면 그것이 가졌던 `--name --model` 혼동도 따라온다. 단 B2 착수 시 `--settings`·`--setting-sources`·`--agents`·`--system-prompt` 4개는 필연 |
+| F4 | Go 1.27.2 게이트 | 실측 후 판단 |
+
+### F(구)  — 원래 목록
 
 | # | 항목 | 왜 결정인가 |
 |---|---|---|

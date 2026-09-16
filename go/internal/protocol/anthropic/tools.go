@@ -271,6 +271,10 @@ type ResultPart struct {
 	Type string
 	Text string
 	Name string // tool_reference only
+
+	// image only
+	MediaType string
+	Data      string
 }
 
 func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, error) {
@@ -302,6 +306,14 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 				return nil, err
 			}
 			parts = append(parts, ResultPart{Type: "text", Text: block.Text})
+		case "image":
+			// No role check here: a tool result is already required to be a user turn, so
+			// the question the block-level check answers has been answered.
+			block, err := decodeImage(entry)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, ResultPart{Type: "image", MediaType: block.MediaType, Data: block.Data})
 		case "tool_reference":
 			reference, err := wire.Fields(entry, []string{"type", "tool_name", "cache_control"})
 			if err != nil {

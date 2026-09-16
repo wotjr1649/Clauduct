@@ -103,6 +103,27 @@ type NamedTool struct {
 type InputPart struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+	// ImageURL carries a data URL for an input_image part and is empty otherwise.
+	ImageURL string `json:"-"`
+}
+
+// MarshalJSON writes the shape each part type actually has.
+//
+// An input_image carries an image_url and no text; an input_text carries a text and no
+// image_url. A single struct with omitempty would get both wrong -- it would put an empty
+// text beside every image, and it would drop the text field from a legitimately empty text
+// part. The two shapes are written out rather than approximated.
+func (p InputPart) MarshalJSON() ([]byte, error) {
+	if p.Type == "input_image" {
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			ImageURL string `json:"image_url"`
+		}{p.Type, p.ImageURL})
+	}
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{p.Type, p.Text})
 }
 
 // ReasoningParam carries the effort the caller asked for.
@@ -195,6 +216,14 @@ func BuildRequest(request *anthropic.Request) (*Request, error) {
 			switch block.Type {
 			case "text":
 				parts = append(parts, InputPart{Type: kind, Text: block.Text})
+			case "image":
+				// Its own entry, which is the baseline's shape: an attached picture is not
+				// a part of the sentence around it.
+				flush()
+				out.Input = append(out.Input, InputEntry{Role: "user", Content: []InputPart{{
+					Type:     "input_image",
+					ImageURL: anthropic.ImageURL(block.MediaType, block.Data),
+				}}})
 			case "tool_use":
 				flush()
 				out.Input = append(out.Input, InputEntry{
@@ -230,6 +259,9 @@ func resultParts(block anthropic.Block) []InputPart {
 	}
 	for _, part := range block.Result {
 		switch part.Type {
+		case "image":
+			parts = append(parts, InputPart{Type: "input_image",
+				ImageURL: anthropic.ImageURL(part.MediaType, part.Data)})
 		case "tool_reference":
 			// A historical reference is data, not a definition that can reactivate a tool.
 			parts = append(parts, InputPart{Type: "input_text",

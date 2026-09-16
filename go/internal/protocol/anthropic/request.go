@@ -60,6 +60,10 @@ const (
 	CodeCacheFields          = "CACHE_FIELDS"
 	CodeCacheValue           = "CACHE_VALUE"
 	CodeUnsupportedContent   = "UNSUPPORTED_CONTENT"
+	CodeImageFields          = "IMAGE_FIELDS"
+	CodeImageSourceFields    = "IMAGE_SOURCE_FIELDS"
+	CodeUnsupportedImage     = "UNSUPPORTED_IMAGE"
+	CodeImageRole            = "IMAGE_ROLE"
 	CodeInvalidModel         = "INVALID_MODEL"
 	CodeToolUseFieldsCode    = "TOOL_USE_FIELDS"
 	CodeToolResultFieldsCode = "TOOL_RESULT_FIELDS"
@@ -110,6 +114,19 @@ type Block struct {
 	ToolUseID string
 	IsError   bool
 	Result    []ResultPart
+
+	// image
+	MediaType string
+	Data      string
+}
+
+// ImageURL is the data URL the backend reads an image from.
+//
+// The backend takes an image as a data URL rather than as a source object, so the
+// media type and the payload are joined here and nowhere else. The shape is the
+// baseline's, byte for byte.
+func ImageURL(mediaType, data string) string {
+	return "data:" + mediaType + ";base64," + data
 }
 
 // Message is one turn.
@@ -353,6 +370,13 @@ func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Blo
 		return Block{}, refuse(CodeUnsupportedContent, "content")
 	}
 	switch kind {
+	case "image":
+		// Role is checked here rather than at the conversion, because a picture attached
+		// to an assistant turn is a malformed request and not something to reinterpret.
+		if role != "user" {
+			return Block{}, refuse(CodeImageRole, "image")
+		}
+		return decodeImage(raw)
 	case "tool_use":
 		return decodeToolUse(raw, role, state)
 	case "tool_result":
@@ -399,6 +423,60 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 		}
 	}
 	return block, nil
+}
+
+// imageMediaTypes is what the backend accepts, and the list is the baseline's.
+//
+// Not a guess and not a superset. A media type outside it is refused rather than passed
+// through: sending a format the backend will not read turns a picture the user attached
+// into an error they cannot place.
+var imageMediaTypes = map[string]bool{
+	"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true,
+}
+
+// base64Payload is standard base64 with optional padding. No whitespace and no URL-safe
+// alphabet: the client sends neither, and accepting them here would mean re-encoding
+// somebody's image on the way through.
+var base64Payload = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
+
+// decodeImage reads one image block.
+//
+// Both key sets are closed. An unknown key on the block or on its source is refused
+// rather than ignored, because an image carries its meaning in fields this build does not
+// interpret, and quietly dropping one would send a different picture than was attached.
+func decodeImage(raw json.RawMessage) (Block, error) {
+	fields, err := wire.Fields(raw, []string{"type", "source", "cache_control"})
+	if err != nil {
+		return Block{}, refuse(CodeImageFields, "image")
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return Block{}, err
+		}
+	}
+	sourceValue, present := wire.Of(fields, "source")
+	if present != wire.Present {
+		return Block{}, refuse(CodeImageFields, "source")
+	}
+	source, err := wire.Fields(sourceValue, []string{"type", "media_type", "data"})
+	if err != nil {
+		return Block{}, refuse(CodeImageSourceFields, "source")
+	}
+
+	var kind, mediaType, data string
+	kindValue, ok := wire.Of(source, "type")
+	if ok != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "base64" {
+		return Block{}, refuse(CodeUnsupportedImage, "source.type")
+	}
+	typeValue, ok := wire.Of(source, "media_type")
+	if ok != wire.Present || json.Unmarshal(typeValue, &mediaType) != nil || !imageMediaTypes[mediaType] {
+		return Block{}, refuse(CodeUnsupportedImage, "source.media_type")
+	}
+	dataValue, ok := wire.Of(source, "data")
+	if ok != wire.Present || json.Unmarshal(dataValue, &data) != nil || !base64Payload.MatchString(data) {
+		return Block{}, refuse(CodeUnsupportedImage, "source.data")
+	}
+	return Block{Type: "image", Raw: raw, MediaType: mediaType, Data: data}, nil
 }
 
 // checkCacheControl validates a caching hint without acting on it.

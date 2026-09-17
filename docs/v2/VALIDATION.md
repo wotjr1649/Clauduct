@@ -1003,7 +1003,7 @@ stub 서버의 툴이 `MCP_STUB_SECRET_TOKEN`(기준선 규칙의 두 문자열�
 | G7 live integration | **완료** | 1.6절. 실제 claude.exe → 제품 빌드 → 실제 backend 왕복. 출하 바이너리로도 확인 | release 후보 판단 |
 | G8 package | **완료** | 1.7절. 재현 빌드·신원·설치·동시 실행·자원 증가·문서. [PACKAGING.md](PACKAGING.md) | 기본 전환 판단 요청 |
 | G9 기본 전환 | **완료 2026-09-17** | 사용자 승인("지금 전환"). 설치 실측: `clauduct`→Go, `clauduct-node`→Node, `clauduct-hook` 동거. 상태 파일이 `hookInstalled: true` | 새 실행의 기본 binary 변경 |
-| G10 선택적 archive | **DEFERRED** | [MIGRATION.md](MIGRATION.md) 6장 M3. 권고는 하지 않음 | 승인된 구조 정리 |
+| G10 선택적 archive | **DEFERRED** | [MIGRATION.md](MIGRATION.md) 6장 M3. 권고는 하지 않음. **여는 조건 3개가 거기 적혀 있다** (2026-09-17) | 승인된 구조 정리 |
 
 **산출물 완료**와 **게이트 통과**를 구분한다. 앞의 것은 "그 게이트가 요구한 증거가 만들어졌다"는 사실이고, 뒤의 것은 사용자 판단이다. 이 표는 앞의 것만 기록한다.
 

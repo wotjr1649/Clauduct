@@ -30,7 +30,7 @@ Windows 전용입니다. **Claude Code와 Codex CLI가 먼저 설치돼 있어�
 저장소를 클론했다면 그대로, 아니면 스크립트만 받아서 **읽어보고** 실행합니다.
 
 ```powershell
-irm https://raw.githubusercontent.com/wotjr1649/Clauduct/main/scripts/install.ps1 -OutFile install.ps1
+irm https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1 -OutFile install.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 

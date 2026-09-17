@@ -28,11 +28,16 @@ clauduct --model sol --effort xhigh
 clauduct --continue
 clauduct -p "Summarize the current task"
 clauduct --update      # Clauduct 자신을 갱신. `clauduct update`는 그대로 전달되어 Claude Code를 갱신
+clauduct --usage       # 이 계정이 주간 한도를 얼마나 썼는지. 요청 0회
 clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너리로
 ```
 
-거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update` 하나이고,
-거부하는 것은 네 개입니다(권한 해제 2종, `--settings`·`--setting-sources`).
+거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`와 `--usage`
+둘이고(둘 다 **첫 인자일 때만** 인식), 거부하는 것은 네 개입니다(권한 해제 2종,
+`--settings`·`--setting-sources`).
+
+클라이언트의 `/usage`·`/cost`는 GPT 플랜 사용량을 보여주지 못합니다 — 커스텀 base URL에는 계정
+엔드포인트를 묻지 않는 것으로 실측됐습니다. `clauduct --usage`가 그 질문에 답합니다.
 
 `claude.exe`와 `codex.exe`, 그리고 `~/.codex/auth.json`이 필요합니다. Node도 .NET도 필요하지
 않습니다. 출하물·빌드·되돌리기는 [docs/v2/PACKAGING.md](docs/v2/PACKAGING.md), 모듈의 빌드 명령과

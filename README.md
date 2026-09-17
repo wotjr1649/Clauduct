@@ -89,8 +89,9 @@ clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너�
 클라이언트의 `/usage`·`/cost`는 GPT 플랜 사용량을 보여주지 못합니다 — 커스텀 base URL에는 계정
 엔드포인트를 묻지 않는 것으로 실측됐습니다. `clauduct --usage`가 그 질문에 답합니다.
 
-필요한 것과 설치는 [설치](#설치) 절에 있습니다. 출하물·빌드·되돌리기는 [docs/v2/PACKAGING.md](docs/v2/PACKAGING.md), 모듈의 빌드 명령과
-runtime 계약은 [go/README.md](go/README.md)에 있습니다.
+필요한 것과 설치는 [설치](#설치) 절에 있습니다. 출하물·빌드·되돌리기는
+[docs/v2/PACKAGING.md](docs/v2/PACKAGING.md), 모듈의 빌드 명령과 runtime 계약은
+[go/README.md](go/README.md)에 있습니다.
 
 ## Node 구현 (`clauduct-node`)
 

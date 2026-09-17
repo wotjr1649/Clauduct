@@ -125,6 +125,47 @@ PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`�
 
 세션 상태는 전부 native가 소유하고 `CLAUDE_CONFIG_DIR`(기본 `~/.claude`) 아래에 있다. 이 wrapper는 자기 것을 어디에도 쓰지 않는다.
 
+### 5.0 스크립트
+
+`scripts/install.ps1`과 `scripts/uninstall.ps1`이 그 복사를 대신한다. 루트의 `install.ps1`은
+**v1(Node) 설치기**이고 기준선이므로 건드리지 않는다 — 이름이 같지만 다른 물건이다.
+
+```powershell
+# 릴리스에서 설치 (기본 최신 태그, 기본 위치 ~\.local\bin)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
+scripts\install.ps1 -Tag v0.2.0                 # 태그 고정
+scripts\install.ps1 -FromPath .\dist            # 로컬 빌드 설치 (3개 + SHA256SUMS 필요)
+scripts\install.ps1 -NoPathUpdate               # PATH를 건드리지 않는다
+
+scripts\uninstall.ps1                           # 바이너리 3개 + --update가 남긴 *.old
+scripts\uninstall.ps1 -Purge                    # %TEMP%\clauduct 진단 파일까지
+scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실행 파일이 없을 때만
+```
+
+**셋이 다 검증되기 전에는 하나도 복사하지 않는다.** digest가 어긋나면 `INSTALL_DIGEST_MISMATCH`로
+멈추고 대상 디렉터리는 손대지 않은 상태로 남는다. 새 바이너리 둘 옆에 옛 바이너리 하나는 어떤
+릴리스도 그 조합으로 시험된 적이 없다.
+
+**설치 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 거부한다**(`INSTALL_DIRECTORY_SHADOW`).
+이유는 1장과 같다 — Git Bash가 거기서 멈춘다.
+
+**PATH는 레지스트리에서 원문으로 읽고 같은 값 종류로 되돌려 쓴다.** .NET의
+`GetEnvironmentVariable`은 `%USERPROFILE%`을 펼쳐서 주고 `SetEnvironmentVariable`은 `REG_SZ`로
+저장하므로, 순진한 read-modify-write는 남은 `%VAR%` 항목을 **영구히** 죽인다. `setx`는 1024자에서
+자른다. 쓰고 나서 `WM_SETTINGCHANGE`를 뿌리는데, 이게 없으면 작업 표시줄에서 연 터미널이 다음
+로그인까지 옛 PATH를 쓴다.
+
+**제거는 자기 것만 지운다.** `clauduct-node.cmd`·`clauduct-node-store`·`CLAUDE_CONFIG_DIR` 아래는
+건드리지 않는다. PATH 항목은 기본으로 두며, `-RemovePath`를 줘도 그 디렉터리에 다른 실행 파일이
+남아 있으면 `UNINSTALL_PATH_SHARED`로 거부한다 — 기본 설치에서 `claude.exe`가 거기 산다.
+
+**설치 후 `Unblock-File`을 건다.** 방금 릴리스의 digest로 확인한 바이트이고, 그것이 SmartScreen
+대화상자가 묻는 질문이다.
+
+| 검사됨 | `internal/app/install_windows_test.go` 4건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 제거가 남의 파일을 안 지움. 돌연변이 4건 전부 잡힌다 |
+|---|---|
+| **검사 안 됨** | **다운로드 경로**(네트워크가 필요하다)와 **PATH 쓰기**(테스트가 실행 머신의 레지스트리를 고쳐서는 안 된다). v1도 같은 이유로 제외했다 |
+
 ## 5.1 업데이트
 
 ```powershell

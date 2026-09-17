@@ -30,9 +30,10 @@ HOLD 해제와 출하 PASS 표기는 사용자의 판단이다. 에이전트는 
 
 ## 3. 지켜야 할 선
 
-- **사용자의 untracked 파일을 임의로 삭제·stage·덮어쓰지 않는다.** `.tmp/`, `clauduct-check.txt`, `clauduct-agent-validation-*.txt`, `docs/prompts/`, `docs/handoff-*.md`, `src/agent-selection.review-fixture.mjs`, `verification/dev-sandbox/`에 사용자 상태가 있다. `verification` 아래에는 tracked 자료와 untracked 작업이 섞여 있으므로 폴더째 판단하지 않는다.
+- **사용자의 untracked 파일을 임의로 삭제·stage·덮어쓰지 않는다.** `.tmp/`, `docs/journal/`, `src/agent-selection.review-fixture.mjs`, `verification/dev-sandbox/`에 사용자 상태가 있다. `verification` 아래에는 tracked 자료와 untracked 작업이 섞여 있으므로 폴더째 판단하지 않는다.
 - **`git add -A`나 디렉터리 단위 stage를 쓰지 않는다.** 변경한 파일을 이름으로 stage한다.
 - **커밋된 문서가 근거로 인용하는 파일은 함께 커밋한다.** 인용과 부재는 공존할 수 없다 — 감사가 이름을 대는 파일이 저장소에 없으면 클론한 사람은 그 주장을 검증할 수 없고, 그것은 이 문서들이 존재하는 이유를 무너뜨린다. 예외는 여기까지이며 인용되지 않은 것은 그대로 둔다.
+- **새 증거 문서는 세션 프롬프트를 인용하지 않는다.** 프롬프트와 인계 문서는 `docs/journal/`에 있고 저장소에 올라가지 않는다(2026-09-17 사용자 결정: 증거는 공개, 지시는 비공개). 위 규칙과 합치면 **프롬프트를 인용하는 순간 그 프롬프트가 공개 대상이 된다** — 경계를 무너뜨리는 것은 결정이 아니라 인용이다. 지시를 근거로 대야 하면 그 내용을 감사 문서에 옮겨 적고 그것을 인용한다. `docs/prompts/`에 남은 다섯 개는 이 규칙 이전에 인용된 것들이라 그대로 둔다.
 - **guard·권한·정책의 거부를 다른 셸·도구·인코딩으로 우회하지 않는다.** 거부는 미검증으로 남기고 무엇이 막혔는지 기록한다.
 - **검증을 약화시켜 통과시키지 않는다.** assertion 제거, 검사 축소, 실패 삼키기, 검사 대상 mocking으로 얻은 통과는 통과가 아니다. 가드와 검증 대상을 먼저 구분한다.
 - **실호출은 사용자가 준 예산 안에서만 한다.** 현재 예산 상태는 3.2절이 적는다. 예산 없이 실호출이 필요한 결론에 이르면 실행하지 말고 블로커로 보고한다.

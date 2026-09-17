@@ -2,3 +2,18 @@
 /.clauduct-status/
 /output/
 /.tmp/
+
+# Session prompts and handoffs. The evidence they produced is committed -- audits,
+# verdicts, the v2 documents -- but the instructions that produced it are working
+# material and stay on the machine that wrote them. Deliberately not backed up:
+# they are consumables, and the outputs that matter are already in the repository.
+#
+# The five prompts still under docs/prompts/ are there because committed evidence
+# cites them by name, and HANDOFF.md's rule is that a cited file has to be present
+# or the claim cannot be checked. New evidence documents must not cite a prompt --
+# doing so drags it back into the public repository through that same rule.
+/docs/journal/
+
+# Markers written by live validation runs.
+/clauduct-check.txt
+/clauduct-agent-validation-*.txt

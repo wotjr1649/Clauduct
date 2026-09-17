@@ -82,9 +82,15 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 git worktree add ../clauduct-release v0.2.0
 cd ../clauduct-release/go
 $env:CGO_ENABLED = '0'
-go build -trimpath -o clauduct.exe      ./cmd/clauduct
-go build -trimpath -o clauduct-hook.exe ./cmd/clauduct-hook
-go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
+# 산출물은 반드시 트리 **바깥**으로. 안에 쓰면 두 번째 빌드부터 자기가 만든 exe 때문에
+# 트리가 dirty가 되고 commit 스탬프에 +dirty가 붙는다 — 이 절차를 처음 실행하면서 실제로
+# 겪었다.
+go build -trimpath -o ../../release-assets/clauduct.exe      ./cmd/clauduct
+go build -trimpath -o ../../release-assets/clauduct-hook.exe ./cmd/clauduct-hook
+go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
+
+# 스탬프에 +dirty가 없는지 확인한다. 있으면 그 빌드는 릴리스 후보가 아니다.
+../../release-assets/clauduct-dev.exe version
 
 # 2. 자산 이름 그대로 SHA256SUMS를 만든다. `<hex>  <name>` 두 칸이 파서가 읽는 형식이다.
 # 3. gh release create v0.2.0 clauduct.exe clauduct-hook.exe clauduct-dev.exe SHA256SUMS
@@ -98,8 +104,12 @@ go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
 **드래프트나 pre-release로 두면 `--update`가 보지 못한다.** GitHub의 `releases/latest`가 그 둘을
 건너뛰기 때문이다.
 
-재현 빌드이므로 같은 태그·같은 Go 버전이면 누구가 빌드해도 digest가 같아야 한다. 다르면 둘 중
-하나가 위 절차를 벗어난 것이다.
+재현 빌드이므로 같은 태그·같은 Go 버전이면 누가 빌드해도 digest가 같아야 한다. 다르면 둘 중
+하나가 위 절차를 벗어난 것이다. v0.2.0에서 세 바이너리 모두 두 번 빌드해 바이트 일치를 확인했다.
+
+**발행 뒤에는 실제로 받아 본다.** `clauduct --update`가 릴리스를 읽고, digest를 대조하고, 교체하는
+것까지가 이 절차의 끝이다. v0.2.0에서 확인했다 — 설치된 세 파일의 digest가 `SHA256SUMS`와 일치하고,
+교체 후 세션이 정상으로 돌았다.
 
 ## 5. 설치
 

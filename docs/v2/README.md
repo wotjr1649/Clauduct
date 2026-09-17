@@ -13,11 +13,11 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 | 작업 패키지 | **WP01–WP07 완료.** C4·F4는 "조사 후 안 함"으로 닫힘 |
 | 기본 실행기 | **Go.** `clauduct` = Go 빌드, `clauduct-node` = Node 구현 (G9, 2026-09-17) |
 | 기준선 | `node-bfbdf23-g0` (commit `bfbdf2385175…`, tree `9cd96d660959…`) |
-| 개발 branch | `redesign/go-v2-native-host`, worktree `D:/AIDEV/Clauduct-go-v2` |
+| 개발 branch | `redesign/go-v2-native-host` (main에 머지됨). 작업은 `D:/AIDEV/Clauduct` main에서 한다 — worktree `Clauduct-go-v2`는 2026-09-17에 제거했다 |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.1, 제3자 의존성 0, **CGO_ENABLED=0** |
 | 기존 Node 변경 | **0건.** baseline tracked 파일 생성·수정·이동·삭제 없음 |
-| 테스트 | **1030 pass / 0 fail / 3 skip** (subtest 포함, 14 package). CI green |
-| 실모델 호출 | **추론 35/100.** 검색 probe는 ledger를 쓰지 않는다(별도 기록) |
+| 테스트 | **1104 pass / 0 fail / 3 skip** (subtest 포함, 15 package). CI green |
+| 실모델 호출 | **추론 53/100** (probe 35 + 2026-09-17 제품 실세션 18). 검색 probe는 ledger를 쓰지 않는다(별도 기록) |
 | 측정된 클라이언트 | claude **2.1.274** (2026-09-17 재확인), codex-cli 0.154.0 |
 
 판정 전문은 [DECISION.md](DECISION.md), 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md),

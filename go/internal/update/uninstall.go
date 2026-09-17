@@ -92,7 +92,9 @@ func UninstallIn(dir, self, statusDir string, args []string, in io.Reader, out i
 	if renamed := filepath.Base(self) + ".old"; sameDir(dir, self) {
 		fmt.Fprintf(out, "one file is left because this process is still running it: %s\n",
 			filepath.Join(dir, renamed))
-		fmt.Fprintf(out, "  del %q\n", filepath.Join(dir, renamed))
+		// %s inside quotes rather than %q: Go quotes a Windows path by escaping every
+		// separator, and the one command this prints is one the user has to be able to paste.
+		fmt.Fprintf(out, "  del \"%s\"\n", filepath.Join(dir, renamed))
 	}
 	reportPath(dir, out)
 	return 0

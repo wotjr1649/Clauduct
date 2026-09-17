@@ -71,6 +71,12 @@ func TestUninstallRemovesTheSetAndLeavesTheRestAlone(t *testing.T) {
 	if !strings.Contains(out.String(), "PATH: untouched") {
 		t.Fatalf("did not say it left PATH alone:\n%s", out.String())
 	}
+	// This process cannot delete the file it is running, so it prints a command instead.
+	// That command has to be one somebody can paste: %q would escape every separator in
+	// the path and the line would be wrong in the one place it has to be right.
+	if want := "del \"" + self + ".old\""; !strings.Contains(out.String(), want) {
+		t.Fatalf("printed command is not usable, wanted %s:\n%s", want, out.String())
+	}
 }
 
 func TestUninstallWithoutAnAnswerRemovesNothing(t *testing.T) {

@@ -4,7 +4,7 @@
 
 | 항목 | 값 |
 |---|---|
-| 실행한 V2 Go 테스트 | **1111개 통과 / 0 실패 / 3 skip** (subtest 포함), 테스트가 있는 15 package(`internal/protocol/codex`는 테스트 파일 없음). `CGO_ENABLED=0 go test ./... -count=1` 2026-09-17 실행 |
+| 실행한 V2 Go 테스트 | **1112개 통과 / 0 실패 / 3 skip** (subtest 포함), 테스트가 있는 15 package(`internal/protocol/codex`는 테스트 파일 없음). `CGO_ENABLED=0 go test ./... -count=1` 2026-09-17 실행 |
 | mutation 검증 | **230건 주입** (battery 15개) + 2026-09-17 수동 4건. 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
 | 실모델 호출 | **추론 53회.** probe 원장 35회(`gpt-5.6-luna`/low: 1.3절 상한 · 1.4절 wire · 1.6절 G7 실세션 · 1.9절 LIFE17 · 6.8절 A그룹 · D5 헤더) **+ 2026-09-17 제품 빌드 실세션 18회**(`gpt-6-astra`/low, 8세션 18 attempts/18 inferences) |
 | 잔여 승인 예산 | **47회** (2026-09-15 사용자가 누적 100회로 상향) |

@@ -169,10 +169,20 @@ scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실
 건드리지 않는다. PATH 항목은 기본으로 두며, `-RemovePath`를 줘도 그 디렉터리에 다른 실행 파일이
 남아 있으면 `UNINSTALL_PATH_SHARED`로 거부한다 — 기본 설치에서 `claude.exe`가 거기 산다.
 
+**digest는 BCL로 계산하고 `-cne`로 비교한다.** `Get-FileHash`는 스냅인이 아니라
+`Microsoft.PowerShell.Utility` **모듈**이 얹어주는 cmdlet이라, PowerShell 7 세션에서 시작된
+`powershell.exe`가 PS7의 모듈 디렉터리를 먼저 보게 되면 **그 이름이 사라진다.** 2026-09-17 실측:
+같은 실행 파일, 같은 5.1.26100.8870, FullLanguage인데 PSModulePath 항목이 3개에서 6개가 되고
+`Get-FileHash`만 없어진다 — `Unblock-File`·`Invoke-WebRequest`·`Add-Type`·`New-Object`는 멀쩡하다.
+README가 시키는 `powershell -File install.ps1`을 PowerShell 7 터미널에서 실행하는 것이 정확히 그
+모양이고, CI의 go 스텝이 pwsh로 도는 덕에 잡혔다. 비교는 `-ne`가 아니라 `-cne`다 — PowerShell의
+문자열 비교는 기본이 대소문자 무시라 정규화가 깨져도 조용히 통과한다. 테스트는 pwsh가 있으면 그
+그림자를 **일부러 만들어** 돌므로 bash에서 돌려도 CI와 같은 것을 잰다.
+
 **설치 후 `Unblock-File`을 건다.** 방금 릴리스의 digest로 확인한 바이트이고, 그것이 SmartScreen
 대화상자가 묻는 질문이다.
 
-| 검사됨 | `internal/app/install_windows_test.go` 7건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 8건 전부 잡힌다 |
+| 검사됨 | `internal/app/install_windows_test.go` 8건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 대문자 digest 수용, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 11건 전부 잡힌다 |
 |---|---|
 | **검사 안 됨** | **다운로드 경로**(네트워크가 필요하다)와 **PATH 쓰기**(테스트가 실행 머신의 레지스트리를 고쳐서는 안 된다). v1도 같은 이유로 제외했다. 사전 검증은 PATH와 `USERPROFILE`을 테스트가 소유한 값으로 갈아끼워 검사하므로 러너에 무엇이 깔렸는지에 좌우되지 않는다 |
 

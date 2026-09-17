@@ -34,13 +34,7 @@ func scriptPath(t *testing.T, name string) string {
 
 func runScript(t *testing.T, script string, args ...string) (string, error) {
 	t.Helper()
-	shell, err := exec.LookPath("powershell")
-	if err != nil {
-		t.Skipf("powershell not on PATH: %v", err)
-	}
-	full := append([]string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script}, args...)
-	out, err := exec.Command(shell, full...).CombinedOutput()
-	return string(out), err
+	return runScriptIn(t, "", nil, script, args...)
 }
 
 // stageRelease writes the three names plus a SHA256SUMS that agrees with them.
@@ -194,6 +188,26 @@ func runScriptIn(t *testing.T, dir string, override map[string]string, script st
 	full := append([]string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script}, args...)
 	cmd := exec.Command(shell, full...)
 	cmd.Dir = dir
+
+	// Windows PowerShell answers most cmdlets from a snap-in compiled into the engine, but a
+	// few are added by the Microsoft.PowerShell.Utility module. When PowerShell 7's module
+	// directory comes first on PSModulePath, that name resolves to PS7's copy and the cmdlets
+	// the module would have added -- Get-FileHash among them -- are simply gone. Measured
+	// 2026-09-17: same executable, same 5.1.26100.8870, six path entries instead of three.
+	//
+	// CI meets this for free because its go step runs under pwsh. A bash parent never does,
+	// which is how a script calling Get-FileHash passed here and failed there. So recreate
+	// the shadowing rather than trusting whichever shell started the test. Where PowerShell 7
+	// is not installed there is nothing to shadow with, and these run unhardened.
+	forced := map[string]string{}
+	if modules, ok := pwshModules(); ok {
+		forced["PSModulePath"] = modules + string(os.PathListSeparator) + os.Getenv("PSModulePath")
+	}
+	for key, value := range override {
+		forced[key] = value
+	}
+	override = forced
+
 	kept := make([]string, 0, len(os.Environ())+len(override))
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
@@ -214,6 +228,20 @@ func runScriptIn(t *testing.T, dir string, override map[string]string, script st
 	cmd.Env = kept
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// pwshModules locates PowerShell 7's module directory, the thing that shadows Windows
+// PowerShell's when the two share a PSModulePath.
+func pwshModules() (string, bool) {
+	exe, err := exec.LookPath("pwsh")
+	if err != nil {
+		return "", false
+	}
+	dir := filepath.Join(filepath.Dir(exe), "Modules")
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return "", false
+	}
+	return dir, true
 }
 
 func plantTools(t *testing.T) string {
@@ -286,5 +314,40 @@ func TestInstallPreflightIgnoresToolsOnlyInTheWorkingDirectory(t *testing.T) {
 	}
 	if !strings.Contains(out, "INSTALL_PREREQUISITE_MISSING") {
 		t.Fatalf("refusal did not name itself:\n%s", out)
+	}
+}
+
+// sha256sum writes lowercase, certutil and Get-FileHash write uppercase, and a SHA256SUMS
+// assembled by hand can carry either. The script lowercases both sides precisely so the
+// exact comparison it then makes is about the digest and not about the tool that printed it.
+func TestInstallScriptAcceptsUppercaseDigests(t *testing.T) {
+	source, _ := stageRelease(t)
+	sums := filepath.Join(source, "SHA256SUMS")
+	body, err := os.ReadFile(sums)
+	if err != nil {
+		t.Fatalf("read sums: %v", err)
+	}
+	// The digest only. Uppercasing the whole file would also uppercase the names and this
+	// would stop being a test about digests.
+	var upper bytes.Buffer
+	for _, line := range strings.Split(strings.TrimRight(string(body), "\n"), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			t.Fatalf("unexpected sums line %q", line)
+		}
+		fmt.Fprintf(&upper, "%s  %s\n", strings.ToUpper(fields[0]), fields[1])
+	}
+	if err := os.WriteFile(sums, upper.Bytes(), 0o600); err != nil {
+		t.Fatalf("rewrite sums: %v", err)
+	}
+	root := t.TempDir()
+
+	out, err := runScript(t, scriptPath(t, "install.ps1"),
+		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate", "-SkipPreflight")
+	if err != nil {
+		t.Fatalf("refused a digest that differed only in case: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "clauduct.exe")); err != nil {
+		t.Fatalf("nothing installed: %v\n%s", err, out)
 	}
 }

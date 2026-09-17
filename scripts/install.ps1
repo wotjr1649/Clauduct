@@ -30,6 +30,28 @@ function Read-Sums([string] $Path) {
     return $out
 }
 
+# Get-FileHash is not always there, and the way it goes missing is worth knowing.
+#
+# Windows PowerShell answers most cmdlets from a snap-in compiled into the engine, but a few
+# -- Get-FileHash among them -- are added on top by the Microsoft.PowerShell.Utility module.
+# A powershell.exe started from a PowerShell 7 session inherits a PSModulePath whose PS7
+# module directory comes first, so that module name resolves to PS7's copy and the cmdlets it
+# would have added never appear. Measured 2026-09-17: same executable, same 5.1.26100.8870,
+# FullLanguage either way; six path entries instead of three; Get-FileHash the only casualty,
+# while Unblock-File, Invoke-WebRequest, Add-Type and New-Object all kept working.
+#
+# This is not a corner: the README tells people to run `powershell -File install.ps1`, and
+# doing that from a PowerShell 7 terminal is exactly the failing shape. CI found it because
+# its go step runs under pwsh. The BCL has no module to shadow.
+function Get-Sha256([string] $Path) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [IO.File]::OpenRead($Path)
+        try { $bytes = $sha.ComputeHash($stream) } finally { $stream.Dispose() }
+    } finally { $sha.Dispose() }
+    return [BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
+}
+
 # Nothing is copied until all three match. A half-installed set is worse than a refused
 # install: two new binaries beside one old one is a combination no release was tested as.
 function Assert-Digests([string] $Dir) {
@@ -40,13 +62,17 @@ function Assert-Digests([string] $Dir) {
         $file = Join-Path $Dir $name
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "INSTALL_SOURCE_MISSING $name" }
         if (-not $sums.ContainsKey($name)) { throw "INSTALL_SUMS_INCOMPLETE $name" }
-        $have = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($have -ne $sums[$name]) { throw "INSTALL_DIGEST_MISMATCH $name" }
+        $have = Get-Sha256 $file
+        # -cne, not -ne: PowerShell compares strings case-insensitively by default, which
+        # would quietly accept a digest this script failed to normalise. Both sides are
+        # lowercased above, so the exact comparison is the one that means something.
+        if ($have -cne $sums[$name]) { throw "INSTALL_DIGEST_MISMATCH $name" }
     }
 }
 
 function Get-Release([string] $Dir) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    # Without this the progress bar costs more than the transfer on Windows PowerShell.
     $ProgressPreference = 'SilentlyContinue'
     if ($Tag -eq 'latest') { $base = "https://github.com/$Repo/releases/latest/download" }
     else                   { $base = "https://github.com/$Repo/releases/download/$Tag" }
@@ -91,6 +117,12 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint M
     }
     $result = [UIntPtr]::Zero
     [void] [Clauduct.Native]::SendMessageTimeout([IntPtr] 0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref] $result)
+}
+
+# The broadcast is a convenience, and Add-Type is one of the cmdlets that can be missing.
+# Failing the install over it would trade a working PATH entry for a cosmetic refresh.
+function Try-PublishEnvironmentChange {
+    try { Publish-EnvironmentChange; return $true } catch { return $false }
 }
 
 # Mirrors platform.Resolver.find, including the parts that look like overkill in an
@@ -200,8 +232,11 @@ if (Test-Path -LiteralPath $legacy -PathType Leaf) {
 if ($NoPathUpdate) {
     Write-Host "PATH: untouched (-NoPathUpdate). $InstallRoot has to be on PATH for 'clauduct' to work from any directory."
 } elseif (Add-UserPathEntry $InstallRoot) {
-    Publish-EnvironmentChange
-    Write-Host "PATH: added $InstallRoot to the user PATH. Open a new terminal."
+    if (Try-PublishEnvironmentChange) {
+        Write-Host "PATH: added $InstallRoot to the user PATH. Open a new terminal."
+    } else {
+        Write-Host "PATH: added $InstallRoot to the user PATH, but could not broadcast the change. Sign out and back in."
+    }
 } else {
     Write-Host "PATH: $InstallRoot was already on it."
 }

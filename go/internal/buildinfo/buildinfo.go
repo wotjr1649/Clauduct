@@ -7,9 +7,17 @@ package buildinfo
 
 import "runtime/debug"
 
-// Version is the product version. Unreleased builds keep the placeholder; it is not a
-// claim that any release exists.
-const Version = "0.0.0-wp01"
+// Version is the product version.
+//
+// 0.2.0 is the first release of the Go implementation. It follows v0.1.0, which released
+// the Node one: the same product with a new implementation underneath and the default
+// switched to it, which is a minor step rather than a new product. Still 0.x, and the
+// reasons are in PACKAGING.md: unsigned, Windows only, installed by copying files.
+//
+// A constant rather than a linker flag. The commit stamp comes from the toolchain's own VCS
+// record precisely so a release script cannot forget it, and a version that could be passed
+// in is a version a script can get wrong.
+const Version = "0.2.0"
 
 // Info is what a build can say about itself. An empty field means the toolchain did not
 // stamp it, which is a different thing from a zero value and is reported as such.

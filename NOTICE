@@ -1,0 +1,13 @@
+Clauduct
+Copyright 2026 김재석 (wotjr1649)
+
+Licensed under the Apache License, Version 2.0. See the LICENSE file.
+
+Clauduct is an independent, third-party bridge. It is not affiliated with,
+endorsed by, or sponsored by Anthropic or OpenAI. "Claude", "Claude Code",
+"ChatGPT", and "Codex" are trademarks of their respective owners, used here
+only to name the software this project interoperates with.
+
+This license covers the copyright in this source. It grants nothing under any
+provider's terms of service: whether running Clauduct is permitted by the
+services it reaches is a separate question, answered by those services.

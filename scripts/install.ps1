@@ -4,7 +4,8 @@ param(
     [string] $Repo = 'wotjr1649/Clauduct',
     [string] $InstallRoot = (Join-Path $env:USERPROFILE '.local\bin'),
     [string] $FromPath,
-    [switch] $NoPathUpdate
+    [switch] $NoPathUpdate,
+    [switch] $SkipPreflight
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,6 +93,59 @@ public static extern System.IntPtr SendMessageTimeout(System.IntPtr hWnd, uint M
     [void] [Clauduct.Native]::SendMessageTimeout([IntPtr] 0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref] $result)
 }
 
+# Mirrors platform.Resolver.find, including the parts that look like overkill in an
+# installer: the standalone location first, then PATH capped at 64 raw entries, unquoted,
+# absolute only, with the working directory dropped and duplicates removed. Searching wider
+# than the launcher does would pass on a machine where the launcher then reports
+# CLAUDE_NOT_FOUND -- a preflight that disagrees with runtime is worse than none.
+#
+# One difference, stated rather than hidden: the launcher reads the OS user record for the
+# home directory because %USERPROFILE% can be handed to it poisoned. Here the user is running
+# their own shell, so $env:USERPROFILE is what they mean.
+function Find-NativeTool([string] $Name) {
+    $standalone = Join-Path $env:USERPROFILE ".local\bin\$Name"
+    if (Test-Path -LiteralPath $standalone -PathType Leaf) { return $standalone }
+
+    try { $cwd = [IO.Path]::GetFullPath((Get-Location).Path).TrimEnd('\').ToLowerInvariant() }
+    catch { $cwd = '' }
+
+    $raw = @($env:PATH -split ';')
+    if ($raw.Count -gt 64) { $raw = $raw[0..63] }
+    $seen = @{}
+    foreach ($entry in $raw) {
+        $dir = $entry.Trim()
+        if ($dir.Length -ge 2 -and $dir.StartsWith('"') -and $dir.EndsWith('"')) {
+            $dir = $dir.Substring(1, $dir.Length - 2)
+        }
+        if (-not $dir -or -not [IO.Path]::IsPathRooted($dir)) { continue }
+        try { $key = [IO.Path]::GetFullPath($dir).TrimEnd('\').ToLowerInvariant() } catch { continue }
+        if ($key -eq $cwd -or $seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $candidate = Join-Path $dir $Name
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return $null
+}
+
+# Both have to be there or this build has nothing to do: it launches claude.exe, and every
+# request it forwards identifies itself with the installed Codex CLI's version. The names
+# thrown here are the ones the launcher uses at runtime, so a search for either finds the
+# same answer whichever surface reported it.
+function Assert-Prerequisites {
+    $missing = @()
+    foreach ($tool in @(
+        @{ Name = 'claude.exe'; Code = 'CLAUDE_NOT_FOUND'; What = 'Claude Code' },
+        @{ Name = 'codex.exe';  Code = 'CODEX_NOT_FOUND';  What = 'Codex CLI' })) {
+        $found = Find-NativeTool $tool.Name
+        if ($found) { Write-Host "found $($tool.What): $found" }
+        else { $missing += "$($tool.Code) ($($tool.What), $($tool.Name))" }
+    }
+    if ($missing.Count -gt 0) {
+        throw ("INSTALL_PREREQUISITE_MISSING -- " + ($missing -join '; ') +
+               ". Install them first, or pass -SkipPreflight to install anyway.")
+    }
+}
+
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 
 # MSYS and Git Bash stop their PATH search at a directory carrying the command's name and
@@ -102,6 +156,10 @@ $shadow = Join-Path $InstallRoot 'clauduct'
 if (Test-Path -LiteralPath $shadow -PathType Container) {
     throw "INSTALL_DIRECTORY_SHADOW $shadow -- rename it first: Rename-Item '$shadow' 'clauduct-node-store'"
 }
+
+# Before the download, not after: a machine that cannot run this build should not spend the
+# bandwidth finding out.
+if ($SkipPreflight) { Write-Host 'preflight: skipped (-SkipPreflight)' } else { Assert-Prerequisites }
 
 $staging = $null
 try {

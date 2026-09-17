@@ -72,7 +72,7 @@ func TestInstallScriptPlacesTheThreeItVerified(t *testing.T) {
 	}
 
 	out, err := runScript(t, scriptPath(t, "install.ps1"),
-		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate")
+		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate", "-SkipPreflight")
 	if err != nil {
 		t.Fatalf("install failed: %v\n%s", err, out)
 	}
@@ -102,7 +102,7 @@ func TestInstallScriptRefusesATamperedFileAndCopiesNothing(t *testing.T) {
 	root := t.TempDir()
 
 	out, err := runScript(t, scriptPath(t, "install.ps1"),
-		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate")
+		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate", "-SkipPreflight")
 	if err == nil {
 		t.Fatalf("installed a file whose digest did not match:\n%s", out)
 	}
@@ -126,7 +126,7 @@ func TestInstallScriptRefusesADirectoryShadowingTheCommand(t *testing.T) {
 	}
 
 	out, err := runScript(t, scriptPath(t, "install.ps1"),
-		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate")
+		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate", "-SkipPreflight")
 	if err == nil {
 		t.Fatalf("installed into a root where Git Bash cannot reach the exe:\n%s", out)
 	}
@@ -142,7 +142,7 @@ func TestUninstallScriptRemovesOnlyItsOwn(t *testing.T) {
 	source, _ := stageRelease(t)
 	root := t.TempDir()
 	if out, err := runScript(t, scriptPath(t, "install.ps1"),
-		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate"); err != nil {
+		"-FromPath", source, "-InstallRoot", root, "-NoPathUpdate", "-SkipPreflight"); err != nil {
 		t.Fatalf("install failed: %v\n%s", err, out)
 	}
 
@@ -177,5 +177,114 @@ func TestUninstallScriptRemovesOnlyItsOwn(t *testing.T) {
 	}
 	if !strings.Contains(out, "PATH: untouched") {
 		t.Fatalf("uninstall did not say it left PATH alone:\n%s", out)
+	}
+}
+
+// The preflight mirrors platform.Resolver.find rather than searching for the two tools its
+// own way, so these drive it through a PATH and a home directory the test owns. Nothing is
+// executed: the script asks whether the files are there, which is the same question the
+// launcher asks before it spawns anything.
+
+func runScriptIn(t *testing.T, dir string, override map[string]string, script string, args ...string) (string, error) {
+	t.Helper()
+	shell, err := exec.LookPath("powershell")
+	if err != nil {
+		t.Skipf("powershell not on PATH: %v", err)
+	}
+	full := append([]string{"-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script}, args...)
+	cmd := exec.Command(shell, full...)
+	cmd.Dir = dir
+	kept := make([]string, 0, len(os.Environ())+len(override))
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		replaced := false
+		for key := range override {
+			if strings.EqualFold(key, name) {
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			kept = append(kept, entry)
+		}
+	}
+	for key, value := range override {
+		kept = append(kept, key+"="+value)
+	}
+	cmd.Env = kept
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func plantTools(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"claude.exe", "codex.exe"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("stand-in for "+name), 0o600); err != nil {
+			t.Fatalf("plant %s: %v", name, err)
+		}
+	}
+	return dir
+}
+
+func TestInstallPreflightPassesWhenBothToolsResolve(t *testing.T) {
+	source, _ := stageRelease(t)
+	root := t.TempDir()
+	tools := plantTools(t)
+
+	out, err := runScriptIn(t, t.TempDir(),
+		map[string]string{"PATH": tools, "USERPROFILE": t.TempDir()},
+		scriptPath(t, "install.ps1"), "-FromPath", source, "-InstallRoot", root, "-NoPathUpdate")
+	if err != nil {
+		t.Fatalf("preflight refused a machine that has both: %v\n%s", err, out)
+	}
+	for _, want := range []string{"found Claude Code", "found Codex CLI"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("preflight did not report %q:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "clauduct.exe")); err != nil {
+		t.Fatalf("install did not proceed after a passing preflight: %v\n%s", err, out)
+	}
+}
+
+func TestInstallPreflightRefusesAndNamesWhatIsMissing(t *testing.T) {
+	source, _ := stageRelease(t)
+	root := t.TempDir()
+
+	out, err := runScriptIn(t, t.TempDir(),
+		map[string]string{"PATH": t.TempDir(), "USERPROFILE": t.TempDir()},
+		scriptPath(t, "install.ps1"), "-FromPath", source, "-InstallRoot", root, "-NoPathUpdate")
+	if err == nil {
+		t.Fatalf("installed onto a machine with neither tool:\n%s", out)
+	}
+	// The runtime names, so that searching for either lands on the same answer whichever
+	// surface reported it.
+	for _, want := range []string{"INSTALL_PREREQUISITE_MISSING", "CLAUDE_NOT_FOUND", "CODEX_NOT_FOUND"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("refusal did not say %q:\n%s", want, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "clauduct.exe")); err == nil {
+		t.Fatalf("copied before the preflight decided")
+	}
+}
+
+func TestInstallPreflightIgnoresToolsOnlyInTheWorkingDirectory(t *testing.T) {
+	source, _ := stageRelease(t)
+	root := t.TempDir()
+	tools := plantTools(t)
+
+	// The launcher drops the working directory from its PATH search, so a program that merely
+	// sits next to the user's files is not an installed tool. A preflight that accepted this
+	// would pass here and fail at first launch.
+	out, err := runScriptIn(t, tools,
+		map[string]string{"PATH": tools, "USERPROFILE": t.TempDir()},
+		scriptPath(t, "install.ps1"), "-FromPath", source, "-InstallRoot", root, "-NoPathUpdate")
+	if err == nil {
+		t.Fatalf("preflight accepted tools the launcher will not use:\n%s", out)
+	}
+	if !strings.Contains(out, "INSTALL_PREREQUISITE_MISSING") {
+		t.Fatalf("refusal did not name itself:\n%s", out)
 	}
 }

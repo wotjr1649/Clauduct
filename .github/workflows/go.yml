@@ -27,6 +27,13 @@ jobs:
     # deliberate — a non-Windows target is new design under V2-04, not a port.
     runs-on: windows-latest
     timeout-minutes: 20
+    env:
+      # Pinned rather than left to the runner. CGO_ENABLED defaults to 1 wherever a C
+      # toolchain exists and windows-latest has one, so without this CI would build and
+      # test different bytes than a release machine without gcc -- and the reproducibility
+      # test could not tell, because it compares two builds from the same environment.
+      # The race job below is the one exception and its binary is not the one that ships.
+      CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v6

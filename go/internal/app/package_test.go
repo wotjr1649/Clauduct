@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"debug/buildinfo"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -343,4 +344,40 @@ func worktreeModified(t *testing.T) bool {
 		t.Skipf("git status: %v", err)
 	}
 	return strings.TrimSpace(string(raw)) != ""
+}
+
+// G8: what ships is built without cgo, and the builder's environment says so.
+//
+// Nothing in this module imports "C", so on Windows this changes no behaviour today -- net
+// and os/user reach the platform through syscalls either way. What it changes is who the
+// artifact depends on: CGO_ENABLED defaults to 1 wherever a C toolchain happens to exist,
+// so a runner with gcc would build, test and possibly publish different bytes than a
+// machine without one, and TestTheBuildIsReproducible would not notice because it compares
+// two builds from the same environment.
+//
+// The build here deliberately inherits the environment rather than setting the variable
+// itself. A test that pins the value it then asserts agrees only with itself; this one
+// fails on any machine or runner whose environment does not already produce a cgo-free
+// build, which is exactly where the pin has to live.
+func TestTheShippedBinaryIsBuiltWithoutCgo(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds the product")
+	}
+	exe := buildProduct(t, t.TempDir(), "clauduct")
+	info, err := buildinfo.ReadFile(exe)
+	if err != nil {
+		t.Fatalf("read build info from %s: %v", exe, err)
+	}
+	for _, setting := range info.Settings {
+		if setting.Key != "CGO_ENABLED" {
+			continue
+		}
+		if setting.Value != "0" {
+			t.Fatalf("the built binary records CGO_ENABLED=%s.\n"+
+				"Set CGO_ENABLED=0 for builds and tests; the race job is the one exception, "+
+				"and the binary it produces is not the one that ships.", setting.Value)
+		}
+		return
+	}
+	t.Fatal("no CGO_ENABLED setting recorded in the binary")
 }

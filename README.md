@@ -28,31 +28,35 @@ Windows 전용입니다. **Claude Code와 Codex CLI가 먼저 설치돼 있어�
 실사용에는 기존 Codex 로그인(`~/.codex/auth.json`)도 필요합니다. Node도 .NET도 필요하지 않습니다.
 
 설치 스크립트는 릴리스 자산입니다. 받아서 **읽어보고** 실행합니다 — 어느 셸에서 시작하든 실행은
-`powershell`이 합니다.
-
-**PowerShell**
+`powershell`이 합니다. 아래 셋 중 **당신이 지금 있는 셸의 블록 하나만** 통째로 붙여넣습니다.
 
 ```powershell
-irm https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1 -OutFile install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+# PowerShell
+irm https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1 -OutFile clauduct-install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\clauduct-install.ps1
 ```
-
-**cmd** (`curl.exe`는 Windows 10 1803부터 기본 탑재입니다)
 
 ```bat
-curl -fsSL -o install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
+rem cmd
+curl -fsSL -o clauduct-install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
 ```
-
-**Git Bash**
 
 ```bash
-curl -fsSL -o install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
+# Git Bash
+curl -fsSL -o clauduct-install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
 ```
 
-PowerShell만 `irm`인 이유가 있습니다. PowerShell 5.1에서 `curl`은 `Invoke-WebRequest`의 별칭이라
-`-fsSL -o`를 받지 못하고, Git Bash에는 `irm`이 없습니다. 같은 한 줄을 세 곳에 쓸 수는 없습니다.
+**세 가지가 다른 이유는 셸이 다르기 때문이고, 셋 다 실제로 겪은 것입니다.**
+
+| 차이 | 왜 |
+|---|---|
+| PowerShell만 `irm` | PowerShell 5.1에서 `curl`은 `Invoke-WebRequest`의 별칭이라 `-fsSL -o`를 받지 못합니다. Git Bash에는 반대로 `irm`이 없습니다 |
+| PowerShell만 `.\` | Git Bash는 `.\`의 백슬래시를 이스케이프로 먹어 `.install.ps1`을 넘깁니다. cmd는 둘 다 되지만 맞춰서 뺐습니다 |
+| 받는 이름이 `clauduct-install.ps1` | 이 저장소 루트에 **v1(Node) 설치기인 `install.ps1`이 있습니다.** 클론 안에서 그 이름으로 받으면 기준선 파일을 덮어씁니다 |
+
+cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑재이기 때문입니다.
 
 최신 릴리스에서 바이너리 3개와 `SHA256SUMS`를 받아 **셋이 모두 대조된 뒤에** `~\.local\bin`에
 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. 받은 바이트가 릴리스가 말하는 digest와 다르면
@@ -61,10 +65,10 @@ PowerShell만 `irm`인 이유가 있습니다. PowerShell 5.1에서 `curl`은 `I
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-.\install.ps1 -Tag v0.2.1        # 태그 고정
-.\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
-.\install.ps1 -NoPathUpdate      # PATH는 직접 관리
-.\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
+.\scripts\install.ps1 -Tag v0.2.1        # 태그 고정
+.\scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
+.\scripts\install.ps1 -NoPathUpdate      # PATH는 직접 관리
+.\scripts\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
 ```
 
 설치 뒤 **새 터미널**을 열고 확인합니다. Windows는 대소문자를 가리지 않으므로 `Clauduct`도 같은

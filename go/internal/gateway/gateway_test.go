@@ -567,16 +567,19 @@ func TestTheClientVersionIsRecordedOnce(t *testing.T) {
 		t.Fatalf("version = %q after a request that named no client", version)
 	}
 
+	// The measured strings, not invented ones. /v1/models arrives under one product name
+	// and /v1/messages under another with a suffix, and a pattern written from either alone
+	// matches nothing in half the session.
 	do(t, g, request{method: http.MethodGet, path: "/v1/models",
-		headers: map[string]string{"User-Agent": "claude-cli/2.1.274"}})
+		headers: map[string]string{"User-Agent": "claude-code/2.1.274"}})
 	if version := g.ClientVersion(); version != "2.1.274" {
-		t.Fatalf("version = %q, want 2.1.274", version)
+		t.Fatalf("version = %q, want 2.1.274 from claude-code/", version)
 	}
 
 	// A second, different value does not replace the first: a session has one client, and a
 	// changing answer is one this account cannot explain.
 	do(t, g, request{method: http.MethodGet, path: "/v1/models",
-		headers: map[string]string{"User-Agent": "claude-cli/9.9.9"}})
+		headers: map[string]string{"User-Agent": "claude-cli/9.9.9 (external, sdk-cli)"}})
 	if version := g.ClientVersion(); version != "2.1.274" {
 		t.Fatalf("version = %q after a second client named itself", version)
 	}
@@ -584,5 +587,15 @@ func TestTheClientVersionIsRecordedOnce(t *testing.T) {
 	report := g.Diagnose().Client
 	if report.Reference != ReferenceClient || report.Verified != (report.Version == ReferenceClient) {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+// The suffixed form the conversation actually uses is matched too.
+func TestTheSuffixedClientAgentIsRead(t *testing.T) {
+	g := start(t)
+	do(t, g, request{method: http.MethodGet, path: "/v1/models",
+		headers: map[string]string{"User-Agent": "claude-cli/2.1.274 (external, sdk-cli)"}})
+	if version := g.ClientVersion(); version != "2.1.274" {
+		t.Fatalf("version = %q, want 2.1.274 from the suffixed agent", version)
 	}
 }

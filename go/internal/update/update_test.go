@@ -335,3 +335,23 @@ func TestTheRateLimitIsNamedRatherThanCalledAMissingRelease(t *testing.T) {
 		t.Fatalf("a plain 403 was reported as a rate limit: %v", err)
 	}
 }
+
+// The command does not call a rate limit a missing release.
+func TestTheCommandReportsTheLimitAsItself(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", fmt.Sprint(time.Now().Add(9*time.Minute).Unix()))
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	var out strings.Builder
+	RunIn(context.Background(), server.Client(), server.URL, t.TempDir(),
+		[]string{"--update"}, strings.NewReader(""), &out)
+	if strings.Contains(out.String(), "no release") {
+		t.Fatalf("a rate limit was reported as a missing release: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "RATE_LIMITED") {
+		t.Fatalf("the limit was not named: %s", out.String())
+	}
+}

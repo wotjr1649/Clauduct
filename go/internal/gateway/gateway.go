@@ -184,10 +184,18 @@ func (g *Gateway) Token() string { return g.token }
 // than becoming a bisect.
 const ReferenceClient = "2.1.274"
 
-// clientAgent matches the client naming itself. Nothing else is recorded: the readiness
-// probe arrives as Bun/1.4.3 and the account is a file that outlives the session, so it
-// holds a version number or nothing.
-var clientAgent = regexp.MustCompile(`^claude-cli/([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)$`)
+// clientAgent matches the client naming itself.
+//
+// Both product names and a trailing suffix, because that is what was measured rather than
+// what was assumed: /v1/models arrives as claude-code/2.1.274 and /v1/messages as
+// claude-cli/2.1.274 (external, sdk-cli). The first version of this pattern anchored the
+// end and required claude-cli, so it matched nothing at all and the account reported an
+// empty version -- found by reading a real session's account, which is the thing this
+// field exists to make possible.
+//
+// The readiness probe arrives as Bun/1.4.3 and is not recorded: this account is a file that
+// outlives the session, so it holds a version number or nothing.
+var clientAgent = regexp.MustCompile(`^claude-(?:cli|code)/([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)`)
 
 // noteClient records the client's version the first time it names one.
 func (g *Gateway) noteClient(agent string) {

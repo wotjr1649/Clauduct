@@ -3,6 +3,7 @@ package update
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,6 +76,12 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 
 	release, err := Latest(ctx, client, api)
 	if err != nil {
+		// The limit is not a missing release, and saying so would send a reader looking for
+		// one that is published and fine. Measured: this is the first thing a real run hits.
+		if errors.Is(err, ErrRateLimited) {
+			fmt.Fprintln(out, "clauduct:", err)
+			return 1
+		}
 		fmt.Fprintln(out, "clauduct: no release to update from:", err)
 		return 1
 	}

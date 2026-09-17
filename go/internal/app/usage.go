@@ -40,7 +40,7 @@ func (r Reading) Age() time.Duration { return time.Since(r.Taken) }
 // half-written file from a session that is still running is expected rather than wrong.
 func Readings(dir string, limit int) []Reading {
 	if dir == "" {
-		dir = statusDir()
+		dir = StatusDir()
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {

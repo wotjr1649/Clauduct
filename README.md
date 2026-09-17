@@ -62,13 +62,26 @@ clauduct --update --yes  # 무인
 ### 제거
 
 ```powershell
-scripts\uninstall.ps1              # 바이너리 3개와 갱신이 남긴 *.old
+clauduct --uninstall        # 무엇을 지울지 보여주고 확인을 받습니다
+clauduct --uninstall --yes  # 무인
+```
+
+**저장소가 없어도 됩니다.** 릴리스로 설치한 머신에는 바이너리만 있고 그게 바로 지우고 싶은 그
+머신이므로, 제거는 바이너리가 합니다. `--update`와 같은 규칙이라 **첫 인자일 때만** 인식하고,
+`clauduct -p "how do I --uninstall"`은 아무것도 지우지 않습니다.
+
+실행 중인 자기 자신은 지울 수 없으므로 `.old`로 옮기고 그 한 줄을 출력합니다. **PATH와 진단
+파일은 건드리지 않고** 무엇이 남았는지만 알립니다 — 기본 설치 폴더에는 `claude.exe`도 살기
+때문입니다. 그것까지 지우려면 저장소의 스크립트를 씁니다.
+
+```powershell
 scripts\uninstall.ps1 -Purge       # 진단 파일(%TEMP%\clauduct)까지
 scripts\uninstall.ps1 -RemovePath  # PATH 항목까지 — 그 폴더에 다른 실행 파일이 없을 때만
 ```
 
-`clauduct-node`와 그 버전 저장소, `~/.claude` 아래 세션 상태는 건드리지 않습니다. 설치가 무엇을
-검사하고 **무엇을 검사하지 않는지**는 [docs/v2/PACKAGING.md](docs/v2/PACKAGING.md) 5장에 있습니다.
+`clauduct-node`와 그 버전 저장소, `~/.claude` 아래 세션 상태는 어느 쪽도 건드리지 않습니다. 설치와
+제거가 무엇을 검사하고 **무엇을 검사하지 않는지**는
+[docs/v2/PACKAGING.md](docs/v2/PACKAGING.md) 5장에 있습니다.
 
 ## Go 빌드 (`clauduct`)
 

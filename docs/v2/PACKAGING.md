@@ -96,6 +96,12 @@ PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`�
 | 둘 다 쓴다 | 그대로 둔다. 이름이 다르므로 서로를 가리지 않고 동시에 실행된다 — 측정으로 확인했다(VALIDATION.md) |
 | Go 빌드를 완전히 뺀다 | 세 바이너리를 지우고 위의 되돌리기를 한다 |
 
+**저장소 안에서는 `clauduct`가 여전히 Node를 가리킨다.** cmd는 PATH보다 **현재 디렉터리를 먼저**
+보고, 저장소 루트에는 v1 개발용 `clauduct.cmd`가 있다. 그 파일의 해시와 경로가 동결된 migration
+manifest(738 entries)와 기준선 문서 여러 곳에 박혀 있어 지금 개명하지 않는다 — 이득보다 파급이
+크다. 영향은 **cmd/PowerShell에서 저장소를 cwd로 둔 경우뿐**이고(bash는 cwd를 탐색하지 않는다),
+정리 시점은 Node 파일을 실제로 옮기는 G10/M3다.
+
 Windows `PATHEXT`는 `.EXE`를 `.CMD`보다 먼저 본다. 같은 디렉터리에 `clauduct.exe`와 `clauduct.cmd`가 동시에 있으면 `.exe`가 이긴다 — 그래서 되돌릴 때는 **`clauduct.exe`를 치우는 것이 필수**이고, `.cmd`를 되살리는 것만으로는 부족하다.
 
 기준선 소스는 이 작업 내내 tracked 변경 0으로 유지됐다. 비교 기준이 바뀌면 비교가 아니다.

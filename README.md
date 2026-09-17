@@ -27,20 +27,44 @@ Windows 전용입니다. **Claude Code와 Codex CLI가 먼저 설치돼 있어�
 하나라도 없으면 설치 스크립트가 `CLAUDE_NOT_FOUND`·`CODEX_NOT_FOUND`로 **내려받기 전에** 멈춥니다.
 실사용에는 기존 Codex 로그인(`~/.codex/auth.json`)도 필요합니다. Node도 .NET도 필요하지 않습니다.
 
-저장소를 클론했다면 그대로, 아니면 스크립트만 받아서 **읽어보고** 실행합니다.
+설치 스크립트는 릴리스 자산입니다. 받아서 **읽어보고** 실행합니다 — 어느 셸에서 시작하든 실행은
+`powershell`이 합니다.
+
+**PowerShell**
 
 ```powershell
 irm https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1 -OutFile install.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
+**cmd** (`curl.exe`는 Windows 10 1803부터 기본 탑재입니다)
+
+```bat
+curl -fsSL -o install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
+```
+
+**Git Bash**
+
+```bash
+curl -fsSL -o install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
+```
+
+PowerShell만 `irm`인 이유가 있습니다. PowerShell 5.1에서 `curl`은 `Invoke-WebRequest`의 별칭이라
+`-fsSL -o`를 받지 못하고, Git Bash에는 `irm`이 없습니다. 같은 한 줄을 세 곳에 쓸 수는 없습니다.
+
 최신 릴리스에서 바이너리 3개와 `SHA256SUMS`를 받아 **셋이 모두 대조된 뒤에** `~\.local\bin`에
-넣고, 그 경로를 사용자 PATH에 추가합니다.
+넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. 받은 바이트가 릴리스가 말하는 digest와 다르면
+`INSTALL_DIGEST_MISMATCH`로 멈추고 **대상 폴더는 손대지 않은 상태로 남습니다.**
+
+저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-scripts\install.ps1 -Tag v0.2.0        # 태그 고정
-scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
-scripts\install.ps1 -NoPathUpdate      # PATH는 직접 관리
+.\install.ps1 -Tag v0.2.1        # 태그 고정
+.\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
+.\install.ps1 -NoPathUpdate      # PATH는 직접 관리
+.\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
 ```
 
 설치 뒤 **새 터미널**을 열고 확인합니다. Windows는 대소문자를 가리지 않으므로 `Clauduct`도 같은
@@ -66,8 +90,9 @@ clauduct --uninstall        # 무엇을 지울지 보여주고 확인을 받습�
 clauduct --uninstall --yes  # 무인
 ```
 
-**저장소가 없어도 됩니다.** 릴리스로 설치한 머신에는 바이너리만 있고 그게 바로 지우고 싶은 그
-머신이므로, 제거는 바이너리가 합니다. `--update`와 같은 규칙이라 **첫 인자일 때만** 인식하고,
+**저장소가 없어도 되고 셸도 가리지 않습니다.** PATH의 실행 파일이라 bash·cmd·PowerShell 어디서든
+같은 한 줄입니다. 릴리스로 설치한 머신에는 바이너리만 있고 그게 바로 지우고 싶은 그 머신이므로,
+제거는 바이너리가 합니다. `--update`와 같은 규칙이라 **첫 인자일 때만** 인식하고,
 `clauduct -p "how do I --uninstall"`은 아무것도 지우지 않습니다.
 
 실행 중인 자기 자신은 지울 수 없으므로 `.old`로 옮기고 그 한 줄을 출력합니다. **PATH와 진단

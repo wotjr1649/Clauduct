@@ -9,15 +9,22 @@ import "runtime/debug"
 
 // Version is the product version.
 //
-// 0.2.0 is the first release of the Go implementation. It follows v0.1.0, which released
+// 0.2.0 was the first release of the Go implementation. It follows v0.1.0, which released
 // the Node one: the same product with a new implementation underneath and the default
 // switched to it, which is a minor step rather than a new product. Still 0.x, and the
 // reasons are in PACKAGING.md: unsigned, Windows only, installed by copying files.
 //
+// 0.2.1 adds --uninstall and nothing else. Strict semver would call a new option a minor
+// bump; 0.x is exempt from that rule, and the more useful reading here is that nothing
+// about what this bridge does to a request changed -- translation, streaming, routing and
+// the budget are byte for byte what 0.2.0 shipped, and a session behaves identically. What
+// changed is that the binary can now remove itself on a machine that never cloned the
+// repository, which is tooling around the install rather than the product's behaviour.
+//
 // A constant rather than a linker flag. The commit stamp comes from the toolchain's own VCS
 // record precisely so a release script cannot forget it, and a version that could be passed
 // in is a version a script can get wrong.
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 // Info is what a build can say about itself. An empty field means the toolchain did not
 // stamp it, which is a different thing from a zero value and is reported as such.

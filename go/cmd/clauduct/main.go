@@ -39,6 +39,14 @@ func run() int {
 		return update.Run(ctx, os.Args[1:], os.Stdin, os.Stdout)
 	}
 
+	// The second option this launcher owns: what this account has spent. Recognised the
+	// same way, and only as the first argument, because a prompt is an argument like any
+	// other. The client defines no --usage of its own (measured on 2.1.274) and its own
+	// /usage cannot answer for this backend, so nothing is being taken over.
+	if asked(os.Args[1:], usageOption) {
+		return app.WriteUsage("", os.Stdout)
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct: CWD_UNAVAILABLE")
@@ -101,4 +109,17 @@ func environMap() map[string]string {
 		}
 	}
 	return out
+}
+
+// usageOption is the name for the account view.
+const usageOption = "--usage"
+
+// asked reports whether argv is exactly this option.
+//
+// First and alone. Everything else this launcher sees belongs to the native client, and an
+// option matched anywhere in the vector would fire on a prompt that merely mentions it --
+// which for --update meant replacing binaries and for this means printing instead of
+// starting a session.
+func asked(args []string, option string) bool {
+	return len(args) == 1 && strings.EqualFold(args[0], option)
 }

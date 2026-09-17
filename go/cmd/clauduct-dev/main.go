@@ -35,10 +35,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return version(stdout)
 	case "doctor":
 		return doctor(stdout)
+	case "usage":
+		return usage(stdout)
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct-dev [version|doctor|probe]")
+		fmt.Fprintln(stderr, "usage: clauduct-dev [version|doctor|usage|probe]")
 		return 2
 	}
 }

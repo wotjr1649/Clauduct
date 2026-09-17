@@ -26,10 +26,15 @@ import "runtime/debug"
 // predecessor, left a clauduct.exe.old behind every time somebody ran it. Reported from
 // real use. Nothing about the bridge changed here either.
 //
+// 0.2.3 fixes --uninstall, which left a clauduct.exe.old in the installation. 0.2.2 had
+// added a sweep on the next launch, and after an uninstall there is no next launch, so
+// the running image is moved out of the installation instead of beside it. The bridge
+// is untouched again.
+//
 // A constant rather than a linker flag. The commit stamp comes from the toolchain's own VCS
 // record precisely so a release script cannot forget it, and a version that could be passed
 // in is a version a script can get wrong.
-const Version = "0.2.2"
+const Version = "0.2.3"
 
 // Info is what a build can say about itself. An empty field means the toolchain did not
 // stamp it, which is a different thing from a zero value and is reported as such.

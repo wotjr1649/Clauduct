@@ -44,18 +44,24 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 
 ```powershell
 cd go
+$env:CGO_ENABLED = '0'
 go build -trimpath -o clauduct.exe      ./cmd/clauduct
 go build -trimpath -o clauduct-hook.exe ./cmd/clauduct-hook
 go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
 ```
 
-`-trimpath`는 빌드 머신의 디렉터리 배치가 바이너리에 남지 않게 한다. commit stamp는 Go toolchain의 VCS 기록에서 나오므로 **릴리스 스크립트가 잊을 수 없다.**
+`-trimpath`는 빌드 머신의 디렉터리 배치가 바이너리에 남지 않게 한다. `CGO_ENABLED=0`은
+**빌드 머신에 C 툴체인이 있는지에 산출물이 의존하지 않게** 한다 — 이 모듈은 `import "C"`가
+없어서 Windows에서 동작은 같지만, cgo가 켜진 채로 빌드하면 바이트가 달라진다. 재현성 테스트는
+같은 환경에서 두 번 빌드해 비교하므로 이 차이를 볼 수 없고, 그래서 산출물 쪽에서 고정한다
+(`TestTheShippedBinaryIsBuiltWithoutCgo`). 예외는 race job 하나이고, 그 바이너리는 출하 대상이
+아니다. commit stamp는 Go toolchain의 VCS 기록에서 나오므로 **릴리스 스크립트가 잊을 수 없다.**
 
 ```powershell
 clauduct-dev version
 # clauduct     0.0.0-wp01
 # commit       <40자 hash>
-# go           go1.27.0 windows/amd64
+# go           go1.27.1 windows/amd64
 ```
 
 worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다. **그런 빌드는 릴리스 후보가 아니다.**
@@ -68,7 +74,13 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 
 ## 5. 설치
 
-PATH에 있는 디렉터리에 두 파일을 복사한다. 그게 전부다.
+PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`이 `clauduct` 옆에 없으면 역할
+라우팅과 메뉴의 effort가 조용히 동작하지 않는다(1장).
+
+**그 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 안 된다.** MSYS/Git Bash의 PATH 탐색은 같은
+이름의 디렉터리에서 멈추고 `clauduct.exe`에 도달하지 못한다 — cmd는 PATHEXT로 찾으므로 셸에 따라
+동작이 갈린다. v1 설치 프로그램이 `$bin/clauduct`를 버전 저장소로 쓰므로 실제로 일어났고,
+2026-09-17에 그 저장소를 `clauduct-node-store`로 옮겨 해결했다(PARITY 11장 G9).
 
 **설치 디렉터리에 쓰지 않는다.** 테스트가 확인한다 — 다른 cwd에서 실행한 뒤 설치 디렉터리에 무엇이 생겼는지 전후 비교한다. 따라서 공유 경로나 쓰기 금지 경로에 둘 수 있다.
 
@@ -96,6 +108,6 @@ Windows `PATHEXT`는 `.EXE`를 `.CMD`보다 먼저 본다. 같은 디렉터리�
 | 자동 업데이트 | 없다 |
 | Windows 외 대상 | `internal/platform`에 windows 태그 파일 하나뿐이다. 다른 대상은 이식이 아니라 **새 설계**다 |
 | 서명 | 없다. 코드 서명 인증서는 이 프로젝트가 가진 것이 아니다 |
-| CI 실행 결과 | `.github/workflows/go.yml`은 작성돼 있고 **한 번도 실행된 적이 없다.** push가 별도 승인 사항이다 (REL10) |
+| CI 실행 결과 | **있다.** `redesign/go-v2-native-host`에서 gofmt·vet·build·test·race 전부 green (최근 run `35161187084`). 2026-09-17에 `CGO_ENABLED=0` 핀을 추가했으므로 다음 run이 출하 구성과 같은 것을 검사한다 |
 
 **미실행은 통과가 아니다.** 각 항목은 없다고 적혀 있지 괜찮다고 적혀 있지 않다.

@@ -1,63 +1,55 @@
 # Clauduct Go V2 — 현행 인덱스
 
-V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하나의 자리**다. 기존 Node 제품의 현행 상태는 여기에 복제하지 않는다 — 그것은 [HANDOFF.md](../../HANDOFF.md)와 [현행 검증표](../remaining-verification.md)가 소유한다. 두 축은 서로 다르며 한쪽의 판정이 다른 쪽을 바꾸지 않는다.
+V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하나의 자리**다. 기존 Node
+제품의 현행 상태는 여기에 복제하지 않는다 — 그것은 [HANDOFF.md](../../HANDOFF.md)와
+[현행 검증표](../remaining-verification.md)가 소유한다.
 
-## 1. 현재 상태
+## 1. 현재 상태 (2026-09-17)
 
 | 항목 | 값 |
 |---|---|
 | 세대 | V2 — Go Native-Host-Preserving Bridge |
-| 완료한 게이트 | **G0(현황) · G1(설계) · G2(격리)** |
-| 완료한 작업 패키지 | **WP01** launcher · **WP02** HTTP·생명주기 · **WP03** text protocol · **WP04** tool 왕복 |
-| 다음 게이트 | **G4 기본 wire 완료.** 다음은 WP05 (transport) |
+| 게이트 | **G0–G9 완료.** G10(archive)만 DEFERRED |
+| 작업 패키지 | **WP01–WP07 완료.** C4·F4는 "조사 후 안 함"으로 닫힘 |
+| 기본 실행기 | **Go.** `clauduct` = Go 빌드, `clauduct-node` = Node 구현 (G9, 2026-09-17) |
 | 기준선 | `node-bfbdf23-g0` (commit `bfbdf2385175…`, tree `9cd96d660959…`) |
 | 개발 branch | `redesign/go-v2-native-host`, worktree `D:/AIDEV/Clauduct-go-v2` |
-| Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.0, 제3자 의존성 0 |
+| Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.1, 제3자 의존성 0, **CGO_ENABLED=0** |
 | 기존 Node 변경 | **0건.** baseline tracked 파일 생성·수정·이동·삭제 없음 |
-| 실모델 호출 | **0회.** 잔여 승인 예산 0 |
-| 실행 언어 | Go 확정 (D01). 재투표 대상 아님 |
+| 테스트 | **1030 pass / 0 fail / 3 skip** (subtest 포함, 14 package). CI green |
+| 실모델 호출 | **추론 35/100.** 검색 probe는 ledger를 쓰지 않는다(별도 기록) |
+| 측정된 클라이언트 | claude **2.1.274** (2026-09-17 재확인), codex-cli 0.154.0 |
 
-판정 전문은 [DECISION.md](DECISION.md)에 있다. 요약:
-
-```text
-DESIGN:             GO (수정 9건 반영)
-OFFLINE_BUILD:      GO  — G2 승인됨, WP01 구현·검증 완료
-LIVE_VALIDATION:    NOT_AUTHORIZED  (예산 0 + 전송 계약 BLOCKED)
-DEFAULT_SWITCH:     NOT_REQUESTED
-RELEASE:            USER_DECISION_REQUIRED
-ARCHIVAL_MOVE:      DEFERRED
-```
+판정 전문은 [DECISION.md](DECISION.md), 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md),
+격차 원장은 [PARITY.md](PARITY.md), 증거는 [VALIDATION.md](VALIDATION.md)가 소유한다.
 
 ## 2. 문서 위치와 책임
 
 | 문서 | 소유하는 것 |
 |---|---|
-| 이 파일 | 현재 상태·다음 게이트·예산. 다른 문서가 이 값을 복제하지 않는다 |
-| [DECISION.md](DECISION.md) | 착수 판정, 판정 근거, 확정·보류·블로커 |
+| 이 파일 | 현재 상태·다음 작업·예산. 다른 문서가 이 값을 복제하지 않는다 |
+| [DECISION.md](DECISION.md) | 착수 판정과 그 근거. **G1 시점 문서이며 이후 상태를 말하지 않는다** |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 책임 경계·프로토콜·생명주기의 stable contract |
 | [MIGRATION.md](MIGRATION.md) | 파일 처분의 요약과 이동 단계. 기계 판본이 source of truth |
 | [COMPATIBILITY.md](COMPATIBILITY.md) | 기능별 지원·제약·미검증 |
-| [VALIDATION.md](VALIDATION.md) | 요구 ID·test ID·게이트·예산·비교 실행 계약·실행 증거 |
+| [PARITY.md](PARITY.md) | 기준선 대비 실제 격차와 작업 목록 |
+| [VALIDATION.md](VALIDATION.md) | 요구 ID·test ID·게이트·예산·실행 증거 |
+| [PACKAGING.md](PACKAGING.md) | 출하물·런타임 의존·빌드·되돌리기 |
 | `go/README.md` | Go 모듈의 빌드 명령과 지켜야 할 runtime 계약 |
-| `comparison/baselines/node-bfbdf23-g0.json` | 기준선 SHA·환경·검증 상태 |
-| `comparison/baselines/node-bfbdf23-g0-migration.json` | **전수 파일 처분의 source of truth** (738 entries) |
 
-원본 설계 요구는 `docs/prompts/2026-09-16-session-34-go-v2-native-host-redesign-handoff.md`다. 그 문서는 세션 프롬프트이며 현재 상태 문서가 아니다 — 갱신하지 않는다.
+원본 설계 요구는 `docs/prompts/2026-09-16-session-34-go-v2-native-host-redesign-handoff.md`다.
+그 문서는 세션 프롬프트이며 현재 상태 문서가 아니다 — 갱신하지 않는다.
 
-## 3. 다음 세션이 읽을 것
+## 3. 이 시점에 아직 사실이 아닌 것
 
-전체 핸드오프를 매번 다시 읽지 않는다. 이 파일 → [DECISION.md](DECISION.md) → 착수할 작업 패키지의 해당 절만 읽는다.
-
-다음 하나의 bounded work package는 **WP05 — direct transport와 read-only auth provider**다. 파이프라인은 완성됐고 보낼 곳만 없다: 실제 `claude.exe`가 이 빌드에 대해 남기는 유일한 오류가 `NO_UPSTREAM_TRANSPORT`다. 우선 테스트는 AUTH01–AUTH08, LIFE08–LIFE10, LIFE13, REL12.
-
-WP05에서 함께 판정할 것이 하나 있다: **5xx는 종류를 가리지 않고 클라이언트가 재시도한다**(측정값은 [VALIDATION.md](VALIDATION.md) 5.7.1). 클라이언트 재시도와 이 bridge의 재시도가 곱해지지 않도록 소유권을 정해야 하고, 실호출 cap은 socket을 열기 **전에** 걸려야 한다.
-
-## 4. 이 시점에 아직 사실이 아닌 것
-
-- **대화형 세션이 성립하지 않는다.** 이제 막는 것은 하나뿐이다: 제품 빌드에 transport가 없다(→ `400 NO_UPSTREAM_TRANSPORT`, 4.5초에 종료). 침묵이 아니라 명시된 오류다.
-- upstream 전송(WP05), 모델 라우팅(WP07), `/v1/models` discovery(WP07), 이미지·문서·hosted search는 아직 없다.
-- TOOL01·TOOL02·TOOL06은 실제 native 실행이 필요해 `NOT_RUN`이다(WP06).
-- 성능·지연·메모리 비교 수치는 측정한 적이 없다.
-- host parity는 미검증이다. 통제된 synthetic profile 실행(NATIVE_SYNTH)은 아직 하지 않았다.
-- `-race`는 이 머신에서 **NOT_RUN**이다 — cgo와 C 툴체인이 없다. CI가 담당하며 미실행은 통과가 아니다.
-- CI(`.github/workflows/go.yml`)는 작성만 했고 **실행된 적이 없다.** push 권한은 별도 승인 사항이다.
+- **완료 연결 바인딩 4종**(`linkTaskResult`·`linkWorkflow`·`linkResume`·`linkSkill`)은 없다.
+  등록/해제(`POST /clauduct/agents`)만 있다.
+- **agent 메타데이터 identity 검증**(symlink 경계·실패 코드 12종)은 사용자 결정으로 보류다.
+  이 빌드에서 선택 실패는 턴을 죽이지 않고 클라이언트가 고른 모델로 진행한다.
+- **workflow 저널 검증(C4)**은 조사 후 구현하지 않기로 했다 — 이 빌드는 라우팅에 디스크를 읽지 않는다.
+- **WebSearch는 bridge 단위와 실백엔드 probe로만 검증됐다.** 실제 클라이언트 세션이 WebSearch를
+  일으키는 NATIVE_SYNTH 테스트는 없다.
+- **성능 비교는 시작 비용과 메모리만 측정했다.** 요청당 지연·처리량의 v1/v2 비교는 공용 fixture
+  harness가 없어 미측정이다.
+- **document(PDF) 블록과 `POST /v1/messages/count_tokens`는 양쪽 다 미지원이다.**
+- **비Windows 대상은 없다.** `internal/platform`에 windows 태그 파일 하나뿐이다.

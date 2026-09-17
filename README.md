@@ -1,35 +1,56 @@
 # Clauduct
 
-다른 머신으로 이관하거나 이전 대화 없이 개발을 재개할 때는 [HANDOFF.md](HANDOFF.md)를 먼저 읽습니다. 무인 연속 개발의 전체 개선·검증 제안과 native memory·세션 이력의 이관 범위를 연결합니다.
+Claude Code 인터페이스의 모델 요청을 로컬 게이트웨이를 통해 기존 Codex 로그인으로 라우팅합니다.
+Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 그대로 담당합니다.
 
-Claude Code 인터페이스의 모델 요청을 로컬 게이트웨이를 통해 기존 Codex 로그인으로 라우팅합니다. Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 담당합니다.
+추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다.
+Codex app-server를 호출하거나 실행 중인 Codex 앱 세션에 요청을 넘기는 구현이 아닙니다.
 
-현재 추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다. Codex app-server를 호출하거나 실행 중인 Codex 앱의 세션에 요청을 전달하는 구현이 아닙니다. 로그인 자격 증명을 재사용하는 것과 Codex 앱의 실행 엔진·재시도·프로토콜 처리를 재사용하는 것은 다릅니다. 로컬 합성 테스트 통과는 실제 backend 오류가 발생하지 않는다는 보장이 아닙니다.
+## 구현이 둘입니다
+
+이름이 다르므로 동시에 설치해도 서로를 가리지 않습니다.
+
+| 이름 | 무엇 | 상태 | 현행 문서 |
+|---|---|---|---|
+| `clauduct` | Go 단일 바이너리 (+`clauduct-hook`, `clauduct-dev`) | **현재 제품** | [docs/v2/README.md](docs/v2/README.md) |
+| `clauduct-node` | Node 구현 | 이전 제품 · 비교 기준선 · 되돌리기 경로 | [HANDOFF.md](HANDOFF.md) |
+
+**어느 쪽 문서를 읽고 있는지가 중요합니다.** 이 저장소의 v1 문서는 Node 구현을 기술하며 Go 빌드에
+그대로 적용되지 않습니다 — 게이트웨이 재시도 횟수, 자원·선택 실패 코드, Node 런타임 요구,
+`--dry-run` 같은 항목이 서로 다릅니다. Go 빌드의 **현행** 동작·제약·미지원은
+[docs/v2/COMPATIBILITY.md](docs/v2/COMPATIBILITY.md) 하나가 소유합니다.
+
+## Go 빌드 (`clauduct`)
 
 ```powershell
 clauduct
 clauduct --model sol --effort xhigh
 clauduct --continue
-clauduct --resume <session-id>
-clauduct -p --output-format json --max-turns 3 "Summarize the current task"
+clauduct -p "Summarize the current task"
+clauduct --update      # Clauduct 자신을 갱신. `clauduct update`는 그대로 전달되어 Claude Code를 갱신
+clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너리로
 ```
 
-Windows 설치는 [설치 안내](docs/installation.md)를 따른다. Node.js 24 이상, Claude Code, Codex CLI와 기존 Codex 로그인이 필요하다. Release의 `install.ps1`은 현재 사용자 홈 `.local\bin`에 명령을 설치한다. 설치 후 새 터미널에서 프로젝트로 이동해 실행한다. 소스 ZIP을 직접 푼 경우에는 해당 폴더의 `clauduct.cmd` 전체 경로를 사용한다.
+거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update` 하나이고,
+거부하는 것은 네 개입니다(권한 해제 2종, `--settings`·`--setting-sources`).
 
-메인 기본 실행은 **astra/low**입니다. 명시적 모델 선택의 기본값(astra/medium, sol/xhigh, terra/high, luna/max)과 고정 agent 정의는 보존합니다. `--effort`로 지정한 값이 우선합니다. 실행 중 `/model` 선택을 사용하며, 모델 미지정 Explore와 일반 역할은 luna/max, Plan은 astra/low로 연결합니다. 자식 메타데이터와 부모 호출 ID로 확인한 명시 모델이 역할 기본값보다 우선합니다. 실제 실행에서 연결을 확인할 수 없으면 AGENT_SELECTION_UNVERIFIED로 중단하며 다른 모델로 추정 배정하지 않습니다.
+`claude.exe`와 `codex.exe`, 그리고 `~/.codex/auth.json`이 필요합니다. Node도 .NET도 필요하지
+않습니다. 출하물·빌드·되돌리기는 [docs/v2/PACKAGING.md](docs/v2/PACKAGING.md), 모듈의 빌드 명령과
+runtime 계약은 [go/README.md](go/README.md)에 있습니다.
 
-- 텍스트는 생성 중 스트리밍하고, 도구 호출은 응답 완료 검증 뒤에 전달합니다.
-- 기존 Codex가 갱신한 인증을 재읽습니다. 직접 OAuth 갱신이나 인증 파일 쓰기는 하지 않습니다.
-- 메모리가 부족하면 새 요청을 기본 최대 30초 대기시킵니다. 기한을 넘으면 `MEMORY_ADMISSION_TIMEOUT`을 반환하며, 진행 중 작업은 유지합니다.
-- 응답 전달 전 일시 오류만 최대 5회 재시도합니다. 전달 후 실패는 명시적 재개가 필요합니다.
-- 메인·서브에이전트에 400K 컨텍스트/320K 자동 압축 목표 정책을 전달합니다. 실제 backend 수용량과 실제 압축 시점은 별도 검증 대상입니다.
+## Node 구현 (`clauduct-node`)
 
-기존 native 설정 경로·플러그인·훅을 상속합니다. Clauduct용 라우팅 hook과 환경 설정은 자식 세션에만 추가합니다. 사용자가 해결한 모델 선택 keybindings와 전역 settings는 수정하지 않습니다. 보안상 provider/secret 계열 환경 변수는 자식에 복사하지 않으므로 이 값에 의존하는 도구는 일반 Claude 실행과 차이가 있습니다.
+Windows 설치는 [설치 안내](docs/installation.md)를 따릅니다. Node.js 24 이상, Claude Code,
+Codex CLI와 기존 Codex 로그인이 필요합니다. 동작·검증 구분과 자원 제한은
+[native 구현 안내](docs/native.md), 설치·복구·배포 무결성은 [릴리즈 안내](RELEASE.md)에 있습니다.
 
-설치된 Node와 native Claude를 사용하는 Windows 실행기입니다. 설치기는 기본적으로 사용자 PATH에 설치 위치를 추가하며 `-NoPathUpdate`로 생략할 수 있습니다. 프로필·인증 파일은 변경하지 않습니다. 인증 없이 실행 구성을 확인하려면 `clauduct --dry-run`을 사용합니다.
+기준선으로서의 역할이 남아 있어 저장소에 그대로 둡니다. 정리 여부와 그 조건은
+[docs/v2/MIGRATION.md](docs/v2/MIGRATION.md) 6장이 기록합니다.
 
-`-p`/`--print`는 비대화형 실행입니다. 파이프로 입력·출력을 연결할 수 있고, stdout은 native Claude의 텍스트/JSON/stream-json 결과만 제공합니다. Clauduct의 시작 안내와 종료 진단은 stderr 및 기존 상태 파일에 남습니다. 명시적 `-p` 없이 일반 실행을 파이프에서 시작하면 터미널 요구 오류로 중단합니다. 인증·TLS·계정 고정·native 권한 검사는 비대화형에서도 적용됩니다. 자동 실행은 `--max-turns`와 실행 주체의 시간 제한으로 범위를 정합니다.
+## 무엇이 검증됐는가
 
-설치·비대화형 실행·복구·배포 파일 무결성은 [릴리즈 안내](RELEASE.md), 보완 및 검증 증거는 [릴리즈 검증](docs/release-readiness.md)에 기록합니다.
+증거는 [docs/v2/VALIDATION.md](docs/v2/VALIDATION.md)가 소유합니다. 요구 ID, 게이트, 실행한 검사와
+**실행하지 않은 검사**를 함께 적습니다 — 미실행은 통과가 아닙니다.
 
-**Verified / Not verified의 상세 구분, 자원 제한, 호환성 제약과 검사 명령은 [native 구현 안내](docs/native.md)에 있습니다.** 기존 [Read 1회 PoC](poc/실제-Read-실행.md)의 사용자 SUCCESS와 이후 프롬프트 1~6 통과 보고는 보존하지만, 이번 스트리밍 변경의 실제 native 성공 증거로 대체하지 않습니다.
+Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 공식 지원하지 않는다고 명시합니다.
+이것은 제3자 호환 구현이며 "공식 지원"이나 "전체 기능 100% 보장"으로 설명하지 않습니다.

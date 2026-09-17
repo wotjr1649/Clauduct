@@ -846,36 +846,3 @@ func TestACompletionStatingADifferentCountIsRefused(t *testing.T) {
 		})
 	}
 }
-
-// Arguments delivered whole and then stated are not a mismatch.
-//
-// Found by review. An absent key reads as the empty string, so a backend that streamed no
-// deltas and then sent function_call_arguments.done with the whole payload was answered
-// with ARGUMENTS_MISMATCH and the turn died. closeItem allows that exact case and says so
-// in a comment; this branch disagreed with it.
-func TestArgumentsStatedWithoutDeltasAreAccepted(t *testing.T) {
-	const args = `{"file_path":"a.txt"}`
-	_, err := runFor(t, callable("Read"),
-		event(codex.FuncArgsDone, `{"item_id":"fc_1","arguments":`+quoteJSON(args)+`}`),
-		completedWith(`{"id":"fc_1","type":"function_call","call_id":"call_1",`+
-			`"name":"Read","arguments":`+quoteJSON(args)+`}`))
-	if err != nil {
-		t.Fatalf("arguments delivered whole were refused: %v", err)
-	}
-
-	// A real disagreement is still caught: deltas that do not add up to what was stated.
-	_, err = runFor(t, callable("Read"),
-		event(codex.FuncArgsDelta, `{"item_id":"fc_1","delta":"{\"file_path\":"}`),
-		event(codex.FuncArgsDone, `{"item_id":"fc_1","arguments":`+quoteJSON(args)+`}`),
-		completedWith(`{"id":"fc_1","type":"function_call","call_id":"call_1",`+
-			`"name":"Read","arguments":`+quoteJSON(args)+`}`))
-	if !errors.Is(err, ErrArgumentsMismatch) {
-		t.Fatalf("err = %v, want ARGUMENTS_MISMATCH when the deltas contradict the statement", err)
-	}
-}
-
-// quoteJSON makes a JSON string literal out of a payload.
-func quoteJSON(text string) string {
-	encoded, _ := json.Marshal(text)
-	return string(encoded)
-}

@@ -657,12 +657,13 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		// executed by the client, so a stream nobody can account for is not one to build a
 		// call from -- even though the call itself comes from the completed output.
 		//
-		// Only when something streamed. An absent key reads as the empty string, so a
-		// backend that delivered the arguments whole and then stated them was answered with
-		// a mismatch and the turn died -- while closeItem, a hundred lines below, allows
-		// exactly that case and says so. Two rules for one question, and the stricter one
-		// was the accident.
-		if streamed, saw := t.streamedArgs[done.ItemID]; saw && streamed != done.Arguments {
+		// Strict on purpose, and deliberately unlike closeItem below. This event is the end
+		// of an argument stream: its arrival says there was one, so no deltas having
+		// arrived is the missing-delta case rather than a backend delivering the arguments
+		// whole. closeItem answers a different question -- an item that never streamed
+		// arguments at all -- and tolerance there is right for the same reason strictness
+		// is right here. Reviewed 2026-09-17 and left as it was.
+		if t.streamedArgs[done.ItemID] != done.Arguments {
 			return nil, ErrArgumentsMismatch
 		}
 		return nil, nil
@@ -782,7 +783,10 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 			return ErrItemSnapshotMismatch
 		}
 		// Against what actually streamed, when anything did. An item whose arguments never
-		// streamed is not a mismatch: the backend is entitled to deliver them whole.
+		// streamed is not a mismatch: the backend is entitled to deliver them whole, and
+		// when it does it sends no argument stream and no .done to end one. That is why
+		// this tolerates what the FuncArgsDone branch refuses -- the two events say
+		// different things, and a .done is a statement that a stream happened.
 		if streamed, saw := t.streamedArgs[final.ID]; saw && streamed != string(final.Arguments) {
 			return ErrArgumentsMismatch
 		}

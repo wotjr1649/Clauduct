@@ -72,6 +72,35 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 
 이것이 checksum을 의미 있게 만든다. "이 commit에서 빌드했다"는 바이너리가 자기에 대해 하는 주장이지만, 해시가 같다는 것은 **누구나 확인할 수 있는 주장**이다.
 
+## 4.1 릴리스 만들기
+
+`--update`가 읽는 것은 **최신 태그 릴리스의 자산**이므로, 이름과 형식이 계약이다.
+
+```powershell
+# 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
+#    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).
+git worktree add ../clauduct-release v0.2.0
+cd ../clauduct-release/go
+$env:CGO_ENABLED = '0'
+go build -trimpath -o clauduct.exe      ./cmd/clauduct
+go build -trimpath -o clauduct-hook.exe ./cmd/clauduct-hook
+go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
+
+# 2. 자산 이름 그대로 SHA256SUMS를 만든다. `<hex>  <name>` 두 칸이 파서가 읽는 형식이다.
+# 3. gh release create v0.2.0 clauduct.exe clauduct-hook.exe clauduct-dev.exe SHA256SUMS
+```
+
+| 자산 이름 | 왜 이 이름이어야 하나 |
+|---|---|
+| `clauduct.exe` · `clauduct-hook.exe` · `clauduct-dev.exe` | `update.Binaries`가 이 이름으로 찾는다. 셋 다 없으면 무엇이 빠졌는지 이름으로 말하고 멈춘다 |
+| `SHA256SUMS` | 유일한 무결성 근거다. 서명이 없으므로 여기에 적힌 digest와 릴리스 API가 말하는 digest **둘 다** 대조한다 |
+
+**드래프트나 pre-release로 두면 `--update`가 보지 못한다.** GitHub의 `releases/latest`가 그 둘을
+건너뛰기 때문이다.
+
+재현 빌드이므로 같은 태그·같은 Go 버전이면 누구가 빌드해도 digest가 같아야 한다. 다르면 둘 중
+하나가 위 절차를 벗어난 것이다.
+
 ## 5. 설치
 
 PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`이 `clauduct` 옆에 없으면 역할

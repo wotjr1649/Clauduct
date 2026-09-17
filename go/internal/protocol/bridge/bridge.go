@@ -2,9 +2,9 @@
 // imports both, which is what keeps a field from crossing without someone deciding it
 // should.
 //
-// WP03 carries the text path. Tool use, images, structured output and reasoning content
-// are refused by the request decoder or dropped from the client's view here with a note
-// saying so — never forwarded half-understood.
+// The text path, tool use, images, structured output and reasoning content all cross here.
+// What this package does not understand is refused by the request decoder or dropped from
+// the client's view with a note saying so — never forwarded half-understood.
 package bridge
 
 import (
@@ -103,6 +103,24 @@ type Request struct {
 	// conversation is a property of every request this bridge makes, so it is stated
 	// rather than left to a default that could change on the other side.
 	Store bool `json:"store"`
+	// Text carries a structured output request, and is absent when the client named none.
+	Text *TextParam `json:"text,omitempty"`
+}
+
+// TextParam is where the backend takes the response format constraint.
+type TextParam struct {
+	Format SchemaFormat `json:"format"`
+}
+
+// SchemaFormat is the constraint itself, in the shape the Node baseline sends.
+type SchemaFormat struct {
+	Type   string          `json:"type"`
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
+	// Strict is what makes the schema binding rather than advisory. Sent as the baseline
+	// sends it: a caller that asked for a schema wants an answer it can parse, and a
+	// best-effort one is the case it cannot tell apart from success.
+	Strict bool `json:"strict"`
 }
 
 // Instruction is what every request sends as its top-level instructions.
@@ -269,6 +287,15 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 		// sends it unconditionally for the same reason.
 		Effort: &ReasoningParam{Effort: route.Effort},
 		Source: route.Source,
+	}
+	// The schema the client asked for, sent rather than dropped. Accepting a structured
+	// output request and then not asking for one produces prose that satisfies the HTTP
+	// contract and nothing the caller wanted -- and the caller is usually a workflow or a
+	// subagent whose result is parsed, so the failure surfaces far from here.
+	if format := request.OutputFormat; format != nil {
+		out.Text = &TextParam{Format: SchemaFormat{
+			Type: "json_schema", Name: format.Name, Schema: format.Schema, Strict: true,
+		}}
 	}
 	// The system prompt leads the conversation as a developer turn. Its content is a plain
 	// string here rather than a list of parts, which is the shape the baseline sends.

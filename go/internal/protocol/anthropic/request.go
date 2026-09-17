@@ -195,6 +195,24 @@ type Request struct {
 	// presence to decide, so the decision belongs to the caller that can see the whole
 	// shape. Nothing puts this in the tool list sent upstream.
 	HostedSearch *HostedSearch
+
+	// OutputFormat is the JSON Schema the answer must obey, when the request named one.
+	//
+	// Carried rather than only validated. Validating a schema and then not sending it is
+	// the worst of both: the request is accepted, so the client believes the constraint
+	// holds, and the model never hears about it -- the answer comes back as prose and
+	// whatever asked for structure fails somewhere further away from the cause.
+	OutputFormat *OutputFormat
+}
+
+// OutputFormat is a structured output request, in the baseline's shape.
+type OutputFormat struct {
+	// Name is what the backend calls the schema. The baseline defaults it rather than
+	// omitting it, so a request that named none still produces the same wire shape.
+	Name string
+	// Schema is carried through unread. JSON Schema semantics belong to the backend, and
+	// a second, weaker validator here would only disagree with the one that decides.
+	Schema json.RawMessage
 }
 
 // HostedSearch is a server-side search tool definition.
@@ -622,14 +640,20 @@ func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) err
 	if _, err := wire.Fields(schemaValue, nil); err != nil {
 		return refuse(CodeOutputFormatSchema, "schema")
 	}
+	name := DefaultSchemaName
 	if nameValue, present := wire.Of(format, "name"); present == wire.Present {
-		var name string
 		if json.Unmarshal(nameValue, &name) != nil || !identifier.MatchString(name) {
 			return refuse(CodeOutputFormatName, "name")
 		}
 	}
+	request.OutputFormat = &OutputFormat{Name: name, Schema: schemaValue}
 	return nil
 }
+
+// DefaultSchemaName is what an unnamed schema is called upstream. The baseline's value:
+// the backend requires a name, and inventing a different one here would make the same
+// request from the same client look like two schemas depending on which build served it.
+const DefaultSchemaName = "structured_output"
 
 func decodeThinking(fields map[string]json.RawMessage) error {
 	value, presence := wire.Of(fields, "thinking")

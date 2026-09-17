@@ -783,3 +783,56 @@ func argsDone(itemID, arguments string) stream.Event {
 		"type": codex.FuncArgsDone, "item_id": itemID, "arguments": arguments})
 	return stream.Event{Type: codex.FuncArgsDone, Raw: body}
 }
+
+// A schema the client asked for has to reach the backend.
+//
+// Validating one and then dropping it is the quietest failure available here: the request
+// is accepted, so the caller believes the constraint holds, and the model is never told
+// about it. The caller is usually a workflow agent or a subagent whose result is parsed,
+// so what surfaces is a parse error one layer away from the cause.
+func TestARequestedSchemaReachesTheBackend(t *testing.T) {
+	const schema = `{"type":"object","properties":{"verdict":{"type":"boolean"}}}`
+	const head = `{"model":"sonnet","max_tokens":1,"stream":true,` +
+		`"messages":[{"role":"user","content":"x"}],"output_config":{"format":`
+
+	named, err := BuildRequest(decodeRequest(t,
+		head+`{"type":"json_schema","name":"review","schema":`+schema+`}}}`))
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	encoded, _ := json.Marshal(named)
+	for _, want := range []string{
+		`"text":{"format":{`, `"type":"json_schema"`, `"name":"review"`, `"strict":true`,
+		`"properties":{"verdict":{"type":"boolean"}}`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("missing %s: %s", want, encoded)
+		}
+	}
+
+	// An unnamed schema still arrives named. The backend requires one, and inventing a
+	// different default than the baseline's would make the same request from the same
+	// client look like two schemas depending on which build served it.
+	unnamed, err := BuildRequest(decodeRequest(t, head+`{"type":"json_schema","schema":`+schema+`}}}`))
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	// Asserted as a literal, not as the constant. Every other test builds its expectation
+	// from anthropic.DefaultSchemaName, so a drift in that name would leave all of them
+	// green while the wire changed underneath -- checked by mutation, which survived until
+	// this line stopped agreeing with the code it is checking.
+	if unnamed.Text == nil || unnamed.Text.Format.Name != "structured_output" {
+		t.Fatalf("unnamed schema = %+v, want name %q", unnamed.Text, "structured_output")
+	}
+
+	// And a request that asked for no format must not grow one. A constraint nobody asked
+	// for is the same defect in the other direction.
+	plain, err := BuildRequest(decodeRequest(t,
+		`{"model":"sonnet","max_tokens":1,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	if plain.Text != nil {
+		t.Fatalf("format sent for a request that named none: %+v", plain.Text)
+	}
+}

@@ -95,9 +95,9 @@ clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너�
 
 ## Node 구현 (`clauduct-node`)
 
-Windows 설치는 [설치 안내](docs/installation.md)를 따릅니다. Node.js 24 이상, Claude Code,
+Windows 설치는 [설치 안내](docs/v1/installation.md)를 따릅니다. Node.js 24 이상, Claude Code,
 Codex CLI와 기존 Codex 로그인이 필요합니다. 동작·검증 구분과 자원 제한은
-[native 구현 안내](docs/native.md), 설치·복구·배포 무결성은 [릴리즈 안내](RELEASE.md)에 있습니다.
+[native 구현 안내](docs/v1/README.md), 설치·복구·배포 무결성은 [릴리즈 안내](RELEASE.md)에 있습니다.
 
 기준선으로서의 역할이 남아 있어 저장소에 그대로 둡니다. 정리 여부와 그 조건은
 [docs/v2/MIGRATION.md](docs/v2/MIGRATION.md) 6장이 기록합니다.

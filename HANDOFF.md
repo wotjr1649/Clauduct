@@ -7,9 +7,9 @@
 ## 1. 먼저 읽을 것
 
 1. **이 문서** — 목표, 지켜야 할 선, 시작 순서.
-2. **[현행 검증표](docs/remaining-verification.md)** — 2~5장이 현행 기준이다. **무엇이 남았는지는 3.2절이 소유한다.** 6장은 이력이며 그 수치와 프롬프트를 현재 설정으로 쓰지 않는다.
-3. **[무인 개발 심층 리서치](docs/research-2026-09-12-unattended-release-gates.md)** — F01~F23의 정의와 합격 기준의 원본이다. F 번호를 판정할 때 요약이 아니라 이 정의를 본다. **F01~F23은 명세이지 기존 테스트 목록이 아니다** — 대응하는 검사가 전부 존재한다고 가정하지 않는다.
-4. **[릴리즈 검증](docs/release-readiness.md)**과 **[RELEASE.md](RELEASE.md)** — 실행한 항목, 오류 계약, ZIP 구성과 한계.
+2. **[현행 검증표](docs/v1/remaining-verification.md)** — 2~5장이 현행 기준이다. **무엇이 남았는지는 3.2절이 소유한다.** 6장은 이력이며 그 수치와 프롬프트를 현재 설정으로 쓰지 않는다.
+3. **[무인 개발 심층 리서치](docs/v1/release/research-2026-09-12-unattended-release-gates.md)** — F01~F23의 정의와 합격 기준의 원본이다. F 번호를 판정할 때 요약이 아니라 이 정의를 본다. **F01~F23은 명세이지 기존 테스트 목록이 아니다** — 대응하는 검사가 전부 존재한다고 가정하지 않는다.
+4. **[릴리즈 검증](docs/v1/release/release-readiness.md)**과 **[RELEASE.md](RELEASE.md)** — 실행한 항목, 오류 계약, ZIP 구성과 한계.
 
 이 문서와 코드가 작업 근거다. 이전 대화, 사용자 홈 native memory, Engramux 검색은 보조 증거이며 없어도 개발을 이어갈 수 있어야 한다.
 
@@ -21,10 +21,10 @@
 
 | 범위 | 판정 |
 |---|---|
-| 로컬 실사용 | 사용 가능 — [판단 근거](docs/local-use-release-decision.md) |
+| 로컬 실사용 | 사용 가능 — [판단 근거](docs/v1/release/local-use-release-decision.md) |
 | 무인 전체 출하 | **HOLD** |
 
-**남은 것의 목록을 이 문서에 복제하지 않는다.** [현행 검증표](docs/remaining-verification.md)의 3.2절이 그 목록을 소유하며, 사용자 범위 변경이 반영된 유일한 자리다. 여기에 사본을 두면 둘이 갈라지고, 갈라진 사본을 현행으로 읽는 것이 이 문서가 한 번 겪은 실패다.
+**남은 것의 목록을 이 문서에 복제하지 않는다.** [현행 검증표](docs/v1/remaining-verification.md)의 3.2절이 그 목록을 소유하며, 사용자 범위 변경이 반영된 유일한 자리다. 여기에 사본을 두면 둘이 갈라지고, 갈라진 사본을 현행으로 읽는 것이 이 문서가 한 번 겪은 실패다.
 
 HOLD 해제와 출하 PASS 표기는 사용자의 판단이다. 에이전트는 근거를 모아 제시한다. 제외되거나 이관된 항목을 PASS로 바꿔 적지 않는다 — 제외는 검증이 아니다.
 
@@ -65,11 +65,11 @@ HEAD, 테스트 수, 통과 개수는 여기 적지 않는다. 아래 명령이 
    .\clauduct.cmd --dry-run -p
    ```
 
-   JSON 한 줄과 exit 0이면 wrapper 기동과 옵션 해석이 정상이다. `model`·`effort`가 [현행 검증표](docs/remaining-verification.md) 2장의 무옵션 시작값과 같은지 본다.
+   JSON 한 줄과 exit 0이면 wrapper 기동과 옵션 해석이 정상이다. `model`·`effort`가 [현행 검증표](docs/v1/remaining-verification.md) 2장의 무옵션 시작값과 같은지 본다.
 
    같은 출력의 `credentialReads`·`childStarted`·`globalWrites`는 **이 분기가 쓰는 고정값이라 아무것도 증명하지 않는다.** dry-run이 credential·소켓·자식을 열지 않는다는 것은 `src/clauduct.mjs`의 해당 분기가 즉시 반환한다는 코드 사실이며, 그 분기 위로 무언가 옮겨가도 출력은 계속 0을 말한다. 이 세 값을 무접속의 증거로 인용하지 않는다.
 
-4. 실행 범위를 먼저 검토한 뒤 로컬 회귀를 돌린다. 무검토 glob으로 전부 실행하지 않는다 — fixture·자식 프로세스·네트워크·쓰기 대상을 먼저 확인하고 필요한 파일만 나열한다. 대상 선택은 [현행 검증표](docs/remaining-verification.md) 5.1절을 따른다.
+4. 실행 범위를 먼저 검토한 뒤 로컬 회귀를 돌린다. 무검토 glob으로 전부 실행하지 않는다 — fixture·자식 프로세스·네트워크·쓰기 대상을 먼저 확인하고 필요한 파일만 나열한다. 대상 선택은 [현행 검증표](docs/v1/remaining-verification.md) 5.1절을 따른다.
 
    ```powershell
    . ./src/run-node-tests.ps1
@@ -85,7 +85,7 @@ HEAD, 테스트 수, 통과 개수는 여기 적지 않는다. 아래 명령이 
 | 항목 | 이유 |
 |---|---|
 | 과거 Codex/Claude 세션 이력 | 사용자 홈의 세션 저장소에 있다. 폴더 복사로 따라오지 않는다 |
-| native memory | 프로젝트 지식이 여기에만 저장된 흔적은 없다. 점검 범위는 [이관 검증](docs/transfer-verification-2026-09-12.md)에 있다 |
+| native memory | 프로젝트 지식이 여기에만 저장된 흔적은 없다. 점검 범위는 [이관 검증](docs/v1/release/transfer-verification-2026-09-12.md)에 있다 |
 | 실행 중 RAM 상태 | socket·PID·lease는 머신 종속이며 살아 있는 프로세스는 이관되지 않는다 |
 | 인증 | 대상 머신의 유효한 로그인이 필요하다 |
 
@@ -95,7 +95,7 @@ HEAD, 테스트 수, 통과 개수는 여기 적지 않는다. 아래 명령이 
 |---|---|
 | OS·도구 | Windows, PowerShell 7+, Git, Node, Claude, Codex |
 | 실행 파일 위치 | 사용자 홈의 `.local/bin/claude.exe`, `AppData/Local/Programs/OpenAI/Codex/bin/codex.exe`. Node는 PATH에서 찾는다 |
-| 검증된 버전 조합 | 실행별로 [현행 검증표](docs/remaining-verification.md) 4장이 적는다. 2장은 Codex clientVersion 계약만 다룬다. 버전 번호만으로 bridge 호환성을 확정하지 않는다 |
+| 검증된 버전 조합 | 실행별로 [현행 검증표](docs/v1/remaining-verification.md) 4장이 적는다. 2장은 Codex clientVersion 계약만 다룬다. 버전 번호만으로 bridge 호환성을 확정하지 않는다 |
 | 환경 지침 | global guidance·hooks·permissions·plugins·MCP는 대상 머신 쪽 설정으로 유지한다 |
 | secret 환경 변수 | provider/secret 계열 env는 Clauduct 자식에 전달하지 않는 기존 계약을 유지한다 |
 
@@ -121,4 +121,4 @@ git worktree list --porcelain
 - **폴더 전체의 민감정보 부재.** 보존된 profile·임시 결과·대화 이력의 전수 검사는 하지 않았다. 자격증명 경로 이름이 들어간 전수 점검 명령은 `shell-guard`가 차단했고 우회하지 않았다.
 - **기존 세션의 cross-machine resume.** 새 세션으로 개발을 이어가는 것과 구분한다.
 
-이관 검사의 상세와 제약은 [이관 검증 기록](docs/transfer-verification-2026-09-12.md)에 있다.
+이관 검사의 상세와 제약은 [이관 검증 기록](docs/v1/release/transfer-verification-2026-09-12.md)에 있다.

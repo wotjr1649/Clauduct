@@ -45,4 +45,4 @@ gateway 오류의 event=와 request-status의 upstreamFailureEvent는 고정 매
 
 run-02의 HEAD 298a5332e8f4f698002e236b020adf0d803f1562와 미커밋 구현을 유지한다. README.md/cli.mjs/tasks.mjs/test/boundaries.test.mjs 수정과 untracked test/untag.test.mjs는 이번 커밋에 포함하지 않는다. RED 원본 해시 CD24CD98AAB6746F490BAA168601FE6E17DC35914CB3B9D24F662744BE0921F3도 유지한다.
 
-이전 native 구현 자식 로그에서 RED 5→GREEN 5→전체 41 통과와 completed 알림을 확인했지만 두 독립 검토·최종 통합 커밋은 남아 있다. 후속 session-19 프롬프트는 새 프로세스에서 GREEN 산출물 해시/전체 테스트 확인 후 명세 검토부터 시작한다. 기존 session-18 초기 RED 요구를 재적용하지 않는다. 프롬프트는 docs/prompts/2026-09-10-session-19-native-sdd-preserved-green-review.md에 별도 미커밋 파일로 둔다.
+이전 native 구현 자식 로그에서 RED 5→GREEN 5→전체 41 통과와 completed 알림을 확인했지만 두 독립 검토·최종 통합 커밋은 남아 있다. 후속 session-19 프롬프트는 새 프로세스에서 GREEN 산출물 해시/전체 테스트 확인 후 명세 검토부터 시작한다. 기존 session-18 초기 RED 요구를 재적용하지 않는다. 프롬프트는 `2026-09-10-session-19-native-sdd-preserved-green-review.md`(비공개)에 별도 미커밋 파일로 둔다.

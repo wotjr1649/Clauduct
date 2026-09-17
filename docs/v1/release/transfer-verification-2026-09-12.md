@@ -1,6 +1,6 @@
 # 디렉터리 이관 검증 기록
 
-작업 재개 진입점은 [HANDOFF.md](../HANDOFF.md), 장기 무인 개발의 전체 제안은 [심층 리서치](research-2026-09-12-unattended-release-gates.md)다. 기록일은 2026-09-12, 원본은 `D:/AIDEV/Clauduct`, 코드 HEAD는 `aa317c75c7bad0cf9d16641ca7db4edb43016c19`이다.
+작업 재개 진입점은 [HANDOFF.md](../../../HANDOFF.md), 장기 무인 개발의 전체 제안은 [심층 리서치](research-2026-09-12-unattended-release-gates.md)다. 기록일은 2026-09-12, 원본은 `D:/AIDEV/Clauduct`, 코드 HEAD는 `aa317c75c7bad0cf9d16641ca7db4edb43016c19`이다.
 
 ## 검사 결과
 
@@ -78,4 +78,4 @@ F01~F23은 리서치의 향후 장애 시험 명세이며 모두 구현됐다고
 - [Claude Code Memory](https://code.claude.com/docs/en/memory): auto memory의 로컬 저장과 설정 의미.
 - [Claude Code Sessions](https://code.claude.com/docs/en/sessions): transcript 저장과 resume.
 - [Git worktree](https://git-scm.com/docs/git-worktree): main/linked worktree가 함께 이동했을 때의 repair.
-- [기존 릴리즈 검증](release-readiness.md), [현행 검증표](remaining-verification.md), [실행 파일 위치](../src/runtime-paths.mjs), [주 실행기](../src/clauduct.mjs).
+- [기존 릴리즈 검증](release-readiness.md), [현행 검증표](../remaining-verification.md), [실행 파일 위치](../../../src/runtime-paths.mjs), [주 실행기](../../../src/clauduct.mjs).

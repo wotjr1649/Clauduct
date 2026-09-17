@@ -92,7 +92,7 @@ src/clauduct.mjs:229
 
 ### 2.6 수정 5 — 차단 옵션 30개의 인과가 밝혀졌다. 설계가 아니라 승인 문제다
 
-`src/clauduct.mjs:24`의 `blockedOptions`는 정확히 30개이며, [옵션 분류](../claude-option-classification.md)의 A~F 범주와 일치한다. 차단 사유를 분해하면:
+`src/clauduct.mjs:24`의 `blockedOptions`는 정확히 30개이며, [옵션 분류](../v1/reference/claude-option-classification.md)의 A~F 범주와 일치한다. 차단 사유를 분해하면:
 
 | 범주 | 개수 | V2에서의 처리 |
 |---|---|---|
@@ -129,7 +129,7 @@ src/clauduct.mjs:343             알림 문구: 역할별 배정 미적용, Clau
 
 ### 2.10 수정 9 — 실호출은 "예산 0"이 아니라 "BLOCKED"다
 
-핸드오프는 실호출 예산 기본값 0을 말한다. [현행 검증표](../remaining-verification.md) 3.2절은 그보다 강하다: 새 모델 실호출 예산이 **BLOCKED**이며 사유는 "사용자가 요구한 사전 출력 상한을 현재 구독 전송이 보장하지 못한다"이다. 세션 33은 잔여 0(최종 cap 327)을 기록한다.
+핸드오프는 실호출 예산 기본값 0을 말한다. [현행 검증표](../v1/remaining-verification.md) 3.2절은 그보다 강하다: 새 모델 실호출 예산이 **BLOCKED**이며 사유는 "사용자가 요구한 사전 출력 상한을 현재 구독 전송이 보장하지 못한다"이다. 세션 33은 잔여 0(최종 cap 327)을 기록한다.
 
 따라서 `LIVE_VALIDATION`은 "아직 승인 안 받음"이 아니라 **선행 전송 계약이 해결되기 전에는 요청해도 안 되는 상태**다. G6→G7 전이 조건에 이 항목을 명시한다.
 

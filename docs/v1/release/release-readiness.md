@@ -27,7 +27,7 @@ Not verified: 파일 단위 성공 안에 `review-diff`(PATH 부재/ENOENT), nat
 
 ## 출하 판정
 
-로컬 릴리즈 준비·원래 작업 루트 반영 완료. 검증된 지원 범위의 사용 가능한 빌드이며 외부 서버 무오류·무제한 무인 개발·모든 native 기능 조합을 보증하는 판정은 아니다. 미지원·조건부·차단 항목은 [현행 기준표](remaining-verification.md)와 [릴리즈 안내](../RELEASE.md)에 남겼다. 외부 게시·push·시스템 설치는 수행하지 않았다.
+로컬 릴리즈 준비·원래 작업 루트 반영 완료. 검증된 지원 범위의 사용 가능한 빌드이며 외부 서버 무오류·무제한 무인 개발·모든 native 기능 조합을 보증하는 판정은 아니다. 미지원·조건부·차단 항목은 [현행 기준표](../remaining-verification.md)와 [릴리즈 안내](../../../RELEASE.md)에 남겼다. 외부 게시·push·시스템 설치는 수행하지 않았다.
 
 ## 비대화형 실행 보완
 
@@ -103,7 +103,7 @@ Verified: 별도 작업 트리에서 `TASK_ROOT`가 원래 개발 폴더를 가�
 
 ## 로컬 배포 산출물 검증
 
-`verification/build-release.ps1`은 tracked 변경이 없는 정확한 Git checkout에서 커밋된 68개 파일만 ZIP으로 묶는다. `src` 실행 코드·검사, 필요한 `poc` 모듈·검사, 실제 검증기, [설치 안내](../RELEASE.md), 옵션 분류를 포함한다. 사용자 상태·프로필·감사 기록·과거 프롬프트·생성 schema·Git 이력과 모든 untracked 파일은 제외한다. 파일 경로·타입·개수·크기를 확인하고 파일별 및 ZIP SHA256을 `manifest.json`에 기록한다. 외부 게시·push·계정/전역 설치는 수행하지 않는다.
+`verification/build-release.ps1`은 tracked 변경이 없는 정확한 Git checkout에서 커밋된 68개 파일만 ZIP으로 묶는다. `src` 실행 코드·검사, 필요한 `poc` 모듈·검사, 실제 검증기, [설치 안내](../../../RELEASE.md), 옵션 분류를 포함한다. 사용자 상태·프로필·감사 기록·과거 프롬프트·생성 schema·Git 이력과 모든 untracked 파일은 제외한다. 파일 경로·타입·개수·크기를 확인하고 파일별 및 ZIP SHA256을 `manifest.json`에 기록한다. 외부 게시·push·계정/전역 설치는 수행하지 않는다.
 
 Verified: `c310c59`의 ZIP을 두 번 만들어 동일 SHA256을 확인했다. 공백이 있는 새 설치 경로에 풀고 68개 파일의 크기·해시를 전부 대조했다. 실제 `clauduct.cmd --dry-run -p`에서 인증 조회 0·자식 실행 없음과 print 구성을 확인했다. 배포본의 `src` 23/23(17.73초), PoC 6/6(12.81초), 별도 제한 환경의 review-diff가 통과했다. 같은 배포본에서 실제 Workflow와 failure-resume 3단계도 모두 통과했으며, 오류 프로세스의 exit 1·실패 이력·cleanup과 재개 시 MCP 호출 총 1회를 다시 확인했다.
 

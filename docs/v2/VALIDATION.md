@@ -973,7 +973,7 @@ Opus 요금으로 **확신에 찬 틀린 금액**을 만들므로 쓰지 않는�
 
 ## 3. LIVE_VALIDATION은 예산 부족이 아니라 BLOCKED다
 
-핸드오프는 실호출 예산 기본값 0을 말한다. [현행 검증표](../remaining-verification.md) 3.2절은 그보다 강하다.
+핸드오프는 실호출 예산 기본값 0을 말한다. [현행 검증표](../v1/remaining-verification.md) 3.2절은 그보다 강하다.
 
 > 새 모델 실호출 예산 — **BLOCKED**. 사용자가 요구한 사전 출력 상한을 현재 구독 전송이 보장하지 못한다. 검증된 전송 계약 없이 상한 옵션을 제거하지 않는다.
 
@@ -1055,9 +1055,9 @@ stub 서버의 툴이 `MCP_STUB_SECRET_TOKEN`(기준선 규칙의 두 문자열�
 | 출처 | 실제 범위 |
 |---|---|
 | `docs/remaining-verification.md` 3.2 | BLOCKED 대상은 **"새 모델 실호출 예산"** — 검증용 예산이다 |
-| `docs/session-29-release-verdict.md:77` | "상한 옵션을 제거하거나 **관측 후 판정으로 대체하지 않는다**" — 주장 위생 규칙이다 |
-| `docs/audit-2026-09-08.md:180` | 처방은 이미 있었다: 완료 usage 검사 유지, 미지원 필드 추가 안 함, **한계 명시** |
-| `docs/native.md:209` | Node 제품은 그 한계를 명시한 채 **이미 출하돼 있다** |
+| `docs/v1/release/session-29-release-verdict.md:77` | "상한 옵션을 제거하거나 **관측 후 판정으로 대체하지 않는다**" — 주장 위생 규칙이다 |
+| `docs/v1/audit/audit-2026-09-08.md:180` | 처방은 이미 있었다: 완료 usage 검사 유지, 미지원 필드 추가 안 함, **한계 명시** |
+| `docs/v1/README.md:221` | Node 제품은 그 한계를 명시한 채 **이미 출하돼 있다** |
 
 즉 WP05가 구현한 것이 2026-09-08 처방과 같다. 게이트에 "충족 불가로 측정된 조건"을 걸어두면 Node 제품까지 소급해 출하 불가가 되므로, 기존 판정과 정면으로 충돌한다.
 
@@ -1068,7 +1068,7 @@ stub 서버의 툴이 `MCP_STUB_SECRET_TOKEN`(기준선 규칙의 두 문자열�
 | 1 | **명시적 한정 예산이 있을 것** — 경로(model+effort)와 횟수를 함께 정한다. 사전 토큰 상한이 불가능하므로 이것이 실재하는 유일한 통제다 |
 | 2 | **사전 상한을 주장하는 검증은 거부한다** — 기준선의 `VERIFICATION_PREGENERATION_LIMIT_UNAVAILABLE`과 같은 자리. "짧은 응답을 관측했으니 출력이 묶인다"는 추론을 금지한다 |
 | 3 | `OUTPUT_TOKEN_LIMIT_EXCEEDED` 유지 — 상한 옵션을 제거하지 않는다 |
-| 4 | 한계를 사용자 문서에 명시 — `docs/native.md:209`가 Node에서 하는 것과 같게 |
+| 4 | 한계를 사용자 문서에 명시 — `docs/v1/README.md:221`가 Node에서 하는 것과 같게 |
 
 조건 2는 **미래 코드에 대한 규칙이므로 지금 코드로 만들지 않았다.** V2에는 아직 검증 harness가 없어 호출자가 없고, 호출자 없는 상수는 유지보수할 죽은 코드다. G7에서 harness를 만들 때 이 표가 구현 대상이다. 지금 존재하는 방어는 `TestTheOutputLimitIsNotSentUpstream`과 mutation battery의 `max_output_tokens sent again`이다.
 

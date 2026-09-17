@@ -2,7 +2,7 @@
 
 V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하나의 자리**다. 기존 Node
 제품의 현행 상태는 여기에 복제하지 않는다 — 그것은 [HANDOFF.md](../../HANDOFF.md)와
-[현행 검증표](../remaining-verification.md)가 소유한다.
+[현행 검증표](../v1/remaining-verification.md)가 소유한다.
 
 ## 1. 현재 상태 (2026-09-17)
 

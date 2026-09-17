@@ -92,7 +92,9 @@ go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
 # 스탬프에 +dirty가 없는지 확인한다. 있으면 그 빌드는 릴리스 후보가 아니다.
 ../../release-assets/clauduct-dev.exe version
 
-# 2. 자산 이름 그대로 SHA256SUMS를 만든다. `<hex>  <name>` 두 칸이 파서가 읽는 형식이다.
+# 2. 자산 이름 그대로 SHA256SUMS를 만든다. 파서는 공백으로 나뉜 두 필드를 읽고 이름 앞의
+#    `*`(sha256sum의 binary 표시)를 떼므로 `<hex>  <name>`과 `<hex> *<name>` 둘 다 받는다.
+#    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
 # 4. gh release create v0.2.1 clauduct.exe clauduct-hook.exe clauduct-dev.exe `

@@ -21,10 +21,15 @@ import "runtime/debug"
 // changed is that the binary can now remove itself on a machine that never cloned the
 // repository, which is tooling around the install rather than the product's behaviour.
 //
+// 0.2.2 fixes --update. It had no check for being already current, so it replaced three
+// files with the same bytes and, because a running executable cannot delete its own
+// predecessor, left a clauduct.exe.old behind every time somebody ran it. Reported from
+// real use. Nothing about the bridge changed here either.
+//
 // A constant rather than a linker flag. The commit stamp comes from the toolchain's own VCS
 // record precisely so a release script cannot forget it, and a version that could be passed
 // in is a version a script can get wrong.
-const Version = "0.2.1"
+const Version = "0.2.2"
 
 // Info is what a build can say about itself. An empty field means the toolchain did not
 // stamp it, which is a different thing from a zero value and is reported as such.

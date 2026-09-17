@@ -401,3 +401,67 @@ func (r *slowReader) Read(p []byte) (int, error) {
 	r.done = true
 	return copy(p, r.answer), nil
 }
+
+// An installation that already matches the release is not replaced.
+//
+// Replacing three files with the same bytes achieves nothing and is not free: the running
+// executable cannot delete its own predecessor, so it leaves a clauduct.exe.old behind. A
+// leftover produced by an update that changed nothing reads as a fault.
+func TestAnAlreadyCurrentInstallationIsLeftAlone(t *testing.T) {
+	dir := installation(t, "new ")
+	bodies := newBodies("new ")
+	var sums strings.Builder
+	for _, name := range Binaries {
+		fmt.Fprintf(&sums, "%s  %s\n", Digest(bodies[name]), name)
+	}
+	server, api := release{tag: "v9.9.9", bodies: bodies, sums: sums.String()}.serve(t)
+	defer server.Close()
+
+	var out strings.Builder
+	// No consent and no input: if this asked, end of input would answer no and the test
+	// would pass for the wrong reason. It must decide before the question.
+	if code := RunIn(context.Background(), server.Client(), api, dir,
+		[]string{"--update"}, strings.NewReader("y\n"), &out); code != 0 {
+		t.Fatalf("exit %d: %s", code, out.String())
+	}
+	if !strings.Contains(out.String(), "already current") {
+		t.Fatalf("did not say it was already current:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "replace these three files?") {
+		t.Fatalf("asked about work it did not need to do:\n%s", out.String())
+	}
+	for _, name := range Binaries {
+		if _, err := os.Stat(filepath.Join(dir, name+".old")); err == nil {
+			t.Fatalf("%s.old was created by an update that changed nothing", name)
+		}
+	}
+}
+
+// One file differing is enough to make the installation not current.
+func TestOneChangedFileStillUpdates(t *testing.T) {
+	dir := installation(t, "new ")
+	bodies := newBodies("new ")
+	var sums strings.Builder
+	for _, name := range Binaries {
+		fmt.Fprintf(&sums, "%s  %s\n", Digest(bodies[name]), name)
+	}
+	// The digest check is per file, not a version string, so a binary someone replaced by
+	// hand or a download that ended half-written is repaired rather than declared current.
+	if err := os.WriteFile(filepath.Join(dir, "clauduct-dev.exe"), []byte("tampered"), 0o755); err != nil {
+		t.Fatalf("tamper: %v", err)
+	}
+	server, api := release{tag: "v9.9.9", bodies: bodies, sums: sums.String()}.serve(t)
+	defer server.Close()
+
+	var out strings.Builder
+	if code := RunIn(context.Background(), server.Client(), api, dir,
+		[]string{"--update", "--yes"}, strings.NewReader(""), &out); code != 0 {
+		t.Fatalf("exit %d: %s", code, out.String())
+	}
+	if strings.Contains(out.String(), "already current") {
+		t.Fatalf("called a tampered installation current:\n%s", out.String())
+	}
+	if got := read(t, dir, "clauduct-dev.exe"); got != "new clauduct-dev.exe" {
+		t.Fatalf("not repaired: %q", got)
+	}
+}

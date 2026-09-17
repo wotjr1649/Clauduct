@@ -75,8 +75,14 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 명령입니다.
 
 ```powershell
-clauduct --version
+clauduct-dev version   # Clauduct 자신: 0.2.1, commit, Go 버전
+clauduct --version     # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
+
+**둘이 다른 것을 확인합니다.** 이 런처는 자기가 소유한 세 옵션(`--update`·`--usage`·`--uninstall`)
+말고는 **전부 클라이언트에 그대로 넘깁니다.** `--version`도 그중 하나라 Claude Code가 답합니다 —
+버그가 아니라 설계이고, 덕분에 그 명령은 "런처가 클라이언트를 띄울 수 있다"까지 증명합니다.
+Clauduct 자신에 대한 질문은 `clauduct-dev`가 받습니다.
 
 ### 업데이트
 

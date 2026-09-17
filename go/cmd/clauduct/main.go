@@ -30,6 +30,13 @@ func main() {
 }
 
 func run() int {
+	// An update cannot delete the binary it was running, so it renames it aside and says
+	// which file is left. This process is not running that file, so it can finish the job --
+	// and the next launch after an update is the first moment anything can. Silent and
+	// never fatal: a leftover that stays is untidy, and a session that failed over tidying
+	// would be worse than untidy.
+	update.SweepLeftover()
+
 	// The one option this launcher owns, checked before anything else happens. It updates
 	// Clauduct, not the client: `clauduct update` still reaches the client's own updater,
 	// because that one is a bare subcommand and this one is not.

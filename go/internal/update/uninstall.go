@@ -226,3 +226,29 @@ func confirmedRemoval(in io.Reader, out io.Writer) bool {
 	fmt.Fprint(out, "remove them? [y/N] ")
 	return yes(in, out)
 }
+
+// SweepLeftover removes the predecessor an earlier update left beside this executable.
+//
+// Apply renames each binary to <name>.old before writing the new one and then deletes the
+// backups, but the one it cannot delete is its own: Windows holds a running image open.
+// That leftover is reported and then nobody ever removes it, so it sits in the install
+// directory looking like a fault produced by an update that worked.
+//
+// The next launch is the first process that is not running it. Only this executable's own
+// predecessor, only beside this executable, and every failure is ignored -- a file that
+// cannot be removed now will be offered again on the next start, and a session must not
+// fail over housekeeping.
+func SweepLeftover() {
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(self); err == nil {
+		self = resolved
+	}
+	sweepLeftoverOf(self)
+}
+
+// sweepLeftoverOf is SweepLeftover with the executable supplied, because os.Executable in a
+// test is the test binary and a test that cannot name the file it is about measures nothing.
+func sweepLeftoverOf(self string) { _ = os.Remove(self + ".old") }

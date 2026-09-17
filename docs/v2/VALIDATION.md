@@ -835,6 +835,34 @@ and may differ from actual usage"). Bedrock upstream에는 클라이언트가 �
 **남은 구멍 하나**: 실제 클라이언트 세션이 WebSearch를 일으키는 NATIVE_SYNTH 테스트가 없다.
 검증은 bridge 단위와 실백엔드 probe까지이고, 그 사이의 클라이언트 경로는 비어 있다.
 
+### 1.12 NATIVE_SYNTH — 비어 있던 세 칸을 채웠다 (2026-09-17)
+
+"한 층씩은 봤지만 사용자가 쓰는 경로는 아무도 안 돌렸다"가 세 군데 있었다. 전부 실제
+`claude.exe` 2.1.274 + 스크립트 백엔드이고, **모델 호출 0원**이다.
+
+| 테스트 | 무엇을 처음으로 측정했나 | 결과 |
+|---|---|---|
+| `TestReadingAPDFCarriesItToTheBackend` | 실제 Read가 PDF를 **document 블록으로 돌려주고**, 이 빌드가 그것을 `input_file`로 싣는다 | PASS. tool_result를 나르는 요청이 78,800 → 80,231 바이트로 커진다 |
+| `TestAWebSearchRoundTripsThroughTheBridge` | 클라이언트가 side query를 내고, 게이트웨이가 가로채고, **합성한 블록이 다음 턴에 돌아온다** | PASS. 링크 제목과 URL이 tool_result 요청 안에 있다 |
+| `TestAWorkflowsAgentsReachTheBridge` | Workflow 호출이 실행되고, 그 에이전트가 **요청으로 여기 돌아온다** | PASS. spawner=`gpt-6-astra/low`, agent=`gpt-6-astra/low` (부모 상속), `unregistered=0 unrouted=0` |
+
+세 가지가 새로 확인됐다.
+
+**workflow 에이전트는 툴 수로 식별된다.** 세션은 24개를 들고 오고 workflow 에이전트는 20개를
+들고 온다(Workflow 자신이 빠진다). 순서로 고르면 side request 하나에 어긋난다 — 서브에이전트
+테스트가 같은 이유로 같은 규칙을 쓴다.
+
+**부모 상속이 파일을 안 읽고도 성립한다.** 기준선은 저널을 읽고 검증해서 `selectModel(parentRoute)`에
+도달한다. 이 빌드는 "역할에 route가 없으면 클라이언트가 고른 모델을 유지한다"는 기본값으로 같은
+결과에 이른다. C4를 구현하지 않기로 한 판단이 이제 추론이 아니라 테스트다.
+
+**계정이 조용하다는 것도 단언한다.** `unrouted=0`이 없으면 workflow를 쓴 모든 세션이 "보고할 게
+있는 세션"이 된다. 돌연변이로 확인: `buildHook`을 빼면 `unregistered=1`로 실패한다 — 즉 이 테스트는
+hook 경로를 실제로 재고 있다. PDF 쪽도 `case "document"`를 지우면 실패한다.
+
+**아직 미측정**: 대화형(TUI) 세션. 이 환경에서 클라이언트에 pty를 줄 수 없어(샌드박스가 거부)
+`-p`만 관측했다. count_tokens가 대화형에서 불리는지는 그래서 여전히 열려 있다.
+
 ## 2. 네 단계 실행 강도
 
 | Level | 내용 | 실모델 호출 |

@@ -78,16 +78,32 @@ func frames(bodies ...string) string {
 // scripted runs the real client against a backend that answers in order.
 func scripted(t *testing.T, args []string, conversation ...string) (*upstream.Script, string, Result) {
 	t.Helper()
-	exe := nativeAvailable(t)
+	script := newScript(conversation...)
+	return scriptedOn(t, script, script, args)
+}
 
-	// Only the requests carrying tool definitions are the conversation. The client also
-	// generates a session title, which arrives without tools and is not what any of these
-	// tests are about; Default answers it so it cannot consume a scripted turn.
+// newScript builds the backend's answers.
+//
+// Only the requests carrying tool definitions are the conversation. The client also
+// generates a session title, which arrives without tools and is not what any of these tests
+// are about; Default answers it so it cannot consume a scripted turn.
+func newScript(conversation ...string) *upstream.Script {
 	turns := make([]upstream.ScriptTurn, 0, len(conversation))
 	for _, sse := range conversation {
 		turns = append(turns, upstream.ScriptTurn{When: upstream.Conversation, SSE: sse})
 	}
-	script := &upstream.Script{Turns: turns, Default: textStream("side", "untitled")}
+	return &upstream.Script{Turns: turns, Default: textStream("side", "untitled")}
+}
+
+// scriptedOn runs the client against transport, which is normally the script itself.
+//
+// Separated so a test can wrap it. A Script answers inferences and nothing else, and the
+// search side query does not go through Execute at all -- the gateway hands it to a
+// Searcher, so a test about search has to supply one.
+func scriptedOn(t *testing.T, script *upstream.Script, transport upstream.Transport,
+	args []string) (*upstream.Script, string, Result) {
+	t.Helper()
+	exe := nativeAvailable(t)
 
 	_, cwd := workspace(t)
 	var stdout, stderr bytes.Buffer
@@ -101,7 +117,7 @@ func scripted(t *testing.T, args []string, conversation ...string) (*upstream.Sc
 		Stdout:        &stdout,
 		Stderr:        &stderr,
 		ResolveClaude: func() (string, bool, error) { return exe, true, nil },
-		StartGateway:  func() (*gateway.Gateway, error) { return gateway.Start(script) },
+		StartGateway:  func() (*gateway.Gateway, error) { return gateway.Start(transport) },
 	})
 	if err != nil {
 		t.Fatalf("Run: %v", err)

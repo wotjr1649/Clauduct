@@ -243,3 +243,55 @@ func TestAnInheritingRoleIsKnownWithoutHavingARoute(t *testing.T) {
 		}
 	}
 }
+
+// The effort a system turn asks for is the effort the turn runs at.
+//
+// Found by review: the decoder read output_config.effort off a system turn and nothing
+// ever looked at it, so a turn asking for high ran at whatever the session was using.
+// Accepted and ignored, which is the failure this package's doc names first -- and the
+// same shape as the schema that was being validated and dropped.
+func TestASystemTurnSetsTheEffortForThatTurn(t *testing.T) {
+	const head = `{"model":"sonnet","max_tokens":16,"stream":true,"messages":[` +
+		`{"role":"user","content":"x"},`
+
+	plain, err := BuildRequest(decodeRequest(t, head+`{"role":"assistant","content":"y"}]}`))
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	asked, err := BuildRequest(decodeRequest(t,
+		head+`{"role":"system","content":"go carefully","output_config":{"effort":"xhigh"}}]}`))
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	if asked.Effort.Effort != "xhigh" {
+		t.Fatalf("effort = %q, want the xhigh the turn asked for (plain turn: %q)",
+			asked.Effort.Effort, plain.Effort.Effort)
+	}
+	// The record says which rule produced it, which is what CAP03 is for: a reader seeing
+	// an effort the session never chose needs to know where it came from.
+	if !strings.HasSuffix(asked.Source, "+turn") {
+		t.Fatalf("source = %q, want it to name the turn", asked.Source)
+	}
+	// The model is untouched. A turn sets how hard, not what runs.
+	if asked.Model != plain.Model {
+		t.Fatalf("model moved from %q to %q", plain.Model, asked.Model)
+	}
+
+	// A role override wins: a subagent routed by what it is doing does not take an effort
+	// out of the transcript. The baseline draws the same line.
+	role := Route{Model: "gpt-5.6-luna", Effort: "max", Source: "role"}
+	routed, err := BuildRequest(decodeRequest(t,
+		head+`{"role":"system","content":"go carefully","output_config":{"effort":"low"}}]}`), role)
+	if err != nil {
+		t.Fatalf("BuildRequest: %v", err)
+	}
+	if routed.Effort.Effort != "max" {
+		t.Fatalf("a role route was overwritten by a turn: %q", routed.Effort.Effort)
+	}
+
+	// An effort nobody defines is refused rather than forwarded.
+	if _, err := BuildRequest(decodeRequest(t,
+		head+`{"role":"system","content":"x","output_config":{"effort":"maximum"}}]}`)); err == nil {
+		t.Fatal("an undefined effort was accepted")
+	}
+}

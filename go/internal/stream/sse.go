@@ -152,8 +152,11 @@ func (p *Parser) Finish(complete bool) error {
 	if !complete {
 		return ErrTruncatedStream
 	}
-	// Anything still buffered is a frame that never reached its blank-line boundary.
-	if p.pending.Len() != 0 {
+	// Anything still buffered is a frame that never reached its blank-line boundary --
+	// except line endings, which are not a frame. A stream may end with more newlines than
+	// the last boundary consumed, and the bytes after it carry nothing: treating them as a
+	// half-frame threw away a response whose every event had already been delivered.
+	if strings.Trim(p.pending.String(), "\r\n") != "" {
 		return ErrTruncatedStream
 	}
 	if !p.completed {

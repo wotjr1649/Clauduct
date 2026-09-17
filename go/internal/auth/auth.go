@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -117,6 +118,12 @@ type Provider struct {
 	// Synthetic marks every credential this provider produces as a test credential.
 	Synthetic bool
 
+	// mu guards boundAccount. The provider is shared: one of these is handed to the
+	// transport and the transport is used by every request goroutine the HTTP server
+	// starts, so the first two requests of a session read a credential concurrently. An
+	// unguarded read-modify-write there is a data race, and the rule it implements -- one
+	// session, one account -- is exactly the kind that fails open when it loses one.
+	mu sync.Mutex
 	// boundAccount is the account of the first credential read. A later read that reports
 	// a different one is refused rather than followed.
 	boundAccount string
@@ -256,6 +263,11 @@ func (p *Provider) Credential() (Credential, error) {
 	// One session, one account. A credential file replaced mid-session by a different
 	// login is not a reason to continue under the new identity: the conversation, its
 	// history and its budget all belong to the account it started with.
+	//
+	// Under the lock as one step: checking and binding separately is what lets two
+	// concurrent first reads each see an empty value.
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.boundAccount == "" {
 		p.boundAccount = credential.Account
 	} else if p.boundAccount != credential.Account {
@@ -265,7 +277,11 @@ func (p *Provider) Credential() (Credential, error) {
 }
 
 // BoundAccount reports the account this session is pinned to, if one has been read.
-func (p *Provider) BoundAccount() string { return p.boundAccount }
+func (p *Provider) BoundAccount() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.boundAccount
+}
 
 func (p *Provider) selectCredential(raw string) (Credential, error) {
 	var doc struct {

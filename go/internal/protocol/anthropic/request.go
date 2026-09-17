@@ -308,7 +308,16 @@ func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 	}
 	if request.ToolChoice.Present && request.ToolChoice.Type == "tool" {
 		// Naming a tool that is not callable asks for something that cannot happen.
-		if !request.CallableNames()[request.ToolChoice.Name] {
+		//
+		// The hosted search tool counts as nameable even though it is not callable. It is
+		// kept out of the tool list on purpose -- it is not a definition the client can be
+		// told to call, it is a request for this gateway to search -- but the client may
+		// still point tool_choice at it, and the baseline accepts that
+		// (native-protocol.mjs:334). Refusing it here made the branch that reads that shape
+		// unreachable: a side query naming its own tool was answered 400 before anything
+		// looked at what it was.
+		hosted := request.HostedSearch != nil && request.HostedSearch.Name == request.ToolChoice.Name
+		if !hosted && !request.CallableNames()[request.ToolChoice.Name] {
 			return nil, refuse(CodeUnsupportedTools, "tool_choice")
 		}
 	}

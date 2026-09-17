@@ -290,6 +290,18 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 	// record can tell a route the client chose from one this build reassigned.
 	if len(override) > 0 {
 		route = override[0]
+	} else if turn := turnEffort(request); turn != "" {
+		// A system turn may set the effort for this turn alone, and the baseline applies it
+		// (native-protocol.mjs:347). This build decoded it and read it nowhere, so a turn
+		// that asked for high ran at whatever the session was using -- accepted and
+		// ignored, which the package doc forbids.
+		//
+		// Skipped when a role override is in force, which is the baseline's rule too: a
+		// subagent routed by what it is doing does not take an effort from the transcript.
+		if !efforts[turn] {
+			return nil, ErrUnsupportedRoute
+		}
+		route.Effort, route.Source = turn, route.Source+"+turn"
 	}
 	// Last, because it is a cost guard rather than a choice of where to run. A compaction
 	// keeps whichever model it was going to use and drops to medium if it was dearer; see
@@ -644,7 +656,13 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		// The backend's own account of what it wrote, against what arrived. A tool call is
 		// executed by the client, so a stream nobody can account for is not one to build a
 		// call from -- even though the call itself comes from the completed output.
-		if t.streamedArgs[done.ItemID] != done.Arguments {
+		//
+		// Only when something streamed. An absent key reads as the empty string, so a
+		// backend that delivered the arguments whole and then stated them was answered with
+		// a mismatch and the turn died -- while closeItem, a hundred lines below, allows
+		// exactly that case and says so. Two rules for one question, and the stricter one
+		// was the accident.
+		if streamed, saw := t.streamedArgs[done.ItemID]; saw && streamed != done.Arguments {
 			return nil, ErrArgumentsMismatch
 		}
 		return nil, nil
@@ -905,3 +923,17 @@ func (t *Translator) Text() string { return t.builder.Text() }
 
 // ToolCallCount reports how many calls the completed response released.
 func (t *Translator) ToolCallCount() int { return t.builder.ToolCallCount() }
+
+// turnEffort is the effort the conversation's last system turn asked for, or empty.
+//
+// Last rather than first: the client states the current turn's effort as it goes, and the
+// most recent statement is the one about this turn.
+func turnEffort(request *anthropic.Request) string {
+	effort := ""
+	for _, message := range request.Messages {
+		if message.Effort != "" {
+			effort = message.Effort
+		}
+	}
+	return effort
+}

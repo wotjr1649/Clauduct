@@ -407,3 +407,30 @@ func TestCommentsAndEmptyFramesProduceNoEvents(t *testing.T) {
 		t.Fatalf("got %d events, want 1", len(events))
 	}
 }
+
+// A stream that ends with one newline too many is still a complete stream.
+//
+// Found by review. boundary() consumes the blank line that ends a frame, so any newline
+// after it stayed in the buffer -- and a non-empty buffer was read as a frame that never
+// closed. Every event had been delivered, the terminal event had arrived, and the response
+// was thrown away as truncated. Those bytes are legal SSE and carry nothing.
+func TestATrailingNewlineDoesNotTruncateACompleteStream(t *testing.T) {
+	for _, tail := range []string{"", "\n", "\n\n", "\r\n"} {
+		parser := newTestParser(t)
+		if _, err := parser.Push([]byte(goodStream + tail)); err != nil {
+			t.Fatalf("Push with tail %q: %v", tail, err)
+		}
+		if err := parser.Finish(true); err != nil {
+			t.Fatalf("a complete stream ending %q was refused: %v", tail, err)
+		}
+	}
+
+	// A frame that really never closed is still truncated.
+	parser := newTestParser(t)
+	if _, err := parser.Push([]byte(goodStream + "data: half")); err != nil {
+		t.Fatalf("Push: %v", err)
+	}
+	if err := parser.Finish(true); !errors.Is(err, ErrTruncatedStream) {
+		t.Fatalf("err = %v, want TRUNCATED_STREAM for a frame with no boundary", err)
+	}
+}

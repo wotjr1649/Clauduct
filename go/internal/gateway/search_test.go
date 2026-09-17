@@ -293,3 +293,35 @@ func TestASearchCarriesTheLocationTheClientSet(t *testing.T) {
 		}
 	}
 }
+
+// A side query that names its own tool is answered, not refused.
+//
+// Found by review: the branch in SideQuery that reads this shape could never run. The
+// request decoder refused any tool_choice naming something outside the callable set, and
+// the hosted search tool is deliberately outside it -- so a client pointing tool_choice at
+// web_search got 400 before anything looked at what the request was. The baseline accepts
+// it (native-protocol.mjs:334).
+func TestASideQueryNamingItsOwnToolIsAnswered(t *testing.T) {
+	fixture := &upstream.Fixture{SSE: sse(created, completed, "[DONE]"), SearchJSON: searchAnswer}
+	g := startWith(t, fixture)
+
+	resp := post(t, g, `{"model":"gpt-6-astra","max_tokens":1024,"stream":true,
+	  "tools":[{"type":"web_search_20250305","name":"web_search"}],
+	  "tool_choice":{"type":"tool","name":"web_search"},
+	  "messages":[{"role":"user","content":"Perform a web search for the query: rain"}]}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	if fixture.Searches() != 1 {
+		t.Fatalf("searches = %d, want the side query answered from the endpoint", fixture.Searches())
+	}
+
+	// And naming a tool that does not exist is still refused.
+	bad := post(t, g, `{"model":"gpt-6-astra","max_tokens":1024,"stream":true,
+	  "tools":[{"type":"web_search_20250305","name":"web_search"}],
+	  "tool_choice":{"type":"tool","name":"not_a_tool"},
+	  "messages":[{"role":"user","content":"Perform a web search for the query: rain"}]}`)
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("naming an absent tool = %d, want 400", bad.StatusCode)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -400,5 +401,44 @@ func TestNothingIsReadUntilAskedFor(t *testing.T) {
 	p.Credential()
 	if len(opened) == 0 {
 		t.Fatal("asking for a credential opened nothing")
+	}
+}
+
+// Two requests reading a credential at once bind one account, not a race.
+//
+// Found by review. The provider is shared with the transport and the transport is used by
+// every request goroutine the server starts, so the first two requests of a session read
+// concurrently. The bind was an unguarded read-modify-write: a data race, and a rule that
+// fails open when it loses one -- "this session is pinned to one account" is not a rule if
+// two goroutines can each decide what it is.
+//
+// Run under -race this is the test that says so.
+func TestConcurrentCredentialReadsBindOneAccount(t *testing.T) {
+	provider := valid(t)
+
+	const readers = 8
+	var wg sync.WaitGroup
+	accounts := make([]string, readers)
+	errs := make([]error, readers)
+	wg.Add(readers)
+	for i := 0; i < readers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			credential, err := provider.Credential()
+			accounts[i], errs[i] = credential.Account, err
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("reader %d: %v", i, err)
+		}
+		if accounts[i] != accounts[0] {
+			t.Fatalf("reader %d bound %q, reader 0 bound %q", i, accounts[i], accounts[0])
+		}
+	}
+	if provider.BoundAccount() != accounts[0] {
+		t.Fatalf("bound = %q, readers saw %q", provider.BoundAccount(), accounts[0])
 	}
 }

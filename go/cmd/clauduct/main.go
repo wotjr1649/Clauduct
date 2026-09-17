@@ -47,6 +47,16 @@ func run() int {
 		return app.WriteUsage("", os.Stdout)
 	}
 
+	// The third: removing this installation. It has to live in the binary and not only in
+	// scripts/uninstall.ps1, because that script needs the repository and a machine that
+	// installed from a release has the binary and nothing else. Recognised by the same rule
+	// as --update, and it asks before it deletes anything for the same reason --update does.
+	// The diagnostics directory is handed over rather than looked up there: the package that
+	// writes those files owns where they live.
+	if wanted, _ := update.UninstallRequested(os.Args[1:]); wanted {
+		return update.Uninstall(os.Args[1:], app.StatusDir(), os.Stdin, os.Stdout)
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct: CWD_UNAVAILABLE")

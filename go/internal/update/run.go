@@ -169,6 +169,12 @@ func digests(ctx context.Context, client *http.Client, release Release) (map[str
 // update that proceeds because nobody was there to object is not one anybody approved.
 func confirmed(in io.Reader, out io.Writer) bool {
 	fmt.Fprint(out, "replace these three files? [y/N] ")
+	return yes(in, out)
+}
+
+// yes reads the answer. Shared with the removal prompt so that "anything that is not a yes
+// is a no, including end of input" is decided once rather than twice.
+func yes(in io.Reader, out io.Writer) bool {
 	scanner := bufio.NewScanner(in)
 	if !scanner.Scan() {
 		fmt.Fprintln(out)

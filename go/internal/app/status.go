@@ -146,11 +146,12 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 // One file per process. Files from finished sessions accumulate until the operating system
 // clears its temporary directory, which is what that directory is for; a sweep of our own
 // would be this build deleting files by pattern, which is a worse trade.
-// statusDir is where session accounts are written and read. One place knows the location.
-func statusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
+// StatusDir is where session accounts are written and read. One place knows the location,
+// and the uninstall path needs to name it without owning it.
+func StatusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
 
 func writeStatus(encoded []byte) (string, error) {
-	dir := statusDir()
+	dir := StatusDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}

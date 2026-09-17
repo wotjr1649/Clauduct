@@ -65,6 +65,9 @@ var probes = map[string]struct {
 	// One request, and the answer is entirely in the response headers. The body is read
 	// and thrown away.
 	"headers": {"whether the backend sends the rate limit headers D5 would read", 1},
+	// One request. The client can attach a PDF and this build refuses it; whether that is
+	// worth implementing depends on an answer only the backend has.
+	"file": {"whether the backend reads an attached PDF at all", 1},
 }
 
 func usageProbe(out io.Writer) int {
@@ -86,7 +89,9 @@ func usageProbe(out io.Writer) int {
 
 // probeNames lists the probes in a fixed order. Map iteration is random and this text is
 // read by a person deciding what to spend.
-func probeNames() []string { return []string{"limit", "wire", "parity", "search", "headers"} }
+func probeNames() []string {
+	return []string{"limit", "wire", "parity", "search", "headers", "file"}
+}
 
 func probe(args []string, out, errOut io.Writer) int {
 	if len(args) != 2 || args[1] != "--send" {
@@ -133,6 +138,8 @@ func probe(args []string, out, errOut io.Writer) int {
 		if !searchProbe(transport, budget, out) {
 			code = 1
 		}
+	case "file":
+		code = fileProbe(transport, budget, out)
 	default:
 		code = limitProbe(transport, budget, out)
 	}

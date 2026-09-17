@@ -225,6 +225,15 @@ type InputPart struct {
 	Text string `json:"text"`
 	// ImageURL carries a data URL for an input_image part and is empty otherwise.
 	ImageURL string `json:"-"`
+	// FileData carries a data URL for an input_file part, and Filename is what the backend
+	// is told the file is called.
+	//
+	// The name is fixed rather than taken from anywhere: the client sends a document block
+	// with no name in it, and a name invented from the conversation would put the user's
+	// path or prompt text into the request. Several attachments in one turn therefore
+	// arrive under the same name; if that is ever shown to matter, number them.
+	FileData string `json:"-"`
+	Filename string `json:"-"`
 }
 
 // MarshalJSON writes the shape each part type actually has.
@@ -240,11 +249,24 @@ func (p InputPart) MarshalJSON() ([]byte, error) {
 			ImageURL string `json:"image_url"`
 		}{p.Type, p.ImageURL})
 	}
+	if p.Type == "input_file" {
+		return json.Marshal(struct {
+			Type     string `json:"type"`
+			Filename string `json:"filename"`
+			FileData string `json:"file_data"`
+		}{p.Type, p.Filename, p.FileData})
+	}
 	return json.Marshal(struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}{p.Type, p.Text})
 }
+
+// DocumentFilename is what every attached file is called upstream.
+//
+// The backend wants a name and the client's document block does not carry one. A constant
+// keeps the request free of anything derived from the user's paths or prompt.
+const DocumentFilename = "document.pdf"
 
 // ReasoningParam carries the effort the caller asked for.
 type ReasoningParam struct {
@@ -364,6 +386,15 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 					Type:     "input_image",
 					ImageURL: anthropic.ImageURL(block.MediaType, block.Data),
 				}}})
+			case "document":
+				// Its own entry for the same reason as an image, and the same data URL:
+				// measured, the backend reads a PDF handed to it this way.
+				flush()
+				out.Input = append(out.Input, InputEntry{Role: "user", Content: []InputPart{{
+					Type:     "input_file",
+					Filename: DocumentFilename,
+					FileData: anthropic.ImageURL(block.MediaType, block.Data),
+				}}})
 			case "redacted_thinking":
 				// Its own entry, handed straight back. The content is encrypted and this
 				// build has never read it; what it does is not lose it.
@@ -419,6 +450,9 @@ func resultParts(block anthropic.Block) []InputPart {
 		case "image":
 			parts = append(parts, InputPart{Type: "input_image",
 				ImageURL: anthropic.ImageURL(part.MediaType, part.Data)})
+		case "document":
+			parts = append(parts, InputPart{Type: "input_file", Filename: DocumentFilename,
+				FileData: anthropic.ImageURL(part.MediaType, part.Data)})
 		case "tool_reference":
 			// A historical reference is data, not a definition that can reactivate a tool.
 			parts = append(parts, InputPart{Type: "input_text",

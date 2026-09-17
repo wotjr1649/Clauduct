@@ -80,6 +80,7 @@ non-streaming 요청은 기준선도 `REQUEST_STREAM_FALSE`로 거부한다(`nat
 | `tool_reference` (tool_result 안) | 지원 (`:387`) | **이미 지원됨** (`tools.go:304`) | 동등 — 최초 기재가 틀렸다 |
 | `thinking` + `summary_text` | 지원 (`:234`) | 지원 (봉투 안의 summary 파트) | 동등 — 3.4절 |
 | `output_config.format` (구조화 출력) | `text.format`으로 **전달** (`:429`) | **전달 — 2026-09-17 수정** | 동등. 그 전까지는 검증만 하고 버렸다 — 3.5절 |
+| `document` (PDF) | **없음** | **`input_file`로 전달 — 2026-09-17** | **기준선을 앞선다** — 3.6절 |
 
 **텍스트 블록 묶음이 다르다(2026-09-16 발견).** 기준선은 텍스트 블록 **하나마다** input 항목을
 따로 만든다(`native-protocol.mjs:356`). Go는 한 턴의 텍스트를 모아 항목 하나로 보낸다. 모델이 보는
@@ -133,6 +134,30 @@ agent 결과, 구조를 받기로 한 서브에이전트. 원인에서 가장 �
 
 **실백엔드에서는 아직 확인하지 않았다.** 계약의 근거는 기준선이 그 모양을 보내고 출하돼 있다는
 것이고, 이 빌드가 그것을 실제로 보내는 것은 오프라인으로만 고정돼 있다.
+
+### 3.6 PDF — 기준선에 없는 것을 먼저 갖게 됐다 (2026-09-17)
+
+`document` 블록은 양쪽 다 미지원이었고, 이 빌드에서는 `UNSUPPORTED_CONTENT`로 **턴을 죽였다.**
+드문 경로가 아니다 — 클라이언트가 Read로 PDF를 열면 tool_result 안에 document 블록을 담아 보낸다.
+
+구현 전에 두 가지를 쟀다. **클라이언트가 보내는 모양**은 바이너리에서 읽었다(추측 아님):
+`{type:"document",source:{type:"base64",media_type:"application/pdf",data}}`, 그리고 user 첨부와
+tool_result 양쪽. **백엔드가 읽는지**는 직접 물었다 — `clauduct-dev probe file --send`로 생성한
+1페이지 PDF를 `input_file` 데이터 URL로 보냈고, 모델이 **PDF 안에만 있던 토큰을 돌려줬다.**
+지원 여부를 문서에서 추정하지 않았다.
+
+`media_type`은 `application/pdf` 하나만 받는다. 참조 Codex 클라이언트는 `input_file`을 아예 보내지
+않으므로(바이너리에 문자열 0건) 다른 타입에 대한 근거가 없고, 근거 없이 전달하면 사용자가 붙인
+파일이 "아무것도 아닌 것에 대한 답"이 된다. `url`·`file` source도 거부한다 — 가져오거나 조회해야
+하는 것이고 이 빌드는 둘 다 하지 않는다.
+
+**probe가 처음에 거짓말을 했다.** 첫 두 번의 실행은 "accepted, but the reply does not carry the
+token"이라고 보고했는데, 토큰을 `translate()`가 반환하는 exchange에서 찾고 있었고 그 버퍼는
+EOF에서 `nil`로 비워진다. 즉 성공할 수 없는 검사였고, 그것을 **백엔드에 대한 사실로** 출력했다.
+스트림을 지나가는 바이트에서 찾도록 바꾸고, 토큰이 읽기 경계에 걸쳐 도착하는 경우를 테스트로
+고정했다. 답은 처음부터 "읽는다"였다.
+
+돌연변이 3건 전부 잡힘 — 파일 이름, 미측정 media_type 통과, document를 text로 떨어뜨리기.
 
 ### 3.2 스트리밍
 

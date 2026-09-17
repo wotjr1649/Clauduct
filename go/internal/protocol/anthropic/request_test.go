@@ -163,14 +163,15 @@ func TestMessagesValidation(t *testing.T) {
 // Content blocks this build has not implemented are named, not skipped. A block that came
 // back answered as if it had not been sent is a wrong answer.
 //
-// image left this list on 2026-09-16, when it stopped being unimplemented. An empty source
-// is still refused, but now for what is wrong with it rather than for existing.
+// image left this list on 2026-09-16 and document on 2026-09-17, when each stopped being
+// unimplemented. An empty source is still refused, but now for what is wrong with it rather
+// than for existing.
 func TestUnimplementedContentBlocksAreNamed(t *testing.T) {
 	head := `{"model":"m","max_tokens":1,"stream":true,"messages":[{"role":"user","content":[`
 	for name, tc := range map[string]struct{ block, code string }{
-		"image with an empty source": {`{"type":"image","source":{}}`, CodeUnsupportedImage},
-		"document":                   {`{"type":"document","source":{}}`, CodeUnsupportedContent},
-		"thinking":                   {`{"type":"thinking","thinking":"x"}`, CodeUnsupportedContent},
+		"image with an empty source":    {`{"type":"image","source":{}}`, CodeUnsupportedImage},
+		"document with an empty source": {`{"type":"document","source":{}}`, CodeUnsupportedDocument},
+		"thinking":                      {`{"type":"thinking","thinking":"x"}`, CodeUnsupportedContent},
 		// A recorded call on a user turn is not a recorded assistant call.
 		"tool_use on a user turn": {`{"type":"tool_use","id":"t","name":"Read","input":{}}`, CodeInvalidToolCall},
 		// A result with nothing to answer.

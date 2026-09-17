@@ -793,6 +793,39 @@ CI의 `windows-latest`에는 gcc가 있다. 즉 CI는 **출하되는 것과 다�
 요청당 지연·처리량 비교는 두 구현이 같은 fixture backend를 보게 하는 harness가 있어야 하고,
 그것은 아직 없다.
 
+#### PDF — 물어보고 나서 구현했다
+
+`document` 블록은 이 빌드에서 `UNSUPPORTED_CONTENT`였고, 그것은 Read가 PDF를 열 때마다 턴이
+죽는다는 뜻이었다. 구현 여부를 결정하기 전에 **백엔드가 파일을 읽는지**를 직접 물었다:
+`clauduct-dev probe file --send`가 생성한 1페이지 PDF를 `input_file` 데이터 URL로 보내고,
+모델이 **PDF 안에만 있던 토큰**을 돌려줬다. 그 뒤 제품 경로(document 블록 → 디코더 → bridge)로
+같은 확인을 한 번 더 했다.
+
+**probe의 첫 두 실행은 틀린 답을 출력했다.** 토큰을 `translate()`가 돌려주는 exchange에서 찾았는데
+그 버퍼는 EOF에서 비워진다 — 성공할 수 없는 검사였고, 그 결과를 백엔드에 대한 사실로 적었다.
+스트림에서 직접 찾도록 고치고, 읽기 경계에 걸친 토큰을 잡는 단위 테스트를 먼저 통과시킨 뒤 다시
+쐈다. 실호출 3회 중 2회가 이 결함의 값이다.
+
+media_type은 `application/pdf` 하나만 받는다. 참조 Codex 클라이언트는 `input_file`을 보내지
+않으므로 다른 타입에는 근거가 없다. 돌연변이 3건 전부 잡힌다.
+
+#### count_tokens — 부르지 않았다
+
+실세션 한 번(`clauduct -p`)의 요청 전수: `HEAD /api/hello` · `GET /v1/models` ·
+`POST /v1/messages` 2건. **count_tokens는 없다.** 클라이언트 바이너리에는 그 경로가 있고
+(`source:"count_tokens"`, `maxRetries:1`) 실패 경로도 있다(`count_tokens_unreachable`, "estimates
+and may differ from actual usage"). Bedrock upstream에는 클라이언트가 스스로 501을 만들어 로컬
+추정기로 넘긴다.
+
+**구현하지 않는다.** 정직한 답에는 Codex 모델용 토크나이저가 필요하고, 추정치를 API 응답으로
+돌려주면 클라이언트는 그것을 측정값으로 취급한다 — 지금은 스스로 추정하고 있다는 것을 안다.
+남은 미측정: 대화형 세션. `-p`만 관측했다.
+
+같은 실행이 세 가지를 덤으로 줬다. **클라이언트가 `STRUCTURED_OUTPUTS` 베타를 보낸다**(계정의
+`betas.judged`) — 오늘 고친 구조화 출력이 가설이 아니라는 뜻이다. rate limit 관측이 실제로 채워진다
+(`partial`, activeLimit `premium`, primary 46%/10080분). 그리고 요청별 지연이 기록된다: 첫 바이트
+1,449 ms와 3,669 ms, 세션 8.7초.
+
 #### WebSearch — 실백엔드 재확인
 
 `clauduct-dev probe search --send`: 32,060 bytes, 20 links over 14 hosts, 10,149 chars, 11 frames.

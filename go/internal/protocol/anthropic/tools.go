@@ -281,7 +281,7 @@ type ResultPart struct {
 	Text string
 	Name string // tool_reference only
 
-	// image only
+	// image and document
 	MediaType string
 	Data      string
 }
@@ -323,6 +323,14 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 				return nil, err
 			}
 			parts = append(parts, ResultPart{Type: "image", MediaType: block.MediaType, Data: block.Data})
+		case "document":
+			// This is where a PDF actually arrives. Read returns one as a tool result with
+			// a text part and a document part beside it, which is the client's own shape.
+			block, err := decodeDocument(entry)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, ResultPart{Type: "document", MediaType: block.MediaType, Data: block.Data})
 		case "tool_reference":
 			reference, err := wire.Fields(entry, []string{"type", "tool_name", "cache_control"})
 			if err != nil {

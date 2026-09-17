@@ -12,6 +12,7 @@
 |---|---|
 | 스트리밍 대화·도구 왕복·도구 결과 재실행 방지 | TOOL01/02/06, 실클라이언트 |
 | 이미지 입력 | A1, 실백엔드 왕복 |
+| **PDF 입력**(`document` 블록 → `input_file`) | 2026-09-17. 실백엔드가 PDF 안에만 있던 토큰을 돌려줬다. user 첨부와 **tool_result(Read) 양쪽** |
 | 대화 중 도구 추가/삭제(`tool_addition`/`tool_removal`) | A4a, 베타 게이트 포함 |
 | 추론 왕복(`redacted_thinking` ↔ `reasoning.encrypted_content`) | A4b, 실백엔드가 자기 기록을 되받음 |
 | hosted **WebSearch** | A2 + 2026-09-17 실백엔드 재확인(32,060 bytes, 20 links) |
@@ -43,8 +44,7 @@
 
 | 항목 | 상태 |
 |---|---|
-| `document`(PDF 등) 콘텐츠 블록 | **기준선도 미지원.** 백엔드 지원 여부 미확인 |
-| `POST /v1/messages/count_tokens` | **기준선도 미지원.** `UNSUPPORTED_ROUTE` |
+| `POST /v1/messages/count_tokens` | **구현하지 않는다 (2026-09-17 결정).** `-p` 세션에서 클라이언트가 부르지 않았고(요청 4건 전수 관측), 부르더라도 클라이언트에 `count_tokens_unreachable` + 추정치 폴백 경로가 있다. 정직한 구현에는 Codex용 토크나이저가 필요하고, 추정치를 API 답으로 돌려주면 클라이언트가 그것을 정답으로 취급한다 |
 | `review-diff` 헬퍼 | 미지원. `/code-review`는 동작하되 경로 탈출 방지·2 MiB 상한 없이 plain claude와 같다 |
 | 완료 연결 바인딩 4종 / agent 메타 검증 / workflow 저널 검증 | 보류·미구현. [README.md](README.md) 3장 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |

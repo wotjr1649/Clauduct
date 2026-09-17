@@ -65,6 +65,10 @@ const (
 	CodeImageSourceFields    = "IMAGE_SOURCE_FIELDS"
 	CodeUnsupportedImage     = "UNSUPPORTED_IMAGE"
 	CodeImageRole            = "IMAGE_ROLE"
+	CodeDocumentFields       = "DOCUMENT_FIELDS"
+	CodeDocumentSourceFields = "DOCUMENT_SOURCE_FIELDS"
+	CodeUnsupportedDocument  = "UNSUPPORTED_DOCUMENT"
+	CodeDocumentRole         = "DOCUMENT_ROLE"
 	CodeRedactedFields       = "REDACTED_FIELDS"
 	CodeRedactedRole         = "REDACTED_ROLE"
 	CodeReasoningFields      = "REASONING_FIELDS"
@@ -468,6 +472,13 @@ func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Blo
 			return Block{}, refuse(CodeImageRole, "image")
 		}
 		return decodeImage(raw)
+	case "document":
+		// Same rule as an image and for the same reason: a file attached to an assistant
+		// turn is a transcript that has been edited, not a request to honour.
+		if role != "user" {
+			return Block{}, refuse(CodeDocumentRole, "document")
+		}
+		return decodeDocument(raw)
 	case "tool_use":
 		return decodeToolUse(raw, role, state)
 	case "tool_result":
@@ -574,6 +585,62 @@ func decodeImage(raw json.RawMessage) (Block, error) {
 		return Block{}, refuse(CodeUnsupportedImage, "source.data")
 	}
 	return Block{Type: "image", Raw: raw, MediaType: mediaType, Data: data}, nil
+}
+
+// documentMediaTypes is what an attached file may be, and the list is one entry because
+// one entry is what has been measured.
+//
+// The backend reads a base64 PDF sent as an input_file data URL -- asked directly
+// (`clauduct-dev probe file --send`), and the model returned a token that existed only
+// inside the PDF. Nothing establishes any other type, and a type this build forwards
+// without evidence turns an attachment the user made into an answer about nothing.
+var documentMediaTypes = map[string]bool{"application/pdf": true}
+
+// decodeDocument reads one document block.
+//
+// The shape is the client's own, read out of claude 2.1.274 rather than from a
+// specification: {type:"document", source:{type:"base64", media_type:"application/pdf",
+// data}}. It arrives two ways -- attached to a user turn, and inside a tool_result when
+// Read opens a PDF -- and the second is the common one.
+//
+// Both key sets are closed, as for an image: a document carries its meaning in fields this
+// build does not interpret, and quietly dropping one would send a different file than was
+// attached.
+func decodeDocument(raw json.RawMessage) (Block, error) {
+	fields, err := wire.Fields(raw, []string{"type", "source", "cache_control"})
+	if err != nil {
+		return Block{}, refuse(CodeDocumentFields, "document")
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return Block{}, err
+		}
+	}
+	sourceValue, present := wire.Of(fields, "source")
+	if present != wire.Present {
+		return Block{}, refuse(CodeDocumentFields, "source")
+	}
+	source, err := wire.Fields(sourceValue, []string{"type", "media_type", "data"})
+	if err != nil {
+		return Block{}, refuse(CodeDocumentSourceFields, "source")
+	}
+
+	var kind, mediaType, data string
+	kindValue, ok := wire.Of(source, "type")
+	if ok != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "base64" {
+		// url and file sources name something this build would have to fetch or look up,
+		// and it has neither the Files API nor any business fetching a URL for the model.
+		return Block{}, refuse(CodeUnsupportedDocument, "source.type")
+	}
+	typeValue, ok := wire.Of(source, "media_type")
+	if ok != wire.Present || json.Unmarshal(typeValue, &mediaType) != nil || !documentMediaTypes[mediaType] {
+		return Block{}, refuse(CodeUnsupportedDocument, "source.media_type")
+	}
+	dataValue, ok := wire.Of(source, "data")
+	if ok != wire.Present || json.Unmarshal(dataValue, &data) != nil || !base64Payload.MatchString(data) {
+		return Block{}, refuse(CodeUnsupportedDocument, "source.data")
+	}
+	return Block{Type: "document", Raw: raw, MediaType: mediaType, Data: data}, nil
 }
 
 // checkCacheControl validates a caching hint without acting on it.

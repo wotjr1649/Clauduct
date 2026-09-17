@@ -51,5 +51,5 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
   일으키는 NATIVE_SYNTH 테스트는 없다.
 - **성능 비교는 시작 비용과 메모리만 측정했다.** 요청당 지연·처리량의 v1/v2 비교는 공용 fixture
   harness가 없어 미측정이다.
-- **document(PDF) 블록과 `POST /v1/messages/count_tokens`는 양쪽 다 미지원이다.**
+- **`POST /v1/messages/count_tokens`는 구현하지 않기로 했다** (2026-09-17). PDF는 구현했다.
 - **비Windows 대상은 없다.** `internal/platform`에 windows 태그 파일 하나뿐이다.

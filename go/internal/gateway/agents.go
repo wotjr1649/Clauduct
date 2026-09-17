@@ -117,6 +117,18 @@ func (a *agentRegistry) register(binding agentBinding, now time.Time) (registere
 		}
 	}
 
+	// Updated in place when the id is already here, rather than replaced.
+	//
+	// begin() hands out a release closure over the state it incremented. Replacing the
+	// object leaves that closure decrementing something no longer in the map, so the new
+	// state's active count stays zero however many requests are in flight -- and zero is
+	// what both the idle sweep and the cap read as "not busy". A subagent that received a
+	// second SubagentStart while streaming could then be evicted mid-answer, after which
+	// its requests ran with no role at all.
+	if existing, known := a.byID[binding.ID]; known {
+		existing.role, existing.context, existing.lastUsed = binding.Role, binding.Context, now
+		return true, nil
+	}
 	a.byID[binding.ID] = &agentState{role: binding.Role, lastUsed: now, context: binding.Context}
 	return true, nil
 }

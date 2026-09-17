@@ -192,10 +192,10 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 // One field, not the whole report -- the window that is in force, how much of it is gone.
 // `clauduct-dev usage` is where the rest lives, including how old a reading is.
 func quotaField(account Status) string {
-	limits := account.Gateway.Limits
-	if limits == nil || limits.Primary == nil || limits.Primary.UsedPercent == nil {
+	if !hasFigure(account) {
 		return ""
 	}
+	limits := account.Gateway.Limits
 	field := fmt.Sprintf(" quota=%g%%", *limits.Primary.UsedPercent)
 	if minutes := limits.Primary.WindowMinutes; minutes != nil && *minutes > 0 {
 		// Hours or days, whichever divides: a weekly window reads as 7d, not 10080m.

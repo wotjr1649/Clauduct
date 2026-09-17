@@ -142,3 +142,27 @@ func TestReportPutsTheQuotaOnTheLine(t *testing.T) {
 		t.Fatal("carrying a quota changed whether the session reports itself")
 	}
 }
+
+// A report with no figure in it does not count as a reading.
+//
+// Mine, found by review. The observation is recorded whenever the response says anything
+// about limits -- an active-limit name alone, another family, a field that could not be
+// read -- so testing the report for existence took an account with no percentage in it and
+// buried the last real one behind it. The exit line's predicate had it right all along.
+func TestAReportWithNoFigureIsNotTakenAsTheReading(t *testing.T) {
+	dir := t.TempDir()
+	writeAccount(t, dir, "status-real.json", 10*time.Minute, Status{
+		Attempts: 2, Gateway: gateway.Diagnostics{Limits: quota(47, 10080)}})
+	// Newer, and says only that some limit exists.
+	writeAccount(t, dir, "status-empty.json", time.Minute, Status{
+		Attempts: 1, Gateway: gateway.Diagnostics{Limits: &gateway.RateLimitReport{
+			State: "missing", ActiveLimit: "premium", OtherFamilies: []string{"x-codex-other"}}}})
+
+	reading, ok := LatestQuota(dir)
+	if !ok {
+		t.Fatal("no reading found")
+	}
+	if got := *reading.Status.Gateway.Limits.Primary.UsedPercent; got != 47 {
+		t.Fatalf("reported %g%%, want the 47%% that has a figure in it", got)
+	}
+}

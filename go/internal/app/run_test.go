@@ -558,3 +558,33 @@ func TestConfigurationOptionsStillReachTheChild(t *testing.T) {
 		t.Fatalf("child argv\n got: %#v\nwant: %#v", got, args)
 	}
 }
+
+// A child that never started has no exit status, and the account must not claim zero.
+//
+// Found by review. The start-failure path left NativeExitCode at its zero value, so a
+// corrupt or unreadable claude.exe produced "CLIENT_START_FAILED exit=0" and an account
+// saying exitCode 0 -- which the check for a bad exit, reading != 0, waved through. The
+// wait-failure path a dozen lines below already had this right and says why: zero would
+// read as success, which it is not.
+func TestAChildThatNeverStartedHasNoExitStatus(t *testing.T) {
+	result, err := Run(context.Background(), Options{
+		Args:          []string{"-p", "x"},
+		Env:           isolatedEnv(t),
+		Cwd:           t.TempDir(),
+		ResolveClaude: func() (string, bool, error) { return "claude.exe", true, nil },
+		StartProcess: func(launch.Spec, io.Reader, io.Writer, io.Writer) (Process, error) {
+			return nil, errors.New("the executable could not be started")
+		},
+		StartGateway: func() (*gateway.Gateway, error) { return gateway.Start(nil) },
+	})
+	if err == nil {
+		t.Fatal("a start failure was reported as success")
+	}
+	if result.Category != CategoryStartFailed {
+		t.Fatalf("category = %q, want %s", result.Category, CategoryStartFailed)
+	}
+	if result.NativeExitCode != ExitCodeUnknown {
+		t.Fatalf("exit = %d, want ExitCodeUnknown: nothing ran, so there is no status",
+			result.NativeExitCode)
+	}
+}

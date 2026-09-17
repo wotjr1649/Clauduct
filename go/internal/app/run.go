@@ -206,6 +206,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// than replacing it: the start failure is the cause.
 		result.Diagnostics = gw.Diagnose()
 		result.Category = CategoryStartFailed
+		// There is no exit status: nothing ran. Leaving the field at zero printed
+		// "CLIENT_START_FAILED exit=0" and wrote exitCode 0 into the account, where the
+		// check for a bad exit reads != 0 and let it through. The sibling path a dozen
+		// lines below already says what this build says about an answer it does not have.
+		result.NativeExitCode = ExitCodeUnknown
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		return result, startErr
 	}

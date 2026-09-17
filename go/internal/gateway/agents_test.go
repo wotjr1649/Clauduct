@@ -379,3 +379,36 @@ func TestARegistrationInUseIsHeldAgainstTheSweep(t *testing.T) {
 		t.Fatal("a registration that finished and went idle was never released")
 	}
 }
+
+// A registration that arrives twice does not forget the requests in flight.
+//
+// Found by review. Re-registering replaced the state object, so the release closure begin()
+// had handed out decremented an orphan and the new state's active count stayed zero. Zero
+// is what the idle sweep and the cap both read as "not busy", so a subagent that got a
+// second SubagentStart while streaming became evictable mid-answer -- and after eviction
+// its requests ran with no role, which is the one thing the registry exists to prevent.
+func TestARepeatedRegistrationKeepsTheRequestsInFlight(t *testing.T) {
+	registry := newAgentRegistry()
+	binding := agentBinding{ID: "agent_1", Role: "Explore"}
+	if _, err := registry.register(binding, time.Now()); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	role, release, ok := registry.begin("agent_1")
+	if !ok || role != "Explore" {
+		t.Fatalf("begin = %q, %v", role, ok)
+	}
+
+	// The same subagent announces itself again while its request is still running.
+	if _, err := registry.register(binding, time.Now()); err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+	if got := registry.byID["agent_1"].active; got != 1 {
+		t.Fatalf("active = %d after a repeated registration, want the request still counted", got)
+	}
+
+	release()
+	if got := registry.byID["agent_1"].active; got != 0 {
+		t.Fatalf("active = %d after release, want 0", got)
+	}
+}

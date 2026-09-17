@@ -76,16 +76,28 @@ func Readings(dir string, limit int) []Reading {
 	return readings
 }
 
-// LatestQuota returns the newest reading that actually carries a quota.
+// LatestQuota returns the newest reading that actually carries a figure.
 //
 // Newest-with-one rather than newest: a session that asked nothing of the backend has no
 // headers to report, and taking its empty account would hide a reading from ten minutes ago
 // behind one from ten seconds ago that says nothing.
+//
+// A figure, not a report. The observation is recorded even when the response carried only
+// an active-limit name, or another family, or a field this build could not read -- so
+// testing the report for existence accepted accounts with no percentage in them, printed a
+// state and nothing else, and buried the last real reading. The same predicate the exit
+// line uses, which had it right.
 func LatestQuota(dir string) (Reading, bool) {
 	for _, reading := range Readings(dir, 0) {
-		if reading.Status.Gateway.Limits != nil {
+		if hasFigure(reading.Status) {
 			return reading, true
 		}
 	}
 	return Reading{}, false
+}
+
+// hasFigure reports whether an account carries a usable percentage.
+func hasFigure(status Status) bool {
+	limits := status.Gateway.Limits
+	return limits != nil && limits.Primary != nil && limits.Primary.UsedPercent != nil
 }

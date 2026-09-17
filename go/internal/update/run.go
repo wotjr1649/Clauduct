@@ -113,6 +113,15 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 		return 0
 	}
 
+	// A fresh deadline once somebody has answered.
+	//
+	// The one this was given covers the whole command, and the prompt sits inside it: a
+	// reader who takes longer than the budget to check three digests -- which is the point
+	// of printing them -- pressed y and got "context deadline exceeded". Waiting for a
+	// person is not part of the time budget for talking to a server.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), Timeout)
+	defer cancel()
+
 	files, err := Download(ctx, client, release, sums)
 	if err != nil {
 		// Nothing has been touched at this point, and saying so is worth a line: a failed

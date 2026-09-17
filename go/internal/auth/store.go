@@ -68,6 +68,14 @@ func (r *tomlReader) comment() {
 func (r *tomlReader) scan() error {
 	for r.offset < len(r.text) {
 		r.space()
+		// Trailing blanks are the end of the file, not the start of something. Without
+		// this the offset walks past the last byte, at() answers zero, no case matches and
+		// the default reads an assignment out of nothing -- so a config.toml ending in a
+		// space with no newline was CONFIG_UNSUPPORTED, every request became a 400, and
+		// what the user saw was their credential store refusing to work.
+		if r.offset >= len(r.text) {
+			break
+		}
 		switch c := r.at(); {
 		case c == '#':
 			r.comment()

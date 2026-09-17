@@ -145,3 +145,25 @@ func TestOversizedConfigIsRefused(t *testing.T) {
 	}
 	mustReject(t, string(big))
 }
+
+// A file that ends in a blank with no newline is still a file this can read.
+//
+// Found by review. space() walks past the last byte, at() answers zero, nothing matches,
+// and the default branch reads an assignment out of the end of the file -- so the store was
+// CONFIG_UNSUPPORTED and every request in the session became a 400 that looked, to the
+// user, like their credential store was broken. The existing whitespace tests all ended in
+// a newline and never walked that path.
+func TestAConfigEndingInBlankSpaceIsStillRead(t *testing.T) {
+	for name, text := range map[string]string{
+		"a trailing space":       "[x]\nkey = \"value\" ",
+		"a trailing tab":         "[x]\nkey = \"value\"\t",
+		"blanks after a newline": "[x]\nkey = \"value\"\n   ",
+		"nothing but blanks":     "   ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := readStoreSetting(text); err != nil {
+				t.Fatalf("read: %v", err)
+			}
+		})
+	}
+}

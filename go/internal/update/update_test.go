@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -354,4 +355,49 @@ func TestTheCommandReportsTheLimitAsItself(t *testing.T) {
 	if !strings.Contains(out.String(), "RATE_LIMITED") {
 		t.Fatalf("the limit was not named: %s", out.String())
 	}
+}
+
+// Reading the digests does not spend the download's time budget.
+//
+// Found by review: one deadline covered the whole command, prompt included, so a reader who
+// took longer than it to check three digests pressed y and was answered with a context
+// deadline. Printing them and then punishing someone for reading them is the wrong way
+// round.
+//
+// The deadline here is short and the answer is slow, which puts the expiry exactly where a
+// person would have put it: after the metadata and the digests, before the download.
+func TestTheTimeSpentDecidingIsNotChargedToTheDownload(t *testing.T) {
+	dir := installation(t, "old ")
+	server, api := release{tag: "v9.9.9", bodies: newBodies("new ")}.serve(t)
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	var out strings.Builder
+	if code := RunIn(ctx, server.Client(), api, dir,
+		[]string{"--update"}, &slowReader{after: 150 * time.Millisecond, answer: "y" + "\n"}, &out); code != 0 {
+		t.Fatalf("code = %d, want the update to proceed after a slow yes: %s", code, out.String())
+	}
+	for _, name := range Binaries {
+		if got := read(t, dir, name); got != "new "+name {
+			t.Fatalf("%s holds %q", name, got)
+		}
+	}
+}
+
+// slowReader answers once, after a wait, the way a person reading three digests does.
+type slowReader struct {
+	after  time.Duration
+	answer string
+	done   bool
+}
+
+func (r *slowReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	time.Sleep(r.after)
+	r.done = true
+	return copy(p, r.answer), nil
 }

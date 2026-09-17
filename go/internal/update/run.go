@@ -108,6 +108,22 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 		fmt.Fprintln(out, "  ", name, sums[name])
 	}
 
+	// Nothing to do is a real answer, and it has to come before the question.
+	//
+	// Without this, running --update while already current replaces three files with the
+	// same bytes and leaves a clauduct.exe.old behind, because the executable doing the
+	// replacing cannot delete its own predecessor. The user then has a leftover that looks
+	// like a fault and is the product of an update that changed nothing.
+	//
+	// Digests rather than the version string: a version says what a build calls itself, and
+	// two builds can call themselves the same thing. These are the bytes the release states
+	// against the bytes on disk, so a file that is corrupt or was replaced by hand does not
+	// match and does get repaired.
+	if current(dir, sums) {
+		fmt.Fprintln(out, "already current -- the three installed files match", release.Tag)
+		return 0
+	}
+
 	if !consented && !confirmed(in, out) {
 		fmt.Fprintln(out, "clauduct: nothing was changed")
 		return 0
@@ -182,4 +198,22 @@ func yes(in io.Reader, out io.Writer) bool {
 	}
 	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
 	return answer == "y" || answer == "yes"
+}
+
+// current reports whether every installed binary already has the digest the release states.
+//
+// A file that cannot be read is not current: the answer to "is this already what the
+// release says" is no when there is nothing there to compare.
+func current(dir string, sums map[string]string) bool {
+	for _, name := range Binaries {
+		want, ok := sums[name]
+		if !ok {
+			return false
+		}
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil || Digest(body) != want {
+			return false
+		}
+	}
+	return true
 }

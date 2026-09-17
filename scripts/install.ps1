@@ -241,4 +241,9 @@ if ($NoPathUpdate) {
     Write-Host "PATH: $InstallRoot was already on it."
 }
 
-Write-Host "verify: clauduct --version"
+# Two commands because they prove different things, and the difference has confused a
+# reader already: this launcher passes everything it does not own to the client, so
+# `clauduct --version` is answered by Claude Code. It proves the launch path works.
+# What this build calls itself is a question for clauduct-dev.
+Write-Host "verify: clauduct-dev version   (this build)"
+Write-Host "        clauduct --version     (the client, through it)"

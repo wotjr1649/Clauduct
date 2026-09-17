@@ -181,3 +181,36 @@ func TestUninstallCountsDiagnosticsWithoutRemovingThem(t *testing.T) {
 		t.Fatalf("diagnostics were touched: %v %d", err, len(entries))
 	}
 }
+
+func TestSweepLeftoverRemovesOnlyThisExecutablesPredecessor(t *testing.T) {
+	dir := plant(t, "clauduct-hook.exe.old", "someone-else.exe.old")
+	self := filepath.Join(dir, "clauduct.exe")
+	if err := os.WriteFile(self+".old", []byte("predecessor"), 0o600); err != nil {
+		t.Fatalf("plant: %v", err)
+	}
+
+	sweepLeftoverOf(self)
+
+	if _, err := os.Stat(self + ".old"); err == nil {
+		t.Fatalf("the predecessor survived the sweep")
+	}
+	// Everything else ending in .old belongs to somebody, including the hook's own, which
+	// Apply already removes because nothing holds it open.
+	for _, name := range []string{"clauduct-hook.exe.old", "someone-else.exe.old"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Fatalf("%s was swept and is not this executable's predecessor: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(self); err != nil {
+		t.Fatalf("the sweep removed the executable itself: %v", err)
+	}
+}
+
+func TestSweepLeftoverIsSilentWhenThereIsNothingToSweep(t *testing.T) {
+	// The common case: every launch that did not follow an update. Absent is not an error,
+	// and a session must not fail over housekeeping.
+	dir := t.TempDir()
+	sweepLeftoverOf(filepath.Join(dir, "clauduct.exe"))
+	sweepLeftoverOf(filepath.Join(dir, "clauduct.exe"))
+	SweepLeftover()
+}

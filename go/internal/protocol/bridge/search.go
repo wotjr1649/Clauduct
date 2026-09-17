@@ -35,9 +35,10 @@ const (
 
 // SearchQuery is the client's side query, ready to send.
 type SearchQuery struct {
-	Query   string
-	Allowed []string
-	Blocked []string
+	Query    string
+	Allowed  []string
+	Blocked  []string
+	Location map[string]string
 }
 
 // SideQuery reports the query when this request is the client's search side query.
@@ -73,7 +74,8 @@ func SideQuery(request *anthropic.Request) (SearchQuery, bool) {
 	if query == "" || len(query) > maxSearchQuery {
 		return SearchQuery{}, false
 	}
-	return SearchQuery{Query: query, Allowed: hosted.Allowed, Blocked: hosted.Blocked}, true
+	return SearchQuery{Query: query, Allowed: hosted.Allowed, Blocked: hosted.Blocked,
+		Location: hosted.Location}, true
 }
 
 // SearchRequest is the body the backend's search endpoint reads.
@@ -97,10 +99,11 @@ type SearchTerm struct {
 }
 
 type SearchSettings struct {
-	ExternalWebAccess bool           `json:"external_web_access"`
-	ContextSize       string         `json:"search_context_size"`
-	AllowedCallers    []string       `json:"allowed_callers"`
-	Filters           *SearchFilters `json:"filters,omitempty"`
+	ExternalWebAccess bool              `json:"external_web_access"`
+	ContextSize       string            `json:"search_context_size"`
+	AllowedCallers    []string          `json:"allowed_callers"`
+	UserLocation      map[string]string `json:"user_location,omitempty"`
+	Filters           *SearchFilters    `json:"filters,omitempty"`
 }
 
 type SearchFilters struct {
@@ -124,6 +127,14 @@ func BuildSearchRequest(model string, query SearchQuery) *SearchRequest {
 			AllowedCallers:    []string{"direct"},
 		},
 		MaxOut: 2500,
+	}
+	// The location the client asked for, forwarded. Measured 2026-09-17: the search
+	// endpoint accepts a request carrying it -- asked directly rather than assumed, because
+	// the reference Codex client never sends one. Whether it biases the results is the
+	// backend's business and is not something this build can see; what is certain is that
+	// dropping it guarantees it has no effect.
+	if len(query.Location) > 0 {
+		out.Settings.UserLocation = query.Location
 	}
 	if len(query.Allowed) > 0 || len(query.Blocked) > 0 {
 		out.Settings.Filters = &SearchFilters{Allowed: query.Allowed, Blocked: query.Blocked}

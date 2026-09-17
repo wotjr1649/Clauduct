@@ -58,6 +58,10 @@ type Failure struct {
 
 func (f Failure) Error() string { return f.Category }
 
+// RateLimited is what the backend saying "too many" is called. Exported because the status
+// the gateway answers with turns on it.
+const RateLimited = "RATE_LIMITED"
+
 // MaxGatewayRetries is how many times this bridge retries an attempt on its own.
 //
 // Zero, and measured rather than chosen for caution. The installed claude 2.1.272 retries
@@ -91,7 +95,7 @@ func classify(status int, header http.Header, now time.Time) Failure {
 		return Failure{Category: "UNAUTHENTICATED", Disposition: Retryable}
 
 	case status == http.StatusTooManyRequests:
-		return withRetryAfter(Failure{Category: "RATE_LIMITED"}, header, now)
+		return withRetryAfter(Failure{Category: RateLimited}, header, now)
 
 	case status == http.StatusRequestTimeout, status == http.StatusConflict:
 		return Failure{Category: "UPSTREAM_HTTP_ERROR", Disposition: Retryable}

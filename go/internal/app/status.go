@@ -98,7 +98,7 @@ func Account(result Result) Status {
 func (s Status) noteworthy() bool {
 	return s.Category != CategorySuccess ||
 		!s.Session.HookInstalled ||
-		s.Gateway.Requests.Refused > 0 ||
+		s.Gateway.Requests.Refused > 0 || s.Gateway.BrokenStreams() > 0 ||
 		s.Gateway.Events.Unsupported > 0 ||
 		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 ||
 		s.Gateway.Betas.Malformed > 0 ||

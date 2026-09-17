@@ -449,3 +449,41 @@ func TestCacheControlIsValidatedButNotActedOn(t *testing.T) {
 		})
 	}
 }
+
+// A search tool carrying every field the client may set is accepted, not refused.
+//
+// Found by review: three keys the baseline accepts (native-protocol.mjs:295) were missing
+// from this build's set, and an unknown key makes wire.Fields refuse -- so the tool
+// definition was refused, and refusing that refuses the whole turn. A client with a
+// location configured could not search at all.
+func TestASearchToolWithEveryFieldTheClientMaySetIsAccepted(t *testing.T) {
+	const head = `{"model":"gpt-6-astra","max_tokens":1,"stream":true,` +
+		`"messages":[{"role":"user","content":"x"}],"tools":[`
+	request, err := DecodeRequest([]byte(head + `{"type":"web_search_20250305",
+	  "name":"web_search","max_uses":3,"allowed_callers":["assistant"],
+	  "response_inclusion":"citations",
+	  "user_location":{"type":"approximate","city":"Seoul","country":"KR","timezone":"Asia/Seoul"}}]}`))
+	if err != nil {
+		t.Fatalf("a search tool the client can send was refused: %v", err)
+	}
+	if request.HostedSearch == nil {
+		t.Fatal("the hosted tool was not recorded")
+	}
+	if got := request.HostedSearch.Location["city"]; got != "Seoul" {
+		t.Fatalf("location city = %q, want it carried", got)
+	}
+
+	// The shape is still checked: the one type the API defines, a bounded value, a closed
+	// key set. Accepting a field without reading it is how a malformed one becomes
+	// somebody else's problem later.
+	for _, bad := range []string{
+		`"user_location":{"type":"exact","city":"Seoul"}`,
+		`"user_location":{"type":"approximate","city":"` + strings.Repeat("x", 129) + `"}`,
+		`"user_location":{"type":"approximate","street":"nowhere"}`,
+	} {
+		if _, err := DecodeRequest([]byte(head +
+			`{"type":"web_search_20250305","name":"web_search",` + bad + `}]}`)); err == nil {
+			t.Fatalf("accepted %s", bad)
+		}
+	}
+}

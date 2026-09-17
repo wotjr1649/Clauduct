@@ -445,3 +445,43 @@ func TestTheAbortWatcherStillStopsAReadThatTheClientAbandoned(t *testing.T) {
 			"that the handler sits in the read and shutdown waits for it")
 	}
 }
+
+// A rate limit is answered with the status a client waits on, delay or no delay.
+//
+// Found by review, reproduced before fixing: a 429 whose Retry-After is absent or
+// unparsable stays Retryable, and the disposition switch answered that with 502 -- the one
+// class this client was measured to retry eight times in sixty seconds. The account had
+// just said it was out of room and the answer told the client to hurry.
+//
+// The guard that was supposed to prevent this sat after the errors.As block, where every
+// arm returns and the zero value has no category. It could never run.
+func TestARateLimitIsNeverAnsweredWithAStatusThatMakesTheClientHurry(t *testing.T) {
+	now := time.Now()
+	for _, c := range []struct {
+		name   string
+		header http.Header
+		want   int
+	}{
+		{"with a delay", http.Header{"Retry-After": []string{"30"}}, http.StatusTooManyRequests},
+		{"with no delay", http.Header{}, http.StatusTooManyRequests},
+		{"with a delay it cannot read", http.Header{"Retry-After": []string{"soon"}}, http.StatusTooManyRequests},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			failure := upstream.ClassifyStatus(http.StatusTooManyRequests, c.header, now)
+			if got := statusForUpstream(failure); got != c.want {
+				t.Fatalf("status = %d, want %d (disposition %v)", got, c.want, failure.Disposition)
+			}
+		})
+	}
+
+	// And an ordinary upstream failure keeps the answer it had: retryable is 502, terminal
+	// is 400. The fix is about one category, not about the classes around it.
+	retryable := upstream.ClassifyStatus(http.StatusBadGateway, http.Header{}, now)
+	if got := statusForUpstream(retryable); got != http.StatusBadGateway {
+		t.Fatalf("a retryable 502 is answered %d, want 502", got)
+	}
+	terminal := upstream.ClassifyStatus(http.StatusBadRequest, http.Header{}, now)
+	if got := statusForUpstream(terminal); got != http.StatusBadRequest {
+		t.Fatalf("a terminal 400 is answered %d, want 400", got)
+	}
+}

@@ -35,8 +35,11 @@ const (
 // Outcomes. A record that never reaches one is in progress, which is a third answer and not
 // a missing one: a session read while a request is still running should say so.
 const (
-	outcomeOK       = "ok"
-	outcomeRefused  = "refused"
+	outcomeOK      = "ok"
+	outcomeRefused = "refused"
+	// outcomeBroken is a response that started and then stopped. It is neither refused --
+	// the client got a 200 -- nor ok, and calling it either would be false.
+	outcomeBroken   = "broken"
 	outcomeProgress = "in-progress"
 )
 
@@ -108,6 +111,24 @@ func (r *record) refusedWith(status int, category string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data.Outcome, r.data.Category, r.data.Status = outcomeRefused, category, status
+}
+
+// brokeAfterCommitting records a stream that failed once its status was already sent.
+//
+// Without it these were the one failure the account called a success: the status is 200 and
+// already written, so nothing goes through refusedWith, and finish() closes an unrefused
+// record as ok. A response that stopped halfway with TRUNCATED_STREAM or TEXT_MISMATCH was
+// filed as a clean session with Refused == 0, and the exit line said nothing.
+//
+// The status stays what the client actually received. Rewriting it to an error would claim
+// the client saw something it did not; the outcome and the category carry the truth.
+func (r *record) brokeAfterCommitting(category string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.Outcome, r.data.Category = outcomeBroken, category
 }
 
 func (r *record) wroteStatus(status int) {
@@ -310,4 +331,18 @@ func (g *Gateway) handleStatus(w http.ResponseWriter) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(body)
+}
+
+// BrokenStreams counts responses that started and then stopped.
+//
+// Exported behaviour rather than an exported field: a session with one of these has
+// something to report, and the refusal count cannot say so -- the client received a 200.
+func (d Diagnostics) BrokenStreams() int {
+	broken := 0
+	for _, entry := range d.Recent {
+		if entry.Outcome == outcomeBroken {
+			broken++
+		}
+	}
+	return broken
 }

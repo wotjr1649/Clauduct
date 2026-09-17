@@ -18,7 +18,7 @@ func TestResponseByteCeilingIsEnforced(t *testing.T) {
 
 	var err error
 	for i := 0; i < 32 && err == nil; i++ {
-		_, err = builder.AppendText(0, chunk)
+		_, err = builder.AppendText("item_1", 0, chunk)
 	}
 	if !errors.Is(err, ErrResponseTooLarge) {
 		t.Fatalf("err = %v, want RESPONSE_TOO_LARGE before 32 MiB", err)
@@ -31,7 +31,7 @@ func TestContentPartCeilingIsEnforced(t *testing.T) {
 	builder := NewBuilder("m")
 	var err error
 	for i := 0; i < maxTextParts+2 && err == nil; i++ {
-		_, err = builder.AppendText(i, "x")
+		_, err = builder.AppendText("item_1", i, "x")
 	}
 	if !errors.Is(err, ErrResponseTooLarge) {
 		t.Fatalf("err = %v, want RESPONSE_TOO_LARGE past the part ceiling", err)
@@ -45,20 +45,20 @@ func TestContentPartCeilingIsEnforced(t *testing.T) {
 // Added after a mutation run: removing the guard left the suite green.
 func TestNothingIsAcceptedAfterCompletion(t *testing.T) {
 	builder := NewBuilder("m")
-	if _, err := builder.AppendText(0, "before"); err != nil {
+	if _, err := builder.AppendText("item_1", 0, "before"); err != nil {
 		t.Fatalf("AppendText: %v", err)
 	}
 	if _, err := builder.Complete(Usage{}); err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
 
-	if _, err := builder.AppendText(0, "after"); !errors.Is(err, ErrStreamOrder) {
+	if _, err := builder.AppendText("item_1", 0, "after"); !errors.Is(err, ErrStreamOrder) {
 		t.Errorf("AppendText after completion: err = %v, want STREAM_ORDER", err)
 	}
-	if _, err := builder.AppendText(1, "after in a new block"); !errors.Is(err, ErrStreamOrder) {
+	if _, err := builder.AppendText("item_1", 1, "after in a new block"); !errors.Is(err, ErrStreamOrder) {
 		t.Errorf("AppendText in a new block after completion: err = %v, want STREAM_ORDER", err)
 	}
-	if _, err := builder.FinishText(0, "before"); !errors.Is(err, ErrStreamOrder) {
+	if _, err := builder.FinishText("item_1", 0, "before"); !errors.Is(err, ErrStreamOrder) {
 		t.Errorf("FinishText after completion: err = %v, want STREAM_ORDER", err)
 	}
 	if _, err := builder.Complete(Usage{}); !errors.Is(err, ErrStreamOrder) {
@@ -72,16 +72,16 @@ func TestNothingIsAcceptedAfterCompletion(t *testing.T) {
 // A block that has been closed by its snapshot does not reopen.
 func TestClosedBlockDoesNotReopen(t *testing.T) {
 	builder := NewBuilder("m")
-	if _, err := builder.AppendText(0, "done"); err != nil {
+	if _, err := builder.AppendText("item_1", 0, "done"); err != nil {
 		t.Fatalf("AppendText: %v", err)
 	}
-	if _, err := builder.FinishText(0, "done"); err != nil {
+	if _, err := builder.FinishText("item_1", 0, "done"); err != nil {
 		t.Fatalf("FinishText: %v", err)
 	}
-	if _, err := builder.AppendText(0, "more"); !errors.Is(err, ErrStreamOrder) {
+	if _, err := builder.AppendText("item_1", 0, "more"); !errors.Is(err, ErrStreamOrder) {
 		t.Fatalf("err = %v, want STREAM_ORDER", err)
 	}
-	if _, err := builder.FinishText(0, "done"); !errors.Is(err, ErrStreamOrder) {
+	if _, err := builder.FinishText("item_1", 0, "done"); !errors.Is(err, ErrStreamOrder) {
 		t.Fatalf("a second FinishText: err = %v, want STREAM_ORDER", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestClosedBlockDoesNotReopen(t *testing.T) {
 // A negative content index is not a position.
 func TestNegativeContentIndexIsRefused(t *testing.T) {
 	builder := NewBuilder("m")
-	if _, err := builder.AppendText(-1, "x"); !errors.Is(err, ErrStreamOrder) {
+	if _, err := builder.AppendText("item_1", -1, "x"); !errors.Is(err, ErrStreamOrder) {
 		t.Fatalf("err = %v, want STREAM_ORDER", err)
 	}
 }
@@ -101,7 +101,7 @@ func TestResponseIDCannotChangeAfterTheMessageStarts(t *testing.T) {
 	if err := builder.SetResponseID("resp_first"); err != nil {
 		t.Fatalf("SetResponseID: %v", err)
 	}
-	frames, err := builder.AppendText(0, "x")
+	frames, err := builder.AppendText("item_1", 0, "x")
 	if err != nil {
 		t.Fatalf("AppendText: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestCompletionClosesBlocksInIndexOrder(t *testing.T) {
 	for attempt := 0; attempt < 20; attempt++ {
 		builder := NewBuilder("m")
 		for index := 0; index < 5; index++ {
-			if _, err := builder.AppendText(index, "x"); err != nil {
+			if _, err := builder.AppendText("item_1", index, "x"); err != nil {
 				t.Fatalf("AppendText: %v", err)
 			}
 		}

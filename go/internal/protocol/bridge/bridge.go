@@ -609,7 +609,7 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		if err != nil {
 			return nil, err
 		}
-		return t.builder.AppendText(delta.ContentIndex, delta.Delta)
+		return t.builder.AppendText(delta.ItemID, delta.ContentIndex, delta.Delta)
 
 	case codex.OutputItemAdd:
 		event, err := codex.DecodeOutputItem(event.Raw, false)
@@ -654,7 +654,7 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		if err != nil {
 			return nil, err
 		}
-		return t.builder.FinishText(done.ContentIndex, done.Text)
+		return t.builder.FinishText(done.ItemID, done.ContentIndex, done.Text)
 
 	case codex.Completed:
 		usage, err := codex.DecodeUsage(event.Raw)
@@ -791,7 +791,7 @@ func (t *Translator) release() error {
 		case codex.ItemMessage:
 			// The backend's own account of what it said, checked against what was
 			// streamed. A disagreement means a delta went missing.
-			if err := t.checkStreamedText(held.item.Text); err != nil {
+			if err := t.checkStreamedText(held.item.ID, held.item.Text); err != nil {
 				return err
 			}
 		case codex.ItemReasoning:
@@ -876,12 +876,25 @@ func (t *Translator) crossCheckCompleted(raw []byte) error {
 // checkStreamedText compares the completed payload's message text with what the deltas
 // built. It is the same property the per-part snapshot checks, one level up: if the two
 // accounts of the answer differ, neither can be handed on.
-func (t *Translator) checkStreamedText(parts []string) error {
+func (t *Translator) checkStreamedText(item string, parts []string) error {
 	joined := ""
 	for _, part := range parts {
 		joined += part
 	}
-	if joined != t.builder.Text() {
+	// Against this item's own text, not the response's. The completed payload states what
+	// each item said; comparing one item's account with everything that streamed turns a
+	// second message item into a mismatch that never happened.
+	//
+	// An item with no id is the exception, and it keeps the older comparison. An id is
+	// optional on the wire, and without one there is nothing to attribute streamed text
+	// by -- so the whole response is the only account available. That is exactly as good
+	// as it was before and no worse; what it cannot do is tell two anonymous items apart,
+	// which nothing could.
+	streamed := t.builder.Text()
+	if item != "" {
+		streamed = t.builder.TextFor(item)
+	}
+	if joined != streamed {
 		return anthropic.ErrTextMismatch
 	}
 	return nil

@@ -66,6 +66,18 @@ type textPart struct {
 	closed  bool
 }
 
+// partKey identifies a text block by the item it belongs to as well as its index.
+//
+// The index alone is not an identity. content_index counts within one output item, so a
+// response with two message items -- which is what a model that speaks, thinks and speaks
+// again produces -- sends two blocks numbered zero. Keyed on the index alone the second
+// one lands on the first one's part: closed, so the whole response died with STREAM_ORDER,
+// and open, so two separate answers were silently concatenated into one block.
+type partKey struct {
+	item  string
+	index int
+}
+
 // toolCall is a validated call waiting for the completion that releases it.
 type toolCall struct {
 	id    string
@@ -84,7 +96,7 @@ type Builder struct {
 	started    bool
 	completed  bool
 	nextIndex  int
-	parts      map[int]*textPart
+	parts      map[partKey]*textPart
 	totalBytes int
 
 	// Calls are held here until Complete releases them. Nothing writes a tool_use frame
@@ -115,7 +127,7 @@ func (b *Builder) ThoughtCount() int { return len(b.thoughts) }
 func NewBuilder(model string) *Builder {
 	return &Builder{
 		model:    model,
-		parts:    make(map[int]*textPart, 4),
+		parts:    make(map[partKey]*textPart, 4),
 		callIDs:  make(map[string]bool, 4),
 		callable: func(string) bool { return false },
 	}
@@ -206,7 +218,7 @@ func (b *Builder) ResponseID() string {
 // The first delta for a response opens the message; the first delta for a content index
 // opens its block. Opening lazily is what keeps an empty response from announcing a block
 // that never gets any content.
-func (b *Builder) AppendText(contentIndex int, delta string) ([]Frame, error) {
+func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Frame, error) {
 	if b.completed {
 		return nil, ErrStreamOrder
 	}
@@ -225,14 +237,15 @@ func (b *Builder) AppendText(contentIndex int, delta string) ([]Frame, error) {
 		frames = append(frames, b.messageStart())
 	}
 
-	part, existing := b.parts[contentIndex]
+	key := partKey{item: item, index: contentIndex}
+	part, existing := b.parts[key]
 	if !existing {
 		if len(b.parts) >= maxTextParts {
 			return nil, ErrResponseTooLarge
 		}
 		part = &textPart{index: b.nextIndex}
 		b.nextIndex++
-		b.parts[contentIndex] = part
+		b.parts[key] = part
 		frames = append(frames, contentBlockStart(part.index))
 	}
 	if part.closed {
@@ -254,11 +267,11 @@ func (b *Builder) AppendText(contentIndex int, delta string) ([]Frame, error) {
 // part that legitimately produced nothing; the baseline once failed on exactly that and
 // the fix is carried over. A non-empty snapshot with no deltas is still refused, because
 // that is the missing-delta case this check exists for.
-func (b *Builder) FinishText(contentIndex int, snapshot string) ([]Frame, error) {
+func (b *Builder) FinishText(item string, contentIndex int, snapshot string) ([]Frame, error) {
 	if b.completed {
 		return nil, ErrStreamOrder
 	}
-	part, existing := b.parts[contentIndex]
+	part, existing := b.parts[partKey{item: item, index: contentIndex}]
 	if !existing {
 		if snapshot == "" {
 			// Nothing streamed and nothing claimed. There is no block to close.
@@ -374,9 +387,24 @@ func toolBlockDelta(index int, input []byte) Frame {
 
 // Text reports what was accumulated, for a caller that needs the whole answer rather than
 // its deltas. Used by tests and by any non-streaming aggregation.
-func (b *Builder) Text() string {
+func (b *Builder) Text() string { return b.textOf(nil) }
+
+// TextFor reports what one output item accumulated.
+//
+// Separate from Text because the two answer different questions, and answering the second
+// with the first is a defect: the completed payload states each item's own text, so
+// checking item two's account against the whole response compares "B" with "AB" and calls
+// a sound response a mismatch.
+func (b *Builder) TextFor(item string) string {
+	return b.textOf(func(key partKey) bool { return key.item == item })
+}
+
+func (b *Builder) textOf(keep func(partKey) bool) string {
 	ordered := make([]*textPart, 0, len(b.parts))
-	for _, part := range b.parts {
+	for key, part := range b.parts {
+		if keep != nil && !keep(key) {
+			continue
+		}
 		ordered = append(ordered, part)
 	}
 	for i := 0; i < len(ordered); i++ {

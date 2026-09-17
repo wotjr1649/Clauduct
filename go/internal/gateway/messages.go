@@ -456,6 +456,11 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// The status is already sent. A terminal error event is the only signal left, and
 		// leaving the stream to simply stop would look to the client like a short answer
 		// rather than a failure.
+		//
+		// And the account is told, which it was not before: a 200 already written meant
+		// nothing marked the record, so a stream that broke halfway was filed as a clean
+		// success and the session reported nothing wrong.
+		recordOf(w).brokeAfterCommitting(categoryFor(err))
 		_, _ = anthropic.ErrorFrame(categoryFor(err)).WriteTo(w)
 		_ = control.Flush()
 	}
@@ -604,6 +609,14 @@ func statusForUpstream(err error) int {
 
 	var failure upstream.Failure
 	if errors.As(err, &failure) {
+		// A rate limit gets the status that makes a client wait, whether or not the server
+		// named a delay. Reading the delay is what decides Deferred, so a 429 that arrives
+		// without a parsable Retry-After stays Retryable -- and answering that with 502
+		// hands the client the one class it was measured to retry eight times in sixty
+		// seconds, against an account that has just said it is out of room.
+		if failure.Category == upstream.RateLimited {
+			return http.StatusTooManyRequests
+		}
 		switch failure.Disposition {
 		case upstream.Deferred:
 			// The server named a time. 429 is the one status this client backs off from
@@ -623,11 +636,6 @@ func statusForUpstream(err error) int {
 		}
 	}
 
-	// A rate limit with no parsable delay still deserves the status that makes a client
-	// wait rather than the one that makes it hurry.
-	if failure.Category == "RATE_LIMITED" {
-		return http.StatusTooManyRequests
-	}
 	return http.StatusBadGateway
 }
 

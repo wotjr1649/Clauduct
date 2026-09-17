@@ -17,13 +17,29 @@ func event(kind, payload string) stream.Event {
 	return stream.Event{Type: kind, Raw: []byte(payload)}
 }
 
+// defaultItem is the item id the text helpers stream under.
+//
+// It matches the id the message item fixtures carry, which is not a detail: a delta names
+// the item it belongs to, and the two agreeing is what the backend actually does. The
+// fixtures disagreed for as long as nothing compared them -- item_id was "item_1" while
+// the item said "msg_1" -- and the check that now reads both found it immediately.
+const defaultItem = "msg_1"
+
 func textDelta(index int, text string) stream.Event {
-	body, _ := json.Marshal(map[string]any{"item_id": "item_1", "content_index": index, "delta": text})
-	return stream.Event{Type: codex.TextDelta, Raw: body}
+	return textDeltaFor(defaultItem, index, text)
 }
 
 func textDone(index int, text string) stream.Event {
-	body, _ := json.Marshal(map[string]any{"item_id": "item_1", "content_index": index, "text": text})
+	return textDoneFor(defaultItem, index, text)
+}
+
+func textDeltaFor(item string, index int, text string) stream.Event {
+	body, _ := json.Marshal(map[string]any{"item_id": item, "content_index": index, "delta": text})
+	return stream.Event{Type: codex.TextDelta, Raw: body}
+}
+
+func textDoneFor(item string, index int, text string) stream.Event {
+	body, _ := json.Marshal(map[string]any{"item_id": item, "content_index": index, "text": text})
 	return stream.Event{Type: codex.TextDone, Raw: body}
 }
 
@@ -834,5 +850,60 @@ func TestARequestedSchemaReachesTheBackend(t *testing.T) {
 	}
 	if plain.Text != nil {
 		t.Fatalf("format sent for a request that named none: %+v", plain.Text)
+	}
+}
+
+// A response that speaks, thinks, and speaks again.
+//
+// Two message items, each numbering its content from zero, which is what content_index
+// means: an index within one output item. Keyed on that index alone the second item landed
+// on the first one's block -- closed, so the whole response died with STREAM_ORDER, and
+// open, so two separate answers were concatenated into one. Found by review, reproduced
+// before the fix, and it needed the fixtures to start agreeing on item ids as well: the
+// deltas said item_1 while the item said msg_1, which nothing had compared.
+//
+// The second half of the same defect is the mismatch check. It compared one item's stated
+// text against everything that had streamed, so item two's "B" was checked against "AB"
+// and a sound response was called a lie.
+func TestTwoMessageItemsEachKeepTheirOwnBlock(t *testing.T) {
+	frames, err := runFor(t, decodeRequest(t, minimalRequest),
+		itemAdded(0, messageItem("msg_1")),
+		textDeltaFor("msg_1", 0, "first"),
+		textDoneFor("msg_1", 0, "first"),
+		itemDone(0, messageItem("msg_1", "first")),
+		itemAdded(1, messageItem("msg_2")),
+		textDeltaFor("msg_2", 0, "second"),
+		textDoneFor("msg_2", 0, "second"),
+		itemDone(1, messageItem("msg_2", "second")),
+		event(codex.Completed, completedOK),
+	)
+	if err != nil {
+		t.Fatalf("a response with two message items failed: %v", err)
+	}
+
+	// Two blocks, not one: the client is told they are separate, because they are.
+	starts, stops := 0, 0
+	for _, frame := range frames {
+		switch frame.Type {
+		case "content_block_start":
+			starts++
+		case "content_block_stop":
+			stops++
+		}
+	}
+	if starts != 2 || stops != 2 {
+		t.Fatalf("blocks opened=%d closed=%d, want 2 and 2", starts, stops)
+	}
+
+	// And a real disagreement is still caught. The check got narrower, not weaker.
+	_, err = runFor(t, decodeRequest(t, minimalRequest),
+		itemAdded(0, messageItem("msg_1")),
+		textDeltaFor("msg_1", 0, "first"),
+		textDoneFor("msg_1", 0, "first"),
+		itemDone(0, messageItem("msg_1", "something else")),
+		event(codex.Completed, completedOK),
+	)
+	if !errors.Is(err, anthropic.ErrTextMismatch) {
+		t.Fatalf("err = %v, want TEXT_MISMATCH when an item contradicts its own stream", err)
 	}
 }

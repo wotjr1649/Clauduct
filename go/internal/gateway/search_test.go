@@ -269,3 +269,27 @@ func between(body, prefix, end string) string {
 	}
 	return rest[:j]
 }
+
+// The location the client set travels to the search endpoint.
+//
+// The three fields this build used to refuse are the reason: a client with a location
+// configured had its whole request answered 400. Now they are accepted, and the one of
+// them the endpoint has been measured to take is sent rather than dropped.
+func TestASearchCarriesTheLocationTheClientSet(t *testing.T) {
+	fixture := &upstream.Fixture{SSE: sse(created, completed, "[DONE]"), SearchJSON: searchAnswer}
+	g := startWith(t, fixture)
+
+	resp := post(t, g, `{"model":"gpt-6-astra","max_tokens":1024,"stream":true,
+	  "tools":[{"type":"web_search_20250305","name":"web_search",
+	    "user_location":{"type":"approximate","city":"Seoul","country":"KR"}}],
+	  "messages":[{"role":"user","content":"Perform a web search for the query: rain"}]}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	sent := fixture.LastSearch()
+	for _, want := range []string{`"user_location"`, `"city":"Seoul"`, `"country":"KR"`} {
+		if !strings.Contains(sent, want) {
+			t.Fatalf("the search request has no %s: %s", want, sent)
+		}
+	}
+}

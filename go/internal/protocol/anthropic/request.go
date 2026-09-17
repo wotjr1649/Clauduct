@@ -227,6 +227,10 @@ type HostedSearch struct {
 	// named none, which is different from naming an empty list.
 	Allowed []string
 	Blocked []string
+	// Location is the caller's approximate location when the request named one, validated
+	// and carried. Where it goes on the search wire is not yet measured -- see
+	// bridge.BuildSearchRequest.
+	Location map[string]string
 }
 
 // ToolCount reports how many definitions were supplied.

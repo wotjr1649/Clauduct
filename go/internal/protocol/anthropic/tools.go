@@ -417,8 +417,12 @@ const (
 // baseline treats an unusable filter as no filter, and refusing the whole search over one
 // would take away the feature to protect a narrowing nobody can act on.
 func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error) {
+	// The field set is the baseline's (native-protocol.mjs:295). Three of these were
+	// missing and their absence was not a narrower contract, it was a dead turn: an unknown
+	// key makes wire.Fields refuse, and refusing the tool definition refuses the whole
+	// request. A client with a location configured could not search at all.
 	fields, err := wire.Fields(raw, []string{"type", "name", "allowed_domains", "blocked_domains",
-		"max_uses", "cache_control"})
+		"max_uses", "cache_control", "user_location", "allowed_callers", "response_inclusion"})
 	if err != nil {
 		return nil, refuse(CodeToolFields, "tools")
 	}
@@ -427,12 +431,48 @@ func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error)
 	if present != wire.Present || json.Unmarshal(nameValue, &name) != nil || name == "" {
 		return nil, refuse(CodeToolFields, "name")
 	}
+	location, err := searchLocation(fields)
+	if err != nil {
+		return nil, err
+	}
 	return &HostedSearch{
-		Type:    kind,
-		Name:    name,
-		Allowed: searchDomains(fields, "allowed_domains"),
-		Blocked: searchDomains(fields, "blocked_domains"),
+		Type:     kind,
+		Name:     name,
+		Allowed:  searchDomains(fields, "allowed_domains"),
+		Blocked:  searchDomains(fields, "blocked_domains"),
+		Location: location,
 	}, nil
+}
+
+// searchLocation reads the caller's approximate location, checked the way the baseline
+// checks it (native-protocol.mjs:309): a closed key set, the only type it defines, and
+// every value a bounded string.
+//
+// Validated even though this build does not yet send it anywhere. Accepting a shape
+// without reading it is how a malformed one becomes somebody else's problem later, and the
+// check costs nothing.
+func searchLocation(fields map[string]json.RawMessage) (map[string]string, error) {
+	value, present := wire.Of(fields, "user_location")
+	if present != wire.Present {
+		return nil, nil
+	}
+	parts, err := wire.Fields(value, []string{"type", "city", "region", "country", "timezone"})
+	if err != nil {
+		return nil, refuse(CodeToolFields, "user_location")
+	}
+	out := make(map[string]string, len(parts))
+	for key := range parts {
+		raw, _ := wire.Of(parts, key)
+		var text string
+		if json.Unmarshal(raw, &text) != nil || len(text) > 128 {
+			return nil, refuse(CodeUnsupportedTools, "user_location")
+		}
+		out[key] = text
+	}
+	if out["type"] != "approximate" {
+		return nil, refuse(CodeUnsupportedTools, "user_location")
+	}
+	return out, nil
 }
 
 func searchDomains(fields map[string]json.RawMessage, key string) []string {

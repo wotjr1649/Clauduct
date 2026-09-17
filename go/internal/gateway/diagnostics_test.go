@@ -253,3 +253,34 @@ func TestTheAccountNeedsTheSessionToken(t *testing.T) {
 			bodyText(t, resp))
 	}
 }
+
+// A response that started and then broke is not a success.
+//
+// Found by review. Once the status is written nothing goes through the refusal path, so no
+// record was marked and finish() closed it as ok -- a stream that stopped halfway with a
+// truncated body was filed as a clean session, Refused stayed 0, and the exit line said
+// nothing at all. The status stays 200 because that is what the client received; the
+// outcome and the category carry what actually happened.
+func TestAStreamThatBreaksAfterItsStatusIsNotRecordedAsSuccess(t *testing.T) {
+	// A stream that opens, delivers, and then ends without its terminal event.
+	g := startWith(t, &upstream.Fixture{SSE: sse(created, delta("half"))})
+
+	resp := post(t, g, `{"model":"claude-opus-5","max_tokens":16,"stream":true,
+	  "messages":[{"role":"user","content":"x"}]}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want the 200 the client actually got", resp.StatusCode)
+	}
+	bodyText(t, resp)
+
+	entry := status(t, g).Recent[0]
+	if entry.Outcome == outcomeOK {
+		t.Fatalf("a broken stream is recorded as %q: %+v", entry.Outcome, entry)
+	}
+	if entry.Category == "" {
+		t.Fatalf("the record does not say what broke: %+v", entry)
+	}
+	if entry.Status != http.StatusOK {
+		t.Fatalf("status = %d; the client received 200 and the record must not claim otherwise",
+			entry.Status)
+	}
+}

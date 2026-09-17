@@ -6,12 +6,45 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
 // status reads the session's own account.
+// status reads the account, once every record it holds has closed.
+//
+// A client holding the response is not proof that the handler has returned: the record
+// closes in a defer that runs after the last byte is written, so a reader arriving in that
+// window sees in-progress. That reading is accurate and the product is right to give it --
+// what has to wait is the test.
+//
+// CI's race job found this, and it reproduced locally under load a few minutes later, so it
+// was never a race-detector artefact. The wait lives here rather than at each call site
+// because no test wants to observe an open record.
 func status(t *testing.T, g *Gateway) Diagnostics {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		account := readStatus(t, g)
+		if settled(account) || time.Now().After(deadline) {
+			return account
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// settled reports whether every record in the account has finished.
+func settled(account Diagnostics) bool {
+	for _, record := range account.Recent {
+		if record.Outcome == outcomeProgress {
+			return false
+		}
+	}
+	return true
+}
+
+func readStatus(t *testing.T, g *Gateway) Diagnostics {
 	t.Helper()
 	resp := do(t, g, request{method: http.MethodGet, path: statusPath})
 	if resp.StatusCode != http.StatusOK {

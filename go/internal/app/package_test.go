@@ -363,6 +363,12 @@ func TestTheShippedBinaryIsBuiltWithoutCgo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds the product")
 	}
+	if raceDetector {
+		// CI runs this suite twice and the second run turns cgo on for the detector. That
+		// job's binary is not a release candidate, so asking it to be cgo-free is asking
+		// the wrong question -- and it failed on the first CI run that saw it.
+		t.Skip("the race detector requires cgo; the binary this run builds is not the one that ships")
+	}
 	exe := buildProduct(t, t.TempDir(), "clauduct")
 	info, err := buildinfo.ReadFile(exe)
 	if err != nil {

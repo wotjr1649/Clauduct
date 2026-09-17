@@ -127,10 +127,10 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	if writeErr != nil {
 		where = "none"
 	}
-	fmt.Fprintf(errOut, "clauduct: %s exit=%d requests=%d refused=%d attempts=%d inferences=%d status=%s\n",
+	fmt.Fprintf(errOut, "clauduct: %s exit=%d requests=%d refused=%d attempts=%d inferences=%d%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused,
-		account.Attempts, account.Inferences, where)
+		account.Attempts, account.Inferences, quotaField(account), where)
 
 	if account.noteworthy() || writeErr != nil || env[statusEnv] == "1" {
 		fmt.Fprintf(errOut, "CLAUDUCT_REQUEST_STATUS %s\n", encoded)
@@ -146,8 +146,11 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 // One file per process. Files from finished sessions accumulate until the operating system
 // clears its temporary directory, which is what that directory is for; a sweep of our own
 // would be this build deleting files by pattern, which is a worse trade.
+// statusDir is where session accounts are written and read. One place knows the location.
+func statusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
+
 func writeStatus(encoded []byte) (string, error) {
-	dir := filepath.Join(os.TempDir(), "clauduct")
+	dir := statusDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -176,4 +179,34 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 		return CategoryClientFail
 	}
 	return CategorySuccess
+}
+
+// quotaField is the one number from the backend's accounting that belongs on every exit
+// line, or nothing when this session never heard it.
+//
+// It is here because there is nowhere else a user would see it. The client's own /usage
+// cannot: measured against a controlled listener, it skips the account request entirely
+// against a gateway base URL, under either credential shape. Meanwhile the backend states
+// the figure on every response and each session already writes it down.
+//
+// One field, not the whole report -- the window that is in force, how much of it is gone.
+// `clauduct-dev usage` is where the rest lives, including how old a reading is.
+func quotaField(account Status) string {
+	limits := account.Gateway.Limits
+	if limits == nil || limits.Primary == nil || limits.Primary.UsedPercent == nil {
+		return ""
+	}
+	field := fmt.Sprintf(" quota=%g%%", *limits.Primary.UsedPercent)
+	if minutes := limits.Primary.WindowMinutes; minutes != nil && *minutes > 0 {
+		// Hours or days, whichever divides: a weekly window reads as 7d, not 10080m.
+		switch {
+		case *minutes%(60*24) == 0:
+			field += fmt.Sprintf("/%dd", *minutes/(60*24))
+		case *minutes%60 == 0:
+			field += fmt.Sprintf("/%dh", *minutes/60)
+		default:
+			field += fmt.Sprintf("/%dm", *minutes)
+		}
+	}
+	return field
 }

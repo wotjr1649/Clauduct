@@ -233,11 +233,24 @@ func recordOf(w http.ResponseWriter) *record {
 }
 
 // Diagnostics is the whole account, as GET /clauduct/status answers it.
+// ClientReport is which client this session ran against, and whether that is the one the
+// wire rules were measured on.
+//
+// Version is what the client called itself; empty means it never did. Verified false is not
+// a fault -- it says the client has moved and nothing has re-measured it yet, which is the
+// one fact a session that started failing after an auto-update needs to hand over.
+type ClientReport struct {
+	Version   string `json:"version,omitempty"`
+	Reference string `json:"reference"`
+	Verified  bool   `json:"verified"`
+}
+
 type Diagnostics struct {
 	UptimeMs int64            `json:"uptimeMs"`
 	Requests RequestCounts    `json:"requests"`
 	Agents   AgentCounts      `json:"agents"`
 	Betas    BetaReport       `json:"betas"`
+	Client   ClientReport     `json:"client"`
 	Limits   *RateLimitReport `json:"rateLimit,omitempty"`
 	Events   EventReport      `json:"events"`
 	Recent   []RequestRecord  `json:"recent"`
@@ -271,7 +284,12 @@ func (g *Gateway) Diagnose() Diagnostics {
 			Unregistered: unregistered,
 			Unrouted:     unrouted,
 		},
-		Betas:  g.betas.report(),
+		Betas: g.betas.report(),
+		Client: ClientReport{
+			Version:   g.ClientVersion(),
+			Reference: ReferenceClient,
+			Verified:  g.ClientVersion() == ReferenceClient,
+		},
 		Limits: g.limits.report(),
 		Events: g.events.report(),
 		Recent: g.ring.recent(),

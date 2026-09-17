@@ -20,6 +20,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,6 +94,10 @@ type Gateway struct {
 	unregisteredAgents atomic.Int64
 	unroutedRoles      atomic.Int64
 	refused            atomic.Int64
+	// client is what the client called itself, taken from the first request that named a
+	// version in the shape this build recognises. Stored once: a session has one client,
+	// and a later value would mean something this account cannot explain.
+	client atomic.Value
 
 	closeOnce sync.Once
 	closeErr  error
@@ -170,6 +175,38 @@ func (g *Gateway) BaseURL() string { return "http://" + g.Addr() }
 // and never written to an error string.
 func (g *Gateway) Token() string { return g.token }
 
+// ReferenceClient is the client version this gateway's rules were measured against.
+//
+// Evidence, not a pin. Nothing here refuses a version and nothing should: the client
+// updates itself, so a build that only runs against one version would be broken by design
+// rather than by a defect. What the account gets instead is the observed version beside
+// this one, so a session that starts failing after an update says so in one line rather
+// than becoming a bisect.
+const ReferenceClient = "2.1.274"
+
+// clientAgent matches the client naming itself. Nothing else is recorded: the readiness
+// probe arrives as Bun/1.4.3 and the account is a file that outlives the session, so it
+// holds a version number or nothing.
+var clientAgent = regexp.MustCompile(`^claude-cli/([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)$`)
+
+// noteClient records the client's version the first time it names one.
+func (g *Gateway) noteClient(agent string) {
+	if g.client.Load() != nil {
+		return
+	}
+	match := clientAgent.FindStringSubmatch(agent)
+	if match == nil {
+		return
+	}
+	g.client.CompareAndSwap(nil, match[1])
+}
+
+// ClientVersion is the version the client named, or empty if it never named one.
+func (g *Gateway) ClientVersion() string {
+	version, _ := g.client.Load().(string)
+	return version
+}
+
 // Stats reports counts only. Nothing here is derived from request content.
 // ModelLists reports how many times the client asked for the model list.
 //
@@ -191,6 +228,7 @@ func (g *Gateway) Stats() (received, refused, active int64) {
 
 func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	g.received.Add(1)
+	g.noteClient(r.Header.Get("User-Agent"))
 
 	// The record opens before anything is checked, so a refused boundary, version or
 	// encoding is a diagnosed failure rather than an unrecorded 400. The Node baseline

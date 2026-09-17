@@ -550,3 +550,39 @@ func TestCloseIsIdempotentAndReleasesThePort(t *testing.T) {
 		t.Fatalf("%s still accepting after Close", addr)
 	}
 }
+
+// The account records which client ran, and records nothing else from the header.
+//
+// This exists because the wire rules here were measured against one client version and the
+// client updates itself. Refusing an unmeasured version would be broken by design; saying
+// nothing about it leaves a session that broke after an update with no way to say so. The
+// middle is to write the version down.
+func TestTheClientVersionIsRecordedOnce(t *testing.T) {
+	g := start(t)
+
+	// The readiness probe names Bun, which is not a client version and must not become one.
+	do(t, g, request{method: http.MethodHead, path: "/api/hello", noAuth: true,
+		headers: map[string]string{"User-Agent": "Bun/1.4.3"}})
+	if version := g.ClientVersion(); version != "" {
+		t.Fatalf("version = %q after a request that named no client", version)
+	}
+
+	do(t, g, request{method: http.MethodGet, path: "/v1/models",
+		headers: map[string]string{"User-Agent": "claude-cli/2.1.274"}})
+	if version := g.ClientVersion(); version != "2.1.274" {
+		t.Fatalf("version = %q, want 2.1.274", version)
+	}
+
+	// A second, different value does not replace the first: a session has one client, and a
+	// changing answer is one this account cannot explain.
+	do(t, g, request{method: http.MethodGet, path: "/v1/models",
+		headers: map[string]string{"User-Agent": "claude-cli/9.9.9"}})
+	if version := g.ClientVersion(); version != "2.1.274" {
+		t.Fatalf("version = %q after a second client named itself", version)
+	}
+
+	report := g.Diagnose().Client
+	if report.Reference != ReferenceClient || report.Verified != (report.Version == ReferenceClient) {
+		t.Fatalf("report = %+v", report)
+	}
+}

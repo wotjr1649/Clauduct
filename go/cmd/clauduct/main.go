@@ -22,6 +22,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/update"
 )
 
 func main() {
@@ -29,6 +30,15 @@ func main() {
 }
 
 func run() int {
+	// The one option this launcher owns, checked before anything else happens. It updates
+	// Clauduct, not the client: `clauduct update` still reaches the client's own updater,
+	// because that one is a bare subcommand and this one is not.
+	if wanted, _ := update.Requested(os.Args[1:]); wanted {
+		ctx, cancel := context.WithTimeout(context.Background(), update.Timeout)
+		defer cancel()
+		return update.Run(ctx, os.Args[1:], os.Stdin, os.Stdout)
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct: CWD_UNAVAILABLE")

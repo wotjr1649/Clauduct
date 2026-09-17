@@ -25,11 +25,14 @@
 | 컨텍스트 400k / 압축 320k / 압축 요청 effort 상한 | B1, E4 |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
+| **`clauduct --update`** | 태그 릴리스의 바이너리 3개를 SHA256SUMS로 검증한 뒤 교체. 확인을 받고, `--yes`로 무인. `clauduct update`는 그대로 통과해 **클라이언트**를 갱신한다 |
+| 클라이언트 버전 기록 | 계정의 `gateway.client`가 관측 버전·기준 버전·일치 여부를 남긴다. **고정하지 않는다** |
 
 ## 2. 제약
 
 | 항목 | 내용 |
 |---|---|
+| 소유하는 옵션 **1개** | `--update`(+`--yes`). **첫 인자일 때만** 인식한다 — 프롬프트 안의 같은 문자열이 바이너리를 교체하면 안 되기 때문이다. 그 외 모든 인자는 그대로 전달된다 |
 | 거부하는 native 옵션 **4개** | `--dangerously-skip-permissions`·`--allow-…`(권한), `--settings`·`--setting-sources`(이 런처가 직접 주입하며, 두 번째 `--settings`는 병합이 아니라 대체다) |
 | 주입하는 것 | `--settings`(hooks·modelPicker), `--agents`(위임 메뉴), 세션 환경 14키 + 필수 1키. **사용자 환경·사용자 `--agents`가 이긴다** |
 | hook이 없으면 | 역할 라우팅과 메뉴의 effort가 동작하지 않는다. 계정의 `hookInstalled`가 매 세션 그것을 말한다 |

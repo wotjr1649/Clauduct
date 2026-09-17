@@ -1,6 +1,7 @@
 package update
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -47,7 +48,7 @@ func Uninstall(args []string, statusDir string, in io.Reader, out io.Writer) int
 	if resolved, err := filepath.EvalSymlinks(self); err == nil {
 		self = resolved
 	}
-	return UninstallIn(filepath.Dir(self), self, statusDir, args, in, out)
+	return UninstallIn(filepath.Dir(self), self, statusDir, os.TempDir(), args, in, out)
 }
 
 // UninstallIn is Uninstall with the directory, this executable and the diagnostics
@@ -55,7 +56,7 @@ func Uninstall(args []string, statusDir string, in io.Reader, out io.Writer) int
 //
 // The diagnostics directory is passed in rather than computed here because the package
 // that writes those files owns where they live; this one only has to name the place.
-func UninstallIn(dir, self, statusDir string, args []string, in io.Reader, out io.Writer) int {
+func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Reader, out io.Writer) int {
 	_, consented := UninstallRequested(args)
 
 	present, leftovers := survey(dir)
@@ -82,19 +83,26 @@ func UninstallIn(dir, self, statusDir string, args []string, in io.Reader, out i
 		return 1
 	}
 
-	if err := remove(dir, self, present, leftovers); err != nil {
+	parked, err := remove(dir, self, parkDir, present, leftovers)
+	if err != nil {
 		fmt.Fprintf(out, "clauduct: UNINSTALL_FAILED %v\n", err)
 		fmt.Fprintln(out, "nothing was removed")
 		return 1
 	}
 
 	fmt.Fprintln(out, "removed")
-	if renamed := filepath.Base(self) + ".old"; sameDir(dir, self) {
-		fmt.Fprintf(out, "one file is left because this process is still running it: %s\n",
-			filepath.Join(dir, renamed))
+	switch {
+	case parked == "":
+	case sameDir(dir, parked):
+		// The same volume was not available, so the image this process is running is still
+		// in the installation. Name the one command that finishes it.
+		fmt.Fprintf(out, "one file is left because this process is still running it: %s\n", parked)
 		// %s inside quotes rather than %q: Go quotes a Windows path by escaping every
 		// separator, and the one command this prints is one the user has to be able to paste.
-		fmt.Fprintf(out, "  del \"%s\"\n", filepath.Join(dir, renamed))
+		fmt.Fprintf(out, "  del \"%s\"\n", parked)
+	default:
+		fmt.Fprintf(out, "still running its own image, so it was moved to %s\n", parked)
+		fmt.Fprintln(out, "  nothing to do -- that is the directory the OS clears")
 	}
 	reportPath(dir, out)
 	return 0
@@ -121,18 +129,17 @@ func survey(dir string) (present, leftovers []string) {
 // with role routing silently dead -- findHook looks only next to the executable, and a
 // session that cannot find it starts anyway and reports hookInstalled false. So if this
 // executable cannot be moved aside, nothing else is touched either.
-func remove(dir, self string, present, leftovers []string) error {
-	renamed := ""
+func remove(dir, self, parkDir string, present, leftovers []string) (parked string, err error) {
+	moved := ""
 	if sameDir(dir, self) {
-		renamed = self + ".old"
-		_ = os.Remove(renamed)
-		if err := os.Rename(self, renamed); err != nil {
-			return err
+		moved = park(self, parkDir)
+		if moved == "" {
+			return "", errCannotMoveSelf
 		}
 	}
 	restore := func() {
-		if renamed != "" {
-			_ = os.Rename(renamed, self)
+		if moved != "" {
+			_ = os.Rename(moved, self)
 		}
 	}
 	for _, name := range present {
@@ -142,20 +149,56 @@ func remove(dir, self string, present, leftovers []string) error {
 		}
 		if err := os.Remove(path); err != nil {
 			restore()
-			return err
+			return "", err
 		}
 	}
 	for _, name := range leftovers {
 		path := filepath.Join(dir, name)
-		if path == renamed {
+		if path == moved {
 			continue
 		}
 		if err := os.Remove(path); err != nil {
 			restore()
-			return err
+			return "", err
 		}
 	}
-	return nil
+	return moved, nil
+}
+
+// errCannotMoveSelf means the running executable could not be moved out of the way, which is
+// the one failure that stops an uninstall before it touches anything else.
+var errCannotMoveSelf = errors.New("the running executable could not be moved aside")
+
+// park moves the running executable out of the installation.
+//
+// Windows will not let a process delete the image it is running, but it will let that file be
+// renamed -- including into another directory, as long as it is the same volume, because that
+// is one NTFS rename and not a copy. Measured 2026-09-17: the source directory is left empty
+// and the process carries on running.
+//
+// So the leftover goes to the temporary directory rather than sitting in the installation.
+// Uninstall is the one case the sweep on the next launch cannot reach, because after an
+// uninstall there is no next launch; parking it somewhere the OS already clears is what makes
+// the install directory actually empty.
+//
+// The fallback is the old behaviour, for an installation on a different volume from TEMP,
+// where the rename would be a copy and fails. Then the name beside the executable is used and
+// the caller prints the one command that finishes the job.
+func park(self, parkDir string) string {
+	if parkDir != "" {
+		target := filepath.Join(parkDir,
+			fmt.Sprintf("clauduct-removed-%d%s", os.Getpid(), filepath.Ext(self)))
+		_ = os.Remove(target)
+		if os.Rename(self, target) == nil {
+			return target
+		}
+	}
+	beside := self + ".old"
+	_ = os.Remove(beside)
+	if os.Rename(self, beside) == nil {
+		return beside
+	}
+	return ""
 }
 
 // reportPath says what the directory still holds and stops there.

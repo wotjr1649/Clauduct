@@ -49,9 +49,10 @@ func TestUninstallRemovesTheSetAndLeavesTheRestAlone(t *testing.T) {
 		t.Fatalf("plant leftover: %v", err)
 	}
 	self := filepath.Join(dir, "clauduct.exe")
+	park := t.TempDir()
 	var out strings.Builder
 
-	if code := UninstallIn(dir, self, "", []string{"--uninstall", "--yes"}, strings.NewReader(""), &out); code != 0 {
+	if code := UninstallIn(dir, self, "", park, []string{"--uninstall", "--yes"}, strings.NewReader(""), &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	for _, name := range []string{"clauduct-hook.exe", "clauduct-dev.exe", "clauduct.exe"} {
@@ -59,9 +60,17 @@ func TestUninstallRemovesTheSetAndLeavesTheRestAlone(t *testing.T) {
 			t.Fatalf("%s survived\n%s", name, out.String())
 		}
 	}
-	// The running executable cannot delete itself, so it is renamed and reported.
-	if _, err := os.Stat(self + ".old"); err != nil {
-		t.Fatalf("self was not moved aside: %v\n%s", err, out.String())
+	// It cannot delete the image it is running, so it moves that image out of the
+	// installation instead. Windows refuses the delete and allows the rename, and a rename
+	// within one volume reaches another directory just as well as the name beside it.
+	if _, err := os.Stat(self + ".old"); err == nil {
+		t.Fatalf("left its predecessor in the installation\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "moved to "+park) {
+		t.Fatalf("did not say where the running image went:\n%s", out.String())
+	}
+	if entries, err := os.ReadDir(park); err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one parked file in %s: %v %d", park, err, len(entries))
 	}
 	for _, name := range []string{"clauduct-node.cmd", "claude.exe"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
@@ -71,9 +80,30 @@ func TestUninstallRemovesTheSetAndLeavesTheRestAlone(t *testing.T) {
 	if !strings.Contains(out.String(), "PATH: untouched") {
 		t.Fatalf("did not say it left PATH alone:\n%s", out.String())
 	}
-	// This process cannot delete the file it is running, so it prints a command instead.
-	// That command has to be one somebody can paste: %q would escape every separator in
-	// the path and the line would be wrong in the one place it has to be right.
+}
+
+// When TEMP is on another volume the rename becomes a copy and fails, so the older behaviour
+// is still there: the name beside the executable, and the one command that finishes it.
+func TestUninstallFallsBackToTheNameBesideItWhenParkingFails(t *testing.T) {
+	dir := plant(t)
+	self := filepath.Join(dir, "clauduct.exe")
+	// A file where a directory has to be. Nothing can be created inside it, which is the
+	// same answer a cross-volume rename gives without this test needing two volumes.
+	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("block: %v", err)
+	}
+	var out strings.Builder
+
+	if code := UninstallIn(dir, self, "", blocked,
+		[]string{"--uninstall", "--yes"}, strings.NewReader(""), &out); code != 0 {
+		t.Fatalf("exit %d\n%s", code, out.String())
+	}
+	if _, err := os.Stat(self + ".old"); err != nil {
+		t.Fatalf("did not fall back to the name beside it: %v\n%s", err, out.String())
+	}
+	// The command has to be one somebody can paste: %q would escape every separator in the
+	// path and the line would be wrong in the one place it has to be right.
 	if want := "del \"" + self + ".old\""; !strings.Contains(out.String(), want) {
 		t.Fatalf("printed command is not usable, wanted %s:\n%s", want, out.String())
 	}
@@ -86,7 +116,7 @@ func TestUninstallWithoutAnAnswerRemovesNothing(t *testing.T) {
 
 	// End of input, which is what an unattended run looks like. A removal nobody was there
 	// to object to is not one anybody approved.
-	if code := UninstallIn(dir, self, "", []string{"--uninstall"}, strings.NewReader(""), &out); code == 0 {
+	if code := UninstallIn(dir, self, "", t.TempDir(), []string{"--uninstall"}, strings.NewReader(""), &out); code == 0 {
 		t.Fatalf("proceeded without consent\n%s", out.String())
 	}
 	for _, name := range Binaries {
@@ -99,7 +129,7 @@ func TestUninstallWithoutAnAnswerRemovesNothing(t *testing.T) {
 func TestUninstallNamesWhatItWillRemoveBeforeAsking(t *testing.T) {
 	dir := plant(t)
 	var out strings.Builder
-	UninstallIn(dir, filepath.Join(dir, "clauduct.exe"), "", []string{"--uninstall"}, strings.NewReader("n\n"), &out)
+	UninstallIn(dir, filepath.Join(dir, "clauduct.exe"), "", t.TempDir(), []string{"--uninstall"}, strings.NewReader("n\n"), &out)
 
 	// Consent to an unnamed set is not consent. Every file has to be printed before the
 	// question, and the things that are deliberately kept have to be printed too.
@@ -135,7 +165,14 @@ func TestUninstallKeepsEverythingWhenItCannotMoveItselfAside(t *testing.T) {
 	}
 	var out strings.Builder
 
-	code := UninstallIn(dir, self, "", []string{"--uninstall", "--yes"}, strings.NewReader(""), &out)
+	// Both routes have to be closed. Leaving the park directory usable would let it succeed,
+	// and the test would then agree with itself rather than measure the refusal.
+	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("x"), 0o600); err != nil {
+		t.Fatalf("block park: %v", err)
+	}
+
+	code := UninstallIn(dir, self, "", blocked, []string{"--uninstall", "--yes"}, strings.NewReader(""), &out)
 	if code == 0 {
 		t.Fatalf("reported success while blocked\n%s", out.String())
 	}
@@ -152,7 +189,7 @@ func TestUninstallKeepsEverythingWhenItCannotMoveItselfAside(t *testing.T) {
 func TestUninstallOnAnEmptyDirectorySaysSoAndStops(t *testing.T) {
 	dir := t.TempDir()
 	var out strings.Builder
-	if code := UninstallIn(dir, filepath.Join(dir, "clauduct.exe"), "", []string{"--uninstall"}, strings.NewReader(""), &out); code != 0 {
+	if code := UninstallIn(dir, filepath.Join(dir, "clauduct.exe"), "", t.TempDir(), []string{"--uninstall"}, strings.NewReader(""), &out); code != 0 {
 		t.Fatalf("exit %d\n%s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "nothing of this build") {
@@ -169,7 +206,7 @@ func TestUninstallCountsDiagnosticsWithoutRemovingThem(t *testing.T) {
 		}
 	}
 	var out strings.Builder
-	UninstallIn(dir, filepath.Join(dir, "clauduct.exe"), status, []string{"--uninstall", "--yes"}, strings.NewReader(""), &out)
+	UninstallIn(dir, filepath.Join(dir, "clauduct.exe"), status, t.TempDir(), []string{"--uninstall", "--yes"}, strings.NewReader(""), &out)
 
 	if !strings.Contains(out.String(), "2 session accounts") {
 		t.Fatalf("did not report the diagnostics:\n%s", out.String())

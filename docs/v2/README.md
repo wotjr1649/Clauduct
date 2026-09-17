@@ -2,7 +2,7 @@
 
 V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하나의 자리**다. 기존 Node
 제품의 현행 상태는 여기에 복제하지 않는다 — 그것은 [HANDOFF.md](../../HANDOFF.md)와
-[현행 검증표](../remaining-verification.md)가 소유한다.
+[현행 검증표](../v1/remaining-verification.md)가 소유한다.
 
 ## 1. 현재 상태 (2026-09-17)
 
@@ -13,11 +13,11 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 | 작업 패키지 | **WP01–WP07 완료.** C4·F4는 "조사 후 안 함"으로 닫힘 |
 | 기본 실행기 | **Go.** `clauduct` = Go 빌드, `clauduct-node` = Node 구현 (G9, 2026-09-17) |
 | 기준선 | `node-bfbdf23-g0` (commit `bfbdf2385175…`, tree `9cd96d660959…`) |
-| 개발 branch | `redesign/go-v2-native-host`, worktree `D:/AIDEV/Clauduct-go-v2` |
+| 개발 branch | `redesign/go-v2-native-host` (main에 머지됨). 작업은 `D:/AIDEV/Clauduct` main에서 한다 — worktree `Clauduct-go-v2`는 2026-09-17에 제거했다 |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.1, 제3자 의존성 0, **CGO_ENABLED=0** |
 | 기존 Node 변경 | **0건.** baseline tracked 파일 생성·수정·이동·삭제 없음 |
-| 테스트 | **1030 pass / 0 fail / 3 skip** (subtest 포함, 14 package). CI green |
-| 실모델 호출 | **추론 35/100.** 검색 probe는 ledger를 쓰지 않는다(별도 기록) |
+| 테스트 | **1112 pass / 0 fail / 3 skip** (subtest 포함, 15 package). CI green |
+| 실모델 호출 | **추론 53/100** (probe 35 + 2026-09-17 제품 실세션 18). 검색 probe는 ledger를 쓰지 않는다(별도 기록) |
 | 측정된 클라이언트 | claude **2.1.274** (2026-09-17 재확인), codex-cli 0.154.0 |
 
 판정 전문은 [DECISION.md](DECISION.md), 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md),
@@ -37,8 +37,10 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 | [PACKAGING.md](PACKAGING.md) | 출하물·런타임 의존·빌드·되돌리기 |
 | `go/README.md` | Go 모듈의 빌드 명령과 지켜야 할 runtime 계약 |
 
-원본 설계 요구는 `docs/prompts/2026-09-16-session-34-go-v2-native-host-redesign-handoff.md`다.
-그 문서는 세션 프롬프트이며 현재 상태 문서가 아니다 — 갱신하지 않는다.
+원본 설계 요구는 세션 프롬프트였고 저장소에 없다 — 프롬프트와 인계 문서는 `docs/journal/`에
+남으며 올라가지 않는다(2026-09-17 결정: 증거는 공개, 지시는 비공개). 그 프롬프트가 요구한 것
+가운데 지금도 사실인 것은 전부 위 표의 문서들이 소유한다. **여기에 파일 이름을 적어두는 것은
+클론한 사람이 열 수 없는 파일을 가리키는 것이었다** — 그 이름은 한 번도 커밋된 적이 없다.
 
 ## 3. 이 시점에 아직 사실이 아닌 것
 

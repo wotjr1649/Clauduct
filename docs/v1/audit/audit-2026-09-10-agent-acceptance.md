@@ -44,7 +44,7 @@ Node --permission에서 저장소 읽기, fixture가 필요한 검사만 src 쓰
 
 ## 남은 항목과 다음 행동
 
-Not verified: symlink/junction 동적 경계, 모든 모델/effort·실제 도구 조합, 추가 깊이·병렬 손자·장기 안정성. 생성 시점 불변성의 실행 중 모델 변경 조합은 로컬 검사와 실제 정상 상속 증거를 구분한다. 전체 native 동적 경로·provider/fallback·경로별 결과와 기존 보안/운영 잔여 항목은 [남은 검증](remaining-verification.md)에 보존한다.
+Not verified: symlink/junction 동적 경계, 모든 모델/effort·실제 도구 조합, 추가 깊이·병렬 손자·장기 안정성. 생성 시점 불변성의 실행 중 모델 변경 조합은 로컬 검사와 실제 정상 상속 증거를 구분한다. 전체 native 동적 경로·provider/fallback·경로별 결과와 기존 보안/운영 잔여 항목은 [남은 검증](../remaining-verification.md)에 보존한다.
 
 Blocked by: 기존 symlink 및 인증된 자동 native 실행 거부를 유지한다. 허용 권한을 넓혀 통과시키지 않는다. 이 제약이 남아 있으므로 무조건적인 전체 완료를 선언하지 않는다.
 

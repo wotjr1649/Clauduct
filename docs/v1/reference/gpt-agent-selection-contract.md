@@ -2,7 +2,7 @@
 
 이 문서는 사용자가 확정한 수용 기준이며 현재 구현 완료를 뜻하지 않는다.
 
-최신 상태와 다음 실행 순서는 [남은 검증](remaining-verification.md)을 따른다. 아래 선택 의미와 수용 조건은 유지하며, 연결 지점 조사 이후의 절들은 당시의 구현·시험 이력이다. 과거 절의 “미구현/미검증”을 최신 상태로 해석하지 않는다.
+최신 상태와 다음 실행 순서는 [남은 검증](../remaining-verification.md)을 따른다. 아래 선택 의미와 수용 조건은 유지하며, 연결 지점 조사 이후의 절들은 당시의 구현·시험 이력이다. 과거 절의 “미구현/미검증”을 최신 상태로 해석하지 않는다.
 
 ## 선택 의미
 
@@ -29,9 +29,9 @@ Agent 스키마, native 입력 처리, 자식 metadata, gateway 선택과 실제
 
 Verified: src/agent-selection.mjs는 생성 호출의 직접 부모 model/effort를 불변 snapshot으로 보관하고 src/native-gateway.mjs는 실제 prepared.selected를 해당 호출에 전달한다. 등록 정의 선택과 일반 역할 기본값은 별도 분기다. 이 구현을 단순 native 요청 모델 유지 분기로 설명한 아래 과거 조사 내용은 현재 코드 설명이 아니다.
 
-직접 부모 기준 손자 상속은 [gateway 통합 검사](audit-2026-09-10-direct-parent-inherit.md)와 [실제 native 실행](audit-2026-09-10-direct-parent-success.md)으로 확인했다. 실제 메인 sol/high와 다른 부모 terra/high를 손자가 상속했고 완료 알림 후 부모 복귀도 성공했다. Workflow의 단일·순차·병렬 혼합 경로는 [별도 사용자 실행](audit-2026-09-10-workflow-parallel-success.md)으로 확인했다.
+직접 부모 기준 손자 상속은 [gateway 통합 검사](../audit/audit-2026-09-10-direct-parent-inherit.md)와 [실제 native 실행](../audit/audit-2026-09-10-direct-parent-success.md)으로 확인했다. 실제 메인 sol/high와 다른 부모 terra/high를 손자가 상속했고 완료 알림 후 부모 복귀도 성공했다. Workflow의 단일·순차·병렬 혼합 경로는 [별도 사용자 실행](../audit/audit-2026-09-10-workflow-parallel-success.md)으로 확인했다.
 
-Verified: session-11(a2d50ff0)에서 sol/high → clauduct-inherit 부모 sol/high → 손자 sol/high 및 완료 알림 후 부모 복귀를 확인했다. sol 기본 xhigh와 다른 effort가 두 단계 유지됐다. 네 일반 GPT 정의의 실제 선택과 역할 기본값 증거를 포함한 [수용 조건 대조](audit-2026-09-10-agent-acceptance.md)를 따른다.
+Verified: session-11(a2d50ff0)에서 sol/high → clauduct-inherit 부모 sol/high → 손자 sol/high 및 완료 알림 후 부모 복귀를 확인했다. sol 기본 xhigh와 다른 effort가 두 단계 유지됐다. 네 일반 GPT 정의의 실제 선택과 역할 기본값 증거를 포함한 [수용 조건 대조](../audit/audit-2026-09-10-agent-acceptance.md)를 따른다.
 
 Not verified: 전체 경로·보안·운영 검증의 완료. symlink 동적 검사는 기존 거부로 미실행이며 모든 조합의 실제 실행을 주장하지 않는다. 핵심 선택·상속 성공과 제품 전체 완료를 구분한다. 이후 절은 변경 전 실패와 수정 순서를 보존한 역사 기록이다.
 
@@ -70,7 +70,7 @@ Not verified: native Agent가 model=inherit/GPT를 수락하는 실제 실행. �
 
 ## 승인된 시험 등록
 
-사용자가 전역 설정과 임의 --agents 차단을 유지하는 자식 세션 한정 읽기 전용 시험용 agent 등록을 허용했다. 이에 따라 --verify-agent-models 옵션에서만 실행기가 고정한 시험 정의 5개를 --agents JSON으로 전달한다. 이는 사용자 입력 --agents를 허용하는 변경이 아니다. 설치 native 바이너리, hook, 권한 정책, 기존 settings·환경은 변경하지 않는다. 일반 역할 대신 시험 전용 이름을 사용하며 실제 호출은 사용자 실행으로만 검증한다. [사용법과 한계](native.md).
+사용자가 전역 설정과 임의 --agents 차단을 유지하는 자식 세션 한정 읽기 전용 시험용 agent 등록을 허용했다. 이에 따라 --verify-agent-models 옵션에서만 실행기가 고정한 시험 정의 5개를 --agents JSON으로 전달한다. 이는 사용자 입력 --agents를 허용하는 변경이 아니다. 설치 native 바이너리, hook, 권한 정책, 기존 settings·환경은 변경하지 않는다. 일반 역할 대신 시험 전용 이름을 사용하며 실제 호출은 사용자 실행으로만 검증한다. [사용법과 한계](../README.md).
 
 Verified: test-launcher-native.mjs 통과. 일반 실행에서 미등록, 검증 옵션에서 정확히 5개 정의와 Read-only 도구 목록/maxTurns/모델/effort, 기존 settings·환경·메인 effort 보존, source 객체 불변, 임의 --agents·중복/값 첨부 옵션 거부를 검사했다. --verify-agent-models --model astra --effort max --dry-run에서 정의 이름 5개와 childStarted=false, credentialReads=0, globalWrites=0을 확인했다.
 
@@ -108,7 +108,7 @@ Verified: 등록된 시험 정의의 모델·effort 상속과 기존 일반 역�
 
 ## 승인된 일반 작업용 인터페이스 구현
 
-사용자가 일반 개발 도구 제공을 승인했다. 처음에는 --gpt-agents 옵션에서만 정의 5개를 생성했으나, 2026-09-15에 사용자가 기본 사용 방식을 기본 `clauduct` 단일 실행으로 확정해 옵션을 제거하고 `clauduct-<모델>-<effort>` 14개를 모든 실행에 등록하도록 바꿨다. 사용법·도구 목록·권한 범위는 [native 경로 문서](native.md)의 일반 작업 agent 절에 정리했다. 기존 내장 역할이나 Read 전용 시험 정의를 교체하지 않는다.
+사용자가 일반 개발 도구 제공을 승인했다. 처음에는 --gpt-agents 옵션에서만 정의 5개를 생성했으나, 2026-09-15에 사용자가 기본 사용 방식을 기본 `clauduct` 단일 실행으로 확정해 옵션을 제거하고 `clauduct-<모델>-<effort>` 14개를 모든 실행에 등록하도록 바꿨다. 사용법·도구 목록·권한 범위는 [native 경로 문서](../README.md)의 일반 작업 agent 절에 정리했다. 기존 내장 역할이나 Read 전용 시험 정의를 교체하지 않는다.
 
 선택기는 시작 시 등록 정의의 명시 모델·effort를 검증·불변 복사하고, 그 정의를 선택한 Agent/Task 생성 호출에 연결한다. 기존 metadata.model과 원본 호출 선택값의 일치 검사는 유지한다. 정의 기반 직접 선택은 definition-model, 부모 snapshot 상속은 definition-inherit로 출력한다. SendMessage 재개와 완료 복귀는 원래 선택을 보존한다. 새 라이브러리, plugin/MCP/hook/permissionMode 또는 전역 설정은 추가하지 않았다.
 
@@ -127,4 +127,4 @@ Not verified: 새 일반용 이름의 실제 native 로딩·작업·쓰기 도�
 
 ## 동일 저장 Workflow의 재개
 
-현재 path-only Workflow 호출과 native가 정규화한 script digest를 분리해 검증한다. 같은 session의 원본 inline 호출/반환, immutable script, journal, 저장 결과의 실제 native 자식 성공 기록이 일치할 때 재개 run을 연결한다. 새 자식은 현재 호출 이후에 생성된 metadata/transcript로 다시 검증하며 원래 model/effort 선택 계약을 유지한다. 오래된 활성 자식, 외부 session/parent, 취소, 변조·기록 소실과 동시 중복은 거부한다. 자세한 관측 범위와 남은 제한은 [Session-29 판정](session-29-release-verdict.md)에 있다.
+현재 path-only Workflow 호출과 native가 정규화한 script digest를 분리해 검증한다. 같은 session의 원본 inline 호출/반환, immutable script, journal, 저장 결과의 실제 native 자식 성공 기록이 일치할 때 재개 run을 연결한다. 새 자식은 현재 호출 이후에 생성된 metadata/transcript로 다시 검증하며 원래 model/effort 선택 계약을 유지한다. 오래된 활성 자식, 외부 session/parent, 취소, 변조·기록 소실과 동시 중복은 거부한다. 자세한 관측 범위와 남은 제한은 [Session-29 판정](../release/session-29-release-verdict.md)에 있다.

@@ -47,7 +47,7 @@
 | 모델·버전 | 네 모델 low 실호출 성공. Astra upstream 오류 1건 원인 미확정 | 실제 기본 역할인 Plan sol/xhigh·일반 자식 luna/max의 장시간 부하를 low smoke로 대체할 수 없음 |
 | 미지원 기능 | 다중·실패·취소 알림 자동 복귀, 일부 Workflow 재개·중첩 등이 미지원 또는 미보장 | 이런 기능을 사용하는 개발을 무인 지원이라고 선언하려면 구현·검증이 추가로 필요 |
 
-로컬 근거: [현행 검증표](remaining-verification.md), [릴리즈 실행 기록](release-readiness.md), [run-04 감사](audit-2026-09-11-run-04-exit-diagnostics.md), [transport](../src/native-transport.mjs), [credential supplier](../poc/user-session.mjs), [admission](../src/request-admission.mjs), [상태 projection](../src/request-status.mjs), [종료 기록](../src/clauduct.mjs), [실제 native 검증기](../verification/verify-native-headless.ps1), [합성 누적 검사](../src/test-native.mjs), [Workflow 선택](../src/workflow-selection.mjs).
+로컬 근거: [현행 검증표](../remaining-verification.md), [릴리즈 실행 기록](release-readiness.md), [run-04 감사](../audit/audit-2026-09-11-run-04-exit-diagnostics.md), [transport](../../../src/native-transport.mjs), [credential supplier](../../../poc/user-session.mjs), [admission](../../../src/request-admission.mjs), [상태 projection](../../../src/request-status.mjs), [종료 기록](../../../src/clauduct.mjs), [실제 native 검증기](../../../verification/verify-native-headless.ps1), [합성 누적 검사](../../../src/test-native.mjs), [Workflow 선택](../../../src/workflow-selection.mjs).
 
 과거 문서에는 실제 인증 갱신·수시간 실행, 버전 pin·app-server 전환 등이 ‘범위밖’으로 기록돼 있다. 장시간 무인 사용을 새 출하 목표로 삼으면 **인증 유지와 장시간 실행은 필수 검증 범위로 재분류**해야 한다. app-server 전환까지 필수라는 뜻은 아니다. 이전 범위 제외를 남겨 둔 채 전체 완료로 표시하면 목표와 증거가 어긋난다.
 
@@ -329,16 +329,16 @@ NIST의 일정 고장률 모델에서 T시간 무고장일 때 MTBF의 단측 95
 
 | 파일 | 확인한 내용 |
 |---|---|
-| [remaining-verification.md](remaining-verification.md) | HOLD·기본 context·과거 제외 범위·현행 조건부 항목 |
+| [remaining-verification.md](../remaining-verification.md) | HOLD·기본 context·과거 제외 범위·현행 조건부 항목 |
 | [release-readiness.md](release-readiness.md) | 실제 기능별 검증, failure-resume, Astra 미확정 오류, 최종 ZIP |
-| [RELEASE.md](../RELEASE.md) | 오류 계약·설치 환경·지원 제한 |
-| [run-04 종료 진단 감사](audit-2026-09-11-run-04-exit-diagnostics.md) | 408요청·실패 10건·최대 약 7.4분 admission 대기 |
-| [native-transport.mjs](../src/native-transport.mjs) | 재시도·Retry-After cap·401 이후 supplier 재조회 |
-| [user-session.mjs](../poc/user-session.mjs) | 캐시 읽기 전용 supplier·계정 일치 |
-| [request-admission.mjs](../src/request-admission.mjs) | 메모리 reserve·큐 상한·대기 로직 |
-| [request-status.mjs](../src/request-status.mjs) | 최근 16개·실패 first-8/last-8·고정 진단 projection |
-| [clauduct.mjs](../src/clauduct.mjs) | native retry/fallback 설정·종료 append·현재 실행 진입점 |
-| [compact-policy.mjs](../src/compact-policy.mjs) 및 [models.mjs](../src/models.mjs) | native 요약 template 의존과 context/effort 계약 |
-| [agent-selection.mjs](../src/agent-selection.mjs) 및 [workflow-selection.mjs](../src/workflow-selection.mjs) | 메모리 상태·기록 크기·신원·이력 확인 |
-| [verify-native-headless.ps1](../verification/verify-native-headless.ps1) | 120초 최대·전체 출력 수집·기능별 판정 |
-| [test-native.mjs](../src/test-native.mjs) 및 [run-node-tests.ps1](../src/run-node-tests.ps1) | 합성 1000요청·선택적 soak·일반 러너 60초 상한 |
+| [RELEASE.md](../../../RELEASE.md) | 오류 계약·설치 환경·지원 제한 |
+| [run-04 종료 진단 감사](../audit/audit-2026-09-11-run-04-exit-diagnostics.md) | 408요청·실패 10건·최대 약 7.4분 admission 대기 |
+| [native-transport.mjs](../../../src/native-transport.mjs) | 재시도·Retry-After cap·401 이후 supplier 재조회 |
+| [user-session.mjs](../../../poc/user-session.mjs) | 캐시 읽기 전용 supplier·계정 일치 |
+| [request-admission.mjs](../../../src/request-admission.mjs) | 메모리 reserve·큐 상한·대기 로직 |
+| [request-status.mjs](../../../src/request-status.mjs) | 최근 16개·실패 first-8/last-8·고정 진단 projection |
+| [clauduct.mjs](../../../src/clauduct.mjs) | native retry/fallback 설정·종료 append·현재 실행 진입점 |
+| [compact-policy.mjs](../../../src/compact-policy.mjs) 및 [models.mjs](../../../src/models.mjs) | native 요약 template 의존과 context/effort 계약 |
+| [agent-selection.mjs](../../../src/agent-selection.mjs) 및 [workflow-selection.mjs](../../../src/workflow-selection.mjs) | 메모리 상태·기록 크기·신원·이력 확인 |
+| [verify-native-headless.ps1](../../../verification/verify-native-headless.ps1) | 120초 최대·전체 출력 수집·기능별 판정 |
+| [test-native.mjs](../../../src/test-native.mjs) 및 [run-node-tests.ps1](../../../src/run-node-tests.ps1) | 합성 1000요청·선택적 soak·일반 러너 60초 상한 |

@@ -10,7 +10,7 @@
 | 실행 명령 | `D:\AIDEV\Clauduct\clauduct.cmd --model sol --effort high` (사용자 지정) |
 | launcher가 넘긴 값 | `--dry-run` 관측: `model=gpt-5.6-sol`, `effort=high`, `contextPolicy 400000/320000`. `--verify-auto-compact` 미사용 |
 | 자식 세션의 실제 모델·effort | **Not verified.** 자식이 생성되지 않았다 |
-| 전달 | `docs/prompts/2026-09-11-session-25-sdd-three-cycle-run-03.md` 전문 1회. 전달본과 원본을 문자 단위로 대조해 8535자 동일 확인 |
+| 전달 | `2026-09-11-session-25-sdd-three-cycle-run-03.md`(비공개) 전문 1회. 전달본과 원본을 문자 단위로 대조해 8535자 동일 확인 |
 | 회신 | 없음. SAFE-STOP 보고 수신 후에도 그 세션에 아무것도 보내지 않았다 |
 
 ## 2. 관측된 결과
@@ -81,4 +81,4 @@ SAFE-STOP은 안전 정지의 증거이지 개발 능력의 증거가 아니다.
 - 회귀: `src/test-*.mjs` 19개 중 17 pass / 2 fail. 실패는 인계 문서 6장이 기록한 환경 실패 2건(`test-chat`, `test-review-diff` — 이 셸에서 자식 프로세스 spawn 불가)이며 이번 변경과 무관하다.
 - 새 샌드박스 `verification/dev-sandbox/run-04`를 run-03과 동일한 준비 상태로 만들었다. run-03 디렉터리를 재사용하지 않은 이유는 transcript 폴더가 cwd에서 파생되어 두 시도의 기록이 한 폴더에 섞이기 때문이다.
 
-실행 프롬프트는 `docs/prompts/2026-09-11-session-27-sdd-three-cycle-run-04.md`다.
+실행 프롬프트는 `2026-09-11-session-27-sdd-three-cycle-run-04.md`(비공개)다.

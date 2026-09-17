@@ -32,10 +32,15 @@
 
 ## GitHub Release 설치
 
+> **`latest`로는 더 이상 받을 수 없다 (2026-09-17 확인).** 이 문서의 Node 설치기는 `v0.1.0`
+> 자산이고, `latest`는 이제 Go 바이너리 3개와 `SHA256SUMS`만 싣는 `v0.2.0`이다. 아래 원라이너를
+> 그대로 실행하면 `install.ps1`을 찾지 못해 실패한다. **태그를 `v0.1.0`으로 고정해야 한다.**
+> Go 빌드를 설치하려면 [docs/v2/PACKAGING.md](../v2/PACKAGING.md) 5장을 본다 — 설치는 파일 복사다.
+
 다음 주소는 Release에 네 파일을 게시하면 사용할 수 있는 배포 경로다. Release가 없는 경우 다운로드는 실패한다. 게시된 버전과 검증 범위는 해당 Release 설명을 확인한다.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm 'https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1' | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm 'https://github.com/wotjr1649/Clauduct/releases/download/v0.1.0/install.ps1' | iex"
 ```
 
 조직 실행 정책은 이 명령보다 우선할 수 있다. 설치기 자체는 실행 정책을 변경하지 않는다. `irm | iex`는 받은 설치 스크립트를 실행하므로 최초 스크립트의 신뢰는 배포 주소와 게시자에 달려 있다. ZIP 및 개별 파일의 SHA256 검증은 독립적인 서명을 대신하지 않는다. 다운로드는 고정 GitHub 대상과 검토한 asset redirect 호스트에만 허용하고 크기·시간·redirect 횟수를 제한한다. latest는 한 번 확정한 release tag에서 ZIP과 manifest를 받는다. 고정 버전은 다운로드한 설치기에 `-Version <tag>`를 지정한다.

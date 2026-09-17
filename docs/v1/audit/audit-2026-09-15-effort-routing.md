@@ -23,7 +23,7 @@
 
 **코드베이스 전체에 effort를 올리는 무조건 분기는 없다.** 10번만이 조건부 하향이다. `high`/`max`는 전부 "지정된 값" 또는 "모델·역할 기본값"이다.
 
-프롬프트가 참조한 `docs/audit-2026-09-08.md:266`의 서술(일반 routing 이후 high/xhigh/max를 medium으로 낮춘다)은 **위치가 낡았다.** 현재 `src/compact-policy.mjs`에는 effort 로직이 없고 템플릿 형태 판별(`inspectCompactTemplate`)만 있다. 하향 로직은 `src/native-protocol.mjs:423-424`로 옮겨져 있으며 동작 자체는 그대로다.
+프롬프트가 참조한 `docs/v1/audit/audit-2026-09-08.md:266`의 서술(일반 routing 이후 high/xhigh/max를 medium으로 낮춘다)은 **위치가 낡았다.** 현재 `src/compact-policy.mjs`에는 effort 로직이 없고 템플릿 형태 판별(`inspectCompactTemplate`)만 있다. 하향 로직은 `src/native-protocol.mjs:423-424`로 옮겨져 있으며 동작 자체는 그대로다.
 
 ## 2. 관측된 16건의 `high` — 판정: 의도된 값
 
@@ -41,8 +41,8 @@ sol의 기본값은 `xhigh`다(`src/models.mjs:6`). 관측값이 `high`라는 �
 
 ### 근거 B — 기록: 그 실행의 명령줄이 남아 있다
 
-- `docs/audit-2026-09-11-three-cycle-run-03.md:10`, `docs/audit-2026-09-11-three-cycle-run-04.md:12`: `clauduct.cmd --model sol --effort high` **(사용자 지정)**
-- `docs/audit-2026-09-12-workflow-routing.md:59`: "`effort: high`는 스크립트가 준 값이 아니다. 옵션에 effort는 없었고 부모 세션이 `--effort high`였다."
+- `docs/v1/audit/audit-2026-09-11-three-cycle-run-03.md:10`, `docs/v1/audit/audit-2026-09-11-three-cycle-run-04.md:12`: `clauduct.cmd --model sol --effort high` **(사용자 지정)**
+- `docs/v1/audit/audit-2026-09-12-workflow-routing.md:59`: "`effort: high`는 스크립트가 준 값이 아니다. 옵션에 effort는 없었고 부모 세션이 `--effort high`였다."
 
 해당 감사가 인용한 req 10/11(luna/high, terra/high, `workflow-result`)은 문제의 snapshot에 있는 값과 완전히 일치한다. 즉 `2026-09-12T04:59:52` snapshot은 그 감독하 관측 실행의 기록이다.
 
@@ -58,7 +58,7 @@ sol의 기본값은 `xhigh`다(`src/models.mjs:6`). 관측값이 `high`라는 �
 | gpt-5.6-terra | high → high | 1 | workflow-result (부모 effort 상속) |
 | gpt-5.6-luna | (미완료) | 4 | model 미기록 |
 
-`DEFAULT_SELECTION.effort='low'`는 `--model`과 `--effort`를 **둘 다** 생략했을 때만 적용된다(`src/clauduct.mjs:128`). 34건 전부 `--model`이 명시된 실행이므로 애초에 적용 대상이 아니다. 이 규칙은 `README.md:17`, `docs/native.md:5`, `RELEASE.md:28`에 동일하게 문서화돼 있다.
+`DEFAULT_SELECTION.effort='low'`는 `--model`과 `--effort`를 **둘 다** 생략했을 때만 적용된다(`src/clauduct.mjs:128`). 34건 전부 `--model`이 명시된 실행이므로 애초에 적용 대상이 아니다. 이 규칙은 `README.md:17`, `docs/v1/README.md:17`, `RELEASE.md:28`에 동일하게 문서화돼 있다.
 
 `requestedEffort`와 `effort`가 34건 전부 같다 — 게이트웨이는 아무것도 바꾸지 않았다. 10번 하향도 발동하지 않았다(전부 `purpose: conversation`).
 
@@ -82,7 +82,7 @@ prepareNative({ model:'gpt-5.6-luna', output_config:{ effort:'low' }, ... })
 
 `Agent({ model: 'haiku' })`는 별칭이 luna로 풀리고(`src/agent-selection.mjs:20,25-27`) luna의 기본 effort는 `max`다(`src/models.mjs:8`). **가장 싸고 빠른 모델을 명시적으로 고른 자식이 가장 비싼 effort를 받는다.** 부모가 `--effort low`여도 그렇다.
 
-이 공백 자체는 `docs/gpt-agent-selection-contract.md:53`에 이미 기록돼 있다(당시엔 `inherit` 관점). 위 실측은 `inherit`가 아닌 **명시 모델**에서도 같은 일이 일어남을 보인다.
+이 공백 자체는 `docs/v1/reference/gpt-agent-selection-contract.md:53`에 이미 기록돼 있다(당시엔 `inherit` 관점). 위 실측은 `inherit`가 아닌 **명시 모델**에서도 같은 일이 일어남을 보인다.
 
 ### 3-2. 역할 기본값이 전부 최상단이다 — Plan은 6장에서 변경했다
 
@@ -139,7 +139,7 @@ n=2의 46.5%보다 높은 58.7%가 나왔다. **추론이 상류 시간의 절�
 
 - `src/agent-selection.mjs:104-113`의 `remember()`가 읽는 입력은 `model`, `subagent_type`, `skill`, `to/message`, `script`뿐이다.
 - Agent 도구 스키마 자체가 `description / isolation / model / prompt / subagent_type` 5개다.
-- `docs/gpt-agent-selection-contract.md:69`(공식 subagents 문서 확인 기록): effort는 **정의(definition)** 수준에서만 설정한다.
+- `docs/v1/reference/gpt-agent-selection-contract.md:69`(공식 subagents 문서 확인 기록): effort는 **정의(definition)** 수준에서만 설정한다.
 - 그리고 정의 수준의 effort 존중은 `src/agent-selection.mjs:41`이 이미 구현하고 있다.
 
 즉 3-1은 "게이트웨이가 값을 버린다"가 아니라 **"명시할 채널이 정의 하나뿐인데 그 채널이 모델 기본 effort 1개만 노출했다"**가 정확한 진단이다. 자식 요청의 `output_config.effort`를 살리는 안은 채택하지 않았다 — 실측상 그 값은 자식의 명시값이 아니라 부모 세션의 effort가 곱대로 실려 온 값이고(workflow 자식 luna가 `high`, luna 기본값은 `max`, 부모가 `high`), sidecar에 effort가 없어 대조 증거도 없다.
@@ -165,7 +165,7 @@ n=2의 46.5%보다 높은 58.7%가 나왔다. **추론이 상류 시간의 절�
 옵션을 지우면서 `--gpt-agents`를 `blockedOptions`에 넣었다. 그러지 않으면 제거된 래퍼 옵션이 알 수 없는 native 옵션으로 **claude.exe에 전달되어** 자식이 엉뚱하게 실패한다. 이제 래퍼에서 `INVALID_ARGUMENTS`로 거부된다.
 
 기본 등록의 근거:
-- 원래 opt-in이던 사유(`docs/gpt-agent-selection-contract.md:107` — "Read 전용 시험 권한을 넘으므로 범위를 확정하기 전 적용하지 않는다")는 권한 범위 확정 전의 보수적 단계였고 이미 해소됐다.
+- 원래 opt-in이던 사유(`docs/v1/reference/gpt-agent-selection-contract.md:107` — "Read 전용 시험 권한을 넘으므로 범위를 확정하기 전 적용하지 않는다")는 권한 범위 확정 전의 보수적 단계였고 이미 해소됐다.
 - [공식 subagents 문서](https://code.claude.com/docs/en/sub-agents) 확인(2026-09-15): `--agents`는 우선순위 2로 프로젝트(3)·사용자(4) 정의보다 높지만 **이름이 같을 때만** 이긴다. 병합을 막거나 대체하지 않으며, 등록 이름이 전부 `clauduct-` 접두사라 충돌 경로가 없다.
 - 비용 실측: 모델이 매 턴 보는 목록 약 1,886자(≈540 토큰), `--agents` JSON 9,736 bytes, cmdline 11,685 / 32767.
 
@@ -315,4 +315,4 @@ AdGuard를 끈 뒤 세 단계를 전수 실행했다.
 - 프로젝트 `.claude/agents/*.md` 정의의 effort는 여전히 게이트웨이에 도달하지 않는다(`src/clauduct.mjs:214`가 런처 주입 정의만 넘긴다). 미관측.
 - **effort A/B는 하지 않기로 했다.** 적대적 검토에서 셋이 걸렸다. ① 지연 수치가 바꿀 결정이 없다 — 메인 effort는 사용자 지정이고 역할 기본값은 지연·품질 트레이드오프라 지연만으로 정할 수 없다. ② 같은 성격 요청의 관측 편차가 1.5~33초라 n=3은 노이즈에 묻힌다. ③ 텍스트 종료 턴을 강제하는 설계는 이 문서가 지적한 편향을 오히려 고착시킨다. 대신 계측을 고쳐 실사용에서 비용 없이 쌓이게 했다.
 - Plan을 astra/low로 내린 계획 품질은 자동 판정 기준이 없어 A/B 대상이 아니다. 실사용에서 나빠졌다고 느끼면 `src/models.mjs:18-21` 한 곳으로 되돌린다.
-- `docs/audit-2026-09-08.md:266`의 compact 하향 위치 서술이 낡았다(현재 `src/native-protocol.mjs:423-424`).
+- `docs/v1/audit/audit-2026-09-08.md:266`의 compact 하향 위치 서술이 낡았다(현재 `src/native-protocol.mjs:423-424`).

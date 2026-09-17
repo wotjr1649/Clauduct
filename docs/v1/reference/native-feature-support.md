@@ -1,8 +1,8 @@
 # Claude native 기능과 Clauduct 지원 범위 전수 대조
 
-현행 대조일 2026-09-12. 실제 검증 버전은 Claude `2.1.269`, Codex standalone `0.154.0`이다. 2026-09-11의 정적 조사에 새 비대화형 실행 증거를 반영했다. [릴리즈 검증](release-readiness.md)에 성공·실패·미검증 범위를 나누어 기록한다.
+현행 대조일 2026-09-12. 실제 검증 버전은 Claude `2.1.269`, Codex standalone `0.154.0`이다. 2026-09-11의 정적 조사에 새 비대화형 실행 증거를 반영했다. [릴리즈 검증](../release/release-readiness.md)에 성공·실패·미검증 범위를 나누어 기록한다.
 
-2026-09-14 Session-29에서는 Claude2.1.270의 공개 native 중첩 결과 중계와 새 프로세스의 일반 개발 복구를 검사했다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복도 원결과로 대조했다. 동일 저장 세션에서의 Workflow 재개도 현재 bypass에서 두 모델의 공개 응답으로 확인했다. 저장 결과를 재사용하고 실패 단계만 재실행했다. 다른 잔여 요구의 현재 판정은 [Session-29](session-29-release-verdict.md)에 있으며 전체 HOLD다.
+2026-09-14 Session-29에서는 Claude2.1.270의 공개 native 중첩 결과 중계와 새 프로세스의 일반 개발 복구를 검사했다. JPEG/GIF/WebP 각 두 모델의 기존 실제 왕복도 원결과로 대조했다. 동일 저장 세션에서의 Workflow 재개도 현재 bypass에서 두 모델의 공개 응답으로 확인했다. 저장 결과를 재사용하고 실패 단계만 재실행했다. 다른 잔여 요구의 현재 판정은 [Session-29](../release/session-29-release-verdict.md)에 있으며 전체 HOLD다.
 
 현재 사용자는 이 머신의 전역 `settings.json`에 있는 bypass 모드만 사용한다. 실제 `permissions.defaultMode=bypassPermissions`를 읽어 확인했으며 다른 permission 모드·전환 조합은 Session-29 출하 범위에서 제외한다. 아래 다른 모드에 관한 미검증 설명은 이력이고 현재 차단이 아니다. Clauduct의 launcher는 permissions를 재정의하거나 설정 소스를 대체하지 않는다.
 
@@ -132,13 +132,13 @@ Clauduct에서 이 헤더는 **upstream으로 전달되지 않는다.** upstream
 
 ## 9. 미검증으로 남는 것
 
-JPEG/GIF/WebP는 sol/low·luna/max 각각 실제 왕복의 결과·modelMatched·featureVerified·cleanupComplete를 2026-09-14 재대조했다. 사용자 hook 각각의 발화, 프롬프트 캐시의 실제 적중, plan mode·permission mode의 UI 동작, 설치된 skill·plugin 각각의 실제 실행은 미검증이다. 로컬 stdio MCP와 PNG 입력의 기존 실제 왕복도 유지한다. 외부 계정·서버 기능과 [차단된 symlink 검사](remaining-verification.md)는 통과로 표시하지 않는다.
+JPEG/GIF/WebP는 sol/low·luna/max 각각 실제 왕복의 결과·modelMatched·featureVerified·cleanupComplete를 2026-09-14 재대조했다. 사용자 hook 각각의 발화, 프롬프트 캐시의 실제 적중, plan mode·permission mode의 UI 동작, 설치된 skill·plugin 각각의 실제 실행은 미검증이다. 로컬 stdio MCP와 PNG 입력의 기존 실제 왕복도 유지한다. 외부 계정·서버 기능과 [차단된 symlink 검사](../remaining-verification.md)는 통과로 표시하지 않는다.
 
 ## 10. 추가 확정 사항 — 2026-09-11 2차 조사
 
 ### 웹 검색과 웹 가져오기
 
-`WebFetch`는 클라이언트가 가져온 내용을 모델 호출로 처리하고, `WebSearch`의 side query는 **Codex 검색 endpoint로 브리지**한다. [상세](audit-2026-09-11-web-search-bridge.md). 2026-09-12 실제 WebFetch 1회·제목 답변과 WebSearch 1회·검색 링크 반환·최종 답변을 모두 검증했다. 이전 실제 인용 관측은 [현행 기준표](remaining-verification.md)에 있다. 터미널의 출처 카드 렌더링을 새 비대화형 검증으로 입증하지 않는다.
+`WebFetch`는 클라이언트가 가져온 내용을 모델 호출로 처리하고, `WebSearch`의 side query는 **Codex 검색 endpoint로 브리지**한다. [상세](../audit/audit-2026-09-11-web-search-bridge.md). 2026-09-12 실제 WebFetch 1회·제목 답변과 WebSearch 1회·검색 링크 반환·최종 답변을 모두 검증했다. 이전 실제 인용 관측은 [현행 기준표](../remaining-verification.md)에 있다. 터미널의 출처 카드 렌더링을 새 비대화형 검증으로 입증하지 않는다.
 
 ### 서버 의존이지만 거부하지 않는 7개
 

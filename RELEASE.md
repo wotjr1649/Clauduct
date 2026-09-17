@@ -1,8 +1,8 @@
 # Clauduct — Windows 릴리즈 안내
 
-**최신 판단: 로컬 실사용 출하 가능.** 사용자의 후속 요청에 따라 GPT 출력 사양·native 전역/프로젝트 설정 상속과 기존 HOLD 네 항목을 재평가했다. 두 모델의 최대 출력128000, 현재 native 설정64000, 검증 예산30000을 구분한다. 추가 실모델 개발 검증은 중단하고 잔여 복합 복구·캐시/개인 구성은 운영 관찰로 이관한다. 활성 Workflow는 기존 worker 종료 후 재개한다. [현재 로컬 출하 판단과 설정 설명](docs/local-use-release-decision.md)이 아래 과거 무인 검증 판정보다 최신이며, 미실행 검사를 PASS로 바꾸지는 않는다.
+**최신 판단: 로컬 실사용 출하 가능.** 사용자의 후속 요청에 따라 GPT 출력 사양·native 전역/프로젝트 설정 상속과 기존 HOLD 네 항목을 재평가했다. 두 모델의 최대 출력128000, 현재 native 설정64000, 검증 예산30000을 구분한다. 추가 실모델 개발 검증은 중단하고 잔여 복합 복구·캐시/개인 구성은 운영 관찰로 이관한다. 활성 Workflow는 기존 worker 종료 후 재개한다. [현재 로컬 출하 판단과 설정 설명](docs/v1/release/local-use-release-decision.md)이 아래 과거 무인 검증 판정보다 최신이며, 미실행 검사를 PASS로 바꾸지는 않는다.
 
-현재 후보의 무인 개발 출하 판정은 **HOLD**다. 중첩 자식의 수집 결과·실패를 같은 부모의 재개에 연결하는 제품 경로를 추가했다. 동일 저장 세션의 새 프로세스에서 Workflow의 저장 결과를 재사용하고 실패한 단계만 새 agent로 실행하는 경로도 구현했다. 현재 native2.1.270 bypass의 공개 응답 시험에서 두 모델 모두 원래 파일 작업을 마쳤다. 압축·재시작·자식 실패의 결합 및 기존 요구 표의 일부 설정 조합도 충분한 증거가 없다. 추가 실호출은 출력30000의 생성 전 상한을 보장하지 못해 시작 전 차단했다. [Session-29 판정](docs/session-29-release-verdict.md)에 적용 범위와 근거를 기록했다. 로컬 ZIP은 검토 가능한 커밋 후보이며 출하 승인이나 외부 배포를 뜻하지 않는다.
+현재 후보의 무인 개발 출하 판정은 **HOLD**다. 중첩 자식의 수집 결과·실패를 같은 부모의 재개에 연결하는 제품 경로를 추가했다. 동일 저장 세션의 새 프로세스에서 Workflow의 저장 결과를 재사용하고 실패한 단계만 새 agent로 실행하는 경로도 구현했다. 현재 native2.1.270 bypass의 공개 응답 시험에서 두 모델 모두 원래 파일 작업을 마쳤다. 압축·재시작·자식 실패의 결합 및 기존 요구 표의 일부 설정 조합도 충분한 증거가 없다. 추가 실호출은 출력30000의 생성 전 상한을 보장하지 못해 시작 전 차단했다. [Session-29 판정](docs/v1/release/session-29-release-verdict.md)에 적용 범위와 근거를 기록했다. 로컬 ZIP은 검토 가능한 커밋 후보이며 출하 승인이나 외부 배포를 뜻하지 않는다.
 
 HTTP/TCP 안정성, 동적 symlink/junction 실행 검사, 디스크 부족 복구 검증은 사용자 지시로 출하 판정에서 제외한다. 기존 보호와 실패 이력은 유지한다. 과거 실제 두 조합의 일반 Agent·신규 Workflow·두 파일 개발 증거는 변경 영향을 대조한 범위에서 재사용한다. 새 중계·복구 시험은 실제 native에 고정 공개 응답을 공급한 검사로, 새 backend 추론을 실행한 결과와 구분한다.
 
@@ -14,15 +14,15 @@ HTTP/TCP 안정성, 동적 symlink/junction 실행 검사, 디스크 부족 복�
 
 실패한 자식의 부모 재개 검증은 gateway가 해당 자식의 현재 요청에서 기록한 실패와 native의 `isApiErrorMessage`/`stop_sequence` 기록을 대조하도록 보완했다. 세션·직접 부모 관계·metadata·시간을 재확인하고, 성공·실패 혼합 알림의 증거를 한 번만 소비한다. 단순 실패 문구, 오래된 요청, 위조된 완료, 중단된 자식, 다른 계정·세션의 기록으로 재개하지 않는다. 새23개 검사와 기존 완료·다중 알림·모델 선택·진단 관련5파일 회귀가 통과했다. 실제 native의 공개 응답 시험에서는 sol/low와 luna/max 모두 자식 실패가 메인에 전달됐지만 부모에게 직접 알림이 전달되지 않아 부모 자동 재개는 미완료다. 해당 시험에 실제 backend 요청·credential 읽기는 없다.
 
-추가 공개 native 검사에서는 sol/low·luna/max 각각 두 모델 자식 중 하나를 번갈아 취소한4사례가 통과했다. 실제 Agent 반환 ID·TaskStop·TaskOutput·gateway 실패 기록을 대조했고, 형제 완료·늦은 이벤트 차단·정리9항목·잔여0을 확인했다. 실제 backend 요청은0이다. 사용자 일반 PowerShell과 직접 .NET Socket에서도 TCP 반닫기 응답 유실을 재현했지만 이 항목은 현재 출하 보류 사유에서 제외한다. 최신 범위와 실행 증거는 [출하 목표 기록](docs/release-completion-2026-09-14.md)에 있다.
+추가 공개 native 검사에서는 sol/low·luna/max 각각 두 모델 자식 중 하나를 번갈아 취소한4사례가 통과했다. 실제 Agent 반환 ID·TaskStop·TaskOutput·gateway 실패 기록을 대조했고, 형제 완료·늦은 이벤트 차단·정리9항목·잔여0을 확인했다. 실제 backend 요청은0이다. 사용자 일반 PowerShell과 직접 .NET Socket에서도 TCP 반닫기 응답 유실을 재현했지만 이 항목은 현재 출하 보류 사유에서 제외한다. 최신 범위와 실행 증거는 [출하 목표 기록](docs/v1/release/release-completion-2026-09-14.md)에 있다.
 
-TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사례도 있지만, 특정 연결 종료 조건에서는 응답 유실이나 리셋으로 턴·자식 작업이 중단될 수 있고 일부 연결 정리는 약1초 지연될 수 있다. 2026-09-14 후속에서 원인을 이 PC의 loopback HTTP 필터(AdGuard)로 확정했다. 보호를 끄면 반닫기 응답 유실과 약1초 지연이 모두 사라지고 관련 회귀가 통과한다. 제품 결함도 OS·셸 문제도 아니다. 다만 다른 머신의 보안·백신 제품에서 같은 계열 간섭이 재발할 수 있으므로 위험 자체가 사라졌다고 보지 않는다. [실사용 영향과 근거](docs/tcp-shell-assessment-2026-09-14.md#실제-clauduct-사용에-미치는-영향)를 기록했으며 추가 OS 진단은 보류한다.
+TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사례도 있지만, 특정 연결 종료 조건에서는 응답 유실이나 리셋으로 턴·자식 작업이 중단될 수 있고 일부 연결 정리는 약1초 지연될 수 있다. 2026-09-14 후속에서 원인을 이 PC의 loopback HTTP 필터(AdGuard)로 확정했다. 보호를 끄면 반닫기 응답 유실과 약1초 지연이 모두 사라지고 관련 회귀가 통과한다. 제품 결함도 OS·셸 문제도 아니다. 다만 다른 머신의 보안·백신 제품에서 같은 계열 간섭이 재발할 수 있으므로 위험 자체가 사라졌다고 보지 않는다. [실사용 영향과 근거](docs/v1/release/tcp-shell-assessment-2026-09-14.md#실제-clauduct-사용에-미치는-영향)를 기록했으며 추가 OS 진단은 보류한다.
 
 완료된 이전 Workflow의 script 편집이 별개 신규 Workflow 자식을 IDENTITY로 차단하던 검증 순서를 수정했다. 실제 소속 run의 script·metadata·journal 검증과 중복 신원 거부를 유지하며, sol/low·luna/max의 공개 native 연속 Workflow 실행이 통과했다. 현재 동일한 원본 script의 저장 세션 재개는 완료된 단계 재사용과 실패 단계 재실행을 지원한다. 기록 전체 소실의 자동 복원이나 편집한 script의 재개는 보증하지 않는다.
 
 ## 시작
 
-사용자별 설치와 업데이트는 [Windows 설치 안내](docs/installation.md)를 따른다. `install.ps1`은 기존 Node/Claude/Codex를 확인하고 `.local\bin`에 명령을 설치한다. GitHub 온라인 설치에는 해당 Release의 게시된 asset이 필요하다. 아래는 ZIP을 직접 풀어 쓰는 방법이다.
+사용자별 설치와 업데이트는 [Windows 설치 안내](docs/v1/installation.md)를 따른다. `install.ps1`은 기존 Node/Claude/Codex를 확인하고 `.local\bin`에 명령을 설치한다. GitHub 온라인 설치에는 해당 Release의 게시된 asset이 필요하다. 아래는 ZIP을 직접 풀어 쓰는 방법이다.
 
 1. ZIP을 새 폴더에 풀고 `Clauduct` 폴더를 연다. 기존 설치·사용자 프로필에 덮어쓰지 않는다.
 2. 그 폴더의 PowerShell에서 `./clauduct.cmd --dry-run`으로 인증 없는 구성 검사를 한다.
@@ -39,7 +39,7 @@ TCP/HTTP에는 알려진 안정성 제약이 있다. 일반 사용의 성공 사
 ## 필요 환경
 
 - Windows, PATH의 Node.js. 이번 최종 소스의 검증 환경은 Node `24.19.0`, native Claude `2.1.270`, Codex standalone `0.154.0`이다. 과거 안내의 Claude `2.1.269`와 구분한다. 이번 실제 세션과 이전 부모 알림 실패 세션의 공개 fixture transcript에서 모두 `2.1.270`을 확인했다. 다른 조합의 성공을 보장하지 않는다.
-- Node.js 24 이상이 필요하다. native Claude와 Codex는 기존 사용자 설치 위치를 우선하고 절대 PATH를 탐색한다. Codex의 npm 설치도 package metadata를 확인해 Node로 실행한다. [탐색 순서와 설치 제한](docs/installation.md)을 참고한다.
+- Node.js 24 이상이 필요하다. native Claude와 Codex는 기존 사용자 설치 위치를 우선하고 절대 PATH를 탐색한다. Codex의 npm 설치도 package metadata를 확인해 Node로 실행한다. [탐색 순서와 설치 제한](docs/v1/installation.md)을 참고한다.
 - 기존 Codex 로그인과 OS 사용자 홈의 `.codex` 파일 credential store가 필요하다. Clauduct는 인증을 직접 갱신하거나 쓰지 않는다. account 변경·다른 `CODEX_HOME`·디버그/TLS 우회 런타임은 거부한다.
 - 인증 값을 읽기 전에 루트 `cli_auth_credentials_store`를 구조적으로 구분한다. [TOML 1.0 키와 문자열 규칙](https://toml.io/en/v1.0.0#keys)에 따라 따옴표·Unicode escape·주석·여러 줄 문자열·중첩 값·테이블을 구분하며, 명시한 다른 저장소를 놓치고 파일 캐시를 읽던 경우를 수정했다. 이 읽기는 다른 설정을 적용하거나 전체 TOML 설정의 유효성을 보증하지 않는다. 입력65536자·중첩64단계·해석한 키/저장소 문자열1024자 한도이며, 모호하거나 지원하지 않는 인증 설정은 캐시 조회 전에 거부한다.
 - PowerShell `7+`는 검증 스크립트에 필요하다. 별도 npm 의존성 설치는 없다.
@@ -60,11 +60,11 @@ Claude Code의 UI·로컬 도구·기존 권한 검사는 유지하고 모델 �
 - 종료 상태는 설치 폴더의 `.clauduct-status/request-status.jsonl`에도 추가된다. 원문 오류·인증 값은 기록하지 않는다. 기록 실패는 명시적으로 안내하며, 강제 프로세스 종료에서는 기록을 보장하지 않는다.
 - 비대화형 자동화에는 `--max-turns`와 호출자의 시간 제한을 둔다. `--bg`/`--background`의 세션 분리 동작은 이 릴리즈에서 실검증되지 않았으며, 검증된 background 도구/TaskOutput/TaskStop과 구분한다.
 
-[CLI 옵션 경계](docs/claude-option-classification.md)에 차단·전달 범위를 정리했다. 차단 옵션이나 Anthropic 전용 서비스는 지원 기능으로 간주하지 않는다.
+[CLI 옵션 경계](docs/v1/reference/claude-option-classification.md)에 차단·전달 범위를 정리했다. 차단 옵션이나 Anthropic 전용 서비스는 지원 기능으로 간주하지 않는다.
 
 ## 확인된 기능과 남는 한계
 
-2026-09-14 최종 제품 소스: 선택한 회귀68파일과 배포본 관련5파일, 실제 메인/Agent/신규 Workflow 라우팅, 두 파일 개발의 독립81개 판정을 sol/low·luna/max에서 확인했다. 실제6실행/26요청·입력111655/출력4653토큰이며 기존 실패·미관측 예약을 유지한다. 같은 배포본의 출력 단절→동일 세션 복구 두 사례는 고정 공개 응답16개로 검사했고 최초 실패·파일 묶음 쓰기1회·파일 쓰기2회·회수를 대조했다. 복구 주입 사례 자체에 실제 backend 요청은 없다. 당시 증거와 실패 이력은 [출하 기록](docs/release-completion-2026-09-14.md)에 있다.
+2026-09-14 최종 제품 소스: 선택한 회귀68파일과 배포본 관련5파일, 실제 메인/Agent/신규 Workflow 라우팅, 두 파일 개발의 독립81개 판정을 sol/low·luna/max에서 확인했다. 실제6실행/26요청·입력111655/출력4653토큰이며 기존 실패·미관측 예약을 유지한다. 같은 배포본의 출력 단절→동일 세션 복구 두 사례는 고정 공개 응답16개로 검사했고 최초 실패·파일 묶음 쓰기1회·파일 쓰기2회·회수를 대조했다. 복구 주입 사례 자체에 실제 backend 요청은 없다. 당시 증거와 실패 이력은 [출하 기록](docs/v1/release/release-completion-2026-09-14.md)에 있다.
 
 이전 후보의 실측: 비대화형 JSON·stream-json, Read/Edit, Bash·PowerShell, stdio MCP, PNG 입력, WebFetch·WebSearch, Agent 선택, inline Workflow·StructuredOutput·부모 복귀, background 도구 결과 회수·TaskStop 뒤 worker 종료, 새 프로세스 resume, 실패 후 도구 미중복·이력 보존·정리를 확인했다. 모델 네 종류의 low 요청도 당시 성공했다. 이전 후보의 결과를 이번 후보 전체의 회귀 통과로 복사하지 않는다.
 

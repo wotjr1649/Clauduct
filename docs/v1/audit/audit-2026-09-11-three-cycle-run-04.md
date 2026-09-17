@@ -12,7 +12,7 @@
 | 실행 명령 | `D:\AIDEV\Clauduct\clauduct.cmd --model sol --effort high` (사용자 지정) |
 | launcher가 넘긴 값 | `model=gpt-5.6-sol`, `effort=high`, contextPolicy 400000/320000. `--verify-auto-compact` 미사용 |
 | 작업 루트 | `verification/dev-sandbox/run-04` |
-| 전달 | `docs/prompts/2026-09-11-session-27-sdd-three-cycle-run-04.md` 전문 1회. 원본과 문자 단위 대조해 9633자 동일 확인 |
+| 전달 | `2026-09-11-session-27-sdd-three-cycle-run-04.md`(비공개) 전문 1회. 원본과 문자 단위 대조해 9633자 동일 확인 |
 | 관측 구간 | transcript `2026-09-11T06:38:26Z` ~ `09:15:34Z` (2시간 37분) |
 
 ## 2. PASS 조건 — 직접 확인한 증거

@@ -1,6 +1,6 @@
 # 설치 native 모델 호출 경로 조사
 
-현재 버전 주의: 후속 조사에서 활성 실행 파일과 session-12가 2.1.267임을 확인했다. 아래 최초 목록의 2.1.266 전체 근거를 새 버전 전체 검증으로 해석하지 않는다. away_summary/side_question 일부 경로는 [2.1.267 대조](audit-2026-09-10-away-summary.md)를 참조한다.
+현재 버전 주의: 후속 조사에서 활성 실행 파일과 session-12가 2.1.267임을 확인했다. 아래 최초 목록의 2.1.266 전체 근거를 새 버전 전체 검증으로 해석하지 않는다. away_summary/side_question 일부 경로는 [2.1.267 대조](../audit/audit-2026-09-10-away-summary.md)를 참조한다.
 
 기준: 2026-09-09, 코드 수정 da2e050 이후. 현재 실행 대상 C:/Users/JS/.local/bin/claude.exe와 C:/Users/JS/.local/share/claude/versions/2.1.266은 SHA256이 같고 크기는 218971808 bytes다. 실행 파일은 실행하지 않고 읽었다. 활성 plugin 설정의 이름·버전·scope·설치 경로와 hook 종류만 추출했다. 인증값·설정 원문·사용자 대화·reasoning은 기록하지 않았다.
 
@@ -22,8 +22,8 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | Read/Edit/Write/Bash | 실행은 native, 선택·결과를 읽는 모델 요청은 gateway | M/A, tool_use_id ↔ tool_result | 프로토콜 합성 검사, 실제 Read/Bash 부분 증거. 도구 자체를 모델 호출로 세지 않음 |
 | ToolSearch·지연 도구 | 검색 실행 native, 현재 도구 목록을 gateway가 변환 | M/A, tool_reference 및 turn tool addition/removal | 로컬 검사 통과, 설치된 모든 도구별 실제 미검증 |
 | Agent/Task: Explore/general-purpose | native 생성·hook·metadata → gateway | A, 원래 부모/호출 ID 검증 | 순차·병렬 실제 부분 통과 |
-| Agent: clauduct-<모델>-<effort> 14개 | 세션 한정 정의·native 생성·hook·metadata → gateway | definition-model / definition-inherit, 직접 부모 snapshot | 네 GPT 직접 선택, 직접 부모 기준 손자·비기본 effort 및 완료 복귀 실제 확인. [범위별 증거](audit-2026-09-10-agent-acceptance.md). 모든 조합·Task 도구 실제 실행 증거는 아님 |
-| Agent/Task: Plan | 동일 | 기본 sol/xhigh | c94bb0ac request 10/11에서 무명시 Plan/role-default/sol/xhigh 실제 통과. [근거](audit-2026-09-09-plan-lifetime-success.md) |
+| Agent: clauduct-<모델>-<effort> 14개 | 세션 한정 정의·native 생성·hook·metadata → gateway | definition-model / definition-inherit, 직접 부모 snapshot | 네 GPT 직접 선택, 직접 부모 기준 손자·비기본 effort 및 완료 복귀 실제 확인. [범위별 증거](../audit/audit-2026-09-10-agent-acceptance.md). 모든 조합·Task 도구 실제 실행 증거는 아님 |
+| Agent/Task: Plan | 동일 | 기본 sol/xhigh | c94bb0ac request 10/11에서 무명시 Plan/role-default/sol/xhigh 실제 통과. [근거](../audit/audit-2026-09-09-plan-lifetime-success.md) |
 | native role=claude | HIGH-03 metadata에서 실제 확인 | 요청 모델, 부모 연결 유지 | 78986b2에서 status whitelist 보완, 새 표시의 실제 출력은 미검증 |
 | inline Skill | native가 스킬 내용을 모델 문맥에 제공 | M/A, 별도 fork가 없으면 현재 요청 정책 | 일반 변환 지원, 개별 skill 전체 실행 미검증 |
 | background fork Skill | native fork 결과·PostToolUse → gateway | A, skill-result | 실제 생성/Read 통과. 모든 skill fork 조합 미검증 |
@@ -31,10 +31,10 @@ gateway는 native 도구를 실행하지 않고 모델 요청·응답을 변환�
 | SendMessage 복귀 | native 성공 PostToolUse → gateway | 기존 모델·부모·reviewContext, 1회 소비 | verified-resume 및 verified-peer-resume 실제 부분 통과 |
 | completed task-notification 복귀 | native JSONL origin·최종 응답 ID → gateway | 기존 정책, verified-completion-resume | c19c8b14 실제 성공 확인(adb4d26), 복수·실패 알림은 범위 밖 |
 | 결합 완료/failed/killed/blocked 알림 복귀 | native wake router | 완료 증거로 사용하지 않음 | 신규 완료 복귀 경로에서 미지원, 조용한 성공 처리 없음 |
-| Workflow | native Workflow → local inline run → workflow-subagent | 인증된 호출·run·nested metadata 연결. 명시 sidecar 모델은 요청과 대조. 최종 text는 reasoning 뒤로 전달 | 5cd82157 순차·992c0794 병렬 혼합 자식 2개 실제 통과. 병렬 요청 약 4.77초 겹침·결과 복귀 확인. 중첩·resume·custom agentType은 별도 범위. [실제 병렬 성공](audit-2026-09-10-workflow-parallel-success.md) |
+| Workflow | native Workflow → local inline run → workflow-subagent | 인증된 호출·run·nested metadata 연결. 명시 sidecar 모델은 요청과 대조. 최종 text는 reasoning 뒤로 전달 | 5cd82157 순차·992c0794 병렬 혼합 자식 2개 실제 통과. 병렬 요청 약 4.77초 겹침·결과 복귀 확인. 중첩·resume·custom agentType은 별도 범위. [실제 병렬 성공](../audit/audit-2026-09-10-workflow-parallel-success.md) |
 | /compact·자동 compact | 명령은 local, 내부 querySource=compact는 모델 호출 | C, 요약 뒤 새 요청 연결 | 수동·낮춘 임계값 자동 압축 실제 통과, 기본400K·각 자식은 미검증 |
-| /btw | local-jsx → side_question → 공통 query/client | cacheSafeParams의 agentContext 유지. 메인 문맥이면 자식 header 없이 메인 경로. skipTranscript=true | [session-12 결과와 정적 경로](audit-2026-09-10-native-btw-path.md). 사용자 제공 UI 답변 성공, 관찰 요청 sol/high. 취소 2건의 귀속·전체 beta 호환성은 미확정 |
-| away_summary | 저장된 메인 문맥 → 보조 query → system 요약 기록 | 2.1.267 b4e/XD/hk/kSn/oB/knr 경로. 특정 모델 강제 없음 | d9752fc6에 실제 요약 172자 기록. 직전 요청 13 sol/high 성공과 약 393ms 차이, 정확한 귀속은 추론. [증거·버전 경계](audit-2026-09-10-away-summary.md) |
+| /btw | local-jsx → side_question → 공통 query/client | cacheSafeParams의 agentContext 유지. 메인 문맥이면 자식 header 없이 메인 경로. skipTranscript=true | [session-12 결과와 정적 경로](../audit/audit-2026-09-10-native-btw-path.md). 사용자 제공 UI 답변 성공, 관찰 요청 sol/high. 취소 2건의 귀속·전체 beta 호환성은 미확정 |
+| away_summary | 저장된 메인 문맥 → 보조 query → system 요약 기록 | 2.1.267 b4e/XD/hk/kSn/oB/knr 경로. 특정 모델 강제 없음 | d9752fc6에 실제 요약 172자 기록. 직전 요청 13 sol/high 성공과 약 393ms 차이, 정확한 귀속은 추론. [증거·버전 경계](../audit/audit-2026-09-10-away-summary.md) |
 | /fork·/subtask | native 정의에 백그라운드 에이전트/세션 생성 존재 | fork 유형에 따른 ID·모델 경로 미추적 | code-review fork와 동일 지원이라고 단정하지 않음 |
 | /init | builtin prompt 등록 확인 | 모델이 문서·설정 작업을 생성 | GPT 경로 실제 미검증, 설정/지침 쓰기는 별도 권한 대상 |
 | /batch | builtin prompt 등록, 병렬 worktree 및 PR 작업을 기술 | 하위 Agent 정책·원격 쓰기는 별도 | 미검증, PR/push를 자동 실행하지 않음 |
@@ -104,7 +104,7 @@ superpowers manifest는 SessionStart command hook 하나로 run-hook.cmd → ses
 
 현재 recentRequests는 마지막 16개만 보존한다. 과거 other의 원래 이벤트명과 전체 요청의 성공/실패를 복원할 수 없다. auxiliaryMetadataEvents=0인 마지막 16개 기록은 전체 세션에서 보조 이벤트가 없었다는 증거가 아니다.
 
-아래는 최초 조사 당시의 계측 요구다. 이후 요청 누적 카운터는 c94bb0ac에서 실제 확인했고, 불투명 관계 참조·role=claude 표시·실패 단계별 집계를 구현했다. [구현 근거](audit-2026-09-09-request-correlation.md). 새 관계 참조와 failuresByStage 필드 출력은 [session-10·11](audit-2026-09-10-agent-acceptance.md)에서 확인했다. 이 두 정상 세션의 실패 집계는 모두 0이므로 각 실패 단계의 실제 증가나 보조 이벤트 발생까지 입증하지 않는다.
+아래는 최초 조사 당시의 계측 요구다. 이후 요청 누적 카운터는 c94bb0ac에서 실제 확인했고, 불투명 관계 참조·role=claude 표시·실패 단계별 집계를 구현했다. [구현 근거](../audit/audit-2026-09-09-request-correlation.md). 새 관계 참조와 failuresByStage 필드 출력은 [session-10·11](../audit/audit-2026-09-10-agent-acceptance.md)에서 확인했다. 이 두 정상 세션의 실패 집계는 모두 0이므로 각 실패 단계의 실제 증가나 보조 이벤트 발생까지 입증하지 않는다.
 
 1. gateway 수명 동안 고정 항목으로 성공·실패 단계·unsupportedEvent 분류·보조 이벤트 처리 횟수를 누적한다. 원래 이벤트명·본문·오류 문자열을 저장하지 않는다.
 2. 세션/agent/부모는 gateway마다 바뀌는 키를 쓰는 불투명 상관관계 값으로 연결한다. request 번호만으로 특정 자식을 추정하지 않는다.

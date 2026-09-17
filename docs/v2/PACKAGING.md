@@ -125,6 +125,95 @@ PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`�
 
 세션 상태는 전부 native가 소유하고 `CLAUDE_CONFIG_DIR`(기본 `~/.claude`) 아래에 있다. 이 wrapper는 자기 것을 어디에도 쓰지 않는다.
 
+### 5.0 스크립트
+
+`scripts/install.ps1`과 `scripts/uninstall.ps1`이 그 복사를 대신한다. 루트의 `install.ps1`은
+**v1(Node) 설치기**이고 기준선이므로 건드리지 않는다 — 이름이 같지만 다른 물건이다.
+
+```powershell
+# 릴리스에서 설치 (기본 최신 태그, 기본 위치 ~\.local\bin)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
+scripts\install.ps1 -Tag v0.2.0                 # 태그 고정
+scripts\install.ps1 -FromPath .\dist            # 로컬 빌드 설치 (3개 + SHA256SUMS 필요)
+scripts\install.ps1 -NoPathUpdate               # PATH를 건드리지 않는다
+
+scripts\uninstall.ps1                           # 바이너리 3개 + --update가 남긴 *.old
+scripts\uninstall.ps1 -Purge                    # %TEMP%\clauduct 진단 파일까지
+scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실행 파일이 없을 때만
+```
+
+**내려받기 전에 Claude Code와 Codex CLI를 찾는다.** 둘 중 하나라도 없으면
+`INSTALL_PREREQUISITE_MISSING`과 함께 런타임과 **같은 이름**(`CLAUDE_NOT_FOUND`·`CODEX_NOT_FOUND`)을
+내고 멈춘다 — 어느 표면이 보고했든 검색하면 같은 답에 닿게 하기 위해서다. 찾는 방식은
+`platform.Resolver.find`를 그대로 따른다: 표준 위치(`~\.local\bin`) 먼저, 그다음 PATH를 **64개까지**,
+따옴표 제거, 절대 경로만, **작업 디렉터리 제외**, 중복 제거. 런처보다 넓게 찾으면 통과시켜 놓고
+첫 실행에서 `CLAUDE_NOT_FOUND`가 나는데, **런타임과 어긋나는 사전 검증은 없느니만 못하다.**
+`-SkipPreflight`로 건너뛴다. 한 가지 차이는 숨기지 않고 적는다 — 런처는 `%USERPROFILE%`이
+오염된 채 넘어올 수 있어 OS 사용자 기록에서 홈을 읽지만, 스크립트는 사용자 자신의 셸에서 도므로
+`$env:USERPROFILE`을 쓴다.
+
+**셋이 다 검증되기 전에는 하나도 복사하지 않는다.** digest가 어긋나면 `INSTALL_DIGEST_MISMATCH`로
+멈추고 대상 디렉터리는 손대지 않은 상태로 남는다. 새 바이너리 둘 옆에 옛 바이너리 하나는 어떤
+릴리스도 그 조합으로 시험된 적이 없다.
+
+**설치 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 거부한다**(`INSTALL_DIRECTORY_SHADOW`).
+이유는 1장과 같다 — Git Bash가 거기서 멈춘다.
+
+**PATH는 레지스트리에서 원문으로 읽고 같은 값 종류로 되돌려 쓴다.** .NET의
+`GetEnvironmentVariable`은 `%USERPROFILE%`을 펼쳐서 주고 `SetEnvironmentVariable`은 `REG_SZ`로
+저장하므로, 순진한 read-modify-write는 남은 `%VAR%` 항목을 **영구히** 죽인다. `setx`는 1024자에서
+자른다. 쓰고 나서 `WM_SETTINGCHANGE`를 뿌리는데, 이게 없으면 작업 표시줄에서 연 터미널이 다음
+로그인까지 옛 PATH를 쓴다.
+
+**제거는 자기 것만 지운다.** `clauduct-node.cmd`·`clauduct-node-store`·`CLAUDE_CONFIG_DIR` 아래는
+건드리지 않는다. PATH 항목은 기본으로 두며, `-RemovePath`를 줘도 그 디렉터리에 다른 실행 파일이
+남아 있으면 `UNINSTALL_PATH_SHARED`로 거부한다 — 기본 설치에서 `claude.exe`가 거기 산다.
+
+**digest는 BCL로 계산하고 `-cne`로 비교한다.** `Get-FileHash`는 스냅인이 아니라
+`Microsoft.PowerShell.Utility` **모듈**이 얹어주는 cmdlet이라, PowerShell 7 세션에서 시작된
+`powershell.exe`가 PS7의 모듈 디렉터리를 먼저 보게 되면 **그 이름이 사라진다.** 2026-09-17 실측:
+같은 실행 파일, 같은 5.1.26100.8870, FullLanguage인데 PSModulePath 항목이 3개에서 6개가 되고
+`Get-FileHash`만 없어진다 — `Unblock-File`·`Invoke-WebRequest`·`Add-Type`·`New-Object`는 멀쩡하다.
+README가 시키는 `powershell -File install.ps1`을 PowerShell 7 터미널에서 실행하는 것이 정확히 그
+모양이고, CI의 go 스텝이 pwsh로 도는 덕에 잡혔다. 비교는 `-ne`가 아니라 `-cne`다 — PowerShell의
+문자열 비교는 기본이 대소문자 무시라 정규화가 깨져도 조용히 통과한다. 테스트는 pwsh가 있으면 그
+그림자를 **일부러 만들어** 돌므로 bash에서 돌려도 CI와 같은 것을 잰다.
+
+**설치 후 `Unblock-File`을 건다.** 방금 릴리스의 digest로 확인한 바이트이고, 그것이 SmartScreen
+대화상자가 묻는 질문이다.
+
+| 검사됨 | `internal/app/install_windows_test.go` 8건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 대문자 digest 수용, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 11건 전부 잡힌다 |
+|---|---|
+| **검사 안 됨** | **다운로드 경로**(네트워크가 필요하다)와 **PATH 쓰기**(테스트가 실행 머신의 레지스트리를 고쳐서는 안 된다). v1도 같은 이유로 제외했다. 사전 검증은 PATH와 `USERPROFILE`을 테스트가 소유한 값으로 갈아끼워 검사하므로 러너에 무엇이 깔렸는지에 좌우되지 않는다 |
+
+### 5.0.1 SmartScreen — 재보고 나서 서명하지 않기로 했다
+
+**언제 뜨는가.** 브라우저로 내려받은 exe를 탐색기에서 더블클릭할 때만이다. 2026-09-17 실측:
+
+| 잰 것 | 결과 |
+|---|---|
+| 설치본 3개의 `Zone.Identifier` | **없다.** `--update`는 Go의 파일 쓰기로 내려받으므로 MOTW가 붙지 않는다 |
+| MOTW(`ZoneId=3`)를 일부러 붙인 사본을 터미널에서 실행 | **경고 없이 `exit=0`.** SmartScreen 평판 검사는 `ShellExecute` 경로이지 `CreateProcess`가 아니다 |
+
+이 제품은 터미널에서 이름을 쳐서 쓰는 런처다. **실사용 경로에는 그 대화상자가 존재하지 않는다.**
+설치 스크립트는 digest를 대조한 직후 `Unblock-File`을 걸어 수동 다운로드 경로까지 덮는다.
+
+**결정(2026-09-17, 사용자): 서명하지 않는다.** 돈이 아니라 효과가 없어서다.
+
+- **EV 인증서의 즉시 SmartScreen 평판은 2024년에 폐지됐다.** 지금은 EV도 OV도 평판을 새로
+  쌓아야 한다 — 어떤 가격에도 대화상자를 즉시 없애는 상품이 없다.
+- 평판은 **다운로드 수**로 쌓인다. v0.2.0의 `clauduct.exe`는 3회이고 그중 대부분이 개발자 자신이다.
+- Azure Artifact Signing($9.99/월)은 개인 개발자 기준 **미국·캐나다 한정**이고 법인도 미국·캐나다·
+  EU·영국이다. 한국은 어느 쪽도 아니다.
+- 남는 현실적 경로인 Certum 오픈소스 인증서(클라우드 연 €49)는 **게시자 줄이 "Open Source
+  Developer &lt;이름&gt;"으로 고정**되고 **상용 배포에 쓰면 취소**되며, 2026-02-27부터 인증서 유효
+  상한이 459일이라 **사는 순간 시계가 돈다.**
+
+**이 결정이 받아들이는 것.** WDAC·AppLocker·Smart App Control이 강제된 머신에서는 서명 없는
+바이너리에 「실행」 버튼조차 없다 — 그런 머신에는 설치할 수 없고, 이것은 회피가 아니라 한계다.
+Defender 오탐이 나도 내놓을 근거가 `SHA256SUMS`뿐이다. 이 결정이 틀려지는 조건은 그 둘 중 하나가
+실제로 보고되는 것이다.
+
 ## 5.1 업데이트
 
 ```powershell
@@ -145,9 +234,10 @@ digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말�
 `clauduct update`(하이픈 없음)는 이 명령이 아니다 — 그대로 클라이언트에 전달되어 **Claude Code**가
 갱신된다. 클라이언트에는 `--update` 옵션이 없으므로(2.1.274 실측) 이 이름은 아무것도 가리지 않는다.
 
-**아직 없는 것**: 이 릴리스. 현재 공개된 `v0.1.0`은 Node 구현의 zip을 싣고 있고 Go 바이너리 3개와
-그 `SHA256SUMS`는 없다. 그래서 `--update`는 지금 실행하면 "릴리스에 무엇이 빠졌는지"를 이름으로
-말하고 종료한다. 인증 없는 GitHub API는 주소당 시간당 60회이므로 한도에 걸리면 그것도 이름으로
+**릴리스는 있다.** `v0.2.0`이 `clauduct.exe`·`clauduct-hook.exe`·`clauduct-dev.exe`와
+`SHA256SUMS`를 싣고 있고 draft도 pre-release도 아니다(2026-09-17 확인). `v0.1.0`은 Node 구현의
+zip이고 그대로 둔다. 릴리스에 자산이 빠져 있으면 `--update`는 무엇이 빠졌는지 이름으로 말하고
+종료하며, 인증 없는 GitHub API는 주소당 시간당 60회이므로 한도에 걸리면 그것도 이름으로
 말한다(`RATE_LIMITED`, 재시도 시각 포함).
 
 ## 5.2 이 계정이 얼마나 썼는지
@@ -190,10 +280,10 @@ Windows `PATHEXT`는 `.EXE`를 `.CMD`보다 먼저 본다. 같은 디렉터리�
 
 | 항목 | 상태 |
 |---|---|
-| installer | 없다. 파일 복사가 설치다 |
-| 자동 업데이트 | 없다 |
+| installer | MSI·서비스·레지스트리 등록은 없다. 파일 복사가 설치이고 `scripts/install.ps1`이 그 복사와 PATH를 맡는다(5.0절) |
+| 자동 업데이트 | 배경에서 도는 것은 없다. 사용자가 부르는 `clauduct --update`는 있다(5.1절) |
 | Windows 외 대상 | `internal/platform`에 windows 태그 파일 하나뿐이다. 다른 대상은 이식이 아니라 **새 설계**다 |
-| 서명 | 없다. 코드 서명 인증서는 이 프로젝트가 가진 것이 아니다 |
+| 서명 | **없고, 넣지 않기로 했다**(5.0.1절). 이유는 비용이 아니라 효과다 — 2024년 이후 어떤 인증서도 SmartScreen을 즉시 통과시키지 못한다 |
 | CI 실행 결과 | **있다.** `redesign/go-v2-native-host`에서 gofmt·vet·build·test·race 전부 green (최근 run `35161187084`). 2026-09-17에 `CGO_ENABLED=0` 핀을 추가했으므로 다음 run이 출하 구성과 같은 것을 검사한다 |
 
 **미실행은 통과가 아니다.** 각 항목은 없다고 적혀 있지 괜찮다고 적혀 있지 않다.

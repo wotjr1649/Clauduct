@@ -60,7 +60,7 @@ TCP/셸 변경 조사는 보류하고 Workflow 재개 계약을 다음 대상으
 | on | 9ms에EOF·응답0바이트 | 2ms에EOF·응답0바이트 |
 | off | 405ms·응답1바이트 | 405ms·응답1바이트 |
 
-일반 연결은 양쪽 모두1바이트로 정상이며, 차이는 반닫기에서만 나타난다. 보호를 끈 상태에서 `test-http-close`는 roundtrip20·`halfClosedClientReply` true·pending0으로 통과했고, `test-chat`은28/28 통과했다. 같은 필터가 비표준 `Expect` header를 제거하고 잘못된 method에 자체400 page를 반환하는 것도 확인했다. 근거와 판별법은 [native 시작 진단](native-startup-diagnostics-2026-09-14.md)에 있다.
+일반 연결은 양쪽 모두1바이트로 정상이며, 차이는 반닫기에서만 나타난다. 보호를 끈 상태에서 `test-http-close`는 roundtrip20·`halfClosedClientReply` true·pending0으로 통과했고, `test-chat`은28/28 통과했다. 같은 필터가 비표준 `Expect` header를 제거하고 잘못된 method에 자체400 page를 반환하는 것도 확인했다. 근거와 판별법은 [native 시작 진단](../reference/native-startup-diagnostics-2026-09-14.md)에 있다.
 
 실사용 경로는 이 필터가 켜져 있어도 영향이 없다. 필터를 켠 상태에서 chunked SSE stream8/8 frame이200~207ms 간격으로 변형 없이 도착했고, heartbeat 주기를 넘기는16초 간격 유휴 stream도3/3 도착에 socket error 없이 종료했다. 필터가 건드리는 것은 기형 HTTP 요청과 TCP 반닫기다.
 

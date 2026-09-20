@@ -25,10 +25,25 @@ type ToolFailureReport struct {
 	Interrupted      int64               `json:"interrupted"`
 	CapacityExceeded bool                `json:"capacityExceeded"`
 }
+
+// seenCall is one already-counted tool call. The sequence exists so the oldest can be
+// dropped at the cap: without it the map only ever grew, and the 1025th distinct failed
+// call refused every later /v1/messages request in the process. Ordinary Bash and Read
+// failures land here too, so a long session reaches that number, and because the same
+// conversation replays on every following request the refusal never cleared itself.
+//
+// Dropping the oldest can double-count a call whose hooks arrive more than 1024 distinct
+// failures apart. Hooks for one call arrive together, and a miscount in a diagnostic is a
+// smaller thing than a session that cannot make another request.
+type seenCall struct {
+	interrupted bool
+	sequence    uint64
+}
 type toolFailures struct {
-	mu     sync.Mutex
-	seen   map[delegationKey]bool
-	report ToolFailureReport
+	mu       sync.Mutex
+	seen     map[delegationKey]seenCall
+	sequence uint64
+	report   ToolFailureReport
 }
 
 func (f *toolFailures) snapshot() ToolFailureReport {
@@ -85,17 +100,26 @@ func (g *Gateway) recordToolFailure(event ToolFailureRecord) bool {
 	f := &g.toolFailures
 	f.mu.Lock()
 	if f.seen == nil {
-		f.seen = map[delegationKey]bool{}
+		f.seen = map[delegationKey]seenCall{}
 	}
 	key := delegationKey{event.Session, event.Call}
-	interrupted, seen := f.seen[key]
+	previous, seen := f.seen[key]
+	interrupted := previous.interrupted
 	if !seen {
 		if len(f.seen) >= maxAgents {
+			// Reported, because reaching the cap is still worth knowing, but no longer
+			// fatal: the oldest counted call makes room for this one.
 			f.report.CapacityExceeded = true
-			f.mu.Unlock()
-			return false
+			oldest, at := delegationKey{}, ^uint64(0)
+			for candidate, call := range f.seen {
+				if call.sequence < at {
+					oldest, at = candidate, call.sequence
+				}
+			}
+			delete(f.seen, oldest)
 		}
-		f.seen[key] = event.Interrupted
+		f.sequence++
+		f.seen[key] = seenCall{interrupted: event.Interrupted, sequence: f.sequence}
 		f.report.Total++
 		if event.Interrupted {
 			f.report.Interrupted++
@@ -107,7 +131,7 @@ func (g *Gateway) recordToolFailure(event ToolFailureRecord) bool {
 	} else if event.Interrupted && !interrupted {
 		// A later hook can prove cancellation after an error result was seen.
 		// Do not count the same call twice or lose that stronger evidence.
-		f.seen[key] = true
+		f.seen[key] = seenCall{interrupted: true, sequence: previous.sequence}
 		f.report.Interrupted++
 		for i := range f.report.Recent {
 			if f.report.Recent[i].Session == event.Session && f.report.Recent[i].Call == event.Call {

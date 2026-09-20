@@ -482,10 +482,24 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 		return errDelegationUnverified
 	}
 	if len(d.resolved) >= maxAgents {
+		// Map iteration picks an arbitrary victim, and it could be a running agent: without
+		// its resolved choice, a plan child recomputes its step index one past the real one
+		// and refuses from then on. Only an agent that owes nothing is dropped, and when
+		// none does this refuses -- which is what results.start above already does rather
+		// than discard live work.
+		evicted := ""
+		d.results.mu.Lock()
 		for key := range d.resolved {
-			delete(d.resolved, key)
-			break
+			if e := d.results.entries[key]; e == nil || resultReported(e.State) {
+				evicted = key
+				break
+			}
 		}
+		d.results.mu.Unlock()
+		if evicted == "" {
+			return errDelegationUnverified
+		}
+		delete(d.resolved, evicted)
 	}
 	if choice.receipt == nil {
 		choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Parent: choice.parent, Call: choice.call, Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias, State: "restored"})

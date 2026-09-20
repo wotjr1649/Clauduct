@@ -223,7 +223,11 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 	if s == nil {
 		if len(c.states) >= maxAgents {
 			for old, state := range c.states {
-				if !state.busy && state.saved != "" && !state.persistenceError {
+				// A state whose journal cannot be written is still restorable from the
+				// journal it last wrote, so it is no less evictable than any other. Excluding
+				// it meant a poisoned entry held one of these slots permanently, and a
+				// machine with a sticky write error eventually refused every new agent.
+				if !state.busy && state.saved != "" {
 					delete(c.states, old)
 					break
 				}
@@ -239,7 +243,15 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 		c.states[key] = s
 	}
 	if s.persistenceError {
-		return override, func() {}, "CONTEXT_JOURNAL_FAILED"
+		// Memory ahead of disk is worth stopping for, but this was a one-way latch: the only
+		// other saveContext caller runs after this check, so nothing could ever clear the
+		// flag. One transient failure -- a temp file an antivirus still holds across the
+		// rename, a momentary ACL error -- ended that session and agent for the life of the
+		// process. Retrying the write here is the recovery the flag always needed; a failure
+		// that is not transient still refuses, but only this request.
+		if g.saveContext(s) != nil {
+			return override, func() {}, "CONTEXT_JOURNAL_FAILED"
+		}
 	}
 	if s.busy {
 		return override, func() {}, "CONTEXT_REQUEST_CONFLICT"

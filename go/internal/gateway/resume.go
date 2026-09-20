@@ -71,7 +71,26 @@ func (d *delegations) prepareResume(scope delegationScope, call string, raw json
 		return nil, errDelegationUnverified
 	}
 	if len(d.resumes) >= maxAgents && d.resumes[id] == nil {
-		return nil, errDelegationUnverified
+		// discardResume only removes bindings that never started, so started ones accumulated
+		// and the 1025th distinct agent could never be resumed again. A binding whose agent
+		// has reported owes nothing and is the one to reclaim; if none has, this still
+		// refuses rather than cutting a live resume loose.
+		evicted := ""
+		d.results.mu.Lock()
+		for key, binding := range d.resumes {
+			if !binding.started {
+				continue
+			}
+			if e := d.results.entries[key]; e == nil || resultReported(e.State) {
+				evicted = key
+				break
+			}
+		}
+		d.results.mu.Unlock()
+		if evicted == "" {
+			return nil, errDelegationUnverified
+		}
+		delete(d.resumes, evicted)
 	}
 	native, err := bridge.SelectRoute(scope.nativeModel, "")
 	if err != nil {

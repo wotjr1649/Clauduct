@@ -153,9 +153,16 @@ func InheritsParent(role string) bool { return inheritRoles[role] }
 
 // RoleRoute reports where a subagent of this role runs.
 //
-// A role nobody has a route for is not an error and not a guess: the caller keeps the model
-// the client asked for. Inventing one would run the user's work somewhere they did not
-// choose, and refusing would end a turn over a routing preference.
+// A role nobody has a route for is not an error and not a guess here: this function reports
+// what it knows and invents nothing, because inventing one would run the user's work
+// somewhere the user did not choose.
+//
+// What the caller does with "not known" is the caller's, and it changed. Keeping the
+// client's model was right while a child's identity was unverified anyway; with the context
+// policy on -- which the launcher does unconditionally -- an unverified selection now
+// refuses, the same rule as an unsupported model or effort combination. The gateway records
+// which kind of miss it was before it refuses, so the counters below still describe
+// something real.
 func RoleRoute(role string) (Route, bool) {
 	if route, known := roleRoutes[role]; known {
 		return route, true

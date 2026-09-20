@@ -154,11 +154,20 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if g.delegations != nil && r.Header.Get("X-Claude-Code-Agent-Id") != "" && conversationRequest(r, request) && r.Header.Get("X-Claude-Code-Request-Class") != "compaction" {
-		if !g.delegations.beginResult(r.Header.Get("X-Claude-Code-Agent-Id")) {
+		agentID := r.Header.Get("X-Claude-Code-Agent-Id")
+		// Read and validate the turn receipt before beginResult, which is destructive: a
+		// refusal after it leaves the request unrun and the evidence it needed to recover
+		// already cleared.
+		receipt, present, ok := g.readActiveTurn(scope.session, agentID)
+		if !ok {
+			g.refuseCategory(w, 400, "NATIVE_TURN_UNVERIFIED")
+			return
+		}
+		if !g.delegations.beginResult(agentID) {
 			g.refuseCategory(w, 400, "AGENT_RESULT_CAPACITY")
 			return
 		}
-		if !g.bindNativeTurn(scope.session, r.Header.Get("X-Claude-Code-Agent-Id")) {
+		if present && !g.applyNativeTurn(agentID, receipt) {
 			g.refuseCategory(w, 400, "NATIVE_TURN_UNVERIFIED")
 			return
 		}
@@ -308,18 +317,23 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			}
 		}
 		if len(override) == 0 {
-			if g.contexts != nil {
-				return nil, releaseAgent, errDelegationUnverified
-			}
+			// Counted before the refusal rather than instead of it. The production launcher
+			// enables the context policy unconditionally, so the branch below always returns
+			// and these two counters could never move: the one diagnostic that says which
+			// kind of unverified child produced an AGENT_SELECTION_UNVERIFIED was
+			// structurally always zero. What happens to the request is unchanged.
+			_, routed := bridge.RoleRoute(role)
 			switch {
 			case !registered:
 				g.unregisteredAgents.Add(1)
-			default:
-				if route, known := bridge.RoleRoute(role); known {
-					override = append(override, route)
-				} else if !bridge.InheritsParent(role) {
-					g.unroutedRoles.Add(1)
-				}
+			case !routed && !bridge.InheritsParent(role):
+				g.unroutedRoles.Add(1)
+			}
+			if g.contexts != nil {
+				return nil, releaseAgent, errDelegationUnverified
+			}
+			if route, known := bridge.RoleRoute(role); known && registered {
+				override = append(override, route)
 			}
 		}
 	}

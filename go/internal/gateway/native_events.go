@@ -93,21 +93,43 @@ func (g *Gateway) nativeEventReport() NativeEventReport {
 
 // Bind the current native turn before inference, not by time proximity. A
 // resumed agent's previous end receipt cannot terminate this new execution.
-func (g *Gateway) bindNativeTurn(session, id string) bool {
-	if g.delegations == nil || id == "" || !correlationShape.MatchString(id) {
-		return true
-	}
+// readActiveTurn answers everything about the receipt that can refuse a request, and
+// changes nothing. It is separate from applying it because the handler runs beginResult in
+// between, and beginResult is destructive: it clears NativeTurn, NativeEndObserved and
+// EndReason for an awaiting_children parent and drops the body of an awaiting_native_stop
+// child. A refusal after that point left the request unrun and the evidence gone, and
+// gone for good -- continuation requires exactly the fields it wiped, and
+// reconcileNativeResults only looks at entries that still have a NativeTurn.
+//
+// The one check that cannot move is the turn comparison below, since clearing the old turn
+// is what beginResult is for.
+func (g *Gateway) readActiveTurn(session, id string) (nativeTurnReceipt, bool, bool) {
 	var receipt nativeTurnReceipt
+	if g.delegations == nil || id == "" || !correlationShape.MatchString(id) {
+		return receipt, false, true
+	}
 	found, err := g.readNativeReceipt("active-"+id+".json", &receipt)
 	if err != nil {
-		return false
+		return receipt, false, false
 	}
 	if !found {
-		return g.nativeEvents.directory == ""
+		return receipt, false, g.nativeEvents.directory == ""
 	}
 	if !validActiveReceipt(receipt, session, id) {
-		return false
+		return receipt, false, false
 	}
+	return receipt, true, true
+}
+
+func (g *Gateway) bindNativeTurn(session, id string) bool {
+	receipt, present, ok := g.readActiveTurn(session, id)
+	if !ok || !present {
+		return ok
+	}
+	return g.applyNativeTurn(id, receipt)
+}
+
+func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
 	r := &g.delegations.results
 	r.mu.Lock()
 	defer r.mu.Unlock()

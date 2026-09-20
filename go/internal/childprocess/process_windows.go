@@ -16,6 +16,10 @@ import (
 	"unsafe"
 )
 
+// ERROR_NO_DATA. The pipe is being closed from the other end -- what a child that stopped
+// reading produces on Windows, beside ERROR_BROKEN_PIPE. Not in syscall, so it is named here.
+const errNoData = syscall.Errno(232)
+
 var processKernel = syscall.NewLazyDLL("kernel32.dll")
 var createJob = processKernel.NewProc("CreateJobObjectW")
 var setJob = processKernel.NewProc("SetInformationJobObject")
@@ -166,7 +170,26 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 		files[0] = r
 		children = append(children, r)
 		p.pipes = append(p.pipes, w)
-		copies = append(copies, func() { _, _ = io.Copy(w, stdin); _ = w.Close() })
+		// Registered like the output copiers, and for the reason exec.Cmd waits for its own
+		// stdin goroutine: Wait() closes p.pipes as soon as outputs.Wait() returns, and this
+		// one was not in that group, so a copy still parked on a full pipe had the pipe
+		// closed under it. Its error went nowhere either, so a child that consumed only a
+		// prefix of a 24 MB document and exited 0 was reported as a clean run and its
+		// truncated output parsed as complete.
+		//
+		// A peer that stops reading is not a failure -- that is a child exiting early, which
+		// exec suppresses here too -- so only an unexpected error is recorded.
+		p.outputs.Add(1)
+		copies = append(copies, func() {
+			defer p.outputs.Done()
+			_, e := io.Copy(w, stdin)
+			_ = w.Close()
+			if e != nil && !errors.Is(e, os.ErrClosed) && !errors.Is(e, io.ErrClosedPipe) && !errors.Is(e, syscall.ERROR_BROKEN_PIPE) && !errors.Is(e, errNoData) {
+				p.mu.Lock()
+				p.copyErr = errors.Join(p.copyErr, e)
+				p.mu.Unlock()
+			}
+		})
 	}
 	// Serialize writes when stdout and stderr share a destination, as exec does.
 	var outputMu sync.Mutex

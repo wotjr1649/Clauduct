@@ -8,8 +8,15 @@ import (
 // ResponseMessage collects our validated frames for an explicit non-streaming request.
 // It never interprets backend events or releases a partial tool call.
 type ResponseMessage struct {
-	fields          map[string]json.RawMessage
-	blocks          []messageBlock
+	fields map[string]json.RawMessage
+	// Pointers, not values. strings.Builder records the address it was first written at and
+	// panics if it is later used from a different one, and append moves every element when it
+	// grows. A delta for block 0 that arrives after block 1 opened -- which the ordering
+	// guards below accept, since start never requires the previous block closed and delta
+	// never requires the newest index -- then wrote through a Builder that had been copied,
+	// and the process took a panic where every other malformed shape returns ErrStreamOrder.
+	// go vet's copylocks does not see strings.Builder and the race detector cannot either.
+	blocks          []*messageBlock
 	bytes           int
 	finished, delta bool
 }
@@ -49,13 +56,13 @@ func (m *ResponseMessage) Add(frames []Frame) error {
 			if len(m.blocks) >= maxTextParts {
 				return ErrResponseTooLarge
 			}
-			m.blocks = append(m.blocks, messageBlock{fields: e.ContentBlock})
+			m.blocks = append(m.blocks, &messageBlock{fields: e.ContentBlock})
 			m.bytes += len(frame.Data)
 		case "content_block_delta", "content_block_stop":
 			if e.Index < 0 || e.Index >= len(m.blocks) || m.blocks[e.Index].closed || m.delta {
 				return ErrStreamOrder
 			}
-			b := &m.blocks[e.Index]
+			b := m.blocks[e.Index]
 			if frame.Type == "content_block_stop" {
 				b.closed = true
 				break
@@ -113,8 +120,7 @@ func (m *ResponseMessage) JSON() ([]byte, error) {
 		return nil, ErrStreamOrder
 	}
 	content := make([]map[string]json.RawMessage, 0, len(m.blocks))
-	for i := range m.blocks {
-		b := &m.blocks[i]
+	for _, b := range m.blocks {
 		switch b.field {
 		case "text":
 			b.fields["text"], _ = json.Marshal(b.data.String())

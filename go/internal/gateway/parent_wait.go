@@ -122,5 +122,19 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 		Index int    `json:"index"`
 		Hold  bool   `json:"hold"`
 	}{step.Turn, step.Index, hold})
-	return root.WriteFile("decision-"+name+".json", decision, 0600)
+	// Written through a temporary and renamed, the way every other file this plugin reads is
+	// written. WriteFile truncates in place, so a read landing in that window returns a
+	// partial document; the plugin parses this one with a bare JSON.parse, and the
+	// SyntaxError escapes the generator rather than reaching the deliberate refusal three
+	// lines below it. A rename is atomic, so the reader sees one version or the other.
+	nonce, err := newToken()
+	if err != nil {
+		return err
+	}
+	temp := "decision-" + name + "." + nonce + ".tmp"
+	if err := root.WriteFile(temp, decision, 0600); err != nil {
+		return err
+	}
+	defer root.Remove(temp)
+	return root.Rename(temp, "decision-"+name+".json")
 }

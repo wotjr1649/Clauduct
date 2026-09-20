@@ -342,7 +342,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	result.Category = endedAs(ctx, result, ledger)
 	if lifecycle.Reason == "session_deadline" {
 		result.Category = CategoryDeadline
-		if waitErr == context.Canceled {
+		// errors.Is, not ==. A cancellation that reached here wrapped -- which is the
+		// ordinary shape once it has passed through a layer that annotates it -- kept the
+		// error set and the launcher exited 1 for a session that hit its deadline, where the
+		// answer is 124.
+		if errors.Is(waitErr, context.Canceled) {
 			waitErr = nil
 		}
 	}

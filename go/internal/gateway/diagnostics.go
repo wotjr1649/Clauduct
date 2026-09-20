@@ -523,7 +523,13 @@ func (g *ring) count(r RequestRecord) {
 		observed.Compactions++
 		g.contextUsage[r.Model] = observed
 	}
-	if r.CountSource != "" && r.Kind != "count_tokens" {
+	// Not excluding count_tokens. Only two paths record a CountSource -- the count_tokens
+	// handler and priorCount's cache read -- so excluding one of them and then excluding
+	// prior-count-cache inside left Preflights, CountsVerified, CountCacheHits, CountShared
+	// and CountMs structurally at zero, which is not the same thing as measuring no counts.
+	// CountAgreement is unaffected: it needs backend usage from a generation, which a count
+	// request does not have.
+	if r.CountSource != "" {
 		if _, known := policyFor(r.Model); known {
 			observed := g.contextUsage[r.Model]
 			if r.CountSource != "prior-count-cache" {

@@ -90,7 +90,15 @@ export const register = on => {
         }
         if (!decision) {
           const file=root+'/decision-'+name+'.json';
-          decision=await $.fs.exists(file)?JSON.parse(await $.fs.read(file)):{hold:false};
+          // A decision this build cannot parse is an unverified decision, not a crash. The
+          // refusal three lines down is the deliberate answer for that; a bare JSON.parse
+          // threw a SyntaxError that escaped this generator instead, past the only handler
+          // that knows what to do about it.
+          decision={hold:false};
+          if (await $.fs.exists(file)) {
+            try { decision=JSON.parse(await $.fs.read(file)); }
+            catch { throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED'); }
+          }
           if (decision.turn!==turn || decision.index!==e.index) decision={hold:false};
           if (typeof decision.hold!=='boolean' || decision.hold && !eligible) throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED');
         }
@@ -145,9 +153,12 @@ export const register = on => {
     const p=progress.get(e.agentId?ident(e.agentId):'');
     if (!p) return next(e);
     if (e.tool==='Agent' || e.tool==='SendMessage') p.delegated=true;
+    // Counted inside the guarded region. A throwing observe left the counter raised with
+    // nothing to lower it, and session_lifecycle waits for it to reach zero: the session
+    // then burned the whole deadline grace and was force-stopped instead of drained.
     p.pendingTools++;p.phase='tool_pending';
-    await observe($,state,progress,p,'tool_started');
     try {
+      await observe($,state,progress,p,'tool_started');
       const out=await next(e), value=out.result;
       if (!out.deny && !out.isError && value && e.tool==='Workflow' && value.status==='async_launched' && value.taskType==='local_workflow') {
         const run=ident(value.runId), task=ident(value.taskId), call=ident(e.tool_use_id);

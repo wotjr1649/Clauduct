@@ -205,7 +205,11 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		}
 		bytesLeft -= int64(len(raw))
 		scanner := bufio.NewScanner(strings.NewReader(string(raw)))
-		scanner.Buffer(make([]byte, 4096), 128<<10)
+		// The journal legitimately holds result lines up to resultBodyLimit, so a reader
+		// bounded below it refuses valid input: one child report over 128 KiB made every
+		// later child of that run fail selection, and no retry could recover it. The three
+		// other readers of this same file already use this bound.
+		scanner.Buffer(make([]byte, 4096), resultBodyLimit+16384)
 		found := false
 		label := ""
 		rows := 0

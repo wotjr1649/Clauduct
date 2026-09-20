@@ -714,8 +714,10 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 기준선은 settings 블록을 환경에 무조건 덮어쓰고 그 대신 `--effort`를 제공한다. 사용자 환경이 이기게
 하면 파서 없이 effort 선택이 돌아온다 — `CLAUDE_CODE_EFFORT_LEVEL=max`로 실제 확인했다.
 
-예외 하나만 **요구사항**이다: `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK`. 이 빌드는 non-streaming
-요청을 거부하므로, fallback을 허용하면 느린 답이 아니라 **깨진 턴**이 된다.
+예외 하나만 **요구사항**이다: `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK`. 요구사항은 남지만
+이유가 바뀌었다. 0.3.0부터 `stream:false`와 생략은 완료된 JSON 응답을 반환한다 — 더 이상 거부가
+아니다. fallback을 끄는 것은 이제 스트리밍 턴이 조용히 non-streaming으로 재생성되는 것을 막기
+위해서이며, 그 재생성 경로는 이 빌드가 검증하지 않았다.
 
 시작 route는 기준선의 `DEFAULT_SELECTION`과 같은 **astra/low**다. 지금까지 Go는 아무것도 주지 않아
 클라이언트 기본값(opus→sol/high)으로 돌았다.
@@ -733,14 +735,14 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 
 ### B.5 위임 메뉴 — 측정이 설계를 절반 바꿨다 (2026-09-16)
 
-`clauduct-<model>-<effort>` 13종 + `clauduct-inherit`. 전부 `bridge.Models`/`bridge.Efforts`에서
+`clauduct-<model>-<effort>` 20종 + `clauduct-inherit`(0.3.0 기준 21종. 4 모델 x 5 effort). 전부 `bridge.Models`/`bridge.Efforts`에서
 파생되므로 모델이 늘면 메뉴도 늘고 아무도 이 파일을 안 고친다. max는 max가 기본인 모델의 것이다
 (`(정의.effort == max) == (모델.effort == max)`) — 양방향으로 테스트한다.
 
-> **2026-09-18 실측: 14개 중 `clauduct-inherit` 하나만 비결정적이다.**
+> **2026-09-18 실측(메뉴 14개 시점): `clauduct-inherit` 하나만 비결정적이다.**
 >
 > Agent 도구에는 자체 `model` 인자가 있고, **호출한 모델이 묻지도 않고 채운다** — 실세션 위임 4회
-> 중 4회, 사용자가 요청한 적 없다. 이름 붙은 13종은 gateway의 role override가 그 인자를 이기므로
+> 중 4회, 사용자가 요청한 적 없다. 이름 붙은 모델/effort 항목은 gateway의 role override가 그 인자를 이기므로
 > 영향이 없다(`clauduct-luna-max` + 호출자 `model=fable` → luna/max로 갔다). `inherit`은 설계상
 > override가 없어서 — 상속이란 고르지 않는다는 뜻이므로 — 호출자 인자가 마지막 말이 된다.
 >
@@ -891,8 +893,10 @@ launcher가 더하는 것은 고정 접두사이지 인자 사이에 끼어드�
 > 적었다(반증됨). 그리고 그 테스트는 변경 후에도 통과했다 — `runFor`가 게이트웨이 배선을 우회해
 > **실패할 수 없는 테스트**였다. 지금은 게이트웨이가 넘기는 값과 빈 값을 모두 통과시킨다.
 
-> **미해결(세션 37): WebSearch는 역할 라우팅을 건너뛴다.** `messages.go`의 hosted search 분기가
-> 역할 오버라이드 블록보다 **앞에서 반환한다.** 그래서 역할 라우팅된 서브에이전트의 웹검색은
+> **해결(0.3.0): WebSearch도 agent의 확정 모델을 쓴다.** 아래는 세션 37 시점의 기록이다.
+>
+> ~~**미해결(세션 37): WebSearch는 역할 라우팅을 건너뛴다.**~~ `messages.go`의 hosted search 분기가
+> 역할 오버라이드 블록보다 **앞에서 반환했다.** 그래서 역할 라우팅된 서브에이전트의 웹검색은
 > `SelectRoute(request.Model, ...)`로 만들어져 역할의 모델이 아니라 **요청 모델**로 나가고,
 > 그 경로의 `message_start`도 같은 값을 싣는다. 근거 주석이 없어 의도인지 누락인지 확인되지 않았다.
 
@@ -1067,13 +1071,16 @@ compactPercent), non-streaming fallback 차단 여부, 위임 메뉴 항목 수.
 | E1 | ~~`anthropic-version` 검사~~ **완료 2026-09-16** | 8 |
 | E2 | ~~`content-encoding` 검사~~ **완료 2026-09-16** | 8 |
 | E3 | ~~`Frame.WriteTo` 16 KiB 청킹~~ **완료 2026-09-16.** `chunkedWriter`, 돌연변이 6/6 | 6.3 |
-| E4 | compact 템플릿 식별 + **effort medium 상한** | **완료 2026-09-17** |
+| E4 | compact 템플릿 식별 + ~~effort medium 상한~~ | 식별은 유지, **상한은 0.3.0에서 제거** |
 | E5 | 전체 요청 timeout 10분 | **완료 2026-09-17** |
 
 ### E.4/E5 (2026-09-17)
 
 **E4는 진단이 아니라 돈이다.** 기준선의 `compact-policy`가 하는 일은 분류가 아니라
-`purpose === 'compact-template'`일 때 **effort를 medium으로 낮추는 것**이다. 압축 요청은
+`purpose === 'compact-template'`일 때 **effort를 medium으로 낮추는 것**이다.
+
+**0.3.0에는 이 상한이 없다.** 압축은 그 agent의 확정 effort를 유지하고, 전환에 필요한 압축은
+기존 모델로 먼저 수행한다. 아래 기술은 상한이 있던 시점의 기록이며 현재 동작이 아니다. 압축 요청은
 아무도 시키지 않고, 세션이 보내는 **가장 큰 입력**을 싣고, max로 고정된 세션에서는 자동으로
 일어나는 가장 비싼 단일 요청이다. 전사(轉寫) 요약은 max가 존재하는 이유가 아니다.
 

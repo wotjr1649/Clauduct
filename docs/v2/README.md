@@ -13,12 +13,12 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 | 작업 패키지 | **WP01–WP07 완료.** C4·F4는 "조사 후 안 함"으로 닫힘 |
 | 기본 실행기 | **Go.** `clauduct` = Go 빌드, `clauduct-node` = Node 구현 (G9, 2026-09-17) |
 | 기준선 | `node-bfbdf23-g0` (commit `bfbdf2385175…`, tree `9cd96d660959…`) |
-| 개발 branch | `fix/verified-agent-policies`, `D:/AIDEV/Clauduct`. 검증 바이너리: `D:/AIDEV/clauduct-s36-build/clauduct.exe` |
+| 출시 branch | `release/v0.3.0`. 검증 바이너리: `D:/AIDEV/clauduct-s36-build/clauduct.exe` |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.1, **CGO_ENABLED=0**. 정확 계수를 위해 검토·고정한 의존성 3개: [결정](../../verification/policy-evidence-20260918/DEPENDENCIES.md) |
 | 기존 Node 변경 | **0건.** baseline tracked 파일 생성·수정·이동·삭제 없음 |
 | 테스트 | 2026-09-17 기준선은 1124 pass / 0 fail / 3 skip. 2026-09-18 변경의 별도 증거: [계수](../../verification/policy-evidence-20260918/COUNT-TOKENS.md), [압축 제어](../../verification/policy-evidence-20260918/CONTEXT-ENFORCEMENT.md) |
 | 실모델 호출 | 2026-09-17 누계는 추론 55/100. 이후 검증은 각 evidence 테스트의 유한 ledger와 실행 기록으로 별도 집계 |
-| 측정된 클라이언트 | claude **2.1.275**, Windows, go 1.27.1 |
+| 측정된 클라이언트 | claude **2.1.278**, Windows, go 1.27.1 |
 
 판정 전문은 [DECISION.md](DECISION.md), 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md),
 격차 원장은 [PARITY.md](PARITY.md), 증거는 [VALIDATION.md](VALIDATION.md)가 소유한다.

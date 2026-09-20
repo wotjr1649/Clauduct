@@ -44,6 +44,10 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	}
 	var def roleDefault
 	found := false
+	// A definition this scan could not read may be the one being asked for, so the answer
+	// below is "unverified" rather than "absent". It is not a reason to lose the definitions
+	// that did parse, which is what aborting the walk cost.
+	scanned := false
 	for i, dir := range s.directories {
 		if i == s.managed {
 			def, found = s.cli[role]
@@ -54,10 +58,11 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if dir.prefix != "" && !strings.HasPrefix(role, dir.prefix+":") {
 			continue
 		}
-		defs, err := readRoleDirectory(dir)
+		defs, incomplete, err := readRoleDirectory(dir)
 		if err != nil {
 			return bridge.Route{}, false, err
 		}
+		scanned = scanned || incomplete
 		def, found = defs[role]
 		if found {
 			break
@@ -70,22 +75,34 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if strings.Contains(role, ":") && s.pluginError != nil {
 			return bridge.Route{}, false, s.pluginError
 		}
+		if scanned {
+			return bridge.Route{}, false, errRoleDefaults
+		}
 		return bridge.Route{}, false, nil
 	}
 	if def.invalid {
 		return bridge.Route{}, false, errRoleDefaults
 	}
 	model, effort := def.Model, def.Effort
+	named := model != "" && model != "inherit"
 	if model == "" && s.defaultModel != "inherit" {
 		model = s.defaultModel
+		named = model != ""
 	}
 	if model == "" || model == "inherit" {
 		model = parent.Model
 	}
-	if effort == "" {
+	// A definition that names a model and no effort takes that model's own default. That is
+	// what SelectRoute does with an empty effort, and it is what the same choice written as
+	// Agent(model:) already gets. Reading the parent's effort here routed one intent two
+	// ways: a role pinned to astra ran at a max parent's effort rather than astra's own, and
+	// a parent at low silently downgraded a role whose model defaults higher. Inheritance is
+	// still right when the definition names no model -- then the parent's route is the whole
+	// answer, and a parent without one is still unverified.
+	if effort == "" && !named {
 		effort = parent.Effort
 	}
-	if model == "" || effort == "" {
+	if model == "" || (!named && effort == "") {
 		return bridge.Route{}, false, errRoleDefaults
 	}
 	route, err := bridge.SelectRoute(model, effort)
@@ -109,9 +126,16 @@ func boundedRoleFile(path string) ([]byte, error) {
 	return raw, nil
 }
 
-func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
+// The bool reports that at least one .md was passed over. A per-file failure is not the
+// directory's failure: native skips a definition it cannot read, and aborting the walk here
+// meant one stray markdown file -- a note whose first line happens to be a --- rule, so the
+// frontmatter has no closing fence -- took every valid role beside it down and ended every
+// Agent call in the session with a message that named no file. The caller turns the skip
+// into an unverified answer for roles it then cannot find, which is where that belongs.
+func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, bool, error) {
 	defs := map[string]roleDefault{}
 	count := 0
+	skipped := false
 	err := filepath.WalkDir(dir.path, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) && path == dir.path {
@@ -128,22 +152,26 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 		}
 		file, err := os.Open(path)
 		if err != nil {
-			return errRoleDefaults
+			skipped = true
+			return nil
 		}
 		info, err := file.Stat()
 		if err != nil || !info.Mode().IsRegular() {
 			file.Close()
-			return errRoleDefaults
+			skipped = true
+			return nil
 		}
 		// Only the bounded frontmatter prefix is needed, never the role prompt.
 		raw, err := io.ReadAll(io.LimitReader(file, 65544))
 		file.Close()
 		if err != nil {
-			return errRoleDefaults
+			skipped = true
+			return nil
 		}
 		def, ok, err := parseRoleFile(raw)
 		if err != nil {
-			return errRoleDefaults
+			skipped = true
+			return nil
 		}
 		if dir.prefix != "" && !ok {
 			def.Name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -161,7 +189,7 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 		defs[def.Name] = def
 		return nil
 	})
-	return defs, err
+	return defs, skipped, err
 }
 
 func parseRoleFile(raw []byte) (roleDefault, bool, error) {

@@ -54,7 +54,7 @@ func blockAt(t *testing.T, frames []anthropic.Frame, kind string, nth int) map[s
 // before the backend has said the response completed. A stream that fails midway must not
 // have handed over a call.
 func TestNoToolFrameEscapesBeforeCompletion(t *testing.T) {
-	translator := NewTranslatorFor(callable("Read"))
+	translator := NewTranslatorFor(callable("Read"), "")
 
 	// Everything a backend sends while a call is being produced.
 	for _, e := range []stream.Event{
@@ -330,6 +330,10 @@ func TestToolDefinitionsReachTheBackend(t *testing.T) {
 		t.Fatalf("tools = %+v", out.Tools)
 	}
 	tool := out.Tools[0]
+	encoded, err := json.Marshal(tool)
+	if err != nil || !strings.Contains(string(encoded), `"strict":false`) {
+		t.Fatal("Responses must receive explicit non-strict native tool semantics")
+	}
 	if tool.Type != "function" || tool.Name != "Read" || tool.Description != "read a file" {
 		t.Fatalf("tool = %+v", tool)
 	}
@@ -563,7 +567,7 @@ func TestCallIdentifierShapeIsChecked(t *testing.T) {
 // The event that would tempt a naive port into releasing a call early. Feeding it here is
 // what makes the barrier test able to fail if someone adds that arm.
 func TestStreamingItemEventsProduceNoToolFrames(t *testing.T) {
-	translator := NewTranslatorFor(callable("Read"))
+	translator := NewTranslatorFor(callable("Read"), "")
 	for _, e := range []stream.Event{
 		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
 		itemDone(0, functionItem("fc_1", "call_1", "Read", `{}`)),
@@ -592,7 +596,7 @@ func TestStreamingItemEventsProduceNoToolFrames(t *testing.T) {
 // The barrier stated as a measurement. Every event a tool call produces, and not one client
 // frame, until the completion arrives.
 func TestNothingIsReleasedUntilTheResponseCompletes(t *testing.T) {
-	translator := NewTranslatorFor(callable("Read"))
+	translator := NewTranslatorFor(callable("Read"), "")
 
 	for _, e := range []stream.Event{
 		event(codex.Created, `{"type":"response.created","response":{"id":"r"}}`),

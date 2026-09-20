@@ -6,15 +6,8 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 )
 
-// Recognising the client's own compaction request, and making it cost less.
-//
-// When a session fills its context the client compacts it: one request that asks the model to
-// summarise everything so far. Nobody asks for it and nobody sees it happen, and it arrives
-// with the largest input the session will ever send. On a session pinned to max or xhigh it
-// is by some distance the most expensive single thing that happens, automatically.
-//
-// Summarising a transcript is not the work those efforts exist for. So a compaction runs at
-// medium unless the session is already cheaper, which is the Node baseline's rule.
+// Recognising the client's compaction template for diagnostics. Compaction retains
+// the resolved model and effort; matching text must never change the selection.
 //
 // This is template compatibility and nothing more. It is not an authenticated origin, not a
 // permission decision, and not a claim about who sent the request -- and the prompt itself is
@@ -32,8 +25,9 @@ const compactPrefix = "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\
 const compactSuffix = "\n\nREMINDER: Do NOT call any tools. Respond with plain text only — " +
 	"an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task."
 
-// compactEffort is what a compaction runs at when the session is on something dearer.
-const compactEffort = "medium"
+// A summary preference, not a truncation or output-token cap. Explicit retention
+// requirements take precedence, and the exact preflight counts this instruction.
+const CompactEfficiencyInstruction = " For this compaction, keep any requested analysis brief. In the summary preserve every explicit retention requirement, exact task data, decisions, constraints, agent/run IDs, verified outcomes, failures, and next actions. State each fact once; omit repeated narration, duplicate reports and unexecuted example scripts unless explicitly requested for retention. Aim for at most 1200 words when those requirements fit; exceed that target whenever needed to preserve required information. Keep the native summary format."
 
 // folded collapses runs of whitespace so the comparison is about wording.
 //
@@ -56,6 +50,9 @@ func IsCompactTemplate(messages []Message) bool {
 		strings.HasSuffix(body, " "+suffix) &&
 		len(body) > len(prefix)+len(suffix)+2
 }
+
+// IsCompaction recognizes the native template, never authorizes its execution.
+func IsCompaction(request *anthropic.Request) bool { return IsCompactTemplate(textOf(request)) }
 
 // Message is the part of a turn this rule looks at. Declared here rather than taking the
 // anthropic type so the rule stays a rule about text and cannot reach anything else in a

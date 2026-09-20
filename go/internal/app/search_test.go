@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,81 @@ type searchingScript struct {
 
 	mu   sync.Mutex
 	sent []string
+}
+
+type childSearchFixture struct {
+	mu          sync.Mutex
+	root, child int
+	searches    []string
+	done        chan struct{}
+}
+
+func (f *childSearchFixture) Count(context.Context, upstream.Call) (int64, error) { return 1000, nil }
+func (f *childSearchFixture) Search(_ context.Context, raw []byte) ([]byte, error) {
+	var request struct{ Model string }
+	_ = json.Unmarshal(raw, &request)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.searches = append(f.searches, request.Model)
+	if len(f.searches) == 1 {
+		close(f.done)
+	}
+	return []byte(`{"output":"Public fixture","results":[{"title":"Public search proof","url":"https://example.org/proof"}]}`), nil
+}
+func (f *childSearchFixture) Execute(ctx context.Context, call upstream.Call) (*upstream.Response, error) {
+	reply := textStream("side", "done")
+	if upstream.Conversation(string(call.Body)) {
+		f.mu.Lock()
+		if call.Model == "gpt-5.6-sol" {
+			f.child++
+			step := f.child
+			f.mu.Unlock()
+			if step == 1 {
+				reply = toolStream("discover_search", "ToolSearch", `{"query":"select:WebSearch","max_results":1}`)
+			} else if step == 2 {
+				reply = toolStream("search_public", "WebSearch", `{"query":"public synthetic search proof"}`)
+			} else {
+				reply = textStream("child_report", "Findings: public proof. Evidence: https://example.org/proof. Unverified: live web.")
+			}
+		} else {
+			f.root++
+			step := f.root
+			f.mu.Unlock()
+			if step == 1 {
+				reply = toolStream("spawn_search", "Agent", `{"subagent_type":"searcher","description":"public search","prompt":"Search public synthetic evidence","model":"gpt-5.6-sol","effort":"high"}`)
+			} else {
+				select {
+				case <-f.done:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				reply = textStream("parent_report", "done")
+			}
+		}
+	}
+	return (&upstream.Fixture{SSE: countedFixtureReply(reply, call, 1000)}).Execute(ctx, call)
+}
+func TestNativeChildWebSearchUsesConfirmedSelectionWithExactPolicy(t *testing.T) {
+	buildHook(t)
+	f := &childSearchFixture{done: make(chan struct{})}
+	out := (nativeRun{Args: []string{"-p", "delegate public search", "--allowedTools", "Agent,ToolSearch,WebSearch", "--agents", `{"searcher":{"description":"public search fixture","prompt":"Use public search","tools":["ToolSearch","WebSearch"],"model":"gpt-5.6-luna","effort":"medium"}}`}, transport: f, ContextPolicy: true}).run(t)
+	if out.err != nil || out.result.NativeExitCode != 0 {
+		t.Fatalf("child search failed exit=%d err=%v records=%+v", out.result.NativeExitCode, out.err, out.result.Diagnostics.Recent)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.searches) != 1 || f.searches[0] != "gpt-5.6-sol" {
+		t.Fatalf("confirmed search model missing: %v", f.searches)
+	}
+	verified := false
+	for _, r := range out.result.Diagnostics.Recent {
+		if r.Kind == "web_search" {
+			verified = r.AgentID != "" && r.SelectionVerified != nil && *r.SelectionVerified && r.Model == "gpt-5.6-sol" && r.Effort == "high"
+		}
+	}
+	if !verified {
+		t.Fatal("search agent provenance missing")
+	}
 }
 
 func (s *searchingScript) Search(_ context.Context, body []byte) ([]byte, error) {
@@ -48,6 +124,7 @@ func TestAWebSearchRoundTripsThroughTheBridge(t *testing.T) {
 	const query = "example release date"
 
 	script := newScript(
+		toolStream("discover_search", "ToolSearch", `{"query":"select:WebSearch","max_results":1}`),
 		toolStream("call_search_1", "WebSearch", `{"query":"`+query+`"}`),
 		textStream("resp_done", "done"))
 	backend := &searchingScript{
@@ -56,7 +133,7 @@ func TestAWebSearchRoundTripsThroughTheBridge(t *testing.T) {
 			`{"title":"` + title + `","url":"` + link + `"}]}`,
 	}
 
-	scriptedOn(t, script, backend, []string{"-p", "search the web for it", "--allowedTools", "WebSearch"})
+	scriptedOn(t, script, backend, []string{"-p", "search the web for it", "--allowedTools", "ToolSearch,WebSearch"})
 
 	sent := backend.searches()
 	if len(sent) == 0 {

@@ -405,25 +405,15 @@ func TestAnUpstreamFailureCarriesNoBackendText(t *testing.T) {
 // --- the abort watcher ------------------------------------------------------------------
 
 // The watcher must not expire a deadline on a connection the handler has finished with.
-//
-// Calling it once proves nothing: the defect was a select between two closed channels, so
-// it only shows as a rate. Two thousand rounds put the odds of a silent pass past any
-// number worth writing down.
 func TestTheAbortWatcherLeavesAFinishedConnectionAlone(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	done := make(chan struct{})
-	close(done)
-	cancel()
-
 	fired := 0
-	for i := 0; i < 2000; i++ {
-		abortOnCancel(ctx, done, func() { fired++ })
-	}
+	stop := watchReadCancellation(ctx, func() { fired++ })
+	stop()
+	cancel()
 	if fired != 0 {
-		t.Fatalf("the watcher expired the read deadline %d times in 2000 rounds after the "+
-			"handler had finished. Each one resets a connection whose response is still in "+
-			"the server's write buffer, so the client gets no reply at all.", fired)
+		t.Fatal("the watcher changed the deadline after the handler finished")
 	}
 }
 
@@ -431,11 +421,10 @@ func TestTheAbortWatcherLeavesAFinishedConnectionAlone(t *testing.T) {
 // also makes the test above pass.
 func TestTheAbortWatcherStillStopsAReadThatTheClientAbandoned(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	defer close(done)
-
+	defer cancel()
 	fired := make(chan struct{})
-	go abortOnCancel(ctx, done, func() { close(fired) })
+	stop := watchReadCancellation(ctx, func() { close(fired) })
+	defer stop()
 
 	cancel()
 	select {

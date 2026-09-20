@@ -1,0 +1,18 @@
+{
+  "installedReleaseChanged": false,
+  "target": "D:\\AIDEV\\clauduct-s36-build",
+  "prior": {
+    "clauduct-hook.exe": "869fdaa3ffe48b29c516b3f1c9c3568652192ced7f116aacc3318c00614d0851",
+    "clauduct.exe": "fdc613eb07bfe1362729ff4df947a406d93f4b0808a86c04661905c56e406a3d",
+    "clauduct-dev.exe": "49d85b423d1d31882bb5ef13980eae805ca0d1a3e5975db7b5243dc36b7633b9"
+  },
+  "at": "2026-09-20T21:38:48.4037661+09:00",
+  "backup": "D:\\AIDEV\\clauduct-s36-build\\before-s49-31ff118-20260920",
+  "source": "31ff1184c21d7dac0fccd03394081aacd78b9db5",
+  "artifacts": {
+    "clauduct.exe": "7feb620944578d85982f8ecac20fe3ffba0096207da0e9b81682f603b5b1036f",
+    "clauduct-hook.exe": "7d517dbee62c9b7054709f0f20ed51bd701e11702408c62e1ef1a6bf0d4f279d",
+    "clauduct-dev.exe": "c7d8999d5ef6cef5ad249481bed17c30e7e4ca8a8f940c62b1601f774bb3cd03",
+    "filtercancel.exe": "88d144e516cb3aa475c8e88765e46462b8d66e83365889602c4e5c69f965e39e"
+  }
+}

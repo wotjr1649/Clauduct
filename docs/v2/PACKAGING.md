@@ -147,6 +147,17 @@ PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`�
 
 세션 상태는 전부 native가 소유하고 `CLAUDE_CONFIG_DIR`(기본 `~/.claude`) 아래에 있다. 이 wrapper는 자기 것을 어디에도 쓰지 않는다.
 
+**그 결정의 대가 (2026-09-18 관측).** 격리하지 않으므로 clauduct 세션이 고른 모델이 사용자의
+`~/.claude.json`에 남는다 — `clientDataCacheSlots.bi1-*.model`에 `gpt-6-astra`가 들어가고, 그 다음
+native `claude`가 "이 버전 카탈로그에 없는 모델"이라고 경고한다. 첫 실사용에서 실제로 나왔다.
+
+완화는 `behavesAs`가 **아니다.** 넣으면 경고는 사라지지만 effort를 함께 가져가서 low가 medium이 된다고
+실측돼 있다(`app/settings.go`의 `pickerRows` 주석). 경고가 가리키는 컨텍스트 창 문제는
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`가 이미 따로 해결한다.
+
+지금의 완화는 안내다 — clauduct에서 모델을 바꾸면 그 선택이 native 쪽에도 보인다. 구조적 해결(설정
+격리)은 결정거리로 남아 있고 아직 하지 않았다.
+
 ### 5.0 스크립트
 
 `scripts/install.ps1`과 `scripts/uninstall.ps1`이 그 복사를 대신한다. 루트의 `install.ps1`은

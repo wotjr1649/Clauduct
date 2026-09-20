@@ -24,7 +24,7 @@ import (
 // Reading is one session's account with the time it was written.
 type Reading struct {
 	Status Status
-	// Taken is the file's modification time, which is when the session ended.
+	// Taken is the last checkpoint or final report time; Lifecycle distinguishes them.
 	Taken time.Time
 	// Path is where it was read from, so a reader can go and look.
 	Path string
@@ -37,7 +37,7 @@ func (r Reading) Age() time.Duration { return time.Since(r.Taken) }
 //
 // dir empty means the directory sessions write to. A file that does not decode is skipped
 // rather than reported: the directory is a temporary one and anything may be in it, and a
-// half-written file from a session that is still running is expected rather than wrong.
+// an older build or an interrupted write may have left an incomplete account.
 func Readings(dir string, limit int) []Reading {
 	if dir == "" {
 		dir = StatusDir()

@@ -8,10 +8,52 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
+
+func TestRejectedWorkflowIsDeniedWithoutGatewayOrOriginalOperation(t *testing.T) {
+	for _, script := range []string{bridge.RejectedWorkflowScript, "return 42;", bridge.RejectedWorkflowScript + "\nreturn 42;"} {
+		raw, _ := json.Marshal(map[string]any{"hook_event_name": "PreToolUse", "tool_name": "Workflow", "tool_input": map[string]string{"script": script}})
+		var out, errOut bytes.Buffer
+		if code := runWithOutput(bytes.NewReader(raw), &out, &errOut, nil); code != 0 {
+			t.Fatal(code, errOut.String())
+		}
+		if script != bridge.RejectedWorkflowScript {
+			if out.Len() != 0 {
+				t.Fatal("unrelated call changed")
+			}
+			continue
+		}
+		var resultFields map[string]map[string]string
+		if json.Unmarshal(out.Bytes(), &resultFields) != nil || resultFields["hookSpecificOutput"]["permissionDecision"] != "deny" || resultFields["hookSpecificOutput"]["permissionDecisionReason"] != bridge.RejectedWorkflowReason {
+			t.Fatal("not a native denial", out.String())
+		}
+	}
+}
 
 func gatewayEnv(base string) map[string]string {
 	return map[string]string{"ANTHROPIC_BASE_URL": base, "ANTHROPIC_AUTH_TOKEN": "session-token"}
+}
+
+func TestCompactionEventsSendOnlyIdentityAndFailClosed(t *testing.T) {
+	for _, status := range []int{204, 400} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			if r.URL.Path != "/clauduct/context" || strings.Contains(string(raw), "synthetic-private") {
+				t.Error("context event forwarded content or wrong destination")
+			}
+			w.WriteHeader(status)
+		}))
+		for _, event := range []string{"PreCompact", "PostCompact"} {
+			var out bytes.Buffer
+			code := run(strings.NewReader(`{"hook_event_name":"`+event+`","session_id":"s1","agent_id":"a1","compact_summary":"synthetic-private"}`), &out, gatewayEnv(server.URL))
+			if status == 204 && code != 0 || status == 400 && code != 2 {
+				t.Fatalf("event result %d: code=%d", status, code)
+			}
+		}
+		server.Close()
+	}
 }
 
 // B4. What the hook reports is an identifier, a role, and where the client keeps its
@@ -60,8 +102,9 @@ func TestOnlyTheBindingTravels(t *testing.T) {
 	}
 }
 
-// A stop withdraws a registration and says nothing else about it.
-func TestAStopCarriesNothingButTheWithdrawal(t *testing.T) {
+// Completion carries only correlation and its existing report, for event-first
+// parent delivery. Context settings and unrelated hook fields stay behind.
+func TestAStopCarriesCorrelationAndExistingResult(t *testing.T) {
 	var got []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, _ = io.ReadAll(io.LimitReader(r.Body, 1<<16))
@@ -71,7 +114,7 @@ func TestAStopCarriesNothingButTheWithdrawal(t *testing.T) {
 
 	event := `{"hook_event_name":"SubagentStop","agent_id":"agent_1","agent_type":"Explore",
 	  "session_id":"1b0b3297-ade4-4aa4-86c8-80eaf43db0a3",
-	  "transcript_path":"C:/x/.claude/projects/p/s.jsonl"}`
+	  "transcript_path":"C:/x/.claude/projects/p/s.jsonl","last_assistant_message":"PUBLIC_REPORT","unrelated":"DO_NOT_FORWARD"}`
 	var errOut bytes.Buffer
 	if code := run(strings.NewReader(event), &errOut, gatewayEnv(server.URL)); code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut.String())
@@ -83,8 +126,42 @@ func TestAStopCarriesNothingButTheWithdrawal(t *testing.T) {
 	if !sent.Stop {
 		t.Fatal("a SubagentStop did not report one")
 	}
-	if sent.TranscriptPath != "" || sent.SessionID != "" {
-		t.Errorf("a finished subagent still described where its transcript is: %+v", sent)
+	if sent.TranscriptPath == "" || sent.SessionID == "" || sent.Result != "PUBLIC_REPORT" || sent.Context != nil || bytes.Contains(got, []byte("DO_NOT_FORWARD")) {
+		t.Error("completion lost correlation/report or forwarded unrelated data")
+	}
+}
+
+func TestToolFailureEventNeverForwardsInputsOrErrorText(t *testing.T) {
+	var got []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, _ = io.ReadAll(r.Body)
+		if r.URL.Path != "/clauduct/tool-failures" {
+			t.Error("wrong route")
+		}
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+	var log bytes.Buffer
+	code := run(strings.NewReader(`{"hook_event_name":"PostToolUseFailure","session_id":"public_session","tool_use_id":"public_call","tool_name":"mcp__private_name","is_interrupt":true,"error":"DO_NOT_COPY","tool_input":{"value":"DO_NOT_COPY"}}`), &log, gatewayEnv(server.URL))
+	if code != 0 || bytes.Contains(got, []byte("private_name")) || bytes.Contains(got, []byte("DO_NOT_COPY")) || !bytes.Contains(got, []byte(`"tool":"MCP"`)) || !bytes.Contains(got, []byte(`"interrupted":true`)) {
+		t.Fatal("failure receipt boundary", code)
+	}
+}
+
+func TestEscapedResultAtDecodedLimitSurvivesJSONExpansion(t *testing.T) {
+	result := strings.Repeat("<", 256<<10)
+	event, _ := json.Marshal(map[string]any{"hook_event_name": "SubagentStop", "agent_id": "public_child", "agent_type": "Plan", "session_id": "public_session", "transcript_path": "C:/public/public_session.jsonl", "last_assistant_message": result})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b binding
+		if json.NewDecoder(r.Body).Decode(&b) != nil || b.Result != result {
+			t.Error("escaped result was lost")
+		}
+		w.WriteHeader(204)
+	}))
+	defer server.Close()
+	var log bytes.Buffer
+	if run(bytes.NewReader(event), &log, gatewayEnv(server.URL)) != 0 {
+		t.Fatal("valid decoded-limit result refused", log.String())
 	}
 }
 

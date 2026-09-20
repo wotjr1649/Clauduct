@@ -17,6 +17,17 @@ func event(kind, payload string) stream.Event {
 	return stream.Event{Type: kind, Raw: []byte(payload)}
 }
 
+func TestDisplayOnlyHistoryEncodesAnEmptyInputArray(t *testing.T) {
+	request, err := BuildRequest(&anthropic.Request{Model: "gpt-6-astra"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(request)
+	if err != nil || !strings.Contains(string(raw), `"input":[]`) {
+		t.Fatal("empty display-only input must not be null")
+	}
+}
+
 // defaultItem is the item id the text helpers stream under.
 //
 // It matches the id the message item fixtures carry, which is not a detail: a delta names
@@ -179,7 +190,18 @@ func callable(names ...string) *anthropic.Request {
 // runFor feeds events through a translator that knows what is callable.
 func runFor(t *testing.T, request *anthropic.Request, parts ...any) ([]anthropic.Frame, error) {
 	t.Helper()
-	translator := NewTranslatorFor(request)
+	return runForOn(t, request, "", parts...)
+}
+
+// runForOn is the same with the effective model stated, which is what the gateway does.
+//
+// runFor passes an empty one, and for a while that was the only way these frames were ever
+// produced in a test -- so TestTheReplyNamesTheRequestedModelNotTheRoutedOne asserted an
+// invariant the product had stopped holding and went on passing, because the path it drove
+// could not carry the value that would have broken it.
+func runForOn(t *testing.T, request *anthropic.Request, effective string, parts ...any) ([]anthropic.Frame, error) {
+	t.Helper()
+	translator := NewTranslatorFor(request, effective)
 	var frames []anthropic.Frame
 	for _, e := range flatten(t, parts) {
 		produced, err := translator.Accept(e)
@@ -469,7 +491,7 @@ func TestACompletionWithNoUsageIsRefused(t *testing.T) {
 // handing the client more than it asked for would be answering a different request.
 func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
-		`{"model":"sonnet","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+		`{"model":"sonnet","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`), "")
 	for _, e := range []stream.Event{textDelta(0, "x"), textDone(0, "x")} {
 		if _, err := translator.Accept(e); err != nil {
 			t.Fatalf("Accept: %v", err)
@@ -486,7 +508,7 @@ func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 // for and paid for.
 func TestAResponseExactlyAtTheLimitIsAccepted(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
-		`{"model":"sonnet","max_tokens":3,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
+		`{"model":"sonnet","max_tokens":3,"stream":true,"messages":[{"role":"user","content":"x"}]}`), "")
 	for _, e := range []stream.Event{textDelta(0, "x"), textDone(0, "x")} {
 		if _, err := translator.Accept(e); err != nil {
 			t.Fatalf("Accept: %v", err)
@@ -683,7 +705,7 @@ func TestAnExplicitEffortWins(t *testing.T) {
 // A green test asserting the defect is what offline checking looks like when it agrees with
 // itself.
 func TestStreamedToolArgumentsAreAccountedForNotRefused(t *testing.T) {
-	translator := NewTranslatorFor(callable("Read"))
+	translator := NewTranslatorFor(callable("Read"), "")
 
 	// Every streaming argument event, and not one client frame. This is the delivery
 	// barrier stated as a measurement: before response.completed there is nothing to

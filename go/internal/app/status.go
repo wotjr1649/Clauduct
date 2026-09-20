@@ -38,22 +38,32 @@ const (
 	CategoryStartFailed = "CLIENT_START_FAILED"
 	CategoryBudget      = "REQUEST_BUDGET"
 	CategoryCancelled   = "USER_CANCELLED"
+	CategoryDeadline    = "SESSION_DEADLINE"
 )
 
-// SessionFacts are what this build told the child about itself.
+// SessionFacts describe launcher defaults and installed integration components.
 //
-// Kept beside the gateway's account because half of a session's behaviour is decided here
-// and is invisible from there: where it compacts, what it starts on, and whether a
-// non-streaming retry was allowed. A reader asking why a session compacted at a particular
-// point has no other place to look.
+// Context defaults are not a reading of the native client's effective configuration.
+// Desired model policies and backend observations are reported by the gateway.
 type SessionFacts struct {
-	Model                 string  `json:"model"`
-	Effort                string  `json:"effort"`
-	ContextWindow         int     `json:"contextWindow"`
-	AutoCompactWindow     int     `json:"autoCompactWindow"`
-	CompactPercent        float64 `json:"compactPercent"`
-	NonStreamingFallback  bool    `json:"nonStreamingFallbackDisabled"`
-	DelegationMenuEntries int     `json:"delegationMenuEntries"`
+	// StartupModel and StartupEffort are what a session begins on when the user names
+	// nothing. A default, never a reading of what the session went on to run.
+	//
+	// Named that way since 2026-09-18, and the rename is the whole fix. They were called
+	// model and effort, and until the startup effort moved onto --effort they were
+	// accidentally accurate -- CLAUDE_CODE_EFFORT_LEVEL pinned a session to exactly this
+	// value, so nothing could make them wrong. Letting a session change its effort made
+	// them routinely wrong, and a field called "effort" under a struct called session is
+	// read as what the session ran at.
+	//
+	// There is no single honest value for that. A session runs its parent and its
+	// subagents on different routes at the same time, which is the point of role routing.
+	// Recent answers it per request, and exactly.
+	StartupModel          string                `json:"startupModel"`
+	StartupEffort         string                `json:"startupEffort"`
+	NativeContextDefaults NativeContextDefaults `json:"nativeContextDefaults"`
+	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
+	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
 	// HookInstalled is whether the subagent hook was found beside this executable.
 	//
 	// Reported because its absence is silent otherwise. findHook looks beside the binary
@@ -63,46 +73,109 @@ type SessionFacts struct {
 	HookInstalled bool `json:"hookInstalled"`
 }
 
+// Launcher defaults may be overridden by the user's environment. They are not
+// evidence that a native agent applied them or that gateway policy was enforced.
+type NativeContextDefaults struct {
+	Window              int     `json:"window"`
+	AutoCompactWindow   int     `json:"autoCompactWindow"`
+	CompactPercent      float64 `json:"compactPercent"`
+	ApplicationVerified bool    `json:"applicationVerified"`
+}
+
 // Status is the whole account of one session.
 type Status struct {
+	Completion CompletionFacts     `json:"completion"`
 	Category   string              `json:"category"`
 	ExitCode   int                 `json:"exitCode"`
 	Attempts   int                 `json:"attempts"`
 	Inferences int                 `json:"inferences"`
 	Session    SessionFacts        `json:"session"`
 	Gateway    gateway.Diagnostics `json:"gateway"`
+	Lifecycle  *LifecycleFacts     `json:"lifecycle,omitempty"`
+}
+
+// Process exit, transport success and task completion are different claims.
+// Acceptance is never inferred from exit=0 or a model's own report.
+type CompletionFacts struct {
+	Acceptance            string `json:"acceptance"`
+	APIFailures           int64  `json:"apiFailures"`
+	CancelledRequests     int64  `json:"cancelledRequests"`
+	NativeCancellations   int64  `json:"nativeCancellations"`
+	NativeToolFailures    int64  `json:"nativeToolFailures"`
+	RejectedWorkflowCalls int64  `json:"rejectedWorkflowCalls"`
+	UnacquiredResults     int    `json:"unacquiredResultsInRecent"`
+	ControlTransitions    int64  `json:"controlTransitions"`
+}
+
+func completionFacts(d gateway.Diagnostics) CompletionFacts {
+	out := CompletionFacts{Acceptance: "not_assessed"}
+	for category, n := range d.Totals.Failures {
+		if category == "CANCELLED" {
+			out.CancelledRequests += n
+		} else {
+			out.APIFailures += n
+		}
+	}
+	out.NativeCancellations = d.AgentResults.Totals["cancelled"]
+	out.RejectedWorkflowCalls = d.Totals.RejectedWorkflowCalls
+	for _, n := range d.Totals.Controls {
+		out.ControlTransitions += n
+	}
+	out.NativeToolFailures = d.NativeToolFailures.Total
+	// Old clients without the native failure event can still expose Agent errors
+	// in their next request. Do not add the two sources and double-count failures.
+	if n := d.AgentSelections.Totals["native_tool_failed"]; n > out.NativeToolFailures {
+		out.NativeToolFailures = n
+	}
+	for _, r := range d.AgentResults.Recent {
+		if r.State == "result_unavailable" || r.State == "unavailable_reported" || r.State == "awaiting_parent" || r.State == "awaiting_workflow_result" {
+			out.UnacquiredResults++
+		}
+	}
+	return out
 }
 
 // Account assembles what this session did.
 func Account(result Result) Status {
 	return Status{
+		Completion: completionFacts(result.Diagnostics),
 		Category:   result.Category,
 		ExitCode:   result.NativeExitCode,
 		Attempts:   result.Attempts,
 		Inferences: result.Inferences,
 		Session: SessionFacts{
-			Model:                 startupModel.Model,
-			Effort:                startupModel.Effort,
-			ContextWindow:         contextWindow,
-			AutoCompactWindow:     compactAt,
-			CompactPercent:        compactPercent(),
+			StartupModel:  startupModel.Model,
+			StartupEffort: startupModel.Effort,
+			NativeContextDefaults: NativeContextDefaults{Window: contextWindow,
+				AutoCompactWindow: compactAt, CompactPercent: compactPercent(), ApplicationVerified: false},
 			NonStreamingFallback:  sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
 			DelegationMenuEntries: len(agentDefinitions()),
 			HookInstalled:         result.HookInstalled,
 		},
-		Gateway: result.Diagnostics,
+		Gateway:   result.Diagnostics,
+		Lifecycle: result.Lifecycle,
 	}
 }
 
 // noteworthy reports whether this session has anything a reader would want the detail of.
+//
+// Judged betas are deliberately not in this list. Measured 2026-09-17: the installed client
+// sends structured-outputs-2025-12-15 on every request, so including them made every single
+// session noteworthy and the whole account was dumped at every exit. A signal that fires on
+// ordinary use is not a signal. Judged is the name for something this project already looked
+// at and decided; Unknown is the name for something nobody has classified, and that is the
+// one that still deserves a reader's attention.
 func (s Status) noteworthy() bool {
 	return s.Category != CategorySuccess ||
+		(s.Lifecycle != nil && s.Lifecycle.CheckpointFailures > 0) ||
+		s.Gateway.WorkflowPersistence.Failed > 0 ||
 		!s.Session.HookInstalled ||
-		s.Gateway.Requests.Refused > 0 || s.Gateway.BrokenStreams() > 0 ||
+		s.Gateway.Requests.Refused > s.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]+s.Completion.ControlTransitions || s.Gateway.BrokenStreams() > 0 ||
+		s.Completion.NativeToolFailures > 0 || s.Completion.RejectedWorkflowCalls > 0 || s.Completion.UnacquiredResults > 0 || s.Gateway.NativeToolFailures.CapacityExceeded ||
 		s.Gateway.Events.Unsupported > 0 ||
 		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 ||
 		s.Gateway.Betas.Malformed > 0 ||
-		len(s.Gateway.Betas.Judged) > 0 || len(s.Gateway.Betas.Unknown) > 0
+		len(s.Gateway.Betas.Unknown) > 0
 }
 
 // Report writes the account to a file and says what needs saying on stderr.
@@ -127,10 +200,19 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	if writeErr != nil {
 		where = "none"
 	}
-	fmt.Fprintf(errOut, "clauduct: %s exit=%d requests=%d refused=%d attempts=%d inferences=%d%s status=%s\n",
+	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s attempts=%d inferences=%d%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused,
-		account.Attempts, account.Inferences, quotaField(account), where)
+		brokenField(account), account.Attempts, account.Inferences, quotaField(account), where)
+	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
+		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
+	}
+	if life := account.Lifecycle; life != nil && (life.Reason == "session_deadline" || life.CheckpointFailures > 0) {
+		fmt.Fprintf(errOut, "clauduct: lifecycle=%s reason=%s grace_expired=%t native_reaped=%t checkpoint_failures=%d\n", life.State, life.Reason, life.GraceExpired, life.NativeReaped, life.CheckpointFailures)
+	}
+	if count := account.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]; count > 0 {
+		fmt.Fprintf(errOut, "clauduct: count_tokens unsupported=%d; native estimation fallback remains available\n", count)
+	}
 
 	if account.noteworthy() || writeErr != nil || env[statusEnv] == "1" {
 		fmt.Fprintf(errOut, "CLAUDUCT_REQUEST_STATUS %s\n", encoded)
@@ -150,13 +232,41 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 // and the uninstall path needs to name it without owning it.
 func StatusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
 
+// WriteCheckpoint uses the same bounded metadata schema and atomic file as the
+// final report. It never writes to the terminal while native owns the TUI.
+func WriteCheckpoint(account Status) error {
+	encoded, err := json.Marshal(account)
+	if err != nil {
+		return err
+	}
+	_, err = writeStatus(encoded)
+	return err
+}
+
 func writeStatus(encoded []byte) (string, error) {
+	if len(encoded) > 8<<20 {
+		return "", fmt.Errorf("STATUS_TOO_LARGE")
+	}
 	dir := StatusDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, fmt.Sprintf("status-%d.json", os.Getpid()))
-	if err := os.WriteFile(path, append(encoded, '\n'), 0o600); err != nil {
+	file, err := os.CreateTemp(dir, fmt.Sprintf("status-%d-*.tmp", os.Getpid()))
+	if err != nil {
+		return "", err
+	}
+	temp := file.Name()
+	defer os.Remove(temp)
+	_, writeErr := file.Write(append(encoded, '\n'))
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	for _, err := range []error{writeErr, syncErr, closeErr} {
+		if err != nil {
+			return "", err
+		}
+	}
+	if err := os.Rename(temp, path); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -192,6 +302,24 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 //
 // One field, not the whole report -- the window that is in force, how much of it is gone.
 // `clauduct-dev usage` is where the rest lives, including how old a reading is.
+// brokenField names streams that broke after their status was sent, and only when there are
+// any.
+//
+// The one failure the counters beside it cannot report: the client received a 200, so refused
+// stays at zero and received counts it as a request that happened. Measured 2026-09-18, a
+// session with one of these printed "refused=0" and then its whole account, leaving a reader
+// holding the JSON with no word on why -- the line reported the counter that was fine and
+// omitted the one that was not.
+//
+// Conditional, which is the rule quotaField follows below: a line carrying broken=0 on every
+// clean session is back to reporting the number that needs no reporting.
+func brokenField(account Status) string {
+	if broken := account.Gateway.BrokenStreams(); broken > 0 {
+		return fmt.Sprintf(" broken=%d", broken)
+	}
+	return ""
+}
+
 func quotaField(account Status) string {
 	if !hasFigure(account) {
 		return ""

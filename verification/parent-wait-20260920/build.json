@@ -1,0 +1,11 @@
+{
+  "commit": "01614e0cb79fe9380ff1253f8b0c4db946271d51",
+  "source": "D:/AIDEV/clauduct-s36-build/context-verified-01614e0",
+  "artifacts": {
+    "clauduct.exe": "32086c7b87d5f2222590537962507293394b19e6f1790d2000209dc08b8c892e",
+    "clauduct-hook.exe": "42318ae0bbf6247d87b2a6ee8d99fa46e870a8088a38b840ff555733266aa837",
+    "clauduct-dev.exe": "0be543b0b65987afcc6e4c229b7cb34f4d4c94de1cc1fc5392b0acd4e2245736"
+  },
+  "stamp": "D:\\AIDEV\\clauduct-s36-build\\wait-workflow-repair-20260920\\verification\\parent-wait-20260920\\bin\\clauduct.exe: go1.27.1\n\tpath\tgithub.com/wotjr1649/Clauduct/go/cmd/clauduct\n\tmod\tgithub.com/wotjr1649/Clauduct/go\t(devel)\t\n\tdep\tgithub.com/coder/websocket\tv1.8.15\th1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=\n\tdep\tgithub.com/dlclark/regexp2/v2\tv2.5.1\th1:E5Ug7Dh264W1ymdySmiHNcDG7fmsR307APCE5R07a20=\n\tdep\tgithub.com/tiktoken-go/tokenizer\tv0.8.1\th1:4obDoB6/dhdBt9xMweX4nww5cjdOq/nYF4ecwPq2+mg=\n\tdep\tgo.yaml.in/yaml/v3\tv3.0.4\th1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=windows\n\tbuild\tGOAMD64=v1\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=01614e0cb79fe9380ff1253f8b0c4db946271d51\n\tbuild\tvcs.time=2026-09-19T19:46:15Z\n\tbuild\tvcs.modified=false",
+  "built": "2026-09-19T19:47:58.716Z"
+}

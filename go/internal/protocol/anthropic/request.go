@@ -34,8 +34,6 @@ var requestFields = []string{
 const (
 	CodeRequestFields        = "REQUEST_FIELDS"
 	CodeRequestShape         = "REQUEST_SHAPE"
-	CodeStreamFalse          = "REQUEST_STREAM_FALSE"
-	CodeStreamMissing        = "REQUEST_STREAM_MISSING"
 	CodeStreamInvalid        = "REQUEST_STREAM_INVALID"
 	CodeMessagesInvalid      = "REQUEST_MESSAGES_INVALID"
 	CodeMessagesEmpty        = "REQUEST_MESSAGES_EMPTY"
@@ -58,6 +56,7 @@ const (
 	CodeMessageEffortRole    = "MESSAGE_EFFORT_ROLE"
 	CodeTextFields           = "TEXT_FIELDS"
 	CodeTextValue            = "TEXT_VALUE"
+	CodeTextCitations        = "UNSUPPORTED_TEXT_CITATIONS"
 	CodeCacheFields          = "CACHE_FIELDS"
 	CodeCacheValue           = "CACHE_VALUE"
 	CodeUnsupportedContent   = "UNSUPPORTED_CONTENT"
@@ -173,12 +172,13 @@ type Message struct {
 // Request is a decoded inference request. Unparsed members stay in Fields so a later
 // package can read them without this one having to guess what they mean.
 type Request struct {
-	Model     string
-	MaxTokens int64
-	Messages  []Message
-	System    json.RawMessage
-	Effort    string
-	Fields    map[string]json.RawMessage
+	NonStreaming bool
+	Model        string
+	MaxTokens    int64
+	Messages     []Message
+	System       json.RawMessage
+	Effort       string
+	Fields       map[string]json.RawMessage
 
 	// Tools are the definitions as sent. Discovered additionally holds every name the
 	// conversation has already used, which is what lets a transcript recorded under a
@@ -243,7 +243,7 @@ const maxSafeInteger = int64(1)<<53 - 1
 
 // DecodeRequest validates an inference request and returns what this build understands.
 //
-// It refuses rather than repairs. A stream flag that is missing, a sampling parameter this
+// It refuses rather than repairs. A stream flag with the wrong type, a sampling parameter this
 // bridge cannot honour, an unknown top-level field: each gets its own category, because
 // "the request was malformed" and "we do not support that" lead a user to different
 // actions.
@@ -270,15 +270,12 @@ func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 
 	request := &Request{Fields: fields}
 
-	// stream. Three distinct answers, because a client that omitted it and one that asked
-	// for a non-streaming response have different problems.
+	// The Messages API defaults an omitted stream flag to a single JSON response.
 	switch value, presence := wire.Of(fields, "stream"); {
-	case presence == wire.Absent:
-		return nil, refuse(CodeStreamMissing, "stream")
 	case string(value) == "true":
-		// the only accepted form
-	case string(value) == "false":
-		return nil, refuse(CodeStreamFalse, "stream")
+		// streaming delivery
+	case presence == wire.Absent || string(value) == "false":
+		request.NonStreaming = true
 	default:
 		return nil, refuse(CodeStreamInvalid, "stream")
 	}
@@ -529,7 +526,7 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 		return Block{}, refuse(CodeUnsupportedContent, kind)
 	}
 
-	fields, err := wire.Fields(raw, []string{"type", "text", "cache_control"})
+	fields, err := wire.Fields(raw, []string{"type", "text", "cache_control", "citations"})
 	if err != nil {
 		return Block{}, refuse(CodeTextFields, "content")
 	}
@@ -537,6 +534,14 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 	textValue, presence := wire.Of(fields, "text")
 	if presence != wire.Present || json.Unmarshal(textValue, &block.Text) != nil {
 		return Block{}, refuse(CodeTextValue, "text")
+	}
+	// Native retains interrupted text with citations:null. Empty citations carry
+	// no references to translate; populated/invalid values must not be discarded.
+	if value, present := fields["citations"]; present {
+		var citations []json.RawMessage
+		if json.Unmarshal(value, &citations) != nil || len(citations) != 0 {
+			return Block{}, refuse(CodeTextCitations, "citations")
+		}
 	}
 	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
 		if err := checkCacheControl(control); err != nil {

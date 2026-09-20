@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
+	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 // refusal is a fixed error category. The client sees the Anthropic error envelope it
@@ -72,19 +76,38 @@ func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category str
 }
 
 func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
-	g.refused.Add(1)
+	g.countRefusal(r.category, recordOf(w).path())
 	recordOf(w).refusedWith(r.status, r.category)
+	// net/http drains unread request bytes before sending a refusal. Bound that
+	// work without forcing Connection: close or aborting a buffered reply.
+	deadline := time.Now().Add(time.Second)
+	if r.category == refuseCancelled.category {
+		deadline = time.Now()
+	}
+	_ = http.NewResponseController(w).SetReadDeadline(deadline)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.status)
 	body, err := json.Marshal(map[string]any{
 		"type": "error",
 		"error": map[string]string{
 			"type":    errorType(r.status),
-			"message": r.category,
+			"message": refusalMessage(r.category),
 		},
 	})
 	if err != nil {
 		return
 	}
 	w.Write(body)
+}
+
+func refusalMessage(category string) string {
+	if category != "UNSUPPORTED_MODEL_OR_EFFORT" {
+		return category
+	}
+	models := make([]string, 0, len(bridge.Models))
+	for _, model := range bridge.Models {
+		models = append(models, model.ID)
+	}
+	return category + "; supported models: " + strings.Join(models, ", ") +
+		"; supported efforts for each: " + strings.Join(bridge.Efforts, ", ") + ". No replacement was executed."
 }

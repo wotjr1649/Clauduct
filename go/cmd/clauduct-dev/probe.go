@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
@@ -55,7 +57,17 @@ var probes = map[string]struct {
 	attempts int
 }{
 	"limit": {"whether the backend accepts max_output_tokens", 3},
-	"wire":  {"whether this module's own request encoding survives the real backend", 3},
+	// Two sends and two spare. The client's "0 cached" is a constant, not a reading --
+	// DecodeUsage reads input_tokens and output_tokens and nothing else -- so before any
+	// cache accounting can be built, the backend has to be asked whether it reports one.
+	"cache": {"whether the backend reports cached input tokens", 2},
+	// The follow-up, separate because it is a different question and a reader deciding what
+	// to spend should see the two prices apart. Measured 2026-09-18: cache lands as
+	// input_tokens_details.cached_tokens and both it and cache_write_tokens read zero over
+	// a 4,325-token prefix -- and a cold call writing nothing is what a prefix under the
+	// minimum looks like, so the size is the next thing to vary.
+	"cache-long": {"whether a larger prefix is what the cache minimum wanted", 2},
+	"wire":       {"whether this module's own request encoding survives the real backend", 3},
 	// Four inferences and one search. The search is a different endpoint and is not an
 	// attempt; it is named here so what is spent is visible before it is spent.
 	"parity": {"whether images, tool changes, the reasoning round trip and search work", 4},
@@ -90,7 +102,7 @@ func usageProbe(out io.Writer) int {
 // probeNames lists the probes in a fixed order. Map iteration is random and this text is
 // read by a person deciding what to spend.
 func probeNames() []string {
-	return []string{"limit", "wire", "parity", "search", "headers", "file"}
+	return []string{"limit", "cache", "cache-long", "wire", "parity", "search", "headers", "file"}
 }
 
 func probe(args []string, out, errOut io.Writer) int {
@@ -128,6 +140,10 @@ func probe(args []string, out, errOut io.Writer) int {
 
 	code := 0
 	switch args[0] {
+	case "cache":
+		code = cacheProbe(transport, budget, out, cacheRepeats)
+	case "cache-long":
+		code = cacheProbe(transport, budget, out, 4*cacheRepeats)
 	case "wire":
 		code = wireProbe(transport, budget, out)
 	case "parity":
@@ -219,6 +235,11 @@ type outcome struct {
 	outputTokens int64
 	terminal     string
 	reason       string
+	// usage is every integer the backend put in its usage object, including one level of
+	// nesting, flattened as "parent.child". Read as a map rather than into a struct
+	// because the question is which fields exist, and a struct can only find the ones
+	// somebody already thought of.
+	usage map[string]int64
 }
 
 func (o outcome) String() string {
@@ -312,6 +333,7 @@ func read(response *upstream.Response) outcome {
 					if usage, err := codex.DecodeUsage(event.Raw); err == nil {
 						result.outputTokens = usage.OutputTokens
 					}
+					result.usage = usageCounts(event.Raw)
 				case codex.Incomplete:
 					// This is the answer the probe exists for: the backend stopped where
 					// it was told to, and the reason says so.
@@ -358,4 +380,224 @@ func incompleteReason(raw []byte) string {
 		}
 	}
 	return "unrecognised"
+}
+
+// --- cache: does the backend say anything about cached input? -----------------------------
+
+// cachePrefix is the shared head of both cache requests.
+//
+// Long on purpose and identical on purpose. Prompt caching everywhere it exists has a
+// minimum prefix length, and a short probe that found nothing could not tell "this backend
+// does not report caching" from "that prompt was too small to cache" -- which is the same
+// mistake as the single max_output_tokens value the limit probe deliberately avoids.
+//
+// Deterministic text rather than random: two requests have to carry byte-identical prefixes
+// or there is nothing for a cache to hit.
+func cachePrefix(repeats int) string {
+	const line = "The quick brown fox jumps over the lazy dog while the patient stars wheel overhead. "
+	var b strings.Builder
+	for i := 0; i < repeats; i++ {
+		fmt.Fprintf(&b, "%3d. %s", i, line)
+	}
+	return b.String()
+}
+
+// cacheRepeats is the first prefix size tried, about 4,300 tokens.
+const cacheRepeats = 220
+
+// usageCounts is every integer in the usage object, one level of nesting included.
+//
+// Read as a map because the question is which fields exist. A struct would find only the
+// fields someone already knew to look for, and "we did not look" is exactly how the
+// client's 0 cached became a constant that reads like a measurement.
+//
+// Key names are filtered rather than echoed. This map is printed, and a name arriving from
+// the backend is not something to put on a terminal unexamined.
+func usageCounts(raw []byte) map[string]int64 {
+	var payload struct {
+		Response struct {
+			Usage map[string]json.RawMessage `json:"usage"`
+		} `json:"response"`
+	}
+	if json.Unmarshal(raw, &payload) != nil {
+		return nil
+	}
+	out := map[string]int64{}
+	for name, value := range payload.Response.Usage {
+		if !plainName(name) {
+			continue
+		}
+		var count int64
+		if json.Unmarshal(value, &count) == nil {
+			out[name] = count
+			continue
+		}
+		var nested map[string]json.RawMessage
+		if json.Unmarshal(value, &nested) != nil {
+			continue
+		}
+		for inner, innerValue := range nested {
+			if !plainName(inner) {
+				continue
+			}
+			if json.Unmarshal(innerValue, &count) == nil {
+				out[name+"."+inner] = count
+			}
+		}
+	}
+	return out
+}
+
+// plainName accepts the shape a field name has and refuses anything else, so what reaches
+// the terminal is bounded by this function rather than by the backend.
+func plainName(name string) bool {
+	if len(name) == 0 || len(name) > 40 {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// cacheProbe sends the same long prefix twice and reports what the backend said about it.
+//
+// Two sends, not one. One answers whether a cache field exists; it cannot answer whether
+// the number in it is a measurement, because a field that is always zero and a field that
+// is zero on a cold call look the same. The second call is the only thing that can tell
+// those apart.
+func cacheProbe(transport upstream.Transport, budget upstream.Budget, out io.Writer, repeats int) int {
+	prefix := cachePrefix(repeats)
+	fmt.Fprintf(out, "%-28s %d characters\n", "shared prefix", len(prefix))
+
+	cold := sendCache(transport, budget, prefix)
+	fmt.Fprintf(out, "%-28s %s\n", "cold", cold)
+	fmt.Fprintf(out, "%-28s %s\n", "  usage fields", fieldList(cold.usage))
+
+	warm := sendCache(transport, budget, prefix)
+	fmt.Fprintf(out, "%-28s %s\n", "repeat, identical prefix", warm)
+	fmt.Fprintf(out, "%-28s %s\n", "  usage fields", fieldList(warm.usage))
+
+	fmt.Fprintf(out, "reading %s\n", cacheVerdict(cold, warm))
+	if !cold.ok || !warm.ok {
+		return 1
+	}
+	return 0
+}
+
+func sendCache(transport upstream.Transport, budget upstream.Budget, prefix string) outcome {
+	body := map[string]any{
+		"model":        budget.Model,
+		"instructions": "Follow the developer instructions in the conversation.",
+		"input": []any{
+			map[string]any{"role": "developer", "content": probeInstruction},
+			map[string]any{
+				"role": "user",
+				"content": []any{map[string]any{
+					"type": "input_text",
+					// The prefix first, the ask last. A cache hit is on a shared head, so
+					// anything that varies has to come after everything that does not.
+					"text": prefix + "\n\nReply with exactly the word: ok",
+				}},
+			},
+		},
+		"reasoning": map[string]any{"effort": budget.Effort},
+		"include":   []string{"reasoning.encrypted_content"},
+		"stream":    true,
+		// Left as the product sends it. A probe that turns on storage to find a cache would
+		// be measuring a request this build never makes.
+		"store": false,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return outcome{category: "PROBE_BODY"}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	response, err := transport.Execute(ctx, upstream.Call{
+		Body:      encoded,
+		Requested: budget.Model,
+		Model:     budget.Model,
+		Effort:    budget.Effort,
+		Source:    "direct",
+	})
+	if err != nil {
+		var failure upstream.Failure
+		if errors.As(err, &failure) {
+			return outcome{category: failure.Category, status: failure.Status}
+		}
+		if category := auth.CategoryOf(err); category != "" {
+			return outcome{category: category}
+		}
+		return outcome{category: err.Error()}
+	}
+	defer response.Body.Close()
+	return read(response)
+}
+
+// fieldList renders the usage fields in a fixed order, so two runs can be compared by eye.
+func fieldList(usage map[string]int64) string {
+	if len(usage) == 0 {
+		return "none reported"
+	}
+	names := make([]string, 0, len(usage))
+	for name := range usage {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, name := range names {
+		parts = append(parts, fmt.Sprintf("%s=%d", name, usage[name]))
+	}
+	return strings.Join(parts, " ")
+}
+
+// cacheVerdict states what the pair established, and states plainly when it established
+// nothing. "No cache field" and "a cache field that never moved" are different findings and
+// only the first one closes the question.
+func cacheVerdict(cold, warm outcome) string {
+	if !cold.ok || !warm.ok {
+		return "inconclusive: a request was refused, so nothing about caching was measured"
+	}
+	cached := cacheFields(cold, warm)
+	if len(cached) == 0 {
+		return "the backend reports no cache field at all; the client's \"0 cached\" cannot " +
+			"become a measurement without one"
+	}
+	// Either call, not just the second. Measured 2026-09-18: the non-zero arrived on the
+	// *first* call of the pair, because its prefix overlapped a run a few minutes earlier --
+	// and a verdict that only looked at the second reported "stayed zero" over a reading of
+	// 3,840. What closes the question is that the field is ever anything but zero; which
+	// call it happened on is a fact about the probe, not about the backend.
+	for _, name := range cached {
+		if cold.usage[name] > 0 || warm.usage[name] > 0 {
+			return fmt.Sprintf("%s read %d then %d: it is a measurement, not a constant, "+
+				"and this build is discarding it",
+				name, cold.usage[name], warm.usage[name])
+		}
+	}
+	return fmt.Sprintf("cache fields exist (%s) and stayed zero across an identical prefix: "+
+		"either this route does not cache or the prefix was under its minimum",
+		strings.Join(cached, ", "))
+}
+
+// cacheFields names the usage fields that look like they count cached input.
+func cacheFields(runs ...outcome) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, run := range runs {
+		for name := range run.usage {
+			if !strings.Contains(name, "cach") || seen[name] {
+				continue
+			}
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }

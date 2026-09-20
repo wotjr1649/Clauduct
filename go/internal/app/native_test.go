@@ -100,6 +100,8 @@ type nativeRun struct {
 	Env map[string]string
 	// ConfigDir overrides the synthetic CLAUDE_CONFIG_DIR. Empty allocates one.
 	ConfigDir string
+	// Cwd lets a resume test reopen the same synthetic project.
+	Cwd string
 	// Bare passes --bare, which skips hooks, plugins, keychain reads and CLAUDE.md.
 	Bare bool
 	// Timeout bounds the whole run.
@@ -110,6 +112,9 @@ type nativeRun struct {
 	// transport replaces the fixture entirely, for a test that needs to see the calls
 	// rather than the bytes.
 	transport upstream.Transport
+	// Enable production preflight with a count-capable synthetic backend.
+	ContextPolicy  bool
+	ObserveGateway func(*gateway.Gateway)
 }
 
 // workspace is a working directory with a parent nobody else writes to.
@@ -159,6 +164,10 @@ func (s nativeRun) run(t *testing.T) nativeOutcome {
 		configDir = t.TempDir()
 	}
 	parent, cwd := workspace(t)
+	if s.Cwd != "" {
+		cwd = s.Cwd
+		parent = filepath.Dir(cwd)
+	}
 	before := tree(t, parent)
 
 	env := map[string]string{}
@@ -207,7 +216,13 @@ func (s nativeRun) run(t *testing.T) nativeOutcome {
 		ResolveClaude: func() (string, bool, error) { return exe, true, nil },
 		StartGateway: func() (*gateway.Gateway, error) {
 			g, err := gateway.Start(transport)
+			if err == nil && s.ContextPolicy {
+				g.EnableContextPolicy()
+			}
 			started = g
+			if err == nil && s.ObserveGateway != nil {
+				s.ObserveGateway(g)
+			}
 			return g, err
 		},
 	})
@@ -312,16 +327,14 @@ func TestTheUsersConfigDirChoiceIsPreserved(t *testing.T) {
 	}
 }
 
-// ENV10 and CAP04: the native's own persistent writes are its business. This wrapper's are
-// not, and there are none.
-//
-// V1 wrote a status directory beside the project and injected a hooks entry into settings.
-// Neither survives here, and the check is what the filesystem says rather than what the
-// code claims.
-func TestTheWrapperWritesNothingOfItsOwn(t *testing.T) {
+// Policy journals are deliberately persisted under native projects. Nothing may
+// be written beside the task root or injected into persistent native settings.
+func TestTheWrapperWritesOnlyScopedPolicyJournals(t *testing.T) {
+	buildHook(t)
+	script := newScript(textStream("ready", "ok"))
 	got := nativeRun{
-		Args:    []string{"-p", "say ok"},
-		Reply:   measuredStream("ok"),
+		Args:      []string{"-p", "say ok"},
+		transport: exactScript{script}, ContextPolicy: true,
 		Timeout: defaultNativeTimeout,
 	}.run(t)
 	if got.err != nil {
@@ -352,17 +365,31 @@ func TestTheWrapperWritesNothingOfItsOwn(t *testing.T) {
 		t.Fatal("the session wrote nothing at all; it cannot have run")
 	}
 
-	// CAP04: nothing of the wrapper's inside the native's state either. V1 injected a hooks
-	// entry pointing at its own script; a path into this build would show up as one.
+	journal := false
 	for _, entry := range tree(t, got.configDir) {
-		if strings.Contains(strings.ToLower(entry), "clauduct") {
-			t.Fatalf("the wrapper wrote %q into the native's config directory", entry)
+		name := filepath.Base(entry)
+		if strings.Contains(name, ".clauduct-") {
+			if !strings.HasPrefix(filepath.ToSlash(entry), "projects/") || (!strings.HasSuffix(name, ".clauduct-context.json") && !strings.HasSuffix(name, ".clauduct-selection.json")) {
+				t.Fatal("unexpected persistent wrapper artifact")
+			}
+			journal = true
 		}
 	}
-	settings := filepath.Join(got.configDir, ".claude.json")
-	if raw, err := os.ReadFile(settings); err == nil {
-		if strings.Contains(strings.ToLower(string(raw)), "clauduct") {
-			t.Fatal("the native's own settings mention this wrapper; something was injected")
+	if !journal {
+		t.Fatal("policy journal was not exercised")
+	}
+	for _, name := range []string{".claude.json", "settings.json"} {
+		settings := filepath.Join(got.configDir, name)
+		if raw, err := os.ReadFile(settings); err == nil {
+			var settings map[string]json.RawMessage
+			if json.Unmarshal(raw, &settings) != nil {
+				t.Fatal("invalid persistent settings")
+			}
+			for _, key := range []string{"hooks", "modelPicker"} {
+				if len(settings[key]) > 0 {
+					t.Fatal("launcher configuration persisted into native settings")
+				}
+			}
 		}
 	}
 }

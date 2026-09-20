@@ -228,7 +228,7 @@ func categoryOf(err error) string {
 
 // translate drives the real Translator over the reply and reports what it produced.
 func translate(response *upstream.Response, request *anthropic.Request) exchange {
-	translator := bridge.NewTranslatorFor(request)
+	translator := bridge.NewTranslatorFor(request, "")
 	parser := stream.NewParser(stream.DefaultLimits())
 	buffer := make([]byte, 32*1024)
 

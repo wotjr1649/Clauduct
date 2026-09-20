@@ -25,13 +25,10 @@ func TestTheDelegationMenuIsTheCatalogue(t *testing.T) {
 	}
 	sort.Strings(names)
 
-	// Written out rather than built from agentEfforts, which would agree with itself.
-	want := []string{"clauduct-inherit"}
+	// All twenty verified pairs, plus the parent-inheriting role.
+	want := []string{bridge.InheritRole}
 	for _, model := range bridge.Models {
 		for _, effort := range bridge.Efforts {
-			if (effort == "max") != (model.Effort == "max") {
-				continue
-			}
 			want = append(want, "clauduct-"+model.Key+"-"+effort)
 		}
 	}
@@ -41,7 +38,7 @@ func TestTheDelegationMenuIsTheCatalogue(t *testing.T) {
 	}
 
 	for name, definition := range menu {
-		if name == "clauduct-inherit" {
+		if name == bridge.InheritRole {
 			if definition.Model != "inherit" || definition.Effort != "" {
 				t.Errorf("%s = %s/%s", name, definition.Model, definition.Effort)
 			}
@@ -65,19 +62,17 @@ func TestTheDelegationMenuIsTheCatalogue(t *testing.T) {
 		if !strings.HasPrefix(name, "clauduct-"+model.Key+"-") {
 			t.Errorf("%s runs on %s", name, definition.Model)
 		}
-		// max and the model whose default it is belong to each other. A model that exists
-		// for max offering the four cheaper efforts would be four ways to ask for a worse
-		// answer at no saving; max on any other model is an entry nobody can tell from
-		// that model's own.
-		if (definition.Effort == "max") != (model.Effort == "max") {
-			t.Errorf("%s offers %s on a model whose own effort is %s",
-				name, definition.Effort, model.Effort)
-		}
 	}
 }
 
 // delegation runs a session whose first turn delegates to one agent type.
 func delegation(t *testing.T, agentType string, extra ...string) (models []string, stderr string) {
+	t.Helper()
+	return delegationAs(t, agentType, "", extra...)
+}
+
+// delegationAs is the same, with the Agent tool's own model argument set.
+func delegationAs(t *testing.T, agentType, callerModel string, extra ...string) (models []string, stderr string) {
 	t.Helper()
 	exe := nativeAvailable(t)
 	// The effort half of a menu entry is decided at the gateway, and the gateway only learns
@@ -86,7 +81,7 @@ func delegation(t *testing.T, agentType string, extra ...string) (models []strin
 	buildHook(t)
 	script := &upstream.Script{
 		Turns: []upstream.ScriptTurn{
-			{When: upstream.Conversation, SSE: agentStream(agentType, "say ok")},
+			{When: upstream.Conversation, SSE: agentStream(agentType, "say ok", callerModel)},
 			{When: upstream.Conversation, SSE: textStream("sub", "ok")},
 			{When: upstream.Conversation, SSE: textStream("main", "done")},
 		},
@@ -156,7 +151,7 @@ func TestDelegatingToAMenuEntryRunsThere(t *testing.T) {
 // "inherit" is not a model. Whether the client accepts it as one is a question about the
 // client, and the answer is that it does: the child ran on the session's own route.
 func TestTheInheritEntryKeepsTheParentsModel(t *testing.T) {
-	models, stderr := delegation(t, "clauduct-inherit")
+	models, stderr := delegation(t, bridge.InheritRole)
 	if len(models) < 2 {
 		t.Fatalf("models = %v; nothing was delegated\nstderr: %s", models, stderr)
 	}
@@ -226,7 +221,7 @@ func TestTheUsersOwnAgentsSurviveTheMenu(t *testing.T) {
 func TestEveryMenuEntryResolvesToItself(t *testing.T) {
 	for name, definition := range agentDefinitions() {
 		route, known := bridge.RoleRoute(name)
-		if name == "clauduct-inherit" {
+		if name == bridge.InheritRole {
 			if known {
 				t.Errorf("%s resolved to %s/%s; it exists to resolve to nothing",
 					name, route.Model, route.Effort)
@@ -244,5 +239,49 @@ func TestEveryMenuEntryResolvesToItself(t *testing.T) {
 		if route.Source != "role" {
 			t.Errorf("%s: Source = %q", name, route.Source)
 		}
+	}
+}
+
+// At the top level, an explicit model takes precedence over the inherit role.
+// A task-bound descendant is different: the gateway rejects conflicting choices.
+func TestACallersOwnModelTakesTheInheritEntryOffTheParentsRoute(t *testing.T) {
+	models, stderr := delegationAs(t, bridge.InheritRole, "opus")
+	if len(models) < 2 {
+		t.Fatalf("models = %v; nothing was delegated\nstderr: %s", models, stderr)
+	}
+	left := false
+	for _, model := range models {
+		if model != startupModel.Model+"/"+startupModel.Effort {
+			left = true
+		}
+	}
+	if !left {
+		t.Fatalf("models = %v; the caller named a model and every request stayed on the "+
+			"session route, so this entry is no longer the one the description warns about",
+			models)
+	}
+}
+
+// The user's chosen precedence: an explicit model overrides the role's model,
+// while the native role's prompt and tools remain in place.
+func TestAnExplicitAliasOverridesANamedRoleModel(t *testing.T) {
+	models, stderr := delegationAs(t, "clauduct-luna-max", "opus")
+	if !ran(models, "gpt-5.6-sol/xhigh") || ran(models, "gpt-5.6-luna/max") {
+		t.Fatalf("models = %v, want explicit opus=sol and its default effort\nstderr: %s", models, tail(stderr, 400))
+	}
+}
+
+// The menu asks callers to omit unrequested model overrides.
+func TestTheInheritEntrySaysWhatItNeedsFromTheCaller(t *testing.T) {
+	entry, defined := agentDefinitions()[bridge.InheritRole]
+	if !defined {
+		t.Fatalf("%s is not in the menu", bridge.InheritRole)
+	}
+	if !strings.Contains(entry.Description, "model") {
+		t.Errorf("the description never mentions the argument it depends on: %q", entry.Description)
+	}
+	if !strings.Contains(strings.ToLower(entry.Description), "do not") {
+		t.Errorf("the description states a behaviour but asks nothing of the caller: %q",
+			entry.Description)
 	}
 }

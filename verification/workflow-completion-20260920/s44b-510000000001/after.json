@@ -1,0 +1,22 @@
+{
+  "remaining": [],
+  "finishedMarkers": [],
+  "atUtc": "2026-09-20T15:33:13.6724281Z",
+  "probe": "s44b-510000000001",
+  "observerKillsProcesses": false,
+  "exits": [
+    {
+      "role": "root",
+      "startedTicks": "639255151039385261",
+      "pid": 18924,
+      "exitedUtc": "2026-09-20T15:33:13.6009287Z"
+    },
+    {
+      "role": "leaf",
+      "startedTicks": "639255151051443109",
+      "pid": 4480,
+      "exitedUtc": "2026-09-20T15:33:13.6006728Z"
+    }
+  ],
+  "stoppedBeforeNaturalDeadline": true
+}

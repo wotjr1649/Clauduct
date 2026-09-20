@@ -149,16 +149,20 @@ func TestABrokenFieldSaysWhichOneAndWhy(t *testing.T) {
 // The response is the backend's bytes. The account is written to a file and printed at the
 // end of a session, and a plan name, a credit balance or a cookie has no business in it.
 func TestTheReadingKeepsNothingButTheQuota(t *testing.T) {
+	// A unique privacy canary tests value leakage without matching unrelated
+	// schema words such as "provenReports". The measured-header test keeps pro.
+	header := measuredLimits()
+	header.Set("X-Codex-Plan-Type", "PRIVATE_PLAN_VALUE")
 	g := startWith(t, &upstream.Fixture{
 		SSE:    sse(created, delta("ok"), done("ok"), completed, "[DONE]"),
-		Header: measuredLimits(),
+		Header: header,
 	})
 	post(t, g, `{"model":"claude-opus-5","max_tokens":16,"stream":true,
 	  "messages":[{"role":"user","content":"x"}]}`)
 
 	body := bodyText(t, do(t, g, request{method: http.MethodGet, path: statusPath}))
 	for _, secret := range []string{
-		"SECRET-COOKIE-VALUE", "__cf_bm", "req_0123456789", "pro", "unlimited",
+		"SECRET-COOKIE-VALUE", "__cf_bm", "req_0123456789", "PRIVATE_PLAN_VALUE", "unlimited",
 	} {
 		if strings.Contains(body, secret) {
 			t.Errorf("the account kept %q:\n%s", secret, body)

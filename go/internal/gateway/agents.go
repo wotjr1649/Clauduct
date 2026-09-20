@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -17,8 +18,8 @@ import (
 // hook posts that, a SubagentStop hook withdraws it, and what the registration is for is
 // deciding which model the subagent's requests run on.
 //
-// Nothing about the subagent's work arrives here: an identifier, a role name, and where the
-// client keeps its transcript. No prompt, no output, no tool call.
+// Stop events additionally carry the existing final answer for parent delivery.
+// Bodies remain transient; diagnostics expose only delivery state and byte count.
 
 const (
 	// maxAgents bounds the table. The baseline's number.
@@ -48,9 +49,11 @@ type agentBinding struct {
 	SessionID      string
 	TranscriptPath string
 	Context        *contextPolicy
+	Result         string
 }
 
 type agentState struct {
+	binding  agentBinding
 	role     string
 	lastUsed time.Time
 	context  *contextPolicy
@@ -126,11 +129,21 @@ func (a *agentRegistry) register(binding agentBinding, now time.Time) (registere
 	// second SubagentStart while streaming could then be evicted mid-answer, after which
 	// its requests ran with no role at all.
 	if existing, known := a.byID[binding.ID]; known {
+		existing.binding = binding
 		existing.role, existing.context, existing.lastUsed = binding.Role, binding.Context, now
 		return true, nil
 	}
-	a.byID[binding.ID] = &agentState{role: binding.Role, lastUsed: now, context: binding.Context}
+	a.byID[binding.ID] = &agentState{binding: binding, role: binding.Role, lastUsed: now, context: binding.Context}
 	return true, nil
+}
+
+func (a *agentRegistry) bindingOf(id string) agentBinding {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if state := a.byID[id]; state != nil {
+		return state.binding
+	}
+	return agentBinding{}
 }
 
 // roleOf reports the role a registration was started as.
@@ -186,12 +199,10 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, refuseMediaType)
 		return
 	}
-	// Small on purpose. A hook reports an identifier and a role; a body larger than this is
-	// not one of those, and reading it to find out would be doing the thing the size limit
-	// exists to prevent.
-	body, err := readBounded(r, maxBindingBytes)
-	if err != nil || len(body) > maxBindingBytes {
-		g.refuse(w, refuseTooLarge)
+	// Bound the identity fields plus one existing completion report. No arbitrary
+	// native event payload or transcript is accepted by this endpoint.
+	body, ok := g.readBounded(w, r, maxBindingBytes)
+	if !ok {
 		return
 	}
 
@@ -200,10 +211,20 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "INVALID_AGENT_BINDING")
 		return
 	}
+	if binding.Stop {
+		prior := g.agents.bindingOf(binding.ID)
+		if prior.SessionID != "" && (binding.SessionID != prior.SessionID || binding.TranscriptPath != prior.TranscriptPath) {
+			g.refuseCategory(w, http.StatusBadRequest, "INVALID_AGENT_BINDING")
+			return
+		}
+	}
 	registered, err := g.agents.register(binding, time.Now())
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if binding.Stop && g.delegations != nil {
+		g.delegations.stopped(binding)
 	}
 
 	reply, err := json.Marshal(struct {
@@ -219,10 +240,35 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 }
 
 // maxBindingBytes bounds a hook's report.
-const maxBindingBytes = 4096
+const maxBindingBytes = resultBodyLimit*6 + 8192 // worst-case JSON escaping; decoded report remains bounded
 
-func readBounded(r *http.Request, limit int64) ([]byte, error) {
-	return io.ReadAll(io.LimitReader(r.Body, limit+1))
+// Event uploads need the same shutdown cancellation and body deadline as model
+// requests. Their admission is held only while reading the bounded event body.
+func (g *Gateway) readBounded(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
+	_, ctx, release, err := g.requests.admit(r.Context())
+	if err != nil {
+		if errors.Is(err, errGatewayClosed) {
+			g.refuse(w, refuseClosed)
+		} else {
+			g.refuse(w, refuseBusy)
+		}
+		return nil, false
+	}
+	defer release()
+	control := http.NewResponseController(w)
+	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
+	stop := watchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
+	defer stop()
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		if ctx.Err() != nil {
+			g.refuse(w, refuseCancelled)
+		} else {
+			g.refuse(w, refuseTooLarge)
+		}
+		return nil, false
+	}
+	return body, true
 }
 
 // decodeAgentBinding validates a hook's report before any of it is believed.
@@ -232,12 +278,17 @@ func readBounded(r *http.Request, limit int64) ([]byte, error) {
 // it is checked like anything else that crosses a boundary.
 func decodeAgentBinding(raw []byte) (agentBinding, error) {
 	fields, err := wire.Fields(raw, []string{"id", "role", "stop", "sessionId",
-		"transcriptPath", "contextPolicy"})
+		"transcriptPath", "contextPolicy", "result"})
 	if err != nil {
 		return agentBinding{}, errInvalidBinding
 	}
 
 	var binding agentBinding
+	if value, present := wire.Of(fields, "result"); present == wire.Present {
+		if json.Unmarshal(value, &binding.Result) != nil || len(binding.Result) > resultBodyLimit {
+			return binding, errInvalidBinding
+		}
+	}
 	if value, present := wire.Of(fields, "id"); present != wire.Present ||
 		json.Unmarshal(value, &binding.ID) != nil || !correlationShape.MatchString(binding.ID) {
 		return agentBinding{}, errInvalidBinding

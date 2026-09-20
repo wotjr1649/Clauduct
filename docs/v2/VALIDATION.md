@@ -6,8 +6,9 @@
 |---|---|
 | 실행한 V2 Go 테스트 | **1124개 통과 / 0 실패 / 3 skip** (subtest 포함), 테스트가 있는 15 package(`internal/protocol/codex`는 테스트 파일 없음). `CGO_ENABLED=0 go test ./... -count=1` 2026-09-17 실행 |
 | mutation 검증 | **230건 주입** (battery 15개) + 2026-09-17 수동 4건. 현재 전부 잡힌다. 처음 주입 때 살아남은 것은 각 절에 기록했다 |
-| 실모델 호출 | **추론 55회.** probe 원장 35회(`gpt-5.6-luna`/low: 1.3절 상한 · 1.4절 wire · 1.6절 G7 실세션 · 1.9절 LIFE17 · 6.8절 A그룹 · D5 헤더) **+ 2026-09-17 제품 빌드 실세션 20회**(`gpt-6-astra`/low, 9세션). 마지막 2회는 **의도하지 않은 소비**다 — `--uninstall`이 프롬프트 안에 있을 때 삭제되지 않는지를 실제 바이너리에 `-p`로 확인했는데, 그 경로는 백엔드까지 간다. 같은 것을 단위 테스트가 이미 증명하고 있었다(`TestUninstallRequestedTakesTheFirstArgumentOnly`). 옵션 파싱은 실호출로 확인할 것이 아니다 |
-| 잔여 승인 예산 | **45회** (2026-09-15 사용자가 누적 100회로 상향) |
+| 실모델 호출 | **추론 59회.** probe 원장 39회(`gpt-5.6-luna`/low: 1.3절 상한 · 1.4절 wire · 1.6절 G7 실세션 · 1.9절 LIFE17 · 6.8절 A그룹 · D5 헤더 · **2026-09-18 cache 4회**) **+ 2026-09-17 제품 빌드 실세션 20회**(`gpt-6-astra`/low, 9세션). 마지막 2회는 **의도하지 않은 소비**다 — `--uninstall`이 프롬프트 안에 있을 때 삭제되지 않는지를 실제 바이너리에 `-p`로 확인했는데, 그 경로는 백엔드까지 간다. 같은 것을 단위 테스트가 이미 증명하고 있었다(`TestUninstallRequestedTakesTheFirstArgumentOnly`). 옵션 파싱은 실호출로 확인할 것이 아니다 |
+| 잔여 승인 예산 | **41회** (2026-09-15 사용자가 누적 100회로 상향) |
+| 2026-09-18 cache 4회 | `clauduct-dev probe cache --send` 2회 + `probe cache-long --send` 2회, 전부 `gpt-5.6-luna`/low. 세션 36 D항목 — 백엔드가 `usage`에 캐시 항목을 싣는지 확인. **싣는다**: `input_tokens_details.cached_tokens`·`input_tokens_details.cache_write_tokens`, 그리고 `output_tokens_details.reasoning_tokens`·`total_tokens`도 함께. `cached_tokens`는 4,325토큰 프리픽스에서 0, 16,865토큰에서 **3,840**을 읽었다 — 상수가 아니라 측정값이고 `codex.DecodeUsage`가 버리고 있다 |
 | 그 20회의 출처 | `%TEMP%\clauduct\status-*.json` 실측(`clauduct-dev usage`). status 기록은 2026-09-17 06:16에 들어왔으므로 이 파일들은 09-15·09-16 실세션과 겹치지 않는다. 전부 에이전트가 검증으로 띄운 세션이다 — **사용자가 스스로 띄운 세션은 이 예산에 넣지 않는다.** 다음에 셀 때 status 파일을 그대로 합치면 사용자 사용량까지 예산으로 청구하게 된다 |
 | 검색 요청 | ledger를 쓰지 않는다(설계). 2026-09-17에 1회 더 실행했고 통과했다 — 1.11절 |
 | skip 3건 | live 1(예산 opt-in), 수동 2(콘솔 종료·런처 강제 종료) |
@@ -861,8 +862,25 @@ and may differ from actual usage"). Bedrock upstream에는 클라이언트가 �
 있는 세션"이 된다. 돌연변이로 확인: `buildHook`을 빼면 `unregistered=1`로 실패한다 — 즉 이 테스트는
 hook 경로를 실제로 재고 있다. PDF 쪽도 `case "document"`를 지우면 실패한다.
 
-**아직 미측정**: 대화형(TUI) 세션. 이 환경에서 클라이언트에 pty를 줄 수 없어(샌드박스가 거부)
-`-p`만 관측했다. count_tokens가 대화형에서 불리는지는 그래서 여전히 열려 있다.
+~~**아직 미측정**: 대화형(TUI) 세션. 이 환경에서 클라이언트에 pty를 줄 수 없어(샌드박스가 거부)
+`-p`만 관측했다. count_tokens가 대화형에서 불리는지는 그래서 여전히 열려 있다.~~
+
+**2026-09-18 닫혔다. 부른다.** 사용자가 TUI로 돌린 세션(요청 231건·추론 211건, Explore 서브에이전트
+셋 병렬)에서:
+
+```
+refusedBy:    {"CANCELLED": 1, "UNSUPPORTED_ROUTE": 13}
+refusedPaths: ["/v1/messages/count_tokens", "/v1/messages"]
+```
+
+`recent`의 한 건이 직접 보여준다 — `POST /v1/messages/count_tokens`, `outcome=refused`,
+`category=UNSUPPORTED_ROUTE`, `status=404`. **대화형 클라이언트는 231요청 중 13번 이 경로를
+부른다.** `-p` 세션이 한 번도 안 부른 것은 `-p`의 성질이었지 클라이언트의 성질이 아니었다.
+
+이 측정 자체가 세션 36에서 추가한 `refusedPaths` 덕분에 가능했다. 그 전에는 사유(`UNSUPPORTED_ROUTE`)
+까지만 남고 **어느 경로인지는 16칸 링이 삼켰다** — 긴 대화형 세션에서는 언제나.
+
+pty 제약은 그대로다. 이 수치는 에이전트가 잰 것이 아니라 **사용자가 직접 TUI로 돌린 세션의 기록**이다.
 
 ### 1.13 버전을 고정하지 않으면서 드리프트를 보는 법 (2026-09-17)
 

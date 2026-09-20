@@ -1,0 +1,234 @@
+{
+  "boundedScenarioPassed": true,
+  "allFeaturesReleaseApproval": false,
+  "source": "313a78cfe99a84fb43d7f1c25a9fe4a9bad07f09",
+  "build": {
+    "source": "D:\\AIDEV\\clauduct-s36-build\\support-expansion-20260920\\go",
+    "artifacts": {
+      "clauduct.exe": "fdc613eb07bfe1362729ff4df947a406d93f4b0808a86c04661905c56e406a3d",
+      "clauduct-hook.exe": "869fdaa3ffe48b29c516b3f1c9c3568652192ced7f116aacc3318c00614d0851",
+      "clauduct-dev.exe": "49d85b423d1d31882bb5ef13980eae805ca0d1a3e5975db7b5243dc36b7633b9",
+      "filtercancel.exe": "bea80150190065d10e1b59387f5648f2b1b768a481d5a3cee486a14e44c102e1"
+    },
+    "stamp": "D:\\AIDEV\\clauduct-s36-build\\support-expansion-20260920\\verification\\support-expansion-20260920\\bin\\clauduct.exe: go1.27.1\n\tpath\tgithub.com/wotjr1649/Clauduct/go/cmd/clauduct\n\tmod\tgithub.com/wotjr1649/Clauduct/go\t(devel)\t\n\tdep\tgithub.com/coder/websocket\tv1.8.15\th1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=\n\tdep\tgithub.com/dlclark/regexp2/v2\tv2.5.1\th1:E5Ug7Dh264W1ymdySmiHNcDG7fmsR307APCE5R07a20=\n\tdep\tgithub.com/tiktoken-go/tokenizer\tv0.8.1\th1:4obDoB6/dhdBt9xMweX4nww5cjdOq/nYF4ecwPq2+mg=\n\tdep\tgo.yaml.in/yaml/v3\tv3.0.4\th1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\t-trimpath=true\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=windows\n\tbuild\tGOAMD64=v1\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=313a78cfe99a84fb43d7f1c25a9fe4a9bad07f09\n\tbuild\tvcs.time=2026-09-20T11:00:32Z\n\tbuild\tvcs.modified=false\n",
+    "prototype": false,
+    "at": "2026-09-20T11:00:40.855Z"
+  },
+  "tui": {
+    "id": "4ce18162-9c5f-4c1d-9647-df0c2da00ee2",
+    "sha256": "fdc613eb07bfe1362729ff4df947a406d93f4b0808a86c04661905c56e406a3d",
+    "completion": {
+      "acceptance": "not_assessed",
+      "apiFailures": 0,
+      "cancelledRequests": 0,
+      "nativeCancellations": 0,
+      "nativeToolFailures": 0,
+      "rejectedWorkflowCalls": 0,
+      "unacquiredResultsInRecent": 1,
+      "controlTransitions": 0
+    },
+    "lifecycle": {
+      "state": "finished",
+      "final": true,
+      "reason": "native_exit",
+      "startedAt": "2026-09-20T11:01:00.4113405Z",
+      "observedAt": "2026-09-20T11:03:49.6554519Z",
+      "deadlineAt": "2026-09-20T11:11:00.4113405Z",
+      "nativeReaped": true
+    },
+    "children": [
+      {
+        "run": "wf_4b9c4483-b1a",
+        "agent": "a7b108c5cb73b0ec8",
+        "tools": [
+          "Read"
+        ],
+        "attachments": [
+          "deferred_tools_delta",
+          "environment",
+          "model",
+          "skill_listing",
+          "session_context",
+          "date",
+          "remote_session_change",
+          "prompt_snapshot",
+          "prompt_snapshot",
+          "total_tokens_reminder"
+        ],
+        "apiError": false,
+        "results": [
+          {
+            "error": false,
+            "bytes": 105
+          }
+        ],
+        "answers": [
+          {
+            "bytes": 11,
+            "done": false,
+            "readOK": true,
+            "noToolsOK": false,
+            "sum43": false,
+            "parentEcho": false
+          }
+        ]
+      },
+      {
+        "run": "wf_4b9c4483-b1a",
+        "agent": "a842e709f2c61d377",
+        "tools": [
+          "Read"
+        ],
+        "attachments": [
+          "environment",
+          "model",
+          "session_context",
+          "date",
+          "prompt_snapshot",
+          "prompt_snapshot",
+          "total_tokens_reminder"
+        ],
+        "apiError": false,
+        "results": [
+          {
+            "error": false,
+            "bytes": 105
+          }
+        ],
+        "answers": []
+      },
+      {
+        "run": "wf_4b9c4483-b1a",
+        "agent": "ac19f8516a74b1195",
+        "tools": [],
+        "attachments": [
+          "deferred_tools_delta",
+          "environment",
+          "model",
+          "skill_listing",
+          "session_context",
+          "date",
+          "remote_session_change",
+          "prompt_snapshot",
+          "prompt_snapshot"
+        ],
+        "apiError": false,
+        "results": [],
+        "answers": [
+          {
+            "bytes": 18,
+            "done": false,
+            "readOK": false,
+            "noToolsOK": true,
+            "sum43": true,
+            "parentEcho": false
+          }
+        ]
+      }
+    ],
+    "results": [
+      {
+        "selection": {
+          "requestedModel": "gpt-5.6-luna",
+          "requestedEffort": "low",
+          "modelProvided": true,
+          "effortProvided": true,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-luna",
+          "effectiveEffort": "low",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "1dd3dae5-01b3-4c04-ac35-4093b2123d7e",
+        "nativeModel": "gpt-5.6-luna",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "ac19f8516a74b1195",
+        "session": "4ce18162-9c5f-4c1d-9647-df0c2da00ee2",
+        "call": "call_eeYXObl1SVJNs7YaNF8UewAC",
+        "state": "parent_received",
+        "source": "delivered_response",
+        "bytes": 18,
+        "recovered": false,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "requestedModel": "gpt-5.6-terra",
+          "requestedEffort": "low",
+          "modelProvided": true,
+          "effortProvided": true,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-terra",
+          "effectiveEffort": "low",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "a3c0c6f2-be6f-4151-b42f-6be659129818",
+        "nativeModel": "gpt-5.6-terra",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "a842e709f2c61d377",
+        "session": "4ce18162-9c5f-4c1d-9647-df0c2da00ee2",
+        "call": "call_eeYXObl1SVJNs7YaNF8UewAC",
+        "state": "unavailable_reported",
+        "bytes": 0,
+        "recovered": true,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "requestedModel": "gpt-5.6-terra",
+          "requestedEffort": "low",
+          "modelProvided": true,
+          "effortProvided": true,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-terra",
+          "effectiveEffort": "low",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "14afc12d-33d0-49e2-8423-51476efc28bf",
+        "nativeModel": "gpt-5.6-terra",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "a7b108c5cb73b0ec8",
+        "session": "4ce18162-9c5f-4c1d-9647-df0c2da00ee2",
+        "call": "call_eeYXObl1SVJNs7YaNF8UewAC",
+        "state": "parent_received",
+        "source": "delivered_response",
+        "bytes": 11,
+        "recovered": false,
+        "review": "not_assessed_by_gateway"
+      }
+    ],
+    "nextTurn": true
+  },
+  "filter": {
+    "id": "d15ae515-a1c7-4d67-ad05-24127a739f65",
+    "source": "95b31804d0922a11efd68790fcb2ecd126c0b76d",
+    "sha256": "f63b4bd98d378f8816b3d01347f9997c5eb56b7a73e412edb30d4aa1c8fa9dc8",
+    "realBackend": false,
+    "cancelDelayMs": 1272,
+    "events": [
+      {
+        "at": "2026-09-20T10:56:03.3010821Z",
+        "kind": "partial_tool_started"
+      },
+      {
+        "at": "2026-09-20T10:56:35.1821633Z",
+        "kind": "proxy_client_closed"
+      },
+      {
+        "at": "2026-09-20T10:56:36.4542852Z",
+        "kind": "upstream_cancelled"
+      },
+      {
+        "at": "2026-09-20T10:56:47.4312315Z",
+        "kind": "recovery_answer"
+      }
+    ],
+    "filterSetting": "user_reported_enabled_unchanged"
+  },
+  "at": "2026-09-20T11:04:48.549Z"
+}

@@ -14,6 +14,18 @@
 # back into the public repository. Quote the instruction into the audit instead.
 /docs/prompts/
 
+# Worktrees an isolated subagent checks out under the project.
+#
+# The directory beside them is not ignored: .claude is where a project shares agent
+# configuration, and hiding all of it would hide something this repository may one day want
+# tracked. Only the checkouts, which are disposable by construction.
+#
+# Written 2026-09-18, after a code-review agent left one behind: 12MB, registered with git
+# and locked, so `git worktree prune` would not have taken it either. Removing one is
+# `git worktree unlock` then `git worktree remove` -- deleting the directory leaves the
+# registration and the worktree's branch behind.
+/.claude/worktrees/
+
 # Markers written by live validation runs.
 /clauduct-check.txt
 /clauduct-agent-validation-*.txt

@@ -1,0 +1,33 @@
+{
+  "childParentPid": 18916,
+  "method": "held_OS_process_handles_and_start_time",
+  "probe": "s44b-700000000001",
+  "observerKillsProcesses": false,
+  "identities": [
+    {
+      "durationSeconds": 180,
+      "role": "root",
+      "processPolicy": "RemoteSigned",
+      "observedUtc": "2026-09-20T15:35:24.8278305Z",
+      "probe": "s44b-700000000001",
+      "startedTicks": "639255153243690777",
+      "pid": 18916,
+      "version": "7.6.6",
+      "policy": "RemoteSigned",
+      "engine": "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+    },
+    {
+      "pid": 19024,
+      "version": "7.6.6",
+      "processPolicy": "RemoteSigned",
+      "durationSeconds": 180,
+      "probe": "s44b-700000000001",
+      "policy": "RemoteSigned",
+      "engine": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+      "role": "leaf",
+      "observedUtc": "2026-09-20T15:35:25.6020835Z",
+      "startedTicks": "639255153249925712"
+    }
+  ],
+  "atUtc": "2026-09-20T15:35:26.0325554Z"
+}

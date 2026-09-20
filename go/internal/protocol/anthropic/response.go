@@ -109,7 +109,33 @@ type Builder struct {
 	// Thoughts are held beside the calls and for the same reason. A stream that fails
 	// midway must not have handed the client a partial record of the model's reasoning,
 	// which the next turn would then send back as though it were complete.
-	thoughts []string
+	thoughts     []string
+	deferText    bool
+	waitChildren bool
+}
+
+// DeferTextUntilComplete lets consumers that return only the last assistant block
+// receive reasoning before the answer. It uses the existing bounded text buffer.
+// Workflow results are returned only after completion; ordinary text still streams.
+func (b *Builder) DeferTextUntilComplete() { b.deferText = true }
+
+// Only a verified native wait step may use this control response. It carries no
+// invented answer; the native hook consumes it without an empty-response retry.
+func (b *Builder) WaitForChildren() { b.waitChildren = true; b.deferText = true }
+func (b *Builder) WaitingForChildren() bool {
+	return b.completed && b.waitChildren && len(b.calls) == 0
+}
+
+func (b *Builder) ReplyEmpty() bool {
+	if len(b.calls) > 0 {
+		return false
+	}
+	for _, part := range b.parts {
+		if len(part.builder) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // AddThought records a chain of thought to emit when the response completes.
@@ -253,6 +279,9 @@ func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Fra
 	}
 	part.builder = append(part.builder, delta...)
 	frames = append(frames, contentBlockDelta(part.index, delta))
+	if b.deferText {
+		return nil, nil
+	}
 	return frames, nil
 }
 
@@ -286,6 +315,9 @@ func (b *Builder) FinishText(item string, contentIndex int, snapshot string) ([]
 		return nil, ErrTextMismatch
 	}
 	part.closed = true
+	if b.deferText {
+		return nil, nil
+	}
 	return []Frame{contentBlockStop(part.index)}, nil
 }
 
@@ -297,9 +329,13 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		return nil, ErrStreamOrder
 	}
 	b.completed = true
+	if b.WaitingForChildren() {
+		b.started = true
+		return []Frame{b.messageStart(), contentBlockStart(0), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false), {Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}}, nil
+	}
 
 	var frames []Frame
-	if !b.started {
+	if !b.started || b.deferText {
 		// A response that produced only tool calls still needs its message frames, or the
 		// client is left waiting for a message that never started.
 		b.started = true
@@ -323,17 +359,31 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 	}
 	for _, part := range open {
 		part.closed = true
-		frames = append(frames, contentBlockStop(part.index))
+		if !b.deferText {
+			frames = append(frames, contentBlockStop(part.index))
+		}
+	}
+	if b.deferText {
+		b.nextIndex = 0
 	}
 
-	// After the text and before the tools, which is the order the Node baseline emits and
-	// therefore the order a transcript recorded by either implementation has. A thought is
-	// not an answer, so it does not come first; it is not an instruction, so it does not
-	// come between a call and its result.
+	// Streaming responses retain the baseline's text/thought/tool order. Deferred
+	// Workflow responses put thoughts first so the last assistant block is the answer.
 	for _, data := range b.thoughts {
 		index := b.nextIndex
 		b.nextIndex++
 		frames = append(frames, thoughtBlockStart(index, data), contentBlockStop(index))
+	}
+	if b.deferText {
+		ordered := make([]*textPart, len(b.parts))
+		for _, part := range b.parts {
+			ordered[part.index] = part
+		}
+		for _, part := range ordered {
+			index := b.nextIndex
+			b.nextIndex++
+			frames = append(frames, contentBlockStart(index), contentBlockDelta(index, string(part.builder)), contentBlockStop(index))
+		}
 	}
 
 	// Every text block is closed before the first tool block opens. A client reading
@@ -388,6 +438,17 @@ func toolBlockDelta(index int, input []byte) Frame {
 // Text reports what was accumulated, for a caller that needs the whole answer rather than
 // its deltas. Used by tests and by any non-streaming aggregation.
 func (b *Builder) Text() string { return b.textOf(nil) }
+
+// Answer excludes tool turns and incomplete responses. Reasoning is never text.
+func (b *Builder) Answer() string {
+	if b.WaitingForChildren() {
+		return ""
+	}
+	if !b.completed || len(b.calls) != 0 {
+		return ""
+	}
+	return b.Text()
+}
 
 // TextFor reports what one output item accumulated.
 //

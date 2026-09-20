@@ -44,13 +44,21 @@ func buildHook(t *testing.T) {
 // Task produced no subagent and no tool result at all -- the client dropped the call and
 // re-sent the same conversation, so a test written against the baseline's name would have
 // passed while measuring nothing.
-func agentStream(role, prompt string) string {
+// callerModel, when given, is the Agent tool's own model argument. Measured 2026-09-18 in a
+// real session: the calling model fills that argument in unasked -- four delegations, four
+// times, none of them requested by the user -- so a test that never sets it is testing the
+// polite case and nothing else.
+func agentStream(role, prompt string, callerModel ...string) string {
+	model := ""
+	if len(callerModel) > 0 && callerModel[0] != "" {
+		model = `"model":"` + callerModel[0] + `",`
+	}
 	return toolStream("call_agent_1", "Agent", `{"subagent_type":"`+role+
-		`","description":"look around","prompt":"`+prompt+`"}`)
+		`",`+model+`"description":"look around","prompt":"`+prompt+`"}`)
 }
 
 // subagentRun starts a session whose first turn spawns one subagent.
-func subagentRun(t *testing.T) (session, sub string, unregistered, unrouted int64) {
+func subagentRun(t *testing.T, accounts ...*gateway.Diagnostics) (session, sub string, unregistered, unrouted int64) {
 	t.Helper()
 	exe := nativeAvailable(t)
 	script := &upstream.Script{
@@ -82,6 +90,9 @@ func subagentRun(t *testing.T) (session, sub string, unregistered, unrouted int6
 		},
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+	for _, account := range accounts {
+		*account = g.Diagnose()
 	}
 
 	// Which request is the subagent's is decided by what it was given to work with, not by
@@ -153,11 +164,9 @@ func TestASubagentRunsWhereItsRoleSaysAndNotWhereTheClientAsked(t *testing.T) {
 	}
 }
 
-// And with no hook installed the same session still works -- on the model the client chose.
-//
-// This is the half that makes the other half mean something. Without it, "the subagent ran
-// on luna" has a second explanation: that luna is simply where a subagent goes. It is not.
-func TestWithNoHookTheSubagentKeepsTheClientsOwnModel(t *testing.T) {
+// Missing registration must stop an adapted child. Falling back to the client's
+// request was the old behavior; it contradicts the verified-selection contract.
+func TestWithNoHookTheUnverifiedSubagentNeverReachesBackend(t *testing.T) {
 	// Another test in this package builds it beside the test binary. Make its absence the
 	// condition rather than an assumption about test order.
 	if path := hookPath(t); path != "" {
@@ -167,17 +176,9 @@ func TestWithNoHookTheSubagentKeepsTheClientsOwnModel(t *testing.T) {
 		}
 	}
 
-	_, sub, unregistered, _ := subagentRun(t)
-	if sub == "" {
-		t.Fatal("the subagent never made a request of its own")
-	}
-	// gpt-5.6-sol is what the client itself picks for a built-in Explore, which it says in
-	// its own stderr as agent:builtin:Explore. sol to luna is no tier mapping; the other
-	// test's luna is the role and nothing else.
-	if sub != "gpt-5.6-sol/low" {
-		t.Fatalf("the subagent ran on %s; with no hook it should run where the client asked", sub)
-	}
-	if unregistered != 1 {
-		t.Fatalf("unregistered = %d, want 1: the header arrived and no registration had", unregistered)
+	var account gateway.Diagnostics
+	_, sub, _, _ := subagentRun(t, &account)
+	if sub != "" || account.Requests.RefusedBy["AGENT_SELECTION_UNVERIFIED"] == 0 {
+		t.Fatal("unverified child executed or its refusal was not observed")
 	}
 }

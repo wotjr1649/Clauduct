@@ -211,6 +211,10 @@ type ToolSpec struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters"`
+	// Preserve native optional fields. Responses may normalize an omitted strict
+	// flag into a grammar requiring model/effort/isolation even when unrequested.
+	// Native argument validation and permission checks still apply unchanged.
+	Strict bool `json:"strict"`
 }
 
 // NamedTool constrains the choice to one tool.
@@ -273,18 +277,13 @@ type ReasoningParam struct {
 	Effort string `json:"effort"`
 }
 
-// BuildRequest converts a decoded Anthropic request into a backend request.
-//
-// It refuses nothing on its own: the decoder has already established that this request is
-// within what the build supports, so anything arriving here is text. A block that is not
-// text reaching this point would be a decoder defect, and it is reported as one rather
-// than skipped.
-func BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
+// ResolveRoute selects the same model and effort for generation and hosted search.
+func ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) {
 	// The client asks for a Claude model; the backend has never heard of one. Resolved
 	// here rather than forwarded, and refused rather than defaulted -- see route.go.
 	route, err := SelectRoute(request.Model, request.Effort)
 	if err != nil {
-		return nil, err
+		return Route{}, err
 	}
 	// An override replaces that entirely and carries its own source, so a reader of the
 	// record can tell a route the client chose from one this build reassigned.
@@ -299,18 +298,22 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 		// Skipped when a role override is in force, which is the baseline's rule too: a
 		// subagent routed by what it is doing does not take an effort from the transcript.
 		if !efforts[turn] {
-			return nil, ErrUnsupportedRoute
+			return Route{}, ErrUnsupportedRoute
 		}
 		route.Effort, route.Source = turn, route.Source+"+turn"
 	}
-	// Last, because it is a cost guard rather than a choice of where to run. A compaction
-	// keeps whichever model it was going to use and drops to medium if it was dearer; see
-	// compact.go for why that is the one request worth capping.
-	if route.Effort != "low" && route.Effort != compactEffort && IsCompactTemplate(textOf(request)) {
-		route.Effort, route.Source = compactEffort, "compact"
+	return route, nil
+}
+
+// BuildRequest converts a decoded Anthropic request into a backend request.
+func BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
+	route, err := ResolveRoute(request, override...)
+	if err != nil {
+		return nil, err
 	}
 
 	out := &Request{
+		Input:       make([]InputEntry, 0),
 		Model:       route.Model,
 		Instruction: Instruction,
 		Stream:      true,
@@ -512,8 +515,9 @@ func systemText(raw json.RawMessage) (string, bool) {
 // It holds the whole mapping in one place so that adding an event type is a decision made
 // here rather than a default that happens somewhere else.
 type Translator struct {
-	builder *anthropic.Builder
-	usage   codex.Usage
+	PrepareToolCall func(id, name string, raw json.RawMessage) (json.RawMessage, error)
+	builder         *anthropic.Builder
+	usage           codex.Usage
 	// outputLimit is the caller's max_tokens. Nothing asks the backend to stop at it, so
 	// it is checked here against what the backend says it spent.
 	outputLimit int64
@@ -533,6 +537,11 @@ type Translator struct {
 	ids   map[string]bool
 }
 
+// ObservedUsage returns backend-reported counts; unknown counts remain unknown.
+func (t *Translator) ObservedUsage() codex.Usage { return t.usage }
+
+func (t *Translator) Answer() string { return t.builder.Answer() }
+
 // heldItem is one output item and whether the backend has finished writing it.
 type heldItem struct {
 	item codex.OutputItem
@@ -546,10 +555,35 @@ type heldItem struct {
 // above any plausible response and far below anything that matters.
 const maxOutputItems = 1024
 
-// NewTranslatorFor builds a translator for one request: which tools a new call may name,
-// and the output limit that request asked for.
-func NewTranslatorFor(request *anthropic.Request) *Translator {
-	t := &Translator{builder: anthropic.NewBuilder(request.Model), outputLimit: request.MaxTokens}
+// NewTranslatorFor builds a translator for one request: which tools a new call may name, the
+// output limit that request asked for, and the model the answer will actually come from.
+//
+// effective is a separate argument because this function cannot work it out. The route is
+// decided in BuildRequest, and for a role-routed subagent it is not the model the request
+// names -- so a translator given only the request reports a model that answered nothing,
+// which is what this did until 2026-09-18.
+//
+// What the client does with the name, measured rather than assumed: nothing visible. Its
+// agent header is drawn when the subagent starts, before any response exists, and its
+// per-model token ledger follows the model it asked for -- a session whose every subagent
+// request was answered here by gpt-6-astra still filed all of it under gpt-5.6-terra after
+// this change. So this is not a fix for either of those, and claiming it was would be the
+// same kind of statement this is correcting.
+//
+// It is here because the field means "the model that produced this response" and the honest
+// value is the one that did. The Node baseline reports it that way and pins it with tests
+// (src/native-protocol.mjs:509-511, src/test-native.mjs:505-511), and ARCHITECTURE.md:217
+// says a request is never quietly moved to a cheaper model. Reporting the request instead is
+// the one statement here that is false.
+//
+// Empty falls back to the requested model, which is the right answer for a caller that has
+// no route to hand over.
+func NewTranslatorFor(request *anthropic.Request, effective string) *Translator {
+	reported := effective
+	if reported == "" {
+		reported = request.Model
+	}
+	t := &Translator{builder: anthropic.NewBuilder(reported), outputLimit: request.MaxTokens}
 	callable := request.CallableNames()
 	t.builder.SetCallable(func(name string) bool { return callable[name] })
 	return t
@@ -605,6 +639,9 @@ func (t *Translator) Builder() *anthropic.Builder { return t.builder }
 // inventing a signature for it would be passing it off as an Anthropic feature.
 func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	if failure := codex.Failure(event.Type); failure != nil {
+		if codex.ContextLimit(event.Raw) {
+			return nil, codex.ErrContextLimit
+		}
 		return nil, failure
 	}
 
@@ -807,7 +844,15 @@ func (t *Translator) release() error {
 		}
 		switch held.item.Type {
 		case codex.ItemFunctionCall:
-			if err := t.builder.AddToolCall(held.item.CallID, held.item.Name, held.item.Arguments); err != nil {
+			arguments := held.item.Arguments
+			if t.PrepareToolCall != nil {
+				var err error
+				arguments, err = t.PrepareToolCall(held.item.CallID, held.item.Name, arguments)
+				if err != nil {
+					return err
+				}
+			}
+			if err := t.builder.AddToolCall(held.item.CallID, held.item.Name, arguments); err != nil {
 				return err
 			}
 		case codex.ItemMessage:

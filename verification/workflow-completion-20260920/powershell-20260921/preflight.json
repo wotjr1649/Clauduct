@@ -1,0 +1,14 @@
+[
+  {
+    "engine": "C:/Windows/System32/WindowsPowerShell/v1.0/powershell.exe",
+    "syntax": "pass",
+    "invalidProbeRejected": true,
+    "exit": 1
+  },
+  {
+    "engine": "C:/Program Files/PowerShell/7/pwsh.exe",
+    "syntax": "pass",
+    "invalidProbeRejected": true,
+    "exit": 1
+  }
+]

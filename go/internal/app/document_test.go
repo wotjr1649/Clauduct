@@ -16,6 +16,7 @@ import (
 // client produces a document block for a real PDF, or that this build carries the one it
 // produces. That is what this measures, and it costs no model call.
 func TestReadingAPDFCarriesItToTheBackend(t *testing.T) {
+	buildHook(t) // PDF rendering is provided by the shipped companion executable.
 	pdf, err := base64.StdEncoding.DecodeString(onePagePDFBase64)
 	if err != nil {
 		t.Fatalf("decode fixture: %v", err)
@@ -41,6 +42,8 @@ func TestReadingAPDFCarriesItToTheBackend(t *testing.T) {
 		`"type":"input_file"`,
 		`"filename":"document.pdf"`,
 		`"file_data":"data:application/pdf;base64,JVBER`,
+		`"type":"input_image"`,
+		`"image_url":"data:image/png;base64,iVBOR`,
 	} {
 		if !strings.Contains(withResult, want) {
 			// Either the client did not return the PDF as a document block, or this build

@@ -188,9 +188,18 @@ func runSession(t *testing.T, so sessionOptions) *session {
 // the launcher adds is a fixed prefix, never something interleaved with them.
 func forwarded(t *testing.T, argv []string) []string {
 	t.Helper()
-	for len(argv) >= 2 && (argv[0] == "--settings" || argv[0] == "--agents") {
-		argv = argv[2:]
+	// The launcher's prefix, in the order Build writes it, and each one taken at most once.
+	// A loop that strips any of these from the front eats a user's own --effort when it
+	// happens to lead their arguments, and then compares an argv this helper damaged.
+	for _, own := range []string{"--effort", "--settings", "--agents"} {
+		if len(argv) >= 2 && argv[0] == own {
+			argv = argv[2:]
+		}
 	}
+	// Only the other two are guarded below. Those are refused from a user
+	// (launch/refuse.go), so one appearing among the forwarded arguments could only be this
+	// launcher's. A user may pass their own --effort and it has to arrive, which is what
+	// TestTheUsersOwnEffortLandsAfterThisBuilds is about.
 	for _, arg := range argv {
 		if arg == "--settings" || arg == "--agents" {
 			t.Fatalf("the launcher's own option turned up among the forwarded arguments: %#v", argv)
@@ -586,5 +595,25 @@ func TestAChildThatNeverStartedHasNoExitStatus(t *testing.T) {
 	if result.NativeExitCode != ExitCodeUnknown {
 		t.Fatalf("exit = %d, want ExitCodeUnknown: nothing ran, so there is no status",
 			result.NativeExitCode)
+	}
+}
+
+// A user whose own --effort leads their arguments still gets it forwarded.
+//
+// Both halves of this were untested. The launcher writes its --effort first, so a user's own
+// lands after it and wins -- and the helper that strips the launcher's prefix used to take
+// any leading --effort, which meant a test written this way would have had its own argument
+// eaten before the comparison and passed on a damaged argv.
+//
+// Found by a code review of this session's diff, 2026-09-18, and confirmed by a mutation: the
+// old helper survived every existing test because none of them led with the option.
+func TestAUsersOwnEffortLeadingTheArgumentsSurvives(t *testing.T) {
+	args := []string{"--effort", "max", "-p", "first"}
+	s := runSession(t, sessionOptions{args: args})
+	if s.err != nil {
+		t.Fatalf("Run: %v", s.err)
+	}
+	if got := forwarded(t, s.report.Argv); !reflect.DeepEqual(got, args) {
+		t.Fatalf("child argv\n got: %#v\nwant: %#v", got, args)
 	}
 }

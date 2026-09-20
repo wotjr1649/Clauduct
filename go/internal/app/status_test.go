@@ -70,7 +70,7 @@ func TestACleanSessionSaysOneLine(t *testing.T) {
 		t.Fatalf("the file holds %+v", filed)
 	}
 	// And the half of a session's behaviour that the gateway cannot see is in it.
-	if filed.Session.ContextWindow != contextWindow || filed.Session.Model != startupModel.Model {
+	if filed.Session.NativeContextDefaults.Window != contextWindow || filed.Session.StartupModel != startupModel.Model {
 		t.Errorf("session facts = %+v", filed.Session)
 	}
 	if !filed.Session.NonStreamingFallback {
@@ -78,6 +78,59 @@ func TestACleanSessionSaysOneLine(t *testing.T) {
 	}
 	if !filed.Session.HookInstalled {
 		t.Error("the hook was installed and the account says it was not")
+	}
+}
+
+func TestExpectedCountUnsupportedPrintsOnlySummary(t *testing.T) {
+	text, filed := reported(t, Result{Category: CategorySuccess, HookInstalled: true,
+		Diagnostics: gateway.Diagnostics{Requests: gateway.RequestCounts{
+			Refused: 39, RefusedBy: map[string]int64{"COUNT_TOKENS_UNSUPPORTED": 39},
+		}}}, nil)
+	if strings.Contains(text, "CLAUDUCT_REQUEST_STATUS ") || !strings.Contains(text, "count_tokens unsupported=39") {
+		t.Fatalf("expected a short count summary: %s", text)
+	}
+	if filed.Gateway.Requests.Refused != 39 {
+		t.Fatal("summary discarded diagnostic evidence")
+	}
+}
+
+func TestNativeContextDefaultsAreNotPresentedAsAppliedModelPolicy(t *testing.T) {
+	account := Account(Result{})
+	raw, err := json.Marshal(account.Session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"contextWindow", "autoCompactWindow", "compactPercent"} {
+		if _, exists := fields[name]; exists {
+			t.Fatalf("ambiguous applied-setting field remains: %s", name)
+		}
+	}
+	if _, exists := fields["nativeContextDefaults"]; !exists || account.Session.NativeContextDefaults.ApplicationVerified {
+		t.Fatalf("native defaults claimed verification: %s", raw)
+	}
+}
+
+func TestControlTransitionsAreNotAcceptanceOrAPIFailures(t *testing.T) {
+	d := gateway.Diagnostics{Requests: gateway.RequestCounts{Refused: 1}, Totals: gateway.SessionTotals{Controls: map[string]int64{"MODEL_SWITCH_COMPACTION_REQUIRED": 1}}, NativeToolFailures: gateway.ToolFailureReport{Total: 2}}
+	account := Account(Result{Category: CategorySuccess, HookInstalled: true, Diagnostics: d})
+	if account.Completion.Acceptance != "not_assessed" || account.Completion.APIFailures != 0 || account.Completion.ControlTransitions != 1 || account.Completion.NativeToolFailures != 2 || !account.noteworthy() {
+		t.Fatal("process/control/tool outcomes conflated")
+	}
+	account.Completion.NativeToolFailures = 0
+	if account.noteworthy() {
+		t.Fatal("ordinary compact handshake treated as API failure")
+	}
+}
+
+func TestCancellationDoesNotHideTimeoutOrMissingReport(t *testing.T) {
+	d := gateway.Diagnostics{Totals: gateway.SessionTotals{Failures: map[string]int64{"CANCELLED": 1, "REQUEST_TIMEOUT": 1, "DELIVERY_FAILED": 1}}, AgentResults: gateway.AgentResultReport{Totals: map[string]int64{"cancelled": 1}, Recent: []gateway.AgentResultRecord{{State: "cancellation_reported"}, {State: "result_unavailable"}}}}
+	facts := completionFacts(d)
+	if facts.APIFailures != 2 || facts.CancelledRequests != 1 || facts.NativeCancellations != 1 || facts.UnacquiredResults != 1 || facts.Acceptance != "not_assessed" {
+		t.Fatalf("conflated completion facts: %+v", facts)
 	}
 }
 
@@ -90,8 +143,13 @@ func TestASessionWithSomethingToSaySaysIt(t *testing.T) {
 			Events: gateway.EventReport{Unsupported: 1, Names: []string{"response.new_thing"}}}},
 		"a subagent went unrouted": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
 			Agents: gateway.AgentCounts{Unrouted: 1}}},
-		"a beta this build does not do": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
-			Betas: gateway.BetaReport{Requests: 1, Judged: []string{"STRUCTURED_OUTPUTS"}}}},
+		// A beta name nobody has classified, and one that arrived unreadable. These are the
+		// two the beta report still speaks up about; a name this project already judged is
+		// not among them, and TestAJudgedBetaIsNotWorthInterrupting holds that line.
+		"a beta nobody has classified": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
+			Betas: gateway.BetaReport{Requests: 1, Unknown: []string{"some-new-beta-2026-01-01"}}}},
+		"a beta header that could not be read": {Category: CategorySuccess, HookInstalled: true, Diagnostics: gateway.Diagnostics{
+			Betas: gateway.BetaReport{Requests: 1, Malformed: 1}}},
 		"the client failed": {Category: CategoryClientFail, NativeExitCode: 2, HookInstalled: true},
 		// The one failure nobody would think to look for: the package shipped without
 		// the hook, everything works, and role routing silently never happens.
@@ -324,4 +382,103 @@ func TestTheAccountSaysWhetherTheHookWasActuallyFound(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A (session 36). A beta this build has already judged is not a reason to interrupt.
+//
+// Measured 2026-09-17: the installed client sends structured-outputs-2025-12-15 on every
+// request -- 182 of 182 -- and judgedBetas classifies it rather than refusing it. With
+// len(Judged) > 0 in noteworthy(), every session that used the client's own defaults was
+// filed as having something to say and dumped its whole account at exit. A signal that
+// fires on ordinary use distinguishes nothing, which is the failure it exists to prevent.
+//
+// The vocabulary already draws the line: Judged is what this project looked at and decided,
+// Unknown is what nobody has classified. Only the second is news.
+func TestAJudgedBetaIsNotWorthInterrupting(t *testing.T) {
+	text, _ := reported(t, Result{Category: CategorySuccess, HookInstalled: true,
+		Diagnostics: gateway.Diagnostics{
+			Betas: gateway.BetaReport{Requests: 182, Judged: []string{"STRUCTURED_OUTPUTS"}}}}, nil)
+
+	if strings.Contains(text, "CLAUDUCT_REQUEST_STATUS ") {
+		t.Fatalf("a session that used the client's default betas dumped its whole account:\n%s", text)
+	}
+}
+
+// (b) of the 2026-09-18 verification round. These two are a startup default, not a reading.
+//
+// They carry startupModel, which is a constant. Until effort moved onto --effort they were
+// accidentally accurate: CLAUDE_CODE_EFFORT_LEVEL pinned the session to exactly this value,
+// so nothing could make them wrong. Letting a session change its effort made them routinely
+// wrong -- measured the same day, an account reporting gpt-6-astra/low for a session whose
+// every request ran on gpt-5.6-sol at high.
+//
+// The fix is the name, not the value. What a session actually ran on is per request and
+// Recent already answers it exactly; one field cannot, because a session runs a parent and
+// its subagents on different routes at the same time. So these say what they are.
+func TestTheStartupRouteIsNamedAsOneRatherThanAsTheSessionsRoute(t *testing.T) {
+	_, filed := reported(t, Result{Category: CategorySuccess, HookInstalled: true}, nil)
+
+	encoded, err := json.Marshal(Account(Result{Category: CategorySuccess, HookInstalled: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &keys); err != nil {
+		t.Fatal(err)
+	}
+	var session map[string]json.RawMessage
+	if err := json.Unmarshal(keys["session"], &session); err != nil {
+		t.Fatal(err)
+	}
+	for _, claiming := range []string{"model", "effort"} {
+		if _, present := session[claiming]; present {
+			t.Errorf("the account still calls a startup constant %q, which a reader takes "+
+				"for what the session ran on", claiming)
+		}
+	}
+	for _, named := range []string{"startupModel", "startupEffort"} {
+		if _, present := session[named]; !present {
+			t.Errorf("%s is missing from the account", named)
+		}
+	}
+	if filed.Session.StartupModel != startupModel.Model ||
+		filed.Session.StartupEffort != startupModel.Effort {
+		t.Errorf("startup route = %s/%s, want %s/%s", filed.Session.StartupModel,
+			filed.Session.StartupEffort, startupModel.Model, startupModel.Effort)
+	}
+}
+
+// The line has to name the count that made the session worth reading.
+//
+// Measured 2026-09-18: a 71-request session had one stream break after its status was already
+// sent. The account was printed, because a broken stream is noteworthy -- and the line above
+// it said "refused=0" and nothing else, so a reader was handed the whole JSON with no word on
+// why. The counter that was fine was reported and the one that was not was left out.
+//
+// Only when there is one, which is the rule quotaField already follows. A line that carries
+// broken=0 on every clean session is back to reporting the number that needs no reporting.
+func TestTheLineNamesABrokenStream(t *testing.T) {
+	broken := Result{Category: CategorySuccess, HookInstalled: true,
+		Diagnostics: gateway.Diagnostics{
+			Requests: gateway.RequestCounts{Received: 71, Broken: 1}}}
+	text, _ := reported(t, broken, nil)
+	if !strings.Contains(text, "broken=1") {
+		t.Errorf("a stream broke and the line does not say so:\n%s", firstLine(text))
+	}
+	// And it is the exit line that says it, not only the account below.
+	if !strings.Contains(firstLine(text), "broken=1") {
+		t.Errorf("broken=1 is not on the summary line:\n%s", firstLine(text))
+	}
+
+	clean := Result{Category: CategorySuccess, HookInstalled: true,
+		Diagnostics: gateway.Diagnostics{Requests: gateway.RequestCounts{Received: 71}}}
+	quiet, _ := reported(t, clean, nil)
+	if strings.Contains(quiet, "broken=") {
+		t.Errorf("a clean session carries a count of nothing:\n%s", firstLine(quiet))
+	}
+}
+
+func firstLine(text string) string {
+	line, _, _ := strings.Cut(text, "\n")
+	return line
 }

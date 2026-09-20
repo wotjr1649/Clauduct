@@ -17,6 +17,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"io"
 	"mime"
 	"net"
 	"net/http"
@@ -73,18 +74,25 @@ var bannedProxyHeaders = []string{"Origin", "Sec-Fetch-Site", "Forwarded"}
 // Gateway is one session's listener. Two concurrent sessions share nothing: separate
 // listener, separate port, separate token, separate request registry.
 type Gateway struct {
-	listener  net.Listener
-	server    *http.Server
-	token     string
-	expected  string // the exact Host this session answers to
-	requests  *registry
-	agents    *agentRegistry
-	transport upstream.Transport
-	served    chan error
-	ring      *ring
-	betas     *betaLedger
-	limits    *limitLedger
-	events    *eventLedger
+	listener     net.Listener
+	server       *http.Server
+	token        string
+	expected     string // the exact Host this session answers to
+	requests     *registry
+	agents       *agentRegistry
+	transport    upstream.Transport
+	served       chan error
+	ring         *ring
+	betas        *betaLedger
+	limits       *limitLedger
+	events       *eventLedger
+	delegations  *delegations
+	counts       countCache
+	contexts     *contextGuard
+	nativeEvents nativeEventState
+	displays     displayHistory
+	toolFailures toolFailures
+	documents    documentRenderer
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -93,7 +101,20 @@ type Gateway struct {
 	// happened, so "routing quietly did nothing" is a number rather than a silence.
 	unregisteredAgents atomic.Int64
 	unroutedRoles      atomic.Int64
-	refused            atomic.Int64
+
+	// Refusals, by the reason each was answered with, and streams that broke after their
+	// status was already sent. Both are cumulative for the life of the session and neither
+	// is derived from the record ring: the ring holds sixteen slots, and measured
+	// 2026-09-17 a real session runs 184 requests through it, so anything counted there is
+	// a count of the last sixteen requests wearing the name of a session total.
+	//
+	// The aggregate is summed from the map rather than kept beside it. Two counters for one
+	// fact drift, and the one that would have drifted here is the one a reader trusts.
+	refusalMu sync.Mutex
+	refusals  map[string]int64
+	// refusedPaths are the distinct paths refusals were answered on, first ones kept.
+	refusedPaths []string
+	broken       atomic.Int64
 	// client is what the client called itself, taken from the first request that named a
 	// version in the shape this build recognises. Stored once: a session has one client,
 	// and a later value would mean something this account cannot explain.
@@ -182,7 +203,7 @@ func (g *Gateway) Token() string { return g.token }
 // rather than by a defect. What the account gets instead is the observed version beside
 // this one, so a session that starts failing after an update says so in one line rather
 // than becoming a bisect.
-const ReferenceClient = "2.1.274"
+const ReferenceClient = "2.1.278"
 
 // clientAgent matches the client naming itself.
 //
@@ -231,7 +252,94 @@ func (g *Gateway) Unrouted() (unregistered, unrouted int64) {
 }
 
 func (g *Gateway) Stats() (received, refused, active int64) {
-	return g.received.Load(), g.refused.Load(), int64(g.requests.count())
+	return g.received.Load(), g.refusedTotal(), int64(g.requests.count())
+}
+
+// countRefusal records one refusal under the reason it was answered with.
+//
+// Called from the single place every refusal goes through, which is what keeps the reasons
+// and the total the same fact rather than two that agree until they do not.
+func (g *Gateway) countRefusal(category, path string) {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	if g.refusals == nil {
+		g.refusals = make(map[string]int64)
+	}
+	g.refusals[category]++
+	g.notePath(path)
+}
+
+// notePath records a refused path once, while there is room. Caller holds refusalMu.
+//
+// First ones kept rather than most recent: a flood then fills slots it cannot take back,
+// where evicting would let it erase the path a reader came for.
+func (g *Gateway) notePath(path string) {
+	if !printablePath(path) || len(g.refusedPaths) >= refusedPathLimit {
+		return
+	}
+	for _, seen := range g.refusedPaths {
+		if seen == path {
+			return
+		}
+	}
+	g.refusedPaths = append(g.refusedPaths, path)
+}
+
+// printablePath accepts the shape a path has and refuses anything else.
+//
+// This string is written into a diagnostic a person reads and other tools may parse, and the
+// request decides it. Recent already carries raw paths, so nothing new is exposed by keeping
+// one -- but a cumulative set is worth holding to a shape rather than to whatever arrived.
+func printablePath(path string) bool {
+	if len(path) == 0 || len(path) > 64 {
+		return false
+	}
+	for _, r := range path {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '/', r == '_', r == '.', r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// RefusedPaths is a copy of the distinct paths refusals were answered on.
+func (g *Gateway) RefusedPaths() []string {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	if len(g.refusedPaths) == 0 {
+		return nil
+	}
+	return append([]string(nil), g.refusedPaths...)
+}
+
+// RefusalsByCategory is how many refusals of each reason this session answered.
+//
+// Copied out: a caller that serves this to a client must not be able to edit what the
+// gateway counted.
+func (g *Gateway) RefusalsByCategory() map[string]int64 {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	if len(g.refusals) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(g.refusals))
+	for category, count := range g.refusals {
+		out[category] = count
+	}
+	return out
+}
+
+func (g *Gateway) refusedTotal() int64 {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	var total int64
+	for _, count := range g.refusals {
+		total += count
+	}
+	return total
 }
 
 func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
@@ -278,9 +386,25 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		g.handleMessages(w, r)
 		return
 	}
+	if r.URL.Path == "/v1/messages/count_tokens" {
+		g.handleCountTokens(w, r)
+		return
+	}
 
 	if r.URL.Path == "/clauduct/agents" {
 		g.handleAgents(w, r)
+		return
+	}
+	if r.URL.Path == "/clauduct/context" {
+		g.handleContextEvent(w, r)
+		return
+	}
+	if r.URL.Path == "/clauduct/workflows" {
+		g.handleWorkflow(w, r)
+		return
+	}
+	if r.URL.Path == "/clauduct/tool-failures" {
+		g.handleToolFailure(w, r)
 		return
 	}
 
@@ -390,6 +514,9 @@ func isJSON(contentType string) bool {
 func (g *Gateway) Close(ctx context.Context) error {
 	g.closeOnce.Do(func() {
 		g.requests.closeAll(errShuttingDown)
+		if closer, ok := g.transport.(io.Closer); ok {
+			defer closer.Close()
+		}
 		shutdownErr := g.server.Shutdown(ctx)
 		if shutdownErr != nil {
 			// A handler that will not return must not keep the port bound. Force the

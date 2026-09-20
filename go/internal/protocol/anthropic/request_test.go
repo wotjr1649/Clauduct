@@ -51,6 +51,27 @@ func TestTextOnlyRequestIsAccepted(t *testing.T) {
 	}
 }
 
+func TestInterruptedTextRetainsContentWithEmptyCitations(t *testing.T) {
+	for _, member := range []string{"", `,"citations":null`, `,"citations":[]`, `,"citations":[ ]`} {
+		body := `{"model":"gpt-6-astra","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"public task"},{"role":"assistant","content":[{"type":"text","text":"partial public answer"` + member + `}]},{"role":"user","content":"continue"}]}`
+		request, refusal := decode(t, body)
+		if refusal != nil {
+			t.Errorf("%s: %v", member, refusal)
+			continue
+		}
+		if len(request.Messages) != 3 || request.Messages[1].Blocks[0].Text != "partial public answer" || request.Messages[2].Blocks[0].Text != "continue" {
+			t.Fatal("interrupted history changed")
+		}
+	}
+}
+
+func TestTextCitationsDoNotDiscardUnsupportedMeaning(t *testing.T) {
+	for _, value := range []string{`[{"type":"char_location","cited_text":"public"}]`, `[null]`, `{}`, `""`, `false`, `0`} {
+		mustRefuse(t, `{"model":"gpt-6-astra","max_tokens":64,"stream":true,"messages":[{"role":"assistant","content":[{"type":"text","text":"partial","citations":`+value+`}]}]}`, "UNSUPPORTED_TEXT_CITATIONS")
+	}
+	mustRefuse(t, `{"model":"gpt-6-astra","max_tokens":64,"stream":true,"messages":[{"role":"assistant","content":[{"type":"text","text":"partial","citations":null,"unknown":null}]}]}`, CodeTextFields)
+}
+
 // The shape the measured claude 2.1.272 actually sends, tools included. A refusal here
 // would mean the allowlist is wrong, not that the client is.
 func TestTheMeasuredClientEnvelopeIsAccepted(t *testing.T) {
@@ -110,16 +131,19 @@ func TestUnknownTopLevelFieldIsRefusedAndNamed(t *testing.T) {
 	}
 }
 
-// WIRE01 at the request layer: stream has three distinguishable states and each gets its
-// own category, because "you forgot it" and "you asked for non-streaming" are different.
+// Omission and false select JSON; null and other types remain malformed.
 func TestStreamHasThreeDistinctRefusals(t *testing.T) {
 	base := `{"model":"m","max_tokens":1,"messages":[{"role":"user","content":"x"}]`
+	for _, suffix := range []string{`}`, `,"stream":false}`} {
+		req, err := DecodeRequest([]byte(base + suffix))
+		if err != nil || !req.NonStreaming {
+			t.Fatal("JSON response mode not selected", err)
+		}
+	}
 	for name, tc := range map[string]struct{ suffix, code string }{
-		"missing": {`}`, CodeStreamMissing},
-		"false":   {`,"stream":false}`, CodeStreamFalse},
-		"null":    {`,"stream":null}`, CodeStreamInvalid},
-		"string":  {`,"stream":"true"}`, CodeStreamInvalid},
-		"number":  {`,"stream":1}`, CodeStreamInvalid},
+		"null":   {`,"stream":null}`, CodeStreamInvalid},
+		"string": {`,"stream":"true"}`, CodeStreamInvalid},
+		"number": {`,"stream":1}`, CodeStreamInvalid},
 	} {
 		t.Run(name, func(t *testing.T) { mustRefuse(t, base+tc.suffix, tc.code) })
 	}
@@ -347,7 +371,7 @@ func TestDuplicateAndTrailingAreRefused(t *testing.T) {
 // or from this package; values never do.
 func TestRefusalDoesNotEchoRequestValues(t *testing.T) {
 	const marker = "SENSITIVE-PROMPT-CONTENT"
-	body := `{"model":"m","max_tokens":1,"stream":false,
+	body := `{"model":"m","max_tokens":1,"stream":null,
 	  "messages":[{"role":"user","content":"` + marker + `"}]}`
 	_, refusal := decode(t, body)
 	if refusal == nil {

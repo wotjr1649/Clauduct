@@ -31,10 +31,7 @@ func TestPermissionBypassOptionsAreRefused(t *testing.T) {
 // The options the baseline also blocked are the user's own configuration. Forwarding them is
 // the point of the redesign, and the handoff's target usage examples are exactly these.
 //
-// --settings and --setting-sources left this list on 2026-09-16, and not as a policy: the
-// launcher began injecting a settings blob, because a hook is a settings entry with no
-// environment form. Measured, a second --settings replaces the first rather than merging
-// with it, so one of the two would be silently lost. Their refusal is below.
+// Settings are merged by app before launch; source selection remains native-owned.
 func TestConfigurationOptionsAreForwarded(t *testing.T) {
 	for _, args := range [][]string{
 		{"--mcp-config", ".\\mcp.json"},
@@ -49,6 +46,9 @@ func TestConfigurationOptionsAreForwarded(t *testing.T) {
 		{"--agents", "{}"},
 		{"--bare"},
 		{"--safe-mode"},
+		{"--settings", "{}"},
+		{"--settings={}"},
+		{"--setting-sources", "user"},
 		{"--cloud"},
 		{"--resume", "abc-123"},
 		{"-p", "hello"},
@@ -110,28 +110,5 @@ func TestBuildStillForwardsEverythingVerbatim(t *testing.T) {
 	spec := Build("claude.exe", args, nil, "", Overlay{})
 	if strings.Join(spec.Args, "\x00") != strings.Join(args, "\x00") {
 		t.Fatalf("Build filtered arguments: %#v", spec.Args)
-	}
-}
-
-// The two that are refused because this launcher supplies its own.
-//
-// Not a judgement about the option. A second --settings replaces the first rather than
-// adding to it, so forwarding the user's would drop the hooks this session installs and
-// nothing would say so -- the subagent routing would simply never happen.
-func TestTheSettingsOptionsAreRefusedBecauseThisLauncherSuppliesThem(t *testing.T) {
-	for _, args := range [][]string{
-		{"--settings", "{}"},
-		{"--settings={}"},
-		{"--setting-sources", "user"},
-		{"-p", "x", "--settings", "{}"},
-	} {
-		name, refused := Refused(args)
-		if !refused {
-			t.Errorf("%v was forwarded; this launcher's own settings would be replaced", args)
-			continue
-		}
-		if reason := Reason(name); reason == "" {
-			t.Errorf("%q is refused with no reason to show the user", name)
-		}
 	}
 }

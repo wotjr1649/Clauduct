@@ -1,0 +1,346 @@
+{
+  "id": "febe7e62-d829-4e63-a275-e167b2e8529f",
+  "binary": "84bdbdf85de0c5e555dc01053979ee7eb8e5f9a5cfd9872a97a86a8033c60011",
+  "answers": [
+    {
+      "agent": "",
+      "time": "2026-09-19T11:47:06.238Z",
+      "text": "WAITING_ROOT"
+    },
+    {
+      "agent": "",
+      "time": "2026-09-19T11:47:29.774Z",
+      "text": "TREE_OK=1530"
+    },
+    {
+      "agent": "",
+      "time": "2026-09-19T11:50:15.810Z",
+      "text": "WAITING_ROOT"
+    },
+    {
+      "agent": "",
+      "time": "2026-09-19T11:50:21.827Z",
+      "text": "Workflow completed: 4 leaves finished, 0 errors.\n\n```json\n[{\"value\":23},{\"value\":29},{\"value\":31},{\"value\":37}]\n```"
+    }
+  ],
+  "selection": {
+    "recent": [
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "agent": "ac8123430a559ccee",
+        "role": "workflow-subagent",
+        "modelProvided": false,
+        "effortProvided": false,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-6-astra",
+        "effectiveEffort": "low",
+        "source": "workflow-selection",
+        "nativeModelAlias": "",
+        "state": "selection_verified",
+        "backendResponses": 1,
+        "backendCompletions": 1
+      },
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "agent": "af88bbe6e03190d9b",
+        "role": "workflow-subagent",
+        "requestedModel": "gpt-5.6-luna",
+        "modelProvided": true,
+        "effortProvided": false,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-5.6-luna",
+        "effectiveEffort": "max",
+        "source": "workflow-selection",
+        "nativeModelAlias": "",
+        "state": "selection_verified",
+        "backendResponses": 1,
+        "backendCompletions": 1
+      },
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "agent": "a875cd060ea0a5ea4",
+        "role": "workflow-subagent",
+        "requestedEffort": "high",
+        "modelProvided": false,
+        "effortProvided": true,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-6-astra",
+        "effectiveEffort": "high",
+        "source": "workflow-selection",
+        "nativeModelAlias": "",
+        "state": "selection_verified",
+        "backendResponses": 1,
+        "backendCompletions": 1
+      },
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "agent": "adc78357b05063c00",
+        "role": "workflow-subagent",
+        "requestedModel": "gpt-5.6-terra",
+        "requestedEffort": "medium",
+        "modelProvided": true,
+        "effortProvided": true,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveEffort": "medium",
+        "source": "workflow-selection",
+        "nativeModelAlias": "",
+        "state": "selection_verified",
+        "backendResponses": 1,
+        "backendCompletions": 1
+      },
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "parent": "ac94e8036f0e1eeaf",
+        "call": "call_sOAKjJgTt9jUyY4vnY9wBi8n",
+        "agent": "a44912699d0135b0b",
+        "role": "general-purpose",
+        "modelProvided": false,
+        "effortProvided": false,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveEffort": "medium",
+        "source": "delegation-inherited",
+        "nativeModelAlias": "sonnet",
+        "state": "selection_verified",
+        "backendResponses": 1,
+        "backendCompletions": 1
+      },
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "parent": "acd44bd126bc8a803",
+        "call": "call_bYVqUyDa5UaTw6ELCJinC29y",
+        "agent": "ac94e8036f0e1eeaf",
+        "role": "general-purpose",
+        "modelProvided": false,
+        "effortProvided": false,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveEffort": "medium",
+        "source": "delegation-inherited",
+        "nativeModelAlias": "sonnet",
+        "state": "selection_verified",
+        "backendResponses": 3,
+        "backendCompletions": 3
+      },
+      {
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_S4CMFt6SxmeOKHEedX0MIHv4",
+        "agent": "acd44bd126bc8a803",
+        "role": "general-purpose",
+        "requestedModel": "gpt-5.6-terra",
+        "requestedEffort": "medium",
+        "modelProvided": true,
+        "effortProvided": true,
+        "requestPresenceVerified": true,
+        "effectiveModel": "gpt-5.6-terra",
+        "effectiveEffort": "medium",
+        "source": "agent-call-model+effort",
+        "nativeModelAlias": "sonnet",
+        "state": "selection_verified",
+        "backendResponses": 3,
+        "backendCompletions": 3
+      }
+    ],
+    "totals": {
+      "prepared": 3,
+      "restored": 4,
+      "selection_verified": 7
+    }
+  },
+  "results": {
+    "recent": [
+      {
+        "selection": {
+          "requestedModel": "gpt-5.6-luna",
+          "modelProvided": true,
+          "effortProvided": false,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-luna",
+          "effectiveEffort": "max",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "beb76761-a459-47ac-a20d-d47894758bc3",
+        "nativeModel": "gpt-5.6-luna",
+        "nativeEffort": "max",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "af88bbe6e03190d9b",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "state": "parent_received",
+        "source": "workflow_journal",
+        "bytes": 12,
+        "recovered": true,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "requestedModel": "gpt-5.6-terra",
+          "requestedEffort": "medium",
+          "modelProvided": true,
+          "effortProvided": true,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-terra",
+          "effectiveEffort": "medium",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "f6fee7b4-3916-4fb1-a18d-757caef3458c",
+        "nativeModel": "gpt-5.6-terra",
+        "nativeEffort": "medium",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "adc78357b05063c00",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "state": "parent_received",
+        "source": "workflow_journal",
+        "bytes": 12,
+        "recovered": true,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "modelProvided": false,
+          "effortProvided": false,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-6-astra",
+          "effectiveEffort": "low",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "68a22bde-ab69-42bc-a3cb-178c8da6fbe0",
+        "nativeModel": "gpt-6-astra",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "ac8123430a559ccee",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "state": "parent_received",
+        "source": "workflow_journal",
+        "bytes": 12,
+        "recovered": true,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "requestedEffort": "high",
+          "modelProvided": false,
+          "effortProvided": true,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-6-astra",
+          "effectiveEffort": "high",
+          "source": "workflow-selection"
+        },
+        "nativeTurnId": "d8501c8e-bcfd-429b-9e43-8c9a26329d9a",
+        "nativeModel": "gpt-6-astra",
+        "nativeEffort": "high",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "a875cd060ea0a5ea4",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_opvWMNNHEcF7yn5o6rckCi40",
+        "state": "parent_received",
+        "source": "workflow_journal",
+        "bytes": 12,
+        "recovered": true,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "requestedModel": "gpt-5.6-terra",
+          "requestedEffort": "medium",
+          "modelProvided": true,
+          "effortProvided": true,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-terra",
+          "effectiveEffort": "medium",
+          "source": "agent-call-model+effort"
+        },
+        "nativeTurnId": "ed866529-f686-4dd2-a337-09487da81d41",
+        "nativeModel": "gpt-5.6-terra",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "acd44bd126bc8a803",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_S4CMFt6SxmeOKHEedX0MIHv4",
+        "state": "parent_received",
+        "source": "delivered_response",
+        "bytes": 10,
+        "recovered": false,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "modelProvided": false,
+          "effortProvided": false,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-terra",
+          "effectiveEffort": "medium",
+          "source": "delegation-inherited"
+        },
+        "nativeTurnId": "8c8b7a73-c8b9-481f-b2c3-18e583f3eb23",
+        "nativeModel": "gpt-5.6-terra",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "ac94e8036f0e1eeaf",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_bYVqUyDa5UaTw6ELCJinC29y",
+        "state": "parent_received",
+        "source": "delivered_response",
+        "bytes": 11,
+        "recovered": false,
+        "review": "not_assessed_by_gateway"
+      },
+      {
+        "selection": {
+          "modelProvided": false,
+          "effortProvided": false,
+          "requestPresenceVerified": true,
+          "effectiveModel": "gpt-5.6-terra",
+          "effectiveEffort": "medium",
+          "source": "delegation-inherited"
+        },
+        "nativeTurnId": "910c6e00-57bd-49be-a3d7-3ad852812cb4",
+        "nativeModel": "gpt-5.6-terra",
+        "nativeEffort": "low",
+        "nativeEndObserved": true,
+        "endReason": "answer",
+        "agent": "a44912699d0135b0b",
+        "session": "febe7e62-d829-4e63-a275-e167b2e8529f",
+        "call": "call_sOAKjJgTt9jUyY4vnY9wBi8n",
+        "state": "parent_received",
+        "source": "delivered_response",
+        "bytes": 9,
+        "recovered": false,
+        "review": "not_assessed_by_gateway"
+      }
+    ],
+    "totals": {
+      "awaiting_children": 2,
+      "awaiting_parent": 7,
+      "awaiting_workflow_result": 4,
+      "parent_received": 7,
+      "running": 9
+    },
+    "totalsMeaning": "state_entry_counts",
+    "current": {
+      "parent_received": 7
+    }
+  },
+  "completion": {
+    "acceptance": "not_assessed",
+    "apiFailures": 0,
+    "cancelledRequests": 0,
+    "nativeCancellations": 0,
+    "nativeToolFailures": 0,
+    "unacquiredResultsInRecent": 0,
+    "controlTransitions": 0
+  }
+}

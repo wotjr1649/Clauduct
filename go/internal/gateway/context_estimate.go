@@ -1,0 +1,52 @@
+package gateway
+
+import "github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+
+// Only provider numbers and a scalar text estimate survive between requests.
+// This is a previous request's measurement, not the current context size.
+type contextUsageAnchor struct {
+	Model        string `json:"model"`
+	Effort       string `json:"effort"`
+	Input        int64  `json:"inputTokens"`
+	Output       int64  `json:"outputTokens"`
+	TextEstimate int64  `json:"textEstimate"`
+}
+
+// A cheap preventive signal, never an exact-count endpoint. Do not tokenize
+// base64 images, files or encrypted reasoning as though they were prompt text.
+func estimateTextInput(r *bridge.Request) (int64, bool) {
+	size := int64(len(r.Instruction))
+	opaque := false
+	parts := func(items []bridge.InputPart) {
+		for _, p := range items {
+			switch p.Type {
+			case "input_text", "output_text":
+				size += int64(len(p.Text)) + 12
+			default:
+				opaque = true
+			}
+		}
+	}
+	for _, e := range r.Input {
+		size += 12
+		if e.Reasoning != nil {
+			opaque = true
+			continue
+		}
+		size += int64(len(e.Arguments) + len(e.Name) + len(e.CallID))
+		switch content := e.Content.(type) {
+		case string:
+			size += int64(len(content))
+		case []bridge.InputPart:
+			parts(content)
+		}
+		parts(e.Output)
+	}
+	for _, tool := range r.Tools {
+		size += int64(len(tool.Name)+len(tool.Description)+len(tool.Parameters)) + 60
+	}
+	if r.Text != nil {
+		size += int64(len(r.Text.Format.Schema)+len(r.Text.Format.Name)) + 60
+	}
+	return (size + 2) / 3, opaque
+}

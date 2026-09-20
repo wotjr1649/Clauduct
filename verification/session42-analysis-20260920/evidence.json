@@ -1,0 +1,4253 @@
+{
+  "id": "df320410-f4cd-443d-86f6-290ac649f634",
+  "productCommit": "34ebcb1608e0dc712a9ae9f887427fdc48a3bcfd",
+  "binarySha256": "bbc498a694fbfa39c74c9d6f2339d289b34ace6a51660247e0485c58cb94633b",
+  "nativeVersion": "2.1.278",
+  "rootRows": 411,
+  "childFiles": 10,
+  "childRows": 179,
+  "retainedRequests": 121,
+  "totalRequests": 272,
+  "completion": {
+    "acceptance": "not_assessed",
+    "apiFailures": 2,
+    "cancelledRequests": 9,
+    "nativeCancellations": 1,
+    "nativeToolFailures": 0,
+    "unacquiredResultsInRecent": 0,
+    "controlTransitions": 0
+  },
+  "lifecycle": {
+    "state": "finished",
+    "final": true,
+    "reason": "native_exit",
+    "startedAt": "2026-09-19T15:58:06.7796055Z",
+    "observedAt": "2026-09-19T16:41:46.0776657Z",
+    "deadlineAt": "2026-09-19T17:58:06.7796055Z",
+    "nativeReaped": true
+  },
+  "commands": [
+    {
+      "line": 113,
+      "at": "2026-09-19T16:10:08.589Z",
+      "text": "<local-command-stdout>Set model to `gpt-5.6-sol` for this session only with `high` effort</local-command-stdout>"
+    },
+    {
+      "line": 130,
+      "at": "2026-09-19T16:11:13.368Z",
+      "text": "/compact S42 검증을 계속한다. 공통 계약, 세션 기억 표식, fixture 토큰, REV-A의 모든 원장 행과 계산 규칙, A→A1→A2/B→B1의 실제 ID와 leaf 기억 표식, C/D의 파일 근거, 원본 S42_SOURCE_RUN과 W1~W5 원문, 최초 오류·미검증 목록을 정확히 보존하라. 완료 작업을 새로 실행하지 않는다. 다음 작업은 기존 A2/B1에 원장 증분만 전달하는 것이다."
+    },
+    {
+      "line": 196,
+      "at": "2026-09-19T16:25:48.273Z",
+      "text": "<local-command-stdout>Set model to `gpt-5.6-terra` for this session only with `medium` effort</local-command-stdout>"
+    },
+    {
+      "line": 198,
+      "at": "2026-09-19T16:25:52.430Z",
+      "text": "/compact"
+    },
+    {
+      "line": 244,
+      "at": "2026-09-19T16:31:13.417Z",
+      "text": "<local-command-stdout>Set model to `gpt-5.6-luna` for this session only with `high` effort</local-command-stdout>"
+    },
+    {
+      "line": 378,
+      "at": "2026-09-19T16:38:47.345Z",
+      "text": "<local-command-stdout>Set model to `gpt-6-astra` for this session only with `low` effort</local-command-stdout>"
+    }
+  ],
+  "userPrompts": [
+    {
+      "line": 8,
+      "at": "2026-09-19T16:00:35.400Z",
+      "marker": "S42_READY",
+      "uuid": "fecf2340-21eb-43e4-80bc-86105cbfc8b4",
+      "sha256": "f620d6ebcd5b8fc1245b93a744d36bb3f595d29e1245f8e5022c6cb052604ed9"
+    },
+    {
+      "line": 34,
+      "at": "2026-09-19T16:00:58.370Z",
+      "marker": "S42_TREE",
+      "uuid": "5891794c-fb03-4167-81eb-43ba3e2d34cc",
+      "sha256": "87952e48df72a6044d290193ce93d58a3202a94dbcc2876f36355cf9dbe4cdf8"
+    },
+    {
+      "line": 63,
+      "at": "2026-09-19T16:04:53.073Z",
+      "marker": "S42_DEFAULTS",
+      "uuid": "0f75b9b0-d01d-416c-86d8-65a2a0d3424b",
+      "sha256": "acb5e3ee3e449c62da1fad38309770964952e3b318bc67478bb5435ba707cd01"
+    },
+    {
+      "line": 91,
+      "at": "2026-09-19T16:07:10.234Z",
+      "marker": "S42_WORKFLOW",
+      "uuid": "4419b42b-a92f-4896-b769-2838b12a2c67",
+      "sha256": "562672003de10174de651c432f7aee71007ba57c75b9bb39031392d8f7bcb5bb"
+    },
+    {
+      "line": 102,
+      "at": "2026-09-19T16:08:14.909Z",
+      "marker": "S42_REUSE_BEFORE",
+      "uuid": "3150c8e5-2450-4054-ae1e-cafa122f2d62",
+      "sha256": "0a97ae7b80960af4fe3e3a2f28328fa058ffee9b8d0253f10a4a3c198b74fc29"
+    },
+    {
+      "line": 118,
+      "at": "2026-09-19T16:10:31.229Z",
+      "marker": "S42_SWITCH_SOL",
+      "uuid": "5704723e-fff2-432b-9287-c20126f2d96f",
+      "sha256": "1d519fba4d3797001fd9a4ea1e70bc86e3fd7c95c15fb7ed453bea5276e1ba92"
+    },
+    {
+      "line": 166,
+      "at": "2026-09-19T16:23:36.832Z",
+      "marker": "S42_RESUME_REV_B",
+      "uuid": "1a323a03-e42b-4968-bc10-4b0acb6fa637",
+      "sha256": "3ed51062b1916cbde2811eee50ea3e2b2e8d70c633e36c7c35b5ae69e9250cfc"
+    },
+    {
+      "line": 236,
+      "at": "2026-09-19T16:30:31.972Z",
+      "marker": "S42_REUSE_AFTER",
+      "uuid": "20ae0d32-98d6-4f98-b531-184b0c5d4044",
+      "sha256": "f61594c6182c06093c4fe7bcfae9d471161d6fcb9554c29bf62c7a182f1d238d"
+    },
+    {
+      "line": 246,
+      "at": "2026-09-19T16:31:14.861Z",
+      "marker": "S42_SEARCH",
+      "uuid": "a7495696-8dea-4a46-8d7f-16530b5073c3",
+      "sha256": "b223b3f8e545896d679f9713e19cc0e186bb78868d394ffc959fcc9665f4518e"
+    },
+    {
+      "line": 269,
+      "at": "2026-09-19T16:32:12.709Z",
+      "marker": "S42_CONTEXT_BEFORE",
+      "uuid": "d9248671-a25f-4014-9752-86ad326072be",
+      "sha256": "eb921fe898474ce2c962f6e0593f7df3750442db5e562c48e18ed0a878a9c1f1"
+    },
+    {
+      "line": 288,
+      "at": "2026-09-19T16:32:53.724Z",
+      "marker": "S42_CONTEXT_AFTER",
+      "uuid": "4ac5e23a-e28f-4695-88a0-009abefb8de3",
+      "sha256": "0f0eb3b332a1f054b7e42badc3ae6b4de9c62f6823bb37ed216b4a118c7b81d3"
+    },
+    {
+      "line": 293,
+      "at": "2026-09-19T16:33:19.808Z",
+      "marker": "S42_CANCEL_ISOLATION",
+      "uuid": "e79b7d31-bc35-4fef-a6bd-511dfa7d9ce8",
+      "sha256": "8e08437f366d21f405681b86d859cb4389acddc143478bdec57c8ebc0eb37367"
+    },
+    {
+      "line": 334,
+      "at": "2026-09-19T16:35:09.710Z",
+      "marker": "S42_ESC_EARLY",
+      "uuid": "c1fa4c2a-bce5-4a4b-9216-31f165c70b47",
+      "sha256": "68768c415abdfd1c95af29a97a50bb22fd79aacd2b053ab3d2f8150f15709f9b"
+    },
+    {
+      "line": 337,
+      "at": "2026-09-19T16:35:15.956Z",
+      "marker": "S42_ESC_EARLY",
+      "uuid": "250af615-c7fc-46fd-8185-acf41eb639f4",
+      "sha256": "68768c415abdfd1c95af29a97a50bb22fd79aacd2b053ab3d2f8150f15709f9b"
+    },
+    {
+      "line": 340,
+      "at": "2026-09-19T16:35:30.700Z",
+      "marker": "S42_ESC_EARLY",
+      "uuid": "b17fb230-02b3-4add-a96b-48bc541c4743",
+      "sha256": "68768c415abdfd1c95af29a97a50bb22fd79aacd2b053ab3d2f8150f15709f9b"
+    },
+    {
+      "line": 343,
+      "at": "2026-09-19T16:35:48.468Z",
+      "marker": "S42_ESC_EARLY",
+      "uuid": "5ca1daf5-5f3b-43f9-8b0b-250c80c1b6df",
+      "sha256": "68768c415abdfd1c95af29a97a50bb22fd79aacd2b053ab3d2f8150f15709f9b"
+    },
+    {
+      "line": 349,
+      "at": "2026-09-19T16:36:10.949Z",
+      "marker": "S42_RECOVER_EARLY",
+      "uuid": "ae42e94e-92b2-49b1-a140-77c507ee41fa",
+      "sha256": "6c0c5bd8886e8a54ae320b0e3200def6dd5c58bc28b805b6011ffb7d2120769e"
+    },
+    {
+      "line": 355,
+      "at": "2026-09-19T16:36:43.000Z",
+      "marker": "S42_ESC_TEXT",
+      "uuid": "72408606-63c8-4e0b-8aa7-f18a6bfdb3d4",
+      "sha256": "104cd1b57a12906818647ceecdd2fdc4f5b0f6fa45a2c6e0cea27e61175a1c1e"
+    },
+    {
+      "line": 365,
+      "at": "2026-09-19T16:37:48.652Z",
+      "marker": "S42_RECOVER_TEXT",
+      "uuid": "a4a1d9f9-a040-4af4-969e-43b2048d1256",
+      "sha256": "d621c2494ca9146cd8de6283ca7b7a06664b8a0f039dcf82d3934d8fe884829e"
+    },
+    {
+      "line": 380,
+      "at": "2026-09-19T16:38:54.772Z",
+      "marker": "S42_FINAL",
+      "uuid": "5c53b0e6-3dc0-4328-bc74-744a3a90206e",
+      "sha256": "d170e360e8def37969827037df3b02d3e90ae1cd0bd0a226c713d836a39ee96d"
+    },
+    {
+      "line": 399,
+      "at": "2026-09-19T16:40:53.332Z",
+      "marker": "S42_EXPECTED_REFUSAL",
+      "uuid": "5916b122-955d-485f-934e-af17dc7ac7d9",
+      "sha256": "c302d8640c39edd9fc718c013855643a509504c7c4f2bdc2ff82f152965a6d24"
+    },
+    {
+      "line": 404,
+      "at": "2026-09-19T16:41:07.628Z",
+      "marker": "S42_AFTER_REFUSAL",
+      "uuid": "9b2ac5b4-cf8b-4e52-8ed3-4ea493fa4c3b",
+      "sha256": "15c6944a4a554ab0fda861a40edaaa0d0a23beec7927d29a74f8e0cab825f2d7"
+    }
+  ],
+  "toolCalls": [
+    {
+      "line": 23,
+      "at": "2026-09-19T16:00:40.341Z",
+      "name": "Read",
+      "id": "call_VvjMIGfmLcRcGJ4JcmAS7Vur"
+    },
+    {
+      "line": 36,
+      "at": "2026-09-19T16:01:32.103Z",
+      "name": "Agent",
+      "id": "call_0bwWrz1YxILeDJUFan8IrRS3",
+      "role": "general-purpose"
+    },
+    {
+      "line": 39,
+      "at": "2026-09-19T16:02:04.256Z",
+      "name": "Agent",
+      "id": "call_xCMZhKOYpmZLotEMgBv1XduU",
+      "role": "general-purpose"
+    },
+    {
+      "line": 69,
+      "at": "2026-09-19T16:05:22.071Z",
+      "name": "Agent",
+      "id": "call_s8NcANlusOyc1eavajt3K8Nn",
+      "role": "Plan"
+    },
+    {
+      "line": 70,
+      "at": "2026-09-19T16:05:22.089Z",
+      "name": "Agent",
+      "id": "call_LvIWPO6vQJNAWDquncMJVBHm",
+      "role": "Explore"
+    },
+    {
+      "line": 93,
+      "at": "2026-09-19T16:07:13.791Z",
+      "name": "Skill",
+      "id": "call_nzfHW8VKjy0F85MDt9HxD9FL"
+    },
+    {
+      "line": 169,
+      "at": "2026-09-19T16:23:43.391Z",
+      "name": "ToolSearch",
+      "id": "call_eFW9aoMHJt9DG1LyYUwqqkj1"
+    },
+    {
+      "line": 173,
+      "at": "2026-09-19T16:23:51.208Z",
+      "name": "SendMessage",
+      "id": "call_CMl1QJxqZLUgO8fCNHpY4SRA",
+      "to": "a4607dbae2a1a6689"
+    },
+    {
+      "line": 251,
+      "at": "2026-09-19T16:31:25.730Z",
+      "name": "Agent",
+      "id": "call_o47DFJQ2ResStyUcv9tMrjQI",
+      "role": "general-purpose"
+    },
+    {
+      "line": 296,
+      "at": "2026-09-19T16:33:28.377Z",
+      "name": "ToolSearch",
+      "id": "call_FnVYFnhu9SfGH7uaZARqes7P"
+    },
+    {
+      "line": 300,
+      "at": "2026-09-19T16:33:40.943Z",
+      "name": "Agent",
+      "id": "call_Mb9lKzgIi5lO5XyNudv3AjUM",
+      "role": "general-purpose"
+    },
+    {
+      "line": 301,
+      "at": "2026-09-19T16:33:40.969Z",
+      "name": "Agent",
+      "id": "call_Gs54HpQEhLr8kHAIpWbTvym8",
+      "role": "general-purpose"
+    },
+    {
+      "line": 312,
+      "at": "2026-09-19T16:33:47.221Z",
+      "name": "TaskStop",
+      "id": "call_FNLm8KlXA3c8F3VY2KfgMpB6"
+    },
+    {
+      "line": 369,
+      "at": "2026-09-19T16:37:56.698Z",
+      "name": "Read",
+      "id": "call_VMfGQcfBn2fmB5pOOcbitaq2"
+    },
+    {
+      "line": 384,
+      "at": "2026-09-19T16:39:06.688Z",
+      "name": "Agent",
+      "id": "call_FM4dHwDLxFYyGr0XId23Hlrv",
+      "role": "Plan"
+    }
+  ],
+  "workflowContract": {
+    "line": 95,
+    "signature": "- agent(prompt: string, opts?: {label?: string, phase?: string, schema?: object, model?: string, effort?: string, isolation?: 'worktree', agentType?: string}): Promise<any>",
+    "toolsOptionMentioned": false,
+    "maxTurnsMentioned": false,
+    "workflowToolCalls": 0,
+    "workflowAgentRequests": 0
+  },
+  "compactions": [
+    {
+      "seq": 153,
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "input": 33704,
+      "counted": 33704,
+      "countMs": 1176,
+      "totalMs": 195983,
+      "toFirstByteMs": 69538,
+      "afterFirstByteMs": 126445,
+      "textDeltas": 6982,
+      "native": {
+        "line": 135,
+        "at": "2026-09-19T16:14:29.553Z",
+        "trigger": "manual",
+        "durationMs": 196110,
+        "preTokens": 36080,
+        "postTokens": 13546
+      },
+      "nextMain": {
+        "seq": 156,
+        "method": "POST",
+        "path": "/v1/messages",
+        "stage": "delivery",
+        "outcome": "ok",
+        "status": 200,
+        "requested": "gpt-5.6-sol",
+        "model": "gpt-5.6-sol",
+        "effort": "high",
+        "source": "direct+effort",
+        "kind": "generation",
+        "nativeRequestClass": "main",
+        "backendInputTokens": 24347,
+        "countedInputTokens": 24347,
+        "countSource": "backend-count-warmup",
+        "countMethod": "backend-count-warmup",
+        "countAgreement": "matched",
+        "countMs": 923,
+        "streamEnd": {
+          "readError": "eof",
+          "clientContext": "none",
+          "terminalObserved": true,
+          "events": 400,
+          "bytes": 232516
+        },
+        "verifiedChecks": [
+          "input",
+          "route",
+          "exact_preflight"
+        ],
+        "lastObservedMs": 1101221,
+        "backendProgress": {
+          "events": 400,
+          "textDeltas": 390,
+          "toolArgumentDeltas": 0,
+          "reasoningDeltas": 0
+        },
+        "startedMs": 1081663,
+        "firstByteMs": 1093846,
+        "endedMs": 1101287
+      }
+    },
+    {
+      "seq": 167,
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "input": 28723,
+      "counted": 28723,
+      "countMs": 932,
+      "totalMs": 230506,
+      "toFirstByteMs": 40061,
+      "afterFirstByteMs": 190445,
+      "textDeltas": 10686,
+      "native": {
+        "line": 203,
+        "at": "2026-09-19T16:29:43.140Z",
+        "trigger": "manual",
+        "durationMs": 230636,
+        "preTokens": 34001,
+        "postTokens": 16116
+      },
+      "nextMain": {
+        "seq": 170,
+        "method": "POST",
+        "path": "/v1/messages",
+        "stage": "delivery",
+        "outcome": "ok",
+        "status": 200,
+        "requested": "gpt-5.6-terra",
+        "model": "gpt-5.6-terra",
+        "effort": "medium",
+        "source": "direct+effort",
+        "kind": "generation",
+        "nativeRequestClass": "main",
+        "backendInputTokens": 28321,
+        "countedInputTokens": 28321,
+        "countSource": "backend-count-warmup",
+        "countMethod": "backend-count-warmup",
+        "countAgreement": "matched",
+        "countMs": 1073,
+        "streamEnd": {
+          "readError": "eof",
+          "clientContext": "none",
+          "terminalObserved": true,
+          "events": 443,
+          "bytes": 243179
+        },
+        "verifiedChecks": [
+          "input",
+          "route",
+          "exact_preflight"
+        ],
+        "lastObservedMs": 1928602,
+        "backendProgress": {
+          "events": 443,
+          "textDeltas": 433,
+          "toolArgumentDeltas": 0,
+          "reasoningDeltas": 0
+        },
+        "startedMs": 1908798,
+        "firstByteMs": 1920479,
+        "endedMs": 1928688
+      }
+    }
+  ],
+  "summaries": [
+    {
+      "line": 136,
+      "characters": 16253,
+      "ledgerIDs": [
+        "I01",
+        "I02",
+        "I03",
+        "I04",
+        "I05",
+        "I06",
+        "I07",
+        "I08",
+        "I09",
+        "I10",
+        "I11",
+        "I12",
+        "I13",
+        "I14"
+      ],
+      "rootMarker": true,
+      "forkMarker": true,
+      "forkID": true
+    },
+    {
+      "line": 204,
+      "characters": 23491,
+      "ledgerIDs": [
+        "I01",
+        "I02",
+        "I03",
+        "I04",
+        "I05",
+        "I06",
+        "I07",
+        "I08",
+        "I09",
+        "I10",
+        "I11",
+        "I12",
+        "I13",
+        "I14",
+        "I15",
+        "I16",
+        "I17",
+        "I18",
+        "I19"
+      ],
+      "rootMarker": true,
+      "forkMarker": true,
+      "forkID": true
+    }
+  ],
+  "contextReports": [
+    {
+      "line": 5,
+      "at": "2026-09-19T16:00:16.885Z",
+      "model": "gpt-6-astra",
+      "tokens": "9.9k / 500k (2%)",
+      "messages": "| Messages | 19 | 0.0% |"
+    },
+    {
+      "line": 116,
+      "at": "2026-09-19T16:10:18.416Z",
+      "model": "gpt-5.6-sol",
+      "tokens": "31.8k / 500k (6%)",
+      "messages": "| Messages | 22.1k | 4.4% |"
+    },
+    {
+      "line": 276,
+      "at": "2026-09-19T16:32:26.137Z",
+      "model": "gpt-5.6-luna",
+      "tokens": "30.7k / 500k (6%)",
+      "messages": "| Messages | 21k | 4.2% |"
+    },
+    {
+      "line": 279,
+      "at": "2026-09-19T16:32:27.795Z",
+      "model": "gpt-5.6-luna",
+      "tokens": "30.7k / 500k (6%)",
+      "messages": "| Messages | 23k | 4.6% |"
+    },
+    {
+      "line": 286,
+      "at": "2026-09-19T16:32:29.594Z",
+      "model": "gpt-5.6-luna",
+      "tokens": "30.7k / 500k (6%)",
+      "messages": "| Messages | 25.1k | 5.0% |"
+    }
+  ],
+  "recovery": {
+    "S42_EARLY_RECOVERED": [
+      {
+        "line": 351,
+        "at": "2026-09-19T16:36:17.522Z"
+      }
+    ],
+    "S42_TEXT_RECOVERED": [
+      {
+        "line": 372,
+        "at": "2026-09-19T16:38:13.217Z"
+      }
+    ],
+    "S42_REFUSAL_RECOVERED": []
+  },
+  "cachedReadRecovery": {
+    "call": {
+      "line": 369,
+      "at": "2026-09-19T16:37:56.698Z",
+      "id": "call_VMfGQcfBn2fmB5pOOcbitaq2",
+      "name": "Read"
+    },
+    "resultLine": 370,
+    "result": "Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead."
+  },
+  "cancellations": {
+    "auxiliary": [
+      60,
+      80,
+      163
+    ],
+    "subagent": [
+      239
+    ],
+    "main": [
+      247,
+      249,
+      251,
+      253,
+      257
+    ]
+  },
+  "counting": {
+    "matches": 87,
+    "mismatches": 0,
+    "preflights": 98,
+    "cacheHits": 6,
+    "warmups": 140,
+    "totalAttempts": 330,
+    "inferences": 98,
+    "reconciledAttempts": 330
+  },
+  "selections": [
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_FM4dHwDLxFYyGr0XId23Hlrv",
+      "agent": "aa8945395c09ac693",
+      "role": "Plan",
+      "modelProvided": false,
+      "effortProvided": false,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-6-astra",
+      "effectiveEffort": "medium",
+      "source": "agent-call-role",
+      "nativeModelAlias": "fable",
+      "state": "selection_verified",
+      "backendResponses": 2,
+      "backendCompletions": 2
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_Gs54HpQEhLr8kHAIpWbTvym8",
+      "agent": "a1e0c7bf616264422",
+      "role": "general-purpose",
+      "requestedModel": "gpt-5.6-terra",
+      "requestedEffort": "medium",
+      "modelProvided": true,
+      "effortProvided": true,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-terra",
+      "effectiveEffort": "medium",
+      "source": "agent-call-model+effort",
+      "nativeModelAlias": "sonnet",
+      "state": "selection_verified",
+      "backendResponses": 3,
+      "backendCompletions": 3
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_Mb9lKzgIi5lO5XyNudv3AjUM",
+      "agent": "a831d46fdf9054557",
+      "role": "general-purpose",
+      "requestedModel": "gpt-5.6-luna",
+      "requestedEffort": "high",
+      "modelProvided": true,
+      "effortProvided": true,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-luna",
+      "effectiveEffort": "high",
+      "source": "agent-call-model+effort",
+      "nativeModelAlias": "haiku",
+      "state": "selection_verified",
+      "backendResponses": 1,
+      "backendCompletions": 0
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_o47DFJQ2ResStyUcv9tMrjQI",
+      "agent": "ad4ab156abd932a4b",
+      "role": "general-purpose",
+      "requestedModel": "gpt-5.6-sol",
+      "requestedEffort": "high",
+      "modelProvided": true,
+      "effortProvided": true,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-sol",
+      "effectiveEffort": "high",
+      "source": "agent-call-model+effort",
+      "nativeModelAlias": "opus",
+      "state": "selection_verified",
+      "backendResponses": 3,
+      "backendCompletions": 3
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_LvIWPO6vQJNAWDquncMJVBHm",
+      "agent": "a25ded0bdd3002397",
+      "role": "Explore",
+      "requestedEffort": "high",
+      "modelProvided": false,
+      "effortProvided": true,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-luna",
+      "effectiveEffort": "high",
+      "source": "agent-call-role+effort",
+      "nativeModelAlias": "haiku",
+      "state": "selection_verified",
+      "backendResponses": 2,
+      "backendCompletions": 2
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_s8NcANlusOyc1eavajt3K8Nn",
+      "agent": "a3ebe238419dc5a8e",
+      "role": "Plan",
+      "requestedModel": "gpt-5.6-luna",
+      "modelProvided": true,
+      "effortProvided": false,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-luna",
+      "effectiveEffort": "max",
+      "source": "agent-call-model",
+      "nativeModelAlias": "haiku",
+      "state": "selection_verified",
+      "backendResponses": 4,
+      "backendCompletions": 4
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "parent": "a0a64e2419a0a1aca",
+      "call": "call_JclbwWkNv8UHWMpeWCyLn2Yo",
+      "agent": "a4607dbae2a1a6689",
+      "role": "fork",
+      "modelProvided": false,
+      "effortProvided": false,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-sol",
+      "effectiveEffort": "high",
+      "source": "delegation-inherited",
+      "nativeModelAlias": "opus",
+      "state": "selection_verified",
+      "backendResponses": 3,
+      "backendCompletions": 2
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "parent": "a6a9877d1560b601c",
+      "call": "call_gjJoyU0C9uyq5uMP8gVjljLQ",
+      "agent": "a1c1b93dc55bf4f40",
+      "role": "general-purpose",
+      "modelProvided": false,
+      "effortProvided": false,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-terra",
+      "effectiveEffort": "medium",
+      "source": "delegation-inherited",
+      "nativeModelAlias": "sonnet",
+      "state": "selection_verified",
+      "backendResponses": 1,
+      "backendCompletions": 1
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_xCMZhKOYpmZLotEMgBv1XduU",
+      "agent": "a0a64e2419a0a1aca",
+      "role": "general-purpose",
+      "requestedModel": "gpt-5.6-sol",
+      "requestedEffort": "high",
+      "modelProvided": true,
+      "effortProvided": true,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-sol",
+      "effectiveEffort": "high",
+      "source": "agent-call-model+effort",
+      "nativeModelAlias": "opus",
+      "state": "selection_verified",
+      "backendResponses": 3,
+      "backendCompletions": 3
+    },
+    {
+      "session": "df320410-f4cd-443d-86f6-290ac649f634",
+      "call": "call_0bwWrz1YxILeDJUFan8IrRS3",
+      "agent": "a6a9877d1560b601c",
+      "role": "general-purpose",
+      "requestedModel": "gpt-5.6-terra",
+      "requestedEffort": "medium",
+      "modelProvided": true,
+      "effortProvided": true,
+      "requestPresenceVerified": true,
+      "effectiveModel": "gpt-5.6-terra",
+      "effectiveEffort": "medium",
+      "source": "agent-call-model+effort",
+      "nativeModelAlias": "sonnet",
+      "state": "selection_verified",
+      "backendResponses": 4,
+      "backendCompletions": 3
+    }
+  ],
+  "features": [
+    {
+      "name": "generation",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "requests": 96,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 96,
+      "successfulResponses": 85,
+      "failedAfterChecks": 2,
+      "cancelledAfterChecks": 9,
+      "lastRequest": 271,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "native_agent",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "requests": 23,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 23,
+      "successfulResponses": 22,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 1,
+      "lastRequest": 266,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "agent_resume",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "selection",
+        "native_turn",
+        "continuation",
+        "route",
+        "exact_preflight"
+      ],
+      "requests": 1,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 1,
+      "successfulResponses": 1,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 162,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_agent",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "workflow_selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "count_tokens",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "requests": 141,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 141,
+      "successfulResponses": 141,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 229,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "web_search",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "search_available"
+      ],
+      "requests": 1,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 1,
+      "successfulResponses": 1,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 179,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "compaction",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "compaction_authorized",
+        "exact_preflight"
+      ],
+      "requests": 2,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 2,
+      "successfulResponses": 2,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 167,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_result_reuse",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "exact_preflight",
+        "workflow_recovery_request",
+        "workflow_recovery"
+      ],
+      "requests": 2,
+      "requestsWithoutRequiredChecks": 2,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "conditions_not_confirmed_for_all_requests",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "empty_reply_wait",
+      "enforcement": "unsupported",
+      "requiredChecks": null,
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_implemented",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_resume",
+      "enforcement": "unsupported",
+      "requiredChecks": null,
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_implemented",
+      "acceptance": "not_assessed"
+    }
+  ],
+  "checkpoints": [
+    {
+      "name": "C1.json",
+      "at": "2026-09-19T16:23:24.7800221Z",
+      "requests": 156,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 2,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 16,
+        "compaction": 1,
+        "context_event": 3,
+        "count_tokens": 95,
+        "generation": 39,
+        "models": 1,
+        "readiness": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 54,
+        "requests": 16,
+        "unreadable": 0,
+        "provenReports": 0,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "C2.json",
+      "at": "2026-09-19T16:30:22.7820103Z",
+      "requests": 170,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 3,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 18,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 95,
+        "generation": 48,
+        "models": 1,
+        "readiness": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 54,
+        "requests": 16,
+        "unreadable": 0,
+        "provenReports": 0,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "CANCEL.json",
+      "at": "2026-09-19T16:34:46.7803649Z",
+      "requests": 245,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 4,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 23,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 141,
+        "generation": 71,
+        "models": 1,
+        "readiness": 1,
+        "web_search": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 108,
+        "requests": 22,
+        "unreadable": 0,
+        "provenReports": 3,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "CONTEXT.json",
+      "at": "2026-09-19T16:33:08.7800383Z",
+      "requests": 232,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 3,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 20,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 141,
+        "generation": 61,
+        "models": 1,
+        "readiness": 1,
+        "web_search": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 63,
+        "requests": 17,
+        "unreadable": 0,
+        "provenReports": 3,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "ESC-EARLY.json",
+      "at": "2026-09-19T16:36:24.7800472Z",
+      "requests": 255,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 8,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 23,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 141,
+        "generation": 81,
+        "models": 1,
+        "readiness": 1,
+        "web_search": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 153,
+        "requests": 27,
+        "unreadable": 0,
+        "provenReports": 3,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "ESC-TEXT.json",
+      "at": "2026-09-19T16:38:24.7799505Z",
+      "requests": 260,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 9,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 23,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 141,
+        "generation": 86,
+        "models": 1,
+        "readiness": 1,
+        "web_search": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 180,
+        "requests": 30,
+        "unreadable": 0,
+        "provenReports": 3,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "FINAL.json",
+      "at": "2026-09-19T16:40:46.7799754Z",
+      "requests": 268,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 9,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 25,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 141,
+        "generation": 92,
+        "models": 1,
+        "readiness": 1,
+        "web_search": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 207,
+        "requests": 33,
+        "unreadable": 0,
+        "provenReports": 3,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "NEGATIVE.json",
+      "at": "2026-09-19T16:41:32.7801435Z",
+      "requests": 272,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 2,
+        "cancelledRequests": 9,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 25,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 141,
+        "generation": 96,
+        "models": 1,
+        "readiness": 1,
+        "web_search": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 225,
+        "requests": 35,
+        "unreadable": 0,
+        "provenReports": 3,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "RESUME.json",
+      "at": "2026-09-19T16:25:30.7800705Z",
+      "requests": 165,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 3,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 18,
+        "compaction": 1,
+        "context_event": 3,
+        "count_tokens": 95,
+        "generation": 46,
+        "models": 1,
+        "readiness": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 54,
+        "requests": 16,
+        "unreadable": 0,
+        "provenReports": 0,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "TREE.json",
+      "at": "2026-09-19T16:04:40.7798003Z",
+      "requests": 82,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 2,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 12,
+        "context_event": 1,
+        "count_tokens": 48,
+        "generation": 19,
+        "models": 1,
+        "readiness": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 21,
+        "requests": 7,
+        "unreadable": 0,
+        "provenReports": 1,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "WF-AFTER.json",
+      "at": "2026-09-19T16:30:54.7798048Z",
+      "requests": 172,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 3,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 18,
+        "compaction": 2,
+        "context_event": 5,
+        "count_tokens": 95,
+        "generation": 50,
+        "models": 1,
+        "readiness": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 54,
+        "requests": 16,
+        "unreadable": 0,
+        "provenReports": 0,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    },
+    {
+      "name": "WF-BEFORE.json",
+      "at": "2026-09-19T16:10:00.7801632Z",
+      "requests": 102,
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 2,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "kinds": {
+        "agent_binding": 16,
+        "context_event": 1,
+        "count_tokens": 48,
+        "generation": 35,
+        "models": 1,
+        "readiness": 1
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 42,
+        "requests": 14,
+        "unreadable": 0,
+        "provenReports": 1,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      }
+    }
+  ],
+  "requests": [
+    {
+      "seq": 60,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "agent": "a6a9877d1560b601c",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 7167,
+      "countMs": 833,
+      "startedMs": 235428,
+      "endedMs": 247674,
+      "checks": [
+        "input",
+        "selection",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 409,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 404,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 67,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 247668,
+      "firstByteMs": 247668,
+      "endedMs": 247668,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 68,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 250790,
+      "firstByteMs": 250792,
+      "endedMs": 250792,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 69,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 250862,
+      "firstByteMs": 250862,
+      "endedMs": 250862,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 70,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "agent": "a6a9877d1560b601c",
+      "outcome": "ok",
+      "input": 11958,
+      "counted": 11958,
+      "countMs": 831,
+      "startedMs": 250880,
+      "firstByteMs": 261778,
+      "endedMs": 272233,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 579,
+        "textDeltas": 569,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 71,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 257379,
+      "firstByteMs": 257379,
+      "endedMs": 257379,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 72,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "agent": "a4607dbae2a1a6689",
+      "outcome": "ok",
+      "input": 8849,
+      "counted": 8849,
+      "countMs": 1207,
+      "startedMs": 257407,
+      "firstByteMs": 272572,
+      "endedMs": 282326,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 551,
+        "textDeltas": 539,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 73,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "agent": "a0a64e2419a0a1aca",
+      "outcome": "ok",
+      "input": 10144,
+      "counted": 10144,
+      "countMs": 849,
+      "startedMs": 257414,
+      "firstByteMs": 261051,
+      "endedMs": 261346,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 21,
+        "textDeltas": 11,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 74,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 261402,
+      "firstByteMs": 261402,
+      "endedMs": 261402,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 75,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 272289,
+      "firstByteMs": 272289,
+      "endedMs": 272289,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 76,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 18690,
+      "counted": 18690,
+      "countMs": 788,
+      "startedMs": 272325,
+      "firstByteMs": 275104,
+      "endedMs": 278310,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 103,
+        "textDeltas": 95,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 77,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 282381,
+      "firstByteMs": 282381,
+      "endedMs": 282381,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 78,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 282455,
+      "firstByteMs": 282455,
+      "endedMs": 282455,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 79,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "agent": "a0a64e2419a0a1aca",
+      "outcome": "ok",
+      "input": 11255,
+      "counted": 11255,
+      "countMs": 2083,
+      "startedMs": 282476,
+      "firstByteMs": 294865,
+      "endedMs": 313903,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 1057,
+        "textDeltas": 1047,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 80,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "agent": "a0a64e2419a0a1aca",
+      "outcome": "refused",
+      "category": "CANCELLED",
+      "counted": 11289,
+      "countMs": 973,
+      "startedMs": 312473,
+      "endedMs": 313971,
+      "checks": [
+        "input",
+        "selection",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 81,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 313962,
+      "firstByteMs": 313962,
+      "endedMs": 313962,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 82,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 19575,
+      "counted": 19575,
+      "countMs": 873,
+      "startedMs": 314008,
+      "firstByteMs": 316768,
+      "endedMs": 377895,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 2028,
+        "textDeltas": 2020,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 87,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 435405,
+      "firstByteMs": 435405,
+      "endedMs": 435405,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 88,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "agent": "a25ded0bdd3002397",
+      "outcome": "ok",
+      "input": 5332,
+      "counted": 5332,
+      "countMs": 994,
+      "startedMs": 435423,
+      "firstByteMs": 440667,
+      "endedMs": 440691,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 70,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 62,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 89,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 23339,
+      "counted": 23339,
+      "countMs": 948,
+      "startedMs": 435448,
+      "firstByteMs": 441019,
+      "endedMs": 442594,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 49,
+        "textDeltas": 41,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 90,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "agent": "a25ded0bdd3002397",
+      "outcome": "ok",
+      "input": 5543,
+      "counted": 5543,
+      "countMs": 1449,
+      "startedMs": 440710,
+      "firstByteMs": 452724,
+      "endedMs": 457103,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 212,
+        "textDeltas": 202,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 91,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "agent": "a3ebe238419dc5a8e",
+      "outcome": "ok",
+      "input": 5900,
+      "counted": 5900,
+      "countMs": 884,
+      "startedMs": 441971,
+      "firstByteMs": 448998,
+      "endedMs": 449061,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 70,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 62,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 92,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "agent": "a3ebe238419dc5a8e",
+      "outcome": "ok",
+      "input": 6117,
+      "counted": 6117,
+      "countMs": 791,
+      "startedMs": 449079,
+      "firstByteMs": 479344,
+      "endedMs": 492058,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 700,
+        "textDeltas": 686,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 93,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 457155,
+      "firstByteMs": 457155,
+      "endedMs": 457155,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 94,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 24068,
+      "counted": 24068,
+      "countMs": 851,
+      "startedMs": 457197,
+      "firstByteMs": 463304,
+      "endedMs": 473016,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 322,
+        "textDeltas": 314,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 95,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "agent": "a3ebe238419dc5a8e",
+      "outcome": "ok",
+      "input": 6245,
+      "counted": 6245,
+      "countMs": 803,
+      "startedMs": 465396,
+      "firstByteMs": 469773,
+      "endedMs": 470002,
+      "checks": [
+        "input",
+        "selection",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 14,
+        "textDeltas": 4,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 96,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 492121,
+      "firstByteMs": 492121,
+      "endedMs": 492121,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 97,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 25495,
+      "counted": 25495,
+      "countMs": 955,
+      "startedMs": 492163,
+      "firstByteMs": 494888,
+      "endedMs": 537196,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 1381,
+        "textDeltas": 1373,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 98,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 1426,
+      "counted": 1426,
+      "countMs": 675,
+      "startedMs": 543488,
+      "firstByteMs": 551903,
+      "endedMs": 552198,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 19,
+        "textDeltas": 9,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 99,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 27477,
+      "counted": 27477,
+      "countMs": 920,
+      "startedMs": 543500,
+      "firstByteMs": 547016,
+      "endedMs": 547053,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 13,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 7,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 100,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 31413,
+      "counted": 31413,
+      "countMs": 835,
+      "startedMs": 547079,
+      "firstByteMs": 550800,
+      "endedMs": 557356,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 212,
+        "textDeltas": 202,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 101,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 948,
+      "counted": 948,
+      "countMs": 1096,
+      "startedMs": 608171,
+      "firstByteMs": 613098,
+      "endedMs": 613512,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 25,
+        "textDeltas": 15,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 102,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 31825,
+      "counted": 31825,
+      "countMs": 1403,
+      "startedMs": 608187,
+      "firstByteMs": 611718,
+      "endedMs": 618471,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 221,
+        "textDeltas": 213,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 141,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 1008,
+      "countMs": 489,
+      "startedMs": 730127,
+      "firstByteMs": 730618,
+      "endedMs": 730618,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 142,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 917,
+      "countMs": 421,
+      "startedMs": 730128,
+      "firstByteMs": 730550,
+      "endedMs": 730550,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 143,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 499,
+      "countMs": 510,
+      "startedMs": 730132,
+      "firstByteMs": 730643,
+      "endedMs": 730643,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 144,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 357,
+      "countMs": 376,
+      "startedMs": 730132,
+      "firstByteMs": 730509,
+      "endedMs": 730509,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 145,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 557,
+      "countMs": 1506,
+      "startedMs": 730132,
+      "firstByteMs": 731639,
+      "endedMs": 731639,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 146,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 180,
+      "countMs": 806,
+      "startedMs": 730132,
+      "firstByteMs": 730939,
+      "endedMs": 730939,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 147,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 1313,
+      "countMs": 846,
+      "startedMs": 730132,
+      "firstByteMs": 730980,
+      "endedMs": 730980,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 148,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 180,
+      "countMs": 846,
+      "startedMs": 730133,
+      "firstByteMs": 730979,
+      "endedMs": 730979,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 149,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-sol",
+      "effort": "xhigh",
+      "outcome": "ok",
+      "counted": 159,
+      "countMs": 855,
+      "startedMs": 730133,
+      "firstByteMs": 730989,
+      "endedMs": 730989,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 150,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 898,
+      "counted": 898,
+      "countMs": 741,
+      "startedMs": 744486,
+      "firstByteMs": 748765,
+      "endedMs": 749127,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 21,
+        "textDeltas": 11,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 151,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 32297,
+      "counted": 32297,
+      "countMs": 1128,
+      "startedMs": 744498,
+      "firstByteMs": 760821,
+      "endedMs": 774731,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 765,
+        "textDeltas": 753,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 152,
+      "kind": "context_event",
+      "outcome": "ok",
+      "startedMs": 786658,
+      "firstByteMs": 786658,
+      "endedMs": 786658,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 153,
+      "kind": "compaction",
+      "class": "compaction",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 33704,
+      "counted": 33704,
+      "countMs": 1176,
+      "startedMs": 786674,
+      "firstByteMs": 856212,
+      "endedMs": 982657,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight",
+        "compaction_authorized"
+      ],
+      "backendProgress": {
+        "events": 7006,
+        "textDeltas": 6982,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 154,
+      "kind": "context_event",
+      "outcome": "ok",
+      "startedMs": 982776,
+      "endedMs": 982776,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 155,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 904,
+      "counted": 904,
+      "countMs": 996,
+      "startedMs": 1081615,
+      "firstByteMs": 1087202,
+      "endedMs": 1087843,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 24,
+        "textDeltas": 14,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 156,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 24347,
+      "counted": 24347,
+      "countMs": 923,
+      "startedMs": 1081663,
+      "firstByteMs": 1093846,
+      "endedMs": 1101287,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 400,
+        "textDeltas": 390,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 157,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 1129,
+      "counted": 1129,
+      "countMs": 907,
+      "startedMs": 1530103,
+      "firstByteMs": 1540237,
+      "endedMs": 1540797,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 24,
+        "textDeltas": 14,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 158,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 25633,
+      "counted": 25633,
+      "countMs": 1487,
+      "startedMs": 1530120,
+      "firstByteMs": 1536603,
+      "endedMs": 1536685,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 21,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 13,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 159,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 27153,
+      "counted": 27153,
+      "countMs": 1145,
+      "startedMs": 1536704,
+      "firstByteMs": 1544427,
+      "endedMs": 1544491,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 199,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 191,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 160,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 27591,
+      "counted": 27591,
+      "countMs": 1254,
+      "startedMs": 1544514,
+      "firstByteMs": 1550448,
+      "endedMs": 1552720,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 131,
+        "textDeltas": 114,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 161,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 1544523,
+      "firstByteMs": 1544523,
+      "endedMs": 1544523,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 162,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "agent": "a4607dbae2a1a6689",
+      "outcome": "ok",
+      "input": 13987,
+      "counted": 13987,
+      "countMs": 823,
+      "startedMs": 1544542,
+      "firstByteMs": 1566180,
+      "endedMs": 1581602,
+      "checks": [
+        "input",
+        "selection",
+        "continuation",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 812,
+        "textDeltas": 800,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 163,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "agent": "a4607dbae2a1a6689",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 14111,
+      "countMs": 877,
+      "startedMs": 1574541,
+      "endedMs": 1581671,
+      "checks": [
+        "input",
+        "selection",
+        "continuation",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 3,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 164,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 1581663,
+      "firstByteMs": 1581663,
+      "endedMs": 1581663,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 165,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 29073,
+      "counted": 29073,
+      "countMs": 921,
+      "startedMs": 1581703,
+      "firstByteMs": 1602670,
+      "endedMs": 1618497,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 877,
+        "textDeltas": 865,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 166,
+      "kind": "context_event",
+      "outcome": "ok",
+      "startedMs": 1665719,
+      "firstByteMs": 1665719,
+      "endedMs": 1665719,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 167,
+      "kind": "compaction",
+      "class": "compaction",
+      "model": "gpt-5.6-sol",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 28723,
+      "counted": 28723,
+      "countMs": 932,
+      "startedMs": 1665739,
+      "firstByteMs": 1705800,
+      "endedMs": 1896245,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight",
+        "compaction_authorized"
+      ],
+      "backendProgress": {
+        "events": 10702,
+        "textDeltas": 10686,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 168,
+      "kind": "context_event",
+      "outcome": "ok",
+      "startedMs": 1896362,
+      "endedMs": 1896363,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 169,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 892,
+      "counted": 892,
+      "countMs": 832,
+      "startedMs": 1908742,
+      "firstByteMs": 1918478,
+      "endedMs": 1918826,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 23,
+        "textDeltas": 13,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 170,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "outcome": "ok",
+      "input": 28321,
+      "counted": 28321,
+      "countMs": 1073,
+      "startedMs": 1908798,
+      "firstByteMs": 1920479,
+      "endedMs": 1928688,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 443,
+        "textDeltas": 433,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 171,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 945,
+      "counted": 945,
+      "countMs": 853,
+      "startedMs": 1945232,
+      "firstByteMs": 1951121,
+      "endedMs": 1951502,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 22,
+        "textDeltas": 12,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 172,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "outcome": "ok",
+      "input": 29461,
+      "counted": 29461,
+      "countMs": 888,
+      "startedMs": 1945248,
+      "firstByteMs": 1953563,
+      "endedMs": 1960241,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 362,
+        "textDeltas": 352,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 217,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 96,
+      "countMs": 2412,
+      "startedMs": 2055694,
+      "firstByteMs": 2058108,
+      "endedMs": 2058108,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 218,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 19,
+      "countMs": 2297,
+      "startedMs": 2055694,
+      "firstByteMs": 2057993,
+      "endedMs": 2057993,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 219,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 1008,
+      "countMs": 457,
+      "startedMs": 2058231,
+      "firstByteMs": 2058688,
+      "endedMs": 2058688,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 220,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 93,
+      "countMs": 349,
+      "startedMs": 2058231,
+      "firstByteMs": 2058581,
+      "endedMs": 2058581,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 221,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 66,
+      "countMs": 528,
+      "startedMs": 2058231,
+      "firstByteMs": 2058761,
+      "endedMs": 2058761,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 222,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 944,
+      "countMs": 390,
+      "startedMs": 2058232,
+      "firstByteMs": 2058623,
+      "endedMs": 2058623,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 223,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 499,
+      "countMs": 460,
+      "startedMs": 2058233,
+      "firstByteMs": 2058694,
+      "endedMs": 2058694,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 224,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 357,
+      "countMs": 505,
+      "startedMs": 2058233,
+      "firstByteMs": 2058739,
+      "endedMs": 2058739,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 225,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 1313,
+      "countMs": 357,
+      "startedMs": 2058233,
+      "firstByteMs": 2058590,
+      "endedMs": 2058590,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 226,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 917,
+      "countMs": 754,
+      "startedMs": 2058233,
+      "firstByteMs": 2058987,
+      "endedMs": 2058987,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 227,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 180,
+      "countMs": 693,
+      "startedMs": 2058233,
+      "firstByteMs": 2058928,
+      "endedMs": 2058928,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 228,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 159,
+      "countMs": 751,
+      "startedMs": 2058233,
+      "firstByteMs": 2058986,
+      "endedMs": 2058986,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 229,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 180,
+      "countMs": 1124,
+      "startedMs": 2058233,
+      "firstByteMs": 2059359,
+      "endedMs": 2059359,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 230,
+      "kind": "count_tokens",
+      "model": "gpt-5.6-luna",
+      "effort": "max",
+      "outcome": "ok",
+      "counted": 557,
+      "countMs": 748,
+      "startedMs": 2058233,
+      "firstByteMs": 2058983,
+      "endedMs": 2058983,
+      "checks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 231,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 796,
+      "counted": 796,
+      "countMs": 743,
+      "startedMs": 2086973,
+      "firstByteMs": 2095938,
+      "endedMs": 2097083,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 18,
+        "textDeltas": 8,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 232,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 30820,
+      "counted": 30820,
+      "countMs": 1022,
+      "startedMs": 2086984,
+      "firstByteMs": 2089717,
+      "endedMs": 2090095,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 12,
+        "textDeltas": 4,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 233,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 1116,
+      "counted": 1116,
+      "countMs": 716,
+      "startedMs": 2113055,
+      "firstByteMs": 2119633,
+      "endedMs": 2120000,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 24,
+        "textDeltas": 14,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 234,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 31189,
+      "counted": 31189,
+      "countMs": 1271,
+      "startedMs": 2113067,
+      "firstByteMs": 2121584,
+      "endedMs": 2121684,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 23,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 15,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 235,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 31594,
+      "counted": 31594,
+      "countMs": 1496,
+      "startedMs": 2121706,
+      "firstByteMs": 2134164,
+      "endedMs": 2134275,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 13,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 2,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 236,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 2134255,
+      "firstByteMs": 2134255,
+      "endedMs": 2134255,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 237,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 2134298,
+      "firstByteMs": 2134298,
+      "endedMs": 2134298,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 238,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 32813,
+      "counted": 32813,
+      "countMs": 2193,
+      "startedMs": 2134343,
+      "firstByteMs": 2140442,
+      "endedMs": 2140445,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 22,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 14,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 239,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "agent": "a831d46fdf9054557",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 6169,
+      "countMs": 860,
+      "startedMs": 2134347,
+      "endedMs": 2140463,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 3,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 240,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "agent": "a1e0c7bf616264422",
+      "outcome": "ok",
+      "input": 6165,
+      "counted": 6165,
+      "countMs": 910,
+      "startedMs": 2134360,
+      "firstByteMs": 2138684,
+      "endedMs": 2138691,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 70,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 62,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 241,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "agent": "a1e0c7bf616264422",
+      "outcome": "ok",
+      "input": 8185,
+      "counted": 8185,
+      "countMs": 763,
+      "startedMs": 2138723,
+      "firstByteMs": 2142020,
+      "endedMs": 2142060,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 72,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 66,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 242,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 33370,
+      "counted": 33370,
+      "countMs": 967,
+      "startedMs": 2140508,
+      "firstByteMs": 2147368,
+      "endedMs": 2151714,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 127,
+        "textDeltas": 108,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 243,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "agent": "a1e0c7bf616264422",
+      "outcome": "ok",
+      "input": 8392,
+      "counted": 8392,
+      "countMs": 846,
+      "startedMs": 2142175,
+      "firstByteMs": 2145851,
+      "endedMs": 2150442,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 251,
+        "textDeltas": 241,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 244,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 2150495,
+      "firstByteMs": 2150495,
+      "endedMs": 2150495,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 245,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 34346,
+      "counted": 34346,
+      "countMs": 900,
+      "startedMs": 2151749,
+      "firstByteMs": 2162856,
+      "endedMs": 2170421,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 413,
+        "textDeltas": 403,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 246,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 843,
+      "counted": 843,
+      "countMs": 877,
+      "startedMs": 2222961,
+      "firstByteMs": 2227009,
+      "endedMs": 2227455,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 26,
+        "textDeltas": 16,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 247,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 35270,
+      "countMs": 1006,
+      "startedMs": 2222973,
+      "endedMs": 2227750,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 3,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 248,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 843,
+      "counted": 843,
+      "countMs": 0,
+      "startedMs": 2229208,
+      "firstByteMs": 2233502,
+      "endedMs": 2233879,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 26,
+        "textDeltas": 16,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 249,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 35270,
+      "countMs": 0,
+      "startedMs": 2229215,
+      "endedMs": 2242986,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 3,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 250,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 843,
+      "counted": 843,
+      "countMs": 0,
+      "startedMs": 2243948,
+      "firstByteMs": 2248320,
+      "endedMs": 2248875,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 26,
+        "textDeltas": 16,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 251,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 35270,
+      "countMs": 0,
+      "startedMs": 2243958,
+      "endedMs": 2260394,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 3,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 252,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 843,
+      "counted": 843,
+      "countMs": 0,
+      "startedMs": 2261717,
+      "firstByteMs": 2266563,
+      "endedMs": 2267000,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 26,
+        "textDeltas": 16,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 253,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 35270,
+      "countMs": 0,
+      "startedMs": 2261727,
+      "firstByteMs": 2275075,
+      "endedMs": 2275535,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 34,
+        "textDeltas": 26,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 254,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 845,
+      "counted": 845,
+      "countMs": 836,
+      "startedMs": 2284200,
+      "firstByteMs": 2291326,
+      "endedMs": 2291689,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 25,
+        "textDeltas": 15,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 255,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 35423,
+      "counted": 35423,
+      "countMs": 1239,
+      "startedMs": 2284210,
+      "firstByteMs": 2289768,
+      "endedMs": 2290883,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 51,
+        "textDeltas": 41,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 256,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 856,
+      "counted": 856,
+      "countMs": 797,
+      "startedMs": 2316250,
+      "firstByteMs": 2321480,
+      "endedMs": 2322807,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 22,
+        "textDeltas": 12,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 257,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "counted": 35644,
+      "countMs": 1861,
+      "startedMs": 2316261,
+      "firstByteMs": 2343726,
+      "endedMs": 2366126,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 1106,
+        "textDeltas": 1098,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 258,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 848,
+      "counted": 848,
+      "countMs": 723,
+      "startedMs": 2381909,
+      "firstByteMs": 2385358,
+      "endedMs": 2385695,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 21,
+        "textDeltas": 11,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 259,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 37942,
+      "counted": 37942,
+      "countMs": 1047,
+      "startedMs": 2381924,
+      "firstByteMs": 2387439,
+      "endedMs": 2389988,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 107,
+        "textDeltas": 32,
+        "toolArgumentDeltas": 62,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 260,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 38191,
+      "counted": 38191,
+      "countMs": 889,
+      "startedMs": 2390008,
+      "firstByteMs": 2403667,
+      "endedMs": 2406689,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 95,
+        "textDeltas": 85,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 261,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 1110,
+      "counted": 1110,
+      "countMs": 716,
+      "startedMs": 2448029,
+      "firstByteMs": 2454058,
+      "endedMs": 2454371,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 20,
+        "textDeltas": 10,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 262,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 36839,
+      "counted": 36839,
+      "countMs": 1088,
+      "startedMs": 2448042,
+      "firstByteMs": 2451186,
+      "endedMs": 2460012,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 281,
+        "textDeltas": 71,
+        "toolArgumentDeltas": 199,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 263,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 2459991,
+      "firstByteMs": 2459991,
+      "endedMs": 2459991,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 264,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "agent": "aa8945395c09ac693",
+      "outcome": "ok",
+      "input": 5264,
+      "counted": 5264,
+      "countMs": 788,
+      "startedMs": 2460014,
+      "firstByteMs": 2464697,
+      "endedMs": 2464749,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 68,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 62,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 265,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 37502,
+      "counted": 37502,
+      "countMs": 935,
+      "startedMs": 2460032,
+      "firstByteMs": 2464078,
+      "endedMs": 2465691,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 52,
+        "textDeltas": 44,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 266,
+      "kind": "generation",
+      "class": "subagent",
+      "model": "gpt-6-astra",
+      "effort": "medium",
+      "agent": "aa8945395c09ac693",
+      "outcome": "ok",
+      "input": 5393,
+      "counted": 5393,
+      "countMs": 767,
+      "startedMs": 2464765,
+      "firstByteMs": 2467276,
+      "endedMs": 2471731,
+      "checks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 153,
+        "textDeltas": 145,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 267,
+      "kind": "agent_binding",
+      "outcome": "ok",
+      "startedMs": 2471786,
+      "firstByteMs": 2471786,
+      "endedMs": 2471786,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 268,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "ok",
+      "input": 38181,
+      "counted": 38181,
+      "countMs": 905,
+      "startedMs": 2471825,
+      "firstByteMs": 2475273,
+      "endedMs": 2550314,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 2490,
+        "textDeltas": 2482,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 269,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 854,
+      "counted": 854,
+      "countMs": 696,
+      "startedMs": 2566590,
+      "firstByteMs": 2572502,
+      "endedMs": 2572898,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 24,
+        "textDeltas": 14,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 270,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "refused",
+      "category": "WORKFLOW_RECOVERY_UNVERIFIED",
+      "counted": 40701,
+      "countMs": 982,
+      "startedMs": 2566604,
+      "endedMs": 2572790,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight",
+        "workflow_recovery_request"
+      ],
+      "backendProgress": {
+        "events": 17,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 11,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 271,
+      "kind": "generation",
+      "class": "auxiliary",
+      "model": "gpt-5.6-luna",
+      "effort": "high",
+      "outcome": "ok",
+      "input": 822,
+      "counted": 822,
+      "countMs": 738,
+      "startedMs": 2580878,
+      "firstByteMs": 2589282,
+      "endedMs": 2589485,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight"
+      ],
+      "backendProgress": {
+        "events": 24,
+        "textDeltas": 14,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      }
+    },
+    {
+      "seq": 272,
+      "kind": "generation",
+      "class": "main",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "outcome": "refused",
+      "category": "WORKFLOW_RECOVERY_UNVERIFIED",
+      "counted": 40757,
+      "countMs": 1154,
+      "startedMs": 2580890,
+      "endedMs": 2586712,
+      "checks": [
+        "input",
+        "route",
+        "exact_preflight",
+        "workflow_recovery_request"
+      ],
+      "backendProgress": {
+        "events": 17,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 11,
+        "reasoningDeltas": 0
+      }
+    }
+  ],
+  "sources": [
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\run.json",
+      "bytes": 1115,
+      "sha256": "409131fab03f7ed4dfe8fb774c93fac1cb0a9adf0356beb5929281e50a8714cc"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634.jsonl",
+      "bytes": 988785,
+      "sha256": "cdbf983ca6c4f8c94437926e38841ea8d70223d1b3a5b714ecc8d8602ede5de5"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a0a64e2419a0a1aca.jsonl",
+      "bytes": 107066,
+      "sha256": "5cc3c89393b93e537117787625d5689a2f13c51855e2c5422a84de0f59e16f4e"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a1c1b93dc55bf4f40.jsonl",
+      "bytes": 66197,
+      "sha256": "41e1b18b30a4a903ecfda9dc5eab27771290faa9025eeaadce273e6246df3913"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a1e0c7bf616264422.jsonl",
+      "bytes": 88062,
+      "sha256": "b4123732013d849257ea39cb7fd25db6a2153565d4d7a8a578b060dbbe5baff2"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a25ded0bdd3002397.jsonl",
+      "bytes": 61007,
+      "sha256": "5a162070fbe3abad74e25b046aa102897177782b6411c191df98a0523b8d6696"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a3ebe238419dc5a8e.jsonl",
+      "bytes": 90124,
+      "sha256": "fb937c32e8fa6bdee24929e35df35831485f3e80cc97747928bfd0dece50f56b"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a4607dbae2a1a6689.jsonl",
+      "bytes": 153092,
+      "sha256": "e7c955e9bf5d0ff756072cac233194e0e6be1a182487ff1c1b619cce0e484e18"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a6a9877d1560b601c.jsonl",
+      "bytes": 124367,
+      "sha256": "e2e54aa71c2cc3399fe0c6383950f4aec0cf28185d35f44ac48fc8b8c1c8c774"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-a831d46fdf9054557.jsonl",
+      "bytes": 26397,
+      "sha256": "70872b7511032b8fdd1a09c045aecca973f3aa339cc30e595c9b4d06b2ba5ca0"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-aa8945395c09ac693.jsonl",
+      "bytes": 52197,
+      "sha256": "27040a4c126d7b46b008ea4f6ce10fcbaa751af9fb91641a975ddc47506dd847"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile\\projects\\D--AIDEV-clauduct-s36-build-repair-20260919-verification-policy-repair-20260919-interactive-e268b95d-2048-47e3-b36b-5483000541a7-project\\df320410-f4cd-443d-86f6-290ac649f634\\subagents\\agent-ad4ab156abd932a4b.jsonl",
+      "bytes": 110145,
+      "sha256": "9735a270a02301dc69a8dadaf2c3bd8ab74bb08d7650b194ee88157bd7397b98"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\tmp\\clauduct\\status-18872.json",
+      "bytes": 42177,
+      "sha256": "6bdcdc8c96fc4c6247b1b670c504448e8afb70520dc5ac0b761081593510c2bc"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\C1.json",
+      "bytes": 27747,
+      "sha256": "acaeee067c50dd75b7ecd6e0cf03c48098c107134b52c6e34d31238f2f62238d"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\C2.json",
+      "bytes": 30203,
+      "sha256": "c9c871e7fecc715e5d4975580cf03be9f306c92182edb3fc8c3fc1365a2b5bf5"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\CANCEL.json",
+      "bytes": 35877,
+      "sha256": "994bf3feec9e398cb2be3ec21d326664fbcfcfd9c92f0cddb8806c7a4ff5c0bc"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\CONTEXT.json",
+      "bytes": 30918,
+      "sha256": "c85fed4af9e82991d7495a1f911d42f18bb944d9d62cd72f09758fd0c214d8c0"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\ESC-EARLY.json",
+      "bytes": 39433,
+      "sha256": "81e18861981d9e321ac68059f43a4738316a9949b42757bc26f27dbbb1b0112f"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\ESC-TEXT.json",
+      "bytes": 40228,
+      "sha256": "e217ff4b0a0eaa3918729c9ba2e4698073cc7c98453ce53bc436e4de4695a4bd"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\FINAL.json",
+      "bytes": 41000,
+      "sha256": "0d652ba3ef5e3b6d7072880118b287f9bcd8c7af395a8f65afbbfcafdb67856c"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\NEGATIVE.json",
+      "bytes": 42156,
+      "sha256": "5ffbe74d7f03dea37e7d1b3e405bcae0b0f7717e24a77d396f21dcc39aac1010"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\RESUME.json",
+      "bytes": 30083,
+      "sha256": "c729743e3ccda89ab9a10c7a3451c9505539924ead26e5c4632e98a1487e2953"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\TREE.json",
+      "bytes": 23610,
+      "sha256": "2335e985f8e93b23dc384a677ac5e090556847d6e07b674d4f4da96706717cbb"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\WF-AFTER.json",
+      "bytes": 30211,
+      "sha256": "a2248a305331f2509528d36aeb8627e499ba4d4ab8da4bf54d18ef67df4b4ce5"
+    },
+    {
+      "file": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-df320410-f4cd-443d-86f6-290ac649f634\\checkpoints-s42\\WF-BEFORE.json",
+      "bytes": 29045,
+      "sha256": "ea152b3ea227eb62c032d65de867073ee2a0e646a4877310b9c836708f42cde7"
+    }
+  ],
+  "limitations": [
+    "No saved raw backend output arguments for rejected Workflow calls; model motive and exact second-call input remain unverified.",
+    "Actual offered child Agent role schema was not saved in this user run.",
+    "Native context estimates are separate from backend exact preflight counts.",
+    "Individual keypress timestamps are not recorded; the user confirmed the repeated early-Esc submissions were manual."
+  ],
+  "userConfirmation": {
+    "source": "current user reply to S42 repeated-submission question",
+    "earlyEscRepeatedSubmissions": "manually submitted and cancelled multiple times"
+  }
+}

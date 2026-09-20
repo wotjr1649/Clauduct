@@ -1,0 +1,63 @@
+{
+  "checkedAt": "2026-09-19T15:03:21.1761401Z",
+  "runs": [
+    {
+      "id": "07ab4b75-6eb5-4143-a938-f641fd2e9343",
+      "pid": 18716,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": true
+    },
+    {
+      "id": "bf4a458d-5056-4592-a7f5-2b8ef9d135ba",
+      "pid": 18332,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": true
+    },
+    {
+      "id": "cceb2ca8-8213-472e-92bb-d88de3077d8a",
+      "pid": 12272,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": true
+    },
+    {
+      "id": "e8a5e4a9-6fdb-4f90-87b3-0d71c910c334",
+      "pid": 17892,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": true
+    },
+    {
+      "id": "2452d8f3-fe24-4b77-9097-1e298ea3e26d",
+      "pid": 17264,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": null
+    },
+    {
+      "id": "4cfac413-30b8-4ca4-b5bb-2a020be00629",
+      "pid": 11852,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": null
+    },
+    {
+      "id": "4d65ca16-164f-4fe0-96cc-f9fefc5be7f8",
+      "pid": 4700,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": null
+    },
+    {
+      "id": "e7cd9b3d-ec18-4a34-b155-16503e57ef34",
+      "pid": 9460,
+      "state": "pid_absent",
+      "exitCode": 0,
+      "nativeReaped": null
+    }
+  ],
+  "matchingProcesses": [],
+  "scope": "Known run PIDs and exact session IDs or candidate binary path; not a whole-machine orphan proof"
+}

@@ -1,0 +1,2698 @@
+{
+  "scope": "Public native TUI evidence. Mechanism fixtures and subscription backend runs remain separate; no universal acceptance.",
+  "runs": [
+    {
+      "id": "4648bee3-1752-4934-8e36-7641ea4cd626",
+      "commit": "3b002c1157eb522f4ec5ab795fbdf18c426ee3cb",
+      "binarySha256": "5f57682b7982892f49d810d739b5f264e4548afc4c0d4864fea210030310b2ed",
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 0,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "rejectedWorkflowCalls": 1,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "rootRows": 127,
+      "rootSha256": "993b1305c87c5749dc4387d75542b292179a61cde1fe32d661df17fc0a85b6a0",
+      "requests": 77,
+      "inferences": 54,
+      "matches": 54,
+      "mismatches": 0,
+      "features": [
+        {
+          "name": "generation",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 54,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 54,
+          "successfulResponses": 54,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 77,
+          "lastCompletedRequest": 77,
+          "rejectedToolCalls": 1,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "native_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 27,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 27,
+          "successfulResponses": 27,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 71,
+          "lastCompletedRequest": 71,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "workflow_selection",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 22,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 22,
+          "successfulResponses": 22,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 71,
+          "lastCompletedRequest": 71,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_result_reuse",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_recovery"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 1,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 75,
+          "lastCompletedRequest": 75,
+          "rejectedToolCalls": 1,
+          "runtimeEvidence": "conditions_not_confirmed_for_all_requests",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "parent_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 2,
+          "successfulResponses": 2,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 9,
+          "lastCompletedRequest": 9,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_resume",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_plan_resume"
+          ],
+          "requests": 1,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 67,
+          "lastCompletedRequest": 67,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "answers": [
+        {
+          "line": 40,
+          "time": "2026-09-19T19:33:22.577Z",
+          "markers": [
+            "PUBLIC_ACCEPTANCE_TOKEN",
+            "S43_INPUT_OK",
+            "S43_ROOT_43",
+            "S43_LEAF_41"
+          ]
+        },
+        {
+          "line": 67,
+          "time": "2026-09-19T19:40:47.555Z",
+          "markers": [
+            "S43_PLAN",
+            "S43_A_17",
+            "S43_B_19",
+            "S43_C_23"
+          ]
+        },
+        {
+          "line": 79,
+          "time": "2026-09-19T19:42:37.586Z",
+          "markers": [
+            "S43_PLAN2"
+          ]
+        },
+        {
+          "line": 108,
+          "time": "2026-09-19T19:45:52.357Z",
+          "markers": [
+            "S43_P2_A_17",
+            "S43_P2_C_23"
+          ]
+        },
+        {
+          "line": 122,
+          "time": "2026-09-19T19:46:52.397Z",
+          "markers": [
+            "S43_AFTER_REJECT_OK"
+          ]
+        }
+      ],
+      "toolCalls": [
+        {
+          "line": 20,
+          "time": "2026-09-19T19:32:36.459Z",
+          "name": "Agent",
+          "call": "call_c7BpnZHyxgWV1LQ2wSeaDlJn"
+        },
+        {
+          "line": 35,
+          "time": "2026-09-19T19:33:15.554Z",
+          "name": "Read",
+          "call": "call_7mYmUl2fFQHyCBmpwRolmJ6r"
+        },
+        {
+          "line": 45,
+          "time": "2026-09-19T19:35:06.634Z",
+          "name": "Skill",
+          "call": "call_APgmB0F9AM2LuZKLpiqiKzoD"
+        },
+        {
+          "line": 54,
+          "time": "2026-09-19T19:35:15.367Z",
+          "name": "Workflow",
+          "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+          "plan": false
+        },
+        {
+          "line": 72,
+          "time": "2026-09-19T19:42:04.809Z",
+          "name": "Workflow",
+          "call": "call_YHNy27OAXNpCB1u3GFWgsIMO",
+          "plan": false
+        },
+        {
+          "line": 84,
+          "time": "2026-09-19T19:43:27.152Z",
+          "name": "ToolSearch",
+          "call": "call_UZUCXQuh3sMdmIyFLz1fiKGc"
+        },
+        {
+          "line": 87,
+          "time": "2026-09-19T19:43:31.813Z",
+          "name": "TaskStop",
+          "call": "call_DjWYBxubSqRnXu9a0CP5mZWo",
+          "task": "w840uxlgb"
+        },
+        {
+          "line": 96,
+          "time": "2026-09-19T19:44:36.733Z",
+          "name": "Workflow",
+          "call": "call_IspME3idbmCiltZPRey3G4zx",
+          "plan": false
+        },
+        {
+          "line": 114,
+          "time": "2026-09-19T19:46:17.754Z",
+          "name": "Workflow",
+          "call": "call_8gwW8c6ACaaK6fqgUak92GVN",
+          "plan": false
+        }
+      ],
+      "compactions": [],
+      "children": [
+        {
+          "agent": "ad0e5239ad46ce6bd",
+          "sha256": "77def8f3a72a8a3f726c19f645886985420e6e1a5833adc31b7966a41cf53531",
+          "rows": 17,
+          "selection": {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_c7BpnZHyxgWV1LQ2wSeaDlJn",
+            "agent": "ad0e5239ad46ce6bd",
+            "role": "general-purpose",
+            "requestedModel": "gpt-5.6-terra",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "low",
+            "source": "agent-call-model+effort",
+            "nativeModelAlias": "sonnet",
+            "state": "selection_verified",
+            "backendResponses": 3,
+            "backendCompletions": 3
+          },
+          "tools": [
+            {
+              "line": 11,
+              "name": "Agent",
+              "call": "call_SYKCT5kKEvIYSciZA6nRaKX6"
+            }
+          ],
+          "answers": [
+            {
+              "line": 17,
+              "time": "2026-09-19T19:33:15.330Z",
+              "markers": [
+                "S43_LEAF_41"
+              ]
+            }
+          ]
+        },
+        {
+          "agent": "ade7d598a6c043675",
+          "sha256": "10545967c0adae23b2a1d3f1b47b0a31d4741b8278f6f4e734b5a037dade2cf4",
+          "rows": 16,
+          "selection": {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "parent": "ad0e5239ad46ce6bd",
+            "call": "call_SYKCT5kKEvIYSciZA6nRaKX6",
+            "agent": "ade7d598a6c043675",
+            "role": "general-purpose",
+            "modelProvided": false,
+            "effortProvided": false,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "low",
+            "source": "delegation-inherited",
+            "nativeModelAlias": "sonnet",
+            "state": "selection_verified",
+            "backendResponses": 2,
+            "backendCompletions": 2
+          },
+          "tools": [
+            {
+              "line": 11,
+              "name": "Bash",
+              "call": "call_UTMStdsEHg0lkLCM7eWsmUxC"
+            }
+          ],
+          "answers": [
+            {
+              "line": 16,
+              "time": "2026-09-19T19:33:11.345Z",
+              "markers": [
+                "S43_LEAF_41"
+              ]
+            }
+          ]
+        }
+      ],
+      "workflows": [
+        {
+          "run": "wf_584d8b3d-2cf",
+          "task": "w0g3tw16v",
+          "status": "completed",
+          "sha256": "39876f26d61153a96957a68345e56021ab2664254220912051149567adc3dfa8",
+          "journalSha256": "e5ccc636daaed24401426d5be0dd13044c22188d6372a8e4de0dc90c0877af4d",
+          "starts": [
+            {
+              "agent": "a31031332f96a8ad9",
+              "step": "C"
+            }
+          ],
+          "agentCount": 1,
+          "complete": false,
+          "results": [
+            {
+              "step": "A",
+              "state": "completed_result_reused",
+              "agent": "a0ac526b1b016e361",
+              "markers": [
+                "S43_P2_A_17"
+              ]
+            },
+            {
+              "step": "B",
+              "state": "started_not_reexecuted",
+              "agent": "a3949171097965601",
+              "markers": []
+            },
+            {
+              "step": "C",
+              "state": "completed",
+              "markers": [
+                "S43_P2_C_23"
+              ]
+            }
+          ],
+          "children": [
+            {
+              "agent": "a31031332f96a8ad9",
+              "step": "C",
+              "sha256": "87301528e38f9bdc7a0b7d9a469638c50a74379c1f21e265b45a3a0f7cd5ac7b",
+              "tools": [],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:45:36.820Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:45:36.822Z",
+                  "markers": [
+                    "S43_P2_C_23"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "run": "wf_703d681f-312",
+          "task": "w3oxpz7gs",
+          "status": "completed",
+          "sha256": "79d450414c03bcb299c5f2c30b3d1387c8f90992f6e5664b7cd92007e85b5455",
+          "journalSha256": "3dab7896d3d0a8c05f7a0c9c4d6f43742dd3e626411766093e3eae8311ed205d",
+          "starts": [
+            {
+              "agent": "a4f1a6eeb793c53bc",
+              "step": "A"
+            },
+            {
+              "agent": "aa42f86b2c1f6f688",
+              "step": "B"
+            },
+            {
+              "agent": "afb5665d3ec1806a6",
+              "step": "C"
+            }
+          ],
+          "agentCount": 3,
+          "complete": true,
+          "results": [
+            {
+              "step": "A",
+              "state": "completed",
+              "markers": []
+            },
+            {
+              "step": "B",
+              "state": "completed",
+              "markers": []
+            },
+            {
+              "step": "C",
+              "state": "completed",
+              "markers": [
+                "S43_C_23"
+              ]
+            }
+          ],
+          "children": [
+            {
+              "agent": "a4f1a6eeb793c53bc",
+              "step": "A",
+              "sha256": "4ae81e0d8fb7191ce80ea56d6486f4dba82ecfe24704d7bc10d046ba4c21272c",
+              "tools": [
+                {
+                  "line": 12,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 17,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 22,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 26,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 30,
+                  "name": "Skill"
+                },
+                {
+                  "line": 36,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 40,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 44,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 49,
+                  "name": "SendMessage"
+                }
+              ],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:39:24.386Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:39:24.391Z",
+                  "markers": []
+                },
+                {
+                  "line": 16,
+                  "time": "2026-09-19T19:39:27.723Z",
+                  "markers": []
+                },
+                {
+                  "line": 17,
+                  "time": "2026-09-19T19:39:27.729Z",
+                  "markers": []
+                },
+                {
+                  "line": 21,
+                  "time": "2026-09-19T19:39:31.233Z",
+                  "markers": []
+                },
+                {
+                  "line": 22,
+                  "time": "2026-09-19T19:39:31.239Z",
+                  "markers": []
+                },
+                {
+                  "line": 25,
+                  "time": "2026-09-19T19:39:34.396Z",
+                  "markers": []
+                },
+                {
+                  "line": 26,
+                  "time": "2026-09-19T19:39:34.398Z",
+                  "markers": []
+                },
+                {
+                  "line": 29,
+                  "time": "2026-09-19T19:39:38.073Z",
+                  "markers": []
+                },
+                {
+                  "line": 30,
+                  "time": "2026-09-19T19:39:38.079Z",
+                  "markers": []
+                },
+                {
+                  "line": 35,
+                  "time": "2026-09-19T19:39:41.965Z",
+                  "markers": []
+                },
+                {
+                  "line": 36,
+                  "time": "2026-09-19T19:39:41.969Z",
+                  "markers": []
+                },
+                {
+                  "line": 39,
+                  "time": "2026-09-19T19:39:45.234Z",
+                  "markers": []
+                },
+                {
+                  "line": 40,
+                  "time": "2026-09-19T19:39:45.237Z",
+                  "markers": []
+                },
+                {
+                  "line": 43,
+                  "time": "2026-09-19T19:39:49.873Z",
+                  "markers": []
+                },
+                {
+                  "line": 44,
+                  "time": "2026-09-19T19:39:49.876Z",
+                  "markers": []
+                },
+                {
+                  "line": 48,
+                  "time": "2026-09-19T19:39:54.942Z",
+                  "markers": []
+                },
+                {
+                  "line": 49,
+                  "time": "2026-09-19T19:39:54.945Z",
+                  "markers": []
+                },
+                {
+                  "line": 53,
+                  "time": "2026-09-19T19:39:58.810Z",
+                  "markers": []
+                },
+                {
+                  "line": 54,
+                  "time": "2026-09-19T19:39:58.818Z",
+                  "markers": []
+                }
+              ]
+            },
+            {
+              "agent": "aa42f86b2c1f6f688",
+              "step": "B",
+              "sha256": "1539b1535702378272f8899ccd8ee3b271d1428b3bb24f9743b857318d58beb5",
+              "tools": [
+                {
+                  "line": 12,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 17,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 22,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 27,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 31,
+                  "name": "ToolSearch"
+                }
+              ],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:40:02.541Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:40:02.545Z",
+                  "markers": []
+                },
+                {
+                  "line": 16,
+                  "time": "2026-09-19T19:40:05.940Z",
+                  "markers": []
+                },
+                {
+                  "line": 17,
+                  "time": "2026-09-19T19:40:05.945Z",
+                  "markers": []
+                },
+                {
+                  "line": 21,
+                  "time": "2026-09-19T19:40:09.689Z",
+                  "markers": []
+                },
+                {
+                  "line": 22,
+                  "time": "2026-09-19T19:40:09.694Z",
+                  "markers": []
+                },
+                {
+                  "line": 26,
+                  "time": "2026-09-19T19:40:13.459Z",
+                  "markers": []
+                },
+                {
+                  "line": 27,
+                  "time": "2026-09-19T19:40:13.462Z",
+                  "markers": []
+                },
+                {
+                  "line": 30,
+                  "time": "2026-09-19T19:40:18.357Z",
+                  "markers": []
+                },
+                {
+                  "line": 31,
+                  "time": "2026-09-19T19:40:18.360Z",
+                  "markers": []
+                },
+                {
+                  "line": 34,
+                  "time": "2026-09-19T19:40:22.784Z",
+                  "markers": []
+                },
+                {
+                  "line": 35,
+                  "time": "2026-09-19T19:40:22.786Z",
+                  "markers": []
+                }
+              ]
+            },
+            {
+              "agent": "afb5665d3ec1806a6",
+              "step": "C",
+              "sha256": "70011d28225ceb055d9154f8ee44e41e19ea675158f45ab3422c19af7733db28",
+              "tools": [
+                {
+                  "line": 12,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 17,
+                  "name": "ToolSearch"
+                }
+              ],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:40:26.710Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:40:26.713Z",
+                  "markers": []
+                },
+                {
+                  "line": 16,
+                  "time": "2026-09-19T19:40:32.572Z",
+                  "markers": []
+                },
+                {
+                  "line": 17,
+                  "time": "2026-09-19T19:40:32.574Z",
+                  "markers": []
+                },
+                {
+                  "line": 21,
+                  "time": "2026-09-19T19:40:38.388Z",
+                  "markers": []
+                },
+                {
+                  "line": 22,
+                  "time": "2026-09-19T19:40:38.391Z",
+                  "markers": [
+                    "S43_C_23"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "run": "wf_9a3fd71d-484",
+          "task": "w840uxlgb",
+          "status": "killed",
+          "sha256": "376ec80a8918efcbbd0af4c856f79a8321867c1f5b0567f6df336f4c3310a08e",
+          "journalSha256": "9471e817a2ec40dbe76e21223ee4ac69a7df6936188745a4f8463e3ee5fbcf6d",
+          "starts": [
+            {
+              "agent": "a0ac526b1b016e361",
+              "step": "A"
+            },
+            {
+              "agent": "a3949171097965601",
+              "step": "B"
+            }
+          ],
+          "agentCount": 2,
+          "children": [
+            {
+              "agent": "a0ac526b1b016e361",
+              "step": "A",
+              "sha256": "fb8e1a8f41d47d400b43a1f821eeac6a2daa8314e2144fe390d701c64e7acd45",
+              "tools": [],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:42:35.303Z",
+                  "markers": [
+                    "S43_P2_A_17"
+                  ]
+                }
+              ]
+            },
+            {
+              "agent": "a3949171097965601",
+              "step": "B",
+              "sha256": "1a96c93aa49273acf1c3c4bc13e8b140b1c8b0f455b0a4524e2e6f880b2d04ad",
+              "tools": [
+                {
+                  "line": 12,
+                  "name": "Bash"
+                }
+              ],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:42:39.763Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:42:39.765Z",
+                  "markers": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "parentReadiness": [
+        {
+          "seq": 63,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "a3949171097965601"
+          ],
+          "includedResults": [
+            "a0ac526b1b016e361"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 64,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "a3949171097965601"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 65,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "unavailableResults": [
+            "a3949171097965601"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 67,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 70,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 71,
+          "model": "gpt-5.6-luna",
+          "agent": "a31031332f96a8ad9",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 73,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "includedResults": [
+            "a31031332f96a8ad9"
+          ],
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 75,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 76,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 77,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 5,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 7,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "call_c7BpnZHyxgWV1LQ2wSeaDlJn"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": true,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 8,
+          "model": "gpt-5.6-terra",
+          "agent": "ad0e5239ad46ce6bd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 9,
+          "model": "gpt-5.6-terra",
+          "agent": "ad0e5239ad46ce6bd",
+          "kind": "generation",
+          "pending": [
+            "ade7d598a6c043675"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": true,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 11,
+          "model": "gpt-5.6-terra",
+          "agent": "ade7d598a6c043675",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 13,
+          "model": "gpt-5.6-terra",
+          "agent": "ade7d598a6c043675",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 15,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "ad0e5239ad46ce6bd"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 18,
+          "model": "gpt-5.6-terra",
+          "agent": "ad0e5239ad46ce6bd",
+          "kind": "generation",
+          "includedResults": [
+            "ade7d598a6c043675"
+          ],
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 20,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "includedResults": [
+            "ad0e5239ad46ce6bd"
+          ],
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        }
+      ],
+      "compactionRequests": [],
+      "cancellations": []
+    },
+    {
+      "id": "117719c7-d224-4ece-9700-fd7ee458644b",
+      "commit": "01614e0cb79fe9380ff1253f8b0c4db946271d51",
+      "binarySha256": "32086c7b87d5f2222590537962507293394b19e6f1790d2000209dc08b8c892e",
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 2,
+        "nativeCancellations": 1,
+        "nativeToolFailures": 0,
+        "rejectedWorkflowCalls": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "rootRows": 128,
+      "rootSha256": "079c273856426bec6e256e8bfdd62e94469a9e992675f70d2c28caa806221070",
+      "requests": 43,
+      "inferences": 30,
+      "matches": 29,
+      "mismatches": 0,
+      "features": [
+        {
+          "name": "generation",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 30,
+          "requestsWithoutRequiredChecks": 1,
+          "requestsWithRequiredChecks": 29,
+          "successfulResponses": 28,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 1,
+          "lastRequest": 43,
+          "lastCompletedRequest": 42,
+          "runtimeEvidence": "conditions_not_confirmed_for_all_requests",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "native_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 9,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 9,
+          "successfulResponses": 9,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 30,
+          "lastCompletedRequest": 30,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "workflow_selection",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 9,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 9,
+          "successfulResponses": 9,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 30,
+          "lastCompletedRequest": 30,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "compaction",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "compaction_authorized",
+            "exact_preflight"
+          ],
+          "requests": 1,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 34,
+          "lastCompletedRequest": 34,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_result_reuse",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_recovery"
+          ],
+          "requests": 1,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 19,
+          "lastCompletedRequest": 19,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_resume",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_plan_resume"
+          ],
+          "requests": 1,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 19,
+          "lastCompletedRequest": 19,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "answers": [
+        {
+          "line": 33,
+          "time": "2026-09-19T19:52:02.609Z",
+          "markers": [
+            "ORCHID-63"
+          ]
+        },
+        {
+          "line": 62,
+          "time": "2026-09-19T19:55:23.961Z",
+          "markers": [
+            "ORCHID-63"
+          ]
+        },
+        {
+          "line": 74,
+          "time": "2026-09-19T19:56:41.946Z",
+          "markers": [
+            "S43_F_A_17",
+            "S43_F_C_23",
+            "ORCHID-63"
+          ]
+        },
+        {
+          "line": 103,
+          "time": "2026-09-19T19:59:45.925Z",
+          "markers": [
+            "ORCHID-63",
+            "S43_F_C_23",
+            "S43_AFTER_COMPACT_OK"
+          ]
+        },
+        {
+          "line": 117,
+          "time": "2026-09-19T20:04:02.555Z",
+          "markers": [
+            "S43_EARLY_RECOVERY",
+            "S43_EARLY"
+          ]
+        },
+        {
+          "line": 118,
+          "time": "2026-09-19T20:04:02.587Z",
+          "markers": [
+            "S43_EARLY_RECOVERY",
+            "S43_EARLY"
+          ]
+        },
+        {
+          "line": 123,
+          "time": "2026-09-19T20:04:19.014Z",
+          "markers": [
+            "S43_FINAL_RECOVERED",
+            "ORCHID-63"
+          ]
+        }
+      ],
+      "toolCalls": [
+        {
+          "line": 20,
+          "time": "2026-09-19T19:49:54.040Z",
+          "name": "Skill",
+          "call": "call_CDpe4E4BS1ps8Kxj0o4PEZQP"
+        },
+        {
+          "line": 30,
+          "time": "2026-09-19T19:50:05.289Z",
+          "name": "Workflow",
+          "call": "call_lhyZq66tXl4MXO146YAfEtCq",
+          "plan": false
+        },
+        {
+          "line": 38,
+          "time": "2026-09-19T19:53:00.998Z",
+          "name": "ToolSearch",
+          "call": "call_1TG3myDXasFzl7uMkYiiclZt"
+        },
+        {
+          "line": 41,
+          "time": "2026-09-19T19:53:04.995Z",
+          "name": "TaskStop",
+          "call": "call_woh58asWENXSH4Gi2oCFTTXV",
+          "task": "w3348oz45"
+        },
+        {
+          "line": 55,
+          "time": "2026-09-19T19:54:24.184Z",
+          "name": "Workflow",
+          "call": "call_s8Hxn4NWLvbft1LcGHRvhO1N",
+          "plan": false
+        }
+      ],
+      "compactions": [
+        {
+          "line": 83,
+          "time": "2026-09-19T19:58:21.540Z",
+          "chars": 10753,
+          "retained": [
+            "S43_FINAL_PLAN",
+            "S43_F_A_17",
+            "S43_F_B_19",
+            "S43_F_C_23",
+            "ORCHID-63",
+            "S43_FINAL_STOP",
+            "S43_FINAL_RESUME"
+          ]
+        }
+      ],
+      "children": [],
+      "workflows": [
+        {
+          "run": "wf_ae4f1a7d-6a9",
+          "task": "w4mq1fidw",
+          "status": "completed",
+          "sha256": "1f0d7ac22a193906c559cb31ea2807a16ec24af74340084b106045d65ed7be15",
+          "journalSha256": "9cccff7a1fa748d17e2e38023ae6cea3f231478ed261570ee2102d47f9550315",
+          "starts": [
+            {
+              "agent": "ab7483457bd47fadd",
+              "step": "C"
+            }
+          ],
+          "agentCount": 1,
+          "complete": false,
+          "completeMeaning": "all_step_results_present_not_task_success",
+          "results": [
+            {
+              "step": "A",
+              "state": "completed_result_reused",
+              "agent": "a40b8bf48e7409e15",
+              "markers": [
+                "S43_F_A_17"
+              ]
+            },
+            {
+              "step": "B",
+              "state": "started_not_reexecuted",
+              "agent": "a7fe65ae8b0d79708",
+              "markers": []
+            },
+            {
+              "step": "C",
+              "state": "completed",
+              "markers": [
+                "S43_F_C_23"
+              ]
+            }
+          ],
+          "children": [
+            {
+              "agent": "ab7483457bd47fadd",
+              "step": "C",
+              "sha256": "94acbe0575188b1b32cb1cf17c3690bc177843a6cd8c6c6452ee9abb6bdfc6d9",
+              "tools": [
+                {
+                  "line": 12,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 17,
+                  "name": "Bash"
+                },
+                {
+                  "line": 22,
+                  "name": "ToolSearch"
+                },
+                {
+                  "line": 26,
+                  "name": "Bash"
+                },
+                {
+                  "line": 31,
+                  "name": "Bash"
+                },
+                {
+                  "line": 35,
+                  "name": "SendMessage"
+                }
+              ],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:55:21.811Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:55:21.813Z",
+                  "markers": []
+                },
+                {
+                  "line": 16,
+                  "time": "2026-09-19T19:55:25.154Z",
+                  "markers": []
+                },
+                {
+                  "line": 17,
+                  "time": "2026-09-19T19:55:25.155Z",
+                  "markers": []
+                },
+                {
+                  "line": 21,
+                  "time": "2026-09-19T19:55:28.652Z",
+                  "markers": []
+                },
+                {
+                  "line": 22,
+                  "time": "2026-09-19T19:55:28.654Z",
+                  "markers": []
+                },
+                {
+                  "line": 25,
+                  "time": "2026-09-19T19:55:32.070Z",
+                  "markers": []
+                },
+                {
+                  "line": 26,
+                  "time": "2026-09-19T19:55:32.071Z",
+                  "markers": []
+                },
+                {
+                  "line": 30,
+                  "time": "2026-09-19T19:55:36.142Z",
+                  "markers": []
+                },
+                {
+                  "line": 31,
+                  "time": "2026-09-19T19:55:36.144Z",
+                  "markers": []
+                },
+                {
+                  "line": 34,
+                  "time": "2026-09-19T19:56:28.152Z",
+                  "markers": []
+                },
+                {
+                  "line": 35,
+                  "time": "2026-09-19T19:56:28.153Z",
+                  "markers": []
+                },
+                {
+                  "line": 38,
+                  "time": "2026-09-19T19:56:32.767Z",
+                  "markers": []
+                },
+                {
+                  "line": 39,
+                  "time": "2026-09-19T19:56:32.769Z",
+                  "markers": [
+                    "S43_F_C_23"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "run": "wf_b0162ec8-3e7",
+          "task": "w3348oz45",
+          "status": "killed",
+          "sha256": "33306adebb5fac53e15ba65d6bd86762fea0e721a9a0c2ed480be7398b7006bc",
+          "journalSha256": "3bc5afd2cf329626311b1d8fd3632914e32633198013a555fe35bc61cb5efd4d",
+          "starts": [
+            {
+              "agent": "a40b8bf48e7409e15",
+              "step": "A"
+            },
+            {
+              "agent": "a7fe65ae8b0d79708",
+              "step": "B"
+            }
+          ],
+          "agentCount": 2,
+          "children": [
+            {
+              "agent": "a40b8bf48e7409e15",
+              "step": "A",
+              "sha256": "45dfbc95774a06516752baf7f87aa8a563d522373579adbfdefa51e8e69a0b3f",
+              "tools": [],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:51:59.443Z",
+                  "markers": [
+                    "S43_F_A_17"
+                  ]
+                }
+              ]
+            },
+            {
+              "agent": "a7fe65ae8b0d79708",
+              "step": "B",
+              "sha256": "d59c764317abaea949ab7cae33ef58500ea2e7ef2d3513694ee4941c4c05ca0b",
+              "tools": [
+                {
+                  "line": 12,
+                  "name": "Bash"
+                }
+              ],
+              "answers": [
+                {
+                  "line": 11,
+                  "time": "2026-09-19T19:52:03.599Z",
+                  "markers": []
+                },
+                {
+                  "line": 12,
+                  "time": "2026-09-19T19:52:03.601Z",
+                  "markers": []
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "parentReadiness": [
+        {
+          "seq": 28,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 29,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "pending": [
+            "ab7483457bd47fadd"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 30,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 32,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "includedResults": [
+            "ab7483457bd47fadd"
+          ],
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 37,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 39,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 41,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 43,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 22,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 23,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 24,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 25,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 26,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 27,
+          "model": "gpt-5.6-luna",
+          "agent": "ab7483457bd47fadd",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 17,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "unavailableResults": [
+            "a7fe65ae8b0d79708"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 19,
+          "model": "gpt-5.6-sol",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 5,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 6,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 9,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "a40b8bf48e7409e15"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 10,
+          "model": "gpt-5.6-sol",
+          "agent": "a40b8bf48e7409e15",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 13,
+          "model": "gpt-5.6-terra",
+          "agent": "a7fe65ae8b0d79708",
+          "kind": "generation",
+          "completionEligible": true,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 15,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "a7fe65ae8b0d79708"
+          ],
+          "includedResults": [
+            "a40b8bf48e7409e15"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        },
+        {
+          "seq": 16,
+          "model": "gpt-6-astra",
+          "kind": "generation",
+          "pending": [
+            "a7fe65ae8b0d79708"
+          ],
+          "completionEligible": false,
+          "meaning": "known_child_reports_in_input_not_task_success",
+          "replyWithheld": false,
+          "waitControlMode": "native_tui"
+        }
+      ],
+      "compactionRequests": [
+        {
+          "seq": 34,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-5.6-sol",
+          "model": "gpt-5.6-sol",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "compaction",
+          "nativeRequestClass": "compaction",
+          "backendInputTokens": 22408,
+          "countedInputTokens": 22408,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1245,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 2604,
+            "bytes": 845783
+          },
+          "verifiedChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "compaction_authorized"
+          ],
+          "lastObservedMs": 547072,
+          "backendProgress": {
+            "events": 2604,
+            "textDeltas": 2594,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 493317,
+          "firstByteMs": 501463,
+          "endedMs": 547200
+        }
+      ],
+      "cancellations": [
+        {
+          "seq": 39,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "count",
+          "outcome": "refused",
+          "category": "CANCELLED",
+          "status": 499,
+          "requested": "gpt-5.6-sol",
+          "model": "gpt-5.6-sol",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countMs": 1088,
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route"
+          ],
+          "lastObservedMs": 780507,
+          "backendProgress": {
+            "events": 0,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 780504,
+          "endedMs": 781595
+        },
+        {
+          "seq": 41,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "broken",
+          "category": "CANCELLED",
+          "status": 200,
+          "requested": "gpt-5.6-sol",
+          "model": "gpt-5.6-sol",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "countedInputTokens": 18796,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countMs": 1193,
+          "streamEnd": {
+            "readError": "cancelled",
+            "clientContext": "cancelled",
+            "terminalObserved": false,
+            "events": 2197,
+            "bytes": 656282
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 888266,
+          "backendProgress": {
+            "events": 2197,
+            "textDeltas": 2191,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 843102,
+          "firstByteMs": 848855,
+          "endedMs": 888275
+        }
+      ]
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "19258ef5-b61c-433b-804a-31b97ab68405",
+      "realBackend": false,
+      "error": false,
+      "manifest": null,
+      "events": [
+        {
+          "at": "2026-09-19T18:49:13.5746704Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "auxiliary",
+          "model": "gpt-5.6-luna",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T18:49:13.7163576Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T18:49:14.0118358Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T18:49:14.1029934Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T18:49:14.2071Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T18:49:14.325576Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "leaf",
+          "model": "gpt-5.6-terra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T18:49:17.8074338Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "auxiliary",
+          "model": "gpt-5.6-luna",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T18:49:17.85747Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 3
+        },
+        {
+          "at": "2026-09-19T18:49:26.9127315Z",
+          "hasLeaf": true,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 3
+        },
+        {
+          "at": "2026-09-19T18:49:27.1373273Z",
+          "hasLeaf": false,
+          "hasMiddle": true,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 4
+        }
+      ],
+      "features": [
+        {
+          "name": "parent_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 2,
+          "successfulResponses": 2,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 9,
+          "lastCompletedRequest": 7,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "empty_reply_wait",
+          "enforcement": "unsupported",
+          "requiredChecks": null,
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_implemented",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "requests": [
+        {
+          "seq": 4,
+          "startedMs": 16270,
+          "endedMs": 16271,
+          "model": "gpt-5.6-luna"
+        },
+        {
+          "seq": 5,
+          "startedMs": 16374,
+          "endedMs": 16414,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": false
+          }
+        },
+        {
+          "seq": 6,
+          "startedMs": 16575,
+          "endedMs": 16575
+        },
+        {
+          "seq": 7,
+          "startedMs": 16584,
+          "endedMs": 16916,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "pending": [
+              "a2e8a1fea2cdb59d6"
+            ],
+            "completionEligible": false,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": true
+          }
+        },
+        {
+          "seq": 8,
+          "startedMs": 16695,
+          "endedMs": 16708,
+          "model": "gpt-5.6-terra",
+          "agent": "a2e8a1fea2cdb59d6",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": false
+          }
+        },
+        {
+          "seq": 9,
+          "startedMs": 16796,
+          "endedMs": 16800,
+          "model": "gpt-5.6-terra",
+          "agent": "a2e8a1fea2cdb59d6",
+          "parentReadiness": {
+            "pending": [
+              "call_public_leaf"
+            ],
+            "completionEligible": false,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": true
+          }
+        },
+        {
+          "seq": 10,
+          "startedMs": 16838,
+          "endedMs": 16839
+        },
+        {
+          "seq": 11,
+          "startedMs": 16933,
+          "endedMs": 16933
+        },
+        {
+          "seq": 12,
+          "startedMs": 17009,
+          "endedMs": 29023,
+          "model": "gpt-5.6-terra",
+          "agent": "a989745474f49e9cf",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": false
+          }
+        },
+        {
+          "seq": 13,
+          "startedMs": 20503,
+          "endedMs": 20505,
+          "model": "gpt-5.6-luna"
+        },
+        {
+          "seq": 14,
+          "startedMs": 20529,
+          "endedMs": 20555,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "pending": [
+              "a2e8a1fea2cdb59d6"
+            ],
+            "completionEligible": false,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": false
+          }
+        },
+        {
+          "seq": 15,
+          "startedMs": 29126,
+          "endedMs": 29127
+        },
+        {
+          "seq": 16,
+          "startedMs": 29265,
+          "endedMs": 29265
+        },
+        {
+          "seq": 17,
+          "startedMs": 29297,
+          "endedMs": 29610,
+          "model": "gpt-5.6-terra",
+          "agent": "a2e8a1fea2cdb59d6",
+          "parentReadiness": {
+            "includedResults": [
+              "a989745474f49e9cf"
+            ],
+            "completionEligible": true,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": false
+          }
+        },
+        {
+          "seq": 18,
+          "startedMs": 29731,
+          "endedMs": 29731
+        },
+        {
+          "seq": 19,
+          "startedMs": 29803,
+          "endedMs": 29835,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "includedResults": [
+              "a2e8a1fea2cdb59d6"
+            ],
+            "completionEligible": true,
+            "meaning": "input_contains_reports_not_findings_reviewed",
+            "replyWithheld": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "3d1ac679-d235-4a95-80d1-62947bf76128",
+      "realBackend": false,
+      "error": false,
+      "manifest": null,
+      "events": [
+        {
+          "at": "2026-09-19T19:20:19.4738033Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "auxiliary",
+          "model": "gpt-5.6-luna",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:20:19.5790574Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:20:19.7605078Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T19:20:20.2027763Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:20:20.287921Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T19:20:20.5521636Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "leaf",
+          "model": "gpt-5.6-terra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:20:25.2831634Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "auxiliary",
+          "model": "gpt-5.6-luna",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T19:20:25.3140359Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 3
+        },
+        {
+          "at": "2026-09-19T19:20:25.4626245Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 4
+        },
+        {
+          "at": "2026-09-19T19:20:32.8311916Z",
+          "hasLeaf": true,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 3
+        },
+        {
+          "at": "2026-09-19T19:20:33.0037258Z",
+          "hasLeaf": false,
+          "hasMiddle": true,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 5
+        }
+      ],
+      "features": [
+        {
+          "name": "parent_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 2,
+          "successfulResponses": 2,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 9,
+          "lastCompletedRequest": 9,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "empty_reply_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "requests": [
+        {
+          "seq": 5,
+          "startedMs": 21665,
+          "endedMs": 21683,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 6,
+          "startedMs": 21847,
+          "endedMs": 21849
+        },
+        {
+          "seq": 7,
+          "startedMs": 21858,
+          "endedMs": 21871,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "pending": [
+              "call_public_middle"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": true,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 8,
+          "startedMs": 21995,
+          "endedMs": 22307,
+          "model": "gpt-5.6-terra",
+          "agent": "a93dca4f843844e81",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 9,
+          "startedMs": 22388,
+          "endedMs": 22401,
+          "model": "gpt-5.6-terra",
+          "agent": "a93dca4f843844e81",
+          "parentReadiness": {
+            "pending": [
+              "call_public_leaf"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": true,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 10,
+          "startedMs": 22443,
+          "endedMs": 22444
+        },
+        {
+          "seq": 11,
+          "startedMs": 22545,
+          "endedMs": 22545
+        },
+        {
+          "seq": 12,
+          "startedMs": 22589,
+          "endedMs": 34657,
+          "model": "gpt-5.6-terra",
+          "agent": "a27414751c1685411",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 13,
+          "startedMs": 27385,
+          "endedMs": 27387,
+          "model": "gpt-5.6-luna"
+        },
+        {
+          "seq": 14,
+          "startedMs": 27412,
+          "endedMs": 27418,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "pending": [
+              "a93dca4f843844e81"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 15,
+          "startedMs": 27560,
+          "endedMs": 27566,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "pending": [
+              "a93dca4f843844e81"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 16,
+          "startedMs": 34761,
+          "endedMs": 34761
+        },
+        {
+          "seq": 17,
+          "startedMs": 34899,
+          "endedMs": 34899
+        },
+        {
+          "seq": 18,
+          "startedMs": 34930,
+          "endedMs": 34935,
+          "model": "gpt-5.6-terra",
+          "agent": "a93dca4f843844e81",
+          "parentReadiness": {
+            "includedResults": [
+              "a27414751c1685411"
+            ],
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 19,
+          "startedMs": 35042,
+          "endedMs": 35042
+        },
+        {
+          "seq": 20,
+          "startedMs": 35101,
+          "endedMs": 35108,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "includedResults": [
+              "a93dca4f843844e81"
+            ],
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        }
+      ]
+    },
+    {
+      "id": "69412496-eb80-41d8-8084-42980f008142",
+      "realBackend": false,
+      "error": false,
+      "manifest": {
+        "id": "69412496-eb80-41d8-8084-42980f008142",
+        "variant": "race",
+        "fixture": true,
+        "realBackend": false,
+        "started": "2026-09-19T19:48:13.304Z",
+        "sha256": "31f2c1e0640e49d2bf683557e527385082ba5d84ad08969328cd9b2c837ebf63",
+        "stamp": "D:\\AIDEV\\clauduct-s36-build\\wait-workflow-repair-20260920\\verification\\parent-wait-20260920\\fixture-bin\\parentwait.exe: go1.27.1\n\tpath\tgithub.com/wotjr1649/Clauduct/go/.verification/parentwait\n\tmod\tgithub.com/wotjr1649/Clauduct/go\t(devel)\t\n\tdep\tgithub.com/coder/websocket\tv1.8.15\th1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=\n\tdep\tgithub.com/dlclark/regexp2/v2\tv2.5.1\th1:E5Ug7Dh264W1ymdySmiHNcDG7fmsR307APCE5R07a20=\n\tdep\tgithub.com/tiktoken-go/tokenizer\tv0.8.1\th1:4obDoB6/dhdBt9xMweX4nww5cjdOq/nYF4ecwPq2+mg=\n\tdep\tgo.yaml.in/yaml/v3\tv3.0.4\th1:tfq32ie2Jv2UxXFdLJdh3jXuOzWiL1fo0bu/FbuKpbc=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=windows\n\tbuild\tGOAMD64=v1\n\tbuild\tvcs=git\n\tbuild\tvcs.revision=01614e0cb79fe9380ff1253f8b0c4db946271d51\n\tbuild\tvcs.time=2026-09-19T19:46:15Z\n\tbuild\tvcs.modified=true\n",
+        "exitCode": 0,
+        "finished": "2026-09-19T19:49:10.097Z"
+      },
+      "events": [
+        {
+          "at": "2026-09-19T19:48:36.9695293Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "auxiliary",
+          "model": "gpt-5.6-luna",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:48:37.3230199Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:48:37.4914149Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:48:37.5317382Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T19:48:37.6261417Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "leaf",
+          "model": "gpt-5.6-terra",
+          "step": 1
+        },
+        {
+          "at": "2026-09-19T19:48:37.7095477Z",
+          "hasLeaf": false,
+          "hasMiddle": false,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 2
+        },
+        {
+          "at": "2026-09-19T19:48:39.6988578Z",
+          "hasLeaf": true,
+          "hasMiddle": false,
+          "kind": "gpt-5.6-terra",
+          "model": "gpt-5.6-terra",
+          "step": 3
+        },
+        {
+          "at": "2026-09-19T19:48:39.81477Z",
+          "hasLeaf": false,
+          "hasMiddle": true,
+          "kind": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "step": 3
+        }
+      ],
+      "features": [
+        {
+          "name": "parent_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 2,
+          "successfulResponses": 2,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 9,
+          "lastCompletedRequest": 6,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "empty_reply_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 1,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 9,
+          "lastCompletedRequest": 9,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "requests": [
+        {
+          "seq": 2,
+          "startedMs": 466,
+          "endedMs": 466
+        },
+        {
+          "seq": 3,
+          "startedMs": 672,
+          "endedMs": 672
+        },
+        {
+          "seq": 4,
+          "startedMs": 23614,
+          "endedMs": 23615,
+          "model": "gpt-5.6-luna"
+        },
+        {
+          "seq": 5,
+          "startedMs": 23657,
+          "endedMs": 23968,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 6,
+          "startedMs": 24050,
+          "endedMs": 26355,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "pending": [
+              "a6435593a0b0f73e0"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": true,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 7,
+          "startedMs": 24064,
+          "endedMs": 24064
+        },
+        {
+          "seq": 8,
+          "startedMs": 24124,
+          "endedMs": 24137,
+          "model": "gpt-5.6-terra",
+          "agent": "a6435593a0b0f73e0",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 9,
+          "startedMs": 24174,
+          "endedMs": 26177,
+          "model": "gpt-5.6-terra",
+          "agent": "a6435593a0b0f73e0",
+          "parentReadiness": {
+            "pending": [
+              "call_public_leaf"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": true,
+            "backendReplyEmpty": true,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 10,
+          "startedMs": 24206,
+          "endedMs": 24206
+        },
+        {
+          "seq": 11,
+          "startedMs": 24263,
+          "endedMs": 24572,
+          "model": "gpt-5.6-terra",
+          "agent": "a5f3cfcb72e25dfa7",
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 12,
+          "startedMs": 24639,
+          "endedMs": 24639
+        },
+        {
+          "seq": 13,
+          "startedMs": 26245,
+          "endedMs": 26245
+        },
+        {
+          "seq": 14,
+          "startedMs": 26320,
+          "endedMs": 26320
+        },
+        {
+          "seq": 15,
+          "startedMs": 26341,
+          "endedMs": 26344,
+          "model": "gpt-5.6-terra",
+          "agent": "a6435593a0b0f73e0",
+          "parentReadiness": {
+            "includedResults": [
+              "a5f3cfcb72e25dfa7"
+            ],
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        },
+        {
+          "seq": 16,
+          "startedMs": 26419,
+          "endedMs": 26419
+        },
+        {
+          "seq": 17,
+          "startedMs": 26457,
+          "endedMs": 26460,
+          "model": "gpt-6-astra",
+          "parentReadiness": {
+            "includedResults": [
+              "a6435593a0b0f73e0"
+            ],
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          }
+        }
+      ]
+    }
+  ]
+}

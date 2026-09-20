@@ -154,7 +154,7 @@ func TestTheBoundIsResetBeforeEveryWrite(t *testing.T) {
 	}
 
 	w := &recordingWriter{}
-	g.relay(context.Background(), w, http.NewResponseController(w), response, request)
+	g.relay(context.Background(), w, http.NewResponseController(w), response, request, "")
 
 	flushes := 0
 	for at, event := range w.events {
@@ -253,7 +253,7 @@ func TestALargeFrameIsWrittenUnderMoreThanOneBound(t *testing.T) {
 	}
 
 	w := &recordingWriter{}
-	g.relay(context.Background(), w, http.NewResponseController(w), response, request)
+	g.relay(context.Background(), w, http.NewResponseController(w), response, request, "")
 
 	bounds := 0
 	for _, event := range w.events {

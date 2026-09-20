@@ -1,10 +1,12 @@
 package app
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,6 +57,13 @@ func TestProductSourceHasNoNodeRuntimeDependency(t *testing.T) {
 			lowered := strings.ToLower(value)
 			for _, f := range forbidden {
 				if strings.Contains(lowered, strings.ToLower(f.fragment)) {
+					// These two paths name the embedded module loaded by native's
+					// own runtime. They are not Node programs or checkout paths.
+					// The companion test verifies embedded bytes, runtime-free source
+					// and the exact closed exception; every other module path fails.
+					if f.fragment == ".mjs" && embeddedNativeModulePath(filepath.ToSlash(rel), value) {
+						continue
+					}
 					t.Errorf("%s:%d string literal %q contains %q: %s",
 						filepath.ToSlash(rel), fset.Position(lit.Pos()).Line, value, f.fragment, f.why)
 				}
@@ -64,21 +73,66 @@ func TestProductSourceHasNoNodeRuntimeDependency(t *testing.T) {
 	}
 }
 
-// The module must stay dependency-free until a dependency is argued for. Every third-party
-// package is supply chain, licence and update cost the Node baseline did not have: it had
-// zero npm dependencies, so there is no existing surface to reproduce.
-func TestModuleHasNoThirdPartyDependencies(t *testing.T) {
-	root := moduleRoot(t)
+func embeddedNativeModulePath(file, value string) bool {
+	return file == "internal/app/native_events.go" && (value == `{"modules":["./events.mjs"]}` || value == "hooks/events.mjs")
+}
 
-	if _, err := os.Stat(filepath.Join(root, "go.sum")); err == nil {
-		t.Error("go.sum exists; a dependency was added without a recorded decision")
+func TestEmbeddedNativeModuleDoesNotIntroduceExternalRuntime(t *testing.T) {
+	source, err := os.ReadFile("native-events.mjs")
+	if err != nil || string(source) != nativeEventModule {
+		t.Fatal("native module not embedded byte-for-byte")
 	}
-	content, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	for _, forbidden := range []string{"import ", "import(", "require(", "node:", "process.", "eval(", "new Function", "globalThis", "fetch("} {
+		if strings.Contains(nativeEventModule, forbidden) {
+			t.Fatalf("unreviewed runtime capability: %s", forbidden)
+		}
+	}
+	for _, tc := range []struct {
+		file, value string
+		want        bool
+	}{
+		{"internal/app/native_events.go", "hooks/events.mjs", true},
+		{"internal/app/native_events.go", `{"modules":["./events.mjs"]}`, true},
+		{"internal/app/run.go", "hooks/events.mjs", false},
+		{"internal/app/native_events.go", "node.exe hooks/events.mjs", false},
+		{"internal/app/native_events.go", "hooks/other.mjs", false},
+		{"internal/app/native_events.go", `{"modules":["../../checkout/events.mjs"]}`, false},
+	} {
+		if embeddedNativeModulePath(tc.file, tc.value) != tc.want {
+			t.Fatal("runtime exception widened")
+		}
+	}
+}
+
+// The dependency decision and boundary review are recorded in
+// verification/policy-evidence-20260918/DEPENDENCIES.md. Keep the set closed:
+// exact tokenization and RFC6455 framing are not reimplemented in application code.
+func TestModuleUsesOnlyReviewedPinnedDependencies(t *testing.T) {
+	root := moduleRoot(t)
+	cmd := exec.Command("go", "mod", "edit", "-json")
+	cmd.Dir = root
+	raw, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("read go.mod: %v", err)
+		t.Fatal("read module graph", err)
 	}
-	if strings.Contains(string(content), "require") {
-		t.Errorf("go.mod has a require block:\n%s", content)
+	var module struct {
+		Require          []struct{ Path, Version string }
+		Replace, Exclude []json.RawMessage
+	}
+	if json.Unmarshal(raw, &module) != nil {
+		t.Fatal("module graph invalid")
+	}
+	allowed := map[string]string{"github.com/tiktoken-go/tokenizer": "v0.8.1", "github.com/dlclark/regexp2/v2": "v2.5.1", "github.com/coder/websocket": "v1.8.15", "go.yaml.in/yaml/v3": "v3.0.4"}
+	if len(module.Replace) != 0 || len(module.Exclude) != 0 || len(module.Require) != len(allowed) {
+		t.Fatal("dependency set differs from reviewed decision")
+	}
+	for _, dependency := range module.Require {
+		if allowed[dependency.Path] != dependency.Version {
+			t.Errorf("unreviewed dependency %s %s", dependency.Path, dependency.Version)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "go.sum")); err != nil {
+		t.Fatal("pinned dependency checksums missing")
 	}
 }
 

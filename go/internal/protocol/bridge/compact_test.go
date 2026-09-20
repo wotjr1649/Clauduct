@@ -19,13 +19,8 @@ func text(role string, blocks ...string) anthropic.Message {
 	return message
 }
 
-// E4. A compaction runs at medium, whatever the session is pinned to.
-//
-// It is the one request nobody asks for, it carries the largest input the session will ever
-// send, and on a session at max it is by some distance the most expensive thing that happens.
-// Summarising a transcript is not the work max exists for.
-func TestACompactionIsCappedAtMedium(t *testing.T) {
-	for _, effort := range []string{"high", "xhigh", "max"} {
+func TestACompactionPreservesEffort(t *testing.T) {
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
 		request := &anthropic.Request{
 			Model:    "claude-opus-5",
 			Effort:   effort,
@@ -35,18 +30,33 @@ func TestACompactionIsCappedAtMedium(t *testing.T) {
 		if err != nil {
 			t.Fatalf("BuildRequest at %s: %v", effort, err)
 		}
-		if built.Effort.Effort != compactEffort {
+		if built.Effort.Effort != effort {
 			t.Errorf("a compaction at %s ran at %s, want %s",
-				effort, built.Effort.Effort, compactEffort)
+				effort, built.Effort.Effort, effort)
 		}
-		// CAP03: the record has to say what changed it, or a reader sees an effort the
-		// session never chose and nothing that explains it.
-		if built.Source != "compact" {
+		if built.Source == "compact" {
 			t.Errorf("source = %q at %s", built.Source, effort)
 		}
-		// The model is untouched. This caps what a request costs, it does not move it.
+		// Compaction must also preserve the resolved model.
 		if built.Model != "gpt-5.6-sol" {
 			t.Errorf("the compaction was moved to %s", built.Model)
+		}
+	}
+}
+
+func TestCompactionKeepsTheAgentOverride(t *testing.T) {
+	for _, route := range Catalogue() {
+		for _, effort := range Efforts {
+			route.Effort, route.Source = effort, "agent"
+			rq := &anthropic.Request{Model: "gpt-6-astra", Effort: "low",
+				Messages: []anthropic.Message{text("user", compaction("synthetic transcript"))}}
+			got, err := BuildRequest(rq, route)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.Model != route.Model || got.Effort.Effort != effort || got.Source != "agent" {
+				t.Fatalf("override %v changed during compaction: %+v", route, got)
+			}
 		}
 	}
 }

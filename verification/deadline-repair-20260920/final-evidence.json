@@ -1,0 +1,92 @@
+{
+  "id": "f55faaae-fef5-41c2-95fa-e6a8acbc1b76",
+  "commit": "3df87d369445796ba94da7880d0e4852247d3d90",
+  "binarySha256": "e43235288e3cd9c1b634bfb94a81af1ffb6bda58ba35df324aed066cbbe3cafb",
+  "native": {
+    "version": "2.1.278",
+    "reference": "2.1.278",
+    "verified": true,
+    "verifiedMeaning": "version_match_only"
+  },
+  "statusSha256": "52186596066e68b0729dd18cad0334e31cba63a44172a776adf0053d50647f52",
+  "transcriptSha256": "4f89da1c9af0a1075d92d3115d7894ca162f39a1636146e8059a83f063a8d6c1",
+  "completion": {
+    "acceptance": "not_assessed",
+    "apiFailures": 0,
+    "cancelledRequests": 0,
+    "nativeCancellations": 0,
+    "nativeToolFailures": 0,
+    "rejectedWorkflowCalls": 0,
+    "unacquiredResultsInRecent": 0,
+    "controlTransitions": 0
+  },
+  "lifecycle": {
+    "state": "finished",
+    "final": true,
+    "reason": "native_exit",
+    "startedAt": "2026-09-20T03:43:19.0882183Z",
+    "observedAt": "2026-09-20T03:46:40.3885984Z",
+    "deadlineAt": "2026-09-20T04:03:19.0882183Z",
+    "nativeReaped": true
+  },
+  "counts": {
+    "matched": 11,
+    "mismatched": 0
+  },
+  "contexts": [
+    {
+      "at": "2026-09-20T03:43:53.455Z",
+      "tokens": "10.1k / 500k (2%)",
+      "messages": "| Messages | 19 | 0.0% |"
+    },
+    {
+      "at": "2026-09-20T03:44:32.225Z",
+      "tokens": "10.1k / 500k (2%)",
+      "messages": "| Messages | 14 | 0.0% |"
+    }
+  ],
+  "children": [
+    {
+      "id": "aad48a5efc68d9880",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "source": "agent-call-model+effort",
+      "sha256": "c13356286076846fad305d1e5c50b1ce7013f5739d036477e9f8ee37b1a3da07",
+      "markers": [
+        "S44_MIDDLE_41"
+      ],
+      "tools": [
+        "Agent",
+        "ToolSearch",
+        "SendMessage"
+      ]
+    },
+    {
+      "id": "ad4284c899b5cbfb5",
+      "parent": "aad48a5efc68d9880",
+      "model": "gpt-5.6-terra",
+      "effort": "medium",
+      "source": "delegation-inherited",
+      "sha256": "14f8436ab8041abadf47c2337cc7db5c2d6a8cd2b367abc8e0babef7d6953d52",
+      "markers": [
+        "S44_LEAF_41"
+      ],
+      "tools": []
+    }
+  ],
+  "contextDisplay": {
+    "source": "native_transcript_provenance",
+    "removedBlocks": 27,
+    "requests": 5,
+    "unreadable": 0,
+    "provenReports": 2,
+    "nativeDisplay": "unchanged_local_history_estimates",
+    "capacityExceeded": false
+  },
+  "acceptance": {
+    "nestedInheritance": "pass",
+    "contextRepeat": "pass_observed_native_totals",
+    "allFormats": false,
+    "universal": false
+  }
+}

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -50,7 +51,11 @@ func TestASubagentRegistersAndWithdraws(t *testing.T) {
 		t.Fatalf("role = %q (known=%v), want Explore", role, known)
 	}
 
-	stopped := do(t, g, binding(`{"id":"agent_1","role":"Explore","stop":true}`))
+	wrong := do(t, g, binding(`{"id":"agent_1","role":"Explore","stop":true,"sessionId":"wrong","transcriptPath":"C:/Users/x/.claude/projects/p/s.jsonl"}`))
+	if wrong.StatusCode != http.StatusBadRequest || g.agents.Registered() != 1 {
+		t.Fatal("cross-session stop accepted")
+	}
+	stopped := do(t, g, binding(`{"id":"agent_1","role":"Explore","stop":true,"sessionId":"1b0b3297-ade4-4aa4-86c8-80eaf43db0a3","transcriptPath":"C:/Users/x/.claude/projects/p/s.jsonl"}`))
 	if stopped.StatusCode != http.StatusOK || registeredBy(t, stopped) {
 		t.Fatalf("a SubagentStop left it registered: %s", bodyText(t, stopped))
 	}
@@ -217,7 +222,7 @@ func TestTheBindingEndpointNeedsTheSessionCredentialAndIsNotAModelRoute(t *testi
 
 	// A report larger than a report. Reading it to find out what it is would be doing the
 	// thing the bound exists to prevent.
-	oversized := do(t, g, binding(`{"id":"agent_1","role":"`+strings.Repeat("r", 8192)+`","stop":false}`))
+	oversized := do(t, g, binding(`{"id":"agent_1","role":"`+strings.Repeat("r", maxBindingBytes+1)+`","stop":false}`))
 	if oversized.StatusCode != http.StatusRequestEntityTooLarge {
 		t.Fatalf("oversized = %d, want 413: %s", oversized.StatusCode, bodyText(t, oversized))
 	}
@@ -237,7 +242,8 @@ func withAgent(agent, body string) request {
 func TestASubagentsRoleDecidesWhereItRuns(t *testing.T) {
 	for _, c := range []struct{ role, model, effort string }{
 		{"Explore", "gpt-5.6-luna", "max"},
-		{"Plan", "gpt-6-astra", "low"},
+		// Raised from low on 2026-09-18 at the user's decision -- see roleRoutes.
+		{"Plan", "gpt-6-astra", "medium"},
 		{"general-purpose", "gpt-5.6-luna", "max"},
 	} {
 		t.Run(c.role, func(t *testing.T) {
@@ -296,6 +302,13 @@ func TestRoutingThatCannotHappenDoesNotEndTheTurn(t *testing.T) {
 		// diagnostic that cries wolf on ordinary use stops being read.
 		{name: "a role that deliberately keeps the parent's model",
 			register: `{"id":"agent_1","role":"workflow-subagent","stop":false}`,
+			agent:    "agent_1"},
+		// The same rule, for the entry this build puts in its own menu. Measured in a real
+		// session 2026-09-18: delegating to clauduct-inherit reported agents.unrouted=1 and
+		// dumped the whole account at exit, because the launcher shipped a name the router
+		// had never been told about. Inheriting is not a missing route; it is the answer.
+		{name: "the launcher's own inherit entry",
+			register: `{"id":"agent_1","role":"` + bridge.InheritRole + `","stop":false}`,
 			agent:    "agent_1"},
 		{name: "the subagent was already stopped",
 			register: `{"id":"agent_1","role":"Explore","stop":true}`,
@@ -410,5 +423,50 @@ func TestARepeatedRegistrationKeepsTheRequestsInFlight(t *testing.T) {
 	release()
 	if got := registry.byID["agent_1"].active; got != 0 {
 		t.Fatalf("active = %d after release, want 0", got)
+	}
+}
+
+// (c) of the 2026-09-18 verification round. The response has to name the model that produced
+// it, not the one that was asked for.
+//
+// message_start carries a model and this build was filling it from the request. For an
+// ordinary turn the two are the same string and nothing showed. For a role-routed subagent
+// they are not: measured in a real session, the client asked for gpt-5.6-terra, the role sent
+// it to gpt-6-astra, and the client was told terra.
+//
+// It is not only what the user reads. The client keeps its own per-model ledger from what it
+// believes it ran -- measured the same day, 422,494 input tokens and $2.27 filed under
+// gpt-5.6-terra, which ran nothing at all that session, while gpt-6-astra ran fourteen
+// requests and does not appear. ARCHITECTURE.md:217 already says requested and effective are
+// kept apart and that a request is never quietly moved to a cheaper model; this is the half
+// of that promise the client can see.
+func TestTheResponseNamesTheModelThatProducedIt(t *testing.T) {
+	seen := make(chan upstream.Call, 1)
+	g := startWith(t, &recordingTransport{
+		sse:  sse(created, delta("ok"), done("ok"), completed, "[DONE]"),
+		seen: seen,
+	})
+	if resp := do(t, g, binding(`{"id":"agent_1","role":"Explore","stop":false}`)); resp.StatusCode != http.StatusOK {
+		t.Fatalf("register: %s", bodyText(t, resp))
+	}
+
+	// The client asks for opus, which routes to sol. Explore sends it to luna instead.
+	resp := do(t, g, withAgent("agent_1", `{"model":"claude-opus-5","max_tokens":16,
+	  "stream":true,"messages":[{"role":"user","content":"x"}]}`))
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d: %s", resp.StatusCode, bodyText(t, resp))
+	}
+	body := bodyText(t, resp)
+	call := <-seen
+	if call.Model != "gpt-5.6-luna" {
+		t.Fatalf("ran on %s, want the role's model", call.Model)
+	}
+
+	start, _, _ := strings.Cut(body, "event: content_block_start")
+	if !strings.Contains(start, `"model":"gpt-5.6-luna"`) {
+		t.Errorf("message_start does not name the model that ran:\n%s", start)
+	}
+	if strings.Contains(start, `"model":"claude-opus-5"`) {
+		t.Errorf("message_start named the model the client asked for, which ran nothing:\n%s", start)
 	}
 }

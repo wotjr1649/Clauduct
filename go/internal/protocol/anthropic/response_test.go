@@ -1,11 +1,108 @@
 package anthropic
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestParentWaitOnlyConsumesVerifiedTerminalAnswers(t *testing.T) {
+	for _, withText := range []bool{false, true} {
+		b := NewBuilder("public-model")
+		b.WaitForChildren()
+		if withText {
+			frames, err := b.AppendText("msg", 0, "PREMATURE_PUBLIC_FINAL")
+			if err != nil || len(frames) != 0 {
+				t.Fatal("premature text streamed")
+			}
+			if _, err = b.FinishText("msg", 0, "PREMATURE_PUBLIC_FINAL"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		frames, err := b.Complete(Usage{InputTokens: 42, OutputTokens: 7, InputKnown: true, OutputKnown: true})
+		if err != nil || !b.WaitingForChildren() || b.Answer() != "" {
+			t.Fatal("wait was interpreted as a final report")
+		}
+		raw, _ := json.Marshal(frames)
+		if strings.Contains(string(raw), "PREMATURE_PUBLIC_FINAL") || len(frames) != 6 {
+			t.Fatal("invalid wait frames")
+		}
+		var delta struct {
+			Usage struct {
+				Input  int `json:"input_tokens"`
+				Output int `json:"output_tokens"`
+			}
+		}
+		if json.Unmarshal(frames[4].Data, &delta) != nil || delta.Usage.Input != 42 || delta.Usage.Output != 7 {
+			t.Fatal("wait hid actual usage")
+		}
+	}
+	b := NewBuilder("public-model")
+	if _, err := b.Complete(Usage{}); !errors.Is(err, ErrEmptyReply) {
+		t.Fatal("ordinary empty replies stopped failing")
+	}
+}
+
+func TestDeferredTextEndsWithAnswerAndPreservesReasoning(t *testing.T) {
+	for _, deferred := range []bool{false, true} {
+		b := NewBuilder("m")
+		if deferred {
+			b.DeferTextUntilComplete()
+		}
+		frames, err := b.AppendText("msg", 0, "probe")
+		if err != nil || (len(frames) == 0) != deferred {
+			t.Fatal("ordinary streaming changed or deferred text leaked")
+		}
+		end, err := b.FinishText("msg", 0, "probe")
+		if err != nil {
+			t.Fatal(err)
+		}
+		frames = append(frames, end...)
+		b.AddThought("PUBLIC_SYNTHETIC_ENVELOPE")
+		end, err = b.Complete(Usage{InputTokens: 1, OutputTokens: 1, InputKnown: true, OutputKnown: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		frames = append(frames, end...)
+		var kinds []string
+		var text string
+		starts := 0
+		for _, f := range frames {
+			if f.Type == "message_start" {
+				starts++
+			}
+			var v struct {
+				Index        int
+				ContentBlock struct{ Type, Data string } `json:"content_block"`
+				Delta        struct{ Text string }
+			}
+			if err := json.Unmarshal(f.Data, &v); err != nil {
+				t.Fatal(err)
+			}
+			if f.Type == "content_block_start" {
+				if v.Index != len(kinds) {
+					t.Fatal("non-contiguous blocks")
+				}
+				kinds = append(kinds, v.ContentBlock.Type)
+				if v.ContentBlock.Type == "redacted_thinking" && v.ContentBlock.Data != "PUBLIC_SYNTHETIC_ENVELOPE" {
+					t.Fatal("reasoning changed")
+				}
+			}
+			if f.Type == "content_block_delta" {
+				text += v.Delta.Text
+			}
+		}
+		want := "text,redacted_thinking"
+		if deferred {
+			want = "redacted_thinking,text"
+		}
+		if starts != 1 || strings.Join(kinds, ",") != want || text != "probe" || b.Answer() != "probe" {
+			t.Fatal("lost, duplicated or reordered answer")
+		}
+	}
+}
 
 // A response has a ceiling. Without one, a backend that keeps sending holds memory here
 // for as long as it likes, and the request that is meant to be bounded is not.

@@ -1,0 +1,21 @@
+{
+  "id": "263ef248-4675-4de2-b905-6d0f2bc4dc1d",
+  "productSource": "31ff1184c21d7dac0fccd03394081aacd78b9db5",
+  "sha256": "7feb620944578d85982f8ecac20fe3ffba0096207da0e9b81682f603b5b1036f",
+  "transcriptSHA256": "4d6453e08bc58f57149d24dade5624c75e0a5199d4ad6cac12b768dbf28df0ab",
+  "checks": [
+    "source_native_Read",
+    "custom_role_defaults_sol_high",
+    "model_only_luna_max",
+    "normal_exit_checkpoint",
+    "same_session_new_launcher_restore",
+    "completed_results_43_180_without_child_reexecution",
+    "plan_A_reused_B_not_reexecuted_C_only_144",
+    "original_journals_unchanged",
+    "duplicate_tool_denial",
+    "next_answer_53",
+    "zero_api_failures",
+    "native_reaped_both_phases"
+  ],
+  "humanAcceptance": "not_assessed"
+}

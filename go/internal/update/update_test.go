@@ -364,19 +364,19 @@ func TestTheCommandReportsTheLimitAsItself(t *testing.T) {
 // deadline. Printing them and then punishing someone for reading them is the wrong way
 // round.
 //
-// The deadline here is short and the answer is slow, which puts the expiry exactly where a
-// person would have put it: after the metadata and the digests, before the download.
+// Cancel the metadata context exactly when consent is read. A 50ms wall-clock
+// deadline raced metadata I/O and failed before reaching the behavior under test.
 func TestTheTimeSpentDecidingIsNotChargedToTheDownload(t *testing.T) {
 	dir := installation(t, "old ")
 	server, api := release{tag: "v9.9.9", bodies: newBodies("new ")}.serve(t)
 	defer server.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	var out strings.Builder
 	if code := RunIn(ctx, server.Client(), api, dir,
-		[]string{"--update"}, &slowReader{after: 150 * time.Millisecond, answer: "y" + "\n"}, &out); code != 0 {
+		[]string{"--update"}, &cancelOnRead{Reader: strings.NewReader("y\n"), cancel: cancel}, &out); code != 0 {
 		t.Fatalf("code = %d, want the update to proceed after a slow yes: %s", code, out.String())
 	}
 	for _, name := range Binaries {
@@ -386,20 +386,14 @@ func TestTheTimeSpentDecidingIsNotChargedToTheDownload(t *testing.T) {
 	}
 }
 
-// slowReader answers once, after a wait, the way a person reading three digests does.
-type slowReader struct {
-	after  time.Duration
-	answer string
-	done   bool
+type cancelOnRead struct {
+	io.Reader
+	cancel context.CancelFunc
 }
 
-func (r *slowReader) Read(p []byte) (int, error) {
-	if r.done {
-		return 0, io.EOF
-	}
-	time.Sleep(r.after)
-	r.done = true
-	return copy(p, r.answer), nil
+func (r *cancelOnRead) Read(p []byte) (int, error) {
+	r.cancel()
+	return r.Reader.Read(p)
 }
 
 // An installation that already matches the release is not replaced.

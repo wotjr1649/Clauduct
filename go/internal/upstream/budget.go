@@ -106,6 +106,8 @@ type Attempt struct {
 	Requested, Model, Effort, Source string
 	// Retry says this attempt continues an inference already counted.
 	Retry bool
+	// A warmup is a metered backend attempt, but it generates no model response.
+	CountOnly bool
 }
 
 // RouteRecord is one distinct route a session used.
@@ -147,7 +149,7 @@ func (l *Ledger) Reserve(a Attempt) error {
 	// the answer. An attempt that fails, times out or is cancelled mid-flight still reached
 	// the backend, so nothing is ever given back.
 	l.attempts++
-	if !a.Retry {
+	if !a.Retry && !a.CountOnly {
 		l.inferences++
 	}
 	if l.routes == nil {

@@ -71,12 +71,19 @@ func run() int {
 	}
 
 	env := environMap()
+	sessionDuration, err := app.SessionDuration(env)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clauduct: INVALID_SESSION_TIMEOUT")
+		return 1
+	}
 	resolve := platform.Resolver{}.Claude
 	result, err := app.Run(context.Background(), app.Options{
-		Args:          os.Args[1:],
-		Env:           env,
-		Cwd:           cwd,
-		ResolveClaude: resolve,
+		Args:           os.Args[1:],
+		Env:            env,
+		Cwd:            cwd,
+		ResolveClaude:  resolve,
+		SessionTimeout: sessionDuration,
+		Checkpoint:     app.WriteCheckpoint,
 	})
 
 	// What the session did, said once, at the end. The native client owns the terminal
@@ -113,6 +120,9 @@ func run() int {
 	// and stderr is where it belongs, never mixed into a headless stdout.
 	if result.CleanupErr != nil {
 		fmt.Fprintf(os.Stderr, "clauduct: CLEANUP_FAILED %v\n", result.CleanupErr)
+	}
+	if result.Category == app.CategoryDeadline {
+		return 124
 	}
 	return result.NativeExitCode
 }

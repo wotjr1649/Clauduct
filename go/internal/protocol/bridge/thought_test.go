@@ -9,6 +9,7 @@ import (
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
+	"github.com/wotjr1649/Clauduct/go/internal/stream"
 )
 
 // A reasoning item as the backend delivers it.
@@ -18,6 +19,39 @@ func reasoningItem(id, encrypted, summary string) string {
 }
 
 const oneSummary = `[{"type":"summary_text","text":"considered two paths"}]`
+
+func TestAnswerSurvivesTrailingReasoningButExcludesToolTurns(t *testing.T) {
+	for _, tools := range []bool{false, true} {
+		tr := NewTranslatorFor(callable("Read"), "gpt-5.6-luna")
+		item := reasoningItem("rs_1", "PUBLIC_SYNTHETIC_ENVELOPE", `[]`)
+		for _, ev := range []stream.Event{itemAdded(0, `{"id":"msg_1","type":"message"}`), textDelta(0, "PUBLIC_REPORT"), textDone(0, "PUBLIC_REPORT"), itemDone(0, messageItem("msg_1", "PUBLIC_REPORT")), itemAdded(1, openingOf(item)), itemDone(1, item)} {
+			if _, err := tr.Accept(ev); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if tr.Answer() != "" {
+			t.Fatal("incomplete answer accepted")
+		}
+		if tools {
+			call := `{"id":"fc_1","type":"function_call","call_id":"call_1","name":"Read","arguments":"{}"}`
+			for _, ev := range []stream.Event{itemAdded(2, openingOf(call)), itemDone(2, call)} {
+				if _, err := tr.Accept(ev); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if _, err := tr.Accept(event(codex.Completed, completedOK)); err != nil {
+			t.Fatal(err)
+		}
+		want := "PUBLIC_REPORT"
+		if tools {
+			want = ""
+		}
+		if tr.Answer() != want {
+			t.Fatal("reasoning or tool turn substituted for completed answer")
+		}
+	}
+}
 
 // thoughtData pulls the envelope out of the emitted frames.
 func thoughtData(t *testing.T, frames []anthropic.Frame) string {

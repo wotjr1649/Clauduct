@@ -76,7 +76,24 @@ type ResultSelection struct {
 }
 
 func resultReported(state string) bool {
-	return state == "parent_received" || state == "unavailable_reported" || state == "cancellation_reported"
+	// restored_evidence is historical metadata rather than a task, so it owes the parent
+	// nothing. It belongs here for the same reason the reported states do: every caller is
+	// asking "does this entry still owe a report", and answering no is what lets the
+	// eviction loops reclaim its slot. Left out, it was unreachable by both of them.
+	return state == "parent_received" || state == "unavailable_reported" || state == "cancellation_reported" || state == "restored_evidence"
+}
+
+// deliverable reports whether this turn can hand the entry to its parent.
+//
+// Named rather than inlined because the delivery loop and the pending tally have to agree
+// on it. They did not: the tally treated every stopped entry as settled, while
+// awaiting_workflow_result is stopped because the native turn ended, not because the
+// journal has been read. A child in that state appeared in neither Pending nor
+// Unavailable, so ParentReadiness.Eligible -- which is the AND of both being empty --
+// reported true with a report still outstanding. Completion evidence failing open is
+// worse than failing closed, so the two now read the same function.
+func deliverable(state string) bool {
+	return state == "awaiting_parent" || state == "result_unavailable" || state == "cancelled"
 }
 
 func (r *agentResults) change(e *agentResult, state string) {
@@ -413,12 +430,20 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 	sort.Strings(keys)
 	for _, id := range keys {
 		e := r.entries[id]
+		// Only the live key speaks for an agent. begin() archives a superseded entry under
+		// id+"/"+sequence and installs a fresh one, so walking every key would hand the
+		// parent the previous run's report beside the current one, under the same label and
+		// with a second identical receipt. report() and FinalizeNativeResults already guard
+		// on this; delivery did not.
+		if id != e.Agent {
+			continue
+		}
 		if len(evidence) > 0 && e.Session == session && e.parent == parent && !resultReported(e.State) {
-			if !e.stopped {
+			if !e.stopped || !deliverable(e.State) {
 				evidence[0].Pending = append(evidence[0].Pending, e.Agent)
 			}
 		}
-		if !e.stopped || e.Session != session || e.parent != parent || (e.State != "awaiting_parent" && e.State != "result_unavailable" && e.State != "cancelled") {
+		if !e.stopped || e.Session != session || e.parent != parent || !deliverable(e.State) {
 			continue
 		}
 		// Supply the verified correlation ID independently of native launch prose

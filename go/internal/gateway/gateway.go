@@ -245,10 +245,15 @@ func (g *Gateway) ClientVersion() string {
 // arrives.
 func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 
-// Unrouted reports the subagent requests that kept the client's own model: one count for a
-// registration that never arrived, one for a role with no route.
+// Unrouted reports the subagent requests this build had no route of its own for: one count
+// for a registration that never arrived, one for a role with no route, which runs on the
+// caller's route instead.
 func (g *Gateway) Unrouted() (unregistered, unrouted int64) {
-	return g.unregisteredAgents.Load(), g.unroutedRoles.Load()
+	unrouted = g.unroutedRoles.Load()
+	if g.delegations != nil {
+		unrouted += g.delegations.unroutedRoles.Load()
+	}
+	return g.unregisteredAgents.Load(), unrouted
 }
 
 func (g *Gateway) Stats() (received, refused, active int64) {

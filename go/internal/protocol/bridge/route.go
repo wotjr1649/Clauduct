@@ -157,12 +157,12 @@ func InheritsParent(role string) bool { return inheritRoles[role] }
 // what it knows and invents nothing, because inventing one would run the user's work
 // somewhere the user did not choose.
 //
-// What the caller does with "not known" is the caller's, and it changed. Keeping the
-// client's model was right while a child's identity was unverified anyway; with the context
-// policy on -- which the launcher does unconditionally -- an unverified selection now
-// refuses, the same rule as an unsupported model or effort combination. The gateway records
-// which kind of miss it was before it refuses, so the counters below still describe
-// something real.
+// What the caller does with "not known" is the caller's. It runs the child on the route of
+// whatever asked for it, which is the same answer 0.2.x arrived at by leaving the client's
+// model alone -- and it is recorded as a choice rather than waved through, because a child
+// with no recorded choice is invisible to the completion evidence and lets its parent answer
+// as complete with a report outstanding. An explicit effort is still refused: there is no
+// catalogue entry to apply it to, and inventing one is the guess this build does not make.
 func RoleRoute(role string) (Route, bool) {
 	if route, known := roleRoutes[role]; known {
 		return route, true

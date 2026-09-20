@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
@@ -49,6 +50,12 @@ func (c resolvedChoice) isWorkflow() bool {
 // Correlate a resolved Agent call with native child metadata. Full IDs and native
 // aliases follow the same precedence; role prompts and tools stay with the client.
 type delegations struct {
+	// Roles this build had no route for, run on the caller's. Counted here rather than in
+	// the gateway's override block, which is where it used to happen and no longer runs:
+	// prepare resolves a route for every role now, so a counter left there would report zero
+	// for a condition that still occurs.
+	unroutedRoles atomic.Int64
+
 	selectionRecent     []*SelectionRecord
 	selectionTotals     map[string]int64
 	mu                  sync.Mutex
@@ -283,6 +290,18 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			if !known {
 				route, known = bridge.RoleRoute(role)
 			}
+		}
+		if !known && !hasEffort && scope.route.Model != "" {
+			// A role with no route of its own runs on the caller's, which is what 0.2.x did
+			// by leaving the client's model alone. It has to be recorded as a choice rather
+			// than waved through, because results.start is reached only through cacheChoice:
+			// a child with no resolved choice is invisible to the completion evidence, and a
+			// parent can then answer as complete while that child's report is outstanding.
+			//
+			// Not marked inherited. That flag means a task-bound explicit selection is fixed
+			// for descendants, and this is a fallback rather than a selection anybody made.
+			d.unroutedRoles.Add(1)
+			route, known, source = scope.route, true, "agent-call-unrouted-parent"
 		}
 		if !known {
 			if hasEffort {

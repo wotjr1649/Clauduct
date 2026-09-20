@@ -65,7 +65,7 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-.\scripts\install.ps1 -Tag v0.2.3        # 태그 고정
+.\scripts\install.ps1 -Tag v0.3.0        # 태그 고정
 .\scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
 .\scripts\install.ps1 -NoPathUpdate      # PATH는 직접 관리
 .\scripts\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
@@ -75,7 +75,7 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 명령입니다.
 
 ```powershell
-clauduct-dev version   # Clauduct 자신: 0.2.3, commit, Go 버전
+clauduct-dev version   # Clauduct 자신: 0.3.0, commit, Go 버전
 clauduct --version     # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
 

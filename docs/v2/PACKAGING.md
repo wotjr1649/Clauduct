@@ -79,7 +79,7 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 ```powershell
 # 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
 #    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).
-git worktree add ../clauduct-release v0.2.3
+git worktree add ../clauduct-release v0.3.0
 cd ../clauduct-release/go
 $env:CGO_ENABLED = '0'
 # 산출물은 반드시 트리 **바깥**으로. 안에 쓰면 두 번째 빌드부터 자기가 만든 exe 때문에
@@ -97,7 +97,7 @@ go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
 #    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
-# 4. gh release create v0.2.3 clauduct.exe clauduct-hook.exe clauduct-dev.exe `
+# 4. gh release create v0.3.0 clauduct.exe clauduct-hook.exe clauduct-dev.exe `
 #        install.ps1 uninstall.ps1 SHA256SUMS
 ```
 

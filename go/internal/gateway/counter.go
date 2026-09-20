@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"sync"
 	"time"
 
@@ -64,6 +65,17 @@ func (g *Gateway) countInput(ctx context.Context, built *bridge.Request, raw []b
 				c.mu.Unlock()
 				if bad == backendCount || bad != "" && bad == flight.method {
 					return 0, "exact-count-shared", flight.method, upstream.Failure{Category: "COUNT_SOURCE_QUARANTINED"}
+				}
+				if errors.Is(flight.err, context.Canceled) || errors.Is(flight.err, context.DeadlineExceeded) {
+					// The owner's request went away; this one did not. Its cancellation is
+					// not an answer to share -- handed back, it becomes a
+					// COUNT_TOKENS_FAILED_CANCELLED for a request nobody cancelled, because
+					// the handler's own ctx.Err() is nil here. The flight is already out of
+					// c.pending, so retrying takes it over rather than waiting again.
+					if ctx.Err() != nil {
+						return 0, "exact-count-wait", "", ctx.Err()
+					}
+					continue
 				}
 				return flight.tokens, "exact-count-shared", flight.method, flight.err
 			}

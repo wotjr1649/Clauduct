@@ -203,7 +203,13 @@ func (g *Gateway) reconcileNativeResults() {
 	}
 	pending := make([]snapshot, 0, len(r.entries))
 	for key, e := range r.entries {
-		if !e.NativeEndObserved && e.NativeTurn != "" {
+		// A receipt settles a turn whose outcome is still open. Once the report has reached
+		// the parent there is nothing left for it to settle, and applying one anyway undid
+		// the delivery: a late aborted receipt cleared the body and moved the entry to
+		// cancelled, so the next turn told a parent that already held the real report that
+		// no completed report was expected from it. The pointer guard below protects a
+		// resumed entry, which is a different entry; this is the same one.
+		if !e.NativeEndObserved && e.NativeTurn != "" && !resultReported(e.State) {
 			pending = append(pending, snapshot{key, e, e.AgentResultRecord})
 		}
 	}

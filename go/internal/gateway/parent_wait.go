@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 
@@ -10,6 +11,13 @@ import (
 
 // This is a structural completion condition, never a review of a child's findings.
 // Identifiers only: result bodies stay in the existing delivery path.
+// A journal this build could not write is a local, permanent condition, and the status
+// class is a retry instruction: a plain error here fell through categoryFor to
+// UPSTREAM_FAILURE and 502, which the measured client answers with eight requests in sixty
+// seconds. The sibling path that meets the identical failure one write earlier already
+// returns 400 by name. One condition, one classification.
+var errParentWaitUnverified = errors.New("PARENT_WAIT_UNVERIFIED")
+
 type ParentReadiness struct {
 	Pending     []string `json:"pending,omitempty"`
 	Included    []string `json:"includedResults,omitempty"`

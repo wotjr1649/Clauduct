@@ -707,7 +707,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 				_ = g.verifyCount(recordOf(w))
 				if translator.Builder().WaitingForChildren() {
 					if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {
-						fail(errors.New("PARENT_WAIT_UNVERIFIED"))
+						fail(errParentWaitUnverified)
 						return false
 					}
 					entry := recordOf(w)
@@ -799,6 +799,8 @@ func categoryFor(err error) string {
 		return "UNSUPPORTED_MODEL_OR_EFFORT"
 	case errors.Is(err, errDelegationUnverified):
 		return "AGENT_SELECTION_UNVERIFIED"
+	case errors.Is(err, errParentWaitUnverified):
+		return "PARENT_WAIT_UNVERIFIED"
 	case errors.Is(err, errWorkflowRecoveryUnverified):
 		return "WORKFLOW_RECOVERY_UNVERIFIED"
 	case errors.Is(err, upstream.ErrNoTransport):
@@ -881,7 +883,7 @@ func statusForUpstream(err error) int {
 	switch {
 	case errors.Is(err, bridge.ErrUnsupportedRoute):
 		return http.StatusBadRequest
-	case errors.Is(err, errDelegationUnverified), errors.Is(err, errWorkflowRecoveryUnverified):
+	case errors.Is(err, errDelegationUnverified), errors.Is(err, errWorkflowRecoveryUnverified), errors.Is(err, errParentWaitUnverified):
 		return http.StatusBadRequest
 	case errors.Is(err, upstream.ErrNoTransport):
 		return http.StatusBadRequest

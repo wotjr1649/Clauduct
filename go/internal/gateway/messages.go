@@ -116,10 +116,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	g.stripContextDisplays(request, scope.session)
 	g.reconcileNativeResults()
 	g.reconcileWorkflowResults(false)
-	if !g.observeMessageFailures(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id")) {
-		g.refuseCategory(w, 400, "TOOL_FAILURE_CAPACITY")
-		return
-	}
+	g.observeMessageFailures(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
 	if g.delegations != nil {
 		g.delegations.restoreSelectionHistory(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
 		g.delegations.toolFailures(scope.session, request)

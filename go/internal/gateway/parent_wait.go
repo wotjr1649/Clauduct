@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 )
@@ -136,5 +137,19 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 		return err
 	}
 	defer root.Remove(temp)
-	return root.Rename(temp, "decision-"+name+".json")
+	// Bounded retry, which the other atomic writers here do not need. They are renamed over
+	// files only this process reads; this one is renamed over a file the plugin reads at
+	// exactly this moment -- that race is why it stopped being an in-place write. Windows
+	// refuses to replace a file whose reader did not share delete access, and libuv does
+	// share it, so the expected number of retries is zero; an antivirus or indexer holding
+	// it briefly is the case this covers. A few milliseconds beats turning a transient
+	// sharing violation into a hard PARENT_WAIT_UNVERIFIED.
+	var renameErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		if renameErr = root.Rename(temp, "decision-"+name+".json"); renameErr == nil {
+			return nil
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return renameErr
 }

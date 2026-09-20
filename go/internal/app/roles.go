@@ -44,14 +44,20 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	}
 	var def roleDefault
 	found := false
-	// A definition this scan could not read may be the one being asked for, so the answer
-	// below is "unverified" rather than "absent". It is not a reason to lose the definitions
-	// that did parse, which is what aborting the walk cost.
-	scanned := false
+	// A definition this scan could not read is not a reason to lose the definitions that did
+	// parse, which is what aborting the walk cost. It is a reason not to trust an answer the
+	// skipped file could have outranked.
+	//
+	// Two flags, because the priority matters. A skip in a directory searched before the
+	// match may hold this very role at a higher priority, so the match is unverified. A skip
+	// in the same directory as the match, or below it, cannot outrank what was found, and
+	// treating it as if it could would put us back where the abort was: one stray markdown
+	// file ending every role beside it.
+	incompleteAbove, incompleteAnywhere := false, false
 	for i, dir := range s.directories {
 		if i == s.managed {
-			def, found = s.cli[role]
-			if found {
+			if def, found = s.cli[role]; found {
+				incompleteAbove = incompleteAnywhere
 				break
 			}
 		}
@@ -62,23 +68,33 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if err != nil {
 			return bridge.Route{}, false, err
 		}
-		scanned = scanned || incomplete
-		def, found = defs[role]
-		if found {
+		if def, found = defs[role]; found {
+			incompleteAbove = incompleteAnywhere
+			incompleteAnywhere = incompleteAnywhere || incomplete
 			break
 		}
+		incompleteAnywhere = incompleteAnywhere || incomplete
 	}
 	if !found {
-		def, found = s.cli[role]
+		// The CLI set was not reached inside the loop, so every directory outranks it here
+		// and any skip among them could have held this role.
+		if def, found = s.cli[role]; found {
+			incompleteAbove = incompleteAnywhere
+		}
 	}
 	if !found {
 		if strings.Contains(role, ":") && s.pluginError != nil {
 			return bridge.Route{}, false, s.pluginError
 		}
-		if scanned {
+		// A file this scan passed over may be the definition being asked for, so the answer
+		// is unverified rather than absent.
+		if incompleteAnywhere {
 			return bridge.Route{}, false, errRoleDefaults
 		}
 		return bridge.Route{}, false, nil
+	}
+	if incompleteAbove {
+		return bridge.Route{}, false, errRoleDefaults
 	}
 	if def.invalid {
 		return bridge.Route{}, false, errRoleDefaults

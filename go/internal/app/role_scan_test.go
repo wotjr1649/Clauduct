@@ -79,3 +79,29 @@ func TestAnUnknownRoleInACleanScanIsAbsentNotAnError(t *testing.T) {
 		t.Fatalf("found=%v err=%v", found, err)
 	}
 }
+
+// Priority is what makes a skip matter. A file passed over in a directory searched before
+// the match may hold this very role at a higher priority, so answering from the lower one
+// would be the silent misroute that skipping rather than aborting was not supposed to buy.
+// A skip in the matching directory or below it cannot outrank what was found, and treating
+// it as if it could puts one stray markdown file back in charge of every role beside it.
+func TestASkipOnlyInvalidatesAMatchItCouldHaveOutranked(t *testing.T) {
+	high, low := t.TempDir(), t.TempDir()
+	if os.WriteFile(filepath.Join(high, "notes.md"), []byte("---\nno closing fence\n"), 0600) != nil {
+		t.Fatal("write")
+	}
+	if os.WriteFile(filepath.Join(low, "reviewer.md"), []byte("---\nname: reviewer\ndescription: proof\nmodel: gpt-5.6-terra\neffort: high\n---\nPrompt"), 0600) != nil {
+		t.Fatal("write")
+	}
+	parent := bridge.Route{Model: "gpt-6-astra", Effort: "low"}
+	above := roleSources{directories: []roleDirectory{{path: high}, {path: low}}}
+	if _, _, err := above.resolve("reviewer", parent); err == nil {
+		t.Fatal("a lower-priority definition answered while a higher-priority file went unread")
+	}
+	// The same two directories the other way round: the skip is now below the match.
+	below := roleSources{directories: []roleDirectory{{path: low}, {path: high}}}
+	route, found, err := below.resolve("reviewer", parent)
+	if err != nil || !found || route.Model != "gpt-5.6-terra" {
+		t.Fatalf("a skip beneath the match invalidated it: %s/%s found=%v err=%v", route.Model, route.Effort, found, err)
+	}
+}

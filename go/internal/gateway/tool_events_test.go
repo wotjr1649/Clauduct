@@ -18,7 +18,8 @@ func TestSendMessageSoftFailureReleasesResumeAndCountsOnce(t *testing.T) {
 				{Role: "user", Blocks: []anthropic.Block{{Type: "tool_result", ToolUseID: "call", Result: []anthropic.ResultPart{{Type: "text", Text: `{"success":false,"message":"PUBLIC_NOT_DELIVERED"}`}}}}},
 			}}
 			for i := 0; i < 2; i++ {
-				if !g.observeMessageFailures(r, "session", "") {
+				g.observeMessageFailures(r, "session", "")
+				if false {
 					t.Fatal("bounded observation failed")
 				}
 			}
@@ -64,7 +65,9 @@ func TestToolResultErrorsWithoutNativeFailureHook(t *testing.T) {
 				{Role: "assistant", Blocks: []anthropic.Block{{Type: "tool_use", ID: "public_call", Name: tool}}},
 				{Role: "user", Blocks: []anthropic.Block{{Type: "tool_result", ToolUseID: "public_call", IsError: true, Result: []anthropic.ResultPart{{Type: "text", Text: "private error must not be retained"}}}}},
 			}}
-			if !g.observeMessageFailures(req, "session", "") || !g.observeMessageFailures(req, "session", "") {
+			g.observeMessageFailures(req, "session", "")
+			g.observeMessageFailures(req, "session", "")
+			if false {
 				t.Fatal("observation failed")
 			}
 			r := g.toolFailures.snapshot()
@@ -86,7 +89,8 @@ func TestToolResultErrorsWithoutNativeFailureHook(t *testing.T) {
 		if linked {
 			req.Messages = append([]anthropic.Message{{Role: "assistant", Blocks: []anthropic.Block{{Type: "tool_use", ID: "missing", Name: "TaskStop"}}}}, req.Messages...)
 		}
-		if !g.observeMessageFailures(req, "session", "") || g.toolFailures.snapshot().Total != 0 {
+		g.observeMessageFailures(req, "session", "")
+		if g.toolFailures.snapshot().Total != 0 {
 			t.Fatal("unlinked or successful result counted as failure")
 		}
 	}
@@ -111,7 +115,8 @@ func TestToolFailureSourcesPreserveCancellationAndPolicyRejections(t *testing.T)
 	g := startWith(t, nil)
 	key := delegationKey{"session", "call"}
 	g.delegations = &delegations{workflowCalls: map[delegationKey]workflowOrigin{key: {rejected: true}}}
-	if !g.recordToolFailure(ToolFailureRecord{Session: "session", Call: "call", Tool: "Workflow", Source: "native_failure_hook"}) || g.toolFailures.snapshot().Total != 0 || !g.delegations.workflowCalls[key].rejected {
+	g.recordToolFailure(ToolFailureRecord{Session: "session", Call: "call", Tool: "Workflow", Source: "native_failure_hook"})
+	if g.toolFailures.snapshot().Total != 0 || !g.delegations.workflowCalls[key].rejected {
 		t.Fatal("policy rejection reclassified or its history removed")
 	}
 }

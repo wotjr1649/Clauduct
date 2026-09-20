@@ -199,7 +199,13 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 		if !waiting || binding.SessionID != session || binding.Role != choice.role || err != nil || meta.ToolUseID != choice.call || meta.ParentAgentID != choice.parent || meta.AgentType != choice.role || !metadataModelMatches(choice.role, choice.alias, meta.Model) || meta.StoppedByUser {
 			return
 		}
-		if !r.begin(id) || !g.bindNativeTurn(session, id) {
+		// applyNativeTurn with the receipt read and validated at the top of this function,
+		// rather than bindNativeTurn re-reading it. begin() is destructive for exactly the
+		// state that got us here -- awaiting_children -- so a re-read that fails in the
+		// window since, which holds a metadata file read, would destroy the evidence
+		// continuation needs and refuse anyway. Only the turn comparison can fail now, and
+		// clearing the previous turn is what begin() is for.
+		if !r.begin(id) || !g.applyNativeTurn(id, active) {
 			return
 		}
 	}

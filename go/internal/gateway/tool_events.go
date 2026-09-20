@@ -79,14 +79,15 @@ func (g *Gateway) handleToolFailure(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	event.Source = "native_failure_hook"
-	if !g.recordToolFailure(event) {
-		g.refuseCategory(w, 400, "TOOL_FAILURE_CAPACITY")
-		return
-	}
+	g.recordToolFailure(event)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (g *Gateway) recordToolFailure(event ToolFailureRecord) bool {
+// No return value. Reaching the cap stopped being a refusal when the oldest counted call
+// started making room, and a bool nothing can set to false leaves callers holding refusal
+// branches that cannot fire -- a reader takes those for a live safeguard. CapacityExceeded
+// in the report is the one signal that the cap was reached.
+func (g *Gateway) recordToolFailure(event ToolFailureRecord) {
 	// Controlled policy rejections already have their own counter. Keep the
 	// saved original call so later requests can recover the correct history.
 	if d := g.delegations; d != nil && event.Tool == "Workflow" {
@@ -94,7 +95,7 @@ func (g *Gateway) recordToolFailure(event ToolFailureRecord) bool {
 		rejected := d.workflowCalls[delegationKey{event.Session, event.Call}].rejected
 		d.mu.Unlock()
 		if rejected {
-			return true
+			return
 		}
 	}
 	f := &g.toolFailures
@@ -153,15 +154,14 @@ func (g *Gateway) recordToolFailure(event ToolFailureRecord) bool {
 		}
 		d.mu.Unlock()
 	}
-	return true
 }
 
 // Native validation errors (for example TaskStop on a finished task) can return
 // is_error without PostToolUseFailure. Match a real call/result pair; never parse
 // error-looking text as a failure. SendMessage also has its success:false form.
-func (g *Gateway) observeMessageFailures(req *anthropic.Request, session, agent string) bool {
+func (g *Gateway) observeMessageFailures(req *anthropic.Request, session, agent string) {
 	if !correlationShape.MatchString(session) || agent != "" && !correlationShape.MatchString(agent) {
-		return true
+		return
 	}
 	calls := map[string]string{}
 	for _, m := range req.Messages {
@@ -183,9 +183,7 @@ func (g *Gateway) observeMessageFailures(req *anthropic.Request, session, agent 
 				if strings.HasPrefix(tool, "mcp__") {
 					name = "MCP"
 				}
-				if !g.recordToolFailure(ToolFailureRecord{Session: session, Agent: agent, Call: b.ToolUseID, Tool: name, Source: "tool_result"}) {
-					return false
-				}
+				g.recordToolFailure(ToolFailureRecord{Session: session, Agent: agent, Call: b.ToolUseID, Tool: name, Source: "tool_result"})
 				continue
 			}
 			if tool != "SendMessage" {
@@ -199,12 +197,9 @@ func (g *Gateway) observeMessageFailures(req *anthropic.Request, session, agent 
 					Success *bool `json:"success"`
 				}
 				if json.Unmarshal([]byte(part.Text), &result) == nil && result.Success != nil && !*result.Success {
-					if !g.recordToolFailure(ToolFailureRecord{Session: session, Agent: agent, Call: b.ToolUseID, Tool: "SendMessage", Source: "tool_result"}) {
-						return false
-					}
+					g.recordToolFailure(ToolFailureRecord{Session: session, Agent: agent, Call: b.ToolUseID, Tool: "SendMessage", Source: "tool_result"})
 				}
 			}
 		}
 	}
-	return true
 }

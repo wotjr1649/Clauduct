@@ -478,15 +478,19 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 }
 
 func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
-	if !d.results.start(id, choice) {
-		return errDelegationUnverified
-	}
-	if len(d.resolved) >= maxAgents {
+	// Before start(), not after. start() installs r.entries[id] as running, and a refusal
+	// below would then leave an entry with no resolved choice behind: stoppedTurn returns
+	// early without one, so it never stops, never reports, and both eviction loops skip it.
+	// Every refusal would burn one of those slots for the life of the process.
+	//
+	// Only when this id is new, the guard prepareResume already has: re-caching an agent
+	// that is already resolved adds nothing to the map, so evicting for it drops an
+	// unrelated agent for nothing.
+	if _, held := d.resolved[id]; !held && len(d.resolved) >= maxAgents {
 		// Map iteration picks an arbitrary victim, and it could be a running agent: without
 		// its resolved choice, a plan child recomputes its step index one past the real one
 		// and refuses from then on. Only an agent that owes nothing is dropped, and when
-		// none does this refuses -- which is what results.start above already does rather
-		// than discard live work.
+		// none does this refuses rather than discarding live work.
 		evicted := ""
 		d.results.mu.Lock()
 		for key := range d.resolved {
@@ -500,6 +504,9 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 			return errDelegationUnverified
 		}
 		delete(d.resolved, evicted)
+	}
+	if !d.results.start(id, choice) {
+		return errDelegationUnverified
 	}
 	if choice.receipt == nil {
 		choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Parent: choice.parent, Call: choice.call, Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias, State: "restored"})

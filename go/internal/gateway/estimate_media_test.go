@@ -23,6 +23,14 @@ func TestReasoningIsOpaqueButIsNotMedia(t *testing.T) {
 	if _, opaque, media := estimateTextInput(text); opaque || media {
 		t.Fatalf("text: opaque=%v media=%v", opaque, media)
 	}
+	// The line this exists for: a part kind outside the named set is unestimated, so opaque,
+	// but it is not media and must not reach the counter. Inferring media from "not text"
+	// made every future part kind media by default, which is the defect the named set
+	// removed -- and nothing failed when it was inferred, because no test used one.
+	unknown := &bridge.Request{Input: []bridge.InputEntry{{Content: []bridge.InputPart{{Type: "input_audio"}}}}}
+	if _, opaque, media := estimateTextInput(unknown); !opaque || media {
+		t.Fatalf("an unnamed part kind: opaque=%v media=%v", opaque, media)
+	}
 }
 
 // A journal whose content is already on disk has nothing unwritten, so the flag that says

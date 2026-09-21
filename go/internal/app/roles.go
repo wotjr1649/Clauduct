@@ -145,6 +145,19 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 			if os.IsNotExist(walkErr) && path == dir.path {
 				return nil
 			}
+			// A directory this scan cannot enter holds definitions it cannot name, which is
+			// the same thing an unreadable file is and gets the same answer: skip it. Failing
+			// the walk here refused every role in the session over one unreadable
+			// subdirectory -- the blast radius this whole mechanism exists to remove, left
+			// in place for directories while the comment above it described files.
+			//
+			// Not covered by a test, and deliberately not covered badly: producing a
+			// directory WalkDir cannot read needs permissions this build's only platform
+			// does not give a test process. Reverting this line fails nothing, which is
+			// recorded here rather than implied by a test that passes for another reason.
+			if entry != nil && entry.IsDir() {
+				return nil
+			}
 			return errRoleDefaults
 		}
 		count++
@@ -155,20 +168,22 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 			return nil
 		}
 		// The name an unreadable file claims. Frontmatter is what would have said otherwise
-		// and it is exactly what could not be read, so the path is the only name there is.
-		// It is recorded as a claim on that role, not as a definition of it.
+		// and it is exactly what could not be read, so the filename is the only name there
+		// is. It is recorded as a claim on that role, not as a definition of it.
 		//
-		// Relative to the directory, not just the base name. This walk recurses, so a stale
-		// draft left in a subdirectory shares a stem with the real definition above it, and
-		// claiming that stem would refuse a role the draft has no say over. Scoped this way
-		// only a file at the level a role is actually read from can claim its name. The cost
-		// is a subdirectory file that really did declare an occupied name and cannot be read
-		// to prove it, which nothing short of parsing it could tell.
-		relative, relErr := filepath.Rel(dir.path, path)
-		if relErr != nil {
-			relative = filepath.Base(path)
-		}
-		passedOver := filepath.ToSlash(strings.TrimSuffix(relative, filepath.Ext(relative)))
+		// The base name, which is what a readable file at this path is named from twenty
+		// lines down. Keying the claim on the path relative to the directory instead put the
+		// two derivations in different namespaces: a plugin's unreadable agents/drafts/x.md
+		// claimed "p:drafts/x" while a readable one would have taken "p:x", so the role it
+		// could not vouch for resolved as simply absent and ran on the caller's model.
+		//
+		// This walk recurses, so a stale draft in a subdirectory now claims the stem of the
+		// definition above it and that role is refused. That is the loud answer where the
+		// other was the silent one, which is the direction to be wrong in. Reading only the
+		// directory's own level would remove the question rather than answer it; whether
+		// native scans these trees recursively is not measured here, and the change is not
+		// one to make on an assumption.
+		passedOver := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		if dir.prefix != "" {
 			passedOver = dir.prefix + ":" + passedOver
 		}

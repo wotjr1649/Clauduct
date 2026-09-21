@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -127,8 +128,16 @@ func TestAnUnreadableDuplicateUnderAnotherFilenameIsNotCaught(t *testing.T) {
 	if os.WriteFile(filepath.Join(above, "reviewer.md"), []byte("---\nname: reviewer\nmodel: [broken]\n---\n"), 0600) != nil {
 		t.Fatal("write")
 	}
+	parent := bridge.Route{Model: "gpt-6-astra", Effort: "low"}
+	// A positive control first: the lower directory alone answers, so the refusal below is
+	// the upper directory's doing and not this one's. Without it the assertion held whether
+	// or not the second directory was ever opened -- resolve breaks at the first hit, so
+	// deleting {path: dir} left the test passing byte for byte.
+	if route, found, err := (roleSources{directories: []roleDirectory{{path: dir}}}).resolve("reviewer", parent); err != nil || !found || route.Model != "gpt-5.6-terra" {
+		t.Fatalf("control: %s found=%v err=%v", route.Model, found, err)
+	}
 	shadowed := roleSources{directories: []roleDirectory{{path: above}, {path: dir}}}
-	if _, found, err := shadowed.resolve("reviewer", bridge.Route{Model: "gpt-6-astra", Effort: "low"}); err == nil {
-		t.Fatalf("a readable definition answered while a file of that name went unread above it: found=%v", found)
+	if _, found, err := shadowed.resolve("reviewer", parent); !errors.Is(err, errRoleDefaults) || found {
+		t.Fatalf("a readable definition answered while a file of that name went unread above it: found=%v err=%v", found, err)
 	}
 }

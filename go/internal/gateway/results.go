@@ -162,6 +162,10 @@ func (r *agentResults) begin(id string) bool {
 			e.NativeTurn = ""
 			e.NativeEndObserved = false
 			e.EndReason = ""
+			// The category belonged to the turn being cleared. Left attached, deliver quotes
+			// it to the parent as this turn's failure; the stopped leg of this same function
+			// builds a fresh record and drops it, so the two disagreed.
+			e.RequestFailure = ""
 			e.since = time.Now().Truncate(time.Millisecond)
 			r.change(e, "running")
 		}

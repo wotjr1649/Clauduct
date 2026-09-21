@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +52,10 @@ func (c resolvedChoice) isWorkflow() bool {
 // Correlate a resolved Agent call with native child metadata. Full IDs and native
 // aliases follow the same precedence; role prompts and tools stay with the client.
 type delegations struct {
+	// projectsErr is why the projects tree could not be created, for the diagnostic that
+	// would otherwise report only that every delegation was refused.
+	projectsErr error
+
 	// Roles this build had no route for, run on the caller's. Counted here rather than in
 	// the gateway's override block, which is where it used to happen and no longer runs:
 	// prepare resolves a route for every role now, so a counter left there would report zero
@@ -136,8 +142,12 @@ func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (brid
 // start over a directory the client may create a moment later would be the same mistake in
 // a louder place.
 func (g *Gateway) ConfigureDelegations(projects string) {
-	_ = os.MkdirAll(projects, 0o700)
-	g.delegations = &delegations{projects: projects, events: g.nativeEvents.directory,
+	// Recorded, not discarded. Ten of the fourteen readers of this path hard-refuse on a
+	// root they cannot open, and ENOTDIR -- what a projects path that is a regular file
+	// produces -- is not os.IsNotExist, so every one of them refuses with a message naming
+	// nothing. The error here is the only place that condition has a name.
+	mkdirErr := os.MkdirAll(projects, 0o700)
+	g.delegations = &delegations{projects: projects, events: g.nativeEvents.directory, projectsErr: mkdirErr,
 		pending: map[delegationKey]delegatedChoice{}, resolved: map[string]resolvedChoice{}}
 }
 
@@ -482,7 +492,11 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	// identities exact; only reconcile a known built-in reported by both native
 	// sources after the requested model/effort has independently been selected.
 	role := choice.role
-	if _, builtin := bridge.RoleRoute(binding.Role); builtin && !strings.HasPrefix(binding.Role, bridge.MenuPrefix) && strings.EqualFold(role, binding.Role) && !strings.HasPrefix(choice.route.Source, "agent-call-definition") {
+	// InheritsParent as well as RoleRoute. The fold added to those two helpers fixed the
+	// model check for a differently-cased fork and left this one exact, so the same call
+	// passed there and failed here on ROLE_MISMATCH -- the defect moved rather than went.
+	_, builtin := bridge.RoleRoute(binding.Role)
+	if (builtin || bridge.InheritsParent(binding.Role)) && !strings.HasPrefix(binding.Role, bridge.MenuPrefix) && strings.EqualFold(role, binding.Role) && !strings.HasPrefix(choice.route.Source, "agent-call-definition") {
 		role = binding.Role
 	}
 	switch {
@@ -590,6 +604,16 @@ type selectionIntent struct {
 	EffortProvided bool   `json:"effortProvided"`
 }
 
+// choiceAbsent is the answer when no journal exists for this child: a role this build
+// routes owes one, anything else falls through to native's own routing.
+func (d *delegations) choiceAbsent(binding agentBinding) (resolvedChoice, bool, error) {
+	var empty resolvedChoice
+	if _, known := bridge.RoleRoute(binding.Role); known || bridge.InheritsParent(binding.Role) {
+		return empty, false, errDelegationUnverified
+	}
+	return empty, false, nil
+}
+
 func (d *delegations) choicePath(binding agentBinding) (*os.Root, string, error) {
 	if !correlationShape.MatchString(binding.ID) || !correlationShape.MatchString(binding.SessionID) || filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
 		return nil, "", errDelegationUnverified
@@ -600,7 +624,13 @@ func (d *delegations) choicePath(binding agentBinding) (*os.Root, string, error)
 	}
 	root, err := os.OpenRoot(d.projects)
 	if err != nil {
-		return nil, "", errDelegationUnverified
+		// Wrapped, not replaced. Callers that only classify still see
+		// errDelegationUnverified; loadChoice can additionally ask whether the tree is
+		// merely absent and route that into the role-aware branch it already has, instead of
+		// being short-circuited past it for every role. That divergence is the one
+		// ConfigureDelegations' comment names and this is the line it was one function away
+		// from.
+		return nil, "", fmt.Errorf("%w: %w", errDelegationUnverified, err)
 	}
 	return root, filepath.Join(rel, binding.SessionID, "subagents", "agent-"+binding.ID+".clauduct-selection.json"), nil
 }
@@ -638,15 +668,17 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	}
 	root, path, err := d.choicePath(binding)
 	if err != nil {
-		return empty, false, err
+		if !errors.Is(err, fs.ErrNotExist) {
+			return empty, false, err
+		}
+		// A tree that is not there holds no journal, which is the question the branch below
+		// answers. Falling through to it beats refusing every role over the same condition.
+		return d.choiceAbsent(binding)
 	}
 	defer root.Close()
 	file, err := root.Open(path)
 	if os.IsNotExist(err) {
-		if _, known := bridge.RoleRoute(binding.Role); known || bridge.InheritsParent(binding.Role) {
-			return empty, false, errDelegationUnverified
-		}
-		return empty, false, nil
+		return d.choiceAbsent(binding)
 	}
 	if err != nil {
 		return empty, false, errDelegationUnverified

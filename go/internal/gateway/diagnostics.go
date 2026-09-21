@@ -765,6 +765,11 @@ type AgentCounts struct {
 	Registered   int   `json:"registered"`
 	Unregistered int64 `json:"unregistered"`
 	Unrouted     int64 `json:"unrouted"`
+	// ProjectsUnavailable is why the projects tree could not be created, when it could not.
+	// Every reader of that tree refuses without it, and ENOTDIR -- a projects path that is a
+	// regular file -- is not an absence any of them recognise, so this is the only place the
+	// condition is named.
+	ProjectsUnavailable string `json:"projectsUnavailable,omitempty"`
 	// FellBackToCaller ran, on the caller's route, because this build has no route of its
 	// own for that role. Separate from Unrouted, which counts refusals: one field holding
 	// both would mean neither, and every native built-in outside the three in the role table
@@ -784,6 +789,10 @@ func (g *Gateway) Snapshot() Diagnostics {
 	received, refused, active := g.Stats()
 	unregistered, unrouted := g.Unrouted()
 	fellBack := g.FellBackToCaller()
+	projectsErr := ""
+	if g.delegations != nil && g.delegations.projectsErr != nil {
+		projectsErr = g.delegations.projectsErr.Error()
+	}
 	results := AgentResultReport{}
 	selections := SelectionReport{}
 	var countStats *upstream.CountConnectionStats
@@ -812,10 +821,11 @@ func (g *Gateway) Snapshot() Diagnostics {
 			Active:       active, ModelLists: g.ModelLists(),
 		},
 		Agents: AgentCounts{
-			Registered:       g.agents.Registered(),
-			Unregistered:     unregistered,
-			Unrouted:         unrouted,
-			FellBackToCaller: fellBack,
+			Registered:          g.agents.Registered(),
+			Unregistered:        unregistered,
+			Unrouted:            unrouted,
+			FellBackToCaller:    fellBack,
+			ProjectsUnavailable: projectsErr,
 		},
 		Betas: g.betas.report(),
 		Client: ClientReport{

@@ -61,7 +61,7 @@ export const register = on => {
     // the gateway uses for the files it writes is not available on this side, so a reader
     // can land mid-write and the gateway counts an invalid receipt -- which is one reason
     // the gateway re-reads and compares the turn rather than trusting one read.
-    if (!agent) await $.fs.write(root+'/active-main.json',JSON.stringify({session:await session($,state),agent:'',turn}));
+    if (!agent && !turns.has('main:'+turn)) {turns.add('main:'+turn);await $.fs.write(root+'/active-main.json',JSON.stringify({session:await session($,state),agent:'',turn}));}
     if (e.agentId) {
       const agent=ident(e.agentId), turn=ident(e.turnId);
       if (!agent || !turn) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');

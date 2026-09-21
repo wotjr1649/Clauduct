@@ -28,7 +28,13 @@ func estimateTextInput(r *bridge.Request) (int64, bool, bool) {
 			case "input_text", "output_text":
 				size += int64(len(p.Text)) + 12
 			default:
-				opaque, media = true, true
+				// Opaque is everything this does not add bytes for. Media is the named
+				// subset whose size is the reason a length refusal arrives, spelled out
+				// rather than inferred from "not text": a part kind added later would
+				// otherwise arrive as media by default and put the counter back to
+				// reporting that a conversation happened.
+				opaque = true
+				media = media || p.Type == "input_image" || p.Type == "input_file"
 			}
 		}
 	}

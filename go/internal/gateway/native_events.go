@@ -209,9 +209,14 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 		// begin() is destructive for exactly the state that got us here -- awaiting_children
 		// -- and a refusal after it would take the evidence continuation needs with it.
 		current, present, ok := g.readActiveTurn(session, id)
-		if !ok || !present || current.Turn != active.Turn {
+		if !ok || !present {
 			return
 		}
+		// The turn moved on while this request was reading a metadata file. Binding to the
+		// one it left would file the failure under a turn that is over; returning would file
+		// it nowhere, and a child that failed with no recorded reason is what the tail block
+		// below exists to prevent. It is recorded against the turn the child is on.
+		active = current
 		if !r.begin(id) || !g.applyNativeTurn(id, current) {
 			return
 		}

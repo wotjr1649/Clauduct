@@ -58,7 +58,7 @@ func agentStream(role, prompt string, callerModel ...string) string {
 }
 
 // subagentRun starts a session whose first turn spawns one subagent.
-func subagentRun(t *testing.T, accounts ...*gateway.Diagnostics) (session, sub string, unregistered, unrouted int64) {
+func subagentRun(t *testing.T, accounts ...*gateway.Diagnostics) (session, sub string, unregistered, unrouted, fellBack int64) {
 	t.Helper()
 	exe := nativeAvailable(t)
 	script := &upstream.Script{
@@ -131,9 +131,10 @@ func subagentRun(t *testing.T, accounts ...*gateway.Diagnostics) (session, sub s
 		sub = where
 	}
 	unregistered, unrouted = g.Unrouted()
+	fellBack = g.FellBackToCaller()
 	t.Logf("session=%s subagent=%s unregistered=%d unrouted=%d stdout=%q",
 		session, sub, unregistered, unrouted, stdout.String())
-	return session, sub, unregistered, unrouted
+	return session, sub, unregistered, unrouted, fellBack
 }
 
 // C2 end to end: the client starts a subagent, the hook reports its role, and the subagent's
@@ -147,16 +148,16 @@ func subagentRun(t *testing.T, accounts ...*gateway.Diagnostics) (session, sub s
 func TestASubagentRunsWhereItsRoleSaysAndNotWhereTheClientAsked(t *testing.T) {
 	buildHook(t)
 
-	session, sub, unregistered, unrouted := subagentRun(t)
+	session, sub, unregistered, unrouted, fellBack := subagentRun(t)
 	if sub == "" {
 		t.Fatal("the subagent never made a request of its own")
 	}
 	if sub != "gpt-5.6-luna/max" {
 		t.Fatalf("the subagent ran on %s, want gpt-5.6-luna/max for Explore", sub)
 	}
-	if unregistered != 0 || unrouted != 0 {
-		t.Fatalf("counts = (%d, %d); the registration did not reach the request",
-			unregistered, unrouted)
+	if unregistered != 0 || unrouted != 0 || fellBack != 0 {
+		t.Fatalf("counts = (%d, %d, %d); the registration did not reach the request, or the "+
+			"role took the caller's route instead of its own", unregistered, unrouted, fellBack)
 	}
 	// The session is untouched. Routing a subagent is not routing the conversation.
 	if session != "gpt-6-astra/low" {
@@ -177,7 +178,7 @@ func TestWithNoHookTheUnverifiedSubagentNeverReachesBackend(t *testing.T) {
 	}
 
 	var account gateway.Diagnostics
-	_, sub, _, _ := subagentRun(t, &account)
+	_, sub, _, _, _ := subagentRun(t, &account)
 	if sub != "" || account.Requests.RefusedBy["AGENT_SELECTION_UNVERIFIED"] == 0 {
 		t.Fatal("unverified child executed or its refusal was not observed")
 	}

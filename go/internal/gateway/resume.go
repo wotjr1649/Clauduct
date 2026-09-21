@@ -96,7 +96,7 @@ func (d *delegations) prepareResume(scope delegationScope, call string, raw json
 	if err != nil {
 		return nil, errDelegationUnverified
 	}
-	if choice.role == "fork" {
+	if bridge.IsFork(choice.role) {
 		if input.Message == "" {
 			return nil, errDelegationUnverified
 		}
@@ -142,7 +142,7 @@ func (d *delegations) resumeModel(scope delegationScope, id, model string) bool 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	r := d.resumes[id]
-	return d.resolved[id].role == "fork" && r != nil && r.verified && r.session == scope.session && r.parent == scope.parent && r.nativeModel == model
+	return bridge.IsFork(d.resolved[id].role) && r != nil && r.verified && r.session == scope.session && r.parent == scope.parent && r.nativeModel == model
 }
 
 func (d *delegations) beginResult(id string) bool {

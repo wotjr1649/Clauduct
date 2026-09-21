@@ -48,13 +48,13 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	// parse, which is what aborting the walk cost. It is a reason not to trust an answer for
 	// the role that file might have held -- and only that role.
 	//
-	// The names, not a flag. A flag said "something here was unreadable", which refused
-	// every role in the tree over one stray markdown file: the same failure the abort was,
-	// moved from inside a directory to between them. A skipped file's name is the one it
-	// would have defined, so it answers the only question that matters. It also fixes the
-	// case a flag got backwards: two files declaring the same role where one is unreadable
-	// is the ambiguity def.invalid exists to refuse, and priority has nothing to do with it.
-	skipped := map[string]bool{}
+	// That distinction lives in readRoleDirectory now, which enters an unreadable file into
+	// the same map under the same name a readable one would have taken, marked invalid. The
+	// duplicate rule below it has always meant "two files claim this role and this build will
+	// not pick between them", and an unreadable file claiming it is the same fact. A second
+	// map of names, merged across directories and consulted afterwards, was a parallel
+	// answer to a question this one already had -- and it got the priority reasoning wrong
+	// in both directions.
 	for i, dir := range s.directories {
 		if i == s.managed {
 			if def, found = s.cli[role]; found {
@@ -64,12 +64,9 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if dir.prefix != "" && !strings.HasPrefix(role, dir.prefix+":") {
 			continue
 		}
-		defs, passedOver, err := readRoleDirectory(dir)
+		defs, err := readRoleDirectory(dir)
 		if err != nil {
 			return bridge.Route{}, false, err
-		}
-		for name := range passedOver {
-			skipped[name] = true
 		}
 		if def, found = defs[role]; found {
 			break
@@ -82,14 +79,6 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if strings.Contains(role, ":") && s.pluginError != nil {
 			return bridge.Route{}, false, s.pluginError
 		}
-	}
-	// Checked whether or not the role was found. Unfound, a skipped file of that name is the
-	// definition being asked for. Found, it is a second definition of the same name, which
-	// is the duplicate this build refuses rather than picks between.
-	if skipped[role] {
-		return bridge.Route{}, false, errRoleDefaults
-	}
-	if !found {
 		return bridge.Route{}, false, nil
 	}
 	if def.invalid {
@@ -138,16 +127,19 @@ func boundedRoleFile(path string) ([]byte, error) {
 	return raw, nil
 }
 
-// The bool reports that at least one .md was passed over. A per-file failure is not the
-// directory's failure: native skips a definition it cannot read, and aborting the walk here
-// meant one stray markdown file -- a note whose first line happens to be a --- rule, so the
-// frontmatter has no closing fence -- took every valid role beside it down and ended every
-// Agent call in the session with a message that named no file. The caller turns the skip
-// into an unverified answer for roles it then cannot find, which is where that belongs.
-func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, map[string]bool, error) {
+// A per-file failure is not the directory's failure: native skips a definition it cannot
+// read, and aborting the walk here meant one stray markdown file -- a note whose first line
+// happens to be a --- rule, so the frontmatter has no closing fence -- took every valid role
+// beside it down and ended every Agent call in the session with a message that named no
+// file.
+//
+// An unreadable file still enters defs, under the name a readable one would have taken and
+// marked invalid, so the duplicate rule below carries it: resolve refuses that one role and
+// answers every other normally, without a second structure to merge or a priority argument
+// to get wrong.
+func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 	defs := map[string]roleDefault{}
 	count := 0
-	skipped := map[string]bool{}
 	err := filepath.WalkDir(dir.path, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) && path == dir.path {
@@ -162,36 +154,48 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, map[string]bo
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(path), ".md") {
 			return nil
 		}
-		// The name a skipped file would have defined. Native derives one from the filename
-		// when frontmatter does not give it, and a file this scan cannot parse is exactly
-		// the case where frontmatter gives nothing, so the filename is the only name there
-		// is -- and the right one to distrust.
-		passedOver := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		// The name an unreadable file claims. Frontmatter is what would have said otherwise
+		// and it is exactly what could not be read, so the path is the only name there is.
+		// It is recorded as a claim on that role, not as a definition of it.
+		//
+		// Relative to the directory, not just the base name. This walk recurses, so a stale
+		// draft left in a subdirectory shares a stem with the real definition above it, and
+		// claiming that stem would refuse a role the draft has no say over. Scoped this way
+		// only a file at the level a role is actually read from can claim its name. The cost
+		// is a subdirectory file that really did declare an occupied name and cannot be read
+		// to prove it, which nothing short of parsing it could tell.
+		relative, relErr := filepath.Rel(dir.path, path)
+		if relErr != nil {
+			relative = filepath.Base(path)
+		}
+		passedOver := filepath.ToSlash(strings.TrimSuffix(relative, filepath.Ext(relative)))
 		if dir.prefix != "" {
 			passedOver = dir.prefix + ":" + passedOver
 		}
+		claim := func() error {
+			if held, seen := defs[passedOver]; !seen || !held.invalid {
+				defs[passedOver] = roleDefault{Name: passedOver, invalid: true}
+			}
+			return nil
+		}
 		file, err := os.Open(path)
 		if err != nil {
-			skipped[passedOver] = true
-			return nil
+			return claim()
 		}
 		info, err := file.Stat()
 		if err != nil || !info.Mode().IsRegular() {
 			file.Close()
-			skipped[passedOver] = true
-			return nil
+			return claim()
 		}
 		// Only the bounded frontmatter prefix is needed, never the role prompt.
 		raw, err := io.ReadAll(io.LimitReader(file, 65544))
 		file.Close()
 		if err != nil {
-			skipped[passedOver] = true
-			return nil
+			return claim()
 		}
 		def, ok, err := parseRoleFile(raw)
 		if err != nil {
-			skipped[passedOver] = true
-			return nil
+			return claim()
 		}
 		if dir.prefix != "" && !ok {
 			def.Name = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
@@ -209,7 +213,7 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, map[string]bo
 		defs[def.Name] = def
 		return nil
 	})
-	return defs, skipped, err
+	return defs, err
 }
 
 func parseRoleFile(raw []byte) (roleDefault, bool, error) {

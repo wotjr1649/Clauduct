@@ -399,6 +399,7 @@ func TestAWorkflowsAgentsReachTheBridge(t *testing.T) {
 	}
 
 	unregistered, unrouted := g.Unrouted()
+	fellBack := g.FellBackToCaller()
 
 	// Which request is the workflow's agent is decided by what it was handed, not by where
 	// it falls: the session can send a side request at any point. A workflow agent cannot
@@ -469,9 +470,10 @@ func TestAWorkflowsAgentsReachTheBridge(t *testing.T) {
 	// And the account has nothing to report. A workflow agent has a role name and no route,
 	// which an earlier build counted as a routing failure -- so every session that ran a
 	// workflow reported itself as having something wrong.
-	if unregistered != 0 || unrouted != 0 {
-		t.Fatalf("counts = (%d, %d), want (0, 0): the hook reached the gateway and "+
-			"workflow-subagent is an intentional inherit, not a failure", unregistered, unrouted)
+	if unregistered != 0 || unrouted != 0 || fellBack != 0 {
+		t.Fatalf("counts = (%d, %d, %d), want (0, 0, 0): the hook reached the gateway and "+
+			"workflow-subagent is an intentional inherit, not a failure and not a fallback",
+			unregistered, unrouted, fellBack)
 	}
 	if result.NativeExitCode != 0 {
 		t.Fatalf("exit = %d", result.NativeExitCode)

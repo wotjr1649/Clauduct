@@ -119,11 +119,16 @@ func TestAnUnreadableDuplicateUnderAnotherFilenameIsNotCaught(t *testing.T) {
 	if err != nil || !found || route.Model != "gpt-5.6-terra" {
 		t.Fatalf("behaviour changed; the comment above no longer describes it: %s found=%v err=%v", route.Model, found, err)
 	}
-	// Named to match, it is caught.
-	if os.WriteFile(filepath.Join(dir, "reviewer.md"), []byte("---\nname: reviewer\nmodel: [broken]\n---\n"), 0600) != nil {
+	// The property the found==true branch of the refusal exists for, which needs two
+	// directories: one file cannot be both readable and not in a single directory. Overwriting
+	// reviewer.md here instead left no definition anywhere, so the assertion degenerated into
+	// the !found case covered above and the branch survived deletion under it.
+	above := t.TempDir()
+	if os.WriteFile(filepath.Join(above, "reviewer.md"), []byte("---\nname: reviewer\nmodel: [broken]\n---\n"), 0600) != nil {
 		t.Fatal("write")
 	}
-	if _, _, err := (roleSources{directories: []roleDirectory{{path: dir}}}).resolve("reviewer", bridge.Route{Model: "gpt-6-astra", Effort: "low"}); err == nil {
-		t.Fatal("an unreadable definition of the requested name was answered from elsewhere")
+	shadowed := roleSources{directories: []roleDirectory{{path: above}, {path: dir}}}
+	if _, found, err := shadowed.resolve("reviewer", bridge.Route{Model: "gpt-6-astra", Effort: "low"}); err == nil {
+		t.Fatalf("a readable definition answered while a file of that name went unread above it: found=%v", found)
 	}
 }

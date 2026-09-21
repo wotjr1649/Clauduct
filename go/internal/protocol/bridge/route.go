@@ -149,7 +149,24 @@ var inheritRoles = map[string]bool{
 const InheritRole = MenuPrefix + "inherit"
 
 // InheritsParent reports whether this role deliberately keeps the model the client chose.
-func InheritsParent(role string) bool { return inheritRoles[role] }
+func InheritsParent(role string) bool {
+	if inheritRoles[role] {
+		return true
+	}
+	// Folded like the role table beside it. Folding one and not the other meant "Fork" missed
+	// this map, took the explicit-model path, and died on its first request against native's
+	// own model:inherit -- where "fork" is refused cleanly at the call.
+	for name := range inheritRoles {
+		if strings.EqualFold(name, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFork folds the one role name five call sites compared exactly. Native resolves these
+// case-insensitively; this build did not, in five different places.
+func IsFork(role string) bool { return strings.EqualFold(role, "fork") }
 
 // RoleRoute reports where a subagent of this role runs.
 //

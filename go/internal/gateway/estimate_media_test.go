@@ -44,3 +44,25 @@ func TestAJournalThatMatchesDiskClearsTheUnwritableFlag(t *testing.T) {
 		t.Fatal("a state whose journal is already on disk stayed latched as unwritable")
 	}
 }
+
+// The counter reads Media, not Opaque. Reading Opaque made it a duplicate of the control
+// count, because this build's own replies carry encrypted reasoning and the client replays
+// it: an ordinary conversation sets Opaque on nearly every request. Reasoning-only overflows
+// are deliberately not counted here; they are a compaction control with no media on it.
+func TestTheOverflowCounterReadsMediaNotOpaque(t *testing.T) {
+	overflow := func(opaque, media bool) int64 {
+		r := newRing()
+		r.count(RequestRecord{
+			Model:           "gpt-6-astra",
+			Control:         "BACKEND_CONTEXT_COMPACTION_REQUIRED",
+			ContextEstimate: &ContextEstimate{Input: 40000, Source: "text_estimate", Opaque: opaque, Media: media},
+		})
+		return r.contextUsage["gpt-6-astra"].MediaOverflows
+	}
+	if n := overflow(true, false); n != 0 {
+		t.Fatalf("an overflow on reasoning-only opacity counted %d; the window is media", n)
+	}
+	if n := overflow(true, true); n != 1 {
+		t.Fatalf("an overflow carrying media counted %d", n)
+	}
+}

@@ -55,6 +55,12 @@ export const register = on => {
       progress.set(agent,p);
     }
     p.phase='request';
+    // Written in place, because this plugin API has no rename. Measured 2026-09-21 against
+    // the declarations Claude Code 2.1.278 writes for its own hooks: $.fs offers read,
+    // write, exists, stat and append, and nothing that moves a file. The temp-and-rename
+    // the gateway uses for the files it writes is not available on this side, so a reader
+    // can land mid-write and the gateway counts an invalid receipt -- which is one reason
+    // the gateway re-reads and compares the turn rather than trusting one read.
     if (!agent) await $.fs.write(root+'/active-main.json',JSON.stringify({session:await session($,state),agent:'',turn}));
     if (e.agentId) {
       const agent=ident(e.agentId), turn=ident(e.turnId);

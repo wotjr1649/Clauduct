@@ -123,7 +123,20 @@ func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (brid
 }
 
 // ConfigureDelegations is called by the launcher before it starts the client.
+//
+// The directory is created here, once, rather than tolerated at each of the thirteen places
+// that open it. The client writes this tree lazily and a configuration directory that is new
+// has none of it when the first request arrives, so every reader had to decide for itself
+// whether absence meant damage -- and they decided differently: a hard refusal in the
+// context journal, a provenance failure in the display counter, a retry in one metadata path
+// and not in the choice path beside it. One MkdirAll makes the question unreachable instead
+// of answering it four ways.
+//
+// A failure is not fatal here. The readers still classify what they get, and refusing to
+// start over a directory the client may create a moment later would be the same mistake in
+// a louder place.
 func (g *Gateway) ConfigureDelegations(projects string) {
+	_ = os.MkdirAll(projects, 0o700)
 	g.delegations = &delegations{projects: projects, events: g.nativeEvents.directory,
 		pending: map[delegationKey]delegatedChoice{}, resolved: map[string]resolvedChoice{}}
 }
@@ -329,7 +342,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	modelID = route.Model
 	// Native fork always resolves model:inherit, even if Agent receives a model
 	// argument. Keep the parent model; never claim an ignored override was applied.
-	if role == "fork" && route.Model != scope.route.Model {
+	if bridge.IsFork(role) && route.Model != scope.route.Model {
 		return nil, bridge.ErrUnsupportedRoute
 	}
 	var model *bridge.Model
@@ -707,7 +720,7 @@ type delegationMetadata struct {
 // alias. Call, parent, role and session are checked by both callers; dispatch
 // separately verifies the native request's resolved model against the choice.
 func metadataModelMatches(role, alias, model string) bool {
-	if role == "fork" {
+	if bridge.IsFork(role) {
 		return model == "inherit"
 	}
 	return model == alias

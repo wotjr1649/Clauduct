@@ -451,13 +451,12 @@ type ContextObservation struct {
 	CountShared     int64 `json:"countShared"`
 	CountMs         int64 `json:"countMs"`
 	Compactions     int64 `json:"compactionRequests"`
-	// Overflows the preventive estimate could not have seen coming. estimateTextInput adds
-	// nothing for image and file parts by design, and beginContext drops the measured anchor
-	// after every compaction because the old full-history usage is not the size of the new
-	// summary. Where those two meet -- the first request after a compaction, carrying a
-	// document -- the estimate is honest and small and the backend still refuses. Counted so
-	// that window is something a reader can see rather than derive.
-	OpaqueOverflows int64  `json:"overflowsWithOpaqueInput"`
+	// Length refusals on a request carrying image or file parts, whose bytes the estimate
+	// adds nothing for by design. Named for media rather than for opacity because encrypted
+	// reasoning is opaque too and this build's own replies carry it: counting that would
+	// report every ordinary conversation. Reasoning-only overflows are therefore not here --
+	// they are visible as a compaction control with no media on the request.
+	MediaOverflows  int64  `json:"overflowsWithUnestimatedMedia"`
 	Requests        int64  `json:"requestsWithBackendUsage"`
 	LastInputTokens *int64 `json:"lastCompletedInputTokens,omitempty"`
 	PeakInputTokens *int64 `json:"peakCompletedInputTokens,omitempty"`
@@ -541,7 +540,7 @@ func (g *ring) count(r RequestRecord) {
 	// the case visible instead of derivable.
 	if r.Control == "BACKEND_CONTEXT_COMPACTION_REQUIRED" && r.ContextEstimate != nil && r.ContextEstimate.Media {
 		observed := g.contextUsage[r.Model]
-		observed.OpaqueOverflows++
+		observed.MediaOverflows++
 		g.contextUsage[r.Model] = observed
 	}
 	// Not excluding count_tokens. Only two paths record a CountSource -- the count_tokens

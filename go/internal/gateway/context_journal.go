@@ -61,6 +61,19 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 		state.journal = filepath.Join(filepath.Dir(transcript), session, "subagents", "agent-"+agent+".clauduct-context.json")
 	}
 	root, err := os.OpenRoot(g.delegations.projects)
+	if os.IsNotExist(err) {
+		// A directory that is not there yet holds no journal, which is the same fact the
+		// line below already reads correctly one level down. Reading it as damage instead
+		// ended the session: the client creates this tree lazily, and with auto memory
+		// disabled it has not touched it by the time the first request arrives, so on a
+		// configuration directory that is new every first /v1/messages was refused
+		// CONTEXT_JOURNAL_UNVERIFIED and the session died having made no inference.
+		//
+		// Measured 2026-09-21 on the product path, one variable changed and nothing else:
+		// directory absent, the launcher exits 1 with refusedBy CONTEXT_JOURNAL_UNVERIFIED
+		// and inferences 0; directory pre-created, the same command succeeds.
+		return nil
+	}
 	if err != nil {
 		return errContextJournal
 	}
@@ -135,6 +148,12 @@ func (g *Gateway) saveContext(state *contextState) error {
 		return nil
 	}
 	state.persistenceError = true
+	// The write is what establishes the tree. Restoring tolerates its absence because there
+	// is nothing to restore; saving cannot, and MkdirAll on a path the client owns and
+	// creates itself is the smaller thing than refusing the turn that wanted to save.
+	if err := os.MkdirAll(g.delegations.projects, 0o700); err != nil {
+		return errContextJournal
+	}
 	root, err := os.OpenRoot(g.delegations.projects)
 	if err != nil {
 		return errContextJournal

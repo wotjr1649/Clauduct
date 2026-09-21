@@ -12,9 +12,9 @@ import (
 
 func TestMediaEstimateNeverCountsBase64AsText(t *testing.T) {
 	r := &bridge.Request{Model: "gpt-6-astra", Instruction: bridge.Instruction, Input: []bridge.InputEntry{{Type: "function_call_output", Output: []bridge.InputPart{{Type: "input_image", ImageURL: "small"}}}}}
-	small, opaque := estimateTextInput(r)
+	small, opaque, _ := estimateTextInput(r)
 	r.Input[0].Output[0].ImageURL = strings.Repeat("A", 2<<20)
-	large, _ := estimateTextInput(r)
+	large, _, _ := estimateTextInput(r)
 	if !opaque || small != large || bridge.BackendCountSupported(r) {
 		t.Fatal("media bytes became a token count or unsupported counter was enabled")
 	}

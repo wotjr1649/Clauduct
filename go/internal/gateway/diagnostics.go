@@ -118,16 +118,21 @@ type ContextEstimate struct {
 	Input  int64  `json:"inputTokens"`
 	Source string `json:"source"`
 	Opaque bool   `json:"containsUnestimatedMediaOrReasoning"`
-	Exact  bool   `json:"exact"`
+	// Media narrows Opaque to image and file parts. Encrypted reasoning is opaque too and
+	// this build's own replies carry it, so Opaque is set on nearly every turn of an
+	// ordinary conversation; only this one isolates input the estimate could not see whose
+	// size is the reason a length refusal arrived.
+	Media bool `json:"containsUnestimatedMedia"`
+	Exact bool `json:"exact"`
 }
 
-func (r *record) contextEstimate(tokens int64, source string, opaque bool) {
+func (r *record) contextEstimate(tokens int64, source string, opaque, media bool) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data.ContextEstimate = &ContextEstimate{Input: tokens, Source: source, Opaque: opaque}
+	r.data.ContextEstimate = &ContextEstimate{Input: tokens, Source: source, Opaque: opaque, Media: media}
 }
 
 // Closed labels and counters only. Never preserve transport error text, URLs,
@@ -534,7 +539,7 @@ func (g *ring) count(r RequestRecord) {
 	// own input. BACKEND_CONTEXT_COMPACTION_REQUIRED is the control this build sets when it
 	// turns that refusal into a compaction; pairing it with an opaque estimate is what makes
 	// the case visible instead of derivable.
-	if r.Control == "BACKEND_CONTEXT_COMPACTION_REQUIRED" && r.ContextEstimate != nil && r.ContextEstimate.Opaque {
+	if r.Control == "BACKEND_CONTEXT_COMPACTION_REQUIRED" && r.ContextEstimate != nil && r.ContextEstimate.Media {
 		observed := g.contextUsage[r.Model]
 		observed.OpaqueOverflows++
 		g.contextUsage[r.Model] = observed
@@ -761,6 +766,11 @@ type AgentCounts struct {
 	Registered   int   `json:"registered"`
 	Unregistered int64 `json:"unregistered"`
 	Unrouted     int64 `json:"unrouted"`
+	// FellBackToCaller ran, on the caller's route, because this build has no route of its
+	// own for that role. Separate from Unrouted, which counts refusals: one field holding
+	// both would mean neither, and every native built-in outside the three in the role table
+	// reaches this one in ordinary use.
+	FellBackToCaller int64 `json:"fellBackToCallerRoute"`
 }
 
 // Diagnose is the account, readable in a session and at the end of one.
@@ -774,6 +784,7 @@ func (g *Gateway) Diagnose() Diagnostics {
 func (g *Gateway) Snapshot() Diagnostics {
 	received, refused, active := g.Stats()
 	unregistered, unrouted := g.Unrouted()
+	fellBack := g.FellBackToCaller()
 	results := AgentResultReport{}
 	selections := SelectionReport{}
 	var countStats *upstream.CountConnectionStats
@@ -802,9 +813,10 @@ func (g *Gateway) Snapshot() Diagnostics {
 			Active:       active, ModelLists: g.ModelLists(),
 		},
 		Agents: AgentCounts{
-			Registered:   g.agents.Registered(),
-			Unregistered: unregistered,
-			Unrouted:     unrouted,
+			Registered:       g.agents.Registered(),
+			Unregistered:     unregistered,
+			Unrouted:         unrouted,
+			FellBackToCaller: fellBack,
 		},
 		Betas: g.betas.report(),
 		Client: ClientReport{

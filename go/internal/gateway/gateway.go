@@ -249,11 +249,22 @@ func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 // for a registration that never arrived, one for a role with no route, which runs on the
 // caller's route instead.
 func (g *Gateway) Unrouted() (unregistered, unrouted int64) {
-	unrouted = g.unroutedRoles.Load()
-	if g.delegations != nil {
-		unrouted += g.delegations.unroutedRoles.Load()
+	// Only the refusals. The counter in delegations counts the opposite outcome -- a role
+	// with no route of its own that ran, on the caller's route -- and summing the two gave a
+	// field that means neither, and double-counts a child that reaches both. It is reported
+	// separately as FellBackToCaller.
+	return g.unregisteredAgents.Load(), g.unroutedRoles.Load()
+}
+
+// FellBackToCaller counts roles this build had no route for that ran on the caller's. It is
+// an ordinary outcome for every native built-in outside the three in the role table, so it
+// is deliberately not part of what makes a session noteworthy: a signal that fires on
+// ordinary use is not a signal.
+func (g *Gateway) FellBackToCaller() int64 {
+	if g.delegations == nil {
+		return 0
 	}
-	return g.unregisteredAgents.Load(), unrouted
+	return g.delegations.unroutedRoles.Load()
 }
 
 func (g *Gateway) Stats() (received, refused, active int64) {

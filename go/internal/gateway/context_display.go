@@ -78,6 +78,12 @@ func (g *Gateway) stripContextDisplays(request *anthropic.Request, session strin
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	root, err := os.OpenRoot(g.delegations.projects)
+	if os.IsNotExist(err) {
+		// Nothing written here yet, which the transcript check below already treats as
+		// nothing to read. Counting it as unreadable made every first request on a new
+		// configuration directory look like a provenance failure.
+		return
+	}
 	if err != nil {
 		d.unreadable++
 		return

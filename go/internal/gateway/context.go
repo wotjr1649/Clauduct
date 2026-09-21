@@ -348,7 +348,7 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 	if !conversationRequest(r, request) {
 		s = nil // A title/classifier shares identity headers, never conversation usage.
 	}
-	text, opaque := estimateTextInput(built)
+	text, opaque, media := estimateTextInput(built)
 	tokens, source := text, "text_estimate"
 	if s != nil && s.usage != nil {
 		// Growth is deliberately conservative: generated output is reserved in
@@ -360,7 +360,7 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 			source = "previous_model_usage_plus_text_estimate"
 		}
 	}
-	entry.contextEstimate(tokens, source, opaque)
+	entry.contextEstimate(tokens, source, opaque, media)
 	entry.checked("context_policy")
 	// Save route/phase transitions, never conversation content. A checkpoint
 	// failure stops this request before generation rather than losing switch state.

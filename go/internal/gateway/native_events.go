@@ -199,13 +199,20 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 		if !waiting || binding.SessionID != session || binding.Role != choice.role || err != nil || meta.ToolUseID != choice.call || meta.ParentAgentID != choice.parent || meta.AgentType != choice.role || !metadataModelMatches(choice.role, choice.alias, meta.Model) || meta.StoppedByUser {
 			return
 		}
-		// applyNativeTurn with the receipt read and validated at the top of this function,
-		// rather than bindNativeTurn re-reading it. begin() is destructive for exactly the
-		// state that got us here -- awaiting_children -- so a re-read that fails in the
-		// window since, which holds a metadata file read, would destroy the evidence
-		// continuation needs and refuse anyway. Only the turn comparison can fail now, and
-		// clearing the previous turn is what begin() is for.
-		if !r.begin(id) || !g.applyNativeTurn(id, active) {
+		// Re-read here, and compare, before anything destructive. The receipt at the top of
+		// this function is separated from the write below by a metadata file read, and the
+		// hook overwrites active-<id>.json on every new turn: applying the older one filed
+		// a child that had already moved on under the turn it left, which reconcile then
+		// settles from an end receipt for a turn that is over.
+		//
+		// The comparison is what is new. The read still happens before begin(), because
+		// begin() is destructive for exactly the state that got us here -- awaiting_children
+		// -- and a refusal after it would take the evidence continuation needs with it.
+		current, present, ok := g.readActiveTurn(session, id)
+		if !ok || !present || current.Turn != active.Turn {
+			return
+		}
+		if !r.begin(id) || !g.applyNativeTurn(id, current) {
 			return
 		}
 	}

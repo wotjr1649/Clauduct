@@ -48,7 +48,45 @@ func TestARoleWithNoRouteRunsOnTheCallersRouteAndIsTracked(t *testing.T) {
 	if pending.inherited {
 		t.Fatal("a fallback was recorded as a task-bound selection, which would pin every descendant")
 	}
+	if pending.route.Source != "parent-route" {
+		t.Fatalf("source %q is not one loadChoice accepts, so the choice dies on restore", pending.route.Source)
+	}
 	_ = binding
+}
+
+// inherited is set for any clauduct-* role the menu cannot resolve, and it means a
+// task-bound selection is fixed for every descendant. The fallback has to clear it: a
+// fallback is not a selection anybody made, and leaving it set refuses any child of this one
+// that names a model. The other test in this file cannot catch it -- statusline-setup has no
+// menu prefix, so it passes for a reason unrelated to the flag.
+func TestAMenuNameTheMenuCannotResolveIsNotTreatedAsTaskBound(t *testing.T) {
+	d, scope, _ := preparedDelegation(t)
+	scope.route = bridge.Route{Model: "gpt-5.6-terra", Effort: "high", Source: "catalogue"}
+	if _, err := d.prepare(scope, "menu_call", "Agent",
+		json.RawMessage(`{"subagent_type":"clauduct-inherit-high","prompt":"synthetic","description":"proof"}`)); err != nil {
+		t.Fatalf("a menu-shaped name the menu does not define was refused: %v", err)
+	}
+	for key, choice := range d.pending {
+		if key.call == "menu_call" && choice.inherited {
+			t.Fatal("a fallback pinned the model for every descendant")
+		}
+	}
+}
+
+// Built-in role names resolve case-insensitively, the way native resolves them and the way
+// the gateway already reconciles a child's reported role. Exact-only matching sent "explore"
+// down the fallback, so an Explore child ran on the caller's route and the EqualFold
+// reconciliation let it pass.
+func TestABuiltInRoleResolvesWhateverItsCasing(t *testing.T) {
+	for _, name := range []string{"Explore", "explore", "EXPLORE", "general-purpose", "General-Purpose"} {
+		route, known := bridge.RoleRoute(name)
+		if !known {
+			t.Fatalf("%s missed the role table", name)
+		}
+		if name != "general-purpose" && name != "General-Purpose" && route.Model != "gpt-5.6-luna" {
+			t.Fatalf("%s routed to %s", name, route.Model)
+		}
+	}
 }
 
 // An explicit effort on a role with no route is still unsupported: there is no catalogue

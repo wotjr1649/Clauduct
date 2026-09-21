@@ -149,6 +149,9 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 		if renameErr = root.Rename(temp, "decision-"+name+".json"); renameErr == nil {
 			return nil
 		}
+		if attempt == 4 {
+			break
+		}
 		time.Sleep(2 * time.Millisecond)
 	}
 	return renameErr

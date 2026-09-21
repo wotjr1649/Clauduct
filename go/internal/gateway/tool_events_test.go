@@ -19,9 +19,6 @@ func TestSendMessageSoftFailureReleasesResumeAndCountsOnce(t *testing.T) {
 			}}
 			for i := 0; i < 2; i++ {
 				g.observeMessageFailures(r, "session", "")
-				if false {
-					t.Fatal("bounded observation failed")
-				}
 			}
 			want := int64(0)
 			if tool == "SendMessage" {
@@ -67,9 +64,6 @@ func TestToolResultErrorsWithoutNativeFailureHook(t *testing.T) {
 			}}
 			g.observeMessageFailures(req, "session", "")
 			g.observeMessageFailures(req, "session", "")
-			if false {
-				t.Fatal("observation failed")
-			}
 			r := g.toolFailures.snapshot()
 			want := tool
 			if strings.HasPrefix(tool, "mcp__") {

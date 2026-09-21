@@ -14,16 +14,21 @@ type contextUsageAnchor struct {
 
 // A cheap preventive signal, never an exact-count endpoint. Do not tokenize
 // base64 images, files or encrypted reasoning as though they were prompt text.
-func estimateTextInput(r *bridge.Request) (int64, bool) {
+// The second return is any opaque input; the third is media specifically -- image and file
+// parts, whose bytes this adds nothing for. They are different questions. Encrypted
+// reasoning is opaque too and this build's own replies carry it, so an ordinary multi-turn
+// conversation sets the first on every request; a counter built on it would measure
+// "there was a conversation" rather than the window it exists to show.
+func estimateTextInput(r *bridge.Request) (int64, bool, bool) {
 	size := int64(len(r.Instruction))
-	opaque := false
+	opaque, media := false, false
 	parts := func(items []bridge.InputPart) {
 		for _, p := range items {
 			switch p.Type {
 			case "input_text", "output_text":
 				size += int64(len(p.Text)) + 12
 			default:
-				opaque = true
+				opaque, media = true, true
 			}
 		}
 	}
@@ -48,5 +53,5 @@ func estimateTextInput(r *bridge.Request) (int64, bool) {
 	if r.Text != nil {
 		size += int64(len(r.Text.Format.Schema)+len(r.Text.Format.Name)) + 60
 	}
-	return (size + 2) / 3, opaque
+	return (size + 2) / 3, opaque, media
 }

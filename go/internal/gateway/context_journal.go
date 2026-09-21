@@ -145,16 +145,30 @@ func (g *Gateway) saveContext(state *contextState) error {
 	}
 	raw, _ := json.Marshal(contextJournal{Version: 2, Identity: state.identity, Model: state.route.Model, Effort: state.route.Effort, Phase: state.phase, Target: state.target, Usage: state.usage})
 	if string(raw) == state.saved {
+		// Disk already holds exactly this, so there is nothing to write and nothing left
+		// unwritten. Returning without clearing the flag latched a state as unwritable for
+		// the life of the process once its content came back to the last value that saved:
+		// the retry that exists to clear it reaches this line and returns before the clear.
+		state.persistenceError = false
 		return nil
 	}
 	state.persistenceError = true
 	// The write is what establishes the tree. Restoring tolerates its absence because there
 	// is nothing to restore; saving cannot, and MkdirAll on a path the client owns and
 	// creates itself is the smaller thing than refusing the turn that wanted to save.
-	if err := os.MkdirAll(g.delegations.projects, 0o700); err != nil {
-		return errContextJournal
-	}
 	root, err := os.OpenRoot(g.delegations.projects)
+	if os.IsNotExist(err) {
+		// Created only when its absence is what failed. Doing it unconditionally spent a
+		// syscall on every turn whose journal changed -- which is every turn -- inside the
+		// lock that serialises admission, for a condition true once per installation. It
+		// also re-resolved the path a second time, leaving a window in which the name could
+		// become a junction between the two calls: os.Root bounds escapes from the root it
+		// opened, not how that root was reached.
+		if err = os.MkdirAll(g.delegations.projects, 0o700); err != nil {
+			return errContextJournal
+		}
+		root, err = os.OpenRoot(g.delegations.projects)
+	}
 	if err != nil {
 		return errContextJournal
 	}

@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,11 +32,13 @@ func TestPolicyEvidenceNativeFunctionHookDeclarations(t *testing.T) {
 	if err != nil || len(raw) > 2<<20 {
 		t.Fatalf("declarations not written: %v output=%s", err, tail(out.output(), 1200))
 	}
-	dest := filepath.Join("..", "..", "..", "verification", "policy-evidence-20260918", "native-function-api.d.ts")
-	if err := os.WriteFile(dest, raw, 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("native API declarations=%d bytes, model calls=0", len(raw))
+	// Not written back into the repository. These declarations are the client's early-access
+	// surface and this project stopped carrying a copy; writing one to a tracked path would
+	// put it back on the next `git add`. The digest is the evidence -- it is what a reader
+	// regenerates and compares against, and it does not go stale the way half a megabyte of
+	// somebody else's API does.
+	digest := sha256.Sum256(raw)
+	t.Logf("native API declarations=%d bytes sha256=%x, model calls=0", len(raw), digest)
 }
 
 func TestPolicyEvidenceNativeFunctionEvents(t *testing.T) {

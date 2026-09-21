@@ -167,6 +167,16 @@ func RoleRoute(role string) (Route, bool) {
 	if route, known := roleRoutes[role]; known {
 		return route, true
 	}
+	// Case-insensitively for the built-ins, because native resolves them that way and the
+	// gateway already reconciles a child's reported role against the requested one with
+	// EqualFold. Exact-only matching meant "explore" missed this table, took the caller's
+	// route, and then passed that reconciliation -- an Explore child running somewhere other
+	// than the entry above says it runs, decided by the casing in a tool call.
+	for name, route := range roleRoutes {
+		if strings.EqualFold(name, role) {
+			return route, true
+		}
+	}
 	return menuRoute(role)
 }
 

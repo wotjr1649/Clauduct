@@ -300,8 +300,18 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			//
 			// Not marked inherited. That flag means a task-bound explicit selection is fixed
 			// for descendants, and this is a fallback rather than a selection anybody made.
+			// parent-route, not a name of its own. This is the caller's route by another
+			// path, the branch above already calls that parent-route, and loadChoice's
+			// allow-list is written in these names: a source it does not list is refused, so
+			// a new one would have turned a first-request refusal into a permanent one the
+			// moment the choice was restored from its journal.
+			//
+			// inherited is cleared rather than inspected. It is set for any clauduct-* role
+			// the menu does not resolve, and it means a task-bound selection is fixed for
+			// every descendant -- which a fallback is not, and which would refuse any child
+			// of this one that names a model.
 			d.unroutedRoles.Add(1)
-			route, known, source = scope.route, true, "agent-call-unrouted-parent"
+			route, known, inherited, source = scope.route, true, false, "parent-route"
 		}
 		if !known {
 			if hasEffort {
@@ -522,9 +532,14 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 		if evicted == "" {
 			return errDelegationUnverified
 		}
+		// Chosen here, dropped after start() succeeds. Deleting first meant a refused
+		// cacheChoice had already destroyed a victim that keeps its slot -- and start() can
+		// still refuse, because r.entries fills with entries no eviction loop can reclaim.
+		if !d.results.start(id, choice) {
+			return errDelegationUnverified
+		}
 		delete(d.resolved, evicted)
-	}
-	if !d.results.start(id, choice) {
+	} else if !d.results.start(id, choice) {
 		return errDelegationUnverified
 	}
 	if choice.receipt == nil {
@@ -708,6 +723,14 @@ func (d *delegations) metadata(binding agentBinding) (delegationMetadata, error)
 		return meta, errDelegationUnverified
 	}
 	root, err := os.OpenRoot(d.projects)
+	if os.IsNotExist(err) {
+		// The tree the client has not written yet, which is the same "not there yet" the
+		// missing metadata file below is already allowed to retry through. Classified as a
+		// hard refusal it gave the opposite answer to the identical condition one line
+		// down: a first turn that delegates, on a configuration directory that is new, got
+		// no retry at all.
+		return meta, errMetadataPending
+	}
 	if err != nil {
 		return meta, errDelegationUnverified
 	}

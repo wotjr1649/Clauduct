@@ -438,14 +438,21 @@ type ring struct {
 // Preflight totals and completed backend usage are separate observations. Neither
 // is a reading of the current size of an agent conversation between requests.
 type ContextObservation struct {
-	CountMatches    int64  `json:"countMatches"`
-	CountMismatches int64  `json:"countMismatches"`
-	Preflights      int64  `json:"preflights"`
-	CountsVerified  int64  `json:"successfulPreflightCounts"`
-	CountCacheHits  int64  `json:"countCacheHits"`
-	CountShared     int64  `json:"countShared"`
-	CountMs         int64  `json:"countMs"`
-	Compactions     int64  `json:"compactionRequests"`
+	CountMatches    int64 `json:"countMatches"`
+	CountMismatches int64 `json:"countMismatches"`
+	Preflights      int64 `json:"preflights"`
+	CountsVerified  int64 `json:"successfulPreflightCounts"`
+	CountCacheHits  int64 `json:"countCacheHits"`
+	CountShared     int64 `json:"countShared"`
+	CountMs         int64 `json:"countMs"`
+	Compactions     int64 `json:"compactionRequests"`
+	// Overflows the preventive estimate could not have seen coming. estimateTextInput adds
+	// nothing for image and file parts by design, and beginContext drops the measured anchor
+	// after every compaction because the old full-history usage is not the size of the new
+	// summary. Where those two meet -- the first request after a compaction, carrying a
+	// document -- the estimate is honest and small and the backend still refuses. Counted so
+	// that window is something a reader can see rather than derive.
+	OpaqueOverflows int64  `json:"overflowsWithOpaqueInput"`
 	Requests        int64  `json:"requestsWithBackendUsage"`
 	LastInputTokens *int64 `json:"lastCompletedInputTokens,omitempty"`
 	PeakInputTokens *int64 `json:"peakCompletedInputTokens,omitempty"`
@@ -521,6 +528,15 @@ func (g *ring) count(r RequestRecord) {
 	if r.Kind == "compaction" {
 		observed := g.contextUsage[r.Model]
 		observed.Compactions++
+		g.contextUsage[r.Model] = observed
+	}
+	// The backend refused for length on a request whose estimate could not see part of its
+	// own input. BACKEND_CONTEXT_COMPACTION_REQUIRED is the control this build sets when it
+	// turns that refusal into a compaction; pairing it with an opaque estimate is what makes
+	// the case visible instead of derivable.
+	if r.Control == "BACKEND_CONTEXT_COMPACTION_REQUIRED" && r.ContextEstimate != nil && r.ContextEstimate.Opaque {
+		observed := g.contextUsage[r.Model]
+		observed.OpaqueOverflows++
 		g.contextUsage[r.Model] = observed
 	}
 	// Not excluding count_tokens. Only two paths record a CountSource -- the count_tokens

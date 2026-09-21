@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
 )
 
 // Endpoint is where an inference request goes. It is a constant of this build, not
@@ -79,7 +80,9 @@ type Direct struct {
 	// destination stays unreachable from configuration, which is the point of the constant.
 	endpoint string
 	// overallFor replaces the ten minute bound in a test. Zero is the product.
-	overallFor time.Duration
+	overallFor   time.Duration
+	counts       countConnections
+	searchCounts searchCounters
 }
 
 func (d *Direct) target() string {
@@ -209,6 +212,12 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 	}
 	if response.StatusCode != http.StatusOK {
 		failure := ClassifyStatus(response.StatusCode, response.Header, time.Now())
+		if response.StatusCode == http.StatusBadRequest {
+			raw, readErr := io.ReadAll(io.LimitReader(response.Body, 64*1024+1))
+			if readErr == nil && len(raw) <= 64*1024 && codex.ContextLimit(raw) {
+				failure.Category = "CONTEXT_LENGTH_EXCEEDED"
+			}
+		}
 		response.Body.Close()
 		cancel()
 		return nil, failure

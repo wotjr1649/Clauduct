@@ -1,0 +1,546 @@
+{
+  "id": "fd73e62b-840a-47ae-b562-4876344d41b5",
+  "phases": [
+    {
+      "phase": "first",
+      "exit": 0,
+      "watchdogForced": false,
+      "sha256": "7feb620944578d85982f8ecac20fe3ffba0096207da0e9b81682f603b5b1036f",
+      "statusFile": "D:\\AIDEV\\clauduct-s36-build\\workflow-completion-20260920\\verification\\workflow-completion-20260920\\tui-fd73e62b-840a-47ae-b562-4876344d41b5\\first\\tmp\\clauduct\\status-1744.json",
+      "statusHash": "4b2a9f42ae3bda195e74fae678c34c71af3b9333134a94b5b736aa9b4a0c70b9",
+      "completion": {
+        "acceptance": "not_assessed",
+        "apiFailures": 0,
+        "cancelledRequests": 0,
+        "nativeCancellations": 0,
+        "nativeToolFailures": 1,
+        "rejectedWorkflowCalls": 0,
+        "unacquiredResultsInRecent": 0,
+        "controlTransitions": 0
+      },
+      "lifecycle": {
+        "state": "finished",
+        "final": true,
+        "reason": "native_exit",
+        "startedAt": "2026-09-20T14:26:09.2216466Z",
+        "observedAt": "2026-09-20T14:33:02.413166Z",
+        "deadlineAt": "2026-09-20T14:41:09.2216466Z",
+        "nativeReaped": true
+      },
+      "requests": {
+        "received": 19,
+        "refused": 0,
+        "broken": 0,
+        "active": 0,
+        "modelLists": 1
+      },
+      "features": [
+        {
+          "name": "generation",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "context_policy"
+          ],
+          "requests": 8,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 8,
+          "successfulResponses": 8,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 19,
+          "lastCompletedRequest": 19,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "native_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "native_turn",
+            "route",
+            "context_policy"
+          ],
+          "requests": 4,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 4,
+          "successfulResponses": 4,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 17,
+          "lastCompletedRequest": 17,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "agent_resume",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "native_turn",
+            "continuation",
+            "route",
+            "context_policy"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "workflow_selection",
+            "native_turn",
+            "route",
+            "context_policy"
+          ],
+          "requests": 4,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 4,
+          "successfulResponses": 4,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 17,
+          "lastCompletedRequest": 17,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_tool_policy",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "workflow_tool_policy",
+            "route"
+          ],
+          "requests": 4,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 4,
+          "successfulResponses": 4,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 17,
+          "lastCompletedRequest": 17,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "count_tokens",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "count_completed"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "web_search",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "search_available"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "compaction",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "compaction_authorized",
+            "context_policy"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_result_reuse",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "context_policy",
+            "workflow_recovery_request",
+            "workflow_recovery"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "parent_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "context_policy",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "empty_reply_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "context_policy",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_resume",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "context_policy",
+            "workflow_recovery_request",
+            "workflow_plan_resume"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_restore",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "context_policy",
+            "workflow_recovery_request",
+            "workflow_checkpoint"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "totals": {
+        "requestsWithUsage": 8,
+        "generationRequestsWithoutUsage": 0,
+        "backendInputTokens": 55919,
+        "backendOutputTokens": 1300,
+        "rejectedWorkflowCalls": 0,
+        "completed": 19,
+        "kinds": {
+          "agent_binding": 6,
+          "context_event": 1,
+          "generation": 8,
+          "models": 1,
+          "other": 2,
+          "readiness": 1
+        },
+        "routes": {
+          "gpt-5.6-luna/high/direct+effort": 1,
+          "gpt-5.6-luna/max/workflow-selection": 1,
+          "gpt-5.6-sol/high/workflow-selection": 1,
+          "gpt-5.6-terra/medium/workflow-selection": 2,
+          "gpt-6-astra/low/direct+effort": 3
+        },
+        "kindRoutes": {
+          "generation/gpt-5.6-luna/high/direct+effort": 1,
+          "generation/gpt-5.6-luna/max/workflow-selection": 1,
+          "generation/gpt-5.6-sol/high/workflow-selection": 1,
+          "generation/gpt-5.6-terra/medium/workflow-selection": 2,
+          "generation/gpt-6-astra/low/direct+effort": 3
+        },
+        "failures": {},
+        "controls": {}
+      },
+      "persistence": {
+        "saved": 1,
+        "restored": 0,
+        "failed": 0
+      },
+      "selections": {
+        "recent": [
+          {
+            "session": "fd73e62b-840a-47ae-b562-4876344d41b5",
+            "call": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+            "agent": "adbb44d7b5c330644",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-luna",
+            "requestedEffort": "max",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-luna",
+            "effectiveEffort": "max",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 1,
+            "backendCompletions": 1
+          },
+          {
+            "session": "fd73e62b-840a-47ae-b562-4876344d41b5",
+            "call": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+            "agent": "afc65c952db348153",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-terra",
+            "requestedEffort": "medium",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "medium",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 2,
+            "backendCompletions": 2
+          },
+          {
+            "session": "fd73e62b-840a-47ae-b562-4876344d41b5",
+            "call": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+            "agent": "abe3c7d7431011613",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-sol",
+            "requestedEffort": "high",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-sol",
+            "effectiveEffort": "high",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 1,
+            "backendCompletions": 1
+          }
+        ],
+        "totals": {
+          "restored": 3,
+          "selection_verified": 3
+        }
+      },
+      "results": {
+        "recent": [
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-terra",
+              "requestedEffort": "medium",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-terra",
+              "effectiveEffort": "medium",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "6b396a1c-a348-4e10-9e36-31ff4f0245f4",
+            "nativeModel": "gpt-5.6-terra",
+            "nativeEffort": "medium",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "afc65c952db348153",
+            "session": "fd73e62b-840a-47ae-b562-4876344d41b5",
+            "call": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 590,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-luna",
+              "requestedEffort": "max",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-luna",
+              "effectiveEffort": "max",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "26e98934-6a3c-46a7-8731-02ab01c6c831",
+            "nativeModel": "gpt-5.6-luna",
+            "nativeEffort": "max",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "adbb44d7b5c330644",
+            "session": "fd73e62b-840a-47ae-b562-4876344d41b5",
+            "call": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 10,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-sol",
+              "requestedEffort": "high",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-sol",
+              "effectiveEffort": "high",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "a2eb2383-c1c7-43f1-a56a-b54b71113545",
+            "nativeModel": "gpt-5.6-sol",
+            "nativeEffort": "high",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "abe3c7d7431011613",
+            "session": "fd73e62b-840a-47ae-b562-4876344d41b5",
+            "call": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 10,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          }
+        ],
+        "totals": {
+          "awaiting_parent": 3,
+          "parent_received": 3,
+          "running": 3
+        },
+        "totalsMeaning": "state_entry_counts",
+        "current": {
+          "parent_received": 3
+        }
+      }
+    }
+  ],
+  "transcript": {
+    "sha256": "8c2b510600efbae1cb0ae6372d342f2332fe3e1e05cdf4b02beb264fb57cdf51",
+    "rows": 38,
+    "calls": [
+      {
+        "id": "call_QRYfXwVvAzeUTi3aTRHicbfq",
+        "name": "Workflow",
+        "plan": false
+      }
+    ],
+    "textMentionsNotExecutionProof": {
+      "43": false,
+      "180": true,
+      "S49_A=303": false,
+      "S49_C=144": false,
+      "completed_result_reused": false,
+      "started_not_reexecuted": false,
+      "S49_AFTER_RESTART=47": false,
+      "S49_AFTER_DENIAL=53": false
+    }
+  },
+  "workflows": [
+    {
+      "runId": "wf_85c051d7-67e",
+      "taskId": "wveb7v2gq",
+      "status": "completed",
+      "hash": "09e891459e26c0e54a10d741a9d753e33f22213cab483ee08a46e1a8d9e5a681",
+      "journalHash": "cd0642c5efce02e4a7656959596e1edf7cbdd99b2379c0e28c14e69d104daa2d",
+      "events": [
+        {
+          "type": "launched"
+        },
+        {
+          "type": "started",
+          "agentId": "abe3c7d7431011613",
+          "key": "v2:d8ad12dc2e6eefd28fa8299c01f68079c30b281c0e469cf1a329a96c5f14750a"
+        },
+        {
+          "type": "result",
+          "agentId": "abe3c7d7431011613",
+          "key": "v2:d8ad12dc2e6eefd28fa8299c01f68079c30b281c0e469cf1a329a96c5f14750a"
+        },
+        {
+          "type": "started",
+          "agentId": "afc65c952db348153",
+          "key": "v2:805c3479d49c5cbc2196eaf15f5df9203735a33e0378938ac505356dd1f9b5d6"
+        },
+        {
+          "type": "result",
+          "agentId": "afc65c952db348153",
+          "key": "v2:805c3479d49c5cbc2196eaf15f5df9203735a33e0378938ac505356dd1f9b5d6"
+        },
+        {
+          "type": "started",
+          "agentId": "adbb44d7b5c330644",
+          "key": "v2:200808d3931674e28ad44de0cf150be2d6104bde6149828c10083834c539ca8e"
+        },
+        {
+          "type": "result",
+          "agentId": "adbb44d7b5c330644",
+          "key": "v2:200808d3931674e28ad44de0cf150be2d6104bde6149828c10083834c539ca8e"
+        }
+      ],
+      "checkpoint": true,
+      "claimed": false
+    }
+  ],
+  "humanAcceptance": "not_assessed"
+}

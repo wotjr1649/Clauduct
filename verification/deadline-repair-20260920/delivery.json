@@ -1,0 +1,15 @@
+{
+  "commit": "3df87d369445796ba94da7880d0e4852247d3d90",
+  "destination": "D:/AIDEV/clauduct-s36-build",
+  "backup": "D:\\AIDEV\\clauduct-s36-build\\before-3df87d3-20260920",
+  "hashes": {
+    "clauduct.exe": "e43235288e3cd9c1b634bfb94a81af1ffb6bda58ba35df324aed066cbbe3cafb",
+    "clauduct-hook.exe": "eec8bce41dedd4425d801939c10bad9993450be9cd8784b318e29a6dc9143768",
+    "clauduct-dev.exe": "d45b885d62869a5abcce333cd5eefa705bdd06d44aeb33503c9dc1ec510434db"
+  },
+  "humanLauncher": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive.mjs",
+  "humanLauncherSha256": "79b6282848dddaf847f9fd3e9d7ab3a594eb8cbd2ab46837449cc81493951453",
+  "at": "2026-09-20T03:50:34.454Z",
+  "acceptance": "documented_scenarios_only",
+  "universalAcceptance": false
+}

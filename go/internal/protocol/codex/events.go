@@ -142,6 +142,25 @@ type Usage struct {
 	OutputTokens int64
 	InputKnown   bool
 	OutputKnown  bool
+
+	// The counts that arrive alongside those two and were read by nothing until 2026-09-18.
+	//
+	// Measured that day on the real backend: a response.completed carries total_tokens,
+	// input_tokens_details.cached_tokens, input_tokens_details.cache_write_tokens and
+	// output_tokens_details.reasoning_tokens. cached_tokens read 3,840 on a 16,865-token
+	// prefix, so it is a reading and not a field that is always zero -- while the client's
+	// display said "0 cached" as a constant, because nothing here had ever looked.
+	//
+	// Reasoning tokens are billed. Not counting them made every cost this build reported an
+	// undercount by an amount nobody could name.
+	CachedInputTokens int64
+	CacheWriteTokens  int64
+	ReasoningTokens   int64
+	TotalTokens       int64
+	CachedInputKnown  bool
+	CacheWriteKnown   bool
+	ReasoningKnown    bool
+	TotalKnown        bool
 }
 
 // DecodeTextDelta reads a response.output_text.delta payload.
@@ -279,19 +298,45 @@ func DecodeUsage(raw []byte) (Usage, error) {
 	}
 
 	var out Usage
-	if value, presence := wire.Of(usage, "input_tokens"); presence == wire.Present {
-		var count int
-		if intValue(value, &count) == nil {
-			out.InputTokens, out.InputKnown = int64(count), true
-		}
-	}
-	if value, presence := wire.Of(usage, "output_tokens"); presence == wire.Present {
-		var count int
-		if intValue(value, &count) == nil {
-			out.OutputTokens, out.OutputKnown = int64(count), true
-		}
-	}
+	readCount(usage, "input_tokens", &out.InputTokens, &out.InputKnown)
+	readCount(usage, "output_tokens", &out.OutputTokens, &out.OutputKnown)
+	readCount(usage, "total_tokens", &out.TotalTokens, &out.TotalKnown)
+	readDetail(usage, "input_tokens_details", "cached_tokens",
+		&out.CachedInputTokens, &out.CachedInputKnown)
+	readDetail(usage, "input_tokens_details", "cache_write_tokens",
+		&out.CacheWriteTokens, &out.CacheWriteKnown)
+	readDetail(usage, "output_tokens_details", "reasoning_tokens",
+		&out.ReasoningTokens, &out.ReasoningKnown)
 	return out, nil
+}
+
+// readCount takes one count, leaving it unknown when it is absent or unreadable.
+//
+// Unreadable is deliberately the same answer as absent rather than an error. A usage object
+// whose shape drifts in one member must not cost the counts beside it: losing input_tokens
+// because a sibling changed would be a worse answer than losing the sibling.
+func readCount(fields map[string]json.RawMessage, name string, into *int64, known *bool) {
+	value, presence := wire.Of(fields, name)
+	if presence != wire.Present {
+		return
+	}
+	var count int
+	if intValue(value, &count) == nil {
+		*into, *known = int64(count), true
+	}
+}
+
+// readDetail takes one count out of a nested details object, on the same terms.
+func readDetail(fields map[string]json.RawMessage, parent, name string, into *int64, known *bool) {
+	value, presence := wire.Of(fields, parent)
+	if presence != wire.Present {
+		return
+	}
+	nested, err := wire.Fields(value, nil)
+	if err != nil {
+		return
+	}
+	readCount(nested, name, into, known)
 }
 
 func stringField(fields map[string]json.RawMessage, name string, into *string) error {

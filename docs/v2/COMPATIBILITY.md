@@ -1,57 +1,306 @@
 # V2 호환성 — 현재 / 제약 / 미지원
 
-기능별 **현행**을 적는다. 격차의 이력과 근거는 [PARITY.md](PARITY.md), 실행 증거는
-[VALIDATION.md](VALIDATION.md)가 소유한다. 여기에 복제하지 않는다.
+Go 개발 빌드의 지원 기능과 제한을 이 문서에서 관리한다. 격차의 이력은
+[PARITY.md](PARITY.md), 이전 실행 증거는 [VALIDATION.md](VALIDATION.md),
+S41 수리와 실패 기록은 [S41 보고서](../../verification/session41-repair-20260919/REPORT.md),
+기능별 판정·진행 관측·Workflow 결과 회수는 [후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)에 있다.
+S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수리 기록](../../verification/session42-repair-20260920/REPORT.md)에 있다.
+부모의 완료 조건·native TUI 대기·미실행 Workflow 단계 재개는 [부모 대기·계획 재개 기록](../../verification/parent-wait-20260920/REPORT.md)에 있다.
+같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](../../verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
+Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
-검증된 조합: **claude 2.1.274 · codex-cli 0.154.0 · Windows 11 10.0.26200 amd64 · go 1.27.1
-(CGO_ENABLED=0)**. 2026-09-17 재확인.
+**2026-09-20 S48 개발 보완.** settings 병합, Workflow 도구 제한·명시적 모델의 커스텀 역할,
+native 역할의 `maxTurns`, 빈 종료 결과 통지, non-streaming JSON 응답을 구현했다.
+최종 제품 source `313a78c`, 실제 TUI UUID `4ce18162-9c5f-4c1d-9647-df0c2da00ee2`의
+복합 시나리오와 후속 대화를 확인하고 개발용 바이너리에 반영했다.
+새 범위의 실제 검사·실패 기록·필터 한계는 [S48 보고서](../../verification/support-expansion-20260920/REPORT.md)를 따른다.
+S49 제품 source `31ff118`은 수거 완료 후 동일 세션의 Workflow 근거 복원,
+`scriptPath`·로컬 named 파일, custom 역할 기본 선택을 보완한다. 실제 TUI의
+동일 UUID 종료·재시작에서 완료 결과 회수와 미실행 단계만 재개를 확인했다. 범위와 검증은
+[S49 기록](../../verification/workflow-completion-20260920/REPORT.md)을 따른다.
+사용자 S44의 복원·중첩 위임·압축·취소 후 회복 관측에 이어, 같은 제품/native 조합의
+보충 TUI에서 B 실제 OS 실행 중 취소·프로세스 회수와 재시작 후 A 재사용/B 재실행 0/C만
+실행을 확인했다. **합의한 지원 범위의 S44 수용 및 v0.3.0 기능 출시 적합 판정은 합격**이다.
+원래 S44의 미실행 Esc 세부 단계를 수행했다고 소급하지 않는다. 근거·선행 시험 실패·한계는
+[B OS 최종 수용](../../verification/workflow-completion-20260920/S44-B-OS-ACCEPTANCE.md)을 따른다.
+2026-09-21에는 승인된 Process 범위 RemoteSigned로 Windows PowerShell 5.1과 PowerShell 7의
+공개 파일·자식 실행, TaskStop 회수, 후속 응답과 영구 정책 불변까지 확인했다.
+[PowerShell 보충 검수](../../verification/workflow-completion-20260920/S44-POWERSHELL-ACCEPTANCE.md).
+S47 출하 판정을 이후 확대 범위 전체의 합격으로 승계하지 않는다.
 
-## 1. 동작하는 것
+**S47 후보 이력.** 제품 source는 `442c366`이며 당시 출시 판정과 지원 범위는
+[최종 후보 보고서](../../verification/release-candidate-20260920/REPORT.md)를 따른다.
+사용자가 일반 생성의 정확 사전 차단 보장을 철회하고 실측 usage 기록·예방 압축을
+채택한 구현은 [S46 기록](../../verification/release-repair-20260920/REPORT.md)에 있다.
+이전 제품 source `3df87d3`의 실제 혼합 PDF
+Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`가 발생했다.
+같은 이미지의 tool-output 계수 경로에서 차이 1,418을 독립 재현했으며, 이미지/PDF
+전체의 정확 계수 지원 주장을 할 수 없다. 부분 도구 인자 Esc는 실제 TUI에서 회복까지
+확인했고, Windows 소켓 반례는 사용자 AdGuard 필터 비활성화 전후 대조로 간섭을 확인했다.
+실패의 원래 근거는 [S45 조사 기록](../../verification/release-investigation-20260920/REPORT.md),
+필터 활성 취소·종료·화면 표시 대조와 최초 Workflow 수정 실패는
+[S47 조사 기록](../../verification/release-final-20260920/REPORT.md)에 보존한다.
+
+## 0. 기준과 판정 방법 — 2026-09-20 (실행: 2026-09-19)
+
+| 구분 | 확인한 기준 |
+|---|---|
+| 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](../../verification/workflow-completion-20260920/build.json), [개발 경로 반영](../../verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
+| 최근 실제 TUI | Claude Code `2.1.278`, Windows amd64, Go 1.27.1, CGO_ENABLED=0 |
+| 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
+| 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](../../verification/workflow-completion-20260920/evidence.json), [TUI 검수](../../verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
+
+**구현 여부, 현재 실행 조건 확인, 실제 TUI 검증은 서로 다른 판정이다.**
+현재 `gateway.client.verified`는 관측 버전과 기준 버전의 문자열 일치만 뜻한다.
+기능 전체 검사나 무결점 보장이 아니다. [실제 판정 코드](../../go/internal/gateway/diagnostics.go)
+
+- **범위 내 TUI 확인:** 아래에 특정 입력·시나리오·버전의 실제 실행 근거가 있다.
+- **이전 실측:** 과거 빌드에 실제 근거가 있지만 이번 최종 TUI에서 다시 시험하지 않았다.
+- **미검증:** 필요한 실제 근거가 없다. 코드 존재나 단위 검사만으로 승격하지 않는다.
+- **미지원:** 현행 코드가 해당 경로를 처리하지 않거나 명시적으로 거부한다. 구현 불가능과 같은 뜻이 아니다.
+- **정책 확정·구현 대기:** 사용자가 선택한 설계이며 현재 바이너리의 기능으로 표시하지 않는다.
+
+### 지원 범위 재확인 — 2026-09-20
+
+**Anthropic 서버 의존 명령을 제외한 모든 기능을 완벽 지원한다는 판정은 아니다.**
+S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표시·멀티모달·종료 환경
+제한 외에도 다음 조건이 남는다. 이번 대조는 모든 slash command를 실제 TUI에서 다시
+실행한 전수 검사가 아니다.
+
+| 서버 전용 기능을 제외해도 남는 조건 | 현재 구현 |
+|---|---|
+| CLI 옵션 | `--settings` JSON/파일을 필수 settings와 병합하고 `--setting-sources`는 native로 전달. 필수 연결·hook 충돌은 거부. 권한 우회 CLI 옵션 2개는 계속 거부. [설정 병합](../../go/internal/app/user_settings.go) |
+| API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`, `stop_sequences`는 미지원. [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
+| Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원과 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow 및 임의 JS 재실행은 별도 제한 |
+| 부모·빈 응답 대기 | 출처와 회차가 확인된 native TUI에만 적용. SDK/`-p`의 동일 대기 동작 전체를 보장하지 않음. [실제 필수 조건](../../go/internal/gateway/features.go) |
+| 새 모델·새 명령·외부 확장 | 현재 모델 카탈로그와 검증된 요청 형식 범위만 지원. 새 모델, native 버전, plugin/MCP 조합의 성공을 자동 승계하지 않음. [모델 카탈로그](../../go/internal/protocol/bridge/route.go) |
+| native 전역 effort 고정 | `CLAUDE_CODE_EFFORT_LEVEL`은 native의 명시적 자식 effort·피커보다 우선할 수 있음. S49 실제 영수증으로 재확인. 부모 시작 기본값에는 `--effort` 사용. 전역 고정과 자식 선택이 충돌하면 선택 검증을 우회하지 않음 |
+
+인자를 native로 전달하거나 메뉴가 나타나는 것은 그 명령의 모든 후속 경로를 검증했다는
+뜻이 아니다. `gateway.features`도 계측한 기능군의 조건 관측이며 전체 slash command
+합격 목록이 아니다. 공식 명령은 로컬 UI, 모델에 전달되는 skill, 동적 Workflow가 섞여 있고
+사용 가능 여부도 환경에 따라 달라진다. [공식 명령 구분](https://code.claude.com/docs/en/commands)
+
+필터 문제에서도 **임의 필터가 통신 경로 전체를 계속 차단하는 동안 전달 성공을 보장할 수
+없다는 한계**와 **특정 필터 호환 문제는 더 수정할 수 있다는 가능성**을 구분한다.
+현재 남은 즉시 소켓 종료 반례를 근본적으로 해결 불가능하다고 확정하지 않았다.
+취소·회수의 제품 보완 및 반례는 [S47 조사 기록](../../verification/release-final-20260920/REPORT.md)을 따른다.
+
+### 현재 거부와 구현 가능성은 별개
+
+다음은 S48 구현과 남은 구현 방향이다. 범위별 근거를 따르며 거부문 삭제만으로 지원을 선언하지 않는다.
+
+| 항목 | 거부 근거와 구현 가능성 |
+|---|---|
+| non-streaming API | 구현. 동일 backend SSE를 한 번 소비해 검증된 완료만 JSON으로 반환. 16 MiB/1,024 block 상한, 실패 시 부분 성공 미반환. 4개 모델의 공개 live 요청에서 text/usage/완료 확인. 도구·opaque reasoning·검색 결과는 HTTP/프로토콜 회귀로 확인 |
+| Workflow `tools` | 구현. raw agent와 계획 step 모두 최대 64개 정확 이름 목록 또는 빈 목록. native 도구 목록과 교집합이며 과거 도구 기록이 새 호출 권한이 되지 않음. 지연 발견 도구가 필요하면 `ToolSearch` 자체도 허용 목록에 포함해야 함 |
+| Workflow `maxTurns`, custom `agentType` | 역할 지침·도구·`maxTurns`는 native 유지. S49는 모델 생략 시 역할 정의와 실제 native turn을 대조한다. native metadata의 빈 model은 요청에서 모델을 생략했다는 뜻일 수 있으므로 실제 turn과 구분. 직접 `agent(...,{maxTurns})`는 native가 적용하지 않아 거부하며 역할 정의를 사용 |
+| named/scriptPath Workflow | S49 구현. native `Read`의 권한·훅·실제 전체 결과를 통과한 텍스트에만 adapter 적용. `scriptPath` 우선; named 파일은 cwd부터 Git root까지 `.claude/workflows` 및 profile의 `workflows` 순서로 탐색. 최대 500 KiB, native Read 부분 결과는 거부. plugin/bundled named resolver 전체와 동일하다는 주장은 하지 않음 |
+| launcher 재시작 후 Workflow 복원 | S49 구현. native 수거 후 본문 없는 메타데이터 저장, 같은 UUID의 SessionStart 경로에서만 복원, native script/journal/metadata 해시와 선택·종료 근거 재검증. 독립 계획 재개는 디스크의 배타적 claim으로 중복 실행 방지. 강제 종료로 최종 근거를 저장하지 못했거나 기록이 변경되면 재개 거부 |
+| `--settings` | 구현. 최대 2 MiB JSON 객체/일반 파일, 중복 키 거부, 마지막 옵션 우선. 사용자 hook을 보존하고 필수 binding 추가. 연결·필수 정책 충돌은 조용히 덮지 않고 거부 |
+| `--setting-sources` | native user/project/빈 source 적용을 공개 fixture와 실제 native CLI로 확인. 필수 CLI settings는 별도로 유지 |
+| 권한 우회 CLI 옵션 2개 | 기술적 불가능이 아니라 명시적 제품 정책 제한이다. 지원 여부 변경과 현재 작업의 권한·guard 준수는 별개 |
+| `temperature`, `top_p`, `stop_sequences` | 입력층 거부 유지. S48에서 4개 모델 × baseline/temperature/top_p/max_output_tokens/stop = 20개 공개 요청 비교: baseline 4건 성공, 추가 필드 16건 HTTP 400. `stop` 시험을 `stop_sequences` 필드 자체의 실측으로 부르지 않음. 일반 API 문서 지원이 구독 backend 지원을 뜻하지 않음 |
+
+`max_output_tokens`는 위 세 파라미터와 달리 기존 backend HTTP 400 실측이 있다.
+출력 문자열을 잘라내는 것으로 서버의 생성 토큰 제한이나 sampling 제어와 동등해지지 않는다.
+[출력 상한의 기존 실측](VALIDATION.md), [현재 변환 계약](../../go/internal/protocol/bridge/bridge.go).
+
+native 공식 Workflow 재개는 중단·실패한 agent를 다시 실행할 수 있다. Clauduct의
+현재 정책은 시작한 단계의 자동 재실행을 금지하므로 native 재개와 완전히 같은 의미가 아니다.
+동일 의미로 바꾸려면 재실행 정책도 별도로 정해야 한다. 실행 여부를 확인할 수 없는
+외부 효과에 대해 기록·멱등성 협력 없이 무조건 중복 없는 재실행을 보장하지 않는다.
+[native 재개 의미](https://code.claude.com/docs/en/workflows#resume-after-a-pause),
+[settings와 setting-sources의 구분](https://code.claude.com/docs/en/cli-reference#cli-flags).
+
+### 채택한 버전 변경 정책 — 기능별 근거 집계 구현
+
+버전 번호만으로 전체 실행을 허용하거나 차단하지 않는다. 해당 기능의 필수 조건을 확인해
+실행 여부를 정하고, 조건이 깨진 기능만 차단한다. 세션 전체에 필요한 조건이 깨지면 세션을 중단한다.
+`34ebcb1`은 기존 decoder·선택·회차·정확 계수 검사의 실제 통과 지점을 `gateway.features`에 모은다.
+최근 16건 외의 세션 전체 누계도 유지한다. 과거 성공이 미래 요청을 허가하지 않으며,
+TUI 판정은 계속 `not_assessed`로 구분한다. native 회차 영수증이 설정됐는데 없으면 자식 실행을 거부한다.
+버전 일치 필드는 `verifiedMeaning:version_match_only`로 명확히 했다.
+제품 반영과 실제 검증 범위는 [후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)을 따른다.
+다음 설계의 코드·공식 문서·native TUI 근거와 반례는
+[설계 검토 기록](../../verification/design-evidence-20260919/REPORT.md)에 있다.
+빈 응답 대기는 `native_tui` 출처·회차·대기 자식을 확인한 범위에서 제품에 연결했다.
+SDK/`-p`에는 같은 무출력 제어가 성립하지 않아 적용하지 않는다. 실제 빈 backend 응답은
+고정 응답 fixture로 만들었고 구독 backend가 자연 발생시킨 사례와 구분한다.
+
+| 기능군 | 실행 전에 확보해야 할 조건 | 실행 중·후에 확인할 사항 |
+|---|---|---|
+| 일반 생성 | 지원 입력 형식, 확정 모델·effort, 모델별 예방 압축 정책과 agent 식별 | backend input/output usage 기록, 미확보는 unknown, 전달·취소 분류 |
+| native Agent | 역할과 원래 지정 여부, 확정 선택, session/child/parent 및 현재 회차 연결 | 완료·실패·취소 이벤트, 결과 존재와 부모 수신 |
+| 자동 재진입·SendMessage 재개 | 원래 계보·선택과 새로운 실행 회차의 연결 | 이전 회차의 늦은 이벤트·결과 혼입 방지 |
+| Workflow | 실제 script/역할/선택과 run/child 식별 연결 | native journal의 해당 결과, 결과 회수와 재실행 구분 |
+| 명시적 계수 | 독립적으로 검증한 모델·입력·계수 경로 | 계수 요청만 성공/미지원/실패 판정. 일반 생성과 분리 |
+| 예방 압축 | 사용량 anchor·명시적 추정, 모델별 관리 목표, 압축 대상 연결 | 압축 완료·요약 재평가·재개 순서, 실패·반복 overflow 시 해당 생성 차단 |
+| `/context` 입력 제외 | native 기록의 출처·session·명령/출력 연결 | 일반 사용자 입력을 보존했는지, 새 형식의 출처를 검증할 수 있는지 |
+
+미래 응답의 유효성은 실행 전 검사만으로 증명할 수 없다. 실행 후에만 알 수 있는 조건은
+요청·도구 전달·완료 판정의 해당 경계에서 검사한다. 일부 조건 통과를 전체 호환으로 표시하지 않는다.
+필수 조건을 알 수 없으면 추측으로 통과시키지 않고 영향을 받는 범위와 이유를 남긴다.
+
+## 1. 구현된 기능과 근거 범위
 
 | 기능 | 근거 |
 |---|---|
 | 스트리밍 대화·도구 왕복·도구 결과 재실행 방지 | TOOL01/02/06, 실클라이언트 |
 | 이미지 입력 | A1, 실백엔드 왕복 |
-| **PDF 입력**(`document` 블록 → `input_file`) | 2026-09-17. 실백엔드가 PDF 안에만 있던 토큰을 돌려줬다. user 첨부와 **tool_result(Read) 양쪽** |
+| **PDF 입력**(`document` 블록 → `input_file`) | 직접 document 변환과 native Read 페이지 이미지 경로를 구분. native 2.1.278의 혼합 PDF(텍스트·표·raster chart·vector diagram·수식) 3페이지는 S46/S47 실제 TUI에서 내용 확인. S45의 tool-output 이미지 계수 불일치는 남아 있으며 해당 warmup 계수는 미지원 |
 | 대화 중 도구 추가/삭제(`tool_addition`/`tool_removal`) | A4a, 베타 게이트 포함 |
 | 추론 왕복(`redacted_thinking` ↔ `reasoning.encrypted_content`) | A4b, 실백엔드가 자기 기록을 되받음 |
 | hosted **WebSearch** | A2 + 2026-09-17 실백엔드 재확인(32,060 bytes, 20 links) |
 | **구조화 출력**(`output_config.format` → `text.format`) | 2026-09-17. 그 전까지는 검증만 하고 버렸다 |
 | MCP 서버(`--mcp-config`) | G5. 서버가 뜨고 툴이 제공되고 **상속 환경이 살아남는다** |
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` · `--bare` | G5, 전부 동작으로 측정 |
-| 서브에이전트 역할 라우팅 | hook(`clauduct-hook`)이 role 보고 → Explore/Plan/general-purpose 재지정 |
-| 위임 메뉴 14종(`clauduct-<model>-<effort>`) | effort는 게이트웨이가 맡는다(정의로는 지정 불가) |
+| 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
+| 위임 메뉴 21종 | `clauduct-<model>-<effort>` 20종 + `clauduct-inherit`. [카탈로그 기반 생성](../../go/internal/app/agents.go). 메뉴 존재는 모든 조합의 최신 TUI 통과를 뜻하지 않음 |
+| 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. 최근 TUI에서 ROOT → A → B → C의 완료 결과 전달 확인 |
+| 완료 Agent의 SendMessage 재개 | 최근 TUI에서 동일 child ID의 Sol/high 유지·두 번째 결과 수신 확인 |
+| inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |
+| Agent 결과 회수와 Workflow StructuredOutput | 일반 결과와 검증된 native journal 결과를 부모에게 전달. 범용 Workflow 재실행·복구 기능은 아님 |
 | 모델 피커 + `GET /v1/models` discovery | A3 + B1 |
-| 컨텍스트 400k / 압축 320k / 압축 요청 effort 상한 | B1, E4 |
+| 모델별 실측 사용량·예방 압축 | Astra 500K/450K, Sol·Terra·Luna 272K/239K는 관리 목표이며 정확 사전 차단 상한이 아니다. 압축에도 기존 확정 모델·effort 유지. native 공통 표시/환경 기본값은 500K. 새 대용량 입력의 최초 초과 가능성이 있으며 추정과 실제 usage를 구분 |
+| `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](../../verification/policy-evidence-20260918/COUNT-TOKENS.md) |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
 | **`clauduct --update`** | 태그 릴리스의 바이너리 3개를 SHA256SUMS로 검증한 뒤 교체. 확인을 받고, `--yes`로 무인. `clauduct update`는 그대로 통과해 **클라이언트**를 갱신한다 |
 | **`clauduct --usage`** (= `clauduct-dev usage`) | 이 **계정**의 주간/보조 한도 사용률·리셋·in force family를, 세션이 남긴 계정에서 읽어 보여준다. 요청 0회 |
 | 종료 줄의 `quota=47%/7d` | 묻지 않아도 매 세션 보인다. 백엔드가 응답 헤더로 말한 값 |
-| 클라이언트 버전 기록 | 계정의 `gateway.client`가 관측 버전·기준 버전·일치 여부를 남긴다. **고정하지 않는다** |
+| Esc 이후 같은 세션 회복 | 정확 계수 중·부분 텍스트 출력 중·도구 전달 전 생성 취소 후 회복 확인. S45에서는 부분 인자 delta 563개/본문 0개 상태 취소, tool 실행·파일 생성 0, 같은 세션 후속 답변을 확인 |
+| `/context` 보고서의 실제 backend 입력 제외 | 검증된 native transcript 출처가 있는 조회 기록만 제외. [이전 수리 근거](../../verification/context-fork-20260919/REPORT.md). native 화면·로컬 이력 추정치는 변경하지 않음 |
+| 클라이언트 버전과 기능 조건 | `gateway.client`의 버전 일치와 `gateway.features`의 요청별 필수 조건 관측을 구분. 미관측을 통과로 승격하지 않음 |
+| 본문 없는 진행 관측 | `gateway.progress`, 요청의 `lastObservedMs`와 고정 backend delta 수. 오래된 관측은 생존 증명이 아니며, 승인 요청 횟수는 현재 승인 대기를 뜻하지 않음 |
+| Workflow 완료 결과 회수 | 같은 세션의 검증된 원본 run에 `resumeFromRunId` 하나만 전달. S49부터 launcher 수거 후 저장된 근거를 재검증해 재시작 뒤에도 지원. 기존 자식 보고서를 반환하고 미확보는 명시. 새 자식/원본 스크립트 실행은 하지 않음 |
+| 부모 입력의 완료 조건·대기 | 해당 요청에 실제 포함된 자식 결과 ID와 아직 대기/미확보인 ID를 `parentReadiness`에 기록. 알려진 자식 보고서가 모두 입력에 있는 조건이며, 내용의 타당성·업무 성공 판정이 아님 |
+| native TUI 빈 응답 대기 | 확인된 위임 후 회차·루트 완료 알림에서 미완료 자식이 있으면 일반 본문/빈 본문을 대기로 처리. 별도 모델 상태 확인 요청 없이 native 완료 이벤트로 재진입. 새 사용자 요청·Read 왕복 보존 실측 |
+| 독립 단계 계획의 미실행 단계 재개 | `script:"clauduct:plan-v1"` + `args.steps`. 같은 세션에서 TaskStop·자식 종료 또는 수거 후 저장된 근거를 재검증한 원본에 `resumeFromRunId`만 전달. 완료 결과 재사용, 시작한 단계 재실행 금지, 시작하지 않은 단계만 실행. 디스크 claim으로 launcher 재시작 후에도 원본 run당 한 번만 소비 |
+| 독립 계획의 무도구 단계 | step에 `tools:[]`를 지정하면 검증된 자식의 backend 도구 목록과 downstream callable set 모두 제한. 생략하면 기존 native 도구 유지. 재개에도 동일 제한 유지. `toolPolicy:workflow_step_none`와 `workflow_tool_policy` 기능 누계로 관측 |
+| 필터가 소켓 취소를 지연시키는 경우 | exact session/agent/turn의 native 명시적 abort 기록으로 backend 취소. 실제 TUI + 취소를 전달하지 않는 loopback fixture에서 부분 도구 인자 중 Esc·후속 답변 확인. 모든 보안 제품/임의 패킷 차단의 전달 성공 보장은 아님 |
+
+A/G/LIFE 등의 식별자는 [이전 검증 기록](VALIDATION.md)의 범위를 가리킨다.
+그 행을 최근 빌드에서 모두 다시 실측했다는 뜻은 아니다. 이미지·PDF·MCP·WebSearch 등은
+이전 실측을 보존하며, 전체 형식·환경·plugin 조합의 보장으로 확대하지 않는다.
+
+### 부모 대기·계획 재개의 실제 근거
+
+사용자 UUID `8544df8b-bc32-4df0-bffe-fce86176e3e1`에서 새 입력이 LEAF 도구 완료 전에
+제출됐고 Read 답변과 뒤이은 중첩 결과 43, 병렬 중첩 합계 180을 확인했다. 계획 재개는
+A 재사용/B 미재실행/C Luna/max·도구 없이 완료 및 중복 거부 후 회복을 확인했다.
+수동 압축 2회는 약 70초/80초이며 모델 변경 직후 일반 요청 없이 한 두 번째 압축도 기존 Sol/high를
+유지했다. 이후 Terra/high 대화와 보존값 회수는 정상이다. [실제 기록 감사](../../verification/parent-wait-20260920/s43-user-audit.json)
+
+S43의 두 Esc는 모두 부분 본문 뒤여서 첫 본문 전 취소 재검증으로 세지 않는다. B의 Bash 결과는
+`User rejected tool use`로 OS 명령 실행 후 중단 여부가 미확정이다. 자연 발생 빈 응답은 0회이며,
+정상 본문이 한꺼번에 보인다는 관측의 실제 화면 표시 시각도 확보되지 않았다. 초기 `/context`는
+10.1K가 세 번 유지됐지만 최초 backend 계수의 약 5초 구간은 남는다. API 실패 0/계수 59건 일치를
+이 미검증 조건의 해결로 확대하지 않는다. deadline 최초 실패와 후속 보완은 아래 별도 근거를 따른다.
+
+### Deadline 후속 수리와 실제 실행 확인
+
+`53482a4`에서 deadline 테스트의 가짜 프로세스가 HTTP 요청 종료 전에 회수 완료를 반환하던
+소유권 오류를 수정했다. 80회 grace 만료 검사와 실제 native TUI의 유예 내 응답/유예 만료 종료를
+확인했다. Windows 원격 TCP close 통지의 별도 반례를 제품에서 해결했다고 주장하지 않는다.
+
+실제 backend에서 첫 본문 전 Esc 후 새 입력 회복을 확인했고, B의 OS 프로세스 시작과
+TaskStop 후 종료를 확보했다. Workflow 재개 자식이 부모의 조정 지시를 자기 일로 해석한 실패는
+검증된 계획 자식의 작업자 역할 설명으로 보완했다. 이후 A 재사용/B 미재실행/C Luna/max·도구
+0회·지정 결과 반환을 확인했다. 설명은 정확 계수에도 포함하며 사용자 제한을 대체하지 않는다.
+
+native hook 없는 도구 검증 오류는 다음 요청의 실제 call/result 쌍으로 추가 집계한다.
+`source:tool_result`와 `source:native_failure_hook`를 구분하고 중복 집계하지 않는다.
+`3df87d3`는 자식 계수와 생성이 같은 agent ID로 도구 스키마를 구성하도록 추가 수정했다.
+최종 바이너리 TUI에서 두 `/context all`의 10.1K 유지, Terra/medium 중첩 상속과 결과 전달,
+API/도구 실패 0, 계수 일치 11건을 확인했다.
+[원인·실패·검증·한계 기록](../../verification/deadline-repair-20260920/REPORT.md)
+
+[TUI 감사 자료](../../verification/parent-wait-20260920/tui-audit.json)는 실제 구독 backend 실행과
+native TUI+고정 upstream fixture를 분리한다. 부모→중간→손자 결과 전달, 대기 중 별도 사용자
+Read, 자식 종료와 대기 응답의 경합을 확인했다. 무출력 제어는 native composer/task-notification
+출처와 현재 회차를 검증한 범위에 한정한다. SDK·분류되지 않은 입력·출처 없는 자식 새 회차의
+첫 요청에는 적용하지 않는다. 추가 상태 확인용 모델 호출을 만들지 않지만 기존 생성·정확 계수
+비용이 사라지는 것은 아니다.
+
+계획 재개는 독립된 1~16단계이며 각 단계는 `id`, `prompt`, 선택적 `model`, `effort`, `tools`를 받는다.
+`tools`는 빈 배열 또는 최대 64개의 중복 없는 정확한 도구 이름을 지원한다. null·wildcard는 거부한다. 원래 모델·effort·도구 제한은
+재개 시 부모 모델이 달라져도 유지한다. 원본 script hash, 관측한 자식 ID·순서,
+native journal, TaskStop 영수증과 종료를 대조하고 변경/누락/중복 재개는 거부한다.
+빈 결과·중단된 결과는 전체 완료로 올리지 않는다. `completeMeaning`은
+`all_step_results_present_not_task_success`이며, `complete:true`도 내용상 성공을 보장하지 않는다.
+실제 시험 중 작업자가 부모 지시를 자기 일로 해석하거나 불필요한 도구를 제안한 실패를 보존한다.
+따라서 실행·회수 기능의 확인을 모델 지시 준수의 무결점 판정으로 확대하지 않는다.
+
+### S42 이후 변경의 실제 TUI 근거
+
+알 수 없는 Workflow run의 회수 요청을 native 도구 거부로 전달하고, 같은 세션의 다음 일반 답변을 확인했다.
+원래 거부된 작업을 실행하거나 API 오류를 성공한 작업으로 집계하지 않는다. `rejectedWorkflowCalls`와
+기능별 `rejectedToolCalls`로 실행 거부를 별도 기록한다. 이 경로의 `apiFailures=0`은 도구 거부 0건이라는 뜻이 아니다.
+native hook이 실행되지 않는 경우에도 전달된 고정 script는 오류만 발생시키며 원래 작업을 실행하지 않는다.
+다른 종류의 검증 오류 전체를 이 경로로 바꾸지는 않았다.
+
+지연 로딩된 Agent를 발견하면 역할 목록이 뒤늦게 추가되는 실제 TUI 근거를 확보했다.
+`ToolSearch` 안내를 보완했지만 모델의 모든 역할 선택·대기 판단까지 결정적으로 보장하지 않는다.
+압축 요약의 반복 설명을 줄이는 지침은 압축에만 적용하며, 필요한 데이터 보존이 1,200단어 목표보다 우선한다.
+지침도 사전 정확 계수에 포함하며 일반 생성 모델·effort와 계수 검증은 변경하지 않는다.
+세션·선택·결과·압축별 실제 근거와 제한은 [S42 수리 기록](../../verification/session42-repair-20260920/REPORT.md)을 따른다.
+
+### 이전 `34ebcb1`의 실제 TUI 근거
+
+`34ebcb1`의 최종 TUI에서 검증된 Workflow 자식 결과를 회수했고 새 자식 실행은 0개였다.
+알 수 없는 run ID를 의도적으로 거부한 1건은 API 실패 누계에 남으며, 이후 같은 세션의 정상 응답을 확인했다.
+진행 관측·승인 요청·동일 자식 재개 및 보조 요청 집계 수정은 이번 중간 빌드의 TUI 근거와 구분해
+[후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)에 기록했다.
+빈 응답 대기 실험은 native TUI와 로컬 응답 fixture이며 구독 backend 제품 검증으로 표시하지 않는다.
+
+### 이전 `17532f7` 빌드의 실제 TUI 근거
+
+| 시나리오 | 근거 | 판정 범위 |
+|---|---|---|
+| 중첩 Agent·자동 재진입 | [tree-proof](../../verification/session41-repair-20260919/tree-proof.json) | Terra/medium, 깊이 3 자식 계보·결과 전달. 모든 깊이·역할 조합의 검증은 아님 |
+| 병렬 Workflow 네 선택 방식 | [workflow-proof](../../verification/session41-repair-20260919/workflow-proof.json) | inline `agent()` 자식 4개. StructuredOutput 및 native 도구 제한 조건 |
+| Sol/high 동일 자식 재개·추가 취소 회복 | [resume-cancellation-proof](../../verification/session41-repair-20260919/resume-cancellation-proof.json) | SendMessage 1회 재개. 추가 취소의 정확한 backend 이벤트 종류는 미확인 |
+| 계수·텍스트 중 Esc 회복 | [통합 세션](../../verification/session41-repair-20260919/run-febe7e62-d829-4e63-a275-e167b2e8529f.json) | count/delivery 각각 취소 후 새 요청 완료 |
+| 계수 정확도 | [통합 세션](../../verification/session41-repair-20260919/run-febe7e62-d829-4e63-a275-e167b2e8529f.json), [추가 세션](../../verification/session41-repair-20260919/run-fb24a803-a013-45e4-9845-9a4318c67b14.json) | backend usage가 있는 합계 38건 일치. 모든 tokenizer·멀티모달 형식의 증거는 아님 |
+| launcher 강제 종료 | [handle 관측](../../verification/session41-repair-20260919/hard-kill-261642e5-d5c9-4a70-8a35-41eb11c1a45a.json) | launcher만 종료 후 하위 6개까지 종료. 콘솔 창 닫기·OS 종료 전체는 미검증 |
+
+이전 `17532f7`의 두 정상 종료 TUI는 70요청, API 실패 0, 의도한 취소 3, 종료 시 결과 미확보 0이었다.
+개발 중 실패를 없었던 것으로 취급하지 않는다. `EMPTY_REPLY`, 역할 해석, Workflow 입력·결과 처리의
+실패와 수정 근거는 [실패 이력](../../verification/session41-repair-20260919/REPORT.md)에 보존한다.
 
 ## 2. 제약
 
 | 항목 | 내용 |
 |---|---|
 | 소유하는 옵션 **2개** | `--update`(+`--yes`)와 `--usage`. **첫 인자일 때만** 인식한다 — 프롬프트 안의 같은 문자열이 바이너리를 교체하면 안 되기 때문이다. 그 외 모든 인자는 그대로 전달된다 |
-| 거부하는 native 옵션 **4개** | `--dangerously-skip-permissions`·`--allow-…`(권한), `--settings`·`--setting-sources`(이 런처가 직접 주입하며, 두 번째 `--settings`는 병합이 아니라 대체다) |
-| 주입하는 것 | `--settings`(hooks·modelPicker), `--agents`(위임 메뉴), 세션 환경 14키 + 필수 1키. **사용자 환경·사용자 `--agents`가 이긴다** |
-| hook이 없으면 | 역할 라우팅과 메뉴의 effort가 동작하지 않는다. 계정의 `hookInstalled`가 매 세션 그것을 말한다 |
-| non-streaming 요청 | 거부. 대신 클라이언트의 fallback 자체를 환경변수로 끈다 |
+| 거부하는 native 옵션 **2개** | `--dangerously-skip-permissions`·`--allow-dangerously-skip-permissions`(권한). 사용자 settings는 필수 settings와 병합하며 충돌만 거부 |
+| 주입하는 것 | settings·위임 메뉴·세션 plugin·모델/도구/압축 관련 환경. 사용자 `--agents`는 메뉴를 대체할 수 있지만, [sessionRequirements](../../go/internal/app/session.go)의 필수 환경값은 사용자 값으로 자동 대체하지 않음 |
+| hook이 없으면 | 자식 확정 선택과 native 압축을 검증할 수 없으므로 해당 요청을 거부한다. `hookInstalled`에 기록 |
+| non-streaming 요청 | explicit false/생략 지원. 세션 인증·요청 종류·컨텍스트 정책 등 기존 실행 조건은 동일. native의 오류 후 자동 fallback은 중복 생성을 피하려고 계속 끔 |
 | 미지 SSE 이벤트 | 요청 실패. 이름만 계정에 남긴다(D6) |
 | side query가 아닌 hosted 도구 요청 | `HOSTED_TOOL_UNSUPPORTED`로 거부. 기준선은 조용히 성공시킨다 — 의도적 divergence |
-| 사전 출력 토큰 상한 | **불가능.** 이 backend는 `max_output_tokens`를 HTTP 400으로 거부한다. 완료 후 usage 검사만 |
-| 게이트웨이 재시도 | 0. 연결 실패의 안전한 경우는 Go 표준 라이브러리가 이미 처리한다(PARITY F1) |
+| 사전 출력 토큰 상한 | 기존 실측에서 backend가 `max_output_tokens`를 HTTP 400으로 거부해 해당 방식은 미지원. 완료 후 usage 검사와 구분하며, 미래의 모든 구현 가능성까지 부정하지 않음 |
+| 게이트웨이 재시도 | 일반 생성의 자동 재시도와 [WebSearch의 제한된 읽기 재시도](../../go/internal/upstream/search.go)를 구분. 전 경로가 재시도 0이라는 뜻이 아님 |
+| native context 표시 | 공통 500K 환경과 native 로컬 추정은 모델별 gateway 정책의 적용 근거가 아님. 모델별 정책·실제 계수는 status로 확인 |
+| 정확 계수 성능 | 연결 재사용·동일 입력 캐시·동시 요청 공유 구현. 새 입력의 backend 왕복 지연은 남으며 전후 성능 무저하를 입증하지 않음 |
+| native 첫 본문 표시 | Clauduct와 hook 없는 native 2.1.278에서도 SSE 진행 중 counter만 증가하고 완료 후 본문이 보이는 현상을 재현. 정확한 screen paint 시각/내부 원인은 미확정. 제품이 native 표시부를 패치하지 않음 |
+| `/context` 최초 조회 | 정확 계수의 첫 backend 왕복 지연이 남음. 조회 자체가 모델 본문 생성을 뜻하지 않고, 검증된 조회 기록은 실제 다음 모델 입력에서 제외. native 로컬 이력/추정 표시와 실제 usage는 다름 |
 | 런타임 의존 | `claude.exe` + `codex.exe`(버전이 요청 헤더) + `~/.codex/auth.json` |
 
-## 3. 미지원
+## 3. 미지원·미검증·구현 대기
 
 | 항목 | 상태 |
 |---|---|
-| `POST /v1/messages/count_tokens` | **구현하지 않는다 (2026-09-17 결정).** `-p` 세션에서 클라이언트가 부르지 않았고(요청 4건 전수 관측), 부르더라도 클라이언트에 `count_tokens_unreachable` + 추정치 폴백 경로가 있다. 정직한 구현에는 Codex용 토크나이저가 필요하고, 추정치를 API 답으로 돌려주면 클라이언트가 그것을 정답으로 취급한다 |
+| 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
 | `review-diff` 헬퍼 | 미지원. `/code-review`는 동작하되 경로 탈출 방지·2 MiB 상한 없이 plain claude와 같다 |
-| 완료 연결 바인딩 4종 / agent 메타 검증 / workflow 저널 검증 | 보류·미구현. [README.md](README.md) 3장 |
+| Workflow remote·자식의 별도 Workflow·범용 JS 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 임의 JS는 `resumeFromRunId` 단독의 결과 회수, 독립 계획은 미실행 단계만 재개. 다른 세션, 기록 없는 강제 종료, 불명확한 시작 단계의 자동 재실행은 거부 |
+| Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
+| Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
+| PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
+| 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
+| 빈 응답 대기의 전체 실행 모드 지원 | native TUI의 확인된 회차에만 제품 적용. SDK/`-p`·분류되지 않은 출처·출처 없는 자식 새 회차 index 0은 미지원. 대기 조건 없는 빈 응답은 기존 오류 처리 유지 |
+| 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
@@ -66,3 +315,24 @@ API에는 있으나 이 조합에서는 도달 경로가 없다.
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 **공식 지원하지 않는다고 명시**한다.
 V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능 100% 보장"으로 설명하지 않는다.
 지원 조합을 고정해 기록하고 drift 진단을 남긴다 — 클라이언트 버전은 고정하지 않고 **보고**한다.
+
+## 5. 이번 grilling에서 확정한 정책과 구현 상태
+
+아래는 사용자와 확정한 목표다. 문서 작성 자체가 기능 구현이나 검증 완료를 뜻하지 않는다.
+
+| 확정 정책 | 현재 상태 / 다음 근거 |
+|---|---|
+| 작업 성공과 실패 처리·회복 합격을 구분 | 판정 기준 채택. 외부 장애를 정확히 보고하고 이력·결과를 보존하며 다음 요청이 동작해야 회복 합격. 모든 장애 조합 실측은 남음 |
+| 실제 실행 중인 자식과 대기 회차가 검증된 부모의 빈 응답은 대기로 유지 | native TUI 제품 통합. 입력 출처·회차·알려진 대기 자식·context policy 확인. fixture 빈 응답과 실제 backend 일반 대기 응답의 근거 구분. 자연 발생 빈 응답 관측은 별개 |
+| 진행 미관측만으로 강제 종료하지 않음 | 마지막 실제 이벤트·경과 시간·도구 대기 수를 보고. 누락/미종료는 drain 완료로 간주하지 않음. 기존 명시적 deadline/grace만 적용 |
+| 재개 요청이 있어도 이전 도구 실행 효과가 불명확한 자식은 자동 재실행하지 않음 | 기존 결과 회수 유지. 독립 계획에서는 중단이 확인된 원본의 미실행 단계만 실행하고, 시작했지만 결과 없는 단계는 `started_not_reexecuted`·전체 `complete:false`로 보고 |
+| 버전 번호 대신 기능별 필수 조건으로 실행 판정 | 기존 실행 경계 검사 결과를 기능별로 집계. `/context` 출처도 관측 버전과 구조를 대조. 버전 일치와 전체 기능 합격을 구분 |
+| 지원 기능을 별도 문서로 관리 | 이 문서를 현행 지원 목록으로 사용. 세션별 보고서는 변경 당시의 근거로 보존 |
+
+## 6. 업데이트 시 이 문서를 갱신하는 기준
+
+1. **문서와 실행 판정의 사실을 일치시킨다.** 기능명, 지원 입력, 필수 조건, 구현 여부, 실측 버전·제품 commit·binary hash, 검사/실제 TUI 근거, 제한을 기록한다. 문서의 문구가 실행 허용을 대신하지 않는다.
+2. **버전 변경만으로 과거 근거를 지우거나 새 버전으로 바꾸지 않는다.** 현재 실행 조건 확인과 과거 TUI 확인을 나란히 표시한다. 영향받은 기능을 새 버전에서 검증한 뒤 근거를 추가한다.
+3. **구현·지원 범위가 바뀌면 같은 변경에서 해당 행을 갱신한다.** 근거가 없는 완료 표현, 버전 일치만으로 `검증 완료` 처리, 단위 검사를 실제 TUI로 표시하는 변경은 하지 않는다.
+4. **실패를 재실행 성공으로 덮지 않는다.** 최초 실패·원인·수정·검증을 연결하고, 미지원/미검증/실행 조건 실패를 구분한다. 정상 종료 코드만으로 기능 합격을 선언하지 않는다.
+5. **추가 구현 전 남은 사실을 확인한다.** 진행 관측·TUI 대기 통합·독립 계획의 중복 방지 재개는 위 범위에서 구현했다. 다른 실행 모드·범용 스크립트 재개·의미상 성공 판정·모든 경계/멀티모달/성능의 검증은 남아 있다. 원본 사용자 세션이나 전역 설정을 문서 작업 때문에 변경하지 않는다.

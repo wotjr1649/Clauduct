@@ -10,11 +10,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -34,15 +37,8 @@ func (e *RefusedOptionError) Error() string { return "OPTION_REFUSED " + e.Optio
 type Process interface {
 	Wait() error
 	ExitCode() int
-	// Stop ends the process.
-	//
-	// Only this process. The handle came from starting it, so nothing else can be reached
-	// through it -- no name is looked up and nothing is enumerated, which is what keeps a
-	// cancelled session from touching a Claude or MCP process belonging to someone else.
-	//
-	// Its limit, stated rather than discovered later: on Windows a grandchild the native
-	// client started does not die with it. Binding the tree together needs a Job Object
-	// and that is LIFE11, which is not done.
+	// Stop ends the owned process tree. Windows binds it at creation to a Job
+	// whose only handle belongs to this launcher; unrelated processes are excluded.
 	Stop() error
 }
 
@@ -67,10 +63,10 @@ type Options struct {
 	Session map[string]string
 	// Settings decides whether this launcher injects options of its own at all.
 	//
-	// Nil builds the session's settings blob and its delegation menu. A pointer sends that
-	// value as the settings blob and no menu, which is what a caller launching something
-	// other than the native client wants -- neither option means anything to it and both
-	// would arrive as arguments it does not understand.
+	// Nil builds the session's settings blob, its delegation menu and its startup --effort.
+	// A pointer sends that value as the settings blob and none of the rest, which is what a
+	// caller launching something other than the native client wants -- none of them mean
+	// anything to it and all would arrive as arguments it does not understand.
 	Settings *string
 	// Ledger records what a session spent. Zero allocates an unrestricted one.
 	//
@@ -81,6 +77,12 @@ type Options struct {
 	StartProcess func(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (Process, error)
 	// ShutdownTimeout bounds the gateway drain. Zero uses a default.
 	ShutdownTimeout time.Duration
+	// SessionTimeout is an opt-in launcher deadline. Existing invocations have none.
+	SessionTimeout time.Duration
+	// DeadlineGrace bounds draining an in-flight turn after that deadline.
+	DeadlineGrace time.Duration
+	// Checkpoint persists metadata while the child runs; nil disables checkpoints.
+	Checkpoint func(Status) error
 }
 
 // Result separates what the native process did from what cleanup did.
@@ -103,8 +105,9 @@ type Result struct {
 	Category string
 	// HookInstalled is whether the subagent hook was found beside this executable.
 	HookInstalled bool
-	// Diagnostics is what the gateway saw, read before the gateway was closed.
+	// Diagnostics is the final account after in-flight requests have drained.
 	Diagnostics gateway.Diagnostics
+	Lifecycle   *LifecycleFacts
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -141,6 +144,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if option, refused := launch.Refused(o.Args); refused {
 		return Result{}, &RefusedOptionError{Option: option}
 	}
+	forward, userSettings, err := takeUserSettings(o.Args, o.Cwd)
+	if err != nil {
+		return Result{}, err
+	}
+	o.Args = forward
 
 	exe, found, err := o.ResolveClaude()
 	if err != nil {
@@ -177,11 +185,18 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// The hook program, when this build shipped one beside itself. Without it the settings
 	// carry the picker and nothing else, which is the right answer: a hook pointing at a
 	// program that is not there fails on every subagent the client starts.
-	settings, agents := "", ""
+	// The startup effort rides with them, and is suppressed with them: --effort means
+	// nothing to a binary that is not the native client, and would arrive as an argument it
+	// does not understand.
+	settings, agents, effort := "", "", ""
+	nativePlugin := ""
+	nativePDF := ""
+	hook := ""
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
-		hook := findHook()
+		effort = startupModel.Effort
+		hook = findHook()
 		result.HookInstalled = hook != ""
 		if built, ok := sessionSettings(hook); ok {
 			settings = built
@@ -190,14 +205,103 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			agents = menu
 		}
 	}
+	if userSettings != nil {
+		if settings == "" {
+			settings = "{}"
+		}
+		settings, err = mergeUserSettings(settings, userSettings)
+		if err != nil {
+			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+			return result, err
+		}
+	}
+	if o.Settings == nil {
+		gw.ConfigurePDFRenderer(hook)
+		if hook != "" {
+			nativePlugin, err = prepareNativeEvents()
+			if err != nil {
+				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")
+			}
+			gw.ConfigureNativeEvents(filepath.Join(nativePlugin, "receipts"))
+			if _, foundErr := exec.LookPath("pdftoppm.exe"); foundErr != nil {
+				nativePDF, err = prepareNativePDF(nativePlugin, hook)
+				if err != nil {
+					result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+					return result, fmt.Errorf("NATIVE_PDF_SETUP_FAILED")
+				}
+			}
+		}
+	}
 	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{
 		BaseURL:   gw.BaseURL(),
 		AuthToken: gw.Token(),
 		Session:   session,
+		Effort:    effort,
 		Enforced:  sessionRequirements(),
 		Settings:  settings,
 		Agents:    agents,
 	})
+	if nativePlugin != "" {
+		spec.Args = append([]string{"--plugin-dir", nativePlugin}, spec.Args...)
+		filtered := spec.Env[:0]
+		pathAdded := false
+		for _, value := range spec.Env {
+			key, _, _ := strings.Cut(value, "=")
+			if nativePDF != "" && strings.EqualFold(key, "PATH") {
+				_, old, _ := strings.Cut(value, "=")
+				filtered = append(filtered, key+"="+nativePDF+string(os.PathListSeparator)+old)
+				pathAdded = true
+				continue
+			}
+			if !strings.EqualFold(key, "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS") {
+				filtered = append(filtered, value)
+			}
+		}
+		if nativePDF != "" && !pathAdded {
+			filtered = append(filtered, "PATH="+nativePDF)
+		}
+		spec.Env = append(filtered, "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1")
+	}
+	configDir := ""
+	for _, entry := range spec.Env {
+		key, value, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(key, "CLAUDE_CONFIG_DIR") {
+			configDir = value
+		}
+	}
+	if configDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			configDir = filepath.Join(home, ".claude")
+		}
+	}
+	if configDir != "" {
+		if !filepath.IsAbs(configDir) {
+			configDir = filepath.Join(o.Cwd, configDir)
+		}
+		gw.ConfigureDelegations(filepath.Join(configDir, "projects"))
+		var workflowDirs []string
+		for dir := o.Cwd; dir != "" && len(workflowDirs) < 63; dir = filepath.Dir(dir) {
+			workflowDirs = append(workflowDirs, filepath.Join(dir, ".claude", "workflows"))
+			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil || filepath.Dir(dir) == dir {
+				break
+			}
+		}
+		gw.ConfigureWorkflowSources(append(workflowDirs, filepath.Join(configDir, "workflows")))
+		if nativePDF != "" {
+			filtered := spec.Env[:0]
+			for _, entry := range spec.Env {
+				key, _, _ := strings.Cut(entry, "=")
+				if !strings.EqualFold(key, "CLAUDUCT_PDF_PROJECTS_ROOT") {
+					filtered = append(filtered, entry)
+				}
+			}
+			spec.Env = append(filtered, "CLAUDUCT_PDF_PROJECTS_ROOT="+filepath.Join(configDir, "projects"))
+		}
+		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
+			return sessionRoleSources(configDir, o.Cwd, agents, o.Args, o.Env, role).resolve(role, parent)
+		})
+	}
 
 	process, startErr := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)
 	if startErr != nil {
@@ -216,7 +320,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	result.NativeStarted = true
 
-	waitErr, reaped := waitFor(ctx, process)
+	waitErr, reaped, lifecycle := waitForSession(ctx, process, gw, o, result)
+	result.Lifecycle = &lifecycle
 	if reaped {
 		result.NativeExitCode = process.ExitCode()
 	} else {
@@ -226,11 +331,25 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.NativeExitCode = ExitCodeUnknown
 	}
 
-	// Read before the gateway is closed: shutting it down is what ends the session, and an
-	// account taken afterwards would be an account of a gateway that is no longer serving.
-	result.Diagnostics = gw.Diagnose()
-	result.Category = endedAs(ctx, result, ledger)
+	// Reap native first, then drain the gateway before taking its final account.
+	// Otherwise a cancellation could still be in flight when status claimed completion.
 	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+	if reaped {
+		gw.FinalizeNativeResults()
+	}
+	result.Diagnostics = gw.Diagnose()
+	result.Lifecycle.ObservedAt = time.Now().UTC()
+	result.Category = endedAs(ctx, result, ledger)
+	if lifecycle.Reason == "session_deadline" {
+		result.Category = CategoryDeadline
+		// errors.Is, not ==. A cancellation that reached here wrapped -- which is the
+		// ordinary shape once it has passed through a layer that annotates it -- kept the
+		// error set and the launcher exited 1 for a session that hit its deadline, where the
+		// answer is 124.
+		if errors.Is(waitErr, context.Canceled) {
+			waitErr = nil
+		}
+	}
 
 	// A non-zero native exit is the native process's answer, not this bridge's error. Only
 	// a failure to observe the child at all is returned as an error.
@@ -314,8 +433,12 @@ func (o Options) withDefaults() Options {
 		// budget is a separate thing and lives in clauduct-dev probe.
 		ledger := o.Ledger
 		o.StartGateway = func() (*gateway.Gateway, error) {
-			return gateway.Start(upstream.NewDirect(
+			g, err := gateway.Start(upstream.NewDirect(
 				&auth.Provider{}, ledger, upstream.InstalledVersion()))
+			if err == nil {
+				g.EnableContextPolicy()
+			}
+			return g, err
 		}
 	}
 	if o.StartProcess == nil {
@@ -324,41 +447,8 @@ func (o Options) withDefaults() Options {
 	if o.ShutdownTimeout == 0 {
 		o.ShutdownTimeout = defaultShutdownTimeout
 	}
+	if o.DeadlineGrace == 0 {
+		o.DeadlineGrace = 3 * time.Minute
+	}
 	return o
-}
-
-type osProcess struct{ cmd *exec.Cmd }
-
-func (p *osProcess) Wait() error { return p.cmd.Wait() }
-
-// Stop kills this process by the handle that started it.
-func (p *osProcess) Stop() error {
-	if p.cmd.Process == nil {
-		return nil
-	}
-	return p.cmd.Process.Kill()
-}
-
-func (p *osProcess) ExitCode() int { return p.cmd.ProcessState.ExitCode() }
-
-// startOSProcess runs the real executable.
-//
-// No shell. exec.Command is handed an argument slice, never a command line assembled by
-// string concatenation, so a value containing & | < > ^ % or a quote is an argument and
-// cannot become a command. When stdout is the real *os.File the child inherits that handle
-// directly rather than through a pipe, which is what keeps the native TUI, its key
-// handling and its Ctrl+C behaviour identical to running claude by hand.
-func startOSProcess(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (Process, error) {
-	cmd := exec.Command(spec.File, spec.Args...)
-	cmd.Dir = spec.Dir
-	cmd.Env = spec.Env
-	cmd.Stdin = stdin
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	// SysProcAttr is deliberately left alone. CREATE_NEW_PROCESS_GROUP would stop Ctrl+C
-	// from reaching the child, and HideWindow would hide the console the TUI needs.
-	if err := cmd.Start(); err != nil {
-		return nil, err
-	}
-	return &osProcess{cmd: cmd}, nil
 }

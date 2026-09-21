@@ -9,9 +9,9 @@
 // separate too: the launcher forwards every argument to the native client, so a subcommand
 // there could collide with a native option or a native option's value.
 //
-// What it sends is an identifier, a role name, where the client keeps its transcript, and
-// the context window it was given. Never a prompt, an output, or a tool call -- those are in
-// the event it reads and are deliberately left there.
+// Start reports contain identity and context. Stop reports additionally deliver
+// the existing final answer to this session's authenticated loopback gateway.
+// Neither the hook nor diagnostics persist report bodies or arbitrary hook fields.
 package main
 
 import (
@@ -19,23 +19,57 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/wotjr1649/Clauduct/go/internal/pdf"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func main() { os.Exit(run(os.Stdin, os.Stderr, environ())) }
+func main() {
+	if strings.EqualFold(filepath.Base(os.Args[0]), "pdftoppm.exe") {
+		os.Exit(nativePDF(os.Args[1:], os.Stdout, os.Stderr))
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--render-pdf" {
+		os.Exit(renderPDF())
+		return
+	}
+	os.Exit(runWithOutput(os.Stdin, os.Stdout, os.Stderr, environ()))
+}
+
+// Used only by the gateway's sealed, deadline-bound renderer subprocess.
+// PDF bytes and page images stay in pipes/memory; diagnostics contain no data.
+func renderPDF() int {
+	data, err := io.ReadAll(io.LimitReader(os.Stdin, pdf.MaxBytes+1))
+	if err != nil || len(data) > pdf.MaxBytes {
+		fmt.Fprintln(os.Stderr, "PDF_INPUT_LIMIT")
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pages, err := pdf.Render(ctx, data)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "PDF_RENDER_FAILED")
+		return 1
+	}
+	if json.NewEncoder(os.Stdout).Encode(pages) != nil {
+		return 1
+	}
+	return 0
+}
 
 // The bounds. A hook event is a small object; anything past these is not one.
 const (
-	maxEventBytes   = 1 << 20
-	maxBindingBytes = 4096
+	maxEventBytes   = (256<<10)*6 + 16384
+	maxBindingBytes = (256<<10)*6 + 8192
 	requestTimeout  = 3 * time.Second
 )
 
@@ -50,10 +84,120 @@ var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 var loopback = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}$`)
 
 func run(in io.Reader, errOut io.Writer, env map[string]string) int {
+	return runWithOutput(in, io.Discard, errOut, env)
+}
+
+func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
 	if err != nil || len(raw) > maxEventBytes {
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
 		return 1
+	}
+	var pre struct {
+		Event string                  `json:"hook_event_name"`
+		Tool  string                  `json:"tool_name"`
+		Input struct{ Script string } `json:"tool_input"`
+	}
+	if json.Unmarshal(raw, &pre) == nil && pre.Event == "PreToolUse" && pre.Tool == "Workflow" && pre.Input.Script == bridge.RejectedWorkflowScript {
+		if json.NewEncoder(out).Encode(map[string]any{"hookSpecificOutput": map[string]string{
+			"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": bridge.RejectedWorkflowReason,
+		}}) != nil {
+			return 2
+		}
+		return 0
+	}
+	var failure struct {
+		Event       string `json:"hook_event_name"`
+		Session     string `json:"session_id"`
+		Agent       string `json:"agent_id"`
+		Call        string `json:"tool_use_id"`
+		Tool        string `json:"tool_name"`
+		Interrupted bool   `json:"is_interrupt"`
+	}
+	if json.Unmarshal(raw, &failure) == nil && failure.Event == "PostToolUseFailure" {
+		if !identifier.MatchString(failure.Session) || !identifier.MatchString(failure.Call) || (failure.Agent != "" && !identifier.MatchString(failure.Agent)) {
+			fmt.Fprintln(errOut, "CLAUDUCT_TOOL_EVENT_INVALID")
+			return 1
+		}
+		tool := "other"
+		for _, name := range []string{"Agent", "Workflow", "Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebSearch", "WebFetch", "ToolSearch", "SendMessage", "TaskOutput", "TaskStop"} {
+			if failure.Tool == name {
+				tool = name
+			}
+		}
+		if strings.HasPrefix(failure.Tool, "mcp__") {
+			tool = "MCP"
+		}
+		body, _ := json.Marshal(map[string]any{"session": failure.Session, "agent": failure.Agent, "call": failure.Call, "tool": tool, "interrupted": failure.Interrupted})
+		if _, err := postReply(body, env, "/clauduct/tool-failures"); err != nil {
+			fmt.Fprintln(errOut, "CLAUDUCT_TOOL_EVENT_FAILED")
+			return 1
+		}
+		return 0
+	}
+	var workflow struct {
+		Event      string                                                                            `json:"hook_event_name"`
+		Tool       string                                                                            `json:"tool_name"`
+		Session    string                                                                            `json:"session_id"`
+		Parent     string                                                                            `json:"agent_id"`
+		Call       string                                                                            `json:"tool_use_id"`
+		Transcript string                                                                            `json:"transcript_path"`
+		Result     struct{ Status, TaskType, RunID, WorkflowName, TranscriptDir, ScriptPath string } `json:"tool_response"`
+	}
+	if json.Unmarshal(raw, &workflow) == nil && workflow.Event == "PostToolUse" && workflow.Tool == "Workflow" {
+		if workflow.Result.Status != "async_launched" || workflow.Result.TaskType != "local_workflow" {
+			fmt.Fprintln(errOut, "CLAUDUCT_WORKFLOW_UNVERIFIED")
+			return 1
+		}
+		body, _ := json.Marshal(map[string]string{"sessionId": workflow.Session, "parent": workflow.Parent, "toolUseId": workflow.Call, "transcriptPath": workflow.Transcript, "runId": workflow.Result.RunID, "workflowName": workflow.Result.WorkflowName, "transcriptDir": workflow.Result.TranscriptDir, "scriptPath": workflow.Result.ScriptPath})
+		if _, err := postReply(body, env, "/clauduct/workflows"); err != nil {
+			fmt.Fprintln(errOut, "CLAUDUCT_WORKFLOW_UNVERIFIED")
+			return 1
+		}
+		return 0
+	}
+	var compact struct {
+		Event      string `json:"hook_event_name"`
+		Session    string `json:"session_id"`
+		Agent      string `json:"agent_id"`
+		Transcript string `json:"transcript_path"`
+		Trigger    string `json:"trigger"`
+	}
+	if json.Unmarshal(raw, &compact) == nil && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart") {
+		if !identifier.MatchString(compact.Session) || (compact.Agent != "" && !identifier.MatchString(compact.Agent)) {
+			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_INVALID")
+			return 2
+		}
+		fields := map[string]string{"event": compact.Event, "sessionId": compact.Session, "agentId": compact.Agent}
+		if compact.Trigger != "" {
+			if compact.Trigger != "auto" && compact.Trigger != "manual" {
+				return 2
+			}
+			fields["trigger"] = compact.Trigger
+		}
+		if compact.Event == "SessionStart" {
+			if compact.Transcript == "" || len(compact.Transcript) > 4096 {
+				return 2
+			}
+			fields["transcriptPath"] = compact.Transcript
+		}
+		body, _ := json.Marshal(fields)
+		reply, err := postReply(body, env, "/clauduct/context")
+		if err != nil {
+			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_FAILED")
+			return 2
+		}
+		if compact.Event == "PreCompact" && len(reply) > 0 {
+			var receipt struct {
+				Ticket string `json:"ticket"`
+			}
+			if json.Unmarshal(reply, &receipt) != nil || len(receipt.Ticket) != 43 || !identifier.MatchString(receipt.Ticket) {
+				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_RECEIPT_INVALID")
+				return 2
+			}
+			fmt.Fprintf(out, "[clauduct-compact:%s]", receipt.Ticket)
+		}
+		return 0
 	}
 
 	binding, ok := bindingFrom(raw, env)
@@ -83,6 +227,7 @@ type binding struct {
 	SessionID      string         `json:"sessionId,omitempty"`
 	TranscriptPath string         `json:"transcriptPath,omitempty"`
 	Context        *contextPolicy `json:"contextPolicy,omitempty"`
+	Result         string         `json:"result,omitempty"`
 }
 
 type contextPolicy struct {
@@ -102,6 +247,7 @@ func bindingFrom(raw []byte, env map[string]string) (binding, bool) {
 		AgentType      string `json:"agent_type"`
 		SessionID      string `json:"session_id"`
 		TranscriptPath string `json:"transcript_path"`
+		Result         string `json:"last_assistant_message"`
 	}
 	if json.Unmarshal(raw, &event) != nil {
 		return binding{}, false
@@ -116,15 +262,16 @@ func bindingFrom(raw []byte, env map[string]string) (binding, bool) {
 	}
 
 	out := binding{ID: event.AgentID, Role: event.AgentType, Stop: stop}
-	if stop {
-		// A stop withdraws a registration. Where the transcript is and how big the window
-		// was are facts about a subagent that is finished, so they are not sent.
-		return out, true
-	}
 	if identifier.MatchString(event.SessionID) && event.TranscriptPath != "" &&
 		len(event.TranscriptPath) <= 4096 {
 		out.SessionID = event.SessionID
 		out.TranscriptPath = event.TranscriptPath
+	}
+	if stop {
+		if len(event.Result) <= 256<<10 {
+			out.Result = event.Result
+		}
+		return out, true
 	}
 	out.Context = contextFrom(env)
 	return out, true
@@ -151,23 +298,28 @@ func positiveInt(value string) (int64, bool) {
 
 // post sends the binding to this session's gateway and nowhere else.
 func post(body []byte, env map[string]string) error {
+	_, err := postReply(body, env, "/clauduct/agents")
+	return err
+}
+
+func postReply(body []byte, env map[string]string, path string) ([]byte, error) {
 	base := env["ANTHROPIC_BASE_URL"]
 	token := env["ANTHROPIC_AUTH_TOKEN"]
 	if !loopback.MatchString(base) || token == "" {
-		return errInvalidGateway
+		return nil, errInvalidGateway
 	}
 	parsed, err := url.Parse(base)
 	if err != nil {
-		return errInvalidGateway
+		return nil, errInvalidGateway
 	}
 	port, err := strconv.Atoi(parsed.Port())
 	if err != nil || port < 1 || port > 65535 {
-		return errInvalidGateway
+		return nil, errInvalidGateway
 	}
 
-	request, err := http.NewRequest(http.MethodPost, base+"/clauduct/agents", bytes.NewReader(body))
+	request, err := http.NewRequest(http.MethodPost, base+path, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
@@ -191,14 +343,17 @@ func post(body []byte, env map[string]string) error {
 	}
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
+	reply, err := io.ReadAll(io.LimitReader(response.Body, 4097))
+	if err != nil || len(reply) > 4096 {
+		return nil, errInvalidGateway
 	}
-	return nil
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		return nil, fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
+	}
+	return reply, nil
 }
 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")

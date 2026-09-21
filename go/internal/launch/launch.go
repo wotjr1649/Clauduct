@@ -38,12 +38,28 @@ type Overlay struct {
 	// choice without anything here parsing an argument -- and letting their environment win
 	// gives them the effort choice too, which the baseline hands out as --effort.
 	Session map[string]string
+	// Effort is the startup effort, passed as --effort, or empty for none.
+	//
+	// An argument rather than CLAUDE_CODE_EFFORT_LEVEL, which is where the rewrite went
+	// wrong. Measured 2026-09-18: that name beats an explicit --effort on the command line,
+	// the reverse of ANTHROPIC_MODEL's relationship to --model -- and a value that wins over
+	// an explicit flag wins over the client's own picker too. A session started with it set
+	// sends one effort for as long as it runs, whatever the user chooses afterwards.
+	//
+	// The Node baseline passed --model and --effort (src/clauduct.mjs:213) and set the
+	// environment name in exactly one place: under --verify-model-route
+	// (src/clauduct.mjs:192), whose purpose is to pin the route so a verification run cannot
+	// drift. It was the baseline's lock, and the rewrite made it the default.
+	//
+	// Goes ahead of the forwarded arguments for the same reason --agents does: the client
+	// takes the last one, so a user stating their own replaces this rather than colliding
+	// with it. Nothing here parses an argument to arrange that -- ours is simply first.
+	Effort string
 	// Settings is a settings blob to hand the child, or empty for none.
 	//
 	// It goes ahead of the forwarded arguments, which is the only ordering that could work:
-	// measured, a second --settings replaces the first rather than merging with it, so
-	// anything after this would take its place. That is also why the launcher refuses the
-	// options that would arrive after it -- see refuse.go.
+	// measured, a second --settings replaces the first rather than merging. App consumes
+	// and merges the user's settings first, so production passes exactly one argument.
 	Settings string
 	// Agents is the delegation menu to hand the child, or empty for none.
 	//
@@ -88,7 +104,10 @@ func denied(key string) bool {
 // decision to refuse some native options has to be a deliberate, separately tested
 // addition rather than a side effect of having a parser lying around.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
-	args := make([]string, 0, len(forward)+4)
+	args := make([]string, 0, len(forward)+6)
+	if overlay.Effort != "" {
+		args = append(args, "--effort", overlay.Effort)
+	}
 	if overlay.Settings != "" {
 		args = append(args, "--settings", overlay.Settings)
 	}

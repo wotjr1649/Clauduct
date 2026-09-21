@@ -106,6 +106,32 @@ func direct(t *testing.T, l *listener, p *auth.Provider, budget Budget) *Direct 
 	return d
 }
 
+func TestOnlyStructuredBadRequestAuthorizesContextRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		body   string
+		limit  bool
+	}{
+		{"confirmed", 400, `{"error":{"code":"context_length_exceeded"}}`, true},
+		{"message_only", 400, `{"error":{"message":"context_length_exceeded"}}`, false},
+		{"different_status", 403, `{"error":{"code":"context_length_exceeded"}}`, false},
+		{"oversized", 400, `{"error":{"code":"context_length_exceeded"},"padding":"` + strings.Repeat("x", 64*1024) + `"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := serve(t, &listener{status: tc.status, payload: tc.body})
+			// Same local placeholder provider as other HTTP transport tests. The
+			// synthetic-transport rejection is exercised separately below.
+			d := direct(t, l, credentialStore(t, false), Budget{Model: "gpt-5.6-luna", Effort: "low", Limit: 1})
+			_, err := d.Execute(context.Background(), call(routedBody))
+			var failure Failure
+			if !errors.As(err, &failure) || (failure.Category == "CONTEXT_LENGTH_EXCEEDED") != tc.limit || l.hits.Load() != 1 {
+				t.Fatal("overflow classification or request count changed", err)
+			}
+		})
+	}
+}
+
 // REL12: with no budget, nothing is sent. The evidence is the server's own count, not the
 // error this returned.
 func TestAnUnauthorisedBudgetOpensNoSocket(t *testing.T) {

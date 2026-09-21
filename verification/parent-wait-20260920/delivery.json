@@ -1,0 +1,21 @@
+{
+  "commit": "01614e0cb79fe9380ff1253f8b0c4db946271d51",
+  "destination": "D:/AIDEV/clauduct-s36-build",
+  "backup": "D:\\AIDEV\\clauduct-s36-build\\before-01614e0-20260920",
+  "hashes": {
+    "clauduct.exe": "32086c7b87d5f2222590537962507293394b19e6f1790d2000209dc08b8c892e",
+    "clauduct-hook.exe": "42318ae0bbf6247d87b2a6ee8d99fa46e870a8088a38b840ff555733266aa837",
+    "clauduct-dev.exe": "0be543b0b65987afcc6e4c229b7cb34f4d4c94de1cc1fc5392b0acd4e2245736"
+  },
+  "humanLauncher": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive.mjs",
+  "humanLauncherSha256": "cf19b2537492133bcf759aefbad57d08fb18d6c4728c06bbe319bc63c1cee9ab",
+  "at": "2026-09-19T20:09:29.114Z",
+  "acceptance": "user_validation_pending",
+  "universalAcceptance": false,
+  "knownLimits": [
+    "model instruction noncompliance observed",
+    "one original deadline test timeout unexplained",
+    "native_tui wait mode only",
+    "independent workflow plans only"
+  ]
+}

@@ -121,6 +121,9 @@ func TestASearchRetriesOnceAndOnlyWhenItCouldPass(t *testing.T) {
 					"side query the client is waiting on is not where a retry budget goes.",
 					got, c.hits)
 			}
+			if stats := d.SearchStats(); stats.Requests != 1 || stats.Attempts != c.hits || stats.Retries != c.hits-1 {
+				t.Fatalf("search retries hidden: %+v", stats)
+			}
 		})
 	}
 }

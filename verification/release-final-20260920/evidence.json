@@ -1,0 +1,295 @@
+{
+  "cancellationProduct": "29ed902774110fa3122765937691da57299ddc56",
+  "finalProduct": "442c3667f050fa4f252def04f19c8b1b627c9d53",
+  "adguard": "on_user_reported_unchanged",
+  "filterCancellation": {
+    "sha256": "f3407620da30c69add342519f71401040e9e979447e6c4ad218467576d428a20",
+    "realBackend": false,
+    "realNativeTUI": true,
+    "cancellationMs": 358,
+    "cancelled": {
+      "seq": 5,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "broken",
+      "category": "CANCELLED",
+      "cancellationSource": "native_abort_receipt",
+      "requested": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "source": "direct+effort",
+      "kind": "generation",
+      "nativeRequestClass": "main",
+      "contextEstimate": {
+        "inputTokens": 28156,
+        "source": "text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "streamEnd": {
+        "readError": "cancelled",
+        "clientContext": "cancelled",
+        "terminalObserved": false,
+        "events": 127,
+        "bytes": 12373
+      },
+      "verifiedChecks": [
+        "input",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 31955,
+      "backendProgress": {
+        "events": 127,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 125,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 19495,
+      "endedMs": 32020
+    },
+    "requests": {
+      "received": 7,
+      "refused": 0,
+      "broken": 0,
+      "active": 0,
+      "modelLists": 1
+    },
+    "events": [
+      {
+        "at": "2026-09-20T08:09:51.410391Z",
+        "kind": "partial_tool_started"
+      },
+      {
+        "at": "2026-09-20T08:10:03.5686821Z",
+        "kind": "proxy_client_closed"
+      },
+      {
+        "at": "2026-09-20T08:10:03.9261449Z",
+        "kind": "upstream_cancelled"
+      },
+      {
+        "at": "2026-09-20T08:10:17.2625081Z",
+        "kind": "recovery_answer"
+      }
+    ]
+  },
+  "deadlines": [
+    {
+      "id": "28a49954-3758-4b3f-8980-4b2c24714fab",
+      "sha256": "2b7a0b72414a5f1029f0a27e7449e32bbafe8213cace2a91eba00df2dda7f0b9",
+      "category": "SESSION_DEADLINE",
+      "nativeExitCode": 1,
+      "lifecycle": {
+        "state": "finished",
+        "final": true,
+        "reason": "session_deadline",
+        "startedAt": "2026-09-20T08:10:41.0065717Z",
+        "observedAt": "2026-09-20T08:11:29.040125Z",
+        "deadlineAt": "2026-09-20T08:11:26.0065717Z",
+        "deadlineReachedAt": "2026-09-20T08:11:26.0065717Z",
+        "graceExpiresAt": "2026-09-20T08:11:36.0065717Z",
+        "nativeStopRequested": true,
+        "nativeReaped": true
+      }
+    },
+    {
+      "id": "57a8e460-eb94-4f92-bab5-39db20b1fcaa",
+      "sha256": "ffb362de630a520eb0732f3032862f64abf4caf136e507a8439c631ebff8015d",
+      "category": "SESSION_DEADLINE",
+      "nativeExitCode": 1,
+      "lifecycle": {
+        "state": "finished",
+        "final": true,
+        "reason": "session_deadline",
+        "startedAt": "2026-09-20T08:12:10.3190161Z",
+        "observedAt": "2026-09-20T08:13:05.3513548Z",
+        "deadlineAt": "2026-09-20T08:12:55.3190161Z",
+        "deadlineReachedAt": "2026-09-20T08:12:55.3190161Z",
+        "graceExpiresAt": "2026-09-20T08:13:05.3190161Z",
+        "graceExpired": true,
+        "nativeStopRequested": true,
+        "nativeReaped": true
+      }
+    }
+  ],
+  "streams": [
+    {
+      "id": "96a9f5a1-b6ca-4095-97b1-e045fe9d8069",
+      "sha256": "5194f051fc3bb18d4359fa4d5e8d07702072d87c4e36644d64ba259124a8798a",
+      "variant": "none",
+      "nativeSha256": "006ea5c8638f67f10a5ae66bb232fd267c9f6af294e3f03f4cfcf1fd3f2cced8",
+      "fixture": true,
+      "realBackend": false,
+      "filter": "enabled_by_user_report",
+      "started": 1789890940995,
+      "events": [
+        {
+          "request": 1,
+          "slow": true,
+          "at": 1789890959848,
+          "firstTextAt": 1789890959849,
+          "terminalAt": 1789890975009,
+          "closedAt": 1789890975010,
+          "finished": true
+        },
+        {
+          "request": 2,
+          "slow": true,
+          "at": 1789890960162,
+          "firstTextAt": 1789890960163,
+          "terminalAt": 1789890975305,
+          "closedAt": 1789890975306,
+          "finished": true
+        }
+      ],
+      "pid": 20372,
+      "exit": 0,
+      "signal": null,
+      "ended": 1789890986366
+    },
+    {
+      "id": "548fbc92-bced-40a7-a4c8-031bab86c24c",
+      "sha256": "25c00f883195474eeb7cb39e0b249776049dd7193a8ce9a58d0c68d51f00668a",
+      "variant": "product",
+      "nativeSha256": "006ea5c8638f67f10a5ae66bb232fd267c9f6af294e3f03f4cfcf1fd3f2cced8",
+      "fixture": true,
+      "realBackend": false,
+      "filter": "enabled_by_user_report",
+      "started": 1789891111889,
+      "events": [
+        {
+          "request": 1,
+          "slow": true,
+          "at": 1789891144976,
+          "firstTextAt": 1789891144977,
+          "terminalAt": 1789891160138,
+          "closedAt": 1789891160139,
+          "finished": true
+        },
+        {
+          "request": 2,
+          "slow": true,
+          "at": 1789891145349,
+          "firstTextAt": 1789891145349,
+          "terminalAt": 1789891160514,
+          "closedAt": 1789891160514,
+          "finished": true
+        }
+      ],
+      "moduleSha256": "32146d3b51cf2fbcf95ae04e88e357528c6fe5b81b3903ac2fc40901f18db837",
+      "pid": 4656,
+      "exit": 0,
+      "signal": null,
+      "ended": 1789891177657
+    }
+  ],
+  "checks": [
+    {
+      "file": "all-1789891760635.jsonl",
+      "sha256": "5944e52ebb1119ba9756b7e7de525178ce90267ef982783bc4a582420a1eb886",
+      "passed": 1611,
+      "packages": 17,
+      "failures": [],
+      "skipped": [
+        "TestConsoleCloseIsNotRunHere",
+        "TestALiveSessionCompletes",
+        "TestWhatSurvivesTheLauncherBeingKilled"
+      ]
+    },
+    {
+      "file": "all-1789892882993.jsonl",
+      "sha256": "2008a33e673fa929fe5cbbf9a7ed938b9fa2192ca755b75c1edd085948718370",
+      "passed": 1622,
+      "packages": 17,
+      "failures": [],
+      "skipped": [
+        "TestConsoleCloseIsNotRunHere",
+        "TestALiveSessionCompletes",
+        "TestWhatSurvivesTheLauncherBeingKilled"
+      ]
+    },
+    {
+      "file": "race-1789893076876.jsonl",
+      "sha256": "b866baded57ab0bd8164feb6ddf7068c9c3d4d22a83567839a85899fb9104eaf",
+      "passed": 1621,
+      "packages": 17,
+      "failures": [],
+      "skipped": [
+        "TestConsoleCloseIsNotRunHere",
+        "TestALiveSessionCompletes",
+        "TestTheShippedBinaryIsBuiltWithoutCgo",
+        "TestWhatSurvivesTheLauncherBeingKilled"
+      ]
+    },
+    {
+      "file": "gateway-1789893701923.jsonl",
+      "sha256": "05d8a699c076c1cc7b13156148a43ef829f3a37ab50f8188db8c1cc895b634ba",
+      "passed": 548,
+      "packages": 1,
+      "failures": [],
+      "skipped": []
+    },
+    {
+      "file": "race_gateway-1789893788095.jsonl",
+      "sha256": "acf45d63fbd7b97ab74cfd3652c4b5b82907115d671ff4882e76e12d07f24369",
+      "passed": 548,
+      "packages": 1,
+      "failures": [],
+      "skipped": []
+    }
+  ],
+  "counterexamples": [
+    {
+      "file": "socket_drain-1789890857058.jsonl",
+      "sha256": "83448b47a3d91966beaed173d2c6ac17102a2d0545cc8ac92069947d5f05d58a",
+      "passed": 0,
+      "packages": 0,
+      "failures": [
+        {
+          "package": "github.com/wotjr1649/Clauduct/go/.verification/filterclose",
+          "test": "TestFilteredHTTPShutdown/length_shutdown_drain"
+        },
+        {
+          "package": "github.com/wotjr1649/Clauduct/go/.verification/filterclose",
+          "test": "TestFilteredHTTPShutdown"
+        },
+        {
+          "package": "github.com/wotjr1649/Clauduct/go/.verification/filterclose"
+        }
+      ],
+      "skipped": []
+    },
+    {
+      "file": "socket_drain-1789891107091.jsonl",
+      "sha256": "9382112e85b3c4d786e9326dbc1cdb59ac9bca1da2b1bbe974e264fd02937085",
+      "passed": 0,
+      "packages": 0,
+      "failures": [
+        {
+          "package": "github.com/wotjr1649/Clauduct/go/.verification/filterclose",
+          "test": "TestFilteredHTTPShutdown/length_shutdown_drain"
+        },
+        {
+          "package": "github.com/wotjr1649/Clauduct/go/.verification/filterclose",
+          "test": "TestFilteredHTTPShutdown"
+        },
+        {
+          "package": "github.com/wotjr1649/Clauduct/go/.verification/filterclose"
+        }
+      ],
+      "skipped": []
+    }
+  ],
+  "failedWorkflow": "4f76c3095cfd580e4ad709cf179e6c5f21bac867cbee05f0c12b10d5be618a57"
+}

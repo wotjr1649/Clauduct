@@ -114,9 +114,23 @@ func TestEachModelKeepsItsOwnDefaultEffort(t *testing.T) {
 	}
 }
 
-// The route is what goes upstream. The reply must still name the model the client asked
-// for, or the client is told it talked to something it never requested.
-func TestTheReplyNamesTheRequestedModelNotTheRoutedOne(t *testing.T) {
+// The reply names the model that answered, which is the route and not the request.
+//
+// This test said the opposite until 2026-09-18, and said it with a reason: "the client is
+// told it talked to something it never requested". The reason has the honesty backwards. A
+// role-routed subagent does not talk to what it requested, so naming the request is the
+// statement that is false, and it is false in the direction that hides a model swap from the
+// user -- which ARCHITECTURE.md:217 says this build does not do.
+//
+// The Node baseline had it this way from the start: frameStart uses prepared.selected.model
+// (src/native-protocol.mjs:509-511), selected comes from the role route when there is one
+// (:258), and its own tests pin it -- a client posting terra gets ROLE_MODELS.Plan.model back
+// in the stream (src/test-native.mjs:505-511). The rewrite diverged here by omission, and the
+// divergence was found by running a real session, not by reading either one.
+//
+// Reversing a recorded decision, and recorded as such: the old invariant and its reason are
+// above, the measurement that overturned it is in PARITY.md.
+func TestTheReplyNamesTheModelThatAnswered(t *testing.T) {
 	request := decodeRequest(t, `{"model":"claude-opus-5","max_tokens":100000,"stream":true,`+
 		`"messages":[{"role":"user","content":"x"}]}`)
 
@@ -128,18 +142,27 @@ func TestTheReplyNamesTheRequestedModelNotTheRoutedOne(t *testing.T) {
 		t.Fatalf("the backend request named %q", backend.Model)
 	}
 
-	frames, err := runFor(t, request,
-		itemAdded(0, `{"id":"msg_1","type":"message"}`),
-		textDelta(0, "hi"), textDone(0, "hi"),
-		itemDone(0, messageItem("msg_1", "hi")),
-		event(codex.Completed, completedOK))
-	if err != nil {
-		t.Fatalf("Accept: %v", err)
-	}
-	start := blockAt(t, frames, "message_start", 0)
-	message := start["message"].(map[string]any)
-	if message["model"] != "claude-opus-5" {
-		t.Fatalf("the client was told it talked to %v, not what it asked for", message["model"])
+	// The gateway states the route it built; runFor's empty value is the caller that has
+	// none, and both are checked because only one of them is the product path.
+	for name, tc := range map[string]struct{ effective, want string }{
+		"the gateway, which knows the route": {backend.Model, "gpt-5.6-sol"},
+		"a caller with no route to state":    {"", "claude-opus-5"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			frames, err := runForOn(t, request, tc.effective,
+				itemAdded(0, `{"id":"msg_1","type":"message"}`),
+				textDelta(0, "hi"), textDone(0, "hi"),
+				itemDone(0, messageItem("msg_1", "hi")),
+				event(codex.Completed, completedOK))
+			if err != nil {
+				t.Fatalf("Accept: %v", err)
+			}
+			start := blockAt(t, frames, "message_start", 0)
+			message := start["message"].(map[string]any)
+			if message["model"] != tc.want {
+				t.Fatalf("the client was told it talked to %v, want %s", message["model"], tc.want)
+			}
+		})
 	}
 }
 
@@ -293,5 +316,34 @@ func TestASystemTurnSetsTheEffortForThatTurn(t *testing.T) {
 	if _, err := BuildRequest(decodeRequest(t,
 		head+`{"role":"system","content":"x","output_config":{"effort":"maximum"}}]}`)); err == nil {
 		t.Fatal("an undefined effort was accepted")
+	}
+}
+
+// Session 36, measured in a real session on 2026-09-18. The launcher ships an agent type
+// the router does not know about, so using it reports the session as faulty.
+//
+// clauduct-inherit is one of the fourteen entries in the delegation menu (app/agents.go) and
+// its whole point is to keep the parent's model and effort. The router had no entry for it:
+// menuRoute rejects it because "inherit" carries no -<effort> suffix, inheritRoles held only
+// workflow-subagent, so it fell through to the routing-miss counter. A session that used it
+// came back with agents.unrouted=1 and the whole account dumped at exit.
+//
+// That is the failure inheritRoles was written to prevent, stated in its own comment for
+// workflow-subagent: a diagnostic that cries wolf on ordinary use stops being read. This
+// build's own agent was the one it cried wolf about.
+func TestTheInheritAgentIsNotARoutingMiss(t *testing.T) {
+	if !InheritsParent(InheritRole) {
+		t.Errorf("%s is in the delegation menu and the router counts it as unrouted", InheritRole)
+	}
+	// Deliberately not a route: inheriting means keeping what the client asked for, so
+	// RoleRoute must decline rather than reassign.
+	if route, known := RoleRoute(InheritRole); known {
+		t.Errorf("%s was reassigned to %s/%s; inheriting means not choosing",
+			InheritRole, route.Model, route.Effort)
+	}
+	// And the name the menu builds is the name the router matches. Two spellings of one
+	// string is how this broke.
+	if InheritRole != MenuPrefix+"inherit" {
+		t.Errorf("InheritRole = %q, which is not a %s name", InheritRole, MenuPrefix)
 	}
 }

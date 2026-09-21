@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
@@ -88,11 +90,14 @@ func versionFrom(resolve func() (string, bool, error)) (string, error) {
 	defer cancel()
 	// Output, not CombinedOutput: a warning on stderr must not become part of a version
 	// string that goes on the wire.
-	raw, err := exec.CommandContext(ctx, path, "--version").Output()
+	var raw bytes.Buffer
+	cmd := exec.Command(path, "--version")
+	cmd.Stdout = &raw
+	err = childprocess.Run(ctx, cmd)
 	if err != nil {
 		return "", ErrNoClientVersion
 	}
-	return ParseVersion(string(raw))
+	return ParseVersion(raw.String())
 }
 
 // ParseVersion reads a version out of what the executable printed.

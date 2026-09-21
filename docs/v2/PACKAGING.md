@@ -79,7 +79,7 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 ```powershell
 # 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
 #    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).
-git worktree add ../clauduct-release v0.2.3
+git worktree add ../clauduct-release v0.3.0
 cd ../clauduct-release/go
 $env:CGO_ENABLED = '0'
 # 산출물은 반드시 트리 **바깥**으로. 안에 쓰면 두 번째 빌드부터 자기가 만든 exe 때문에
@@ -97,7 +97,7 @@ go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
 #    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
-# 4. gh release create v0.2.3 clauduct.exe clauduct-hook.exe clauduct-dev.exe `
+# 4. gh release create v0.3.0 clauduct.exe clauduct-hook.exe clauduct-dev.exe `
 #        install.ps1 uninstall.ps1 SHA256SUMS
 ```
 
@@ -146,6 +146,17 @@ PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`�
 **설치 디렉터리에 쓰지 않는다.** 테스트가 확인한다 — 다른 cwd에서 실행한 뒤 설치 디렉터리에 무엇이 생겼는지 전후 비교한다. 따라서 공유 경로나 쓰기 금지 경로에 둘 수 있다.
 
 세션 상태는 전부 native가 소유하고 `CLAUDE_CONFIG_DIR`(기본 `~/.claude`) 아래에 있다. 이 wrapper는 자기 것을 어디에도 쓰지 않는다.
+
+**그 결정의 대가 (2026-09-18 관측).** 격리하지 않으므로 clauduct 세션이 고른 모델이 사용자의
+`~/.claude.json`에 남는다 — `clientDataCacheSlots.bi1-*.model`에 `gpt-6-astra`가 들어가고, 그 다음
+native `claude`가 "이 버전 카탈로그에 없는 모델"이라고 경고한다. 첫 실사용에서 실제로 나왔다.
+
+완화는 `behavesAs`가 **아니다.** 넣으면 경고는 사라지지만 effort를 함께 가져가서 low가 medium이 된다고
+실측돼 있다(`app/settings.go`의 `pickerRows` 주석). 경고가 가리키는 컨텍스트 창 문제는
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS`가 이미 따로 해결한다.
+
+지금의 완화는 안내다 — clauduct에서 모델을 바꾸면 그 선택이 native 쪽에도 보인다. 구조적 해결(설정
+격리)은 결정거리로 남아 있고 아직 하지 않았다.
 
 ### 5.0 스크립트
 

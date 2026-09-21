@@ -1,0 +1,1684 @@
+{
+  "run": {
+    "id": "4648bee3-1752-4934-8e36-7641ea4cd626",
+    "binary": "D:\\AIDEV\\clauduct-s36-build\\wait-workflow-repair-20260920\\verification\\parent-wait-20260920\\bin\\clauduct.exe",
+    "sha256": "5f57682b7982892f49d810d739b5f264e4548afc4c0d4864fea210030310b2ed",
+    "artifacts": {
+      "clauduct.exe": "5f57682b7982892f49d810d739b5f264e4548afc4c0d4864fea210030310b2ed",
+      "clauduct-hook.exe": "331ef9664f9c86c39c99e49ca5d18e5016bb67f05f6f120ed4670d2b2acef8f3",
+      "clauduct-dev.exe": "9768dc098391a5f0f48f47237dd6bc8c2655599cdea896de6aeb4c17462704b4"
+    },
+    "project": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\project",
+    "profile": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile",
+    "mode": "context-fork-repair",
+    "deadlineSeconds": 1200,
+    "graceSeconds": 180,
+    "started": "2026-09-19T19:31:54.243Z",
+    "state": "exited",
+    "launcherPid": 18416,
+    "exitCode": 0,
+    "signal": null,
+    "finished": "2026-09-19T19:47:31.821Z"
+  },
+  "status": {
+    "completion": {
+      "acceptance": "not_assessed",
+      "apiFailures": 0,
+      "cancelledRequests": 0,
+      "nativeCancellations": 1,
+      "nativeToolFailures": 0,
+      "rejectedWorkflowCalls": 1,
+      "unacquiredResultsInRecent": 0,
+      "controlTransitions": 0
+    },
+    "category": "SUCCESS",
+    "exitCode": 0,
+    "attempts": 108,
+    "inferences": 54,
+    "session": {
+      "startupModel": "gpt-6-astra",
+      "startupEffort": "low",
+      "nativeContextDefaults": {
+        "window": 500000,
+        "autoCompactWindow": 500000,
+        "compactPercent": 100,
+        "applicationVerified": false
+      },
+      "nonStreamingFallbackDisabled": true,
+      "delegationMenuEntries": 21,
+      "hookInstalled": true
+    },
+    "gateway": {
+      "uptimeMs": 937463,
+      "requests": {
+        "received": 77,
+        "refused": 0,
+        "broken": 0,
+        "active": 0,
+        "modelLists": 1
+      },
+      "agents": {
+        "registered": 1,
+        "unregistered": 0,
+        "unrouted": 0
+      },
+      "betas": {
+        "requests": 54,
+        "judged": [
+          "STRUCTURED_OUTPUTS"
+        ]
+      },
+      "client": {
+        "version": "2.1.278",
+        "reference": "2.1.278",
+        "verified": true,
+        "verifiedMeaning": "version_match_only"
+      },
+      "features": [
+        {
+          "name": "generation",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 54,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 54,
+          "successfulResponses": 54,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 77,
+          "lastCompletedRequest": 77,
+          "rejectedToolCalls": 1,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "native_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 27,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 27,
+          "successfulResponses": 27,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 71,
+          "lastCompletedRequest": 71,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "agent_resume",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "selection",
+            "native_turn",
+            "continuation",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_agent",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "workflow_selection",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "requests": 22,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 22,
+          "successfulResponses": 22,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 71,
+          "lastCompletedRequest": 71,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "count_tokens",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "count_completed"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "web_search",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "search_available"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "compaction",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "compaction_authorized",
+            "exact_preflight"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_result_reuse",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_recovery"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 1,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 75,
+          "lastCompletedRequest": 75,
+          "rejectedToolCalls": 1,
+          "runtimeEvidence": "conditions_not_confirmed_for_all_requests",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "parent_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 2,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 2,
+          "successfulResponses": 2,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 9,
+          "lastCompletedRequest": 9,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "empty_reply_wait",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui"
+          ],
+          "requests": 0,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 0,
+          "successfulResponses": 0,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "runtimeEvidence": "not_observed",
+          "acceptance": "not_assessed"
+        },
+        {
+          "name": "workflow_resume",
+          "enforcement": "per_request",
+          "requiredChecks": [
+            "input",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_plan_resume"
+          ],
+          "requests": 1,
+          "requestsWithoutRequiredChecks": 0,
+          "requestsWithRequiredChecks": 1,
+          "successfulResponses": 1,
+          "failedAfterChecks": 0,
+          "cancelledAfterChecks": 0,
+          "lastRequest": 67,
+          "lastCompletedRequest": 67,
+          "runtimeEvidence": "required_checks_observed",
+          "acceptance": "not_assessed"
+        }
+      ],
+      "progress": {
+        "source": "native_event_receipts",
+        "state": "observed_events_not_liveness_proof",
+        "unreadable": 0,
+        "capacityExceeded": false,
+        "agents": [
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "agent": "",
+            "turn": "4398bd0e-033f-4025-bd09-e98db74f84ae",
+            "phase": "turn_ended",
+            "signal": "turn_answer",
+            "sequence": 3,
+            "at": 1789847212502,
+            "pendingTools": 0,
+            "permissionRequests": 0,
+            "ageMs": 39306
+          }
+        ]
+      },
+      "rateLimit": {
+        "state": "partial",
+        "activeLimit": "premium",
+        "primary": {
+          "usedPercent": 16,
+          "windowMinutes": 10080,
+          "resetAt": 1790411768
+        },
+        "secondary": {
+          "usedPercent": 0,
+          "windowMinutes": 0
+        }
+      },
+      "events": {},
+      "recent": [
+        {
+          "seq": 62,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-5.6-luna",
+          "model": "gpt-5.6-luna",
+          "effort": "high",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "auxiliary",
+          "backendInputTokens": 849,
+          "countedInputTokens": 849,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 903,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 21,
+            "bytes": 14505
+          },
+          "verifiedChecks": [
+            "input",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 695975,
+          "backendProgress": {
+            "events": 21,
+            "textDeltas": 11,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 688564,
+          "firstByteMs": 695561,
+          "endedMs": 695979
+        },
+        {
+          "seq": 63,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 22389,
+          "countedInputTokens": 22389,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1293,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 19,
+            "bytes": 130506
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 692795,
+          "backendProgress": {
+            "events": 19,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 13,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "pending": [
+              "a3949171097965601"
+            ],
+            "includedResults": [
+              "a0ac526b1b016e361"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 688583,
+          "firstByteMs": 692796,
+          "endedMs": 692849
+        },
+        {
+          "seq": 64,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 22482,
+          "countedInputTokens": 22482,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1295,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 16,
+            "bytes": 132861
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 697457,
+          "backendProgress": {
+            "events": 16,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 10,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "pending": [
+              "a3949171097965601"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 692866,
+          "firstByteMs": 697458,
+          "endedMs": 697509
+        },
+        {
+          "seq": 65,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 22632,
+          "countedInputTokens": 22632,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1229,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 88,
+            "bytes": 153479
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 703401,
+          "backendProgress": {
+            "events": 88,
+            "textDeltas": 80,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "unavailableResults": [
+              "a3949171097965601"
+            ],
+            "completionEligible": false,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 697536,
+          "firstByteMs": 700849,
+          "endedMs": 703476
+        },
+        {
+          "seq": 66,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-5.6-luna",
+          "model": "gpt-5.6-luna",
+          "effort": "high",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "auxiliary",
+          "backendInputTokens": 905,
+          "countedInputTokens": 905,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 844,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 21,
+            "bytes": 13842
+          },
+          "verifiedChecks": [
+            "input",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 763328,
+          "backendProgress": {
+            "events": 21,
+            "textDeltas": 11,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 758023,
+          "firstByteMs": 763163,
+          "endedMs": 763374
+        },
+        {
+          "seq": 67,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 22819,
+          "countedInputTokens": 22819,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1621,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 23,
+            "bytes": 135917
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request",
+            "workflow_recovery",
+            "workflow_plan_resume"
+          ],
+          "lastObservedMs": 762363,
+          "backendProgress": {
+            "events": 23,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 17,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 758035,
+          "firstByteMs": 762370,
+          "endedMs": 762434
+        },
+        {
+          "seq": 68,
+          "method": "POST",
+          "path": "/clauduct/workflows",
+          "stage": "request",
+          "outcome": "ok",
+          "status": 204,
+          "kind": "other",
+          "lastObservedMs": 0,
+          "backendProgress": {
+            "events": 0,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 819369,
+          "endedMs": 819370
+        },
+        {
+          "seq": 69,
+          "method": "POST",
+          "path": "/clauduct/agents",
+          "stage": "request",
+          "outcome": "ok",
+          "status": 200,
+          "kind": "agent_binding",
+          "lastObservedMs": 0,
+          "backendProgress": {
+            "events": 0,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 819392,
+          "firstByteMs": 819392,
+          "endedMs": 819392
+        },
+        {
+          "seq": 70,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 23644,
+          "countedInputTokens": 23644,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1353,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 102,
+            "bytes": 158240
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 826647,
+          "backendProgress": {
+            "events": 102,
+            "textDeltas": 94,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 819425,
+          "firstByteMs": 823819,
+          "endedMs": 826737
+        },
+        {
+          "seq": 71,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-5.6-luna",
+          "model": "gpt-5.6-luna",
+          "effort": "low",
+          "source": "workflow-selection",
+          "kind": "generation",
+          "nativeRequestClass": "workflow",
+          "backendInputTokens": 6106,
+          "countedInputTokens": 6106,
+          "agentId": "a31031332f96a8ad9",
+          "agentRole": "workflow-subagent",
+          "selectionVerified": true,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1082,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 17,
+            "bytes": 64574
+          },
+          "verifiedChecks": [
+            "input",
+            "selection",
+            "workflow_selection",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "native_turn",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 822471,
+          "backendProgress": {
+            "events": 17,
+            "textDeltas": 7,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 819459,
+          "firstByteMs": 822472,
+          "endedMs": 822513
+        },
+        {
+          "seq": 72,
+          "method": "POST",
+          "path": "/clauduct/agents",
+          "stage": "request",
+          "outcome": "ok",
+          "status": 200,
+          "kind": "agent_binding",
+          "lastObservedMs": 0,
+          "backendProgress": {
+            "events": 0,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 822577,
+          "firstByteMs": 822577,
+          "endedMs": 822577
+        },
+        {
+          "seq": 73,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 24792,
+          "countedInputTokens": 24792,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1507,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 240,
+            "bytes": 196241
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 838051,
+          "backendProgress": {
+            "events": 240,
+            "textDeltas": 232,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "includedResults": [
+              "a31031332f96a8ad9"
+            ],
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 826786,
+          "firstByteMs": 830886,
+          "endedMs": 838128
+        },
+        {
+          "seq": 74,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-5.6-luna",
+          "model": "gpt-5.6-luna",
+          "effort": "high",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "auxiliary",
+          "backendInputTokens": 847,
+          "countedInputTokens": 847,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 839,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 18,
+            "bytes": 9558
+          },
+          "verifiedChecks": [
+            "input",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 861605,
+          "backendProgress": {
+            "events": 18,
+            "textDeltas": 10,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "startedMs": 859436,
+          "firstByteMs": 861279,
+          "endedMs": 861641
+        },
+        {
+          "seq": 75,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 24993,
+          "countedInputTokens": 24993,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1291,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 23,
+            "bytes": 137648
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight",
+            "workflow_recovery_request"
+          ],
+          "rejectedWorkflowCalls": 1,
+          "lastObservedMs": 863399,
+          "backendProgress": {
+            "events": 23,
+            "textDeltas": 0,
+            "toolArgumentDeltas": 17,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 859448,
+          "firstByteMs": 863400,
+          "endedMs": 863480
+        },
+        {
+          "seq": 76,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 25099,
+          "countedInputTokens": 25099,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1350,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 100,
+            "bytes": 159850
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 870094,
+          "backendProgress": {
+            "events": 100,
+            "textDeltas": 92,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 863505,
+          "firstByteMs": 867092,
+          "endedMs": 870184
+        },
+        {
+          "seq": 77,
+          "method": "POST",
+          "path": "/v1/messages",
+          "stage": "delivery",
+          "outcome": "ok",
+          "status": 200,
+          "requested": "gpt-6-astra",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "source": "direct+effort",
+          "kind": "generation",
+          "nativeRequestClass": "main",
+          "backendInputTokens": 25245,
+          "countedInputTokens": 25245,
+          "countSource": "backend-count-warmup",
+          "countMethod": "backend-count-warmup",
+          "countAgreement": "matched",
+          "countMs": 1422,
+          "streamEnd": {
+            "readError": "eof",
+            "clientContext": "none",
+            "terminalObserved": true,
+            "events": 22,
+            "bytes": 139094
+          },
+          "verifiedChecks": [
+            "input",
+            "parent_input_snapshot",
+            "native_wait_step",
+            "native_tui",
+            "route",
+            "exact_preflight"
+          ],
+          "lastObservedMs": 898061,
+          "backendProgress": {
+            "events": 22,
+            "textDeltas": 14,
+            "toolArgumentDeltas": 0,
+            "reasoningDeltas": 0
+          },
+          "parentReadiness": {
+            "completionEligible": true,
+            "meaning": "known_child_reports_in_input_not_task_success",
+            "replyWithheld": false,
+            "waitControlMode": "native_tui"
+          },
+          "startedMs": 893672,
+          "firstByteMs": 897447,
+          "endedMs": 898151
+        }
+      ],
+      "totals": {
+        "rejectedWorkflowCalls": 1,
+        "completed": 77,
+        "kinds": {
+          "agent_binding": 17,
+          "context_event": 1,
+          "generation": 54,
+          "models": 1,
+          "other": 3,
+          "readiness": 1
+        },
+        "routes": {
+          "gpt-5.6-luna/high/direct+effort": 7,
+          "gpt-5.6-luna/low/workflow-selection": 11,
+          "gpt-5.6-sol/low/workflow-selection": 4,
+          "gpt-5.6-terra/low/agent-call-model+effort": 3,
+          "gpt-5.6-terra/low/delegation-inherited": 2,
+          "gpt-5.6-terra/low/workflow-selection": 7,
+          "gpt-6-astra/low/direct+effort": 20
+        },
+        "kindRoutes": {
+          "generation/gpt-5.6-luna/high/direct+effort": 7,
+          "generation/gpt-5.6-luna/low/workflow-selection": 11,
+          "generation/gpt-5.6-sol/low/workflow-selection": 4,
+          "generation/gpt-5.6-terra/low/agent-call-model+effort": 3,
+          "generation/gpt-5.6-terra/low/delegation-inherited": 2,
+          "generation/gpt-5.6-terra/low/workflow-selection": 7,
+          "generation/gpt-6-astra/low/direct+effort": 20
+        },
+        "failures": {},
+        "controls": {}
+      },
+      "modelContexts": [
+        {
+          "model": "gpt-6-astra",
+          "target": {
+            "window": 500000,
+            "compactAt": 450000
+          },
+          "application": "gateway_exact_preflight",
+          "verification": "preflight_observed",
+          "reason": "NATIVE_WINDOW_IS_SHARED",
+          "observed": {
+            "countMatches": 20,
+            "countMismatches": 0,
+            "preflights": 20,
+            "successfulPreflightCounts": 20,
+            "countCacheHits": 0,
+            "countShared": 0,
+            "countMs": 26798,
+            "compactionRequests": 0,
+            "requestsWithBackendUsage": 20,
+            "lastCompletedInputTokens": 25245,
+            "peakCompletedInputTokens": 25245
+          }
+        },
+        {
+          "model": "gpt-5.6-sol",
+          "target": {
+            "window": 272000,
+            "compactAt": 239000
+          },
+          "application": "gateway_exact_preflight",
+          "verification": "preflight_observed",
+          "reason": "NATIVE_WINDOW_IS_SHARED",
+          "observed": {
+            "countMatches": 4,
+            "countMismatches": 0,
+            "preflights": 4,
+            "successfulPreflightCounts": 4,
+            "countCacheHits": 0,
+            "countShared": 0,
+            "countMs": 4852,
+            "compactionRequests": 0,
+            "requestsWithBackendUsage": 4,
+            "lastCompletedInputTokens": 6193,
+            "peakCompletedInputTokens": 7249
+          }
+        },
+        {
+          "model": "gpt-5.6-terra",
+          "target": {
+            "window": 272000,
+            "compactAt": 239000
+          },
+          "application": "gateway_exact_preflight",
+          "verification": "preflight_observed",
+          "reason": "NATIVE_WINDOW_IS_SHARED",
+          "observed": {
+            "countMatches": 12,
+            "countMismatches": 0,
+            "preflights": 12,
+            "successfulPreflightCounts": 12,
+            "countCacheHits": 0,
+            "countShared": 0,
+            "countMs": 13681,
+            "compactionRequests": 0,
+            "requestsWithBackendUsage": 12,
+            "lastCompletedInputTokens": 6223,
+            "peakCompletedInputTokens": 10082
+          }
+        },
+        {
+          "model": "gpt-5.6-luna",
+          "target": {
+            "window": 272000,
+            "compactAt": 239000
+          },
+          "application": "gateway_exact_preflight",
+          "verification": "preflight_observed",
+          "reason": "NATIVE_WINDOW_IS_SHARED",
+          "observed": {
+            "countMatches": 18,
+            "countMismatches": 0,
+            "preflights": 18,
+            "successfulPreflightCounts": 18,
+            "countCacheHits": 0,
+            "countShared": 0,
+            "countMs": 18440,
+            "compactionRequests": 0,
+            "requestsWithBackendUsage": 18,
+            "lastCompletedInputTokens": 847,
+            "peakCompletedInputTokens": 14370
+          }
+        }
+      ],
+      "agentContexts": [
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "model": "gpt-6-astra",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-6-astra",
+          "lastSuccessfullyCountedInputTokens": 25245,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "a0ac526b1b016e361",
+          "model": "gpt-5.6-sol",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-sol",
+          "lastSuccessfullyCountedInputTokens": 6193,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "a31031332f96a8ad9",
+          "model": "gpt-5.6-luna",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-luna",
+          "lastSuccessfullyCountedInputTokens": 6106,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "a3949171097965601",
+          "model": "gpt-5.6-terra",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-terra",
+          "lastSuccessfullyCountedInputTokens": 6223,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "a4f1a6eeb793c53bc",
+          "model": "gpt-5.6-luna",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-luna",
+          "lastSuccessfullyCountedInputTokens": 14370,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "aa42f86b2c1f6f688",
+          "model": "gpt-5.6-terra",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-terra",
+          "lastSuccessfullyCountedInputTokens": 10082,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "ad0e5239ad46ce6bd",
+          "model": "gpt-5.6-terra",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-terra",
+          "lastSuccessfullyCountedInputTokens": 9266,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "ade7d598a6c043675",
+          "model": "gpt-5.6-terra",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-terra",
+          "lastSuccessfullyCountedInputTokens": 8164,
+          "persistent": true
+        },
+        {
+          "sessionId": "4648bee3-1752-4934-8e36-7641ea4cd626",
+          "agentId": "afb5665d3ec1806a6",
+          "model": "gpt-5.6-sol",
+          "effort": "low",
+          "phase": "ready",
+          "phaseMeaning": "context_policy_state_not_turn_outcome",
+          "lastCountModel": "gpt-5.6-sol",
+          "lastSuccessfullyCountedInputTokens": 7249,
+          "persistent": true
+        }
+      ],
+      "agentResults": {
+        "recent": [
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-luna",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-luna",
+              "effectiveEffort": "low",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "19eebea0-f516-4382-aa0a-0d82349bf26a",
+            "nativeModel": "gpt-5.6-luna",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "a31031332f96a8ad9",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_IspME3idbmCiltZPRey3G4zx",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 11,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-terra",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-terra",
+              "effectiveEffort": "low",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "9a6fea5a-4b9a-41e9-ac43-0e3d330d0440",
+            "nativeModel": "gpt-5.6-terra",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "aborted",
+            "agent": "a3949171097965601",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_YHNy27OAXNpCB1u3GFWgsIMO",
+            "state": "cancellation_reported",
+            "bytes": 0,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-sol",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-sol",
+              "effectiveEffort": "low",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "fc34276b-4d54-4bb8-91c9-9329d66bba82",
+            "nativeModel": "gpt-5.6-sol",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "a0ac526b1b016e361",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_YHNy27OAXNpCB1u3GFWgsIMO",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 11,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-sol",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-sol",
+              "effectiveEffort": "low",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "8cbd6a69-54e0-456a-8da8-8e5d1ee8d15e",
+            "nativeModel": "gpt-5.6-sol",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "afb5665d3ec1806a6",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 8,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-terra",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-terra",
+              "effectiveEffort": "low",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "147ef317-69d0-4873-a690-a574003a2b15",
+            "nativeModel": "gpt-5.6-terra",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "aa42f86b2c1f6f688",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 87,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-luna",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-luna",
+              "effectiveEffort": "low",
+              "source": "workflow-selection"
+            },
+            "nativeTurnId": "3b01c14e-92b2-46db-872f-60909d7b40b1",
+            "nativeModel": "gpt-5.6-luna",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "a4f1a6eeb793c53bc",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 123,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "requestedModel": "gpt-5.6-terra",
+              "requestedEffort": "low",
+              "modelProvided": true,
+              "effortProvided": true,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-terra",
+              "effectiveEffort": "low",
+              "source": "agent-call-model+effort"
+            },
+            "nativeTurnId": "7b184652-84cc-4ac5-ae4b-60c405f165a2",
+            "nativeModel": "gpt-5.6-terra",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "ad0e5239ad46ce6bd",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_c7BpnZHyxgWV1LQ2wSeaDlJn",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 215,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          },
+          {
+            "selection": {
+              "modelProvided": false,
+              "effortProvided": false,
+              "requestPresenceVerified": true,
+              "effectiveModel": "gpt-5.6-terra",
+              "effectiveEffort": "low",
+              "source": "delegation-inherited"
+            },
+            "nativeTurnId": "f99f8ca1-fbb0-435c-a796-1d3fb460c35c",
+            "nativeModel": "gpt-5.6-terra",
+            "nativeEffort": "low",
+            "nativeEndObserved": true,
+            "endReason": "answer",
+            "agent": "ade7d598a6c043675",
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_SYKCT5kKEvIYSciZA6nRaKX6",
+            "state": "parent_received",
+            "source": "delivered_response",
+            "bytes": 105,
+            "recovered": false,
+            "review": "not_assessed_by_gateway"
+          }
+        ],
+        "totals": {
+          "awaiting_children": 1,
+          "awaiting_parent": 7,
+          "cancellation_reported": 1,
+          "cancelled": 1,
+          "parent_received": 7,
+          "running": 9
+        },
+        "totalsMeaning": "state_entry_counts",
+        "current": {
+          "cancellation_reported": 1,
+          "parent_received": 7
+        }
+      },
+      "nativeEvents": {
+        "configured": true,
+        "observed": true,
+        "invalid": 0
+      },
+      "contextDisplay": {
+        "source": "native_transcript_provenance",
+        "removedBlocks": 0,
+        "requests": 0,
+        "unreadable": 0,
+        "provenReports": 0,
+        "nativeDisplay": "unchanged_local_history_estimates",
+        "capacityExceeded": false
+      },
+      "nativeToolFailures": {
+        "recent": null,
+        "total": 0,
+        "interrupted": 0,
+        "capacityExceeded": false
+      },
+      "agentSelections": {
+        "recent": [
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_IspME3idbmCiltZPRey3G4zx",
+            "agent": "a31031332f96a8ad9",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-luna",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-luna",
+            "effectiveEffort": "low",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 1,
+            "backendCompletions": 1
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_YHNy27OAXNpCB1u3GFWgsIMO",
+            "agent": "a3949171097965601",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-terra",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "low",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 1,
+            "backendCompletions": 1
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_YHNy27OAXNpCB1u3GFWgsIMO",
+            "agent": "a0ac526b1b016e361",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-sol",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-sol",
+            "effectiveEffort": "low",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 1,
+            "backendCompletions": 1
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+            "agent": "afb5665d3ec1806a6",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-sol",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-sol",
+            "effectiveEffort": "low",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 3,
+            "backendCompletions": 3
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+            "agent": "aa42f86b2c1f6f688",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-terra",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "low",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 6,
+            "backendCompletions": 6
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_gQO6ZDEvquAsPJC5MvNPB3rJ",
+            "agent": "a4f1a6eeb793c53bc",
+            "role": "workflow-subagent",
+            "requestedModel": "gpt-5.6-luna",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-luna",
+            "effectiveEffort": "low",
+            "source": "workflow-selection",
+            "nativeModelAlias": "",
+            "state": "selection_verified",
+            "backendResponses": 10,
+            "backendCompletions": 10
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "parent": "ad0e5239ad46ce6bd",
+            "call": "call_SYKCT5kKEvIYSciZA6nRaKX6",
+            "agent": "ade7d598a6c043675",
+            "role": "general-purpose",
+            "modelProvided": false,
+            "effortProvided": false,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "low",
+            "source": "delegation-inherited",
+            "nativeModelAlias": "sonnet",
+            "state": "selection_verified",
+            "backendResponses": 2,
+            "backendCompletions": 2
+          },
+          {
+            "session": "4648bee3-1752-4934-8e36-7641ea4cd626",
+            "call": "call_c7BpnZHyxgWV1LQ2wSeaDlJn",
+            "agent": "ad0e5239ad46ce6bd",
+            "role": "general-purpose",
+            "requestedModel": "gpt-5.6-terra",
+            "requestedEffort": "low",
+            "modelProvided": true,
+            "effortProvided": true,
+            "requestPresenceVerified": true,
+            "effectiveModel": "gpt-5.6-terra",
+            "effectiveEffort": "low",
+            "source": "agent-call-model+effort",
+            "nativeModelAlias": "sonnet",
+            "state": "selection_verified",
+            "backendResponses": 3,
+            "backendCompletions": 3
+          }
+        ],
+        "totals": {
+          "prepared": 2,
+          "restored": 6,
+          "selection_verified": 8
+        }
+      },
+      "countConnections": {
+        "dials": 53,
+        "reused": 1
+      },
+      "searchTransport": {
+        "requests": 0,
+        "attempts": 0,
+        "retries": 0
+      }
+    },
+    "lifecycle": {
+      "state": "finished",
+      "final": true,
+      "reason": "native_exit",
+      "startedAt": "2026-09-19T19:31:54.3755653Z",
+      "observedAt": "2026-09-19T19:47:31.808703Z",
+      "deadlineAt": "2026-09-19T19:51:54.3755653Z",
+      "nativeReaped": true
+    }
+  }
+}

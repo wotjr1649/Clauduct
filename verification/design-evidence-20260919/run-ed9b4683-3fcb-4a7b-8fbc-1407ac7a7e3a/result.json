@@ -1,0 +1,123 @@
+{
+  "id": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+  "native": "C:/Users/js/.local/bin/claude.exe",
+  "version": "2.1.278 (Claude Code)",
+  "sha256": "006ea5c8638f67f10a5ae66bb232fd267c9f6af294e3f03f4cfcf1fd3f2cced8",
+  "harnessSha256": "fd7e7635ac3c6eadb0070d4c7974dafb7112b1a54c75897a6fb4ff62986a3007",
+  "project": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\project",
+  "profile": "D:\\AIDEV\\clauduct-s36-build\\repair-20260919\\verification\\policy-repair-20260919\\interactive-e268b95d-2048-47e3-b36b-5483000541a7\\profile",
+  "variant": "nonempty-control",
+  "fixture": true,
+  "realBackend": false,
+  "mode": "interactive-native-empty-wait",
+  "deadlineSeconds": 180,
+  "started": "2026-09-19T13:11:47.339Z",
+  "records": [
+    {
+      "event": "request",
+      "seq": 1,
+      "ms": 18721,
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 1,
+      "tools": 0,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "auxiliary"
+    },
+    {
+      "event": "request",
+      "seq": 2,
+      "ms": 19035,
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 2,
+      "tools": 25,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "root-spawn"
+    },
+    {
+      "event": "request",
+      "seq": 3,
+      "ms": 19113,
+      "agentId": "abad8644e0d921a3b",
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 1,
+      "tools": 15,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "middle-spawn"
+    },
+    {
+      "event": "request",
+      "seq": 4,
+      "ms": 19152,
+      "agentId": "abad8644e0d921a3b",
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 2,
+      "tools": 15,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "middle-wait-response",
+      "variant": "nonempty-control"
+    },
+    {
+      "event": "request",
+      "seq": 5,
+      "ms": 19184,
+      "agentId": "a0d9bb85836522355",
+      "parentAgentId": "abad8644e0d921a3b",
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 1,
+      "tools": 15,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "leaf-held"
+    },
+    {
+      "event": "request",
+      "seq": 6,
+      "ms": 19378,
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 3,
+      "tools": 25,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "root-idle"
+    },
+    {
+      "event": "leaf-release",
+      "agentId": "a0d9bb85836522355",
+      "ms": 31197
+    },
+    {
+      "event": "request",
+      "seq": 7,
+      "ms": 61231,
+      "agentId": "abad8644e0d921a3b",
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 3,
+      "tools": 15,
+      "hasLeaf": true,
+      "hasMiddle": false,
+      "kind": "middle-woke"
+    },
+    {
+      "event": "request",
+      "seq": 8,
+      "ms": 95533,
+      "sessionId": "ed9b4683-3fcb-4a7b-8fbc-1407ac7a7e3a",
+      "turn": 4,
+      "tools": 25,
+      "hasLeaf": false,
+      "hasMiddle": false,
+      "kind": "root-idle"
+    }
+  ],
+  "loopbackPort": 8614,
+  "pid": 2808,
+  "exitCode": 0,
+  "signal": null,
+  "finished": "2026-09-19T13:14:28.899Z",
+  "middle": "abad8644e0d921a3b",
+  "leaf": "a0d9bb85836522355"
+}

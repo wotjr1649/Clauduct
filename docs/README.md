@@ -13,7 +13,7 @@ v1 문서는 Node 구현을 기술하며 Go 빌드에 그대로 적용되지 않
 | 질문 | 문서 |
 |---|---|
 | 설치·업데이트·제거는 | 루트 [README.md](../README.md)의 설치 절 |
-| 지금 무엇이 되고 무엇이 안 되나 | [v2/COMPATIBILITY.md](v2/COMPATIBILITY.md) |
+| 기능별 지원 범위·버전 변경 정책·실측 근거·남은 한계는 | [v2/COMPATIBILITY.md](v2/COMPATIBILITY.md) |
 | 왜 이렇게 만들었나 | [v2/ARCHITECTURE.md](v2/ARCHITECTURE.md) · [v2/DECISION.md](v2/DECISION.md) |
 | 기준선 대비 무엇이 다른가 | [v2/PARITY.md](v2/PARITY.md) |
 | 무엇을 실제로 검사했고 **무엇을 안 했나** | [v2/VALIDATION.md](v2/VALIDATION.md) |

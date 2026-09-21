@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, bad)
 		return
 	}
+	g.ReconcileNativeCancellations()
 
 	// Admission happens before the body is read, so a request that cannot be served does
 	// not first cost the memory of its own payload.
@@ -64,9 +66,8 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// may take to finish a body it has already started.
 	control := http.NewResponseController(w)
 	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-	watcherDone := make(chan struct{})
-	defer close(watcherDone)
-	go abortOnCancel(ctx, watcherDone, func() { _ = control.SetReadDeadline(time.Now()) })
+	stopReadCancellation := watchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
+	defer stopReadCancellation()
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 	if err != nil {
@@ -97,61 +98,90 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The client's search side query is a server tool call addressed to this gateway, not a
-	// model request. Answered before conversion so the model path stays untouched.
-	if request.HostedSearch != nil {
-		query, ok := bridge.SideQuery(request)
-		if !ok {
-			// The tool is here but the request is not the side query the client sends. The
-			// Node baseline drops the tool and answers from the model without search
-			// results; this refuses instead. A WebSearch that quietly returns nothing is
-			// worse than one that says it broke, because only the second gets fixed.
-			g.refuseCategory(w, http.StatusBadRequest, anthropic.CodeHostedToolUnsupp)
-			return
-		}
-		g.searchFor(ctx, w, control, request, query)
-		return
-	}
-
-	// A subagent's role decides where it runs, whatever model the client asked for. The
-	// registration comes from the client's own hook, so this is the client telling us what
-	// it started rather than this build inferring it.
-	//
-	// Every way this can fail leaves the client's own choice in place. A header that is
-	// absent, a registration that has not arrived yet, a role nobody has a route for: none
-	// of them is a reason to end a turn. The baseline refuses the request in some of these
-	// cases, and that is defensible there because it verifies the subagent's identity
-	// against the client's own metadata first. Without that verification the same refusal
-	// would only add a way to fail.
+	// Adapted selections must be linked to the native child before dispatch. Calls
+	// outside that extension retain the legacy role/request selection below.
 	// Classified, never refused -- see betas.go. Observed after the body is decoded so the
 	// header of a request that never became one is not counted as a feature the session
 	// asked for.
 	g.betas.observe(r.Header.Get("Anthropic-Beta"))
 
 	entry := recordOf(w)
+	entry.checked("input")
+	entry.requestClass(r.Header.Get("X-Claude-Code-Request-Class"))
 	entry.at(stageSelection)
 
-	var override []bridge.Route
-	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
-		role, release, registered := g.agents.begin(agent)
-		defer release()
-		switch {
-		case !registered:
-			g.unregisteredAgents.Add(1)
-		default:
-			switch route, known := bridge.RoleRoute(role); {
-			case known:
-				override = append(override, route)
-			case bridge.InheritsParent(role):
-				// Known, and deliberately left alone. Counting it as a miss would report
-				// every session that ran a workflow as having something wrong with it.
-			default:
-				g.unroutedRoles.Add(1)
-			}
-		}
+	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
+	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
+	defer g.recordFailedAgentRequest(scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), entry)
+	g.stripContextDisplays(request, scope.session)
+	g.reconcileNativeResults()
+	g.reconcileWorkflowResults(false)
+	g.observeMessageFailures(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
+	if g.delegations != nil {
+		g.delegations.restoreSelectionHistory(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
+		g.delegations.toolFailures(scope.session, request)
+	}
+	override, releaseAgent, err := g.agentSelection(r, request, entry)
+	defer releaseAgent()
+	if err != nil {
+		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
+		return
 	}
 
 	entry.at(stagePrepare)
+	if g.delegations != nil && !g.delegations.restrictWorkflowTools(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), entry) {
+		g.refuseCategory(w, 400, "WORKFLOW_TOOL_POLICY")
+		return
+	}
+	// Search uses the same selection as generation, including an agent override.
+	if request.HostedSearch != nil {
+		entry.kind("web_search")
+		query, ok := bridge.SideQuery(request)
+		if !ok {
+			g.refuseCategory(w, http.StatusBadRequest, anthropic.CodeHostedToolUnsupp)
+			return
+		}
+		g.searchFor(ctx, w, control, request, query, override...)
+		return
+	}
+	finishResults := g.deliverResults(r, request, entry)
+	parentWait, waitErr := g.prepareParentWait(r, request, entry)
+	if waitErr != nil {
+		g.refuseCategory(w, http.StatusBadRequest, "PARENT_WAIT_UNVERIFIED")
+		return
+	}
+	if g.delegations != nil && r.Header.Get("X-Claude-Code-Agent-Id") != "" && conversationRequest(r, request) && r.Header.Get("X-Claude-Code-Request-Class") != "compaction" {
+		agentID := r.Header.Get("X-Claude-Code-Agent-Id")
+		// Read and validate the turn receipt before beginResult, which is destructive: a
+		// refusal after it leaves the request unrun and the evidence it needed to recover
+		// already cleared.
+		receipt, present, ok := g.readActiveTurn(scope.session, agentID)
+		if !ok {
+			g.refuseCategory(w, 400, "NATIVE_TURN_UNVERIFIED")
+			return
+		}
+		if !g.delegations.beginResult(agentID) {
+			g.refuseCategory(w, 400, "AGENT_RESULT_CAPACITY")
+			return
+		}
+		if present && !g.applyNativeTurn(agentID, receipt) {
+			g.refuseCategory(w, 400, "NATIVE_TURN_UNVERIFIED")
+			return
+		}
+		if g.nativeEvents.directory != "" {
+			entry.checked("native_turn")
+		}
+	}
+	resultsDelivered := false
+	defer func() { finishResults(resultsDelivered) }()
+	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry)
+	defer finishCancellation()
+	override, finishContext, contextError := g.beginContext(r, request, entry, override)
+	defer finishContext()
+	if contextError != "" {
+		g.refuseCategory(w, http.StatusBadRequest, contextError)
+		return
+	}
 	backendRequest, err := bridge.BuildRequest(request, override...)
 	if err != nil {
 		// CAP06: a model this build cannot route is the caller's answerable problem, not
@@ -165,6 +195,22 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_CONVERSION_FAILED")
 		return
 	}
+	if g.delegations != nil {
+		if entry.snapshot().Kind != "compaction" {
+			g.delegations.describeWorkflowStep(backendRequest, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
+		}
+		if err := g.delegations.describe(backendRequest.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
+			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
+			return
+		}
+	}
+	if entry.snapshot().Kind == "compaction" {
+		backendRequest.Input = append([]bridge.InputEntry{{Role: "developer", Content: bridge.CompactEfficiencyInstruction}}, backendRequest.Input...)
+	}
+	if err := g.prepareDocuments(ctx, backendRequest); err != nil {
+		g.refuseCategory(w, 400, err.Error())
+		return
+	}
 	encoded, err := json.Marshal(backendRequest)
 	if err != nil {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")
@@ -176,7 +222,15 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// session ran what was asked for.
 	entry.route(request.Model, backendRequest.Model,
 		backendRequest.Effort.Effort, backendRequest.Source)
+	entry.checked("route")
+	if !g.checkContext(w, r, request, backendRequest) {
+		return
+	}
+	if entry.snapshot().Kind == "compaction" {
+		entry.checked("compaction_authorized")
+	}
 	entry.at(stageUpstream)
+	g.priorCount(encoded, entry)
 	response, err := g.transport.Execute(ctx, upstream.Call{
 		Body:      encoded,
 		Requested: request.Model,
@@ -185,16 +239,103 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Source:    backendRequest.Source,
 	})
 	if err != nil {
+		if categoryFor(err) == "CONTEXT_LENGTH_EXCEEDED" && g.recoverContextOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), backendRequest.Model) {
+			return
+		}
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 		return
 	}
 	defer response.Body.Close()
+	if g.delegations != nil {
+		g.delegations.observeBackend(r.Header.Get("X-Claude-Code-Agent-Id"), false)
+	}
 
 	// What the backend volunteered about the quota. Read, never acted on.
 	g.limits.observe(response.Header)
 
 	entry.at(stageDelivery)
-	g.relay(ctx, w, control, response, request)
+	resultsDelivered = g.relay(ctx, w, control, response, request, backendRequest.Model,
+		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source}})
+	g.rememberUsage(encoded, entry)
+	if resultsDelivered && g.delegations != nil {
+		g.delegations.observeBackend(r.Header.Get("X-Claude-Code-Agent-Id"), true)
+	}
+}
+
+// Generation, search and token counting must resolve the same child selection.
+// Keep the registration live until the caller finishes the entire request.
+func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, entry *record) ([]bridge.Route, func(), error) {
+	var override []bridge.Route
+	releaseAgent := func() {}
+	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
+	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
+	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
+		role, release, registered := g.agents.begin(agent)
+		releaseAgent = release
+		entry.agent(agent, scope.parent, role, false)
+		if g.delegations != nil {
+			binding := g.agents.bindingOf(agent)
+			if scope.workflow || binding.Role == "workflow-subagent" {
+				var active nativeTurnReceipt
+				found, err := g.readNativeReceipt("active-"+agent+".json", &active)
+				if err != nil || found && !validActiveReceipt(active, scope.session, agent) {
+					return nil, releaseAgent, errDelegationUnverified
+				}
+				if found {
+					scope.nativeTurn = &active
+				}
+			}
+			resolvedScope, continued := g.continuationScope(scope, agent, binding)
+			route, found, err := g.delegations.route(resolvedScope, agent, binding, r.Context())
+			if err != nil {
+				return nil, releaseAgent, errDelegationUnverified
+			}
+			if found {
+				observed, err := bridge.SelectRoute(request.Model, "")
+				if err != nil || observed.Model != route.Model && !g.delegations.resumeModel(scope, agent, observed.Model) {
+					return nil, releaseAgent, errDelegationUnverified
+				}
+				if strings.HasPrefix(route.Source, "workflow-") && (request.Effort != route.Effort || route.Source == "workflow-selection" && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
+					return nil, releaseAgent, errDelegationUnverified
+				}
+				if continued {
+					route.Source = "verified-continuation"
+					entry.continuation(resolvedScope.parent)
+				}
+				override = []bridge.Route{route}
+				entry.agent(agent, scope.parent, role, true)
+				entry.checked("selection")
+				if strings.HasPrefix(route.Source, "workflow-") {
+					entry.checked("workflow_selection")
+				}
+				if continued || route.Source == "verified-resume" {
+					entry.checked("continuation")
+				}
+			}
+		}
+		if len(override) == 0 {
+			// Counted before the refusal rather than instead of it. The production launcher
+			// enables the context policy unconditionally, so the branch below always returns
+			// and these two counters could never move: the one diagnostic that says which
+			// kind of unverified child produced an AGENT_SELECTION_UNVERIFIED was
+			// structurally always zero. What happens to the request is unchanged.
+			_, routed := bridge.RoleRoute(role)
+			switch {
+			case !registered:
+				g.unregisteredAgents.Add(1)
+			case !routed && !bridge.InheritsParent(role):
+				g.unroutedRoles.Add(1)
+			}
+			if g.contexts != nil {
+				return nil, releaseAgent, errDelegationUnverified
+			}
+			if route, known := bridge.RoleRoute(role); known && registered {
+				override = append(override, route)
+			}
+		}
+	}
+
+	return override, releaseAgent, nil
 }
 
 // correlationHeaders are the identifiers the client uses to tie a request to the session
@@ -224,6 +365,11 @@ const anthropicVersion = "2023-06-01"
 // second is a malformed one. A shape that is not the client's is refused rather than
 // carried, since these values are what a later binding would be matched against.
 func checkRequestHeaders(r *http.Request) (refusal, bool) {
+	switch r.Header.Get("X-Claude-Code-Request-Class") {
+	case "", "main", "subagent", "workflow", "auxiliary", "compaction":
+	default:
+		return refuseHeader, false
+	}
 	for _, name := range correlationHeaders {
 		if value := r.Header.Get(name); value != "" && !correlationShape.MatchString(value) {
 			return refuseSessionID, false
@@ -245,7 +391,7 @@ func checkRequestHeaders(r *http.Request) (refusal, bool) {
 // No model turn and no inference: one JSON round trip, then the blocks the client reduces.
 // Nothing from the conversation travels with the query -- only the query does.
 func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
-	control *http.ResponseController, request *anthropic.Request, query bridge.SearchQuery) {
+	control *http.ResponseController, request *anthropic.Request, query bridge.SearchQuery, override ...bridge.Route) {
 
 	searcher, ok := g.transport.(upstream.Searcher)
 	if !ok {
@@ -255,7 +401,7 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
-	route, err := bridge.SelectRoute(request.Model, request.Effort)
+	route, err := bridge.ResolveRoute(request, override...)
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, "UNSUPPORTED_MODEL_OR_EFFORT")
 		return
@@ -266,6 +412,11 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
+	entry := recordOf(w)
+	entry.route(request.Model, route.Model, route.Effort, route.Source)
+	entry.checked("route")
+	entry.checked("search_available")
+	entry.at(stageUpstream)
 	raw, err := searcher.Search(ctx, body)
 	if err != nil {
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
@@ -277,6 +428,17 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
+	entry.at(stageDelivery)
+	frames := bridge.SearchFrames(route.Model, query, results, bridge.SearchID)
+	if request.NonStreaming {
+		var message anthropic.ResponseMessage
+		if err := message.Add(frames); err != nil {
+			g.refuseCategory(w, 502, categoryFor(err))
+			return
+		}
+		g.deliverMessage(ctx, w, control, &message)
+		return
+	}
 	header := w.Header()
 	header.Set("Content-Type", "text/event-stream")
 	header.Set("Cache-Control", "no-cache")
@@ -285,12 +447,15 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 
 	bounded := &chunkedWriter{to: w, control: control}
 	defer func() { _ = control.SetWriteDeadline(time.Time{}) }()
-	for _, frame := range bridge.SearchFrames(route.Model, query, results, bridge.SearchID) {
+	for _, frame := range frames {
 		if _, err := frame.WriteTo(bounded); err != nil {
+			g.deliveryFailed(ctx, w)
 			return
 		}
 	}
-	_ = control.Flush()
+	if err := control.Flush(); err != nil {
+		g.deliveryFailed(ctx, w)
+	}
 }
 
 // handleModels answers the client's model discovery.
@@ -362,34 +527,25 @@ func (c *chunkedWriter) Write(p []byte) (int, error) {
 	return written, nil
 }
 
-// abortOnCancel expires the read deadline when the client goes away while the handler is
-// still reading, and never after the handler is done.
-//
-// The re-check is the whole point. By the time this goroutine first runs, both channels
-// are usually closed already: done by the handler's defer, ctx by net/http the instant the
-// handler returns. A plain two-case select picks between closed channels at random, so
-// half the time it expired the deadline on a connection the handler no longer owned. The
-// response was still sitting in the server's write buffer at that moment, and the expired
-// deadline tore the connection down before the flush, so the client saw a reset instead of
-// its reply. That was a real intermittent failure in this suite, on fast requests only.
-//
-// done is closed by a defer, which runs strictly before net/http cancels ctx, so checking
-// it again here is exact rather than another guess.
-func abortOnCancel(ctx context.Context, done <-chan struct{}, expire func()) {
-	select {
-	case <-ctx.Done():
-		select {
-		case <-done:
-		default:
-			expire()
+// The returned stop function joins an already-started deadline update. Checking
+// a done channel alone leaves a race between the check and expire: the handler
+// could return its ResponseWriter to net/http before the update finishes.
+func watchReadCancellation(ctx context.Context, expire func()) func() {
+	done := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(done)
+		expire()
+	})
+	return func() {
+		if !stop() {
+			<-done
 		}
-	case <-done:
 	}
 }
 
 // relay reads the backend stream and writes client frames as they are produced.
 func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *http.ResponseController,
-	response *upstream.Response, request *anthropic.Request) {
+	response *upstream.Response, request *anthropic.Request, effective string, scopes ...delegationScope) bool {
 
 	// Cleared when this response ends, and that is not tidiness.
 	//
@@ -404,10 +560,82 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	parser.IsTerminal = codex.Terminal
 	// The translator is told which tools are callable now, so a call naming a withdrawn
 	// tool is refused rather than passed to a client that would try to run it.
-	translator := bridge.NewTranslatorFor(request)
+	translator := bridge.NewTranslatorFor(request, effective)
+	if len(scopes) > 0 && scopes[0].parentWait != nil {
+		translator.Builder().WaitForChildren()
+	}
+	if entry := recordOf(w); entry != nil && entry.snapshot().RequestClass == "workflow" {
+		translator.Builder().DeferTextUntilComplete()
+	}
+	var prepared []string
+	relayCompleted := false
+	if g.delegations != nil && len(scopes) > 0 && scopes[0].parent != "" {
+		class := recordOf(w).snapshot().RequestClass
+		if class != "compaction" && class != "auxiliary" {
+			finishAnswer := g.delegations.beginAnswer(scopes[0].session, scopes[0].parent)
+			defer func() {
+				answer := ""
+				if relayCompleted {
+					answer = translator.Answer()
+				}
+				finishAnswer(answer, relayCompleted)
+			}()
+		}
+	}
+	defer func() {
+		if !relayCompleted && g.delegations != nil && len(scopes) > 0 {
+			g.delegations.discard(scopes[0].session, prepared)
+		}
+	}()
+	if g.delegations != nil && len(scopes) > 0 {
+		translator.PrepareToolCall = func(id, name string, raw json.RawMessage) (json.RawMessage, error) {
+			if name == "Workflow" {
+				var fields map[string]json.RawMessage
+				if json.Unmarshal(raw, &fields) == nil {
+					if _, requested := fields["resumeFromRunId"]; requested {
+						recordOf(w).checked("workflow_recovery_request")
+					}
+				}
+			}
+			adapted, err := g.delegations.prepare(scopes[0], id, name, raw)
+			if name == "Workflow" && (errors.Is(err, errWorkflowRecoveryUnverified) || errors.Is(err, errDelegationUnverified)) {
+				adapted, err = g.delegations.rejectWorkflow(scopes[0], id, raw)
+				if err == nil {
+					recordOf(w).rejectedWorkflow()
+				}
+			}
+			if err != nil && name == "Agent" {
+				g.delegations.rejectedSelection(scopes[0], id, raw, err)
+			}
+			if err == nil && (name == "Agent" || name == "Workflow" || name == "SendMessage") {
+				prepared = append(prepared, id)
+			}
+			if err == nil && name == "Workflow" {
+				g.delegations.mu.Lock()
+				origin := g.delegations.workflowCalls[delegationKey{scopes[0].session, id}]
+				isRecovery := origin.recoveryOf != ""
+				restored := isRecovery && g.delegations.workflows[delegationKey{scopes[0].session, origin.recoveryOf}].restored
+				g.delegations.mu.Unlock()
+				if isRecovery {
+					recordOf(w).checked("workflow_recovery")
+					if restored {
+						recordOf(w).checked("workflow_checkpoint")
+					}
+					if origin.plan != nil {
+						recordOf(w).checked("workflow_plan_resume")
+					}
+				}
+			}
+			return adapted, err
+		}
+	}
 
 	committed := false
+	var message anthropic.ResponseMessage
 	emit := func(frames []anthropic.Frame) error {
+		if request.NonStreaming {
+			return message.Add(frames)
+		}
 		if len(frames) == 0 {
 			return nil
 		}
@@ -450,6 +678,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// an error frame must not inherit a deadline that has already passed.
 		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
 		if !committed {
+			if errors.Is(err, codex.ErrContextLimit) && len(scopes) > 0 && g.recoverContextOverflow(w, scopes[0].session, scopes[0].parent, effective) {
+				return
+			}
 			g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 			return
 		}
@@ -460,8 +691,8 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// And the account is told, which it was not before: a 200 already written meant
 		// nothing marked the record, so a stream that broke halfway was filed as a clean
 		// success and the session reported nothing wrong.
-		recordOf(w).brokeAfterCommitting(categoryFor(err))
-		_, _ = anthropic.ErrorFrame(categoryFor(err)).WriteTo(w)
+		g.streamBroke(w, categoryFor(err))
+		_, _ = anthropic.ErrorFrame(refusalMessage(categoryFor(err))).WriteTo(w)
 		_ = control.Flush()
 	}
 
@@ -472,44 +703,117 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			events, err := parser.Push(buffer[:n])
 			if err != nil {
 				fail(err)
-				return
+				return false
 			}
 			for _, event := range events {
+				recordOf(w).backendEvent(event.Type)
 				frames, err := translator.Accept(event)
 				if err != nil {
 					fail(err)
-					return
+					return false
+				}
+				recordOf(w).usage(translator.ObservedUsage())
+				// A count-source mismatch quarantines that optional counter, not
+				// a valid model response. The provider usage remains authoritative.
+				_ = g.verifyCount(recordOf(w))
+				if translator.Builder().WaitingForChildren() {
+					if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {
+						fail(errParentWaitUnverified)
+						return false
+					}
+					entry := recordOf(w)
+					entry.mu.Lock()
+					if entry.data.ParentReadiness != nil {
+						snapshot := *entry.data.ParentReadiness
+						snapshot.Withheld = true
+						snapshot.Empty = translator.Builder().ReplyEmpty()
+						entry.data.ParentReadiness = &snapshot
+					}
+					entry.mu.Unlock()
 				}
 				if err := emit(frames); err != nil {
-					// The client stopped reading. Nothing more can be delivered and
-					// there is nobody left to tell.
-					return
+					if request.NonStreaming {
+						fail(err)
+					} else {
+						g.deliveryFailed(ctx, w)
+					}
+					return false
 				}
 			}
 		}
 		if readErr != nil {
+			events, bytes := parser.Stats()
+			recordOf(w).streamEnd(readErr, ctx.Err(), parser.Completed(), events, bytes)
+			// A transport read interrupted by the client's cancelled context is
+			// cancellation evidence. An upstream reset/deadline alone is not.
+			if errors.Is(ctx.Err(), context.Canceled) {
+				g.deliveryFailed(ctx, w)
+				return false
+			}
 			// A read error that is not EOF means the body did not arrive whole, and the
 			// parser is told so rather than being asked to judge well-formed framing.
 			if err := parser.Finish(errors.Is(readErr, io.EOF)); err != nil {
 				fail(err)
-			} else if !committed {
+				return false
+			}
+			if request.NonStreaming {
+				committed = g.deliverMessage(ctx, w, control, &message)
+			}
+			if !committed && !request.NonStreaming {
 				// Well formed, terminal, and it produced nothing to send. The client
 				// still needs a message, which Complete would have emitted — reaching
 				// here means the backend ended without one.
 				g.refuseCategory(w, http.StatusBadGateway, "EMPTY_UPSTREAM_RESPONSE")
 			}
-			return
+			relayCompleted = committed
+			return committed
 		}
 		if ctx.Err() != nil {
-			return
+			g.deliveryFailed(ctx, w)
+			return false
 		}
 	}
+}
+
+func (g *Gateway) deliverMessage(ctx context.Context, w http.ResponseWriter, control *http.ResponseController, message *anthropic.ResponseMessage) bool {
+	defer func() { _ = control.SetWriteDeadline(time.Time{}) }()
+	raw, err := message.JSON()
+	if err != nil {
+		g.refuseCategory(w, 502, categoryFor(err))
+		return false
+	}
+	if ctx.Err() != nil {
+		g.deliveryFailed(ctx, w)
+		return false
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
+	w.WriteHeader(http.StatusOK)
+	if _, err = (&chunkedWriter{to: w, control: control}).Write(raw); err != nil {
+		g.deliveryFailed(ctx, w)
+		return false
+	}
+	if err = control.Flush(); err != nil {
+		g.deliveryFailed(ctx, w)
+		return false
+	}
+	return true
 }
 
 // categoryFor maps an error to the fixed category a client sees. Nothing from a backend
 // body reaches this: every arm returns a constant chosen here.
 func categoryFor(err error) string {
 	switch {
+	case errors.Is(err, codex.ErrContextLimit):
+		return "CONTEXT_LENGTH_EXCEEDED"
+	case errors.Is(err, bridge.ErrUnsupportedRoute):
+		return "UNSUPPORTED_MODEL_OR_EFFORT"
+	case errors.Is(err, errDelegationUnverified):
+		return "AGENT_SELECTION_UNVERIFIED"
+	case errors.Is(err, errParentWaitUnverified):
+		return "PARENT_WAIT_UNVERIFIED"
+	case errors.Is(err, errWorkflowRecoveryUnverified):
+		return "WORKFLOW_RECOVERY_UNVERIFIED"
 	case errors.Is(err, upstream.ErrNoTransport):
 		return "NO_UPSTREAM_TRANSPORT"
 	case errors.Is(err, codex.ErrResponseFailed):
@@ -554,7 +858,9 @@ func categoryFor(err error) string {
 		return "EVENT_AFTER_COMPLETION"
 	case errors.Is(err, stream.ErrSequenceMismatch):
 		return "SEQUENCE_MISMATCH"
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.DeadlineExceeded):
+		return "REQUEST_TIMEOUT"
+	case errors.Is(err, context.Canceled):
 		return "CANCELLED"
 	}
 	// The real transport's own categories. Each is a constant chosen in this project, never
@@ -586,6 +892,10 @@ func categoryFor(err error) string {
 // settle rather than one to pre-empt here.
 func statusForUpstream(err error) int {
 	switch {
+	case errors.Is(err, bridge.ErrUnsupportedRoute):
+		return http.StatusBadRequest
+	case errors.Is(err, errDelegationUnverified), errors.Is(err, errWorkflowRecoveryUnverified), errors.Is(err, errParentWaitUnverified):
+		return http.StatusBadRequest
 	case errors.Is(err, upstream.ErrNoTransport):
 		return http.StatusBadRequest
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

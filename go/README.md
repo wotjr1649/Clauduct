@@ -2,7 +2,10 @@
 
 이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
-## 현재 범위 — WP01–WP06, G7 연결됨, G8 패키징
+현재 지원 기능·버전별 근거·제약은 [호환성 문서](../docs/v2/COMPATIBILITY.md)가 관리한다.
+아래 WP01–WP06 목록은 초기 구현 기록이며 최신 지원 여부를 판정하는 목록이 아니다.
+
+## 초기 구현 기록 — WP01–WP06, G7 연결됨, G8 패키징
 
 동작하는 것:
 
@@ -26,9 +29,9 @@
 - attempt 원장: 경로(model+effort)와 누적 횟수를 함께 승인한다. 예약이 credential 읽기보다도 먼저다
 - 실패 분류: 상태 코드와 연결 오류를 terminal/retryable/deferred로 나눈다. `Retry-After`는 두 형식 모두
 
-- 모델 라우팅: Claude alias·버전 id → Codex 모델. 모르는 모델·effort는 **거부하지 기본값으로 대체하지 않는다**
+- 모델 라우팅: Claude alias·버전 id → Codex 모델. 모르는 모델·effort는 **거부하며 기본값으로 대체하지 않는다**
 
-**동작하지 않는 것:**
+**당시 미구현 항목(현재 지원 여부는 호환성 문서 참조):**
 
 - 이미지·문서·hosted search·structured output 결과 검증·`/v1/models` discovery
 
@@ -75,10 +78,10 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 
 ## 지켜야 할 계약
 
-- **제품 launcher는 인자를 해석하지 않는다.** `launch.Build`는 argv를 그대로 복사한다. 유일한 예외는 `launch.Refused`의 옵션 2개(`--dangerously-skip-permissions` 계열)이며, 값을 먹지 않는 옵션이라 인자 단위 정확 일치만으로 충분하다 — 값 추적이 없으므로 값이 옵션으로 오인되는 경로가 생기지 않는다. 목록을 늘리려면 그 성질이 유지되는지 먼저 확인한다.
+- **제품 launcher는 인자를 해석하지 않는다.** `launch.Build`는 argv를 그대로 복사한다. 유일한 예외는 `launch.Refused`의 옵션 2개(`--dangerously-skip-permissions` 계열)이며, 값을 먹지 않는 옵션이라 인자 단위 정확 일치만으로 충분하다. **값이 옵션으로 오인되는 경로는 있고, 의도적으로 허용한다** — `--append-system-prompt --dangerously-skip-permissions`처럼 옵션 값이 정확히 그 이름이면 거부된다. `refuse.go`가 그 판단을 적어 두었다: 과잉 거부는 스스로 드러나 사용자가 표현을 바꾸면 되지만, 과소 거부는 조용히 권한 검사를 없앤다. 목록을 늘리려면 확인할 것은 값 오인이 없다는 것이 아니라, 그 옵션이 값을 먹지 않는지와 이 과잉 거부를 그 이름에 대해서도 받아들일 수 있는지다. 0.3.0부터 **`--settings`만** `takeUserSettings`가 **`launch.Build` 이전에** argv에서 걷어낸다(`run.go:151`에서 `o.Args`를 교체). 값을 먹는 옵션이라 값 추적을 하며, 그래서 launcher가 아니라 app 계층에 있다 — `launch.Build`가 argv를 그대로 복사한다는 위 문장은 그대로 유효하다. `--setting-sources`를 포함한 나머지는 순서와 철자 그대로 전달된다.
 - **거부는 아무것도 얻기 전에 일어난다.** 실행 파일 조회도, bind도 하지 않는다. `internal/app`에 그 순서를 지키는 테스트가 있다.
 - **Node·.NET·PowerShell에 runtime 의존하지 않는다.** `internal/app`의 소스 스캔 테스트가 문자열 리터럴 수준에서 이를 강제한다. Node 기준선이 `<node.exe> <repo>/src/review-diff.mjs` 형태의 명령을 native에 넘기던 패턴이 다시 들어오면 그 자리에서 실패한다.
-- **제3자 의존성 0.** `go.sum`이 생기거나 `go.mod`에 `require`가 생기면 테스트가 실패한다. 의존성을 추가하려면 `docs/v2/ARCHITECTURE.md` 14장의 허용 기준을 통과시키고 그 결정을 기록한다.
+- **검토·고정한 의존성만 허용.** 4개 모듈의 버전을 테스트로 고정한다 — 정확 계수를 위한 3개와, 역할 정의 frontmatter를 읽는 `go.yaml.in/yaml/v3`. [추가 결정과 검토](../verification/policy-evidence-20260918/DEPENDENCIES.md), [라이선스](THIRD_PARTY_NOTICES.txt). 새로운 의존성은 `docs/v2/ARCHITECTURE.md` 14장의 기준에 따라 별도 검토·기록한다.
 - **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 `docs/v2/DECISION.md`. Clauduct는 추가 secret 장벽이 아니다.
 - **세션 token은 로그·커맨드라인·오류 문자열에 넣지 않는다.**
 - **tool call은 `response.completed` 이전에 만들어지지 않는다.** 스트리밍 이벤트에서 호출을 조립하는 arm을 추가하면 barrier가 사라진다. `internal/protocol/bridge`에 그것을 잡는 테스트가 있다.

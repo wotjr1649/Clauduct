@@ -15,9 +15,8 @@ import (
 
 // LIFE11, LIFE12 and LIFE17: what a session owns, and what it leaves behind.
 //
-// The handoff is explicit that these are measured and reported rather than engineered
-// around: clean only the tree this run owns, never every process named claude or codex, and
-// do not take the child's Wait as proof that its grandchildren are gone.
+// Clean only the tree this run owns, never every process named claude or codex,
+// and do not take the child's Wait as proof that its grandchildren are gone.
 //
 // Every process here is one these tests started, and everything is addressed by process id.
 // Nothing looks a process up by name: this machine had three of the user's own claude.exe
@@ -177,8 +176,8 @@ func runOwnedSession(ctx context.Context, t *testing.T, shell string, args []str
 			if startErr != nil {
 				return nil, startErr
 			}
-			if p, ok := process.(*osProcess); ok && p.cmd.Process != nil {
-				*pid = p.cmd.Process.Pid
+			if p, ok := process.(*osProcess); ok {
+				*pid = p.PID()
 				if onStart != nil {
 					onStart(*pid)
 				}
@@ -221,17 +220,8 @@ func TestEndingASessionLeavesOtherProcessesAlone(t *testing.T) {
 	}
 }
 
-// LIFE11: what happens to a grandchild, measured rather than assumed.
-//
-// The handoff says not to take the child's Wait as proof that its grandchildren are gone,
-// and this is why. Killing a process on Windows kills that process; its children are not in
-// the handle and do not die with it.
-//
-// The expected result is a failure of cleanup and the test asserts it. That is deliberate:
-// the limit is real, the Node baseline has the same one -- clauduct.mjs:261 is a bare
-// child.kill() -- and a test that pretended otherwise would be the claim rather than the
-// check. If the tree ever does die together this test fails, and rewriting it is the work.
-func TestAGrandchildOutlivesTheSessionThatStartedIt(t *testing.T) {
+// LIFE11 now requires cleanup of the actual native-owned descendants.
+func TestAGrandchildEndsWithTheSessionThatStartedIt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -253,7 +243,7 @@ func TestAGrandchildOutlivesTheSessionThatStartedIt(t *testing.T) {
 		t.Fatal("the session never started a child")
 	}
 	if len(grandchildren) == 0 {
-		t.Skip("the child spawned nothing of its own; nothing to measure")
+		t.Fatal("the child spawned nothing of its own; cleanup was not exercised")
 	}
 	settleProcess()
 
@@ -267,14 +257,10 @@ func TestAGrandchildOutlivesTheSessionThatStartedIt(t *testing.T) {
 			survivors = append(survivors, pid)
 		}
 	}
-	if len(survivors) == 0 {
-		t.Fatalf("every grandchild died with the child. Something now binds the tree, and "+
-			"the limit this test records is no longer the limit -- rewrite it to require "+
-			"the behaviour instead of recording its absence. grandchildren=%v", grandchildren)
+	if len(survivors) != 0 {
+		t.Fatalf("owned grandchildren outlived the session: %v", survivors)
 	}
-	t.Logf("measured: %d of %d grandchildren outlived the session (%v). Ending a session "+
-		"ends the process it started and nothing below it.",
-		len(survivors), len(grandchildren), survivors)
+	t.Logf("all %d observed grandchildren ended with the session", len(grandchildren))
 }
 
 // A child that will not go must not hold the caller past its deadline.
@@ -406,16 +392,12 @@ func TestWhatSurvivesTheLauncherBeingKilled(t *testing.T) {
 		}
 	}
 
-	// Recorded, not demanded. Windows does not reap a child when its parent dies, so the
-	// native client outliving an abruptly killed launcher is the operating system rather
-	// than a defect here, and the Node baseline behaves the same way. What matters is that
-	// it is written down: a user who ends clauduct from Task Manager is left with a
-	// client whose gateway has gone, and nothing in this build cleans that up.
-	t.Logf("after killing the launcher: %d of %d owned processes still running (%v)",
-		len(survivors), len(owned), survivors)
-	if len(survivors) == 0 {
-		t.Log("nothing survived. Something now ends the tree with the parent -- the console, " +
-			"a job object, or the environment -- and this record needs rewriting to require it.")
+	// The product now owns this tree through a Windows Job. Surviving children are
+	// a failure, not a successful observation. The offline held-handle counterpart
+	// is TestJobOwnsTreeOnExitStopAndLauncherKill.
+	if len(survivors) != 0 {
+		t.Fatalf("after killing the launcher: %d of %d owned processes still running (%v)",
+			len(survivors), len(owned), survivors)
 	}
 }
 

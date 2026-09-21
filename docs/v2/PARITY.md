@@ -670,7 +670,7 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 | 잰 것 | 결과 |
 |---|---|
 | `ANTHROPIC_MODEL` | 클라이언트가 그 모델을 요청한다 |
-| `CLAUDE_CODE_EFFORT_LEVEL` | effort가 그 값이 된다(`high` → `low`) |
+| `CLAUDE_CODE_EFFORT_LEVEL` | effort가 그 값이 된다(`high` → `low`). **`--effort`까지 이긴다 — 아래 2026-09-18 정정** |
 | `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` | 요청이 2→3. **클라이언트가 `/v1/models`를 실제로 부른다** |
 | `ANTHROPIC_DEFAULT_{HAIKU,SONNET,OPUS}_MODEL` | 클라이언트가 Claude 이름 대신 backend 모델을 직접 부른다 |
 | **`--model` vs `ANTHROPIC_MODEL`** | **`--model`이 이긴다** |
@@ -679,13 +679,45 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 유지한다.** 그래서 argv 주입도, 파서도, 차단 목록도 필요 없다. ARG05(옵션 값 안의 모델명)도 그대로
 성립한다 — 실제 클라이언트로 확인했다.
 
-**세션 값은 명령이 아니라 기본값이다.** 사용자가 이미 설정한 이름이 이긴다. 기준선은 settings 블록을
-환경에 무조건 덮어쓰고 그 대신 `--effort`를 제공하는데, 여기서는 `--effort`가 클라이언트 옵션이 아님이
-측정으로 확인됐다(`--effort max`가 무시됐다). 사용자 환경이 이기게 하면 파서 없이 effort 선택이
-돌아온다 — `CLAUDE_CODE_EFFORT_LEVEL=max`로 실제 확인했다.
+**세션 값은 명령이 아니라 기본값이다.** 사용자가 이미 설정한 이름이 이긴다.
 
-예외 하나만 **요구사항**이다: `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK`. 이 빌드는 non-streaming
-요청을 거부하므로, fallback을 허용하면 느린 답이 아니라 **깨진 턴**이 된다.
+> **2026-09-18 정정 — 이 문단의 effort 부분은 틀렸다.**
+>
+> 원문은 *"`--effort`가 클라이언트 옵션이 아님이 측정으로 확인됐다(`--effort max`가 무시됐다)"*였다.
+> 다시 재보니 `--effort`는 동작한다. 환경변수를 지우고 주면 `--effort medium` → `effort=medium`이
+> 그대로 나간다.
+>
+> 2026-09-16에 무시되어 보인 이유는 **같은 빌드가 `CLAUDE_CODE_EFFORT_LEVEL`을 함께 세우고 있었고,
+> 그 이름이 `--effort`를 이기기 때문**이다. 측정은 교란됐고, 결론은 "옵션이 아니다"가 아니라
+> "환경변수가 옵션을 이긴다"였어야 했다.
+>
+> | 2026-09-18 실측 (fixture backend, 추론 0) | 결과 |
+> |---|---|
+> | 환경변수 없음, `--effort low` | `effort=low` |
+> | 환경변수 없음, `--effort low` 뒤에 사용자의 `--effort high` | `effort=high` — 뒤의 것이 이긴다 |
+> | `CLAUDE_CODE_EFFORT_LEVEL=high` + `--effort low` | **`high`** — 환경변수가 이긴다 |
+> | `CLAUDE_CODE_EFFORT_LEVEL=low` + `--effort high` | **`low`** — 같은 방향 |
+>
+> 이것이 `--model`과 정반대다. `--model`은 `ANTHROPIC_MODEL`을 이기지만, `CLAUDE_CODE_EFFORT_LEVEL`은
+> `--effort`를 이긴다. 명시적 플래그를 이기는 값은 **클라이언트의 `/model` 피커도 이긴다** — 이것이
+> 2026-09-17 첫 실사용에서 사용자가 high를 고르고도 182건 전부 `low`로 나간 원인이다.
+>
+> 그래서 시작 effort는 `--effort`로 옮겼다(`launch.Overlay.Effort`). 기준선이 원래 그렇게 했고
+> (`src/clauduct.mjs:213`), 기준선이 `CLAUDE_CODE_EFFORT_LEVEL`을 세우는 자리는
+> `--verify-model-route` 하나뿐이다(`src/clauduct.mjs:192`) — 검증 실행이 경로에서 벗어나지 못하게
+> **일부러 못 박는** 모드다. v1의 잠금장치를 v2가 기본값으로 만들었던 것이다.
+>
+> 이 문단의 나머지 — 세션 값은 명령이 아니라 기본값이고 사용자 환경이 이긴다 — 는 그대로 맞다.
+> 사용자가 `CLAUDE_CODE_EFFORT_LEVEL`을 직접 세우면 주입된 `--effort`를 이기므로, 그 성질은
+> 옮긴 뒤에도 공짜로 보존된다.
+
+기준선은 settings 블록을 환경에 무조건 덮어쓰고 그 대신 `--effort`를 제공한다. 사용자 환경이 이기게
+하면 파서 없이 effort 선택이 돌아온다 — `CLAUDE_CODE_EFFORT_LEVEL=max`로 실제 확인했다.
+
+예외 하나만 **요구사항**이다: `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK`. 요구사항은 남지만
+이유가 바뀌었다. 0.3.0부터 `stream:false`와 생략은 완료된 JSON 응답을 반환한다 — 더 이상 거부가
+아니다. fallback을 끄는 것은 이제 스트리밍 턴이 조용히 non-streaming으로 재생성되는 것을 막기
+위해서이며, 그 재생성 경로는 이 빌드가 검증하지 않았다.
 
 시작 route는 기준선의 `DEFAULT_SELECTION`과 같은 **astra/low**다. 지금까지 Go는 아무것도 주지 않아
 클라이언트 기본값(opus→sol/high)으로 돌았다.
@@ -703,9 +735,30 @@ stdout의 그 한 줄이 유일한 사본이라고 알린다.
 
 ### B.5 위임 메뉴 — 측정이 설계를 절반 바꿨다 (2026-09-16)
 
-`clauduct-<model>-<effort>` 13종 + `clauduct-inherit`. 전부 `bridge.Models`/`bridge.Efforts`에서
+`clauduct-<model>-<effort>` 20종 + `clauduct-inherit`(0.3.0 기준 21종. 4 모델 x 5 effort). 전부 `bridge.Models`/`bridge.Efforts`에서
 파생되므로 모델이 늘면 메뉴도 늘고 아무도 이 파일을 안 고친다. max는 max가 기본인 모델의 것이다
 (`(정의.effort == max) == (모델.effort == max)`) — 양방향으로 테스트한다.
+
+> **2026-09-18 실측(메뉴 14개 시점): `clauduct-inherit` 하나만 비결정적이다.**
+>
+> Agent 도구에는 자체 `model` 인자가 있고, **호출한 모델이 묻지도 않고 채운다** — 실세션 위임 4회
+> 중 4회, 사용자가 요청한 적 없다. 이름 붙은 모델/effort 항목은 gateway의 role override가 그 인자를 이기므로
+> 영향이 없다(`clauduct-luna-max` + 호출자 `model=fable` → luna/max로 갔다). `inherit`은 설계상
+> override가 없어서 — 상속이란 고르지 않는다는 뜻이므로 — 호출자 인자가 마지막 말이 된다.
+>
+> | 호출 | 자식이 요청한 것 | 실제 경로 |
+> |---|---|---|
+> | `inherit`, `model` 없음 | 부모와 같음 | **부모 route** ✓ |
+> | `inherit`, `model=opus` | `gpt-5.6-sol` | sol ✗ |
+> | `luna-max`, `model=fable` | `claude-fable-5-1` | **luna/max (role)** ✓ |
+>
+> 그래서 이 항목의 **description이 유일한 기구**다: 호출자에게 `model` 인자를 넘기지 말라고
+> 명시한다. 나머지 13종은 description이 무엇을 말하든 경로가 바뀌지 않으므로 그럴 필요가 없다.
+> description을 테스트로 검사하는 이유가 이것이다(`TestTheInheritEntrySaysWhatItNeedsFromTheCaller`).
+>
+> 고치지 않은 이유: gateway가 부모 모델을 기억해 강제하는 길은 반례 셋을 휴리스틱으로 덮어야 한다 —
+> 헤더 없는 요청이 대화만은 아니고(배경 작업도 헤더가 없다), 중첩 자식은 직계가 아닌 최상위 부모를
+> 물려받고, 병렬 요청에서 "마지막"이 타이밍에 좌우된다.
 
 **잰 것 넷:**
 
@@ -796,10 +849,56 @@ launcher가 더하는 것은 고정 접두사이지 인자 사이에 끼어드�
 그래서 이 빌드에서는 **선택 실패가 턴을 죽이지 않는다.** 등록을 못 찾거나 역할을 모르면 클라이언트가
 요청한 모델로 간다 — 재지정을 못 했을 뿐이지 잘못된 것을 한 게 아니다.
 
-**구현 2026-09-16.** `bridge.roleRoutes` 3개(`Explore`→luna/max, `Plan`→astra/low,
+**구현 2026-09-16.** `bridge.roleRoutes` 3개(`Explore`→luna/max, `Plan`→astra/**medium**,
 `general-purpose`→luna/max), `BuildRequest(request, override ...Route)`, gateway가
 `X-Claude-Code-Agent-Id`로 등록을 찾아 override를 얹는다. 실패 3경로는 각각 카운터로 남는다
 (`unregisteredAgents` / `unroutedRoles`) — "조용히 아무것도 안 했다"가 침묵이 아니라 숫자가 된다.
+
+> **2026-09-18: `Plan`을 low → medium으로 올렸다 (사용자 결정).** 기준선은 astra/low이고
+> (`src/models.mjs:20-21`) 여기도 그랬다. sonnet에 이은 **두 번째 기록된 갈라짐**이다. 근거는
+> 계획이 유일하게 그 위에 쌓이는 모든 것이 실수를 대신 갚는 작업이라는 것 — 아낄 자리가 아니었다.
+> medium이 astra의 카탈로그 기본과 같은 것은 우연이고 근거가 아니다. **항목은 명시로 남는다**:
+> override는 effort뿐 아니라 모델도 못박으므로, 카탈로그로 떨어뜨리면 Plan이 대화가 요청한 아무
+> 모델에서나 돌게 된다.
+
+> **2026-09-18: 응답이 어느 모델 이름을 싣는지 뒤집었다 (기록된 결정 번복).**
+>
+> v2는 `message_start.model`에 **클라이언트가 요청한** 모델을 실었고, `route_test.go`에 그 불변식과
+> 이유가 적혀 있었다 — *"the client is told it talked to something it never requested"*.
+> **기준선은 반대다.** v1의 `frameStart`는 `prepared.selected.model`을 쓰고
+> (`src/native-protocol.mjs:509-511`), 역할 route가 있으면 `doc.model`은 읽히지도 않는다(`:258`).
+> v1 테스트가 그걸 못 박는다 — 클라이언트가 terra를 보내도 응답에 `ROLE_MODELS.Plan.model`이
+> 들어있는지 단언한다(`src/test-native.mjs:505-511`).
+>
+> v1 쪽으로 맞췄다. 이유의 honesty가 거꾸로였다: 역할 라우팅된 서브에이전트는 요청한 것과 **대화하지
+> 않는다.** 요청 이름을 싣는 쪽이 거짓 진술이고, 그것도 모델 교체를 사용자에게서 **감추는** 방향이다 —
+> ARCHITECTURE.md 6장이 하지 않겠다고 적은 바로 그것이다.
+>
+> **클라이언트가 이 값으로 무엇을 하는지는 실측했다 — 눈에 보이는 것은 없다.**
+>
+> | 무엇 | 언제 정해지나 | 근거 |
+> |---|---|---|
+> | TUI 에이전트 헤더 | **spawn 시점**, 응답 존재 이전 | 에이전트 실행 중 헤더가 이미 그려져 있음 |
+> | 모델별 토큰·비용 장부 | **클라이언트가 요청한 모델** 기준 | 변경 후 서브에이전트 10건이 전부 `gpt-6-astra`에서 돌았는데 장부는 `gpt-5.6-terra`에 계속 쌓였고 astra는 나타나지 않았다 |
+>
+> 교차 증거: 같은 머신의 `code-map-memo` 프로젝트 장부에는 astra가 **있다.** 거기선 클라이언트가
+> astra를 직접 요청했기 때문이다. 즉 장부는 요청을 따라간다.
+>
+> **그러므로 이 변경은 표시나 장부의 수정이 아니다.** 게이트웨이가 돌려보내는 바이트는 셋 모두의
+> 하류에 있어서 닿지 못한다. 필드가 사실이어야 한다는 것, 그리고 기준선이 그렇게 한다는 것이 근거의
+> 전부다.
+>
+> 번복 과정에서 두 가지를 잘못 적었다가 고쳤다. `route_test.go`의 기존 결정을 못 보고
+> "기록이 없다"고 단정했고(grep 출력을 자른 채 전수로 취급), 클라이언트 장부가 이 값에서 온다고
+> 적었다(반증됨). 그리고 그 테스트는 변경 후에도 통과했다 — `runFor`가 게이트웨이 배선을 우회해
+> **실패할 수 없는 테스트**였다. 지금은 게이트웨이가 넘기는 값과 빈 값을 모두 통과시킨다.
+
+> **해결(0.3.0): WebSearch도 agent의 확정 모델을 쓴다.** 아래는 세션 37 시점의 기록이다.
+>
+> ~~**미해결(세션 37): WebSearch는 역할 라우팅을 건너뛴다.**~~ `messages.go`의 hosted search 분기가
+> 역할 오버라이드 블록보다 **앞에서 반환했다.** 그래서 역할 라우팅된 서브에이전트의 웹검색은
+> `SelectRoute(request.Model, ...)`로 만들어져 역할의 모델이 아니라 **요청 모델**로 나가고,
+> 그 경로의 `message_start`도 같은 값을 싣는다. 근거 주석이 없어 의도인지 누락인지 확인되지 않았다.
 
 `begin(id)`가 요청 1건 동안 등록을 붙잡는다. **이게 있어야** "진행 중인 작업은 쓸지 않는다"가 의도가
 아니라 사실이 된다 — 변이(`state.active++` 제거)는 lastUsed 갱신만으로 살아남았고, 그래서 테스트를
@@ -972,13 +1071,16 @@ compactPercent), non-streaming fallback 차단 여부, 위임 메뉴 항목 수.
 | E1 | ~~`anthropic-version` 검사~~ **완료 2026-09-16** | 8 |
 | E2 | ~~`content-encoding` 검사~~ **완료 2026-09-16** | 8 |
 | E3 | ~~`Frame.WriteTo` 16 KiB 청킹~~ **완료 2026-09-16.** `chunkedWriter`, 돌연변이 6/6 | 6.3 |
-| E4 | compact 템플릿 식별 + **effort medium 상한** | **완료 2026-09-17** |
+| E4 | compact 템플릿 식별 + ~~effort medium 상한~~ | 식별은 유지, **상한은 0.3.0에서 제거** |
 | E5 | 전체 요청 timeout 10분 | **완료 2026-09-17** |
 
 ### E.4/E5 (2026-09-17)
 
 **E4는 진단이 아니라 돈이다.** 기준선의 `compact-policy`가 하는 일은 분류가 아니라
-`purpose === 'compact-template'`일 때 **effort를 medium으로 낮추는 것**이다. 압축 요청은
+`purpose === 'compact-template'`일 때 **effort를 medium으로 낮추는 것**이다.
+
+**0.3.0에는 이 상한이 없다.** 압축은 그 agent의 확정 effort를 유지하고, 전환에 필요한 압축은
+기존 모델로 먼저 수행한다. 아래 기술은 상한이 있던 시점의 기록이며 현재 동작이 아니다. 압축 요청은
 아무도 시키지 않고, 세션이 보내는 **가장 큰 입력**을 싣고, max로 고정된 세션에서는 자동으로
 일어나는 가장 비싼 단일 요청이다. 전사(轉寫) 요약은 max가 존재하는 이유가 아니다.
 

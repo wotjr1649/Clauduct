@@ -44,9 +44,11 @@ func TestTheSessionTellsTheChildWhatThisBuildRoutes(t *testing.T) {
 	}
 
 	// The startup route, likewise routable.
-	if _, err := bridge.SelectRoute(session["ANTHROPIC_MODEL"], session["CLAUDE_CODE_EFFORT_LEVEL"]); err != nil {
+	// The effort is no longer one of these names -- it travels as --effort -- so the startup
+	// route is checked against where it now comes from.
+	if _, err := bridge.SelectRoute(session["ANTHROPIC_MODEL"], startupModel.Effort); err != nil {
 		t.Errorf("the startup route %s/%s does not route: %v",
-			session["ANTHROPIC_MODEL"], session["CLAUDE_CODE_EFFORT_LEVEL"], err)
+			session["ANTHROPIC_MODEL"], startupModel.Effort, err)
 	}
 
 	for _, name := range []string{
@@ -69,13 +71,12 @@ func TestTheSessionTellsTheChildWhatThisBuildRoutes(t *testing.T) {
 	}
 }
 
-// The one value that is not a preference.
-func TestOnlyTheNonStreamingGuardIsEnforced(t *testing.T) {
+// Streaming and the shared envelope are prerequisites of the selected exact
+// per-model policies; inherited 400K settings must not override them.
+func TestPolicyPrerequisitesAreEnforced(t *testing.T) {
 	enforced := sessionRequirements()
-	if len(enforced) != 1 || enforced["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] != "1" {
-		t.Fatalf("enforced = %v. This build refuses a non-streaming request, so a client "+
-			"free to fall back to one produces a broken turn rather than a slower answer. "+
-			"Everything else is a preference the user may hold differently.", enforced)
+	if len(enforced) != 5 || enforced["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] != "1" || enforced["CLAUDE_CODE_GATEWAY_HINT_HEADERS"] != "1" || enforced["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] != "500000" || enforced["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] != "500000" || enforced["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] != "100" {
+		t.Fatalf("policy prerequisites changed: %v", enforced)
 	}
 }
 
@@ -151,13 +152,14 @@ func sessionRun(t *testing.T, args []string) ([]upstream.Call, int64) {
 func TestTheSessionNamesAreTheMeasuredOnes(t *testing.T) {
 	want := strings.Fields(`
 		CLAUDE_CODE_RETRY_WATCHDOG DISABLE_TELEMETRY DISABLE_ERROR_REPORTING
-		CLAUDE_CODE_RESUME_INTERRUPTED_TURN ANTHROPIC_MODEL CLAUDE_CODE_EFFORT_LEVEL
+		CLAUDE_CODE_RESUME_INTERRUPTED_TURN ANTHROPIC_MODEL
 		ANTHROPIC_CUSTOM_MODEL_OPTION ANTHROPIC_CUSTOM_MODEL_OPTION_NAME
 		ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY
 		CLAUDE_CODE_DISABLE_ADVISOR_TOOL ANTHROPIC_DEFAULT_HAIKU_MODEL
 		ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL
 		CLAUDE_CODE_MAX_CONTEXT_TOKENS CLAUDE_CODE_AUTO_COMPACT_WINDOW
-		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`)
+		CLAUDE_AUTOCOMPACT_PCT_OVERRIDE ENABLE_TOOL_SEARCH ANTHROPIC_DEFAULT_FABLE_MODEL
+		CLAUDE_CODE_GATEWAY_HINT_HEADERS`)
 	session := sessionEnvironment()
 	if len(session) != len(want) {
 		t.Fatalf("the session carries %d names, the measured set is %d: %v",

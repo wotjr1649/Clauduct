@@ -1,0 +1,105 @@
+{
+  "id": "432ae808-ff52-435e-aed2-e0ca5c8c983a",
+  "commit": "53482a478470042f7a3b6051730f71bd45d53176",
+  "binarySha256": "0d848b9146ba7f69b39951903d83fb721d0864992650b893066fd09d466ce4d3",
+  "native": {
+    "version": "2.1.278",
+    "reference": "2.1.278",
+    "verified": true,
+    "verifiedMeaning": "version_match_only"
+  },
+  "statusSha256": "35c8bf70866efc42bb0efca1835f320e3b75f214518263a3c550dc714c3d7610",
+  "transcriptSha256": "5f3104b7a2dcc2f979a229e2cb160811dd665b04a75035cad46d83240a5c4dc1",
+  "completion": {
+    "acceptance": "not_assessed",
+    "apiFailures": 0,
+    "cancelledRequests": 0,
+    "nativeCancellations": 1,
+    "nativeToolFailures": 1,
+    "rejectedWorkflowCalls": 2,
+    "unacquiredResultsInRecent": 0,
+    "controlTransitions": 0
+  },
+  "lifecycle": {
+    "state": "finished",
+    "final": true,
+    "reason": "native_exit",
+    "startedAt": "2026-09-20T03:31:29.9921447Z",
+    "observedAt": "2026-09-20T03:41:54.872331Z",
+    "deadlineAt": "2026-09-20T03:51:29.9921447Z",
+    "nativeReaped": true
+  },
+  "counts": {
+    "matched": 22,
+    "mismatched": 0
+  },
+  "original": {
+    "run": "wf_1fe400a8-48d",
+    "task": "wwluym7hn",
+    "status": "killed",
+    "journalSha256": "5a7baba109bb5c78e9e38b390a09bdc2143162647c3a89eed3bee75f7785734f",
+    "children": [
+      {
+        "id": "ab3a3162d1222996c",
+        "model": "gpt-5.6-sol",
+        "effort": "high",
+        "transcriptSha256": "820381c7dd2ab29dc4b46998f6875d751882019e94e5aa9c50228f55ca2f33f7",
+        "tools": []
+      },
+      {
+        "id": "a3dcc3d94f3aec56e",
+        "model": "gpt-5.6-terra",
+        "effort": "medium",
+        "transcriptSha256": "48d85e58e2e8aa3eb69c616b97dc09216b9248aff022e83e356e5d4d17b91c68",
+        "tools": [
+          "Bash"
+        ]
+      }
+    ]
+  },
+  "resumed": {
+    "run": "wf_e05d9f58-c37",
+    "task": "wlsy012yh",
+    "status": "completed",
+    "journalSha256": "bb970c63cb99cafbd827bb069e01357399fb58895072362c10b0c14791b6ae02",
+    "children": [
+      {
+        "id": "a23d25ab3555aba9f",
+        "model": "gpt-5.6-luna",
+        "effort": "max",
+        "transcriptSha256": "f50b048d700dd427e007da7903c45a82b59a618cb492d5c155e65980ab54e3b6",
+        "tools": []
+      }
+    ]
+  },
+  "process": {
+    "before": {
+      "pid": 15048,
+      "start": "2026-09-20T03:33:27.7258466Z",
+      "marker": 1789875207754,
+      "observed": "2026-09-20T03:33:29.2151004Z",
+      "exited": false
+    },
+    "after": {
+      "pid": 15048,
+      "start": "2026-09-20T03:33:27.7258466Z",
+      "exited": true,
+      "exitAt": "2026-09-20T03:33:48.8848478Z",
+      "runtimeMs": 21159.0012
+    }
+  },
+  "toolFailure": {
+    "session": "432ae808-ff52-435e-aed2-e0ca5c8c983a",
+    "call": "call_jc43EOupGN05MLA5COocSnBp",
+    "tool": "TaskStop",
+    "interrupted": false,
+    "source": "tool_result"
+  },
+  "acceptance": {
+    "deadline": "separate_native_fixture_evidence",
+    "workflowStopResume": "pass_for_observed_plan",
+    "toolFailureRecovery": "pass",
+    "workerRestrictionAdversarial": "not_reached: first call rejected; second attempt declined by parent",
+    "universal": false
+  }
+}

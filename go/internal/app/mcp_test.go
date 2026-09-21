@@ -63,6 +63,7 @@ func TestAnMCPServerActuallyRunsAndKeepsItsCredential(t *testing.T) {
 
 	script := &upstream.Script{
 		Turns: []upstream.ScriptTurn{
+			{When: upstream.Conversation, SSE: toolStream("discover_mcp", "ToolSearch", `{"query":"select:mcp__stub__report","max_results":1}`)},
 			{When: upstream.Conversation,
 				SSE: toolStream("call_mcp_1", "mcp__stub__report", `{"name":"`+mcpSecret+`"}`)},
 			{When: upstream.Conversation, SSE: textStream("done", "ok")},
@@ -79,7 +80,7 @@ func TestAnMCPServerActuallyRunsAndKeepsItsCredential(t *testing.T) {
 
 	if _, err := Run(ctx, Options{
 		Args: []string{"-p", "ask the server", "--mcp-config", config,
-			"--strict-mcp-config", "--allowedTools", "mcp__stub__report"},
+			"--strict-mcp-config", "--allowedTools", "ToolSearch,mcp__stub__report"},
 		Env: env, Cwd: cwd, Stdout: &stdout, Stderr: &stderr,
 		ResolveClaude: func() (string, bool, error) { return exe, true, nil },
 		StartGateway:  func() (*gateway.Gateway, error) { return gateway.Start(script) },

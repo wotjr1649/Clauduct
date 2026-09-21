@@ -53,7 +53,18 @@ type Model struct {
 	// Family is the versioned Claude prefix for that tier. Matched by prefix so no version
 	// is pinned: claude-opus-5 and claude-opus-4-1 route the same way and a new release
 	// needs no code change. An unknown name still fails closed.
-	Family string
+	Family  string
+	Context ContextPolicy
+	// CountValidated admits the separately tested token-count input shapes.
+	// Routing a new model alone never opts it into an older tokenizer formula.
+	CountValidated bool
+}
+
+// ContextPolicy supplies preventive management targets, not exact admission caps. Native displays its
+// shared process envelope; it does not display an independent child window.
+type ContextPolicy struct {
+	Window    int64 `json:"window"`
+	CompactAt int64 `json:"compactAt"`
 }
 
 // Models is the catalogue in published order.
@@ -62,10 +73,10 @@ type Model struct {
 // rather than from a convention that looked reasonable, with one deliberate divergence
 // recorded above: sonnet routes to terra here and to luna there.
 var Models = []Model{
-	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Alias: "fable", Family: "claude-fable-"},
-	{Key: "sol", ID: "gpt-5.6-sol", Effort: "xhigh", Alias: "opus", Family: "claude-opus-"},
-	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Alias: "sonnet", Family: "claude-sonnet-"},
-	{Key: "luna", ID: "gpt-5.6-luna", Effort: "max", Alias: "haiku", Family: "claude-haiku-"},
+	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
+	{Key: "sol", ID: "gpt-5.6-sol", Effort: "xhigh", Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "luna", ID: "gpt-5.6-luna", Effort: "max", Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
 }
 
 // Catalogue lists the routes this build offers, in published order.
@@ -84,12 +95,22 @@ func Catalogue() []Route {
 //
 // The Node baseline's ROLE_MODELS. The point of it is that a role's cost is a property of
 // the role: exploring a repository and planning a change are not the same work, and neither
-// is the model the conversation happens to be using. Plan runs on the top model at the
-// cheapest effort because a plan is short and wants judgement; the other two run on the
-// cheapest model at its own default.
+// is the model the conversation happens to be using. Plan runs on the top model because a
+// plan is short and wants judgement; the other two run on the cheapest model at its own
+// default.
+//
+// The second recorded divergence from the baseline, after sonnet. The baseline gives Plan
+// the cheapest effort (src/models.mjs:20-21) and so did this until 2026-09-18, when the user
+// raised it to medium: a plan is the one piece of work whose mistakes are paid for by
+// everything built on it, and low was buying the saving in the wrong place.
+//
+// medium is also astra's catalogue default, which is a coincidence and not a reason. This
+// entry must stay written out: an override pins the model as well as the effort, and letting
+// it fall through to the catalogue would leave a Plan running on whatever the conversation
+// happened to ask for.
 var roleRoutes = map[string]Route{
 	"Explore":         {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
-	"Plan":            {Model: "gpt-6-astra", Effort: "low", Source: "role"},
+	"Plan":            {Model: "gpt-6-astra", Effort: "medium", Source: "role"},
 	"general-purpose": {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
 }
 
@@ -109,19 +130,69 @@ var roleRoutes = map[string]Route{
 // been looked at.
 var inheritRoles = map[string]bool{
 	"workflow-subagent": true,
+	"fork":              true, // Native forks retain the parent's model and history.
+	// The launcher's own inherit entry, and the reason this is a named constant rather
+	// than a string in two files. Measured in a real session 2026-09-18: the menu shipped
+	// clauduct-inherit, the router had never heard of it, and every session that delegated
+	// to it was filed with agents.unrouted=1 and dumped its whole account at exit -- the
+	// cry-wolf failure this map exists to prevent, about this build's own agent.
+	//
+	// menuRoute cannot cover it: "inherit" carries no -<effort> suffix to parse, because
+	// there is no effort to name. That is the point of it.
+	InheritRole: true,
 }
 
+// InheritRole is the agent type that keeps whatever the parent was running on.
+//
+// Defined here, beside the router that has to recognise it, and used by the launcher that
+// builds the menu. One spelling: two was the defect.
+const InheritRole = MenuPrefix + "inherit"
+
 // InheritsParent reports whether this role deliberately keeps the model the client chose.
-func InheritsParent(role string) bool { return inheritRoles[role] }
+func InheritsParent(role string) bool {
+	if inheritRoles[role] {
+		return true
+	}
+	// Folded like the role table beside it. Folding one and not the other meant "Fork" missed
+	// this map, took the explicit-model path, and died on its first request against native's
+	// own model:inherit -- where "fork" is refused cleanly at the call.
+	for name := range inheritRoles {
+		if strings.EqualFold(name, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFork folds the one role name five call sites compared exactly. Native resolves these
+// case-insensitively; this build did not, in five different places.
+func IsFork(role string) bool { return strings.EqualFold(role, "fork") }
 
 // RoleRoute reports where a subagent of this role runs.
 //
-// A role nobody has a route for is not an error and not a guess: the caller keeps the model
-// the client asked for. Inventing one would run the user's work somewhere they did not
-// choose, and refusing would end a turn over a routing preference.
+// A role nobody has a route for is not an error and not a guess here: this function reports
+// what it knows and invents nothing, because inventing one would run the user's work
+// somewhere the user did not choose.
+//
+// What the caller does with "not known" is the caller's. It runs the child on the route of
+// whatever asked for it, which is the same answer 0.2.x arrived at by leaving the client's
+// model alone -- and it is recorded as a choice rather than waved through, because a child
+// with no recorded choice is invisible to the completion evidence and lets its parent answer
+// as complete with a report outstanding. An explicit effort is still refused: there is no
+// catalogue entry to apply it to, and inventing one is the guess this build does not make.
 func RoleRoute(role string) (Route, bool) {
 	if route, known := roleRoutes[role]; known {
 		return route, true
+	}
+	// Case-insensitively for the built-ins, because native resolves them that way and the
+	// gateway already reconciles a child's reported role against the requested one with
+	// EqualFold. Exact-only matching meant "explore" missed this table, took the caller's
+	// route, and then passed that reconciliation -- an Explore child running somewhere other
+	// than the entry above says it runs, decided by the casing in a tool call.
+	for name, route := range roleRoutes {
+		if strings.EqualFold(name, role) {
+			return route, true
+		}
 	}
 	return menuRoute(role)
 }
@@ -132,10 +203,9 @@ const MenuPrefix = "clauduct-"
 // menuRoute reads a route out of an agent type's own name.
 //
 // The launcher defines agent types called clauduct-<model>-<effort> so the user can send a
-// piece of work to a chosen model. Measured 2026-09-16: an agent definition can name a model
-// and the client honours it, but *nothing in a definition sets the effort* -- not effort,
-// effortLevel, reasoningEffort nor reasoning_effort, and an {level: ...} object makes the
-// definition invalid outright. The child runs at whatever the session is on.
+// piece of work to a chosen model. Native 2.1.276 supports a definition's effort
+// (verified 2026-09-18). The gateway fixes the selected effort here as well, so
+// native presentation or silent downgrades cannot change the backend route.
 //
 // So the effort comes from here instead. The name already carries it, the hook already
 // reports the name, and the request already arrives with the identifier that finds it. The

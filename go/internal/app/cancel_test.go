@@ -45,10 +45,7 @@ func TestTheChildIsNotPutInItsOwnProcessGroup(t *testing.T) {
 	if !ok {
 		t.Fatalf("startOSProcess returned %T", process)
 	}
-	if p.cmd.SysProcAttr == nil {
-		return // No attributes at all: the child shares the console and its group.
-	}
-	if flags := p.cmd.SysProcAttr.CreationFlags; flags&syscall.CREATE_NEW_PROCESS_GROUP != 0 {
+	if flags := p.CreationFlags(); flags&syscall.CREATE_NEW_PROCESS_GROUP != 0 {
 		t.Fatalf("the child is started with CREATE_NEW_PROCESS_GROUP (flags %#x). A console "+
 			"Ctrl+C would no longer reach it, and this launcher has no signal handling of "+
 			"its own to forward one.", flags)
@@ -130,13 +127,9 @@ func TestACancelledSessionIsDistinguishableFromOneThatEnded(t *testing.T) {
 	}
 }
 
-// And the other shape, measured rather than assumed: a child with a child of its own does
-// not finish when it is killed, because the grandchild holds the pipes it inherited. The
-// session ends in the stop grace, and says so.
-//
-// This is the same limit LIFE11 records, arriving through the wait rather than through the
-// process table. A cancelled session with a grandchild costs the full grace.
-func TestACancelledSessionWithAGrandchildEndsInTheStopGrace(t *testing.T) {
+// The job closes the descendants' inherited pipes too: cancellation must finish
+// with the original deadline, not consume the entire grace waiting for EOF.
+func TestACancelledSessionWithAGrandchildReapsWithoutStopGrace(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -147,16 +140,13 @@ func TestACancelledSessionWithAGrandchildEndsInTheStopGrace(t *testing.T) {
 	if err == nil {
 		t.Fatal("a cancelled session reported no error")
 	}
-	if !strings.Contains(err.Error(), "did not exit") {
-		t.Skipf("this child went promptly (%v): %v. The grandchild did not hold the pipes, "+
-			"so there is no grace to measure.", elapsed, err)
+	if err.Error() != context.DeadlineExceeded.Error() {
+		t.Fatalf("cancellation did not reap the tree: %v", err)
 	}
-	if elapsed < stopGrace {
-		t.Fatalf("the grace was reported after only %v", elapsed)
+	if elapsed >= 2*time.Second+stopGrace {
+		t.Fatalf("tree cancellation consumed the stop grace: %v", elapsed)
 	}
-	t.Logf("measured: a cancelled session whose child has a child of its own ends after %v "+
-		"-- the deadline plus the full %v grace, because Wait holds until the inherited "+
-		"pipes close.", elapsed.Round(time.Millisecond), stopGrace)
+	t.Logf("tree reaped after %v", elapsed.Round(time.Millisecond))
 }
 
 // LIFE05's remaining leg, recorded rather than skipped.

@@ -65,7 +65,7 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-.\scripts\install.ps1 -Tag v0.2.3        # 태그 고정
+.\scripts\install.ps1 -Tag v0.3.0        # 태그 고정
 .\scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
 .\scripts\install.ps1 -NoPathUpdate      # PATH는 직접 관리
 .\scripts\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
@@ -75,7 +75,7 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 명령입니다.
 
 ```powershell
-clauduct-dev version   # Clauduct 자신: 0.2.3, commit, Go 버전
+clauduct-dev version   # Clauduct 자신: 0.3.0, commit, Go 버전
 clauduct --version     # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
 
@@ -131,8 +131,9 @@ clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너�
 ```
 
 거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`와 `--usage`
-둘이고(둘 다 **첫 인자일 때만** 인식), 거부하는 것은 네 개입니다(권한 해제 2종,
-`--settings`·`--setting-sources`).
+둘이고(둘 다 **첫 인자일 때만** 인식), 거부하는 것은 **둘**입니다(권한 해제 2종).
+`--settings`는 0.3.0부터 거부 대신 필수 settings와 **병합**됩니다 — 필수 연결이나 hook과
+충돌할 때만 거부합니다. `--setting-sources`는 그대로 native에 전달됩니다.
 
 클라이언트의 `/usage`·`/cost`는 GPT 플랜 사용량을 보여주지 못합니다 — 커스텀 base URL에는 계정
 엔드포인트를 묻지 않는 것으로 실측됐습니다. `clauduct --usage`가 그 질문에 답합니다.

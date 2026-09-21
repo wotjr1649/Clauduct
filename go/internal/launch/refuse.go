@@ -19,18 +19,10 @@ import "strings"
 var refusedOptions = map[string]string{
 	"--dangerously-skip-permissions":       reasonPermission,
 	"--allow-dangerously-skip-permissions": reasonPermission,
-	// Consequences of injecting a settings blob rather than policy choices. Measured: a
-	// second --settings replaces the first instead of merging, so one of the two would be
-	// silently lost -- and if it were this build's, the subagent hooks would never install
-	// and nothing would say so.
-	"--settings":        reasonSettings,
-	"--setting-sources": reasonSettings,
 }
 
 const (
 	reasonPermission = "it turns off permission checks for the whole session"
-	reasonSettings   = "this launcher supplies the session's own settings, and a second " +
-		"--settings replaces the first rather than adding to it"
 )
 
 // Reason reports why an option is not forwarded.

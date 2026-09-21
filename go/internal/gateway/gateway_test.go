@@ -5,7 +5,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -77,8 +79,9 @@ func messages(body io.Reader) request {
 		method: http.MethodPost,
 		path:   "/v1/messages?beta=true",
 		headers: map[string]string{
-			"Content-Type":      "application/json",
-			"Anthropic-Version": anthropicVersion,
+			"Content-Type":                "application/json",
+			"Anthropic-Version":           anthropicVersion,
+			"X-Claude-Code-Request-Class": "main",
 		},
 		body: body,
 	}
@@ -94,6 +97,8 @@ func waitForActive(t *testing.T, g *Gateway, want int64, why string) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	_, _, active := g.Stats()
+	stacks := make([]byte, 128<<10)
+	t.Logf("request drain stacks:\n%s", stacks[:runtime.Stack(stacks, true)])
 	t.Fatalf("active = %d, want %d (%s)", active, want, why)
 }
 
@@ -188,11 +193,11 @@ func TestAuthenticationRefusals(t *testing.T) {
 // the boundary, the credential, the method and the media type all passed first.
 func TestValidTokenReachesTheDecoder(t *testing.T) {
 	g := start(t)
-	resp := do(t, g, messages(strings.NewReader(`{"model":"x"}`)))
+	resp := do(t, g, messages(strings.NewReader(`{"model":"x","stream":null}`)))
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 from the request decoder", resp.StatusCode)
 	}
-	if body := bodyText(t, resp); !strings.Contains(body, "REQUEST_STREAM_MISSING") {
+	if body := bodyText(t, resp); !strings.Contains(body, "REQUEST_STREAM_INVALID") {
 		t.Fatalf("body = %q, want the decoder's own category", body)
 	}
 }
@@ -387,7 +392,6 @@ func TestUnknownRoutesRefuseExplicitly(t *testing.T) {
 		{http.MethodPost, "/clauduct/status"}, // the account is read, never written
 		{http.MethodGet, "/api/hello"},        // readiness is HEAD only, matching the baseline
 		{http.MethodGet, "/"},
-		{http.MethodPost, "/v1/messages/count_tokens"},
 	} {
 		resp := do(t, g, request{method: tc.method, path: tc.path})
 		if resp.StatusCode != http.StatusNotFound {
@@ -396,6 +400,14 @@ func TestUnknownRoutesRefuseExplicitly(t *testing.T) {
 		if body := bodyText(t, resp); !strings.Contains(body, "UNSUPPORTED_ROUTE") {
 			t.Errorf("%s %s body = %q", tc.method, tc.path, body)
 		}
+	}
+}
+
+func TestCountTokensHasAnExplicitIsolatedRefusal(t *testing.T) {
+	g := start(t)
+	resp := do(t, g, request{method: http.MethodPost, path: "/v1/messages/count_tokens"})
+	if body := bodyText(t, resp); resp.StatusCode != 400 || !strings.Contains(body, "COUNT_TOKENS_UNSUPPORTED") {
+		t.Fatalf("count status=%d body=%s", resp.StatusCode, body)
 	}
 }
 
@@ -461,22 +473,47 @@ func TestNotReachableOffLoopback(t *testing.T) {
 
 // slowUpload starts a request whose body never finishes, so there is a genuine in-flight
 // request to cancel. Reading the body is production work, not a hook added for the test.
-func slowUpload(t *testing.T, g *Gateway) (cancel func(), done chan struct{}) {
+type observedUploadConn struct {
+	net.Conn
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (c *observedUploadConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(func() { close(c.closed) })
+	return err
+}
+func slowUpload(t *testing.T, g *Gateway, path string) (cancel func(), done chan struct{}) {
 	t.Helper()
 	reader, writer := io.Pipe()
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.BaseURL()+"/v1/messages", reader)
+	t.Cleanup(func() { cancelCtx(); writer.Close(); reader.Close() })
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.BaseURL()+path, reader)
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+g.Token())
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Anthropic-Version", anthropicVersion)
+	// Own this client's connection and observe the actual close. Client.Do
+	// returning on context cancellation alone is not proof that TCP was closed.
+	closed := make(chan struct{})
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		return &observedUploadConn{Conn: conn, closed: closed}, nil
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport}
 
 	done = make(chan struct{})
 	go func() {
 		defer close(done)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err == nil {
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -484,21 +521,31 @@ func slowUpload(t *testing.T, g *Gateway) (cancel func(), done chan struct{}) {
 	}()
 	go func() { writer.Write([]byte(`{"messages":[`)) }()
 
-	return func() { cancelCtx(); writer.Close() }, done
+	return func() {
+		cancelCtx()
+		writer.Close()
+		select {
+		case <-closed:
+		case <-time.After(5 * time.Second):
+			t.Error("upload client returned without closing TCP")
+		}
+	}, done
 }
 
 // The HTTP wiring of LIFE06: an abandoned request is cancelled and leaves the registry.
 // Sibling isolation itself is proved deterministically in the registry tests; what this
 // adds is that the handler is actually registered and actually released.
 func TestAbandonedRequestIsCancelledAndDrains(t *testing.T) {
-	g := start(t)
-
-	cancel, done := slowUpload(t, g)
-	waitForActive(t, g, 1, "the slow upload should be registered while its body is read")
-
-	cancel()
-	<-done
-	waitForActive(t, g, 0, "an abandoned request must leave the registry")
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens"} {
+		t.Run(path, func(t *testing.T) {
+			g := start(t)
+			cancel, done := slowUpload(t, g, path)
+			waitForActive(t, g, 1, "the slow upload should be registered while its body is read")
+			cancel()
+			<-done
+			waitForActive(t, g, 0, "an abandoned request must leave the registry")
+		})
+	}
 }
 
 // Shutdown cancels what it owns rather than waiting for it. A bare Shutdown would block on
@@ -510,7 +557,7 @@ func TestCloseCancelsInFlightRatherThanWaiting(t *testing.T) {
 	}
 	addr := g.Addr()
 
-	cancel, done := slowUpload(t, g)
+	cancel, done := slowUpload(t, g, "/v1/messages")
 	defer func() { cancel(); <-done }()
 	waitForActive(t, g, 1, "the slow upload should be in flight before Close")
 

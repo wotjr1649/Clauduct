@@ -1,0 +1,1008 @@
+{
+  "id": "2895cf89-c811-4796-9c42-4baaa94dedde",
+  "sha256": "34516e93596d7b22dc63c5d2f847c36dd4cc18f6bb2a41aa2fe371cb6baf7e83",
+  "lifecycle": {
+    "state": "finished",
+    "final": true,
+    "reason": "native_exit",
+    "startedAt": "2026-09-20T10:55:23.2287787Z",
+    "observedAt": "2026-09-20T10:58:32.2019144Z",
+    "deadlineAt": "2026-09-20T11:05:23.2287787Z",
+    "nativeReaped": true
+  },
+  "completion": {
+    "acceptance": "not_assessed",
+    "apiFailures": 0,
+    "cancelledRequests": 0,
+    "nativeCancellations": 0,
+    "nativeToolFailures": 0,
+    "rejectedWorkflowCalls": 0,
+    "unacquiredResultsInRecent": 1,
+    "controlTransitions": 0
+  },
+  "features": [
+    {
+      "name": "generation",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "context_policy"
+      ],
+      "requests": 8,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 8,
+      "successfulResponses": 8,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 17,
+      "lastCompletedRequest": 17,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "native_agent",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "selection",
+        "native_turn",
+        "route",
+        "context_policy"
+      ],
+      "requests": 3,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 3,
+      "successfulResponses": 3,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 14,
+      "lastCompletedRequest": 13,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "agent_resume",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "selection",
+        "native_turn",
+        "continuation",
+        "route",
+        "context_policy"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_agent",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "workflow_selection",
+        "native_turn",
+        "route",
+        "context_policy"
+      ],
+      "requests": 3,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 3,
+      "successfulResponses": 3,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 14,
+      "lastCompletedRequest": 13,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_tool_policy",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "selection",
+        "workflow_tool_policy",
+        "route"
+      ],
+      "requests": 2,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 2,
+      "successfulResponses": 2,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "lastRequest": 13,
+      "lastCompletedRequest": 13,
+      "runtimeEvidence": "required_checks_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "count_tokens",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "count_completed"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "web_search",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "search_available"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "compaction",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "compaction_authorized",
+        "context_policy"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_result_reuse",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "context_policy",
+        "workflow_recovery_request",
+        "workflow_recovery"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "parent_wait",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "context_policy",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "empty_reply_wait",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "context_policy",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    },
+    {
+      "name": "workflow_resume",
+      "enforcement": "per_request",
+      "requiredChecks": [
+        "input",
+        "route",
+        "context_policy",
+        "workflow_recovery_request",
+        "workflow_plan_resume"
+      ],
+      "requests": 0,
+      "requestsWithoutRequiredChecks": 0,
+      "requestsWithRequiredChecks": 0,
+      "successfulResponses": 0,
+      "failedAfterChecks": 0,
+      "cancelledAfterChecks": 0,
+      "runtimeEvidence": "not_observed",
+      "acceptance": "not_assessed"
+    }
+  ],
+  "progress": {
+    "source": "native_event_receipts",
+    "state": "observed_events_not_liveness_proof",
+    "unreadable": 0,
+    "capacityExceeded": false,
+    "agents": [
+      {
+        "session": "2895cf89-c811-4796-9c42-4baaa94dedde",
+        "agent": "",
+        "turn": "b322e437-9ac7-43c1-8498-440ffc599d0d",
+        "phase": "turn_ended",
+        "signal": "turn_answer",
+        "sequence": 3,
+        "at": 1789901838672,
+        "pendingTools": 0,
+        "permissionRequests": 0,
+        "ageMs": 73529
+      }
+    ]
+  },
+  "recent": [
+    {
+      "seq": 2,
+      "method": "GET",
+      "path": "/v1/models",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 200,
+      "kind": "models",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 1214,
+      "firstByteMs": 1214,
+      "endedMs": 1214
+    },
+    {
+      "seq": 3,
+      "method": "POST",
+      "path": "/clauduct/context",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 204,
+      "kind": "context_event",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 1737,
+      "endedMs": 1737
+    },
+    {
+      "seq": 4,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "status": 200,
+      "requested": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "effort": "low",
+      "source": "direct+effort",
+      "kind": "generation",
+      "nativeRequestClass": "auxiliary",
+      "backendInputTokens": 1013,
+      "backendOutputTokens": 142,
+      "backendCachedInputTokens": 0,
+      "backendReasoningTokens": 123,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 1522,
+        "source": "text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 19,
+        "bytes": 13302
+      },
+      "verifiedChecks": [
+        "input",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 42336,
+      "backendProgress": {
+        "events": 19,
+        "textDeltas": 9,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 38527,
+      "firstByteMs": 42024,
+      "endedMs": 42371
+    },
+    {
+      "seq": 5,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "status": 200,
+      "requested": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "source": "direct+effort",
+      "kind": "generation",
+      "nativeRequestClass": "main",
+      "backendInputTokens": 11937,
+      "backendOutputTokens": 19,
+      "backendCachedInputTokens": 7296,
+      "backendReasoningTokens": 0,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 19212,
+        "source": "text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 13,
+        "bytes": 124211
+      },
+      "verifiedChecks": [
+        "input",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 43907,
+      "backendProgress": {
+        "events": 13,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 7,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 38670,
+      "firstByteMs": 43909,
+      "endedMs": 43928
+    },
+    {
+      "seq": 6,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "status": 200,
+      "requested": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "source": "direct+effort",
+      "kind": "generation",
+      "nativeRequestClass": "main",
+      "backendInputTokens": 15873,
+      "backendOutputTokens": 214,
+      "backendCachedInputTokens": 0,
+      "backendReasoningTokens": 0,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 25013,
+        "source": "backend_usage_plus_text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 208,
+        "bytes": 175293
+      },
+      "verifiedChecks": [
+        "input",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 52912,
+      "backendProgress": {
+        "events": 208,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 202,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 44074,
+      "firstByteMs": 52914,
+      "endedMs": 52921
+    },
+    {
+      "seq": 7,
+      "method": "POST",
+      "path": "/clauduct/workflows",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 204,
+      "kind": "other",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 82792,
+      "endedMs": 82793
+    },
+    {
+      "seq": 8,
+      "method": "POST",
+      "path": "/clauduct/agents",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 200,
+      "kind": "agent_binding",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 82856,
+      "firstByteMs": 82856,
+      "endedMs": 82856
+    },
+    {
+      "seq": 9,
+      "method": "POST",
+      "path": "/clauduct/agents",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 200,
+      "kind": "agent_binding",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 82864,
+      "firstByteMs": 82865,
+      "endedMs": 82865
+    },
+    {
+      "seq": 10,
+      "method": "POST",
+      "path": "/clauduct/agents",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 200,
+      "kind": "agent_binding",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 82871,
+      "firstByteMs": 82872,
+      "endedMs": 82872
+    },
+    {
+      "seq": 11,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "status": 200,
+      "requested": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "source": "direct+effort",
+      "kind": "generation",
+      "nativeRequestClass": "main",
+      "backendInputTokens": 16870,
+      "backendOutputTokens": 31,
+      "backendCachedInputTokens": 7296,
+      "backendReasoningTokens": 0,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 25992,
+        "source": "backend_usage_plus_text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 35,
+        "bytes": 131921
+      },
+      "verifiedChecks": [
+        "input",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 85778,
+      "backendProgress": {
+        "events": 35,
+        "textDeltas": 27,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 82898,
+      "firstByteMs": 84837,
+      "endedMs": 85890
+    },
+    {
+      "seq": 12,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "toolPolicy": "workflow_allowlist",
+      "status": 200,
+      "requested": "gpt-5.6-terra",
+      "model": "gpt-5.6-terra",
+      "effort": "low",
+      "source": "workflow-selection",
+      "kind": "generation",
+      "nativeRequestClass": "workflow",
+      "backendInputTokens": 3318,
+      "backendOutputTokens": 223,
+      "backendCachedInputTokens": 0,
+      "backendReasoningTokens": 199,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 4824,
+        "source": "text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "agentId": "afe45b65d2f22cd08",
+      "agentRole": "workflow-subagent",
+      "selectionVerified": true,
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 28,
+        "bytes": 21255
+      },
+      "verifiedChecks": [
+        "input",
+        "selection",
+        "workflow_selection",
+        "workflow_tool_policy",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "native_turn",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 92499,
+      "backendProgress": {
+        "events": 28,
+        "textDeltas": 18,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 83037,
+      "firstByteMs": 92499,
+      "endedMs": 92558
+    },
+    {
+      "seq": 13,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "toolPolicy": "workflow_step_none",
+      "status": 200,
+      "requested": "gpt-5.6-luna",
+      "model": "gpt-5.6-luna",
+      "effort": "low",
+      "source": "workflow-selection",
+      "kind": "generation",
+      "nativeRequestClass": "workflow",
+      "backendInputTokens": 2965,
+      "backendOutputTokens": 1230,
+      "backendCachedInputTokens": 0,
+      "backendReasoningTokens": 545,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 4289,
+        "source": "text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "agentId": "a2e8b148104aa63ba",
+      "agentRole": "workflow-subagent",
+      "selectionVerified": true,
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 691,
+        "bytes": 225080
+      },
+      "verifiedChecks": [
+        "input",
+        "selection",
+        "workflow_selection",
+        "workflow_tool_policy",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "native_turn",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 106260,
+      "backendProgress": {
+        "events": 691,
+        "textDeltas": 623,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 83078,
+      "firstByteMs": 106262,
+      "endedMs": 106330
+    },
+    {
+      "seq": 14,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "status": 200,
+      "requested": "gpt-5.6-terra",
+      "model": "gpt-5.6-terra",
+      "effort": "low",
+      "source": "workflow-selection",
+      "kind": "generation",
+      "nativeRequestClass": "workflow",
+      "backendInputTokens": 1678,
+      "backendOutputTokens": 104,
+      "backendCachedInputTokens": 0,
+      "backendReasoningTokens": 28,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 2445,
+        "source": "text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "agentId": "a3b6f790e2a672f2f",
+      "agentRole": "public-reader",
+      "selectionVerified": true,
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 70,
+        "bytes": 30305
+      },
+      "verifiedChecks": [
+        "input",
+        "selection",
+        "workflow_selection",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "native_turn",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 88972,
+      "backendProgress": {
+        "events": 70,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 62,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "completionEligible": true,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 83084,
+      "firstByteMs": 88972,
+      "endedMs": 89005
+    },
+    {
+      "seq": 15,
+      "method": "POST",
+      "path": "/clauduct/agents",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 200,
+      "kind": "agent_binding",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 92643,
+      "firstByteMs": 92643,
+      "endedMs": 92643
+    },
+    {
+      "seq": 16,
+      "method": "POST",
+      "path": "/clauduct/agents",
+      "stage": "request",
+      "outcome": "ok",
+      "status": 200,
+      "kind": "agent_binding",
+      "lastObservedMs": 0,
+      "backendProgress": {
+        "events": 0,
+        "textDeltas": 0,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "startedMs": 106429,
+      "firstByteMs": 106429,
+      "endedMs": 106429
+    },
+    {
+      "seq": 17,
+      "method": "POST",
+      "path": "/v1/messages",
+      "stage": "delivery",
+      "outcome": "ok",
+      "status": 200,
+      "requested": "gpt-6-astra",
+      "model": "gpt-6-astra",
+      "effort": "low",
+      "source": "direct+effort",
+      "kind": "generation",
+      "nativeRequestClass": "main",
+      "backendInputTokens": 18737,
+      "backendOutputTokens": 228,
+      "backendCachedInputTokens": 0,
+      "backendReasoningTokens": 0,
+      "usageSource": "backend",
+      "contextEstimate": {
+        "inputTokens": 28125,
+        "source": "backend_usage_plus_text_estimate",
+        "containsUnestimatedMediaOrReasoning": false,
+        "exact": false
+      },
+      "streamEnd": {
+        "readError": "eof",
+        "clientContext": "none",
+        "terminalObserved": true,
+        "events": 232,
+        "bytes": 186249
+      },
+      "verifiedChecks": [
+        "input",
+        "parent_input_snapshot",
+        "native_wait_step",
+        "native_tui",
+        "route",
+        "context_policy"
+      ],
+      "lastObservedMs": 115464,
+      "backendProgress": {
+        "events": 232,
+        "textDeltas": 224,
+        "toolArgumentDeltas": 0,
+        "reasoningDeltas": 0
+      },
+      "parentReadiness": {
+        "includedResults": [
+          "a2e8b148104aa63ba",
+          "afe45b65d2f22cd08"
+        ],
+        "unavailableResults": [
+          "a3b6f790e2a672f2f"
+        ],
+        "completionEligible": false,
+        "meaning": "known_child_reports_in_input_not_task_success",
+        "replyWithheld": false,
+        "waitControlMode": "native_tui"
+      },
+      "startedMs": 106527,
+      "firstByteMs": 108522,
+      "endedMs": 115472
+    }
+  ],
+  "children": [
+    {
+      "run": "wf_18b4f28a-ac6",
+      "agent": "a2e8b148104aa63ba",
+      "tools": [],
+      "attachments": [
+        "deferred_tools_delta",
+        "environment",
+        "model",
+        "skill_listing",
+        "session_context",
+        "date",
+        "remote_session_change",
+        "prompt_snapshot",
+        "prompt_snapshot"
+      ],
+      "apiError": false,
+      "results": [],
+      "answers": [
+        {
+          "bytes": 127,
+          "done": false
+        },
+        {
+          "bytes": 54,
+          "done": false
+        },
+        {
+          "bytes": 53,
+          "done": false
+        },
+        {
+          "bytes": 596,
+          "done": false
+        },
+        {
+          "bytes": 589,
+          "done": false
+        },
+        {
+          "bytes": 544,
+          "done": false
+        },
+        {
+          "bytes": 72,
+          "done": false
+        }
+      ]
+    },
+    {
+      "run": "wf_18b4f28a-ac6",
+      "agent": "a3b6f790e2a672f2f",
+      "tools": [
+        "Read"
+      ],
+      "attachments": [
+        "environment",
+        "model",
+        "session_context",
+        "date",
+        "prompt_snapshot",
+        "prompt_snapshot",
+        "total_tokens_reminder"
+      ],
+      "apiError": false,
+      "results": [
+        {
+          "error": false,
+          "bytes": 105
+        }
+      ],
+      "answers": []
+    },
+    {
+      "run": "wf_18b4f28a-ac6",
+      "agent": "afe45b65d2f22cd08",
+      "tools": [],
+      "attachments": [
+        "deferred_tools_delta",
+        "environment",
+        "model",
+        "skill_listing",
+        "session_context",
+        "date",
+        "remote_session_change",
+        "prompt_snapshot",
+        "prompt_snapshot"
+      ],
+      "apiError": false,
+      "results": [],
+      "answers": [
+        {
+          "bytes": 65,
+          "done": false
+        }
+      ]
+    }
+  ],
+  "markers": {
+    "parent": true,
+    "apiError": false
+  },
+  "calls": [
+    {
+      "name": "Skill",
+      "id": "call_2laQLiq2ATGSUzzVImXQsmwK"
+    },
+    {
+      "name": "Workflow",
+      "id": "call_brzVcwxoB5T5d5ELsTnX4iIz"
+    }
+  ]
+}

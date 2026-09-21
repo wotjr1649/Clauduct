@@ -1,0 +1,211 @@
+// No environment mutation, network, process or report-body access. Native identity,
+// progress and terminal receipts are recorded. Workflow source files use native Read
+// with its permission checks. A verified dependency wait consumes only the gateway's
+// empty control response. Native commands are untouched.
+const root = __CLAUDUCT_EVENT_ROOT__;
+const ident = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : '';
+async function session($, state) {
+  if (!state.session) state.session = ident(await $.session.id());
+  if (!state.session) throw new Error('CLAUDUCT_NATIVE_SESSION_INVALID');
+  return state.session;
+}
+async function observe($, state, progress, p, signal) {
+    const receipt = {agent:p.agent,turn:p.turn,
+      phase:p.phase,signal,sequence:++p.sequence,
+      pendingTools:p.pendingTools,permissionRequests:p.permissionRequests};
+    const prior = p.write;
+    p.write = (async () => {
+      if (prior) await prior;
+      receipt.session=await session($,state);receipt.at=await $.clock.now();
+      if (progress.get(p.agent)!==p) return; // a late prior turn cannot replace current progress
+      const name=p.agent?'progress-child-'+p.agent:'progress-root';
+      await $.fs.write(root+'/'+name+'.json',JSON.stringify(receipt));
+    })();
+    await p.write;
+}
+export const register = on => {
+  const state = {session:'',mode:'unclassified'};
+  const turns = new Set();
+  const cancelledTurns = new Set();
+  const progress = new Map();
+  let origin='unclassified';
+  on('prompt.submit', async ($, e, next) => {
+    origin=e.origin?.kind || 'unclassified';
+    if (origin==='composer') state.mode='native_tui';
+    else if (origin==='sdk') state.mode='sdk';
+    const p=progress.get('');
+    if (e.turnId && p?.turn===e.turnId && origin!=='task-notification') p.intervened=true;
+    return next(e);
+  });
+  on('turn.start', async ($, e, next) => {
+    state.rootTurn=e.turnId;state.rootOrigin=origin;origin='unclassified';
+    return next(e);
+  });
+  on('session.start', async ($, e, next) => {
+    await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($,state)}));
+    return next(e);
+  });
+  on('turn.step', async function* ($, e, next) {
+    const agent=e.agentId?ident(e.agentId):'', turn=ident(e.turnId);
+    if (!turn || (e.agentId && !agent)) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+    let p=progress.get(agent);
+    if (!p || p.turn!==turn) {
+      if (progress.size>=4096 && !p) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+      p={agent,turn,sequence:0,pendingTools:0,permissionRequests:0,phase:'request',write:p?.write};
+      progress.set(agent,p);
+    }
+    p.phase='request';
+    // Written in place, because this plugin API has no rename. Measured 2026-09-21 against
+    // the declarations Claude Code 2.1.278 writes for its own hooks: $.fs offers read,
+    // write, exists, stat and append, and nothing that moves a file. The temp-and-rename
+    // the gateway uses for the files it writes is not available on this side, so a reader
+    // can land mid-write and the gateway counts an invalid receipt -- which is one reason
+    // the gateway re-reads and compares the turn rather than trusting one read.
+    if (!agent && !turns.has('main:'+turn)) {turns.add('main:'+turn);await $.fs.write(root+'/active-main.json',JSON.stringify({session:await session($,state),agent:'',turn}));}
+    if (e.agentId) {
+      const agent=ident(e.agentId), turn=ident(e.turnId);
+      if (!agent || !turn) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+      const key=agent+'/'+turn;
+      if (!turns.has(key)) {
+        if (turns.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+        const model=['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(e.model)?e.model:'unlisted';
+        const effort=['low','medium','high','xhigh','max'].includes(e.effort)?e.effort:'unlisted';
+        await $.fs.write(root+'/active-'+agent+'.json',JSON.stringify({session:await session($,state),agent,turn,model,effort}));
+        turns.add(key);
+      }
+    }
+    await observe($,state,progress,p,'request_started');
+    const name=agent?'child-'+agent:'root';
+    // index 0 of an explicit new input is never withheld. Child wakeups without
+    // ingress provenance remain outside this control until a later tool step.
+    const eligible=state.mode==='native_tui' && !p.intervened && (e.index>0 && p.delegated || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
+    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($,state),agent,turn,index:e.index,eligible,mode:state.mode}));
+    let held=false;
+    try {
+      if (state.mode!=='native_tui') return yield* next(e);
+      const stream=next(e);
+      let decision;
+      const prefix=[];
+      for await (const chunk of stream) {
+        // Retry/envelope engine chunks may precede the HTTP response. Resolve
+        // the control only at its first semantic chunk, after gateway admission.
+        if (eligible && !decision) {
+          prefix.push(chunk);
+          if (prefix.length>64) throw new Error('CLAUDUCT_PARENT_WAIT_PREFIX_LIMIT');
+          if (chunk.kind==='engine') continue;
+        }
+        if (!decision) {
+          const file=root+'/decision-'+name+'.json';
+          // A decision this build cannot parse is an unverified decision, not a crash. The
+          // refusal three lines down is the deliberate answer for that; a bare JSON.parse
+          // threw a SyntaxError that escaped this generator instead, past the only handler
+          // that knows what to do about it.
+          decision={hold:false};
+          if (await $.fs.exists(file)) {
+            try { decision=JSON.parse(await $.fs.read(file)); }
+            catch { throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED'); }
+          }
+          if (decision.turn!==turn || decision.index!==e.index) decision={hold:false};
+          if (typeof decision.hold!=='boolean' || decision.hold && !eligible) throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED');
+        }
+        if (prefix.length) {if (!decision.hold) yield* prefix;prefix.length=0;}
+        else if (!decision.hold) yield chunk;
+      }
+      if (!decision) yield* prefix;
+      const result=await stream.result;
+      if (!decision?.hold) return result;
+      if (result.toolUses.length || result.answer!=='' || result.stopReason!=='end_turn') throw new Error('CLAUDUCT_PARENT_WAIT_CONTROL_INVALID');
+      held=true;p.phase='awaiting_children';
+      await observe($,state,progress,p,'children_wait');
+      return {...result,answer:'',stopReason:null};
+    }
+    finally {
+      if (!held) {
+        p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
+        await observe($,state,progress,p,'request_returned');
+      }
+    }
+  });
+  on('tool.call', async ($, e, next) => {
+	if (e.tool==='Workflow' && (e.scriptPath!==undefined || e.script===undefined && e.name!==undefined)) {
+	  const call=ident(e.tool_use_id),sid=await session($,state);
+	  if (!call) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
+	  const file=root+'/workflow-source-'+call+'.json';
+	  if (!await $.fs.exists(file)) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
+	  const source=JSON.parse(await $.fs.read(file));
+	  if (source.session!==sid || source.call!==call || !Array.isArray(source.paths) || !source.paths.length || source.paths.length>64 || typeof source.trailer!=='string') return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
+	  let selected;
+	  for (const path of source.paths) {
+	    if (typeof path!=='string' || path.length>4096) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
+	    if (await $.fs.exists(path)) {selected=path;break;}
+	  }
+	  if (!selected) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_MISSING: no agent started; provide an existing scriptPath or inline script'};
+	  // This is the actual native Read tool. A denial/partial read never falls
+	  // back to $.fs.read(source), nor to the original unadapted Workflow.
+	  const read=await $.tool.call({tool:'Read',file_path:selected});
+	  const result=read.result;
+	  if (read.deny || read.isError || result?.type!=='text' || result.file?.startLine!==1 || result.file.numLines!==result.file.totalLines || result.file.truncatedByTokenCap || typeof result.file.content!=='string' || result.file.content.includes('__CLAUDUCT_')) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_READ_UNVERIFIED'};
+	  let text=result.file.content;
+	  if (source.previousTrailer!==undefined) {
+	    if (typeof source.previousTrailer!=='string' || !source.previousTrailer) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
+	    if (text.endsWith(source.previousTrailer)) text=text.slice(0,-source.previousTrailer.length);
+	  }
+	  const bytes=new TextEncoder().encode(text);
+	  if (bytes.length>500*1024) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_TOO_LARGE'};
+	  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),v=>v.toString(16).padStart(2,'0')).join('');
+	  await $.fs.write(root+'/workflow-read-'+call+'.json',JSON.stringify({session:sid,call,path:selected,digest}));
+	  e={...e,script:text+source.trailer};delete e.scriptPath;delete e.name;
+	}
+    const p=progress.get(e.agentId?ident(e.agentId):'');
+    if (!p) return next(e);
+    if (e.tool==='Agent' || e.tool==='SendMessage') p.delegated=true;
+    // Counted inside the guarded region. A throwing observe left the counter raised with
+    // nothing to lower it, and session_lifecycle waits for it to reach zero: the session
+    // then burned the whole deadline grace and was force-stopped instead of drained.
+    p.pendingTools++;p.phase='tool_pending';
+    try {
+      await observe($,state,progress,p,'tool_started');
+      const out=await next(e), value=out.result;
+      if (!out.deny && !out.isError && value && e.tool==='Workflow' && value.status==='async_launched' && value.taskType==='local_workflow') {
+        const run=ident(value.runId), task=ident(value.taskId), call=ident(e.tool_use_id);
+        if (run && task && call) await $.fs.write(root+'/workflow-'+run+'.json',JSON.stringify({session:await session($,state),run,task,call}));
+      }
+      if (!out.deny && !out.isError && value && e.tool==='TaskStop') {
+        const task=ident(value.task_id), call=ident(e.tool_use_id);
+        if (task && call && value.task_type==='local_workflow') await $.fs.write(root+'/stopped-'+task+'.json',JSON.stringify({session:await session($,state),task,call,type:value.task_type}));
+      }
+      return out;
+    }
+    finally {
+      p.pendingTools--;p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
+      await observe($,state,progress,p,'tool_returned');
+    }
+  });
+  on('classic.PermissionRequest', async ($, e, next) => {
+    const p=progress.get(e.agent_id?ident(e.agent_id):'');
+    if (p) { p.permissionRequests++;await observe($,state,progress,p,'permission_requested'); }
+    return next(e);
+  });
+  on('turn.complete', async ($, e, next) => {
+    if (e.reason==='aborted') {
+      const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
+      if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+      if (!cancelledTurns.has(turn)) {
+        if (cancelledTurns.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($,state),agent,turn,reason:'aborted'}));
+        cancelledTurns.add(turn);
+      }
+    }
+    if (e.agentId) {
+      const agent=ident(e.agentId),turn=ident(e.turnId);
+      if (!agent || !turn || !['answer','aborted','refusal','error'].includes(e.reason)) throw new Error('CLAUDUCT_NATIVE_END_INVALID');
+      await $.fs.write(root+'/end-'+agent+'-'+turn+'.json',JSON.stringify({session:await session($,state),agent,turn,reason:e.reason}));
+    }
+    const p=progress.get(e.agentId?ident(e.agentId):'');
+    if (p && p.turn===e.turnId && ['answer','aborted','refusal','error'].includes(e.reason)) {
+      if (p.phase!=='awaiting_children' || e.reason!=='answer') p.phase='turn_ended';
+      await observe($,state,progress,p,'turn_'+e.reason);
+    }
+    return next(e);
+  });
+};

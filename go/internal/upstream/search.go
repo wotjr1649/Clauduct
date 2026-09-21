@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
@@ -31,6 +32,17 @@ const (
 // searchTimeout bounds one search. The baseline's: min(overall, 45s). A side query the user
 // is waiting on is not the place to spend ten minutes.
 const searchTimeout = 45 * time.Second
+
+type searchCounters struct{ requests, attempts, retries atomic.Int64 }
+type SearchStats struct {
+	Requests int64 `json:"requests"`
+	Attempts int64 `json:"attempts"`
+	Retries  int64 `json:"retries"`
+}
+
+func (d *Direct) SearchStats() SearchStats {
+	return SearchStats{d.searchCounts.requests.Load(), d.searchCounts.attempts.Load(), d.searchCounts.retries.Load()}
+}
 
 // Refusals particular to the search path.
 var (
@@ -59,6 +71,7 @@ func (d *Direct) searchTarget() (string, error) {
 // consulted: a search is not an inference and counting it as one would make a budget stated
 // in inferences stop meaning that.
 func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
+	d.searchCounts.requests.Add(1)
 	target, err := d.searchTarget()
 	if err != nil {
 		return nil, err
@@ -98,6 +111,7 @@ func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	if !errors.As(failure, &retryable) || retryable.Disposition != Retryable {
 		return nil, failure
 	}
+	d.searchCounts.retries.Add(1)
 	raw, failure = d.searchOnce(ctx, target, body, credential, version)
 	if failure != nil {
 		return nil, failure
@@ -128,6 +142,7 @@ func (d *Direct) searchOnce(ctx context.Context, target string, body []byte,
 	// from the user's own codex installation.
 	request.Header.Set("x-codex-turn-metadata", searchTurnMetadata(time.Now()))
 
+	d.searchCounts.attempts.Add(1)
 	response, err := d.client().Do(request)
 	if err != nil {
 		if errors.Is(err, ErrRedirected) {

@@ -129,6 +129,23 @@ func (g *Gateway) bindNativeTurn(session, id string) bool {
 	return g.applyNativeTurn(id, receipt)
 }
 
+// stillOnTurn re-reads the active receipt and reports whether the child is on the turn the
+// caller validated. The read at the top of recordFailedAgentRequest is separated from the
+// write by a metadata file read, and the hook rewrites that receipt on every new turn, so
+// the value read first can be stale by the time it is applied.
+//
+// A named predicate rather than an inline comparison because that is what makes it
+// testable: a test writes one turn to disk and hands in another, without needing to change
+// the file during a call. Recording the comparison as untestable was wrong -- what had no
+// seam was the sequence, and the comparison never needed one.
+func (g *Gateway) stillOnTurn(session, id string, validated nativeTurnReceipt) (nativeTurnReceipt, bool) {
+	current, present, ok := g.readActiveTurn(session, id)
+	if !ok || !present || current.Turn != validated.Turn {
+		return current, false
+	}
+	return current, true
+}
+
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
 	r := &g.delegations.results
 	r.mu.Lock()
@@ -208,8 +225,8 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 		// The comparison is what is new. The read still happens before begin(), because
 		// begin() is destructive for exactly the state that got us here -- awaiting_children
 		// -- and a refusal after it would take the evidence continuation needs with it.
-		current, present, ok := g.readActiveTurn(session, id)
-		if !ok || !present || current.Turn != active.Turn {
+		current, still := g.stillOnTurn(session, id, active)
+		if !still {
 			return
 		}
 		if !r.begin(id) || !g.applyNativeTurn(id, current) {

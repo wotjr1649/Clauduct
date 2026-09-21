@@ -151,11 +151,13 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 			// subdirectory -- the blast radius this whole mechanism exists to remove, left
 			// in place for directories while the comment above it described files.
 			//
-			// Not covered by a test, and deliberately not covered badly: producing a
-			// directory WalkDir cannot read needs permissions this build's only platform
-			// does not give a test process. Reverting this line fails nothing, which is
-			// recorded here rather than implied by a test that passes for another reason.
-			if entry != nil && entry.IsDir() {
+			// A subdirectory, not the root. Without that distinction this swallowed the
+			// root's own enumeration failure and returned an empty map with no error, so an
+			// agents directory that exists and cannot be read answered "no roles here" and
+			// every one of them ran on the caller's model -- silently, because the only
+			// counter that moves is deliberately outside noteworthy(). Before the skip
+			// existed that case refused loudly, which is the answer it gets again.
+			if entry != nil && entry.IsDir() && path != dir.path {
 				return nil
 			}
 			return errRoleDefaults

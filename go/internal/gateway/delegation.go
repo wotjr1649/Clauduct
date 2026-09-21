@@ -143,9 +143,13 @@ func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (brid
 // a louder place.
 func (g *Gateway) ConfigureDelegations(projects string) {
 	// Recorded, not discarded. Ten of the fourteen readers of this path hard-refuse on a
-	// root they cannot open, and ENOTDIR -- what a projects path that is a regular file
-	// produces -- is not os.IsNotExist, so every one of them refuses with a message naming
-	// nothing. The error here is the only place that condition has a name.
+	// root they cannot open, and the error here is the only place that condition has a name.
+	//
+	// Named for the failure and not for its cause. On this build's only platform ENOTDIR is
+	// ERROR_PATH_NOT_FOUND, so MkdirAll over a projects path that is a regular file reports
+	// what reads as absence -- os.IsNotExist is true for it. The message is kept verbatim
+	// rather than classified, because classifying it here would have said "absent" about a
+	// path that exists.
 	mkdirErr := os.MkdirAll(projects, 0o700)
 	g.delegations = &delegations{projects: projects, events: g.nativeEvents.directory, projectsErr: mkdirErr,
 		pending: map[delegationKey]delegatedChoice{}, resolved: map[string]resolvedChoice{}}

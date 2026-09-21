@@ -765,10 +765,11 @@ type AgentCounts struct {
 	Registered   int   `json:"registered"`
 	Unregistered int64 `json:"unregistered"`
 	Unrouted     int64 `json:"unrouted"`
-	// ProjectsUnavailable is why the projects tree could not be created, when it could not.
-	// Every reader of that tree refuses without it, and ENOTDIR -- a projects path that is a
-	// regular file -- is not an absence any of them recognise, so this is the only place the
-	// condition is named.
+	// ProjectsUnavailable is the error MkdirAll gave when the projects tree could not be
+	// created, verbatim. Every reader of that tree refuses without it and names nothing, so
+	// this is the only place the condition appears at all. Not interpreted: on Windows a
+	// path that is a regular file reports as a missing path, so calling it "absent" here
+	// would be wrong about the one case worth reporting.
 	ProjectsUnavailable string `json:"projectsUnavailable,omitempty"`
 	// FellBackToCaller ran, on the caller's route, because this build has no route of its
 	// own for that role. Separate from Unrouted, which counts refusals: one field holding

@@ -1,8 +1,11 @@
 package gateway
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 )
@@ -36,18 +39,34 @@ func TestAnAbsentProjectsTreeIsNotAnUnreadableTranscript(t *testing.T) {
 	}
 }
 
-// Not covered, and recorded as such rather than covered badly.
+// The child moved on while this request was reading a metadata file. Binding to the turn it
+// left files the failure under a turn that is over and, worse, lets begin() clear the
+// awaiting_children evidence that turn's end receipt needs.
 //
-// recordFailedAgentRequest reads the active receipt, reads a metadata file, then records the
-// turn. The hook overwrites that receipt on every new turn, so the value read first can be
-// stale by the time it is written; the fix re-reads and compares before anything
-// destructive. Reaching that window deterministically needs the receipt to change *during*
-// the call, and there is no injection point for it -- applyNativeTurn records whatever it is
-// handed, by design, so a test that drives it directly proves nothing about the caller's
-// comparison. One was written that way first and asserted a property of the wrong function.
-//
-// What holds without a test: the re-read cannot make the outcome worse than applying a value
-// already known to be possibly stale, and the comparison fails closed, before begin().
-func TestTheStaleTurnWindowIsNarrowedButNotTested(t *testing.T) {
-	t.Skip("race window; no injection point that does not test the wrong function")
+// This was recorded as untestable in an earlier round, which was wrong: what has no seam is
+// the sequence, not the comparison. Naming the predicate is enough -- the receipt on disk
+// and the one the caller validated are two values, and a test can simply disagree them.
+func TestAReceiptThatMovedOnIsNotTakenAsCurrent(t *testing.T) {
+	d, scope, binding := preparedDelegation(t)
+	if _, _, err := d.route(scope, binding.ID, binding); err != nil {
+		t.Fatal(err)
+	}
+	g := &Gateway{delegations: d, agents: newAgentRegistry()}
+	if _, err := g.agents.register(binding, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	g.ConfigureNativeEvents(dir)
+	onDisk := nativeTurnReceipt{Session: scope.session, Agent: binding.ID, Turn: "second", Model: "gpt-5.6-luna", Effort: "high"}
+	raw, _ := json.Marshal(onDisk)
+	if err := os.WriteFile(filepath.Join(dir, "active-"+binding.ID+".json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	validated := nativeTurnReceipt{Session: scope.session, Agent: binding.ID, Turn: "first", Model: "gpt-5.6-luna", Effort: "high"}
+	if _, still := g.stillOnTurn(scope.session, binding.ID, validated); still {
+		t.Fatal("a turn the child has already left was taken as current")
+	}
+	if got, still := g.stillOnTurn(scope.session, binding.ID, onDisk); !still || got.Turn != "second" {
+		t.Fatalf("the turn the child is on was rejected: %q still=%v", got.Turn, still)
+	}
 }

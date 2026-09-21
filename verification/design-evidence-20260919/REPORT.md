@@ -17,7 +17,9 @@
 - 검토 시작 HEAD: `ffcee08`. 제품 코드 commit: `17532f7dc9daf7d5c47b0539af62a243c43df5a3`.
 - 개발 `clauduct.exe` SHA256: `84bdbdf85de0c5e555dc01053979ee7eb8e5f9a5cfd9872a97a86a8033c60011`.
 - 현재 native: `2.1.278`, SHA256 `006ea5c8638f67f10a5ae66bb232fd267c9f6af294e3f03f4cfcf1fd3f2cced8`.
-- [현재 native API 선언](native-function-api.d.ts)은 해당 executable의 `/plugin-types`로 새로 생성했다.
+- 현재 native API 선언은 해당 executable의 `/plugin-types`로 새로 생성해 대조했다. 선언 자체는
+  Claude Code가 early access로 배포하는 표면이라 이 저장소에 보관하지 않는다 — 같은 버전의
+  클라이언트에서 그 명령으로 다시 만들고 아래 크기·digest로 대조한다.
   [생성 기록](native-types.json): 499,393 bytes, SHA256 `4d7d287eede4f20e3b84907189508c83ad05bda65609d70183963164821f815c`.
   이전 `2.1.276` 선언은 최신 근거로 사용하지 않았다. function hooks 활성화가 없는 첫 TUI에서는
   이 명령이 `Unknown command`였고, 별도의 한정된 선언 생성 프로세스에서 활성화해 생성했다.

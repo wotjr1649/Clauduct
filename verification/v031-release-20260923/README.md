@@ -47,5 +47,10 @@ loopback TCP만 종료한다. AdGuard·WFP·방화벽 설정을 바꾸지 않는
 [검사 소스](permission-scope_test.go), [결과](permission-scope-final.txt). 이 측정에 따라 harness의
 규칙 전달 위치만 변경했다. `dontAsk`와 두 파일의 경로 범위를 유지한다. 제품 Go 변경은 없다.
 
+두 번째 실행은 네 입력과 의도적 손실·후속 작업을 실제로 마쳤으나 마지막 검수기의
+Workflow JSON 필드 오기로 FAIL 종료했다. Go 필드 `Completed`의 wire 이름은
+`successfulResponses`다. 원문 status에서 해당 값 1, 결과 수신 2, 실제 Write 성공 2와
+의도한 두 failure 각 1을 확인한 뒤 검수기의 필드명을 수정했다. 실패 실행을 덮어쓰지 않는다.
+
 이 디렉터리의 입력과 이전 계측 결과는 최종 commit의 출하물 성공 증거가 아니다.
 빌드 hash, 실제 SDK/TUI 실행 및 격리 설치 결과는 해당 산출물과 함께 별도로 기록한다.

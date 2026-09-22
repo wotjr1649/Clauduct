@@ -166,7 +166,7 @@ try {
   }
   if($tools['Write'] -ne 2 -or $tools['Agent'] -ne 1 -or $tools['Workflow'] -ne 1){throw 'duplicate or missing tool execution'}
   $workflowEvidence=@($status.gateway.features | Where-Object {$_.name -eq 'workflow_agent'})
-  if($workflowEvidence.Count -ne 1 -or $workflowEvidence[0].completed -ne 1){throw 'missing actual Workflow completion'}
+  if($workflowEvidence.Count -ne 1 -or $workflowEvidence[0].successfulResponses -ne 1){throw 'missing actual Workflow completion'}
   if([IO.File]::ReadAllText((Join-Path $project 'public-file.txt')) -cne 'PUBLIC_FILE_53' -or [IO.File]::ReadAllText((Join-Path $project 'public-once.txt')) -cne 'PUBLIC_ONCE_59'){throw 'actual file contents mismatch'}
   if($InjectLoss -and -not $faultInjected){throw 'loss was not injected'}
   $verdict=@{verdict='PASS';nativePID=$nativeId;starts=1;phases=$phase;notifications=$notifications;tools=$tools;successfulTools=$results;attempts=$status.attempts;inferences=$status.inferences;exit=$p.ExitCode;lossInjected=$faultInjected;interruptedConnections=$faultConnections}

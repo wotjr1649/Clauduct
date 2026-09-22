@@ -20,14 +20,15 @@ import (
 // The native client and gateway are real. Counts/replies are synthetic here;
 // separate live paired evidence establishes the counter's accuracy.
 type compactFixture struct {
-	mu        sync.Mutex
-	file      string
-	threshold int64
-	turns     int
-	compacts  int
-	resumed   bool
-	fail      bool
-	routes    []string
+	mu            sync.Mutex
+	file          string
+	threshold     int64
+	turns         int
+	compacts      int
+	resumed       bool
+	fail          bool
+	routes        []string
+	compactRoutes []string
 }
 
 func (f *compactFixture) Count(_ context.Context, call upstream.Call) (int64, error) {
@@ -48,7 +49,7 @@ func (f *compactFixture) Execute(ctx context.Context, call upstream.Call) (*upst
 	reply := textStream("side", "untitled")
 	if strings.Contains(body, "CRITICAL: Respond with TEXT ONLY") {
 		f.compacts++
-		f.routes = append(f.routes, call.Model+"/"+call.Effort)
+		f.compactRoutes = append(f.compactRoutes, call.Model+"/"+call.Effort)
 		if f.fail {
 			return nil, upstream.Failure{Category: "SYNTHETIC_COMPACT_FAILED", Status: 400}
 		}
@@ -112,8 +113,11 @@ func TestNativeMeasuredUsageTriggersPreventiveCompaction(t *testing.T) {
 			}
 			for _, route := range f.routes {
 				if route != model.ID+"/high" {
-					t.Fatalf("compaction changed route: %s", route)
+					t.Fatalf("generation changed route: %s", route)
 				}
+			}
+			if len(f.compactRoutes) != 1 || f.compactRoutes[0] != model.ID+"/medium" {
+				t.Fatalf("automatic compaction route: %v", f.compactRoutes)
 			}
 			classes := map[string]bool{}
 			for _, record := range out.result.Diagnostics.Recent {
@@ -237,6 +241,9 @@ func parallelCompactionProof(t *testing.T, both bool) {
 			t.Fatal("child compaction changed route")
 		}
 	}
+	if len(f.child.compactRoutes) != 1 || f.child.compactRoutes[0] != "gpt-5.6-sol/medium" {
+		t.Fatalf("child automatic compaction route: %v", f.child.compactRoutes)
+	}
 	found := false
 	for _, record := range out.result.Diagnostics.Recent {
 		if record.Kind == "compaction" {
@@ -259,6 +266,9 @@ func parallelCompactionProof(t *testing.T, both bool) {
 		peerCompacts = f.peer.compacts
 		if peerCompacts != 1 || !f.peer.resumed {
 			t.Fatal("parallel peer did not compact and resume")
+		}
+		if len(f.peer.compactRoutes) != 1 || f.peer.compactRoutes[0] != "gpt-5.6-terra/medium" {
+			t.Fatal("parallel peer compaction selection changed")
 		}
 		for _, route := range f.peer.routes {
 			if route != "gpt-5.6-terra/medium" {

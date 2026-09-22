@@ -112,8 +112,12 @@ func TestContextPolicyRequiresClassAndNativeSessionEvidence(t *testing.T) {
 				want = "CONTEXT_SESSION_UNVERIFIED"
 			}
 			response := do(t, g, rq)
-			if response.StatusCode != 400 || !strings.Contains(bodyText(t, response), want) || f.Calls() != 0 || f.counts.Load() != 0 {
+			body := bodyText(t, response)
+			if response.StatusCode != 400 || !strings.Contains(body, want) || f.Calls() != 0 || f.counts.Load() != 0 {
 				t.Fatal("unverified policy performed upstream work")
+			}
+			if missing == "session" && !strings.Contains(body, "submit the prompt again") {
+				t.Fatal("missing session registration has no recovery guidance")
 			}
 		})
 	}

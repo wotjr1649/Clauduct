@@ -9,6 +9,121 @@ S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수�
 같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](../../verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
+**2026-09-22 네 번째 수리·검증 — 현재 검수 범위 SUCCESS, 미출하.** 보완된 실제 backend 기록에서
+최초 502의 `EMPTY_REPLY`와 terminal/event/byte 정보를 확보했다. SDK 빈 대기·완료 알림,
+Workflow 자식 등록 전 경계, 동일 step의 결정 충돌, TUI 완료 알림의 진행 상태를 수정했다.
+최종 일반·race 전체 18개 패키지, 정적/태그 검사, 최소 재현·수정 제거 검사가 통과했다.
+실제 backend SDK는 PID 28224·12회 호출로 도구·자식 결과·손실 후 중복 방지·후속 작업을,
+TUI는 PID 26160·5회 호출로 생성·압축·취소·복구·정상 종료를 확인했다. 마지막 Workflow-only
+대기 상태 조건은 그 뒤 직접 경계 검사와 최종 전체 일반/race로 검증했다. native Claude의
+통합 리뷰와 F1 수정 확인을 받았고, 추가 지적은 수정 또는 직접 재현에 따른 반박으로 처리했다.
+현재 범위의 미해결 확정 결함·판정 차단 항목은 없다. 보호 설정은 변경하지 않았으며 On은
+사용자의 마지막 확인 상태다. 일반 생성·압축은 실제 backend usage를 계속 사용한다.
+과거 batch-03에서 유실된 category와 raw TCP source는 역사적 증거 한계로 남긴다.
+현재 결과를 임의의 미래 버전 전체나 릴리스 승인으로 확장하지 않는다. 자세한 근거는
+`verification/v031-review-fixes-20260922/batch-04/REPORT.md`, `REVIEW.md`, `evidence.json`에 있다.
+
+**2026-09-22 세 번째 수리 당시 — 변경 범위 PASS, 전체 판정 HOLD, 미출하.** Workflow 선택과
+거부 집계, 복합 short option, 손상된 plugin 역할의 namespace, 선택적 count 분류를 보완했다.
+일반·race 전체 18개 패키지와 태그 검수기가 통과했다. 실제 backend에서 native PID 27120의
+파일 도구·Agent/Workflow 결과 수거·응답 손실 후 재전송 차단·후속 작업을 13회 호출로,
+PID 276의 TUI 생성·압축·취소·복구·정상 종료를 5회 호출로 검증했다. 보호 설정은 변경하지
+않았으며 On은 사용자의 마지막 확인 상태다. 일반 생성·압축은 계속 실제 backend usage를 쓴다.
+한 선행 SDK 실행의 HTTP 502는 최초 오류명이 기록되지 않아 원인 미확정이다. 재실행 PASS가
+그 실패를 종결하지 않았다. 당시 별도 Claude 재리뷰는 6분 안에 결과를 반환하지 못했다.
+그때의 HOLD와 실패 이력은 보존하며 현재 판정은 위 네 번째 수리를 따른다. 당시 근거는
+`verification/v031-review-fixes-20260922/batch-03/REPORT.md`에 있다.
+
+**2026-09-22 첫째·둘째 수리 당시 — CHANGES_REQUIRED, 미출하.** 첫 수리 묶음에서 늦은 요청의
+실패·완료가 새 turn의 결과를 덮어쓰는 문제와 압축 journal 저장 실패 뒤 복구 고착을 수정했다.
+전송 검사에는 읽기·파싱 오류를 함께 남기도록 보완했다. 두 번째 수리에서는 큰 요청 거부 뒤
+연결 유지, 종료 대기 중단, native의 불확실한 요청 재전송 차단을 검증했다. 당시 남은 리뷰
+지적의 후속 판정은 위 세 번째 수리 기록을 따른다. 아래 PASS는 전체 릴리스 승인이 아니다.
+근거는 `verification/v031-review-fixes-20260922/batch-01/REPORT.md`와 `batch-02/REPORT.md`에 있다.
+
+**2026-09-22 전송 후속 수리 — 제품 수용 범위 PASS, 미출하.** 큰 body 거부를 bounded drain으로
+처리하여 같은 연결을 유지하고, 완료 응답의 socket 종료 상한을 500ms로 보완했다. 같은 native
+turn·step의 재전송은 실행 지문으로 차단한다. 응답 전 손실·부분 응답·upstream 오류 뒤에도
+같은 PID에서 후속 요청이 성공했고, 실제 backend TUI는 PID 19376·5회 실호출·정상 종료를
+80.08초에 검증했다. 13단계 실제 native 대조, HTTP/SSE 800건, 일반·race 전체 18개 패키지가
+통과했다. 보호 설정은 변경하지 않았다. 구현·실패 이력·남는 경계는
+`verification/v031-review-fixes-20260922/batch-02/REPORT.md`가 관리한다.
+
+**2026-09-22 이전 전송 보완의 관측 수용 범위 — PASS, 미출하.** 사용자가 완료 기준을 보호 On에서의
+제품 실제 동작으로 정하고 native 프로세스를 유지하는 복구를 우선했다. 응답 framing 완료 뒤
+socket을 즉시 닫지 않고 상대 종료를 최대 100ms·64KiB까지 기다리도록 제품 공통 listener를
+보완했다. 제품 HTTP/SSE 800건, 수정 제거 시 reset 재현, 실제 backend TUI의 동일 프로세스
+생성·압축·취소·후속 응답·종료와 전체 Go race 검사가 통과했다. 보호 설정은 바꾸지 않았다.
+아래 이력의 독립 Node·.NET·raw TCP FAIL/HOLD를 PASS로 바꾸는 판정은 아니며, 외부 driver의
+수정 또는 모든 필터·버전의 호환성을 뜻하지 않는다. 범위·초기 검수 실패·재실행 근거는
+[프로세스 유지 수리 기록](../../verification/v031-transport-20260922/REPORT.md)을 따른다.
+
+**2026-09-21 v0.3.1 개발 묶음 1 — 미출하.** 사용자 역할을 먼저 확인한 뒤 내장 이름만
+정규화하고, 사용자 `Fork`의 모델 선택과 복원 시 구분을 보존한다. 자체 라우트가 없는 역할은
+native의 실제 모델·effort를 확인하며 완료 추적을 유지한다. 손상된 역할 정의의 이름을
+확정하지 못하면 읽힌 정의는 보존하되 부재를 단정하지 않는다. `input_audio`의 미디어 분류도
+보완했다. 이번 변경은 로컬 fixture를 연결한 native 2.1.278에서 검사했으며 수동 TUI 수용
+판정은 아니다. 근거와 남은 항목은 [v0.3.1 첫 묶음 기록](../../verification/v031-roles-20260921/REPORT.md)에 있다.
+
+**2026-09-21 v0.3.1 개발 묶음 2 — 미출하.** native 턴 영수증을 턴별 파일과 완료 표시로
+기록하고, 한 요청의 선택·취소·실패 기록이 같은 턴을 사용한다. 재개 시 이전 턴의 복구 여부와
+native 모델·effort를 초기화하며 검증된 continuation은 보존한다. 세션 전용 plugin/PDF 임시
+폴더는 종료·drain·최종 진단 뒤에 정리하고, 정리 불확실성과 실패를 별도로 보고한다.
+실행 근거와 한계는 [v0.3.1 두 번째 묶음 기록](../../verification/v031-events-20260921/REPORT.md)에 있다.
+
+**2026-09-21 v0.3.1 개발 묶음 3 — 미출하.** projects 루트의 실제 부재와 파일·접근 오류를
+공통 경로에서 구분한다. 첫 실행의 context 복원과 metadata 재시도는 유지하고, 루트 접근
+실패를 모르는 역할로 집계하지 않는다. [v0.3.1 세 번째 묶음 기록](../../verification/v031-projects-20260921/REPORT.md).
+
+**2026-09-21 v0.3.1 개발 묶음 4 — 미출하.** 설정·역할 탐색의 옵션 값과 `--` 경계를
+공유하고, 설정 옵션의 자리를 유지하여 앞 옵션이 뒤 프롬프트를 흡수하지 않게 한다.
+권한 우회 옵션의 기존 전역 거부와 실제 설정 옵션의 병합을 CLI 계약에서 구분했다.
+[v0.3.1 네 번째 묶음 기록](../../verification/v031-argv-20260921/REPORT.md).
+
+**2026-09-21 v0.3.1 개발 묶음 5 — 미출하.** 시작 시 세션 등록이 누락되면 프롬프트 제출
+hook에서 재확인하여 복구한다. 등록 실패가 계속되면 안내와 함께 해당 프롬프트를 막는다.
+요청 분류 헤더 누락은 역할 선택 전에 진단하며, 버전 일치와 필요한 기능을 구분한다.
+[v0.3.1 다섯 번째 묶음 기록](../../verification/v031-session-20260921/REPORT.md).
+
+**2026-09-21 v0.3.1 개발 묶음 6 — 미출하.** 검증된 자동 압축만 기존 모델에서 effort를
+medium 이하로 제한하고, 세션의 원래 선택과 이후 생성 effort를 보존한다. 수동 압축은
+원래 effort를 유지한다. 압축 계수와 생성의 모델·지침·영수증 제거 경로를 맞췄다.
+실제 backend의 high → medium → high, 계수 일치, 필수 정보 보존을 확인했다.
+[v0.3.1 여섯 번째 묶음 기록](../../verification/v031-compaction-20260921/REPORT.md).
+
+**2026-09-21–22 v0.3.1 통합 검수 — 미출하.** 실제 native `-p`에서 답변 뒤의 reasoning 블록으로
+최종 출력이 비는 결함을 재현했다. 검증된 SDK 경로에서도 reasoning 다음에 최종 텍스트를
+전달하여, 실제 backend의 병렬 자식 결과와 같은 세션 재시작 출력을 확인했다.
+도구 결과 이미지의 warmup 계수 불일치는 Luna에서도 재현되어 기존 미지원 처리를 유지한다.
+승인된 임시 profile의 실제 TUI에서 수동 압축·사실 보존·Esc 취소·같은 세션 복구를 관측했다.
+취소 집계의 검수 오류를 수정했으나 요청 상한을 소진해 수정 후 실호출 재실행은 하지 않았다.
+v0.3.0의 새 선택 journal 거부, 최초 검수 실패와 보조 요청 거부를 포함한 범위는
+[통합 검수 기록](../../verification/v031-integration-20260921/REPORT.md)을 따른다.
+
+**2026-09-22 무과금 보완 — 미출하.** 검증 예산·라우트 거부를 400과 고유 오류명으로 구분했다.
+도구·검색·자식·부모 ID가 없는 루트 `auxiliary` 요청은 독립적인 보조 요청으로 처리하며,
+대화 턴 게시 중에도 그 턴의 선택·취소 기록을 소유하지 않는다. 자식·도구·일반 대화 검증은 유지한다.
+누적 집계와 native transcript의 사실·순서를 함께 검사하는 실제 TUI + 로컬 합성 응답은 PASS했다.
+AdGuard 활성 상태의 raw TCP reset은 재현됐다. 승인된 standalone HTTP 검사도 Node의
+`ECONNRESET`과 .NET의 `RESPONSE_TRUNCATED`로 실패하여 전체 무오류 판정은 HOLD다.
+실호출을 추가하지 않은 범위와 실패 기록은 [무과금 보완 기록](../../verification/v031-offline-20260922/REPORT.md)을 따른다.
+
+**2026-09-22 실제 backend 재검증 — 미출하.** 자동 압축 effort 복귀·계수·사실 보존과
+실제 TUI의 압축·Esc·같은 세션 복구 검수가 통과했다. 사용자가 AdGuard 보호를 켠 상태의
+실제 TUI도 PASS다. 동일 Node 31개·.NET 35개·raw TCP 400개 검사는 보호 Off에서 모두
+통과하고 On에서 다시 실패했다. 특정 보안 제품에 의존하는 제품 수정은 하지 않았다.
+보호 On의 독립 전송 반례 때문에 요청된 전송 검사 전체 판정은 HOLD다. 도구 결과 이미지의
+warmup 2,828 / usage 3,525 불일치는 기존 명시적 계수의 미지원 범위이며 일반 생성·압축의
+합격 조건이 아니다. 이 두 경로는 원격 사전 계수 없이 실제 backend usage를 사용한다.
+[실호출·보호 대조 및 판정 정정](../../verification/v031-recheck-20260922/REPORT.md).
+
+**2026-09-22 종료 순서 후속 검수 — HOLD 유지.** 채택된 usage 정책을
+[ARCHITECTURE.md](ARCHITECTURE.md) 7.1절에 명시했다. 보호 On의 직접 Winsock 대조에서
+상대가 종료하지 않았는데도 송신 전용 shutdown 뒤 수신 EOF가 발생했다. 특정 driver 내부
+위치까지 확정하거나 수정한 것은 아니다. 기존 Node·.NET 검사는 다시 실패했고 raw TCP는
+22/400 실패했다. 실제 backend TUI는 압축·중단·같은 세션 복구·정리까지 PASS했다.
+[계측·재검증 근거와 남은 조건](../../verification/v031-close-20260922/REPORT.md).
+
 **2026-09-20 S48 개발 보완.** settings 병합, Workflow 도구 제한·명시적 모델의 커스텀 역할,
 native 역할의 `maxTurns`, 빈 종료 결과 통지, non-streaming JSON 응답을 구현했다.
 최종 제품 source `313a78c`, 실제 TUI UUID `4ce18162-9c5f-4c1d-9647-df0c2da00ee2`의
@@ -54,6 +169,10 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 현재 `gateway.client.verified`는 관측 버전과 기준 버전의 문자열 일치만 뜻한다.
 기능 전체 검사나 무결점 보장이 아니다. [실제 판정 코드](../../go/internal/gateway/diagnostics.go)
 
+v0.3.1 개발 빌드의 `gateway.client.requestClassRequired`는 context policy의 헤더 요구이고,
+`requestClassMissing`은 그 헤더가 없어 거부한 요청의 누적 횟수다. 헤더를 보내지 않는
+client는 제품 생성 경로를 사용할 수 없다. `verified=true`도 이 요구를 대신하지 않는다.
+
 - **범위 내 TUI 확인:** 아래에 특정 입력·시나리오·버전의 실제 실행 근거가 있다.
 - **이전 실측:** 과거 빌드에 실제 근거가 있지만 이번 최종 TUI에서 다시 시험하지 않았다.
 - **미검증:** 필요한 실제 근거가 없다. 코드 존재나 단위 검사만으로 승격하지 않는다.
@@ -72,7 +191,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | CLI 옵션 | `--settings` JSON/파일을 필수 settings와 병합하고 `--setting-sources`는 native로 전달. 필수 연결·hook 충돌은 거부. 권한 우회 CLI 옵션 2개는 계속 거부. [설정 병합](../../go/internal/app/user_settings.go) |
 | API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`, `stop_sequences`는 미지원. [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
 | Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원과 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow 및 임의 JS 재실행은 별도 제한 |
-| 부모·빈 응답 대기 | 출처와 회차가 확인된 native TUI에만 적용. SDK/`-p`의 동일 대기 동작 전체를 보장하지 않음. [실제 필수 조건](../../go/internal/gateway/features.go) |
+| 부모·빈 응답 대기 | 확인된 TUI 회차는 무출력 대기. SDK/`-p`의 검증된 빈 대기·알림 응답은 Clauduct 상태 메시지로 전달하며 실제 본문·도구는 보존. 상태 메시지는 자식 결과나 업무 완료가 아님. [실제 필수 조건](../../go/internal/gateway/features.go) |
 | 새 모델·새 명령·외부 확장 | 현재 모델 카탈로그와 검증된 요청 형식 범위만 지원. 새 모델, native 버전, plugin/MCP 조합의 성공을 자동 승계하지 않음. [모델 카탈로그](../../go/internal/protocol/bridge/route.go) |
 | native 전역 effort 고정 | `CLAUDE_CODE_EFFORT_LEVEL`은 native의 명시적 자식 effort·피커보다 우선할 수 있음. S49 실제 영수증으로 재확인. 부모 시작 기본값에는 `--effort` 사용. 전역 고정과 자식 선택이 충돌하면 선택 검증을 우회하지 않음 |
 
@@ -124,9 +243,12 @@ TUI 판정은 계속 `not_assessed`로 구분한다. native 회차 영수증이 
 제품 반영과 실제 검증 범위는 [후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)을 따른다.
 다음 설계의 코드·공식 문서·native TUI 근거와 반례는
 [설계 검토 기록](../../verification/design-evidence-20260919/REPORT.md)에 있다.
-빈 응답 대기는 `native_tui` 출처·회차·대기 자식을 확인한 범위에서 제품에 연결했다.
-SDK/`-p`에는 같은 무출력 제어가 성립하지 않아 적용하지 않는다. 실제 빈 backend 응답은
-고정 응답 fixture로 만들었고 구독 backend가 자연 발생시킨 사례와 구분한다.
+빈 응답 제어는 native 출처·회차와 대기 자식, 직전 Workflow 실행 또는 루트 완료 알림을
+확인한 범위에 적용한다. TUI는 무출력 대기, SDK/`-p`는 `[Clauduct]` 상태 메시지를 사용한다.
+SDK는 실제 본문을 억제하지 않는다. 새 명시적 사용자 입력·분류되지 않은 출처에는 적용하지
+않으며, 실제 결과 수신은 `parent_received`로 별도 확인한다. 이번 실제 backend에서 정상
+terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검증을 각각 기록했다.
+근거는 `verification/v031-review-fixes-20260922/batch-04/REPORT.md`에 있다.
 
 | 기능군 | 실행 전에 확보해야 할 조건 | 실행 중·후에 확인할 사항 |
 |---|---|---|
@@ -162,7 +284,7 @@ SDK/`-p`에는 같은 무출력 제어가 성립하지 않아 적용하지 않�
 | inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |
 | Agent 결과 회수와 Workflow StructuredOutput | 일반 결과와 검증된 native journal 결과를 부모에게 전달. 범용 Workflow 재실행·복구 기능은 아님 |
 | 모델 피커 + `GET /v1/models` discovery | A3 + B1 |
-| 모델별 실측 사용량·예방 압축 | Astra 500K/450K, Sol·Terra·Luna 272K/239K는 관리 목표이며 정확 사전 차단 상한이 아니다. 압축에도 기존 확정 모델·effort 유지. native 공통 표시/환경 기본값은 500K. 새 대용량 입력의 최초 초과 가능성이 있으며 추정과 실제 usage를 구분 |
+| 모델별 실측 사용량·예방 압축 | Astra 500K/450K, Sol·Terra·Luna 272K/239K는 관리 목표이며 정확 사전 차단 상한이 아니다. 기존 확정 모델을 유지하며 v0.3.1 개발본은 검증된 자동 압축만 medium effort 상한을 적용한다. 이후 생성·수동 압축은 원래 effort 유지. native 공통 표시/환경 기본값은 500K. 새 대용량 입력의 최초 초과 가능성이 있으며 추정과 실제 usage를 구분 |
 | `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](../../verification/policy-evidence-20260918/COUNT-TOKENS.md) |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
@@ -176,9 +298,10 @@ SDK/`-p`에는 같은 무출력 제어가 성립하지 않아 적용하지 않�
 | Workflow 완료 결과 회수 | 같은 세션의 검증된 원본 run에 `resumeFromRunId` 하나만 전달. S49부터 launcher 수거 후 저장된 근거를 재검증해 재시작 뒤에도 지원. 기존 자식 보고서를 반환하고 미확보는 명시. 새 자식/원본 스크립트 실행은 하지 않음 |
 | 부모 입력의 완료 조건·대기 | 해당 요청에 실제 포함된 자식 결과 ID와 아직 대기/미확보인 ID를 `parentReadiness`에 기록. 알려진 자식 보고서가 모두 입력에 있는 조건이며, 내용의 타당성·업무 성공 판정이 아님 |
 | native TUI 빈 응답 대기 | 확인된 위임 후 회차·루트 완료 알림에서 미완료 자식이 있으면 일반 본문/빈 본문을 대기로 처리. 별도 모델 상태 확인 요청 없이 native 완료 이벤트로 재진입. 새 사용자 요청·Read 왕복 보존 실측 |
+| native SDK 빈 응답 처리 | 확인된 대기·Workflow 실행 직후·루트 완료 알림의 빈 응답에 출처가 명시된 상태 메시지 전달. 실제 답변·도구와 native background scheduler 보존. 빈 완료 알림과 중간 SDK 오류까지 실제 native fixture로 검사 |
 | 독립 단계 계획의 미실행 단계 재개 | `script:"clauduct:plan-v1"` + `args.steps`. 같은 세션에서 TaskStop·자식 종료 또는 수거 후 저장된 근거를 재검증한 원본에 `resumeFromRunId`만 전달. 완료 결과 재사용, 시작한 단계 재실행 금지, 시작하지 않은 단계만 실행. 디스크 claim으로 launcher 재시작 후에도 원본 run당 한 번만 소비 |
 | 독립 계획의 무도구 단계 | step에 `tools:[]`를 지정하면 검증된 자식의 backend 도구 목록과 downstream callable set 모두 제한. 생략하면 기존 native 도구 유지. 재개에도 동일 제한 유지. `toolPolicy:workflow_step_none`와 `workflow_tool_policy` 기능 누계로 관측 |
-| 필터가 소켓 취소를 지연시키는 경우 | exact session/agent/turn의 native 명시적 abort 기록으로 backend 취소. 실제 TUI + 취소를 전달하지 않는 loopback fixture에서 부분 도구 인자 중 Esc·후속 답변 확인. 모든 보안 제품/임의 패킷 차단의 전달 성공 보장은 아님 |
+| 필터가 소켓 취소를 지연시키는 경우 | exact session/agent/turn의 native abort·error·refusal 종료 기록으로 추론·검색 취소. 다음 turn에도 남는 기록으로 이전 요청을 정리하며 성공 응답·다른 turn은 취소하지 않는다. [내장 필터 검증](../../verification/v031-httpguard-20260923/REPORT.md). 기존 실제 TUI의 부분 도구 인자 Esc·후속 답변 근거와 최종 출하물 검증은 구분한다 |
 
 A/G/LIFE 등의 식별자는 [이전 검증 기록](VALIDATION.md)의 범위를 가리킨다.
 그 행을 최근 빌드에서 모두 다시 실측했다는 뜻은 아니다. 이미지·PDF·MCP·WebSearch 등은
@@ -243,7 +366,8 @@ native hook이 실행되지 않는 경우에도 전달된 고정 script는 오�
 지연 로딩된 Agent를 발견하면 역할 목록이 뒤늦게 추가되는 실제 TUI 근거를 확보했다.
 `ToolSearch` 안내를 보완했지만 모델의 모든 역할 선택·대기 판단까지 결정적으로 보장하지 않는다.
 압축 요약의 반복 설명을 줄이는 지침은 압축에만 적용하며, 필요한 데이터 보존이 1,200단어 목표보다 우선한다.
-지침도 사전 정확 계수에 포함하며 일반 생성 모델·effort와 계수 검증은 변경하지 않는다.
+v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도록 누락을 수정했다.
+일반 생성 모델·effort와 계수 검증은 변경하지 않는다.
 세션·선택·결과·압축별 실제 근거와 제한은 [S42 수리 기록](../../verification/session42-repair-20260920/REPORT.md)을 따른다.
 
 ### 이전 `34ebcb1`의 실제 TUI 근거
@@ -299,7 +423,7 @@ native hook이 실행되지 않는 경우에도 전달된 고정 script는 오�
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
 | PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
-| 빈 응답 대기의 전체 실행 모드 지원 | native TUI의 확인된 회차에만 제품 적용. SDK/`-p`·분류되지 않은 출처·출처 없는 자식 새 회차 index 0은 미지원. 대기 조건 없는 빈 응답은 기존 오류 처리 유지 |
+| 빈 응답 제어의 전체 실행 모드 지원 | TUI 무출력 대기와 SDK 상태 메시지는 확인된 회차에 한정. 분류되지 않은 출처·출처 없는 자식 새 회차 index 0·새 사용자 입력의 빈 응답은 기존 오류 처리 유지 |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
@@ -323,7 +447,7 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 | 확정 정책 | 현재 상태 / 다음 근거 |
 |---|---|
 | 작업 성공과 실패 처리·회복 합격을 구분 | 판정 기준 채택. 외부 장애를 정확히 보고하고 이력·결과를 보존하며 다음 요청이 동작해야 회복 합격. 모든 장애 조합 실측은 남음 |
-| 실제 실행 중인 자식과 대기 회차가 검증된 부모의 빈 응답은 대기로 유지 | native TUI 제품 통합. 입력 출처·회차·알려진 대기 자식·context policy 확인. fixture 빈 응답과 실제 backend 일반 대기 응답의 근거 구분. 자연 발생 빈 응답 관측은 별개 |
+| 실제 실행 중인 자식과 대기 회차가 검증된 부모의 빈 응답은 대기로 유지 | TUI는 무출력 대기, SDK는 완료를 주장하지 않는 Clauduct 상태 메시지. 실제 backend의 빈 응답과 결정적 native fixture를 모두 관측. 자식 결과 수신과 상태 표시를 분리 |
 | 진행 미관측만으로 강제 종료하지 않음 | 마지막 실제 이벤트·경과 시간·도구 대기 수를 보고. 누락/미종료는 drain 완료로 간주하지 않음. 기존 명시적 deadline/grace만 적용 |
 | 재개 요청이 있어도 이전 도구 실행 효과가 불명확한 자식은 자동 재실행하지 않음 | 기존 결과 회수 유지. 독립 계획에서는 중단이 확인된 원본의 미실행 단계만 실행하고, 시작했지만 결과 없는 단계는 `started_not_reexecuted`·전체 `complete:false`로 보고 |
 | 버전 번호 대신 기능별 필수 조건으로 실행 판정 | 기존 실행 경계 검사 결과를 기능별로 집계. `/context` 출처도 관측 버전과 구조를 대조. 버전 일치와 전체 기능 합격을 구분 |

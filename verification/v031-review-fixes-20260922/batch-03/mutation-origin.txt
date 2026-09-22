@@ -1,0 +1,6 @@
+=== RUN   TestVerifiedWorkflowRefusalIsCountedBeforeRouteAdmission
+    delegation_test.go:175: origin=true: {Name:workflow_agent Enforcement:per_request Required:[input workflow_selection native_turn route context_policy] Requests:0 Unconfirmed:0 Observed:0 Completed:0 Failed:0 Cancelled:0 LastRequest:0 LastCompletedRequest:0 RejectedToolCalls:0 Evidence:not_observed Acceptance:not_assessed}
+--- FAIL: TestVerifiedWorkflowRefusalIsCountedBeforeRouteAdmission (0.02s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.118s
+FAIL

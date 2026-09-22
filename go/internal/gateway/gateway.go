@@ -1,9 +1,8 @@
 // Package gateway owns the ephemeral loopback listener the native client talks to.
 //
-// WP02 scope: bind, session token, request boundary, authentication, per-request
-// cancellation and shutdown. The routes it recognises answer with a fixed category rather
-// than content — there is still no upstream client anywhere in this module, so a model
-// request is not merely absent, it has no code path to travel.
+// It validates the request boundary and session token, owns admission/cancellation,
+// and translates admitted requests through the supplied upstream transport. The
+// product supplies a real backend transport; a nil transport refuses inference.
 //
 // The rules here were measured against the installed claude 2.1.272 rather than recalled:
 // readiness arrives as HEAD /api/hello with no credential at all, inference arrives as
@@ -27,6 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -79,6 +79,7 @@ type Gateway struct {
 	token        string
 	expected     string // the exact Host this session answers to
 	requests     *registry
+	executions   nativeExecutions
 	agents       *agentRegistry
 	transport    upstream.Transport
 	served       chan error
@@ -122,6 +123,8 @@ type Gateway struct {
 
 	closeOnce sync.Once
 	closeErr  error
+	closing   context.Context
+	stopClose context.CancelFunc
 }
 
 // Start binds 127.0.0.1 on a port the operating system chooses and begins serving.
@@ -147,7 +150,10 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 	if transport == nil {
 		transport = upstream.None{}
 	}
+	closing, stopClose := context.WithCancel(context.Background())
 	g := &Gateway{
+		closing:   closing,
+		stopClose: stopClose,
 		listener:  listener,
 		token:     token,
 		expected:  listener.Addr().String(),
@@ -169,7 +175,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		BaseContext:       func(net.Listener) context.Context { return context.Background() },
 	}
 	go func() {
-		err := g.server.Serve(listener)
+		err := httpguard.Serve(g.server, listener, g.closing, maxRequestBytes)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
@@ -371,7 +377,7 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != statusPath {
 		entry := g.ring.open(r.Method, r.URL.Path)
 		defer entry.finish()
-		w = &tracked{ResponseWriter: w, rec: entry}
+		w = &tracked{ResponseWriter: w, rec: entry, body: r.Body}
 	}
 
 	if bad, ok := g.checkBoundary(r); !ok {
@@ -529,6 +535,7 @@ func isJSON(contentType string) bool {
 // cleanup it was trying to perform.
 func (g *Gateway) Close(ctx context.Context) error {
 	g.closeOnce.Do(func() {
+		g.stopClose()
 		g.requests.closeAll(errShuttingDown)
 		if closer, ok := g.transport.(io.Closer); ok {
 			defer closer.Close()

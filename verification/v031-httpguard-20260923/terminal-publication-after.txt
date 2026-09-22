@@ -1,0 +1,3 @@
+PASS: exact root/child terminal receipts persist; success never cancels
+PASS: failed write retry, immutable earlier receipts, shared concurrent 4096-turn cap
+PASS: pending child wait and completed notification lifecycle are distinct

@@ -17,7 +17,7 @@ import (
 // Measured 2026-09-16: a second --settings does not merge with the first, the last one
 // wins. So the moment this injects one, a --settings the user also passed would silently
 // replace it and the hooks would never install. user_settings.go now combines user
-// settings with these required bindings before handing native one settings argument.
+// settings with these required bindings at each actual settings option's position.
 
 // hookBinary is the name of the program the client runs on a subagent event.
 const hookBinary = "clauduct-hook"
@@ -75,6 +75,7 @@ func sessionSettings(hookPath string) (string, bool) {
 		}}
 		settings.Hooks = map[string][]hookMatcher{
 			"SessionStart":       entry,
+			"UserPromptSubmit":   entry,
 			"SubagentStart":      entry,
 			"SubagentStop":       entry,
 			"PreCompact":         entry,

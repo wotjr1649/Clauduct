@@ -1,0 +1,90 @@
+[
+  {
+    "name": "restart_old_initialization",
+    "test": "^TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.395,
+    "evidence": "--- FAIL: TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation (0.00s)\n--- FAIL: TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation/awaiting_children (0.00s)\nresult_restart_test.go:27: old turn state survived: &{AgentResultRecord:{Selection:{RequestedModel: RequestedEffort: ModelProvided:false EffortProvided:false PresenceVerified:false Model:gpt-5.6-sol Effort:high Source:agent-call} NativeTurn: NativeModel:gpt-6-astra NativeEffort:max NativeEndObserved:false EndReason: RequestFailure: Agent:child Session:s Call:call State:running Source:native_transcript Bytes:3 Recovered:true Review:old_review} parent:parent body:old stopped:false sequence:1 since:{wall:751000000 ext:63925579400 loc:<address>} streaming:true stopBinding:<address> continuationTurn:incoming}"
+  },
+  {
+    "name": "restart_recovered_leak",
+    "test": "^TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.354,
+    "evidence": "--- FAIL: TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation (0.00s)\n--- FAIL: TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation/awaiting_children (0.00s)\nresult_restart_test.go:27: old turn state survived: &{AgentResultRecord:{Selection:{RequestedModel: RequestedEffort: ModelProvided:false EffortProvided:false PresenceVerified:false Model:gpt-5.6-sol Effort:high Source:agent-call} NativeTurn: NativeModel: NativeEffort: NativeEndObserved:false EndReason: RequestFailure: Agent:child Session:s Call:call State:running Source: Bytes:0 Recovered:true Review:not_assessed_by_gateway} parent:parent body: stopped:false sequence:1 since:{wall:110000000 ext:63925579402 loc:<address>} streaming:false stopBinding:<nil> continuationTurn:incoming}\n--- FAIL: TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation/awaiting_parent (0.00s)\nresult_restart_test.go:27: old turn state survived: &{AgentResultRecord:{Selection:{RequestedModel: RequestedEffort: ModelProvided:false EffortProvided:false PresenceVerified:false Model:gpt-5.6-sol Effort:high Source:agent-call} NativeTurn: NativeModel: NativeEffort: NativeEndObserved:false EndReason: RequestFailure: Agent:child Session:s Call:call State:running Source: Bytes:0 Recovered:true Review:not_assessed_by_gateway} parent:parent body: stopped:false sequence:1 since:{wall:110000000 ext:63925579402 loc:<address>} streaming:false stopBinding:<nil> continuationTurn:}\n--- FAIL: TestRestartKeepsOnlyTaskIdentityAndIncomingContinuation/awaiting_native_stop (0.00s)\nresult_restart_test.go:27: old turn state survived: &{AgentResultRecord:{Selection:{RequestedModel: RequestedEffort: ModelProvided:false EffortProvided:false PresenceVerified:false Model:gpt-5.6-sol Effort:high Source:agent-call} NativeTurn: NativeModel: NativeEffort: Na"
+  },
+  {
+    "name": "lost_continuation",
+    "test": "^TestNativeContinuationRequiresCurrentTurnAndOriginalLineage$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.385,
+    "evidence": "--- FAIL: TestNativeContinuationRequiresCurrentTurnAndOriginalLineage (0.07s)\n--- FAIL: TestNativeContinuationRequiresCurrentTurnAndOriginalLineage/none (0.01s)\ncontinuation_test.go:92: same live continuation rejected AGENT_SELECTION_UNVERIFIED"
+  },
+  {
+    "name": "unpublished_receipt",
+    "test": "^TestIncompleteTurnPublicationNeverFallsBackAndRetryRecovers$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.369,
+    "evidence": "--- FAIL: TestIncompleteTurnPublicationNeverFallsBackAndRetryRecovers (0.01s)\nturn_receipt_test.go:59: unpublished body parsed as committed JSON"
+  },
+  {
+    "name": "failure_retargeted",
+    "test": "^TestAReceiptThatMovedOnDoesNotRetargetAnAdmittedFailure$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.311,
+    "evidence": "--- FAIL: TestAReceiptThatMovedOnDoesNotRetargetAnAdmittedFailure (0.01s)\nturn_receipt_test.go:116: failure attached to old or later turn {{gpt-5.6-luna  true false true gpt-5.6-luna max agent-call-model} third gpt-5.6-luna high false  EMPTY_REPLY proof_child proof_session proof_call running  0 false not_assessed_by_gateway}"
+  },
+  {
+    "name": "cleanup_removed",
+    "test": "^TestNativeSessionDirectoryCleanupAndFinalEvidence$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.942,
+    "evidence": "--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence (0.84s)\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/success (0.06s)\nnative_cleanup_test.go:122: session directory leaked <nil>\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/native_failure (0.03s)\nnative_cleanup_test.go:122: session directory leaked <nil>\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/spawn_failure (0.01s)\nnative_cleanup_test.go:122: session directory leaked <nil>\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/cancelled (0.02s)\nnative_cleanup_test.go:122: session directory leaked <nil>\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/locked (0.03s)\nnative_cleanup_test.go:111: real cleanup failure hidden <nil>"
+  },
+  {
+    "name": "cleanup_error_hidden",
+    "test": "^TestNativeSessionDirectoryCleanupAndFinalEvidence/locked$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.847,
+    "evidence": "--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence (0.76s)\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/locked (0.08s)\nnative_cleanup_test.go:111: real cleanup failure hidden <nil>"
+  },
+  {
+    "name": "cleanup_before_diagnostics",
+    "test": "^TestNativeSessionDirectoryCleanupAndFinalEvidence/success$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 2.068,
+    "evidence": "--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence (0.98s)\n--- FAIL: TestNativeSessionDirectoryCleanupAndFinalEvidence/success (0.07s)\nnative_cleanup_test.go:125: directory removed before final diagnostics"
+  },
+  {
+    "name": "failed_write_cached",
+    "test": "native_events_publication_test.mjs",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 0.049,
+    "evidence": "AssertionError [ERR_ASSERTION]: Got unwanted rejection.\nactual: Error: EISDIR: illegal operation on a directory, open '<TEMP>\\clauduct-publication-test-yot9Ec\\active\\root\\1-retry.json'\nexpected: undefined,"
+  },
+  {
+    "name": "turn_capacity_removed",
+    "test": "native_events_publication_test.mjs",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 9.063,
+    "evidence": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\nactual: 2,\nexpected: 1,"
+  },
+  {
+    "name": "eviction_bytes_retained",
+    "test": "^TestRestartEvictionReleasesOnlyTheEvictedBody$",
+    "detected": true,
+    "exitCode": 1,
+    "seconds": 1.21,
+    "evidence": "--- FAIL: TestRestartEvictionReleasesOnlyTheEvictedBody (0.00s)\nresult_restart_test.go:67: eviction leaked byte accounting or removed undelivered work 9 1024"
+  }
+]

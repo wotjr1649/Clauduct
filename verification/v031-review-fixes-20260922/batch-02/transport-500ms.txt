@@ -1,0 +1,40 @@
+=== RUN   TestRefusalBoundsUnfinishedBody
+--- PASS: TestRefusalBoundsUnfinishedBody (1.54s)
+=== RUN   TestGatewayResponsesSurviveConnectionTurnover
+=== RUN   TestGatewayResponsesSurviveConnectionTurnover/reused/catalogue
+    connection_test.go:99: requests=200 failures=0
+=== RUN   TestGatewayResponsesSurviveConnectionTurnover/closed/catalogue
+    connection_test.go:99: requests=200 failures=0
+=== RUN   TestGatewayResponsesSurviveConnectionTurnover/reused/stream
+    connection_test.go:99: requests=200 failures=0
+=== RUN   TestGatewayResponsesSurviveConnectionTurnover/closed/stream
+    connection_test.go:99: requests=200 failures=0
+--- PASS: TestGatewayResponsesSurviveConnectionTurnover (3.30s)
+    --- PASS: TestGatewayResponsesSurviveConnectionTurnover/reused/catalogue (0.25s)
+    --- PASS: TestGatewayResponsesSurviveConnectionTurnover/closed/catalogue (0.67s)
+    --- PASS: TestGatewayResponsesSurviveConnectionTurnover/reused/stream (0.96s)
+    --- PASS: TestGatewayResponsesSurviveConnectionTurnover/closed/stream (1.41s)
+=== RUN   TestResponseCloseDrainIsBoundedAndInterruptible
+=== RUN   TestResponseCloseDrainIsBoundedAndInterruptible/forced=false
+=== RUN   TestResponseCloseDrainIsBoundedAndInterruptible/forced=true
+--- PASS: TestResponseCloseDrainIsBoundedAndInterruptible (0.52s)
+    --- PASS: TestResponseCloseDrainIsBoundedAndInterruptible/forced=false (0.50s)
+    --- PASS: TestResponseCloseDrainIsBoundedAndInterruptible/forced=true (0.02s)
+=== RUN   TestCompletedResponseDoesNotWaitForASilentPeer
+--- PASS: TestCompletedResponseDoesNotWaitForASilentPeer (0.00s)
+=== RUN   TestServerRefusalHalfClosesAfterDrainingLargeBody
+=== RUN   TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=false
+    connection_test.go:230: framed refusal was not followed by prompt FIN: read tcp 127.0.0.1:9414->127.0.0.1:9413: i/o timeout
+=== RUN   TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=true
+--- FAIL: TestServerRefusalHalfClosesAfterDrainingLargeBody (2.07s)
+    --- FAIL: TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=false (1.03s)
+    --- PASS: TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=true (1.04s)
+=== RUN   TestNativeRequestReplayNeverDispatchesTwice
+--- PASS: TestNativeRequestReplayNeverDispatchesTwice (0.03s)
+=== RUN   TestNativeRequestReplayIsBlockedWhileFirstAttemptIsRunning
+--- PASS: TestNativeRequestReplayIsBlockedWhileFirstAttemptIsRunning (0.01s)
+=== RUN   TestNativeRequestReservationReleasesOnlyBeforeDispatch
+--- PASS: TestNativeRequestReservationReleasesOnlyBeforeDispatch (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	7.606s
+FAIL

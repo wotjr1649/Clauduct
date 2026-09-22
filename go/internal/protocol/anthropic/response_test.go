@@ -45,6 +45,31 @@ func TestParentWaitOnlyConsumesVerifiedTerminalAnswers(t *testing.T) {
 	}
 }
 
+func TestVerifiedNotificationConsumesOnlyEmptyReplies(t *testing.T) {
+	for _, text := range []string{"", "PUBLIC_NOTIFICATION_RESULT"} {
+		b := NewBuilder("public-model")
+		b.ConsumeEmptyNotification()
+		if text != "" {
+			if _, err := b.AppendText("public", 0, text); err != nil {
+				t.Fatal(err)
+			}
+		}
+		frames, err := b.Complete(Usage{InputTokens: 5, OutputTokens: 2, InputKnown: true, OutputKnown: true})
+		if err != nil || b.WaitingForChildren() != (text == "") || b.Answer() != text || len(frames) == 0 {
+			t.Fatal("notification lost an answer or fabricated one", err)
+		}
+	}
+	b := NewBuilder("public-model")
+	b.ConsumeEmptyNotification()
+	b.SetCallable(func(string) bool { return true })
+	if err := b.AddToolCall("public_call", "Read", []byte(`{"file_path":"public.txt"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Complete(Usage{}); err != nil || b.WaitingForChildren() {
+		t.Fatal("notification swallowed a tool call", err)
+	}
+}
+
 func TestDeferredTextEndsWithAnswerAndPreservesReasoning(t *testing.T) {
 	for _, deferred := range []bool{false, true} {
 		b := NewBuilder("m")

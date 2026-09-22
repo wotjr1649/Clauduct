@@ -1,0 +1,15 @@
+=== RUN   TestRuntimeEvidenceNativeTUI
+    integration_runtime_evidence_test.go:296: tui_public_profile=D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI776749587\001\profile cwd=D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI776749587\001\public-project
+    integration_runtime_evidence_test.go:313: native_pid=13944 starts=1
+Error: Input must be provided either through stdin or as a prompt argument when using --print
+    integration_runtime_evidence_test.go:296: tui class= kind=readiness outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=models outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: same_native_pid=13944 starts=1 exit=1 cleanup=true
+    integration_runtime_evidence_test.go:296: TUI lifecycle incomplete
+    integration_runtime_evidence_test.go:206: live attempts=0 inferences=0 refused=0
+--- FAIL: TestRuntimeEvidenceNativeTUI (10.05s)
+FAIL
+FAILgithub.com/wotjr1649/Clauduct/go/internal/app10.333s
+FAIL
+

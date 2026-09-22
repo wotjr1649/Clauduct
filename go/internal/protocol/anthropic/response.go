@@ -109,9 +109,10 @@ type Builder struct {
 	// Thoughts are held beside the calls and for the same reason. A stream that fails
 	// midway must not have handed the client a partial record of the model's reasoning,
 	// which the next turn would then send back as though it were complete.
-	thoughts     []string
-	deferText    bool
-	waitChildren bool
+	thoughts          []string
+	deferText         bool
+	waitChildren      bool
+	emptyNotification bool
 }
 
 // DeferTextUntilComplete lets consumers that return only the last assistant block
@@ -122,8 +123,12 @@ func (b *Builder) DeferTextUntilComplete() { b.deferText = true }
 // Only a verified native wait step may use this control response. It carries no
 // invented answer; the native hook consumes it without an empty-response retry.
 func (b *Builder) WaitForChildren() { b.waitChildren = true; b.deferText = true }
+
+// A verified native task notification may have nothing new to report after its
+// result was already delivered. Preserve any actual text or tool call.
+func (b *Builder) ConsumeEmptyNotification() { b.emptyNotification = true; b.deferText = true }
 func (b *Builder) WaitingForChildren() bool {
-	return b.completed && b.waitChildren && len(b.calls) == 0
+	return b.completed && len(b.calls) == 0 && (b.waitChildren || b.emptyNotification && b.ReplyEmpty())
 }
 
 func (b *Builder) ReplyEmpty() bool {

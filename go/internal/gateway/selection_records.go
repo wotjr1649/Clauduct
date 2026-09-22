@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
-	"strings"
 )
 
 // Native stores the compatibility alias, not the model's original call. Restore
@@ -52,14 +51,11 @@ func (d *delegations) restoreSelectionHistory(request *anthropic.Request, sessio
 			var alias, role string
 			_ = json.Unmarshal(fields["model"], &alias)
 			_ = json.Unmarshal(fields["subagent_type"], &role)
-			roleMatches := role == r.Role
-			if r.Role == "Plan" || r.Role == "Explore" || r.Role == "general-purpose" {
-				roleMatches = strings.EqualFold(role, r.Role)
-			}
+			matches := roleMatches(r.Role, role, r.CustomRole)
 			if fields["subagent_type"] == nil && r.Role == "general-purpose" {
-				roleMatches = true
+				matches = true
 			}
-			if alias != r.NativeModel || !roleMatches || fields["effort"] != nil {
+			if alias != r.NativeModel || !matches || fields["effort"] != nil {
 				continue
 			}
 			delete(fields, "model")
@@ -93,7 +89,7 @@ func (d *delegations) rejectedSelection(scope delegationScope, call string, raw 
 	_ = json.Unmarshal(fields["model"], &model)
 	_ = json.Unmarshal(fields["effort"], &effort)
 	_ = json.Unmarshal(fields["subagent_type"], &role)
-	if _, ok := bridge.RoleRoute(role); !ok && !bridge.InheritsParent(role) {
+	if !bridge.KnownRole(role) {
 		role = "unlisted"
 	}
 	switch effort {
@@ -120,6 +116,7 @@ type SelectionRecord struct {
 	Call               string `json:"call"`
 	Agent              string `json:"agent,omitempty"`
 	Role               string `json:"role"`
+	CustomRole         bool   `json:"customRole,omitempty"`
 	RequestedModel     string `json:"requestedModel,omitempty"`
 	RequestedEffort    string `json:"requestedEffort,omitempty"`
 	ModelProvided      bool   `json:"modelProvided"`

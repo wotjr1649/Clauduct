@@ -209,3 +209,100 @@ func TestAuxiliaryRequestCannotRestartOrReplaceChildResult(t *testing.T) {
 		t.Fatal("auxiliary turn changed delegated result")
 	}
 }
+
+func TestOldStreamCompletionCannotSettleResumedResult(t *testing.T) {
+	for _, delivered := range []bool{false, true} {
+		t.Run(fmt.Sprint(delivered), func(t *testing.T) {
+			d, scope, binding := preparedDelegation(t)
+			if _, _, err := d.route(scope, binding.ID, binding); err != nil {
+				t.Fatal(err)
+			}
+			r := &d.results
+			first := r.entries[binding.ID]
+			first.NativeTurn = "first"
+			finish := d.beginAnswer(scope.session, binding.ID)
+			binding.Result = "OLD_PUBLIC_STOP"
+			d.stopped(binding)
+			if first.stopBinding == nil {
+				t.Fatal("stop was not deferred until stream completion")
+			}
+			r.change(first, "awaiting_children")
+			if !r.begin(binding.ID) {
+				t.Fatal("resume refused")
+			}
+			next := r.entries[binding.ID]
+			next.NativeTurn = "second"
+			r.body(next, "NEW_PUBLIC_REPORT", "native_handback")
+			before, beforeBytes := next.AgentResultRecord, r.bytes
+			finish("OLD_PUBLIC_STREAM", delivered)
+			if r.entries[binding.ID] != next || next.stopped || next.AgentResultRecord != before || next.body != "NEW_PUBLIC_REPORT" || r.bytes != beforeBytes {
+				t.Fatal("old stream completed the resumed result or changed its accounting")
+			}
+			d.stopped(binding)
+			parent := &anthropic.Request{}
+			r.deliver(parent, scope.session, "")(true)
+			if len(parent.Messages) != 1 || !strings.Contains(parent.Messages[0].Blocks[0].Text, "NEW_PUBLIC_REPORT") || strings.Contains(parent.Messages[0].Blocks[0].Text, "OLD_PUBLIC") || r.bytes != 0 {
+				t.Fatal("new result was not delivered exactly once")
+			}
+		})
+	}
+}
+
+func TestStreamCompletionRechecksResultAfterWaitingForStop(t *testing.T) {
+	d, scope, binding := preparedDelegation(t)
+	if _, _, err := d.route(scope, binding.ID, binding); err != nil {
+		t.Fatal(err)
+	}
+	r := &d.results
+	first := r.entries[binding.ID]
+	finish := d.beginAnswer(scope.session, binding.ID)
+	binding.Result = "OLD_PUBLIC_STOP"
+	d.stopped(binding)
+	if first.stopBinding == nil {
+		t.Fatal("stop was not deferred")
+	}
+	// Pause the stop after completion released results.mu, then resume the child.
+	d.mu.Lock()
+	locked := true
+	done := make(chan struct{})
+	defer func() {
+		if locked {
+			d.mu.Unlock()
+		}
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("completion did not finish")
+		}
+	}()
+	go func() { finish("OLD_PUBLIC_STREAM", true); close(done) }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		r.mu.Lock()
+		waiting := !first.streaming
+		r.mu.Unlock()
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("completion did not reach the stop boundary")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	r.mu.Lock()
+	r.change(first, "awaiting_children")
+	r.mu.Unlock()
+	if !r.begin(binding.ID) {
+		t.Fatal("resume refused")
+	}
+	d.mu.Unlock()
+	locked = false
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("stop did not finish")
+	}
+	if next := r.entries[binding.ID]; next == first || next.stopped || next.State != "running" || next.body != "" || r.bytes != 0 {
+		t.Fatal("a stop that waited for the lock settled the new result")
+	}
+}

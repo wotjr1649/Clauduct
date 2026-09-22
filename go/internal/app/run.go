@@ -144,7 +144,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if option, refused := launch.Refused(o.Args); refused {
 		return Result{}, &RefusedOptionError{Option: option}
 	}
-	forward, userSettings, err := takeUserSettings(o.Args, o.Cwd)
+	forward, userSettings, settingsSlots, err := takeUserSettings(o.Args, o.Cwd)
 	if err != nil {
 		return Result{}, err
 	}
@@ -190,6 +190,21 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// does not understand.
 	settings, agents, effort := "", "", ""
 	nativePlugin := ""
+	nativeCleanupReady := true // No child owns the directory until spawn succeeds.
+	defer func() {
+		if nativePlugin == "" {
+			return
+		}
+		// Every exit above/below drains the gateway first. Retain the directory
+		// if either owner may still be using it; never sweep older session dirs.
+		if !nativeCleanupReady || result.CleanupErr != nil {
+			result.CleanupErr = errors.Join(result.CleanupErr, errors.New("NATIVE_EVENT_CLEANUP_UNVERIFIED"))
+			return
+		}
+		if removeErr := os.RemoveAll(nativePlugin); removeErr != nil {
+			result.CleanupErr = errors.New("NATIVE_EVENT_CLEANUP_FAILED")
+		}
+	}()
 	nativePDF := ""
 	hook := ""
 	if o.Settings != nil {
@@ -214,6 +229,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 			return result, err
 		}
+		for _, slot := range settingsSlots {
+			o.Args[slot] = "--settings=" + settings
+		}
+		settings = "" // Already present at the user's original option boundaries.
 	}
 	if o.Settings == nil {
 		gw.ConfigurePDFRenderer(hook)
@@ -319,9 +338,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return result, startErr
 	}
 	result.NativeStarted = true
+	nativeCleanupReady = false
 
 	waitErr, reaped, lifecycle := waitForSession(ctx, process, gw, o, result)
 	result.Lifecycle = &lifecycle
+	cleanupWaitErr := waitErr
+	if joined, ok := waitErr.(interface{ Unwrap() []error }); ok && len(joined.Unwrap()) == 1 {
+		cleanupWaitErr = joined.Unwrap()[0]
+	}
+	_, nativeExit := cleanupWaitErr.(*exec.ExitError)
+	nativeCleanupReady = reaped && (waitErr == nil || nativeExit || waitErr == ctx.Err() || waitErr == context.Canceled)
 	if reaped {
 		result.NativeExitCode = process.ExitCode()
 	} else {

@@ -1,0 +1,18 @@
+=== RUN   TestNativeCancellationBeforeDispatchKeepsInputAvailable
+=== RUN   TestNativeCancellationBeforeDispatchKeepsInputAvailable/inference
+=== RUN   TestNativeCancellationBeforeDispatchKeepsInputAvailable/search
+--- PASS: TestNativeCancellationBeforeDispatchKeepsInputAvailable (0.03s)
+    --- PASS: TestNativeCancellationBeforeDispatchKeepsInputAvailable/inference (0.02s)
+    --- PASS: TestNativeCancellationBeforeDispatchKeepsInputAvailable/search (0.01s)
+=== RUN   TestNativeRequestReplayNeverDispatchesTwice
+--- PASS: TestNativeRequestReplayNeverDispatchesTwice (0.03s)
+=== RUN   TestNativeRequestReplayIsBlockedWhileFirstAttemptIsRunning
+--- PASS: TestNativeRequestReplayIsBlockedWhileFirstAttemptIsRunning (0.03s)
+=== RUN   TestNativeRequestReservationReleasesOnlyBeforeDispatch
+--- PASS: TestNativeRequestReservationReleasesOnlyBeforeDispatch (0.01s)
+=== RUN   TestNativeStepHasOneConversationOwner
+--- PASS: TestNativeStepHasOneConversationOwner (0.04s)
+=== RUN   TestRateLimitDoesNotAuthoriseNativeReplay
+--- PASS: TestRateLimitDoesNotAuthoriseNativeReplay (0.04s)
+PASS
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	0.293s

@@ -15,9 +15,16 @@ func TestReasoningIsOpaqueButIsNotMedia(t *testing.T) {
 	if _, opaque, media := estimateTextInput(reasoning); !opaque || media {
 		t.Fatalf("reasoning: opaque=%v media=%v", opaque, media)
 	}
-	image := &bridge.Request{Input: []bridge.InputEntry{{Content: []bridge.InputPart{{Type: "input_image"}}}}}
-	if _, opaque, media := estimateTextInput(image); !opaque || !media {
-		t.Fatalf("image: opaque=%v media=%v", opaque, media)
+	for _, kind := range []string{"input_image", "input_file", "input_audio"} {
+		for _, entry := range []bridge.InputEntry{
+			{Content: []bridge.InputPart{{Type: kind}}},
+			{Output: []bridge.InputPart{{Type: kind}}},
+		} {
+			request := &bridge.Request{Input: []bridge.InputEntry{entry}}
+			if _, opaque, media := estimateTextInput(request); !opaque || !media {
+				t.Errorf("%s: opaque=%v media=%v", kind, opaque, media)
+			}
+		}
 	}
 	text := &bridge.Request{Input: []bridge.InputEntry{{Content: []bridge.InputPart{{Type: "input_text", Text: "hello"}}}}}
 	if _, opaque, media := estimateTextInput(text); opaque || media {
@@ -27,7 +34,7 @@ func TestReasoningIsOpaqueButIsNotMedia(t *testing.T) {
 	// but it is not media and must not reach the counter. Inferring media from "not text"
 	// made every future part kind media by default, which is the defect the named set
 	// removed -- and nothing failed when it was inferred, because no test used one.
-	unknown := &bridge.Request{Input: []bridge.InputEntry{{Content: []bridge.InputPart{{Type: "input_audio"}}}}}
+	unknown := &bridge.Request{Input: []bridge.InputEntry{{Content: []bridge.InputPart{{Type: "__clauduct_test_unknown__"}}}}}
 	if _, opaque, media := estimateTextInput(unknown); !opaque || media {
 		t.Fatalf("an unnamed part kind: opaque=%v media=%v", opaque, media)
 	}

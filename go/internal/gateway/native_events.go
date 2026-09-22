@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -84,6 +86,68 @@ func (g *Gateway) readNativeJSON(name string, fields []string, out any) (found b
 	return err == nil, err
 }
 
+// Each attempt has a unique filename. A zero-byte ready marker is published only
+// after the body write completes. Seeing an unfinished newer attempt refuses the
+// old turn; callers pin the returned receipt for the whole request.
+func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, found bool, err error) {
+	if g.nativeEvents.directory == "" {
+		return
+	}
+	name := "root"
+	if id != "" {
+		if !correlationShape.MatchString(id) {
+			return receipt, false, errDelegationUnverified
+		}
+		name = "child-" + id
+	}
+	root, err := os.OpenRoot(g.nativeEvents.directory)
+	if err != nil {
+		return receipt, false, err
+	}
+	defer root.Close()
+	directory := "active/" + name
+	dir, err := root.Open(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return receipt, false, nil
+	}
+	if err != nil {
+		return receipt, false, err
+	}
+	defer dir.Close()
+	// ponytail: scan at most 8192 publication attempts per session; index only if measured slow.
+	entries, err := dir.ReadDir(16385)
+	if err != nil && !errors.Is(err, io.EOF) || len(entries) > 16384 {
+		return receipt, false, errDelegationUnverified
+	}
+	latest, stem, turn := 0, "", ""
+	for _, entry := range entries {
+		file, ok := strings.CutSuffix(entry.Name(), ".json")
+		if !ok {
+			continue
+		}
+		number, identity, ok := strings.Cut(file, "-")
+		sequence, parseErr := strconv.Atoi(number)
+		if !ok || parseErr != nil || sequence < 1 || sequence > 8192 || strconv.Itoa(sequence) != number || !correlationShape.MatchString(identity) || !entry.Type().IsRegular() {
+			return receipt, false, errDelegationUnverified
+		}
+		if sequence > latest {
+			latest, stem, turn = sequence, file, identity
+		}
+	}
+	if stem == "" {
+		return receipt, false, nil
+	}
+	marker, err := root.Stat(directory + "/" + stem + ".ready")
+	if err != nil || !marker.Mode().IsRegular() || marker.Size() != 0 {
+		return receipt, false, errDelegationUnverified
+	}
+	found, err = g.readNativeReceipt(directory+"/"+stem+".json", &receipt)
+	if err == nil && (!found || receipt.Turn != turn) {
+		err = errDelegationUnverified
+	}
+	return receipt, found && err == nil, err
+}
+
 func (g *Gateway) nativeEventReport() NativeEventReport {
 	n := &g.nativeEvents
 	n.mu.Lock()
@@ -108,7 +172,7 @@ func (g *Gateway) readActiveTurn(session, id string) (nativeTurnReceipt, bool, b
 	if g.delegations == nil || id == "" || !correlationShape.MatchString(id) {
 		return receipt, false, true
 	}
-	found, err := g.readNativeReceipt("active-"+id+".json", &receipt)
+	receipt, found, err := g.readCurrentNativeTurn(id)
 	if err != nil {
 		return receipt, false, false
 	}
@@ -129,28 +193,16 @@ func (g *Gateway) bindNativeTurn(session, id string) bool {
 	return g.applyNativeTurn(id, receipt)
 }
 
-// stillOnTurn re-reads the active receipt and reports whether the child is on the turn the
-// caller validated. The read at the top of recordFailedAgentRequest is separated from the
-// write by a metadata file read, and the hook rewrites that receipt on every new turn, so
-// the value read first can be stale by the time it is applied.
-//
-// A named predicate rather than an inline comparison because that is what makes it
-// testable: a test writes one turn to disk and hands in another, without needing to change
-// the file during a call. Recording the comparison as untestable was wrong -- what had no
-// seam was the sequence, and the comparison never needed one.
-func (g *Gateway) stillOnTurn(session, id string, validated nativeTurnReceipt) (nativeTurnReceipt, bool) {
-	current, present, ok := g.readActiveTurn(session, id)
-	if !ok || !present || current.Turn != validated.Turn {
-		return current, false
-	}
-	return current, true
-}
-
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
 	r := &g.delegations.results
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if e := r.entries[id]; e != nil {
+	return g.applyNativeTurnLocked(id, receipt)
+}
+
+// Caller holds results.mu so replacement and binding are one state transition.
+func (g *Gateway) applyNativeTurnLocked(id string, receipt nativeTurnReceipt) bool {
+	if e := g.delegations.results.entries[id]; e != nil {
 		if e.NativeTurn != "" && e.NativeTurn != receipt.Turn {
 			return false
 		}
@@ -165,6 +217,12 @@ func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
 }
 
 func validActiveReceipt(receipt nativeTurnReceipt, session, id string) bool {
+	if receipt.Session != session || receipt.Agent != id || !correlationShape.MatchString(receipt.Turn) || receipt.Reason != "" {
+		return false
+	}
+	if id == "" {
+		return receipt.Model == "" && receipt.Effort == ""
+	}
 	modelKnown := receipt.Model == "unlisted"
 	for _, model := range bridge.Models {
 		modelKnown = modelKnown || receipt.Model == model.ID
@@ -173,10 +231,7 @@ func validActiveReceipt(receipt nativeTurnReceipt, session, id string) bool {
 	for _, effort := range []string{"unlisted", "low", "medium", "high", "xhigh", "max"} {
 		effortKnown = effortKnown || receipt.Effort == effort
 	}
-	if receipt.Session != session || receipt.Agent != id || !correlationShape.MatchString(receipt.Turn) || !modelKnown || !effortKnown || receipt.Reason != "" {
-		return false
-	}
-	return true
+	return modelKnown && effortKnown
 }
 
 // A selection refusal may occur before normal result binding. Attach its fixed
@@ -192,9 +247,8 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 	if category == "" || category == "CANCELLED" {
 		return
 	}
-	var active nativeTurnReceipt
-	found, err := g.readNativeReceipt("active-"+id+".json", &active)
-	if !found || err != nil || !validActiveReceipt(active, session, id) {
+	active := record.nativeTurn
+	if active == nil || !validActiveReceipt(*active, session, id) {
 		return
 	}
 	d := g.delegations
@@ -209,32 +263,29 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 	e := r.entries[id]
 	same := e != nil && e.NativeTurn == active.Turn
 	waiting := e != nil && !e.stopped && e.State == "awaiting_children"
+	owned := e != nil && e == record.nativeResult && e.NativeTurn == record.nativeResultTurn
 	r.mu.Unlock()
 	if !same {
+		if !waiting || !owned {
+			return
+		}
 		binding := g.agents.bindingOf(id)
 		meta, err := d.metadata(binding)
-		if !waiting || binding.SessionID != session || binding.Role != choice.role || err != nil || meta.ToolUseID != choice.call || meta.ParentAgentID != choice.parent || meta.AgentType != choice.role || !metadataModelMatches(choice.role, choice.alias, meta.Model) || meta.StoppedByUser {
-			return
-		}
-		// Re-read here, and compare, before anything destructive. The receipt at the top of
-		// this function is separated from the write below by a metadata file read, and the
-		// hook overwrites active-<id>.json on every new turn: applying the older one filed
-		// a child that had already moved on under the turn it left, which reconcile then
-		// settles from an end receipt for a turn that is over.
-		//
-		// The comparison is what is new. The read still happens before begin(), because
-		// begin() is destructive for exactly the state that got us here -- awaiting_children
-		// -- and a refusal after it would take the evidence continuation needs with it.
-		current, still := g.stillOnTurn(session, id, active)
-		if !still {
-			return
-		}
-		if !r.begin(id) || !g.applyNativeTurn(id, current) {
+		if binding.SessionID != session || !roleMatches(choice.role, binding.Role, choice.custom) || err != nil || meta.ToolUseID != choice.call || meta.ParentAgentID != choice.parent || !roleMatches(choice.role, meta.AgentType, choice.custom) || !metadataModelMatches(choice.role, choice.alias, meta.Model, choice.route.Source, choice.custom) || meta.StoppedByUser {
 			return
 		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if !same {
+		current := r.entries[id]
+		if current != e || current.NativeTurn != record.nativeResultTurn || current.stopped || current.State != "awaiting_children" {
+			return
+		}
+		if !r.beginLocked(id) || !g.applyNativeTurnLocked(id, *active) {
+			return
+		}
+	}
 	if current := r.entries[id]; current != nil && current.NativeTurn == active.Turn {
 		current.RequestFailure = category
 	}

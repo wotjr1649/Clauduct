@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"strings"
@@ -77,11 +78,8 @@ func (g *Gateway) stripContextDisplays(request *anthropic.Request, session strin
 	d := &g.displays
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	root, err := os.OpenRoot(g.delegations.projects)
-	if os.IsNotExist(err) {
-		// Nothing written here yet, which the transcript check below already treats as
-		// nothing to read. Counting it as unreadable made every first request on a new
-		// configuration directory look like a provenance failure.
+	root, err := g.delegations.openProjects(name)
+	if errors.Is(err, errProjectsAbsent) {
 		return
 	}
 	if err != nil {

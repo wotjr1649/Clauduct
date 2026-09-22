@@ -68,7 +68,7 @@ const cases = [
   { name: 'no-421-retry', status: 421, passed: false, category: 'HTTP_ERROR' },
   { name: 'no-429-retry', status: 429, passed: false, category: 'RATE_LIMITED' }
 ];
-let activeCase, received = 0, passed = 0, invalidRequests = 0;
+let activeCase, activeClient, received = 0, passed = 0, invalidRequests = 0;
 const server = createServer((req, res) => {
   received++;
   if (!activeCase || !['GET', 'POST'].includes(req.method) || req.url !== '/probe'
@@ -152,6 +152,7 @@ try {
   for (const testCase of cases) {
     activeCase = testCase;
     for (const client of [nativeRequest, fetchRequest]) {
+      activeClient = client === nativeRequest ? 'node-http' : 'node-fetch';
       const before = received;
       const result = await client(port);
       assert.equal(received, before + 1, testCase.name);
@@ -174,6 +175,7 @@ try {
   }
   for (const name of ['oversize', 'truncated', 'abort']) {
     activeCase = { name, header: ['Content-Type', 'text/event-stream'] };
+    activeClient = 'node-fetch';
     const before = received;
     if (name === 'abort') {
       const controller = new AbortController();
@@ -190,6 +192,12 @@ try {
   assert.equal(received, cases.length * 2 + 3);
   console.log(JSON.stringify({ helperTests, loopbackTests: passed, passed, localRequests: received,
     externalRequests: 0, credentialReads: 0, cases: cases.map(item => item.name) }));
+} catch (error) {
+  // Fixed test labels and counters only; preserve the original failure and exit status.
+  console.error(JSON.stringify({ result: 'FAIL', testCase: activeCase?.name ?? 'setup',
+    client: activeClient ?? 'none', helperTests, loopbackTestsPassed: passed,
+    localRequests: received, invalidRequests, externalRequests: 0, credentialReads: 0 }));
+  throw error;
 } finally {
   server.closeAllConnections();
   await new Promise(resolve => server.close(resolve));

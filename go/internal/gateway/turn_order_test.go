@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,7 +27,7 @@ func TestReadingTheActiveTurnChangesNothing(t *testing.T) {
 	write := func(receipt nativeTurnReceipt) {
 		t.Helper()
 		raw, _ := json.Marshal(receipt)
-		if err := os.WriteFile(filepath.Join(dir, "active-"+binding.ID+".json"), raw, 0600); err != nil {
+		if err := writeNativeTestFile(filepath.Join(dir, "active/child-"+binding.ID), raw); err != nil {
 			t.Fatal(err)
 		}
 	}

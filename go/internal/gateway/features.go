@@ -1,6 +1,9 @@
 package gateway
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // A completed request proves only the checks it actually reached. Historical
 // observations never grant admission to the next request or assert TUI acceptance.
@@ -31,8 +34,8 @@ var featureRequirements = []FeatureEvidence{
 	{Name: "web_search", Required: []string{"input", "route", "search_available"}},
 	{Name: "compaction", Required: []string{"input", "route", "compaction_authorized", "context_policy"}},
 	{Name: "workflow_result_reuse", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_recovery"}},
-	{Name: "parent_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_tui"}},
-	{Name: "empty_reply_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_tui"}},
+	{Name: "parent_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_wait_control"}},
+	{Name: "empty_reply_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_wait_control"}},
 	{Name: "workflow_resume", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_plan_resume"}},
 	{Name: "workflow_restore", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_checkpoint"}},
 }
@@ -92,7 +95,7 @@ func featureApplies(name string, r RequestRecord) bool {
 	case "native_agent":
 		return r.Kind == "generation" && r.AgentID != "" && r.RequestClass != "auxiliary"
 	case "workflow_agent":
-		return r.Kind == "generation" && (r.AgentRole == "workflow-subagent" || r.RequestClass == "workflow") && r.RequestClass != "auxiliary"
+		return r.Kind == "generation" && (strings.HasPrefix(r.Source, "workflow-") || slices.Contains(r.VerifiedChecks, "workflow_selection") || r.RequestClass == "workflow") && r.RequestClass != "auxiliary"
 	case "workflow_tool_policy":
 		return r.ToolPolicy == "workflow_step_none" || r.ToolPolicy == "workflow_allowlist"
 	case "agent_resume":

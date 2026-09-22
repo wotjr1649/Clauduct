@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -78,13 +79,21 @@ func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category str
 func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
 	g.countRefusal(r.category, recordOf(w).path())
 	recordOf(w).refusedWith(r.status, r.category)
-	// net/http drains unread request bytes before sending a refusal. Bound that
-	// work without forcing Connection: close or aborting a buffered reply.
+	// net/http closes early refusals with more than 256KiB unread. Consume a
+	// bounded body before writing the error so a normal native upload can keep
+	// using its connection. Unfinished/oversized bodies still close, within the
+	// same one-second budget; they never reach decoding or backend execution.
 	deadline := time.Now().Add(time.Second)
 	if r.category == refuseCancelled.category {
 		deadline = time.Now()
 	}
-	_ = http.NewResponseController(w).SetReadDeadline(deadline)
+	if http.NewResponseController(w).SetReadDeadline(deadline) == nil {
+		if tracked, ok := w.(*tracked); ok && tracked.body != nil {
+			if _, err := io.CopyN(io.Discard, tracked.body, maxRequestBytes+1); err != io.EOF {
+				w.Header().Set("Connection", "close")
+			}
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(r.status)
 	body, err := json.Marshal(map[string]any{
@@ -101,6 +110,16 @@ func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
 }
 
 func refusalMessage(category string) string {
+	switch category {
+	case "NATIVE_REQUEST_REPLAY_BLOCKED":
+		return category + "; an earlier attempt may already have executed. Automatic replay was blocked. Check the previous outcome before submitting a new prompt; the current native session can continue."
+	case "NATIVE_REQUEST_CAPACITY":
+		return category + "; this session reached its execution tracking limit. Start a new session before sending more requests. No replacement was executed."
+	case "CONTEXT_REQUEST_CLASS_UNVERIFIED":
+		return category + "; this session requires X-Claude-Code-Request-Class. Update Claude Code or repair the local integration. Reference client: " + ReferenceClient + "."
+	case "CONTEXT_SESSION_UNVERIFIED":
+		return category + "; the Clauduct session hook has not registered a transcript. Check the hook error, restore the connection and submit the prompt again. Context recovery was not bypassed."
+	}
 	if category != "UNSUPPORTED_MODEL_OR_EFFORT" {
 		return category
 	}

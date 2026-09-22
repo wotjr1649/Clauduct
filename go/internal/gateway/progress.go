@@ -59,8 +59,7 @@ func (g *Gateway) nativeProgressReport() NativeProgressReport {
 	}
 	type target struct{ session, agent, turn string }
 	targets := []target{}
-	var main nativeTurnReceipt
-	if found, err := g.readNativeJSON("active-main.json", []string{"session", "agent", "turn"}, &main); err != nil {
+	if main, found, err := g.readCurrentNativeTurn(""); err != nil {
 		out.Unreadable++
 	} else if found && correlationShape.MatchString(main.Session) && correlationShape.MatchString(main.Turn) && main.Agent == "" {
 		targets = append(targets, target{main.Session, "", main.Turn})

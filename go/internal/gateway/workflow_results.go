@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -41,7 +40,7 @@ func (d *delegations) workflowOutcome(session, id string) (string, bool) {
 	if !known || !found || choice.session != session || !choice.isWorkflow() {
 		return "", false
 	}
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return "", false
 	}

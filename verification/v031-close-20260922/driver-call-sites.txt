@@ -1,0 +1,43 @@
+Static inspection of the installed file; not a runtime breakpoint hit or a patch.
+File: adgnetworkwfpdrv.sys
+File version: 8.0.91.0
+SHA256: 8019bc2f97a59f03a13e6a7e53b42083f5e62e6d1f4ce2fb29f88b80507e247f
+All addresses below are image-relative RVAs, not loaded kernel addresses.
+Tool: installed GNU objdump -d -Mintel; PE exception table supplies function starts.
+
+API resolution:
+  +0x13290 ASCII FwpsStreamInjectAsync0
+  +0x12116 loads that string; +0x12120 calls the resolver
+  +0x12125 stores the returned function pointer at +0x179c8
+  +0x13470 ASCII FwpsDiscardClonedStreamData0
+  +0x122a9 loads that string; +0x122b3 calls the resolver
+  +0x122b8 stores the returned function pointer at +0x17a38
+
+Stream injection queue consumer, function starts at +0xB350:
+  +0xB4BA selects the cloned-data branch using request byte +0x1c
+  +0xB4C4 reads streamFlags from request +0x20
+  +0xB4C9..B4D9 conditionally adds bit 0x40000 when (flags & 0x90000) == 0x10000
+  +0xB4DC loads FwpsStreamInjectAsync0 from +0x179c8
+  +0xB4FF writes streamFlags to the seventh x64 argument, [rsp+0x30]
+  +0xB529 invokes the loaded API through the CFG dispatcher
+  +0xB5AC reads streamFlags from request +0x20 for the other branch
+  +0xB5C3 loads FwpsStreamInjectAsync0 from +0x179c8
+  +0xB5EA writes streamFlags to [rsp+0x30]
+  +0xB606 invokes the loaded API through the CFG dispatcher
+  +0x8ADE calls the queue consumer at +0xB350
+
+Separate connection-list operation, function starts at +0xFE20:
+  +0xFE8E loads FwpsStreamInjectAsync0 from +0x179c8
+  +0xFEB3 writes constant streamFlags 0x90000 to [rsp+0x30]
+  +0xFECC invokes the loaded API through the CFG dispatcher
+  +0x7245 calls this function. Execution during the reproduced half-close is NOT established.
+
+Clone disposal, function starts at +0x10250:
+  +0x1026E loads FwpsDiscardClonedStreamData0 from +0x17a38
+  +0x1027B invokes the loaded API through the CFG dispatcher
+
+These are concrete places to observe flowId, calloutId, layerId, streamFlags,
+dataLength, return status and queue producer. Static presence alone does not prove
+which instruction caused the observed extra remote-disconnect injection.
+No driver/service memory was modified, no breakpoints/hooks were installed, and
+no installed binary was replaced. Source-level names and runtime arguments remain unobserved.

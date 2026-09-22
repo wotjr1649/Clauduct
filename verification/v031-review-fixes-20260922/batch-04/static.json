@@ -1,0 +1,33 @@
+[
+  {
+    "name": "gofmt",
+    "exit": 0
+  },
+  {
+    "output": [],
+    "exit": 0,
+    "name": "vet"
+  },
+  {
+    "output": [],
+    "exit": 0,
+    "name": "build"
+  },
+  {
+    "output": [],
+    "exit": 0,
+    "name": "runtime_evidence vet"
+  },
+  {
+    "output": [],
+    "exit": 0,
+    "name": "policy_evidence vet"
+  },
+  {
+    "output": [
+      "ok  \tgithub.com/wotjr1649/Clauduct/go/internal/app\t0.177s"
+    ],
+    "exit": 0,
+    "name": "offline validators"
+  }
+]

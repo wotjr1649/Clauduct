@@ -14,7 +14,7 @@ type contextUsageAnchor struct {
 
 // A cheap preventive signal, never an exact-count endpoint. Do not tokenize
 // base64 images, files or encrypted reasoning as though they were prompt text.
-// The second return is any opaque input; the third is media specifically -- image and file
+// The second return is any opaque input; the third is media specifically -- image, file and audio
 // parts, whose bytes this adds nothing for. They are different questions. Encrypted
 // reasoning is opaque too and this build's own replies carry it, so an ordinary multi-turn
 // conversation sets the first on every request; a counter built on it would measure
@@ -34,7 +34,7 @@ func estimateTextInput(r *bridge.Request) (int64, bool, bool) {
 				// otherwise arrive as media by default and put the counter back to
 				// reporting that a conversation happened.
 				opaque = true
-				media = media || p.Type == "input_image" || p.Type == "input_file"
+				media = media || p.Type == "input_image" || p.Type == "input_file" || p.Type == "input_audio"
 			}
 		}
 	}

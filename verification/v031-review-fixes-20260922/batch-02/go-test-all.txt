@@ -1,0 +1,28 @@
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct	0.291s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-dev	0.353s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-hook	0.546s
+--- FAIL: TestABrokenStreamReachesTheExitLine (1.92s)
+    broken_test.go:56: the upstream dropped every read and the account saw no broken stream (received=2, refused=1)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	282.410s
+ok  	github.com/wotjr1649/Clauduct/go/internal/auth	1.303s
+ok  	github.com/wotjr1649/Clauduct/go/internal/buildinfo	0.302s
+ok  	github.com/wotjr1649/Clauduct/go/internal/childprocess	0.651s
+--- FAIL: TestGatewayResponsesSurviveConnectionTurnover (8.84s)
+    --- FAIL: TestGatewayResponsesSurviveConnectionTurnover/closed/stream (3.28s)
+        connection_test.go:95: iteration=196 elapsed=121.2552ms status=200 bytes=65305 read_error=read tcp 127.0.0.1:9355->127.0.0.1:12698: wsarecv: An existing connection was forcibly closed by the remote host. close_error=<nil> parse_error=unexpected end of JSON input text_bytes=57344 stops=0
+        connection_test.go:99: requests=200 failures=1
+        connection_test.go:101: product responses lost on 1 connections
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	40.190s
+ok  	github.com/wotjr1649/Clauduct/go/internal/launch	0.317s
+ok  	github.com/wotjr1649/Clauduct/go/internal/pdf	0.727s
+ok  	github.com/wotjr1649/Clauduct/go/internal/platform	0.405s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic	0.739s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/bridge	0.411s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/codex	0.540s
+ok  	github.com/wotjr1649/Clauduct/go/internal/stream	0.425s
+ok  	github.com/wotjr1649/Clauduct/go/internal/update	2.331s
+ok  	github.com/wotjr1649/Clauduct/go/internal/upstream	3.335s
+ok  	github.com/wotjr1649/Clauduct/go/internal/wire	0.398s
+FAIL

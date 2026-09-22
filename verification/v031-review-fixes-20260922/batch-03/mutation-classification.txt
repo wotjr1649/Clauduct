@@ -1,0 +1,6 @@
+=== RUN   TestWorkflowEvidenceUsesExecutionSourceRatherThanCustomRoleName
+    features_test.go:67: workflow classification=false, want true for {Seq:0 Method: Path: Stage: Outcome: Category: CancellationSource: ToolPolicy: Control: Status:0 Requested: Model: Effort: Source:verified-continuation Kind:generation RequestClass: InputTokens:<nil> OutputTokens:<nil> CachedInputTokens:<nil> ReasoningTokens:<nil> UsageSource: ContextEstimate:<nil> CountedInputTokens:<nil> AgentID: ParentAgentID: VerifiedParentAgentID: AgentRole: SelectionVerified:<nil> CountSource: CountMethod: CountAgreement: CountMs:<nil> StreamEnd:<nil> VerifiedChecks:[workflow_selection] RejectedWorkflowCalls:0 LastObservedMs:0 BackendProgress:{Events:0 TextDeltas:0 ToolArgumentDeltas:0 ReasoningDeltas:0} ParentReadiness:<nil> StartedMs:0 FirstByteMs:<nil> EndedMs:<nil>}
+--- FAIL: TestWorkflowEvidenceUsesExecutionSourceRatherThanCustomRoleName (0.00s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.086s
+FAIL

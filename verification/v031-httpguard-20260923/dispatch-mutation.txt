@@ -1,0 +1,11 @@
+=== RUN   TestNativeCancellationBeforeDispatchKeepsInputAvailable
+=== RUN   TestNativeCancellationBeforeDispatchKeepsInputAvailable/inference
+    request_replay_test.go:37: cancelled input reached transport: status=499 calls=1 searches=0
+=== RUN   TestNativeCancellationBeforeDispatchKeepsInputAvailable/search
+    request_replay_test.go:37: cancelled input reached transport: status=499 calls=0 searches=1
+--- FAIL: TestNativeCancellationBeforeDispatchKeepsInputAvailable (0.07s)
+    --- FAIL: TestNativeCancellationBeforeDispatchKeepsInputAvailable/inference (0.03s)
+    --- FAIL: TestNativeCancellationBeforeDispatchKeepsInputAvailable/search (0.04s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.319s
+FAIL

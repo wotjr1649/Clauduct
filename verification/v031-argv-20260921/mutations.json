@@ -1,0 +1,90 @@
+[
+  {
+    "mutation": "settings_ignores_terminator",
+    "source": "go/internal/app/user_settings.go",
+    "test": "^TestUserSettingsArgumentBoundaries/terminator$",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestUserSettingsArgumentBoundaries (0.02s)",
+      "    --- FAIL: TestUserSettingsArgumentBoundaries/terminator (0.00s)",
+      "        user_settings_test.go:85: forward=[] settings=false err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file",
+      "    --- FAIL: TestUserSettingsArgumentBoundaries/unknown_after_terminator (0.00s)",
+      "        user_settings_test.go:85: forward=[] settings=false err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file"
+    ]
+  },
+  {
+    "mutation": "required_value_scanned_as_option",
+    "source": "go/internal/app/native_args.go",
+    "test": "^TestUserSettingsArgumentBoundaries/required_value$",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestUserSettingsArgumentBoundaries (0.01s)",
+      "    --- FAIL: TestUserSettingsArgumentBoundaries/required_value (0.00s)",
+      "        user_settings_test.go:85: forward=[] settings=false err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file"
+    ]
+  },
+  {
+    "mutation": "optional_value_consumes_option",
+    "source": "go/internal/app/native_args.go",
+    "test": "^TestUserSettingsArgumentBoundaries/optional_absent$",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestUserSettingsArgumentBoundaries (0.01s)",
+      "    --- FAIL: TestUserSettingsArgumentBoundaries/optional_absent (0.00s)",
+      "        user_settings_test.go:85: forward=[\"--debug\" \"--settings\" \"{\\\"theme\\\":\\\"dark\\\"}\"] settings=false err=<nil>"
+    ]
+  },
+  {
+    "mutation": "unknown_boundary_trusted",
+    "source": "go/internal/app/user_settings.go",
+    "test": "^TestUserSettingsArgumentBoundaries/unknown_consumes_",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestUserSettingsArgumentBoundaries (0.01s)",
+      "    --- FAIL: TestUserSettingsArgumentBoundaries/unknown_consumes_terminator (0.00s)",
+      "        user_settings_test.go:80: expected settings refusal, got <nil>",
+      "    --- FAIL: TestUserSettingsArgumentBoundaries/unknown_consumes_option_name (0.00s)",
+      "        user_settings_test.go:80: expected settings refusal, got <nil>"
+    ]
+  },
+  {
+    "mutation": "settings_slots_removed",
+    "source": "go/internal/app/run.go",
+    "test": "^TestNativeSettingsArgumentBoundaries/(optional_barrier|variadic_barrier)/clauduct$",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestNativeSettingsArgumentBoundaries (2.83s)",
+      "    --- FAIL: TestNativeSettingsArgumentBoundaries/optional_barrier/clauduct (1.49s)",
+      "        argv_native_test.go:102: argv failed: native exited nonzero; Error: Input must be provided either through stdin or as a prompt argument when using --print",
+      "    --- FAIL: TestNativeSettingsArgumentBoundaries/variadic_barrier/clauduct (1.33s)",
+      "        argv_native_test.go:102: argv failed: native exited nonzero; Error: Input must be provided either through stdin or as a prompt argument when using --print"
+    ]
+  },
+  {
+    "mutation": "only_first_settings_slot_merged",
+    "source": "go/internal/app/run.go",
+    "test": "^TestUserSettingsMergedAtEveryOriginalBoundary$",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestUserSettingsMergedAtEveryOriginalBoundary (0.19s)",
+      "    user_settings_test.go:125: settings slots disagree"
+    ]
+  },
+  {
+    "mutation": "role_scanner_reparses_value",
+    "source": "go/internal/app/roles.go",
+    "test": "^TestRoleDefaultsCLIHonoursValueBoundaries$",
+    "exit_code": 1,
+    "assertion_detected": true,
+    "failures": [
+      "--- FAIL: TestRoleDefaultsCLIHonoursValueBoundaries (0.00s)",
+      "    roles_test.go:108: prompt value interpreted as flag"
+    ]
+  }
+]

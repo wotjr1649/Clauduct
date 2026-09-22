@@ -1,0 +1,6 @@
+=== RUN   TestNativeNextStepCanReuseInputButNotReplayItsExecution
+    request_replay_test.go:194: next step and network replay were conflated 1 false 400
+--- FAIL: TestNativeNextStepCanReuseInputButNotReplayItsExecution (0.05s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.196s
+FAIL

@@ -17,6 +17,62 @@ import (
 // protocol conversion, selection correlation and policy guard remain active.
 type exactScript struct{ *upstream.Script }
 
+func TestNativeCustomForkRetainsItsDefinitionAndExplicitChoice(t *testing.T) {
+	buildHook(t)
+	for _, explicit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "definition", true: "explicit"}[explicit], func(t *testing.T) {
+			config := t.TempDir()
+			_, cwd := workspace(t)
+			dir := filepath.Join(cwd, ".claude", "agents")
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "Fork.md"), []byte("---\nname: Fork\ndescription: public proof\ntools: Read\nmodel: gpt-5.6-sol\neffort: medium\n---\nPUBLIC_CUSTOM_FORK_PROOF"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			args, model, effort := `{"subagent_type":"Fork","description":"public proof","prompt":"say ok"}`, "gpt-5.6-sol", "medium"
+			if explicit {
+				args, model, effort = `{"subagent_type":"Fork","model":"gpt-5.6-terra","effort":"high","description":"public proof","prompt":"say ok"}`, "gpt-5.6-terra", "high"
+			}
+			script := newScript(toolStream("custom_fork", "Agent", args), textStream("child", "ok"), textStream("parent", "done"))
+			out := (nativeRun{Cwd: cwd, ConfigDir: config, Args: []string{"-p", "delegate public proof", "--allowedTools", "Agent"}, Env: map[string]string{"CLAUDE_CODE_FORK_SUBAGENT": "1"}, transport: exactScript{script}, ContextPolicy: true}).run(t)
+			found := false
+			for _, raw := range script.Requests() {
+				if !strings.Contains(raw, "PUBLIC_CUSTOM_FORK_PROOF") {
+					continue
+				}
+				var request struct {
+					Model     string
+					Reasoning struct{ Effort string }
+				}
+				if json.Unmarshal([]byte(raw), &request) != nil || request.Model != model || request.Reasoning.Effort != effort {
+					t.Fatal("custom Fork lost its selected route")
+				}
+				found = true
+			}
+			if out.err != nil || out.result.NativeExitCode != 0 || !found || out.result.Diagnostics.AgentResults.Totals["parent_received"] != 1 {
+				t.Fatalf("custom Fork: err=%v exit=%d found=%v received=%d", out.err, out.result.NativeExitCode, found, out.result.Diagnostics.AgentResults.Totals["parent_received"])
+			}
+		})
+	}
+}
+
+func TestNativeUnlistedRoleKeepsNativeModelAndCompletion(t *testing.T) {
+	buildHook(t)
+	script := newScript(toolStream("native_choice", "Agent", `{"subagent_type":"statusline-setup","description":"public proof","prompt":"say ok"}`), textStream("child", "ok"), textStream("parent", "done"))
+	out := (nativeRun{Args: []string{"-p", "delegate public proof", "--allowedTools", "Agent"}, transport: exactScript{script}, ContextPolicy: true}).run(t)
+	found := false
+	for _, record := range out.result.Diagnostics.Recent {
+		if record.Source == "native-selection" && record.Model == "gpt-5.6-terra" && record.AgentRole == "statusline-setup" && record.Status == 200 {
+			found = true
+			t.Logf("native %s selected %s/%s", out.result.Diagnostics.Client.Version, record.Model, record.Effort)
+		}
+	}
+	if out.err != nil || out.result.NativeExitCode != 0 || !found || out.result.Diagnostics.AgentResults.Totals["parent_received"] != 1 {
+		t.Fatalf("native choice: err=%v exit=%d found=%v received=%d selections=%+v", out.err, out.result.NativeExitCode, found, out.result.Diagnostics.AgentResults.Totals["parent_received"], out.result.Diagnostics.AgentSelections)
+	}
+}
+
 func (f exactScript) Count(context.Context, upstream.Call) (int64, error) { return 1000, nil }
 func (f exactScript) Execute(ctx context.Context, call upstream.Call) (*upstream.Response, error) {
 	response, err := f.Script.Execute(ctx, call)
@@ -39,6 +95,8 @@ func TestRoleDefaultsCLIHonoursValueBoundaries(t *testing.T) {
 		{"-p", "prompt", "--agents", explicit},
 		{"--append-system-prompt", "--agents", "--agents=" + explicit},
 		{"--worktree", "--agents", explicit},
+		{"-n", "--agents", "--agents=" + explicit},
+		{"--brief", "--agents=" + explicit},
 	} {
 		defs, _, err := roleCLI(args, injected)
 		if err != nil || defs["worker"].Model != "terra" {
@@ -48,6 +106,10 @@ func TestRoleDefaultsCLIHonoursValueBoundaries(t *testing.T) {
 	defs, _, err := roleCLI([]string{"--append-system-prompt", "--agents", explicit}, injected)
 	if err != nil || defs["worker"].Model != "sol" {
 		t.Fatal("prompt value interpreted as flag")
+	}
+	defs, plugins, err := roleCLI([]string{"--", "--agents", explicit, "--plugin-dir", "public-plugin"}, injected)
+	if err != nil || defs["worker"].Model != "sol" || len(plugins) != 0 {
+		t.Fatal("positional data interpreted as routing policy")
 	}
 	if _, _, err = roleCLI([]string{"--unknown-future-flag", "--agents", explicit}, injected); err == nil {
 		t.Fatal("ambiguous flags accepted")

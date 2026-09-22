@@ -1,0 +1,23 @@
+{
+  "date": "2026-09-21",
+  "test": "TestRuntimeEvidenceAutomaticCompactionEffort",
+  "result": "PASS",
+  "elapsed_seconds": 10.32,
+  "model": "gpt-5.6-luna",
+  "payload": "fixed public synthetic text; no user files or conversation",
+  "attempt_limit": 4,
+  "attempts": 4,
+  "inferences": 3,
+  "count_only_attempts": 1,
+  "refused": 0,
+  "steps": [
+    {"step": "before", "effort": "high", "status": 200, "input_tokens": 28, "output_tokens": 7, "marker_retained": true},
+    {"step": "compact", "effort": "medium", "status": 200, "input_tokens": 295, "output_tokens": 114, "retained_identifiers": 4, "count_source": "prior-count-cache", "count_agreement": "matched"},
+    {"step": "after", "effort": "high", "status": 200, "input_tokens": 28, "output_tokens": 20, "marker_retained": true}
+  ],
+  "limits": [
+    "The live client is the gateway test harness; native lifecycle is tested separately with synthetic backend responses.",
+    "Short text proof does not establish large-history or multimodal summary quality, cost savings, or provider physical model identity.",
+    "The subsequent invalid-receipt consumption fix was verified locally; no extra live attempts were made."
+  ]
+}

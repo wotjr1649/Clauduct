@@ -17,7 +17,7 @@ func TestNativeEventModuleRunsWithNoNodeOnChildPATH(t *testing.T) {
 		textStream("parent", "Public report received."))
 	out := (nativeRun{Args: []string{"-p", "Run the public child", "--allowedTools", "Agent"}, Env: map[string]string{"PATH": filepath.Join(os.Getenv("SystemRoot"), "System32")}, transport: script}).run(t)
 	if out.err != nil || out.result.NativeExitCode != 0 || !out.result.Diagnostics.NativeEvents.Observed || out.result.Diagnostics.NativeEvents.Invalid != 0 {
-		t.Fatalf("embedded module did not execute without Node: %v %+v", out.err, out.result.Diagnostics.NativeEvents)
+		t.Fatalf("embedded module did not execute without Node: %v exit=%d calls=%d %+v %s", out.err, out.result.NativeExitCode, out.backendCalls, out.result.Diagnostics.NativeEvents, tail(out.output(), 2500))
 	}
 }
 
@@ -26,6 +26,11 @@ func TestNativeEventPluginPassesInstalledValidator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(path); err != nil {
+			t.Error(err)
+		}
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, nativeAvailable(t), "plugin", "validate", path)
@@ -36,4 +41,17 @@ func TestNativeEventPluginPassesInstalledValidator(t *testing.T) {
 		t.Fatalf("native validation: %v %s", err, tail(string(out), 2500))
 	}
 	t.Logf("native plugin validator: %s", tail(string(out), 1500))
+}
+
+func TestNativeEventPublicationFailureAndCapacity(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("Node is required only for the filesystem failure/capacity test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, node, "native_events_publication_test.mjs")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("native publication checks: %v\n%s", err, tail(string(output), 3000))
+	}
 }

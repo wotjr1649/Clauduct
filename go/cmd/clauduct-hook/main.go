@@ -163,7 +163,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		Transcript string `json:"transcript_path"`
 		Trigger    string `json:"trigger"`
 	}
-	if json.Unmarshal(raw, &compact) == nil && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart") {
+	if json.Unmarshal(raw, &compact) == nil && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit") {
 		if !identifier.MatchString(compact.Session) || (compact.Agent != "" && !identifier.MatchString(compact.Agent)) {
 			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_INVALID")
 			return 2
@@ -175,15 +175,23 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			}
 			fields["trigger"] = compact.Trigger
 		}
-		if compact.Event == "SessionStart" {
+		if compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit" {
 			if compact.Transcript == "" || len(compact.Transcript) > 4096 {
+				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_INVALID")
 				return 2
 			}
+			// SessionStart cannot block native startup. Reconfirm the same
+			// idempotent registration before each prompt, without sending its text.
+			fields["event"] = "SessionStart"
 			fields["transcriptPath"] = compact.Transcript
 		}
 		body, _ := json.Marshal(fields)
 		reply, err := postReply(body, env, "/clauduct/context")
 		if err != nil {
+			if compact.Event == "UserPromptSubmit" {
+				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_SESSION_UNVERIFIED: session registration failed; restore the Clauduct hook connection and submit the prompt again.")
+				return 2
+			}
 			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_FAILED")
 			return 2
 		}

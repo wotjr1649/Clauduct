@@ -1,0 +1,6 @@
+=== RUN   TestAuxiliaryCompactionTextHasSameGenerationAndCountClassification
+    count_tokens_test.go:31: optional count: 400 {"error":{"message":"CONTEXT_COMPACTION_UNVERIFIED","type":"invalid_request_error"},"type":"error"}
+--- FAIL: TestAuxiliaryCompactionTextHasSameGenerationAndCountClassification (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.139s
+FAIL

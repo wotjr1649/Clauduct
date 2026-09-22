@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -54,6 +53,22 @@ func TestFeatureEvidenceDoesNotTreatAuxiliaryAsNativeTurn(t *testing.T) {
 	}
 }
 
+func TestWorkflowEvidenceUsesExecutionSourceRatherThanCustomRoleName(t *testing.T) {
+	for _, tc := range []struct {
+		record RequestRecord
+		want   bool
+	}{
+		{RequestRecord{Kind: "generation", AgentRole: "workflow-subagent", Source: "agent-call-definition", RequestClass: "subagent"}, false},
+		{RequestRecord{Kind: "generation", AgentRole: "WORKFLOW-SUBAGENT", Source: "workflow-parent"}, true},
+		{RequestRecord{Kind: "generation", AgentRole: "Custom", RequestClass: "workflow"}, true},
+		{RequestRecord{Kind: "generation", Source: "verified-continuation", VerifiedChecks: []string{"workflow_selection"}}, true},
+	} {
+		if got := featureApplies("workflow_agent", tc.record); got != tc.want {
+			t.Fatalf("workflow classification=%v, want %v for %+v", got, tc.want, tc.record)
+		}
+	}
+}
+
 func TestFeatureEvidenceRetainsRejectedRecovery(t *testing.T) {
 	r := newRing()
 	e := r.open("POST", "/v1/messages")
@@ -94,11 +109,11 @@ func TestNativeProgressRejectsForeignAndIncompleteReceipts(t *testing.T) {
 	put := func(name string, value any) {
 		t.Helper()
 		raw, _ := json.Marshal(value)
-		if err := os.WriteFile(filepath.Join(dir, name), raw, 0600); err != nil {
+		if err := writeNativeTestFile(filepath.Join(dir, name), raw); err != nil {
 			t.Fatal(err)
 		}
 	}
-	put("active-main.json", nativeTurnReceipt{Session: "session", Turn: "current"})
+	put("active/root", nativeTurnReceipt{Session: "session", Turn: "current"})
 	if out := g.nativeProgressReport(); out.Unreadable != 1 || len(out.Agents) != 0 {
 		t.Fatal("missing progress became idle proof")
 	}

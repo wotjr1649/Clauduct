@@ -173,10 +173,15 @@ func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, byte
 
 // record is the live half of a RequestRecord, mutated as the request proceeds.
 type record struct {
-	mu    sync.Mutex
-	epoch time.Time
-	data  RequestRecord
-	owner *ring
+	// Handler-owned identity, pinned before selection and never serialized.
+	nativeTurn       *nativeTurnReceipt
+	execution        *nativeExecution
+	nativeResult     *agentResult
+	nativeResultTurn string
+	mu               sync.Mutex
+	epoch            time.Time
+	data             RequestRecord
+	owner            *ring
 }
 
 func (r *record) rejectedWorkflow() {
@@ -679,7 +684,8 @@ func (g *ring) recent() []RequestRecord {
 // site would have been the same change made fifteen times.
 type tracked struct {
 	http.ResponseWriter
-	rec *record
+	rec  *record
+	body io.Reader // handler lifetime only; never retained in the record or diagnostics
 }
 
 // Unwrap is what http.NewResponseController follows to reach the real writer, which is
@@ -716,6 +722,10 @@ type ClientReport struct {
 	Reference       string `json:"reference"`
 	Verified        bool   `json:"verified"`
 	VerifiedMeaning string `json:"verifiedMeaning"`
+	// Capability requirement and cumulative missing-header refusals, independent
+	// of Verified. A later successful request does not erase earlier failures.
+	RequestClassRequired bool  `json:"requestClassRequired"`
+	RequestClassMissing  int64 `json:"requestClassMissing"`
 }
 
 type Diagnostics struct {
@@ -788,6 +798,7 @@ func (g *Gateway) Diagnose() Diagnostics {
 // transcripts or report bodies. Periodic checkpoints do not perform agent work.
 func (g *Gateway) Snapshot() Diagnostics {
 	received, refused, active := g.Stats()
+	refusedBy := g.RefusalsByCategory()
 	unregistered, unrouted := g.Unrouted()
 	fellBack := g.FellBackToCaller()
 	projectsErr := ""
@@ -816,7 +827,7 @@ func (g *Gateway) Snapshot() Diagnostics {
 		UptimeMs: time.Since(g.ring.epoch).Milliseconds(),
 		Requests: RequestCounts{
 			Received: received, Refused: refused,
-			RefusedBy:    g.RefusalsByCategory(),
+			RefusedBy:    refusedBy,
 			RefusedPaths: g.RefusedPaths(),
 			Broken:       g.broken.Load(),
 			Active:       active, ModelLists: g.ModelLists(),
@@ -830,10 +841,12 @@ func (g *Gateway) Snapshot() Diagnostics {
 		},
 		Betas: g.betas.report(),
 		Client: ClientReport{
-			Version:         g.ClientVersion(),
-			Reference:       ReferenceClient,
-			Verified:        g.ClientVersion() == ReferenceClient,
-			VerifiedMeaning: "version_match_only",
+			Version:              g.ClientVersion(),
+			Reference:            ReferenceClient,
+			Verified:             g.ClientVersion() == ReferenceClient,
+			VerifiedMeaning:      "version_match_only",
+			RequestClassRequired: g.contexts != nil,
+			RequestClassMissing:  refusedBy["CONTEXT_REQUEST_CLASS_UNVERIFIED"],
 		},
 		Features:            g.ring.featureReport(),
 		Progress:            g.nativeProgressReport(),

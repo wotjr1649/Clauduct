@@ -1,0 +1,8 @@
+=== RUN   TestNativeSDKEmptyReplyWaitsForBackgroundChild
+=== RUN   TestNativeSDKEmptyReplyWaitsForBackgroundChild/Agent
+    native_wait_test.go:40: SDK wait lost verified feature evidence {parent_wait per_request [input route context_policy parent_input_snapshot native_wait_step native_tui] 1 1 0 0 0 0 6 6 0 conditions_not_confirmed_for_all_requests not_assessed}
+--- FAIL: TestNativeSDKEmptyReplyWaitsForBackgroundChild (4.21s)
+    --- FAIL: TestNativeSDKEmptyReplyWaitsForBackgroundChild/Agent (2.73s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	4.377s
+FAIL

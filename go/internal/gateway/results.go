@@ -143,11 +143,16 @@ func (r *agentResults) start(id string, c resolvedChoice) bool {
 }
 
 // SendMessage can restart a completed native child under the same ID. Keep the
-// previous report independently deliverable and begin a new result record only
+// previous report as historical evidence and begin a new result record only
 // on an actual inference request (never on count_tokens or a status read).
 func (r *agentResults) begin(id string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.beginLocked(id)
+}
+
+// Caller holds mu through the ownership check and turn binding.
+func (r *agentResults) beginLocked(id string) bool {
 	e := r.entries[id]
 	if e != nil && !e.stopped && e.State == "awaiting_native_stop" {
 		e.stopped = true
@@ -157,21 +162,10 @@ func (r *agentResults) begin(id string) bool {
 		e.EndReason = "native_stop_unverified"
 		r.change(e, "result_unavailable")
 	}
-	if e == nil || !e.stopped {
-		if e != nil && e.State == "awaiting_children" {
-			e.NativeTurn = ""
-			e.NativeEndObserved = false
-			e.EndReason = ""
-			// The category belonged to the turn being cleared. Left attached, deliver quotes
-			// it to the parent as this turn's failure; the stopped leg of this same function
-			// builds a fresh record and drops it, so the two disagreed.
-			e.RequestFailure = ""
-			e.since = time.Now().Truncate(time.Millisecond)
-			r.change(e, "running")
-		}
+	if e == nil || !e.stopped && e.State != "awaiting_children" {
 		return true
 	}
-	if len(r.entries) >= maxAgents {
+	if e.stopped && len(r.entries) >= maxAgents {
 		oldest := ""
 		seq := ^uint64(0)
 		for key, item := range r.entries {
@@ -182,10 +176,17 @@ func (r *agentResults) begin(id string) bool {
 		if oldest == "" {
 			return false
 		}
+		r.bytes -= len(r.entries[oldest].body)
 		delete(r.entries, oldest)
 	}
-	r.entries[id+"/"+strconv.FormatUint(e.sequence, 10)] = e
 	next := &agentResult{AgentResultRecord: AgentResultRecord{Agent: e.Agent, Session: e.Session, Call: e.Call, Selection: e.Selection, Review: "not_assessed_by_gateway"}, parent: e.parent, since: time.Now().Truncate(time.Millisecond)}
+	if e.stopped {
+		r.entries[id+"/"+strconv.FormatUint(e.sequence, 10)] = e
+	} else {
+		// Continuation authority was verified for the incoming turn, not the old result.
+		next.continuationTurn = e.continuationTurn
+		r.bytes -= len(e.body)
+	}
 	r.entries[id] = next
 	r.change(next, "running")
 	return true
@@ -266,9 +267,14 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 	r.bytes -= len(e.body)
 	e.body, e.Bytes = "", 0
 	e.streaming = true
+	turn := e.NativeTurn
 	r.mu.Unlock()
 	return func(body string, delivered bool) {
 		r.mu.Lock()
+		if r.entries[id] != e || e.NativeTurn != turn {
+			r.mu.Unlock()
+			return
+		}
 		e.streaming = false
 		binding := e.stopBinding
 		e.stopBinding = nil
@@ -287,12 +293,16 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 		}
 		r.mu.Unlock()
 		if binding != nil && delivered {
-			d.stopped(*binding)
+			d.stoppedResult(*binding, turn, e)
 		}
 	}
 }
 
 func (d *delegations) stoppedTurn(binding agentBinding, turn string) {
+	d.stoppedResult(binding, turn, nil)
+}
+
+func (d *delegations) stoppedResult(binding agentBinding, turn string, expected *agentResult) {
 	d.mu.Lock()
 	choice, known := d.resolved[binding.ID]
 	childrenPending := false
@@ -310,7 +320,7 @@ func (d *delegations) stoppedTurn(binding agentBinding, turn string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	e := r.entries[binding.ID]
-	if e == nil || e.stopped || (turn != "" && e.NativeTurn != turn) {
+	if e == nil || e.stopped || expected != nil && e != expected || (turn != "" && e.NativeTurn != turn) {
 		return
 	}
 	for _, child := range r.entries {

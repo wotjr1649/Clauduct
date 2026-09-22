@@ -25,7 +25,8 @@ async function observe($, state, progress, p, signal) {
 }
 export const register = on => {
   const state = {session:'',mode:'unclassified'};
-  const turns = new Set();
+  const turns = new Map();
+  let turnSequence=0;
   const cancelledTurns = new Set();
   const progress = new Map();
   let origin='unclassified';
@@ -55,34 +56,37 @@ export const register = on => {
       progress.set(agent,p);
     }
     p.phase='request';
-    // Written in place, because this plugin API has no rename. Measured 2026-09-21 against
-    // the declarations Claude Code 2.1.278 writes for its own hooks: $.fs offers read,
-    // write, exists, stat and append, and nothing that moves a file. The temp-and-rename
-    // the gateway uses for the files it writes is not available on this side, so a reader
-    // can land mid-write and the gateway counts an invalid receipt -- which is one reason
-    // the gateway re-reads and compares the turn rather than trusting one read.
-    if (!agent && !turns.has('main:'+turn)) {turns.add('main:'+turn);await $.fs.write(root+'/active-main.json',JSON.stringify({session:await session($,state),agent:'',turn}));}
-    if (e.agentId) {
-      const agent=ident(e.agentId), turn=ident(e.turnId);
-      if (!agent || !turn) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
-      const key=agent+'/'+turn;
-      if (!turns.has(key)) {
-        if (turns.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
-        const model=['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(e.model)?e.model:'unlisted';
-        const effort=['low','medium','high','xhigh','max'].includes(e.effort)?e.effort:'unlisted';
-        await $.fs.write(root+'/active-'+agent+'.json',JSON.stringify({session:await session($,state),agent,turn,model,effort}));
-        turns.add(key);
-      }
+    const key=agent+'/'+turn;
+    let publication=turns.get(key);
+    if (!publication) {
+      if (turns.size>=4096 || turnSequence>=8192) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+      const name=agent?'child-'+agent:'root';
+      const file=root+'/active/'+name+'/'+(++turnSequence)+'-'+turn;
+      publication=(async () => {
+        const receipt={session:await session($,state),agent,turn};
+        if (agent) {
+          receipt.model=['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(e.model)?e.model:'unlisted';
+          receipt.effort=['low','medium','high','xhigh','max'].includes(e.effort)?e.effort:'unlisted';
+        }
+        // Native has write (including mkdir), but no rename/append. A new filename
+        // records each attempt; only the empty marker publishes its finished body.
+        // A reader seeing the newer body without its marker refuses the old turn.
+        await $.fs.write(file+'.json',JSON.stringify(receipt));
+        await $.fs.write(file+'.ready','');
+      })();
+      turns.set(key,publication); // Reserve in-flight capacity, not successful completion.
+      publication.catch(() => turns.delete(key)); // Failed turns remain retryable.
     }
+    await publication;
     await observe($,state,progress,p,'request_started');
     const name=agent?'child-'+agent:'root';
     // index 0 of an explicit new input is never withheld. Child wakeups without
     // ingress provenance remain outside this control until a later tool step.
-    const eligible=state.mode==='native_tui' && !p.intervened && (e.index>0 && p.delegated || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
+    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && p.delegated || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
     await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($,state),agent,turn,index:e.index,eligible,mode:state.mode}));
     let held=false;
     try {
-      if (state.mode!=='native_tui') return yield* next(e);
+      if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
       const stream=next(e);
       let decision;
       const prefix=[];
@@ -106,7 +110,7 @@ export const register = on => {
             catch { throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED'); }
           }
           if (decision.turn!==turn || decision.index!==e.index) decision={hold:false};
-          if (typeof decision.hold!=='boolean' || decision.hold && !eligible) throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED');
+          if (typeof decision.hold!=='boolean' || decision.hold && (!eligible || typeof decision.wait!=='boolean')) throw new Error('CLAUDUCT_PARENT_WAIT_UNVERIFIED');
         }
         if (prefix.length) {if (!decision.hold) yield* prefix;prefix.length=0;}
         else if (!decision.hold) yield chunk;
@@ -115,8 +119,19 @@ export const register = on => {
       const result=await stream.result;
       if (!decision?.hold) return result;
       if (result.toolUses.length || result.answer!=='' || result.stopReason!=='end_turn') throw new Error('CLAUDUCT_PARENT_WAIT_CONTROL_INVALID');
-      held=true;p.phase='awaiting_children';
-      await observe($,state,progress,p,'children_wait');
+      if (state.mode==='sdk') {
+        // SDK retries an empty assistant block and rejects a dropped response
+        // after a notification. Return an attributed status, never a child result
+        // or a claim of completion. Native owns the next background notification.
+        const answer=!agent && e.index===0
+          ? '[Clauduct] Background task notification received; no additional response.'
+          : '[Clauduct] Waiting for background task notification.';
+        yield {kind:'text',index:0,text:answer};
+        yield {kind:'stop',stopReason:'end_turn',usage:result.usage};
+        return {...result,answer,stopReason:'end_turn'};
+      }
+      held=decision.wait;p.phase=held?'awaiting_children':'progress_unconfirmed';
+      await observe($,state,progress,p,held?'children_wait':'notification_consumed');
       return {...result,answer:'',stopReason:null};
     }
     finally {
@@ -158,7 +173,7 @@ export const register = on => {
 	}
     const p=progress.get(e.agentId?ident(e.agentId):'');
     if (!p) return next(e);
-    if (e.tool==='Agent' || e.tool==='SendMessage') p.delegated=true;
+    if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow') p.delegated=true;
     // Counted inside the guarded region. A throwing observe left the counter raised with
     // nothing to lower it, and session_lifecycle waits for it to reach zero: the session
     // then burned the whole deadline grace and was force-stopped instead of drained.
@@ -187,12 +202,12 @@ export const register = on => {
     return next(e);
   });
   on('turn.complete', async ($, e, next) => {
-    if (e.reason==='aborted') {
+    if (['aborted','error','refusal'].includes(e.reason)) {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
       if (!cancelledTurns.has(turn)) {
         if (cancelledTurns.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
-        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($,state),agent,turn,reason:'aborted'}));
+        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($,state),agent,turn,reason:e.reason}));
         cancelledTurns.add(turn);
       }
     }

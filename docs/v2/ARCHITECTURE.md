@@ -52,11 +52,37 @@ go/
 
 ## 4. CLI 계약
 
-제품 런처는 native 인자를 그대로 넘긴다. Claude CLI shadow parser를 만들지 않는다(D05). `--help`·`--version`은 native 의미를 유지하며 Go 제품 정보는 `clauduct-dev version`에서 본다(D06).
+이 절이 제품의 argv 전달·거부 계약을 소유한다. `--help`·`--version`은 native 의미를 유지하며
+Go 제품 정보는 `clauduct-dev version`에서 본다(D06). 처리 순서는 다음과 같다.
 
-옵션 값 안의 문자열을 재파싱하지 않는다. `--append-system-prompt "--model은 설명용 문자열이다"`에서 `--model`을 가로채면 안 된다. `--` 뒤 positional 영역도 원형 그대로 전달한다.
+1. [launch.Refused](../../go/internal/launch/refuse.go)는 리소스를 얻기 전에 모든 argv를 검사한다.
+   `--dangerously-skip-permissions`와 `--allow-dangerously-skip-permissions`만 거부한다.
+   인자별로 `=value`를 제외한 이름을 대소문자 구분 없이 정확히 비교하며 부분 문자열은 허용한다.
+   **옵션 값과 `--` 뒤에서도 같은 이름은 거부한다.** 이 과잉 거부는 의도된 정책이다.
+   이름이 데이터인지 추정하다 권한 검사를 조용히 해제하는 대신 명시적으로 거부한다.
+2. [app.takeUserSettings](../../go/internal/app/user_settings.go)는 실제 `--settings` 옵션의 마지막
+   소스를 읽고 필수 설정과 병합한다. 각 설정 옵션의 자리를 유지하며 값을 병합 결과로 교체한다.
+   자리를 없애면 앞의 optional/variadic 옵션이 뒤의 프롬프트를 값으로 흡수할 수 있기 때문이다.
+   필수 값은 `--settings`나 `--`처럼 보여도 값이며, 독립된 `--`에서는 탐색을 멈춘다.
+   `-p`는 값을 먹지 않는 플래그이므로 문자 그대로의 프롬프트는 `-p -- --settings`로 전달한다.
+   `--setting-sources`를 비롯한 다른 인자는 순서와 철자를 보존한다.
+3. [launch.Build](../../go/internal/launch/launch.go)는 세션 overlay를 앞에 놓고 전달받은 argv를
+   그대로 복사한다. 사용자 설정 옵션이 없을 때만 병합할 필요 없는 세션 설정을 앞에 추가한다.
 
-기준선의 `blockedOptions` 30개와 그 인과 분해는 [DECISION.md](DECISION.md) 2.6절에 있고, 정책 범주 10개의 개방 여부는 사용자 결정으로 남아 있다.
+값 경계는 [공통 탐색 함수](../../go/internal/app/native_args.go)를 읽기 전용 역할 검색과 공유한다.
+Claude Code 2.1.278의 공개 옵션 형태와 기존 hidden 옵션 목록을 사용하며 native 전체 구문을
+재구현하지 않는다(D05). 모르는 옵션 뒤에 `--settings` 후보가 있으면 경계를 확정할 수 없으므로
+`SETTINGS_INVALID`로 거부한다. 그런 후보가 없으면 모르는 옵션의 판정은 native에 맡긴다.
+거부 검사를 통과한 옵션 값과 `--` 뒤 데이터는 재해석하지 않는다.
+
+결합 short 옵션은 `-cp`처럼 boolean을 순서대로 읽고, `-pdapi`·`-pnPUBLIC`처럼 값을 받는
+첫 옵션부터 나머지를 그 값으로 취급한다. settings와 역할 탐색이 같은 경계를 사용한다.
+설치된 native의 공개 옵션 arity는 회귀검사에서 대조한다. 새 옵션은 이 검사를 통해 갱신하며
+모르는 형태를 임의로 boolean으로 간주하지 않는다. native subcommand의 옵션을 별도로
+재구현하지 않으므로, 모르는 subcommand 옵션 뒤의 settings/역할 후보에도 같은 거부 원칙을 적용한다.
+
+기준선의 `blockedOptions` 30개와 그 인과 분해는 [DECISION.md](DECISION.md) 2.6절에 있다.
+현재 거부 목록을 늘릴 때는 값을 먹지 않는 옵션인지와 그 이름의 과잉 거부를 수용할지 별도로 결정한다.
 
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
 
@@ -96,6 +122,37 @@ native 버전별로 `/v1/models` 요청에 인증 header가 둘 이상 실릴 �
 
 `ANTHROPIC_BASE_URL`을 바꿨다는 사실만으로 Claude의 모든 통신이 gateway를 통과한다고 선언하지 않는다. 지원하는 모델 추론 요청만 route trace로 확인한다. native 서비스 점검·WebFetch domain safety·플러그인·MCP의 별도 네트워크는 별도 범주다. Go V2는 OS 수준 egress sandbox가 아니다.
 
+### 6.1. 필터가 활성화된 환경의 연결 종료
+
+완료 기준은 보호가 켜진 환경에서의 제품 실제 동작이다. 독립 Node·.NET·raw TCP 반례는
+환경 진단으로 보존하며 제품 합격으로 덮어쓰지 않는다. 특정 필터 이름·버전에 분기하거나
+외부 프로그램·보호 설정을 바꾸지 않고, native 프로세스를 유지하는 복구를 먼저 구현한다.
+native 자동 재시작은 현재 복구 범위에 포함하지 않는다.
+
+큰 body를 읽기 전에 거부하면 `net/http`가 keep-alive 요청도 종료할 수 있다.
+[거부 처리](../../go/internal/gateway/errors.go)는 남은 body를 최대 1초·32MiB+1 byte까지만
+버리고 오류를 반환한다. 완전한 bounded body는 같은 연결의 후속 요청을 허용하며, 미완성·초과
+body는 닫는다. 이 데이터는 해석·실행·기록하지 않는다. 추론 입력의 32MiB 제한은 그대로다.
+
+완료된 HTTP/1.1 응답 뒤 연결을 닫아야 하면 `net/http`가 framing을 flush한 후 상대가 먼저
+닫을 기회를 준다. [공통 내장 필터](../../go/internal/httpguard/connection.go)는 실제 socket을
+최대 500ms·32MiB까지만 drain한다. 이전 100ms 상한에서 부하 중 64KiB SSE의 마지막 부분이
+손실된 사례를 반영했다. handler 진입마다 완료 표시를 초기화하고 서버가 닫는 경로도 포함한다.
+gateway 종료 신호는 이미 진행 중인 drain을 중단한다. 응답 전송 전 sleep이나 요청 재시도는 아니다.
+`CloseWrite` 전달만으로 필터 환경의 종료를 보장하지 않으며, 불필요한 종료를 먼저 줄인다.
+전달 여부가 불확실한 요청의 native 재전송도 9절의 정책으로 차단한다.
+
+`httpguard`는 표준 Go 패키지만 사용한다. OS별 build tag·syscall·driver 설정에 의존하지
+않으며, Windows 제품 검증과 공통 패키지의 다른 OS 검증을 구분한다. HTTP 파서가 handler
+진입 전에 만드는 400·431·501 응답에도 본문 길이를 지정하여 연결 종료에 의존하지 않게 한다.
+요청 검증·거부 상태와 본문은 유지한다. 이미 끊어진 TCP 연결을 복구하거나 backend를
+자동 재실행하는 계층은 아니다.
+
+[제품 경로 회귀 검사](../../go/internal/gateway/connection_test.go)와
+[이전 보호 On 검수 기록](../../verification/v031-transport-20260922/REPORT.md)을 보존한다.
+현재 13단계 native 대조·실제 backend TUI·수정 제거 검증은
+`verification/v031-review-fixes-20260922/batch-02/REPORT.md`에 기록한다.
+
 ## 7. 프로토콜 변환
 
 거대한 범용 canonical framework를 만들지 않는다. Messages 입력 ↔ Codex wire ↔ Codex events ↔ Claude 출력 사이의 명시적 변환만 둔다. protocol DTO와 domain state를 섞지 않는다.
@@ -128,6 +185,28 @@ text·system instruction·role·image/document·tool 정의·tool_use/tool_resul
 
 optional enum을 강제로 채우거나 의미 있는 사용자 선택을 "default 정리"로 지우지 않는다. upstream의 strict schema에 맞춘다는 이유로 optional field를 required로 만들거나 임의 enum/default를 추가하지 않는다.
 
+### 7.1. usage·예방 압축·명시적 계수
+
+일반 생성과 압축은 원격 사전 계수(`InputCounter.Count`)를 호출하지 않는다. 완료된 backend의
+실제 input/output usage를 요청·agent별로 기록하며, usage를 받지 못한 취소·실패는 `unknown`이다.
+cached input과 reasoning output을 각각의 상위 usage에 다시 더하지 않는다.
+
+예방 압축은 마지막 실측 usage와 변경분의 저비용 추정을 사용한다. 이 추정은 새 입력의 정확한
+토큰 수나 엄격한 입장 상한이 아니다. 압축 성공 후 이전 전체 문맥의 usage anchor를 버리며,
+압축 직후 미디어 요청의 미관측 초과를 이유로 이전 입력량을 최소값으로 이월하지 않는다.
+
+`/v1/messages/count_tokens`는 별도 capability다. 검증된 입력·모델의 계수 또는 동일 요청의
+실제 usage 캐시만 사용한다. tool-output 이미지/PDF의 warmup 계수는 미지원이며, 그 비교의
+불일치를 일반 생성·압축의 필수 미해결 결함으로 분류하지 않는다. 선택적 계수와 실제 usage가
+다르면 계수 캐시를 무효화하고 실제 usage로 보정하되 유효한 생성 응답은 보존한다.
+정확 계수 지원 확대는 별도 작업이며 현행 생성·압축의 완료 조건이 아니다.
+선택적 계수도 생성과 같은 요청 class로 압축 여부를 판정한다. `auxiliary`의 본문이 압축
+템플릿과 닮았다는 이유만으로 압축을 요구하지 않으며, 진단에 해당 class를 보존한다.
+
+채택 배경·추정식·캐시와 복구의 상세 경계는
+[S46 채택 정책](../../verification/release-repair-20260920/POLICY-REVIEW.md), 현재 검증 상태는
+[COMPATIBILITY.md](COMPATIBILITY.md)가 기록한다.
+
 ## 8. SSE·전달 barrier
 
 ```text
@@ -146,6 +225,19 @@ text는 검증된 event 범위에서 streaming할 수 있다. **부작용을 유
 SSE parser는 byte 경계가 UTF-8 문자·JSON token·CRLF·빈 줄 가운데에서 끊겨도 동작해야 한다. 64 KiB를 넘는 합법 event를 기본 scanner limit 때문에 자르지 않되 무제한 buffer도 허용하지 않는다. frame·event count·총 bytes·최대 depth·idle·총 요청 budget은 명시적 configuration schema로 관리하고 단위를 구분하며 overflow를 검사한다.
 
 terminal 이벤트·`[DONE]`·중복 완료·완료 이후 trailing data·비정상 EOF의 의미를 backend 계약으로 고정한다. terminal을 봤다는 이유로 뒤의 프로토콜 위반을 정상 처리하지 않는다.
+
+`StreamEnd`는 모든 relay 반환 경로에서 마지막 read 오류, client context, terminal 관측,
+event 수와 읽은 byte 수를 기록한다. 파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
+있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
+socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.
+
+검증된 native 회차의 대기 자식, 방금 반환된 Workflow 실행, 루트 완료 알림에만 빈 응답
+제어를 허용한다. TUI는 무출력 대기를 유지한다. SDK는 빈 메시지를 재요청하거나 알림 뒤
+메시지 부재를 실행 오류로 처리하므로 `[Clauduct]` 출처의 짧은 대기·알림 상태를 전달한다.
+이 상태는 backend 답변·자식 보고서·업무 성공이 아니다. SDK의 실제 본문과 도구는 보존하고,
+후속 실행은 native의 기존 완료 알림에 맡긴다. 별도 상태 확인용 모델 호출을 만들지 않는다.
+빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
+자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
 
 다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. connect/header/idle/overall/user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
 
@@ -166,6 +258,25 @@ terminal 이벤트·`[DONE]`·중복 완료·완료 이후 trailing data·비정
 | user cancel | retry 금지 |
 
 "text가 아직 없다"만으로 재시도 안전성을 추정하지 않는다.
+
+v0.3.1의 native 경로는 session·agent·turn·step으로 대화 실행 소유권을 메모리에 예약한다.
+같은 step에서 body나 대화 class를 바꿔도 두 번째 실행·대기 결정 쓰기를 허용하지 않는다.
+별도 compaction·독립 auxiliary·step 없는 경로는 class와 원문 body의 SHA-256도 구분한다.
+동일 실행의 진행 중·완료 후·취소 후 재전송은 선택과 결과 변경 전에
+`NATIVE_REQUEST_REPLAY_BLOCKED`로 거부한다. 본문이나 지문을 로그·journal에 저장하지 않는다.
+새 native step과 명시적인 새 turn은 구분한다. `--bare`처럼 turn 정보가 없으면 동일 입력은
+세션 전체에서 사용된 것으로 보존하며, 식별 정보 부재를 재실행 허가로 삼지 않는다.
+
+transport 호출 이후의 불확실한 실패는 예약을 유지한다. backend가 실행되지 않았음이 명확한
+로컬 사전 거부(`NO_UPSTREAM_TRANSPORT`, `REQUEST_BUDGET`, `ROUTE_NOT_AUTHORISED`)만 해제한다.
+추론·검색 transport 호출 직전에 취소가 이미 확인되면 호출하지 않고 예약을 해제한다.
+따라서 실행 전 취소된 입력은 새 연결에서 사용할 수 있지만, 호출 이후의 취소를 같은 조건으로
+오인하여 재실행을 허용하지 않는다.
+독립적인 root auxiliary 요청은 대화 turn의 게시와 분리하되 같은 재전송 방지를 적용한다.
+실행 기록은 세션당 16,384개로 제한하고, 한도에서 과거 기록을 지워 재실행을 허용하지 않는다.
+이 보호는 native 이벤트 경로가 구성된 제품 세션에 적용하며 gateway 내부 재시도는 계속 0이다.
+429도 원인 분류이며 재실행 허가는 아니다. transport 시도 뒤 같은 step은 거부하고,
+사용자의 명시적인 새 turn은 별도 실행으로 처리한다.
 
 ## 10. upstream·인증
 

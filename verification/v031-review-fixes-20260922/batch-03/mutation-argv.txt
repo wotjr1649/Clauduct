@@ -1,0 +1,22 @@
+=== RUN   TestCombinedShortOptionBoundaries
+    argv_native_test.go:41: ["-cp" "--settings={}"]: end=1 known=false, want 1 true
+    argv_native_test.go:41: ["-pv" "--settings={}"]: end=1 known=false, want 1 true
+    argv_native_test.go:41: ["-pdapi" "--settings={}"]: end=1 known=false, want 1 true
+    argv_native_test.go:41: ["-pnPUBLIC" "--settings={}"]: end=1 known=false, want 1 true
+    argv_native_test.go:41: ["-pn" "--settings={}"]: end=1 known=false, want 2 true
+    argv_native_test.go:41: ["-pn"]: end=1 known=false, want 2 true
+    argv_native_test.go:41: ["-cr" "--settings={}"]: end=1 known=false, want 1 true
+    argv_native_test.go:41: ["-cr" "PUBLIC" "--settings={}"]: end=1 known=false, want 2 true
+    argv_native_test.go:41: ["-crw" "--settings={}"]: end=1 known=false, want 1 true
+    argv_native_test.go:46: settings after -cp: slots=[] err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file
+    argv_native_test.go:50: role after -cp: ROLE_DEFAULTS_UNVERIFIED
+    argv_native_test.go:46: settings after -pv: slots=[] err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file
+    argv_native_test.go:50: role after -pv: ROLE_DEFAULTS_UNVERIFIED
+    argv_native_test.go:46: settings after -pdapi: slots=[] err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file
+    argv_native_test.go:50: role after -pdapi: ROLE_DEFAULTS_UNVERIFIED
+    argv_native_test.go:46: settings after -pnPUBLIC: slots=[] err=SETTINGS_INVALID: expected one bounded JSON object or regular JSON file
+    argv_native_test.go:50: role after -pnPUBLIC: ROLE_DEFAULTS_UNVERIFIED
+--- FAIL: TestCombinedShortOptionBoundaries (0.00s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	0.099s
+FAIL

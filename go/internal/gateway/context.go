@@ -100,8 +100,9 @@ func (g *Gateway) EnableContextPolicy() {
 func contextKey(session, agent string) string { return session + "/" + agent }
 
 // Since native 2.1.273 the authenticated request class distinguishes tool-less
-// conversations from title/classifier side calls. Older clients use the measured
-// tool/template fallback and retain its explicitly reported limitations.
+// conversations from title/classifier side calls. Production context policy
+// requires that capability at message admission. The tool/template fallback is
+// only for gateways without context policy; it is not older-client support.
 func conversationRequest(r *http.Request, request *anthropic.Request) bool {
 	switch r.Header.Get("X-Claude-Code-Request-Class") {
 	case "main", "subagent", "workflow", "compaction":
@@ -194,14 +195,11 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"ticket": ticket})
 }
 
-// beginContext pins a compaction to the preceding route, including effort. No
-// lock is held over counting, inference or delivery; independent agents proceed.
+// beginContext retains the preceding route and caps only a verified automatic
+// compaction's effective effort. No lock is held over inference or delivery.
 func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entry *record, override []bridge.Route) ([]bridge.Route, func(), string) {
 	if g.contexts == nil {
 		return override, func() {}, ""
-	}
-	if r.Header.Get("X-Claude-Code-Request-Class") == "" {
-		return override, func() {}, "CONTEXT_REQUEST_CLASS_UNVERIFIED"
 	}
 	nativeCompact := r.Header.Get("X-Claude-Code-Request-Class") == "compaction"
 	compact := nativeCompact || bridge.IsCompaction(request)
@@ -260,44 +258,34 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 		return override, func() {}, "CONTEXT_COMPACTION_FAILED"
 	}
 	if compact {
-		ticket := ""
-		for _, message := range request.Messages {
-			if message.Role != "user" {
-				continue
-			}
-			for _, block := range message.Blocks {
-				if block.Type == "text" {
-					if match := compactTicketPattern.FindStringSubmatch(block.Text); len(match) == 2 {
-						ticket = match[1]
-					}
-				}
-			}
-		}
-		receipt, found := c.tickets[ticket]
-		validReceipt := found && receipt.session == session && (receipt.agent == "" || receipt.agent == agent) && time.Since(receipt.at) <= 5*time.Minute
+		ticket, receipt, validReceipt := g.compactReceipt(session, agent, request)
 		// Only an explicit native /compact event can retry a failed compaction.
 		// An automatic event or a new generation request cannot restart the work.
-		if (s.phase == "failed" || s.phase == "recount") && validReceipt && receipt.trigger == "manual" {
-			s.phase = "required"
+		phase := s.phase
+		if (phase == "failed" || phase == "recount") && validReceipt && receipt.trigger == "manual" {
+			phase = "required"
 		}
-		if (!nativeCompact && !validReceipt) || (s.phase != "" && s.phase != "required") {
+		if (!nativeCompact && !validReceipt) || (phase != "" && phase != "required") {
 			return override, func() {}, "CONTEXT_COMPACTION_UNVERIFIED"
-		}
-		delete(c.tickets, ticket)
-		// Remove local correlation data before counting or contacting the backend.
-		for i := range request.Messages {
-			for j := range request.Messages[i].Blocks {
-				block := &request.Messages[i].Blocks[j]
-				if block.Type == "text" {
-					block.Text = strings.ReplaceAll(block.Text, "[clauduct-compact:"+ticket+"]", "")
-				}
-			}
 		}
 		if s.route.Model != "" {
 			override = []bridge.Route{s.route}
 		}
+		route, err := bridge.ResolveRoute(request, override...)
+		if err != nil {
+			return override, func() {}, "UNSUPPORTED_MODEL_OR_EFFORT"
+		}
+		s.route = route
+		override = []bridge.Route{compactRoute(route, validReceipt && receipt.trigger == "auto")}
+		if validReceipt {
+			delete(c.tickets, ticket)
+		}
+		stripCompactReceipts(request)
 		s.phase = "compacting"
 		if g.saveContext(s) != nil {
+			// No inference started and no finish callback will run. Keep recovery
+			// explicit, as for an interrupted compaction restored from the journal.
+			s.phase = "failed"
 			return override, func() {}, "CONTEXT_JOURNAL_FAILED"
 		}
 		entry.kind("compaction")

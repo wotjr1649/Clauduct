@@ -1,0 +1,163 @@
+--- FAIL: TestReplacementConnectionCancelsUndispatchedBody (5.58s)
+    v1_regression_test.go:138: request drain stacks:
+        goroutine 8 [running]:
+        github.com/wotjr1649/Clauduct/go/internal/gateway.waitForActive(0x35d197a48600, 0x35d197a62808, 0x0, {0x7ff6ebbdbe96, 0x15})
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/gateway/gateway_test.go:101 +0xfb
+        github.com/wotjr1649/Clauduct/go/internal/gateway.TestReplacementConnectionCancelsUndispatchedBody(0x35d197a48600)
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/gateway/v1_regression_test.go:138 +0x9e5
+        testing.tRunner(0x35d197a48600, 0x7ff6ec574038)
+        	C:/Program Files/Go/src/testing/testing.go:2193 +0xc3
+        created by testing.(*T).Run in goroutine 1
+        	C:/Program Files/Go/src/testing/testing.go:2258 +0x4b4
+        
+        goroutine 1 [chan receive]:
+        testing.(*T).Run(0x35d197a48400, {0x7ff6ebbffe12?, 0x35d197c5faa8?}, 0x7ff6ec574038)
+        	C:/Program Files/Go/src/testing/testing.go:2266 +0x4d2
+        testing.runTests.func1(0x35d197a48400)
+        	C:/Program Files/Go/src/testing/testing.go:2742 +0x37
+        testing.tRunner(0x35d197a48400, 0x35d197c5fbc8)
+        	C:/Program Files/Go/src/testing/testing.go:2193 +0xc3
+        testing.runTests({0x7ff6ebbf01ff, 0x20}, {0x7ff6ebc00bff, 0x31}, 0x35d197a502a0, {0x7ff6ec5e74b0, 0x131, 0x131}, {0xc2a4c75e088cbba0, 0x4a861ac05, ...})
+        	C:/Program Files/Go/src/testing/testing.go:2740 +0x505
+        testing.(*M).Run(0x35d197aef2c0)
+        	C:/Program Files/Go/src/testing/testing.go:2600 +0x6af
+        main.main()
+        	_testmain.go:662 +0x9b
+        
+        goroutine 9 [IO wait]:
+        internal/poll.runtime_pollWait(0x29be5ecf000, 0x72)
+        	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+        internal/poll.(*pollDesc).wait(0x35d100000074?, 0x7ff6eb592269?, 0x0)
+        	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+        internal/poll.(*FD).waitIO(0x35d197cda000, 0x35d197d16000)
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:233 +0x3d
+        internal/poll.(*FD).execIO(0x35d197cda000, 0x72, 0x35d197ae3ab8, {0x0, 0x0, 0x7ff600000000?})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:310 +0x27e
+        internal/poll.(*FD).acceptOne(0x35d197cda000, 0x1e0, {0x35d197b1e000?, 0x35d197ae3b78?, 0x7ff6eb601e63?})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:1111 +0x85
+        internal/poll.(*FD).Accept(0x35d197cda000, 0x35d197ae3ca0)
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:1146 +0x18d
+        net.(*netFD).accept(0x35d197cda000)
+        	C:/Program Files/Go/src/net/fd_windows.go:201 +0x4b
+        net.(*TCPListener).accept(0x35d197ae8d80)
+        	C:/Program Files/Go/src/net/tcpsock_posix.go:159 +0x1b
+        net.(*TCPListener).Accept(0x35d197ae8d80)
+        	C:/Program Files/Go/src/net/tcpsock.go:387 +0x30
+        github.com/wotjr1649/Clauduct/go/internal/httpguard.responseListener.Accept({{0x7ff6ec571f10, 0x35d197ae8d80}, {0x7ff6ec572350, 0x35d197ba0b40}, 0x2000000})
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/httpguard/connection.go:75 +0x39
+        net/http.(*Server).Serve(0x35d197bad040, {0x7ff6ec571fd0, 0x35d197d04000})
+        	C:/Program Files/Go/src/net/http/server.go:3551 +0x379
+        github.com/wotjr1649/Clauduct/go/internal/httpguard.Serve(0x35d197bad040, {0x7ff6ec571f10, 0x35d197ae8d80}, {0x7ff6ec572350, 0x35d197ba0b40}, 0x2000000)
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/httpguard/connection.go:63 +0x24e
+        github.com/wotjr1649/Clauduct/go/internal/gateway.Start.func2()
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/gateway/gateway.go:178 +0x45
+        created by github.com/wotjr1649/Clauduct/go/internal/gateway.Start in goroutine 8
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/gateway/gateway.go:177 +0x772
+        
+        goroutine 10 [IO wait]:
+        internal/poll.runtime_pollWait(0x29be5ecec00, 0x72)
+        	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+        internal/poll.(*pollDesc).wait(0x7ff6eb5c9f01?, 0x7ff600000001?, 0x0)
+        	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+        internal/poll.(*FD).waitIO(0x35d197cda1c0, 0x35d197e28000)
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:233 +0x3d
+        internal/poll.(*FD).execIO(0x35d197cda1c0, 0x72, 0x35d197e26ec8, {0x35d197e26e88, 0x1, 0x0?})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:310 +0x27e
+        internal/poll.(*FD).Read(0x35d197cda1c0, {0x35d197e1a000, 0x1000, 0x1000})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:611 +0x21f
+        net.(*netFD).Read(0x35d197cda1c0, {0x35d197e1a000?, 0x35d197e26f48?, 0x35d197e26f90?})
+        	C:/Program Files/Go/src/net/fd_posix.go:68 +0x25
+        net.(*conn).Read(0x35d197a4c200, {0x35d197e1a000?, 0x7ff6eb5548da?, 0x7ff6ec5ecd20?})
+        	C:/Program Files/Go/src/net/net.go:196 +0x45
+        net/http.(*connReader).Read(0x35d197e12000, {0x35d197e1a000, 0x1000, 0x1000})
+        	C:/Program Files/Go/src/net/http/server.go:856 +0x150
+        bufio.(*Reader).Read(0x35d197e18000, {0x35d197e4a034, 0x34, 0x7ff6eb5652bc?})
+        	C:/Program Files/Go/src/bufio/bufio.go:245 +0x193
+        io.(*LimitedReader).Read(0x35d197e3e000, {0x35d197e4a034?, 0x29be60d0dc8?, 0x7ff6ec51dc60?})
+        	C:/Program Files/Go/src/io/io.go:479 +0x43
+        net/http.(*body).readLocked(0x35d197e0e050, {0x35d197e4a034?, 0x32?, 0x10101f6eb5b6c13?})
+        	C:/Program Files/Go/src/net/http/transfer.go:857 +0x3b
+        net/http.(*body).Read(0x35d197e27188?, {0x35d197e4a034?, 0x7ff6eb5bad29?, 0x200?})
+        	C:/Program Files/Go/src/net/http/transfer.go:849 +0x109
+        net/http.(*maxBytesReader).Read(0x35d197e12140, {0x35d197e4a034?, 0x7ff6ec5ecd20?, 0x7ff6ec5ed2a0?})
+        	C:/Program Files/Go/src/net/http/request.go:1248 +0x5f
+        io.ReadAll({0x29be60d4128, 0x35d197e12140})
+        	C:/Program Files/Go/src/io/io.go:722 +0x10d
+        github.com/wotjr1649/Clauduct/go/internal/gateway.(*Gateway).handleMessages(0x35d197a62808, {0x7ff6ec571cd0, 0x35d197e0c120}, 0x35d197e1e000)
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/gateway/messages.go:79 +0x4ea
+        github.com/wotjr1649/Clauduct/go/internal/gateway.(*Gateway).handle(0x35d197a62808, {0x7ff6ec571ee0, 0x35d197e44000}, 0x35d197e1e000)
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/gateway/gateway.go:408 +0x3f6
+        net/http.HandlerFunc.ServeHTTP(0x0?, {0x7ff6ec571ee0?, 0x35d197e44000?}, 0x6?)
+        	C:/Program Files/Go/src/net/http/server.go:2338 +0x29
+        github.com/wotjr1649/Clauduct/go/internal/httpguard.Serve.func1({0x7ff6ec571ee0, 0x35d197e44000}, 0x35d197e1e000)
+        	D:/AIDEV/Clauduct/.tmp/release-v031-20260922/candidate/go/internal/httpguard/connection.go:43 +0xb3
+        net/http.HandlerFunc.ServeHTTP(0x7ff6eb880a80?, {0x7ff6ec571ee0?, 0x35d197e44000?}, 0x35d197e27ae8?)
+        	C:/Program Files/Go/src/net/http/server.go:2338 +0x29
+        net/http.serverHandler.ServeHTTP({0x10?}, {0x7ff6ec571ee0?, 0x35d197e44000?}, 0x1?)
+        	C:/Program Files/Go/src/net/http/server.go:3413 +0x8e
+        net/http.(*conn).serve(0x35d197c80240, {0x7ff6ec572318, 0x35d197cd86c0})
+        	C:/Program Files/Go/src/net/http/server.go:2137 +0x6dc
+        created by net/http.(*Server).Serve in goroutine 9
+        	C:/Program Files/Go/src/net/http/server.go:3581 +0x4fd
+        
+        goroutine 19 [IO wait]:
+        internal/poll.runtime_pollWait(0x29be5ecea00, 0x72)
+        	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+        internal/poll.(*pollDesc).wait(0x35d197d85a01?, 0x35d100000001?, 0x0)
+        	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+        internal/poll.(*FD).waitIO(0x35d197e54000, 0x35d197cc6e70)
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:233 +0x3d
+        internal/poll.(*FD).execIO(0x35d197e54000, 0x72, 0x35d197d85bf8, {0x35d197d85bb8, 0x1, 0x0?})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:310 +0x27e
+        internal/poll.(*FD).Read(0x35d197e54000, {0x35d197e56000, 0x1000, 0x1000})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:611 +0x21f
+        net.(*netFD).Read(0x35d197e54000, {0x35d197e56000?, 0x7ff6eb53593c?, 0x7ff6ec4cbab8?})
+        	C:/Program Files/Go/src/net/fd_posix.go:68 +0x25
+        net.(*conn).Read(0x35d197e02030, {0x35d197e56000?, 0x35d197e0c2d0?, 0x7ff6ec4cb1b0?})
+        	C:/Program Files/Go/src/net/net.go:196 +0x45
+        net/http.(*persistConn).Read(0x35d197e1e3c0, {0x35d197e56000?, 0x7ff6ec56ed78?, 0x7ff6ec5d0100?})
+        	C:/Program Files/Go/src/net/http/transport.go:2300 +0x47
+        bufio.(*Reader).fill(0x35d197e180c0)
+        	C:/Program Files/Go/src/bufio/bufio.go:113 +0x103
+        bufio.(*Reader).Peek(0x35d197e180c0, 0x1)
+        	C:/Program Files/Go/src/bufio/bufio.go:152 +0x52
+        net/http.(*persistConn).readLoop(0x35d197e1e3c0)
+        	C:/Program Files/Go/src/net/http/transport.go:2483 +0x172
+        created by net/http.(*Transport).dialConn in goroutine 18
+        	C:/Program Files/Go/src/net/http/transport.go:2123 +0x1da5
+        
+        goroutine 20 [select]:
+        net/http.(*persistConn).writeLoop(0x35d197e1e3c0)
+        	C:/Program Files/Go/src/net/http/transport.go:2810 +0xe6
+        created by net/http.(*Transport).dialConn in goroutine 18
+        	C:/Program Files/Go/src/net/http/transport.go:2124 +0x1e05
+        
+        goroutine 34 [IO wait]:
+        internal/poll.runtime_pollWait(0x29be5ece800, 0x72)
+        	C:/Program Files/Go/src/runtime/netpoll.go:351 +0x85
+        internal/poll.(*pollDesc).wait(0x35d197e97701?, 0x7ff600000001?, 0x0)
+        	C:/Program Files/Go/src/internal/poll/fd_poll_runtime.go:84 +0x27
+        internal/poll.(*FD).waitIO(0x35d197b0a000, 0x35d197cc6ea0)
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:233 +0x3d
+        internal/poll.(*FD).execIO(0x35d197b0a000, 0x72, 0x35d197e97998, {0x35d197e97958, 0x1, 0x35d197e97940?})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:310 +0x27e
+        internal/poll.(*FD).Read(0x35d197b0a000, {0x35d197d8a000, 0x1000, 0x1000})
+        	C:/Program Files/Go/src/internal/poll/fd_windows.go:611 +0x21f
+        net.(*netFD).Read(0x35d197b0a000, {0x35d197d8a000?, 0x7ff6eb6022a0?, 0x35d197b0a000?})
+        	C:/Program Files/Go/src/net/fd_posix.go:68 +0x25
+        net.(*conn).Read(0x35d197b02008, {0x35d197d8a000?, 0x0?, 0x72?})
+        	C:/Program Files/Go/src/net/net.go:196 +0x45
+        net/http.(*connReader).Read(0x35d197ae8f80, {0x35d197d8a000, 0x1000, 0x1000})
+        	C:/Program Files/Go/src/net/http/server.go:856 +0x150
+        bufio.(*Reader).fill(0x35d197aec2a0)
+        	C:/Program Files/Go/src/bufio/bufio.go:113 +0x103
+        bufio.(*Reader).Peek(0x35d197aec2a0, 0x4)
+        	C:/Program Files/Go/src/bufio/bufio.go:152 +0x52
+        net/http.(*conn).serve(0x35d197b12000, {0x7ff6ec572318, 0x35d197b0e060})
+        	C:/Program Files/Go/src/net/http/server.go:2173 +0x833
+        created by net/http.(*Server).Serve in goroutine 9
+        	C:/Program Files/Go/src/net/http/server.go:3581 +0x4fd
+    v1_regression_test.go:138: active = 1, want 0 (partial body replaced)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	5.734s
+FAIL

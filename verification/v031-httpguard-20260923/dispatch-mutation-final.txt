@@ -1,0 +1,5 @@
+--- FAIL: TestNativeRequestReservationReleasesOnlyBeforeDispatch (0.02s)
+    request_replay_test.go:160: cancelled reservation crossed dispatch boundary
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.167s
+FAIL

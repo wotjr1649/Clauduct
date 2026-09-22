@@ -57,9 +57,9 @@ type Overlay struct {
 	Effort string
 	// Settings is a settings blob to hand the child, or empty for none.
 	//
-	// It goes ahead of the forwarded arguments, which is the only ordering that could work:
-	// measured, a second --settings replaces the first rather than merging. App consumes
-	// and merges the user's settings first, so production passes exactly one argument.
+	// Native takes the last --settings. App merges the user's last source and replaces
+	// every actual settings slot in place to preserve argv boundaries. It supplies this
+	// prefix only when no user settings option exists.
 	Settings string
 	// Agents is the delegation menu to hand the child, or empty for none.
 	//
@@ -98,11 +98,9 @@ func denied(key string) bool {
 
 // Build produces the launch spec.
 //
-// forward is copied verbatim. There is no argument parser here and there must not be one:
-// the product launcher owns no option, so no value can be mistaken for one. That is what
-// makes `--append-system-prompt "--model is a string"` safe, and it is also why a future
-// decision to refuse some native options has to be a deliberate, separately tested
-// addition rather than a side effect of having a parser lying around.
+// forward is copied verbatim after the overlay prefix. App applies Refused and
+// merges settings before calling Build; this pure builder does neither.
+// The product CLI contract is owned by docs/v2/ARCHITECTURE.md section 4.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
 	args := make([]string, 0, len(forward)+6)
 	if overlay.Effort != "" {

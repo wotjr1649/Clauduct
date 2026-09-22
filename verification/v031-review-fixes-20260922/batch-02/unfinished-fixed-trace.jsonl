@@ -1,0 +1,10 @@
+{"at":1790066708473599100,"closing":false,"conn":"0x310660924000","error":"","event":"read","finished":false,"n":74}
+{"at":1790066709474383300,"closing":false,"conn":"0x310660924000","error":"read tcp 127.0.0.1:2798-\u003e127.0.0.1:2799: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790066709474383300,"closing":false,"conn":"0x310660924000","event":"write_start","finished":true,"n":229}
+{"at":1790066709474383300,"closing":false,"conn":"0x310660924000","error":"","event":"write_end","finished":true,"n":229}
+{"at":1790066709474383300,"closing":false,"conn":"0x310660924000","event":"half_close_start","finished":true}
+{"at":1790066709474383300,"closing":false,"conn":"0x310660924000","event":"drain_start","finished":true}
+{"at":1790066709574690600,"closing":true,"conn":"0x310660924000","error":"read tcp 127.0.0.1:2798-\u003e127.0.0.1:2799: i/o timeout","event":"drain_end","finished":true,"n":0}
+{"at":1790066709574690600,"closing":true,"conn":"0x310660924000","event":"half_close_end","finished":true}
+{"at":1790066710075003300,"closing":true,"conn":"0x310660924000","event":"close_start","finished":true}
+{"at":1790066710075003300,"closing":true,"conn":"0x310660924000","event":"close_end","finished":true}

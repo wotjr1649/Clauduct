@@ -251,6 +251,18 @@ func TestAMenuEntryResolvesToWhatItsNameSays(t *testing.T) {
 }
 
 // A role that inherits is known, and is not the same answer as a role nobody has looked at.
+func TestCanonicalRolePreservesNamesOutsideTheBuiltinTables(t *testing.T) {
+	for role, want := range map[string]string{
+		"pLaN": "Plan", "EXPLORE": "Explore", "General-Purpose": "general-purpose",
+		"WORKFLOW-SUBAGENT": "workflow-subagent", "Fork": "fork", "Clauduct-inherit": InheritRole,
+		"Custom-Reviewer": "Custom-Reviewer", "CLAUDUCT-TERRA-HIGH": "CLAUDUCT-TERRA-HIGH",
+	} {
+		if got := CanonicalRole(role); got != want {
+			t.Errorf("%q canonicalized to %q, want %q", role, got, want)
+		}
+	}
+}
+
 func TestAnInheritingRoleIsKnownWithoutHavingARoute(t *testing.T) {
 	if !InheritsParent("workflow-subagent") {
 		t.Error("the role every Workflow agent reports is not recognised")

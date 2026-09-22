@@ -14,8 +14,8 @@ import (
 
 func TestUserSettingsKeepUserHooksAndRequiredBindings(t *testing.T) {
 	args := []string{"-p", "mention --settings safely", "--settings", `{"theme":"dark","integer":9007199254740993,"hooks":{"SubagentStart":[{"matcher":"reviewer","hooks":[{"type":"command","command":"public-user-hook"}]}]}}`, "--setting-sources", "user,project"}
-	forward, user, err := takeUserSettings(args, t.TempDir())
-	if err != nil || !reflect.DeepEqual(forward, []string{"-p", "mention --settings safely", "--setting-sources", "user,project"}) {
+	forward, user, slots, err := takeUserSettings(args, t.TempDir())
+	if err != nil || !reflect.DeepEqual(slots, []int{2}) || !reflect.DeepEqual(forward, []string{"-p", "mention --settings safely", "--settings=" + args[3], "--setting-sources", "user,project"}) {
 		t.Fatal("settings extraction changed unrelated arguments", err)
 	}
 	required, _ := sessionSettings("C:/public/clauduct-hook.exe")
@@ -42,9 +42,103 @@ func TestUserSettingsFileAndLastOccurrence(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "public.json"), []byte(`{"theme":"light"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
-	_, user, err := takeUserSettings([]string{"--settings=missing.json", "--settings", "public.json"}, dir)
+	_, user, _, err := takeUserSettings([]string{"--settings=missing.json", "--settings", "public.json"}, dir)
 	if err != nil || string(user["theme"]) != `"light"` {
 		t.Fatal("last settings source not used", err)
+	}
+}
+
+func TestUserSettingsArgumentBoundaries(t *testing.T) {
+	const settings = `{"theme":"dark"}`
+	const s = "--settings=" + settings
+	for _, test := range []struct {
+		name              string
+		args, forward     []string
+		settings, invalid bool
+	}{
+		{"terminator", []string{"-p", "--", "--settings", settings}, []string{"-p", "--", "--settings", settings}, false, false},
+		{"required_value", []string{"--append-system-prompt", "--settings", "-p", "proof"}, []string{"--append-system-prompt", "--settings", "-p", "proof"}, false, false},
+		{"value_then_option", []string{"--append-system-prompt", "--settings", "-p", "proof", s}, []string{"--append-system-prompt", "--settings", "-p", "proof", s}, true, false},
+		{"terminator_as_value", []string{"--append-system-prompt", "--", "--settings", settings}, []string{"--append-system-prompt", "--", s}, true, false},
+		{"attached_value", []string{"--append-system-prompt=--settings", "--settings", settings}, []string{"--append-system-prompt=--settings", s}, true, false},
+		{"optional_absent", []string{"--debug", "--settings", settings}, []string{"--debug", s}, true, false},
+		{"optional_present", []string{"--debug", "api", "--settings", settings}, []string{"--debug", "api", s}, true, false},
+		{"variadic", []string{"--tools", "Read", "Glob", "--settings", settings}, []string{"--tools", "Read", "Glob", s}, true, false},
+		{"short_value", []string{"-n", "--settings", "--settings", settings}, []string{"-n", "--settings", s}, true, false},
+		{"after_prompt", []string{"-p", "proof", "--settings", settings}, []string{"-p", "proof", s}, true, false},
+		{"print_is_boolean", []string{"-p", "--settings"}, nil, false, true},
+		{"unknown_boundary", []string{"--future-option", "--settings", settings}, nil, false, true},
+		{"unknown_consumes_terminator", []string{"--future-option", "--", "--settings", settings}, nil, false, true},
+		{"unknown_consumes_option_name", []string{"--future-option", "--name", "--settings", settings}, nil, false, true},
+		{"unknown_without_settings", []string{"--future-option", "proof"}, []string{"--future-option", "proof"}, false, false},
+		{"unknown_after_terminator", []string{"--", "--future-option", "--settings"}, []string{"--", "--future-option", "--settings"}, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			forward, user, slots, err := takeUserSettings(test.args, t.TempDir())
+			if test.invalid {
+				if !errors.Is(err, errUserSettings) {
+					t.Fatalf("expected settings refusal, got %v", err)
+				}
+				return
+			}
+			if err != nil || !reflect.DeepEqual(forward, test.forward) || (user != nil) != test.settings || (len(slots) > 0) != test.settings {
+				t.Fatalf("forward=%q settings=%v err=%v", forward, user != nil, err)
+			}
+		})
+	}
+	// A required value may start with '--'; file validation, not its spelling,
+	// decides whether it is a settings source.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "--public.json"), []byte(settings), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, user, _, err := takeUserSettings([]string{"--settings", "--public.json"}, dir)
+	if err != nil || string(user["theme"]) != `"dark"` {
+		t.Fatalf("option-shaped file: %v", err)
+	}
+}
+
+func TestUserSettingsLiteralTokensReachChild(t *testing.T) {
+	for _, args := range [][]string{
+		{"--append-system-prompt", "--settings", "-p", "proof"},
+		{"-p", "--", "--settings", `{"disableAllHooks":true}`},
+	} {
+		s := runSession(t, sessionOptions{args: args})
+		argv := s.report.Argv
+		if s.err != nil || len(argv) < len(args) || !reflect.DeepEqual(argv[len(argv)-len(args):], args) {
+			t.Fatalf("literal argv did not reach child: err=%v", s.err)
+		}
+	}
+}
+
+func TestUserSettingsMergedAtEveryOriginalBoundary(t *testing.T) {
+	args := []string{"--debug", "--settings=missing.json", "proof", "--settings", `{"theme":"dark"}`, "-p"}
+	s := runSession(t, sessionOptions{args: args})
+	if s.err != nil {
+		t.Fatal(s.err)
+	}
+	var merged string
+	count := 0
+	for _, arg := range s.report.Argv {
+		if value, ok := strings.CutPrefix(arg, "--settings="); ok {
+			if count != 0 && merged != value {
+				t.Fatal("settings slots disagree")
+			}
+			merged = value
+			count++
+		}
+	}
+	var settings struct {
+		Theme       string
+		ModelPicker *modelPicker
+	}
+	if count != 2 || json.Unmarshal([]byte(merged), &settings) != nil || settings.Theme != "dark" || settings.ModelPicker == nil {
+		t.Fatal("last user source or required settings lost")
+	}
+	want := []string{"--debug", "--settings=" + merged, "proof", "--settings=" + merged, "-p"}
+	argv := s.report.Argv
+	if len(argv) < len(want) || !reflect.DeepEqual(argv[len(argv)-len(want):], want) {
+		t.Fatal("settings rewrite removed an option boundary")
 	}
 }
 
@@ -57,7 +151,7 @@ func TestUserSettingsRejectAmbiguityAndConnectionReplacement(t *testing.T) {
 		`{"env":{"CLAUDE_CODE_ENABLE_FUNCTION_HOOKS":"0"}}`,
 		`{"modelPicker":{"replaceBuiltInOptions":false}}`,
 	} {
-		_, user, err := takeUserSettings([]string{"--settings=" + value}, t.TempDir())
+		_, user, _, err := takeUserSettings([]string{"--settings=" + value}, t.TempDir())
 		if err == nil {
 			required, _ := sessionSettings("public-hook")
 			_, err = mergeUserSettings(required, user)
@@ -67,7 +161,7 @@ func TestUserSettingsRejectAmbiguityAndConnectionReplacement(t *testing.T) {
 		}
 	}
 	for _, args := range [][]string{{"--settings"}, {"--settings", "--model"}, {"--settings="}} {
-		if _, _, err := takeUserSettings(args, t.TempDir()); err == nil {
+		if _, _, _, err := takeUserSettings(args, t.TempDir()); err == nil {
 			t.Fatal("missing settings accepted")
 		}
 	}

@@ -44,17 +44,9 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	}
 	var def roleDefault
 	found := false
-	// A definition this scan could not read is not a reason to lose the definitions that did
-	// parse, which is what aborting the walk cost. It is a reason not to trust an answer for
-	// the role that file might have held -- and only that role.
-	//
-	// That distinction lives in readRoleDirectory now, which enters an unreadable file into
-	// the same map under the same name a readable one would have taken, marked invalid. The
-	// duplicate rule below it has always meant "two files claim this role and this build will
-	// not pick between them", and an unreadable file claiming it is the same fact. A second
-	// map of names, merged across directories and consulted afterwards, was a parallel
-	// answer to a question this one already had -- and it got the priority reasoning wrong
-	// in both directions.
+	unverified := false
+	// Preserve readable definitions and their precedence. An unreadable ordinary
+	// definition may declare any name, so it cannot prove an unmatched role absent.
 	for i, dir := range s.directories {
 		if i == s.managed {
 			if def, found = s.cli[role]; found {
@@ -64,10 +56,11 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if dir.prefix != "" && !strings.HasPrefix(role, dir.prefix+":") {
 			continue
 		}
-		defs, err := readRoleDirectory(dir)
+		defs, incomplete, err := readRoleDirectory(dir)
 		if err != nil {
 			return bridge.Route{}, false, err
 		}
+		unverified = unverified || incomplete
 		if def, found = defs[role]; found {
 			break
 		}
@@ -76,6 +69,9 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		def, found = s.cli[role]
 	}
 	if !found {
+		if unverified {
+			return bridge.Route{}, false, errRoleDefaults
+		}
 		if strings.Contains(role, ":") && s.pluginError != nil {
 			return bridge.Route{}, false, s.pluginError
 		}
@@ -127,18 +123,11 @@ func boundedRoleFile(path string) ([]byte, error) {
 	return raw, nil
 }
 
-// A per-file failure is not the directory's failure: native skips a definition it cannot
-// read, and aborting the walk here meant one stray markdown file -- a note whose first line
-// happens to be a --- rule, so the frontmatter has no closing fence -- took every valid role
-// beside it down and ended every Agent call in the session with a message that named no
-// file.
-//
-// An unreadable file still enters defs, under the name a readable one would have taken and
-// marked invalid, so the duplicate rule below carries it: resolve refuses that one role and
-// answers every other normally, without a second structure to merge or a priority argument
-// to get wrong.
-func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
+// Return readable definitions, filename claims and whether any names remain
+// unknowable. A partial scan can answer a known role, but cannot prove absence.
+func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, bool, error) {
 	defs := map[string]roleDefault{}
+	incomplete := false
 	count := 0
 	err := filepath.WalkDir(dir.path, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -158,6 +147,7 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 			// counter that moves is deliberately outside noteworthy(). Before the skip
 			// existed that case refused loudly, which is the answer it gets again.
 			if entry != nil && entry.IsDir() && path != dir.path {
+				incomplete = true
 				return nil
 			}
 			return errRoleDefaults
@@ -169,27 +159,15 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 		if entry.IsDir() || !strings.EqualFold(filepath.Ext(path), ".md") {
 			return nil
 		}
-		// The name an unreadable file claims. Frontmatter is what would have said otherwise
-		// and it is exactly what could not be read, so the filename is the only name there
-		// is. It is recorded as a claim on that role, not as a definition of it.
-		//
-		// The base name, which is what a readable file at this path is named from twenty
-		// lines down. Keying the claim on the path relative to the directory instead put the
-		// two derivations in different namespaces: a plugin's unreadable agents/drafts/x.md
-		// claimed "p:drafts/x" while a readable one would have taken "p:x", so the role it
-		// could not vouch for resolved as simply absent and ran on the caller's model.
-		//
-		// This walk recurses, so a stale draft in a subdirectory now claims the stem of the
-		// definition above it and that role is refused. That is the loud answer where the
-		// other was the silent one, which is the direction to be wrong in. Reading only the
-		// directory's own level would remove the question rather than answer it; whether
-		// native scans these trees recursively is not measured here, and the change is not
-		// one to make on an assumption.
+		// Both ordinary and plugin frontmatter may name a different role. Keep
+		// the filename claim and mark unknown names within this directory's
+		// namespace; resolve already skips unrelated plugin namespaces.
 		passedOver := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		if dir.prefix != "" {
 			passedOver = dir.prefix + ":" + passedOver
 		}
 		claim := func() error {
+			incomplete = true
 			if held, seen := defs[passedOver]; !seen || !held.invalid {
 				defs[passedOver] = roleDefault{Name: passedOver, invalid: true}
 			}
@@ -230,7 +208,7 @@ func readRoleDirectory(dir roleDirectory) (map[string]roleDefault, error) {
 		defs[def.Name] = def
 		return nil
 	})
-	return defs, err
+	return defs, incomplete, err
 }
 
 func parseRoleFile(raw []byte) (roleDefault, bool, error) {
@@ -288,16 +266,6 @@ func parseRoleFile(raw []byte) (roleDefault, bool, error) {
 // This read-only scan never changes forwarded argv. Unknown options make --agents
 // discovery unverified rather than misreading a prompt value as a routing policy.
 func roleCLI(args []string, injected string) (map[string]roleDefault, []string, error) {
-	valueOptions := strings.Fields("--add-dir --agent --agents --append-system-prompt --append-system-prompt-file --append-subagent-system-prompt --append-subagent-system-prompt-file --allowedTools --allowed-tools --betas --claude-md-file --debug-file --disallowedTools --disallowed-tools --effort --fallback-model --input-format --json-schema --max-budget-usd --max-turns --mcp-config --model --name --output-format --permission-mode --permission-prompt-tool --plugin-dir --plugin-dir-no-mcp --resume --session-id --settings --setting-sources --system-prompt --system-prompt-file --tools --worktree")
-	values := map[string]bool{}
-	for _, name := range valueOptions {
-		values[name] = true
-	}
-	optional := map[string]bool{"--resume": true, "-r": true, "--worktree": true, "-w": true, "--debug": true, "-d": true, "--remote-control": true, "--teleport": true}
-	flags := map[string]bool{}
-	for _, name := range strings.Fields("-p --print -c --continue --verbose --strict-mcp-config --bare --safe-mode --disable-slash-commands --no-session-persistence --include-partial-messages --replay-user-messages --debug-to-stderr --mcp-debug --no-chrome --chrome --ide --fork-session --version -v --help -h --forward-subagent-text") {
-		flags[name] = true
-	}
 	hasCLI := false
 	for _, arg := range args {
 		if arg == "--agents" || strings.HasPrefix(arg, "--agents=") || strings.HasPrefix(arg, "--plugin-dir") {
@@ -306,34 +274,25 @@ func roleCLI(args []string, injected string) (map[string]roleDefault, []string, 
 	}
 	var plugins []string
 	selected := injected
-	for i := 0; i < len(args); i++ {
-		arg, value, attached := strings.Cut(args[i], "=")
-		if arg == "--" {
+	for i := 0; i < len(args); {
+		if args[i] == "--" {
 			break
 		}
-		if optional[arg] {
-			if !attached && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-				i++
-			}
-			continue
-		}
-		if values[arg] {
-			if !attached {
-				if i+1 >= len(args) {
-					return nil, nil, errRoleDefaults
-				}
-				i++
-				value = args[i]
-			}
-			if arg == "--agents" {
-				selected = value
-			}
-			if arg == "--plugin-dir" || arg == "--plugin-dir-no-mcp" {
-				plugins = append(plugins, value)
-			}
-		} else if hasCLI && strings.HasPrefix(arg, "-") && !flags[arg] {
+		end, known := nativeArgEnd(args, i)
+		if end > len(args) || hasCLI && !known {
 			return nil, nil, errRoleDefaults
 		}
+		arg, value, attached := strings.Cut(args[i], "=")
+		if !attached && end == i+2 {
+			value = args[i+1]
+		}
+		if arg == "--agents" {
+			selected = value
+		}
+		if arg == "--plugin-dir" || arg == "--plugin-dir-no-mcp" {
+			plugins = append(plugins, value)
+		}
+		i = end
 	}
 	defs := map[string]roleDefault{}
 	if selected != "" && (len(selected) > 1<<20 || json.Unmarshal([]byte(selected), &defs) != nil) {

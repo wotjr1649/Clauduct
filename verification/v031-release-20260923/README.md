@@ -41,5 +41,11 @@ loopback TCP만 종료한다. AdGuard·WFP·방화벽 설정을 바꾸지 않는
 제품 코드·mock transport·응답 replay를 주입하지 않는다. 원문 응답 대신 event 종류·counter와
 공개 marker 일치 여부를 사용하며 최종 status의 누적 실패를 검수한다.
 
+첫 출하물 실검증은 첫 Write의 권한 거부로 FAIL이었다(실 backend 3회, 생성 파일 0).
+범위가 있는 Edit 규칙을 inline settings에 둔 경우 직접 native에서도 같은 거부가 재현됐다.
+같은 규칙을 CLI `--allowedTools`에 두면 지정 파일만 생성되고 범위 밖 파일은 계속 거부됐다.
+[검사 소스](permission-scope_test.go), [결과](permission-scope-final.txt). 이 측정에 따라 harness의
+규칙 전달 위치만 변경했다. `dontAsk`와 두 파일의 경로 범위를 유지한다. 제품 Go 변경은 없다.
+
 이 디렉터리의 입력과 이전 계측 결과는 최종 commit의 출하물 성공 증거가 아니다.
 빌드 hash, 실제 SDK/TUI 실행 및 격리 설치 결과는 해당 산출물과 함께 별도로 기록한다.

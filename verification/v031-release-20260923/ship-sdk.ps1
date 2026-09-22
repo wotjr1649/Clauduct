@@ -15,7 +15,7 @@ foreach($dir in @($project,$profile,$temp)){[IO.Directory]::CreateDirectory($dir
 git -C $project init -q
 if($LASTEXITCODE){throw 'public project init failed'}
 foreach($dir in @('C:\Program Files\ClaudeCode','C:\ProgramData\ClaudeCode')){if(Test-Path -LiteralPath $dir){throw 'managed native settings require separate review'}}
-$settings=@{permissions=@{blockReadsOutsideWorkingDirectories=$true;allow=@('Edit(/public-file.txt)','Edit(/public-once.txt)')}} | ConvertTo-Json -Compress -Depth 4
+$settings=@{permissions=@{blockReadsOutsideWorkingDirectories=$true}} | ConvertTo-Json -Compress -Depth 4
 $roles='{"public-peer":{"description":"Public test worker","prompt":"Use no tools. Reply exactly with the public identifier requested.","model":"gpt-5.6-luna","effort":"low","tools":[]}}'
 $psi=[Diagnostics.ProcessStartInfo]::new((Join-Path $PackageDir 'clauduct.exe'))
 $psi.UseShellExecute=$false; $psi.CreateNoWindow=$true; $psi.WorkingDirectory=$project
@@ -28,7 +28,7 @@ foreach($name in @('USERPROFILE','APPDATA','LOCALAPPDATA','CLAUDE_CONFIG_DIR')){
 $psi.Environment['TEMP']=$temp; $psi.Environment['TMP']=$temp
 $psi.Environment['CLAUDUCT_SESSION_TIMEOUT_MS']='240000'
 $psi.Environment['CLAUDE_CODE_FORK_SUBAGENT']='1'
-$arguments=@('-p','--input-format','stream-json','--output-format','stream-json','--verbose','--model','gpt-5.6-luna','--effort','low','--max-turns','16','--permission-mode','dontAsk','--tools','Read,Write,Agent,Workflow,ToolSearch,SendMessage','--allowedTools','Agent,Workflow,ToolSearch,SendMessage','--strict-mcp-config','--setting-sources','','--settings',$settings,'--agents',$roles,'--system-prompt','Public synthetic release verification. Follow only the supplied public task. Never inspect configuration, credentials, environment, or unrelated files. Use only the available tools and permitted project paths.')
+$arguments=@('-p','--input-format','stream-json','--output-format','stream-json','--verbose','--model','gpt-5.6-luna','--effort','low','--max-turns','16','--permission-mode','dontAsk','--tools','Read,Write,Agent,Workflow,ToolSearch,SendMessage','--allowedTools','Agent,Workflow,ToolSearch,SendMessage,Edit(/public-file.txt),Edit(/public-once.txt)','--strict-mcp-config','--setting-sources','','--settings',$settings,'--agents',$roles,'--system-prompt','Public synthetic release verification. Follow only the supplied public task. Never inspect configuration, credentials, environment, or unrelated files. Use only the available tools and permitted project paths.')
 foreach($arg in $arguments){$psi.ArgumentList.Add($arg)}
 $events=[Collections.Generic.List[object]]::new()
 $p=[Diagnostics.Process]::new();$p.StartInfo=$psi;$started=$false

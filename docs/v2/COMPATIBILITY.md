@@ -13,7 +13,7 @@ Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사�
 바인딩을 판정한다. 독립 `auxiliary` 요청은 현재 root turn 안에서만 한 번 실행하고, 다음 turn의 같은
 요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴
 세션이 요청 16,384개에서 멈추지 않는다. 남는 한도는 agent마다 마지막 turn의 기록과 turn 정보 없는
-기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 새 게시의 순번은 이전 게시보다 작아지지 않는다.
+기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 시계가 크게 되돌아가지 않는 한 새 게시의 순번이 이전 게시보다 크다.
 후보 전체의 실제 backend TUI(생성·압축·취소·복구·종료)는 2.1.280에서 PASS했다.
 [TUI 기록](../../verification/v032-tui-20260923/README.md)
 [재실행 방지 묶음 기록](../../verification/v032-replay-ledger-20260923/README.md)

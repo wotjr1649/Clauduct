@@ -429,7 +429,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 미지 SSE 이벤트 | 요청 실패. 이름만 계정에 남긴다(D6) |
 | side query가 아닌 hosted 도구 요청 | `HOSTED_TOOL_UNSUPPORTED`로 거부. 기준선은 조용히 성공시킨다 — 의도적 divergence |
 | 사전 출력 토큰 상한 | 기존 실측에서 backend가 `max_output_tokens`를 HTTP 400으로 거부해 해당 방식은 미지원. 완료 후 usage 검사와 구분하며, 미래의 모든 구현 가능성까지 부정하지 않음 |
-| 게이트웨이 재시도 | 일반 생성의 자동 재시도와 [WebSearch의 제한된 읽기 재시도](../../go/internal/upstream/search.go)를 구분. 전 경로가 재시도 0이라는 뜻이 아님 |
+| 게이트웨이 재시도 | 일반 생성의 자동 재시도와 [WebSearch의 제한된 읽기 재시도](../../go/internal/upstream/search.go)를 구분. 전 경로가 재시도 0이라는 뜻이 아님. backend로 보낸 뒤의 실패는 native가 재시도해도 replay 보호에 막히므로, `X-Should-Retry: false`로 재시도를 막고 원인 범주를 그대로 보인다. backend 실패 이벤트는 고정 어휘로 줄인 code·type·incomplete 사유를 함께 싣는다(v0.3.3, #84). 이전에는 사용자가 원인 대신 `NATIVE_REQUEST_REPLAY_BLOCKED`만 봤다 |
 | native context 표시 | 공통 500K 환경과 native 로컬 추정은 모델별 gateway 정책의 적용 근거가 아님. 모델별 정책·실제 계수는 status로 확인 |
 | 정확 계수 성능 | 연결 재사용·동일 입력 캐시·동시 요청 공유 구현. 새 입력의 backend 왕복 지연은 남으며 전후 성능 무저하를 입증하지 않음 |
 | native 첫 본문 표시 | Clauduct와 hook 없는 native 2.1.278에서도 SSE 진행 중 counter만 증가하고 완료 후 본문이 보이는 현상을 재현. 정확한 screen paint 시각/내부 원인은 미확정. 제품이 native 표시부를 패치하지 않음 |

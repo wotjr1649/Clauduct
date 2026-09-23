@@ -718,11 +718,12 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// Its own deadline: the path that got here may be the write that just stalled, and
 		// an error frame must not inherit a deadline that has already passed.
 		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
+		detail := recordOf(w).upstreamFailure(err)
 		if !committed {
 			if errors.Is(err, codex.ErrContextLimit) && len(scopes) > 0 && g.recoverContextOverflow(w, scopes[0].session, scopes[0].parent, effective) {
 				return
 			}
-			g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
+			g.refuseDetail(w, refusal{categoryFor(err), statusForUpstream(err)}, detail)
 			return
 		}
 		// The status is already sent. A terminal error event is the only signal left, and
@@ -733,7 +734,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// nothing marked the record, so a stream that broke halfway was filed as a clean
 		// success and the session reported nothing wrong.
 		g.streamBroke(w, categoryFor(err))
-		_, _ = anthropic.ErrorFrame(refusalMessage(categoryFor(err))).WriteTo(w)
+		_, _ = anthropic.ErrorFrame(refusalMessage(categoryFor(err)) + detail).WriteTo(w)
 		_ = control.Flush()
 	}
 

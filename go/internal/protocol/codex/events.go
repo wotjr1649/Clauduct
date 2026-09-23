@@ -106,17 +106,21 @@ func Terminal(eventType string) bool {
 	return false
 }
 
-// Failure maps a terminal failure type to its category, or nil if the type is not one.
-func Failure(eventType string) error {
+// Failure maps a terminal failure event to its category and detail, or nil if the type is
+// not one.
+func Failure(eventType string, raw []byte) error {
+	var category error
 	switch eventType {
 	case Failed:
-		return ErrResponseFailed
+		category = ErrResponseFailed
 	case Incomplete:
-		return ErrResponseIncomplt
+		category = ErrResponseIncomplt
 	case ErrorEvent:
-		return ErrErrorEvent
+		category = ErrErrorEvent
+	default:
+		return nil
 	}
-	return nil
+	return &FailureError{category: category, Detail: describe(eventType, raw)}
 }
 
 // TextDeltaEvent is the incremental text the model produced.

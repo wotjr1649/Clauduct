@@ -106,6 +106,9 @@ type RequestRecord struct {
 	BackendProgress       BackendProgress  `json:"backendProgress"`
 	ParentReadiness       *ParentReadiness `json:"parentReadiness,omitempty"`
 
+	// What a backend failure event said about itself, in fixed vocabularies (#84).
+	UpstreamFailure *codex.FailureDetail `json:"upstreamFailure,omitempty"`
+
 	// Milliseconds from when this gateway started. Relative rather than wall clock: a
 	// diagnostic that travels should not carry when the machine was running, and the
 	// question a reader has is how long things took, not what time it was.
@@ -365,6 +368,28 @@ func (r *record) brokeAfterCommitting(category string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data.Outcome, r.data.Category = outcomeBroken, category
+}
+
+// upstreamFailure records a backend failure event's detail and returns it as the client
+// reads it: empty, or a leading space and the labels.
+func (r *record) upstreamFailure(err error) string {
+	var failure *codex.FailureError
+	if !errors.As(err, &failure) || failure.Detail == (codex.FailureDetail{}) {
+		return ""
+	}
+	if r != nil {
+		r.mu.Lock()
+		detail := failure.Detail
+		r.data.UpstreamFailure = &detail
+		r.mu.Unlock()
+	}
+	return " " + failure.Detail.String()
+}
+
+// dispatched reports whether this request went to the backend under the replay ledger.
+// Handler-owned, like execution itself.
+func (r *record) dispatched() bool {
+	return r != nil && r.execution != nil && r.execution.dispatched
 }
 
 func (r *record) wroteStatus(status int) {

@@ -638,7 +638,7 @@ func (t *Translator) Builder() *anthropic.Builder { return t.builder }
 // and produce nothing: the backend's private work is not carried to the client, and
 // inventing a signature for it would be passing it off as an Anthropic feature.
 func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
-	if failure := codex.Failure(event.Type); failure != nil {
+	if failure := codex.Failure(event.Type, event.Raw); failure != nil {
 		if codex.ContextLimit(event.Raw) {
 			return nil, codex.ErrContextLimit
 		}

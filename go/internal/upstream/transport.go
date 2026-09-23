@@ -41,6 +41,11 @@ var (
 const (
 	connectTimeout = 30 * time.Second
 	headerTimeout  = 120 * time.Second
+	// idleTimeout ends a response the backend has stopped sending: no byte for this long
+	// after the headers. It is the Node baseline's rule -- req.setTimeout(600000), which
+	// fires on socket inactivity and reported UPSTREAM_IDLE_TIMEOUT -- and it never cuts an
+	// answer that is still arriving, however long that takes.
+	idleTimeout = 10 * time.Minute
 	// overallTimeout bounds one backend request from dial to last byte.
 	//
 	// The phase deadlines above are the better instrument and stay: a single overall clock
@@ -50,9 +55,11 @@ const (
 	// minute -- meets no phase deadline and never ends, and a request that never ends holds
 	// a goroutine, a connection and the user's subscription for as long as it likes.
 	//
-	// Ten minutes is the Node baseline's, and the longest measured answer here is far
-	// short of it.
-	overallTimeout = 10 * time.Minute
+	// An hour is a ceiling for that case, not a budget for an answer. The baseline had no
+	// overall cap: its ten minutes was the idle rule above, misread here once as an overall
+	// one, which would lose an answer still streaming at ten minutes (#82). The longest of
+	// 400 measured requests (2026-09-16 to 23) took 218 seconds.
+	overallTimeout = 60 * time.Minute
 )
 
 // Direct is the real transport.
@@ -79,8 +86,9 @@ type Direct struct {
 	// endpoint overrides Endpoint. Unexported and set only by this package's tests: the
 	// destination stays unreachable from configuration, which is the point of the constant.
 	endpoint string
-	// overallFor replaces the ten minute bound in a test. Zero is the product.
+	// overallFor and idleFor replace the product bounds in a test. Zero is the product.
 	overallFor   time.Duration
+	idleFor      time.Duration
 	counts       countConnections
 	searchCounts searchCounters
 }
@@ -223,12 +231,13 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 		return nil, failure
 	}
 	return &Response{
-		Body:   &releaseOnClose{ReadCloser: response.Body, release: cancel},
+		Body:   &releaseOnClose{ReadCloser: response.Body, release: cancel, idle: time.AfterFunc(d.idle(), cancel), every: d.idle()},
 		Header: response.Header,
 	}, nil
 }
 
-// releaseOnClose lets go of the request's deadline when its body is closed.
+// releaseOnClose lets go of the request's deadline when its body is closed, and ends the
+// request when the backend goes quiet for longer than the idle bound.
 //
 // Without it the deadline leaks a timer and a goroutine for every request, and with a naive
 // defer it would fire the moment Execute returns and cut every stream at its first byte.
@@ -236,21 +245,42 @@ type releaseOnClose struct {
 	io.ReadCloser
 	once    sync.Once
 	release context.CancelFunc
+	idle    *time.Timer
+	every   time.Duration
+}
+
+// Read restarts the idle bound on every byte the backend sends.
+func (r *releaseOnClose) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	if n > 0 {
+		r.idle.Reset(r.every)
+	}
+	return n, err
 }
 
 func (r *releaseOnClose) Close() error {
 	err := r.ReadCloser.Close()
-	r.once.Do(r.release)
+	r.once.Do(func() {
+		r.idle.Stop()
+		r.release()
+	})
 	return err
 }
 
-// overall is the bound on one request. Overridable so the property can be tested in a
-// second rather than in ten minutes; the product never sets it.
+// overall and idle are the bounds on one request. Overridable so the properties can be
+// tested in a second rather than in minutes; the product never sets them.
 func (d *Direct) overall() time.Duration {
 	if d.overallFor > 0 {
 		return d.overallFor
 	}
 	return overallTimeout
+}
+
+func (d *Direct) idle() time.Duration {
+	if d.idleFor > 0 {
+		return d.idleFor
+	}
+	return idleTimeout
 }
 
 // applyHeaders builds the identity the reference client presents. It is one function so a

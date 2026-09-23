@@ -16,7 +16,7 @@
 
 **`clauduct-hook`은 `clauduct` 옆에 있어야 한다.** `findHook()`이 실행 파일 옆만 본다 — PATH를 뒤지면 이 빌드가 내보내지 않은 동명 프로그램을 찾을 수 있고, 클라이언트는 그 결과를 실행하라는 말을 듣게 된다. 옆에 없으면 hook이 설치되지 않고, **역할별 라우팅과 위임 메뉴의 effort가 조용히 동작하지 않는다.**
 
-**`clauduct-dev`가 따로 있는 이유**는 `clauduct`가 아무 옵션도 소유하지 않기 때문이다. 모든 인자가 native로 그대로 간다 — `--version`과 `--help`를 포함해서. 그래서 이 빌드 자신에 대한 질문은 **다른 바이너리**로 물어야 하고, 그러면 native 옵션이나 그 값과 충돌할 수 없다.
+**`clauduct-dev`가 따로 있는 이유**는 `clauduct`가 첫 인자로 온 `--update`·`--usage`·`--uninstall` 말고는 아무 옵션도 소유하지 않기 때문이다. 나머지 인자는 native로 그대로 간다 — `--version`과 `--help`를 포함해서. 그래서 이 빌드 자신에 대한 질문은 **다른 바이너리**로 물어야 하고, 그러면 native 옵션이나 그 값과 충돌할 수 없다.
 
 ## 2. 실행에 필요한 것
 
@@ -59,7 +59,7 @@ go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
 
 ```powershell
 clauduct-dev version
-# clauduct     0.0.0-wp01
+# clauduct     <buildinfo.Version>
 # commit       <40자 hash>
 # go           go1.27.1 windows/amd64
 ```
@@ -77,9 +77,14 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 `--update`가 읽는 것은 **최신 태그 릴리스의 자산**이므로, 이름과 형식이 계약이다.
 
 ```powershell
+# 0. 태그보다 먼저 버전 상수를 올린다. go/internal/buildinfo/buildinfo.go의 Version을 태그에서
+#    v를 뺀 값으로 바꾼 커밋을 병합하고, 태그는 그 커밋 위에 둔다. `clauduct-dev version`은 태그가
+#    아니라 이 상수를 말한다 — v0.3.2는 상수가 0.3.1인 커밋에 태그가 붙을 뻔했다.
+$tag = 'v0.3.3'
+
 # 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
 #    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).
-git worktree add ../clauduct-release v0.3.0
+git worktree add ../clauduct-release $tag
 cd ../clauduct-release/go
 $env:CGO_ENABLED = '0'
 # 산출물은 반드시 트리 **바깥**으로. 안에 쓰면 두 번째 빌드부터 자기가 만든 exe 때문에
@@ -89,15 +94,18 @@ go build -trimpath -o ../../release-assets/clauduct.exe      ./cmd/clauduct
 go build -trimpath -o ../../release-assets/clauduct-hook.exe ./cmd/clauduct-hook
 go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
 
-# 스탬프에 +dirty가 없는지 확인한다. 있으면 그 빌드는 릴리스 후보가 아니다.
-../../release-assets/clauduct-dev.exe version
+# 버전이 태그와 같고 스탬프에 +dirty가 없는지 확인한다. 어긋나면 그 빌드는 릴리스 후보가 아니다.
+$version = & ../../release-assets/clauduct-dev.exe version
+$version
+if (-not ($version -match "^clauduct\s+$([regex]::Escape($tag.TrimStart('v')))$")) { throw "VERSION_MISMATCH $tag" }
+if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 
 # 2. 자산 이름 그대로 SHA256SUMS를 만든다. 파서는 공백으로 나뉜 두 필드를 읽고 이름 앞의
 #    `*`(sha256sum의 binary 표시)를 떼므로 `<hex>  <name>`과 `<hex> *<name>` 둘 다 받는다.
 #    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
-# 4. gh release create v0.3.0 clauduct.exe clauduct-hook.exe clauduct-dev.exe `
+# 4. gh release create $tag clauduct.exe clauduct-hook.exe clauduct-dev.exe `
 #        install.ps1 uninstall.ps1 SHA256SUMS
 ```
 

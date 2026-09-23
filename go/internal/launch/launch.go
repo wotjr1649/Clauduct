@@ -46,9 +46,9 @@ type Overlay struct {
 	// an explicit flag wins over the client's own picker too. A session started with it set
 	// sends one effort for as long as it runs, whatever the user chooses afterwards.
 	//
-	// The Node baseline passed --model and --effort (src/clauduct.mjs:213) and set the
+	// The Node baseline passed --model and --effort (src/clauduct.mjs:213 at 1b1c5e1) and set the
 	// environment name in exactly one place: under --verify-model-route
-	// (src/clauduct.mjs:192), whose purpose is to pin the route so a verification run cannot
+	// (src/clauduct.mjs:192 at 1b1c5e1), whose purpose is to pin the route so a verification run cannot
 	// drift. It was the baseline's lock, and the rewrite made it the default.
 	//
 	// Goes ahead of the forwarded arguments for the same reason --agents does: the client

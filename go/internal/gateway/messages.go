@@ -881,6 +881,16 @@ func categoryFor(err error) string {
 		return "OUTPUT_TOKEN_LIMIT_EXCEEDED"
 	case errors.Is(err, bridge.ErrUsageUnknown):
 		return "INVALID_USAGE"
+	// Contract faults found while translating the backend's reply. Unnamed, they fell
+	// through to UPSTREAM_FAILURE and read as a backend outage.
+	case errors.Is(err, bridge.ErrArgumentsMismatch):
+		return "ARGUMENTS_MISMATCH"
+	case errors.Is(err, bridge.ErrOutputItemOrder):
+		return "INVALID_OUTPUT_ITEM"
+	case errors.Is(err, bridge.ErrItemSnapshotMismatch):
+		return "SNAPSHOT_MISMATCH"
+	case errors.Is(err, bridge.ErrMissingEncryptedReasoning):
+		return "MISSING_ENCRYPTED_REASONING"
 	case errors.Is(err, anthropic.ErrResponseTooLarge), errors.Is(err, stream.ErrResponseTooLarge):
 		return "RESPONSE_TOO_LARGE"
 	case errors.Is(err, stream.ErrInvalidSSE):
@@ -944,7 +954,7 @@ func statusForUpstream(err error) int {
 	}
 
 	// A credential problem is answered the way the Node baseline answers it
-	// (src/native-gateway.mjs:557): 503, so a client that keeps asking recovers the moment
+	// (src/native-gateway.mjs:557 at 1b1c5e1): 503, so a client that keeps asking recovers the moment
 	// the user logs in again. Retrying costs nothing upstream -- the failure happens before
 	// the socket -- and the category in the message says what to fix.
 	switch auth.CategoryOf(err) {

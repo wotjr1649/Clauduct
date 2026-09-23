@@ -2,7 +2,7 @@
 
 // Package platform holds the OS boundary. The file suffix is the contract: this resolution
 // exists only for Windows, because the Node baseline it ports from only ever had a Windows
-// path (src/runtime-paths.mjs splits PATH on ';' and looks for .exe under AppData). A second
+// path (src/runtime-paths.mjs at 1b1c5e1 splits PATH on ';' and looks for .exe under AppData). A second
 // OS is new design under requirement V2-04, not a port, so there is deliberately no
 // native_other.go stub that would let this package compile into a lie elsewhere.
 package platform

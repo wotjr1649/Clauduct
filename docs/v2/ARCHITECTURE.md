@@ -290,7 +290,7 @@ agent의 새 turn이 예약되면 그 agent의 이전 turn 기록을 지운다. 
 turn 정보 없는 기록이다. 이것을 세션당 16,384개로 제한하고, 한도에서 기록을 지워 재실행을 허용하지 않는다.
 이 보호는 native 이벤트 경로가 구성된 제품 세션에 적용하며 gateway 내부 재시도는 계속 0이다.
 429도 원인 분류이며 재실행 허가는 아니다. transport 시도 뒤 같은 step은 거부하고,
-사용자의 명시적인 새 turn은 별도 실행으로 처리한다.
+사용자의 명시적인 새 turn은 별도 실행으로 처리한다. transport 시도 뒤의 실패는 `X-Should-Retry: false`와 함께 거부한다(v0.3.3, #84). 그 재시도는 어차피 거부되므로, 재시도를 부르는 상태만으로는 사용자가 실제 원인 대신 `NATIVE_REQUEST_REPLAY_BLOCKED`를 보게 된다. 상태 코드(책임 구분)는 바꾸지 않는다. native 2.1.281은 상태 코드보다 이 헤더를 먼저 보며, 헤더를 붙인 `prompt is too long` 뒤의 압축도 그대로 동작한다. backend 실패 이벤트의 code·type·incomplete 사유는 고정 어휘로 줄여 오류 메시지와 요청 기록의 `upstreamFailure`에 싣고, 목록 밖의 값은 `other`로 적는다. backend가 보낸 원문 메시지는 싣지 않는다.
 
 ## 10. upstream·인증
 

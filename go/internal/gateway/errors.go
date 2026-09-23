@@ -76,7 +76,18 @@ func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category str
 	g.refuse(w, refusal{category: category, status: status})
 }
 
-func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
+func (g *Gateway) refuse(w http.ResponseWriter, r refusal) { g.refuseDetail(w, r, "") }
+
+// refuseDetail refuses with a detail after the category. The detail is empty or built from
+// fixed vocabularies, like the category itself.
+func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) {
+	// After dispatch the replay ledger refuses any repeat of this request, so a status that
+	// invites a retry only trades this category for NATIVE_REQUEST_REPLAY_BLOCKED in front of
+	// the user (#84). The client checks x-should-retry before the status class (claude
+	// 2.1.281); without the ledger nothing is refused and the class decides as before.
+	if recordOf(w).dispatched() {
+		w.Header().Set("X-Should-Retry", "false")
+	}
 	g.countRefusal(r.category, recordOf(w).path())
 	recordOf(w).refusedWith(r.status, r.category)
 	control := http.NewResponseController(w)
@@ -108,7 +119,7 @@ func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
 		"type": "error",
 		"error": map[string]string{
 			"type":    errorType(r.status),
-			"message": refusalMessage(r.category),
+			"message": refusalMessage(r.category) + detail,
 		},
 	})
 	if err != nil {

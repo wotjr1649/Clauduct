@@ -162,6 +162,7 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](../../verification/workflow-completion-20260920/build.json), [개발 경로 반영](../../verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
 | 최근 실제 TUI | Claude Code `2.1.278`, Windows amd64, Go 1.27.1, CGO_ENABLED=0 |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. 실제 TUI는 아니다. [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](../../verification/workflow-completion-20260920/evidence.json), [TUI 검수](../../verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 

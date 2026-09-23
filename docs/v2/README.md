@@ -18,7 +18,7 @@ V2(Go Native-Host-Preserving Bridge) 작업의 **현재 상태를 읽는 단 하
 | 기존 Node 변경 | **0건.** baseline tracked 파일 생성·수정·이동·삭제 없음 |
 | 테스트 | 2026-09-17 기준선은 1124 pass / 0 fail / 3 skip. 2026-09-18 변경의 별도 증거: [계수](../../verification/policy-evidence-20260918/COUNT-TOKENS.md), [압축 제어](../../verification/policy-evidence-20260918/CONTEXT-ENFORCEMENT.md) |
 | 실모델 호출 | 2026-09-17 누계는 추론 55/100. 이후 검증은 각 evidence 테스트의 유한 ledger와 실행 기록으로 별도 집계 |
-| 측정된 클라이언트 | claude **2.1.278**, Windows, go 1.27.1 |
+| 측정된 클라이언트 | claude **2.1.280**(인자 표·native fixture 검사), Windows, go 1.27.1. 최근 실제 TUI는 2.1.278 |
 
 판정 전문은 [DECISION.md](DECISION.md), 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md),
 격차 원장은 [PARITY.md](PARITY.md), 증거는 [VALIDATION.md](VALIDATION.md)가 소유한다.

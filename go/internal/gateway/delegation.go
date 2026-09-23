@@ -234,7 +234,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			return nil, errDelegationUnverified
 		}
 	}
-	// Native 2.1.278 makes subagent_type optional and resolves omission to
+	// Native 2.1.280 makes subagent_type optional and resolves omission to
 	// general-purpose. A supplied null/empty/invalid role is not omission.
 	role := "general-purpose"
 	if value, present := fields["subagent_type"]; present {

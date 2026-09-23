@@ -1,0 +1,6 @@
+result phase=0 error=false session=8cd784a8
+result phase=1 error=false session=87339128
+task_notification status=completed child_marker=true
+result phase=2 error=false session=87339128
+{"first":true,"clearChanged":true,"childReported":true,"second":true,"errors":0,"exit":0,"stderrBytes":251,"status":{"category":"SUCCESS","exitCode":0,"attempts":5,"inferences":5,"refused":0,"broken":0,"failures":{},"hookInstalled":true,"client":"2.1.280","reference":"2.1.280","verified":true,"apiFailures":0}}
+SHIP_SESSION PASS

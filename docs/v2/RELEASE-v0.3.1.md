@@ -15,6 +15,14 @@ Windows x64용 Go V2 유지보수 릴리스 후보다. 배포 여부와 검사 �
   완료됐지만 전달되지 못한 응답의 보관·자동 재전달은 포함하지 않는다.
 - Agent·Workflow의 빈 대기 응답과 완료 알림을 구분한다. SDK의 출처 표시 상태는
   자식 보고서나 모델의 작업 완료 답변을 대신하지 않는다.
+- `/clear` 뒤의 요청이 거부되던 문제를 고쳤다. native는 같은 프로세스에서 새 세션을
+  시작하는데, 영수증이 처음 세션 ID를 계속 기록해 v0.3.0에서도 `PARENT_WAIT_UNVERIFIED`로
+  실패했다. 이제 영수증마다 현재 세션 ID를 기록한다.
+- 한 native 프로세스가 turn·자식·취소를 합쳐 4096개 넘게 게시하면 이후 요청이
+  `CLAUDUCT_NATIVE_EVENT_LIMIT`로 멈추던 v0.3.0의 한도를 없앴다. 끝난 turn은 자리를 반환하고,
+  한도는 동시에 진행 중인 agent 수에만 남는다. gateway는 지난 영수증 파일을 정리한다.
+  요청 실행 기록의 세션당 16,384개 한도는 그대로이며 [#63](https://github.com/wotjr1649/Clauduct/issues/63)에서 다룬다.
+  [집중 리뷰 기록](../../verification/v031-focused-review-20260923/README.md)
 
 출하 구성은 Go 1.27.1, `CGO_ENABLED=0`, `-trimpath`다. `clauduct.exe`,
 `clauduct-hook.exe`, `clauduct-dev.exe` 세 파일과 `SHA256SUMS`를 함께 사용한다.

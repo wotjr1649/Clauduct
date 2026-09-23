@@ -4,19 +4,22 @@
 // empty control response. Native commands are untouched.
 const root = __CLAUDUCT_EVENT_ROOT__;
 const ident = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : '';
-async function session($, state) {
-  if (!state.session) state.session = ident(await $.session.id());
-  if (!state.session) throw new Error('CLAUDUCT_NATIVE_SESSION_INVALID');
-  return state.session;
+// /clear starts a new native session in this process without registering this module
+// again. Read the id for every receipt: a cached first id signed later turns for the
+// cleared session, and the gateway refused every request after /clear.
+async function session($) {
+  const id = ident(await $.session.id());
+  if (!id) throw new Error('CLAUDUCT_NATIVE_SESSION_INVALID');
+  return id;
 }
-async function observe($, state, progress, p, signal) {
+async function observe($, progress, p, signal) {
     const receipt = {agent:p.agent,turn:p.turn,
       phase:p.phase,signal,sequence:++p.sequence,
       pendingTools:p.pendingTools,permissionRequests:p.permissionRequests};
     const prior = p.write;
     p.write = (async () => {
       if (prior) await prior;
-      receipt.session=await session($,state);receipt.at=await $.clock.now();
+      receipt.session=await session($);receipt.at=await $.clock.now();
       if (progress.get(p.agent)!==p) return; // a late prior turn cannot replace current progress
       const name=p.agent?'progress-child-'+p.agent:'progress-root';
       await $.fs.write(root+'/'+name+'.json',JSON.stringify(receipt));
@@ -24,7 +27,7 @@ async function observe($, state, progress, p, signal) {
     await p.write;
 }
 export const register = on => {
-  const state = {session:'',mode:'unclassified'};
+  const state = {mode:'unclassified'};
   const turns = new Map();
   let turnSequence=0;
   const cancelledTurns = new Set();
@@ -43,7 +46,7 @@ export const register = on => {
     return next(e);
   });
   on('session.start', async ($, e, next) => {
-    await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($,state)}));
+    await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($)}));
     return next(e);
   });
   on('turn.step', async function* ($, e, next) {
@@ -56,14 +59,15 @@ export const register = on => {
       progress.set(agent,p);
     }
     p.phase='request';
-    const key=agent+'/'+turn;
-    let publication=turns.get(key);
-    if (!publication) {
-      if (turns.size>=4096 || turnSequence>=8192) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+    // One publication per agent's current turn: completed turns release their slot,
+    // so 4096 bounds concurrently active agents, not turns over a session's life.
+    let current=turns.get(agent);
+    if (current?.turn!==turn) {
+      if (turns.size>=4096 && !current) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
       const name=agent?'child-'+agent:'root';
       const file=root+'/active/'+name+'/'+(++turnSequence)+'-'+turn;
-      publication=(async () => {
-        const receipt={session:await session($,state),agent,turn};
+      const publication=(async () => {
+        const receipt={session:await session($),agent,turn};
         if (agent) {
           receipt.model=['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(e.model)?e.model:'unlisted';
           receipt.effort=['low','medium','high','xhigh','max'].includes(e.effort)?e.effort:'unlisted';
@@ -74,16 +78,18 @@ export const register = on => {
         await $.fs.write(file+'.json',JSON.stringify(receipt));
         await $.fs.write(file+'.ready','');
       })();
-      turns.set(key,publication); // Reserve in-flight capacity, not successful completion.
-      publication.catch(() => turns.delete(key)); // Failed turns remain retryable.
+      const reserved={turn,publication};
+      turns.set(agent,reserved); // Reserve in-flight capacity, not successful completion.
+      publication.catch(() => { if (turns.get(agent)===reserved) turns.delete(agent); }); // Failed turns remain retryable.
+      current=reserved;
     }
-    await publication;
-    await observe($,state,progress,p,'request_started');
+    await current.publication;
+    await observe($,progress,p,'request_started');
     const name=agent?'child-'+agent:'root';
     // index 0 of an explicit new input is never withheld. Child wakeups without
     // ingress provenance remain outside this control until a later tool step.
     const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && p.delegated || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
-    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($,state),agent,turn,index:e.index,eligible,mode:state.mode}));
+    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode}));
     let held=false;
     try {
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
@@ -131,19 +137,19 @@ export const register = on => {
         return {...result,answer,stopReason:'end_turn'};
       }
       held=decision.wait;p.phase=held?'awaiting_children':'progress_unconfirmed';
-      await observe($,state,progress,p,held?'children_wait':'notification_consumed');
+      await observe($,progress,p,held?'children_wait':'notification_consumed');
       return {...result,answer:'',stopReason:null};
     }
     finally {
       if (!held) {
         p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
-        await observe($,state,progress,p,'request_returned');
+        await observe($,progress,p,'request_returned');
       }
     }
   });
   on('tool.call', async ($, e, next) => {
 	if (e.tool==='Workflow' && (e.scriptPath!==undefined || e.script===undefined && e.name!==undefined)) {
-	  const call=ident(e.tool_use_id),sid=await session($,state);
+	  const call=ident(e.tool_use_id),sid=await session($);
 	  if (!call) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
 	  const file=root+'/workflow-source-'+call+'.json';
 	  if (!await $.fs.exists(file)) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
@@ -179,26 +185,26 @@ export const register = on => {
     // then burned the whole deadline grace and was force-stopped instead of drained.
     p.pendingTools++;p.phase='tool_pending';
     try {
-      await observe($,state,progress,p,'tool_started');
+      await observe($,progress,p,'tool_started');
       const out=await next(e), value=out.result;
       if (!out.deny && !out.isError && value && e.tool==='Workflow' && value.status==='async_launched' && value.taskType==='local_workflow') {
         const run=ident(value.runId), task=ident(value.taskId), call=ident(e.tool_use_id);
-        if (run && task && call) await $.fs.write(root+'/workflow-'+run+'.json',JSON.stringify({session:await session($,state),run,task,call}));
+        if (run && task && call) await $.fs.write(root+'/workflow-'+run+'.json',JSON.stringify({session:await session($),run,task,call}));
       }
       if (!out.deny && !out.isError && value && e.tool==='TaskStop') {
         const task=ident(value.task_id), call=ident(e.tool_use_id);
-        if (task && call && value.task_type==='local_workflow') await $.fs.write(root+'/stopped-'+task+'.json',JSON.stringify({session:await session($,state),task,call,type:value.task_type}));
+        if (task && call && value.task_type==='local_workflow') await $.fs.write(root+'/stopped-'+task+'.json',JSON.stringify({session:await session($),task,call,type:value.task_type}));
       }
       return out;
     }
     finally {
       p.pendingTools--;p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
-      await observe($,state,progress,p,'tool_returned');
+      await observe($,progress,p,'tool_returned');
     }
   });
   on('classic.PermissionRequest', async ($, e, next) => {
     const p=progress.get(e.agent_id?ident(e.agent_id):'');
-    if (p) { p.permissionRequests++;await observe($,state,progress,p,'permission_requested'); }
+    if (p) { p.permissionRequests++;await observe($,progress,p,'permission_requested'); }
     return next(e);
   });
   on('turn.complete', async ($, e, next) => {
@@ -206,21 +212,26 @@ export const register = on => {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
       if (!cancelledTurns.has(turn)) {
-        if (cancelledTurns.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
-        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($,state),agent,turn,reason:e.reason}));
+        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
         cancelledTurns.add(turn);
+        // Duplicates follow the turn that just ended; forget the oldest, not the session.
+        if (cancelledTurns.size>4096) cancelledTurns.delete(cancelledTurns.values().next().value);
       }
     }
     if (e.agentId) {
       const agent=ident(e.agentId),turn=ident(e.turnId);
       if (!agent || !turn || !['answer','aborted','refusal','error'].includes(e.reason)) throw new Error('CLAUDUCT_NATIVE_END_INVALID');
-      await $.fs.write(root+'/end-'+agent+'-'+turn+'.json',JSON.stringify({session:await session($,state),agent,turn,reason:e.reason}));
+      await $.fs.write(root+'/end-'+agent+'-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
     }
-    const p=progress.get(e.agentId?ident(e.agentId):'');
+    const agent=e.agentId?ident(e.agentId):'';
+    const p=progress.get(agent);
     if (p && p.turn===e.turnId && ['answer','aborted','refusal','error'].includes(e.reason)) {
       if (p.phase!=='awaiting_children' || e.reason!=='answer') p.phase='turn_ended';
-      await observe($,state,progress,p,'turn_'+e.reason);
+      await observe($,progress,p,'turn_'+e.reason);
+      if (agent && progress.get(agent)===p) progress.delete(agent); // Its receipt file stays.
     }
+    // A later step of the same turn would publish it again under a newer sequence.
+    if (turns.get(agent)?.turn===ident(e.turnId)) turns.delete(agent);
     return next(e);
   });
 };

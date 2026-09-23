@@ -114,7 +114,8 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 		return receipt, false, err
 	}
 	defer dir.Close()
-	// ponytail: scan at most 8192 publication attempts per session; index only if measured slow.
+	// Superseded publications are pruned below, so this bound is reached only when
+	// pruning keeps failing; the reader then refuses rather than scanning further.
 	entries, err := dir.ReadDir(16385)
 	if err != nil && !errors.Is(err, io.EOF) || len(entries) > 16384 {
 		return receipt, false, errDelegationUnverified
@@ -127,7 +128,7 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 		}
 		number, identity, ok := strings.Cut(file, "-")
 		sequence, parseErr := strconv.Atoi(number)
-		if !ok || parseErr != nil || sequence < 1 || sequence > 8192 || strconv.Itoa(sequence) != number || !correlationShape.MatchString(identity) || !entry.Type().IsRegular() {
+		if !ok || parseErr != nil || sequence < 1 || sequence > maxNativeSequence || strconv.Itoa(sequence) != number || !correlationShape.MatchString(identity) || !entry.Type().IsRegular() {
 			return receipt, false, errDelegationUnverified
 		}
 		if sequence > latest {
@@ -145,7 +146,37 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 	if err == nil && (!found || receipt.Turn != turn) {
 		err = errDelegationUnverified
 	}
+	if err == nil && len(entries) > nativePruneAbove {
+		prunePublications(root, directory, entries, latest)
+	}
 	return receipt, found && err == nil, err
+}
+
+// The module numbers publications with a JavaScript number; beyond this it loses
+// integer precision.
+const maxNativeSequence = 1<<53 - 1
+
+// A long session publishes a turn for every prompt and child, and only the newest
+// decides. Keep a margin for a reader that listed the directory just before a newer
+// publication and remove the rest, so the scan above stays small.
+const (
+	nativePruneAbove = 256 // directory entries, two per publication
+	nativeKeepRecent = 32  // publications
+)
+
+func prunePublications(root *os.Root, directory string, entries []os.DirEntry, latest int) {
+	for _, entry := range entries {
+		file, ok := strings.CutSuffix(entry.Name(), ".json")
+		if !ok {
+			continue
+		}
+		number, _, _ := strings.Cut(file, "-")
+		if sequence, err := strconv.Atoi(number); err == nil && sequence <= latest-nativeKeepRecent {
+			// ponytail: best effort; a file held open elsewhere stays until the next prune.
+			_ = root.Remove(directory + "/" + file + ".json")
+			_ = root.Remove(directory + "/" + file + ".ready")
+		}
+	}
 }
 
 func (g *Gateway) nativeEventReport() NativeEventReport {

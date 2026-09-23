@@ -73,6 +73,38 @@ func TestIncompleteTurnPublicationNeverFallsBackAndRetryRecovers(t *testing.T) {
 	}
 }
 
+// A long session passes the former 8192 sequence cap, and a read leaves only the
+// newest publications behind so the next scan stays small.
+func TestLongSessionReceiptsPassTheFormerCapAndStayPruned(t *testing.T) {
+	g := &Gateway{}
+	dir := t.TempDir()
+	g.ConfigureNativeEvents(dir)
+	path := filepath.Join(dir, "active", "root")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for sequence := 9000; sequence < 9000+nativePruneAbove/2+1; sequence++ {
+		turn := "turn" + strconv.Itoa(sequence)
+		stem := filepath.Join(path, strconv.Itoa(sequence)+"-"+turn)
+		if err := os.WriteFile(stem+".json", []byte(`{"session":"s","agent":"","turn":"`+turn+`"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(stem+".ready", nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		receipt, found, err := g.readCurrentNativeTurn("")
+		if err != nil || !found || receipt.Turn != "turn9128" {
+			t.Fatalf("newest receipt: found=%v err=%v turn=%q", found, err, receipt.Turn)
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil || len(entries) != 2*nativeKeepRecent {
+			t.Fatalf("superseded publications kept: %d entries %v", len(entries), err)
+		}
+	}
+}
+
 func TestMainTurnIdentityRejectsChildFieldsAndTerminalReason(t *testing.T) {
 	for _, mutation := range []string{"none", "session", "agent", "turn", "model", "effort", "reason"} {
 		receipt := nativeTurnReceipt{Session: "s", Turn: "turn"}

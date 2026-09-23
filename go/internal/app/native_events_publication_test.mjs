@@ -51,14 +51,27 @@ try {
   await step('marker');
   assert.equal(await fs.readFile(path.join(journal,'4-marker.json'),'utf8'),uncommitted,'retry overwrote its previous attempt');
   assert.equal(await fs.readFile(path.join(journal,'5-marker.ready'),'utf8'),'');
-  for(let i=3;i<4095;i++) await step('turn'+i);
-  // At most one concurrent publisher may take the final slot.
-  const last=await Promise.allSettled([step('last'),step('child_last','child')]);
+  // Capacity is in-memory bookkeeping, so a memory-backed filesystem keeps this long
+  // session fast. Over its life it outgrows the former 4096 turn, child and
+  // cancellation limits and the 8192 sequence cap: finished turns release their slots.
+  const memory=new Map();
+  const $long={...$,fs:{write:async(p,s)=>{memory.set(p,s);},read:async p=>memory.get(p),exists:async p=>memory.has(p)}};
+  async function longStep(turn,agent){for await(const _ of handlers.get('turn.step')($long,{turnId:turn,agentId:agent,index:0,model:'gpt-5.6-sol',effort:'high'},next)){} }
+  for(let i=0;i<4200;i++) {
+    await longStep('done_turn_'+i,'done_'+i);
+    await handlers.get('turn.complete')($long,{agentId:'done_'+i,turnId:'done_turn_'+i,reason:'aborted'},async e=>e);
+  }
+  for(let i=0;i<4100;i++) await longStep('long_'+i);
+  const newest=[...memory.keys()].map(k=>k.match(/\/active\/root\/(\d+)-long_4099\.ready$/)).find(Boolean);
+  assert.ok(newest && Number(newest[1])>8192,'publication past the former sequence cap');
+  // Concurrently active agents stay bounded; root holds one slot, and at most one
+  // concurrent publisher may take the final one.
+  for(let i=0;i<4094;i++) await longStep('active_turn_'+i,'active_'+i);
+  const last=await Promise.allSettled([longStep('last','active_last'),longStep('other_last','active_other')]);
   assert.equal(last.filter(r=>r.status==='fulfilled').length,1);
   assert.match(last.find(r=>r.status==='rejected').reason.message,/CLAUDUCT_NATIVE_EVENT_LIMIT/);
-  await assert.rejects(step('overflow'),/CLAUDUCT_NATIVE_EVENT_LIMIT/);
-  await assert.rejects(step('child_overflow','another'),/CLAUDUCT_NATIVE_EVENT_LIMIT/);
-  await step('retry'); // Already recorded turns still work at capacity.
+  await assert.rejects(longStep('overflow','another'),/CLAUDUCT_NATIVE_EVENT_LIMIT/);
+  await longStep('long_4099'); // An active agent's current turn still works at capacity.
   // Exercise the real event module with file-backed decisions. A completed
   // notification owes no child and must not leave lifecycle drain waiting.
   handlers.clear();register((name,fn)=>handlers.set(name,fn));
@@ -75,7 +88,7 @@ try {
     const progress=JSON.parse(await fs.readFile(path.join(root,'progress-root.json'),'utf8'));
     assert.equal(progress.phase,waiting?'awaiting_children':'turn_ended','completed notification left lifecycle waiting');
   }
-  console.log('PASS: failed write retry, immutable earlier receipts, shared concurrent 4096-turn cap');
+  console.log('PASS: failed write retry, immutable earlier receipts, long session under a 4096 active-agent cap');
   console.log('PASS: pending child wait and completed notification lifecycle are distinct');
 } finally {
   await fs.rm(root,{recursive:true,force:true});

@@ -1,0 +1,3 @@
+--- PASS: TestNativeClearSignsLaterReceiptsWithTheNewSession (2.37s)
+PASS
+ok  	github.com/wotjr1649/Clauduct/go/internal/app	2.500s

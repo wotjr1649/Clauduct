@@ -14,7 +14,8 @@ Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사�
 요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴
 세션이 요청 16,384개에서 멈추지 않는다. 남는 한도는 agent마다 마지막 turn의 기록과 turn 정보 없는
 기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 새 게시의 순번은 이전 게시보다 작아지지 않는다.
-로컬 fixture와 실제 native로만 검사했으며 실제 backend·TUI 검수는 아니다.
+후보 전체의 실제 backend TUI(생성·압축·취소·복구·종료)는 2.1.280에서 PASS했다.
+[TUI 기록](../../verification/v032-tui-20260923/README.md)
 [재실행 방지 묶음 기록](../../verification/v032-replay-ledger-20260923/README.md)
 
 **2026-09-22 네 번째 수리·검증 — 현재 검수 범위 SUCCESS, 미출하.** 보완된 실제 backend 기록에서
@@ -169,8 +170,8 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 | 구분 | 확인한 기준 |
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](../../verification/workflow-completion-20260920/build.json), [개발 경로 반영](../../verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.278`, Windows amd64, Go 1.27.1, CGO_ENABLED=0 |
-| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. 실제 TUI는 아니다. [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md) |
+| 최근 실제 TUI | Claude Code `2.1.280`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.2 후보, 실제 backend, 2026-09-23. [TUI 기록](../../verification/v032-tui-20260923/README.md) |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](../../verification/workflow-completion-20260920/evidence.json), [TUI 검수](../../verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 

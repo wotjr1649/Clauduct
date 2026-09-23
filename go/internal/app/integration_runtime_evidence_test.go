@@ -136,6 +136,30 @@ func TestIntegrationPrivatePathsStopBeforeTransport(t *testing.T) {
 	if privateIntegrationPath(upstream.Call{Body: []byte(`D:/public-synthetic/task`)}) {
 		t.Fatal("public task path rejected")
 	}
+	t.Setenv("TMP", `C:\Users\PublicSynthetic\Temp`)
+	t.Setenv("TEMP", `C:\Users\PublicSynthetic\Temp`)
+	if integrationPathsPrivate(t) == "" {
+		t.Fatal("a private temporary root was accepted before the first request")
+	}
+	t.Setenv("TMP", `D:\public-synthetic`)
+	t.Setenv("TEMP", `D:\public-synthetic`)
+	if got, hook := integrationPathsPrivate(t), privateIntegrationPath(upstream.Call{Body: []byte(hookPath(t))}); (got == "hook") != hook || !hook && got != "" {
+		t.Fatalf("hook location check: got %q, private hook %v", got, hook)
+	}
+}
+
+// The transport guard refuses a request that names a private path, but only after the
+// requests before it were billed. Native sends the working directory, under the temporary
+// root, with the first request, and the PreCompact hook's command path, next to this test
+// binary, in the request after /compact (measured on 2.1.280). Refuse before anything is sent.
+func integrationPathsPrivate(t *testing.T) string {
+	switch {
+	case privateIntegrationPath(upstream.Call{Body: []byte(os.TempDir())}):
+		return "temporary root"
+	case privateIntegrationPath(upstream.Call{Body: []byte(hookPath(t))}):
+		return "hook"
+	}
+	return ""
 }
 
 func (d integrationLiveTransport) Execute(ctx context.Context, call upstream.Call) (*upstream.Response, error) {
@@ -161,6 +185,9 @@ func integrationLive(t *testing.T) (integrationLiveTransport, map[string]string,
 	t.Helper()
 	if os.Getenv("CLAUDUCT_EVIDENCE_LIVE") != "1" {
 		t.Skip("explicit live switch absent")
+	}
+	if where := integrationPathsPrivate(t); where != "" {
+		t.Fatalf("EVIDENCE_PRIVATE_PATH before any request: the %s is under C:\\Users; build the test binary and set TEMP/TMP elsewhere", where)
 	}
 	p := &auth.Provider{}
 	if err := p.CheckRuntime(); err != nil {

@@ -1,0 +1,6 @@
+# Test binary built into the default TEMP (under C:\Users), TEMP/TMP set to the public folder,
+# CLAUDUCT_EVIDENCE_LIVE=1 CLAUDUCT_EVIDENCE_TUI=1, run from go/internal/app.
+=== RUN   TestRuntimeEvidenceNativeTUI
+    integration_runtime_evidence_test.go:301: EVIDENCE_PRIVATE_PATH before any request: the hook is under C:\Users; build the test binary and set TEMP/TMP elsewhere
+--- FAIL: TestRuntimeEvidenceNativeTUI (0.00s)
+FAIL

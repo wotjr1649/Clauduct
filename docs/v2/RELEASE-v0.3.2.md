@@ -5,8 +5,10 @@ Windows x64용 Go V2 유지보수 릴리스 후보다. 배포 여부와 검사 �
 
 - 기준 클라이언트를 Claude Code 2.1.280으로 올렸다. 공개 옵션 65개의 이름과 값 형태는
   2.1.278과 같고, native 이벤트 모듈이 쓰는 plugin API는 선택 필드만 추가됐다.
-  진단의 `verified`는 계속 버전 문자열 일치만 뜻한다.
-  [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md)
+  진단의 `verified`는 계속 버전 문자열 일치만 뜻한다. 이 후보는 2.1.280의 실제 backend TUI에서
+  생성·압축·취소·복구·종료를 확인했다.
+  [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md),
+  [TUI 기록](../../verification/v032-tui-20260923/README.md)
 - 요청 하나가 turn 영수증을 한 번만 읽고, 업로드 취소·실행 예약·선택이 그 값을 함께 쓴다.
   읽는 사이에 새 turn이 게시되면 정상 요청이 `NATIVE_TURN_UNVERIFIED`로 거부되던 경합을 고쳤다.
 - 긴 세션이 요청 16,384개에서 `NATIVE_REQUEST_CAPACITY`로 멈추던 한도를 풀었다. agent의 새 turn이

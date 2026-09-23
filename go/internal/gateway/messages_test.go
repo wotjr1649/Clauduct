@@ -415,39 +415,6 @@ func TestAnUpstreamFailureCarriesNoBackendText(t *testing.T) {
 	}
 }
 
-// --- the abort watcher ------------------------------------------------------------------
-
-// The watcher must not expire a deadline on a connection the handler has finished with.
-func TestTheAbortWatcherLeavesAFinishedConnectionAlone(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fired := 0
-	stop := watchReadCancellation(ctx, func() { fired++ })
-	stop()
-	cancel()
-	if fired != 0 {
-		t.Fatal("the watcher changed the deadline after the handler finished")
-	}
-}
-
-// And it must still do its job, which is the mutation that matters: deleting the watcher
-// also makes the test above pass.
-func TestTheAbortWatcherStillStopsAReadThatTheClientAbandoned(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	fired := make(chan struct{})
-	stop := watchReadCancellation(ctx, func() { close(fired) })
-	defer stop()
-
-	cancel()
-	select {
-	case <-fired:
-	case <-time.After(5 * time.Second):
-		t.Fatal("a client that went away mid-body must expire the read deadline; without " +
-			"that the handler sits in the read and shutdown waits for it")
-	}
-}
-
 // A rate limit is answered with the status a client waits on, delay or no delay.
 //
 // Found by review, reproduced before fixing: a 429 whose Retry-After is absent or

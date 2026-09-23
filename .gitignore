@@ -13,6 +13,7 @@
 # rule is that a cited file has to be present, so a citation is what would drag one
 # back into the public repository. Quote the instruction into the audit instead.
 /docs/prompts/
+/AGENTS.md
 
 # Worktrees an isolated subagent checks out under the project.
 #

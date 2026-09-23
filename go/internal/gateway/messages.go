@@ -76,7 +76,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		readCtx, finish := g.bindNativeCancellation(ctx, r, recordOf(w), true)
 		defer finish()
 		_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-		stop := watchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
+		stop := httpguard.WatchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
 		defer stop()
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 		if readCtx.Err() != nil {
@@ -90,10 +90,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		case errors.As(err, &tooLarge):
 			g.refuse(w, refuseTooLarge)
 		case ctx.Err() != nil || errors.Is(err, context.Canceled):
-			// The read deadline also expires net/http's background reader. A
-			// filtered socket can still deliver this refusal, but must not be
-			// pooled with that cancelled connection context for the next turn.
-			w.Header().Set("Connection", "close")
 			// Record abandoned input as cancellation, including a replacement
 			// connection whose predecessor the filter kept open.
 			g.refuse(w, refuseCancelled)
@@ -565,13 +561,6 @@ func (c *chunkedWriter) Write(p []byte) (int, error) {
 		p = p[size:]
 	}
 	return written, nil
-}
-
-// The returned stop function joins an already-started deadline update. Checking
-// a done channel alone leaves a race between the check and expire: the handler
-// could return its ResponseWriter to net/http before the update finishes.
-func watchReadCancellation(ctx context.Context, expire func()) func() {
-	return httpguard.WatchReadCancellation(ctx, expire)
 }
 
 // relay reads the backend stream and writes client frames as they are produced.

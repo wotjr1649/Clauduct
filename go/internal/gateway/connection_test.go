@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"context"
 
 	"encoding/json"
 	"fmt"
@@ -256,6 +257,58 @@ func TestProtocolRefusalsPreserveResponses(t *testing.T) {
 					}
 					waitForActive(t, g, 0, "protocol rejection")
 				})
+			}
+		})
+	}
+}
+
+// A busy or oversized refusal closes the connection instead of first draining the upload,
+// so a slow uploader cannot hold the refusal back by the one-second drain budget.
+func TestClosingRefusalsDoNotWaitForASlowUpload(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		sent   int64
+		status int
+	}{{"busy", 1024, http.StatusTooManyRequests}, {"too-large", maxRequestBytes + 1, http.StatusRequestEntityTooLarge}} {
+		t.Run(c.name, func(t *testing.T) {
+			g := start(t)
+			if c.status == http.StatusTooManyRequests {
+				for i := 0; i < maxActiveRequests; i++ {
+					_, _, release, err := g.requests.admit(context.Background())
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer release()
+				}
+			}
+			body, upload := io.Pipe()
+			defer upload.Close()
+			sent := make(chan time.Time, 1)
+			started := time.Now()
+			go func() { _, _ = io.CopyN(upload, endlessReader{}, c.sent); sent <- time.Now() }() // then the upload stalls
+			r, err := http.NewRequest(http.MethodPost, g.BaseURL()+"/v1/messages", body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for key, value := range messages(nil).headers {
+				r.Header.Set(key, value)
+			}
+			r.Header.Set("Authorization", "Bearer "+g.Token())
+			response, err := http.DefaultClient.Do(r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			answered := time.Now()
+			if c.status == http.StatusRequestEntityTooLarge {
+				select {
+				case started = <-sent:
+				case <-time.After(10 * time.Second):
+					t.Fatal("the oversized upload never finished")
+				}
+			}
+			if waited := answered.Sub(started); response.StatusCode != c.status || !response.Close || waited > 500*time.Millisecond {
+				t.Fatalf("status=%d close=%v after %v", response.StatusCode, response.Close, waited)
 			}
 		})
 	}

@@ -1,0 +1,22 @@
+# Go: each mutation is one change to the fixed file, attached with go test -overlay.
+# M67-cancelled-drains ran the whole gateway package.
+===== M65-keep-pointers (diagnostics.go)
+--- FAIL: TestFinishReleasesHandlerOwnedPointers (0.00s)
+diagnostics_test.go:761: a finished record kept a handler-owned pointer
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.082s
+===== M66-busy-drains (errors.go)
+--- FAIL: TestClosingRefusalsDoNotWaitForASlowUpload (2.16s)
+--- FAIL: TestClosingRefusalsDoNotWaitForASlowUpload/busy (1.55s)
+connection_test.go:311: status=429 close=true after 1.0024461s
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	2.270s
+===== M66-large-drains (errors.go)
+--- FAIL: TestClosingRefusalsDoNotWaitForASlowUpload (2.12s)
+--- FAIL: TestClosingRefusalsDoNotWaitForASlowUpload/too-large (1.58s)
+connection_test.go:311: status=413 close=true after 1.0132473s
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	2.203s
+===== M67-cancelled-drains (errors.go)
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	27.117s
+===== M67-watcher-noop (httpguard/connection.go)
+--- FAIL: TestTheAbortWatcherStillStopsAReadThatTheClientAbandoned (5.00s)
+connection_test.go:188: a client that went away mid-body must expire the read deadline; without that the handler sits in the read and shutdown waits for it
+FAIL	github.com/wotjr1649/Clauduct/go/internal/httpguard	5.470s

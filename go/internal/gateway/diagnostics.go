@@ -406,6 +406,9 @@ func (r *record) finish() {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// The record stays in the recent-request ring after its handler returned; the
+	// handler's own pointers must not keep a delivered result or its report alive.
+	r.nativeTurn, r.execution, r.nativeResult = nil, nil, nil
 	if r.data.EndedMs != nil {
 		return
 	}

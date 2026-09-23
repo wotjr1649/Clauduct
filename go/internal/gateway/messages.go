@@ -327,7 +327,10 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				if err != nil || observed.Model != route.Model && !g.delegations.resumeModel(scope, agent, observed.Model) {
 					return nil, releaseAgent, errDelegationUnverified
 				}
-				if (strings.HasPrefix(route.Source, "workflow-") || route.Source == "native-selection") && (request.Effort != route.Effort || (route.Source == "workflow-selection" || route.Source == "native-selection") && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
+				// Where native chose the route, every request must match native's receipt for
+				// its current turn.
+				nativeChosen := route.Source == "workflow-selection" || route.Source == "native-selection" || route.Source == "native-fork"
+				if (strings.HasPrefix(route.Source, "workflow-") || nativeChosen) && (request.Effort != route.Effort || nativeChosen && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
 					return nil, releaseAgent, errDelegationUnverified
 				}
 				if strings.HasPrefix(route.Source, "workflow-") {

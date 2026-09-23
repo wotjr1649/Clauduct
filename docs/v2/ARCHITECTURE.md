@@ -242,7 +242,7 @@ socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 
 빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
 자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
 
-다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. connect/header/idle/overall/user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
+다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. connect(30초)·header(120초)·idle(backend 무바이트 10분, 기준선 규칙)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
 
 ## 9. retry
 

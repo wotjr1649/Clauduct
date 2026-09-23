@@ -127,7 +127,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	entry.checked("input")
 	entry.requestClass(r.Header.Get("X-Claude-Code-Request-Class"))
 	entry.at(stageSelection)
-	execution, category := g.claimNativeExecution(r, body, request)
+	execution, category := g.claimNativeExecution(r, entry, body, request)
 	if category != "" {
 		g.refuseCategory(w, http.StatusBadRequest, category)
 		return
@@ -150,10 +150,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer releaseAgent()
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
-		return
-	}
-	if execution != nil && entry.nativeTurn != nil && execution.key.turn != entry.nativeTurn.Turn {
-		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_TURN_UNVERIFIED")
 		return
 	}
 	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)
@@ -303,36 +299,18 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	releaseAgent := func() {}
 	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
 	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
-	entry.nativeTurn = nil
-	entry.nativeResult, entry.nativeResultTurn = nil, ""
 	// A tool-less root title/classifier request is independent of the conversation
 	// turn being published. It neither inherits a child selection nor owns an abort
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
+		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
 		return nil, releaseAgent, nil
 	}
-	// Capture the predecessor before reading the receipt. A later refusal may
-	// replace only this unchanged result, never a turn admitted in the meantime.
-	if g.delegations != nil {
-		results := &g.delegations.results
-		results.mu.Lock()
-		entry.nativeResult = results.entries[r.Header.Get("X-Claude-Code-Agent-Id")]
-		if entry.nativeResult != nil {
-			entry.nativeResultTurn = entry.nativeResult.NativeTurn
-		}
-		results.mu.Unlock()
-	}
-	active, present, turnErr := g.readCurrentNativeTurn(r.Header.Get("X-Claude-Code-Agent-Id"))
-	if turnErr != nil {
+	active, ok := g.pinNativeTurn(r, entry)
+	if !ok {
 		return nil, releaseAgent, errDelegationUnverified
 	}
-	if present {
-		if !validActiveReceipt(active, scope.session, r.Header.Get("X-Claude-Code-Agent-Id")) {
-			return nil, releaseAgent, errDelegationUnverified
-		}
-		entry.nativeTurn = &active
-		scope.nativeTurn = &active
-	}
+	scope.nativeTurn = active
 	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
 		role, release, registered := g.agents.begin(agent)
 		releaseAgent = release

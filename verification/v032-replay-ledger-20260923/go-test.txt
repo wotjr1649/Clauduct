@@ -1,0 +1,66 @@
+# go test, Go go1.27.1, native 2.1.280 (Claude Code)
+# first CGO_ENABLED=0 go test -count=1 -v ./...: 828 PASS, 1 FAIL, 3 SKIP
+process_test.go:261: owned grandchildren outlived the session: [15276]
+--- FAIL: TestAGrandchildEndsWithTheSessionThatStartedIt (6.07s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	278.416s
+FAIL
+# the survivor PID was bun.exe, created at 21:28:01 on an earlier day, with ParentProcessId 6688.
+# the test lists grandchildren by ParentProcessId, so its own cmd child must have received the reused PID 6688.
+# CGO_ENABLED=0 go test -count=10 -run '^TestAGrandchildEndsWithTheSessionThatStartedIt$' ./internal/app: ok
+
+# rerun CGO_ENABLED=0 go test -count=1 -v ./...   (top-level PASS=829 FAIL=0 SKIP=3)
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct	0.326s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-dev	0.394s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-hook	0.542s
+ok  	github.com/wotjr1649/Clauduct/go/internal/app	193.990s
+ok  	github.com/wotjr1649/Clauduct/go/internal/auth	1.315s
+ok  	github.com/wotjr1649/Clauduct/go/internal/buildinfo	0.507s
+ok  	github.com/wotjr1649/Clauduct/go/internal/childprocess	0.775s
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	31.522s
+ok  	github.com/wotjr1649/Clauduct/go/internal/httpguard	1.503s
+ok  	github.com/wotjr1649/Clauduct/go/internal/launch	0.512s
+ok  	github.com/wotjr1649/Clauduct/go/internal/pdf	0.865s
+ok  	github.com/wotjr1649/Clauduct/go/internal/platform	0.389s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic	0.787s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/bridge	0.432s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/codex	0.506s
+ok  	github.com/wotjr1649/Clauduct/go/internal/stream	0.521s
+ok  	github.com/wotjr1649/Clauduct/go/internal/update	1.359s
+ok  	github.com/wotjr1649/Clauduct/go/internal/upstream	2.553s
+ok  	github.com/wotjr1649/Clauduct/go/internal/wire	0.473s
+--- SKIP: TestConsoleCloseIsNotRunHere (0.00s)
+--- SKIP: TestALiveSessionCompletes (0.00s)
+--- SKIP: TestWhatSurvivesTheLauncherBeingKilled (0.00s)
+--- PASS: TestNativeEventPublicationFailureAndCapacity (0.22s)
+--- PASS: TestIndependentAuxiliaryIsSpentPerRootTurn (0.03s)
+--- PASS: TestANewTurnForgetsItsAgentsEarlierExecutions (0.04s)
+--- PASS: TestARequestReadsItsTurnReceiptOnce (0.02s)
+--- PASS: TestARequestKeepsTheTurnItArrivedIn (0.03s)
+--- PASS: TestClaimAndSelectionUseThePinnedTurn (0.00s)
+--- PASS: TestIndependentRootAuxiliaryDoesNotOwnThePublishingConversationTurn (0.03s)
+
+# CGO_ENABLED=1 go test -count=1 -race ./... (same tree as the first run)
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct	1.204s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-dev	3.599s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-hook	2.523s
+ok  	github.com/wotjr1649/Clauduct/go/internal/app	279.854s
+ok  	github.com/wotjr1649/Clauduct/go/internal/auth	1.968s
+ok  	github.com/wotjr1649/Clauduct/go/internal/buildinfo	1.290s
+ok  	github.com/wotjr1649/Clauduct/go/internal/childprocess	1.621s
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	42.815s
+ok  	github.com/wotjr1649/Clauduct/go/internal/httpguard	2.286s
+ok  	github.com/wotjr1649/Clauduct/go/internal/launch	1.456s
+ok  	github.com/wotjr1649/Clauduct/go/internal/pdf	1.654s
+ok  	github.com/wotjr1649/Clauduct/go/internal/platform	1.504s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic	3.312s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/bridge	2.164s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/codex	1.472s
+ok  	github.com/wotjr1649/Clauduct/go/internal/stream	1.506s
+ok  	github.com/wotjr1649/Clauduct/go/internal/update	2.111s
+ok  	github.com/wotjr1649/Clauduct/go/internal/upstream	2.896s
+ok  	github.com/wotjr1649/Clauduct/go/internal/wire	1.518s
+
+# gofmt (changed files), go vet (default, runtime_evidence, policy_evidence), go build: exit 0
+# CI offline evidence checks (runtime_evidence tag):
+ok  	github.com/wotjr1649/Clauduct/go/internal/app	0.108s

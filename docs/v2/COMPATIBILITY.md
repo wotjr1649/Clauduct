@@ -9,6 +9,14 @@ S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수�
 같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](../../verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
+**2026-09-23 v0.3.2 재실행 방지 묶음 — 미출하.** 요청은 처음 읽은 turn 영수증 하나로 예약·선택·취소
+바인딩을 판정한다. 독립 `auxiliary` 요청은 현재 root turn 안에서만 한 번 실행하고, 다음 turn의 같은
+요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴
+세션이 요청 16,384개에서 멈추지 않는다. 남는 한도는 agent마다 마지막 turn의 기록과 turn 정보 없는
+기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 새 게시의 순번은 이전 게시보다 작아지지 않는다.
+로컬 fixture와 실제 native로만 검사했으며 실제 backend·TUI 검수는 아니다.
+[재실행 방지 묶음 기록](../../verification/v032-replay-ledger-20260923/README.md)
+
 **2026-09-22 네 번째 수리·검증 — 현재 검수 범위 SUCCESS, 미출하.** 보완된 실제 backend 기록에서
 최초 502의 `EMPTY_REPLY`와 terminal/event/byte 정보를 확보했다. SDK 빈 대기·완료 알림,
 Workflow 자식 등록 전 경계, 동일 step의 결정 충돌, TUI 완료 알림의 진행 상태를 수정했다.

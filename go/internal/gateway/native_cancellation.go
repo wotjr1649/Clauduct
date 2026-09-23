@@ -31,12 +31,11 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 	}
 	var id nativeTurnReceipt
 	if reading {
-		var found bool
-		var err error
-		id, found, err = g.readCurrentNativeTurn(agent)
-		if !found || err != nil {
+		turn, _ := g.pinNativeTurn(r, entry)
+		if turn == nil {
 			return ctx, func() {}
 		}
+		id = *turn
 	} else {
 		if entry == nil || entry.nativeTurn == nil {
 			return ctx, func() {}

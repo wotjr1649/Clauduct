@@ -9,7 +9,10 @@ try {
     .replace('__CLAUDUCT_EVENT_ROOT__',JSON.stringify(root.replaceAll('\\','/')));
   const {register}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
   const handlers=new Map();register((name,fn)=>handlers.set(name,fn));
-  const $={session:{id:async()=>'public'},clock:{now:async()=>Date.now()},fs:{
+  // The first instance starts its publication counter at this clock, so the journal names
+  // below are publication counts. The instance registered later reads a later time.
+  let clock=0;
+  const $={session:{id:async()=>'public'},clock:{now:async()=>clock},fs:{
     write:async(p,s)=>{await fs.mkdir(path.dirname(p),{recursive:true});await fs.writeFile(p,s);},read:p=>fs.readFile(p,'utf8'),
     exists:async p=>{try{await fs.stat(p);return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}}
   }};
@@ -74,6 +77,9 @@ try {
   await longStep('long_4099'); // An active agent's current turn still works at capacity.
   // Exercise the real event module with file-backed decisions. A completed
   // notification owes no child and must not leave lifecycle drain waiting.
+  // Registering again is what a plugin reload or worker respawn does. The new instance's
+  // publications must still outrank every receipt the first one left in this directory.
+  clock=Date.now();
   handlers.clear();register((name,fn)=>handlers.set(name,fn));
   for(const waiting of [true,false]) {
     const turn=waiting?'waiting_notification':'finished_notification';
@@ -88,6 +94,9 @@ try {
     const progress=JSON.parse(await fs.readFile(path.join(root,'progress-root.json'),'utf8'));
     assert.equal(progress.phase,waiting?'awaiting_children':'turn_ended','completed notification left lifecycle waiting');
   }
+  const published=(await fs.readdir(journal)).filter(name=>name.endsWith('.json')).sort((a,b)=>parseInt(b)-parseInt(a));
+  assert.match(published[0],/^\d+-finished_notification\.json$/,'a module registered again published behind its earlier receipts');
+  console.log('PASS: a module registered again publishes ahead of its earlier receipts');
   console.log('PASS: failed write retry, immutable earlier receipts, long session under a 4096 active-agent cap');
   console.log('PASS: pending child wait and completed notification lifecycle are distinct');
 } finally {

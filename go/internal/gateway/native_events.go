@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -32,6 +33,8 @@ type nativeTurnReceipt struct {
 	Model   string `json:"model,omitempty"`
 	Effort  string `json:"effort,omitempty"`
 	Reason  string `json:"reason,omitempty"`
+	// Publication number within the agent's directory; set by readCurrentNativeTurn.
+	sequence int
 }
 
 // Set once before spawning native. The generated plugin writes only bounded
@@ -149,7 +152,41 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 	if err == nil && len(entries) > nativePruneAbove {
 		prunePublications(root, directory, entries, latest)
 	}
+	receipt.sequence = latest
 	return receipt, found && err == nil, err
+}
+
+// pinNativeTurn reads the request's current turn receipt once; the reading-stage
+// cancellation binding, the replay claim and the selection all use this value. Separate
+// reads could straddle a newer publication and disagree, and the handler then refused
+// the request. ok is false when a receipt exists but cannot be verified for the request.
+func (g *Gateway) pinNativeTurn(r *http.Request, entry *record) (turn *nativeTurnReceipt, ok bool) {
+	if entry == nil {
+		entry = &record{} // an untracked writer: nothing to share the read with
+	}
+	if entry.turnPinned {
+		return entry.nativeTurn, entry.turnValid
+	}
+	entry.turnPinned = true
+	entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
+	session, agent := r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id")
+	// Capture the predecessor before reading the receipt. A later refusal may
+	// replace only this unchanged result, never a turn admitted in the meantime.
+	if g.delegations != nil {
+		results := &g.delegations.results
+		results.mu.Lock()
+		entry.nativeResult = results.entries[agent]
+		if entry.nativeResult != nil {
+			entry.nativeResultTurn = entry.nativeResult.NativeTurn
+		}
+		results.mu.Unlock()
+	}
+	receipt, found, err := g.readCurrentNativeTurn(agent)
+	entry.turnValid = err == nil && (!found || validActiveReceipt(receipt, session, agent))
+	if found && entry.turnValid {
+		entry.nativeTurn = &receipt
+	}
+	return entry.nativeTurn, entry.turnValid
 }
 
 // The module numbers publications with a JavaScript number; beyond this it loses

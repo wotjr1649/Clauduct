@@ -29,7 +29,7 @@ async function observe($, progress, p, signal) {
 export const register = on => {
   const state = {mode:'unclassified'};
   const turns = new Map();
-  let turnSequence=0;
+  let turnSequence=0,seeding;
   const cancelledTurns = new Set();
   const progress = new Map();
   let origin='unclassified';
@@ -52,6 +52,14 @@ export const register = on => {
   on('turn.step', async function* ($, e, next) {
     const agent=e.agentId?ident(e.agentId):'', turn=ident(e.turnId);
     if (!turn || (e.agentId && !agent)) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+    // The plugin API loads a module again on a reload, an enable or a worker respawn. A
+    // counter restarted at 1 would lose to the receipts already published, since the
+    // gateway takes the highest number as current, so the counter starts at the clock.
+    // ponytail: a clock stepped back past the previous instance's count still loses.
+    await (seeding??=$.clock.now().then(now => {
+      if (!Number.isSafeInteger(now) || now<0) throw new Error('CLAUDUCT_NATIVE_CLOCK_INVALID');
+      turnSequence=Math.max(turnSequence,now);
+    }).catch(error => {seeding=undefined;throw error;}));
     let p=progress.get(agent);
     if (!p || p.turn!==turn) {
       if (progress.size>=4096 && !p) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');

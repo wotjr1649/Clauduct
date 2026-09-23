@@ -175,6 +175,8 @@ func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, byte
 type record struct {
 	// Handler-owned identity, pinned before selection and never serialized.
 	nativeTurn       *nativeTurnReceipt
+	turnPinned       bool // pinNativeTurn has read the receipt
+	turnValid        bool
 	execution        *nativeExecution
 	nativeResult     *agentResult
 	nativeResultTurn string

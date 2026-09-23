@@ -205,6 +205,20 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 현재 남은 즉시 소켓 종료 반례를 근본적으로 해결 불가능하다고 확정하지 않았다.
 취소·회수의 제품 보완 및 반례는 [S47 조사 기록](../../verification/release-final-20260920/REPORT.md)을 따른다.
 
+**AdGuard localhost 필터링(2026-09-23).** AdGuard for Windows 8.0.5570에서는
+[로컬 호스트 필터링](https://adguard.com/kb/ko/adguard-for-windows/settings/app-settings/advanced-settings/)이
+위 즉시 반닫기 응답 유실의 조건이었다. 전체 보호를 켠 채 이 설정만 끄자 공개 반닫기 probe와
+`TestRuntimeEvidenceImmediateFINReply`가 각각 20회 중 응답 0회에서 20회 모두 정상으로 바뀌었다.
+`claude.exe`의 앱별 라우팅·트래픽 필터링을 켠 상태에서 v0.3.1 후보 `ad01745`의 실제
+`claude.exe` → Clauduct → backend 왕복도 `gpt-5.6-luna`/`low` 1회로 통과했다.
+한 PC·한 버전의 결과이며, 켠 상태의 실제 요청 비교와 설치 바이너리·장기 안정성은 검증하지 않았다.
+[전후 기록](../../verification/v031-localhost-filter-20260923/README.md)
+
+다른 필터 제품이 loopback 통신을 검사·중계한다면 그 기능만 제외한 뒤 **같은 반닫기 probe와
+실제 요청을 전후 비교**한다. 설정 이름과 적용 범위는 제품·버전마다 다르므로 기능을 껐다는
+사실만으로 응답 유실이 해결됐다고 판정하지 않는다. localhost 제외는 그 제품이 검사하지 않는
+로컬 통신 범위를 넓히므로 적용 범위를 확인한다.
+
 ### 현재 거부와 구현 가능성은 별개
 
 다음은 S48 구현과 남은 구현 방향이다. 범위별 근거를 따르며 거부문 삭제만으로 지원을 선언하지 않는다.

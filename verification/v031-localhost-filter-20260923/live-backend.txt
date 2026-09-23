@@ -1,0 +1,24 @@
+adguard_live_manual_test.go 실행 기록. 이전 Codex 세션의 도구 출력에서 옮겼다.
+조건: localhost 필터링 끔, claude.exe 앱별 라우팅·트래픽 필터링 켬, AdGuard 전체 보호 켬.
+대상: v0.3.1 후보 ad01745 worktree의 go/internal/app에 임시로 둔 검사. 실행 뒤 삭제했다.
+
+실행 명령(cwd = go):
+  go test -count=1 -run=<검사명> -timeout=120s -json ./internal/app
+환경: 기본 OS 변수만 전달, GOPROXY=off, GOSUMDB=off, GOTOOLCHAIN=local, CGO_ENABLED=0,
+  DISABLE_AUTOUPDATER=1, DISABLE_TELEMETRY=1, DISABLE_ERROR_REPORTING=1,
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1, CLAUDE_CODE_MAX_RETRIES=0, CLAUDE_CODE_RETRY_WATCHDOG=0
+
+순서(UTC):
+2026-09-22T23:56:34Z  TestAdGuardCandidateLive, --bare 구성  FAIL
+  live: attempts=0 inferences=0 refused=0 exit=1 cleanup_failed=false parsed=true exact_reply=false stderr_present=true
+  backend 시도 0회. 과금 요청 없음.
+2026-09-22T23:59:42Z  TestAdGuardCandidateFixture, --bare + context policy  FAIL
+  fixture failed: gateway_calls=0 received=2 refused=1 exit=1 parsed=true exact_reply=false stderr_present=true failure_categories=[CONTEXT_SESSION_UNVERIFIED]
+  원인: --bare가 SessionStart hook을 건너뛰어 gateway가 세션을 확인하지 못했다. 제품 검증은 끄지 않고
+  검사가 실제 hook을 실행하도록 구성을 고쳤다(buildHook, --bare 제거).
+2026-09-23T00:01:24Z  TestAdGuardCandidateFixture, 실제 hook + context policy  PASS
+2026-09-23T00:01:51Z  TestAdGuardCandidateLive, 실제 hook  PASS
+  live: attempts=1 inferences=1 refused=0 exit=0 cleanup_failed=false parsed=true exact_reply=true stderr_present=true run_error=false native_error=false error_subtype=false gateway_received=5 gateway_refused=0 gateway_broken=0 failure_categories=[]
+
+판정: gpt-5.6-luna/low 요청 1회(ledger 한도 1), 지정 문구 LOCAL_FILTER_BACKEND_OK 정확 일치,
+native exit 0, 정리 오류 없음, gateway 거부·끊김 0. stderr 내용은 기록하지 않았다.

@@ -4,7 +4,10 @@
 gateway의 `request_replay.go`, `native_cancellation.go`, `messages.go`, `gateway.go`,
 `native_events.go`, `diagnostics.go`, `errors.go`. `/code-review high`를 1회 실행했고, 그 결과는
 코드를 읽고 추론한 것이다. 지적마다 코드·설계 문서·실제 native 실행으로 다시 판정했다.
-native는 Claude Code 2.1.278이고, 아래 재현은 모두 로컬 합성 backend를 사용해 과금이 없다.
+native는 Claude Code 2.1.280이고, 아래 재현은 모두 로컬 합성 backend를 사용해 과금이 없다.
+처음에는 2.1.278로 잘못 적었다. 검사가 실행하는 `~/.local/bin/claude.exe`는 2026-09-23 01:58(KST)부터
+2.1.280과 같은 파일이고, 리뷰 대상 `99b681f`는 같은 날 09:33(KST)에 커밋됐다
+([정정 근거](../v032-client-2.1.280-20260923/README.md)).
 
 ## 판정
 

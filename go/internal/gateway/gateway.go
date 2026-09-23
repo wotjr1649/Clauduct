@@ -209,7 +209,7 @@ func (g *Gateway) Token() string { return g.token }
 // rather than by a defect. What the account gets instead is the observed version beside
 // this one, so a session that starts failing after an update says so in one line rather
 // than becoming a bisect.
-const ReferenceClient = "2.1.278"
+const ReferenceClient = "2.1.280"
 
 // clientAgent matches the client naming itself.
 //

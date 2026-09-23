@@ -175,6 +175,8 @@ func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, byte
 type record struct {
 	// Handler-owned identity, pinned before selection and never serialized.
 	nativeTurn       *nativeTurnReceipt
+	turnPinned       bool // pinNativeTurn has read the receipt
+	turnValid        bool
 	execution        *nativeExecution
 	nativeResult     *agentResult
 	nativeResultTurn string
@@ -404,6 +406,9 @@ func (r *record) finish() {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// The record stays in the recent-request ring after its handler returned; the
+	// handler's own pointers must not keep a delivered result or its report alive.
+	r.nativeTurn, r.execution, r.nativeResult = nil, nil, nil
 	if r.data.EndedMs != nil {
 		return
 	}

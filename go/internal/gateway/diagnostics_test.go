@@ -749,3 +749,15 @@ func TestBackendContextObservationSurvivesRecentEviction(t *testing.T) {
 		})
 	}
 }
+
+// A finished record stays in the recent-request ring. The handler's own pointers must not
+// keep its execution, its pinned turn or a delivered result alive there.
+func TestFinishReleasesHandlerOwnedPointers(t *testing.T) {
+	g := start(t)
+	entry := g.ring.open(http.MethodPost, "/v1/messages")
+	entry.nativeTurn, entry.execution, entry.nativeResult = &nativeTurnReceipt{}, &nativeExecution{}, &agentResult{}
+	entry.finish()
+	if entry.nativeTurn != nil || entry.execution != nil || entry.nativeResult != nil {
+		t.Fatal("a finished record kept a handler-owned pointer")
+	}
+}

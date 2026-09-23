@@ -9,6 +9,15 @@ S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수�
 같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](../../verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
+**2026-09-23 v0.3.2 재실행 방지 묶음 — 미출하.** 요청은 처음 읽은 turn 영수증 하나로 예약·선택·취소
+바인딩을 판정한다. 독립 `auxiliary` 요청은 현재 root turn 안에서만 한 번 실행하고, 다음 turn의 같은
+요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴
+세션이 요청 16,384개에서 멈추지 않는다. 남는 한도는 agent마다 마지막 turn의 기록과 turn 정보 없는
+기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 시계가 크게 되돌아가지 않는 한 새 게시의 순번이 이전 게시보다 크다.
+후보 전체의 실제 backend TUI(생성·압축·취소·복구·종료)는 2.1.280에서 PASS했다.
+[TUI 기록](../../verification/v032-tui-20260923/README.md)
+[재실행 방지 묶음 기록](../../verification/v032-replay-ledger-20260923/README.md)
+
 **2026-09-22 네 번째 수리·검증 — 현재 검수 범위 SUCCESS, 미출하.** 보완된 실제 backend 기록에서
 최초 502의 `EMPTY_REPLY`와 terminal/event/byte 정보를 확보했다. SDK 빈 대기·완료 알림,
 Workflow 자식 등록 전 경계, 동일 step의 결정 충돌, TUI 완료 알림의 진행 상태를 수정했다.
@@ -161,7 +170,8 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 | 구분 | 확인한 기준 |
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](../../verification/workflow-completion-20260920/build.json), [개발 경로 반영](../../verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.278`, Windows amd64, Go 1.27.1, CGO_ENABLED=0 |
+| 최근 실제 TUI | Claude Code `2.1.280`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.2 후보, 실제 backend, 2026-09-23. [TUI 기록](../../verification/v032-tui-20260923/README.md) |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](../../verification/workflow-completion-20260920/evidence.json), [TUI 검수](../../verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 

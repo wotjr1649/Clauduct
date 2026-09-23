@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -38,7 +39,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	defer release()
 	control := http.NewResponseController(w)
 	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-	stopReadCancellation := watchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
+	stopReadCancellation := httpguard.WatchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
 	defer stopReadCancellation()
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -257,7 +258,7 @@ func (g *Gateway) readBounded(w http.ResponseWriter, r *http.Request, limit int6
 	defer release()
 	control := http.NewResponseController(w)
 	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-	stop := watchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
+	stop := httpguard.WatchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
 	defer stop()
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {

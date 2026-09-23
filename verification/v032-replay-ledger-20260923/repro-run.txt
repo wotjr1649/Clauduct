@@ -1,0 +1,33 @@
+===== head
+zz_v032_probe_test.go:35: turn published between claim and selection: status=400 category=NATIVE_TURN_UNVERIFIED backend_calls=0
+zz_v032_probe_test.go:37: request refused
+--- FAIL: TestV032TurnPublishedBetweenReads (0.02s)
+zz_v032_probe_test.go:59: request=main status=200 receipt_directory_reads=3
+zz_v032_probe_test.go:59: request=auxiliary status=200 receipt_directory_reads=0
+zz_v032_probe_test.go:59: request=count_tokens status=200 receipt_directory_reads=1
+--- PASS: TestV032ReceiptReadsPerRequest (0.01s)
+zz_v032_repro_test.go:29: identical side request refused in second-turn: status=400
+--- FAIL: TestV032ReproIndependentAuxiliaryIsSpentPerRootTurn (0.01s)
+zz_v032_repro_test.go:53: one request read the receipt 2 times
+--- FAIL: TestV032ReproARequestReadsItsTurnReceiptOnce (0.00s)
+zz_v032_repro_test.go:112: the newer turn's input was taken for a replay 400 {"error":{"message":"NATIVE_REQUEST_REPLAY_BLOCKED; an earlier attempt may already have executed. Automatic replay was blocked. Check the previous outcome before submitting a new prompt; the current native session can continue.","type":"invalid_request_error"},"type":"error"}
+--- FAIL: TestV032ReproARequestKeepsTheTurnItArrivedIn (0.01s)
+zz_v032_repro_test.go:145: new turn after 16384 earlier executions: status=400 category=NATIVE_REQUEST_CAPACITY; this session reached its execution tracking limit. Start a new session before sending more requests. No replacement was executed.
+zz_v032_repro_test.go:147: a new turn stayed blocked by earlier turns' executions
+--- FAIL: TestV032ReproCapacityAfterANewTurn (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.192s
+FAIL
+===== fix
+zz_v032_probe_test.go:35: turn published between claim and selection: status=200 category=none backend_calls=1
+--- PASS: TestV032TurnPublishedBetweenReads (0.01s)
+zz_v032_probe_test.go:59: request=main status=200 receipt_directory_reads=1
+zz_v032_probe_test.go:59: request=auxiliary status=200 receipt_directory_reads=1
+zz_v032_probe_test.go:59: request=count_tokens status=200 receipt_directory_reads=1
+--- PASS: TestV032ReceiptReadsPerRequest (0.01s)
+--- PASS: TestV032ReproIndependentAuxiliaryIsSpentPerRootTurn (0.01s)
+--- PASS: TestV032ReproARequestReadsItsTurnReceiptOnce (0.01s)
+--- PASS: TestV032ReproARequestKeepsTheTurnItArrivedIn (0.01s)
+zz_v032_repro_test.go:145: new turn after 16384 earlier executions: status=200 category=none
+--- PASS: TestV032ReproCapacityAfterANewTurn (0.02s)
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	0.197s

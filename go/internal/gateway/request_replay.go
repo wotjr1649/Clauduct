@@ -11,8 +11,11 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
-// Keep only fingerprints, never request bodies. Spent entries are not evicted:
-// forgetting one would allow a delayed transport retry to execute it again.
+// Keep only fingerprints, never request bodies. A spent entry is forgotten only when a
+// newer turn of its agent claims: requests are keyed by the turn current when they
+// arrive, so a key under an older turn cannot match again, and a request that read the
+// older turn is refused rather than keyed under it. What remains counts each agent's
+// latest turn and the turnless (--bare) keys, which stay for the session.
 const maxNativeExecutions = 16384
 
 type nativeExecutionKey struct {
@@ -24,6 +27,13 @@ type nativeExecutionKey struct {
 type nativeExecutions struct {
 	sync.Mutex
 	seen map[nativeExecutionKey]struct{}
+	// The newest turn claimed per session and agent, by publication number.
+	current map[[2]string]claimedTurn
+}
+
+type claimedTurn struct {
+	turn     string
+	sequence int
 }
 
 type nativeExecution struct {
@@ -35,18 +45,31 @@ type nativeExecution struct {
 // Reserve before selection/result mutation. A retry can arrive while its first
 // handler is still returning from a failed write. Retry headers cannot identify
 // it: the measured native resends with X-Stainless-Retry-Count: 0.
-func (g *Gateway) claimNativeExecution(r *http.Request, body []byte, request *anthropic.Request) (*nativeExecution, string) {
+func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []byte, request *anthropic.Request) (*nativeExecution, string) {
 	if g.nativeEvents.directory == "" {
 		return nil, ""
 	}
 	key := nativeExecutionKey{session: r.Header.Get("X-Claude-Code-Session-Id"), agent: r.Header.Get("X-Claude-Code-Agent-Id"), class: r.Header.Get("X-Claude-Code-Request-Class"), step: -1, body: sha256.Sum256(body)}
-	if !independentAuxiliary(r, request) {
-		turn, found, err := g.readCurrentNativeTurn(key.agent)
-		if err != nil || found && !validActiveReceipt(turn, key.session, key.agent) {
+	auxiliary := independentAuxiliary(r, request)
+	var turn *nativeTurnReceipt
+	if auxiliary {
+		// An independent side request (a title or a classifier) owns no turn, but it is
+		// spent only within the root turn it arrived in: the same bytes in a later turn
+		// are a new request. Without a readable root receipt it stays spent for the
+		// session, like --bare.
+		if root, found, err := g.readCurrentNativeTurn(""); err == nil && found && validActiveReceipt(root, key.session, "") {
+			turn = &root
+		}
+	} else {
+		var ok bool
+		if turn, ok = g.pinNativeTurn(r, entry); !ok {
 			return nil, "AGENT_SELECTION_UNVERIFIED"
 		}
-		if found {
-			key.turn = turn.Turn
+	}
+	sequence := 0
+	if turn != nil {
+		key.turn, sequence = turn.Turn, turn.sequence
+		if !auxiliary {
 			step, present, err := g.readNativeStep(key.session, key.agent)
 			if err != nil || present && step.Turn != turn.Turn {
 				return nil, "AGENT_SELECTION_UNVERIFIED"
@@ -67,6 +90,26 @@ func (g *Gateway) claimNativeExecution(r *http.Request, body []byte, request *an
 	ledger := &g.executions
 	ledger.Lock()
 	defer ledger.Unlock()
+	if key.turn != "" {
+		agent := [2]string{key.session, key.agent}
+		last, known := ledger.current[agent]
+		if known && key.turn != last.turn {
+			if sequence <= last.sequence {
+				return nil, "NATIVE_TURN_UNVERIFIED"
+			}
+			for spent := range ledger.seen {
+				if spent.session == key.session && spent.agent == key.agent && spent.turn != "" && spent.turn != key.turn {
+					delete(ledger.seen, spent)
+				}
+			}
+		}
+		if !known || sequence > last.sequence {
+			if ledger.current == nil {
+				ledger.current = make(map[[2]string]claimedTurn)
+			}
+			ledger.current[agent] = claimedTurn{key.turn, sequence}
+		}
+	}
 	if _, exists := ledger.seen[key]; exists {
 		return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
 	}

@@ -76,7 +76,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		readCtx, finish := g.bindNativeCancellation(ctx, r, recordOf(w), true)
 		defer finish()
 		_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-		stop := watchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
+		stop := httpguard.WatchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
 		defer stop()
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
 		if readCtx.Err() != nil {
@@ -90,10 +90,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		case errors.As(err, &tooLarge):
 			g.refuse(w, refuseTooLarge)
 		case ctx.Err() != nil || errors.Is(err, context.Canceled):
-			// The read deadline also expires net/http's background reader. A
-			// filtered socket can still deliver this refusal, but must not be
-			// pooled with that cancelled connection context for the next turn.
-			w.Header().Set("Connection", "close")
 			// Record abandoned input as cancellation, including a replacement
 			// connection whose predecessor the filter kept open.
 			g.refuse(w, refuseCancelled)
@@ -127,7 +123,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	entry.checked("input")
 	entry.requestClass(r.Header.Get("X-Claude-Code-Request-Class"))
 	entry.at(stageSelection)
-	execution, category := g.claimNativeExecution(r, body, request)
+	execution, category := g.claimNativeExecution(r, entry, body, request)
 	if category != "" {
 		g.refuseCategory(w, http.StatusBadRequest, category)
 		return
@@ -150,10 +146,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer releaseAgent()
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
-		return
-	}
-	if execution != nil && entry.nativeTurn != nil && execution.key.turn != entry.nativeTurn.Turn {
-		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_TURN_UNVERIFIED")
 		return
 	}
 	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)
@@ -303,36 +295,18 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	releaseAgent := func() {}
 	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
 	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
-	entry.nativeTurn = nil
-	entry.nativeResult, entry.nativeResultTurn = nil, ""
 	// A tool-less root title/classifier request is independent of the conversation
 	// turn being published. It neither inherits a child selection nor owns an abort
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
+		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
 		return nil, releaseAgent, nil
 	}
-	// Capture the predecessor before reading the receipt. A later refusal may
-	// replace only this unchanged result, never a turn admitted in the meantime.
-	if g.delegations != nil {
-		results := &g.delegations.results
-		results.mu.Lock()
-		entry.nativeResult = results.entries[r.Header.Get("X-Claude-Code-Agent-Id")]
-		if entry.nativeResult != nil {
-			entry.nativeResultTurn = entry.nativeResult.NativeTurn
-		}
-		results.mu.Unlock()
-	}
-	active, present, turnErr := g.readCurrentNativeTurn(r.Header.Get("X-Claude-Code-Agent-Id"))
-	if turnErr != nil {
+	active, ok := g.pinNativeTurn(r, entry)
+	if !ok {
 		return nil, releaseAgent, errDelegationUnverified
 	}
-	if present {
-		if !validActiveReceipt(active, scope.session, r.Header.Get("X-Claude-Code-Agent-Id")) {
-			return nil, releaseAgent, errDelegationUnverified
-		}
-		entry.nativeTurn = &active
-		scope.nativeTurn = &active
-	}
+	scope.nativeTurn = active
 	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
 		role, release, registered := g.agents.begin(agent)
 		releaseAgent = release
@@ -587,13 +561,6 @@ func (c *chunkedWriter) Write(p []byte) (int, error) {
 		p = p[size:]
 	}
 	return written, nil
-}
-
-// The returned stop function joins an already-started deadline update. Checking
-// a done channel alone leaves a race between the check and expire: the handler
-// could return its ResponseWriter to net/http before the update finishes.
-func watchReadCancellation(ctx context.Context, expire func()) func() {
-	return httpguard.WatchReadCancellation(ctx, expire)
 }
 
 // relay reads the backend stream and writes client frames as they are produced.

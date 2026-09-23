@@ -79,18 +79,26 @@ func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category str
 func (g *Gateway) refuse(w http.ResponseWriter, r refusal) {
 	g.countRefusal(r.category, recordOf(w).path())
 	recordOf(w).refusedWith(r.status, r.category)
-	// net/http closes early refusals with more than 256KiB unread. Consume a
-	// bounded body before writing the error so a normal native upload can keep
-	// using its connection. Unfinished/oversized bodies still close, within the
-	// same one-second budget; they never reach decoding or backend execution.
-	deadline := time.Now().Add(time.Second)
-	if r.category == refuseCancelled.category {
-		deadline = time.Now()
-	}
-	if http.NewResponseController(w).SetReadDeadline(deadline) == nil {
-		if tracked, ok := w.(*tracked); ok && tracked.body != nil {
-			if _, err := io.CopyN(io.Discard, tracked.body, maxRequestBytes+1); err != io.EOF {
-				w.Header().Set("Connection", "close")
+	control := http.NewResponseController(w)
+	switch r.category {
+	case refuseCancelled.category, refuseTooLarge.category, refuseBusy.category:
+		// These close without reading more. A cancelled read must not be pooled with the
+		// next turn, even when a filter still delivers this refusal; an oversized body is
+		// already past its limit and the closing socket is drained by httpguard; a busy
+		// gateway must not wait on a slow upload. The expired read deadline also stops
+		// net/http's background reader.
+		_ = control.SetReadDeadline(time.Now())
+		w.Header().Set("Connection", "close")
+	default:
+		// net/http closes early refusals with more than 256KiB unread. Consume a
+		// bounded body before writing the error so a normal native upload can keep
+		// using its connection. Unfinished bodies still close, within a one-second
+		// budget; they never reach decoding or backend execution.
+		if control.SetReadDeadline(time.Now().Add(time.Second)) == nil {
+			if tracked, ok := w.(*tracked); ok && tracked.body != nil {
+				if _, err := io.CopyN(io.Discard, tracked.body, maxRequestBytes+1); err != io.EOF {
+					w.Header().Set("Connection", "close")
+				}
 			}
 		}
 	}

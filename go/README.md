@@ -82,7 +82,10 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 해당 실행 프로세스의 `TEMP`·`TMP`를 task 전용 공개 합성 폴더로 지정한다. 기본 사용자
 임시 경로가 요청에 섞이면 `EVIDENCE_PRIVATE_PATH`로 전송 전에 거부한다. 이 guard를 끄지
 않는다. TUI 검사는 `go test -c -tags=runtime_evidence`로 만든 검사 바이너리를 실제 PTY에서
-직접 실행해야 stdin이 native까지 이어진다. 최종 transcript·누적 counter·정상 종료를 함께
+직접 실행해야 stdin이 native까지 이어진다. 검사 바이너리도 `C:\Users` 밖(예: 저장소의 `.tmp\`)에
+만든다. 검사가 hook을 그 옆에 만들고, native 2.1.280은 `/compact` 다음 요청에 hook 경로를 싣는다.
+live 검사는 두 경로 중 하나라도 `C:\Users` 아래면 요청 전에 멈춘다. PowerShell에서는
+`'-test.run=^Name$'`처럼 따옴표로 묶는다. 묶지 않으면 `-test`와 `.run`으로 나뉘어 전달된다. 최종 transcript·누적 counter·정상 종료를 함께
 확인하며, 화면의 완료 문구만으로 PASS를 판정하지 않는다. CI는 live 스위치 없이 태그
 compile/vet와 오프라인 검수기만 실행한다.
 

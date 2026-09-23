@@ -1,2 +1,0 @@
-The compiled test executable rejected an unquoted PowerShell dotted argument as -test.
-exit=1; test not started; native not started; backend calls=0.

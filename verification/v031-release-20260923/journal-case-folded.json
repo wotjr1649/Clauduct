@@ -1,1 +1,0 @@
-{"version":2,"session":"proof_session","parent":"","agent":"proof_child","call":"proof_call","role":"Plan","alias":"haiku","model":"gpt-5.6-luna","effort":"max","source":"agent-call-model","inherited":true,"intent":{"model":"gpt-5.6-luna","effort":"","modelProvided":true,"effortProvided":false}}

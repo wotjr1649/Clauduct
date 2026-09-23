@@ -1,8 +1,8 @@
 # V2 패키징 — 무엇이 나가고, 무엇이 필요하고, 어떻게 되돌리는가
 
-이 문서는 **출하되는 것**을 기술한다. 설계는 [ARCHITECTURE.md](ARCHITECTURE.md), 증거는 [VALIDATION.md](VALIDATION.md)가 소유한다.
+이 문서는 **출하되는 것**을 기술한다. 설계는 [ARCHITECTURE.md](ARCHITECTURE.md), v0.3.2까지의 증거는 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)가 소유한다.
 
-**G9 완료 2026-09-17: 기본이 Go다.** 설치된 `clauduct`는 이 빌드이고, Node 구현은 `clauduct-node`로 남는다. 그 전까지 이름을 나눠 둔 이유는 이름을 공유하면 PATH 순서가 어느 구현이 도는지 결정하기 때문이었다. 이제 그건 결정 사항이고, 이름이 그 결정의 답이다.
+**설치된 `clauduct`는 이 Go 빌드다**(G9, 2026-09-17). 이전 Node 구현(v1)은 v0.3.3에서 저장소에서 은퇴했다(6장).
 
 ## 1. 나가는 것
 
@@ -162,8 +162,8 @@ native `claude`가 "이 버전 카탈로그에 없는 모델"이라고 경고한
 
 ### 5.0 스크립트
 
-`scripts/install.ps1`과 `scripts/uninstall.ps1`이 그 복사를 대신한다. 루트의 `install.ps1`은
-**v1(Node) 설치기**이고 기준선이므로 건드리지 않는다 — 이름이 같지만 다른 물건이다.
+`scripts/install.ps1`과 `scripts/uninstall.ps1`이 그 복사를 대신한다. v0.3.2까지 저장소 루트에
+있던 `install.ps1`은 v1(Node) 설치기였고 v0.3.3에서 저장소와 함께 은퇴했다.
 
 ```powershell
 # 릴리스에서 설치 (기본 최신 태그, 기본 위치 ~\.local\bin)
@@ -354,31 +354,18 @@ clauduct --usage       # 또는 clauduct-dev usage — 같은 뷰다
 출처를 가진 새 선택 journal은 v0.3.0 reader가 거부한다. 구형 형식 대조군은 그대로 읽혔다.
 바이너리를 되돌려도 이 자식의 같은 세션 재개가 보장되지는 않는다. v0.3.1에서 해당 세션을
 계속하거나, v0.3.0에서는 새 세션을 시작한다. 기록을 삭제하거나 필드를 제거해 검증을
-통과시키지 않는다. [합성 journal 대조 근거](../../verification/v031-integration-20260921/REPORT.md).
+통과시키지 않는다. [합성 journal 대조 근거](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-integration-20260921/REPORT.md).
 
 내장 역할의 대소문자 정규화도 역호환 경계다. 저장된 `Plan`과 native metadata의 `plan`처럼
 철자가 다르면 v0.3.1은 일치로 검증하지만 v0.3.0은 정확 비교에서 거부한다.
 v0.3.1 writer가 만든 bytes를 그대로 v0.3.0 reader에 넣어 확인했다.
-[대조군과 검사 범위](../../verification/v031-release-20260923/README.md). 구버전으로 되돌릴 때는
+[대조군과 검사 범위](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-release-20260923/README.md). 구버전으로 되돌릴 때는
 새 세션을 시작하는 경로를 사용하고, 기존 세션은 해당 기록을 쓴 버전에서 계속한다.
 
-**두 파일 이름을 바꾸면 끝난다.** Node 구현은 지워지지 않았고 `clauduct-node`로 그대로 있다.
-
-| 상황 | 하는 일 |
-|---|---|
-| Node로 되돌린다 | `clauduct.exe`를 치우고 `clauduct-node.cmd`를 `clauduct.cmd`로 되돌린다. Go 바이너리는 지울 필요도 없다 |
-| 둘 다 쓴다 | 그대로 둔다. 이름이 다르므로 서로를 가리지 않고 동시에 실행된다 — 측정으로 확인했다(VALIDATION.md) |
-| Go 빌드를 완전히 뺀다 | 세 바이너리를 지우고 위의 되돌리기를 한다 |
-
-**저장소 안에서는 `clauduct`가 여전히 Node를 가리킨다.** cmd는 PATH보다 **현재 디렉터리를 먼저**
-보고, 저장소 루트에는 v1 개발용 `clauduct.cmd`가 있다. 그 파일의 해시와 경로가 동결된 migration
-manifest(738 entries)와 기준선 문서 여러 곳에 박혀 있어 지금 개명하지 않는다 — 이득보다 파급이
-크다. 영향은 **cmd/PowerShell에서 저장소를 cwd로 둔 경우뿐**이고(bash는 cwd를 탐색하지 않는다),
-정리 시점은 Node 파일을 실제로 옮기는 G10/M3다.
-
-Windows `PATHEXT`는 `.EXE`를 `.CMD`보다 먼저 본다. 같은 디렉터리에 `clauduct.exe`와 `clauduct.cmd`가 동시에 있으면 `.exe`가 이긴다 — 그래서 되돌릴 때는 **`clauduct.exe`를 치우는 것이 필수**이고, `.cmd`를 되살리는 것만으로는 부족하다.
-
-기준선 소스는 이 작업 내내 tracked 변경 0으로 유지됐다. 비교 기준이 바뀌면 비교가 아니다.
+**Node 구현으로 되돌리는 경로는 v0.3.3에서 닫았다.** 이 저장소는 더 이상 Node 구현을 싣지 않는다.
+이미 설치된 `clauduct-node`는 이 문서의 설치·업데이트·제거가 건드리지 않으므로 그대로 동작한다.
+그 소스가 필요하면 [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481)에서 받는다.
+같은 디렉터리에 `clauduct.exe`와 `clauduct.cmd`가 함께 있으면 `PATHEXT` 순서상 `.exe`가 이긴다.
 
 ## 7. 아직 없는 것
 
@@ -388,6 +375,6 @@ Windows `PATHEXT`는 `.EXE`를 `.CMD`보다 먼저 본다. 같은 디렉터리�
 | 자동 업데이트 | 배경에서 도는 것은 없다. 사용자가 부르는 `clauduct --update`는 있다(5.1절) |
 | Windows 외 대상 | `internal/platform`에 windows 태그 파일 하나뿐이다. 다른 대상은 이식이 아니라 **새 설계**다 |
 | 서명 | **없고, 넣지 않기로 했다**(5.0.1절). 이유는 비용이 아니라 효과다 — 2024년 이후 어떤 인증서도 SmartScreen을 즉시 통과시키지 못한다 |
-| CI 실행 결과 | **있다.** `redesign/go-v2-native-host`에서 gofmt·vet·build·test·race 전부 green (최근 run `35161187084`). 2026-09-17에 `CGO_ENABLED=0` 핀을 추가했으므로 다음 run이 출하 구성과 같은 것을 검사한다 |
+| 공개 CI의 테스트 | **없다(v0.3.3부터).** 공개 CI는 Windows gofmt·vet·build와 httpguard의 Linux·macOS build만 본다. 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
 
 **미실행은 통과가 아니다.** 각 항목은 없다고 적혀 있지 괜찮다고 적혀 있지 않다.

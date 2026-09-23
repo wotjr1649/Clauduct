@@ -1,5 +1,0 @@
---- FAIL: TestRefusalBoundsUnfinishedBody (2.00s)
-    cancellation_test.go:132: refused upload still held the server open: context deadline exceeded
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	27.971s
-FAIL

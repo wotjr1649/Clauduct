@@ -1,9 +1,0 @@
-    live-clear_test.go:94: live: result phase=0 error=false session=4b919854
-    live-clear_test.go:94: live: result phase=1 error=false session=25019862
-    live-clear_test.go:94: live: result phase=2 error=true session=25019862
-    live-clear_test.go:132: live: first_marker=true clear_changed_session=true second_marker=false child_reported=false child_generation_200=0 result_errors=1
-    live-clear_test.go:134: live: attempts=0 inferences=0 refused=0 run_error=false exit=1 cleanup_failed=false failure_categories=[AGENT_SELECTION_UNVERIFIED] stderr_present=true
---- FAIL: TestFocusedReviewLiveClearDryRun (2.26s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/app	2.390s
-FAIL

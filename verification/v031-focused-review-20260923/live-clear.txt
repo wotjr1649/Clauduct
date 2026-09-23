@@ -1,8 +1,0 @@
-    live-clear_test.go:94: live: result phase=0 error=false session=b095fa51
-    live-clear_test.go:94: live: result phase=1 error=false session=eb6c0050
-    live-clear_test.go:88: live: task_notification status=completed child_marker=true
-    live-clear_test.go:94: live: result phase=2 error=false session=eb6c0050
-    live-clear_test.go:132: live: first_marker=true clear_changed_session=true second_marker=true child_reported=true child_generation_200=1 result_errors=0
-    live-clear_test.go:134: live: attempts=5 inferences=5 refused=0 run_error=false exit=0 cleanup_failed=false failure_categories=[] stderr_present=true
---- PASS: TestFocusedReviewLiveClear (22.75s)
-ok  	github.com/wotjr1649/Clauduct/go/internal/app	22.869s

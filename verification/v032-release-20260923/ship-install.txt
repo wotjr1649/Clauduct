@@ -1,6 +1,0 @@
-new install 0.3.2: digests=match old_files=0 version=[clauduct 0.3.2 commit 5c2e719b8af0d1294ac6e19a4d2909a7c5e7b7a8 go go1.27.1 windows/amd64] -> PASS
-install 0.3.1 from its published assets: digests=match old_files=0 version=[clauduct 0.3.1 commit 37ea73347a7076836e0bdb4f9b2ce99b8d6ae7d0 go go1.27.1 windows/amd64] -> PASS
-update 0.3.1 -> 0.3.2: digests=match old_files=0 version=[clauduct 0.3.2 commit 5c2e719b8af0d1294ac6e19a4d2909a7c5e7b7a8 go go1.27.1 windows/amd64] -> PASS
-rollback 0.3.2 -> 0.3.1: digests=match old_files=0 version=[clauduct 0.3.1 commit 37ea73347a7076836e0bdb4f9b2ce99b8d6ae7d0 go go1.27.1 windows/amd64] -> PASS
-user PATH unchanged: True
-SHIP_INSTALL PASS

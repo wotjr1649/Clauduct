@@ -6,19 +6,12 @@ Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 그대로 담당
 추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다.
 Codex app-server를 호출하거나 실행 중인 Codex 앱 세션에 요청을 넘기는 구현이 아닙니다.
 
-## 구현이 둘입니다
-
-이름이 다르므로 동시에 설치해도 서로를 가리지 않습니다.
-
-| 이름 | 무엇 | 상태 | 현행 문서 |
-|---|---|---|---|
-| `clauduct` | Go 단일 바이너리 (+`clauduct-hook`, `clauduct-dev`) | **현재 제품** | [docs/v2/README.md](docs/v2/README.md) |
-| `clauduct-node` | Node 구현 | 이전 제품 · 비교 기준선 · 되돌리기 경로 | [HANDOFF.md](HANDOFF.md) |
-
-**어느 쪽 문서를 읽고 있는지가 중요합니다.** 이 저장소의 v1 문서는 Node 구현을 기술하며 Go 빌드에
-그대로 적용되지 않습니다 — 게이트웨이 재시도 횟수, 자원·선택 실패 코드, Node 런타임 요구,
-`--dry-run` 같은 항목이 서로 다릅니다. Go 빌드의 **현행** 동작·제약·미지원은
+제품은 Go 단일 바이너리 `clauduct`(+`clauduct-hook`, `clauduct-dev`)입니다. 현행 동작·제약·미지원은
 [docs/v2/COMPATIBILITY.md](docs/v2/COMPATIBILITY.md) 하나가 소유합니다.
+
+이전 Node 구현(v1, `clauduct-node`)은 v0.3.3에서 저장소에서 은퇴했습니다. 마지막 소스와 문서는
+[분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481)에
+그대로 있습니다.
 
 ## 설치
 
@@ -54,7 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
 |---|---|
 | PowerShell만 `irm` | PowerShell 5.1에서 `curl`은 `Invoke-WebRequest`의 별칭이라 `-fsSL -o`를 받지 못합니다. Git Bash에는 반대로 `irm`이 없습니다 |
 | PowerShell만 `.\` | Git Bash는 `.\`의 백슬래시를 이스케이프로 먹어 `.install.ps1`을 넘깁니다. cmd는 둘 다 되지만 맞춰서 뺐습니다 |
-| 받는 이름이 `clauduct-install.ps1` | 이 저장소 루트에 **v1(Node) 설치기인 `install.ps1`이 있습니다.** 클론 안에서 그 이름으로 받으면 기준선 파일을 덮어씁니다 |
+| 받는 이름이 `clauduct-install.ps1` | v0.3.2까지는 저장소 루트에 **v1(Node) 설치기인 `install.ps1`이 있었습니다.** 클론 안에서 그 이름으로 받으면 그 파일을 덮어썼습니다. 이름은 그대로 둡니다 |
 
 cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑재이기 때문입니다.
 
@@ -142,19 +135,11 @@ clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너�
 [docs/v2/PACKAGING.md](docs/v2/PACKAGING.md), 모듈의 빌드 명령과 runtime 계약은
 [go/README.md](go/README.md)에 있습니다.
 
-## Node 구현 (`clauduct-node`)
-
-Windows 설치는 [설치 안내](docs/v1/installation.md)를 따릅니다. Node.js 24 이상, Claude Code,
-Codex CLI와 기존 Codex 로그인이 필요합니다. 동작·검증 구분과 자원 제한은
-[native 구현 안내](docs/v1/README.md), 설치·복구·배포 무결성은 [릴리즈 안내](RELEASE.md)에 있습니다.
-
-기준선으로서의 역할이 남아 있어 저장소에 그대로 둡니다. 정리 여부와 그 조건은
-[docs/v2/MIGRATION.md](docs/v2/MIGRATION.md) 6장이 기록합니다.
-
 ## 무엇이 검증됐는가
 
-증거는 [docs/v2/VALIDATION.md](docs/v2/VALIDATION.md)가 소유합니다. 요구 ID, 게이트, 실행한 검사와
-**실행하지 않은 검사**를 함께 적습니다 — 미실행은 통과가 아닙니다.
+v0.3.2까지의 증거는 [docs/v2/VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)가 소유합니다. 요구 ID, 게이트, 실행한 검사와
+**실행하지 않은 검사**를 함께 적습니다 — 미실행은 통과가 아닙니다. v0.3.3부터 테스트와 검증 기록은
+이 저장소에 두지 않고 로컬에서 관리합니다. 공개 CI는 빌드만 확인합니다.
 
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 공식 지원하지 않는다고 명시합니다.
 이것은 제3자 호환 구현이며 "공식 지원"이나 "전체 기능 100% 보장"으로 설명하지 않습니다.

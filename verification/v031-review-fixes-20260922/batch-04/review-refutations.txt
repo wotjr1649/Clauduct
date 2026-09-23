@@ -1,8 +1,0 @@
-=== RUN   TestWithheldChildIsPendingRatherThanMissingACompletedResult
---- PASS: TestWithheldChildIsPendingRatherThanMissingACompletedResult (0.01s)
-=== RUN   TestRateLimitDoesNotAuthoriseNativeReplay
---- PASS: TestRateLimitDoesNotAuthoriseNativeReplay (0.06s)
-=== RUN   TestAgentResultsRequireBodyAndSuccessfulParentDelivery
---- PASS: TestAgentResultsRequireBodyAndSuccessfulParentDelivery (0.01s)
-PASS
-ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	0.216s

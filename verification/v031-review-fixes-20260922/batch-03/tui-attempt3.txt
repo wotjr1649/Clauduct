@@ -1,173 +1,0 @@
-=== RUN   TestRuntimeEvidenceNativeTUI
-    integration_runtime_evidence_test.go:296: tui_public_profile=D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI1131491280\001\profile cwd=D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI1131491280\001\public-project
-    integration_runtime_evidence_test.go:313: native_pid=12844 starts=1
-WelcometoClaudeCodev2.1.278Let'sgetstarted.ChoosethetextstylethatlooksbestwithyourterminalTochangethislater,run/theme1.Auto(matchterminal)>2.Darkmode√3.Lightmode4.Darkmode(colorblind-friendly)5.Lightmode(colorblind-friendly)6.Darkmode(ANSIcolorsonly)7.Lightmode(ANSIcolorsonly)╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 1 function greet(){ 2 -  console.log("Hello, World!");
-  2 +  console.log("Hello, Claude!");     
-  3  }
- ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 
-  Syntax theme: Monokai Extended (ctrl+t to disable)
-[>0qSecurity notes:1. Claude can make mistakes.   You'rresponsibleforClaud's actions and should alwaysreview them, especially when running code.2. Due to promptinjectionrisks,onlyuseitwithcodeyoutrust Learn more: https://code.claude.com/docs/en/securityPress Enter to continue…
-
-
-
-
-
-
-
-
-
-
-[>4m
-
-
-
-
-
-
-
-
-
-
-
-[>0q────────────────────────────────────────────────────────────────────────────────Accessingworkspace:D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI1131491280\001\public-projectQuicksafetycheck:Isthisaprojectyoucreatedoroneyoutrust?(Likeyourowncode,awell-knownopensourceproject,orworkfromyourteam).Ifnot,takeamomenttoreviewwhat'sinthisfolderfirst.ClaudeCode'llbeabletoread,edit,andexecutefileshere.Securityguide>No,exitYes,ItrustthisfolderEntertoconfirm·Esctocancel[>4m
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
- ▐▛███▛█Claude Codev2.1.278
-▝▜██████▀gpt-5.6-luna with low effort · API Usage Billing
-  ▝▝ ▝▝  D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidence…○ low · /effort
-────────────────────────────────────────────────────────────────────────────────>  
-────────────────────────────────────────────────────────────────────────────────⏸ manual mode on · ? for shortcuts · ← for agents[>0q        
- ▐▛▛█ 
-·▜██████·~~▗▟▛███▛█▄▜███▘
-  ▝▝ ▝▝   ▐ 
-▝▀        
- ▐▛▛█ 
-·▜██████·~~▗▟▛███▛█▄▜███▘
-  ▝▝ ▝▝   ▐ 
-▝▀> Remember these public facts: code PUBLIC_TUI_47, color blue, release number     47. Use no tools. Reply exactly PUBLIC_TUI_47.                                ·Spelunking… (running UserPromptSubmit hook · 0s)> esc to interrupt · ← for agents✢…*g✶✻n✽i…kg✻nn✶ui*✢lk·enpu✢Sl*e✶✻p✽S    integration_runtime_evidence_test.go:167: backend text_stream_startedRemember these public facts: code PUBLIC_TUI_47, color blue, release number 47. Use no tools. Reply exactly PUBLIC_TUI_47.Workig…(3s · ↓2 tokens)✻●PUBLIC_TUI_473    integration_runtime_evidence_test.go:119: backend text_delta_bytes=13 completed_text_bytes=0 parent_marker=false
-    integration_runtime_evidence_test.go:124: proof_backend_marker=PUBLIC_TUI_47
- · thinking with low effort)✻Sautéed for 3s · done 오후 8:07> ? for shortcuts · ← for agents> /compact                                                                      ✢Running PreCompact hooks… (running PreCompact hook · 0s)
-  ⎿  Tip: Start with small features or bug fixes, tell Claude to propose a plan,and verify its suggested edits> esc to interrupt · ← for agents*oa*Compacting conversation… 
- ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱ 0%✶✻Com✽Cpoampct1aicntig ✻ncgo n✶covenr*vserat✢siaotn·io…▰2n…✢*✶✻✽3CoCmpoa    integration_runtime_evidence_test.go:167: backend text_stream_startedmcpati✻cntg✶i ngco* ncv✢oenvrs▰4ea·rtsaiotni…on…✢*✶✻5✽Com✻Cpomac✶ptai*ctngi ✢nc6go cnv·oenrvesartsiao✢tin…on*…✶▰7✻✽✻Com✶Cpoa*mpct8ai✢cntg·in cgo ncovenrvsea✢rstiao*tni…✶on▰9…✻✽✻✶C10%*oCmp✢oamcpt·acintgi ncg oncv✢oenvrsea*rtsi1✶atoni…✻on…✽✻✶*▰2✢Com·Cpomacptaicntig ✢ncgo cnv*oenr✶vs3erat✻siao✽tin…on…✻✶*▰4✢·ComCpoamc✢paticntg*in cgo✶ ncv5✻onervsea✽rtsaiotni…on…✻✶*✢6·Com✢Copamc*pt(16s)ai✶ctngi ✻ncg oncv▰7✽oenrvesartsiaton✻i…on7✶…*✢·8✢Com8*Cpoa✶mpctai✻cntig ✽ncgo n▰9covenrvserat✻siao✶tn9io…*n…✢·20✢20*C✶oCmp✻oamc✽paticntgi ngco ncv1✻oenvrs✶ea1rt*saiotn✢i…on…·✢▰22*✶✻Com✽Cpomacptaictngi ✻ncgo cnv3✶oenr3*vesart✢siao·tin…on…✢*4✶✻▰4✽ComCpoampct✻aicntg5✶in cgo* ncove✢nrvsea5·rstiaotni…on…✢6*✶✻✽6CoCmp✻oamc7✶ptacin*tgi ✢ncg oncv·oenvrseartsiaton✢i…▰7on…8*✶    integration_runtime_evidence_test.go:119: backend text_delta_bytes=4982 completed_text_bytes=0 parent_marker=false
-    integration_runtime_evidence_test.go:128: proof_backend_compaction_finished
-✻Running SessionStar hooks… (running SessionStart hook · 28s)✽ 
-  ⎿  Compacted (ctrl+o to see full summary)
-    PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu   ct-hook.exe"] completed successfully:                                           [REDACTED_COMPACT_RECEIPT]                                                                           > ? for shortcuts · ← for agents> Remember these public facts: code PUBLIC_TUI_47, color blue, release number     47. Use no tools. Reply exactly PUBLIC_TUI_47.                                
-
-● PUBLIC_TUI_47✻Sautéed for 3s · done 오후 8:07
-
->/compact
-  ⎿  Compacted (ctrl+o to see full summary)
-    PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/clauduct-hook.exe"] completed successfully: 
-    [REDACTED_COMPACT_RECEIPT] Use no tools. Reply with the remembered code, color and release number, 
-  followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.                                                                                  ✽Burrowing… (running UserPromptSubmit hook · 0s)                                 ⎿  Tip: Use Plan Mode to prepare for a complex request before making changes. Press shift+tab twice to enable.> esc to interrupt · ← for agents                                                                   ✻✶*✢·…✢g*n✶i…✻✽wgon✻ri✶*rwuo✢·Brr✢u*B✶    integration_runtime_evidence_test.go:167: backend text_stream_startedUse no tools. Reply with the remembered code, color and release number, followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.(3s · ↓2 tokens)✻✽4                                                                                ● PUBLIC_TUI_47                                                                 ✻Sautéed for 3s · done 오후 8:07> /compact                                                                        ⎿  Compacted (ctrl+o to see full summary)
-     PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu     ct-hook.exe"] completed succesfully: [REDACTED_COMPACT_RECEIPT]             
-> Use no tools. Reply with the remembered code, color and release number,         followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.       
-
-● PUBLIC_TUI_47 blue 47 PUBLIC_COMPACT_DONE                                         integration_runtime_evidence_test.go:119: backend text_delta_bytes=41 completed_text_bytes=0 parent_marker=false
-    integration_runtime_evidence_test.go:124: proof_backend_marker=PUBLIC_TUI_47
-7 blue 47 PUBLIC_COMPACT_DONE
-    integration_runtime_evidence_test.go:128: proof_backend_compaction_finished 
-Burrowing… · thinking with low effort)> Remember these public facts: code PUBLIC_TUI_47, color blue, release number     47. Use no tools. Reply exactly PUBLIC_TUI_47.                                ●PUBLIC_TUI_47✻ Sautéed for 3s · done 오후 8:07
-                                                                                > /compact                                                                        ⎿  Compacted (ctrl+o to see full ummary)PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/clauduct-hook.exe"] completed successfully: 
-     [REDACTED_COMPACT_RECEIPT]                                                                                             > Use no tools. Reply with the remembered code, color and release number,         followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.       ●PUBLIC_TUI_47 blue47 PUBLIC_COMPACT_DONE                                                                                                                     ✻Baked for 4s · done 오후8:09                                                 > ? for shortcuts · ← for agents                                                                                  ⎿  Compacted (ctrl+o to see full summary)                                     PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu    ct-hook.exe"] completed successfully: [REDACTED_COMPACT_RECEIPT]
-
-> Use no tools. Reply with the remembered code, color and release number,        followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.
-                                                                                ●PUBLIC_TUI_47 blue 47 PUBLIC_COMPACT_DONE                                     
-✻Baked for 4s · done 오후 8:09                                                 Use no tools. Start with PUBLIC_CANCEL_STARTED, then write 500 numbered lines, each a complete sentence about a different public color. Keep writing 
-  until all 500 lines are complete.                                                                                                                             ✽Lollygagging… 
-  ⎿  Tip: Use /memryto view and manage Claude memory> esc to interrupt · ← for agents(running UserPromptSubmit hook · 0s)yg                                                                ✻la✶lg*✢oy·Lll✢o*L✶✻✽✻✶*✢·✢*✶✻    integration_runtime_evidence_test.go:167: backend text_stream_startedUse no tools. Start with PUBLIC_CANCEL_STARTED, then write 500 numbered lines, each a complete sentence about a different public color. Keep writing until all 500 lines are complete.(3s · ↓2 tokens)✽4✻11 tokens)✶8*20✢235·544…523✢g566*n78✶9✻i…812✽gg690gn56✻ai8104 tokens)✶gg7*8✢yg101·la729lg3741✢oy266*Ll75✶9✻l80✽o28207L213✻42✶56*67✢74·89923018✢134*25✶34✻8✽10s · ↓ 40 tokens)53671✻2✶487*400✢4·1519326✢7*951✶…64✻8✽g2982n958✻i…500✶1*gg18gn25✢9·ai3302gg4351✢yg5*la7✶70lg9✻85✽oy489Ll60110✻l6✶o8*29✢L3842·545758✢6*70✶1✻380✽62357✻712✶23*30✢554·76725✢889*97✶803✻67✽8192835✻…749✶g58*66✢n79·i…981gg936✢gn8911*ai24✶8✻gg931✽yg204la524✻lg568✶oy80*4✢Ll57·l11.0k tokens)o✢L*✶✻✽21✻✶*    integration_runtime_evidence_test.go:119: backend text_delta_bytes=4500 completed_text_bytes=0 parent_marker=false
-    integration_runtime_evidence_test.go:131: proof_backend_incomplete_end
-✻ Sautéed for 3s · done 오후 8:07                                               
-> /compact                                                                        ⎿  Compacted (ctrl+o to see full summary)PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu     ct-hook.exe"] completed successfully:                                           [REDACTED_COMPACT_RECEIPT]             > Use no tools. Reply with the remembered code, color and release number,         followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.                                                                                       ●PUBLIC_TUI_47blue47PUBLIC_COMPACT_DONE
-                                                                                ✻ Baked for 4s · done 오후 8:09                                                                                                                                 > Use no tools. Start with PUBLIC_CANCEL_STARTED, then write 500 numbered         lines, each a complete sentence about a different public color. Keep writing    until all 500 lines are complete.                                             > ? for shortcuts · ← for agents65.Jadeisamediumgreencolorinspiredbyamineral.
- 66. Mint is a pale green color withacoolfreshness.67.Seafoamisalightgreencolorresemblingoceanfoam.
-  68. Moss is a muted yellow-green color.                                         69. Celadon is a pale grayish green color.70. Sage is a subdued gray-green color.                                       71. Pistachio is a light yellow-green colornamedafteranut.72. Avocado is a muted yellow-green color.                                    73.Appleisafreshmediumgreencolor.
-  74. Shamrock is a bright green color associated with a clover.                  75. Kelly is a vivid medium green color.                                      76.Viridianisablue-leaninggreenpigmentcolor.
- 77. Malachiteis arich green color inspiredbyamineral.78.Peridotisayellow-greencolornamedafteragemstone.
- 79. Spearmint is a cool pale greencolor.80.Asparagusisasubduedgreencolor.
-  81. Celery is a pale yellow-green color.                                        82. Artichoke is a muted gray-green color.                                      83. Juniper is a dark green color                                             6Mintpale green colr with a cool freshness.                         7Seafoamis  liht green color resembing ocean foam.8Moss isa muted yellow-green color.9Celadonis a pale grayish green color.70Sage isa subdued-green color.1Pistachiois a light ellow-green colornamedafteranut.2Avocdo is amuted yellow-green colr.                                    3pple is afresh medium green colr.                                      4Shamrockis a bright green color associatedwithaclover.5Kelly isa vivid medium green color.                                      6Viridianis a blue-leaning green pigmentcolor.7Malachite is a rich gree color inspiredby a mineral.8Peridot is ayellow-named aftergemstone.9Spearmint isa col pal green color.                                    80Aspagussubdued green colr.                                       1Celey ia ple yellow-gren color.2Artichokeis  mutd gray-green clor.3Junper is adark green color                                               ⎿  Interrupted · What should Claude do instead?71Psachiois alightyelow-greenlor named afteranut.72Avocadomutedyellow-green color.                                    73Apple is a frsh medium gren color.74Shamrck is a bright green color associatedwithaclover.5Kelly is a vivid medium gren color.6Vridian is a bue-leaning gren pigment color.                           7Malachite isa rich green colorinspiredbyamineral.8Peridot isa yellow-green color namedafteragemstone.9peamint is a cool pal green color.                                     80Asparagus is a subdued gren color.                                       81Celery is apale yelow-green color.                                      82Artiokmuted gray-greencolor.                                    83Junperdark green colr                                               ⎿  Interrupted · What should Claude do instead?                                                                              > Use no tools. Reply exactly PUBLIC_TUI_RECOVERED.                                                                                                           ✢Harmonizing… (running UserPromptSubmit hook · 0s)                             Tip: Use /theme tocangethe colorthem                                  > esc to interrupt · ← for agents·                                                                 …✢g*n✶✻i…✽zginni✻✶oz*✢mi·rnao✢Hm*r✶✻a    integration_runtime_evidence_test.go:167: backend text_stream_startedUse no tools. Reply exactly PUBLIC_TUI_RECOVERED.(3s · ↓2 tokens)✽H3Apple is a fresh medium green color.                                      4Shamrock is a bright green color associatedwithaclover.5Kelyvivid6Viridianlue-leaninggreenpigment color.                           7Maachte is a rich green color inspiredbyamineral.8Peot is a yelow-gree color named after a gemstone.9Spermntcoolpal green color.                                     80Asparagus isa subdued green color.                                       81Celey isa ple yellow-gren color.                                      2rtichokemted gray-green color.3Juniper is a dark green color                                              ⎿  Interrupted · What should Claude do instead?                                                                              > Use no tools. Reply exactly PUBLIC_TUI_RECOVERED.                             ● PUBLIC_TUI_RECOVERED                                                          4Harmonizing…    integration_runtime_evidence_test.go:119: backend text_delta_bytes=20 completed_text_bytes=0 parent_marker=false
-    integration_runtime_evidence_test.go:124: proof_backend_marker=PUBLIC_TUI_RE
-ECOVERED
-    integration_runtime_evidence_test.go:128: proof_backend_compaction_finished 
-2vocado isa muted yellow-green clor.3Apple isa fresh medium green color.4Shamrockis a bright green color associatedwithaclover.5Kelly isa vivid medium green color.                                      6Viridian is a blue-leanig green pigmentcolor.                           7Malachite isa rich inspired bymineral.                    8Peridot is ayellw-gren color namedafteragemstone.79Spemintcool pale green clor.0Aspaaguis  subdued gren color.                                       1Celery isa ple yllow-green colr.                                      2Artchoke isa muted gray-greencolor.
-  83. Juniper is a dark green color                                               ⎿  Interrupted · What should Claude do instead?
-                                                                                > Use no tools. Reply exactly PUBLIC_TUI_RECOVERED.                                                                                                             ●PUBLIC_TUI_RECOVERED
-                                                                                ✻ Cooked for 3s · done 오후 8:11                                                > ? for shortcuts · ← for agents    integration_runtime_evidence_test.go:296: tui class= kind=models outcome=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
-come=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generatio
-on outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
-    integration_runtime_evidence_test.go:296: tui class=main kind=generation out
-tcome=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
-come=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class=compaction kind=compacti
-ion outcome=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
-come=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
-come=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generatio
-on outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
-    integration_runtime_evidence_test.go:296: tui class=main kind=generation out
-tcome=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
-come=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generatio
-on outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
-    integration_runtime_evidence_test.go:296: tui class=main kind=generation out
-tcome=broken category=CANCELLED cancellation=
-    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
-come=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generatio
-on outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
-    integration_runtime_evidence_test.go:296: tui class=main kind=generation out
-tcome=ok category= cancellation=
-    integration_runtime_evidence_test.go:296: same_native_pid=12844 starts=1 exi
-it=1 cleanup=true
-    integration_runtime_evidence_test.go:296: TUI lifecycle incomplete
-    integration_runtime_evidence_test.go:206: live attempts=5 inferences=5 refus
-sed=4
---- FAIL: TestRuntimeEvidenceNativeTUI (302.68s)
-FAIL
-

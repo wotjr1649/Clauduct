@@ -1,9 +1,8 @@
 name: go
 
-# A separate workflow file rather than another job inside tests.yml. The Node baseline's
-# workflow is the evidence for the shipped product, and a Go failure must not be readable
-# as a Node regression. Keeping them apart also means this file can be added without
-# editing a tracked file the comparison depends on.
+# Compile-only since v0.3.3. Tests, the race run, evidence checks and their inputs are not in
+# the public tree; the maintainer runs them locally before a push. A `go test` here would
+# report "no test files" and read as a pass, so this workflow does not run one.
 
 on:
   push:
@@ -29,10 +28,8 @@ jobs:
     timeout-minutes: 20
     env:
       # Pinned rather than left to the runner. CGO_ENABLED defaults to 1 wherever a C
-      # toolchain exists and windows-latest has one, so without this CI would build and
-      # test different bytes than a release machine without gcc -- and the reproducibility
-      # test could not tell, because it compares two builds from the same environment.
-      # The race job below is the one exception and its binary is not the one that ships.
+      # toolchain exists and windows-latest has one, so without this CI would build
+      # different bytes than a release machine without gcc.
       CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@v7
@@ -55,30 +52,11 @@ jobs:
       - name: vet
         run: go vet ./...
 
-      - name: evidence compile and vet
-        run: |
-          go vet -tags runtime_evidence ./...
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go vet -tags policy_evidence ./...
-
-      - name: offline evidence validators
-        run: go test -tags runtime_evidence -count=1 -timeout=60s -run '^(TestTUIAcceptanceRejectsMissingOrMisorderedEvidence|TestIntegrationAuditSignalsOnlyTextStart|TestIntegrationPrivatePathsStopBeforeTransport)$' ./internal/app
-
       - name: build
         run: go build ./...
 
-      - name: test
-        run: go test -count=1 ./...
-
-      - name: test (race)
-        # The race detector needs cgo and a C toolchain. If this step fails because the
-        # runner has neither, fix the runner: an unrun race check is NOT_RUN, never a pass.
-        env:
-          CGO_ENABLED: '1'
-        run: go test -count=1 -race ./...
-
   httpguard-portable:
-    # This validates the shared filter only; the full launcher remains Windows-only.
+    # This compiles the shared filter only; the full launcher remains Windows-only.
     strategy:
       fail-fast: false
       matrix:
@@ -94,4 +72,4 @@ jobs:
           go-version: '1.27.1'
           cache: false
       - name: shared filter
-        run: go test -count=1 -timeout=60s ./internal/httpguard
+        run: go build ./internal/httpguard

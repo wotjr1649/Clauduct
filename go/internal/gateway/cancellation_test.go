@@ -93,7 +93,10 @@ func TestCloseCancelsEventBodyReads(t *testing.T) {
 			if g.received.Load() == 0 {
 				t.Fatal("event request never arrived")
 			}
-			ctx, stop := context.WithTimeout(context.Background(), time.Second)
+			// The upload never finishes on its own, so any bound catches a read that
+			// shutdown does not cancel. Use the product's drain budget (app's
+			// defaultShutdownTimeout): one second failed under a loaded race run.
+			ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 			defer stop()
 			if err := g.Close(ctx); err != nil {
 				t.Errorf("shutdown did not cancel the event body read: %v", err)

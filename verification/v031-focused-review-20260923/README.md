@@ -86,7 +86,9 @@ race의 첫 전체 실행에서 gateway의 `TestCloseCancelsEventBodyReads`가 �
 있다. gateway만 race 3회 반복하면 새 검사가 파일 600개를 만들 때 두 번 실패했고, 새 검사를 빼거나
 HEAD 파일로는 통과했다. 새 검사의 게시 수를 정리 기준을 막 넘는 129개로 줄인 뒤 gateway race 3회
 반복 두 번과 위 전체 race가 통과했다. 줄인 검사도 두 수정의 제거를 잡는다([기록](capacity-mutations.txt)).
-시간 예산 검사의 간헐 실패 자체는 이번에 고치지 않았다.
+이 검사는 v0.3.0에도 같은 1초 예산으로 있었다. 업로드가 스스로 끝나지 않으므로 어떤 상한이든 취소되지
+않은 읽기를 잡는다. 그래서 예산을 제품의 종료 예산(`defaultShutdownTimeout`, 5초)에 맞췄다. 종료 시 요청
+취소를 제거하면 여전히 `context deadline exceeded`로 실패한다.
 
 ## 재현
 

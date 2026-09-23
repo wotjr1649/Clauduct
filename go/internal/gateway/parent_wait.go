@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
@@ -115,14 +116,55 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 		entry.checked("native_wait_control")
 	}
 	workflowLaunch := step.Eligible && len(readiness.Pending) == 0 && id == "" && step.Index > 0 && g.delegations.returnedWorkflowLaunch(request, session, id)
+	forkLaunch := step.Eligible && len(readiness.Pending) == 0 && id == "" && step.Index > 0 && returnedForkLaunch(request)
 	step.waiting = len(readiness.Pending) > 0
 	// Eligible root index zero is published only for a task notification, never
 	// explicit user input. With no pending children it may consume only an empty
 	// terminal reply; a real answer or tool call must still reach native.
-	if step.Eligible && (step.waiting || workflowLaunch || id == "" && step.Index == 0) {
+	if step.Eligible && (step.waiting || workflowLaunch || forkLaunch || id == "" && step.Index == 0) {
 		return &step, nil
 	}
 	return nil, nil
+}
+
+// forkLaunchMarker is how native 2.1.280 reports a forked skill that went to the background:
+// `Skill "<name>" launched (forked execution, running in the background).`
+const forkLaunchMarker = "launched (forked execution, running in the background)"
+
+// In the TUI a forked skill runs in the background (#81). The Skill tool returns at once,
+// the parent may end its turn empty while it waits, and the report arrives later as native's
+// own notification -- the Workflow launch case below, without a gateway-side record, because
+// nothing was prepared for a fork. Correlate only a successful Skill result in this request
+// that says so; it permits an empty control reply, never fabricates a child or a result.
+// An inline skill returns its content instead, and its empty answer stays EMPTY_REPLY.
+func returnedForkLaunch(request *anthropic.Request) bool {
+	start := len(request.Messages) - 1
+	for start >= 0 && request.Messages[start].Role != "assistant" {
+		start--
+	}
+	if start < 0 {
+		return false
+	}
+	for _, message := range request.Messages[start+1:] {
+		if message.Role != "user" {
+			continue
+		}
+		for _, b := range message.Blocks {
+			if b.Type != "tool_result" || b.IsError {
+				continue
+			}
+			called := false
+			for _, call := range request.Messages[start].Blocks {
+				called = called || call.Type == "tool_use" && call.Name == "Skill" && call.ID == b.ToolUseID
+			}
+			for _, part := range b.Result {
+				if called && strings.HasPrefix(part.Text, `Skill "`) && strings.Contains(part.Text, forkLaunchMarker) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // A successful Workflow launch returns before its first child is registered.

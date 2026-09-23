@@ -187,7 +187,8 @@ export const register = on => {
 	}
     const p=progress.get(e.agentId?ident(e.agentId):'');
     if (!p) return next(e);
-    if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow') p.delegated=true;
+    // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
+    if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;
     // Counted inside the guarded region. A throwing observe left the counter raised with
     // nothing to lower it, and session_lifecycle waits for it to reach zero: the session
     // then burned the whole deadline grace and was force-stopped instead of drained.

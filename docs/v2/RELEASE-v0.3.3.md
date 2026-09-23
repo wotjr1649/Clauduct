@@ -43,3 +43,18 @@ v0.3.0으로 되돌릴 때의 제한은 [v0.3.1 안내](RELEASE-v0.3.1.md)와 �
 
 Windows 전용이며 서명하지 않는다. 지원 기능과 남은 조건은 [호환성 문서](COMPATIBILITY.md)를
 참조한다.
+
+## 출하 검사 (2026-09-24)
+
+태그 `v0.3.3`은 `3ecbc4a`를 가리키고, [Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.3.3)에 자산 6개가 있다.
+검증 기록은 v0.3.3부터 공개 저장소에 두지 않으므로 결과만 적는다.
+
+- 태그의 깨끗한 checkout 두 곳에서 빌드했고, 두 번째는 별도 build cache를 썼다. 세 바이너리는 바이트 단위로 같았다.
+  `clauduct-dev version`은 `0.3.3`, commit `3ecbc4a9bdf7134e36b1e0da543a885e2af1fb11`이고 `+dirty`는 없다.
+- 격리 설치로 새 설치, v0.3.2 발행 자산 설치, v0.3.3으로 업데이트, v0.3.2로 되돌리기를 차례로 했다. 모든 단계에서
+  digest와 버전 스탬프가 맞았고 `.old` 파일과 PATH 변화는 없었다.
+- 설치한 v0.3.3으로 실제 backend 세션을 돌렸다(luna/low, 시도 5회). 입력, `/clear`, 백그라운드 자식 위임을 보냈고
+  거부·끊김·실패는 0이었다. hook이 설치됐고 자식 보고가 도착했으며, 끝난 자식 turn 하나가 재실행 방지 기록을 돌려줬다.
+- 발행 후 받은 자산 6개는 빌드한 파일과 같았고, Release API의 digest는 `SHA256SUMS`와 같았다.
+  `install.ps1 -Tag v0.3.3`으로 GitHub에서 설치했다. 격리된 v0.3.2의 `clauduct --update --yes`는 v0.3.3으로 교체했고,
+  남은 `.old`는 다음 실행에서 사라졌다. 두 번째 `--update`는 `already current`였다.

@@ -1,6 +1,6 @@
 # Go V2 아키텍처 — 로컬 검증 후 확정본
 
-핸드오프 5·7·12–21장의 설계를 기준선 `node-bfbdf23-g0`의 실제 코드와 대조한 결과다. 핸드오프와 다른 곳에는 이유를 붙였다. 상태·판정은 여기에 두지 않는다 — [README.md](README.md)와 [DECISION.md](DECISION.md)가 소유한다.
+핸드오프 5·7·12–21장의 설계를 기준선 `node-bfbdf23-g0`의 실제 코드와 대조한 결과다. 핸드오프와 다른 곳에는 이유를 붙였다. 상태·판정은 여기에 두지 않는다 — [README.md](README.md)와 [DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md)가 소유한다.
 
 ## 1. 실행 경로
 
@@ -81,7 +81,7 @@ Claude Code 2.1.280의 공개 옵션 형태(2.1.278과 같다)와 기존 hidden 
 모르는 형태를 임의로 boolean으로 간주하지 않는다. native subcommand의 옵션을 별도로
 재구현하지 않으므로, 모르는 subcommand 옵션 뒤의 settings/역할 후보에도 같은 거부 원칙을 적용한다.
 
-기준선의 `blockedOptions` 30개와 그 인과 분해는 [DECISION.md](DECISION.md) 2.6절에 있다.
+기준선의 `blockedOptions` 30개와 그 인과 분해는 [DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md) 2.6절에 있다.
 현재 거부 목록을 늘릴 때는 값을 먹지 않는 옵션인지와 그 이름의 과잉 거부를 수용할지 별도로 결정한다.
 
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
@@ -100,7 +100,7 @@ Claude Code 2.1.280의 공개 옵션 형태(2.1.278과 같다)와 기존 hidden 
 
 기존의 광범위 secret 제거를 축소하면 MCP 호환은 개선되지만 **child에 보이는 secret 범위가 넓어진다.** 이를 보안상 동일한 동작으로 표현하지 않는다.
 
-기본 모드에서 system prompt 교체, agent 목록 주입, picker 교체, permission 우회, telemetry 변경, context window 확대, resume policy 변경을 하지 않는다. 기준선이 지금 하고 있는 주입 3키·agent 14개·hook 3이벤트는 V2 기본 경로에 없다([DECISION.md](DECISION.md) 2.5·2.7).
+기본 모드에서 system prompt 교체, agent 목록 주입, picker 교체, permission 우회, telemetry 변경, context window 확대, resume policy 변경을 하지 않는다. 기준선이 지금 하고 있는 주입 3키·agent 14개·hook 3이벤트는 V2 기본 경로에 없다([DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md) 2.5·2.7).
 
 ## 6. HTTP façade
 
@@ -151,10 +151,10 @@ gateway 종료 신호는 이미 진행 중인 drain을 중단한다. 응답 전�
 요청 검증·거부 상태와 본문은 유지한다. 이미 끊어진 TCP 연결을 복구하거나 backend를
 자동 재실행하는 계층은 아니다.
 
-[제품 경로 회귀 검사](../../go/internal/gateway/connection_test.go)와
-[이전 보호 On 검수 기록](../../verification/v031-transport-20260922/REPORT.md)을 보존한다.
+[제품 경로 회귀 검사](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/go/internal/gateway/connection_test.go)와
+[이전 보호 On 검수 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-transport-20260922/REPORT.md)을 보존한다.
 현재 13단계 native 대조·실제 backend TUI·수정 제거 검증은
-`verification/v031-review-fixes-20260922/batch-02/REPORT.md`에 기록한다.
+[`verification/v031-review-fixes-20260922/batch-02/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-02/REPORT.md)에 기록한다.
 
 ## 7. 프로토콜 변환
 
@@ -207,7 +207,7 @@ cached input과 reasoning output을 각각의 상위 usage에 다시 더하지 �
 템플릿과 닮았다는 이유만으로 압축을 요구하지 않으며, 진단에 해당 class를 보존한다.
 
 채택 배경·추정식·캐시와 복구의 상세 경계는
-[S46 채택 정책](../../verification/release-repair-20260920/POLICY-REVIEW.md), 현재 검증 상태는
+[S46 채택 정책](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/release-repair-20260920/POLICY-REVIEW.md), 현재 검증 상태는
 [COMPATIBILITY.md](COMPATIBILITY.md)가 기록한다.
 
 ## 8. SSE·전달 barrier
@@ -315,7 +315,7 @@ fake upstream은 synthetic credential만 받는다. production credential이 loo
 
 가능하면 실제 `.exe`를 직접 실행한다. shell 문자열 조립으로 user argument를 연결하지 않는다. npm `.cmd`만 발견되면 설치 방식을 식별해 검증된 adapter를 쓰거나 지원 한계를 알린다. 어떤 `.cmd`든 내용을 대충 파싱하거나 `cmd /c`에 인자를 이어붙이는 fallback은 금지한다. cwd에서 우연히 발견한 동명 프로그램을 신뢰된 설치로 취급하지 않는다.
 
-기준선의 실행 파일 해석 계약(`src/runtime-paths.mjs`)은 Windows 전용이다 — PATH를 `;`로 나누고, PATH 항목 중 cwd와 같은 것을 제외하고, 절대경로만 받고, 64개로 제한하며, npm shim은 `package.json`의 `name`/`bin` 일치까지 확인한 뒤에만 Node 경유로 실행한다. 이 다섯 가지 방어는 Go에서도 유지한다.
+기준선의 실행 파일 해석 계약([`src/runtime-paths.mjs`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/src/runtime-paths.mjs))은 Windows 전용이다 — PATH를 `;`로 나누고, PATH 항목 중 cwd와 같은 것을 제외하고, 절대경로만 받고, 64개로 제한하며, npm shim은 `package.json`의 `name`/`bin` 일치까지 확인한 뒤에만 Node 경유로 실행한다. 이 다섯 가지 방어는 Go에서도 유지한다.
 
 기본 interactive 실행은 native console과 stdin/stdout/stderr를 상속한다. 새 PTY를 만들어 native UI를 재구현하지 않는다. `Esc`·`Ctrl+C`·prompt 편집·취소가 baseline과 맞아야 한다. `Ctrl+C`를 무조건 parent 종료로 해석하는 구현도, 모든 signal을 무시하는 구현도 금지한다. 같은 console event를 중복 전달해 도구·세션을 두 번 취소하지 않는다.
 
@@ -377,6 +377,6 @@ V1에서 만든 transcript를 V2가 무조건 재개할 수 있다고 선언하�
 
 모든 Go 코드는 `gofmt` 적용, `go vet`·타입 검사 통과. CGO 없는 production binary를 우선하되 필요한 native 기능은 검증한다. race 검사는 지원 runner에서 수행하고 미실행을 PASS로 표기하지 않는다. Windows 지원은 Windows 실행 증거가 있어야 한다. artifact에 commit·Go version·target OS/arch·빌드 명령·dependency 정보를 연결한다.
 
-`.NET`·PowerShell·Python을 Go 제품의 필수 runtime으로 새로 요구하지 않는다. **Node도 마찬가지다** — 기준선이 `process.execPath`를 wire로 내보내는 두 곳([DECISION.md](DECISION.md) 2.3)은 포팅하지 않고 재설계한다(요구 V2-02). 사용자가 설치한 Claude/Codex가 npm shim이면 그 도구의 Node 의존은 별개다.
+`.NET`·PowerShell·Python을 Go 제품의 필수 runtime으로 새로 요구하지 않는다. **Node도 마찬가지다** — 기준선이 `process.execPath`를 wire로 내보내는 두 곳([DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md) 2.3)은 포팅하지 않고 재설계한다(요구 V2-02). 사용자가 설치한 Claude/Codex가 npm shim이면 그 도구의 Node 의존은 별개다.
 
 두 독립 build의 hash가 같다고 주장하려면 동일 toolchain·dependency·build flags·VCS metadata·입력 상태로 실제 재빌드 비교를 한다. `-trimpath`를 썼다는 사실만으로 재현 가능성을 선언하지 않는다. 서명·자동 업데이트는 별도 권한과 설계가 필요하며 기본 범위에 몰래 추가하지 않는다.

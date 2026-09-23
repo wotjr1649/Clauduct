@@ -1,6 +1,0 @@
-=== RUN   TestUnreadablePluginNameIsUncertainOnlyInItsNamespace
-    role_scan_test.go:195: unverified plugin role "proof:reviewer" treated as absent: false <nil>
---- FAIL: TestUnreadablePluginNameIsUncertainOnlyInItsNamespace (0.01s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/app	0.101s
-FAIL

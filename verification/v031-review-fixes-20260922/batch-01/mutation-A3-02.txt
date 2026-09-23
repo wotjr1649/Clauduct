@@ -1,6 +1,0 @@
-=== RUN   TestCompactionAdmissionWriteFailureRecoversWithoutRestart
-    context_journal_test.go:187: write failure left unrecoverable or unverified state: phase=compacting busy=false calls=1
---- FAIL: TestCompactionAdmissionWriteFailureRecoversWithoutRestart (0.04s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.226s
-FAIL

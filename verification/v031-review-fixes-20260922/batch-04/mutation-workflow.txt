@@ -1,8 +1,0 @@
-=== RUN   TestNativeSDKEmptyReplyWaitsForBackgroundChild
-=== RUN   TestNativeSDKEmptyReplyWaitsForBackgroundChild/Workflow
-    native_wait_test.go:36: SDK wait hid an error map[EMPTY_REPLY:1 NATIVE_REQUEST_REPLAY_BLOCKED:1]
---- FAIL: TestNativeSDKEmptyReplyWaitsForBackgroundChild (5.86s)
-    --- FAIL: TestNativeSDKEmptyReplyWaitsForBackgroundChild/Workflow (3.90s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/app	6.084s
-FAIL

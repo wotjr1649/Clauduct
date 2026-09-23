@@ -1,7 +1,0 @@
---- FAIL: TestHalfClosedClientCanReconnectWithoutDuplicateExecution (2.09s)
-    --- FAIL: TestHalfClosedClientCanReconnectWithoutDuplicateExecution/dispatched=true (0.76s)
-        --- FAIL: TestHalfClosedClientCanReconnectWithoutDuplicateExecution/dispatched=true/7 (0.05s)
-            v1_regression_test.go:85: read body: read tcp 127.0.0.1:8995->127.0.0.1:8993: wsarecv: An existing connection was forcibly closed by the remote host.
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	3.693s
-FAIL

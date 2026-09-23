@@ -1,12 +1,12 @@
 # V2 호환성 — 현재 / 제약 / 미지원
 
 Go 개발 빌드의 지원 기능과 제한을 이 문서에서 관리한다. 격차의 이력은
-[PARITY.md](PARITY.md), 이전 실행 증거는 [VALIDATION.md](VALIDATION.md),
-S41 수리와 실패 기록은 [S41 보고서](../../verification/session41-repair-20260919/REPORT.md),
-기능별 판정·진행 관측·Workflow 결과 회수는 [후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)에 있다.
-S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수리 기록](../../verification/session42-repair-20260920/REPORT.md)에 있다.
-부모의 완료 조건·native TUI 대기·미실행 Workflow 단계 재개는 [부모 대기·계획 재개 기록](../../verification/parent-wait-20260920/REPORT.md)에 있다.
-같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](../../verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
+[PARITY.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/PARITY.md), 이전 실행 증거는 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md),
+S41 수리와 실패 기록은 [S41 보고서](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/REPORT.md),
+기능별 판정·진행 관측·Workflow 결과 회수는 [후속 검수 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/capability-repair-20260919/REPORT.md)에 있다.
+S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수리 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session42-repair-20260920/REPORT.md)에 있다.
+부모의 완료 조건·native TUI 대기·미실행 Workflow 단계 재개는 [부모 대기·계획 재개 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/REPORT.md)에 있다.
+같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
 **2026-09-23 v0.3.2 재실행 방지 묶음 — 미출하.** 요청은 처음 읽은 turn 영수증 하나로 예약·선택·취소
@@ -15,8 +15,8 @@ Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사�
 세션이 요청 16,384개에서 멈추지 않는다. 남는 한도는 agent마다 마지막 turn의 기록과 turn 정보 없는
 기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 시계가 크게 되돌아가지 않는 한 새 게시의 순번이 이전 게시보다 크다.
 후보 전체의 실제 backend TUI(생성·압축·취소·복구·종료)는 2.1.280에서 PASS했다.
-[TUI 기록](../../verification/v032-tui-20260923/README.md)
-[재실행 방지 묶음 기록](../../verification/v032-replay-ledger-20260923/README.md)
+[TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md)
+[재실행 방지 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-replay-ledger-20260923/README.md)
 
 **2026-09-22 네 번째 수리·검증 — 현재 검수 범위 SUCCESS, 미출하.** 보완된 실제 backend 기록에서
 최초 502의 `EMPTY_REPLY`와 terminal/event/byte 정보를 확보했다. SDK 빈 대기·완료 알림,
@@ -30,7 +30,7 @@ TUI는 PID 26160·5회 호출로 생성·압축·취소·복구·정상 종료�
 사용자의 마지막 확인 상태다. 일반 생성·압축은 실제 backend usage를 계속 사용한다.
 과거 batch-03에서 유실된 category와 raw TCP source는 역사적 증거 한계로 남긴다.
 현재 결과를 임의의 미래 버전 전체나 릴리스 승인으로 확장하지 않는다. 자세한 근거는
-`verification/v031-review-fixes-20260922/batch-04/REPORT.md`, `REVIEW.md`, `evidence.json`에 있다.
+[`verification/v031-review-fixes-20260922/batch-04/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-04/REPORT.md), `REVIEW.md`, `evidence.json`에 있다.
 
 **2026-09-22 세 번째 수리 당시 — 변경 범위 PASS, 전체 판정 HOLD, 미출하.** Workflow 선택과
 거부 집계, 복합 short option, 손상된 plugin 역할의 namespace, 선택적 count 분류를 보완했다.
@@ -41,14 +41,14 @@ PID 276의 TUI 생성·압축·취소·복구·정상 종료를 5회 호출로 �
 한 선행 SDK 실행의 HTTP 502는 최초 오류명이 기록되지 않아 원인 미확정이다. 재실행 PASS가
 그 실패를 종결하지 않았다. 당시 별도 Claude 재리뷰는 6분 안에 결과를 반환하지 못했다.
 그때의 HOLD와 실패 이력은 보존하며 현재 판정은 위 네 번째 수리를 따른다. 당시 근거는
-`verification/v031-review-fixes-20260922/batch-03/REPORT.md`에 있다.
+[`verification/v031-review-fixes-20260922/batch-03/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-03/REPORT.md)에 있다.
 
 **2026-09-22 첫째·둘째 수리 당시 — CHANGES_REQUIRED, 미출하.** 첫 수리 묶음에서 늦은 요청의
 실패·완료가 새 turn의 결과를 덮어쓰는 문제와 압축 journal 저장 실패 뒤 복구 고착을 수정했다.
 전송 검사에는 읽기·파싱 오류를 함께 남기도록 보완했다. 두 번째 수리에서는 큰 요청 거부 뒤
 연결 유지, 종료 대기 중단, native의 불확실한 요청 재전송 차단을 검증했다. 당시 남은 리뷰
 지적의 후속 판정은 위 세 번째 수리 기록을 따른다. 아래 PASS는 전체 릴리스 승인이 아니다.
-근거는 `verification/v031-review-fixes-20260922/batch-01/REPORT.md`와 `batch-02/REPORT.md`에 있다.
+근거는 [`verification/v031-review-fixes-20260922/batch-01/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-01/REPORT.md)와 `batch-02/REPORT.md`에 있다.
 
 **2026-09-22 전송 후속 수리 — 제품 수용 범위 PASS, 미출하.** 큰 body 거부를 bounded drain으로
 처리하여 같은 연결을 유지하고, 완료 응답의 socket 종료 상한을 500ms로 보완했다. 같은 native
@@ -56,7 +56,7 @@ turn·step의 재전송은 실행 지문으로 차단한다. 응답 전 손실·
 같은 PID에서 후속 요청이 성공했고, 실제 backend TUI는 PID 19376·5회 실호출·정상 종료를
 80.08초에 검증했다. 13단계 실제 native 대조, HTTP/SSE 800건, 일반·race 전체 18개 패키지가
 통과했다. 보호 설정은 변경하지 않았다. 구현·실패 이력·남는 경계는
-`verification/v031-review-fixes-20260922/batch-02/REPORT.md`가 관리한다.
+[`verification/v031-review-fixes-20260922/batch-02/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-02/REPORT.md)가 관리한다.
 
 **2026-09-22 이전 전송 보완의 관측 수용 범위 — PASS, 미출하.** 사용자가 완료 기준을 보호 On에서의
 제품 실제 동작으로 정하고 native 프로세스를 유지하는 복구를 우선했다. 응답 framing 완료 뒤
@@ -65,40 +65,40 @@ socket을 즉시 닫지 않고 상대 종료를 최대 100ms·64KiB까지 기다
 생성·압축·취소·후속 응답·종료와 전체 Go race 검사가 통과했다. 보호 설정은 바꾸지 않았다.
 아래 이력의 독립 Node·.NET·raw TCP FAIL/HOLD를 PASS로 바꾸는 판정은 아니며, 외부 driver의
 수정 또는 모든 필터·버전의 호환성을 뜻하지 않는다. 범위·초기 검수 실패·재실행 근거는
-[프로세스 유지 수리 기록](../../verification/v031-transport-20260922/REPORT.md)을 따른다.
+[프로세스 유지 수리 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-transport-20260922/REPORT.md)을 따른다.
 
 **2026-09-21 v0.3.1 개발 묶음 1 — 미출하.** 사용자 역할을 먼저 확인한 뒤 내장 이름만
 정규화하고, 사용자 `Fork`의 모델 선택과 복원 시 구분을 보존한다. 자체 라우트가 없는 역할은
 native의 실제 모델·effort를 확인하며 완료 추적을 유지한다. 손상된 역할 정의의 이름을
 확정하지 못하면 읽힌 정의는 보존하되 부재를 단정하지 않는다. `input_audio`의 미디어 분류도
 보완했다. 이번 변경은 로컬 fixture를 연결한 native 2.1.278에서 검사했으며 수동 TUI 수용
-판정은 아니다. 근거와 남은 항목은 [v0.3.1 첫 묶음 기록](../../verification/v031-roles-20260921/REPORT.md)에 있다.
+판정은 아니다. 근거와 남은 항목은 [v0.3.1 첫 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-roles-20260921/REPORT.md)에 있다.
 
 **2026-09-21 v0.3.1 개발 묶음 2 — 미출하.** native 턴 영수증을 턴별 파일과 완료 표시로
 기록하고, 한 요청의 선택·취소·실패 기록이 같은 턴을 사용한다. 재개 시 이전 턴의 복구 여부와
 native 모델·effort를 초기화하며 검증된 continuation은 보존한다. 세션 전용 plugin/PDF 임시
 폴더는 종료·drain·최종 진단 뒤에 정리하고, 정리 불확실성과 실패를 별도로 보고한다.
-실행 근거와 한계는 [v0.3.1 두 번째 묶음 기록](../../verification/v031-events-20260921/REPORT.md)에 있다.
+실행 근거와 한계는 [v0.3.1 두 번째 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-events-20260921/REPORT.md)에 있다.
 
 **2026-09-21 v0.3.1 개발 묶음 3 — 미출하.** projects 루트의 실제 부재와 파일·접근 오류를
 공통 경로에서 구분한다. 첫 실행의 context 복원과 metadata 재시도는 유지하고, 루트 접근
-실패를 모르는 역할로 집계하지 않는다. [v0.3.1 세 번째 묶음 기록](../../verification/v031-projects-20260921/REPORT.md).
+실패를 모르는 역할로 집계하지 않는다. [v0.3.1 세 번째 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-projects-20260921/REPORT.md).
 
 **2026-09-21 v0.3.1 개발 묶음 4 — 미출하.** 설정·역할 탐색의 옵션 값과 `--` 경계를
 공유하고, 설정 옵션의 자리를 유지하여 앞 옵션이 뒤 프롬프트를 흡수하지 않게 한다.
 권한 우회 옵션의 기존 전역 거부와 실제 설정 옵션의 병합을 CLI 계약에서 구분했다.
-[v0.3.1 네 번째 묶음 기록](../../verification/v031-argv-20260921/REPORT.md).
+[v0.3.1 네 번째 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-argv-20260921/REPORT.md).
 
 **2026-09-21 v0.3.1 개발 묶음 5 — 미출하.** 시작 시 세션 등록이 누락되면 프롬프트 제출
 hook에서 재확인하여 복구한다. 등록 실패가 계속되면 안내와 함께 해당 프롬프트를 막는다.
 요청 분류 헤더 누락은 역할 선택 전에 진단하며, 버전 일치와 필요한 기능을 구분한다.
-[v0.3.1 다섯 번째 묶음 기록](../../verification/v031-session-20260921/REPORT.md).
+[v0.3.1 다섯 번째 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-session-20260921/REPORT.md).
 
 **2026-09-21 v0.3.1 개발 묶음 6 — 미출하.** 검증된 자동 압축만 기존 모델에서 effort를
 medium 이하로 제한하고, 세션의 원래 선택과 이후 생성 effort를 보존한다. 수동 압축은
 원래 effort를 유지한다. 압축 계수와 생성의 모델·지침·영수증 제거 경로를 맞췄다.
 실제 backend의 high → medium → high, 계수 일치, 필수 정보 보존을 확인했다.
-[v0.3.1 여섯 번째 묶음 기록](../../verification/v031-compaction-20260921/REPORT.md).
+[v0.3.1 여섯 번째 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-compaction-20260921/REPORT.md).
 
 **2026-09-21–22 v0.3.1 통합 검수 — 미출하.** 실제 native `-p`에서 답변 뒤의 reasoning 블록으로
 최종 출력이 비는 결함을 재현했다. 검증된 SDK 경로에서도 reasoning 다음에 최종 텍스트를
@@ -107,7 +107,7 @@ medium 이하로 제한하고, 세션의 원래 선택과 이후 생성 effort�
 승인된 임시 profile의 실제 TUI에서 수동 압축·사실 보존·Esc 취소·같은 세션 복구를 관측했다.
 취소 집계의 검수 오류를 수정했으나 요청 상한을 소진해 수정 후 실호출 재실행은 하지 않았다.
 v0.3.0의 새 선택 journal 거부, 최초 검수 실패와 보조 요청 거부를 포함한 범위는
-[통합 검수 기록](../../verification/v031-integration-20260921/REPORT.md)을 따른다.
+[통합 검수 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-integration-20260921/REPORT.md)을 따른다.
 
 **2026-09-22 무과금 보완 — 미출하.** 검증 예산·라우트 거부를 400과 고유 오류명으로 구분했다.
 도구·검색·자식·부모 ID가 없는 루트 `auxiliary` 요청은 독립적인 보조 요청으로 처리하며,
@@ -115,7 +115,7 @@ v0.3.0의 새 선택 journal 거부, 최초 검수 실패와 보조 요청 거�
 누적 집계와 native transcript의 사실·순서를 함께 검사하는 실제 TUI + 로컬 합성 응답은 PASS했다.
 AdGuard 활성 상태의 raw TCP reset은 재현됐다. 승인된 standalone HTTP 검사도 Node의
 `ECONNRESET`과 .NET의 `RESPONSE_TRUNCATED`로 실패하여 전체 무오류 판정은 HOLD다.
-실호출을 추가하지 않은 범위와 실패 기록은 [무과금 보완 기록](../../verification/v031-offline-20260922/REPORT.md)을 따른다.
+실호출을 추가하지 않은 범위와 실패 기록은 [무과금 보완 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-offline-20260922/REPORT.md)을 따른다.
 
 **2026-09-22 실제 backend 재검증 — 미출하.** 자동 압축 effort 복귀·계수·사실 보존과
 실제 TUI의 압축·Esc·같은 세션 복구 검수가 통과했다. 사용자가 AdGuard 보호를 켠 상태의
@@ -124,56 +124,56 @@ AdGuard 활성 상태의 raw TCP reset은 재현됐다. 승인된 standalone HTT
 보호 On의 독립 전송 반례 때문에 요청된 전송 검사 전체 판정은 HOLD다. 도구 결과 이미지의
 warmup 2,828 / usage 3,525 불일치는 기존 명시적 계수의 미지원 범위이며 일반 생성·압축의
 합격 조건이 아니다. 이 두 경로는 원격 사전 계수 없이 실제 backend usage를 사용한다.
-[실호출·보호 대조 및 판정 정정](../../verification/v031-recheck-20260922/REPORT.md).
+[실호출·보호 대조 및 판정 정정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-recheck-20260922/REPORT.md).
 
 **2026-09-22 종료 순서 후속 검수 — HOLD 유지.** 채택된 usage 정책을
 [ARCHITECTURE.md](ARCHITECTURE.md) 7.1절에 명시했다. 보호 On의 직접 Winsock 대조에서
 상대가 종료하지 않았는데도 송신 전용 shutdown 뒤 수신 EOF가 발생했다. 특정 driver 내부
 위치까지 확정하거나 수정한 것은 아니다. 기존 Node·.NET 검사는 다시 실패했고 raw TCP는
 22/400 실패했다. 실제 backend TUI는 압축·중단·같은 세션 복구·정리까지 PASS했다.
-[계측·재검증 근거와 남은 조건](../../verification/v031-close-20260922/REPORT.md).
+[계측·재검증 근거와 남은 조건](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-close-20260922/REPORT.md).
 
 **2026-09-20 S48 개발 보완.** settings 병합, Workflow 도구 제한·명시적 모델의 커스텀 역할,
 native 역할의 `maxTurns`, 빈 종료 결과 통지, non-streaming JSON 응답을 구현했다.
 최종 제품 source `313a78c`, 실제 TUI UUID `4ce18162-9c5f-4c1d-9647-df0c2da00ee2`의
 복합 시나리오와 후속 대화를 확인하고 개발용 바이너리에 반영했다.
-새 범위의 실제 검사·실패 기록·필터 한계는 [S48 보고서](../../verification/support-expansion-20260920/REPORT.md)를 따른다.
+새 범위의 실제 검사·실패 기록·필터 한계는 [S48 보고서](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/support-expansion-20260920/REPORT.md)를 따른다.
 S49 제품 source `31ff118`은 수거 완료 후 동일 세션의 Workflow 근거 복원,
 `scriptPath`·로컬 named 파일, custom 역할 기본 선택을 보완한다. 실제 TUI의
 동일 UUID 종료·재시작에서 완료 결과 회수와 미실행 단계만 재개를 확인했다. 범위와 검증은
-[S49 기록](../../verification/workflow-completion-20260920/REPORT.md)을 따른다.
+[S49 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md)을 따른다.
 사용자 S44의 복원·중첩 위임·압축·취소 후 회복 관측에 이어, 같은 제품/native 조합의
 보충 TUI에서 B 실제 OS 실행 중 취소·프로세스 회수와 재시작 후 A 재사용/B 재실행 0/C만
 실행을 확인했다. **합의한 지원 범위의 S44 수용 및 v0.3.0 기능 출시 적합 판정은 합격**이다.
 원래 S44의 미실행 Esc 세부 단계를 수행했다고 소급하지 않는다. 근거·선행 시험 실패·한계는
-[B OS 최종 수용](../../verification/workflow-completion-20260920/S44-B-OS-ACCEPTANCE.md)을 따른다.
+[B OS 최종 수용](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/S44-B-OS-ACCEPTANCE.md)을 따른다.
 2026-09-21에는 승인된 Process 범위 RemoteSigned로 Windows PowerShell 5.1과 PowerShell 7의
 공개 파일·자식 실행, TaskStop 회수, 후속 응답과 영구 정책 불변까지 확인했다.
-[PowerShell 보충 검수](../../verification/workflow-completion-20260920/S44-POWERSHELL-ACCEPTANCE.md).
+[PowerShell 보충 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/S44-POWERSHELL-ACCEPTANCE.md).
 S47 출하 판정을 이후 확대 범위 전체의 합격으로 승계하지 않는다.
 
 **S47 후보 이력.** 제품 source는 `442c366`이며 당시 출시 판정과 지원 범위는
-[최종 후보 보고서](../../verification/release-candidate-20260920/REPORT.md)를 따른다.
+[최종 후보 보고서](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/release-candidate-20260920/REPORT.md)를 따른다.
 사용자가 일반 생성의 정확 사전 차단 보장을 철회하고 실측 usage 기록·예방 압축을
-채택한 구현은 [S46 기록](../../verification/release-repair-20260920/REPORT.md)에 있다.
+채택한 구현은 [S46 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/release-repair-20260920/REPORT.md)에 있다.
 이전 제품 source `3df87d3`의 실제 혼합 PDF
 Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`가 발생했다.
 같은 이미지의 tool-output 계수 경로에서 차이 1,418을 독립 재현했으며, 이미지/PDF
 전체의 정확 계수 지원 주장을 할 수 없다. 부분 도구 인자 Esc는 실제 TUI에서 회복까지
 확인했고, Windows 소켓 반례는 사용자 AdGuard 필터 비활성화 전후 대조로 간섭을 확인했다.
-실패의 원래 근거는 [S45 조사 기록](../../verification/release-investigation-20260920/REPORT.md),
+실패의 원래 근거는 [S45 조사 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/release-investigation-20260920/REPORT.md),
 필터 활성 취소·종료·화면 표시 대조와 최초 Workflow 수정 실패는
-[S47 조사 기록](../../verification/release-final-20260920/REPORT.md)에 보존한다.
+[S47 조사 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/release-final-20260920/REPORT.md)에 보존한다.
 
 ## 0. 기준과 판정 방법 — 2026-09-20 (실행: 2026-09-19)
 
 | 구분 | 확인한 기준 |
 |---|---|
-| 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](../../verification/workflow-completion-20260920/build.json), [개발 경로 반영](../../verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.280`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.2 후보, 실제 backend, 2026-09-23. [TUI 기록](../../verification/v032-tui-20260923/README.md) |
-| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. [재측정 기록](../../verification/v032-client-2.1.280-20260923/README.md) |
+| 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/build.json), [개발 경로 반영](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
+| 최근 실제 TUI | Claude Code `2.1.280`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.2 후보, 실제 backend, 2026-09-23. [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. [재측정 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-client-2.1.280-20260923/README.md) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
-| 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](../../verification/workflow-completion-20260920/evidence.json), [TUI 검수](../../verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
+| 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/evidence.json), [TUI 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 
 **구현 여부, 현재 실행 조건 확인, 실제 TUI 검증은 서로 다른 판정이다.**
 현재 `gateway.client.verified`는 관측 버전과 기준 버전의 문자열 일치만 뜻한다.
@@ -213,7 +213,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 필터 문제에서도 **임의 필터가 통신 경로 전체를 계속 차단하는 동안 전달 성공을 보장할 수
 없다는 한계**와 **특정 필터 호환 문제는 더 수정할 수 있다는 가능성**을 구분한다.
 현재 남은 즉시 소켓 종료 반례를 근본적으로 해결 불가능하다고 확정하지 않았다.
-취소·회수의 제품 보완 및 반례는 [S47 조사 기록](../../verification/release-final-20260920/REPORT.md)을 따른다.
+취소·회수의 제품 보완 및 반례는 [S47 조사 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/release-final-20260920/REPORT.md)을 따른다.
 
 **AdGuard localhost 필터링(2026-09-23).** AdGuard for Windows 8.0.5570에서는
 [로컬 호스트 필터링](https://adguard.com/kb/ko/adguard-for-windows/settings/app-settings/advanced-settings/)이
@@ -222,7 +222,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 `claude.exe`의 앱별 라우팅·트래픽 필터링을 켠 상태에서 v0.3.1 후보 `ad01745`의 실제
 `claude.exe` → Clauduct → backend 왕복도 `gpt-5.6-luna`/`low` 1회로 통과했다.
 한 PC·한 버전의 결과이며, 켠 상태의 실제 요청 비교와 설치 바이너리·장기 안정성은 검증하지 않았다.
-[전후 기록](../../verification/v031-localhost-filter-20260923/README.md)
+[전후 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-localhost-filter-20260923/README.md)
 
 다른 필터 제품이 loopback 통신을 검사·중계한다면 그 기능만 제외한 뒤 **같은 반닫기 probe와
 실제 요청을 전후 비교**한다. 설정 이름과 적용 범위는 제품·버전마다 다르므로 기능을 껐다는
@@ -247,7 +247,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 
 `max_output_tokens`는 위 세 파라미터와 달리 기존 backend HTTP 400 실측이 있다.
 출력 문자열을 잘라내는 것으로 서버의 생성 토큰 제한이나 sampling 제어와 동등해지지 않는다.
-[출력 상한의 기존 실측](VALIDATION.md), [현재 변환 계약](../../go/internal/protocol/bridge/bridge.go).
+[출력 상한의 기존 실측](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md), [현재 변환 계약](../../go/internal/protocol/bridge/bridge.go).
 
 native 공식 Workflow 재개는 중단·실패한 agent를 다시 실행할 수 있다. Clauduct의
 현재 정책은 시작한 단계의 자동 재실행을 금지하므로 native 재개와 완전히 같은 의미가 아니다.
@@ -264,15 +264,15 @@ native 공식 Workflow 재개는 중단·실패한 agent를 다시 실행할 수
 최근 16건 외의 세션 전체 누계도 유지한다. 과거 성공이 미래 요청을 허가하지 않으며,
 TUI 판정은 계속 `not_assessed`로 구분한다. native 회차 영수증이 설정됐는데 없으면 자식 실행을 거부한다.
 버전 일치 필드는 `verifiedMeaning:version_match_only`로 명확히 했다.
-제품 반영과 실제 검증 범위는 [후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)을 따른다.
+제품 반영과 실제 검증 범위는 [후속 검수 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/capability-repair-20260919/REPORT.md)을 따른다.
 다음 설계의 코드·공식 문서·native TUI 근거와 반례는
-[설계 검토 기록](../../verification/design-evidence-20260919/REPORT.md)에 있다.
+[설계 검토 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/design-evidence-20260919/REPORT.md)에 있다.
 빈 응답 제어는 native 출처·회차와 대기 자식, 직전 Workflow 실행 또는 루트 완료 알림을
 확인한 범위에 적용한다. TUI는 무출력 대기, SDK/`-p`는 `[Clauduct]` 상태 메시지를 사용한다.
 SDK는 실제 본문을 억제하지 않는다. 새 명시적 사용자 입력·분류되지 않은 출처에는 적용하지
 않으며, 실제 결과 수신은 `parent_received`로 별도 확인한다. 이번 실제 backend에서 정상
 terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검증을 각각 기록했다.
-근거는 `verification/v031-review-fixes-20260922/batch-04/REPORT.md`에 있다.
+근거는 [`verification/v031-review-fixes-20260922/batch-04/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-04/REPORT.md)에 있다.
 
 | 기능군 | 실행 전에 확보해야 할 조건 | 실행 중·후에 확인할 사항 |
 |---|---|---|
@@ -309,14 +309,14 @@ terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검
 | Agent 결과 회수와 Workflow StructuredOutput | 일반 결과와 검증된 native journal 결과를 부모에게 전달. 범용 Workflow 재실행·복구 기능은 아님 |
 | 모델 피커 + `GET /v1/models` discovery | A3 + B1 |
 | 모델별 실측 사용량·예방 압축 | Astra 500K/450K, Sol·Terra·Luna 272K/239K는 관리 목표이며 정확 사전 차단 상한이 아니다. 기존 확정 모델을 유지하며 v0.3.1 개발본은 검증된 자동 압축만 medium effort 상한을 적용한다. 이후 생성·수동 압축은 원래 effort 유지. native 공통 표시/환경 기본값은 500K. 새 대용량 입력의 최초 초과 가능성이 있으며 추정과 실제 usage를 구분 |
-| `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](../../verification/policy-evidence-20260918/COUNT-TOKENS.md) |
+| `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/COUNT-TOKENS.md) |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
 | **`clauduct --update`** | 태그 릴리스의 바이너리 3개를 SHA256SUMS로 검증한 뒤 교체. 확인을 받고, `--yes`로 무인. `clauduct update`는 그대로 통과해 **클라이언트**를 갱신한다 |
 | **`clauduct --usage`** (= `clauduct-dev usage`) | 이 **계정**의 주간/보조 한도 사용률·리셋·in force family를, 세션이 남긴 계정에서 읽어 보여준다. 요청 0회 |
 | 종료 줄의 `quota=47%/7d` | 묻지 않아도 매 세션 보인다. 백엔드가 응답 헤더로 말한 값 |
 | Esc 이후 같은 세션 회복 | 정확 계수 중·부분 텍스트 출력 중·도구 전달 전 생성 취소 후 회복 확인. S45에서는 부분 인자 delta 563개/본문 0개 상태 취소, tool 실행·파일 생성 0, 같은 세션 후속 답변을 확인 |
-| `/context` 보고서의 실제 backend 입력 제외 | 검증된 native transcript 출처가 있는 조회 기록만 제외. [이전 수리 근거](../../verification/context-fork-20260919/REPORT.md). native 화면·로컬 이력 추정치는 변경하지 않음 |
+| `/context` 보고서의 실제 backend 입력 제외 | 검증된 native transcript 출처가 있는 조회 기록만 제외. [이전 수리 근거](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/context-fork-20260919/REPORT.md). native 화면·로컬 이력 추정치는 변경하지 않음 |
 | 클라이언트 버전과 기능 조건 | `gateway.client`의 버전 일치와 `gateway.features`의 요청별 필수 조건 관측을 구분. 미관측을 통과로 승격하지 않음 |
 | 본문 없는 진행 관측 | `gateway.progress`, 요청의 `lastObservedMs`와 고정 backend delta 수. 오래된 관측은 생존 증명이 아니며, 승인 요청 횟수는 현재 승인 대기를 뜻하지 않음 |
 | Workflow 완료 결과 회수 | 같은 세션의 검증된 원본 run에 `resumeFromRunId` 하나만 전달. S49부터 launcher 수거 후 저장된 근거를 재검증해 재시작 뒤에도 지원. 기존 자식 보고서를 반환하고 미확보는 명시. 새 자식/원본 스크립트 실행은 하지 않음 |
@@ -325,9 +325,9 @@ terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검
 | native SDK 빈 응답 처리 | 확인된 대기·Workflow 실행 직후·루트 완료 알림의 빈 응답에 출처가 명시된 상태 메시지 전달. 실제 답변·도구와 native background scheduler 보존. 빈 완료 알림과 중간 SDK 오류까지 실제 native fixture로 검사 |
 | 독립 단계 계획의 미실행 단계 재개 | `script:"clauduct:plan-v1"` + `args.steps`. 같은 세션에서 TaskStop·자식 종료 또는 수거 후 저장된 근거를 재검증한 원본에 `resumeFromRunId`만 전달. 완료 결과 재사용, 시작한 단계 재실행 금지, 시작하지 않은 단계만 실행. 디스크 claim으로 launcher 재시작 후에도 원본 run당 한 번만 소비 |
 | 독립 계획의 무도구 단계 | step에 `tools:[]`를 지정하면 검증된 자식의 backend 도구 목록과 downstream callable set 모두 제한. 생략하면 기존 native 도구 유지. 재개에도 동일 제한 유지. `toolPolicy:workflow_step_none`와 `workflow_tool_policy` 기능 누계로 관측 |
-| 필터가 소켓 취소를 지연시키는 경우 | exact session/agent/turn의 native abort·error·refusal 종료 기록으로 추론·검색 취소. 다음 turn에도 남는 기록으로 이전 요청을 정리하며 성공 응답·다른 turn은 취소하지 않는다. [내장 필터 검증](../../verification/v031-httpguard-20260923/REPORT.md). 기존 실제 TUI의 부분 도구 인자 Esc·후속 답변 근거와 최종 출하물 검증은 구분한다 |
+| 필터가 소켓 취소를 지연시키는 경우 | exact session/agent/turn의 native abort·error·refusal 종료 기록으로 추론·검색 취소. 다음 turn에도 남는 기록으로 이전 요청을 정리하며 성공 응답·다른 turn은 취소하지 않는다. [내장 필터 검증](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-httpguard-20260923/REPORT.md). 기존 실제 TUI의 부분 도구 인자 Esc·후속 답변 근거와 최종 출하물 검증은 구분한다 |
 
-A/G/LIFE 등의 식별자는 [이전 검증 기록](VALIDATION.md)의 범위를 가리킨다.
+A/G/LIFE 등의 식별자는 [이전 검증 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)의 범위를 가리킨다.
 그 행을 최근 빌드에서 모두 다시 실측했다는 뜻은 아니다. 이미지·PDF·MCP·WebSearch 등은
 이전 실측을 보존하며, 전체 형식·환경·plugin 조합의 보장으로 확대하지 않는다.
 
@@ -337,7 +337,7 @@ A/G/LIFE 등의 식별자는 [이전 검증 기록](VALIDATION.md)의 범위를 
 제출됐고 Read 답변과 뒤이은 중첩 결과 43, 병렬 중첩 합계 180을 확인했다. 계획 재개는
 A 재사용/B 미재실행/C Luna/max·도구 없이 완료 및 중복 거부 후 회복을 확인했다.
 수동 압축 2회는 약 70초/80초이며 모델 변경 직후 일반 요청 없이 한 두 번째 압축도 기존 Sol/high를
-유지했다. 이후 Terra/high 대화와 보존값 회수는 정상이다. [실제 기록 감사](../../verification/parent-wait-20260920/s43-user-audit.json)
+유지했다. 이후 Terra/high 대화와 보존값 회수는 정상이다. [실제 기록 감사](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/s43-user-audit.json)
 
 S43의 두 Esc는 모두 부분 본문 뒤여서 첫 본문 전 취소 재검증으로 세지 않는다. B의 Bash 결과는
 `User rejected tool use`로 OS 명령 실행 후 중단 여부가 미확정이다. 자연 발생 빈 응답은 0회이며,
@@ -361,9 +361,9 @@ native hook 없는 도구 검증 오류는 다음 요청의 실제 call/result �
 `3df87d3`는 자식 계수와 생성이 같은 agent ID로 도구 스키마를 구성하도록 추가 수정했다.
 최종 바이너리 TUI에서 두 `/context all`의 10.1K 유지, Terra/medium 중첩 상속과 결과 전달,
 API/도구 실패 0, 계수 일치 11건을 확인했다.
-[원인·실패·검증·한계 기록](../../verification/deadline-repair-20260920/REPORT.md)
+[원인·실패·검증·한계 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/deadline-repair-20260920/REPORT.md)
 
-[TUI 감사 자료](../../verification/parent-wait-20260920/tui-audit.json)는 실제 구독 backend 실행과
+[TUI 감사 자료](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/tui-audit.json)는 실제 구독 backend 실행과
 native TUI+고정 upstream fixture를 분리한다. 부모→중간→손자 결과 전달, 대기 중 별도 사용자
 Read, 자식 종료와 대기 응답의 경합을 확인했다. 무출력 제어는 native composer/task-notification
 출처와 현재 회차를 검증한 범위에 한정한다. SDK·분류되지 않은 입력·출처 없는 자식 새 회차의
@@ -392,30 +392,30 @@ native hook이 실행되지 않는 경우에도 전달된 고정 script는 오�
 압축 요약의 반복 설명을 줄이는 지침은 압축에만 적용하며, 필요한 데이터 보존이 1,200단어 목표보다 우선한다.
 v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도록 누락을 수정했다.
 일반 생성 모델·effort와 계수 검증은 변경하지 않는다.
-세션·선택·결과·압축별 실제 근거와 제한은 [S42 수리 기록](../../verification/session42-repair-20260920/REPORT.md)을 따른다.
+세션·선택·결과·압축별 실제 근거와 제한은 [S42 수리 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session42-repair-20260920/REPORT.md)을 따른다.
 
 ### 이전 `34ebcb1`의 실제 TUI 근거
 
 `34ebcb1`의 최종 TUI에서 검증된 Workflow 자식 결과를 회수했고 새 자식 실행은 0개였다.
 알 수 없는 run ID를 의도적으로 거부한 1건은 API 실패 누계에 남으며, 이후 같은 세션의 정상 응답을 확인했다.
 진행 관측·승인 요청·동일 자식 재개 및 보조 요청 집계 수정은 이번 중간 빌드의 TUI 근거와 구분해
-[후속 검수 기록](../../verification/capability-repair-20260919/REPORT.md)에 기록했다.
+[후속 검수 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/capability-repair-20260919/REPORT.md)에 기록했다.
 빈 응답 대기 실험은 native TUI와 로컬 응답 fixture이며 구독 backend 제품 검증으로 표시하지 않는다.
 
 ### 이전 `17532f7` 빌드의 실제 TUI 근거
 
 | 시나리오 | 근거 | 판정 범위 |
 |---|---|---|
-| 중첩 Agent·자동 재진입 | [tree-proof](../../verification/session41-repair-20260919/tree-proof.json) | Terra/medium, 깊이 3 자식 계보·결과 전달. 모든 깊이·역할 조합의 검증은 아님 |
-| 병렬 Workflow 네 선택 방식 | [workflow-proof](../../verification/session41-repair-20260919/workflow-proof.json) | inline `agent()` 자식 4개. StructuredOutput 및 native 도구 제한 조건 |
-| Sol/high 동일 자식 재개·추가 취소 회복 | [resume-cancellation-proof](../../verification/session41-repair-20260919/resume-cancellation-proof.json) | SendMessage 1회 재개. 추가 취소의 정확한 backend 이벤트 종류는 미확인 |
-| 계수·텍스트 중 Esc 회복 | [통합 세션](../../verification/session41-repair-20260919/run-febe7e62-d829-4e63-a275-e167b2e8529f.json) | count/delivery 각각 취소 후 새 요청 완료 |
-| 계수 정확도 | [통합 세션](../../verification/session41-repair-20260919/run-febe7e62-d829-4e63-a275-e167b2e8529f.json), [추가 세션](../../verification/session41-repair-20260919/run-fb24a803-a013-45e4-9845-9a4318c67b14.json) | backend usage가 있는 합계 38건 일치. 모든 tokenizer·멀티모달 형식의 증거는 아님 |
-| launcher 강제 종료 | [handle 관측](../../verification/session41-repair-20260919/hard-kill-261642e5-d5c9-4a70-8a35-41eb11c1a45a.json) | launcher만 종료 후 하위 6개까지 종료. 콘솔 창 닫기·OS 종료 전체는 미검증 |
+| 중첩 Agent·자동 재진입 | [tree-proof](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/tree-proof.json) | Terra/medium, 깊이 3 자식 계보·결과 전달. 모든 깊이·역할 조합의 검증은 아님 |
+| 병렬 Workflow 네 선택 방식 | [workflow-proof](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/workflow-proof.json) | inline `agent()` 자식 4개. StructuredOutput 및 native 도구 제한 조건 |
+| Sol/high 동일 자식 재개·추가 취소 회복 | [resume-cancellation-proof](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/resume-cancellation-proof.json) | SendMessage 1회 재개. 추가 취소의 정확한 backend 이벤트 종류는 미확인 |
+| 계수·텍스트 중 Esc 회복 | [통합 세션](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/run-febe7e62-d829-4e63-a275-e167b2e8529f.json) | count/delivery 각각 취소 후 새 요청 완료 |
+| 계수 정확도 | [통합 세션](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/run-febe7e62-d829-4e63-a275-e167b2e8529f.json), [추가 세션](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/run-fb24a803-a013-45e4-9845-9a4318c67b14.json) | backend usage가 있는 합계 38건 일치. 모든 tokenizer·멀티모달 형식의 증거는 아님 |
+| launcher 강제 종료 | [handle 관측](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/hard-kill-261642e5-d5c9-4a70-8a35-41eb11c1a45a.json) | launcher만 종료 후 하위 6개까지 종료. 콘솔 창 닫기·OS 종료 전체는 미검증 |
 
 이전 `17532f7`의 두 정상 종료 TUI는 70요청, API 실패 0, 의도한 취소 3, 종료 시 결과 미확보 0이었다.
 개발 중 실패를 없었던 것으로 취급하지 않는다. `EMPTY_REPLY`, 역할 해석, Workflow 입력·결과 처리의
-실패와 수정 근거는 [실패 이력](../../verification/session41-repair-20260919/REPORT.md)에 보존한다.
+실패와 수정 근거는 [실패 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/REPORT.md)에 보존한다.
 
 ## 2. 제약
 
@@ -441,7 +441,8 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 항목 | 상태 |
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
-| `review-diff` 헬퍼 | 미지원. `/code-review`는 동작하되 경로 탈출 방지·2 MiB 상한 없이 plain claude와 같다 |
+| forked Skill(`context: fork`) | **미지원.** 자식 요청이 선택 검증 근거 없이 도착해 `AGENT_SELECTION_UNVERIFIED`로 거부된다(2026-09-23, native 2.1.280 fixture 재현). fork로 실행되는 내장 `/code-review`도 같다. 같은 skill을 fork 없이 쓰면 동작한다 |
+| `review-diff` 헬퍼 | 미지원. 기준선의 경로 탈출 방지·2 MiB 상한은 없다 |
 | Workflow remote·자식의 별도 Workflow·범용 JS 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 임의 JS는 `resumeFromRunId` 단독의 결과 회수, 독립 계획은 미실행 단계만 재개. 다른 세션, 기록 없는 강제 종료, 불명확한 시작 단계의 자동 재실행은 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |

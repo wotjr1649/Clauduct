@@ -1,6 +1,0 @@
-=== RUN   TestAuxiliaryCompactionTextHasSameGenerationAndCountClassification
-    count_tokens_test.go:39: count class or actual usage lost
---- FAIL: TestAuxiliaryCompactionTextHasSameGenerationAndCountClassification (0.01s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.146s
-FAIL

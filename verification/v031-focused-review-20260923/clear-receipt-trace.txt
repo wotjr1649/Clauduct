@@ -1,9 +1,0 @@
-    clear-probe_test.go:100: second: type=system subtype=init session=a749b0f7 is_error=false result=""
-    clear-probe_test.go:100: second: type=result subtype=success session=a749b0f7 is_error=true result="API Error: 400 AGENT_SELECTION_UNVERIFIED"
-    clear-probe_test.go:124: note: header=7db2b84d receipt=7db2b84d turn=44c74477 found=true active_root=[1-44c74477.json 1-44c74477.ready]
-    clear-probe_test.go:124: note: header=a749b0f7 receipt=7db2b84d turn=68e2c9bc found=true active_root=[1-44c74477.json 1-44c74477.ready 2-68e2c9bc.json 2-68e2c9bc.ready]
-    clear-probe_test.go:126: probe: run_err=<nil> exit=1 backend_calls=1 failures=[AGENT_SELECTION_UNVERIFIED] stderr_present=true
---- FAIL: TestReviewProbeClearThenPrompt (2.22s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/app	2.356s
-FAIL

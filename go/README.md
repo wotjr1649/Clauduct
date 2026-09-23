@@ -52,21 +52,24 @@ clauduct-dev probe <name> --send
 
 probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-5.6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다.
 
-이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 `docs/v2/VALIDATION.md` 1.1.2에 있다.
+이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 [`docs/v2/VALIDATION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md) 1.1.2에 있다.
 
 ## 명령
 
 ```powershell
 cd go
+$env:CGO_ENABLED = '0'
 
-go test ./...            # 전체
-go test -count=1 ./...   # 캐시 무시
 gofmt -l .               # 출력이 비어야 한다
 go vet ./...
+go build ./...
 
 go run ./cmd/clauduct-dev version
 go run ./cmd/clauduct-dev doctor     # 인증·소켓·자식 없이 환경만 본다
 ```
+
+v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
+공개 CI는 위 세 검사와 `internal/httpguard`의 Linux·macOS build만 본다.
 
 빌드 산출물은 저장소 밖이나 이미 ignore되는 `.tmp/` 아래에 둔다. `go run`은 VCS 정보를 stamp하지 않으므로 `version`이 `commit unknown`을 말한다. 실제 commit을 확인하려면 빌드한다.
 
@@ -74,28 +77,15 @@ go run ./cmd/clauduct-dev doctor     # 인증·소켓·자식 없이 환경만 �
 go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 ```
 
-`-race`는 `CGO_ENABLED=1`과 C 툴체인을 요구한다. 2026-09-21 로컬 검사는 기존
-`C:\msys64\ucrt64\bin\gcc.exe`를 프로세스 PATH에 추가하여 통과했다. 툴체인이 없는
-러너에서는 `NOT_RUN`으로 기록하고 러너를 보완한다. 출하 빌드는 `CGO_ENABLED=0`이다.
-
-`runtime_evidence` 태그의 live 검사는 `CLAUDUCT_EVIDENCE_LIVE=1`을 명시한 별도 실행이다.
-해당 실행 프로세스의 `TEMP`·`TMP`를 task 전용 공개 합성 폴더로 지정한다. 기본 사용자
-임시 경로가 요청에 섞이면 `EVIDENCE_PRIVATE_PATH`로 전송 전에 거부한다. 이 guard를 끄지
-않는다. TUI 검사는 `go test -c -tags=runtime_evidence`로 만든 검사 바이너리를 실제 PTY에서
-직접 실행해야 stdin이 native까지 이어진다. 검사 바이너리도 `C:\Users` 밖(예: 저장소의 `.tmp\`)에
-만든다. 검사가 hook을 그 옆에 만들고, native 2.1.280은 `/compact` 다음 요청에 hook 경로를 싣는다.
-live 검사는 두 경로 중 하나라도 `C:\Users` 아래면 요청 전에 멈춘다. PowerShell에서는
-`'-test.run=^Name$'`처럼 따옴표로 묶는다. 묶지 않으면 `-test`와 `.run`으로 나뉘어 전달된다. 최종 transcript·누적 counter·정상 종료를 함께
-확인하며, 화면의 완료 문구만으로 PASS를 판정하지 않는다. CI는 live 스위치 없이 태그
-compile/vet와 오프라인 검수기만 실행한다.
+출하 빌드는 `CGO_ENABLED=0`이다.
 
 ## 지켜야 할 계약
 
 - **CLI 계약은 [ARCHITECTURE.md 4절](../docs/v2/ARCHITECTURE.md#4-cli-계약)이 소유한다.** `app.Run`이 거부 검사와 설정 병합을 적용하고, `launch.Build`는 세션 overlay 뒤에 argv를 그대로 복사한다. 값 경계 변경은 settings 추출·역할 검색·실제 native 대조 검사로 확인한다.
 - **거부는 아무것도 얻기 전에 일어난다.** 실행 파일 조회도, bind도 하지 않는다. `internal/app`에 그 순서를 지키는 테스트가 있다.
 - **Node·.NET·PowerShell에 runtime 의존하지 않는다.** `internal/app`의 소스 스캔 테스트가 문자열 리터럴 수준에서 이를 강제한다. Node 기준선이 `<node.exe> <repo>/src/review-diff.mjs` 형태의 명령을 native에 넘기던 패턴이 다시 들어오면 그 자리에서 실패한다.
-- **검토·고정한 의존성만 허용.** 4개 모듈의 버전을 테스트로 고정한다 — 정확 계수를 위한 3개와, 역할 정의 frontmatter를 읽는 `go.yaml.in/yaml/v3`. [추가 결정과 검토](../verification/policy-evidence-20260918/DEPENDENCIES.md), [라이선스](THIRD_PARTY_NOTICES.txt). 새로운 의존성은 `docs/v2/ARCHITECTURE.md` 14장의 기준에 따라 별도 검토·기록한다.
-- **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 `docs/v2/DECISION.md`. Clauduct는 추가 secret 장벽이 아니다.
+- **검토·고정한 의존성만 허용.** 4개 모듈의 버전을 테스트로 고정한다 — 정확 계수를 위한 3개와, 역할 정의 frontmatter를 읽는 `go.yaml.in/yaml/v3`. [추가 결정과 검토](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md), [라이선스](THIRD_PARTY_NOTICES.txt). 새로운 의존성은 `docs/v2/ARCHITECTURE.md` 14장의 기준에 따라 별도 검토·기록한다.
+- **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 [`docs/v2/DECISION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md). Clauduct는 추가 secret 장벽이 아니다.
 - **세션 token은 로그·커맨드라인·오류 문자열에 넣지 않는다.**
 - **tool call은 `response.completed` 이전에 만들어지지 않는다.** 스트리밍 이벤트에서 호출을 조립하는 arm을 추가하면 barrier가 사라진다. `internal/protocol/bridge`에 그것을 잡는 테스트가 있다.
 - **상태 코드 계열은 재시도 지시다.** 측정상 5xx는 종류를 가리지 않고 재시도된다. 영구적인 로컬 조건은 4xx로 답한다.

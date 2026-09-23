@@ -1,9 +1,0 @@
-=== RUN   TestNativePublicOptionAritiesMatchScanner
-    argv_native_test.go:84: installed native public option arities checked=63
---- PASS: TestNativePublicOptionAritiesMatchScanner (0.15s)
-=== RUN   TestSubcommandArgumentsRetainUnknownBoundaries
---- PASS: TestSubcommandArgumentsRetainUnknownBoundaries (0.00s)
-=== RUN   TestNativeEventPublicationFailureAndCapacity
---- PASS: TestNativeEventPublicationFailureAndCapacity (10.86s)
-PASS
-ok  	github.com/wotjr1649/Clauduct/go/internal/app	11.131s

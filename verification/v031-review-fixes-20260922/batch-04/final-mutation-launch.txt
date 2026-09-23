@@ -1,6 +1,0 @@
-=== RUN   TestWorkflowLaunchWaitPrecedesItsFirstChild
-    parent_wait_test.go:149: verified launch lost before first child
---- FAIL: TestWorkflowLaunchWaitPrecedesItsFirstChild (0.01s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.138s
-FAIL

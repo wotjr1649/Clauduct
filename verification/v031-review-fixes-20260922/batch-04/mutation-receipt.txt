@@ -1,8 +1,0 @@
-=== RUN   TestParentWaitNeedsMatchingNativeStepAndPendingChild
-=== RUN   TestParentWaitNeedsMatchingNativeStepAndPendingChild/SDK_pending
-    parent_wait_test.go:79: step=<nil> err=AGENT_SELECTION_UNVERIFIED
---- FAIL: TestParentWaitNeedsMatchingNativeStepAndPendingChild (0.01s)
-    --- FAIL: TestParentWaitNeedsMatchingNativeStepAndPendingChild/SDK_pending (0.00s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.169s
-FAIL

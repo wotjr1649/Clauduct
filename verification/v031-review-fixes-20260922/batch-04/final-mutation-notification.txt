@@ -1,6 +1,0 @@
-=== RUN   TestVerifiedNotificationConsumesOnlyEmptyReplies
-    response_test.go:59: notification lost an answer or fabricated one EMPTY_REPLY
---- FAIL: TestVerifiedNotificationConsumesOnlyEmptyReplies (0.00s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic	0.431s
-FAIL

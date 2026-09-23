@@ -22,7 +22,7 @@ Windows x64용 Go V2 유지보수 릴리스 후보다. 배포 여부와 검사 �
   `CLAUDUCT_NATIVE_EVENT_LIMIT`로 멈추던 v0.3.0의 한도를 없앴다. 끝난 turn은 자리를 반환하고,
   한도는 동시에 진행 중인 agent 수에만 남는다. gateway는 지난 영수증 파일을 정리한다.
   요청 실행 기록의 세션당 16,384개 한도는 그대로이며 [#63](https://github.com/wotjr1649/Clauduct/issues/63)에서 다룬다.
-  [집중 리뷰 기록](../../verification/v031-focused-review-20260923/README.md)
+  [집중 리뷰 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-focused-review-20260923/README.md)
 
 출하 구성은 Go 1.27.1, `CGO_ENABLED=0`, `-trimpath`다. `clauduct.exe`,
 `clauduct-hook.exe`, `clauduct-dev.exe` 세 파일과 `SHA256SUMS`를 함께 사용한다.
@@ -36,9 +36,9 @@ Windows x64용 Go V2 유지보수 릴리스 후보다. 배포 여부와 검사 �
 
 AdGuard for Windows에서 응답이 유실되면 전체 보호는 유지한 채 로컬 호스트 필터링만 끄고
 다시 확인한다. 8.0.5570에서 확인한 범위와 다른 필터 제품의 확인 방법은
-[전후 기록](../../verification/v031-localhost-filter-20260923/README.md)과 호환성 문서에 있다.
+[전후 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-localhost-filter-20260923/README.md)과 호환성 문서에 있다.
 
 Windows 전용이며 서명하지 않는다. 지원 기능과 남은 조건은
 [호환성 문서](COMPATIBILITY.md), 수정 검토는
-[batch-04 보고서](../../verification/v031-review-fixes-20260922/batch-04/REPORT.md)와
-[내장 필터 검증](../../verification/v031-httpguard-20260923/REPORT.md)을 참조한다.
+[batch-04 보고서](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-04/REPORT.md)와
+[내장 필터 검증](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-httpguard-20260923/REPORT.md)을 참조한다.

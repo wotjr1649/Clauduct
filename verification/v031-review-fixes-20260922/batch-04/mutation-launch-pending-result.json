@@ -1,6 +1,0 @@
-{
-  "name": "launch_pending",
-  "exit": 1,
-  "assertion_failed": true,
-  "log": "mutation-launch-pending.txt"
-}

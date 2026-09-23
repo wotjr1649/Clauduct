@@ -1,12 +1,8 @@
 # 문서 색인
 
-이 저장소에는 구현이 둘 있고 문서도 그렇게 나뉩니다. **어느 쪽을 읽고 있는지가 중요합니다** —
-v1 문서는 Node 구현을 기술하며 Go 빌드에 그대로 적용되지 않습니다.
-
-| 폴더 | 무엇 |
-|---|---|
-| [v2/](v2/) | **`clauduct`(Go) — 현재 제품.** 설계·현행 동작·격차·증거·출하물 |
-| [v1/](v1/) | `clauduct-node`(Node) — 이전 제품이자 비교 기준선이며 되돌리기 경로 |
+제품은 `clauduct`(Go)이고 문서는 [v2/](v2/)에 있습니다. 이전 Node 구현(v1)과 그 문서는 v0.3.3에서
+저장소에서 은퇴했고 [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v1)에
+남아 있습니다.
 
 ## 무엇을 물을 때 어디를 보는가
 
@@ -14,20 +10,13 @@ v1 문서는 Node 구현을 기술하며 Go 빌드에 그대로 적용되지 않
 |---|---|
 | 설치·업데이트·제거는 | 루트 [README.md](../README.md)의 설치 절 |
 | 기능별 지원 범위·버전 변경 정책·실측 근거·남은 한계는 | [v2/COMPATIBILITY.md](v2/COMPATIBILITY.md) |
-| 왜 이렇게 만들었나 | [v2/ARCHITECTURE.md](v2/ARCHITECTURE.md) · [v2/DECISION.md](v2/DECISION.md) |
-| 기준선 대비 무엇이 다른가 | [v2/PARITY.md](v2/PARITY.md) |
-| 무엇을 실제로 검사했고 **무엇을 안 했나** | [v2/VALIDATION.md](v2/VALIDATION.md) |
+| 왜 이렇게 만들었나 | [v2/ARCHITECTURE.md](v2/ARCHITECTURE.md) · [v2/DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md) (v0.3.2 시점) |
+| 기준선 대비 무엇이 다른가 | [v2/PARITY.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/PARITY.md) (v0.3.2 시점) |
+| 무엇을 실제로 검사했고 **무엇을 안 했나** | [v2/VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md) (v0.3.2 시점) |
 | 무엇이 출하되고 어떻게 되돌리나 | [v2/PACKAGING.md](v2/PACKAGING.md) |
 | 지금 상태 한 장 | [v2/README.md](v2/README.md) |
 
-v1의 감사 기록·릴리스 판정·참조 문서는 [v1/README.md](v1/README.md)가 안내합니다.
-
 ## 여기 없는 것
 
-`docs/prompts/`에는 세션별 실행 프롬프트와 인계 문서가 있고 **저장소에 올라가지 않습니다.**
-증거는 공개하고 지시는 공개하지 않는다는 2026-09-17 결정입니다. 그 결과물 — 감사, 판정, v2 문서 —
-는 전부 여기 있습니다.
-
-그래서 **증거 문서는 프롬프트를 인용하지 않습니다.** 인용하면 [HANDOFF.md](../HANDOFF.md)의
-"인용한 파일은 함께 커밋한다" 규칙이 그 프롬프트를 공개로 끌어올립니다. 지시를 근거로 대야 하면
-그 내용을 문서에 옮겨 적고 그것을 인용합니다.
+v0.3.3부터 테스트·검증 증거·이력 문서와 세션별 프롬프트는 이 저장소에 두지 않습니다. 공개 문서는
+공개된 파일만 인용하고, 그 전의 근거는 분리 직전 커밋의 고정 링크로 가리킵니다.

@@ -1,8 +1,0 @@
-=== RUN   TestTUIAcceptanceRejectsMissingOrMisorderedEvidence
-=== RUN   TestTUIAcceptanceRejectsMissingOrMisorderedEvidence/totals_cancel_zero
-    integration_tui_test.go:189: incorrect acceptance: mutation=totals_cancel_zero passed=true
---- FAIL: TestTUIAcceptanceRejectsMissingOrMisorderedEvidence (0.00s)
-    --- FAIL: TestTUIAcceptanceRejectsMissingOrMisorderedEvidence/totals_cancel_zero (0.00s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/app	0.106s
-FAIL

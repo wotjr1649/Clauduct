@@ -1,6 +1,0 @@
-=== RUN   TestPendingAgentDoesNotInheritUnrelatedWorkflowReadFailure
-    delegation_test.go:211: unrelated broken Workflow refused a verified ordinary Agent {  } false AGENT_SELECTION_UNVERIFIED
---- FAIL: TestPendingAgentDoesNotInheritUnrelatedWorkflowReadFailure (0.06s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.189s
-FAIL

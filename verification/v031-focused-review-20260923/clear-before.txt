@@ -1,5 +1,0 @@
-    native_events_test.go:90: prompt after /clear: "API Error: 400 AGENT_SELECTION_UNVERIFIED" calls=1
---- FAIL: TestNativeClearSignsLaterReceiptsWithTheNewSession (2.08s)
-FAIL
-FAIL	github.com/wotjr1649/Clauduct/go/internal/app	2.198s
-FAIL

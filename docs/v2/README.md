@@ -31,8 +31,8 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 
 ## 3. 이 시점에 아직 사실이 아닌 것
 
-- **forked Skill(`context: fork`)의 자식 요청은 거부된다.** 자식 선택을 검증할 근거가 없어
-  `AGENT_SELECTION_UNVERIFIED`로 끝난다. fork로 실행되는 내장 명령(`/code-review` 등)도 같다.
+- **forked Skill(`context: fork`)은 로컬 fixture에서만 검증됐다.** 루트 대화에서 부른 fork만
+  받아들이고, subagent 안에서 부른 fork와 fork 자식의 `SendMessage` 재개는 거부한다.
   Agent 호출로 만든 자식, Workflow 자식, `SendMessage` 재개는 검증된다.
 - **커스텀 역할 기본값의 완전한 수집**은 아직 없다. 제품은 자식 선택을 검증하지 못하면 실행 전에 거부한다.
 - **Workflow의 원 script 재실행 resume**은 하지 않는다. 저널 검증과 결과 회수, 독립 계획의 미실행 단계

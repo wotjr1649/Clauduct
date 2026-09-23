@@ -441,7 +441,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 항목 | 상태 |
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
-| forked Skill(`context: fork`) | **미지원.** 자식 요청이 선택 검증 근거 없이 도착해 `AGENT_SELECTION_UNVERIFIED`로 거부된다(2026-09-23, native 2.1.280 fixture 재현). fork로 실행되는 내장 `/code-review`도 같다. 같은 skill을 fork 없이 쓰면 동작한다 |
+| forked Skill(`context: fork`) | **구현, 실제 backend 미검증.** 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 루트 대화 아래 깊이 1의 general-purpose, skill 본문으로 시작하는 transcript가 모두 맞아야 하고 하나라도 어긋나면 거부한다. 보고서는 Skill 도구 결과로만 전달한다. `-p`에서 직접 입력한 명령은 native가 agent ID 없이 실행하므로 루트 요청으로 처리된다. subagent 안에서 부른 fork와 fork 자식의 `SendMessage` 재개는 여전히 거부한다(2026-09-23, native 2.1.280 fixture) |
 | `review-diff` 헬퍼 | 미지원. 기준선의 경로 탈출 방지·2 MiB 상한은 없다 |
 | Workflow remote·자식의 별도 Workflow·범용 JS 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 임의 JS는 `resumeFromRunId` 단독의 결과 회수, 독립 계획은 미실행 단계만 재개. 다른 세션, 기록 없는 강제 종료, 불명확한 시작 단계의 자동 재실행은 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |

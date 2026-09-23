@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -423,6 +424,10 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	if !hasPending {
 		chosen, found, err := d.loadChoice(scope, id, binding)
 		if err != nil || !found {
+			// A forked skill's child was never prepared and keeps no journal.
+			if fork, ok := d.nativeFork(scope, id, binding, contexts...); ok {
+				return d.cacheFork(id, fork)
+			}
 			return bridge.Route{}, false, err
 		}
 		d.mu.Lock()
@@ -473,6 +478,10 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		}
 	}
 	if err != nil {
+		// Metadata without a tool call: a forked skill's child, not one of the pending calls.
+		if fork, ok := d.nativeFork(scope, id, binding, contexts...); ok {
+			return d.cacheFork(id, fork)
+		}
 		return bridge.Route{}, false, errDelegationUnverified
 	}
 	d.mu.Lock()
@@ -556,6 +565,12 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	return choice.route, true, nil
 }
 
+// startResult opens the child's delegated-result entry. A forked skill's child gets none:
+// native returns its report as the Skill tool's result (see nativeFork).
+func (d *delegations) startResult(id string, choice resolvedChoice) bool {
+	return choice.route.Source == "native-fork" || d.results.start(id, choice)
+}
+
 func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 	choice.custom = choice.custom || strings.HasPrefix(choice.route.Source, "agent-call-definition") || choice.receipt != nil && choice.receipt.CustomRole
 	// Before start(), not after. start() installs r.entries[id] as running, and a refusal
@@ -586,11 +601,11 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 		// Chosen here, dropped after start() succeeds. Deleting first meant a refused
 		// cacheChoice had already destroyed a victim that keeps its slot -- and start() can
 		// still refuse, because r.entries fills with entries no eviction loop can reclaim.
-		if !d.results.start(id, choice) {
+		if !d.startResult(id, choice) {
 			return errDelegationUnverified
 		}
 		delete(d.resolved, evicted)
-	} else if !d.results.start(id, choice) {
+	} else if !d.startResult(id, choice) {
 		return errDelegationUnverified
 	}
 	if choice.receipt == nil {
@@ -761,6 +776,7 @@ type delegationMetadata struct {
 	ParentAgentID string `json:"parentAgentId"`
 	AgentType     string `json:"agentType"`
 	Model         string `json:"model"`
+	SpawnDepth    int    `json:"spawnDepth"`
 	StoppedByUser bool   `json:"stoppedByUser"`
 }
 
@@ -778,45 +794,156 @@ func metadataModelMatches(role, alias, model, source string, custom bool) bool {
 }
 
 func (d *delegations) metadata(binding agentBinding) (delegationMetadata, error) {
+	meta, err := d.readMetadata(binding)
+	if err == nil && !correlationShape.MatchString(meta.ToolUseID) {
+		err = errDelegationUnverified
+	}
+	return meta, err
+}
+
+// readMetadata is metadata without the tool call an Agent-created child records. The child
+// of a forked skill has none.
+func (d *delegations) readMetadata(binding agentBinding) (delegationMetadata, error) {
 	var meta delegationMetadata
-	if filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
+	raw, err := d.subagentFile(binding, "meta.json", 16384)
+	if err != nil {
+		return meta, err
+	}
+	if _, err = wire.Fields(raw, nil); err != nil || json.Unmarshal(raw, &meta) != nil {
 		return meta, errDelegationUnverified
+	}
+	return meta, nil
+}
+
+// subagentFile reads one of native's files for this child, bounded and inside the projects
+// tree. Absence is errMetadataPending: native writes these asynchronously.
+func (d *delegations) subagentFile(binding agentBinding, suffix string, limit int64) ([]byte, error) {
+	if filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
+		return nil, errDelegationUnverified
 	}
 	rel, err := filepath.Rel(d.projects, filepath.Dir(binding.TranscriptPath))
 	if err != nil {
-		return meta, errDelegationUnverified
+		return nil, errDelegationUnverified
 	}
 	root, err := d.openProjects(rel)
 	if errors.Is(err, errProjectsAbsent) {
-		return meta, errMetadataPending
+		return nil, errMetadataPending
 	}
 	if err != nil {
-		return meta, errDelegationUnverified
+		return nil, errDelegationUnverified
 	}
 	defer root.Close()
 	// Root.Open prevents symlink/reparse traversal outside the launcher-owned
 	// projects directory. The hook cannot make us read an arbitrary file.
-	file, err := root.Open(filepath.Join(rel, binding.SessionID, "subagents", "agent-"+binding.ID+".meta.json"))
+	raw, err := workflowRead(root, filepath.Join(rel, binding.SessionID, "subagents", "agent-"+binding.ID+"."+suffix), limit)
 	if os.IsNotExist(err) {
-		return meta, errMetadataPending
+		return nil, errMetadataPending
 	}
 	if err != nil {
-		return meta, errDelegationUnverified
+		return nil, errDelegationUnverified
 	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 16384 {
-		return meta, errDelegationUnverified
+	return raw, nil
+}
+
+// forkedSkillMarker opens the first transcript entry of a forked skill's child. Measured on
+// 2.1.280, for a model-invoked Skill and for a typed slash command alike.
+const forkedSkillMarker = "Base directory for this skill: "
+
+// nativeFork verifies the child of a forked skill -- frontmatter `context: fork`, including
+// built-in commands such as /code-review -- and returns the route native's own receipt
+// records for this turn (#81).
+//
+// Native starts that child without an Agent call, so nothing was prepared for it and its
+// metadata carries no toolUseId: on 2.1.280 it is agentType, spawnDepth and two request
+// flags. What identifies it is the combination of a live SubagentStart registration, a
+// general-purpose child at depth 1 under the root conversation with no tool call, and a
+// transcript that opens with the skill body. The Node baseline recognised the same case
+// from two sidecar files that native no longer writes.
+//
+// Native chooses the model, as it does under native-selection, and dispatch checks the
+// request against the same receipt. The child's report reaches the parent as the Skill
+// tool's own result, so the child is kept out of the delegated-result relay; relaying it
+// as well would hand the parent the report twice. No journal is written either: a restart
+// verifies the child again from the same evidence.
+func (d *delegations) nativeFork(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (resolvedChoice, bool) {
+	var none resolvedChoice
+	if scope.parent != "" || binding.ID != id || binding.SessionID != scope.session || bridge.CanonicalRole(binding.Role) != "general-purpose" {
+		return none, false
 	}
-	raw, err := io.ReadAll(io.LimitReader(file, 16385))
-	if err != nil || len(raw) > 16384 {
-		return meta, errDelegationUnverified
+	meta, first, err := d.forkEvidence(binding)
+	if errors.Is(err, errMetadataPending) && len(contexts) > 0 {
+		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
+		defer cancel()
+		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
+			select {
+			case <-ctx.Done():
+				return none, false
+			case <-time.After(delay):
+				meta, first, err = d.forkEvidence(binding)
+			}
+		}
 	}
-	if _, err = wire.Fields(raw, nil); err != nil {
-		return meta, errDelegationUnverified
+	if err != nil || meta.ToolUseID != "" || meta.ParentAgentID != "" || meta.SpawnDepth != 1 || meta.StoppedByUser || !roleMatches("general-purpose", meta.AgentType, false) {
+		return none, false
 	}
-	if json.Unmarshal(raw, &meta) != nil || !correlationShape.MatchString(meta.ToolUseID) {
-		return meta, errDelegationUnverified
+	var entry struct {
+		Type, AgentID, SessionID string
+		IsSidechain, IsMeta      bool
+		Message                  struct{ Role, Content string }
 	}
-	return meta, nil
+	if json.Unmarshal(first, &entry) != nil || entry.Type != "user" || entry.AgentID != id || entry.SessionID != scope.session ||
+		!entry.IsSidechain || !entry.IsMeta || entry.Message.Role != "user" || !strings.HasPrefix(entry.Message.Content, forkedSkillMarker) {
+		return none, false
+	}
+	active := scope.nativeTurn
+	if active == nil || !validActiveReceipt(*active, scope.session, id) {
+		return none, false
+	}
+	route, err := bridge.SelectRoute(active.Model, active.Effort)
+	if err != nil {
+		return none, false
+	}
+	route.Source = "native-fork"
+	choice := resolvedChoice{session: scope.session, role: "general-purpose", route: route}
+	for _, model := range bridge.Models {
+		if model.ID == route.Model {
+			choice.alias = model.Alias
+		}
+	}
+	return choice, true
+}
+
+// forkEvidence reads the metadata and the first transcript entry together, so a caller
+// waiting for either waits for both.
+func (d *delegations) forkEvidence(binding agentBinding) (delegationMetadata, []byte, error) {
+	meta, err := d.readMetadata(binding)
+	if err != nil {
+		return meta, nil, err
+	}
+	raw, err := d.subagentFile(binding, "jsonl", 1<<20)
+	if err != nil {
+		return meta, nil, err
+	}
+	first, _, _ := bytes.Cut(raw, []byte("\n"))
+	if len(bytes.TrimSpace(first)) == 0 {
+		return meta, nil, errMetadataPending
+	}
+	return meta, first, nil
+}
+
+// cacheFork records a verified fork child. A parallel first request may have done so first.
+func (d *delegations) cacheFork(id string, choice resolvedChoice) (bridge.Route, bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if chosen, found := d.resolved[id]; found {
+		if chosen.session != choice.session || chosen.parent != choice.parent || chosen.route != choice.route {
+			return bridge.Route{}, false, errDelegationUnverified
+		}
+		return chosen.route, true, nil
+	}
+	choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias})
+	if err := d.cacheChoice(id, choice); err != nil {
+		return bridge.Route{}, false, err
+	}
+	return choice.route, true, nil
 }

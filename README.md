@@ -68,7 +68,7 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 명령입니다.
 
 ```powershell
-clauduct-dev version   # Clauduct 자신: 0.3.0, commit, Go 버전
+clauduct-dev version   # Clauduct 자신: 버전, commit, Go 버전
 clauduct --version     # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
 
@@ -123,8 +123,8 @@ clauduct --usage       # 이 계정이 주간 한도를 얼마나 썼는지. 요
 clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너리로
 ```
 
-거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`와 `--usage`
-둘이고(둘 다 **첫 인자일 때만** 인식), 거부하는 것은 **둘**입니다(권한 해제 2종).
+거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`·`--usage`·`--uninstall`
+셋이고(모두 **첫 인자일 때만** 인식), 거부하는 것은 **둘**입니다(권한 해제 2종).
 `--settings`는 0.3.0부터 거부 대신 필수 settings와 **병합**됩니다 — 필수 연결이나 hook과
 충돌할 때만 거부합니다. `--setting-sources`는 그대로 native에 전달됩니다.
 

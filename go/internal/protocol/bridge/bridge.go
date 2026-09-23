@@ -572,7 +572,7 @@ const maxOutputItems = 1024
 //
 // It is here because the field means "the model that produced this response" and the honest
 // value is the one that did. The Node baseline reports it that way and pins it with tests
-// (src/native-protocol.mjs:509-511, src/test-native.mjs:505-511), and ARCHITECTURE.md:217
+// (src/native-protocol.mjs:509-511, src/test-native.mjs:505-511 at 1b1c5e1), and ARCHITECTURE.md section 13
 // says a request is never quietly moved to a cheaper model. Reporting the request instead is
 // the one statement here that is false.
 //

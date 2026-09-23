@@ -12,7 +12,7 @@ import (
 // Codex model directly, because whoever wrote the fixture knew which one to name.
 //
 // The catalogue and the alias rules are the Node baseline's, read from src/models.mjs and
-// src/agent-selection.mjs:23-27 rather than invented. Which model a request runs on decides
+// src/agent-selection.mjs:23-27 at 1b1c5e1 rather than invented. Which model a request runs on decides
 // what it costs, so this is not a place to guess.
 
 // ErrUnsupportedRoute means the requested model or effort is not one this build can route.
@@ -69,7 +69,7 @@ type ContextPolicy struct {
 
 // Models is the catalogue in published order.
 //
-// The values came from the Node baseline's src/models.mjs and src/agent-selection.mjs:23-27
+// The values came from the Node baseline's src/models.mjs and src/agent-selection.mjs:23-27 at 1b1c5e1
 // rather than from a convention that looked reasonable, with one deliberate divergence
 // recorded above: sonnet routes to terra here and to luna there.
 var Models = []Model{
@@ -100,7 +100,7 @@ func Catalogue() []Route {
 // default.
 //
 // The second recorded divergence from the baseline, after sonnet. The baseline gives Plan
-// the cheapest effort (src/models.mjs:20-21) and so did this until 2026-09-18, when the user
+// the cheapest effort (src/models.mjs:20-21 at 1b1c5e1) and so did this until 2026-09-18, when the user
 // raised it to medium: a plan is the one piece of work whose mistakes are paid for by
 // everything built on it, and low was buying the saving in the wrong place.
 //

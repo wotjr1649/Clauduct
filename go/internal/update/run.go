@@ -156,8 +156,14 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 
 	fmt.Fprintln(out, "updated to", release.Tag)
 	for _, path := range leftovers {
-		// The running binary holds its own predecessor open until this process exits.
-		fmt.Fprintln(out, "leftover ", path, "(delete after this process exits)")
+		// The running binary holds its own predecessor open until this process exits, and
+		// the next launch removes exactly that one (SweepLeftover). Any other leftover was
+		// held by some other process and stays until someone deletes it.
+		if strings.EqualFold(filepath.Base(path), Binaries[0]+".old") {
+			fmt.Fprintln(out, "leftover ", path, "(the next clauduct run removes it; deleting it by hand is fine too)")
+		} else {
+			fmt.Fprintln(out, "leftover ", path, "(held by another process; delete it once that process has exited)")
+		}
 	}
 	return 0
 }

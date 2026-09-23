@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -195,7 +196,9 @@ func readWindow(header http.Header, prefix, window string) (RateWindow, string, 
 		switch field {
 		case limitUsedPercent:
 			value, err := strconv.ParseFloat(raw, 64)
-			if err != nil {
+			// ParseFloat reads "NaN" and "Inf". NaN passes the range check below and then
+			// cannot be JSON-encoded, which would cost the whole session account.
+			if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
 				return read, reasonFormat, window + "." + field
 			}
 			if value < 0 || value > 100 {

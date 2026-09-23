@@ -1,0 +1,12 @@
+install -Tag v0.3.2 from GitHub: digests=match old_files=0 version=[clauduct 0.3.2 commit 5c2e719b8af0d1294ac6e19a4d2909a7c5e7b7a8 go go1.27.1 windows/amd64] -> PASS
+before update: clauduct 0.3.1 commit 37ea73347a7076836e0bdb4f9b2ce99b8d6ae7d0 go go1.27.1 windows/amd64
+installed D:\AIDEV\Clauduct\.tmp\v032-ship\install\upgrade
+running   0.3.1 commit 37ea73347a7076836e0bdb4f9b2ce99b8d6ae7d0
+release   v0.3.2 from wotjr1649/Clauduct
+updated to v0.3.2
+clauduct --update --yes (0.3.1 -> 0.3.2): digests=match old_files=1 version=[clauduct 0.3.2 commit 5c2e719b8af0d1294ac6e19a4d2909a7c5e7b7a8 go go1.27.1 windows/amd64] -> PASS
+next clauduct launch sweeps the .old: digests=match old_files=0 version=[clauduct 0.3.2 commit 5c2e719b8af0d1294ac6e19a4d2909a7c5e7b7a8 go go1.27.1 windows/amd64] -> PASS
+already current -- the three installed files match v0.3.2
+second --update is a no-op: digests=match old_files=0 version=[clauduct 0.3.2 commit 5c2e719b8af0d1294ac6e19a4d2909a7c5e7b7a8 go go1.27.1 windows/amd64] -> PASS
+user PATH unchanged: True
+SHIP_UPDATE PASS

@@ -25,6 +25,11 @@ type NativeEventReport struct {
 	Configured bool  `json:"configured"`
 	Observed   bool  `json:"observed"`
 	Invalid    int64 `json:"invalid"`
+	// ReplayKeys is how many executions the replay ledger holds; it refuses new work at
+	// maxNativeExecutions (#70).
+	ReplayKeys int `json:"replayKeys"`
+	// RetiredTurns is how many finished child turns gave their keys back.
+	RetiredTurns int64 `json:"retiredTurns"`
 }
 type nativeTurnReceipt struct {
 	Session string `json:"session"`
@@ -217,10 +222,13 @@ func prunePublications(root *os.Root, directory string, entries []os.DirEntry, l
 }
 
 func (g *Gateway) nativeEventReport() NativeEventReport {
+	g.executions.Lock()
+	keys, retired := len(g.executions.seen), g.executions.retired
+	g.executions.Unlock()
 	n := &g.nativeEvents
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid}
+	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, RetiredTurns: retired}
 }
 
 // Bind the current native turn before inference, not by time proximity. A
@@ -400,6 +408,7 @@ func (g *Gateway) reconcileNativeResults() {
 		default:
 			continue
 		}
+		g.executions.retire(receipt.Session, receipt.Agent, receipt.Turn)
 		// A turn that starts an asynchronous child can end before the delegated
 		// task ends. Only SubagentStop supplies its successful completion body.
 		if receipt.Reason == "answer" {
@@ -427,6 +436,36 @@ func (g *Gateway) reconcileNativeResults() {
 		if root, err := os.OpenRoot(g.nativeEvents.directory); err == nil {
 			_ = root.Remove(name)
 			root.Close()
+		}
+	}
+	g.retireEndedChildren()
+}
+
+// retireEndedChildren retires every child turn the replay ledger still holds open whose end
+// receipt is on disk (#70), whether or not a result entry reads it: a fork child has no
+// entry, and an entry whose report was delivered no longer reads its receipt. The receipts
+// stay where they are; consuming one is a result entry's job.
+func (g *Gateway) retireEndedChildren() {
+	l := &g.executions
+	l.Lock()
+	var open []nativeTurnReceipt
+	for id, c := range l.current {
+		if id[1] != "" && !c.ended && correlationShape.MatchString(id[1]) && correlationShape.MatchString(c.turn) {
+			open = append(open, nativeTurnReceipt{Session: id[0], Agent: id[1], Turn: c.turn})
+		}
+	}
+	l.Unlock()
+	for _, want := range open {
+		var receipt nativeTurnReceipt
+		if found, err := g.readNativeReceipt("end-"+want.Agent+"-"+want.Turn+".json", &receipt); !found || err != nil {
+			continue
+		}
+		switch receipt.Reason {
+		case "answer", "aborted", "refusal", "error":
+			// The body must name the turn its file is named for; retire keys on the session.
+			if receipt.Agent == want.Agent && receipt.Turn == want.Turn {
+				l.retire(receipt.Session, receipt.Agent, receipt.Turn)
+			}
 		}
 	}
 }

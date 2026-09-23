@@ -11,11 +11,12 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
-// Keep only fingerprints, never request bodies. A spent entry is forgotten only when a
-// newer turn of its agent claims: requests are keyed by the turn current when they
-// arrive, so a key under an older turn cannot match again, and a request that read the
-// older turn is refused rather than keyed under it. What remains counts each agent's
-// latest turn and the turnless (--bare) keys, which stay for the session.
+// Keep only fingerprints, never request bodies. A spent entry is forgotten when a newer
+// turn of its agent claims, or when native reports a child's turn complete: requests are
+// keyed by the turn current when they arrive, so a key under an older turn cannot match
+// again, and a request that read the older turn is refused rather than keyed under it. What
+// remains counts each agent's latest unfinished turn and the turnless (--bare) keys, which
+// stay for the session.
 const maxNativeExecutions = 16384
 
 type nativeExecutionKey struct {
@@ -29,11 +30,40 @@ type nativeExecutions struct {
 	seen map[nativeExecutionKey]struct{}
 	// The newest turn claimed per session and agent, by publication number.
 	current map[[2]string]claimedTurn
+	// How many finished child turns gave their keys back (#70).
+	retired int64
 }
 
 type claimedTurn struct {
 	turn     string
 	sequence int
+	// Native reported this turn complete. Its keys are gone, and nothing more of it is
+	// admitted.
+	ended bool
+}
+
+// retire forgets a child agent's turn once native has reported it complete (#70). A finished
+// child never starts another turn, so its last turn's keys used to stay for the session and
+// a session with enough children reached maxNativeExecutions. The turn keeps its place in
+// current, marked ended, so a later request of it is refused rather than admitted against
+// keys that are gone: native does not send one after the turn completes, and if it ever did,
+// refusing is the side that cannot execute twice.
+func (l *nativeExecutions) retire(session, agent, turn string) {
+	l.Lock()
+	defer l.Unlock()
+	id := [2]string{session, agent}
+	last, known := l.current[id]
+	if !known || last.turn != turn || turn == "" {
+		return // Never claimed, or a newer turn has already forgotten it.
+	}
+	last.ended = true
+	l.current[id] = last
+	l.retired++
+	for spent := range l.seen {
+		if spent.session == session && spent.agent == agent && spent.turn == turn {
+			delete(l.seen, spent)
+		}
+	}
 }
 
 type nativeExecution struct {
@@ -93,6 +123,9 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 	if key.turn != "" {
 		agent := [2]string{key.session, key.agent}
 		last, known := ledger.current[agent]
+		if known && key.turn == last.turn && last.ended {
+			return nil, "NATIVE_TURN_ENDED"
+		}
 		if known && key.turn != last.turn {
 			if sequence <= last.sequence {
 				return nil, "NATIVE_TURN_UNVERIFIED"
@@ -107,7 +140,7 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 			if ledger.current == nil {
 				ledger.current = make(map[[2]string]claimedTurn)
 			}
-			ledger.current[agent] = claimedTurn{key.turn, sequence}
+			ledger.current[agent] = claimedTurn{turn: key.turn, sequence: sequence}
 		}
 	}
 	if _, exists := ledger.seen[key]; exists {

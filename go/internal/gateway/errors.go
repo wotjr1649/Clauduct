@@ -132,6 +132,8 @@ func refusalMessage(category string) string {
 	switch category {
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":
 		return category + "; an earlier attempt may already have executed. Automatic replay was blocked. Check the previous outcome before submitting a new prompt; the current native session can continue."
+	case "NATIVE_TURN_ENDED":
+		return category + "; native had already reported this agent turn complete, so nothing was executed. The current native session can continue."
 	case "NATIVE_REQUEST_CAPACITY":
 		return category + "; this session reached its execution tracking limit. Start a new session before sending more requests. No replacement was executed."
 	case "CONTEXT_REQUEST_CLASS_UNVERIFIED":

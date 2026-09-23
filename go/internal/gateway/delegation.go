@@ -845,10 +845,6 @@ func (d *delegations) subagentFile(binding agentBinding, suffix string, limit in
 	return raw, nil
 }
 
-// forkedSkillMarker opens the first transcript entry of a forked skill's child. Measured on
-// 2.1.280, for a model-invoked Skill and for a typed slash command alike.
-const forkedSkillMarker = "Base directory for this skill: "
-
 // nativeFork verifies the child of a forked skill -- frontmatter `context: fork`, including
 // built-in commands such as /code-review -- and returns the route native's own receipt
 // records for this turn (#81).
@@ -857,8 +853,10 @@ const forkedSkillMarker = "Base directory for this skill: "
 // metadata carries no toolUseId: on 2.1.280 it is agentType, spawnDepth and two request
 // flags. What identifies it is the combination of a live SubagentStart registration, a
 // general-purpose child at depth 1 under the root conversation with no tool call, and a
-// transcript that opens with the skill body. The Node baseline recognised the same case
-// from two sidecar files that native no longer writes.
+// transcript that opens with the skill body as a meta user message. The body is not
+// matched: a skill from a file starts "Base directory for this skill: …", a built-in one
+// such as code-review starts with its own prompt (both measured on 2.1.280). The Node
+// baseline recognised the same case from two sidecar files that native no longer writes.
 //
 // Native chooses the model, as it does under native-selection, and dispatch checks the
 // request against the same receipt. The child's report reaches the parent as the Skill
@@ -892,7 +890,7 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 		Message                  struct{ Role, Content string }
 	}
 	if json.Unmarshal(first, &entry) != nil || entry.Type != "user" || entry.AgentID != id || entry.SessionID != scope.session ||
-		!entry.IsSidechain || !entry.IsMeta || entry.Message.Role != "user" || !strings.HasPrefix(entry.Message.Content, forkedSkillMarker) {
+		!entry.IsSidechain || !entry.IsMeta || entry.Message.Role != "user" || entry.Message.Content == "" {
 		return none, false
 	}
 	active := scope.nativeTurn

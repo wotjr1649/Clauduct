@@ -1,0 +1,51 @@
+{
+  "date": "2026-09-22",
+  "base_commit": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "product_acceptance": "PASS",
+  "shipping_status": "UNRELEASED_WORKTREE",
+  "protection": {"state": "ON", "source": "USER_REPORTED_UNCHANGED", "ui_resampled": false, "setting_changes": 0},
+  "policy": {"criterion": "ACTUAL_PRODUCT_BEHAVIOR", "native_auto_restart": false, "gateway_retries": 0, "vendor_specific_branches": 0},
+  "close": {"grace_ms": 100, "drain_bytes": 65536, "phase": "AFTER_HTTP_FRAMING_BEFORE_SOCKET_CLOSE"},
+  "before": {"reused_catalogue": {"requests": 200, "failures": 0}, "closed_catalogue": {"requests": 200, "failures": 42}},
+  "after": {
+    "reused_catalogue": {"requests": 200, "failures": 0, "backend_calls": 0},
+    "closed_catalogue": {"requests": 200, "failures": 0, "backend_calls": 0},
+    "reused_stream": {"requests": 200, "failures": 0, "backend_calls": 200},
+    "closed_stream": {"requests": 200, "failures": 0, "backend_calls": 200},
+    "stream_text_bytes_per_response": 65536,
+    "terminal_events_per_response": 1
+  },
+  "mutation": {"change": "REMOVE_RESPONSE_LISTENER_WRAPPER", "requests": 200, "failures": 7, "restored": true},
+  "local_checks": {
+    "format_vet": "PASS",
+    "build_cgo0": "PASS",
+    "initial_normal_suite": "FAIL_RUNNER_CGO1_AND_APP_SUITE_180S_TIMEOUT",
+    "normal_app_recovery_cgo0": {"result": "PASS", "seconds": 224.190, "suite_timeout_seconds": 720},
+    "normal_other_packages": "PASS",
+    "normal_affected_packages_cgo0": "PASS",
+    "all_packages_race": {"result": "PASS", "app_seconds": 284.449, "gateway_seconds": 53.095},
+    "silent_peer_bounded_close": "PASS",
+    "forced_close_interrupts_drain": "PASS",
+    "existing_cancellation": "PASS",
+    "doc_citations": {"result": "PASS", "documents": 128, "local_links": 724, "failures": 0},
+    "diff_check": "PASS",
+    "owned_processes_remaining": 0,
+    "tui_temp_profiles_remaining": 0
+  },
+  "live_tui": {
+    "result": "PASS", "seconds": 246.76, "native_version": "2.1.278",
+    "model": "gpt-5.6-luna", "effort": "low", "native_pid": 21768,
+    "native_start_local": "2026-09-22T12:10:08+09:00", "native_restarts": 0,
+    "attempts": 5, "inferences": 5, "auxiliary_refused": 4,
+    "generation_completed": 3, "compaction_completed": 1, "generation_cancelled": 1,
+    "cancelled_text_delta_bytes": 5791, "transcript_sequence": "PASS",
+    "native_exit_code": 0, "cleanup_ok": true, "live_tools_exercised": false
+  },
+  "prior_live_attempts": [
+    {"result": "NOT_STARTED", "cause": "POWERSHELL_ARGUMENT_SPLITTING", "backend_attempts": 0},
+    {"result": "FAIL", "cause": "TERMINAL_SUBMISSION_DELAY_HARNESS_DEADLINE", "seconds": 301.04, "backend_attempts": 1, "process_tree_stopped_before_rerun": true}
+  ],
+  "independent_transport_diagnostics": {"run_this_round": false, "last_protection_on_result": "FAIL", "product_fix_applies": false, "source": "../v031-close-20260922/evidence.json"},
+  "external_component_fixed": false,
+  "all_filter_versions_verified": false
+}

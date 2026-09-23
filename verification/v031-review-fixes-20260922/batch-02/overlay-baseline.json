@@ -1,0 +1,7 @@
+{
+  "Replace": {
+    "D:\\AIDEV\\clauduct-v031\\go\\internal\\app\\zz_transport_probe_test.go": "D:\\AIDEV\\clauduct-v031\\verification\\v031-review-fixes-20260922\\batch-02\\probe_native_test.go",
+    "D:\\AIDEV\\clauduct-v031\\go\\internal\\gateway\\connection.go": "D:\\AIDEV\\clauduct-v031\\verification\\v031-review-fixes-20260922\\batch-02\\connection_instrumented.go",
+    "D:\\AIDEV\\clauduct-v031\\go\\internal\\gateway\\zz_transport_probe.go": "D:\\AIDEV\\clauduct-v031\\verification\\v031-review-fixes-20260922\\batch-02\\probe_gateway.go"
+  }
+}

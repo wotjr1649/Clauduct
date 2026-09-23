@@ -116,7 +116,7 @@ func restoreCheckpointPlan(script string, offsets *[]workflowStepOffset) (*workf
 func (d *delegations) saveWorkflowCheckpoints() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		if len(d.workflows) > 0 {
 			d.workflowPersistence.Failed++
@@ -205,7 +205,7 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 	if transcript == "" || !correlationShape.MatchString(source) || !strings.HasPrefix(source, "wf_") {
 		return zero, errWorkflowRecoveryUnverified
 	}
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return zero, errWorkflowRecoveryUnverified
 	}
@@ -340,7 +340,7 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 // A durable exclusive claim precedes every continuation, even before the first
 // checkpoint. Crash/denial after claiming stays uncertain and cannot duplicate work.
 func (d *delegations) claimWorkflow(run workflowRun, call string) error {
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return errWorkflowRecoveryUnverified
 	}

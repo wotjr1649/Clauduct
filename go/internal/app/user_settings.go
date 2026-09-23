@@ -17,31 +17,53 @@ const settingsBytes = 2 << 20
 var errUserSettings = errors.New("SETTINGS_INVALID: expected one bounded JSON object or regular JSON file")
 var errSettingsConflict = errors.New("SETTINGS_CONFLICT: required Clauduct hooks or connection settings cannot be disabled or replaced")
 
-// Only --settings is consumed. All other arguments, including --setting-sources,
-// retain their order and spelling. Repeated settings follow native's last-value rule.
-func takeUserSettings(args []string, cwd string) ([]string, map[string]json.RawMessage, error) {
+// Read the last real --settings source and record every settings slot for Run to
+// replace with the merged blob. Keep each slot: removing it lets an earlier
+// optional/variadic option consume the following prompt. Other argv is unchanged.
+func takeUserSettings(args []string, cwd string) ([]string, map[string]json.RawMessage, []int, error) {
 	forward := make([]string, 0, len(args))
+	var slots []int
 	value, present := "", false
-	for i := 0; i < len(args); i++ {
+	for i := 0; i < len(args); {
+		if args[i] == "--" {
+			forward = append(forward, args[i:]...)
+			break
+		}
+		end, known := nativeArgEnd(args, i)
+		if !known {
+			// An unknown option might consume even the next '--' or known
+			// option name. Do not trust any later boundary for settings.
+			for _, arg := range args[i+1:] {
+				if name, _, _ := strings.Cut(arg, "="); name == "--settings" {
+					return nil, nil, nil, errUserSettings
+				}
+			}
+			forward = append(forward, args[i:]...)
+			break
+		}
 		name, attached, hasValue := strings.Cut(args[i], "=")
 		if name != "--settings" {
-			forward = append(forward, args[i])
+			end = min(end, len(args))
+			forward = append(forward, args[i:end]...)
+			i = end
 			continue
 		}
+		if end > len(args) {
+			return nil, nil, nil, errUserSettings
+		}
 		if !hasValue {
-			i++
-			if i >= len(args) || strings.HasPrefix(args[i], "--") {
-				return nil, nil, errUserSettings
-			}
-			attached = args[i]
+			attached = args[i+1]
 		}
 		value, present = attached, true
+		slots = append(slots, len(forward))
+		forward = append(forward, "--settings="+attached)
+		i = end
 	}
 	if !present {
-		return forward, nil, nil
+		return forward, nil, nil, nil
 	}
 	if len(value) > settingsBytes || strings.TrimSpace(value) == "" {
-		return nil, nil, errUserSettings
+		return nil, nil, nil, errUserSettings
 	}
 	raw := []byte(value)
 	if !strings.HasPrefix(strings.TrimSpace(value), "{") {
@@ -51,50 +73,50 @@ func takeUserSettings(args []string, cwd string) ([]string, map[string]json.RawM
 		}
 		f, err := os.Open(file)
 		if err != nil {
-			return nil, nil, errUserSettings
+			return nil, nil, nil, errUserSettings
 		}
 		defer f.Close()
 		info, err := f.Stat()
 		if err != nil || !info.Mode().IsRegular() || info.Size() > settingsBytes {
-			return nil, nil, errUserSettings
+			return nil, nil, nil, errUserSettings
 		}
 		raw, err = io.ReadAll(io.LimitReader(f, settingsBytes+1))
 		if err != nil || len(raw) > settingsBytes {
-			return nil, nil, errUserSettings
+			return nil, nil, nil, errUserSettings
 		}
 	}
 	fields, err := wire.Fields(raw, nil)
 	if err != nil {
-		return nil, nil, errUserSettings
+		return nil, nil, nil, errUserSettings
 	}
 	if raw, ok := fields["disableAllHooks"]; ok && string(raw) != "false" {
-		return nil, nil, errSettingsConflict
+		return nil, nil, nil, errSettingsConflict
 	}
 	if raw, ok := fields["env"]; ok {
 		env, err := wire.Fields(raw, nil)
 		if err != nil {
-			return nil, nil, errUserSettings
+			return nil, nil, nil, errUserSettings
 		}
 		for key, raw := range env {
 			var value string
 			if json.Unmarshal(raw, &value) != nil {
-				return nil, nil, errUserSettings
+				return nil, nil, nil, errUserSettings
 			}
 			upper := strings.ToUpper(key)
 			if required, ok := sessionRequirements()[upper]; ok && value != required {
-				return nil, nil, errSettingsConflict
+				return nil, nil, nil, errSettingsConflict
 			}
 			switch upper {
 			case "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CLAUDUCT_PDF_PROJECTS_ROOT":
-				return nil, nil, errSettingsConflict
+				return nil, nil, nil, errSettingsConflict
 			case "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS":
 				if value != "1" {
-					return nil, nil, errSettingsConflict
+					return nil, nil, nil, errSettingsConflict
 				}
 			}
 		}
 	}
-	return forward, fields, nil
+	return forward, fields, slots, nil
 }
 
 // Native remains responsible for user setting schemas and hook permissions.

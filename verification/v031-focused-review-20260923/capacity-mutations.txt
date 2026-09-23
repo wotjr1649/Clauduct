@@ -1,0 +1,14 @@
+장기 세션 한도 수정의 mutation 결과. 각 행은 수정 하나만 되돌린 상태다.
+
+plugin (node native_events_publication_test.mjs, 수정한 모듈을 임시 복사본에서 변형)
+  완료된 turn의 게시 자리 반환 제거          FAIL (caught)
+  완료된 자식의 진행 기록 반환 제거          FAIL (caught)
+  취소 turn 기록을 4096에서 다시 거부        FAIL (caught)
+  전역 순번 8192 한도 복원                   FAIL (caught)
+  수정한 모듈 그대로                         PASS, 0.31초
+
+gateway (go test -run '^TestLongSessionReceiptsPassTheFormerCapAndStayPruned$' ./internal/gateway)
+  게시 300개와 129개 두 크기에서 같은 결과
+  순번 상한 8192 복원                        FAIL (caught)
+  지난 영수증 정리 호출 제거                 FAIL (caught)
+  수정한 코드 그대로                         PASS

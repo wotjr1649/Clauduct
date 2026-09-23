@@ -72,13 +72,13 @@ func TestNativeResumeSwitchCompactsOnPersistedOldModelAtDestinationThreshold(t *
 		t.Fatalf("initial failed: exit=%d err=%v reads=%d", first.result.NativeExitCode, first.err, f.reads)
 	}
 	second := (nativeRun{Cwd: cwd, ConfigDir: config, Args: []string{"-p", "Continue and report the marker", "--resume", id, "--model", "gpt-5.6-sol", "--effort", "medium", "--allowedTools", "ToolSearch,Read"}, transport: f, ContextPolicy: true, Timeout: 45 * time.Second}).run(t)
-	if second.err != nil || second.result.NativeExitCode != 0 || len(f.compactRoutes) != 1 || f.compactRoutes[0] != "gpt-6-astra/high" || f.routes[len(f.routes)-1] != "gpt-5.6-sol/medium" {
+	if second.err != nil || second.result.NativeExitCode != 0 || len(f.compactRoutes) != 1 || f.compactRoutes[0] != "gpt-6-astra/medium" || f.routes[len(f.routes)-1] != "gpt-5.6-sol/medium" {
 		t.Fatalf("resume: exit=%d err=%v compaction=%v routes=%v output=%s", second.result.NativeExitCode, second.err, f.compactRoutes, f.routes, tail(second.output(), 1200))
 	}
 	if len(second.result.Diagnostics.AgentContexts) != 1 || !second.result.Diagnostics.AgentContexts[0].Persistent {
 		t.Fatal("native session journal absent")
 	}
-	t.Log("actual native process restart: destination threshold reached; old astra/high compaction, new sol/medium generation")
+	t.Log("actual native process restart: destination threshold reached; old astra capped to medium for compaction, new sol/medium generation")
 }
 
 func TestNativeResumeSwitchWithOneShortTurn(t *testing.T) {

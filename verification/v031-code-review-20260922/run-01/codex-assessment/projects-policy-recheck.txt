@@ -1,0 +1,24 @@
+=== RUN   TestProjectsAbsenceDiffersFromFileAndSharingFailure
+=== RUN   TestProjectsAbsenceDiffersFromFileAndSharingFailure/absent
+=== RUN   TestProjectsAbsenceDiffersFromFileAndSharingFailure/file
+=== RUN   TestProjectsAbsenceDiffersFromFileAndSharingFailure/file_parent
+=== RUN   TestProjectsAbsenceDiffersFromFileAndSharingFailure/locked
+--- PASS: TestProjectsAbsenceDiffersFromFileAndSharingFailure (0.01s)
+    --- PASS: TestProjectsAbsenceDiffersFromFileAndSharingFailure/absent (0.00s)
+    --- PASS: TestProjectsAbsenceDiffersFromFileAndSharingFailure/file (0.01s)
+    --- PASS: TestProjectsAbsenceDiffersFromFileAndSharingFailure/file_parent (0.00s)
+    --- PASS: TestProjectsAbsenceDiffersFromFileAndSharingFailure/locked (0.00s)
+=== RUN   TestProjectsFailureDoesNotCountAsAnUnroutedRole
+=== RUN   TestProjectsFailureDoesNotCountAsAnUnroutedRole/absent
+=== RUN   TestProjectsFailureDoesNotCountAsAnUnroutedRole/file
+=== RUN   TestProjectsFailureDoesNotCountAsAnUnroutedRole/file_parent
+=== RUN   TestProjectsFailureDoesNotCountAsAnUnroutedRole/locked
+=== RUN   TestProjectsFailureDoesNotCountAsAnUnroutedRole/missing_choice
+--- PASS: TestProjectsFailureDoesNotCountAsAnUnroutedRole (0.04s)
+    --- PASS: TestProjectsFailureDoesNotCountAsAnUnroutedRole/absent (0.01s)
+    --- PASS: TestProjectsFailureDoesNotCountAsAnUnroutedRole/file (0.01s)
+    --- PASS: TestProjectsFailureDoesNotCountAsAnUnroutedRole/file_parent (0.01s)
+    --- PASS: TestProjectsFailureDoesNotCountAsAnUnroutedRole/locked (0.01s)
+    --- PASS: TestProjectsFailureDoesNotCountAsAnUnroutedRole/missing_choice (0.01s)
+PASS
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	0.175s

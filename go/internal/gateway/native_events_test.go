@@ -3,7 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
-	"os"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -26,12 +26,12 @@ func TestNativeTerminalReceiptsBindOneExecution(t *testing.T) {
 			put := func(name string, receipt nativeTurnReceipt) {
 				t.Helper()
 				raw, _ := json.Marshal(receipt)
-				if err := os.WriteFile(filepath.Join(dir, name), raw, 0600); err != nil {
+				if err := writeNativeTestFile(filepath.Join(dir, name), raw); err != nil {
 					t.Fatal(err)
 				}
 			}
 			active := nativeTurnReceipt{Session: scope.session, Agent: binding.ID, Turn: "first", Model: "gpt-5.6-luna", Effort: "high"}
-			put("active-"+binding.ID+".json", active)
+			put("active/child-"+binding.ID, active)
 			if !g.bindNativeTurn(scope.session, binding.ID) {
 				t.Fatal("valid turn rejected")
 			}
@@ -93,7 +93,7 @@ func TestNativeTerminalReceiptsBindOneExecution(t *testing.T) {
 				t.Fatal("resume failed")
 			}
 			active.Turn = "second"
-			put("active-"+binding.ID+".json", active)
+			put("active/child-"+binding.ID, active)
 			if !g.bindNativeTurn(scope.session, binding.ID) {
 				t.Fatal("resume turn rejected")
 			}
@@ -121,7 +121,7 @@ func TestMalformedActiveNativeReceiptFailsClosed(t *testing.T) {
 	dir := t.TempDir()
 	g.ConfigureNativeEvents(dir)
 	for _, raw := range []string{`{`, `{"session":"proof_session","agent":"proof_child","turn":"../bad","model":"gpt-5.6-luna","effort":"high"}`, `{"session":"proof_session","agent":"proof_child","turn":"good","model":"unknown private value","effort":"high"}`} {
-		if err := os.WriteFile(filepath.Join(dir, "active-"+binding.ID+".json"), []byte(raw), 0600); err != nil {
+		if err := writeNativeTestFile(filepath.Join(dir, "active/child-"+binding.ID), []byte(raw)); err != nil {
 			t.Fatal(err)
 		}
 		if g.bindNativeTurn(scope.session, binding.ID) {
@@ -145,7 +145,7 @@ func TestRejectedContinuationRecordsItsOwnNativeTerminal(t *testing.T) {
 		put := func(name string, v any) {
 			t.Helper()
 			raw, _ := json.Marshal(v)
-			if err := os.WriteFile(filepath.Join(dir, name), raw, 0600); err != nil {
+			if err := writeNativeTestFile(filepath.Join(dir, name), raw); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -155,8 +155,14 @@ func TestRejectedContinuationRecordsItsOwnNativeTerminal(t *testing.T) {
 		if wrongSession {
 			active.Session = "other"
 		}
-		put("active-"+binding.ID+".json", active)
-		r := &record{data: RequestRecord{Category: "AGENT_SELECTION_UNVERIFIED"}}
+		put("active/child-"+binding.ID, active)
+		req := httptest.NewRequest("POST", "/v1/messages", nil)
+		req.Header.Set("X-Claude-Code-Session-Id", scope.session)
+		req.Header.Set("X-Claude-Code-Agent-Id", binding.ID)
+		r := &record{}
+		_, release, _ := g.agentSelection(req, &anthropic.Request{Model: active.Model}, r)
+		release()
+		r.data.Category = "AGENT_SELECTION_UNVERIFIED"
 		g.recordFailedAgentRequest(scope.session, binding.ID, r)
 		if wrongSession {
 			if e.NativeTurn != "old_turn" || e.RequestFailure != "" {
@@ -164,6 +170,7 @@ func TestRejectedContinuationRecordsItsOwnNativeTerminal(t *testing.T) {
 			}
 			continue
 		}
+		e = d.results.entries[binding.ID]
 		if e.NativeTurn != "new_turn" || e.NativeEndObserved || e.RequestFailure != "AGENT_SELECTION_UNVERIFIED" {
 			t.Fatal("failure bound to old turn")
 		}

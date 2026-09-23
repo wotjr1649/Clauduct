@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -168,6 +169,7 @@ func TestUpstreamFailureBeforeAnyOutputIsAStatus(t *testing.T) {
 		"backend reported failure": {sse(created, `{"type":"response.failed"}`), "UPSTREAM_RESPONSE_FAILED"},
 		"backend error event":      {sse(created, `{"type":"error"}`), "UPSTREAM_ERROR_EVENT"},
 		"malformed frame":          {"data: not json\n\n", "INVALID_SSE"},
+		"empty completed reply":    {sse(created, completed), "EMPTY_REPLY"},
 		"unknown event":            {sse(created, `{"type":"response.output_audio.delta"}`), "UNSUPPORTED_EVENT"},
 		"no terminal event":        {sse(created), "INCOMPLETE_RESPONSE"},
 	} {
@@ -179,6 +181,14 @@ func TestUpstreamFailureBeforeAnyOutputIsAStatus(t *testing.T) {
 			}
 			if body := bodyText(t, resp); !strings.Contains(body, tc.category) {
 				t.Fatalf("body = %q, want %s", body, tc.category)
+			}
+			waitForActive(t, g, 0, "stream evidence must be recorded")
+			failure := g.Diagnose().RecentFailures[0]
+			if failure.Category != tc.category || failure.StreamEnd == nil || failure.StreamEnd.Bytes != len(tc.stream) || failure.StreamEnd.ClientContext != "none" {
+				t.Fatalf("early failure lost stream evidence: category=%s end=%+v", failure.Category, failure.StreamEnd)
+			}
+			if tc.category == "EMPTY_REPLY" && (!failure.StreamEnd.TerminalObserved || failure.StreamEnd.ReadError != "none") {
+				t.Fatal("valid empty terminal response confused with transport failure")
 			}
 		})
 	}
@@ -369,7 +379,10 @@ func TestUpstreamFailuresMapToStatusesTheClientActsOnCorrectly(t *testing.T) {
 			http.StatusBadRequest, auth.CategoryStoreUnsupported},
 
 		// The wrapper's own refusals.
-		"no budget": {upstream.ErrBudgetExhausted, http.StatusBadGateway, "UPSTREAM_FAILURE"},
+		"no budget":              {upstream.ErrBudgetExhausted, http.StatusBadRequest, "REQUEST_BUDGET"},
+		"route not authorised":   {upstream.ErrRouteNotAuthorised, http.StatusBadRequest, "ROUTE_NOT_AUTHORISED"},
+		"wrapped budget refusal": {fmt.Errorf("private context: %w", upstream.ErrBudgetExhausted), http.StatusBadRequest, "REQUEST_BUDGET"},
+		"wrapped route refusal":  {fmt.Errorf("private context: %w", upstream.ErrRouteNotAuthorised), http.StatusBadRequest, "ROUTE_NOT_AUTHORISED"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			g := startWith(t, failingTransport{err: tc.err})
@@ -377,7 +390,7 @@ func TestUpstreamFailuresMapToStatusesTheClientActsOnCorrectly(t *testing.T) {
 			if resp.StatusCode != tc.status {
 				t.Fatalf("status = %d, want %d: %s", resp.StatusCode, tc.status, bodyText(t, resp))
 			}
-			if body := bodyText(t, resp); !strings.Contains(body, tc.category) {
+			if body := bodyText(t, resp); !strings.Contains(body, tc.category) || strings.Contains(body, "private context") {
 				t.Fatalf("body = %q, want %s", body, tc.category)
 			}
 		})

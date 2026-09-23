@@ -592,7 +592,8 @@ func TestDeliveryCancellationRequiresContextEvidence(t *testing.T) {
 		if cancelled {
 			want, broken = "CANCELLED", 0
 		}
-		if got := g.Diagnose(); got.Recent[0].Category != want || got.Requests.Broken != broken {
+		if got := g.Diagnose(); got.Recent[0].Category != want || got.Requests.Broken != broken ||
+			len(got.Totals.Failures) != 1 || got.Totals.Failures[want] != 1 {
 			t.Fatalf("cancelled=%v: %+v", cancelled, got)
 		}
 	}
@@ -634,7 +635,8 @@ func TestStreamReadCancellationAndFailureEvidenceSurviveEviction(t *testing.T) {
 		if cancelled {
 			category, client = "CANCELLED", "cancelled"
 		}
-		if failure.Category != category || failure.StreamEnd == nil || failure.StreamEnd.ClientContext != client || failure.StreamEnd.ReadError != "transport_error" || failure.StreamEnd.TerminalObserved {
+		if failure.Category != category || failure.StreamEnd == nil || failure.StreamEnd.ClientContext != client || failure.StreamEnd.ReadError != "transport_error" || failure.StreamEnd.TerminalObserved ||
+			len(account.Totals.Failures) != 1 || account.Totals.Failures[category] != 1 {
 			t.Fatalf("wrong evidence: %+v / %+v", failure, failure.StreamEnd)
 		}
 		encoded, err := json.Marshal(account)

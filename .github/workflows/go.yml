@@ -55,6 +55,15 @@ jobs:
       - name: vet
         run: go vet ./...
 
+      - name: evidence compile and vet
+        run: |
+          go vet -tags runtime_evidence ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go vet -tags policy_evidence ./...
+
+      - name: offline evidence validators
+        run: go test -tags runtime_evidence -count=1 -timeout=60s -run '^(TestTUIAcceptanceRejectsMissingOrMisorderedEvidence|TestIntegrationAuditSignalsOnlyTextStart|TestIntegrationPrivatePathsStopBeforeTransport)$' ./internal/app
+
       - name: build
         run: go build ./...
 
@@ -67,3 +76,22 @@ jobs:
         env:
           CGO_ENABLED: '1'
         run: go test -count=1 -race ./...
+
+  httpguard-portable:
+    # This validates the shared filter only; the full launcher remains Windows-only.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: false
+      - name: shared filter
+        run: go test -count=1 -timeout=60s ./internal/httpguard

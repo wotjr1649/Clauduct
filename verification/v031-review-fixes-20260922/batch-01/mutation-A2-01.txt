@@ -1,0 +1,11 @@
+=== RUN   TestFailedRequestPreservesNewerAwaitingResult
+=== RUN   TestFailedRequestPreservesNewerAwaitingResult/false
+    turn_receipt_test.go:248: late failure changed the newer result or its accounting
+=== RUN   TestFailedRequestPreservesNewerAwaitingResult/true
+    turn_receipt_test.go:248: late failure changed the newer result or its accounting
+--- FAIL: TestFailedRequestPreservesNewerAwaitingResult (0.04s)
+    --- FAIL: TestFailedRequestPreservesNewerAwaitingResult/false (0.02s)
+    --- FAIL: TestFailedRequestPreservesNewerAwaitingResult/true (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.243s
+FAIL

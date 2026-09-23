@@ -1,0 +1,111 @@
+{
+  "date": "2026-09-22",
+  "base_commit": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "overall_result": "HOLD",
+  "reason": ["PROTECTION_ON_TRANSPORT_COUNTEREXAMPLE"],
+  "policy": {
+    "architecture_section": "7.1",
+    "generation_compaction": "NO_REMOTE_PREFLIGHT_USE_BACKEND_USAGE",
+    "tool_output_media_warmup_blocks_generation": false,
+    "regression": {"result": "PASS", "tests": 5, "seconds": 0.112}
+  },
+  "protection": {"state": "ON", "source": "USER_REPORTED_UNCHANGED", "ui_resampled": false, "setting_changes": 0},
+  "initial_instrumented_tcp": {
+    "immediate": {"attempts": 200, "failures": 14},
+    "receiver_ack": {"attempts": 200, "failures": 2}
+  },
+  "explicit_shutdown_control": {
+    "attempts": 200, "failures": 200, "server_premature_eof": 200,
+    "client_errors": {"errno_10022": 2, "errno_10053": 77, "errno_10054": 1, "none": 120},
+    "payload_mismatches": 1
+  },
+  "winsock_direct": {
+    "build": "PASS_WALL_WEXTRA_WERROR",
+    "client_shutdowns_at_observation": 0, "client_closes_at_observation": 0,
+    "no_shutdown": {"result": "PASS", "received": -1, "error": 10060, "elapsed_us": 512180},
+    "send_only_shutdown": {"result": "FAIL", "received": 0, "error": 0, "elapsed_us": 4451},
+    "conclusion": "PREMATURE_RECEIVE_EOF_AFTER_SEND_ONLY_SHUTDOWN_BELOW_APPLICATION_RUNTIME",
+    "exact_filter_function_identified": false,
+    "original_rst_origin_identified": false,
+    "external_requests": 0, "credential_reads": 0
+  },
+  "recheck": {
+    "node": {"result": "FAIL", "total_cases": 31, "passed": 5, "failed": 1, "not_run": 25, "case": "missing-fixed", "client": "node-fetch", "error": "ECONNRESET", "requests": 6, "invalid_requests": 0, "helper_tests": 5},
+    "dotnet": {"result": "FAIL", "total_cases": 35, "passed": 2, "failed": 1, "not_run": 32, "case": "mixed-case", "category": "NETWORK_OR_TLS_ERROR", "case_elapsed_ms": 33, "deadline_45s": "NOT_RUN"},
+    "raw_tcp": {
+      "result": "FAIL",
+      "immediate": {"attempts": 200, "failures": 15, "client_errno_10054": 15, "payload_mismatches": 15},
+      "receiver_ack": {"attempts": 200, "failures": 7, "server_errno_10054": 7, "payload_mismatches": 0},
+      "seconds": 3.73
+    },
+    "native_tui": {
+      "result": "PASS", "seconds": 211.99, "native_version": "2.1.278",
+      "model": "gpt-5.6-luna", "effort": "low", "attempts": 5, "inferences": 5, "warmups": 0,
+      "generation_completed": 3, "compaction_completed": 1, "generation_cancelled": 1,
+      "route_refusals": 4, "transcript_facts_and_order": true, "exit_code": 0, "cleanup_ok": true,
+      "billing_amount_measured": false
+    }
+  },
+  "unchanged_http_sha256": {
+    "verification/test-http-transport.mjs": "304098b8cd9f1a02a68cdfc18c454cfdf584526ca60cfbf776b09f38e2a61a9b",
+    "verification/test-dotnet-http-transport.mjs": "81bf444aab0490787b76959d88d43448941b6de304315b6f07dcb96204ac860c"
+  },
+  "external_component_followup": {
+    "result": "BLOCKED_NO_VERIFIED_COMPONENT_FIX",
+    "windows_build": "26200", "service_version": "8.0.5570", "core_version": "1.22.29",
+    "loaded_netlib_wfp_version": "8.0.91.0", "installed_driver_file_version": "8.0.91.0",
+    "core_and_driver_authenticode": "Valid", "latest_stable_asset": "AdGuard-8.0.1.5570.exe",
+    "nightly_listed": "8.1.0 Nightly 4 (5673)", "nightly_fix_verified": false,
+    "component_changes": 0, "setting_changes": 0, "real_backend_attempts": 0,
+    "winsock_snapshot": {
+      "build": "PASS_WALL_WEXTRA_WERROR", "no_shutdown_elapsed_us": 513160,
+      "send_only_shutdown_result": "FAIL_PREMATURE_EOF", "send_only_shutdown_elapsed_us": 2476,
+      "server_before": "ESTABLISHED", "client_before": "ESTABLISHED",
+      "server_after": "LAST_ACK", "client_after": "ESTABLISHED", "both_owners": "PROBE_PROCESS"
+    },
+    "original_three_suites_rerun": false,
+    "upstream_issue": {
+      "destination": "AdguardTeam/AdguardForWindows", "status": "PUBLISHED_AWAITING_UPSTREAM_RESPONSE",
+      "url": "https://github.com/AdguardTeam/AdguardForWindows/issues/6233", "number": 6233,
+      "author": "wotjr1649", "created_at": "2026-09-22T01:47:07Z", "state_at_readback": "open",
+      "comments_at_readback": 0, "body_matches_approved_file": true,
+      "body_comparison": "NORMALIZED_LINE_ENDINGS_AND_TRIMMED_END",
+      "approved_local_body_sha256": "190b3d950778c993df018722c396d798d1e2dcca4a79c165ddef69f8d9aa4e5a"
+    },
+    "verification": {"doc_citations": {"documents": 126, "citations": 89, "links_checked": 705, "failures": 0}, "json_and_diff_check": "PASS", "issue_embedded_source_matches_tested_file": true, "remaining_reproduction_processes": 0}
+  },
+  "kernel_investigation": {
+    "result": "PREMATURE_INBOUND_FIN_EXECUTION_PATH_CONFIRMED_INTERNAL_DEFECT_UNRESOLVED",
+    "protection": "ON_USER_ATTESTED_UNCHANGED", "setting_changes": 0, "component_changes": 0,
+    "backend_calls": 0, "additional_public_posts": 0,
+    "build": "PASS_WALL_WEXTRA_WERROR", "filter_setup_check": "PASS_10_PAYLOAD_FILTERS",
+    "winsock_cases": {"total": 6, "premature_eof": 6, "elapsed_us": [1427,1687,323,1187,1151,452]},
+    "etw": {"collector": "PASS", "transport": "FAIL", "process_exit_code": 1, "captured": 17, "rejected": 0, "lost": 0,
+      "stop_error": 0, "buffers_used": 2, "buffer_kib": 64, "max_seconds": 15, "disk_etl": false,
+      "artifact": "kernel-trace.json", "recv_wait_us": 364, "receive_eof_from_shutdown_us": 383.8,
+      "inbound_fin_state_change_us": 374.1, "cleanup_started_us": 749.8},
+    "observed_path": ["NETIO!StreamPermitRemoveDataWorkerRoutine", "NETIO!StreamPermitDataHelper",
+      "NETIO!StreamInjectReceiveToStack", "NETIO!WfpInetInspectInjectRemoteDisconnect",
+      "tcpip!InetInspectInjectRemoteDisconnect", "tcpip!TcpInjectFin", "tcpip!TcpAllowFin", "tcpip!TcpAcceptFin"],
+    "symbols": {"exact_public_pdb": true, "tcpip_file_version": "10.0.26100.8521", "netio_fwpkclnt_file_version": "10.0.26100.8870"},
+    "driver_static_sites": {"version": "8.0.91.0", "sha256": "8019bc2f97a59f03a13e6a7e53b42083f5e62e6d1f4ce2fb29f88b80507e247f",
+      "stream_queue_function_rva": "0xB350", "stream_inject_call_rvas": ["0xB529","0xB606","0xFECC"],
+      "clone_discard_call_rva": "0x1027B", "runtime_hits_observed": false},
+    "internal_stream_flags_observed": false, "original_rst_origin_identified": false,
+    "original_three_suites_rerun": false, "native_tui_rerun": false,
+    "verification": {
+      "artifact_invariants": "PASS", "fin_before_eof_before_cleanup": true,
+      "doc_citations": {"documents": 127, "citations": 89, "links_checked": 711, "failures": 0},
+      "diff_check": "PASS", "approved_issue_draft_unchanged": true,
+      "remaining_probe_processes": 0, "remaining_probe_etw_sessions": 0,
+      "original_root_tracked_and_index_clean": true,
+      "artifact_old_state_omission_detected_and_fixed": true
+    }
+  },
+  "verification": {
+    "tagged_vet": "PASS", "tui_build": "PASS", "full_go_race_rerun": false,
+    "final_checks": "PASS", "doc_citations": {"documents": 125, "citations": 89, "links_checked": 703, "failures": 0},
+    "json_and_diff_check": "PASS", "temporary_tui_root_removed": true,
+    "remaining_validation_processes": 0, "original_root_tracked_and_index_clean": true
+  }
+}

@@ -141,6 +141,7 @@ func workflowLabelSelection(label string, run workflowRun, agent string, active 
 	r := &SelectionRecord{Session: run.Session, Call: run.Call, Role: "workflow-subagent", RequestedModel: selectionModelLabel(model), RequestedEffort: effort, ModelProvided: hasModel, EffortProvided: hasEffort, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source}
 	if options.AgentType != "" {
 		r.Role = options.AgentType
+		r.CustomRole = true
 	}
 	return route, r, nil
 }

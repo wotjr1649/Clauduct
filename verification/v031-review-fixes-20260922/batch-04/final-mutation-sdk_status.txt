@@ -1,0 +1,15 @@
+=== RUN   TestNativeSDKEmptyReplyWaitsForBackgroundChild
+=== RUN   TestNativeSDKEmptyReplyWaitsForBackgroundChild/empty_notification
+    native_wait_test.go:40: SDK parent did not recover: exit=1 failures=map[] root=3 child=1
+    native_wait_test.go:33: class=main status=200 category= wait=&{Pending:[] Included:[] Unavailable:[] Eligible:true Meaning:known_child_reports_in_input_not_task_success Withheld:false Empty:false ControlMode:sdk}
+    native_wait_test.go:33: class=main status=200 category= wait=&{Pending:[public_wait_call] Included:[] Unavailable:[] Eligible:false Meaning:known_child_reports_in_input_not_task_success Withheld:true Empty:true ControlMode:sdk}
+    native_wait_test.go:33: class=subagent status=200 category= wait=&{Pending:[] Included:[] Unavailable:[] Eligible:true Meaning:known_child_reports_in_input_not_task_success Withheld:false Empty:false ControlMode:sdk}
+    native_wait_test.go:33: class=main status=200 category= wait=&{Pending:[] Included:[a88b19402a92a5cb1] Unavailable:[] Eligible:true Meaning:known_child_reports_in_input_not_task_success Withheld:true Empty:true ControlMode:sdk}
+    native_wait_test.go:36: native output=...a":{"inputTokens":27,"outputTokens":4,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"webSearchRequests":0,"costUSD":0.00023500000000000002,"contextWindow":500000,"maxOutputTokens":32000,"thinkingTokens":0,"canonicalModel":"gpt-5.6-luna","provider":"firstParty","costBasis":"unknown"},"gpt-5.6-sol":{"inputTokens":9,"outputTokens":1,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"webSearchRequests":0,"costUSD":0.00007,"contextWindow":500000,"maxOutputTokens":32000,"thinkingTokens":0,"canonicalModel":"gpt-5.6-sol","provider":"firstParty","costBasis":"unknown"}},"permission_denials":[],"terminal_reason":"completed","fast_mode_state":"off","fast_mode_disabled_reason":"sdk_opt_in_required","origin":{"kind":"task-notification"},"subagent_stats":{"spawned":1,"requested":{"background":1,"foreground":0,"unset":0},"started_in_background":1,"max_depth":1,"spawned_by_subagents":0,"completed":1,"failed":0,"killed":{"parent":0,"user":0,"system":0},"refused":{"depth_limit":0,"concurrency_limit":0,"budget":0},"by_type":{"public-wait":1}},"is_error":true,"num_turns":1,"subtype":"error_during_execution","errors":["[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null"],"type":"result","duration_ms":214,"uuid":"a3c629e8-9cfd-4488-8a80-aca10b8bd357","queued_turn_count":0,"result_index":1}
+        [claude-code:unrecognized_model] {"model":"gpt-5.6-luna","query_source":"sdk"}
+        [claude-code:unrecognized_model] {"model":"gpt-5.6-sol","query_source":"agent:custom:public-wait"}
+--- FAIL: TestNativeSDKEmptyReplyWaitsForBackgroundChild (4.50s)
+    --- FAIL: TestNativeSDKEmptyReplyWaitsForBackgroundChild/empty_notification (2.63s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	4.720s
+FAIL

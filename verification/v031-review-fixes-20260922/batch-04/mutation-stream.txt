@@ -1,0 +1,22 @@
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus/no_terminal_event
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus/malformed_frame
+    messages_test.go:188: early failure lost stream evidence: category=INVALID_SSE end=<nil>
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus/backend_reported_failure
+    messages_test.go:188: early failure lost stream evidence: category=UPSTREAM_RESPONSE_FAILED end=<nil>
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus/backend_error_event
+    messages_test.go:188: early failure lost stream evidence: category=UPSTREAM_ERROR_EVENT end=<nil>
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus/empty_completed_reply
+    messages_test.go:188: early failure lost stream evidence: category=EMPTY_REPLY end=<nil>
+=== RUN   TestUpstreamFailureBeforeAnyOutputIsAStatus/unknown_event
+    messages_test.go:188: early failure lost stream evidence: category=UNSUPPORTED_EVENT end=<nil>
+--- FAIL: TestUpstreamFailureBeforeAnyOutputIsAStatus (0.06s)
+    --- PASS: TestUpstreamFailureBeforeAnyOutputIsAStatus/no_terminal_event (0.01s)
+    --- FAIL: TestUpstreamFailureBeforeAnyOutputIsAStatus/malformed_frame (0.01s)
+    --- FAIL: TestUpstreamFailureBeforeAnyOutputIsAStatus/backend_reported_failure (0.01s)
+    --- FAIL: TestUpstreamFailureBeforeAnyOutputIsAStatus/backend_error_event (0.01s)
+    --- FAIL: TestUpstreamFailureBeforeAnyOutputIsAStatus/empty_completed_reply (0.01s)
+    --- FAIL: TestUpstreamFailureBeforeAnyOutputIsAStatus/unknown_event (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.254s
+FAIL

@@ -37,6 +37,26 @@ type parentStep struct {
 	Index    int    `json:"index"`
 	Eligible bool   `json:"eligible"`
 	Mode     string `json:"mode"`
+	waiting  bool   // gateway snapshot, never accepted from the native receipt
+}
+
+func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
+	var step parentStep
+	if !correlationShape.MatchString(session) || id != "" && !correlationShape.MatchString(id) {
+		return step, false, errDelegationUnverified
+	}
+	name := "root"
+	if id != "" {
+		name = "child-" + id
+	}
+	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode"}, &step)
+	if err != nil {
+		return step, false, err
+	}
+	if found && (step.Session != session || step.Agent != id || !correlationShape.MatchString(step.Turn) || step.Index < 0 || step.Index > 65536 || step.Mode != "native_tui" && step.Mode != "sdk" && step.Mode != "unclassified" || step.Eligible && step.Mode != "native_tui" && step.Mode != "sdk") {
+		return step, false, errDelegationUnverified
+	}
+	return step, found, nil
 }
 
 // The same admission snapshot used for result delivery explains whether an answer
@@ -71,12 +91,7 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 	if g.nativeEvents.directory == "" {
 		return nil, nil
 	}
-	name := "root"
-	if id != "" {
-		name = "child-" + id
-	}
-	var step parentStep
-	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode"}, &step)
+	step, found, err := g.readNativeStep(session, id)
 	if err != nil {
 		return nil, err
 	}
@@ -86,9 +101,6 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 		}
 		return nil, nil
 	} // No native wait capability was demonstrated.
-	if step.Session != session || step.Agent != id || !correlationShape.MatchString(step.Turn) || step.Index < 0 || step.Index > 65536 || step.Mode != "native_tui" && step.Mode != "sdk" && step.Mode != "unclassified" || step.Eligible && step.Mode != "native_tui" {
-		return nil, errDelegationUnverified
-	}
 	if err := g.writeParentDecision(&step, false); err != nil {
 		return nil, err
 	}
@@ -99,13 +111,66 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 	snapshot.ControlMode = step.Mode
 	entry.data.ParentReadiness = &snapshot
 	entry.mu.Unlock()
-	if step.Mode == "native_tui" {
-		entry.checked("native_tui")
+	if step.Mode == "native_tui" || step.Mode == "sdk" {
+		entry.checked("native_wait_control")
 	}
-	if step.Eligible && len(readiness.Pending) > 0 {
+	workflowLaunch := step.Eligible && len(readiness.Pending) == 0 && id == "" && step.Index > 0 && g.delegations.returnedWorkflowLaunch(request, session, id)
+	step.waiting = len(readiness.Pending) > 0
+	// Eligible root index zero is published only for a task notification, never
+	// explicit user input. With no pending children it may consume only an empty
+	// terminal reply; a real answer or tool call must still reach native.
+	if step.Eligible && (step.waiting || workflowLaunch || id == "" && step.Index == 0) {
 		return &step, nil
 	}
 	return nil, nil
+}
+
+// A successful Workflow launch returns before its first child is registered.
+// Correlate only a tool result in this request with a prepared/linked local run;
+// it permits an empty control reply, never fabricates a pending child or result.
+func (d *delegations) returnedWorkflowLaunch(request *anthropic.Request, session, parent string) bool {
+	if parent != "" || len(request.Messages) == 0 {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// Native appends system reminders after tool results. The latest assistant
+	// tool turn is the boundary; step.Eligible excludes a new explicit input.
+	start := len(request.Messages) - 1
+	for start >= 0 && request.Messages[start].Role != "assistant" {
+		start--
+	}
+	if start < 0 {
+		return false
+	}
+	for _, message := range request.Messages[start+1:] {
+		if message.Role != "user" {
+			continue
+		}
+		for _, b := range message.Blocks {
+			if b.Type != "tool_result" || b.IsError {
+				continue
+			}
+			called := false
+			for _, call := range request.Messages[start].Blocks {
+				if call.Type == "tool_use" && call.Name == "Workflow" && call.ID == b.ToolUseID {
+					called = true
+				}
+			}
+			if !called {
+				continue
+			}
+			if origin, ok := d.workflowCalls[delegationKey{session, b.ToolUseID}]; ok && !origin.rejected {
+				return true
+			}
+			for _, run := range d.workflows {
+				if run.Session == session && run.Call == b.ToolUseID && !run.origin.rejected {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
@@ -122,7 +187,8 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 		Turn  string `json:"turn"`
 		Index int    `json:"index"`
 		Hold  bool   `json:"hold"`
-	}{step.Turn, step.Index, hold})
+		Wait  bool   `json:"wait"`
+	}{step.Turn, step.Index, hold, hold && step.waiting})
 	// Written through a temporary and renamed, the way every other file this plugin reads is
 	// written. WriteFile truncates in place, so a read landing in that window returns a
 	// partial document; the plugin parses this one with a bare JSON.parse, and the

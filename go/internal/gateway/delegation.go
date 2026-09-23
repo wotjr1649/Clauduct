@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +35,7 @@ type delegatedChoice struct {
 	parent, role, alias string
 	route               bridge.Route
 	inherited           bool
+	custom              bool
 }
 type resolvedChoice struct {
 	receipt               *SelectionRecord
@@ -43,10 +43,22 @@ type resolvedChoice struct {
 	role, alias           string
 	route                 bridge.Route
 	inherited             bool
+	custom                bool
 }
 
 func (c resolvedChoice) isWorkflow() bool {
-	return c.role == "workflow-subagent" || strings.HasPrefix(c.route.Source, "workflow-")
+	return !c.custom && bridge.CanonicalRole(c.role) == "workflow-subagent" || strings.HasPrefix(c.route.Source, "workflow-")
+}
+
+func (c resolvedChoice) isFork() bool {
+	return !c.custom && !c.isWorkflow() && bridge.IsFork(c.role)
+}
+
+func roleMatches(expected, observed string, custom bool) bool {
+	if custom {
+		return expected == observed
+	}
+	return bridge.CanonicalRole(expected) == bridge.CanonicalRole(observed)
 }
 
 // Correlate a resolved Agent call with native child metadata. Full IDs and native
@@ -56,10 +68,8 @@ type delegations struct {
 	// would otherwise report only that every delegation was refused.
 	projectsErr error
 
-	// Roles this build had no route for, run on the caller's. Counted here rather than in
-	// the gateway's override block, which is where it used to happen and no longer runs:
-	// prepare resolves a route for every role now, so a counter left there would report zero
-	// for a condition that still occurs.
+	// Roles without a local route use native's observed selection. Count at
+	// preparation, before first-request reconciliation resolves the actual model.
 	unroutedRoles atomic.Int64
 
 	selectionRecent     []*SelectionRecord
@@ -128,28 +138,9 @@ func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (brid
 	}
 }
 
-// ConfigureDelegations is called by the launcher before it starts the client.
-//
-// The directory is created here, once, rather than tolerated at each of the thirteen places
-// that open it. The client writes this tree lazily and a configuration directory that is new
-// has none of it when the first request arrives, so every reader had to decide for itself
-// whether absence meant damage -- and they decided differently: a hard refusal in the
-// context journal, a provenance failure in the display counter, a retry in one metadata path
-// and not in the choice path beside it. One MkdirAll makes the question unreachable instead
-// of answering it four ways.
-//
-// A failure is not fatal here. The readers still classify what they get, and refusing to
-// start over a directory the client may create a moment later would be the same mistake in
-// a louder place.
+// ConfigureDelegations prepares native's lazily created tree before launch.
+// Failure remains diagnostic; openProjects classifies each later access afresh.
 func (g *Gateway) ConfigureDelegations(projects string) {
-	// Recorded, not discarded. Ten of the fourteen readers of this path hard-refuse on a
-	// root they cannot open, and the error here is the only place that condition has a name.
-	//
-	// Named for the failure and not for its cause. On this build's only platform ENOTDIR is
-	// ERROR_PATH_NOT_FOUND, so MkdirAll over a projects path that is a regular file reports
-	// what reads as absence -- os.IsNotExist is true for it. The message is kept verbatim
-	// rather than classified, because classifying it here would have said "absent" about a
-	// path that exists.
 	mkdirErr := os.MkdirAll(projects, 0o700)
 	g.delegations = &delegations{projects: projects, events: g.nativeEvents.directory, projectsErr: mkdirErr,
 		pending: map[delegationKey]delegatedChoice{}, resolved: map[string]resolvedChoice{}}
@@ -261,9 +252,6 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	requestedModel := selectionModelLabel(modelID)
 	_, modelProvided := fields["model"]
 	inherited := explicitModel || hasEffort
-	if strings.HasPrefix(role, bridge.MenuPrefix) && !bridge.InheritsParent(role) {
-		inherited = true
-	}
 	source := "agent-call-model"
 	var route bridge.Route
 	d.mu.Lock()
@@ -274,6 +262,26 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	}
 	if parentKnown && parent.session != scope.session {
 		return nil, delegationFailure("PARENT_SESSION_MISMATCH")
+	}
+	var definition bridge.Route
+	custom := false
+	if d.roleDefaults != nil {
+		definition, custom, err = d.roleDefaults(role, scope.route)
+		if err != nil && !(custom && errors.Is(err, bridge.ErrUnsupportedRoute) && (explicitModel || parentKnown && parent.inherited)) {
+			if errors.Is(err, bridge.ErrUnsupportedRoute) {
+				return nil, err
+			}
+			return nil, errDelegationUnverified
+		}
+	}
+	if !custom {
+		role = bridge.CanonicalRole(role)
+		if _, present := fields["subagent_type"]; present {
+			fields["subagent_type"], _ = json.Marshal(role)
+		}
+	}
+	if strings.HasPrefix(role, bridge.MenuPrefix) && !bridge.InheritsParent(role) {
+		inherited = true
 	}
 	if parentKnown && parent.inherited {
 		// A task-bound explicit selection remains fixed in descendants. Refuse a
@@ -296,49 +304,24 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		}
 	} else {
 		var known bool
-		if modelID == "inherit" || bridge.InheritsParent(role) {
+		if modelID == "inherit" || !custom && bridge.InheritsParent(role) {
 			route = scope.route
 			known = route.Model != ""
 			source = "parent-route"
 		} else {
 			source = "agent-call-role"
-			if d.roleDefaults != nil {
-				route, known, err = d.roleDefaults(role, scope.route)
-				if err != nil {
-					if errors.Is(err, bridge.ErrUnsupportedRoute) {
-						return nil, err
-					}
-					return nil, errDelegationUnverified
-				}
-				if known {
-					source = "agent-call-definition"
-				}
+			if custom {
+				route, known, source = definition, true, "agent-call-definition"
 			}
 			if !known {
 				route, known = bridge.RoleRoute(role)
 			}
 		}
 		if !known && !hasEffort && scope.route.Model != "" {
-			// A role with no route of its own runs on the caller's, which is what 0.2.x did
-			// by leaving the client's model alone. It has to be recorded as a choice rather
-			// than waved through, because results.start is reached only through cacheChoice:
-			// a child with no resolved choice is invisible to the completion evidence, and a
-			// parent can then answer as complete while that child's report is outstanding.
-			//
-			// Not marked inherited. That flag means a task-bound explicit selection is fixed
-			// for descendants, and this is a fallback rather than a selection anybody made.
-			// parent-route, not a name of its own. This is the caller's route by another
-			// path, the branch above already calls that parent-route, and loadChoice's
-			// allow-list is written in these names: a source it does not list is refused, so
-			// a new one would have turned a first-request refusal into a permanent one the
-			// moment the choice was restored from its journal.
-			//
-			// inherited is cleared rather than inspected. It is set for any clauduct-* role
-			// the menu does not resolve, and it means a task-bound selection is fixed for
-			// every descendant -- which a fallback is not, and which would refuse any child
-			// of this one that names a model.
+			// Pending choices block parent completion before the child has an ID.
+			// Keep native's model choice, then bind its actual turn before dispatch.
 			d.unroutedRoles.Add(1)
-			route, known, inherited, source = scope.route, true, false, "parent-route"
+			known, inherited, source = true, false, "native-selection"
 		}
 		if !known {
 			if hasEffort {
@@ -356,7 +339,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	modelID = route.Model
 	// Native fork always resolves model:inherit, even if Agent receives a model
 	// argument. Keep the parent model; never claim an ignored override was applied.
-	if bridge.IsFork(role) && route.Model != scope.route.Model {
+	if !custom && bridge.IsFork(role) && route.Model != scope.route.Model {
 		return nil, bridge.ErrUnsupportedRoute
 	}
 	var model *bridge.Model
@@ -366,7 +349,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			break
 		}
 	}
-	if model == nil {
+	if model == nil && source != "native-selection" {
 		if hasEffort {
 			return nil, bridge.ErrUnsupportedRoute
 		}
@@ -380,8 +363,12 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	if hasEffort {
 		route.Source += "+effort"
 	}
-	alias, _ := json.Marshal(model.Alias)
-	fields["model"] = alias
+	nativeAlias := ""
+	if model != nil {
+		nativeAlias = model.Alias
+		alias, _ := json.Marshal(nativeAlias)
+		fields["model"] = alias
+	}
 	encoded, err := json.Marshal(fields)
 	if err != nil {
 		return nil, errDelegationUnverified
@@ -399,8 +386,8 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			return nil, errDelegationUnverified
 		}
 	}
-	receipt := d.noteSelection(SelectionRecord{Session: scope.session, Parent: scope.parent, Call: id, Role: role, RequestedModel: requestedModel, RequestedEffort: effort, ModelProvided: modelProvided, EffortProvided: hasEffort, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: model.Alias})
-	d.pending[key] = delegatedChoice{parent: scope.parent, role: role, alias: model.Alias, route: route, inherited: inherited, receipt: receipt}
+	receipt := d.noteSelection(SelectionRecord{Session: scope.session, Parent: scope.parent, Call: id, Role: role, CustomRole: custom, RequestedModel: requestedModel, RequestedEffort: effort, ModelProvided: modelProvided, EffortProvided: hasEffort, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: nativeAlias})
+	d.pending[key] = delegatedChoice{parent: scope.parent, role: role, alias: nativeAlias, route: route, inherited: inherited, receipt: receipt, custom: custom}
 	return encoded, nil
 }
 
@@ -409,7 +396,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	if chosen, found := d.resolved[id]; found {
 		defer d.mu.Unlock()
 		resume, err := d.resumed(scope, id, binding, chosen)
-		if err != nil || chosen.session != scope.session || chosen.parent != scope.parent && resume == nil || binding.ID != id || binding.Role != chosen.role || binding.SessionID != scope.session {
+		if err != nil || chosen.session != scope.session || chosen.parent != scope.parent && resume == nil || binding.ID != id || !roleMatches(chosen.role, binding.Role, chosen.custom) || binding.SessionID != scope.session {
 			return bridge.Route{}, false, errDelegationUnverified
 		}
 		route := chosen.route
@@ -417,14 +404,6 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 			route.Source = "verified-resume"
 		}
 		return route, true, nil
-	}
-	if scope.workflow || binding.Role == "workflow-subagent" {
-		d.mu.Unlock()
-		ctx := context.Background()
-		if len(contexts) > 0 {
-			ctx = contexts[0]
-		}
-		return d.workflowRoute(ctx, scope, id, binding)
 	}
 	hasPending := false
 	for key, choice := range d.pending {
@@ -434,6 +413,13 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		}
 	}
 	d.mu.Unlock()
+	if scope.workflow || !hasPending && bridge.CanonicalRole(binding.Role) == "workflow-subagent" {
+		ctx := context.Background()
+		if len(contexts) > 0 {
+			ctx = contexts[0]
+		}
+		return d.workflowRoute(ctx, scope, id, binding)
+	}
 	if !hasPending {
 		chosen, found, err := d.loadChoice(scope, id, binding)
 		if err != nil || !found {
@@ -454,10 +440,30 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	// Native 2.1.275 launches its metadata write asynchronously. Its first HTTP
 	// request can arrive before the sidecar. Wait only for absence, only at first
 	// resolution, and never fall back to the model from that HTTP request.
-	if errors.Is(err, errMetadataPending) && len(contexts) != 0 {
-		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
-		defer cancel()
+	if errors.Is(err, errMetadataPending) {
+		ctx := context.Background()
+		if len(contexts) != 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(contexts[0], time.Second)
+			defer cancel()
+		}
 		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
+			// A pending sibling proves nothing about this child. Workflow metadata
+			// lives in the registered run directory; ordinary Agent metadata may
+			// still be arriving. Check the real Workflow proof while waiting for
+			// this child's sidecar, never infer membership from the role name.
+			if scope.parent == "" && bridge.CanonicalRole(binding.Role) == "workflow-subagent" {
+				route, found, workflowErr := d.findWorkflow(ctx, scope, id, binding)
+				if workflowErr == nil && found {
+					return route, found, workflowErr
+				}
+				// An unrelated run's damaged evidence cannot reject an ordinary
+				// Agent whose own sidecar is still arriving. Without a verified
+				// alternative the bounded wait below still refuses this child.
+			}
+			if len(contexts) == 0 {
+				break
+			}
 			select {
 			case <-ctx.Done():
 				return bridge.Route{}, false, errDelegationUnverified
@@ -492,23 +498,35 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		return chosen.route, true, nil
 	} // An unrelated native delegation.
 	failure := ""
-	// Native resolves built-in names case-insensitively. Keep custom definition
-	// identities exact; only reconcile a known built-in reported by both native
-	// sources after the requested model/effort has independently been selected.
+	choice.custom = choice.custom || strings.HasPrefix(choice.route.Source, "agent-call-definition")
 	role := choice.role
-	// InheritsParent as well as RoleRoute. The fold added to those two helpers fixed the
-	// model check for a differently-cased fork and left this one exact, so the same call
-	// passed there and failed here on ROLE_MISMATCH -- the defect moved rather than went.
-	_, builtin := bridge.RoleRoute(binding.Role)
-	if (builtin || bridge.InheritsParent(binding.Role)) && !strings.HasPrefix(binding.Role, bridge.MenuPrefix) && strings.EqualFold(role, binding.Role) && !strings.HasPrefix(choice.route.Source, "agent-call-definition") {
-		role = binding.Role
+	if !choice.custom {
+		role = bridge.CanonicalRole(role)
+	}
+	if choice.route.Source == "native-selection" {
+		active := scope.nativeTurn
+		if active == nil || !validActiveReceipt(*active, scope.session, id) {
+			return bridge.Route{}, false, errDelegationUnverified
+		}
+		actual, err := bridge.SelectRoute(active.Model, active.Effort)
+		if err != nil {
+			return bridge.Route{}, false, errDelegationUnverified
+		}
+		actual.Source = "native-selection"
+		choice.route = actual
+		for _, model := range bridge.Models {
+			if model.ID == actual.Model {
+				choice.alias = model.Alias
+				break
+			}
+		}
 	}
 	switch {
 	case choice.parent != scope.parent || meta.ParentAgentID != scope.parent:
 		failure = "PARENT_MISMATCH"
-	case role != binding.Role || meta.AgentType != role:
+	case !roleMatches(role, binding.Role, choice.custom) || !roleMatches(role, meta.AgentType, choice.custom):
 		failure = "ROLE_MISMATCH"
-	case !metadataModelMatches(choice.role, choice.alias, meta.Model):
+	case !metadataModelMatches(choice.role, choice.alias, meta.Model, choice.route.Source, choice.custom):
 		failure = "METADATA_MODEL_MISMATCH"
 	case meta.StoppedByUser:
 		failure = "NATIVE_STOPPED"
@@ -520,10 +538,11 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		}
 		return bridge.Route{}, false, errDelegationUnverified
 	}
-	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: meta.ToolUseID, role: role, alias: choice.alias, route: choice.route, inherited: choice.inherited}
+	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: meta.ToolUseID, role: role, alias: choice.alias, route: choice.route, inherited: choice.inherited, custom: choice.custom}
 	chosen.receipt = choice.receipt
 	if chosen.receipt != nil {
 		chosen.receipt.Role = role
+		chosen.receipt.Model, chosen.receipt.Effort, chosen.receipt.NativeModel = choice.route.Model, choice.route.Effort, choice.alias
 	}
 	// ponytail: first resolutions serialize one small journal write. Cache hits
 	// perform no I/O; use per-agent locks if measured spawn throughput requires it.
@@ -538,6 +557,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 }
 
 func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
+	choice.custom = choice.custom || strings.HasPrefix(choice.route.Source, "agent-call-definition") || choice.receipt != nil && choice.receipt.CustomRole
 	// Before start(), not after. start() installs r.entries[id] as running, and a refusal
 	// below would then leave an entry with no resolved choice behind: stoppedTurn returns
 	// early without one, so it never stops, never reports, and both eviction loops skip it.
@@ -574,7 +594,7 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 		return errDelegationUnverified
 	}
 	if choice.receipt == nil {
-		choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Parent: choice.parent, Call: choice.call, Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias, State: "restored"})
+		choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Parent: choice.parent, Call: choice.call, Agent: id, Role: choice.role, CustomRole: choice.custom, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias, State: "restored"})
 	} else if choice.receipt.State == "" {
 		choice.receipt.State = "restored"
 		choice.receipt = d.noteSelection(*choice.receipt)
@@ -588,18 +608,19 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 }
 
 type choiceJournal struct {
-	Version   int              `json:"version"`
-	Session   string           `json:"session"`
-	Parent    string           `json:"parent"`
-	Agent     string           `json:"agent"`
-	Call      string           `json:"call"`
-	Role      string           `json:"role"`
-	Alias     string           `json:"alias"`
-	Model     string           `json:"model"`
-	Effort    string           `json:"effort"`
-	Source    string           `json:"source"`
-	Inherited bool             `json:"inherited"`
-	Intent    *selectionIntent `json:"intent,omitempty"`
+	Version    int              `json:"version"`
+	Session    string           `json:"session"`
+	Parent     string           `json:"parent"`
+	Agent      string           `json:"agent"`
+	Call       string           `json:"call"`
+	Role       string           `json:"role"`
+	CustomRole bool             `json:"customRole,omitempty"`
+	Alias      string           `json:"alias"`
+	Model      string           `json:"model"`
+	Effort     string           `json:"effort"`
+	Source     string           `json:"source"`
+	Inherited  bool             `json:"inherited"`
+	Intent     *selectionIntent `json:"intent,omitempty"`
 }
 type selectionIntent struct {
 	Model          string `json:"model"`
@@ -608,11 +629,11 @@ type selectionIntent struct {
 	EffortProvided bool   `json:"effortProvided"`
 }
 
-// choiceAbsent is the answer when no journal exists for this child: a role this build
-// routes owes one, anything else falls through to native's own routing.
+// Called only when the root opened but this child's journal is absent. Routed
+// roles require evidence; other roles retain admission's missing-choice policy.
 func (d *delegations) choiceAbsent(binding agentBinding) (resolvedChoice, bool, error) {
 	var empty resolvedChoice
-	if _, known := bridge.RoleRoute(binding.Role); known || bridge.InheritsParent(binding.Role) {
+	if bridge.KnownRole(binding.Role) {
 		return empty, false, errDelegationUnverified
 	}
 	return empty, false, nil
@@ -623,17 +644,11 @@ func (d *delegations) choicePath(binding agentBinding) (*os.Root, string, error)
 		return nil, "", errDelegationUnverified
 	}
 	rel, err := filepath.Rel(d.projects, filepath.Dir(binding.TranscriptPath))
-	if err != nil || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil {
 		return nil, "", errDelegationUnverified
 	}
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(rel)
 	if err != nil {
-		// Wrapped, not replaced. Callers that only classify still see
-		// errDelegationUnverified; loadChoice can additionally ask whether the tree is
-		// merely absent and route that into the role-aware branch it already has, instead of
-		// being short-circuited past it for every role. That divergence is the one
-		// ConfigureDelegations' comment names and this is the line it was one function away
-		// from.
 		return nil, "", fmt.Errorf("%w: %w", errDelegationUnverified, err)
 	}
 	return root, filepath.Join(rel, binding.SessionID, "subagents", "agent-"+binding.ID+".clauduct-selection.json"), nil
@@ -645,7 +660,7 @@ func (d *delegations) saveChoice(binding agentBinding, c resolvedChoice) error {
 		return err
 	}
 	defer root.Close()
-	record := choiceJournal{Version: 2, Session: c.session, Parent: c.parent, Agent: binding.ID, Call: c.call, Role: c.role, Alias: c.alias, Model: c.route.Model, Effort: c.route.Effort, Source: c.route.Source, Inherited: c.inherited}
+	record := choiceJournal{Version: 2, Session: c.session, Parent: c.parent, Agent: binding.ID, Call: c.call, Role: c.role, CustomRole: c.custom, Alias: c.alias, Model: c.route.Model, Effort: c.route.Effort, Source: c.route.Source, Inherited: c.inherited}
 	if c.receipt != nil && c.receipt.PresenceVerified {
 		record.Intent = &selectionIntent{c.receipt.RequestedModel, c.receipt.RequestedEffort, c.receipt.ModelProvided, c.receipt.EffortProvided}
 	}
@@ -672,12 +687,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	}
 	root, path, err := d.choicePath(binding)
 	if err != nil {
-		if !errors.Is(err, fs.ErrNotExist) {
-			return empty, false, err
-		}
-		// A tree that is not there holds no journal, which is the question the branch below
-		// answers. Falling through to it beats refusing every role over the same condition.
-		return d.choiceAbsent(binding)
+		return empty, false, err
 	}
 	defer root.Close()
 	file, err := root.Open(path)
@@ -696,16 +706,18 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	if err != nil || len(raw) > 4096 {
 		return empty, false, errDelegationUnverified
 	}
-	fields, err := wire.Fields(raw, []string{"version", "session", "parent", "agent", "call", "role", "alias", "model", "effort", "source", "inherited", "intent"})
+	fields, err := wire.Fields(raw, []string{"version", "session", "parent", "agent", "call", "role", "customRole", "alias", "model", "effort", "source", "inherited", "intent"})
 	if err != nil {
 		return empty, false, errDelegationUnverified
 	}
 	var saved choiceJournal
-	if json.Unmarshal(raw, &saved) != nil || (saved.Version != 1 && saved.Version != 2) || saved.Session != scope.session || saved.Parent != scope.parent || saved.Agent != id || saved.Role != binding.Role {
+	decodeErr := json.Unmarshal(raw, &saved)
+	saved.CustomRole = saved.CustomRole || strings.HasPrefix(saved.Source, "agent-call-definition")
+	if decodeErr != nil || (saved.Version != 1 && saved.Version != 2) || saved.Session != scope.session || saved.Parent != scope.parent || saved.Agent != id || !roleMatches(saved.Role, binding.Role, saved.CustomRole) {
 		return empty, false, errDelegationUnverified
 	}
 	meta, err := d.metadata(binding)
-	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || meta.AgentType != saved.Role || !metadataModelMatches(saved.Role, saved.Alias, meta.Model) || meta.StoppedByUser {
+	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || !roleMatches(saved.Role, meta.AgentType, saved.CustomRole) || !metadataModelMatches(saved.Role, saved.Alias, meta.Model, saved.Source, saved.CustomRole) || meta.StoppedByUser {
 		return empty, false, errDelegationUnverified
 	}
 	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
@@ -717,12 +729,12 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		return empty, false, errDelegationUnverified
 	}
 	switch saved.Source {
-	case "agent-call-model", "agent-call-model+effort", "agent-call-role", "agent-call-role+effort", "agent-call-definition", "agent-call-definition+effort", "parent-route", "parent-route+effort", "delegation-inherited", "delegation-inherited+effort":
+	case "agent-call-model", "agent-call-model+effort", "agent-call-role", "agent-call-role+effort", "agent-call-definition", "agent-call-definition+effort", "parent-route", "parent-route+effort", "delegation-inherited", "delegation-inherited+effort", "native-selection":
 	default:
 		return empty, false, errDelegationUnverified
 	}
 	route.Source = saved.Source
-	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: saved.Alias, route: route, inherited: saved.Inherited}
+	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: saved.Alias, route: route, inherited: saved.Inherited, custom: saved.CustomRole}
 	if saved.Intent != nil {
 		intent := saved.Intent
 		if saved.Version != 2 {
@@ -739,7 +751,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		if !modelOK || !effortOK || !intent.ModelProvided && intent.Model != "" || intent.EffortProvided != (intent.Effort != "") {
 			return empty, false, errDelegationUnverified
 		}
-		choice.receipt = &SelectionRecord{Session: saved.Session, Parent: saved.Parent, Call: saved.Call, Role: saved.Role, RequestedModel: intent.Model, RequestedEffort: intent.Effort, ModelProvided: intent.ModelProvided, EffortProvided: intent.EffortProvided, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: saved.Alias}
+		choice.receipt = &SelectionRecord{Session: saved.Session, Parent: saved.Parent, Call: saved.Call, Role: saved.Role, CustomRole: saved.CustomRole, RequestedModel: intent.Model, RequestedEffort: intent.Effort, ModelProvided: intent.ModelProvided, EffortProvided: intent.EffortProvided, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: saved.Alias}
 	}
 	return choice, true, nil
 }
@@ -755,8 +767,11 @@ type delegationMetadata struct {
 // 2.1.276 records inherit for native fork, rather than Agent's compatibility
 // alias. Call, parent, role and session are checked by both callers; dispatch
 // separately verifies the native request's resolved model against the choice.
-func metadataModelMatches(role, alias, model string) bool {
-	if bridge.IsFork(role) {
+func metadataModelMatches(role, alias, model, source string, custom bool) bool {
+	if source == "native-selection" {
+		return model == ""
+	}
+	if !custom && bridge.IsFork(role) {
 		return model == "inherit"
 	}
 	return model == alias
@@ -768,16 +783,11 @@ func (d *delegations) metadata(binding agentBinding) (delegationMetadata, error)
 		return meta, errDelegationUnverified
 	}
 	rel, err := filepath.Rel(d.projects, filepath.Dir(binding.TranscriptPath))
-	if err != nil || filepath.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil {
 		return meta, errDelegationUnverified
 	}
-	root, err := os.OpenRoot(d.projects)
-	if os.IsNotExist(err) {
-		// The tree the client has not written yet, which is the same "not there yet" the
-		// missing metadata file below is already allowed to retry through. Classified as a
-		// hard refusal it gave the opposite answer to the identical condition one line
-		// down: a first turn that delegates, on a configuration directory that is new, got
-		// no retry at all.
+	root, err := d.openProjects(rel)
+	if errors.Is(err, errProjectsAbsent) {
 		return meta, errMetadataPending
 	}
 	if err != nil {

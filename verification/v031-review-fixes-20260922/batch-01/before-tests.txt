@@ -1,0 +1,21 @@
+=== RUN   TestCompactionAdmissionWriteFailureRecoversWithoutRestart
+    context_journal_test.go:187: write failure left unrecoverable or unverified state: phase=compacting busy=false calls=1
+--- FAIL: TestCompactionAdmissionWriteFailureRecoversWithoutRestart (0.04s)
+=== RUN   TestOldStreamCompletionCannotSettleResumedResult
+=== RUN   TestOldStreamCompletionCannotSettleResumedResult/false
+=== RUN   TestOldStreamCompletionCannotSettleResumedResult/true
+    results_test.go:239: old stream completed the resumed result or changed its accounting
+--- FAIL: TestOldStreamCompletionCannotSettleResumedResult (0.02s)
+    --- PASS: TestOldStreamCompletionCannotSettleResumedResult/false (0.01s)
+    --- FAIL: TestOldStreamCompletionCannotSettleResumedResult/true (0.01s)
+=== RUN   TestFailedRequestPreservesNewerAwaitingResult
+=== RUN   TestFailedRequestPreservesNewerAwaitingResult/false
+    turn_receipt_test.go:248: late failure changed the newer result or its accounting
+=== RUN   TestFailedRequestPreservesNewerAwaitingResult/true
+    turn_receipt_test.go:248: late failure changed the newer result or its accounting
+--- FAIL: TestFailedRequestPreservesNewerAwaitingResult (0.02s)
+    --- FAIL: TestFailedRequestPreservesNewerAwaitingResult/false (0.02s)
+    --- FAIL: TestFailedRequestPreservesNewerAwaitingResult/true (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.206s
+FAIL

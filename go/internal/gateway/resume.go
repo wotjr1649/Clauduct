@@ -96,7 +96,7 @@ func (d *delegations) prepareResume(scope delegationScope, call string, raw json
 	if err != nil {
 		return nil, errDelegationUnverified
 	}
-	if bridge.IsFork(choice.role) {
+	if choice.isFork() {
 		if input.Message == "" {
 			return nil, errDelegationUnverified
 		}
@@ -121,7 +121,7 @@ func (d *delegations) resumed(scope delegationScope, id string, binding agentBin
 	}
 	if !r.verified {
 		meta, err := d.metadata(binding)
-		if err != nil || meta.ToolUseID != choice.call || meta.ParentAgentID != choice.parent || meta.AgentType != choice.role || !metadataModelMatches(choice.role, choice.alias, meta.Model) || meta.StoppedByUser {
+		if err != nil || meta.ToolUseID != choice.call || meta.ParentAgentID != choice.parent || !roleMatches(choice.role, meta.AgentType, choice.custom) || !metadataModelMatches(choice.role, choice.alias, meta.Model, choice.route.Source, choice.custom) || meta.StoppedByUser {
 			return nil, errDelegationUnverified
 		}
 		r.verified = true
@@ -142,7 +142,7 @@ func (d *delegations) resumeModel(scope delegationScope, id, model string) bool 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	r := d.resumes[id]
-	return bridge.IsFork(d.resolved[id].role) && r != nil && r.verified && r.session == scope.session && r.parent == scope.parent && r.nativeModel == model
+	return d.resolved[id].isFork() && r != nil && r.verified && r.session == scope.session && r.parent == scope.parent && r.nativeModel == model
 }
 
 func (d *delegations) beginResult(id string) bool {

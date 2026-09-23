@@ -148,16 +148,16 @@ func subagentRun(t *testing.T, accounts ...*gateway.Diagnostics) (session, sub s
 func TestASubagentRunsWhereItsRoleSaysAndNotWhereTheClientAsked(t *testing.T) {
 	buildHook(t)
 
-	session, sub, unregistered, unrouted, fellBack := subagentRun(t)
+	session, sub, unregistered, unrouted, _ := subagentRun(t)
 	if sub == "" {
 		t.Fatal("the subagent never made a request of its own")
 	}
 	if sub != "gpt-5.6-luna/max" {
 		t.Fatalf("the subagent ran on %s, want gpt-5.6-luna/max for Explore", sub)
 	}
-	if unregistered != 0 || unrouted != 0 || fellBack != 0 {
-		t.Fatalf("counts = (%d, %d, %d); the registration did not reach the request, or the "+
-			"role took the caller's route instead of its own", unregistered, unrouted, fellBack)
+	if unregistered != 0 || unrouted != 0 {
+		t.Fatalf("counts = (%d, %d); the registration did not reach the request, or the "+
+			"role took the caller's route instead of its own", unregistered, unrouted)
 	}
 	// The session is untouched. Routing a subagent is not routing the conversation.
 	if session != "gpt-6-astra/low" {

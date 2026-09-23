@@ -298,7 +298,7 @@ func (d *delegations) resumeWorkflowPlan(scope delegationScope, call, source str
 		return nil, errWorkflowRecoveryUnverified
 	}
 	stoppedBeforeRead := d.workflowStopped(run)
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return nil, errWorkflowRecoveryUnverified
 	}

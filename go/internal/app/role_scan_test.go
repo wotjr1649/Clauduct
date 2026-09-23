@@ -44,11 +44,9 @@ func TestARoleWithoutAModelStillInheritsTheParentRoute(t *testing.T) {
 	}
 }
 
-// One markdown file the parser cannot read used to abort the whole walk, so every valid
-// role beside it died. A note whose first line is a --- rule is enough: the frontmatter then
-// has no closing fence. Roles it could not have defined are unaffected -- refusing those was
-// the same failure one level up.
-func TestOneUnreadableDefinitionOnlyDistrustsItsOwnName(t *testing.T) {
+// An unreadable file preserves readable roles. Unmatched names remain unverified
+// because an ordinary role is named by frontmatter, not by its filename.
+func TestOneUnreadableDefinitionPreservesKnownRoles(t *testing.T) {
 	dir := t.TempDir()
 	if os.WriteFile(filepath.Join(dir, "reviewer.md"), []byte("---\nname: reviewer\ndescription: proof\nmodel: gpt-5.6-terra\neffort: high\n---\nPrompt"), 0600) != nil {
 		t.Fatal("write")
@@ -65,8 +63,19 @@ func TestOneUnreadableDefinitionOnlyDistrustsItsOwnName(t *testing.T) {
 	if _, _, err := s.resolve("notes", parent); err == nil {
 		t.Fatal("the skipped file's own role resolved as simply absent")
 	}
-	if _, found, err := s.resolve("unrelated", parent); err != nil || found {
-		t.Fatalf("an unrelated role was refused over someone else's unreadable file: found=%v err=%v", found, err)
+	if _, found, err := s.resolve("unrelated", parent); !errors.Is(err, errRoleDefaults) || found {
+		t.Fatalf("an unreadable file could have declared this name: found=%v err=%v", found, err)
+	}
+}
+
+func TestUnreadableRoleWithDifferentFilenameDoesNotFallBack(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "code-reviewer.md"), []byte("---\nname: reviewer\nmodel: [broken]\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := roleSources{directories: []roleDirectory{{path: dir}}}
+	if _, found, err := s.resolve("reviewer", bridge.Route{Model: "gpt-6-astra", Effort: "low"}); !errors.Is(err, errRoleDefaults) || found {
+		t.Fatalf("unverified role silently absent: found=%v err=%v", found, err)
 	}
 }
 
@@ -103,10 +112,9 @@ func TestASkipOutranksAMatchOnlyWhenItSharesItsName(t *testing.T) {
 // frontmatter. Two files declaring one role is the ambiguity def.invalid refuses when both
 // parse; when one does not, and its filename does not say so, the readable one answers.
 //
-// The alternative is refusing every role in the tree whenever any file is unreadable, which
-// is the failure this whole mechanism exists to avoid -- one stray markdown file ending
-// every delegation in the session. The filename convention is native's own for a definition
-// whose frontmatter omits a name, so it covers the ordinary case; this is what it costs.
+// The chosen policy preserves a readable answer. Only an unmatched name is
+// unverified because of this incomplete scan; a filename claim still shadows a
+// lower-priority definition with that same name.
 func TestAnUnreadableDuplicateUnderAnotherFilenameIsNotCaught(t *testing.T) {
 	dir := t.TempDir()
 	if os.WriteFile(filepath.Join(dir, "reviewer.md"), []byte("---\nname: reviewer\ndescription: proof\nmodel: gpt-5.6-terra\neffort: high\n---\nPrompt"), 0600) != nil {
@@ -137,7 +145,66 @@ func TestAnUnreadableDuplicateUnderAnotherFilenameIsNotCaught(t *testing.T) {
 		t.Fatalf("control: %s found=%v err=%v", route.Model, found, err)
 	}
 	shadowed := roleSources{directories: []roleDirectory{{path: above}, {path: dir}}}
+	if err := os.WriteFile(filepath.Join(dir, "lower-only.md"), []byte("---\nname: lower-only\ndescription: proof\nmodel: gpt-5.6-terra\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if route, found, err := shadowed.resolve("lower-only", parent); err != nil || !found || route.Model != "gpt-5.6-terra" {
+		t.Fatalf("the actual shadowed fixture lost its lower directory: found=%v err=%v", found, err)
+	}
 	if _, found, err := shadowed.resolve("reviewer", parent); !errors.Is(err, errRoleDefaults) || found {
 		t.Fatalf("a readable definition answered while a file of that name went unread above it: found=%v err=%v", found, err)
+	}
+}
+
+func TestUnreadableNestedPluginRoleClaimsItsBaseName(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "reviewer.md"), []byte("---\nname: reviewer\ndescription: proof\nmodel: gpt-5.6-terra\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := roleSources{directories: []roleDirectory{{path: dir, prefix: "proof"}}}
+	parent := bridge.Route{Model: "gpt-6-astra", Effort: "low"}
+	if _, found, err := s.resolve("proof:reviewer", parent); err != nil || !found {
+		t.Fatal("valid plugin role was not available")
+	}
+	drafts := filepath.Join(dir, "drafts")
+	if err := os.Mkdir(drafts, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(drafts, "reviewer.md"), []byte("---\nno closing fence\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := s.resolve("proof:reviewer", parent); !errors.Is(err, errRoleDefaults) || found {
+		t.Fatalf("nested unreadable file did not claim the base name: found=%v err=%v", found, err)
+	}
+}
+
+func TestUnreadablePluginNameIsUncertainOnlyInItsNamespace(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"draft.md": "---\nname: reviewer\nmodel: [broken]\n---\n",
+		"known.md": "---\nname: known\ndescription: public\nmodel: haiku\neffort: low\n---\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := roleSources{directories: []roleDirectory{{path: dir, prefix: "proof"}}}
+	parent := bridge.Route{Model: "gpt-6-astra", Effort: "low"}
+	for _, role := range []string{"proof:reviewer", "proof:draft"} {
+		if _, found, err := s.resolve(role, parent); found || !errors.Is(err, errRoleDefaults) {
+			t.Errorf("unverified plugin role %q treated as absent: %v %v", role, found, err)
+		}
+	}
+	if route, found, err := s.resolve("proof:known", parent); err != nil || !found || route.Model != "gpt-5.6-luna" {
+		t.Fatal("readable plugin definition lost", route, found, err)
+	}
+	for _, role := range []string{"Explore", "other:reviewer"} {
+		if _, found, err := s.resolve(role, parent); err != nil || found {
+			t.Errorf("unrelated namespace %q refused: %v %v", role, found, err)
+		}
+	}
+	s.cli = map[string]roleDefault{"proof:reviewer": {Model: "haiku", Effort: "low"}}
+	if route, found, err := s.resolve("proof:reviewer", parent); err != nil || !found || route.Model != "gpt-5.6-luna" {
+		t.Fatal("higher-priority readable CLI definition lost", route, found, err)
 	}
 }

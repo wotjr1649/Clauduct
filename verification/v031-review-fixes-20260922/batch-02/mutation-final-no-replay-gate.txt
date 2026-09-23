@@ -1,0 +1,6 @@
+=== RUN   TestNativeRequestReplayNeverDispatchesTwice
+    request_replay_test.go:33: same native turn dispatched again: status=200 calls=2
+--- FAIL: TestNativeRequestReplayNeverDispatchesTwice (0.03s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.166s
+FAIL

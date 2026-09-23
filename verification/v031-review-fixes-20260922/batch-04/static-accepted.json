@@ -1,0 +1,37 @@
+{
+  "checks": [
+    {
+      "name": "gofmt",
+      "exit": 0,
+      "output": []
+    },
+    {
+      "name": "vet",
+      "exit": 0,
+      "output": []
+    },
+    {
+      "name": "build",
+      "exit": 0,
+      "output": []
+    },
+    {
+      "name": "runtime_evidence vet",
+      "exit": 0,
+      "output": []
+    },
+    {
+      "name": "policy_evidence vet",
+      "exit": 0,
+      "output": []
+    },
+    {
+      "name": "offline validators",
+      "exit": 0,
+      "output": [
+        "ok  \tgithub.com/wotjr1649/Clauduct/go/internal/app\t0.159s"
+      ]
+    }
+  ],
+  "cgo": 0
+}

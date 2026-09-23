@@ -49,7 +49,7 @@ import "runtime/debug"
 // A constant rather than a linker flag. The commit stamp comes from the toolchain's own VCS
 // record precisely so a release script cannot forget it, and a version that could be passed
 // in is a version a script can get wrong.
-const Version = "0.3.0"
+const Version = "0.3.1"
 
 // Info is what a build can say about itself. An empty field means the toolchain did not
 // stamp it, which is a different thing from a zero value and is reported as such.

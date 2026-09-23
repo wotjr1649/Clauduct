@@ -36,6 +36,34 @@ func gatewayEnv(base string) map[string]string {
 	return map[string]string{"ANTHROPIC_BASE_URL": base, "ANTHROPIC_AUTH_TOKEN": "session-token"}
 }
 
+func TestPromptSubmissionRegistersSessionWithoutForwardingPrompt(t *testing.T) {
+	for _, status := range []int{204, 400, 503} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				var fields map[string]string
+				if json.NewDecoder(r.Body).Decode(&fields) != nil || r.URL.Path != "/clauduct/context" ||
+					len(fields) != 4 || fields["event"] != "SessionStart" || fields["sessionId"] != "public-session" ||
+					fields["transcriptPath"] != "C:/public/public-session.jsonl" {
+					t.Error("prompt submission did not use bounded session registration")
+				}
+				w.WriteHeader(status)
+			}))
+			defer server.Close()
+			var out, errOut bytes.Buffer
+			code := runWithOutput(strings.NewReader(`{"hook_event_name":"UserPromptSubmit","session_id":"public-session","transcript_path":"C:/public/public-session.jsonl","prompt":"DO_NOT_FORWARD","unrelated":"DO_NOT_FORWARD"}`), &out, &errOut, gatewayEnv(server.URL))
+			if calls != 1 || out.Len() != 0 || status == 204 && code != 0 || status != 204 && (code != 2 || !strings.Contains(errOut.String(), "submit the prompt again")) {
+				t.Fatalf("registration calls=%d code=%d stderr=%s", calls, code, errOut.String())
+			}
+		})
+	}
+	var out, errOut bytes.Buffer
+	if code := runWithOutput(strings.NewReader(`{"hook_event_name":"UserPromptSubmit","session_id":"public-session"}`), &out, &errOut, nil); code != 2 || !strings.Contains(errOut.String(), "CLAUDUCT_CONTEXT_EVENT_INVALID") {
+		t.Fatal("missing transcript silently accepted")
+	}
+}
+
 func TestCompactionEventsSendOnlyIdentityAndFailClosed(t *testing.T) {
 	for _, status := range []int{204, 400} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

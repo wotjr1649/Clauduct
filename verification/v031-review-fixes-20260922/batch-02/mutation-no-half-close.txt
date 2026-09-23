@@ -1,0 +1,11 @@
+=== RUN   TestServerRefusalHalfClosesAfterDrainingLargeBody
+=== RUN   TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=false
+    connection_test.go:229: framed refusal was not followed by prompt FIN: read tcp 127.0.0.1:11643->127.0.0.1:11642: i/o timeout
+=== RUN   TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=true
+    connection_test.go:229: framed refusal was not followed by prompt FIN: read tcp 127.0.0.1:11645->127.0.0.1:11644: i/o timeout
+--- FAIL: TestServerRefusalHalfClosesAfterDrainingLargeBody (1.26s)
+    --- FAIL: TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=false (0.63s)
+    --- FAIL: TestServerRefusalHalfClosesAfterDrainingLargeBody/authorized=true (0.62s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	1.391s
+FAIL

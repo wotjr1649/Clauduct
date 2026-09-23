@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-22",
+  "base_commit": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "overall_result": "HOLD",
+  "reason": ["ADGUARD_ON_TRANSPORT_COUNTEREXAMPLE"],
+  "classification_correction": {
+    "previously_misclassified_as_blocker": "TOOL_OUTPUT_MEDIA_WARMUP_MISMATCH",
+    "current_classification": "KNOWN_UNSUPPORTED_EXPLICIT_COUNT_BOUNDARY",
+    "generation_and_compaction_policy": "NO_REMOTE_PREFLIGHT_USE_BACKEND_USAGE",
+    "raw_comparison_failure_preserved": true,
+    "policy_regression_tests": {"result": "PASS", "tests": 5, "seconds": 0.171}
+  },
+  "live": {
+    "attempts": 22,
+    "generations": 19,
+    "warmups": 3,
+    "billing_amount_measured": false,
+    "automatic_compaction": {"result": "PASS", "seconds": 9.07, "attempts": 4, "efforts": ["high", "medium", "high"], "count": 295, "usage": 295, "retained_facts": true},
+    "media": {
+      "model": "gpt-5.6-luna", "effort": "low", "attempts": 4,
+      "user": {"result": "PASS", "count": 3497, "usage": 3497},
+      "tool_output": {"result": "FAIL", "count": 2828, "usage": 3525, "difference": 697, "scope": "DIRECT_WARMUP_COMPARISON_OUTSIDE_SUPPORTED_GENERATION_POLICY", "blocks_current_generation_policy": false}
+    },
+    "tui": {
+      "native_version": "2.1.278",
+      "initial": {"result": "FAIL", "seconds": 301.37, "attempts": 4, "reason": "INPUT_DRIVER_DELAY_AND_COMPLETED_CANCELLATION_PROMPT_THEN_DEADLINE"},
+      "stream_observed": {"result": "PASS", "seconds": 174.14, "attempts": 5, "protection_state": "NOT_SAMPLED"},
+      "protection_on": {"result": "PASS", "seconds": 129.08, "attempts": 5, "protection_state_source": "USER_REPORTED", "generation_completed": 3, "compaction_completed": 1, "generation_cancelled": 1, "route_refusals": 4, "transcript_facts_and_order": true, "exit_code": 0, "cleanup_ok": true}
+    },
+    "pre_test_cli_argument_failure_attempts": 0
+  },
+  "adguard": {
+    "service_file_version": "8.0.5570",
+    "running_driver": "adgnetworkwfpdrv",
+    "off_state_source": "UI_VALUE_PATTERN",
+    "on_state_source": "USER_REPORTED_DIRECT_SWITCH",
+    "agent_setting_changes": 0,
+    "other_settings_changed": false,
+    "ui_set_on_attempt": "UNSUPPORTED_READBACK_OFF",
+    "final_state": "ON_USER_SELECTED_UNCHANGED",
+    "external_requests": 0,
+    "credential_reads": 0,
+    "off": {
+      "node": {"result": "PASS", "passed": 31, "helper_tests": 5, "requests": 31},
+      "dotnet": {"result": "PASS", "passed": 35, "parser_tests": 8, "self_tests": 17, "requests": 35, "connections": 35, "open_sockets": 0, "deadline_45s_ms": 45020},
+      "raw_tcp": {"result": "PASS", "immediate": {"attempts": 200, "failures": 0}, "receiver_ack": {"attempts": 200, "failures": 0}}
+    },
+    "on": {
+      "node": {"result": "FAIL", "passed_before_failure": 9, "case": "empty", "client": "node-fetch", "error": "ECONNRESET", "requests": 10, "invalid_requests": 0, "additional_native_assertion": "UV_HANDLE_CLOSING"},
+      "dotnet": {"result": "FAIL", "passed_before_failure": 2, "case": "mixed-case", "category": "NETWORK_OR_TLS_ERROR", "case_elapsed_ms": 34},
+      "raw_tcp": {"result": "FAIL", "immediate": {"attempts": 200, "failures": 32, "client_errno_10054": 32, "payload_mismatches": 31}, "receiver_ack": {"attempts": 200, "failures": 17, "server_errno_10054": 17, "payload_mismatches": 0}}
+    },
+    "same_test_code_sha256": {
+      "verification/test-http-transport.mjs": "304098b8cd9f1a02a68cdfc18c454cfdf584526ca60cfbf776b09f38e2a61a9b",
+      "verification/test-dotnet-http-transport.mjs": "81bf444aab0490787b76959d88d43448941b6de304315b6f07dcb96204ac860c",
+      "go/internal/gateway/socket_runtime_evidence_test.go": "fdcb21ed37f17a3d0652c1360b02c080c9b9f9310c28740bf69667750fc362ce"
+    }
+  },
+  "verification": {
+    "stream_observer": "PASS",
+    "remove_observer_mutation": "ASSERTION_FAILURE",
+    "targeted_race": "PASS",
+    "targeted_race_seconds": 1.202,
+    "tagged_vet_and_build": "PASS",
+    "full_go_race_rerun": false,
+    "final_document_and_cleanup_checks": "PASS",
+    "doc_citations": {"documents": 124, "citations": 89, "links_checked": 691, "failures": 0},
+    "json_and_diff_check": "PASS",
+    "temporary_tui_roots_removed": 3,
+    "remaining_validation_processes": 0
+  }
+}

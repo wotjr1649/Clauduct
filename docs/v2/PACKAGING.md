@@ -145,7 +145,9 @@ PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`�
 
 **설치 디렉터리에 쓰지 않는다.** 테스트가 확인한다 — 다른 cwd에서 실행한 뒤 설치 디렉터리에 무엇이 생겼는지 전후 비교한다. 따라서 공유 경로나 쓰기 금지 경로에 둘 수 있다.
 
-세션 상태는 전부 native가 소유하고 `CLAUDE_CONFIG_DIR`(기본 `~/.claude`) 아래에 있다. 이 wrapper는 자기 것을 어디에도 쓰지 않는다.
+대화 transcript는 native가 소유하며 `CLAUDE_CONFIG_DIR`(기본 `~/.claude`) 아래에 있다.
+Clauduct도 같은 projects 트리에 선택·context·Workflow 복원용 metadata를 저장한다.
+설치 파일 교체와 이 세션 기록의 호환성은 별도로 확인해야 한다.
 
 **그 결정의 대가 (2026-09-18 관측).** 격리하지 않으므로 clauduct 세션이 고른 모델이 사용자의
 `~/.claude.json`에 남는다 — `clientDataCacheSlots.bi1-*.model`에 `gpt-6-astra`가 들어가고, 그 다음
@@ -347,6 +349,18 @@ clauduct --usage       # 또는 clauduct-dev usage — 같은 뷰다
 묻지 않는 것으로 실측됐다. 5.1절의 `--update`와 마찬가지로 이 옵션도 **첫 인자일 때만** 인식한다.
 
 ## 6. 되돌리기
+
+**v0.3.1 개발본 → v0.3.0의 세션 기록 제한.** `customRole` 필드 또는 `native-selection`
+출처를 가진 새 선택 journal은 v0.3.0 reader가 거부한다. 구형 형식 대조군은 그대로 읽혔다.
+바이너리를 되돌려도 이 자식의 같은 세션 재개가 보장되지는 않는다. v0.3.1에서 해당 세션을
+계속하거나, v0.3.0에서는 새 세션을 시작한다. 기록을 삭제하거나 필드를 제거해 검증을
+통과시키지 않는다. [합성 journal 대조 근거](../../verification/v031-integration-20260921/REPORT.md).
+
+내장 역할의 대소문자 정규화도 역호환 경계다. 저장된 `Plan`과 native metadata의 `plan`처럼
+철자가 다르면 v0.3.1은 일치로 검증하지만 v0.3.0은 정확 비교에서 거부한다.
+v0.3.1 writer가 만든 bytes를 그대로 v0.3.0 reader에 넣어 확인했다.
+[대조군과 검사 범위](../../verification/v031-release-20260923/README.md). 구버전으로 되돌릴 때는
+새 세션을 시작하는 경로를 사용하고, 기존 세션은 해당 기록을 쓴 버전에서 계속한다.
 
 **두 파일 이름을 바꾸면 끝난다.** Node 구현은 지워지지 않았고 `clauduct-node`로 그대로 있다.
 

@@ -92,6 +92,126 @@ func TestDelegationWaitsForNativeAsynchronousMetadataOnly(t *testing.T) {
 	}
 }
 
+func TestWorkflowSelectionIgnoresUnrelatedPendingSibling(t *testing.T) {
+	for _, sibling := range []bool{false, true} {
+		d, scope, child, link := workflowProof(t)
+		if err := d.linkWorkflow(link); err != nil {
+			t.Fatal(err)
+		}
+		if sibling {
+			d.pending[delegationKey{scope.session, "other_call"}] = delegatedChoice{parent: scope.parent, role: "Explore"}
+		}
+		route, found, err := d.route(scope, child.ID, child, context.Background())
+		if err != nil || !found || route.Source != "workflow-parent" || route.Model != scope.route.Model {
+			t.Fatalf("sibling=%v: route=%+v found=%v err=%v", sibling, route, found, err)
+		}
+		if d.results.entries[child.ID] == nil || sibling && len(d.pending) != 1 {
+			t.Fatal("child completion tracking or sibling selection lost")
+		}
+	}
+}
+
+func TestWorkflowNamedAgentWaitsForItsOwnMetadata(t *testing.T) {
+	for _, parent := range []string{"", "parent"} {
+		d, scope, binding := preparedDelegation(t)
+		delete(d.pending, delegationKey{scope.session, "proof_call"})
+		scope.route = bridge.Route{Model: "gpt-5.6-luna", Effort: "low"}
+		scope.parent = parent
+		if parent != "" {
+			d.resolved[parent] = resolvedChoice{session: scope.session, role: "Plan", route: scope.route}
+		}
+		if _, err := d.prepare(scope, "proof_call", "Agent", []byte(`{"subagent_type":"workflow-subagent","prompt":"public","description":"proof"}`)); err != nil {
+			t.Fatal(err)
+		}
+		binding.Role = "workflow-subagent"
+		path := filepath.Join(d.projects, "project", scope.session, "subagents", "agent-"+binding.ID+".meta.json")
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		meta, _ := json.Marshal(map[string]string{"toolUseId": "proof_call", "agentType": "workflow-subagent", "model": "haiku", "parentAgentId": parent})
+		go func() {
+			time.Sleep(40 * time.Millisecond)
+			done <- os.WriteFile(path, meta, 0600)
+		}()
+		route, found, err := d.route(scope, binding.ID, binding, context.Background())
+		if writeErr := <-done; writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		if err != nil || !found || strings.HasPrefix(route.Source, "workflow-") || route.Model != scope.route.Model {
+			t.Fatalf("ordinary Agent parent=%q confused with Workflow: %+v %v %v", parent, route, found, err)
+		}
+	}
+}
+
+func TestVerifiedWorkflowRefusalIsCountedBeforeRouteAdmission(t *testing.T) {
+	for _, verifiedOrigin := range []bool{true, false} {
+		d, scope, child, link := workflowProof(t)
+		if verifiedOrigin {
+			if err := d.linkWorkflow(link); err != nil {
+				t.Fatal(err)
+			}
+		}
+		fixture := &upstream.Fixture{}
+		g := startWith(t, fixture)
+		g.EnableContextPolicy()
+		g.delegations = d
+		if _, err := g.agents.register(child, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		// Valid request shape, but the model contradicts the verified Workflow.
+		r := messages(strings.NewReader(`{"model":"gpt-5.6-luna","max_tokens":16,"messages":[{"role":"user","content":"public"}]}`))
+		r.headers["X-Claude-Code-Session-Id"] = scope.session
+		r.headers["X-Claude-Code-Agent-Id"] = child.ID
+		r.headers["X-Claude-Code-Request-Class"] = "subagent"
+		response := do(t, g, r)
+		body := bodyText(t, response)
+		if response.StatusCode != 400 || !strings.Contains(body, "AGENT_SELECTION_UNVERIFIED") || fixture.Calls() != 0 {
+			t.Fatalf("invalid selection executed: %d %s", response.StatusCode, body)
+		}
+		waitForActive(t, g, 0, "refusal must be recorded")
+		for _, feature := range g.Snapshot().Features {
+			if feature.Name != "workflow_agent" {
+				continue
+			}
+			want := int64(0)
+			if verifiedOrigin {
+				want = 1
+			}
+			if feature.Requests != want || feature.Unconfirmed != want || feature.Observed != 0 {
+				t.Fatalf("origin=%v: %+v", verifiedOrigin, feature)
+			}
+		}
+	}
+}
+
+func TestPendingAgentDoesNotInheritUnrelatedWorkflowReadFailure(t *testing.T) {
+	d, scope, binding, link := workflowProof(t)
+	if err := d.linkWorkflow(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(link.Directory, "journal.jsonl"), []byte(`{`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	binding.ID = "ordinary_child"
+	if _, err := d.prepare(scope, "ordinary_call", "Agent", []byte(`{"subagent_type":"workflow-subagent","description":"public","prompt":"public"}`)); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(d.projects, "project", scope.session, "subagents", "agent-ordinary_child.meta.json")
+	done := make(chan error, 1)
+	go func() {
+		time.Sleep(40 * time.Millisecond)
+		done <- os.WriteFile(path, []byte(`{"toolUseId":"ordinary_call","agentType":"workflow-subagent","model":"fable"}`), 0600)
+	}()
+	route, found, err := d.route(scope, binding.ID, binding, context.Background())
+	if writeErr := <-done; writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if err != nil || !found || strings.HasPrefix(route.Source, "workflow-") {
+		t.Fatal("unrelated broken Workflow refused a verified ordinary Agent", route, found, err)
+	}
+}
+
 func TestNativeBuiltinRoleCaseKeepsVerifiedRoute(t *testing.T) {
 	for _, definition := range []bool{false, true} {
 		d, scope, binding := preparedDelegation(t)
@@ -122,6 +242,66 @@ func TestNativeBuiltinRoleCaseKeepsVerifiedRoute(t *testing.T) {
 		if _, found, err := d.loadChoice(scope, binding.ID, binding); err != nil || !found {
 			t.Fatal("saved role not restorable", err)
 		}
+	}
+}
+
+func TestInheritingRoleCaseSurvivesPreparationAndRestore(t *testing.T) {
+	for _, role := range []string{"Clauduct-inherit", "WORKFLOW-SUBAGENT", "Fork"} {
+		d, scope, binding := preparedDelegation(t)
+		delete(d.pending, delegationKey{scope.session, "proof_call"})
+		scope.route = bridge.Route{Model: "gpt-5.6-luna", Effort: "low"}
+		input, _ := json.Marshal(map[string]string{"subagent_type": role, "prompt": "public", "description": "proof"})
+		if _, err := d.prepare(scope, "proof_call", "Agent", input); err != nil {
+			t.Fatal(err)
+		}
+		binding.Role = bridge.CanonicalRole(role)
+		model := "haiku"
+		if binding.Role == "fork" {
+			model = "inherit"
+		}
+		meta, _ := json.Marshal(map[string]string{"toolUseId": "proof_call", "agentType": binding.Role, "model": model})
+		path := filepath.Join(d.projects, "project", scope.session, "subagents", "agent-"+binding.ID+".meta.json")
+		if err := os.WriteFile(path, meta, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if route, found, err := d.route(scope, binding.ID, binding); err != nil || !found || route.Model != scope.route.Model || route.Effort != scope.route.Effort {
+			t.Fatalf("%s: route=%+v found=%v err=%v", role, route, found, err)
+		}
+		if _, found, err := d.loadChoice(scope, binding.ID, binding); err != nil || !found {
+			t.Fatalf("%s not restorable: %v", role, err)
+		}
+	}
+}
+
+func TestCustomForkIdentitySurvivesExplicitSelectionAndRestore(t *testing.T) {
+	d, scope, binding := preparedDelegation(t)
+	delete(d.pending, delegationKey{scope.session, "proof_call"})
+	scope.route = bridge.Route{Model: "gpt-6-astra", Effort: "low"}
+	scope.nativeModel = scope.route.Model
+	d.roleDefaults = func(string, bridge.Route) (bridge.Route, bool, error) {
+		return bridge.Route{Model: "gpt-5.6-luna", Effort: "max"}, true, nil
+	}
+	if _, err := d.prepare(scope, "proof_call", "Agent", []byte(`{"subagent_type":"Fork","model":"gpt-5.6-luna","prompt":"public","description":"proof"}`)); err != nil {
+		t.Fatal("custom Fork was treated as the native fork", err)
+	}
+	binding.Role = "Fork"
+	path := filepath.Join(d.projects, "project", scope.session, "subagents", "agent-"+binding.ID+".meta.json")
+	if err := os.WriteFile(path, []byte(`{"toolUseId":"proof_call","agentType":"Fork","model":"haiku"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, err := d.route(scope, binding.ID, binding); err != nil || !found {
+		t.Fatal("custom Fork selection was not verified", err)
+	}
+	restored, found, err := d.loadChoice(scope, binding.ID, binding)
+	if err != nil || !found {
+		t.Fatal("custom Fork identity was lost on restore", err)
+	}
+	d.resolved[binding.ID] = restored
+	d.results.entries[binding.ID].stopped = true
+	raw, err := d.prepareResume(scope, "resume_custom", []byte(`{"to":"proof_child","message":"next"}`))
+	var message struct{ Message string }
+	if err != nil || json.Unmarshal(raw, &message) != nil || message.Message != "next" {
+		t.Fatal("native fork continuation policy changed a custom role", err)
 	}
 }
 

@@ -3,7 +3,6 @@ package gateway
 import (
 	"encoding/json"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -25,7 +24,7 @@ func TestNativeContinuationRequiresCurrentTurnAndOriginalLineage(t *testing.T) {
 			put := func(name string, value any) {
 				t.Helper()
 				raw, _ := json.Marshal(value)
-				if err := os.WriteFile(name, raw, 0600); err != nil {
+				if err := writeNativeTestFile(name, raw); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -70,7 +69,7 @@ func TestNativeContinuationRequiresCurrentTurnAndOriginalLineage(t *testing.T) {
 				e.State = "running"
 			}
 			if mutation != "missing_receipt" {
-				put(filepath.Join(dir, "active-"+binding.ID+".json"), active)
+				put(filepath.Join(dir, "active/child-"+binding.ID), active)
 			}
 			record := &record{}
 			routes, release, err := g.agentSelection(req, &anthropic.Request{Model: "gpt-5.6-luna"}, record)
@@ -92,6 +91,7 @@ func TestNativeContinuationRequiresCurrentTurnAndOriginalLineage(t *testing.T) {
 			if err != nil || len(routes) != 1 {
 				t.Fatal("same live continuation rejected", err)
 			}
+			e = d.results.entries[binding.ID]
 			e.NativeEndObserved, e.EndReason, e.State = true, "answer", "awaiting_children"
 			_, release, err = g.agentSelection(req, &anthropic.Request{Model: "gpt-5.6-luna"}, record)
 			release()

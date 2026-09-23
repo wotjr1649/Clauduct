@@ -74,11 +74,21 @@ go run ./cmd/clauduct-dev doctor     # 인증·소켓·자식 없이 환경만 �
 go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 ```
 
-`-race`는 cgo와 C 툴체인을 요구한다. 이 개발 머신에는 gcc가 없어 로컬에서는 실행하지 못했고 CI가 담당한다. 미실행은 통과가 아니다.
+`-race`는 `CGO_ENABLED=1`과 C 툴체인을 요구한다. 2026-09-21 로컬 검사는 기존
+`C:\msys64\ucrt64\bin\gcc.exe`를 프로세스 PATH에 추가하여 통과했다. 툴체인이 없는
+러너에서는 `NOT_RUN`으로 기록하고 러너를 보완한다. 출하 빌드는 `CGO_ENABLED=0`이다.
+
+`runtime_evidence` 태그의 live 검사는 `CLAUDUCT_EVIDENCE_LIVE=1`을 명시한 별도 실행이다.
+해당 실행 프로세스의 `TEMP`·`TMP`를 task 전용 공개 합성 폴더로 지정한다. 기본 사용자
+임시 경로가 요청에 섞이면 `EVIDENCE_PRIVATE_PATH`로 전송 전에 거부한다. 이 guard를 끄지
+않는다. TUI 검사는 `go test -c -tags=runtime_evidence`로 만든 검사 바이너리를 실제 PTY에서
+직접 실행해야 stdin이 native까지 이어진다. 최종 transcript·누적 counter·정상 종료를 함께
+확인하며, 화면의 완료 문구만으로 PASS를 판정하지 않는다. CI는 live 스위치 없이 태그
+compile/vet와 오프라인 검수기만 실행한다.
 
 ## 지켜야 할 계약
 
-- **제품 launcher는 인자를 해석하지 않는다.** `launch.Build`는 argv를 그대로 복사한다. 유일한 예외는 `launch.Refused`의 옵션 2개(`--dangerously-skip-permissions` 계열)이며, 값을 먹지 않는 옵션이라 인자 단위 정확 일치만으로 충분하다. **값이 옵션으로 오인되는 경로는 있고, 의도적으로 허용한다** — `--append-system-prompt --dangerously-skip-permissions`처럼 옵션 값이 정확히 그 이름이면 거부된다. `refuse.go`가 그 판단을 적어 두었다: 과잉 거부는 스스로 드러나 사용자가 표현을 바꾸면 되지만, 과소 거부는 조용히 권한 검사를 없앤다. 목록을 늘리려면 확인할 것은 값 오인이 없다는 것이 아니라, 그 옵션이 값을 먹지 않는지와 이 과잉 거부를 그 이름에 대해서도 받아들일 수 있는지다. 0.3.0부터 **`--settings`만** `takeUserSettings`가 **`launch.Build` 이전에** argv에서 걷어낸다(`run.go:151`에서 `o.Args`를 교체). 값을 먹는 옵션이라 값 추적을 하며, 그래서 launcher가 아니라 app 계층에 있다 — `launch.Build`가 argv를 그대로 복사한다는 위 문장은 그대로 유효하다. `--setting-sources`를 포함한 나머지는 순서와 철자 그대로 전달된다.
+- **CLI 계약은 [ARCHITECTURE.md 4절](../docs/v2/ARCHITECTURE.md#4-cli-계약)이 소유한다.** `app.Run`이 거부 검사와 설정 병합을 적용하고, `launch.Build`는 세션 overlay 뒤에 argv를 그대로 복사한다. 값 경계 변경은 settings 추출·역할 검색·실제 native 대조 검사로 확인한다.
 - **거부는 아무것도 얻기 전에 일어난다.** 실행 파일 조회도, bind도 하지 않는다. `internal/app`에 그 순서를 지키는 테스트가 있다.
 - **Node·.NET·PowerShell에 runtime 의존하지 않는다.** `internal/app`의 소스 스캔 테스트가 문자열 리터럴 수준에서 이를 강제한다. Node 기준선이 `<node.exe> <repo>/src/review-diff.mjs` 형태의 명령을 native에 넘기던 패턴이 다시 들어오면 그 자리에서 실패한다.
 - **검토·고정한 의존성만 허용.** 4개 모듈의 버전을 테스트로 고정한다 — 정확 계수를 위한 3개와, 역할 정의 frontmatter를 읽는 `go.yaml.in/yaml/v3`. [추가 결정과 검토](../verification/policy-evidence-20260918/DEPENDENCIES.md), [라이선스](THIRD_PARTY_NOTICES.txt). 새로운 의존성은 `docs/v2/ARCHITECTURE.md` 14장의 기준에 따라 별도 검토·기록한다.
@@ -86,7 +96,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 - **세션 token은 로그·커맨드라인·오류 문자열에 넣지 않는다.**
 - **tool call은 `response.completed` 이전에 만들어지지 않는다.** 스트리밍 이벤트에서 호출을 조립하는 arm을 추가하면 barrier가 사라진다. `internal/protocol/bridge`에 그것을 잡는 테스트가 있다.
 - **상태 코드 계열은 재시도 지시다.** 측정상 5xx는 종류를 가리지 않고 재시도된다. 영구적인 로컬 조건은 4xx로 답한다.
-- **Windows 전용이다.** `internal/platform`에 `_windows.go` 파일만 있어 다른 OS에서는 빌드되지 않는다. 의도된 것이다 — 다른 OS는 이관이 아니라 신규 설계(V2-04)다.
+- **현재 제품은 Windows 전용이다.** `internal/platform`의 실행 파일 해석 등은 Windows 구현만 있다. 공통 `internal/httpguard`는 표준 Go만 사용하며 macOS·Linux 지원 때 재사용한다. 공통 패키지의 검사 통과가 다른 OS의 제품 실행·설치 지원을 의미하지는 않는다.
 
 ## 패키지
 
@@ -97,6 +107,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |
 | `internal/gateway` | loopback listener, 요청 경계·인증·registry |
+| `internal/httpguard` | OS와 무관한 HTTP 응답 framing·제한된 연결 drain·취소 시 읽기 중단 |
 | `internal/stream` | backend SSE 파싱과 전달 상태. 의미 해석은 하지 않는다 |
 | `internal/wire` | 두 wire 형식이 공유하는 JSON 엄격성. 중복 key 거부가 한 곳에만 있다 |
 | `internal/protocol/anthropic` | Claude 쪽 요청 해독과 이벤트 방출 |

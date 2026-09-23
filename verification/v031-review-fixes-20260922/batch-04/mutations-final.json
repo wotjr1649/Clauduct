@@ -1,0 +1,26 @@
+[
+  {
+    "log": "final-mutation-owner.txt",
+    "name": "owner",
+    "assertion_failed": true,
+    "exit": 1
+  },
+  {
+    "log": "final-mutation-launch.txt",
+    "name": "launch",
+    "assertion_failed": true,
+    "exit": 1
+  },
+  {
+    "log": "final-mutation-notification.txt",
+    "name": "notification",
+    "assertion_failed": true,
+    "exit": 1
+  },
+  {
+    "log": "final-mutation-sdk_status.txt",
+    "name": "sdk_status",
+    "assertion_failed": true,
+    "exit": 1
+  }
+]

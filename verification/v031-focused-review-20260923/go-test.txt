@@ -1,0 +1,21 @@
+vet-ok
+build-ok
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct	0.444s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-dev	0.750s
+ok  	github.com/wotjr1649/Clauduct/go/cmd/clauduct-hook	1.447s
+ok  	github.com/wotjr1649/Clauduct/go/internal/app	277.690s
+ok  	github.com/wotjr1649/Clauduct/go/internal/auth	1.816s
+ok  	github.com/wotjr1649/Clauduct/go/internal/buildinfo	0.842s
+ok  	github.com/wotjr1649/Clauduct/go/internal/childprocess	1.240s
+ok  	github.com/wotjr1649/Clauduct/go/internal/gateway	29.774s
+ok  	github.com/wotjr1649/Clauduct/go/internal/httpguard	2.312s
+ok  	github.com/wotjr1649/Clauduct/go/internal/launch	0.872s
+ok  	github.com/wotjr1649/Clauduct/go/internal/pdf	1.350s
+ok  	github.com/wotjr1649/Clauduct/go/internal/platform	0.809s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic	1.403s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/bridge	0.529s
+ok  	github.com/wotjr1649/Clauduct/go/internal/protocol/codex	1.185s
+ok  	github.com/wotjr1649/Clauduct/go/internal/stream	0.534s
+ok  	github.com/wotjr1649/Clauduct/go/internal/update	1.697s
+ok  	github.com/wotjr1649/Clauduct/go/internal/upstream	2.377s
+ok  	github.com/wotjr1649/Clauduct/go/internal/wire	0.438s

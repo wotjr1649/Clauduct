@@ -1,0 +1,6 @@
+=== RUN   TestStreamCompletionRechecksResultAfterWaitingForStop
+    results_test.go:306: a stop that waited for the lock settled the new result
+--- FAIL: TestStreamCompletionRechecksResultAfterWaitingForStop (0.01s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	0.194s
+FAIL

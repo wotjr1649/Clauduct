@@ -134,7 +134,7 @@ func (d *delegations) linkWorkflow(link workflowLink) error {
 	if _, exists := d.workflows[key]; exists || len(d.workflows) >= 128 {
 		return errDelegationUnverified
 	}
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return errDelegationUnverified
 	}
@@ -179,7 +179,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return bridge.Route{}, false, errDelegationUnverified
 	}
@@ -275,11 +275,11 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 			// Native stores the invocation's optional model in this file, not the
 			// custom role's resolved default. The active turn independently proves
 			// the actual model/effort, and the definition resolver proves its source.
-			roleDefault := err == nil && receipt.Role != "workflow-subagent" && !receipt.ModelProvided && meta.Model == ""
+			roleDefault := err == nil && receipt.CustomRole && !receipt.ModelProvided && meta.Model == ""
 			if err != nil || meta.Model != selected.Model && !roleDefault || receipt.Role != meta.AgentType {
 				return bridge.Route{}, false, errDelegationUnverified
 			}
-		} else if meta.AgentType != "workflow-subagent" {
+		} else if bridge.CanonicalRole(meta.AgentType) != "workflow-subagent" {
 			return bridge.Route{}, false, errDelegationUnverified
 		} else if meta.Model != "" {
 			selected, err := bridge.SelectRoute(meta.Model, "")
@@ -313,6 +313,9 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		route = selected
 	}
 	choice := resolvedChoice{session: scope.session, parent: scope.parent, call: matched.Call, role: binding.Role, route: route, inherited: true, receipt: receipt}
+	if receipt != nil {
+		choice.custom = receipt.CustomRole
+	}
 	if matched.origin.plan != nil {
 		key := delegationKey{matched.Session, matched.Run}
 		run := d.workflows[key]

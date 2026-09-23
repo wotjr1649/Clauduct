@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -34,11 +33,11 @@ func TestALateAbortReceiptDoesNotUndoADeliveredReport(t *testing.T) {
 	put := func(name string, receipt nativeTurnReceipt) {
 		t.Helper()
 		raw, _ := json.Marshal(receipt)
-		if err := os.WriteFile(filepath.Join(dir, name), raw, 0600); err != nil {
+		if err := writeNativeTestFile(filepath.Join(dir, name), raw); err != nil {
 			t.Fatal(err)
 		}
 	}
-	put("active-"+binding.ID+".json", nativeTurnReceipt{Session: scope.session, Agent: binding.ID, Turn: "first", Model: "gpt-5.6-luna", Effort: "high"})
+	put("active/child-"+binding.ID, nativeTurnReceipt{Session: scope.session, Agent: binding.ID, Turn: "first", Model: "gpt-5.6-luna", Effort: "high"})
 	if !g.bindNativeTurn(scope.session, binding.ID) {
 		t.Fatal("valid turn rejected")
 	}

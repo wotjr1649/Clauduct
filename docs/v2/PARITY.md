@@ -1071,10 +1071,15 @@ compactPercent), non-streaming fallback 차단 여부, 위임 메뉴 항목 수.
 | E1 | ~~`anthropic-version` 검사~~ **완료 2026-09-16** | 8 |
 | E2 | ~~`content-encoding` 검사~~ **완료 2026-09-16** | 8 |
 | E3 | ~~`Frame.WriteTo` 16 KiB 청킹~~ **완료 2026-09-16.** `chunkedWriter`, 돌연변이 6/6 | 6.3 |
-| E4 | compact 템플릿 식별 + ~~effort medium 상한~~ | 식별은 유지, **상한은 0.3.0에서 제거** |
+| E4 | compact 템플릿 식별 + 자동 압축 effort medium 상한 | 식별은 유지. **0.3.0에서 상한 제거, v0.3.1 개발본은 검증된 자동 압축에만 복원** |
 | E5 | 전체 요청 timeout 10분 | **완료 2026-09-17** |
 
 ### E.4/E5 (2026-09-17)
+
+**2026-09-21 v0.3.1 개발 변경:** 세션·자식·유효기간이 검증된 `PreCompact(auto)` 영수증이
+있을 때만 기존 모델의 high/xhigh/max를 medium으로 제한한다. low/medium, 수동 압축과 이후
+생성의 선택은 유지한다. 템플릿 문구만으로 상한을 적용하지 않는다. 계수와 생성은 같은
+압축 지침·라우트·영수증 제거를 사용한다. [실제 backend와 반증 근거](../../verification/v031-compaction-20260921/REPORT.md).
 
 **E4는 진단이 아니라 돈이다.** 기준선의 `compact-policy`가 하는 일은 분류가 아니라
 `purpose === 'compact-template'`일 때 **effort를 medium으로 낮추는 것**이다.

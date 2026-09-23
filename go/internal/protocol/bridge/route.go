@@ -150,23 +150,33 @@ const InheritRole = MenuPrefix + "inherit"
 
 // InheritsParent reports whether this role deliberately keeps the model the client chose.
 func InheritsParent(role string) bool {
-	if inheritRoles[role] {
-		return true
-	}
-	// Folded like the role table beside it. Folding one and not the other meant "Fork" missed
-	// this map, took the explicit-model path, and died on its first request against native's
-	// own model:inherit -- where "fork" is refused cleanly at the call.
-	for name := range inheritRoles {
-		if strings.EqualFold(name, role) {
-			return true
-		}
-	}
-	return false
+	return inheritRoles[CanonicalRole(role)]
 }
 
 // IsFork folds the one role name five call sites compared exactly. Native resolves these
 // case-insensitively; this build did not, in five different places.
-func IsFork(role string) bool { return strings.EqualFold(role, "fork") }
+func IsFork(role string) bool { return CanonicalRole(role) == "fork" }
+
+// CanonicalRole names the built-ins in the role tables. Callers must resolve
+// custom definitions first: native allows a custom Fork distinct from fork.
+func CanonicalRole(role string) string {
+	for name := range roleRoutes {
+		if strings.EqualFold(name, role) {
+			return name
+		}
+	}
+	for name := range inheritRoles {
+		if strings.EqualFold(name, role) {
+			return name
+		}
+	}
+	return role
+}
+
+func KnownRole(role string) bool {
+	_, routed := RoleRoute(role)
+	return routed || InheritsParent(role)
+}
 
 // RoleRoute reports where a subagent of this role runs.
 //
@@ -174,25 +184,12 @@ func IsFork(role string) bool { return strings.EqualFold(role, "fork") }
 // what it knows and invents nothing, because inventing one would run the user's work
 // somewhere the user did not choose.
 //
-// What the caller does with "not known" is the caller's. It runs the child on the route of
-// whatever asked for it, which is the same answer 0.2.x arrived at by leaving the client's
-// model alone -- and it is recorded as a choice rather than waved through, because a child
-// with no recorded choice is invisible to the completion evidence and lets its parent answer
-// as complete with a report outstanding. An explicit effort is still refused: there is no
-// catalogue entry to apply it to, and inventing one is the guess this build does not make.
+// The caller tracks an unknown role as pending until native's actual model and
+// effort are verified. An effort alone still needs a known role model.
 func RoleRoute(role string) (Route, bool) {
+	role = CanonicalRole(role)
 	if route, known := roleRoutes[role]; known {
 		return route, true
-	}
-	// Case-insensitively for the built-ins, because native resolves them that way and the
-	// gateway already reconciles a child's reported role against the requested one with
-	// EqualFold. Exact-only matching meant "explore" missed this table, took the caller's
-	// route, and then passed that reconciliation -- an Explore child running somewhere other
-	// than the entry above says it runs, decided by the casing in a tool call.
-	for name, route := range roleRoutes {
-		if strings.EqualFold(name, role) {
-			return route, true
-		}
 	}
 	return menuRoute(role)
 }

@@ -54,24 +54,16 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 	state.identity = contextKey(session, agent)
 	transcript := g.contexts.sessions[session]
 	if transcript == "" {
+		// Nonpersistent gateways can omit registration. Production beginContext
+		// requires it so a missing hook cannot bypass a prior journal's state.
 		return nil
-	} // Older clients report nonpersistent status.
+	}
 	state.journal = strings.TrimSuffix(transcript, ".jsonl") + ".clauduct-context.json"
 	if agent != "" {
 		state.journal = filepath.Join(filepath.Dir(transcript), session, "subagents", "agent-"+agent+".clauduct-context.json")
 	}
-	root, err := os.OpenRoot(g.delegations.projects)
-	if os.IsNotExist(err) {
-		// A directory that is not there yet holds no journal, which is the same fact the
-		// line below already reads correctly one level down. Reading it as damage instead
-		// ended the session: the client creates this tree lazily, and with auto memory
-		// disabled it has not touched it by the time the first request arrives, so on a
-		// configuration directory that is new every first /v1/messages was refused
-		// CONTEXT_JOURNAL_UNVERIFIED and the session died having made no inference.
-		//
-		// Measured 2026-09-21 on the product path, one variable changed and nothing else:
-		// directory absent, the launcher exits 1 with refusedBy CONTEXT_JOURNAL_UNVERIFIED
-		// and inferences 0; directory pre-created, the same command succeeds.
+	root, err := g.delegations.openProjects(state.journal)
+	if errors.Is(err, errProjectsAbsent) {
 		return nil
 	}
 	if err != nil {
@@ -153,21 +145,12 @@ func (g *Gateway) saveContext(state *contextState) error {
 		return nil
 	}
 	state.persistenceError = true
-	// The write is what establishes the tree. Restoring tolerates its absence because there
-	// is nothing to restore; saving cannot, and MkdirAll on a path the client owns and
-	// creates itself is the smaller thing than refusing the turn that wanted to save.
-	root, err := os.OpenRoot(g.delegations.projects)
-	if os.IsNotExist(err) {
-		// Created only when its absence is what failed. Doing it unconditionally spent a
-		// syscall on every turn whose journal changed -- which is every turn -- inside the
-		// lock that serialises admission, for a condition true once per installation. It
-		// also re-resolved the path a second time, leaving a window in which the name could
-		// become a junction between the two calls: os.Root bounds escapes from the root it
-		// opened, not how that root was reached.
-		if err = os.MkdirAll(g.delegations.projects, 0o700); err != nil {
+	root, err := g.delegations.openProjects(state.journal)
+	if errors.Is(err, errProjectsAbsent) {
+		if err = os.MkdirAll(g.delegations.projects, 0700); err != nil {
 			return errContextJournal
 		}
-		root, err = os.OpenRoot(g.delegations.projects)
+		root, err = g.delegations.openProjects(state.journal)
 	}
 	if err != nil {
 		return errContextJournal

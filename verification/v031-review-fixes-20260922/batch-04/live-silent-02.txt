@@ -1,0 +1,45 @@
+=== RUN   TestNativeLiveToolsWorkflowAndLossSameProcess
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=17 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:126: phase=1 pid=26248 starts=1 error=false result_bytes=17 replay_blocked=false parent_received=0
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=18 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=15 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:126: phase=2 pid=26248 starts=1 error=true result_bytes=221 replay_blocked=true parent_received=0
+    zz_live_tools_probe_test.go:148: normal task failed
+    zz_live_tools_probe_test.go:86: completed_request seq=3 class= stage=request source= status=204 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=4 class= stage=request source= status=204 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=5 class=main stage=delivery source=direct+effort status=200 outcome=ok category= stream_end=&{ReadError:eof ClientContext:none TerminalObserved:true Events:59 Bytes:119737}
+    zz_live_tools_probe_test.go:86: completed_request seq=6 class=main stage=delivery source=direct+effort status=200 outcome=ok category= stream_end=&{ReadError:eof ClientContext:none TerminalObserved:true Events:52 Bytes:118571}
+    zz_live_tools_probe_test.go:86: completed_request seq=7 class=main stage=delivery source=direct+effort status=200 outcome=ok category= stream_end=&{ReadError:eof ClientContext:none TerminalObserved:true Events:11 Bytes:106084}
+    zz_live_tools_probe_test.go:86: completed_request seq=8 class= stage=request source= status=204 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=9 class=main stage=delivery source=direct+effort status=200 outcome=ok category= stream_end=&{ReadError:eof ClientContext:none TerminalObserved:true Events:13 Bytes:111843}
+    zz_live_tools_probe_test.go:86: completed_request seq=10 class= stage=request source= status=200 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=11 class=subagent stage=delivery source=agent-call-model+effort status=200 outcome=ok category= stream_end=&{ReadError:eof ClientContext:none TerminalObserved:true Events:14 Bytes:10876}
+    zz_live_tools_probe_test.go:86: completed_request seq=12 class= stage=request source= status=204 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=13 class= stage=request source= status=200 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=14 class=main stage=delivery source=direct+effort status=502 outcome=refused category=EMPTY_REPLY stream_end=&{ReadError:none ClientContext:none TerminalObserved:true Events:17 Bytes:115611}
+    zz_live_tools_probe_test.go:86: completed_request seq=15 class=workflow stage=delivery source=workflow-selection status=200 outcome=ok category= stream_end=&{ReadError:eof ClientContext:none TerminalObserved:true Events:13 Bytes:8079}
+    zz_live_tools_probe_test.go:86: completed_request seq=16 class= stage=request source= status=200 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=17 class= stage=request source= status=200 outcome=ok category= stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=18 class=main stage=selection source= status=400 outcome=refused category=NATIVE_REQUEST_REPLAY_BLOCKED stream_end=<nil>
+    zz_live_tools_probe_test.go:86: completed_request seq=14 class=main stage=delivery source=direct+effort status=502 outcome=refused category=EMPTY_REPLY stream_end=&{ReadError:none ClientContext:none TerminalObserved:true Events:17 Bytes:115611}
+    zz_live_tools_probe_test.go:86: completed_request seq=18 class=main stage=selection source= status=400 outcome=refused category=NATIVE_REQUEST_REPLAY_BLOCKED stream_end=<nil>
+    zz_live_tools_probe_test.go:97: failed_run exit=1 cleanup=true
+    integration_runtime_evidence_test.go:186: live attempts=7 inferences=7 refused=0
+--- FAIL: TestNativeLiveToolsWorkflowAndLossSameProcess (34.90s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	35.237s
+FAIL

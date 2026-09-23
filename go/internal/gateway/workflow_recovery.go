@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"os"
 	"path/filepath"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -62,7 +61,7 @@ func (d *delegations) recoverWorkflow(scope delegationScope, call string, raw js
 	if run.origin.recoveryOf != "" {
 		return nil, errWorkflowRecoveryUnverified
 	}
-	root, err := os.OpenRoot(d.projects)
+	root, err := d.openProjects(".")
 	if err != nil {
 		return nil, errWorkflowRecoveryUnverified
 	}

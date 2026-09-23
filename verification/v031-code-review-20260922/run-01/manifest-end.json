@@ -1,0 +1,1080 @@
+{
+  "phase": "end",
+  "base_commit": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "head_commit": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "branch": "fix/v031",
+  "repo_root": "D:/AIDEV/clauduct-v031",
+  "note": "v0.3.1 changes live in the working tree (new files are intent-to-add, index blob = empty). Paths are repo-relative. Review artifacts under verification/v031-code-review-20260922/ are NOT target sources and are excluded.",
+  "file_count": 118,
+  "area_counts": {
+    "A5-verification-compat": 14,
+    "A2-session-turn-recovery": 33,
+    "A1-roles-selection-args": 22,
+    "A3-compaction-usage": 23,
+    "A4-transport-process": 26
+  },
+  "files": [
+    {
+      "path": "docs/v2/ARCHITECTURE.md",
+      "git_status": "M",
+      "area": "A5-verification-compat",
+      "base_blob": "94d41c2ce3e39ea89fecc6984d7dde44ce0a34fb",
+      "worktree_sha256": "0b623002c8d09be11238f792f46842bcfbb37e866d05d54b62f4b13e75d13d91",
+      "bytes": 27724,
+      "present": true
+    },
+    {
+      "path": "docs/v2/COMPATIBILITY.md",
+      "git_status": "M",
+      "area": "A5-verification-compat",
+      "base_blob": "c1317f060a6a09a0258d94dfd7ead1816d357343",
+      "worktree_sha256": "d90fc227874ee42c9defdacc73eec49c67290d1e7ab0c3159722b801db919304",
+      "bytes": 49934,
+      "present": true
+    },
+    {
+      "path": "docs/v2/PACKAGING.md",
+      "git_status": "M",
+      "area": "A5-verification-compat",
+      "base_blob": "cbcab6a462749e10c83fd8d931511741837d54d0",
+      "worktree_sha256": "f012dbdea40cfdee2a511c7cfdeeb41a6d3286a0b6eb7f1ed254c497369b3b65",
+      "bytes": 30359,
+      "present": true
+    },
+    {
+      "path": "docs/v2/PARITY.md",
+      "git_status": "M",
+      "area": "A5-verification-compat",
+      "base_blob": "b7aa68e3c0bd9a266e80d8b487986c5f5a318e74",
+      "worktree_sha256": "1c06cee9e83505e7452916b66cfe9534f3be0b7f79356168bdd4a76876459459",
+      "bytes": 90834,
+      "present": true
+    },
+    {
+      "path": "go/README.md",
+      "git_status": "M",
+      "area": "A5-verification-compat",
+      "base_blob": "08c2a708c233f6bd91e9b56eedcbb0b352bdd5db",
+      "worktree_sha256": "a2f0d554a529c4d13bbc94001fd355917146b1ded9a345536df308016bd9ff51",
+      "bytes": 8905,
+      "present": true
+    },
+    {
+      "path": "go/cmd/clauduct-hook/main.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "e38221ef90ba3deae5639f36f324a72855bfdc4a",
+      "worktree_sha256": "b72002537c0dec7cf0d5b35858fafeee00530908344637fcd5c973636fc2c38e",
+      "bytes": 14507,
+      "present": true
+    },
+    {
+      "path": "go/cmd/clauduct-hook/main_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "a6d55f59e85ca9b29b74813d8c57511ef57bc8cd",
+      "worktree_sha256": "afa9d828bb1fb10b7a693e34767b5d07615f3439a1ab78e4ce0510c0b26f0f64",
+      "bytes": 12477,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/argv_native_test.go",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "c3643cbd89ff5bd6e5b372b72e0a1e6bca20dfa55df09b3073f748ef05c9cb6e",
+      "bytes": 5032,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/context_resume_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "23b81d23a71c5825071cf5d5064d0b5e1f1a4591",
+      "worktree_sha256": "ee8db35d2932c05892c5674d35a989ec0921fbfb3680264bb51fccd4fb2ae629",
+      "bytes": 4898,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/context_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "d0091b609392933dd472f7a19eb4a786e31ecacb",
+      "worktree_sha256": "38a22e59794dd41cd97325194d8c15966aa450e57905e41ff756d5a2028283dc",
+      "bytes": 10699,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/integration_runtime_evidence_test.go",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "95a082b24964ffb327bb2dc72d9260f554ef9df47b761d1b42b408f562f873ce",
+      "bytes": 11427,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/integration_tui_test.go",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "d108636ebddff9328745fa9e7e4401f79a944ede238951079d36b7921e1f9aa2",
+      "bytes": 8871,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/native-events.mjs",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "b9393a3b3e95202072555e2c618529b38a01bf00",
+      "worktree_sha256": "7812efdf3d524b68eb37015c7336322f598603c20a4beda8cf0068296f842eeb",
+      "bytes": 12248,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/native_args.go",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "60904121f23ee0bda183c18692a80640fec87fdae50279ff2c7cea8c5067cdde",
+      "bytes": 2252,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/native_cleanup_test.go",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "a16dad2854dc71d389e32563bee452e7e1b2d815e6311c49fa27bc9252c255b8",
+      "bytes": 4395,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/native_events_publication_test.mjs",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "e9a556a03d0c15260d5dcc22135bf81cab43b9b76c7807b6b6736ea3e2916434",
+      "bytes": 3189,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/native_events_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "028ca75c9480cef801b287b7c4eec0eabbe87982",
+      "worktree_sha256": "5f81cab2934318aa0595e4807be1c92d415e806335925763b01b718c38c3a7d1",
+      "bytes": 2272,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/native_print_test.go",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "e331def364c2354c3fc072d962977585786e5a1f75250d27038769da8e8803be",
+      "bytes": 1290,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/role_case_probe_test.go",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "2598ed1a3cf71f5281d49ee3ae0a0998122359f83b8b7ab9b1b3769ed6e40739",
+      "bytes": 4312,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/role_scan_test.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "1f24747db619ea1b0daba633dbaa2071061e59c4",
+      "worktree_sha256": "8f6122373dbac5c7d79c358734da07ae8d28b56661f579e962e7f15f7b70657a",
+      "bytes": 9397,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/roles.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "b008e4e2646a4bf9eb69b55dd0678aaae2e142c5",
+      "worktree_sha256": "b84ee574ab3089ab61719fd6e248618630ac03ddbfa1a9982979ba6c4c6cb449",
+      "bytes": 14741,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/roles_test.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "05041a59ea89989fb6896c70cf880d78d2909352",
+      "worktree_sha256": "2ee412576a7f895fdccc8590fa20c8d45c9b64ec02679ea82b4b5c6e83c55846",
+      "bytes": 11570,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/run.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "7139a142387a28966cfd08248b4b47cfd170b38f",
+      "worktree_sha256": "0453d547230e420b57da5e6214d28757a03d00db595492ef42fb30eff0978454",
+      "bytes": 18560,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/session_registration_test.go",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "64be405584bdb974afd17382a163ac2cf1784a47f48a7857ce1ca853510c0fe8",
+      "bytes": 4638,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/settings.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "3768fb5fa3cecb9f9e58c1f652d94bbba6e47643",
+      "worktree_sha256": "d7665c576db7c8ac5675f6b7077f8bf91bd2f0f07dced89acc26073d19149cef",
+      "bytes": 4659,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/subagent_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "15d79cf44e1565b3ccda3a369d714a4009ee7a0a",
+      "worktree_sha256": "826c4e8410f232420105e8aaa5a10adddeaa676e771e58188ced8a8a730fbff5",
+      "bytes": 6739,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/user_settings.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "cce4385bfa0966638cb06059b97645dcfa6f0cd3",
+      "worktree_sha256": "7ae2bfa2e1cbb029332f036786c95969a8e7b95a5191b49943406559372fe557",
+      "bytes": 5633,
+      "present": true
+    },
+    {
+      "path": "go/internal/app/user_settings_test.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "1ef4a6e5f1ff4584ae84293d888223f1a144bf4b",
+      "worktree_sha256": "f05c57a8c945f8269e108fe1db0554375761acfb76dc3acbab0b9dc5279a0b26",
+      "bytes": 9397,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/absent_tree_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "83cac6ad5bb17f6b88623097320ec4c48da3d626",
+      "worktree_sha256": "549b047b065bd1b791f3c7a43738d2f8388ac3029a627e7d0c795a27ffb6b568",
+      "bytes": 2249,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/client_capability_test.go",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "24ed36624421d03db218bafb59ca3a517d08e22c7aa64ea5cf4893ee89dad157",
+      "bytes": 3489,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/compaction_effort_test.go",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "dd1bb6e6ddd3af053a3488dd4176ec930cde102f25d8aec5a9136319cf954cac",
+      "bytes": 8905,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/compaction_runtime_evidence_test.go",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "81409e52ec613f6d7544fcceb34682512352d2b49ec68a6b17dde461d0f8523f",
+      "bytes": 5191,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/connection.go",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "3c8879f3429cd7f4ba0f3d658ecb24fa1e9a14847dcdd8035c73e99afb321456",
+      "bytes": 1697,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/connection_test.go",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "6b321f6cf14f95fb43fec097877ad27f9058f496ef35e010f0ff31eda0828ad8",
+      "bytes": 5501,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "ef3192f772945771328018e351f12ec94762c4dd",
+      "worktree_sha256": "09787229f0714c2bf1b2e0a698a17231a310055775f940f75db5696728f18885",
+      "bytes": 16223,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context_compaction.go",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "a4b9e60594d938a019f5b9654e8884ec7a23327afad5331b4048f731e2f4bafc",
+      "bytes": 3232,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context_display.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "590d331e8c5c91799bb91179fbda2ca778ae5a44",
+      "worktree_sha256": "8f65cf14a1c407c7bade3e7250b0f80e2e8dede50379ed00207d3bf68c3a8545",
+      "bytes": 9742,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context_estimate.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "7ab2cc5f58ad0b00b122555fa74bf21ffd325df2",
+      "worktree_sha256": "fc4f09849353247d804e33b9c685ec2f7a13b4fabb3fdd911ec02ce7656a44e3",
+      "bytes": 2415,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context_journal.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "0a91b5c0449c73121350b061f239bb2863c52407",
+      "worktree_sha256": "aaa2c381998007c0d80b7d59cc8e77dc4d13ba94ba10f4baf4a2afd6ac3245b4",
+      "bytes": 6363,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context_journal_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "546658e3394d09b195269a036bd63f129d7a2a2d",
+      "worktree_sha256": "aec33ea53d60821776eedd5118fec205daf1cc12405baf7d585ee236d86ae99f",
+      "bytes": 6530,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/context_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "9b36d9d0052ff8f6514c843725e4b17781c4e986",
+      "worktree_sha256": "cc7002d572b976100886843b256cb44d810b959e62d1793459acd11b633a251d",
+      "bytes": 14716,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/continuation.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "1e931f4df69fe5466db94eba1b5fdea6bd82d7f4",
+      "worktree_sha256": "e5822b464ad50842df69fce960138a62ee09fdf20cac73c9e433e225ef66fce3",
+      "bytes": 2203,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/continuation_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "f5dfe534de6932440125474e98d02f80ce4cb3c1",
+      "worktree_sha256": "5610bce16bdbe542f14991d1b3c9fda9e99a0ebc5b825b5a7ed89ddf717d837e",
+      "bytes": 3957,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/count_tokens.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "31aa4efbb54e429d2628bc9c346e11dc49b85edf",
+      "worktree_sha256": "55c67be5d9bb54379d289cbef0d9ea843070e60f7f4d8da2a47604470939c2e1",
+      "bytes": 5162,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/count_tokens_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "270948565dc0254fd9c10fe4b8dd4844bcbb0ae0",
+      "worktree_sha256": "8364ea41eae03e3e06a6e2777839b351f77099fdd484064ff905a33775c67906",
+      "bytes": 7404,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/delegation.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "dcec4440632f841cd101377b163f8df51d4139db",
+      "worktree_sha256": "c67882d1c602794b5b70de7a3b3dfee36533c05a4a6475fc6ad93e979a493108",
+      "bytes": 33383,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/delegation_test.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "30d538b4ed230a36723b321da6917aa056328d00",
+      "worktree_sha256": "5584e7913091aa1d807d88137c2a4380f347bf6b17ef84cf37bc0b729dc01468",
+      "bytes": 25919,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/diagnostics.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "8f080b52a81ac8936ee36f35b675df064a1cfc97",
+      "worktree_sha256": "404939341d9320f9fa31d1994cf3c23f6a90d5ba6042fd5360e1e8469e45d6d5",
+      "bytes": 32763,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/diagnostics_test.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "707270c0b13e6d068fafffc5f9c5e6d28b825f94",
+      "worktree_sha256": "83595ade2cde1d4305ec55403bb21955f0e2f6fe1c8845701ac2b78a7a99b3cd",
+      "bytes": 29018,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/errors.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "4e6129e6f32424459772570bd03f6780930f4c5f",
+      "worktree_sha256": "eac7265b37eec5101ac686ed3b24ef127f9027d4c9e225fbe5cc13cf6a1fe4b4",
+      "bytes": 5263,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/estimate_media_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "3a1e872dd72fe4ac8a8899bb04023b4f209c4419",
+      "worktree_sha256": "e48e92ef259708e0ccba8aa2a8a1bda16c8c2418ae0d79e06063303373530069",
+      "bytes": 3965,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/features.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "62b123756aa8e6f50ee20774c8d88dc0a5369d34",
+      "worktree_sha256": "e9f169a90613653b125cfd801cbf234293328ba4ef4bb0bc559f3cfa34866098",
+      "bytes": 5769,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/features_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "45753c5d8ad6303afea51261a098d39fa9222b23",
+      "worktree_sha256": "c649735da9481bcb38280f081c4bf810e2d9a43b75224370853ec7f479635380",
+      "bytes": 6016,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/gateway.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "e0817d6faa094ac66064312b789a08244b3d068c",
+      "worktree_sha256": "59d801db0f664894f779e122767ff935af0858943f9ea0fdff93af52d167da6a",
+      "bytes": 20777,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/late_receipt_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "8818cfe513e26f83de86959da3d1bc63093e50ad",
+      "worktree_sha256": "218cc5cd5495a5ebe895805d68eb883d3eb4c9fcd641162e1d2c429067a69d44",
+      "bytes": 4756,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/messages.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "bb455266ab8ffd40e3e8285f0afa30816aead021",
+      "worktree_sha256": "116497c939d08a106180d330df5ec291da28f23f19cb42fe6e39b2ae8ee4a5d4",
+      "bytes": 38926,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/messages_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "6bef348c634285f1dfe6823bf98336dbd981f446",
+      "worktree_sha256": "85c734e546250de60ec85e7b3ff74279ee4e596cab825ed467528845c6d47e70",
+      "bytes": 19846,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/native_cancellation.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "c23c56e05098d490c5e531896977ca30cde72527",
+      "worktree_sha256": "7682a918f7c0754c6f84eb4f64ebbe792ec6592d15ca78ca26c00bf44ca5d1e7",
+      "bytes": 2598,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/native_cancellation_test.go",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "9fcf0c07c11f225d39fee795bd671b41692db272",
+      "worktree_sha256": "b261b166a234ebf173a5eaae054d61c204e15598407010f2222a171619a67013",
+      "bytes": 4335,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/native_events.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "61ed8684ffe88d4609a07492ef16ec4ad7737493",
+      "worktree_sha256": "614f4734c5ccc8d2d212523bbc32229ee1bd1a3faf4ab92ccbc9244a942d154e",
+      "bytes": 12554,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/native_events_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "60b04d0899b3d2f452eac255d4209e281489b293",
+      "worktree_sha256": "2278c06aa608c3e30d7de7c1fc8d0d61b9aed13fed4e29863d50f3616518777b",
+      "bytes": 6986,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/progress.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "312216925da78083f5eb6fcfdb953ed292850e47",
+      "worktree_sha256": "4cfb947d12d4295075d226b1f0a6ebbae0d16cb929057d9281defa41c3c5cd93",
+      "bytes": 4226,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/projects.go",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "bcc87728c70e45a4fc50762c14c432c60f5753b774fb88d187fea8f455604648",
+      "bytes": 1311,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/projects_root_test.go",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "8c1b89c7185af23db265920f448044ce47e396ca7904306c079a99a0d6758575",
+      "bytes": 6216,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/result_restart_test.go",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "a9029a3cda33cad49965582ddbd9ddebfef3e3af859757dc1ae99f2d4fc60bd1",
+      "bytes": 3209,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/results.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "d166f79a15e03938a905c47fca612d723fa35887",
+      "worktree_sha256": "7393135ecc37a7be8495730b97165d4c6315a492387fec9ce18bc6b3f1765a9d",
+      "bytes": 19233,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/resume.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "90ba9743d1d3fb3c68cf4653f631499871c6858c",
+      "worktree_sha256": "c59391bff9b37e0fefdb642e3115f6383e079deccb58e60c54dd133fe6540ed7",
+      "bytes": 5405,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/selection_records.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "79dc353abb0847ec289ebb37709d447654ce647f",
+      "worktree_sha256": "7bb7bdd3a3784eeb070a298c55668f9f6b6fcfaf34f63fe16bb24d19bae332df",
+      "bytes": 6430,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/socket_runtime_evidence_test.go",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "7dc3741c56061f3fac289a2a4c3e5f79d30c37b52213297529be19121db1252c",
+      "bytes": 6115,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/turn_order_test.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "095c928c8e607b442d0fe151462d6e4e3dda4255",
+      "worktree_sha256": "295b1bfc8f2c8bb2b5937d8192fc0482ef4ed694cf3b15be325740208a8d8132",
+      "bytes": 2206,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/turn_receipt_test.go",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "01b70accce91bd834cd68e5b832dfeae65f7389a56807c82260f9e2f6633cb5c",
+      "bytes": 7581,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/unrouted_role_test.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "243e150f61b0ec2f1eddbfd79354cce341869900",
+      "worktree_sha256": "a153123aa1c78fdd803ec7ebcb479f0e19ce79084f3e9f4d06b0dede9ace80f4",
+      "bytes": 10328,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/workflow.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "31142a19cf29f197499fc1e12348a8c371da8614",
+      "worktree_sha256": "d6c854547edf4c7e74ead0f68b9e02c6e27cd2d8f447783c4eb536cedf64ce0b",
+      "bytes": 12290,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/workflow_checkpoint.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "08df20202a67b0db8e52d282f5ab879ca1416f34",
+      "worktree_sha256": "36647d51cb46a811811d8d1b739617200d42100bda0039488780c3bc4b4cf781",
+      "bytes": 14506,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/workflow_plan.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "296b9d49a0366fb9c69d3263d32901aef06f2a9e",
+      "worktree_sha256": "d1d3754f7354e55e4e839a52785d38bfb69587c5968354e836431b1d38ebcfb9",
+      "bytes": 15181,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/workflow_recovery.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "5f109183368cdf2c8ed8e5e3849a545b743b0161",
+      "worktree_sha256": "174ca38433c08480b22d3734adae8b614e5904c25600ba31d1a52bac2b5634e6",
+      "bytes": 5114,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/workflow_results.go",
+      "git_status": "M",
+      "area": "A2-session-turn-recovery",
+      "base_blob": "5f4ed1a69a1f0d1f4d6d58ca7b1b5b1cf4cdbaa8",
+      "worktree_sha256": "5b980f842862edb08341aa412f40e15d30be0678886567b0b04053aad3a7511c",
+      "bytes": 3936,
+      "present": true
+    },
+    {
+      "path": "go/internal/gateway/workflow_selection.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "3fc1c26510f98a848db16d6a2eb6fa7cf31066fa",
+      "worktree_sha256": "aaa3cd69c9c31469a9adc7b95ee2d0cba68bf334897572d4a89358b4b8f9861e",
+      "bytes": 6958,
+      "present": true
+    },
+    {
+      "path": "go/internal/launch/launch.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "4476b0486b2163a16e148581d9efbd9146b1f259",
+      "worktree_sha256": "57f1b0c7014f6b0abd1ea8cb978c85cca2ea1d831e50864999db279e35de7334",
+      "bytes": 8248,
+      "present": true
+    },
+    {
+      "path": "go/internal/launch/refuse.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "b6f9fbc52431fac3ae75ed268f62d3ff8b6509cd",
+      "worktree_sha256": "ec1e8bf8bb358883a24b67979aa34876fb4503a9ed0a57e61ed6ca164d3a9344",
+      "bytes": 1537,
+      "present": true
+    },
+    {
+      "path": "go/internal/protocol/bridge/route.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "c5fd3b412f01a7e041d7b3022ae1e6564454b3ad",
+      "worktree_sha256": "fb2996fd876754931351ba9769dcd9d9e010e9819929f5c844ffb4782448510f",
+      "bytes": 13408,
+      "present": true
+    },
+    {
+      "path": "go/internal/protocol/bridge/route_test.go",
+      "git_status": "M",
+      "area": "A1-roles-selection-args",
+      "base_blob": "16dd467239de10fb8ac440dd055608858aec2563",
+      "worktree_sha256": "8924edb121683c9bfda4958edfc9b58206652419760fd16ad53597c6250811e5",
+      "bytes": 15911,
+      "present": true
+    },
+    {
+      "path": "go/internal/upstream/mixed_pdf_evidence_test.go",
+      "git_status": "M",
+      "area": "A3-compaction-usage",
+      "base_blob": "5810a8f70b3ae7703bf381708a7ea87c1c22f884",
+      "worktree_sha256": "637e29b866af845655e3e8565972c2dcb875c77d960aacf3382a22751a7d9837",
+      "bytes": 5778,
+      "present": true
+    },
+    {
+      "path": "verification/socket-half-close.c",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "a22790298b5009bd5b2acdf8305cf3650cce6999dca4e24ae1e2f1bdfc5a7e65",
+      "bytes": 5307,
+      "present": true
+    },
+    {
+      "path": "verification/socket-shutdown-etw.c",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "bb218a7521addfc537cb980025e0a2b325a6b5632bdfb969dfbdc0efc56d25c2",
+      "bytes": 13339,
+      "present": true
+    },
+    {
+      "path": "verification/socket-shutdown-path.c",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "7b433df96925312e3cff37f758e4e6dca4992fa3a6942a4995005de9795cb973",
+      "bytes": 7802,
+      "present": true
+    },
+    {
+      "path": "verification/test-http-transport.mjs",
+      "git_status": "M",
+      "area": "A4-transport-process",
+      "base_blob": "1852c36799861374c8afe1cf5115f947325ec2cf",
+      "worktree_sha256": "304098b8cd9f1a02a68cdfc18c454cfdf584526ca60cfbf776b09f38e2a61a9b",
+      "bytes": 10433,
+      "present": true
+    },
+    {
+      "path": "verification/v031-argv-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "69be4eb008a2b2c2c371247fd3be4ba6b464a48b43a611a0e71b87889a617736",
+      "bytes": 7705,
+      "present": true
+    },
+    {
+      "path": "verification/v031-argv-20260921/mutations.json",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "b70106a029ef52351a24702c0cca7e0fdfbe0eb6398040c74826ae035a297da9",
+      "bytes": 4187,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/KERNEL-ANALYSIS.md",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "9f4710b154e90c456eb9b8142949f2d72b0f1fc8cceda0c35c6667d753b99e7c",
+      "bytes": 8604,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/REPORT.md",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "13d37091a2b148bf938db72a22329bafda8892845b4340db2de9f628a7256dd4",
+      "bytes": 10844,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/UPSTREAM-ISSUE.md",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "190b3d950778c993df018722c396d798d1e2dcca4a79c165ddef69f8d9aa4e5a",
+      "bytes": 8063,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/component-snapshot.txt",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "4f941a390afbea96eb62d8530eaa0943e1c45ecc98c6ca0d32025d664e702dff",
+      "bytes": 946,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/driver-call-sites.txt",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "f2bf7bce8a7715c6284536a74d221079f591c5a80034831beb89922c61efa534",
+      "bytes": 2319,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/evidence.json",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "95baa5c934ffa9c285c9c85786eaedc52fa92b5ce28d19a52fcc54f6f2fb7707",
+      "bytes": 7187,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/kernel-trace.json",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "8fee9e10ce70844ba83f5ca00dce0826afa5bb3858171c57b51b601a1bcdc31a",
+      "bytes": 16936,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/shutdown-path.txt",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "a25ad14115736bf0aaed7938dace71e2cc762aa866ae69ab8809f659c67249c6",
+      "bytes": 10607,
+      "present": true
+    },
+    {
+      "path": "verification/v031-close-20260922/socket-trace.txt",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "2c8568cf22430b95ee994254cc9a10522d214a42d0fb845bb5f182c4b083ca97",
+      "bytes": 4465,
+      "present": true
+    },
+    {
+      "path": "verification/v031-compaction-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "87f943df1b7bd1ca8716604cfed7badd534e0d5d47f9103f2126baa5cf924dc1",
+      "bytes": 8054,
+      "present": true
+    },
+    {
+      "path": "verification/v031-compaction-20260921/live.json",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "2f710db34156ae0a78ef1cbc1fd75f45ac1fa80e9acdafa715f4d3036fa6cc2c",
+      "bytes": 1186,
+      "present": true
+    },
+    {
+      "path": "verification/v031-compaction-20260921/mutations.json",
+      "git_status": "A",
+      "area": "A3-compaction-usage",
+      "base_blob": null,
+      "worktree_sha256": "1cbe770ccc6c4186f84ea84faad74d468998f21003c008de313bd9fbd8f1ccab",
+      "bytes": 5978,
+      "present": true
+    },
+    {
+      "path": "verification/v031-events-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "fb84315f41841d2695489bfab4e5dff802349c1b85825d57e1ccb04bbb62ef20",
+      "bytes": 8038,
+      "present": true
+    },
+    {
+      "path": "verification/v031-events-20260921/mutations.json",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "a8a5b82b3bbf2224a37ccb3931a6fcdb39aa82bf70560ef4ab6ea77365512e60",
+      "bytes": 7195,
+      "present": true
+    },
+    {
+      "path": "verification/v031-integration-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "edc07c36f70642fc33695b28b178fe773e8cffe49807450f36c79063dfc32399",
+      "bytes": 11644,
+      "present": true
+    },
+    {
+      "path": "verification/v031-integration-20260921/compat-v030-probe_test.go",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "3d5e1f824c5d0b9ff2595a04a50af6954f3211e62dd963f64223769cac5f4406",
+      "bytes": 1541,
+      "present": true
+    },
+    {
+      "path": "verification/v031-integration-20260921/evidence.json",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "d6aeaacb7db1446e6f0405cfa72243fb26bcfddf7dd541e5a65c49ed740ea428",
+      "bytes": 3277,
+      "present": true
+    },
+    {
+      "path": "verification/v031-offline-20260922/REPORT.md",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "e8d806b714b3c5b73fb221d195fa57a70be3abbd6e01bfee87dcc54ae60db616",
+      "bytes": 10843,
+      "present": true
+    },
+    {
+      "path": "verification/v031-offline-20260922/evidence.json",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "cdafbe2ed0744e19ce4516e9094159dc9595b337227e2cf364f96397ed9362bb",
+      "bytes": 3200,
+      "present": true
+    },
+    {
+      "path": "verification/v031-projects-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "82b47f66288b6f34c64a6e05f7ae86b2e753093d69d7e4378ee9496a7f767417",
+      "bytes": 6665,
+      "present": true
+    },
+    {
+      "path": "verification/v031-projects-20260921/mutations.json",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "cefb30faea20d4b4e80cf3ce131d4b37dc6ef57a0d447fb75dd74b2417395029",
+      "bytes": 3387,
+      "present": true
+    },
+    {
+      "path": "verification/v031-recheck-20260922/REPORT.md",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "082cf0a7e928869523be1230998c20465fedc93f09e471da95e2eb48746be0de",
+      "bytes": 8766,
+      "present": true
+    },
+    {
+      "path": "verification/v031-recheck-20260922/evidence.json",
+      "git_status": "A",
+      "area": "A5-verification-compat",
+      "base_blob": null,
+      "worktree_sha256": "b75e8c02e1020225ad946fde5046eaa44988bb64ed06186ba43611844f769a47",
+      "bytes": 4220,
+      "present": true
+    },
+    {
+      "path": "verification/v031-roles-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "b9993007c5405a807f00d0bc34d269783a9f093b3be56aa988337d721106ee42",
+      "bytes": 8578,
+      "present": true
+    },
+    {
+      "path": "verification/v031-roles-20260921/mutations.json",
+      "git_status": "A",
+      "area": "A1-roles-selection-args",
+      "base_blob": null,
+      "worktree_sha256": "093fbf454b289f4ce4d6b3aa8c70734a738be4b1537d3242c9bfc61e6cdff3ec",
+      "bytes": 4206,
+      "present": true
+    },
+    {
+      "path": "verification/v031-session-20260921/REPORT.md",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "8af0eca4c69b4ffaa9cbb984397d2704bb60af5786a773fc35963df4661eb233",
+      "bytes": 7909,
+      "present": true
+    },
+    {
+      "path": "verification/v031-session-20260921/mutations.json",
+      "git_status": "A",
+      "area": "A2-session-turn-recovery",
+      "base_blob": null,
+      "worktree_sha256": "2f234498129b91a27f375e9b867664bb5a592d7227f3203475d5d4c71a619d74",
+      "bytes": 7498,
+      "present": true
+    },
+    {
+      "path": "verification/v031-transport-20260922/REPORT.md",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "5ac5b5a50ad7680d8d0720ab5043cdf52e0bb26822b8a8670d04c0fbddc70923",
+      "bytes": 7884,
+      "present": true
+    },
+    {
+      "path": "verification/v031-transport-20260922/evidence.json",
+      "git_status": "A",
+      "area": "A4-transport-process",
+      "base_blob": null,
+      "worktree_sha256": "9011fa1a06e0c383a4eee891c568384edcc249af562d91e2da55a29ef1623f0f",
+      "bytes": 2993,
+      "present": true
+    }
+  ]
+}

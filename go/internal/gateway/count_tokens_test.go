@@ -19,6 +19,28 @@ func countPost(t *testing.T, g *Gateway, model, text string) *http.Response {
 	return do(t, g, rq)
 }
 
+func TestAuxiliaryCompactionTextHasSameGenerationAndCountClassification(t *testing.T) {
+	g, fixture := newContextFixture(t)
+	if code, body := effortRequest(t, g, "gpt-5.6-luna", "high", compactPrompt(), "auxiliary", false); code != 200 {
+		t.Fatalf("generation: %d %s", code, body)
+	}
+	if fixture.counts.Load() != 0 {
+		t.Fatal("ordinary generation added a preflight count")
+	}
+	if code, body := effortRequest(t, g, "gpt-5.6-luna", "high", compactPrompt(), "auxiliary", true); code != 200 {
+		t.Fatalf("optional count: %d %s", code, body)
+	}
+	waitForActive(t, g, 0, "count diagnostic must finish")
+	if fixture.Calls() != 1 || fixture.counts.Load() != 0 {
+		t.Fatalf("measured usage not reused: generation=%d count=%d", fixture.Calls(), fixture.counts.Load())
+	}
+	for _, record := range g.Snapshot().Recent {
+		if record.Path == "/v1/messages/count_tokens" && (record.RequestClass != "auxiliary" || record.CountMethod != "backend-usage" || record.CountedInputTokens == nil || *record.CountedInputTokens != fixture.tokens) {
+			t.Fatal("count class or actual usage lost")
+		}
+	}
+}
+
 func TestCountTokensSupportsValidatedTextWithoutBackendRequests(t *testing.T) {
 	f := &upstream.Fixture{}
 	g := startWith(t, f)
@@ -140,6 +162,21 @@ func TestBackendCountFailureDoesNotPoisonGeneration(t *testing.T) {
 	bodyText(t, response)
 	if response.StatusCode != 200 || f.Calls() != 1 || f.counts != 1 {
 		t.Fatal("failed counting retried or contaminated generation")
+	}
+}
+
+func TestCountBudgetRefusalsKeepTheirCategory(t *testing.T) {
+	for _, failure := range []error{upstream.ErrBudgetExhausted, upstream.ErrRouteNotAuthorised} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			f := &countingFixture{countErr: failure}
+			g := startWith(t, f)
+			response := countPost(t, g, "gpt-5.6-luna", "public count")
+			body := bodyText(t, response)
+			category := "COUNT_TOKENS_FAILED_" + failure.Error()
+			if response.StatusCode != 400 || !strings.Contains(body, category) || f.counts != 1 || f.Calls() != 0 || g.Diagnose().Totals.Failures[category] != 1 {
+				t.Fatalf("status=%d counts=%d generations=%d category=%s", response.StatusCode, f.counts, f.Calls(), body)
+			}
+		})
 	}
 }
 

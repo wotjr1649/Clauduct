@@ -41,6 +41,39 @@ func journalGateway(t *testing.T, projects string) *Gateway {
 	return g
 }
 
+func TestRepeatedSessionRegistrationPreservesRecoveryAndRejectsPathChanges(t *testing.T) {
+	projects := t.TempDir()
+	g := journalGateway(t, projects)
+	bodyText(t, contextRequest(t, g, "gpt-5.6-sol", "first"))
+	state := g.contexts.states[contextKey("public-session", "")]
+	state.phase = "failed"
+	if err := g.saveContext(state); err != nil {
+		t.Fatal(err)
+	}
+	for _, transcript := range []string{
+		filepath.Join(projects, "public-project", "public-session.jsonl"),
+		filepath.Join(projects, "..", "public-session.jsonl"),
+		filepath.Join(projects, "different", "public-session.jsonl"),
+	} {
+		raw, _ := json.Marshal(map[string]string{"event": "SessionStart", "sessionId": "public-session", "transcriptPath": transcript})
+		rq := messages(strings.NewReader(string(raw)))
+		rq.path = "/clauduct/context"
+		response := do(t, g, rq)
+		bodyText(t, response)
+		want := 400
+		if filepath.Dir(transcript) == filepath.Join(projects, "public-project") {
+			want = 204
+		}
+		if response.StatusCode != want || g.contexts.states[contextKey("public-session", "")] != state || state.phase != "failed" {
+			t.Fatal("registration changed path or reset context")
+		}
+	}
+	response := contextRequest(t, g, "gpt-5.6-sol", "continue")
+	if body := bodyText(t, response); response.StatusCode != 400 || !strings.Contains(body, "CONTEXT_COMPACTION_FAILED") || g.transport.(*contextFixture).Calls() != 1 {
+		t.Fatal("registration bypassed failed compaction")
+	}
+}
+
 func TestContextJournalRestoresOldModelAndPendingSwitch(t *testing.T) {
 	projects := t.TempDir()
 	g := journalGateway(t, projects)
@@ -126,5 +159,55 @@ func TestContextJournalContainsPathsAndEvictsOnlyDurableIdleState(t *testing.T) 
 	bodyText(t, response)
 	if response.StatusCode != 200 || len(g.contexts.states) != maxAgents {
 		t.Fatal("durable idle state not reclaimed")
+	}
+}
+
+func TestCompactionAdmissionWriteFailureRecoversWithoutRestart(t *testing.T) {
+	projects := t.TempDir()
+	g := journalGateway(t, projects)
+	if code, _ := effortRequest(t, g, "gpt-5.6-luna", "high", "before", "main", false); code != 200 {
+		t.Fatal("initial generation failed")
+	}
+	f := g.transport.(*contextFixture)
+	state := g.contexts.states[contextKey("public-session", "")]
+	route, usage := state.route, *state.usage
+	journal := filepath.Join(projects, state.journal)
+	// An actual rename failure, confined to this test's journal destination.
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(journal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	ticket := triggeredCompactEvent(t, g, "manual")
+	if code, body := effortRequest(t, g, route.Model, route.Effort, compactPrompt()+ticket, "compaction", false); code != 400 || !strings.Contains(body, "CONTEXT_JOURNAL_FAILED") {
+		t.Fatal("failed checkpoint did not refuse compaction", code, body)
+	}
+	if state.busy || state.phase != "failed" || !state.persistenceError || state.route != route || state.usage == nil || *state.usage != usage || f.Calls() != 1 {
+		t.Fatalf("write failure left unrecoverable or unverified state: phase=%s busy=%v calls=%d", state.phase, state.busy, f.Calls())
+	}
+	if code, body := effortRequest(t, g, route.Model, route.Effort, "still blocked", "main", false); code != 400 || !strings.Contains(body, "CONTEXT_JOURNAL_FAILED") {
+		t.Fatal("persistent journal failure bypassed")
+	}
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	if code, body := effortRequest(t, g, route.Model, route.Effort, "after repair", "main", false); code != 400 || !strings.Contains(body, "CONTEXT_COMPACTION_FAILED") {
+		t.Fatal("ordinary generation bypassed failed compaction", code, body)
+	}
+	for _, receipt := range []string{ticket, "", triggeredCompactEvent(t, g, "auto")} {
+		if code, body := effortRequest(t, g, route.Model, route.Effort, compactPrompt()+receipt, "compaction", false); code != 400 || !strings.Contains(body, "CONTEXT_COMPACTION_UNVERIFIED") || f.Calls() != 1 {
+			t.Fatal("recovery did not require a fresh manual receipt", code, body)
+		}
+	}
+	manual := triggeredCompactEvent(t, g, "manual")
+	if code, body := effortRequest(t, g, route.Model, route.Effort, compactPrompt()+manual, "compaction", false); code != 200 {
+		t.Fatal("manual recovery failed", code, body)
+	}
+	if state.phase != "recount" || state.busy || state.persistenceError || state.route != route || state.usage != nil || f.Calls() != 2 {
+		t.Fatal("recovered compaction lost route, usage reset or call accounting")
+	}
+	if code, body := effortRequest(t, g, route.Model, route.Effort, "summary continuation", "main", false); code != 200 || f.Calls() != 3 || f.counts.Load() != 0 {
+		t.Fatal("same-process continuation failed or used preflight", code, body)
 	}
 }

@@ -1,0 +1,304 @@
+{
+  "status": "PASS_SCOPED_PRODUCT_ACCEPTANCE",
+  "date": "2026-09-22",
+  "branch": "fix/v031",
+  "base": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "overallReleaseStatus": "CHANGES_REQUIRED_NOT_SHIPPED",
+  "environment": {
+    "os": "Windows",
+    "go": "1.27.1",
+    "native": "2.1.278",
+    "protection": "On per last user confirmation; settings unchanged; UI not independently sampled"
+  },
+  "changes": {
+    "files": 11,
+    "newGoFiles": 2,
+    "responseCloseGraceMs": 500,
+    "responseDrainMaxBytes": 33554432,
+    "refusalBodyDeadlineMs": 1000,
+    "refusalBodyMaxDrainBytes": 33554433,
+    "nativeExecutionLimit": 16384,
+    "nativeRestart": false,
+    "automaticGatewayReplay": false
+  },
+  "native": {
+    "status": "PASS",
+    "backend": "public synthetic controlled input",
+    "pid": 2168,
+    "processStarts": 1,
+    "exit": 0,
+    "cleanup": true,
+    "phases": [
+      {
+        "phase": 1,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 1078,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 2,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 149,
+        "isError": true,
+        "backendCalls": 0
+      },
+      {
+        "phase": 3,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 183,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 4,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 169,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 5,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 171,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 6,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 143,
+        "isError": true,
+        "backendCalls": 1
+      },
+      {
+        "phase": 7,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 164,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 8,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 715,
+        "isError": true,
+        "backendCalls": 1
+      },
+      {
+        "phase": 9,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 155,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 10,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 1060,
+        "isError": true,
+        "backendCalls": 1
+      },
+      {
+        "phase": 11,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 142,
+        "isError": false,
+        "backendCalls": 1
+      },
+      {
+        "phase": 12,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 720,
+        "isError": true,
+        "backendCalls": 1
+      },
+      {
+        "phase": 13,
+        "pid": 2168,
+        "starts": 1,
+        "elapsedMs": 448,
+        "isError": false,
+        "backendCalls": 1
+      }
+    ],
+    "mainHTTPRequests": 16,
+    "backendCalls": 12,
+    "largeErrorBodyBytes": 351573,
+    "largeErrorAndFollowUpSameConnection": true,
+    "automaticRetriesRefused": [
+      8,
+      10,
+      12
+    ],
+    "explicitReplayCategoryVerified": true,
+    "trace": "native-category-verified-trace.jsonl",
+    "log": "native-category-verified.txt"
+  },
+  "tui": {
+    "status": "PASS",
+    "backend": "actual subscription backend",
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "pid": 19376,
+    "processStarts": 1,
+    "elapsedSeconds": 80.08,
+    "liveAttempts": 5,
+    "inferences": 5,
+    "auxiliaryRefusalsBeforeNetwork": 4,
+    "generationCompleted": 3,
+    "compactionCompleted": 1,
+    "generationCancelled": 1,
+    "cancelledTextDeltaBytes": 517,
+    "transcriptFactsAndOrderVerified": true,
+    "exit": 0,
+    "cleanup": true,
+    "tools": "disabled for this validation",
+    "log": "tui-accepted.txt"
+  },
+  "checks": {
+    "goTest": {
+      "status": "PASS",
+      "packages": 18,
+      "appSeconds": 304.878,
+      "gatewaySeconds": 48.7,
+      "log": "go-test-accepted.txt"
+    },
+    "race": {
+      "status": "PASS",
+      "packages": 18,
+      "appSeconds": 325.294,
+      "gatewaySeconds": 51.163,
+      "log": "go-test-race.txt"
+    },
+    "httpSSE": {
+      "status": "PASS",
+      "requests": 800,
+      "realLoopback": true
+    },
+    "static": [
+      {
+        "exit": 0,
+        "check": "gofmt",
+        "files": []
+      },
+      {
+        "check": "go vet",
+        "exit": 0
+      },
+      {
+        "check": "go build",
+        "exit": 0
+      },
+      {
+        "check": "runtime_evidence vet",
+        "exit": 0
+      },
+      {
+        "check": "policy_evidence vet",
+        "exit": 0
+      }
+    ],
+    "docCitations": {
+      "suite": "doc-citations",
+      "selfTests": 12,
+      "linkTests": 18,
+      "documents": 128,
+      "citations": 89,
+      "filesResolved": 31,
+      "links": 999,
+      "linksChecked": 725,
+      "failures": 0,
+      "externalRequests": 0,
+      "credentialReads": 0
+    },
+    "artifact": {
+      "scopedDiffCheck": 0,
+      "scopedFiles": 11,
+      "patchBytes": 38109,
+      "diffWarnings": 2
+    },
+    "rollback": {
+      "reversePatchCheck": 0
+    }
+  },
+  "mutations": [
+    {
+      "removed": "bounded refusal-body drain",
+      "result": "FAIL_AS_EXPECTED",
+      "log": "mutation-no-refusal-drain.txt"
+    },
+    {
+      "removed": "native replay admission",
+      "result": "FAIL_AS_EXPECTED",
+      "log": "mutation-final-no-replay-gate.txt"
+    },
+    {
+      "removed": "shutdown interrupts pending drain",
+      "result": "FAIL_AS_EXPECTED",
+      "log": "mutation-no-shutdown-interrupt.txt"
+    },
+    {
+      "removed": "native step distinction",
+      "result": "FAIL_AS_EXPECTED",
+      "log": "mutation-no-native-step.txt"
+    }
+  ],
+  "liveHistory": [
+    {
+      "pid": 15784,
+      "status": "FAIL_DRIVER_DEADLINE",
+      "seconds": 301.5,
+      "calls": 3,
+      "cleanup": true
+    },
+    {
+      "pid": 3044,
+      "status": "FAIL_DRIVER_DEADLINE",
+      "seconds": 302.07,
+      "calls": 5,
+      "cleanup": true
+    },
+    {
+      "pid": 22992,
+      "status": "PASS",
+      "seconds": 74.82,
+      "calls": 5,
+      "cleanup": true
+    },
+    {
+      "pid": 19376,
+      "status": "PASS_FINAL",
+      "seconds": 80.08,
+      "calls": 5,
+      "cleanup": true
+    }
+  ],
+  "notRun": [
+    "standalone Node 31 / .NET 35 / raw TCP 400: prior environmental FAIL/HOLD retained",
+    "actual-backend tool side effects: this TUI used --tools empty"
+  ],
+  "limits": [
+    "No universal claim for every filter/version or unbounded transport delay",
+    "Response loss is reported; unknown execution is not automatically replayed",
+    "Full gateway process restart is not implemented",
+    "Other v0.3.1 review findings remain outside this batch"
+  ],
+  "manifests": {
+    "before": "before.json",
+    "after": "after.json",
+    "patch": "task-changes.patch"
+  }
+}

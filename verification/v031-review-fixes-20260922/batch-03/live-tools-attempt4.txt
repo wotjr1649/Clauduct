@@ -1,0 +1,46 @@
+=== RUN   TestNativeLiveToolsWorkflowAndLossSameProcess
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=17 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:120: phase=1 pid=27244 starts=1 error=false result_bytes=17 replay_blocked=false parent_received=0
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=18 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=15 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=94 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:120: phase=2 pid=27244 starts=1 error=false result_bytes=55 replay_blocked=false parent_received=1
+    zz_live_tools_probe_test.go:133: SDK text is not child completion proof; waiting for both reports in the gateway input
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=false
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=55 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:120: phase=2 pid=27244 starts=1 error=false result_bytes=55 replay_blocked=false parent_received=2
+    zz_live_tools_probe_test.go:33: backend_phase=3 contains_once_task=true
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=8 contains_once_task=true
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=16 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:120: phase=3 pid=27244 starts=1 error=true result_bytes=221 replay_blocked=true parent_received=2
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=true
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=0 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:33: backend_phase=1 contains_once_task=true
+    integration_runtime_evidence_test.go:147: backend text_stream_started
+    integration_runtime_evidence_test.go:112: backend text_delta_bytes=72 completed_text_bytes=0 parent_marker=false
+    zz_live_tools_probe_test.go:120: phase=4 pid=27244 starts=1 error=false result_bytes=72 replay_blocked=false parent_received=2
+    zz_live_tools_probe_test.go:205: tool execution evidence: uses=map[Agent:2 Read:2 Workflow:1 Write:2] successful=map[Agent:1 Read:2 Workflow:1 Write:2]
+    integration_runtime_evidence_test.go:186: live attempts=13 inferences=13 refused=0
+--- FAIL: TestNativeLiveToolsWorkflowAndLossSameProcess (40.96s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	41.237s
+FAIL

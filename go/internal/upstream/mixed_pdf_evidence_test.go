@@ -26,6 +26,14 @@ import (
 // Separate public inputs discriminate raw-file processing from image processing.
 // One count and one generation per case. No retries to erase a mismatch.
 func TestPublicMixedPDFCount(t *testing.T) {
+	publicMixedPDFCount(t, "gpt-6-astra")
+}
+
+func TestPublicMixedPDFCountLuna(t *testing.T) {
+	publicMixedPDFCount(t, "gpt-5.6-luna")
+}
+
+func publicMixedPDFCount(t *testing.T, model string) {
 	if os.Getenv("CLAUDUCT_MIXED_PDF_EVIDENCE") != "1" {
 		t.Skip("explicit live switch absent")
 	}
@@ -91,10 +99,10 @@ func TestPublicMixedPDFCount(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ledger := NewLedger(Budget{Model: "gpt-6-astra", Effort: "low", Limit: 2})
+			ledger := NewLedger(Budget{Model: model, Effort: "low", Limit: 2})
 			d := NewDirect(&auth.Provider{}, ledger, Fixed(version))
 			defer d.Close()
-			r, e := bridge.BuildRequest(&anthropic.Request{Model: "gpt-6-astra", Effort: "low", Messages: []anthropic.Message{{Role: "user", Blocks: []anthropic.Block{{Type: "text", Text: "Inspect the public report. Reply with only OK."}}}}})
+			r, e := bridge.BuildRequest(&anthropic.Request{Model: model, Effort: "low", Messages: []anthropic.Message{{Role: "user", Blocks: []anthropic.Block{{Type: "text", Text: "Inspect the public report. Reply with only OK."}}}}})
 			if e != nil {
 				t.Fatal("build")
 			}

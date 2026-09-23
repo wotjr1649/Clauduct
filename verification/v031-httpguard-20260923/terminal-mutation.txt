@@ -1,0 +1,19 @@
+--- FAIL: TestNativeTerminalReceiptIsBoundToExactRequestWithoutDependingOnSocket (0.40s)
+    --- FAIL: TestNativeTerminalReceiptIsBoundToExactRequestWithoutDependingOnSocket/error (0.14s)
+        --- FAIL: TestNativeTerminalReceiptIsBoundToExactRequestWithoutDependingOnSocket/error/none (0.01s)
+            native_cancellation_test.go:68: receipt cancelled the wrong scope or did not cancel the matching turn
+    --- FAIL: TestNativeTerminalReceiptIsBoundToExactRequestWithoutDependingOnSocket/refusal (0.14s)
+        --- FAIL: TestNativeTerminalReceiptIsBoundToExactRequestWithoutDependingOnSocket/refusal/none (0.03s)
+            native_cancellation_test.go:68: receipt cancelled the wrong scope or did not cancel the matching turn
+--- FAIL: TestNativeTerminalReceiptStopsUpstreamWhileHTTPConnectionRemainsOpen (8.08s)
+    --- FAIL: TestNativeTerminalReceiptStopsUpstreamWhileHTTPConnectionRemainsOpen/error/inference (2.01s)
+        native_cancellation_test.go:131: upstream waited for filtered socket cancellation
+    --- FAIL: TestNativeTerminalReceiptStopsUpstreamWhileHTTPConnectionRemainsOpen/error/search (2.01s)
+        native_cancellation_test.go:131: upstream waited for filtered socket cancellation
+    --- FAIL: TestNativeTerminalReceiptStopsUpstreamWhileHTTPConnectionRemainsOpen/refusal/inference (2.01s)
+        native_cancellation_test.go:131: upstream waited for filtered socket cancellation
+    --- FAIL: TestNativeTerminalReceiptStopsUpstreamWhileHTTPConnectionRemainsOpen/refusal/search (2.01s)
+        native_cancellation_test.go:131: upstream waited for filtered socket cancellation
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/gateway	8.839s
+FAIL

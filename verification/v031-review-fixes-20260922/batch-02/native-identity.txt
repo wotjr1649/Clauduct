@@ -1,0 +1,16 @@
+=== RUN   TestNativeTransportSameProcessProbe
+    zz_transport_probe_test.go:189: phase=1 pid=24312 starts=1 elapsed_ms=1083 is_error=false subtype=success marker=true capability_error=false backend_calls=1
+    zz_transport_probe_test.go:189: phase=2 pid=24312 starts=1 elapsed_ms=145 is_error=true subtype=success marker=false capability_error=true backend_calls=0
+    zz_transport_probe_test.go:189: phase=3 pid=24312 starts=1 elapsed_ms=481 is_error=false subtype=success marker=true capability_error=false backend_calls=1
+    zz_transport_probe_test.go:189: phase=4 pid=24312 starts=1 elapsed_ms=141 is_error=false subtype=success marker=true capability_error=false backend_calls=1
+    zz_transport_probe_test.go:189: phase=5 pid=24312 starts=1 elapsed_ms=450 is_error=false subtype=success marker=true capability_error=false backend_calls=1
+    zz_transport_probe_test.go:189: phase=6 pid=24312 starts=1 elapsed_ms=130 is_error=true subtype=error_during_execution marker=false capability_error=false backend_calls=1
+    zz_transport_probe_test.go:189: phase=7 pid=24312 starts=1 elapsed_ms=459 is_error=false subtype=success marker=true capability_error=false backend_calls=1
+    zz_transport_probe_test.go:189: phase=8 pid=24312 starts=1 elapsed_ms=964 is_error=false subtype=success marker=true capability_error=false backend_calls=2
+    zz_transport_probe_test.go:200: ambiguous response loss caused duplicate backend execution
+    zz_transport_probe_test.go:189: phase=9 pid=24312 starts=1 elapsed_ms=126 is_error=false subtype=success marker=true capability_error=false backend_calls=1
+    zz_transport_probe_test.go:216: same_pid=24312 starts=1 native_exit=0 cleanup=true
+--- FAIL: TestNativeTransportSameProcessProbe (5.17s)
+FAIL
+FAIL	github.com/wotjr1649/Clauduct/go/internal/app	5.313s
+FAIL

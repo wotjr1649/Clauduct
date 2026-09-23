@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
+	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
@@ -43,6 +44,12 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, bad)
 		return
 	}
+	// Capability, not the version label, decides admission. Check before
+	// selection or result recovery so an old client sees the actual cause.
+	if g.contexts != nil && r.Header.Get("X-Claude-Code-Request-Class") == "" {
+		g.refuseCategory(w, http.StatusBadRequest, "CONTEXT_REQUEST_CLASS_UNVERIFIED")
+		return
+	}
 	g.ReconcileNativeCancellations()
 
 	// Admission happens before the body is read, so a request that cannot be served does
@@ -65,19 +72,30 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// deadline is both the cancellation mechanism and the ceiling on how long a client
 	// may take to finish a body it has already started.
 	control := http.NewResponseController(w)
-	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-	stopReadCancellation := watchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
-	defer stopReadCancellation()
-
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+	body, err := func() ([]byte, error) {
+		readCtx, finish := g.bindNativeCancellation(ctx, r, recordOf(w), true)
+		defer finish()
+		_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
+		stop := watchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
+		defer stop()
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+		if readCtx.Err() != nil {
+			return nil, readCtx.Err()
+		}
+		return body, err
+	}()
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooLarge):
 			g.refuse(w, refuseTooLarge)
-		case ctx.Err() != nil:
-			// The client went away. Nothing will read this, but the status is recorded
-			// so a cancelled request is counted as cancelled rather than as a success.
+		case ctx.Err() != nil || errors.Is(err, context.Canceled):
+			// The read deadline also expires net/http's background reader. A
+			// filtered socket can still deliver this refusal, but must not be
+			// pooled with that cancelled connection context for the next turn.
+			w.Header().Set("Connection", "close")
+			// Record abandoned input as cancellation, including a replacement
+			// connection whose predecessor the filter kept open.
 			g.refuse(w, refuseCancelled)
 		default:
 			g.refuse(w, refuseHeader)
@@ -109,6 +127,13 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	entry.checked("input")
 	entry.requestClass(r.Header.Get("X-Claude-Code-Request-Class"))
 	entry.at(stageSelection)
+	execution, category := g.claimNativeExecution(r, body, request)
+	if category != "" {
+		g.refuseCategory(w, http.StatusBadRequest, category)
+		return
+	}
+	entry.execution = execution
+	defer execution.release()
 
 	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
 	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
@@ -127,6 +152,12 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
 		return
 	}
+	if execution != nil && entry.nativeTurn != nil && execution.key.turn != entry.nativeTurn.Turn {
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_TURN_UNVERIFIED")
+		return
+	}
+	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)
+	defer finishCancellation()
 
 	entry.at(stagePrepare)
 	if g.delegations != nil && !g.delegations.restrictWorkflowTools(request, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), entry) {
@@ -155,8 +186,8 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		// Read and validate the turn receipt before beginResult, which is destructive: a
 		// refusal after it leaves the request unrun and the evidence it needed to recover
 		// already cleared.
-		receipt, present, ok := g.readActiveTurn(scope.session, agentID)
-		if !ok {
+		receipt := entry.nativeTurn
+		if receipt == nil && g.nativeEvents.directory != "" {
 			g.refuseCategory(w, 400, "NATIVE_TURN_UNVERIFIED")
 			return
 		}
@@ -164,7 +195,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 			g.refuseCategory(w, 400, "AGENT_RESULT_CAPACITY")
 			return
 		}
-		if present && !g.applyNativeTurn(agentID, receipt) {
+		if receipt != nil && !g.applyNativeTurn(agentID, *receipt) {
 			g.refuseCategory(w, 400, "NATIVE_TURN_UNVERIFIED")
 			return
 		}
@@ -174,8 +205,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	resultsDelivered := false
 	defer func() { finishResults(resultsDelivered) }()
-	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry)
-	defer finishCancellation()
 	override, finishContext, contextError := g.beginContext(r, request, entry, override)
 	defer finishContext()
 	if contextError != "" {
@@ -205,7 +234,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if entry.snapshot().Kind == "compaction" {
-		backendRequest.Input = append([]bridge.InputEntry{{Role: "developer", Content: bridge.CompactEfficiencyInstruction}}, backendRequest.Input...)
+		addCompactGuidance(backendRequest)
 	}
 	if err := g.prepareDocuments(ctx, backendRequest); err != nil {
 		g.refuseCategory(w, 400, err.Error())
@@ -231,6 +260,10 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.at(stageUpstream)
 	g.priorCount(encoded, entry)
+	if err := execution.dispatch(ctx); err != nil {
+		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
+		return
+	}
 	response, err := g.transport.Execute(ctx, upstream.Call{
 		Body:      encoded,
 		Requested: request.Model,
@@ -238,6 +271,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Effort:    backendRequest.Effort.Effort,
 		Source:    backendRequest.Source,
 	})
+	execution.rejectedBeforeDispatch(err)
 	if err != nil {
 		if categoryFor(err) == "CONTEXT_LENGTH_EXCEEDED" && g.recoverContextOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), backendRequest.Model) {
 			return
@@ -269,34 +303,61 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	releaseAgent := func() {}
 	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
 	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
+	entry.nativeTurn = nil
+	entry.nativeResult, entry.nativeResultTurn = nil, ""
+	// A tool-less root title/classifier request is independent of the conversation
+	// turn being published. It neither inherits a child selection nor owns an abort
+	// receipt. Child, tool and conversation requests still require the same proof.
+	if independentAuxiliary(r, request) {
+		return nil, releaseAgent, nil
+	}
+	// Capture the predecessor before reading the receipt. A later refusal may
+	// replace only this unchanged result, never a turn admitted in the meantime.
+	if g.delegations != nil {
+		results := &g.delegations.results
+		results.mu.Lock()
+		entry.nativeResult = results.entries[r.Header.Get("X-Claude-Code-Agent-Id")]
+		if entry.nativeResult != nil {
+			entry.nativeResultTurn = entry.nativeResult.NativeTurn
+		}
+		results.mu.Unlock()
+	}
+	active, present, turnErr := g.readCurrentNativeTurn(r.Header.Get("X-Claude-Code-Agent-Id"))
+	if turnErr != nil {
+		return nil, releaseAgent, errDelegationUnverified
+	}
+	if present {
+		if !validActiveReceipt(active, scope.session, r.Header.Get("X-Claude-Code-Agent-Id")) {
+			return nil, releaseAgent, errDelegationUnverified
+		}
+		entry.nativeTurn = &active
+		scope.nativeTurn = &active
+	}
 	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
 		role, release, registered := g.agents.begin(agent)
 		releaseAgent = release
 		entry.agent(agent, scope.parent, role, false)
 		if g.delegations != nil {
 			binding := g.agents.bindingOf(agent)
-			if scope.workflow || binding.Role == "workflow-subagent" {
-				var active nativeTurnReceipt
-				found, err := g.readNativeReceipt("active-"+agent+".json", &active)
-				if err != nil || found && !validActiveReceipt(active, scope.session, agent) {
-					return nil, releaseAgent, errDelegationUnverified
-				}
-				if found {
-					scope.nativeTurn = &active
-				}
-			}
 			resolvedScope, continued := g.continuationScope(scope, agent, binding)
 			route, found, err := g.delegations.route(resolvedScope, agent, binding, r.Context())
 			if err != nil {
 				return nil, releaseAgent, errDelegationUnverified
 			}
 			if found {
+				// Preserve the proven origin even if this request contradicts the
+				// selection or fails later admission. This does not mark any check
+				// successful or authorize execution.
+				entry.route(request.Model, route.Model, route.Effort, route.Source)
 				observed, err := bridge.SelectRoute(request.Model, "")
 				if err != nil || observed.Model != route.Model && !g.delegations.resumeModel(scope, agent, observed.Model) {
 					return nil, releaseAgent, errDelegationUnverified
 				}
-				if strings.HasPrefix(route.Source, "workflow-") && (request.Effort != route.Effort || route.Source == "workflow-selection" && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
+				if (strings.HasPrefix(route.Source, "workflow-") || route.Source == "native-selection") && (request.Effort != route.Effort || (route.Source == "workflow-selection" || route.Source == "native-selection") && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
 					return nil, releaseAgent, errDelegationUnverified
+				}
+				if strings.HasPrefix(route.Source, "workflow-") {
+					entry.checked("workflow_selection")
 				}
 				if continued {
 					route.Source = "verified-continuation"
@@ -305,9 +366,6 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				override = []bridge.Route{route}
 				entry.agent(agent, scope.parent, role, true)
 				entry.checked("selection")
-				if strings.HasPrefix(route.Source, "workflow-") {
-					entry.checked("workflow_selection")
-				}
 				if continued || route.Source == "verified-resume" {
 					entry.checked("continuation")
 				}
@@ -319,11 +377,10 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			// and these two counters could never move: the one diagnostic that says which
 			// kind of unverified child produced an AGENT_SELECTION_UNVERIFIED was
 			// structurally always zero. What happens to the request is unchanged.
-			_, routed := bridge.RoleRoute(role)
 			switch {
 			case !registered:
 				g.unregisteredAgents.Add(1)
-			case !routed && !bridge.InheritsParent(role):
+			case !bridge.KnownRole(role):
 				g.unroutedRoles.Add(1)
 			}
 			if g.contexts != nil {
@@ -417,7 +474,12 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 	entry.checked("route")
 	entry.checked("search_available")
 	entry.at(stageUpstream)
+	if err := entry.execution.dispatch(ctx); err != nil {
+		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
+		return
+	}
 	raw, err := searcher.Search(ctx, body)
+	entry.execution.rejectedBeforeDispatch(err)
 	if err != nil {
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 		return
@@ -531,16 +593,7 @@ func (c *chunkedWriter) Write(p []byte) (int, error) {
 // a done channel alone leaves a race between the check and expire: the handler
 // could return its ResponseWriter to net/http before the update finishes.
 func watchReadCancellation(ctx context.Context, expire func()) func() {
-	done := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() {
-		defer close(done)
-		expire()
-	})
-	return func() {
-		if !stop() {
-			<-done
-		}
-	}
+	return httpguard.WatchReadCancellation(ctx, expire)
 }
 
 // relay reads the backend stream and writes client frames as they are produced.
@@ -558,14 +611,32 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 
 	parser := stream.NewParser(stream.DefaultLimits())
 	parser.IsTerminal = codex.Terminal
+	var lastReadErr error
+	defer func() {
+		// Parsing or translation can stop before EOF, including on a terminal
+		// empty reply. Keep the observed read state on every exit, not just EOF.
+		events, bytes := parser.Stats()
+		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.Completed(), events, bytes)
+	}()
 	// The translator is told which tools are callable now, so a call naming a withdrawn
 	// tool is refused rather than passed to a client that would try to run it.
 	translator := bridge.NewTranslatorFor(request, effective)
-	if len(scopes) > 0 && scopes[0].parentWait != nil {
-		translator.Builder().WaitForChildren()
-	}
-	if entry := recordOf(w); entry != nil && entry.snapshot().RequestClass == "workflow" {
-		translator.Builder().DeferTextUntilComplete()
+	if entry := recordOf(w); entry != nil {
+		record := entry.snapshot()
+		if len(scopes) > 0 && scopes[0].parentWait != nil {
+			// SDK keeps real answers and emits only a verified empty-reply status;
+			// its native scheduler owns background task completion.
+			if len(record.ParentReadiness.Pending) > 0 && record.ParentReadiness.ControlMode == "native_tui" {
+				translator.Builder().WaitForChildren()
+			} else {
+				translator.Builder().ConsumeEmptyNotification()
+			}
+		}
+		// Native SDK/print returns the last assistant block. Keep opaque reasoning
+		// before the final text there, as for Workflow; TUI text still streams.
+		if record.RequestClass == "workflow" || record.ParentReadiness != nil && record.ParentReadiness.ControlMode == "sdk" {
+			translator.Builder().DeferTextUntilComplete()
+		}
 	}
 	var prepared []string
 	relayCompleted := false
@@ -699,6 +770,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	buffer := make([]byte, readChunk)
 	for {
 		n, readErr := response.Body.Read(buffer)
+		lastReadErr = readErr
 		if n > 0 {
 			events, err := parser.Push(buffer[:n])
 			if err != nil {
@@ -742,8 +814,6 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			}
 		}
 		if readErr != nil {
-			events, bytes := parser.Stats()
-			recordOf(w).streamEnd(readErr, ctx.Err(), parser.Completed(), events, bytes)
 			// A transport read interrupted by the client's cancelled context is
 			// cancellation evidence. An upstream reset/deadline alone is not.
 			if errors.Is(ctx.Err(), context.Canceled) {
@@ -816,6 +886,10 @@ func categoryFor(err error) string {
 		return "WORKFLOW_RECOVERY_UNVERIFIED"
 	case errors.Is(err, upstream.ErrNoTransport):
 		return "NO_UPSTREAM_TRANSPORT"
+	case errors.Is(err, upstream.ErrBudgetExhausted):
+		return "REQUEST_BUDGET"
+	case errors.Is(err, upstream.ErrRouteNotAuthorised):
+		return "ROUTE_NOT_AUTHORISED"
 	case errors.Is(err, codex.ErrResponseFailed):
 		return "UPSTREAM_RESPONSE_FAILED"
 	case errors.Is(err, codex.ErrResponseIncomplt):
@@ -887,16 +961,16 @@ func categoryFor(err error) string {
 // reported in the class that stops. The category says what actually happened; a reader who
 // needs the cause reads that rather than the number.
 //
-// A genuine upstream failure stays 502. Retrying one can succeed, and whether the client's
-// retries and this bridge's should both exist is a question the real transport has to
-// settle rather than one to pre-empt here.
+// Upstream 502/429/503 retain their failure class. These are not permission to
+// execute twice: the native ledger refuses replay after dispatch, even if the
+// client would otherwise back off and retry. A new explicit turn is separate.
 func statusForUpstream(err error) int {
 	switch {
 	case errors.Is(err, bridge.ErrUnsupportedRoute):
 		return http.StatusBadRequest
 	case errors.Is(err, errDelegationUnverified), errors.Is(err, errWorkflowRecoveryUnverified), errors.Is(err, errParentWaitUnverified):
 		return http.StatusBadRequest
-	case errors.Is(err, upstream.ErrNoTransport):
+	case errors.Is(err, upstream.ErrNoTransport), errors.Is(err, upstream.ErrBudgetExhausted), errors.Is(err, upstream.ErrRouteNotAuthorised):
 		return http.StatusBadRequest
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return refuseCancelled.status

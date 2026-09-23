@@ -1,0 +1,70 @@
+{
+  "date": "2026-09-22",
+  "scope": [
+    "A2-01",
+    "A2-02",
+    "A3-02",
+    "INT-01"
+  ],
+  "status": "PASS_LOCAL_BATCH",
+  "releaseStatus": "CHANGES_REQUIRED",
+  "reviewSession": "a0616359-5dc7-45d4-9eb3-fd1b761c4af7",
+  "base": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "changedFiles": 11,
+  "unchangedReviewFiles": 108,
+  "unrelatedChanges": 0,
+  "sourceHashDrift": 0,
+  "formatVetBuild": "PASS",
+  "taggedVet": [
+    "runtime_evidence",
+    "policy_evidence"
+  ],
+  "checks": {
+    "normal": {
+      "status": "PASS",
+      "exitCode": 0,
+      "packages": 18,
+      "appSeconds": 286.682,
+      "gatewaySeconds": 40.533,
+      "log": "go-test-all.txt"
+    },
+    "race": {
+      "status": "PASS",
+      "exitCode": 0,
+      "packages": 18,
+      "appSeconds": 293.954,
+      "gatewaySeconds": 54.476,
+      "log": "go-test-race-all.txt"
+    }
+  },
+  "mutations": {
+    "detected": 3,
+    "expectedExit": 1,
+    "details": "mutations.json"
+  },
+  "diagnosticFaultInjection": {
+    "status": "PASS_EXPECTED_FAILURE_RETAINED",
+    "before": "invalid SSE JSON only",
+    "after": "unexpected EOF plus parse error, status, bytes, elapsed, text bytes and terminal count",
+    "responseCount": 200,
+    "failures": 1
+  },
+  "docCitations": {
+    "status": "PASS",
+    "trackedDocuments": 128,
+    "localLinks": 724,
+    "failures": 0,
+    "newReportLinks": 6
+  },
+  "diffCheck": "PASS",
+  "reversePatchCheck": "PASS",
+  "liveBackend": "NOT_RUN",
+  "interactiveTUI": "NOT_RUN",
+  "protection": {
+    "state": "USER_REPORTED_ON",
+    "uiResampled": false,
+    "settingChanges": 0
+  },
+  "remoteWrites": 0,
+  "installationChanges": 0
+}

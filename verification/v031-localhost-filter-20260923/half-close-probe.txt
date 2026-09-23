@@ -1,0 +1,10 @@
+half-close-probe.cjs 실행 기록. 각 행은 20회 결과의 집계다.
+ok = 송신을 닫은 뒤 서버의 1바이트 응답을 받고 EOF. eof_0 = 응답 0바이트로 EOF.
+AdGuard 전체 보호는 모든 행에서 켜져 있었다.
+
+시각(UTC)              localhost 필터링  출처                 출력
+2026-09-22T22:46:41Z   켬                 이전 Codex 세션      {"eof_0":20}
+2026-09-22T22:51:22Z   끔                 이전 Codex 세션      {"ok":20}
+2026-09-23T00:30:20Z   끔(변경 없음)      직접 재실행          {"ok":20}
+
+직접 재실행: node v24.19.0, `node half-close-probe.cjs`, exit 0.

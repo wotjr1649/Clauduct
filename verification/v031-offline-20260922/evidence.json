@@ -1,0 +1,69 @@
+{
+  "date": "2026-09-22",
+  "base_commit": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "additional_live_backend_attempts": 0,
+  "prior_integration_live_attempts": 40,
+  "overall_result": "HOLD",
+  "budget_classification": {"pre_fix_failed_cases": 6, "post_fix": "PASS"},
+  "auxiliary_turn_independence": {"cases": 9, "pre_fix": "FAIL", "post_fix": "PASS", "remove_fix_mutation": "ASSERTION_FAILURE"},
+  "tui_assessment": {"cases": 15, "race": "PASS", "race_seconds": 1.234, "remove_transcript_check_mutation_failed_cases": 10},
+  "local_native_tui": {
+    "native_version": "2.1.278",
+    "backend": "LOCAL_SYNTHETIC_NO_NETWORK_OR_CREDENTIAL_PROVIDER",
+    "failed_runs": [{"seconds": 83.50, "reason": "fixture developer content decoding"}, {"seconds": 197.23, "reason": "auxiliary selection refusal"}],
+    "final_result": "PASS",
+    "final_seconds": 73.22,
+    "generation_completed": 3,
+    "compaction_completed": 1,
+    "generation_cancelled": 1,
+    "transcript_facts_and_order": "PASS",
+    "route_refusals": 4,
+    "native_exit": 0,
+    "cleanup_ok": true,
+    "temporary_profile_project_removed": true
+  },
+  "adguard": {
+    "user_reported_active": true,
+    "processes_present": ["Adguard", "AdguardSvc"],
+    "configuration_changed": false,
+    "raw_tcp_result": "FAIL",
+    "first": {"immediate": {"attempts": 200, "failures": 29}, "receiver_ack": {"attempts": 200, "failures": 17}},
+    "instrumented": {
+      "immediate": {"attempts": 200, "failures": 19, "client_errno_10054": 19, "server_errors": 0, "payload_mismatches": 19},
+      "receiver_ack": {"attempts": 200, "failures": 15, "client_errors": 0, "server_errno_10054": 15, "payload_mismatches": 0}
+    }
+  },
+  "go_race_all": {"result": "PASS", "app_seconds": 332.391, "gateway_seconds": 32.446},
+  "gofmt_vet_build": "PASS",
+  "doc_citations": {"documents": 123, "citations": 89, "links_checked": 685, "failures": 0},
+  "node_transport_recovery": {
+    "authorization": "USER_APPROVED_STANDALONE_LOOPBACK_RECOVERY",
+    "result": "FAIL",
+    "node_version": "v24.19.0",
+    "guards_changed": false,
+    "transport_or_acceptance_changed": false,
+    "external_requests": 0,
+    "credential_reads": 0,
+    "remaining_test_processes": 0,
+    "javascript_syntax_and_evidence_status_check": "PASS",
+    "http": {
+      "command": "node verification/test-http-transport.mjs",
+      "initial": {"exit_code": 1, "seconds": 0.428, "error": "ECONNRESET", "case": "NOT_REPORTED"},
+      "instrumented": {
+        "exit_code": 1, "seconds": 0.425, "case": "sse", "client": "node-fetch", "error": "ECONNRESET",
+        "helper_tests_passed": 5, "loopback_tests_passed": 1, "local_requests": 2, "invalid_requests": 0
+      },
+      "planned_loopback_tests": 31,
+      "full_suite_completed": false
+    },
+    "dotnet": {
+      "command": "node verification/test-dotnet-http-transport.mjs",
+      "exit_code": 1, "seconds": 3.775, "case": "sse-fixed", "category": "RESPONSE_TRUNCATED", "case_elapsed_ms": 883,
+      "parser_and_self_test_preconditions": "PASS",
+      "loopback_tests_passed": 0,
+      "planned_loopback_tests": 35,
+      "full_suite_completed": false
+    }
+  },
+  "media_live_recheck": "NOT_RUN_NO_ADDITIONAL_BILLING"
+}

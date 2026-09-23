@@ -1,0 +1,185 @@
+=== RUN   TestRuntimeEvidenceNativeTUI
+    integration_runtime_evidence_test.go:296: tui_public_profile=D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI2674189514\001\profile cwd=D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI2674189514\001\public-project
+    integration_runtime_evidence_test.go:313: native_pid=276 starts=1
+WelcometoClaudeCodev2.1.278Let'sgetstarted.[REDACTED_OPAQUE],run/theme1.Auto(matchterminal)>2.Darkmode√3.Lightmode4.Darkmode(colorblind-friendly)5.Lightmode(colorblind-friendly)6.Darkmode(ANSIcolorsonly)7.Lightmode(ANSIcolorsonly)╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 1 function greet(){ 2 -  console.log("Hello, World!");
+  2 +  console.log("Hello, Claude!");     
+  3  }
+ ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ 
+  Syntax theme: Monokai Extended (ctrl+t to disable)[>0q
+Security notes:1. Claude can make mistakes.   You'rresponsibleforClaud's actions and should alwaysreview them, especially when running code.2. Due to promptinjectionrisks,onlyuseitwithcodeyoutrust Learn more: https://code.claude.com/docs/en/securityPress Enter to continue…
+
+
+
+
+
+
+
+
+
+
+[>4m
+
+
+
+
+
+
+
+
+
+
+
+[>0q────────────────────────────────────────────────────────────────────────────────Accessingworkspace:D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidenceNativeTUI2674189514\001\public-projectQuicksafetycheck:Isthisaprojectyoucreatedoroneyoutrust?(Likeyourowncode,awell-knownopensourceproject,orworkfromyourteam).Ifnot,takeamomenttoreviewwhat'sinthisfolderfirst.ClaudeCode'llbeabletoread,edit,andexecutefileshere.Securityguide>No,exitYes,ItrustthisfolderEntertoconfirm·Esctocancel[>4m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ▐▛███▛█Claude Codev2.1.278
+▝▜██████▀gpt-5.6-luna with low effort · API Usage Billing
+  ▝▝ ▝▝  D:\AIDEV\clauduct-v031\.tmp\integration-temp\TestRuntimeEvidence…○ low · /effort
+────────────────────────────────────────────────────────────────────────────────>  
+────────────────────────────────────────────────────────────────────────────────⏸ manual mode on · ? for shortcuts · ← for agents[>0q▟▟█▟█▟▟█▟█▗▟▛▛▄
+ ▘ ▐ 
+▝▀> Remember these public facts: code PUBLIC_TUI_47, color blue, release number     47. Use no tools. Reply exactly PUBLIC_TUI_47.                                ·Nesting… (running UserPromptSubmit hook · 0s)> esc to interrupt · ← for agents✢*✶✻✽✻✶*✢    integration_runtime_evidence_test.go:167: backend text_stream_startedRemember these public facts: code PUBLIC_TUI_47, color blue, release number 47. Use no tools. Reply exactly PUBLIC_TUI_47.Orchestrating… ·cs(1s · ↓2 tokens)re2✢Oh*c✶✻r✽O3✻●PUBLIC_TUI_47Orchestrating…    integration_runtime_evidence_test.go:119: backend text_delta_bytes=13 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:124: proof_init
+✶Orchestrating…3✻Churned for 3s · done 오후 8:23> ? for shortcuts · ← for agents                 > /compact                                                                      ·Running PreCompact hooks… (running PreCompact hook · 0s)
+  ⎿  Tip: Start with small features or bug fixes, tell Claude to propose a plan,and verify its suggested edits> esc to interrupt · ← for agents✢mc✢Compacting conversation… 
+ ▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱▱ 0%*C✶om✻Copamcpt✽ai1ctngi ncg oncv✻oenrvesa✶rtsi*atoni…✢on▰2·…✢*✶✻Co3m✽Cpoampctaicntig ✻ncgo n✶covenr*vserat▰4✢siaotn·io…    integration_runtime_evidence_test.go:167: backend text_stream_startedn…✢*✶5✻✽CoCmpoamcpati✻cntg✶i ngco* n6cv✢oenvrsea·rtsaiotni…on…✢*▰7✶✻✽Com✻Cpomac✶ptai8*ctngi ✢ncgo cnv·oenrvesartsiao✢tin…on*…▰9✶✻✽✻Com10%✶Cpoa*mpctai✢cntg·in cgo ncovenrvsea✢rstiao*tn1i…✶on…✻✽✻✶▰2C*oCmp✢oamcpt·acintgi ncg oncv✢oenvrsea*rt3si✶atoni…✻on…✽✻✶▰4*✢Com·Cpomacptaicntig ✢ncgo cnv*oenr5✶vserat✻siao✽tin…on…✻✶*6✢·ComCpoamc✢pati(16s)cntg*in cgo✶ ncv✻oner▰7vsea✽rtsaiotni…on…✻7✶*✢8·Com✢Copa8mc*ptai✶ctngi ✻ncg oncv✽oe▰9nrvesartsiaton✻i…9on✶…*✢·20✢20Com*Cpoa✶mpctai✻cntig ✽ncgo ncovenr1vserat1✻siao✶tnio…*n…✢·✢2▰2*C✶oCmp✻oamc✽paticntgi ngco ncv✻oe3nvrs✶ea3rt*saiotn✢i…on…·✢4*✶▰4✻Com✽Cpomacptaictngi ✻nc5go cnv✶oenr*vesart✢si5ao·tin…on…✢6*✶✻✽C6omCpoampct✻ai7cntg✶in cgo* ncove✢nrvsea·rstiaotni…on▰7…✢8*✶✻✽CoCmp✻oa9mc8✶ptacin*tgi ✢ncg oncv·oenvrseart    integration_runtime_evidence_test.go:119: backend text_delta_bytes=6304 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:128: proof_response_end
+siRunning SessionStart hooks… (running SessionStart hook · 29s)R✢u30 
+  ⎿  Compacted (ctrl+o to see full summary)
+    PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu   ct-hook.exe"] completed successfully:                                           [REDACTED_COMPACT_RECEIPT]                                                                           > ? for shortcuts · ← for agents> Remember these public facts: code PUBLIC_TUI_47, color blue, release number     47. Use no tools. Reply exactly PUBLIC_TUI_47.                                
+
+● PUBLIC_TUI_47✻Churned for 3s · done 오후 8:23
+
+>/compact
+  ⎿  Compacted (ctrl+o to see full summary)
+    PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/clauduct-hook.exe"] completed successfully: 
+    [REDACTED_COMPACT_RECEIPT] Use no tools. Reply with the remembered code, color and release number, 
+  followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.                                                                                  ✶Boondoggling…                                                                   ⎿  Tip: Use Plan Mode to prepare for a complex request before making changes. Press shift+tab twice to enable.> esc to interrupt · ← for agents(running UserPromptSubmit hook · 0s)*                                                                ✢·✢*✶✻✽…g✻n✶i…*✢lg·gngi✢ol*dg✶✻ng✽oood✻Bn✶o*✢o·B✢    integration_runtime_evidence_test.go:167: backend text_stream_startedUse no tools. Reply with the remembered code, color and release number, followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.(4s · ↓2 tokens)*5✶                                                                                ● PUBLIC_TUI_47                                                                 ✻Churned for 3s · done 오후 8:23> /compact                                                                        ⎿  Compacted (ctrl+o to see full summary)
+     PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu     ct-hook.exe"] completed succesfully: [REDACTED_COMPACT_RECEIPT]             
+> Use no tools. Reply with the remembered code, color and release number,         followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.       
+
+● PUBLIC_TUI_47 blue 47 PUBLIC_COMPACT_DONE                                     ✻4 · thinking with low effort)Boondoggling…    integration_runtime_evidence_test.go:119: backend text_delta_bytes=41 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:124: proof_facts
+    integration_runtime_evidence_test.go:128: proof_response_end
+> Remember these public facts: code PUBLIC_TUI_47, color blue, release number     47. Use no tools. Reply exactly PUBLIC_TUI_47.                                ●PUBLIC_TUI_47                                                                 ✻ Churned for 3s · done 오후 8:23                                               
+
+> /compact                                                                        ⎿  Compacted (ctrl+o to see full ummary)PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/clauduct-hook.exe"] completed successfully: 
+     [REDACTED_COMPACT_RECEIPT]
+                                                                                > Use no tools. Reply with the remembered code, color and release number,         followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.       ●PUBLIC_TUI_47 blue 47PUBLIC_COMPACT_DONE                                                                                                                     ✻Brewed for 5s · done 오후 8:23                                                > ? for shortcuts · ← for agents                                                                                  ⎿  Compacted (ctrl+o to see full summary)                                     PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu    ct-hook.exe"] completed successfully: [REDACTED_COMPACT_RECEIPT]
+                                                                                > Use no tools. Reply with the remembered code, color and release number,        followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.
+
+●PUBLIC_TUI_47 blue 47 PUBLIC_COMPACT_DONE                                                                                                                ✻Brewed for 5s · done 오후 8:23Use no tools. Start with PUBLIC_CANCEL_STARTED, then write 500 numbered lines, each a complete sentence about a different public color. Keep writing 
+  until all 500 lines are complete.                                                                                                                             ✽Clauding… (running UserPromptSubmit hook · 0s)
+  ⎿  Tip: Use /memory to view and manage Claude memory> esc to interrupt · ← for agents✻ai                                                                    ✶ld*Cu✢·al✢C*✶✻✽✻✶*    integration_runtime_evidence_test.go:167: backend text_stream_startedUse no tools. Start with PUBLIC_CANCEL_STARTED, then write 500 numbered lines, each a complete sentence about a different public color. Keep writing until all 500 lines are complete.(2s · ↓2 tokens)✢·312 tokens)✢9*20✶336✻45✽5145468✻77✶85*6✢8101 tokens)·…148g9533✢n47*i…53✶4✻dg672✽un980ai2ld695✻209    integration_runtime_evidence_test.go:119: backend text_delta_bytes=965 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:131: proof_partial
+✻ Churned for 3s · done 오후 8:23                                                                                                                          > /compact                                                                        ⎿  Compacted (ctrl+o to see full summary)                                     PreCompact ["D:/AIDEV/clauduct-v031/.tmp/v031-review-batch3-20260922/claudu     ct-hook.exe"] completed successfully:                                           [REDACTED_COMPACT_RECEIPT]> Use no tools. Reply with the remembered code, color and release number,         followed by PUBLIC_COMPACT_DONE. Put only those four items on one line.                                                                                       ●PUBLIC_TUI_47blue47PUBLIC_COMPACT_DONE
+                                                                                ✻ Brewed for 5s · done 오후 8:23                                                                                                                                > Use no tools. Start with PUBLIC_CANCEL_STARTED, then write 500 numbered         lines, each a complete sentence about a different public color. Keep writing    until all 500 lines are complete.                                             > ? for shortcuts · ← for agents3.Greenisawidelyrecognizedpubliccolor.
+ 4. Yellow is a widely recognizedpubliccolor.5.Orangeisawidelyrecognizedpubliccolor.
+  6. Purple is a widely recognized public color.                                  7. Violet is a widely recognized public color.8.Indigo is a widely recognized public color.                                9.Pink is a widely recognized public color.10. Brown is a widely recognized public color.11.Blackisawidelyrecognizedpubliccolor.
+  12. White is a widely recognized public color.                                  13. Gray is a widely recognized public color.                                 14.Greyisawidelyrecognizedpubliccolor.
+ 15. Cyan is awidly recognized public color.16.Magentaisawidelyrecognizedpubliccolor.
+ 17. Teal is a widely recognizedpubliccolor.18.Turquoiseisawidelyrecognizedpubliccolor.
+  19. Beige is a widely recognized public color.                                  20. Maroon is a widely recognized public color.                                 21. Navy                                                                      4Yellow is a widely recognized public color.5Orange6Purpl7Violet8Indigo9Pink is awidely recognized public olr.                                  10. Brown isa widely recognized publi clor.1lack2White3Gray is a widely recognized public color.                                 4e5Cyan6Magentais a widely recognized public color.7Teal isa widely recognized public color.                                 8urquoiseis a widly recognized public color.9Beige  a widely recognized public color.                                20Maroon is a widely recognized public color.1Nvy                                                                        ⎿  Interrupted · What should Claude do instead?9Pink is awidely recognized public olr.                                  10. Brown11. Black12. White13. Gray is a widely recognized public color.                                 14. Grey is a widely recognized public color.5Cyan is a widely recognized public color.                                 6Magenta isa widely recognized publi clor.7Teal is a widely recognized public color.                                 8Turquoiseis a widly recognized public color.9Beige is a widely recognized public color.20Maroon isa widely recognized publi clor.21Nvy                                                                        ⎿  Interrupted · What should Claude do instead?                                                                              > Use no tools. Reply exactly PUBLIC_TUI_RECOVERED.                                                                                                           *Ruminating… (running UserPromptSubmit hook · 0s)Tip: Use /theme tocangethe colorthem                                  > esc to interrupt · ← for agents✶✻                                                                  ✽✻✶*✢    integration_runtime_evidence_test.go:167: backend text_stream_startedUse no tools. Reply exactly PUBLIC_TUI_RECOVERED.(1s · ↓2 tokens)·11. Black isa widely recognized publi clor.2White3Gry is a widely recognized public color.                                 4Grey is a widely recognized public color.                                 5Cyn6Magentais a widely recognized public color.7Tel8Turquoise isa widely recognized publi clor.9Bige is a widely recognized public color.20Maoon isa widely recognized public color.                               21Navy                                                                        ⎿  Interrupted · What should Claude do instead?                                                                              > Use no tools. Reply exactly PUBLIC_TUI_RECOVERED.                             ● PUBLIC_TUI_RECOVERED                                                          4Ruminating…    integration_runtime_evidence_test.go:119: backend text_delta_bytes=20 completed_text_bytes=0 parent_marker=false
+    integration_runtime_evidence_test.go:124: proof_recovered
+    integration_runtime_evidence_test.go:128: proof_response_end
+Ruminating…50rown1Black2White is a widely recognized public color.3a4Grey5Cyan isa widely recognized public color.6Magentais a widely recognized public color.7eal is awidely rcognized public color.                                 8Turquoe is a widely recognized public color.19Beige is a widely recognized public color.                                0Mroonisawidelyrecognizedpubliccolor.
+  21. Navy                                                                        ⎿  Interrupted · What should Claude do instead?
+                                                                                > Use no tools. Reply exactly PUBLIC_TUI_RECOVERED.                                                                                                             ●PUBLIC_TUI_RECOVERED
+
+✻ Cooked for 1s · done 오후 8:24                                                > ? for shortcuts · ← for agents[>4m[>4m    integration_runtime_evidence_test.go:313: native_pid=276 starts=1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[>4m
+Resume this session with:
+claude --resume 4feeef11-2a1e-49d5-93e6-855df3e185db
+    integration_runtime_evidence_test.go:296: tui class= kind=models outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generation outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
+    integration_runtime_evidence_test.go:296: tui class=main kind=generation outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class=compaction kind=compaction outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generation outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
+    integration_runtime_evidence_test.go:296: tui class=main kind=generation outcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
+come=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generatio
+on outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
+    integration_runtime_evidence_test.go:296: tui class=main kind=generation out
+tcome=broken category=CANCELLED cancellation=
+    integration_runtime_evidence_test.go:296: tui class= kind=context_event outc
+come=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: tui class=auxiliary kind=generatio
+on outcome=refused category=ROUTE_NOT_AUTHORISED cancellation=
+    integration_runtime_evidence_test.go:296: tui class=main kind=generation out
+tcome=ok category= cancellation=
+    integration_runtime_evidence_test.go:296: same_native_pid=276 starts=1 exit=
+=0 cleanup=true
+    integration_runtime_evidence_test.go:296: TUI acceptance: generation=3 compa
+action=1 cancellation=1; native transcript facts and order verified; exit=0 clean
+nup_ok=true
+    integration_runtime_evidence_test.go:206: live attempts=5 inferences=5 refus
+sed=4
+--- PASS: TestRuntimeEvidenceNativeTUI (77.03s)
+PASS
+

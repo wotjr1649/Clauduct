@@ -1,0 +1,196 @@
+{
+  "schema": 1,
+  "date": "2026-09-22",
+  "root": "D:\\AIDEV\\clauduct-v031",
+  "branch": "fix/v031",
+  "base": "149068edd693fb860a03244a2ea15764bcd68c34",
+  "verdict": {
+    "scoped_changes": "PASS",
+    "overall": "HOLD",
+    "release": "NOT_AUTHORISED_NOT_PERFORMED",
+    "independent_claude_review": "NO_RESULT",
+    "unexplained_live_failure": "OPEN"
+  },
+  "environment": {
+    "os": "Windows",
+    "go": "1.27.1",
+    "native": "2.1.278",
+    "normal_cgo": 0,
+    "race_cgo": 1,
+    "race_cc": "existing C:\\msys64\\ucrt64\\bin\\gcc.exe",
+    "protection": "On per last user confirmation; not independently remeasured",
+    "security_settings_changed": false
+  },
+  "scope": {
+    "product_files": 7,
+    "test_files": 7,
+    "ci_files": 1,
+    "documentation_files": 4,
+    "changed_files": 19,
+    "backed_up_files": 20,
+    "unrelated_work_preserved": true,
+    "source_files": 261,
+    "source_manifest": "candidate-source.json",
+    "source_manifest_sha256": "3292275040fb146e939d7b7b0699b5094660e1317a3dcb970779b8d13f12cce0",
+    "patch": "batch.patch",
+    "patch_sha256": "1b0956a9bca1015498914ff17ad53cd92514b9939214d32c3989adb9c81e0477",
+    "reverse_check": "PASS"
+  },
+  "checks": [
+    {
+      "name": "normal Go suite",
+      "status": "PASS",
+      "packages": 18,
+      "log": "go-test-accepted.txt"
+    },
+    {
+      "name": "race Go suite",
+      "status": "PASS",
+      "packages": 18,
+      "log": "go-race-accepted.txt"
+    },
+    {
+      "name": "gofmt, vet, build, runtime_evidence vet, policy_evidence vet, offline validators",
+      "status": "PASS",
+      "log": "static-final.json"
+    },
+    {
+      "name": "offline validator detail",
+      "status": "PASS",
+      "top_level": 3,
+      "tui_cases": 16,
+      "log": "offline-validators.txt"
+    },
+    {
+      "name": "native CLI compatibility",
+      "status": "PASS",
+      "log": "compat-after.txt"
+    },
+    {
+      "name": "public help arity, subcommand boundary, native file publication",
+      "status": "PASS",
+      "public_option_arities": 63,
+      "log": "hold-app.txt"
+    },
+    {
+      "name": "incomplete turn publication and recovery",
+      "status": "PASS",
+      "log": "hold-publication.txt"
+    },
+    {
+      "name": "workflow and ordinary Agent isolation",
+      "status": "PASS",
+      "log": "review-unrelated-accepted.txt"
+    },
+    {
+      "name": "optional count policy",
+      "status": "PASS",
+      "log": "count-accepted.txt",
+      "preflight_added": false
+    },
+    {
+      "name": "mutation checks",
+      "status": "PASS",
+      "expected_assertion_failures": 9,
+      "build_failures": 0,
+      "log": "mutation-results.json"
+    },
+    {
+      "name": "tracked doc citations",
+      "status": "PASS",
+      "documents": 128,
+      "citations": 89,
+      "internal_links": 725,
+      "failures": 0,
+      "log": "doc-citations.txt"
+    }
+  ],
+  "live": {
+    "backend_model": "gpt-5.6-luna",
+    "effort": "low",
+    "sdk": {
+      "status": "PASS",
+      "native_pid": 27120,
+      "starts": 1,
+      "backend_calls": 13,
+      "elapsed_seconds": 60.43,
+      "exit": 0,
+      "cleanup": true,
+      "parent_received": 2,
+      "workflow_completed": 1,
+      "write_calls": 2,
+      "successful_writes": 2,
+      "agent_calls": 1,
+      "workflow_calls": 1,
+      "dropped_step_backend_calls": 1,
+      "log": "live-tools-diagnosis.txt",
+      "trace": "live-tools-diagnosis-trace.jsonl",
+      "overlay": "overlay-live-tools.json"
+    },
+    "tui": {
+      "status": "PASS",
+      "native_pid": 276,
+      "starts": 1,
+      "backend_calls": 5,
+      "elapsed_seconds": 77.03,
+      "exit": 0,
+      "cleanup": true,
+      "generation_completed": 3,
+      "generation_cancelled": 1,
+      "compaction_completed": 1,
+      "totals_cancelled": 1,
+      "transcript_verified": true,
+      "log": "tui-final.txt",
+      "overlay": "overlay-tui.json"
+    },
+    "observed_integration_backend_calls_all_attempts": 85,
+    "observed_sdk_calls_all_attempts": 70,
+    "observed_tui_calls_all_attempts": 15,
+    "independent_review_usage": "UNKNOWN",
+    "failed_run": {
+      "status": "UNRESOLVED",
+      "native_pid": 20456,
+      "backend_calls": 8,
+      "http_status": 502,
+      "injected_drops": 0,
+      "trace_write_errors": 0,
+      "original_category": "NOT_RETAINED",
+      "subsequent_retry": "NATIVE_REQUEST_REPLAY_BLOCKED",
+      "details": "unresolved-live-502.json"
+    }
+  },
+  "review": {
+    "direct": "COMPLETED_WITH_HOLD",
+    "document": "REVIEW.md",
+    "independent": "NO_RESULT_BEFORE_6_MINUTE_DEADLINE",
+    "route": "native firstParty, not through Clauduct",
+    "selected_model": "opus",
+    "requested_effort": "xhigh",
+    "tools": [],
+    "same_unit_redispatched": false,
+    "process_tree_stop_confirmed": true,
+    "details": "claude-review-timeout.json",
+    "cleanup": "NOT_REMOVED_POLICY_DENIAL",
+    "cleanup_details": "claude-review-cleanup.json"
+  },
+  "history": {
+    "raw_tcp_source": "NOT_RECOVERED",
+    "original_hash_rewritten": false,
+    "details": "historical-provenance.json"
+  },
+  "not_run": [
+    "remote CI",
+    "Node 31 /.NET 35 / raw TCP environmental suites in this batch",
+    "final independent Claude review result",
+    "installation, push, release"
+  ],
+  "reports": [
+    "REPORT.md",
+    "REVIEW.md"
+  ],
+  "policy": {
+    "normal_generation_and_compaction": "actual backend usage, no remote preflight",
+    "replay": "never redispatch after possible execution",
+    "native_restart": false
+  }
+}

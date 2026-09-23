@@ -1,0 +1,473 @@
+{"at":1790078892867636800,"closing":false,"conn":1,"event":"state","finished":false,"state":"new"}
+{"at":1790078892870175000,"closing":false,"conn":1,"error":"","event":"read","finished":false,"n":152}
+{"at":1790078892871184500,"closing":false,"conn":1,"event":"state","finished":false,"state":"active"}
+{"at":1790078892871184500,"bodyBytes":0,"class":"","closing":false,"conn":1,"event":"request","finished":false,"path":"/api/hello","phase":1,"requestClose":false,"retry":""}
+{"at":1790078892871184500,"cancelled":false,"closing":false,"conn":1,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078892871184500,"closing":false,"conn":1,"event":"write_start","finished":true,"n":88}
+{"at":1790078892871690600,"closing":false,"conn":1,"error":"","event":"write_end","finished":true,"n":88}
+{"at":1790078892871690600,"closing":false,"conn":1,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4366: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078892871690600,"closing":false,"conn":1,"event":"state","finished":true,"state":"idle"}
+{"at":1790078893299730800,"closing":false,"conn":2,"event":"state","finished":false,"state":"new"}
+{"at":1790078893303313000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":270}
+{"at":1790078893303675600,"closing":false,"conn":2,"event":"state","finished":false,"state":"active"}
+{"at":1790078893303675600,"bodyBytes":0,"class":"","closing":false,"conn":2,"event":"request","finished":false,"path":"/v1/models","phase":1,"requestClose":false,"retry":""}
+{"at":1790078893303675600,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078893303675600,"closing":false,"conn":2,"event":"write_start","finished":true,"n":370}
+{"at":1790078893303675600,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":370}
+{"at":1790078893303675600,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078893303675600,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078893654059500,"closing":false,"conn":3,"event":"state","finished":false,"state":"new"}
+{"at":1790078893656644600,"closing":false,"conn":3,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078893656644600,"closing":false,"conn":3,"event":"state","finished":false,"state":"active"}
+{"at":1790078893656644600,"bodyBytes":402,"class":"","closing":false,"conn":3,"event":"request","finished":false,"path":"/clauduct/context","phase":1,"requestClose":false,"retry":""}
+{"at":1790078893656644600,"closing":false,"conn":3,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078893657167900,"cancelled":false,"closing":false,"conn":3,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078893657167900,"closing":false,"conn":3,"event":"write_start","finished":true,"n":64}
+{"at":1790078893657167900,"closing":false,"conn":3,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078893657167900,"closing":false,"conn":3,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4368: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078893657167900,"closing":false,"conn":3,"event":"state","finished":true,"state":"idle"}
+{"at":1790078893659432800,"closing":false,"conn":3,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4368: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078893659432800,"closing":false,"conn":3,"event":"close_start","finished":true}
+{"at":1790078893659432800,"closing":false,"conn":3,"event":"drain_start","finished":true}
+{"at":1790078893659432800,"closing":false,"conn":3,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4368: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078893659432800,"closing":false,"conn":3,"event":"close_end","finished":true}
+{"at":1790078893659432800,"closing":false,"conn":3,"event":"state","finished":true,"state":"closed"}
+{"at":1790078893840758500,"closing":false,"conn":4,"event":"state","finished":false,"state":"new"}
+{"at":1790078893849120000,"closing":false,"conn":4,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078893849120000,"closing":false,"conn":4,"event":"state","finished":false,"state":"active"}
+{"at":1790078893849120000,"bodyBytes":402,"class":"","closing":false,"conn":4,"event":"request","finished":false,"path":"/clauduct/context","phase":1,"requestClose":false,"retry":""}
+{"at":1790078893849120000,"closing":false,"conn":4,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078893849120000,"cancelled":false,"closing":false,"conn":4,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078893849120000,"closing":false,"conn":4,"event":"write_start","finished":true,"n":64}
+{"at":1790078893849120000,"closing":false,"conn":4,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078893849120000,"closing":false,"conn":4,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4369: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078893849120000,"closing":false,"conn":4,"event":"state","finished":true,"state":"idle"}
+{"at":1790078893851461100,"closing":false,"conn":4,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4369: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078893851461100,"closing":false,"conn":4,"event":"close_start","finished":true}
+{"at":1790078893851461100,"closing":false,"conn":4,"event":"drain_start","finished":true}
+{"at":1790078893851461100,"closing":false,"conn":4,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4369: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078893851461100,"closing":false,"conn":4,"event":"close_end","finished":true}
+{"at":1790078893851461100,"closing":false,"conn":4,"event":"state","finished":true,"state":"closed"}
+{"at":1790078893918341500,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078893918341500,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078893918341500,"bodyBytes":42128,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078893918341500,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":0,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"5ac48d27-eb23-420d-ae16-3dd67fd7c949"}
+{"at":1790078893918341500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078893918341500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078893918914200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078893918914200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5449}
+{"at":1790078893918914200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078893918914200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":11088}
+{"at":1790078900132878800,"closing":false,"conn":2,"event":"write_start","finished":false,"n":3595}
+{"at":1790078900134394300,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":3595}
+{"at":1790078900191479000,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078900191479000,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078900191479000,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078900191479000,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078900191479000,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078900223817400,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078900223817400,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078900223817400,"bodyBytes":44970,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078900224324400,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":1,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"5ac48d27-eb23-420d-ae16-3dd67fd7c949"}
+{"at":1790078900224324400,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078900224324400,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078900224324400,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078900224324400,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5494}
+{"at":1790078900224324400,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078900224324400,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":13930}
+{"at":1790078904708570200,"closing":false,"conn":2,"event":"write_start","finished":false,"n":1281}
+{"at":1790078904708570200,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":1281}
+{"at":1790078904769116800,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078904769116800,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078904769635400,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078904769635400,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078904769635400,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078904790887800,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078904792441600,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078904792441600,"bodyBytes":45449,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078904792441600,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":2,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"5ac48d27-eb23-420d-ae16-3dd67fd7c949"}
+{"at":1790078904792441600,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078904792984000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078904792984000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078904792984000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5492}
+{"at":1790078904792984000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078904792984000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":14409}
+{"at":1790078907662255200,"closing":false,"conn":2,"event":"write_start","finished":false,"n":1048}
+{"at":1790078907662255200,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":1048}
+{"at":1790078907675880000,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078907675880000,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078907675880000,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078907676409400,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078907676409400,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078907824233200,"closing":false,"conn":5,"event":"state","finished":false,"state":"new"}
+{"at":1790078907830142600,"closing":false,"conn":5,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078907830142600,"closing":false,"conn":5,"event":"state","finished":false,"state":"active"}
+{"at":1790078907830142600,"bodyBytes":402,"class":"","closing":false,"conn":5,"event":"request","finished":false,"path":"/clauduct/context","phase":1,"requestClose":false,"retry":""}
+{"at":1790078907830142600,"closing":false,"conn":5,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078907830142600,"cancelled":false,"closing":false,"conn":5,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078907830142600,"closing":false,"conn":5,"event":"write_start","finished":true,"n":64}
+{"at":1790078907830142600,"closing":false,"conn":5,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078907830142600,"closing":false,"conn":5,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:12689: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078907830649800,"closing":false,"conn":5,"event":"state","finished":true,"state":"idle"}
+{"at":1790078907832744600,"closing":false,"conn":5,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:12689: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078907832744600,"closing":false,"conn":5,"event":"close_start","finished":true}
+{"at":1790078907832744600,"closing":false,"conn":5,"event":"drain_start","finished":true}
+{"at":1790078907832744600,"closing":false,"conn":5,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:12689: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078907832744600,"closing":false,"conn":5,"event":"close_end","finished":true}
+{"at":1790078907832744600,"closing":false,"conn":5,"event":"state","finished":true,"state":"closed"}
+{"at":1790078907865003700,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078907865003700,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078907865003700,"bodyBytes":46687,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078907866012100,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":0,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"2e221317-396b-4805-908a-7159c06b329f"}
+{"at":1790078907866012100,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078907866012100,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078907866012100,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078907866012100,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5449}
+{"at":1790078907866012100,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078907866012100,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":15647}
+{"at":1790078917671116500,"closing":false,"conn":2,"event":"write_start","finished":false,"n":4096}
+{"at":1790078917671116500,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":4096}
+{"at":1790078917671116500,"closing":false,"conn":2,"event":"write_start","finished":false,"n":4096}
+{"at":1790078917671116500,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":4096}
+{"at":1790078917671116500,"closing":false,"conn":2,"event":"write_start","finished":false,"n":550}
+{"at":1790078917671116500,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":550}
+{"at":1790078917682061400,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078917682061400,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078917682061400,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078917682594800,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078917682594800,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078917805795700,"closing":false,"conn":6,"event":"state","finished":false,"state":"new"}
+{"at":1790078917812053700,"closing":false,"conn":6,"error":"","event":"read","finished":false,"n":231}
+{"at":1790078917812053700,"closing":false,"conn":6,"event":"state","finished":false,"state":"active"}
+{"at":1790078917812562300,"bodyBytes":507,"class":"","closing":false,"conn":6,"event":"request","finished":false,"path":"/clauduct/agents","phase":1,"requestClose":false,"retry":""}
+{"at":1790078917812562300,"closing":false,"conn":6,"error":"","event":"read","finished":false,"n":507}
+{"at":1790078917812562300,"cancelled":false,"closing":false,"conn":6,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078917812562300,"closing":false,"conn":6,"event":"write_start","finished":true,"n":127}
+{"at":1790078917812562300,"closing":false,"conn":6,"error":"","event":"write_end","finished":true,"n":127}
+{"at":1790078917813109700,"closing":false,"conn":6,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14775: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078917813630100,"closing":false,"conn":6,"event":"state","finished":true,"state":"idle"}
+{"at":1790078917816304200,"closing":false,"conn":6,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14775: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078917816821700,"closing":false,"conn":6,"event":"close_start","finished":true}
+{"at":1790078917816821700,"closing":false,"conn":6,"event":"drain_start","finished":true}
+{"at":1790078917816821700,"closing":false,"conn":6,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14775: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078917816821700,"closing":false,"conn":6,"event":"close_end","finished":true}
+{"at":1790078917816821700,"closing":false,"conn":6,"event":"state","finished":true,"state":"closed"}
+{"at":1790078917944323600,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078917945830200,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078917945830200,"bodyBytes":6469,"class":"subagent","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078917945830200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":3457}
+{"at":1790078918083635600,"closing":false,"conn":7,"event":"state","finished":false,"state":"new"}
+{"at":1790078918089702900,"closing":false,"conn":7,"error":"","event":"read","finished":false,"n":1424}
+{"at":1790078918089702900,"closing":false,"conn":7,"event":"state","finished":false,"state":"active"}
+{"at":1790078918089702900,"bodyBytes":1189,"class":"","closing":false,"conn":7,"event":"request","finished":false,"path":"/clauduct/workflows","phase":1,"requestClose":false,"retry":""}
+{"at":1790078918090253700,"cancelled":false,"closing":false,"conn":7,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078918090253700,"closing":false,"conn":7,"event":"write_start","finished":true,"n":64}
+{"at":1790078918090773200,"closing":false,"conn":7,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078918090773200,"closing":false,"conn":7,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14776: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078918090773200,"closing":false,"conn":7,"event":"state","finished":true,"state":"idle"}
+{"at":1790078918094851600,"closing":false,"conn":7,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14776: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078918094851600,"closing":false,"conn":7,"event":"close_start","finished":true}
+{"at":1790078918094851600,"closing":false,"conn":7,"event":"drain_start","finished":true}
+{"at":1790078918094851600,"closing":false,"conn":7,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14776: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078918094851600,"closing":false,"conn":7,"event":"close_end","finished":true}
+{"at":1790078918094851600,"closing":false,"conn":7,"event":"state","finished":true,"state":"closed"}
+{"at":1790078918111105100,"closing":false,"conn":8,"event":"state","finished":false,"state":"new"}
+{"at":1790078918114395100,"closing":false,"conn":8,"error":"","event":"read","finished":false,"n":231}
+{"at":1790078918114395100,"closing":false,"conn":8,"event":"state","finished":false,"state":"active"}
+{"at":1790078918114395100,"bodyBytes":513,"class":"","closing":false,"conn":8,"event":"request","finished":false,"path":"/clauduct/agents","phase":1,"requestClose":false,"retry":""}
+{"at":1790078918114395100,"closing":false,"conn":8,"error":"","event":"read","finished":false,"n":513}
+{"at":1790078918114925600,"cancelled":false,"closing":false,"conn":8,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078918114925600,"closing":false,"conn":8,"event":"write_start","finished":true,"n":127}
+{"at":1790078918114925600,"closing":false,"conn":8,"error":"","event":"write_end","finished":true,"n":127}
+{"at":1790078918114925600,"closing":false,"conn":8,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14777: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078918114925600,"closing":false,"conn":8,"event":"state","finished":true,"state":"idle"}
+{"at":1790078918117593600,"closing":false,"conn":8,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14777: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078918117593600,"closing":false,"conn":8,"event":"close_start","finished":true}
+{"at":1790078918117593600,"closing":false,"conn":8,"event":"drain_start","finished":true}
+{"at":1790078918117593600,"closing":false,"conn":8,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14777: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078918118117000,"closing":false,"conn":8,"event":"close_end","finished":true}
+{"at":1790078918118117000,"closing":false,"conn":8,"event":"state","finished":true,"state":"closed"}
+{"at":1790078918128489800,"closing":false,"conn":9,"event":"state","finished":false,"state":"new"}
+{"at":1790078918134014400,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078918134014400,"closing":false,"conn":9,"event":"state","finished":false,"state":"active"}
+{"at":1790078918134014400,"bodyBytes":57097,"class":"main","closing":false,"conn":9,"event":"request","finished":false,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078918136357700,"closing":false,"conn":9,"event":"request_identity","finished":false,"index":1,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"2e221317-396b-4805-908a-7159c06b329f"}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":5504}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":16384}
+{"at":1790078918137414600,"closing":false,"conn":9,"error":"","event":"read","finished":false,"n":9673}
+{"at":1790078918301586500,"closing":false,"conn":10,"event":"state","finished":false,"state":"new"}
+{"at":1790078918304635200,"closing":false,"conn":10,"error":"","event":"read","finished":false,"n":1125}
+{"at":1790078918304635200,"closing":false,"conn":10,"event":"state","finished":false,"state":"active"}
+{"at":1790078918304635200,"bodyBytes":11578,"class":"workflow","closing":false,"conn":10,"event":"request","finished":false,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078918306243000,"closing":false,"conn":10,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078918306243000,"closing":false,"conn":10,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078918306243000,"closing":false,"conn":10,"error":"","event":"read","finished":false,"n":3386}
+{"at":1790078919252250800,"closing":false,"conn":2,"event":"write_start","finished":false,"n":1046}
+{"at":1790078919252786100,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":1046}
+{"at":1790078919280001700,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078919280001700,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078919280001700,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078919280549400,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078919281069500,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078919385321400,"closing":false,"conn":11,"event":"state","finished":false,"state":"new"}
+{"at":1790078919390018400,"closing":false,"conn":11,"error":"","event":"read","finished":false,"n":231}
+{"at":1790078919390018400,"closing":false,"conn":11,"event":"state","finished":false,"state":"active"}
+{"at":1790078919390018400,"bodyBytes":451,"class":"","closing":false,"conn":11,"event":"request","finished":false,"path":"/clauduct/agents","phase":1,"requestClose":false,"retry":""}
+{"at":1790078919390018400,"closing":false,"conn":11,"error":"","event":"read","finished":false,"n":451}
+{"at":1790078919390018400,"cancelled":false,"closing":false,"conn":11,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078919390018400,"closing":false,"conn":11,"event":"write_start","finished":true,"n":128}
+{"at":1790078919390018400,"closing":false,"conn":11,"error":"","event":"write_end","finished":true,"n":128}
+{"at":1790078919390018400,"closing":false,"conn":11,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14780: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078919390018400,"closing":false,"conn":11,"event":"state","finished":true,"state":"idle"}
+{"at":1790078919393258800,"closing":false,"conn":11,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14780: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078919393258800,"closing":false,"conn":11,"event":"close_start","finished":true}
+{"at":1790078919393258800,"closing":false,"conn":11,"event":"drain_start","finished":true}
+{"at":1790078919393258800,"closing":false,"conn":11,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14780: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078919393258800,"closing":false,"conn":11,"event":"close_end","finished":true}
+{"at":1790078919393258800,"closing":false,"conn":11,"event":"state","finished":true,"state":"closed"}
+{"at":1790078919779750900,"closing":false,"conn":10,"event":"write_start","finished":false,"n":3278}
+{"at":1790078919779750900,"closing":false,"conn":10,"error":"","event":"write_end","finished":false,"n":3278}
+{"at":1790078919798265900,"cancelled":false,"closing":false,"conn":10,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078919798811100,"closing":false,"conn":10,"event":"write_start","finished":true,"n":5}
+{"at":1790078919798811100,"closing":false,"conn":10,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078919798811100,"closing":false,"conn":10,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14779: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078919798811100,"closing":false,"conn":10,"event":"state","finished":true,"state":"idle"}
+{"at":1790078919951938400,"closing":false,"conn":12,"event":"state","finished":false,"state":"new"}
+{"at":1790078919955788900,"closing":false,"conn":12,"error":"","event":"read","finished":false,"n":231}
+{"at":1790078919955788900,"closing":false,"conn":12,"event":"state","finished":false,"state":"active"}
+{"at":1790078919955788900,"bodyBytes":460,"class":"","closing":false,"conn":12,"event":"request","finished":false,"path":"/clauduct/agents","phase":1,"requestClose":false,"retry":""}
+{"at":1790078919955788900,"closing":false,"conn":12,"error":"","event":"read","finished":false,"n":460}
+{"at":1790078919955788900,"cancelled":false,"closing":false,"conn":12,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078919955788900,"closing":false,"conn":12,"event":"write_start","finished":true,"n":128}
+{"at":1790078919955788900,"closing":false,"conn":12,"error":"","event":"write_end","finished":true,"n":128}
+{"at":1790078919956296100,"closing":false,"conn":12,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14387: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078919956296100,"closing":false,"conn":12,"event":"state","finished":true,"state":"idle"}
+{"at":1790078919958821700,"closing":false,"conn":12,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14387: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078919958821700,"closing":false,"conn":12,"event":"close_start","finished":true}
+{"at":1790078919958821700,"closing":false,"conn":12,"event":"drain_start","finished":true}
+{"at":1790078919958821700,"closing":false,"conn":12,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14387: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078919958821700,"closing":false,"conn":12,"event":"close_end","finished":true}
+{"at":1790078919958821700,"closing":false,"conn":12,"event":"state","finished":true,"state":"closed"}
+{"at":1790078921865105300,"closing":false,"conn":9,"event":"write_start","finished":false,"n":1033}
+{"at":1790078921865105300,"closing":false,"conn":9,"error":"","event":"write_end","finished":false,"n":1033}
+{"at":1790078921899147600,"cancelled":false,"closing":false,"conn":9,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078921899147600,"closing":false,"conn":9,"event":"write_start","finished":true,"n":5}
+{"at":1790078921899147600,"closing":false,"conn":9,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078921901216000,"closing":false,"conn":9,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14778: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078921902560200,"closing":false,"conn":9,"event":"state","finished":true,"state":"idle"}
+{"at":1790078922239161800,"closing":false,"conn":13,"event":"state","finished":false,"state":"new"}
+{"at":1790078922245059800,"closing":false,"conn":13,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078922246060000,"closing":false,"conn":13,"event":"state","finished":false,"state":"active"}
+{"at":1790078922246060000,"bodyBytes":402,"class":"","closing":false,"conn":13,"event":"request","finished":false,"path":"/clauduct/context","phase":1,"requestClose":false,"retry":""}
+{"at":1790078922248594000,"closing":false,"conn":13,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078922248594000,"cancelled":false,"closing":false,"conn":13,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078922248594000,"closing":false,"conn":13,"event":"write_start","finished":true,"n":64}
+{"at":1790078922248594000,"closing":false,"conn":13,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078922249118600,"closing":false,"conn":13,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:7261: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078922249118600,"closing":false,"conn":13,"event":"state","finished":true,"state":"idle"}
+{"at":1790078922258966800,"closing":false,"conn":13,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:7261: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078922258966800,"closing":false,"conn":13,"event":"close_start","finished":true}
+{"at":1790078922258966800,"closing":false,"conn":13,"event":"drain_start","finished":true}
+{"at":1790078922258966800,"closing":false,"conn":13,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:7261: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078922258966800,"closing":false,"conn":13,"event":"close_end","finished":true}
+{"at":1790078922258966800,"closing":false,"conn":13,"event":"state","finished":true,"state":"closed"}
+{"at":1790078922600068700,"closing":false,"conn":14,"event":"state","finished":false,"state":"new"}
+{"at":1790078922607618200,"closing":false,"conn":14,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078922607618200,"closing":false,"conn":14,"event":"state","finished":false,"state":"active"}
+{"at":1790078922607618200,"bodyBytes":402,"class":"","closing":false,"conn":14,"event":"request","finished":false,"path":"/clauduct/context","phase":1,"requestClose":false,"retry":""}
+{"at":1790078922607618200,"closing":false,"conn":14,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078922607618200,"cancelled":false,"closing":false,"conn":14,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078922608633900,"closing":false,"conn":14,"event":"write_start","finished":true,"n":64}
+{"at":1790078922608633900,"closing":false,"conn":14,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078922608633900,"closing":false,"conn":14,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:10168: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078922608633900,"closing":false,"conn":14,"event":"state","finished":true,"state":"idle"}
+{"at":1790078922612382700,"closing":false,"conn":14,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:10168: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078922612382700,"closing":false,"conn":14,"event":"close_start","finished":true}
+{"at":1790078922612382700,"closing":false,"conn":14,"event":"drain_start","finished":true}
+{"at":1790078922612382700,"closing":false,"conn":14,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:10168: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078922612382700,"closing":false,"conn":14,"event":"close_end","finished":true}
+{"at":1790078922612382700,"closing":false,"conn":14,"event":"state","finished":true,"state":"closed"}
+{"at":1790078922659569700,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078922660454400,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078922660454400,"bodyBytes":61229,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078922661006700,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":0,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"a6e05b28-8544-4a33-9320-c2ddc5d37f0a"}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5449}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":16384}
+{"at":1790078922661535000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":13805}
+{"at":1790078924587366200,"closing":false,"conn":2,"event":"write_start","finished":false,"n":3284}
+{"at":1790078924588086800,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":3284}
+{"at":1790078924669556100,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078924669556100,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078924669556100,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078924670093300,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078924670093300,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078924890089300,"closing":false,"conn":15,"event":"state","finished":false,"state":"new"}
+{"at":1790078924894854400,"closing":false,"conn":15,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078924894854400,"closing":false,"conn":15,"event":"state","finished":false,"state":"active"}
+{"at":1790078924894854400,"bodyBytes":402,"class":"","closing":false,"conn":15,"event":"request","finished":false,"path":"/clauduct/context","phase":3,"requestClose":false,"retry":""}
+{"at":1790078924894854400,"closing":false,"conn":15,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078924895865500,"cancelled":false,"closing":false,"conn":15,"event":"handler_done","finished":true,"phase":3,"status":204}
+{"at":1790078924895865500,"closing":false,"conn":15,"event":"write_start","finished":true,"n":64}
+{"at":1790078924895865500,"closing":false,"conn":15,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078924895865500,"closing":false,"conn":15,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:8220: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078924895865500,"closing":false,"conn":15,"event":"state","finished":true,"state":"idle"}
+{"at":1790078924901196700,"closing":false,"conn":15,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:8220: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078924901196700,"closing":false,"conn":15,"event":"close_start","finished":true}
+{"at":1790078924901196700,"closing":false,"conn":15,"event":"drain_start","finished":true}
+{"at":1790078924901196700,"closing":false,"conn":15,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:8220: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078924901196700,"closing":false,"conn":15,"event":"close_end","finished":true}
+{"at":1790078924901196700,"closing":false,"conn":15,"event":"state","finished":true,"state":"closed"}
+{"at":1790078924941977300,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078924941977300,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078924941977300,"bodyBytes":63711,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":3,"requestClose":false,"retry":"0"}
+{"at":1790078924942714500,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":0,"mode":"sdk","phase":3,"stepFound":true,"stepValid":true,"turn":"3abe4d20-7161-4ee0-962c-e6b5098395a5"}
+{"at":1790078924942714500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078924942714500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078924942714500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078924942714500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5449}
+{"at":1790078924942714500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078924942714500,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":13193}
+{"at":1790078924955909600,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078924956918800,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":15382}
+{"at":1790078927519469100,"closing":false,"conn":2,"event":"write_start","finished":false,"n":3484}
+{"at":1790078927520018000,"closing":false,"conn":2,"error":"","event":"write_end","finished":false,"n":3484}
+{"at":1790078927554611000,"cancelled":false,"closing":false,"conn":2,"event":"handler_done","finished":true,"phase":3,"status":200}
+{"at":1790078927554611000,"closing":false,"conn":2,"event":"write_start","finished":true,"n":5}
+{"at":1790078927555124400,"closing":false,"conn":2,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078927556652600,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078927557668100,"closing":false,"conn":2,"event":"state","finished":true,"state":"idle"}
+{"at":1790078927999184800,"closing":false,"conn":2,"error":"","event":"read","finished":true,"n":4096}
+{"at":1790078928000200300,"closing":false,"conn":2,"event":"state","finished":true,"state":"active"}
+{"at":1790078928000709000,"bodyBytes":66441,"class":"main","closing":false,"conn":2,"event":"request","finished":true,"path":"/v1/messages","phase":8,"requestClose":false,"retry":"0"}
+{"at":1790078928000709000,"closing":false,"conn":2,"event":"request_identity","finished":true,"index":1,"mode":"sdk","phase":8,"stepFound":true,"stepValid":true,"turn":"3abe4d20-7161-4ee0-962c-e6b5098395a5"}
+{"at":1790078928000709000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078928000709000,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078928001719200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078928001719200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":5495}
+{"at":1790078928001719200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078928001719200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":16384}
+{"at":1790078928001719200,"closing":false,"conn":2,"error":"","event":"read","finished":false,"n":19017}
+{"at":1790078930822946400,"closing":false,"conn":2,"event":"write_start","finished":false,"n":1048}
+{"at":1790078930822946400,"closing":false,"conn":2,"event":"injected_drop","finished":false,"forwardedBytes":0}
+{"at":1790078930822946400,"closing":false,"conn":2,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4367: use of closed network connection","event":"read","finished":false,"n":0}
+{"at":1790078930839371700,"cancelled":true,"closing":false,"conn":2,"event":"handler_done","finished":false,"phase":8,"status":200}
+{"at":1790078930839913400,"closing":false,"conn":2,"event":"close_start","finished":false}
+{"at":1790078930839913400,"closing":false,"conn":2,"event":"close_end","finished":false}
+{"at":1790078930839913400,"closing":false,"conn":2,"event":"state","finished":false,"state":"closed"}
+{"at":1790078931430197900,"closing":false,"conn":16,"event":"state","finished":false,"state":"new"}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078931442508100,"closing":false,"conn":16,"event":"state","finished":false,"state":"active"}
+{"at":1790078931442508100,"bodyBytes":66441,"class":"main","closing":false,"conn":16,"event":"request","finished":false,"path":"/v1/messages","phase":8,"requestClose":false,"retry":"0"}
+{"at":1790078931442508100,"closing":false,"conn":16,"event":"request_identity","finished":false,"index":1,"mode":"sdk","phase":8,"stepFound":true,"stepValid":true,"turn":"3abe4d20-7161-4ee0-962c-e6b5098395a5"}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":5471}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":16384}
+{"at":1790078931442508100,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":17056}
+{"at":1790078931750861200,"closing":false,"conn":16,"error":"","event":"read","finished":false,"n":1961}
+{"at":1790078931753566600,"cancelled":false,"closing":false,"conn":16,"event":"handler_done","finished":true,"phase":8,"status":400}
+{"at":1790078931754482800,"closing":false,"conn":16,"event":"write_start","finished":true,"n":394}
+{"at":1790078931754482800,"closing":false,"conn":16,"error":"","event":"write_end","finished":true,"n":394}
+{"at":1790078931754482800,"closing":false,"conn":16,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:11993: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078931754482800,"closing":false,"conn":16,"event":"state","finished":true,"state":"idle"}
+{"at":1790078931758113100,"closing":false,"conn":16,"error":"EOF","event":"read","finished":true,"n":0}
+{"at":1790078931758113100,"closing":false,"conn":16,"event":"close_start","finished":true}
+{"at":1790078931758113100,"closing":false,"conn":16,"event":"drain_start","finished":true}
+{"at":1790078931758113100,"closing":false,"conn":16,"error":"EOF","event":"drain_end","finished":true,"n":0}
+{"at":1790078931758113100,"closing":false,"conn":16,"event":"close_end","finished":true}
+{"at":1790078931758113100,"closing":false,"conn":16,"event":"state","finished":true,"state":"closed"}
+{"at":1790078931990384700,"closing":false,"conn":17,"event":"state","finished":false,"state":"new"}
+{"at":1790078931995123400,"closing":false,"conn":17,"error":"","event":"read","finished":false,"n":232}
+{"at":1790078931995123400,"closing":false,"conn":17,"event":"state","finished":false,"state":"active"}
+{"at":1790078931995689700,"bodyBytes":402,"class":"","closing":false,"conn":17,"event":"request","finished":false,"path":"/clauduct/context","phase":1,"requestClose":false,"retry":""}
+{"at":1790078931995689700,"closing":false,"conn":17,"error":"","event":"read","finished":false,"n":402}
+{"at":1790078931995689700,"cancelled":false,"closing":false,"conn":17,"event":"handler_done","finished":true,"phase":1,"status":204}
+{"at":1790078931996234400,"closing":false,"conn":17,"event":"write_start","finished":true,"n":64}
+{"at":1790078931996234400,"closing":false,"conn":17,"error":"","event":"write_end","finished":true,"n":64}
+{"at":1790078931996234400,"closing":false,"conn":17,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:1584: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078931996234400,"closing":false,"conn":17,"event":"state","finished":true,"state":"idle"}
+{"at":1790078932003377200,"closing":false,"conn":17,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:1584: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078932003377200,"closing":false,"conn":17,"event":"close_start","finished":true}
+{"at":1790078932003377200,"closing":false,"conn":17,"event":"drain_start","finished":true}
+{"at":1790078932003377200,"closing":false,"conn":17,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:1584: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078932004106500,"closing":false,"conn":17,"event":"close_end","finished":true}
+{"at":1790078932004106500,"closing":false,"conn":17,"event":"state","finished":true,"state":"closed"}
+{"at":1790078932055236000,"closing":false,"conn":18,"event":"state","finished":false,"state":"new"}
+{"at":1790078932063762500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":1009}
+{"at":1790078932063762500,"closing":false,"conn":18,"event":"state","finished":false,"state":"active"}
+{"at":1790078932063762500,"bodyBytes":66761,"class":"main","closing":false,"conn":18,"event":"request","finished":false,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078932064298500,"closing":false,"conn":18,"event":"request_identity","finished":false,"index":0,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"ac72323d-ea4f-4610-9b7d-31d7b5ce7201"}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":4416}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":16384}
+{"at":1790078932064298500,"closing":false,"conn":18,"error":"","event":"read","finished":false,"n":19337}
+{"at":1790078936540815400,"closing":false,"conn":18,"event":"write_start","finished":false,"n":3510}
+{"at":1790078936540815400,"closing":false,"conn":18,"error":"","event":"write_end","finished":false,"n":3510}
+{"at":1790078936583561500,"cancelled":false,"closing":false,"conn":18,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078936583561500,"closing":false,"conn":18,"event":"write_start","finished":true,"n":5}
+{"at":1790078936583561500,"closing":false,"conn":18,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078936583561500,"closing":false,"conn":18,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:1585: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078936583561500,"closing":false,"conn":18,"event":"state","finished":true,"state":"idle"}
+{"at":1790078936586275300,"closing":false,"conn":18,"error":"EOF","event":"read","finished":true,"n":0}
+{"at":1790078936586275300,"closing":false,"conn":18,"event":"close_start","finished":true}
+{"at":1790078936586275300,"closing":false,"conn":18,"event":"drain_start","finished":true}
+{"at":1790078936586275300,"closing":false,"conn":18,"error":"EOF","event":"drain_end","finished":true,"n":0}
+{"at":1790078936586275300,"closing":false,"conn":18,"event":"close_end","finished":true}
+{"at":1790078936586275300,"closing":false,"conn":18,"event":"state","finished":true,"state":"closed"}
+{"at":1790078936691241700,"closing":false,"conn":19,"event":"state","finished":false,"state":"new"}
+{"at":1790078936697416800,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078936697416800,"closing":false,"conn":19,"event":"state","finished":false,"state":"active"}
+{"at":1790078936697416800,"bodyBytes":69297,"class":"main","closing":false,"conn":19,"event":"request","finished":false,"path":"/v1/messages","phase":1,"requestClose":false,"retry":"0"}
+{"at":1790078936698949600,"closing":false,"conn":19,"event":"request_identity","finished":false,"index":1,"mode":"sdk","phase":1,"stepFound":true,"stepValid":true,"turn":"ac72323d-ea4f-4610-9b7d-31d7b5ce7201"}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":4096}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":5468}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":10240}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":16384}
+{"at":1790078936698949600,"closing":false,"conn":19,"error":"","event":"read","finished":false,"n":21873}
+{"at":1790078939363290200,"closing":false,"conn":19,"event":"write_start","finished":false,"n":1105}
+{"at":1790078939363290200,"closing":false,"conn":19,"error":"","event":"write_end","finished":false,"n":1105}
+{"at":1790078939468609500,"cancelled":false,"closing":false,"conn":19,"event":"handler_done","finished":true,"phase":1,"status":200}
+{"at":1790078939468609500,"closing":false,"conn":19,"event":"write_start","finished":true,"n":5}
+{"at":1790078939468609500,"closing":false,"conn":19,"error":"","event":"write_end","finished":true,"n":5}
+{"at":1790078939472663600,"closing":false,"conn":19,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:9811: i/o timeout","event":"read","finished":true,"n":0}
+{"at":1790078939472663600,"closing":false,"conn":19,"event":"state","finished":true,"state":"idle"}
+{"at":1790078939491057400,"closing":false,"conn":19,"error":"EOF","event":"read","finished":true,"n":0}
+{"at":1790078939491582000,"closing":false,"conn":19,"event":"close_start","finished":true}
+{"at":1790078939491582000,"closing":false,"conn":19,"event":"drain_start","finished":true}
+{"at":1790078939491582000,"closing":false,"conn":19,"error":"EOF","event":"drain_end","finished":true,"n":0}
+{"at":1790078939491582000,"closing":false,"conn":19,"event":"close_end","finished":true}
+{"at":1790078939491582000,"closing":false,"conn":19,"event":"state","finished":true,"state":"closed"}
+{"at":1790078939611423100,"closing":false,"conn":10,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14779: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078939611423100,"closing":false,"conn":10,"event":"close_start","finished":true}
+{"at":1790078939611423100,"closing":false,"conn":10,"event":"drain_start","finished":true}
+{"at":1790078939611423100,"closing":false,"conn":10,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14779: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078939611423100,"closing":false,"conn":9,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14778: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078939611423100,"closing":false,"conn":9,"event":"close_start","finished":true}
+{"at":1790078939611423100,"closing":false,"conn":9,"event":"drain_start","finished":true}
+{"at":1790078939611423100,"closing":false,"conn":9,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:14778: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078939611423100,"closing":false,"conn":9,"event":"close_end","finished":true}
+{"at":1790078939611423100,"closing":false,"conn":9,"event":"state","finished":true,"state":"closed"}
+{"at":1790078939611423100,"closing":false,"conn":1,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4366: wsarecv: An existing connection was forcibly closed by the remote host.","event":"read","finished":true,"n":0}
+{"at":1790078939611423100,"closing":false,"conn":1,"event":"close_start","finished":true}
+{"at":1790078939611423100,"closing":false,"conn":1,"event":"drain_start","finished":true}
+{"at":1790078939612962000,"closing":false,"conn":1,"error":"read tcp 127.0.0.1:4364-\u003e127.0.0.1:4366: wsarecv: An existing connection was forcibly closed by the remote host.","event":"drain_end","finished":true,"n":0}
+{"at":1790078939612962000,"closing":false,"conn":1,"event":"close_end","finished":true}
+{"at":1790078939612962000,"closing":false,"conn":1,"event":"state","finished":true,"state":"closed"}
+{"at":1790078939612962000,"closing":false,"conn":10,"event":"close_end","finished":true}
+{"at":1790078939612962000,"closing":false,"conn":10,"event":"state","finished":true,"state":"closed"}

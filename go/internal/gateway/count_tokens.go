@@ -70,6 +70,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	entry := recordOf(w)
 	entry.checked("input")
+	entry.requestClass(r.Header.Get("X-Claude-Code-Request-Class"))
 	g.stripContextDisplays(request, r.Header.Get("X-Claude-Code-Session-Id"))
 	if g.delegations != nil {
 		g.delegations.restoreSelectionHistory(request, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"))
@@ -84,17 +85,27 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, 400, "WORKFLOW_TOOL_POLICY")
 		return
 	}
+	override, compact, failure := g.previewCompaction(r, request, override)
+	if failure != "" {
+		g.refuseCategory(w, http.StatusBadRequest, failure)
+		return
+	}
 	built, err := bridge.BuildRequest(request, override...)
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}
 	if g.delegations != nil {
-		g.delegations.describeWorkflowStep(built, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"))
+		if !compact {
+			g.delegations.describeWorkflowStep(built, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"))
+		}
 		if err := g.delegations.describe(built.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
 			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
 			return
 		}
+	}
+	if compact {
+		addCompactGuidance(built)
 	}
 	entry.at(stagePrepare)
 	if err := g.prepareDocuments(ctx, built); err != nil {

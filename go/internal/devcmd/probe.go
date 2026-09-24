@@ -1,4 +1,4 @@
-package main
+package devcmd
 
 import (
 	"context"
@@ -97,7 +97,7 @@ func usageProbe(out io.Writer) int {
 	fmt.Fprintln(out, "  accept <model> [effort...] — one request per catalogue effort, plus a tool call, its result,")
 	fmt.Fprintln(out, "         the reasoning record and an image at the cheapest; its own per-route caps, printed first")
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, "run: clauduct-dev probe <name> --send")
+	fmt.Fprintln(out, "run: clauduct --dev --probe <name> --send")
 	return 2
 }
 

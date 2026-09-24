@@ -11,7 +11,7 @@ import (
 // WriteUsage prints what this account has spent, from the backend's own accounting.
 //
 // It lives here rather than in either command because both ask the same question:
-// `clauduct --usage` and `clauduct-dev usage` are the same view, and a second copy of it
+// `clauduct --usage` and `clauduct --dev --usage` are the same view, and a second copy of it
 // would drift.
 //
 // It exists at all because the client cannot show this. Measured against a controlled

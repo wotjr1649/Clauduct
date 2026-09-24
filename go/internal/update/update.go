@@ -41,10 +41,15 @@ const API = "https://api.github.com/repos/" + Repository + "/releases/latest"
 // Timeout bounds one update run.
 const Timeout = 3 * time.Minute
 
-// Binaries are what an installation consists of. All three or none: clauduct-hook has to
-// sit beside clauduct or role routing stops working, and a half-applied update is the one
-// state nobody would think to look for.
-var Binaries = []string{"clauduct.exe", "clauduct-hook.exe", "clauduct-dev.exe"}
+// Binaries are what an installation consists of: one file since v0.4.0, which is also the
+// hook, the PDF renderer and Clauduct's own commands (#112).
+var Binaries = []string{"clauduct.exe"}
+
+// Retired are the names a 0.3.x installation had beside clauduct.exe. Releases through
+// v0.4.x still publish them as byte-identical copies, because a 0.3.x updater refuses a
+// release without all three; a copy takes the role its name says. An update removes them
+// once it has replaced clauduct.exe, and an uninstall removes them with the rest.
+var Retired = []string{"clauduct-hook.exe", "clauduct-dev.exe"}
 
 // SumsAsset is where the release states its digests.
 const SumsAsset = "SHA256SUMS"
@@ -231,6 +236,16 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	for _, s := range done {
 		if os.Remove(s.backup) != nil {
 			leftovers = append(leftovers, s.backup)
+		}
+	}
+
+	// Only after clauduct.exe is the new one, so a failure above leaves a 0.3.x installation
+	// whole. A copy a session started before the update is running as its hook right now
+	// cannot go, and is reported the same way.
+	for _, name := range Retired {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			leftovers = append(leftovers, path)
 		}
 	}
 	return leftovers, nil

@@ -18,6 +18,10 @@ import (
 const MaxPages = 100
 const MaxBytes = 24 << 20
 
+// RenderArg is the whole argument list of the gateway's renderer subprocess, which is
+// clauduct.exe run again. Reserved with a prefix no native option carries (#112).
+const RenderArg = "--clauduct-render-pdf"
+
 var ErrRender = errors.New("PDF_RENDER_FAILED")
 
 type com struct{ table *[32]uintptr }

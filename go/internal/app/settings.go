@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
@@ -19,14 +20,9 @@ import (
 // replace it and the hooks would never install. user_settings.go now combines user
 // settings with these required bindings at each actual settings option's position.
 
-// hookBinary is the name of the program the client runs on a subagent event.
-const hookBinary = "clauduct-hook"
-
 // hookTimeout is how long the client waits for it. The baseline's five seconds; the hook
 // itself gives up on the gateway after three.
 const hookTimeout = 5
-
-// hookSuffix is what an executable is called here. Set by the platform file.
 
 type childSettings struct {
 	Hooks       map[string][]hookMatcher `json:"hooks,omitempty"`
@@ -69,7 +65,7 @@ func sessionSettings(hookPath string) (string, bool) {
 			Hooks: []hookEntry{{
 				Type: "command",
 				// Quoted: the path has spaces on an ordinary Windows install.
-				Command: `"` + filepath.ToSlash(hookPath) + `"`,
+				Command: `"` + filepath.ToSlash(hookPath) + `" ` + hookcmd.Arg,
 				Timeout: hookTimeout,
 			}},
 		}}
@@ -115,19 +111,19 @@ func pickerRows() *modelPicker {
 	return &modelPicker{ReplaceBuiltInOptions: true, Options: rows}
 }
 
-// findHook looks for the hook program beside this one.
+// executable is os.Executable. A variable so this package's tests can name a built
+// clauduct.exe as the running file: the test binary would answer the hook too, but under
+// -race it starts slowly enough that one per hook event pushed the package past its timeout.
+var executable = os.Executable
+
+// findHook is this program, which answers hookcmd.Arg itself (#112).
 //
-// Beside, and nowhere else. A PATH search could find a program of the same name that this
-// build did not ship, and the client is about to be told to run whatever this returns.
+// Never a PATH search: the client is about to be told to run whatever this returns. Empty
+// only when the platform cannot say which file is running.
 func findHook() string {
-	self, err := os.Executable()
+	self, err := executable()
 	if err != nil {
 		return ""
 	}
-	path := filepath.Join(filepath.Dir(self), hookBinary+hookSuffix)
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
-		return ""
-	}
-	return path
+	return self
 }

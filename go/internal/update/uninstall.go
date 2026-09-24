@@ -12,7 +12,7 @@ import (
 
 // UninstallOption is the third and last option this launcher owns.
 //
-// It lives beside --update because the two manage the same three files and share the rule
+// It lives beside --update because the two manage the same files and share the rule
 // that makes either safe to recognise. The client defines no --uninstall of its own
 // (measured on 2.1.274, where `update|upgrade` is a subcommand and there is no such
 // option), so this name takes nothing over.
@@ -108,10 +108,11 @@ func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Read
 	return 0
 }
 
-// survey reports which of this build's files are in the directory: the binaries, and the
-// predecessors an earlier --update could not delete while it was running them.
+// survey reports which of this build's files are in the directory: the binaries, the
+// copies a 0.3.x updater left under the retired names, and the predecessors an earlier
+// --update could not delete while it was running them.
 func survey(dir string) (present, leftovers []string) {
-	for _, name := range Binaries {
+	for _, name := range append(append([]string{}, Binaries...), Retired...) {
 		if isFile(filepath.Join(dir, name)) {
 			present = append(present, name)
 		}
@@ -124,11 +125,9 @@ func survey(dir string) (present, leftovers []string) {
 
 // remove takes the running executable out of the way first.
 //
-// The order is the safety, the same way it is in Apply. A directory holding clauduct.exe
-// without clauduct-hook.exe beside it is not a partial uninstall, it is a working install
-// with role routing silently dead -- findHook looks only next to the executable, and a
-// session that cannot find it starts anyway and reports hookInstalled false. So if this
-// executable cannot be moved aside, nothing else is touched either.
+// The order is the safety, the same way it is in Apply. If this executable cannot be moved
+// aside, nothing else is touched either: a half-removed installation is the one state
+// nobody would think to look for.
 func remove(dir, self, parkDir string, present, leftovers []string) (parked string, err error) {
 	moved := ""
 	if sameDir(dir, self) {

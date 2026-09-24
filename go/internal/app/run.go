@@ -109,7 +109,7 @@ type Result struct {
 	Inferences int
 	// Category is how the session ended, as the exit report names it.
 	Category string
-	// HookInstalled is whether the subagent hook was found beside this executable.
+	// HookInstalled is whether the session got a hook: since #112 the running executable.
 	HookInstalled bool
 	// Diagnostics is the final account after in-flight requests have drained.
 	Diagnostics gateway.Diagnostics
@@ -200,7 +200,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if session == nil {
 		session = sessionEnvironment()
 	}
-	// The hook program, when this build shipped one beside itself. Without it the settings
+	// The hook program: this executable, unless the platform cannot name it. Without it the settings
 	// carry the picker and nothing else, which is the right answer: a hook pointing at a
 	// program that is not there fails on every subagent the client starts.
 	// The startup effort rides with them, and is suppressed with them: --effort means
@@ -504,7 +504,7 @@ func (o Options) withDefaults() Options {
 		//
 		// The budget is unrestricted, and deliberately: a route is what the client asked
 		// for, and a count cap would stop a long session partway through. The verification
-		// budget is a separate thing and lives in clauduct-dev probe.
+		// budget is a separate thing and lives in clauduct --dev --probe.
 		ledger := o.Ledger
 		o.StartGateway = func() (*gateway.Gateway, error) {
 			g, err := gateway.Start(upstream.NewDirect(

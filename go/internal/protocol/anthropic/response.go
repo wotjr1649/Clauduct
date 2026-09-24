@@ -254,9 +254,9 @@ func (b *Builder) ResponseID() string {
 
 // AppendText adds a text delta at a content index and returns the frames it produces.
 //
-// The first delta for a response opens the message; the first delta for a content index
-// opens its block. Opening lazily is what keeps an empty response from announcing a block
-// that never gets any content.
+// The first delta for a response opens the message, unless a keepalive already did; the
+// first delta for a content index opens its block. Opening lazily is what keeps an empty
+// response from announcing a block that never gets any content.
 func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Frame, error) {
 	if b.completed {
 		return nil, ErrStreamOrder

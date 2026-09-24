@@ -123,7 +123,11 @@ type RequestRecord struct {
 	// question a reader has is how long things took, not what time it was.
 	StartedMs   int64  `json:"startedMs"`
 	FirstByteMs *int64 `json:"firstByteMs,omitempty"`
-	EndedMs     *int64 `json:"endedMs,omitempty"`
+	// KeepaliveOpenedMs is when a keepalive opened a message that had no output yet (#120).
+	// FirstByteMs is then that moment, not the first output, and a count of these says how
+	// often a first output takes longer than the keepalive waits.
+	KeepaliveOpenedMs *int64 `json:"keepaliveOpenedMs,omitempty"`
+	EndedMs           *int64 `json:"endedMs,omitempty"`
 }
 
 type ContextEstimate struct {
@@ -451,6 +455,16 @@ func (r *record) wrote() {
 	}
 }
 
+func (r *record) openedByKeepalive() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	elapsed := time.Since(r.epoch).Milliseconds()
+	r.data.KeepaliveOpenedMs = &elapsed
+}
+
 // finish closes the record. A request that was never refused succeeded.
 func (r *record) finish() {
 	if r == nil {
@@ -474,7 +488,6 @@ func (r *record) finish() {
 	}
 }
 
-// path reports where this record's request was addressed.
 // began is when the request arrived, which is when the client started waiting. Now for a
 // request nothing recorded.
 func (r *record) began() time.Time {
@@ -486,6 +499,7 @@ func (r *record) began() time.Time {
 	return r.epoch.Add(time.Duration(r.data.StartedMs) * time.Millisecond)
 }
 
+// path reports where this record's request was addressed.
 func (r *record) path() string {
 	if r == nil {
 		return ""

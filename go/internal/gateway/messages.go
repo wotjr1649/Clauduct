@@ -20,7 +20,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
-// readChunk is how much of the backend body is taken at a time. The parser does not care —
+// readChunk is the most of the backend body taken at a time. The parser does not care —
 // chunk boundaries carry no meaning to it — so this is purely about not holding more than
 // necessary.
 const readChunk = 32 * 1024
@@ -33,8 +33,8 @@ const readChunk = 32 * 1024
 // After the first output a ping goes out whenever the client has heard nothing for pingQuiet.
 // Before it the status is not yet sent, and a refusal is still answered with its status
 // code, which the client acts on (429 and Retry-After, 400 for a context overflow). So the
-// message is opened only at openQuiet with nothing written: longer than any first output
-// measured (218 s over 400 requests) and well inside the six minutes. A failure after that
+// message is opened only at openQuiet with nothing written: longer than the longest request
+// measured, first output and all (218 s over 400), and well inside the six minutes. A failure after that
 // arrives as an error event instead of a status.
 //
 // Vars so a test can shorten them, as writeStall is. Nothing outside a test assigns to them.
@@ -789,11 +789,15 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	stopReading := make(chan struct{})
 	defer close(stopReading)
 	go func() {
+		// One buffer, and each read handed over as a copy of what arrived. A backend delta
+		// is a few hundred bytes, so a fresh readChunk per read would allocate a hundred
+		// times the answer; reusing the buffer uncopied would let the next read overwrite a
+		// chunk this loop has not parsed yet.
+		buffer := make([]byte, readChunk)
 		for {
-			buffer := make([]byte, readChunk)
 			n, err := response.Body.Read(buffer)
 			select {
-			case chunks <- chunk{buffer[:n], err}:
+			case chunks <- chunk{append([]byte(nil), buffer[:n]...), err}:
 			case <-stopReading:
 				return
 			}
@@ -815,9 +819,13 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			if request.NonStreaming || ctx.Err() != nil || committed && quiet < pingQuiet || !committed && quiet < openQuiet {
 				continue
 			}
+			opening := !committed
 			if err := emit(translator.Builder().Ping()); err != nil {
 				g.deliveryFailed(ctx, w)
 				return false
+			}
+			if opening && committed {
+				recordOf(w).openedByKeepalive()
 			}
 			continue
 		}

@@ -71,6 +71,27 @@ go run ./cmd/clauduct-dev doctor     # 인증·소켓 없이 환경과 Codex 모
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
 공개 CI는 위 세 검사와 `internal/httpguard`의 Linux·macOS build만 본다.
 
+### TUI 검사 (ConPTY)
+
+interactive TUI 검사는 실제 pseudo console에서 사람이 입력해야 하는데, 에이전트의 셸에는 터미널이 없다.
+`cmd/ptydrive`가 ConPTY 안에서 프로그램을 띄우고 단계 파일(JSON 배열: `wait` 정규식, `send`, `optional`,
+`timeout_s`, `after_ms`)대로 화면 문구를 기다려 입력한다. 출하 자산이 아니다. 대기가 시간 초과되면 보고 있던
+화면의 끝을 stderr에 출력한다 — 단계는 클라이언트 화면에 달려 있어 native가 바뀌면 여기서 먼저 깨진다.
+
+```powershell
+go build -o ..\.tmp\ptydrive.exe ./cmd/ptydrive
+..\.tmp\ptydrive.exe -dir <cwd> -script <steps.json> -log raw.log -text screen.txt -env K=V -- <exe> <args...>
+```
+
+- 부모의 표준 핸들이 리다이렉트돼 있으면 자식이 그것을 물려받아 pseudo console을 보지 못하고 native가 시작을
+  거부한다. 그래서 `STARTF_USESTDHANDLES`에 무효 핸들을 넣는다.
+- TUI는 커서 이동으로 단어를 배치하므로 대기 조건은 공백을 모두 뺀 화면 문자열에 맞춘다.
+- 첫 실행의 폴더 신뢰 화면은 기본값이 "No, exit"다.
+
+TUI 검사의 테스트와 단계 파일은 유지보수자 로컬에 있다. 과금 없는 로컬 검사(`CLAUDUCT_EVIDENCE_TUI_LOCAL=1`)는
+출하 절차에서 이 도구로 돌리고, 실제 backend 검사는 과금 스위치 뒤에 둔다. 검사 바이너리와 `TEMP`는
+`C:\Users` 밖에 둔다 — 요청에 그 경로가 실리면 검사의 전송 guard가 backend에 보내지 않는다.
+
 빌드 산출물은 저장소 밖이나 이미 ignore되는 `.tmp/` 아래에 둔다. `go run`은 VCS 정보를 stamp하지 않으므로 `version`이 `commit unknown`을 말한다. 실제 commit을 확인하려면 빌드한다.
 
 ```powershell
@@ -97,6 +118,7 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 |---|---|
 | `cmd/clauduct` | 제품 launcher. 인자를 해석하지 않는다 |
 | `cmd/clauduct-dev` | Clauduct 자신의 명령. native 옵션과 절대 충돌하지 않도록 별도 바이너리다 |
+| `cmd/ptydrive` | 유지보수 도구. ConPTY에서 TUI를 단계 파일대로 조작한다. 출하하지 않는다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |
 | `internal/gateway` | loopback listener, 요청 경계·인증·registry |

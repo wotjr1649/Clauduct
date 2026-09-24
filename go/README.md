@@ -65,7 +65,7 @@ go vet ./...
 go build ./...
 
 go run ./cmd/clauduct-dev version
-go run ./cmd/clauduct-dev doctor     # 인증·소켓·자식 없이 환경만 본다
+go run ./cmd/clauduct-dev doctor     # 인증·소켓 없이 환경과 Codex 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 codex --version 하나
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,

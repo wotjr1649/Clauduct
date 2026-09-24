@@ -475,6 +475,17 @@ func (r *record) finish() {
 }
 
 // path reports where this record's request was addressed.
+// began is when the request arrived, which is when the client started waiting. Now for a
+// request nothing recorded.
+func (r *record) began() time.Time {
+	if r == nil {
+		return time.Now()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.epoch.Add(time.Duration(r.data.StartedMs) * time.Millisecond)
+}
+
 func (r *record) path() string {
 	if r == nil {
 		return ""

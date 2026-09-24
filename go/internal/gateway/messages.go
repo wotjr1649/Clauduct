@@ -25,6 +25,25 @@ import (
 // necessary.
 const readChunk = 32 * 1024
 
+// A quiet response is kept alive, because the client ends one that sends it nothing for six
+// minutes -- before its first output or after -- and nothing reaches the client while the
+// model thinks (#120, measured on claude 2.1.281 through ANTHROPIC_BASE_URL; the client's
+// documented timeout settings did not move it). An SSE ping resets it.
+//
+// After the first output a ping goes out whenever the client has heard nothing for pingQuiet.
+// Before it the status is not yet sent, and a refusal is still answered with its status
+// code, which the client acts on (429 and Retry-After, 400 for a context overflow). So the
+// message is opened only at openQuiet with nothing written: longer than any first output
+// measured (218 s over 400 requests) and well inside the six minutes. A failure after that
+// arrives as an error event instead of a status.
+//
+// Vars so a test can shorten them, as writeStall is. Nothing outside a test assigns to them.
+var (
+	pingQuiet  = 30 * time.Second
+	openQuiet  = 240 * time.Second
+	quietCheck = 5 * time.Second
+)
+
 // handleMessages runs one inference request end to end.
 //
 // The shape of the error handling is the important part. Before the first byte of the
@@ -690,6 +709,8 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}
 
 	committed := false
+	// The client has been waiting since the request arrived, not since the backend answered.
+	lastWrite := recordOf(w).began()
 	var message anthropic.ResponseMessage
 	emit := func(frames []anthropic.Frame) error {
 		if request.NonStreaming {
@@ -698,6 +719,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		if len(frames) == 0 {
 			return nil
 		}
+		defer func() { lastWrite = time.Now() }()
 		if !committed {
 			committed = true
 			header := w.Header()
@@ -756,12 +778,53 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		_ = control.Flush()
 	}
 
-	buffer := make([]byte, readChunk)
+	// The body is read on its own goroutine so a quiet one can be answered with a keepalive;
+	// every write to the client stays on this one. The caller closes the body when this
+	// returns, which ends a read still waiting.
+	type chunk struct {
+		data []byte
+		err  error
+	}
+	chunks := make(chan chunk)
+	stopReading := make(chan struct{})
+	defer close(stopReading)
+	go func() {
+		for {
+			buffer := make([]byte, readChunk)
+			n, err := response.Body.Read(buffer)
+			select {
+			case chunks <- chunk{buffer[:n], err}:
+			case <-stopReading:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	check := time.NewTicker(quietCheck)
+	defer check.Stop()
+
 	for {
-		n, readErr := response.Body.Read(buffer)
+		var read chunk
+		select {
+		case read = <-chunks:
+		case <-check.C:
+			// A cancelled client is left to the read, which reports it with its evidence.
+			quiet := time.Since(lastWrite)
+			if request.NonStreaming || ctx.Err() != nil || committed && quiet < pingQuiet || !committed && quiet < openQuiet {
+				continue
+			}
+			if err := emit(translator.Builder().Ping()); err != nil {
+				g.deliveryFailed(ctx, w)
+				return false
+			}
+			continue
+		}
+		n, readErr := len(read.data), read.err
 		lastReadErr = readErr
 		if n > 0 {
-			events, err := parser.Push(buffer[:n])
+			events, err := parser.Push(read.data)
 			if err != nil {
 				fail(err)
 				return false

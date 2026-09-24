@@ -477,7 +477,7 @@ v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수�
 | V1 격차: 반환 model·effort(#91) | **고침.** 먼저 기록해 4개 모델 모두 보낸 이름과 정확히 같음을 확인한 뒤, 이름이 다르면 `MODEL_EFFORT_MISMATCH`로 거부한다. 응답이 이름을 싣지 않으면 불일치로 보지 않는다. 요청 기록에 `returnedModel`·`returnedEffort` |
 | V1 격차: admission(#91) | **v0.4.2(#119).** 지금은 동시 요청 64의 고정 상한뿐이고 memory budget·대기열은 없다. 관측된 장애는 없다 |
 | V1 격차: `system` block(#91) | **고침.** 문자열이거나, 메시지 text와 같은 규칙(닫힌 키, `cache_control` 검사)을 따르는 text block이어야 한다. 그 밖은 거부 |
-| V1 격차: downstream keepalive(#91) | **의도.** 첫 출력 전에 ping을 쓰지 않는다. ping으로 200을 먼저 보내면 429·400·`X-Should-Retry`의 실패 처리가 SSE 오류 frame으로 바뀐다. 첫 바이트가 195초 뒤였던 요청도 끊기지 않았다(v0.3.3 재판정). 더 긴 무출력의 측정은 v0.4.1(#120) |
+| V1 격차: downstream keepalive(#91) | **v0.4.1에서 바꿈(#120).** 측정해 보니 클라이언트가 6분 무출력에서 끊었다. 처분은 아래 v0.4.1 절의 "무출력 대기" |
 | V1 격차: WebSearch 401(#91) | **고침.** 저장소를 다시 읽어 토큰이 바뀐 경우에만 1회 재시도한다. 같은 토큰의 재시도는 같은 거절이었다 |
 | V1 격차: usage(#91) | **고침.** backend가 `input_tokens`에 포함해 세는 cached 입력을 `cache_read_input_tokens`로 나눠 보낸다. 합계는 같다(실측: 11,926 = 6,294 + 5,632) |
 | V1 격차: 지연 텍스트(#91) | **고침.** Workflow·SDK 대기 응답의 text part를 줄바꿈으로 이어 block 하나로 보낸다. 마지막 block만 읽는 쪽이 답의 일부만 보지 않게 한다 |
@@ -495,6 +495,7 @@ v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수�
 | 모르는 요청 요소(#127) | **거부 유지, 이름을 남긴다.** 모르는 최상위 필드·키·content block·thinking type은 지금처럼 거부한다 — 버리면 요청의 일부를 무시한 답이 성공처럼 돌아온다. 거부한 이름은 상태의 `requests.refusedElements`에 `범주 이름`으로 남는다(처음 8개, 모양 제한. 아는 필드의 잘못된 값은 남기지 않는다). 모르는 `X-Claude-Code-Request-Class` 값은 `INVALID_HEADER`와 구분해 `REQUEST_CLASS_UNKNOWN`(400)이다 |
 | 업데이트 알림(#127) | 측정하지 않은 버전이면 종료 줄에 `unmeasured=claude/<버전>,codex/<버전>`이 붙고, `clauduct --dev --doctor`가 `re-measure due`라고 말한다. 세션은 막지 않는다. 상태의 `gateway.codex`는 요청에 실린 Codex 버전과 판정이다 |
 | Codex 요청 모양(#121) | **재측정, 모양은 유지.** 설치된 Codex CLI 0.156.1의 `codex exec` 요청을 과금 없이 캡처해 이 빌드의 요청과 비교했다. 0.156.1은 WebSocket을 먼저 쓰고, `instructions`·`tools` 대신 입력 항목으로 도구를 싣는 모양이며, 세션 식별 헤더와 zstd 본문을 쓴다. 이 빌드는 HTTP SSE와 `instructions`·`tools`로 보낸다 — 0.156.1에서 실제 backend를 통과한 모양이다(v0.4.0 출하 검사). 측정 기준을 0.156.1로 옮겼고, 새 모양을 따를지는 v0.5.0에서 정한다. TUI의 요청은 시작할 때 계정 확인이 필요해 과금 없이 캡처하지 못했다 |
+| 무출력 대기(#120) | **keepalive 추가.** 과금 없이 측정했다(로컬 backend): Claude Code 2.1.281은 gateway를 거칠 때 바이트가 360초 동안 오지 않으면 연결을 끊고 재시도한다. 첫 출력 전후, `-p`와 TUI가 같고, `CLAUDE_STREAM_IDLE_TIMEOUT_MS`·`API_TIMEOUT_MS`로는 바뀌지 않았다. 이 빌드는 모델이 생각하는 동안 아무것도 보내지 않으므로, 그 재시도가 replay 차단(`NATIVE_REQUEST_REPLAY_BLOCKED`)에 걸려 턴이 사라졌다. 이제 첫 출력 뒤에는 30초 무출력마다 SSE `ping`을 보낸다. 첫 출력 전에는 240초 동안 아무것도 쓰지 않았으면 메시지를 열고(`message_start`) ping을 보낸다. 240초 전의 실패는 지금처럼 상태 코드(429·400 등)로 답하고, 그 뒤의 실패는 오류 이벤트로 온다. 측정된 가장 긴 요청은 218초였다 |
 
 ## 4. 제3자 구현이라는 사실
 

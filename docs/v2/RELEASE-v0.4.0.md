@@ -32,3 +32,21 @@ Windows x64용 Go V2 패키징 릴리스 후보다. 요청을 번역하고 보�
 v0.4.0이 남기는 기록 중 v0.3.5가 읽지 못하는 것은 없다. 되돌리면 `--dev` 대신 `clauduct-dev`를 쓴다.
 
 Windows 전용이며 서명하지 않는다. 지원 기능과 남은 조건은 [호환성 문서](COMPATIBILITY.md)를 참조한다.
+
+## 출하 검사 (2026-09-24)
+
+태그 `v0.4.0`은 `8f0ffd7`을 가리키고, [Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.4.0)에 자산 6개가 있다.
+검증 기록은 공개 저장소에 두지 않으므로 결과만 적는다. 검사 스크립트는 이번부터 릴리스마다 복사하지 않고 태그와 commit만 넘겨 실행했다.
+
+- 태그의 깨끗한 checkout 두 곳에서 빌드했고, 두 번째는 별도 build cache를 썼다. `clauduct.exe`는 바이트 단위로 같았다
+  (`d168b811…`, 사본 둘도 같은 digest). `clauduct --dev --version`은 `v0.4.0`, commit `8f0ffd7643127ead3c348adaa5704c5c637f9db2`이고
+  `+dirty`는 없다.
+- 격리 설치로 새 설치(`clauduct.exe` 하나), v0.3.5 발행 자산 설치(셋), 새 설치 스크립트로 교체(하나, 옛 두 이름 제거), v0.3.5 스크립트로
+  되돌리기(셋)를 차례로 했다. 모든 단계에서 파일 집합·digest·버전 스탬프가 맞았고 `.old` 파일과 PATH 변화는 없었다.
+- 설치한 v0.4.0으로 실제 backend 세션을 돌렸다(시도 5회). 입력, `/clear`, 백그라운드 자식 위임(부모 `gpt-6-luna`/max, 자식
+  `clauduct-luna`에 `effort: low`)을 보냈고 hook(`clauduct.exe --clauduct-hook`)이 자식을 등록했으며 거부·끊김·실패는 0이었다.
+  발행 전에는 같은 코드의 개발 빌드로 SDK 위임 세션과 TUI를 10회 돌렸다. Codex CLI는 0.156.1이었다.
+- 발행 후 받은 자산 6개는 빌드한 파일과 같았고, Release API의 digest는 `SHA256SUMS`와 같았다.
+  `install.ps1 -Tag v0.4.0`으로 GitHub에서 설치했다. 격리된 v0.3.5의 `clauduct --update --yes`는 0.3.5 updater로 세 이름을 받아
+  v0.4.0이 됐고(사본 `clauduct-dev.exe`가 `v0.4.0`을 말했다), 남은 `.old`는 다음 실행에서 사라졌다. 두 번째 `--update`는
+  `already current`였다.

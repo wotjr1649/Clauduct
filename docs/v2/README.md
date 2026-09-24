@@ -2,14 +2,14 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-24, v0.3.5 출시)
+## 1. 현재 상태 (2026-09-24, v0.4.0 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.3.5** (태그 `v0.3.5` → `6bdbb82`). 변경과 출하 검사는 [RELEASE-v0.3.5.md](RELEASE-v0.3.5.md). 그 전은 [v0.3.4](RELEASE-v0.3.4.md) |
+| 최신 출시 | **v0.4.0** (태그 `v0.4.0` → `8f0ffd7`). 변경과 출하 검사는 [RELEASE-v0.4.0.md](RELEASE-v0.4.0.md). 그 전은 [v0.3.5](RELEASE-v0.3.5.md) |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), go 1.27.1, **CGO_ENABLED=0**. 정확 계수를 위해 검토·고정한 의존성 3개: [결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | claude **2.1.281**(기준 상수·인자 표·native fixture, v0.3.4 재측정. 실제 backend TUI는 v0.3.5 개발본에서도 통과). 이전 기준은 2.1.280. Windows, go 1.27.1 |
+| 측정된 클라이언트 | claude **2.1.281**(기준 상수·인자 표·native fixture, v0.3.4 재측정. 실제 backend TUI는 v0.4.0 개발본에서도 통과). Codex CLI 기준은 0.153.4, 설치본은 계속 바뀐다(0.156.1에서 v0.4.0 출하 검사 통과, #121). 이전 기준은 2.1.280. Windows, go 1.27.1 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build만 본다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는

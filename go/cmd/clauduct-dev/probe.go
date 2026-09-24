@@ -94,6 +94,8 @@ func usageProbe(out io.Writer) int {
 		p := probes[name]
 		fmt.Fprintf(out, "  %-6s %d attempts — %s\n", name, p.attempts, p.measures)
 	}
+	fmt.Fprintln(out, "  accept <model> [effort...] — one request per catalogue effort, plus a tool call, its result,")
+	fmt.Fprintln(out, "         the reasoning record and an image at the cheapest; its own per-route caps, printed first")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "run: clauduct-dev probe <name> --send")
 	return 2
@@ -106,6 +108,9 @@ func probeNames() []string {
 }
 
 func probe(args []string, out, errOut io.Writer) int {
+	if len(args) > 0 && args[0] == "accept" {
+		return acceptCommand(args[1:], out, errOut)
+	}
 	if len(args) != 2 || args[1] != "--send" {
 		return usageProbe(out)
 	}

@@ -37,8 +37,10 @@ type catalogModel struct {
 	Efforts        []struct {
 		Effort string `json:"effort"`
 	} `json:"supported_reasoning_levels"`
-	ContextWindow    int64 `json:"context_window"`
-	MaxContextWindow int64 `json:"max_context_window"`
+	ContextWindow    int64    `json:"context_window"`
+	MaxContextWindow int64    `json:"max_context_window"`
+	EffectivePercent int64    `json:"effective_context_window_percent"`
+	InputModalities  []string `json:"input_modalities"`
 	Upgrade          *struct {
 		Model        string `json:"model"`
 		RetirementAt string `json:"retirement_at"`
@@ -48,11 +50,7 @@ type catalogModel struct {
 // catalogue reads the cache from the OS user's Codex home, the one whose credential a
 // session uses (auth.OSCodexHome ignores CODEX_HOME for the same reason).
 func catalogue(out io.Writer) {
-	var raw []byte
-	home, err := auth.OSCodexHome()
-	if err == nil {
-		raw, err = os.ReadFile(filepath.Join(home, "models_cache.json"))
-	}
+	raw, err := readCatalogue()
 	installed, versionErr := upstream.InstalledVersion()()
 	if versionErr != nil {
 		installed = "unavailable"
@@ -60,10 +58,22 @@ func catalogue(out io.Writer) {
 	catalogueReport(out, raw, err, installed, time.Now())
 }
 
+func readCatalogue() ([]byte, error) {
+	home, err := auth.OSCodexHome()
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(filepath.Join(home, "models_cache.json"))
+}
+
+func decodeCatalogue(raw []byte) (cache codexCatalogue, ok bool) {
+	return cache, json.Unmarshal(raw, &cache) == nil && !cache.FetchedAt.IsZero() && len(cache.Models) > 0
+}
+
 // catalogueReport never fails doctor: the cache is a hint about the backend, and a session
 // does not need it.
 func catalogueReport(out io.Writer, raw []byte, readErr error, installed string, now time.Time) {
-	var cache codexCatalogue
+	cache, decoded := decodeCatalogue(raw)
 	switch {
 	case errors.Is(readErr, fs.ErrNotExist):
 		fmt.Fprintln(out, "models       unavailable: no Codex model cache; running codex once writes it")
@@ -71,7 +81,7 @@ func catalogueReport(out io.Writer, raw []byte, readErr error, installed string,
 	case readErr != nil:
 		fmt.Fprintln(out, "models       unavailable: the Codex model cache could not be read")
 		return
-	case json.Unmarshal(raw, &cache) != nil || cache.FetchedAt.IsZero() || len(cache.Models) == 0:
+	case !decoded:
 		fmt.Fprintln(out, "models       unavailable: the Codex model cache is in a format this build does not recognise")
 		return
 	}

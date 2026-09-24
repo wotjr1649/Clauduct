@@ -192,51 +192,38 @@ func Digest(body []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Apply replaces the binaries in dir, and puts them back if any of them fails.
+// Apply replaces the binary in dir, and puts the old one back if the new one cannot be
+// written.
 //
 // A running executable cannot be overwritten on Windows but it can be renamed, which is
 // what makes this possible at all: the old file is moved aside, the new one is written in
 // its place, and the process doing this keeps running from the file it renamed.
+//
+// One binary since v0.4.0 (#112). A second would need the multi-file restore this carried
+// until then: replacing one and failing on the next must not leave a mixed installation.
 func Apply(dir string, files map[string][]byte) (leftovers []string, err error) {
-	type swap struct{ path, backup string }
-	done := make([]swap, 0, len(files))
-
-	restore := func() {
-		for i := len(done) - 1; i >= 0; i-- {
-			os.Remove(done[i].path)
-			os.Rename(done[i].backup, done[i].path)
-		}
+	name := Binaries[0]
+	body, ok := files[name]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrMissingFile, name)
+	}
+	path := filepath.Join(dir, name)
+	backup := path + ".old"
+	os.Remove(backup)
+	if err := os.Rename(path, backup); err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(path, body, 0o755); err != nil {
+		os.Rename(backup, path)
+		return nil, err
 	}
 
-	for _, name := range Binaries {
-		body, ok := files[name]
-		if !ok {
-			restore()
-			return nil, fmt.Errorf("%w: %s", ErrMissingFile, name)
-		}
-		path := filepath.Join(dir, name)
-		backup := path + ".old"
-		os.Remove(backup)
-		if err := os.Rename(path, backup); err != nil {
-			restore()
-			return nil, err
-		}
-		if err := os.WriteFile(path, body, 0o755); err != nil {
-			os.Rename(backup, path)
-			restore()
-			return nil, err
-		}
-		done = append(done, swap{path: path, backup: backup})
-	}
-
-	// The binary running this is one of the files just replaced, so its own predecessor is
-	// still open and cannot be removed until this process exits. Reported rather than
-	// retried: a leftover is a file the user can delete, and a retry loop here would be
-	// waiting for itself.
-	for _, s := range done {
-		if os.Remove(s.backup) != nil {
-			leftovers = append(leftovers, s.backup)
-		}
+	// The binary running this is the file just replaced, so its predecessor is still open
+	// and cannot be removed until this process exits. Reported rather than retried: a
+	// leftover is a file the user can delete, and a retry loop here would be waiting for
+	// itself.
+	if os.Remove(backup) != nil {
+		leftovers = append(leftovers, backup)
 	}
 
 	// Only after clauduct.exe is the new one, so a failure above leaves a 0.3.x installation

@@ -2,11 +2,11 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-24, v0.3.3 출시)
+## 1. 현재 상태 (2026-09-24, v0.3.4 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.3.3** (태그 `v0.3.3` → `3ecbc4a`). 변경과 출하 검사는 [RELEASE-v0.3.3.md](RELEASE-v0.3.3.md) |
+| 최신 출시 | **v0.3.4** (태그 `v0.3.4` → `be7c689`). 변경과 출하 검사는 [RELEASE-v0.3.4.md](RELEASE-v0.3.4.md) |
 | 실행기 | `clauduct` = Go 빌드 (+`clauduct-hook`, `clauduct-dev`). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.1, **CGO_ENABLED=0**. 정확 계수를 위해 검토·고정한 의존성 3개: [결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
 | 측정된 클라이언트 | claude **2.1.281**(기준 상수·인자 표·native fixture·실제 backend TUI, v0.3.4 재측정). 이전 기준은 2.1.280. Windows, go 1.27.1 |

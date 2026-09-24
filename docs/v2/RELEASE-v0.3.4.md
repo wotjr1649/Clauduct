@@ -42,3 +42,20 @@ Windows x64용 Go V2 릴리스 후보다. GPT-6 Sol과 Luna를 라우팅하고 G
 
 Windows 전용이며 서명하지 않는다. 지원 기능과 남은 조건은 [호환성 문서](COMPATIBILITY.md)를
 참조한다.
+
+## 출하 검사 (2026-09-24)
+
+태그 `v0.3.4`는 `be7c689`를 가리키고, [Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.3.4)에 자산 6개가 있다.
+검증 기록은 공개 저장소에 두지 않으므로 결과만 적는다.
+
+- 태그의 깨끗한 checkout 두 곳에서 빌드했고, 두 번째는 별도 build cache를 썼다. 세 바이너리는 바이트 단위로 같았다.
+  `clauduct-dev version`은 `0.3.4`, commit `be7c68963fdcfd5ed0f276f15b4ea5d15886fc62`이고 `+dirty`는 없다.
+- 격리 설치로 새 설치, v0.3.3 발행 자산 설치, v0.3.4로 업데이트, v0.3.3으로 되돌리기를 차례로 했다. 모든 단계에서
+  digest와 버전 스탬프가 맞았고 `.old` 파일과 PATH 변화는 없었다.
+- 설치한 v0.3.4로 실제 backend 세션을 돌렸다(시도 5회). 부모는 `--model gpt-6-luna`만 주어 기본 effort max로 돌았고,
+  자식은 `clauduct-luna`에 `effort: low` 인자로 돌았다. 입력, `/clear`, 백그라운드 자식 위임을 보냈고 거부·끊김·실패는 0이었다.
+  자식 보고가 도착했고, 끝난 자식 turn 하나가 재실행 방지 기록을 돌려줬다. 첫 실행은 모델의 Agent 호출 하나가 native 필수 인자
+  없이 나가 거부된 것을 검사 스크립트가 시도로 세어 세션을 일찍 끊었다(제품 결함 아님). 스크립트를 고쳐 다시 돌렸다.
+- 발행 후 받은 자산 6개는 빌드한 파일과 같았고, Release API의 digest는 `SHA256SUMS`와 같았다.
+  `install.ps1 -Tag v0.3.4`로 GitHub에서 설치했다. 격리된 v0.3.3의 `clauduct --update --yes`는 v0.3.4로 교체했고,
+  남은 `.old`는 다음 실행에서 사라졌다. 두 번째 `--update`는 `already current`였다.

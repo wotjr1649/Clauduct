@@ -277,6 +277,25 @@ func DecodeResponseID(raw []byte) (string, error) {
 	return id, nil
 }
 
+// DecodeReturnedRoute reads the model and reasoning effort a completed response says it ran
+// on. Empty when absent or not a string; nothing here refuses, it only reports (#91).
+func DecodeReturnedRoute(raw []byte) (model, effort string) {
+	var body struct {
+		Response struct {
+			Model     json.RawMessage `json:"model"`
+			Reasoning struct {
+				Effort json.RawMessage `json:"effort"`
+			} `json:"reasoning"`
+		} `json:"response"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		return "", ""
+	}
+	_ = json.Unmarshal(body.Response.Model, &model)
+	_ = json.Unmarshal(body.Response.Reasoning.Effort, &effort)
+	return model, effort
+}
+
 // DecodeUsage reads the counts out of a response.completed payload. A payload without
 // usage is not an error: the counts are simply unknown.
 func DecodeUsage(raw []byte) (Usage, error) {

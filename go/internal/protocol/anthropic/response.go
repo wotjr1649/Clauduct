@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -58,6 +59,10 @@ type Usage struct {
 	OutputTokens int64
 	InputKnown   bool
 	OutputKnown  bool
+	// CacheRead is the part of InputTokens the backend read from its cache. The backend
+	// counts it inside input_tokens; Anthropic reports it beside, so it is moved (#91).
+	CacheRead      int64
+	CacheReadKnown bool
 }
 
 type textPart struct {
@@ -379,16 +384,17 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		b.nextIndex++
 		frames = append(frames, thoughtBlockStart(index, data), contentBlockStop(index))
 	}
-	if b.deferText {
-		ordered := make([]*textPart, len(b.parts))
+	// One block, the parts joined as the baseline joined them: a reader that keeps only the
+	// last assistant block -- Workflow agent(), the SDK -- otherwise saw only the last part
+	// of an answer the backend wrote in two (#91).
+	if b.deferText && len(b.parts) > 0 {
+		texts := make([]string, len(b.parts))
 		for _, part := range b.parts {
-			ordered[part.index] = part
+			texts[part.index] = string(part.builder)
 		}
-		for _, part := range ordered {
-			index := b.nextIndex
-			b.nextIndex++
-			frames = append(frames, contentBlockStart(index), contentBlockDelta(index, string(part.builder)), contentBlockStop(index))
-		}
+		index := b.nextIndex
+		b.nextIndex++
+		frames = append(frames, contentBlockStart(index), contentBlockDelta(index, strings.Join(texts, "\n")), contentBlockStop(index))
 	}
 
 	// Every text block is closed before the first tool block opens. A client reading
@@ -533,6 +539,10 @@ func messageDelta(usage Usage, toolUse bool) Frame {
 	// "we do not know what this cost" into "it cost nothing".
 	if usage.InputKnown {
 		counts["input_tokens"] = usage.InputTokens
+		if usage.CacheReadKnown && usage.CacheRead <= usage.InputTokens {
+			counts["input_tokens"] = usage.InputTokens - usage.CacheRead
+			counts["cache_read_input_tokens"] = usage.CacheRead
+		}
 	}
 	if usage.OutputKnown {
 		counts["output_tokens"] = usage.OutputTokens

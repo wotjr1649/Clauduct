@@ -170,7 +170,7 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 | 구분 | 확인한 기준 |
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/build.json), [개발 경로 반영](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.281`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.4 개발본(GPT-6 표), gpt-6-luna/low 실제 backend, 2026-09-24: 생성·압축·취소·복구·종료 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
+| 최근 실제 TUI | Claude Code `2.1.281`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.5 개발본, gpt-6-luna/low 실제 backend, 2026-09-24: 생성·압축·취소·복구·종료 PASS(공개 `go/cmd/ptydrive`로 조작). 그 전: v0.3.4 개발본(GPT-6 표), 같은 날 같은 항목 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
 | 인자 표·native fixture 재측정 | Claude Code `2.1.281`, 2026-09-24(v0.3.4). `--help` 차이는 `--agents <json-or-file>` 하나다: `--print`와 함께 JSON 파일 경로를 받는다. 인자 수는 같고, 역할 탐색이 그 파일을 읽도록 고쳤다. 모듈이 쓰는 plugin 이벤트 타입은 같고 `$.session.version()`만 추가됐다. 설치 native를 쓰는 fixture 검사 통과. 이전 기준: `2.1.280`, 2026-09-23 [재측정 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-client-2.1.280-20260923/README.md) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/evidence.json), [TUI 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
@@ -458,6 +458,32 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
 **설치된 클라이언트가 보내지 않는다** — 2.1.274 바이너리에 그 타입 이름이 없다(2026-09-17 실측).
 API에는 있으나 이 조합에서는 도달 경로가 없다.
+
+### v0.3.5 — 남은 결함·격차의 처분
+
+v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수정을 되돌리면 실패하는 로컬 테스트가 있다. 런타임을 바꾼 것은
+2026-09-24 개발 빌드로 실제 backend를 확인했다(native 2.1.281, 20회: 모델 4종 `-p`, `-p` Ctrl+C, WebSearch, SDK 위임 세션, TUI 수용).
+
+| 항목 | 처분 |
+|---|---|
+| 모르는 출력 항목(#85) | **고침.** 먼저 응답마다 항목 종류별 개수를 상태의 `events.outputItems`에 남겨 실제 세션에서 모았다(`message`. v0.3.4 probe에서는 `reasoning`·`function_call`도). 그 밖의 종류는 `UNSUPPORTED_OUTPUT`로 거부하고, 종류 이름은 이벤트 이름과 같은 제한 규칙으로 남긴다 |
+| `-p`의 Ctrl+C(#86) | **고침.** 런처가 세션 동안 `os.Interrupt`를 받는다. `-p`에서는 `USER_CANCELLED`로 기록하고 같은 이벤트를 받은 자식이 스스로 끝나기를 기다리며, 5초 안에 끝나지 않을 때만 정지한다. 종료 코드는 자식의 것이다(native 2.1.281은 0). interactive에서는 native에 맡긴다. 자식을 띄우기 전의 Ctrl+C는 시작을 취소한다. 실제 backend에서 정리(세션 plugin 디렉터리 삭제)까지 확인 |
+| codex.exe 탐색(#88) | **고침.** `~\.local\bin` → Codex 앱 설치 위치 → PATH → npm 패키지가 싣는 native `codex.exe`. Node는 실행하지 않는다. 설치 스크립트의 사전 검증도 같다([PACKAGING 5.0](PACKAGING.md#50-스크립트)) |
+| 설치 스크립트 교체(#89) | **고침.** `.new`로 먼저 복사하고 이름을 바꿔 교체하며, 실패하면 원래 셋을 되돌린다. 실행 중인 바이너리도 교체된다([PACKAGING 5.0](PACKAGING.md#50-스크립트)) |
+| 손자 판정의 PID 재사용(#73) | **고침**(테스트). 생성 시각이 부모보다 늦은 프로세스만 자식으로 센다 |
+| TUI 검사 조작 도구(#75) | **공개로 옮김.** `go/cmd/ptydrive`([go/README.md](../../go/README.md#tui-검사-conpty)). 출하 자산이 아니다 |
+| gateway 요청당 비용(#110) | **측정으로 종결.** fixture backend의 대표 main turn(요청 약 230–310 KiB, 자식 0/3/30개)에서 gateway가 쓰는 시간은 요청당 약 15.6/15.6/24.9 ms로, 수 초인 backend 턴의 0.5–2%다. 가장 큰 몫은 요청 해독(DecodeRequest, 약 절반)이고 issue에 적힌 파일 읽기·잠금 항목은 각각 수 % 이하였다. 고치지 않는다. 동시 요청의 경합은 재지 않았다 |
+| V1 격차: Retry-After(#91) | **고침.** backend가 이름 붙인 시각까지 이 세션의 추론·검색 시도를 credential·소켓 전에 `UPSTREAM_RETRY_DEFERRED`로 거부하고(시도로 세지 않는다) 클라이언트에 429와 `Retry-After`를 보낸다. 실제 429는 유도하지 못했다 |
+| V1 격차: 반환 model·effort(#91) | **고침.** 먼저 기록해 4개 모델 모두 보낸 이름과 정확히 같음을 확인한 뒤, 이름이 다르면 `MODEL_EFFORT_MISMATCH`로 거부한다. 응답이 이름을 싣지 않으면 불일치로 보지 않는다. 요청 기록에 `returnedModel`·`returnedEffort` |
+| V1 격차: admission(#91) | **v0.4.0.** 지금은 동시 요청 64의 고정 상한뿐이고 memory budget·대기열은 없다. 관측된 장애는 없다 |
+| V1 격차: `system` block(#91) | **고침.** 문자열이거나, 메시지 text와 같은 규칙(닫힌 키, `cache_control` 검사)을 따르는 text block이어야 한다. 그 밖은 거부 |
+| V1 격차: downstream keepalive(#91) | **의도.** 첫 출력 전에 ping을 쓰지 않는다. ping으로 200을 먼저 보내면 429·400·`X-Should-Retry`의 실패 처리가 SSE 오류 frame으로 바뀐다. 첫 바이트가 195초 뒤였던 요청도 끊기지 않았다(v0.3.3 재판정). 더 긴 무출력의 측정은 v0.4.0 |
+| V1 격차: WebSearch 401(#91) | **고침.** 저장소를 다시 읽어 토큰이 바뀐 경우에만 1회 재시도한다. 같은 토큰의 재시도는 같은 거절이었다 |
+| V1 격차: usage(#91) | **고침.** backend가 `input_tokens`에 포함해 세는 cached 입력을 `cache_read_input_tokens`로 나눠 보낸다. 합계는 같다(실측: 11,926 = 6,294 + 5,632) |
+| V1 격차: 지연 텍스트(#91) | **고침.** Workflow·SDK 대기 응답의 text part를 줄바꿈으로 이어 block 하나로 보낸다. 마지막 block만 읽는 쪽이 답의 일부만 보지 않게 한다 |
+| V1 격차: web_search 도메인 필터(#91) | **고침.** 형식이 틀리거나 32개·253자를 넘으면 `UNSUPPORTED_TOOLS`로 거부한다. 전에는 버리거나 32개로 잘랐다. 기준선은 64개·256자까지 받고 검색 직전에 32개로 잘랐다 — 이 빌드는 보내는 만큼만 받는다. allowed·blocked 동시 지정은 둘 다 보낸다 |
+| V1 격차: 진단(#91) | **고침.** 상태에 등록 만료·퇴출 수(`agents.expired`·`evicted`), 세션 처음 실패 8건 보존(최근 8건과 함께), `cleanupFailed` |
+| V1 격차: 이름으로 재개(#91) | **고침.** 자식이 한 번 끝난 뒤의 요청은 재개 방식(id·이름·이전 재개의 바인딩)과 관계없이 metadata를 다시 읽어, 사용자가 멈춘 자식이면 거부한다. native가 이 경로를 보내는지는 관측하지 못했다 |
 
 ## 4. 제3자 구현이라는 사실
 

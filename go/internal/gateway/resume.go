@@ -129,6 +129,15 @@ func (d *delegations) resumed(scope delegationScope, id string, binding agentBin
 	return r, nil
 }
 
+// endedRun reports whether the child has already ended a run, so a request from it
+// now is a resumption. Caller holds d.mu, which is taken before d.results.mu everywhere.
+func (d *delegations) endedRun(id string) bool {
+	d.results.mu.Lock()
+	defer d.results.mu.Unlock()
+	e := d.results.entries[id]
+	return e != nil && e.stopped
+}
+
 // Caller holds d.mu. A rejected/undelivered tool call is not resume authority.
 func (d *delegations) discardResume(session, call string) {
 	for id, r := range d.resumes {

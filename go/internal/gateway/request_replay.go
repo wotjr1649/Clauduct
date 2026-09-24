@@ -198,9 +198,16 @@ func (e *nativeExecution) dispatch(ctx context.Context) error {
 func (e *nativeExecution) rejectedBeforeDispatch(err error) {
 	// These transport refusals prove no network request was made. Unknown
 	// failures and cancellations remain spent, even if no response arrived.
-	if e != nil && (errors.Is(err, upstream.ErrNoTransport) || errors.Is(err, upstream.ErrBudgetExhausted) || errors.Is(err, upstream.ErrRouteNotAuthorised)) {
+	if e != nil && (errors.Is(err, upstream.ErrNoTransport) || errors.Is(err, upstream.ErrBudgetExhausted) || errors.Is(err, upstream.ErrRouteNotAuthorised) || deferredLocally(err)) {
 		e.dispatched = false
 	}
+}
+
+// deferredLocally is the transport refusing before a socket because a delay the backend named
+// has not passed (#91).
+func deferredLocally(err error) bool {
+	var failure upstream.Failure
+	return errors.As(err, &failure) && failure.Category == upstream.RetryDeferred
 }
 
 func (e *nativeExecution) release() {

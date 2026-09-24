@@ -92,6 +92,9 @@ type Status struct {
 	Session    SessionFacts        `json:"session"`
 	Gateway    gateway.Diagnostics `json:"gateway"`
 	Lifecycle  *LifecycleFacts     `json:"lifecycle,omitempty"`
+	// CleanupFailed is whether releasing what the session owned failed. Only the fact: the
+	// error text can name paths, and it is on stderr already (#91).
+	CleanupFailed bool `json:"cleanupFailed"`
 }
 
 // Process exit, transport success and task completion are different claims.
@@ -152,8 +155,9 @@ func Account(result Result) Status {
 			DelegationMenuEntries: len(agentDefinitions()),
 			HookInstalled:         result.HookInstalled,
 		},
-		Gateway:   result.Diagnostics,
-		Lifecycle: result.Lifecycle,
+		Gateway:       result.Diagnostics,
+		Lifecycle:     result.Lifecycle,
+		CleanupFailed: result.CleanupErr != nil,
 	}
 }
 
@@ -166,14 +170,14 @@ func Account(result Result) Status {
 // at and decided; Unknown is the name for something nobody has classified, and that is the
 // one that still deserves a reader's attention.
 func (s Status) noteworthy() bool {
-	return s.Category != CategorySuccess ||
+	return s.Category != CategorySuccess || s.CleanupFailed ||
 		(s.Lifecycle != nil && s.Lifecycle.CheckpointFailures > 0) ||
 		s.Gateway.WorkflowPersistence.Failed > 0 ||
 		!s.Session.HookInstalled ||
 		s.Gateway.Requests.Refused > s.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]+s.Completion.ControlTransitions || s.Gateway.BrokenStreams() > 0 ||
 		s.Completion.NativeToolFailures > 0 || s.Completion.RejectedWorkflowCalls > 0 || s.Completion.UnacquiredResults > 0 || s.Gateway.NativeToolFailures.CapacityExceeded ||
 		s.Gateway.Events.Unsupported > 0 ||
-		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 ||
+		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 || s.Gateway.Agents.Evicted > 0 ||
 		s.Gateway.Betas.Malformed > 0 ||
 		len(s.Gateway.Betas.Unknown) > 0
 }

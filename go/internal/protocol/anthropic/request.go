@@ -328,9 +328,33 @@ func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 		return nil, err
 	}
 	if value, presence := wire.Of(fields, "system"); presence == wire.Present {
+		if err := checkSystem(value); err != nil {
+			return nil, err
+		}
 		request.System = value
 	}
 	return request, nil
+}
+
+// checkSystem holds the system prompt to the shapes it may take: a string, or text blocks
+// read by the rules a message's are. A non-text block or an unknown key used to be dropped
+// on the way to the backend, and a system prompt short by a part is a request nobody sent
+// (#91).
+func checkSystem(raw json.RawMessage) error {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return nil
+	}
+	var blocks []json.RawMessage
+	if json.Unmarshal(raw, &blocks) != nil {
+		return refuse(CodeTextValue, "system")
+	}
+	for _, block := range blocks {
+		if _, err := decodeBlock(block); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func translateFieldError(err error) error {

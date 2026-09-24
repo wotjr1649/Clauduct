@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
@@ -91,6 +92,33 @@ type Direct struct {
 	idleFor      time.Duration
 	counts       countConnections
 	searchCounts searchCounters
+	// notBefore is when the backend last said this account may come back, in Unix
+	// nanoseconds. Every attempt waits for it, not only the one that was told (#91).
+	notBefore atomic.Int64
+}
+
+// RetryDeferred is an attempt refused here, before a credential or a socket, because the
+// time the backend named has not come. Answered as the backend's own 429 would be.
+const RetryDeferred = "UPSTREAM_RETRY_DEFERRED"
+
+func (d *Direct) deferred(now time.Time) error {
+	until := time.Unix(0, d.notBefore.Load())
+	if !now.Before(until) {
+		return nil
+	}
+	return Failure{Category: RetryDeferred, Disposition: Deferred, RetryAfter: until.Sub(now), RetryAt: until}
+}
+
+func (d *Direct) deferUntil(failure Failure) {
+	if failure.Disposition != Deferred {
+		return
+	}
+	for at := failure.RetryAt.UnixNano(); ; {
+		current := d.notBefore.Load()
+		if at <= current || d.notBefore.CompareAndSwap(current, at) {
+			return
+		}
+	}
 }
 
 func (d *Direct) target() string {
@@ -168,6 +196,9 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 	if err := agreesWithBody(call); err != nil {
 		return nil, err
 	}
+	if err := d.deferred(time.Now()); err != nil {
+		return nil, err
+	}
 	if err := d.Ledger.Reserve(Attempt{
 		Requested: call.Requested,
 		Model:     call.Model,
@@ -220,6 +251,7 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 	}
 	if response.StatusCode != http.StatusOK {
 		failure := ClassifyStatus(response.StatusCode, response.Header, time.Now())
+		d.deferUntil(failure)
 		if response.StatusCode == http.StatusBadRequest {
 			raw, readErr := io.ReadAll(io.LimitReader(response.Body, 64*1024+1))
 			if readErr == nil && len(raw) <= 64*1024 && codex.ContextLimit(raw) {

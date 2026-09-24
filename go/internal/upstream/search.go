@@ -76,6 +76,9 @@ func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := d.deferred(time.Now()); err != nil {
+		return nil, err
+	}
 	if d.Credentials == nil {
 		return nil, &auth.Error{Category: auth.CategoryUnavailable}
 	}
@@ -110,6 +113,16 @@ func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	var retryable Failure
 	if !errors.As(failure, &retryable) || retryable.Disposition != Retryable {
 		return nil, failure
+	}
+	// A 401 is worth another try only on a different token: the same one gets the same
+	// answer. The store is read again because the Codex CLI may have refreshed it since, and
+	// the provider still holds the session to its account (#91).
+	if retryable.Category == "UNAUTHENTICATED" {
+		fresh, err := d.Credentials.Credential()
+		if err != nil || fresh.Synthetic || fresh.Token() == credential.Token() {
+			return nil, failure
+		}
+		credential = fresh
 	}
 	d.searchCounts.retries.Add(1)
 	raw, failure = d.searchOnce(ctx, target, body, credential, version)
@@ -160,7 +173,8 @@ func (d *Direct) searchOnce(ctx context.Context, target string, body []byte,
 	case response.StatusCode != http.StatusOK:
 		failure := Failure{Category: "SEARCH_HTTP_ERROR", Status: response.StatusCode}
 		if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500 {
-			failure.Disposition = Retryable
+			failure = withRetryAfter(failure, response.Header, time.Now())
+			d.deferUntil(failure)
 		}
 		return nil, failure
 	}

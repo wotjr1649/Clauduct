@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"regexp"
 	"sync"
 	"time"
 
@@ -77,9 +78,13 @@ type RequestRecord struct {
 
 	// CAP03: what was asked for and what ran, kept apart. A record that keeps only the
 	// second cannot answer whether the session ran what the user chose.
-	Requested             string           `json:"requested,omitempty"`
-	Model                 string           `json:"model,omitempty"`
-	Effort                string           `json:"effort,omitempty"`
+	Requested string `json:"requested,omitempty"`
+	Model     string `json:"model,omitempty"`
+	Effort    string `json:"effort,omitempty"`
+	// ReturnedModel and ReturnedEffort are what the backend says it ran, shaped before they
+	// are kept since the backend chooses them (#91).
+	ReturnedModel         string           `json:"returnedModel,omitempty"`
+	ReturnedEffort        string           `json:"returnedEffort,omitempty"`
 	Source                string           `json:"source,omitempty"`
 	Kind                  string           `json:"kind"`
 	RequestClass          string           `json:"nativeRequestClass,omitempty"`
@@ -253,6 +258,24 @@ func (r *record) continuation(parent string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data.VerifiedParentAgentID = parent
+}
+
+// returnedShape is what a returned model or effort may be written down as.
+var returnedShape = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
+
+func (r *record) returned(model, effort string) {
+	if r == nil {
+		return
+	}
+	shape := func(v string) string {
+		if v == "" || returnedShape.MatchString(v) {
+			return v
+		}
+		return "<other>"
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.ReturnedModel, r.data.ReturnedEffort = shape(model), shape(effort)
 }
 
 func (r *record) usage(usage codex.Usage) {
@@ -619,9 +642,11 @@ func (g *ring) count(r RequestRecord) {
 		g.totals.Controls[r.Control]++
 	} else if r.Category != "" {
 		g.totals.Failures[r.Category]++
+		// The first failures are kept as well as the latest: the first is usually the cause,
+		// and a long session rolled it out of a latest-only ring (#91).
 		g.failures = append(g.failures, r)
 		if len(g.failures) > recentRequests {
-			g.failures = g.failures[len(g.failures)-recentRequests:]
+			g.failures = append(g.failures[:recentRequests/2], g.failures[len(g.failures)-recentRequests/2:]...)
 		}
 	}
 	if r.InputTokens != nil {
@@ -816,6 +841,9 @@ type AgentCounts struct {
 	// both would mean neither, and every native built-in outside the three in the role table
 	// reaches this one in ordinary use.
 	FellBackToCaller int64 `json:"fellBackToCallerRoute"`
+	// Expired and Evicted are registrations that ended without their child ending (#91).
+	Expired int64 `json:"expired,omitempty"`
+	Evicted int64 `json:"evicted,omitempty"`
 }
 
 // Diagnose is the account, readable in a session and at the end of one.
@@ -831,6 +859,7 @@ func (g *Gateway) Snapshot() Diagnostics {
 	refusedBy := g.RefusalsByCategory()
 	unregistered, unrouted := g.Unrouted()
 	fellBack := g.FellBackToCaller()
+	expired, evicted := g.agents.Retired()
 	projectsErr := ""
 	if g.delegations != nil && g.delegations.projectsErr != nil {
 		projectsErr = g.delegations.projectsErr.Error()
@@ -868,6 +897,8 @@ func (g *Gateway) Snapshot() Diagnostics {
 			Unrouted:            unrouted,
 			FellBackToCaller:    fellBack,
 			ProjectsUnavailable: projectsErr,
+			Expired:             expired,
+			Evicted:             evicted,
 		},
 		Betas: g.betas.report(),
 		Client: ClientReport{

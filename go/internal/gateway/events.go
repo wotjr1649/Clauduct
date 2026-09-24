@@ -32,6 +32,9 @@ type EventReport struct {
 	Names []string `json:"names,omitempty"`
 	// Formats counts how each unrecordable type was judged, by label.
 	Formats map[string]int64 `json:"formats,omitempty"`
+	// OutputItems counts the output items the backend opened, by type, named by the same
+	// rule (#85). At most itemTypes of them; the rest are counted under "<more>".
+	OutputItems map[string]int64 `json:"outputItems,omitempty"`
 }
 
 type eventLedger struct {
@@ -39,10 +42,11 @@ type eventLedger struct {
 	unsupported int64
 	names       map[string]bool
 	formats     map[string]int64
+	items       map[string]int64
 }
 
 func newEventLedger() *eventLedger {
-	return &eventLedger{names: map[string]bool{}, formats: map[string]int64{}}
+	return &eventLedger{names: map[string]bool{}, formats: map[string]int64{}, items: map[string]int64{}}
 }
 
 // observe records one refusal.
@@ -61,10 +65,34 @@ func (e *eventLedger) observe(refusal *bridge.UnsupportedEvent) {
 	}
 }
 
+// itemTypes bounds how many distinct output item types are kept.
+const itemTypes = 16
+
+// observeItems adds one response's output item counts.
+func (e *eventLedger) observeItems(types map[string]int) {
+	if len(types) == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for kind, n := range types {
+		if _, kept := e.items[kind]; !kept && len(e.items) >= itemTypes {
+			kind = "<more>"
+		}
+		e.items[kind] += int64(n)
+	}
+}
+
 func (e *eventLedger) report() EventReport {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	report := EventReport{Unsupported: e.unsupported, Names: sorted(e.names)}
+	if len(e.items) > 0 {
+		report.OutputItems = make(map[string]int64, len(e.items))
+		for kind, n := range e.items {
+			report.OutputItems[kind] = n
+		}
+	}
 	if len(e.formats) > 0 {
 		report.Formats = make(map[string]int64, len(e.formats))
 		for label, count := range e.formats {

@@ -402,8 +402,11 @@ func (r *Request) CallableNames() map[string]bool {
 	return names
 }
 
-// searchDomainLimits bound a filter list. The baseline's numbers: at most thirty-two
-// domains, each at most the length a DNS name can be.
+// searchDomainLimits bound a filter list: what the baseline's search path sent -- at most
+// thirty-two domains, each at most the length a DNS name can be (native-search.mjs:38-39).
+// Its request check let up to 64 names of 256 characters through (native-protocol.mjs:299-302)
+// and the search path then cut them to these. This build sends what it accepts, so past these
+// it refuses where the baseline cut (#91).
 const (
 	maxSearchDomains    = 32
 	maxSearchDomainName = 253
@@ -413,9 +416,9 @@ const (
 //
 // The domain filters are bounded here rather than where they are used, because they travel
 // to the backend and a list the client did not bound is a list this build would be sending
-// on its behalf. A malformed filter drops to nil rather than failing the request: the
-// baseline treats an unusable filter as no filter, and refusing the whole search over one
-// would take away the feature to protect a narrowing nobody can act on.
+// on its behalf. A malformed or oversized filter refuses the request, as a malformed one did
+// in the baseline's request check. Dropping it, or cutting it to the bound, searched without
+// a restriction the user set -- a blocked domain quietly allowed (#91).
 func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error) {
 	// The field set is the baseline's (native-protocol.mjs:295). Three of these were
 	// missing and their absence was not a narrower contract, it was a dead turn: an unknown
@@ -435,11 +438,19 @@ func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error)
 	if err != nil {
 		return nil, err
 	}
+	allowed, err := searchDomains(fields, "allowed_domains")
+	if err != nil {
+		return nil, err
+	}
+	blocked, err := searchDomains(fields, "blocked_domains")
+	if err != nil {
+		return nil, err
+	}
 	return &HostedSearch{
 		Type:     kind,
 		Name:     name,
-		Allowed:  searchDomains(fields, "allowed_domains"),
-		Blocked:  searchDomains(fields, "blocked_domains"),
+		Allowed:  allowed,
+		Blocked:  blocked,
 		Location: location,
 	}, nil
 }
@@ -475,24 +486,21 @@ func searchLocation(fields map[string]json.RawMessage) (map[string]string, error
 	return out, nil
 }
 
-func searchDomains(fields map[string]json.RawMessage, key string) []string {
+func searchDomains(fields map[string]json.RawMessage, key string) ([]string, error) {
 	value, present := wire.Of(fields, key)
 	if present != wire.Present {
-		return nil
+		return nil, nil
 	}
 	var list []string
-	if json.Unmarshal(value, &list) != nil || len(list) == 0 {
-		return nil
+	if json.Unmarshal(value, &list) != nil || len(list) > maxSearchDomains {
+		return nil, refuse(CodeUnsupportedTools, key)
 	}
 	for _, name := range list {
 		if name == "" || len(name) > maxSearchDomainName {
-			return nil
+			return nil, refuse(CodeUnsupportedTools, key)
 		}
 	}
-	if len(list) > maxSearchDomains {
-		list = list[:maxSearchDomains]
-	}
-	return list
+	return list, nil
 }
 
 // decodeToolChange reads a mid-conversation tool_addition or tool_removal.

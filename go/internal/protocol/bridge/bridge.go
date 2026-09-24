@@ -535,6 +535,54 @@ type Translator struct {
 	held  map[int]*heldItem
 	order []int
 	ids   map[string]bool
+	// itemTypes counts the items the backend opened, by type (#85).
+	itemTypes map[string]int
+	// returnedModel and returnedEffort are what the completion says it ran on, and
+	// expectModel and expectEffort the route it was sent on (#91).
+	returnedModel, returnedEffort string
+	expectModel, expectEffort     string
+}
+
+// Returned is the model and effort the completed response names, empty when it names none.
+func (t *Translator) Returned() (model, effort string) { return t.returnedModel, t.returnedEffort }
+
+// ExpectRoute states the route the request was sent on, so the completion can be held to it.
+func (t *Translator) ExpectRoute(model, effort string) { t.expectModel, t.expectEffort = model, effort }
+
+// ErrModelEffortMismatch means the backend says it ran a different model or effort than the
+// route that was sent. The baseline refused it too (MODEL_EFFORT_MISMATCH): an answer from a
+// model the user did not choose is not a substitute for one from the model they did (#91).
+// A completion that names neither is not a mismatch; measured 2026-09-24, all four models in
+// the table name both, exactly as sent.
+var ErrModelEffortMismatch = errors.New("MODEL_EFFORT_MISMATCH")
+
+func (t *Translator) checkReturnedRoute() error {
+	if t.returnedModel != "" && t.expectModel != "" && t.returnedModel != t.expectModel ||
+		t.returnedEffort != "" && t.expectEffort != "" && t.returnedEffort != t.expectEffort {
+		return ErrModelEffortMismatch
+	}
+	return nil
+}
+
+// ErrUnsupportedOutput means the backend opened an output item of a type this build does not
+// read. Refused like an unknown event: accepting it would complete a reply short by exactly
+// that item (#85). Its type is in ItemTypes, named by the same bounded rule.
+var ErrUnsupportedOutput = errors.New("UNSUPPORTED_OUTPUT")
+
+// ItemTypes counts the output items this response opened, by type. A type is written down
+// by the rule an unsupported event's name is, since the backend chooses it too; one that
+// does not fit is counted under a label no type can be.
+func (t *Translator) ItemTypes() map[string]int { return t.itemTypes }
+
+func itemLabel(kind string) string {
+	switch {
+	case len(kind) > eventNameMax:
+		return "<" + EventOversized + ">"
+	case eventNameShape.MatchString(kind):
+		return kind
+	default:
+		return "<" + EventOther + ">"
+	}
 }
 
 // ObservedUsage returns backend-reported counts; unknown counts remain unknown.
@@ -718,6 +766,11 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			return nil, err
 		}
 		t.usage = usage
+		t.returnedModel, t.returnedEffort = codex.DecodeReturnedRoute(event.Raw)
+		// Before anything held is released: a call from the wrong model is not handed on.
+		if err := t.checkReturnedRoute(); err != nil {
+			return nil, err
+		}
 		// The completion is what releases the held items. Until this arrives nothing
 		// assembled above has reached the client, which is the delivery barrier: a stream
 		// that failed midway cannot have handed the client something to execute.
@@ -740,10 +793,12 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			return nil, err
 		}
 		return t.builder.Complete(anthropic.Usage{
-			InputTokens:  usage.InputTokens,
-			OutputTokens: usage.OutputTokens,
-			InputKnown:   usage.InputKnown,
-			OutputKnown:  usage.OutputKnown,
+			InputTokens:    usage.InputTokens,
+			OutputTokens:   usage.OutputTokens,
+			InputKnown:     usage.InputKnown,
+			OutputKnown:    usage.OutputKnown,
+			CacheRead:      usage.CachedInputTokens,
+			CacheReadKnown: usage.CachedInputKnown,
 		})
 
 	case codex.InProgress, codex.Queued,
@@ -784,6 +839,15 @@ func (t *Translator) openItem(event codex.OutputItemEvent) error {
 	}
 	if len(t.order) >= maxOutputItems {
 		return anthropic.ErrResponseTooLarge
+	}
+	if t.itemTypes == nil {
+		t.itemTypes = map[string]int{}
+	}
+	t.itemTypes[itemLabel(event.Item.Type)]++
+	switch event.Item.Type {
+	case codex.ItemFunctionCall, codex.ItemReasoning, codex.ItemMessage:
+	default:
+		return ErrUnsupportedOutput
 	}
 	// One id, one item. A repeated id would let a later snapshot be checked against the
 	// wrong item, and the arguments stream is keyed by it.

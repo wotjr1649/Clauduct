@@ -410,6 +410,15 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		if err != nil || chosen.session != scope.session || chosen.parent != scope.parent && resume == nil || binding.ID != id || !roleMatches(chosen.role, binding.Role, chosen.custom) || binding.SessionID != scope.session {
 			return bridge.Route{}, false, errDelegationUnverified
 		}
+		// A SendMessage by name leaves no binding -- native owns names -- so a stopped child
+		// running again got here without the check an id resume gets, and an id resume's
+		// binding outlives the run it was made for. Whoever resumed it, and however often, a
+		// child the user stopped stays stopped (#91).
+		if d.endedRun(id) {
+			if meta, err := d.metadata(binding); err != nil || meta.StoppedByUser {
+				return bridge.Route{}, false, errDelegationUnverified
+			}
+		}
 		route := chosen.route
 		if resume != nil {
 			route.Source = "verified-resume"

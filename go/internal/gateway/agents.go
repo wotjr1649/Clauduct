@@ -183,6 +183,15 @@ func (a *agentRegistry) begin(id string) (role string, release func(), ok bool) 
 	}, true
 }
 
+// Retired reports how many registrations expired or were evicted to make room. Counted all
+// along and reported nowhere until #91: an evicted child's next request is refused as
+// unregistered, and this is the only place that says why.
+func (a *agentRegistry) Retired() (expired, evicted int64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.expired, a.evicted
+}
+
 // Registered reports how many subagent registrations are live.
 func (a *agentRegistry) Registered() int {
 	a.mu.Lock()

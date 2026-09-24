@@ -268,6 +268,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		if categoryFor(err) == "CONTEXT_LENGTH_EXCEEDED" && g.recoverContextOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), backendRequest.Model) {
 			return
 		}
+		retryAfter(w, err)
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 		return
 	}
@@ -464,6 +465,7 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 	raw, err := searcher.Search(ctx, body)
 	entry.execution.rejectedBeforeDispatch(err)
 	if err != nil {
+		retryAfter(w, err)
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 		return
 	}
@@ -597,6 +599,15 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	// The translator is told which tools are callable now, so a call naming a withdrawn
 	// tool is refused rather than passed to a client that would try to run it.
 	translator := bridge.NewTranslatorFor(request, effective)
+	if len(scopes) > 0 {
+		translator.ExpectRoute(scopes[0].route.Model, scopes[0].route.Effort)
+	}
+	// Which item types the backend actually sends, kept for the session, so refusing an
+	// unknown one is decided on what sessions see (#85).
+	defer func() {
+		g.events.observeItems(translator.ItemTypes())
+		recordOf(w).returned(translator.Returned())
+	}()
 	if entry := recordOf(w); entry != nil {
 		record := entry.snapshot()
 		if len(scopes) > 0 && scopes[0].parentWait != nil {
@@ -877,6 +888,10 @@ func categoryFor(err error) string {
 		return "UPSTREAM_EVENT_SHAPE"
 	case errors.Is(err, bridge.ErrUnsupportedEvent):
 		return "UNSUPPORTED_EVENT"
+	case errors.Is(err, bridge.ErrUnsupportedOutput):
+		return "UNSUPPORTED_OUTPUT"
+	case errors.Is(err, bridge.ErrModelEffortMismatch):
+		return "MODEL_EFFORT_MISMATCH"
 	case errors.Is(err, anthropic.ErrTextMismatch):
 		return "TEXT_MISMATCH"
 	case errors.Is(err, anthropic.ErrStreamOrder):
@@ -934,6 +949,16 @@ func categoryFor(err error) string {
 		return failure.Category
 	}
 	return "UPSTREAM_FAILURE"
+}
+
+// retryAfter passes on the delay the backend named, so the client waits the time the server
+// asked for rather than one it guesses (#91). Whole seconds, rounded up: a shorter wait would
+// be refused again.
+func retryAfter(w http.ResponseWriter, err error) {
+	var failure upstream.Failure
+	if errors.As(err, &failure) && failure.Disposition == upstream.Deferred && failure.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.FormatInt(int64((failure.RetryAfter+time.Second-1)/time.Second), 10))
+	}
 }
 
 // statusForUpstream picks the status class, and the class is a retry instruction as much

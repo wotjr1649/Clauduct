@@ -145,7 +145,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	override, releaseAgent, err := g.agentSelection(r, request, entry)
 	defer releaseAgent()
 	if err != nil {
-		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
+		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
 	}
 	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)
@@ -210,7 +210,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		// user nothing they could act on, and the measured client retries every 5xx, so a
 		// request that can never succeed was sent eight times in a minute.
 		if errors.Is(err, bridge.ErrUnsupportedRoute) {
-			g.refuseCategory(w, http.StatusBadRequest, "UNSUPPORTED_MODEL_OR_EFFORT")
+			g.refuseCategory(w, http.StatusBadRequest, routeCategory(err))
 			return
 		}
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_CONVERSION_FAILED")
@@ -315,6 +315,9 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			binding := g.agents.bindingOf(agent)
 			resolvedScope, continued := g.continuationScope(scope, agent, binding)
 			route, found, err := g.delegations.route(resolvedScope, agent, binding, r.Context())
+			if errors.Is(err, bridge.ErrRetiredRoute) {
+				return nil, releaseAgent, err
+			}
 			if err != nil {
 				return nil, releaseAgent, errDelegationUnverified
 			}
@@ -324,6 +327,9 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				// successful or authorize execution.
 				entry.route(request.Model, route.Model, route.Effort, route.Source)
 				observed, err := bridge.SelectRoute(request.Model, "")
+				if errors.Is(err, bridge.ErrRetiredRoute) {
+					return nil, releaseAgent, err
+				}
 				if err != nil || observed.Model != route.Model && !g.delegations.resumeModel(scope, agent, observed.Model) {
 					return nil, releaseAgent, errDelegationUnverified
 				}
@@ -437,7 +443,7 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 
 	route, err := bridge.ResolveRoute(request, override...)
 	if err != nil {
-		g.refuseCategory(w, http.StatusBadRequest, "UNSUPPORTED_MODEL_OR_EFFORT")
+		g.refuseCategory(w, http.StatusBadRequest, routeCategory(err))
 		return
 	}
 	body, err := json.Marshal(bridge.BuildSearchRequest(route.Model, query))
@@ -848,7 +854,7 @@ func categoryFor(err error) string {
 	case errors.Is(err, codex.ErrContextLimit):
 		return "CONTEXT_LENGTH_EXCEEDED"
 	case errors.Is(err, bridge.ErrUnsupportedRoute):
-		return "UNSUPPORTED_MODEL_OR_EFFORT"
+		return routeCategory(err)
 	case errors.Is(err, errDelegationUnverified):
 		return "AGENT_SELECTION_UNVERIFIED"
 	case errors.Is(err, errParentWaitUnverified):

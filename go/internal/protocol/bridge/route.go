@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -20,6 +21,21 @@ import (
 // CAP02: it is refused rather than quietly replaced. Falling back to a default would run
 // the user's request on a model they did not ask for and bill them for it.
 var ErrUnsupportedRoute = errors.New("UNSUPPORTED_MODEL_OR_EFFORT")
+
+// ErrRetiredRoute is a route this build offered once and no longer does. It is an
+// unsupported route (errors.Is holds), named apart so the refusal can say what replaced it.
+var ErrRetiredRoute error = retiredRoute{}
+
+type retiredRoute struct{}
+
+func (retiredRoute) Error() string { return "MODEL_RETIRED" }
+func (retiredRoute) Unwrap() error { return ErrUnsupportedRoute }
+
+// Retired maps each backend model v0.3.4 stopped routing to the model that took its tier
+// (decided 2026-09-24). A request, a picker value or a journal from an earlier session that
+// names one is refused with this answer; running the replacement instead would bill a model
+// nobody chose.
+var Retired = map[string]string{"gpt-5.6-sol": "gpt-6-sol", "gpt-5.6-luna": "gpt-6-luna"}
 
 // Route is a resolved destination.
 type Route struct {
@@ -48,6 +64,11 @@ type Model struct {
 	// Effort is what it runs at when the request names none. The efforts are not uniform
 	// and normalising them would change what a request costs.
 	Effort string
+	// Efforts is what this build routes the model at, cheapest first. The backend's sets
+	// differ by model (2026-09-23 catalogue: ultra on some, max missing from gpt-5.5), so one
+	// global list would either refuse what a model takes or send what it refuses. An effort
+	// the backend lists but nobody has measured here stays out.
+	Efforts []string
 	// Alias is the Claude tier that belongs here.
 	Alias string
 	// Family is the versioned Claude prefix for that tier. Matched by prefix so no version
@@ -72,12 +93,20 @@ type ContextPolicy struct {
 // The values came from the Node baseline's src/models.mjs and src/agent-selection.mjs:23-27 at 1b1c5e1
 // rather than from a convention that looked reasonable, with one deliberate divergence
 // recorded above: sonnet routes to terra here and to luna there.
+//
+// v0.3.4 moved opus and haiku to GPT-6 Sol and Luna, keeping each family's default effort
+// (there is no GPT-6 Terra). Measured 2026-09-24 with probe accept: both take low..max,
+// tools, the reasoning round trip and images, and the local count matched the backend's
+// input_tokens on every text request. ultra was refused (HTTP 400) on sol, astra and terra,
+// so no model lists it. The context values are the GPT-5.6 ones on the same catalogue window.
 var Models = []Model{
-	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
-	{Key: "sol", ID: "gpt-5.6-sol", Effort: "xhigh", Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-	{Key: "luna", ID: "gpt-5.6-luna", Effort: "max", Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
+	{Key: "sol", ID: "gpt-6-sol", Effort: "xhigh", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "luna", ID: "gpt-6-luna", Effort: "max", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
 }
+
+var lowToMax = []string{"low", "medium", "high", "xhigh", "max"}
 
 // Catalogue lists the routes this build offers, in published order.
 //
@@ -109,9 +138,9 @@ func Catalogue() []Route {
 // it fall through to the catalogue would leave a Plan running on whatever the conversation
 // happened to ask for.
 var roleRoutes = map[string]Route{
-	"Explore":         {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
+	"Explore":         {Model: "gpt-6-luna", Effort: "max", Source: "role"},
 	"Plan":            {Model: "gpt-6-astra", Effort: "medium", Source: "role"},
-	"general-purpose": {Model: "gpt-5.6-luna", Effort: "max", Source: "role"},
+	"general-purpose": {Model: "gpt-6-luna", Effort: "max", Source: "role"},
 }
 
 // inheritRoles are roles this build knows about and deliberately does not reassign.
@@ -137,8 +166,8 @@ var inheritRoles = map[string]bool{
 	// to it was filed with agents.unrouted=1 and dumped its whole account at exit -- the
 	// cry-wolf failure this map exists to prevent, about this build's own agent.
 	//
-	// menuRoute cannot cover it: "inherit" carries no -<effort> suffix to parse, because
-	// there is no effort to name. That is the point of it.
+	// menuRoute cannot cover it: "inherit" names no model, because there is no model to
+	// name. That is the point of it.
 	InheritRole: true,
 }
 
@@ -199,32 +228,37 @@ const MenuPrefix = "clauduct-"
 
 // menuRoute reads a route out of an agent type's own name.
 //
-// The launcher defines agent types called clauduct-<model>-<effort> so the user can send a
-// piece of work to a chosen model. Native 2.1.276 supports a definition's effort
-// (verified 2026-09-18). The gateway fixes the selected effort here as well, so
-// native presentation or silent downgrades cannot change the backend route.
+// The launcher defines one agent type per model, clauduct-<key>, so the user can send a
+// piece of work to a chosen model. The route is that model at its default effort; an effort
+// the caller asks for comes through the gateway's Agent effort argument, which native lacks.
+// The name already carries the model, the hook already reports the name, and the request
+// already arrives with the identifier that finds it. The definition keeps its model so the
+// client's own accounting is right; this decides what the backend is actually asked for.
 //
-// So the effort comes from here instead. The name already carries it, the hook already
-// reports the name, and the request already arrives with the identifier that finds it. The
-// definition keeps its model so the client's own accounting is right; this decides what the
-// backend is actually asked for.
-//
-// clauduct-inherit has no effort in its name and gets no route, which is the whole point of
-// it: the child keeps the parent's.
+// clauduct-inherit names no model and gets no route, which is the whole point of it: the
+// child keeps the parent's.
 func menuRoute(role string) (Route, bool) {
-	if !strings.HasPrefix(role, MenuPrefix) {
-		return Route{}, false
-	}
-	key, effort, split := strings.Cut(strings.TrimPrefix(role, MenuPrefix), "-")
-	if !split || !efforts[effort] {
-		return Route{}, false
-	}
+	key, ok := strings.CutPrefix(role, MenuPrefix)
 	for _, model := range Models {
-		if model.Key == key {
-			return Route{Model: model.ID, Effort: effort, Source: "role"}, true
+		if ok && model.Key == key {
+			return Route{Model: model.ID, Effort: model.Effort, Source: "role"}, true
 		}
 	}
 	return Route{}, false
+}
+
+// RetiredRole reports an agent type from the per-effort menu v0.3.4 replaced, such as
+// clauduct-sol-high. Those names meant a GPT-5.6 model for sol and luna, so reading them
+// through the new table would silently run GPT-6; they are refused, astra and terra alike,
+// rather than parsed (decided 2026-09-24).
+//
+// The keys and efforts are that menu's, written out: they are history, and a later table change
+// must not widen or narrow what counts as an old name.
+func RetiredRole(role string) bool {
+	rest, ok := strings.CutPrefix(role, MenuPrefix)
+	key, effort, split := strings.Cut(rest, "-")
+	return ok && split && slices.Contains([]string{"astra", "sol", "terra", "luna"}, key) &&
+		slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort)
 }
 
 // ForAlias reports the model a Claude tier belongs to.
@@ -241,20 +275,19 @@ func ForAlias(alias string) (Model, bool) {
 	return Model{}, false
 }
 
-// Efforts is what the backend accepts, cheapest first. An effort outside it is refused
-// rather than clamped: clamping "max" down to "high" would quietly produce a cheaper, worse
-// answer than the one that was asked for.
-//
-// Ordered, because the delegation menu is built from it and a menu whose order changes
-// between runs is a menu nobody can learn.
-var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
-
-var efforts = func() map[string]bool {
-	set := make(map[string]bool, len(Efforts))
-	for _, effort := range Efforts {
-		set[effort] = true
+// Efforts is every effort some model accepts, cheapest first: the union of the models' own
+// sets, for the places that can only hold one list (the Agent schema, receipt labels). An
+// effort outside a model's set is refused rather than clamped: clamping "max" down to "high"
+// would quietly produce a cheaper, worse answer than the one that was asked for.
+var Efforts = func() (all []string) {
+	for _, model := range Models {
+		for _, effort := range model.Efforts {
+			if !slices.Contains(all, effort) {
+				all = append(all, effort)
+			}
+		}
 	}
-	return set
+	return all
 }()
 
 // SelectRoute resolves what the client asked for into what the backend understands.
@@ -263,12 +296,11 @@ var efforts = func() map[string]bool {
 // default applies. An empty model is refused: a request that names no model is not one to
 // answer with a guess.
 func SelectRoute(requested, effort string) (Route, error) {
-	if effort != "" && !efforts[effort] {
-		return Route{}, ErrUnsupportedRoute
+	if _, retired := Retired[requested]; retired {
+		return Route{}, ErrRetiredRoute
 	}
-
 	model, source := resolveKey(requested)
-	if source == "" {
+	if source == "" || effort != "" && !slices.Contains(model.Efforts, effort) {
 		return Route{}, ErrUnsupportedRoute
 	}
 	route := Route{Model: model.ID, Effort: model.Effort, Source: source}

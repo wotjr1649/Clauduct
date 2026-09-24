@@ -198,7 +198,11 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		}
 		model["enum"], _ = json.Marshal(names)
 		properties["model"], _ = json.Marshal(model)
-		properties["effort"] = json.RawMessage(`{"type":"string","enum":["low","medium","high","xhigh","max"],"description":"Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."}`)
+		properties["effort"], _ = json.Marshal(struct {
+			Type        string   `json:"type"`
+			Enum        []string `json:"enum"`
+			Description string   `json:"description"`
+		}{"string", bridge.Efforts, "Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."})
 		if pinned.Model != "" {
 			properties["effort"], _ = json.Marshal(map[string]any{"type": "string", "enum": []string{pinned.Effort}, "description": "Omit effort to retain this task's verified selection."})
 		}
@@ -242,6 +246,9 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		if json.Unmarshal(value, &role) != nil || role == "" || string(value) == "null" || len(role) > 200 {
 			return nil, delegationFailure("INVALID_ROLE")
 		}
+	}
+	if bridge.RetiredRole(role) {
+		return nil, bridge.ErrRetiredRoute
 	}
 	effort := ""
 	if value, exists := fields["effort"]; exists {
@@ -289,6 +296,9 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		// conflicting child choice instead of silently substituting either model.
 		if explicitModel {
 			requested, err := bridge.SelectRoute(modelID, effort)
+			if errors.Is(err, bridge.ErrRetiredRoute) {
+				return nil, err
+			}
 			if err != nil || requested.Model != parent.route.Model || hasEffort && requested.Effort != parent.route.Effort {
 				return nil, delegationFailure("PARENT_OVERRIDE_CONFLICT")
 			}
@@ -735,7 +745,14 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || !roleMatches(saved.Role, meta.AgentType, saved.CustomRole) || !metadataModelMatches(saved.Role, saved.Alias, meta.Model, saved.Source, saved.CustomRole) || meta.StoppedByUser {
 		return empty, false, errDelegationUnverified
 	}
+	// A child started on a route v0.3.4 retired is refused by name, not resumed elsewhere.
+	if bridge.RetiredRole(saved.Role) {
+		return empty, false, bridge.ErrRetiredRoute
+	}
 	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
+	if errors.Is(err, bridge.ErrRetiredRoute) {
+		return empty, false, err
+	}
 	if err != nil {
 		return empty, false, errDelegationUnverified
 	}

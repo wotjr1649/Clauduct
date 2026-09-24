@@ -96,7 +96,15 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 			return errContextJournal
 		}
 	}
+	// A session an earlier build ran on a retired route is refused by name, not continued
+	// on the replacement.
+	if _, retired := bridge.Retired[saved.Target]; retired {
+		return bridge.ErrRetiredRoute
+	}
 	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
+	if errors.Is(err, bridge.ErrRetiredRoute) {
+		return err
+	}
 	if err != nil || route.Model != saved.Model {
 		return errContextJournal
 	}
@@ -119,7 +127,9 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 			return errContextJournal
 		}
 		u := saved.Usage
-		if _, err := bridge.SelectRoute(u.Model, u.Effort); err != nil || u.Effort == "" {
+		if _, err := bridge.SelectRoute(u.Model, u.Effort); errors.Is(err, bridge.ErrRetiredRoute) {
+			return err
+		} else if err != nil || u.Effort == "" {
 			return errContextJournal
 		}
 		if _, ok := policyFor(u.Model); !ok || u.Input < 0 || u.Output < 0 || u.TextEstimate < 0 || u.Input > 1<<40 || u.Output > 1<<40 || u.TextEstimate > 1<<40 {

@@ -67,10 +67,10 @@ Go 제품 정보는 `clauduct-dev version`에서 본다(D06). 처리 순서는 �
    `-p`는 값을 먹지 않는 플래그이므로 문자 그대로의 프롬프트는 `-p -- --settings`로 전달한다.
    `--setting-sources`를 비롯한 다른 인자는 순서와 철자를 보존한다.
 3. [launch.Build](../../go/internal/launch/launch.go)는 세션 overlay를 앞에 놓고 전달받은 argv를
-   그대로 복사한다. 사용자 설정 옵션이 없을 때만 병합할 필요 없는 세션 설정을 앞에 추가한다.
+   그대로 복사한다. 사용자 설정 옵션이 없을 때만 병합할 필요 없는 세션 설정을 앞에 추가한다. overlay의 `--effort`는 시작 effort이고, 사용자가 `--effort` 없이 `--model`을 주면 그 모델의 기본 effort다(v0.3.4). 사용자의 `--effort`는 뒤에 놓여 이긴다.
 
 값 경계는 [공통 탐색 함수](../../go/internal/app/native_args.go)를 읽기 전용 역할 검색과 공유한다.
-Claude Code 2.1.280의 공개 옵션 형태(2.1.278과 같다)와 기존 hidden 옵션 목록을 사용하며 native 전체 구문을
+Claude Code 2.1.281의 공개 옵션 형태(인자 수는 2.1.280과 같고, `--agents`가 `--print`와 함께 JSON 파일 경로도 받는다. 역할 탐색은 그 파일을 설정 파일처럼 제한해 읽는다)와 기존 hidden 옵션 목록을 사용하며 native 전체 구문을
 재구현하지 않는다(D05). 모르는 옵션 뒤에 `--settings` 후보가 있으면 경계를 확정할 수 없으므로
 `SETTINGS_INVALID`로 거부한다. 그런 후보가 없으면 모르는 옵션의 판정은 native에 맡긴다.
 거부 검사를 통과한 옵션 값과 `--` 뒤 데이터는 재해석하지 않는다.

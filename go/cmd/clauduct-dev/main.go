@@ -53,7 +53,8 @@ func version(out io.Writer) int {
 	return 0
 }
 
-// doctor reports what a session would find. It does not bind, spawn, or authenticate.
+// doctor reports what a session would find. It does not bind or authenticate; the one
+// process it starts is codex --version, through the resolver a session uses.
 //
 // Counts, not names. A dropped variable's name is chosen by the user and can itself carry
 // information; the rule that produced the count is printed instead, which is the part a
@@ -85,6 +86,7 @@ func doctor(out io.Writer) int {
 	spec := launch.Build("", nil, source, "", launch.Overlay{BaseURL: "http://127.0.0.1:0", AuthToken: ""})
 	fmt.Fprintf(out, "env          %d parent vars, %d passed to child\n", len(source), len(spec.Env))
 	fmt.Fprintln(out, "env rule     drop ANTHROPIC_* and CLAUDE_CODE_OAUTH_TOKEN; everything else is inherited")
+	catalogue(out)
 	fmt.Fprintln(out, "credentials  none read")
 	return status
 }

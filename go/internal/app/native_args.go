@@ -3,7 +3,7 @@ package app
 import "strings"
 
 // The settings rewrite and read-only role scan share native value boundaries.
-// Public arities follow Claude Code 2.1.280 --help; hidden entries retain the
+// Public arities follow Claude Code 2.1.281 --help; hidden entries retain the
 // existing role scanner's contract. Unknown options cannot prove where
 // a later settings/role option begins. This is not native option validation.
 // end is exclusive; a missing required value returns len(args)+1.
@@ -58,4 +58,25 @@ func nativeArgEnd(args []string, i int) (end int, known bool) {
 		return end, !strings.HasPrefix(name, "-") || name == "-"
 	}
 	return end, true
+}
+
+// optionValue reports the last value argv gives a native option, read with the boundaries
+// native uses, so a prompt that mentions the option is not taken for it. An unknown option
+// stops the scan: past it, what looks like a name may be a value.
+func optionValue(args []string, option string) (value string, found bool) {
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		if !known || end > len(args) {
+			break
+		}
+		name, attached, hasValue := strings.Cut(args[i], "=")
+		if name == option {
+			value, found = attached, true
+			if !hasValue && end == i+2 {
+				value = args[i+1]
+			}
+		}
+		i = end
+	}
+	return value, found
 }

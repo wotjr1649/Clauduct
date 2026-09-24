@@ -68,20 +68,24 @@ func wireProbe(transport upstream.Transport, budget upstream.Budget, out io.Writ
 	// 3. The call and its result sent back as history. This is the encoding WP04 built and
 	//    the one nothing has ever checked against a backend: function_call and
 	//    function_call_output, tied by call_id.
-	history := head + `"tools":[` + probeTool + `],"messages":[` +
-		`{"role":"user","content":` + quote(probeToolPrompt) + `},` +
-		`{"role":"assistant","content":[{"type":"tool_use","id":` + quote(call.callID) +
-		`,"name":"get_build_token","input":` + call.arguments + `}]},` +
-		`{"role":"user","content":[{"type":"tool_result","tool_use_id":` + quote(call.callID) +
-		`,"content":[{"type":"text","text":` + quote(probeToolResult) + `}]}]}` +
-		`]}`
-	result := roundTrip(transport, out, "tool result", history)
+	result := roundTrip(transport, out, "tool result", toolHistory(head, call))
 
 	fmt.Fprintf(out, "reading %s\n", wireVerdict(text, call, result))
 	if !result.ok {
 		return 1
 	}
 	return 0
+}
+
+// toolHistory is the conversation that carries a tool call and its result back.
+func toolHistory(head string, call exchange) string {
+	return head + `"tools":[` + probeTool + `],"messages":[` +
+		`{"role":"user","content":` + quote(probeToolPrompt) + `},` +
+		`{"role":"assistant","content":[{"type":"tool_use","id":` + quote(call.callID) +
+		`,"name":"get_build_token","input":` + call.arguments + `}]},` +
+		`{"role":"user","content":[{"type":"tool_result","tool_use_id":` + quote(call.callID) +
+		`,"content":[{"type":"text","text":` + quote(probeToolResult) + `}]}]}` +
+		`]}`
 }
 
 // exchange is what one round trip established. Like outcome, every field is a count, a
@@ -103,6 +107,15 @@ type exchange struct {
 	// names checked against a fixed vocabulary before being printed -- never the payloads.
 	events []string
 	items  []string
+	// eventCounts and itemCounts count every event and every finished output item by type
+	// (#85's first step: what the backend emits, before refusing what nobody reads). Items
+	// are counted from response.output_item.done because the measured completion carries an
+	// empty output array. usage is the completion's usage fields.
+	eventCounts map[string]int
+	itemCounts  map[string]int
+	usage       map[string]int64
+	// request is the backend request that was sent, kept for the local token count.
+	request *bridge.Request
 	// echoed reports whether the reply contains the token the tool returned. It is a
 	// boolean derived from the reply, not the reply: the one thing that establishes the
 	// result actually reached the model is that it could say something it had no other way
@@ -172,6 +185,13 @@ func probeHead(budget upstream.Budget, maxTokens int) string {
 // itself.
 func roundTrip(transport upstream.Transport, out io.Writer, label, requestJSON string,
 	options ...anthropic.Options) exchange {
+	return routedTrip(transport, out, label, requestJSON, nil, options...)
+}
+
+// routedTrip is roundTrip with a route that replaces the one the request resolves to, so a
+// model the table does not route yet goes through the same product path.
+func routedTrip(transport upstream.Transport, out io.Writer, label, requestJSON string,
+	route []bridge.Route, options ...anthropic.Options) exchange {
 
 	request, err := anthropic.DecodeRequest([]byte(requestJSON), options...)
 	if err != nil {
@@ -179,7 +199,7 @@ func roundTrip(transport upstream.Transport, out io.Writer, label, requestJSON s
 		fmt.Fprintf(out, "%-14s %s\n", label, result)
 		return result
 	}
-	backend, err := bridge.BuildRequest(request)
+	backend, err := bridge.BuildRequest(request, route...)
 	if err != nil {
 		result := exchange{category: "BUILD_REQUEST: " + err.Error()}
 		fmt.Fprintf(out, "%-14s %s\n", label, result)
@@ -214,6 +234,7 @@ func roundTrip(transport upstream.Transport, out io.Writer, label, requestJSON s
 	defer response.Body.Close()
 
 	result := translate(response, request)
+	result.request = backend
 	fmt.Fprintf(out, "%-14s %s\n", label, result)
 	return result
 }
@@ -230,9 +251,10 @@ func categoryOf(err error) string {
 func translate(response *upstream.Response, request *anthropic.Request) exchange {
 	translator := bridge.NewTranslatorFor(request, "")
 	parser := stream.NewParser(stream.DefaultLimits())
+	parser.IsTerminal = codex.Terminal // as the gateway parses it (messages.go)
 	buffer := make([]byte, 32*1024)
 
-	result := exchange{ok: true}
+	result := exchange{ok: true, eventCounts: map[string]int{}, itemCounts: map[string]int{}}
 	seen := map[string]bool{}
 	for {
 		n, readErr := response.Body.Read(buffer)
@@ -248,6 +270,20 @@ func translate(response *upstream.Response, request *anthropic.Request) exchange
 				if !seen["ev:"+event.Type] {
 					seen["ev:"+event.Type] = true
 					result.events = append(result.events, safeName(event.Type))
+				}
+				result.eventCounts[safeName(event.Type)]++
+				switch event.Type {
+				case codex.OutputItemDone:
+					var done struct {
+						Item struct {
+							Type string `json:"type"`
+						} `json:"item"`
+					}
+					if json.Unmarshal(event.Raw, &done) == nil {
+						result.itemCounts[safeName(done.Item.Type)]++
+					}
+				case codex.Completed, codex.Incomplete:
+					result.usage = usageCounts(event.Raw)
 				}
 				if event.Type == codex.Completed {
 					result.items = completedItems(event.Raw)

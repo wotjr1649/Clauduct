@@ -79,7 +79,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	override, releaseAgent, err := g.agentSelection(r, request, entry)
 	defer releaseAgent()
 	if err != nil {
-		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
+		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
 	}
 	if g.delegations != nil && !g.delegations.restrictWorkflowTools(request, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"), entry) {

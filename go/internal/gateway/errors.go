@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -128,6 +129,24 @@ func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) 
 	w.Write(body)
 }
 
+// routeCategory names a route refusal, keeping a retired route apart so its message can
+// name the replacement.
+func routeCategory(err error) string {
+	if errors.Is(err, bridge.ErrRetiredRoute) {
+		return "MODEL_RETIRED"
+	}
+	return "UNSUPPORTED_MODEL_OR_EFFORT"
+}
+
+// selectionCategory names a refused agent selection. A child started on a retired route is
+// told so, rather than only that its selection could not be verified.
+func selectionCategory(err error) string {
+	if errors.Is(err, bridge.ErrRetiredRoute) {
+		return "MODEL_RETIRED"
+	}
+	return "AGENT_SELECTION_UNVERIFIED"
+}
+
 func refusalMessage(category string) string {
 	switch category {
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":
@@ -140,14 +159,21 @@ func refusalMessage(category string) string {
 		return category + "; this session requires X-Claude-Code-Request-Class. Update Claude Code or repair the local integration. Reference client: " + ReferenceClient + "."
 	case "CONTEXT_SESSION_UNVERIFIED":
 		return category + "; the Clauduct session hook has not registered a transcript. Check the hook error, restore the connection and submit the prompt again. Context recovery was not bypassed."
+	case "MODEL_RETIRED":
+		retired := make([]string, 0, len(bridge.Retired))
+		for old, replacement := range bridge.Retired {
+			retired = append(retired, old+" (use "+replacement+")")
+		}
+		slices.Sort(retired)
+		return category + "; Clauduct v0.3.4 retired " + strings.Join(retired, ", ") +
+			", and the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). A session or child an earlier build started on one of them cannot be resumed; start a new one. No replacement was executed."
 	}
 	if category != "UNSUPPORTED_MODEL_OR_EFFORT" {
 		return category
 	}
 	models := make([]string, 0, len(bridge.Models))
 	for _, model := range bridge.Models {
-		models = append(models, model.ID)
+		models = append(models, model.ID+" ("+strings.Join(model.Efforts, ", ")+")")
 	}
-	return category + "; supported models: " + strings.Join(models, ", ") +
-		"; supported efforts for each: " + strings.Join(bridge.Efforts, ", ") + ". No replacement was executed."
+	return category + "; supported models and efforts: " + strings.Join(models, ", ") + ". No replacement was executed."
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -303,11 +304,7 @@ func validActiveReceipt(receipt nativeTurnReceipt, session, id string) bool {
 	for _, model := range bridge.Models {
 		modelKnown = modelKnown || receipt.Model == model.ID
 	}
-	effortKnown := false
-	for _, effort := range []string{"unlisted", "low", "medium", "high", "xhigh", "max"} {
-		effortKnown = effortKnown || receipt.Effort == effort
-	}
-	return modelKnown && effortKnown
+	return modelKnown && (receipt.Effort == "unlisted" || slices.Contains(bridge.Efforts, receipt.Effort))
 }
 
 // A selection refusal may occur before normal result binding. Attach its fixed
@@ -448,11 +445,9 @@ func (g *Gateway) reconcileNativeResults() {
 func (g *Gateway) retireEndedChildren() {
 	l := &g.executions
 	l.Lock()
-	var open []nativeTurnReceipt
-	for id, c := range l.current {
-		if id[1] != "" && !c.ended && correlationShape.MatchString(id[1]) && correlationShape.MatchString(c.turn) {
-			open = append(open, nativeTurnReceipt{Session: id[0], Agent: id[1], Turn: c.turn})
-		}
+	open := make([]nativeTurnReceipt, 0, len(l.open))
+	for id, turn := range l.open {
+		open = append(open, nativeTurnReceipt{Session: id[0], Agent: id[1], Turn: turn})
 	}
 	l.Unlock()
 	for _, want := range open {

@@ -50,7 +50,7 @@ clauduct-dev probe          # 무엇을 쓸지 출력하고 아무것도 보내�
 clauduct-dev probe <name> --send
 ```
 
-probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-5.6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다.
+probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다. `probe accept <model> [effort...]`(표에 넣기 전 모델 수용 점검)는 이 예산 대신 Codex 캐시의 effort마다 경로별 상한을 두고, 보내기 전에 그 상한을 출력한다.
 
 이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 [`docs/v2/VALIDATION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md) 1.1.2에 있다.
 
@@ -65,7 +65,7 @@ go vet ./...
 go build ./...
 
 go run ./cmd/clauduct-dev version
-go run ./cmd/clauduct-dev doctor     # 인증·소켓·자식 없이 환경만 본다
+go run ./cmd/clauduct-dev doctor     # 인증·소켓 없이 환경과 Codex 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 codex --version 하나
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,

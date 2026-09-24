@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
@@ -30,11 +32,8 @@ func (g *Gateway) compactReceipt(session, agent string, request *anthropic.Reque
 }
 
 func compactRoute(route bridge.Route, automatic bool) bridge.Route {
-	if automatic {
-		switch route.Effort {
-		case "high", "xhigh", "max":
-			route.Effort, route.Source = "medium", route.Source+"+auto-compact"
-		}
+	if automatic && slices.Index(bridge.Efforts, route.Effort) > slices.Index(bridge.Efforts, "medium") {
+		route.Effort, route.Source = "medium", route.Source+"+auto-compact"
 	}
 	return route // A copy: the session's route and subsequent generation stay intact.
 }
@@ -78,7 +77,9 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 	s := c.states[contextKey(session, agent)]
 	if s == nil {
 		s = &contextState{}
-		if g.restoreContext(session, agent, s) != nil {
+		if err := g.restoreContext(session, agent, s); errors.Is(err, bridge.ErrRetiredRoute) {
+			return nil, false, "MODEL_RETIRED"
+		} else if err != nil {
 			return nil, false, "CONTEXT_JOURNAL_UNVERIFIED"
 		}
 	}
@@ -87,7 +88,7 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 	}
 	route, err := bridge.ResolveRoute(request, override...)
 	if err != nil {
-		return nil, false, "UNSUPPORTED_MODEL_OR_EFFORT"
+		return nil, false, routeCategory(err)
 	}
 	stripCompactReceipts(request)
 	return []bridge.Route{compactRoute(route, valid && receipt.trigger == "auto")}, true, ""

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"regexp"
 	"sort"
@@ -235,7 +236,9 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 			}
 		}
 		s = &contextState{}
-		if err := g.restoreContext(session, agent, s); err != nil {
+		if err := g.restoreContext(session, agent, s); errors.Is(err, bridge.ErrRetiredRoute) {
+			return override, func() {}, "MODEL_RETIRED"
+		} else if err != nil {
 			return override, func() {}, "CONTEXT_JOURNAL_UNVERIFIED"
 		}
 		c.states[key] = s
@@ -273,7 +276,7 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 		}
 		route, err := bridge.ResolveRoute(request, override...)
 		if err != nil {
-			return override, func() {}, "UNSUPPORTED_MODEL_OR_EFFORT"
+			return override, func() {}, routeCategory(err)
 		}
 		s.route = route
 		override = []bridge.Route{compactRoute(route, validReceipt && receipt.trigger == "auto")}

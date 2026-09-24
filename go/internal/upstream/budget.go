@@ -63,19 +63,20 @@ func (b Budget) authorises() bool {
 
 // ApprovedBudget is the policy the user authorised.
 //
-// gpt-5.6-luna at low effort. luna is the cheapest of the four routes and low is its
+// gpt-6-luna at low effort. luna is the cheapest of the four routes and low is its
 // cheapest effort; gpt-6-astra is the top-tier model and the most expensive, so it is
 // deliberately not the one a verification run spends on. Reasoning tokens count toward what
 // a call costs, which is why the effort is pinned rather than left to the caller.
 //
 //	2026-09-15  twenty attempts
 //	2026-09-15  raised to one hundred, route unchanged
+//	2026-09-24  gpt-5.6-luna retired; the route moved with the haiku tier to gpt-6-luna
 //
 // The route is the part that is not delegated. The user's standing instruction is to spend
 // on luna without asking and to ask before astra, so a change of model is a new decision
 // even though a change of count is not.
 func ApprovedBudget() Budget {
-	return Budget{Model: "gpt-5.6-luna", Effort: "low", Limit: 100}
+	return Budget{Model: "gpt-6-luna", Effort: "low", Limit: 100}
 }
 
 // Ledger enforces a budget and records what was spent.

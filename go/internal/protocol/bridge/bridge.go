@@ -297,8 +297,8 @@ func ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) 
 		//
 		// Skipped when a role override is in force, which is the baseline's rule too: a
 		// subagent routed by what it is doing does not take an effort from the transcript.
-		if !efforts[turn] {
-			return Route{}, ErrUnsupportedRoute
+		if _, err := SelectRoute(route.Model, turn); err != nil {
+			return Route{}, err
 		}
 		route.Effort, route.Source = turn, route.Source+"+turn"
 	}

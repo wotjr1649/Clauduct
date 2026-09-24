@@ -170,8 +170,8 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 | 구분 | 확인한 기준 |
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/build.json), [개발 경로 반영](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.280`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.2 후보, 실제 backend, 2026-09-23. [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
-| 인자 표·native fixture 재측정 | Claude Code `2.1.280`, 2026-09-23. 공개 옵션 65개의 이름과 값 형태가 2.1.278과 같고, 모듈이 쓰는 plugin API는 추가 필드만 달라졌다. 설치 native를 쓰는 fixture 검사 통과. [재측정 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-client-2.1.280-20260923/README.md) |
+| 최근 실제 TUI | Claude Code `2.1.281`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.4 개발본(GPT-6 표), gpt-6-luna/low 실제 backend, 2026-09-24: 생성·압축·취소·복구·종료 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.281`, 2026-09-24(v0.3.4). `--help` 차이는 `--agents <json-or-file>` 하나다: `--print`와 함께 JSON 파일 경로를 받는다. 인자 수는 같고, 역할 탐색이 그 파일을 읽도록 고쳤다. 모듈이 쓰는 plugin 이벤트 타입은 같고 `$.session.version()`만 추가됐다. 설치 native를 쓰는 fixture 검사 통과. 이전 기준: `2.1.280`, 2026-09-23 [재측정 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-client-2.1.280-20260923/README.md) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/evidence.json), [TUI 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 
@@ -302,7 +302,7 @@ terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검
 | MCP 서버(`--mcp-config`) | G5. 서버가 뜨고 툴이 제공되고 **상속 환경이 살아남는다** |
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` · `--bare` | G5, 전부 동작으로 측정 |
 | 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
-| 위임 메뉴 21종 | `clauduct-<model>-<effort>` 20종 + `clauduct-inherit`. [카탈로그 기반 생성](../../go/internal/app/agents.go). 메뉴 존재는 모든 조합의 최신 TUI 통과를 뜻하지 않음 |
+| 위임 메뉴 5종·모델 표 | v0.3.4부터 `clauduct-<model>` 4종 + `clauduct-inherit`. effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6-sol, sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
 | 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. 최근 TUI에서 ROOT → A → B → C의 완료 결과 전달 확인 |
 | 완료 Agent의 SendMessage 재개 | 최근 TUI에서 동일 child ID의 Sol/high 유지·두 번째 결과 수신 확인 |
 | inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |

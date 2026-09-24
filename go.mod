@@ -1,4 +1,4 @@
-module github.com/wotjr1649/Clauduct/go
+module github.com/wotjr1649/Clauduct
 
 go 1.27.0
 
@@ -9,3 +9,5 @@ require (
 )
 
 require github.com/dlclark/regexp2/v2 v2.5.1 // indirect
+
+ignore ./verification

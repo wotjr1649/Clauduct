@@ -27,8 +27,8 @@ Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는
 ## 3. 패키지 구조
 
 ```text
-go/
-├── go.mod                    module github.com/wotjr1649/Clauduct/go, go 1.27.0
+go.mod                        module github.com/wotjr1649/Clauduct, go 1.27.0 — 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
+go/                           패키지 경로는 그대로 github.com/wotjr1649/Clauduct/go/...
 ├── cmd/clauduct/             제품 launcher
 ├── cmd/clauduct-dev/         doctor / plan / compare
 └── internal/
@@ -48,7 +48,7 @@ go/
 
 **먼저 다 만들지 않는다.** 빈 package·빈 인터페이스 scaffolding은 하지 않는다. 첫 slice는 `launch` `gateway` `platform` `testkit` `buildinfo`만 만들고 나머지는 실제 책임이 생길 때 분리한다. 만능 `utils`/`manager`로 다시 합치지도 않는다.
 
-`internal/` 아래를 뜻하며, module path에 `/v2` semantic-major suffix를 붙이지 않는다 — 제품 아키텍처 V2와 Go module major는 별개다. subdirectory module을 배포한다면 태그에 `go/` prefix가 필요하다(예 `go/v0.1.0`). 초기 배포는 검증된 binary artifact 우선이며 `go install` 지원은 별도 검증 후에만 선언한다.
+`internal/` 아래를 뜻하며, module path에 `/v2` semantic-major suffix를 붙이지 않는다 — 제품 아키텍처 V2와 Go module major는 별개다. v0.4.0부터 go.mod는 저장소 루트에 있고 태그는 prefix 없는 `vX.Y.Z`다 — `go/` prefix 태그로는 toolchain이 버전을 stamp하지 않는다(#111). 초기 배포는 검증된 binary artifact 우선이며 `go install` 지원은 별도 검증 후에만 선언한다.
 
 ## 4. CLI 계약
 

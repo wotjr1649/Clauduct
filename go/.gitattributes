@@ -9,8 +9,6 @@
 # Scoped to this directory rather than the repository root: the Node baseline's checkout
 # behaviour is not this branch's to change.
 *.go text eol=lf
-go.mod text eol=lf
-go.sum text eol=lf
 # Embedded module bytes and PDF xref offsets must survive a Windows checkout.
 internal/app/native-events.mjs text eol=lf
 internal/app/testdata/*.pdf binary

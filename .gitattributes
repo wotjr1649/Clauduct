@@ -1,0 +1,4 @@
+# go.mod and go.sum moved here from go/ in v0.4.0 (#111), and stay LF for the reason
+# go/.gitattributes gives for Go source.
+/go.mod text eol=lf
+/go.sum text eol=lf

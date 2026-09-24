@@ -41,7 +41,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bad, ok := checkRequestHeaders(r); !ok {
-		g.refuse(w, bad)
+		g.refuseHeaders(w, r, bad)
 		return
 	}
 	// Capability, not the version label, decides admission. Check before
@@ -105,6 +105,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var refusal *anthropic.RequestError
 		if errors.As(err, &refusal) {
+			g.noteUnknown(refusal.Code, err)
 			g.refuseCategory(w, http.StatusBadRequest, refusal.Code)
 			return
 		}
@@ -409,7 +410,7 @@ func checkRequestHeaders(r *http.Request) (refusal, bool) {
 	switch r.Header.Get("X-Claude-Code-Request-Class") {
 	case "", "main", "subagent", "workflow", "auxiliary", "compaction":
 	default:
-		return refuseHeader, false
+		return refuseRequestClass, false
 	}
 	for _, name := range correlationHeaders {
 		if value := r.Header.Get(name); value != "" && !correlationShape.MatchString(value) {

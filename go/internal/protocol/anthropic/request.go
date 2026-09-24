@@ -85,9 +85,13 @@ const (
 // RequestError is a refusal with a fixed category.
 type RequestError struct {
 	Code string
-	// Field names the offending member when one is identifiable. It is a name this
-	// package chose or a key from the allowlist, never a value from the request.
+	// Field names the offending member when one is identifiable: a name this package chose,
+	// or one the request used -- a key, a type, a tool name.
 	Field string
+	// Unknown says Field is something this build does not know -- a key outside the
+	// allowlist, or a block or thinking type -- which is what a client update adds. A known
+	// member with a bad value, or a repeated key, is not Unknown (#127).
+	Unknown bool
 }
 
 func (e *RequestError) Error() string {
@@ -98,6 +102,21 @@ func (e *RequestError) Error() string {
 }
 
 func refuse(code, field string) error { return &RequestError{Code: code, Field: field} }
+
+// refuseFields refuses a closed key set, naming the key that broke it when there is one.
+//
+// An unknown key is what a client update adds, and a refusal that names only the object
+// it sat in leaves the fix -- one more allowed name -- for someone to rediscover (#127).
+func refuseFields(code, object string, err error) error {
+	var fieldErr *wire.FieldError
+	if errors.As(err, &fieldErr) {
+		return &RequestError{Code: code, Field: fieldErr.Field, Unknown: errors.Is(err, wire.ErrUnknownField)}
+	}
+	return refuse(code, object)
+}
+
+// refuseUnknown refuses a type this build does not know, naming it.
+func refuseUnknown(code, kind string) error { return &RequestError{Code: code, Field: kind, Unknown: true} }
 
 // identifier matches the baseline's id() shape, used for names the backend will echo.
 var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
@@ -360,7 +379,7 @@ func checkSystem(raw json.RawMessage) error {
 func translateFieldError(err error) error {
 	var fieldErr *wire.FieldError
 	if errors.As(err, &fieldErr) {
-		return refuse(CodeRequestFields, fieldErr.Field)
+		return refuseFields(CodeRequestFields, "", err)
 	}
 	return refuse(CodeRequestShape, "")
 }
@@ -426,7 +445,7 @@ func decodeMessages(fields map[string]json.RawMessage, request *Request, setting
 func decodeMessage(raw json.RawMessage, state *toolState) (Message, error) {
 	fields, err := wire.Fields(raw, []string{"role", "content", "output_config"})
 	if err != nil {
-		return Message{}, refuse(CodeMessageFields, "messages")
+		return Message{}, refuseFields(CodeMessageFields, "messages", err)
 	}
 
 	var message Message
@@ -449,7 +468,7 @@ func decodeMessage(raw json.RawMessage, state *toolState) (Message, error) {
 		}
 		turn, err := wire.Fields(config, []string{"effort"})
 		if err != nil {
-			return Message{}, refuse(CodeOutputConfigFields, "output_config")
+			return Message{}, refuseFields(CodeOutputConfigFields, "output_config", err)
 		}
 		if effort, present := wire.Of(turn, "effort"); present == wire.Present {
 			if json.Unmarshal(effort, &message.Effort) != nil {
@@ -547,12 +566,12 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 		// Images, documents, reasoning. Each is a real shape this build has not
 		// implemented, and naming it is what keeps the gap visible instead of turning a
 		// request into a shorter one that happens to succeed.
-		return Block{}, refuse(CodeUnsupportedContent, kind)
+		return Block{}, refuseUnknown(CodeUnsupportedContent, kind)
 	}
 
 	fields, err := wire.Fields(raw, []string{"type", "text", "cache_control", "citations"})
 	if err != nil {
-		return Block{}, refuse(CodeTextFields, "content")
+		return Block{}, refuseFields(CodeTextFields, "content", err)
 	}
 	block := Block{Type: kind, Raw: raw}
 	textValue, presence := wire.Of(fields, "text")
@@ -597,7 +616,7 @@ var base64Payload = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
 func decodeImage(raw json.RawMessage) (Block, error) {
 	fields, err := wire.Fields(raw, []string{"type", "source", "cache_control"})
 	if err != nil {
-		return Block{}, refuse(CodeImageFields, "image")
+		return Block{}, refuseFields(CodeImageFields, "image", err)
 	}
 	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
 		if err := checkCacheControl(control); err != nil {
@@ -610,7 +629,7 @@ func decodeImage(raw json.RawMessage) (Block, error) {
 	}
 	source, err := wire.Fields(sourceValue, []string{"type", "media_type", "data"})
 	if err != nil {
-		return Block{}, refuse(CodeImageSourceFields, "source")
+		return Block{}, refuseFields(CodeImageSourceFields, "source", err)
 	}
 
 	var kind, mediaType, data string
@@ -651,7 +670,7 @@ var documentMediaTypes = map[string]bool{"application/pdf": true}
 func decodeDocument(raw json.RawMessage) (Block, error) {
 	fields, err := wire.Fields(raw, []string{"type", "source", "cache_control"})
 	if err != nil {
-		return Block{}, refuse(CodeDocumentFields, "document")
+		return Block{}, refuseFields(CodeDocumentFields, "document", err)
 	}
 	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
 		if err := checkCacheControl(control); err != nil {
@@ -664,7 +683,7 @@ func decodeDocument(raw json.RawMessage) (Block, error) {
 	}
 	source, err := wire.Fields(sourceValue, []string{"type", "media_type", "data"})
 	if err != nil {
-		return Block{}, refuse(CodeDocumentSourceFields, "source")
+		return Block{}, refuseFields(CodeDocumentSourceFields, "source", err)
 	}
 
 	var kind, mediaType, data string
@@ -693,7 +712,7 @@ func decodeDocument(raw json.RawMessage) (Block, error) {
 func checkCacheControl(raw json.RawMessage) error {
 	fields, err := wire.Fields(raw, []string{"type", "ttl", "scope"})
 	if err != nil {
-		return refuse(CodeCacheFields, "cache_control")
+		return refuseFields(CodeCacheFields, "cache_control", err)
 	}
 	kindValue, present := wire.Of(fields, "type")
 	var kind string
@@ -716,7 +735,7 @@ func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) err
 	}
 	config, err := wire.Fields(value, []string{"effort", "format"})
 	if err != nil {
-		return refuse(CodeOutputConfigFields, "output_config")
+		return refuseFields(CodeOutputConfigFields, "output_config", err)
 	}
 	if effort, present := wire.Of(config, "effort"); present == wire.Present {
 		if err := json.Unmarshal(effort, &request.Effort); err != nil {
@@ -733,7 +752,7 @@ func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) err
 		if errors.Is(err, wire.ErrNotObject) {
 			return refuse(CodeOutputFormatShape, "format")
 		}
-		return refuse(CodeOutputFormatFields, "format")
+		return refuseFields(CodeOutputFormatFields, "format", err)
 	}
 	kindValue, present := wire.Of(format, "type")
 	var kind string
@@ -771,7 +790,7 @@ func decodeThinking(fields map[string]json.RawMessage) error {
 	}
 	thinking, err := wire.Fields(value, []string{"type", "display", "budget_tokens"})
 	if err != nil {
-		return refuse(CodeThinkingFields, "thinking")
+		return refuseFields(CodeThinkingFields, "thinking", err)
 	}
 	kindValue, present := wire.Of(thinking, "type")
 	var kind string
@@ -779,7 +798,7 @@ func decodeThinking(fields map[string]json.RawMessage) error {
 		return refuse(CodeThinkingType, "type")
 	}
 	if kind != "adaptive" && kind != "enabled" && kind != "disabled" {
-		return refuse(CodeThinkingType, kind)
+		return refuseUnknown(CodeThinkingType, kind)
 	}
 	if budget, present := wire.Of(thinking, "budget_tokens"); present == wire.Present {
 		number, err := exactInteger(budget)
@@ -800,7 +819,7 @@ func decodeContextManagement(fields map[string]json.RawMessage) error {
 	}
 	management, err := wire.Fields(value, []string{"edits"})
 	if err != nil {
-		return refuse(CodeContextFields, "context_management")
+		return refuseFields(CodeContextFields, "context_management", err)
 	}
 	editsValue, present := wire.Of(management, "edits")
 	if present != wire.Present {
@@ -812,7 +831,7 @@ func decodeContextManagement(fields map[string]json.RawMessage) error {
 	}
 	edit, err := wire.Fields(edits[0], []string{"type", "keep"})
 	if err != nil {
-		return refuse(CodeUnsupportedEdit, "edits")
+		return refuseFields(CodeUnsupportedEdit, "edits", err)
 	}
 	kind, _ := wire.Of(edit, "type")
 	keep, _ := wire.Of(edit, "keep")
@@ -875,7 +894,7 @@ func quoteJSON(value string) string {
 func decodeRedactedThinking(raw json.RawMessage) (Block, error) {
 	fields, err := wire.Fields(raw, []string{"type", "data", "cache_control"})
 	if err != nil {
-		return Block{}, refuse(CodeRedactedFields, "redacted_thinking")
+		return Block{}, refuseFields(CodeRedactedFields, "redacted_thinking", err)
 	}
 	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
 		if err := checkCacheControl(control); err != nil {
@@ -898,7 +917,7 @@ func decodeRedactedThinking(raw json.RawMessage) (Block, error) {
 
 	saved, err := wire.Fields(decoded, []string{"type", "id", "summary", "encrypted_content"})
 	if err != nil {
-		return Block{}, refuse(CodeReasoningFields, "reasoning")
+		return Block{}, refuseFields(CodeReasoningFields, "reasoning", err)
 	}
 	var kind, id, encrypted string
 	kindValue, ok := wire.Of(saved, "type")
@@ -928,7 +947,7 @@ func decodeRedactedThinking(raw json.RawMessage) (Block, error) {
 	for _, entry := range parts {
 		part, err := wire.Fields(entry, []string{"type", "text"})
 		if err != nil {
-			return Block{}, refuse(CodeUnsupportedThinking, "summary")
+			return Block{}, refuseFields(CodeUnsupportedThinking, "summary", err)
 		}
 		var partType, text string
 		typeValue, has := wire.Of(part, "type")

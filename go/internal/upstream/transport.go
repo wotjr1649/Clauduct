@@ -95,6 +95,31 @@ type Direct struct {
 	// notBefore is when the backend last said this account may come back, in Unix
 	// nanoseconds. Every attempt waits for it, not only the one that was told (#91).
 	notBefore atomic.Int64
+	// sent is the version resolved for a request, once one has been.
+	sent atomic.Pointer[string]
+}
+
+// clientVersion resolves the version every request identifies itself with and remembers
+// it, so the session account can say which Codex its requests claimed to be.
+func (d *Direct) clientVersion() (string, error) {
+	if d.Version == nil {
+		return "", ErrNoClientVersion
+	}
+	version, err := d.Version()
+	if err == nil {
+		d.sent.Store(&version)
+	}
+	return version, err
+}
+
+// SentVersion is the Codex CLI version resolved for this transport's requests, or empty
+// before the first. It never resolves one itself: a session that sent nothing must not have
+// spawned a subprocess.
+func (d *Direct) SentVersion() string {
+	if version := d.sent.Load(); version != nil {
+		return *version
+	}
+	return ""
 }
 
 // RetryDeferred is an attempt refused here, before a credential or a socket, because the
@@ -221,10 +246,7 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 		return nil, ErrSyntheticMixing
 	}
 
-	if d.Version == nil {
-		return nil, ErrNoClientVersion
-	}
-	version, err := d.Version()
+	version, err := d.clientVersion()
 	if err != nil {
 		return nil, err
 	}

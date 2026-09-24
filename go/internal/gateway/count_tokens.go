@@ -24,7 +24,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bad, ok := checkRequestHeaders(r); !ok {
-		g.refuse(w, bad)
+		g.refuseHeaders(w, r, bad)
 		return
 	}
 	_, ctx, release, err := g.requests.admit(r.Context())
@@ -54,6 +54,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	// message parser after adding local structural defaults; nothing is generated.
 	fields, err := wire.Fields(body, []string{"model", "messages", "system", "tools", "thinking", "metadata", "output_config", "context_management"})
 	if err != nil {
+		g.noteUnknown("COUNT_TOKENS_UNSUPPORTED", err)
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}
@@ -66,6 +67,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	request, err := anthropic.DecodeRequest(encoded, anthropic.Options{ToolChanges: negotiated(r, betaToolChanges)})
 	if err != nil || request.HostedSearch != nil {
+		g.noteUnknown("COUNT_TOKENS_UNSUPPORTED", err)
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}

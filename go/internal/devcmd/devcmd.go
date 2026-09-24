@@ -5,9 +5,10 @@
 // version; clauduct --dev --version is this bridge's. Until v0.4.0 they were a separate
 // binary, clauduct-dev, and a copy of clauduct.exe by that name still lands here (#112).
 //
-// version and doctor read no credential and open no socket: doctor exists to answer "can
-// this machine even start a session" without starting one. probe is the exception and says
-// so — it sends real requests, and it refuses to do anything at all without --send.
+// version and doctor open no socket: doctor exists to answer "can this machine even start a
+// session" without starting one. doctor reads the Codex credential only to say whether it is
+// usable, and prints its category or expiry, never the credential. probe is the exception
+// and says so — it sends real requests, and it refuses to do anything at all without --send.
 package devcmd
 
 import (
@@ -17,9 +18,12 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/buildinfo"
+	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
 // Run is one command. The command word is taken with or without its leading "--": the
@@ -53,8 +57,8 @@ func version(out io.Writer) int {
 	return 0
 }
 
-// doctor reports what a session would find. It does not bind or authenticate; the one
-// process it starts is codex --version, through the resolver a session uses.
+// doctor reports what a session would find. It does not bind or authenticate; the processes
+// it starts are claude --version and codex --version, through the resolvers a session uses.
 //
 // Counts, not names. A dropped variable's name is chosen by the user and can itself carry
 // information; the rule that produced the count is printed instead, which is the part a
@@ -69,6 +73,8 @@ func doctor(out io.Writer) int {
 		status = 1
 	case found:
 		fmt.Fprintf(out, "claude       found %s\n", path)
+		installed, err := claudeVersion(path)
+		versionReport(out, "claude", installed, err, gateway.ReferenceClient)
 	default:
 		fmt.Fprintf(out, "claude       NOT FOUND (looked for %s and each PATH entry)\n", path)
 		status = 1
@@ -86,8 +92,14 @@ func doctor(out io.Writer) int {
 	spec := launch.Build("", nil, source, "", launch.Overlay{BaseURL: "http://127.0.0.1:0", AuthToken: ""})
 	fmt.Fprintf(out, "env          %d parent vars, %d passed to child\n", len(source), len(spec.Env))
 	fmt.Fprintln(out, "env rule     drop ANTHROPIC_* and CLAUDE_CODE_OAUTH_TOKEN; everything else is inherited")
-	catalogue(out)
-	fmt.Fprintln(out, "credentials  none read")
+	if path, found, err := (platform.Resolver{}).Codex(); err == nil && found {
+		fmt.Fprintf(out, "codex        found %s\n", path)
+	}
+	codex, codexErr := upstream.InstalledVersion()()
+	versionReport(out, "codex", codex, codexErr, upstream.ReferenceClientVersion)
+	catalogue(out, codex, codexErr)
+	credential, err := (&auth.Provider{}).Credential()
+	credentialReport(out, credential, err)
 	return status
 }
 

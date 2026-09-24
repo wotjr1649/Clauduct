@@ -21,13 +21,16 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 // The largest request body accepted, matching the Node baseline's requestBytes. A measured
@@ -115,7 +118,9 @@ type Gateway struct {
 	refusals  map[string]int64
 	// refusedPaths are the distinct paths refusals were answered on, first ones kept.
 	refusedPaths []string
-	broken       atomic.Int64
+	// refusedElements are the distinct unknown request elements, first ones kept.
+	refusedElements []string
+	broken          atomic.Int64
 	// client is what the client called itself, taken from the first request that named a
 	// version in the shape this build recognises. Stored once: a session has one client,
 	// and a later value would mean something this account cannot explain.
@@ -221,8 +226,9 @@ const ReferenceClient = "2.1.281"
 // field exists to make possible.
 //
 // The readiness probe arrives as Bun/1.4.3 and is not recorded: this account is a file that
-// outlives the session, so it holds a version number or nothing.
-var clientAgent = regexp.MustCompile(`^claude-(?:cli|code)/([0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*)`)
+// outlives the session, so it holds a version number or nothing -- and a bounded one, since
+// every exit line prints it.
+var clientAgent = regexp.MustCompile(`^claude-(?:cli|code)/([0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}[0-9A-Za-z.+-]{0,32})`)
 
 // noteClient records the client's version the first time it names one.
 func (g *Gateway) noteClient(agent string) {
@@ -337,6 +343,51 @@ func (g *Gateway) RefusedPaths() []string {
 	return append([]string(nil), g.refusedPaths...)
 }
 
+// elementShape is what a refused element's name may be written down as. The request chose
+// it, so anything else becomes a fixed label, as an unsupported event's name does.
+var elementShape = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,48}$`)
+
+// noteElement records a refused element once, first ones kept, as notePath does.
+func (g *Gateway) noteElement(category, name string) {
+	label := category
+	if name != "" {
+		if !elementShape.MatchString(name) {
+			name = "<other>"
+		}
+		label += " " + name
+	}
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	if len(g.refusedElements) >= refusedElementLimit || slices.Contains(g.refusedElements, label) {
+		return
+	}
+	g.refusedElements = append(g.refusedElements, label)
+}
+
+// noteUnknown records what a refused body carried that this build does not know: a key
+// outside an allowlist or an unknown type. A known member with a bad value is not recorded;
+// its name is not the fix, and a value is the request's own.
+func (g *Gateway) noteUnknown(category string, err error) {
+	var refusal *anthropic.RequestError
+	var field *wire.FieldError
+	switch {
+	case errors.As(err, &refusal) && refusal.Unknown:
+		g.noteElement(category, refusal.Field)
+	case errors.As(err, &field) && errors.Is(err, wire.ErrUnknownField):
+		g.noteElement(category, field.Field)
+	}
+}
+
+// RefusedElements is a copy of the distinct unknown elements refusals named.
+func (g *Gateway) RefusedElements() []string {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	if len(g.refusedElements) == 0 {
+		return nil
+	}
+	return append([]string(nil), g.refusedElements...)
+}
+
 // RefusalsByCategory is how many refusals of each reason this session answered.
 //
 // Copied out: a caller that serves this to a client must not be able to edit what the
@@ -366,7 +417,6 @@ func (g *Gateway) refusedTotal() int64 {
 
 func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	g.received.Add(1)
-	g.noteClient(r.Header.Get("User-Agent"))
 
 	// The record opens before anything is checked, so a refused boundary, version or
 	// encoding is a diagnosed failure rather than an unrecorded 400. The Node baseline
@@ -403,6 +453,9 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, refuseSession)
 		return
 	}
+	// After the credential: the version is taken once and printed on every exit line, so
+	// only the child this session started may name it.
+	g.noteClient(r.Header.Get("User-Agent"))
 
 	if r.URL.Path == "/v1/messages" {
 		g.handleMessages(w, r)

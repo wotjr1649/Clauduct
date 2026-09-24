@@ -103,7 +103,7 @@ func decodeTools(fields map[string]json.RawMessage, request *Request) error {
 func decodeTool(raw json.RawMessage) (Tool, error) {
 	fields, err := wire.Fields(raw, []string{"name", "description", "input_schema", "cache_control", "defer_loading"})
 	if err != nil {
-		return Tool{}, refuse(CodeToolFields, "tools")
+		return Tool{}, refuseFields(CodeToolFields, "tools", err)
 	}
 
 	var tool Tool
@@ -149,7 +149,7 @@ func decodeToolChoice(fields map[string]json.RawMessage, request *Request) error
 	}
 	choice, err := wire.Fields(value, []string{"type", "name", "disable_parallel_tool_use"})
 	if err != nil {
-		return refuse(CodeToolChoiceFields, "tool_choice")
+		return refuseFields(CodeToolChoiceFields, "tool_choice", err)
 	}
 
 	request.ToolChoice.Present = true
@@ -184,7 +184,7 @@ func decodeToolChoice(fields map[string]json.RawMessage, request *Request) error
 func decodeToolUse(raw json.RawMessage, role string, state *toolState) (Block, error) {
 	fields, err := wire.Fields(raw, []string{"type", "id", "name", "input", "cache_control"})
 	if err != nil {
-		return Block{}, refuse(CodeToolUseFieldsCode, "tool_use")
+		return Block{}, refuseFields(CodeToolUseFieldsCode, "tool_use", err)
 	}
 	if role != "assistant" {
 		return Block{}, refuse(CodeInvalidToolCall, "role")
@@ -231,7 +231,7 @@ func decodeToolUse(raw json.RawMessage, role string, state *toolState) (Block, e
 func decodeToolResult(raw json.RawMessage, role string, state *toolState) (Block, error) {
 	fields, err := wire.Fields(raw, []string{"type", "tool_use_id", "content", "is_error", "cache_control"})
 	if err != nil {
-		return Block{}, refuse(CodeToolResultFieldsCode, "tool_result")
+		return Block{}, refuseFields(CodeToolResultFieldsCode, "tool_result", err)
 	}
 	if role != "user" {
 		return Block{}, refuse(CodeInvalidToolResult, "role")
@@ -334,7 +334,7 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 		case "tool_reference":
 			reference, err := wire.Fields(entry, []string{"type", "tool_name", "cache_control"})
 			if err != nil {
-				return nil, refuse(CodeToolRefFields, "tool_reference")
+				return nil, refuseFields(CodeToolRefFields, "tool_reference", err)
 			}
 			nameValue, present := wire.Of(reference, "tool_name")
 			var name string
@@ -345,7 +345,7 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 			state.discovered[name] = true
 			parts = append(parts, ResultPart{Type: "tool_reference", Name: name})
 		default:
-			return nil, refuse(CodeUnsupportedContent, kind)
+			return nil, refuseUnknown(CodeUnsupportedContent, kind)
 		}
 	}
 	return parts, nil
@@ -427,7 +427,7 @@ func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error)
 	fields, err := wire.Fields(raw, []string{"type", "name", "allowed_domains", "blocked_domains",
 		"max_uses", "cache_control", "user_location", "allowed_callers", "response_inclusion"})
 	if err != nil {
-		return nil, refuse(CodeToolFields, "tools")
+		return nil, refuseFields(CodeToolFields, "tools", err)
 	}
 	var name string
 	nameValue, present := wire.Of(fields, "name")
@@ -469,7 +469,7 @@ func searchLocation(fields map[string]json.RawMessage) (map[string]string, error
 	}
 	parts, err := wire.Fields(value, []string{"type", "city", "region", "country", "timezone"})
 	if err != nil {
-		return nil, refuse(CodeToolFields, "user_location")
+		return nil, refuseFields(CodeToolFields, "user_location", err)
 	}
 	out := make(map[string]string, len(parts))
 	for key := range parts {
@@ -517,7 +517,7 @@ func decodeToolChange(raw json.RawMessage, kind, role string, state *toolState) 
 	}
 	fields, err := wire.Fields(raw, []string{"type", "tool", "cache_control"})
 	if err != nil {
-		return Block{}, refuse(CodeToolChangeFields, kind)
+		return Block{}, refuseFields(CodeToolChangeFields, kind, err)
 	}
 	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
 		if err := checkCacheControl(control); err != nil {
@@ -530,7 +530,7 @@ func decodeToolChange(raw json.RawMessage, kind, role string, state *toolState) 
 	}
 	reference, err := wire.Fields(toolValue, []string{"type", "name"})
 	if err != nil {
-		return Block{}, refuse(CodeToolRefFields, "tool")
+		return Block{}, refuseFields(CodeToolRefFields, "tool", err)
 	}
 
 	var refType, name string

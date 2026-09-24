@@ -70,6 +70,51 @@ function Assert-Digests([string] $Dir) {
     }
 }
 
+# All three or none once copying starts too, the way `clauduct --update` does it
+# (update.Apply). Each is staged beside its target first, so a failed copy replaces nothing.
+# Then each current binary is renamed to .old and the staged one takes its name: a running
+# executable cannot be overwritten but can be renamed, and a running one is the lock a plain
+# copy loop most plausibly hit. Any failure puts every original back.
+function Install-Set([string] $Source, [string] $Root) {
+    $targets = @($Names | ForEach-Object { Join-Path $Root $_ })
+    $swapped = @()
+    try {
+        foreach ($target in $targets) {
+            Copy-Item -LiteralPath (Join-Path $Source (Split-Path $target -Leaf)) -Destination "$target.new" -Force
+            # These bytes were just checked against the release's own digest, which is the
+            # question SmartScreen's dialog asks on every double-click. Answer it once, here.
+            Unblock-File -LiteralPath "$target.new" -ErrorAction SilentlyContinue
+        }
+        foreach ($target in $targets) {
+            Remove-Item -LiteralPath "$target.old" -Force -ErrorAction SilentlyContinue
+            $had = Test-Path -LiteralPath $target -PathType Leaf
+            if ($had) { Move-Item -LiteralPath $target -Destination "$target.old" }
+            $swapped += @{ Path = $target; Had = $had }
+            Move-Item -LiteralPath "$target.new" -Destination $target
+        }
+    } catch {
+        $why = $_.Exception.Message
+        $lost = @()
+        for ($i = $swapped.Count - 1; $i -ge 0; $i--) {
+            $s = $swapped[$i]
+            try {
+                if (Test-Path -LiteralPath $s.Path) { Remove-Item -LiteralPath $s.Path -Force }
+                if ($s.Had) { Move-Item -LiteralPath "$($s.Path).old" -Destination $s.Path }
+            } catch { $lost += $s.Path }
+        }
+        foreach ($target in $targets) { Remove-Item -LiteralPath "$target.new" -Force -ErrorAction SilentlyContinue }
+        if ($lost.Count -gt 0) {
+            throw "INSTALL_SWAP_FAILED $why -- could not put back $($lost -join ', '); each original is beside it as .old"
+        }
+        throw "INSTALL_SWAP_FAILED $why -- the previous set is back in place"
+    }
+    foreach ($target in $targets) {
+        Write-Host "installed $target"
+        Remove-Item -LiteralPath "$target.old" -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath "$target.old") { Write-Host "note: $target.old is still running; delete it once it exits" }
+    }
+}
+
 function Get-Release([string] $Dir) {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     # Without this the progress bar costs more than the transfer on Windows PowerShell.
@@ -125,7 +170,7 @@ function Try-PublishEnvironmentChange {
     try { Publish-EnvironmentChange; return $true } catch { return $false }
 }
 
-# Mirrors platform.Resolver.find, including the parts that look like overkill in an
+# Mirrors platform.Resolver, including the parts that look like overkill in an
 # installer: the standalone location first, then PATH capped at 64 raw entries, unquoted,
 # absolute only, with the working directory dropped and duplicates removed. Searching wider
 # than the launcher does would pass on a machine where the launcher then reports
@@ -134,16 +179,17 @@ function Try-PublishEnvironmentChange {
 # One difference, stated rather than hidden: the launcher reads the OS user record for the
 # home directory because %USERPROFILE% can be handed to it poisoned. Here the user is running
 # their own shell, so $env:USERPROFILE is what they mean.
+#
+# Codex has two places more, as platform.Resolver.Codex does: the Codex app's standalone
+# install before PATH, and last the native codex.exe an npm install carries.
 function Find-NativeTool([string] $Name) {
-    $standalone = Join-Path $env:USERPROFILE ".local\bin\$Name"
-    if (Test-Path -LiteralPath $standalone -PathType Leaf) { return $standalone }
-
     try { $cwd = [IO.Path]::GetFullPath((Get-Location).Path).TrimEnd('\').ToLowerInvariant() }
     catch { $cwd = '' }
 
     $raw = @($env:PATH -split ';')
     if ($raw.Count -gt 64) { $raw = $raw[0..63] }
     $seen = @{}
+    $dirs = @()
     foreach ($entry in $raw) {
         $dir = $entry.Trim()
         if ($dir.Length -ge 2 -and $dir.StartsWith('"') -and $dir.EndsWith('"')) {
@@ -153,7 +199,17 @@ function Find-NativeTool([string] $Name) {
         try { $key = [IO.Path]::GetFullPath($dir).TrimEnd('\').ToLowerInvariant() } catch { continue }
         if ($key -eq $cwd -or $seen.ContainsKey($key)) { continue }
         $seen[$key] = $true
-        $candidate = Join-Path $dir $Name
+        $dirs += $dir
+    }
+
+    $candidates = @(Join-Path $env:USERPROFILE ".local\bin\$Name")
+    if ($Name -eq 'codex.exe') { $candidates += Join-Path $env:USERPROFILE 'AppData\Local\Programs\OpenAI\Codex\bin\codex.exe' }
+    $candidates += @($dirs | ForEach-Object { Join-Path $_ $Name })
+    if ($Name -eq 'codex.exe') {
+        $npm = 'node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin\codex.exe'
+        $candidates += @((@(Join-Path $env:USERPROFILE 'AppData\Roaming\npm') + $dirs) | ForEach-Object { Join-Path $_ $npm })
+    }
+    foreach ($candidate in $candidates) {
         if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
     }
     return $null
@@ -207,14 +263,7 @@ try {
     Assert-Digests $source
 
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
-    foreach ($name in $Names) {
-        $target = Join-Path $InstallRoot $name
-        Copy-Item -LiteralPath (Join-Path $source $name) -Destination $target -Force
-        # These bytes were just checked against the release's own digest, which is the
-        # question SmartScreen's dialog asks on every double-click. Answer it once, here.
-        Unblock-File -LiteralPath $target -ErrorAction SilentlyContinue
-        Write-Host "installed $target"
-    }
+    Install-Set $source $InstallRoot
 } finally {
     if ($staging -and (Test-Path -LiteralPath $staging)) {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue

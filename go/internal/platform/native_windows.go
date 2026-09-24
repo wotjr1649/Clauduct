@@ -139,24 +139,51 @@ func comparableDir(dir string) string {
 // When it is not found the returned path is still the standalone install location. That is
 // the address of the problem a user has to fix, and returning it lets a caller report where
 // it looked without a second lookup. A caller must not spawn a path whose found is false.
-func (r Resolver) Claude() (path string, found bool, err error) { return r.find("claude.exe") }
-
-// Codex reports the Codex CLI, found the same way and with the same defences. Its version
-// is what a backend request identifies itself as, so reading it from a directory an
-// attacker can prepend to PATH would let them choose what this bridge claims to be.
-func (r Resolver) Codex() (path string, found bool, err error) { return r.find("codex.exe") }
-
-func (r Resolver) find(name string) (path string, found bool, err error) {
+func (r Resolver) Claude() (path string, found bool, err error) {
 	r, err = r.resolved()
 	if err != nil {
 		return "", false, err
 	}
-	standalone := filepath.Join(r.Home, ".local", "bin", name)
-	if r.IsFile(standalone) {
-		return standalone, true, nil
+	return r.first("claude.exe", nil, nil)
+}
+
+// Codex reports the Codex CLI, found the same way and with the same defences. Its version
+// is what a backend request identifies itself as, so reading it from a directory an
+// attacker can prepend to PATH would let them choose what this bridge claims to be.
+//
+// Two places more than claude.exe, both the baseline's (runtime-paths.mjs at 1b1c5e1): the
+// Codex app's standalone install before PATH, and an npm install last. The baseline ran
+// npm's codex.js through Node, which this build may not; the package carries the native
+// executable codex.js would have started, so that is what is found (#88).
+func (r Resolver) Codex() (path string, found bool, err error) {
+	r, err = r.resolved()
+	if err != nil {
+		return "", false, err
 	}
+	app := filepath.Join(r.Home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin", "codex.exe")
+	npm := []string{filepath.Join(r.Home, "AppData", "Roaming", "npm", npmCodex)}
 	for _, dir := range searchDirs(pathValue(r.Env), r.Cwd) {
-		candidate := filepath.Join(dir, name)
+		npm = append(npm, filepath.Join(dir, npmCodex))
+	}
+	return r.first("codex.exe", []string{app}, npm)
+}
+
+// npmCodex is where a global npm install of @openai/codex keeps its native executable,
+// relative to the npm prefix: npm nests the platform package under the one depending on it.
+// ponytail: npm's nested x64 layout only (the only one shipped for); pnpm, bun and hoisted
+// layouts are not searched -- add one when someone has it.
+var npmCodex = filepath.Join("node_modules", "@openai", "codex", "node_modules", "@openai",
+	"codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe")
+
+// first tries ~\.local\bin, then before, then PATH, then after. Not found still reports
+// ~\.local\bin, the standalone location.
+func (r Resolver) first(name string, before, after []string) (path string, found bool, err error) {
+	standalone := filepath.Join(r.Home, ".local", "bin", name)
+	candidates := append([]string{standalone}, before...)
+	for _, dir := range searchDirs(pathValue(r.Env), r.Cwd) {
+		candidates = append(candidates, filepath.Join(dir, name))
+	}
+	for _, candidate := range append(candidates, after...) {
 		if r.IsFile(candidate) {
 			return candidate, true, nil
 		}

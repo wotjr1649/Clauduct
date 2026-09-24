@@ -14,7 +14,9 @@ function agent(prompt, options = {}) {
   const model = hasModel ? opts.model : null, effort = hasEffort ? opts.effort : null;
   const explicit = hasModel && model !== 'inherit';
   const selected = explicit && typeof model === 'string' && Object.hasOwn(catalogue, model) ? catalogue[model] : explicit ? null : parent;
-  if (!selected || hasEffort && !['low','medium','high','xhigh','max'].includes(effort)) throw Error('UNSUPPORTED_MODEL_OR_EFFORT: use a listed Clauduct model and effort');
+  // A role without a model runs on the role's model, which only the gateway knows.
+  const accepts = hasRole && !hasModel ? Object.values(catalogue).some(v => v[2].includes(effort)) : selected && selected[2].includes(effort);
+  if (!selected || hasEffort && !accepts) throw Error('UNSUPPORTED_MODEL_OR_EFFORT: use a listed Clauduct model and effort');
   const chosenEffort = hasEffort ? effort : selected[1];
   const label = opts.label === undefined ? 'agent' : opts.label;
   if (typeof label !== 'string' || label.length > 1024) throw Error('CLAUDUCT_WORKFLOW_LABEL_UNSUPPORTED');

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 //go:embed native-events.mjs
@@ -24,12 +26,10 @@ func prepareNativeEvents() (directory string, err error) {
 			return directory, err
 		}
 	}
-	encoded, _ := json.Marshal(filepath.ToSlash(filepath.Join(directory, "receipts")))
-	module := strings.Replace(nativeEventModule, "__CLAUDUCT_EVENT_ROOT__", string(encoded), 1)
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name":"clauduct-native-events","version":"1.0.0","description":"Per-session native child identity and terminal receipts for Clauduct status","author":{"name":"Clauduct"}}`,
 		"hooks/hooks.json":           `{"modules":["./events.mjs"]}`,
-		"hooks/events.mjs":           module,
+		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts")),
 	}
 	for name, body := range files {
 		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
@@ -37,6 +37,21 @@ func prepareNativeEvents() (directory string, err error) {
 		}
 	}
 	return directory, nil
+}
+
+// nativeEventSource fills in the module. The receipt's model and effort labels come from
+// the routing table: a model missing there is labelled unlisted, and the gateway cannot
+// route a fork or a native selection from an unlisted receipt.
+func nativeEventSource(receipts string) string {
+	root, _ := json.Marshal(filepath.ToSlash(receipts))
+	models := make([]string, 0, len(bridge.Models))
+	for _, model := range bridge.Models {
+		models = append(models, model.ID)
+	}
+	ids, _ := json.Marshal(models)
+	efforts, _ := json.Marshal(bridge.Efforts)
+	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_MODELS__", string(ids),
+		"__CLAUDUCT_EFFORTS__", string(efforts)).Replace(nativeEventModule)
 }
 
 // Native's optional PDF executable is provided only inside this child process's

@@ -54,8 +54,8 @@ var agentTools = []string{"ToolSearch", "Read", "Grep", "Glob", "Bash", "Edit", 
 func agentDefinitions() map[string]agentDefinition {
 	menu := make(map[string]agentDefinition, len(bridge.Models)*len(bridge.Efforts))
 	for _, model := range bridge.Models {
-		for _, effort := range bridge.Efforts {
-			menu["clauduct-"+model.Key+"-"+effort] = agentDefinition{
+		for _, effort := range model.Efforts {
+			menu[bridge.MenuPrefix+model.Key+"-"+effort] = agentDefinition{
 				Description: "General development worker with " + model.ID + "/" + effort +
 					". Select this agent type when that model choice is requested.",
 				Prompt: agentPrompt,

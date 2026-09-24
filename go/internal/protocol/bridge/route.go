@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"errors"
+	"slices"
 	"strings"
 )
 
@@ -48,6 +49,11 @@ type Model struct {
 	// Effort is what it runs at when the request names none. The efforts are not uniform
 	// and normalising them would change what a request costs.
 	Effort string
+	// Efforts is what this build routes the model at, cheapest first. The backend's sets
+	// differ by model (2026-09-23 catalogue: ultra on some, max missing from gpt-5.5), so one
+	// global list would either refuse what a model takes or send what it refuses. An effort
+	// the backend lists but nobody has measured here stays out.
+	Efforts []string
 	// Alias is the Claude tier that belongs here.
 	Alias string
 	// Family is the versioned Claude prefix for that tier. Matched by prefix so no version
@@ -73,11 +79,13 @@ type ContextPolicy struct {
 // rather than from a convention that looked reasonable, with one deliberate divergence
 // recorded above: sonnet routes to terra here and to luna there.
 var Models = []Model{
-	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
-	{Key: "sol", ID: "gpt-5.6-sol", Effort: "xhigh", Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-	{Key: "luna", ID: "gpt-5.6-luna", Effort: "max", Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
+	{Key: "sol", ID: "gpt-5.6-sol", Effort: "xhigh", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	{Key: "luna", ID: "gpt-5.6-luna", Effort: "max", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
 }
+
+var lowToMax = []string{"low", "medium", "high", "xhigh", "max"}
 
 // Catalogue lists the routes this build offers, in published order.
 //
@@ -216,11 +224,11 @@ func menuRoute(role string) (Route, bool) {
 		return Route{}, false
 	}
 	key, effort, split := strings.Cut(strings.TrimPrefix(role, MenuPrefix), "-")
-	if !split || !efforts[effort] {
+	if !split {
 		return Route{}, false
 	}
 	for _, model := range Models {
-		if model.Key == key {
+		if model.Key == key && slices.Contains(model.Efforts, effort) {
 			return Route{Model: model.ID, Effort: effort, Source: "role"}, true
 		}
 	}
@@ -241,20 +249,19 @@ func ForAlias(alias string) (Model, bool) {
 	return Model{}, false
 }
 
-// Efforts is what the backend accepts, cheapest first. An effort outside it is refused
-// rather than clamped: clamping "max" down to "high" would quietly produce a cheaper, worse
-// answer than the one that was asked for.
-//
-// Ordered, because the delegation menu is built from it and a menu whose order changes
-// between runs is a menu nobody can learn.
-var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
-
-var efforts = func() map[string]bool {
-	set := make(map[string]bool, len(Efforts))
-	for _, effort := range Efforts {
-		set[effort] = true
+// Efforts is every effort some model accepts, cheapest first: the union of the models' own
+// sets, for the places that can only hold one list (the Agent schema, receipt labels). An
+// effort outside a model's set is refused rather than clamped: clamping "max" down to "high"
+// would quietly produce a cheaper, worse answer than the one that was asked for.
+var Efforts = func() (all []string) {
+	for _, model := range Models {
+		for _, effort := range model.Efforts {
+			if !slices.Contains(all, effort) {
+				all = append(all, effort)
+			}
+		}
 	}
-	return set
+	return all
 }()
 
 // SelectRoute resolves what the client asked for into what the backend understands.
@@ -263,12 +270,8 @@ var efforts = func() map[string]bool {
 // default applies. An empty model is refused: a request that names no model is not one to
 // answer with a guess.
 func SelectRoute(requested, effort string) (Route, error) {
-	if effort != "" && !efforts[effort] {
-		return Route{}, ErrUnsupportedRoute
-	}
-
 	model, source := resolveKey(requested)
-	if source == "" {
+	if source == "" || effort != "" && !slices.Contains(model.Efforts, effort) {
 		return Route{}, ErrUnsupportedRoute
 	}
 	route := Route{Model: model.ID, Effort: model.Effort, Source: source}

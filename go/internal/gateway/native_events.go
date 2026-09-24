@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -303,11 +304,7 @@ func validActiveReceipt(receipt nativeTurnReceipt, session, id string) bool {
 	for _, model := range bridge.Models {
 		modelKnown = modelKnown || receipt.Model == model.ID
 	}
-	effortKnown := false
-	for _, effort := range []string{"unlisted", "low", "medium", "high", "xhigh", "max"} {
-		effortKnown = effortKnown || receipt.Effort == effort
-	}
-	return modelKnown && effortKnown
+	return modelKnown && (receipt.Effort == "unlisted" || slices.Contains(bridge.Efforts, receipt.Effort))
 }
 
 // A selection refusal may occur before normal result binding. Attach its fixed

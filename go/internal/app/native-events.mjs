@@ -77,8 +77,8 @@ export const register = on => {
       const publication=(async () => {
         const receipt={session:await session($),agent,turn};
         if (agent) {
-          receipt.model=['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(e.model)?e.model:'unlisted';
-          receipt.effort=['low','medium','high','xhigh','max'].includes(e.effort)?e.effort:'unlisted';
+          receipt.model=__CLAUDUCT_MODELS__.includes(e.model)?e.model:'unlisted';
+          receipt.effort=__CLAUDUCT_EFFORTS__.includes(e.effort)?e.effort:'unlisted';
         }
         // Native has write (including mkdir), but no rename/append. A new filename
         // records each attempt; only the empty marker publishes its finished body.

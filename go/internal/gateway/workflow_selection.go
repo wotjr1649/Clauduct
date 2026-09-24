@@ -65,14 +65,19 @@ func (d *delegations) adaptWorkflowBody(scope delegationScope, id string, fields
 }
 
 func workflowTrailer(scope delegationScope, id string) string {
-	catalogue := map[string][2]string{}
+	// [id, default effort, accepted efforts], so the wrapper refuses before native starts a child.
+	catalogue := map[string][]any{}
+	parentEntry := []any{scope.route.Model, scope.route.Effort, []string{}}
 	for _, m := range bridge.Models {
 		for _, name := range []string{m.ID, m.Key, m.Alias} {
-			catalogue[name] = [2]string{m.ID, m.Effort}
+			catalogue[name] = []any{m.ID, m.Effort, m.Efforts}
+		}
+		if m.ID == scope.route.Model {
+			parentEntry[2] = m.Efforts
 		}
 	}
 	models, _ := json.Marshal(catalogue)
-	parent, _ := json.Marshal([2]string{scope.route.Model, scope.route.Effort})
+	parent, _ := json.Marshal(parentEntry)
 	call, _ := json.Marshal(id)
 	// Git's Windows checkout can give the embedded helper CRLF. Native rejects CR
 	// in its approval dialog; normalize only our helper, never the user's script.

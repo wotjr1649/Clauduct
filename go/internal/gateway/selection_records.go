@@ -3,6 +3,8 @@ package gateway
 import (
 	"encoding/json"
 	"errors"
+	"slices"
+
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
@@ -92,9 +94,7 @@ func (d *delegations) rejectedSelection(scope delegationScope, call string, raw 
 	if !bridge.KnownRole(role) {
 		role = "unlisted"
 	}
-	switch effort {
-	case "", "low", "medium", "high", "xhigh", "max":
-	default:
+	if effort != "" && !slices.Contains(bridge.Efforts, effort) {
 		effort = "unlisted"
 	}
 	failure := "PREPARE_UNVERIFIED"

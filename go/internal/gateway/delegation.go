@@ -198,7 +198,11 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		}
 		model["enum"], _ = json.Marshal(names)
 		properties["model"], _ = json.Marshal(model)
-		properties["effort"] = json.RawMessage(`{"type":"string","enum":["low","medium","high","xhigh","max"],"description":"Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."}`)
+		properties["effort"], _ = json.Marshal(struct {
+			Type        string   `json:"type"`
+			Enum        []string `json:"enum"`
+			Description string   `json:"description"`
+		}{"string", bridge.Efforts, "Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."})
 		if pinned.Model != "" {
 			properties["effort"], _ = json.Marshal(map[string]any{"type": "string", "enum": []string{pinned.Effort}, "description": "Omit effort to retain this task's verified selection."})
 		}

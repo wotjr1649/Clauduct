@@ -146,8 +146,7 @@ func refusalMessage(category string) string {
 	}
 	models := make([]string, 0, len(bridge.Models))
 	for _, model := range bridge.Models {
-		models = append(models, model.ID)
+		models = append(models, model.ID+" ("+strings.Join(model.Efforts, ", ")+")")
 	}
-	return category + "; supported models: " + strings.Join(models, ", ") +
-		"; supported efforts for each: " + strings.Join(bridge.Efforts, ", ") + ". No replacement was executed."
+	return category + "; supported models and efforts: " + strings.Join(models, ", ") + ". No replacement was executed."
 }

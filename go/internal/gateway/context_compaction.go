@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
@@ -30,11 +31,8 @@ func (g *Gateway) compactReceipt(session, agent string, request *anthropic.Reque
 }
 
 func compactRoute(route bridge.Route, automatic bool) bridge.Route {
-	if automatic {
-		switch route.Effort {
-		case "high", "xhigh", "max":
-			route.Effort, route.Source = "medium", route.Source+"+auto-compact"
-		}
+	if automatic && slices.Index(bridge.Efforts, route.Effort) > slices.Index(bridge.Efforts, "medium") {
+		route.Effort, route.Source = "medium", route.Source+"+auto-compact"
 	}
 	return route // A copy: the session's route and subsequent generation stay intact.
 }

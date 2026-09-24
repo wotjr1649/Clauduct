@@ -60,6 +60,32 @@ func nativeArgEnd(args []string, i int) (end int, known bool) {
 	return end, true
 }
 
+// printMode reports whether argv asks native for -p/--print, alone or among combined shorts.
+func printMode(args []string) bool {
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		if !known || end > len(args) {
+			break
+		}
+		arg := args[i]
+		if arg == "--print" {
+			return true
+		}
+		if len(arg) > 1 && arg[0] == '-' && arg[1] != '-' {
+			for _, c := range arg[1:] {
+				if c == 'p' {
+					return true
+				}
+				if !strings.ContainsRune("cvh", c) {
+					break
+				}
+			}
+		}
+		i = end
+	}
+	return false
+}
+
 // optionValue reports the last value argv gives a native option, read with the boundaries
 // native uses, so a prompt that mentions the option is not taken for it. An unknown option
 // stops the scan: past it, what looks like a name may be a value.

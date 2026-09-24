@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -24,6 +25,9 @@ import (
 // ErrClaudeNotFound means the native executable was not located. Nothing was bound and
 // nothing was started, so there is nothing to clean up.
 var ErrClaudeNotFound = errors.New("CLAUDE_NOT_FOUND")
+
+// ErrInterrupted means Ctrl+C arrived before the child was started, so nothing was.
+var ErrInterrupted = errors.New(CategoryCancelled)
 
 // RefusedOptionError names a native option this launcher will not forward. Only the
 // permission-bypass options qualify; see internal/launch for why the list is two entries
@@ -83,6 +87,8 @@ type Options struct {
 	DeadlineGrace time.Duration
 	// Checkpoint persists metadata while the child runs; nil disables checkpoints.
 	Checkpoint func(Status) error
+	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
+	interrupts chan os.Signal
 }
 
 // Result separates what the native process did from what cleanup did.
@@ -157,6 +163,18 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 
 	if !found {
 		return Result{}, ErrClaudeNotFound
+	}
+
+	// Ctrl+C reaches every process on the console, this one included. With nothing asking
+	// for os.Interrupt the Go runtime leaves it to the default handler, which ends the
+	// launcher at once: no report, no cleanup, and the job it holds takes the child along
+	// (#86). Asked for, it is the child's to answer -- it got the same event -- and nothing
+	// is forwarded, so nothing is delivered twice.
+	interrupts := o.interrupts
+	if interrupts == nil {
+		interrupts = make(chan os.Signal, 1)
+		signal.Notify(interrupts, os.Interrupt)
+		defer signal.Stop(interrupts)
 	}
 
 	gw, err := o.StartGateway()
@@ -335,6 +353,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		})
 	}
 
+	// Pressed before there was a child to receive it: the launch is what was cancelled, and
+	// nothing is started only to be stopped again.
+	select {
+	case <-interrupts:
+		result.Diagnostics = gw.Diagnose()
+		result.Category = CategoryCancelled
+		result.NativeExitCode = ExitCodeUnknown
+		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+		return result, ErrInterrupted
+	default:
+	}
 	process, startErr := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)
 	if startErr != nil {
 		// The child never ran, so the port it was going to use must not outlive the
@@ -353,7 +382,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	result.NativeStarted = true
 	nativeCleanupReady = false
 
-	waitErr, reaped, lifecycle := waitForSession(ctx, process, gw, o, result)
+	waitErr, reaped, lifecycle := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
 	result.Lifecycle = &lifecycle
 	cleanupWaitErr := waitErr
 	if joined, ok := waitErr.(interface{ Unwrap() []error }); ok && len(joined.Unwrap()) == 1 {
@@ -379,6 +408,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	result.Diagnostics = gw.Diagnose()
 	result.Lifecycle.ObservedAt = time.Now().UTC()
 	result.Category = endedAs(ctx, result, ledger)
+	if lifecycle.Reason == "user_interrupt" {
+		result.Category = CategoryCancelled
+		if errors.Is(waitErr, context.Canceled) {
+			waitErr = nil // Stopped after the grace; the child's exit code is still the answer.
+		}
+	}
 	if lifecycle.Reason == "session_deadline" {
 		result.Category = CategoryDeadline
 		// errors.Is, not ==. A cancellation that reached here wrapped -- which is the

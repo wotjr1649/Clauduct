@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"strconv"
 	"time"
 
@@ -68,7 +69,8 @@ func drainReady(d gateway.Diagnostics) bool {
 	return true
 }
 
-func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o Options, initial Result) (error, bool, LifecycleFacts) {
+func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o Options, initial Result,
+	interrupts <-chan os.Signal, print bool) (error, bool, LifecycleFacts) {
 	life := LifecycleFacts{State: "running", StartedAt: time.Now().UTC()}
 	// Keep caller cancellation immediate. A harness deadline gets a separate,
 	// bounded drain so it cannot destroy the gateway in the middle of compaction.
@@ -136,6 +138,20 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 			deadline, grace = nil, nil
 			life.Reason = "caller_cancelled"
 			stop()
+		case <-interrupts:
+			// Interactive native owns Ctrl+C (in its raw mode it is a keystroke), and a
+			// second press under -p changes nothing already under way.
+			if !print || life.Reason == "user_interrupt" || life.State == "stopping" {
+				continue
+			}
+			// Under -p native got the same event and ends itself; this records why and
+			// stops it only if it has not gone within the grace.
+			life.Reason = "user_interrupt"
+			deadline = nil
+			timer := time.NewTimer(stopGrace)
+			defer timer.Stop()
+			grace = timer.C
+			checkpoint()
 		case now := <-deadline:
 			deadline = nil
 			life.State, life.Reason = "draining", "session_deadline"

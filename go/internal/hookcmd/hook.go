@@ -1,18 +1,18 @@
-// Command clauduct-hook reports a subagent's start and stop to the session's gateway.
+// Package hookcmd reports a subagent's start and stop to the session's gateway.
 //
 // The client runs it. A SubagentStart or SubagentStop hook hands it the event on stdin, it
 // turns that into a binding, and it posts the binding to the loopback gateway this session
 // started. That is the only way the gateway can know a subagent exists, because the client
 // is what starts one.
 //
-// A separate binary, and not a subcommand of clauduct, for the reason clauduct-dev is
-// separate too: the launcher forwards every argument to the native client, so a subcommand
-// there could collide with a native option or a native option's value.
+// It runs inside clauduct.exe, reached by a reserved first argument no native option can
+// be, or by the executable's name (#112). Until v0.4.0 it was a separate binary,
+// clauduct-hook, because the launcher forwards every other argument to the native client.
 //
 // Start reports contain identity and context. Stop reports additionally deliver
 // the existing final answer to this session's authenticated loopback gateway.
 // Neither the hook nor diagnostics persist report bodies or arbitrary hook fields.
-package main
+package hookcmd
 
 import (
 	"bytes"
@@ -33,16 +33,40 @@ import (
 	"time"
 )
 
-func main() {
-	if strings.EqualFold(filepath.Base(os.Args[0]), "pdftoppm.exe") {
-		os.Exit(nativePDF(os.Args[1:], os.Stdout, os.Stderr))
-		return
+// Named reports whether argv0 is the program called name, in any case and with or without
+// a directory or .exe: a process started from cmd.exe gets its name as it was typed.
+func Named(argv0, name string) bool {
+	return strings.EqualFold(strings.TrimSuffix(strings.ToLower(filepath.Base(argv0)), ".exe"), name)
+}
+
+// Arg is the whole argument list the session settings give the hook command.
+const Arg = "--clauduct-hook"
+
+// Dispatch runs the role argv asks for, if it asks for one of these, and reports whether
+// it did. It has to come before anything else the launcher does: the renderer runs with an
+// empty environment and the hook inside the client's timeout, and neither is a launch.
+func Dispatch(argv []string) (int, bool) {
+	if len(argv) == 0 {
+		return 0, false
 	}
-	if len(os.Args) == 2 && os.Args[1] == "--render-pdf" {
-		os.Exit(renderPDF())
-		return
+	args := argv[1:]
+	alone := func(arg string) bool { return len(args) == 1 && args[0] == arg }
+	switch {
+	case Named(argv[0], "pdftoppm"):
+		return nativePDF(args, os.Stdout, os.Stderr), true
+	case Named(argv[0], "clauduct-hook"):
+		// The copy a 0.3.x updater installs, which a session started before the update still
+		// names, with that version's renderer argument.
+		if alone("--render-pdf") {
+			return renderPDF(), true
+		}
+		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, environ()), true
+	case alone(pdf.RenderArg):
+		return renderPDF(), true
+	case alone(Arg):
+		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, environ()), true
 	}
-	os.Exit(runWithOutput(os.Stdin, os.Stdout, os.Stderr, environ()))
+	return 0, false
 }
 
 // Used only by the gateway's sealed, deadline-bound renderer subprocess.

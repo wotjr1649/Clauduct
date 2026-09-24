@@ -2,9 +2,12 @@
 // through an ephemeral loopback gateway.
 //
 // It parses nothing. Every argument goes to the native executable exactly as given,
-// including --help and --version, so their meaning stays the native one. Clauduct's own
-// build identity is a question for clauduct-dev, which is a separate binary precisely so
-// that asking it can never collide with a native option or a native option's value.
+// including --help and --version, so their meaning stays the native one. The exceptions
+// are a handful of first arguments no native option is: --update, --usage, --uninstall,
+// --dev for Clauduct's own commands (clauduct --dev --version is this build's identity),
+// and the hook and PDF renderer roles the session runs this same file for. Since v0.4.0
+// that is the whole installation (#112); a copy named clauduct-hook.exe or clauduct-dev.exe
+// takes the role its name says.
 //
 // The name was clauduct-go until the Node implementation stopped being the installed
 // product. Sharing a name before that decision would have made PATH order decide which
@@ -20,6 +23,8 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/app"
+	"github.com/wotjr1649/Clauduct/go/internal/devcmd"
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/update"
@@ -30,6 +35,15 @@ func main() {
 }
 
 func run() int {
+	// The roles this file plays for a running session come first: they are not launches,
+	// and a hook has the client's timeout to answer in.
+	if code, ok := hookcmd.Dispatch(os.Args); ok {
+		return code
+	}
+	if args, ok := devArgs(os.Args); ok {
+		return devcmd.Run(args, os.Stdout, os.Stderr)
+	}
+
 	// An update cannot delete the binary it was running, so it renames it aside and says
 	// which file is left. This process is not running that file, so it can finish the job --
 	// and the next launch after an update is the first moment anything can. Silent and
@@ -140,6 +154,25 @@ func environMap() map[string]string {
 
 // usageOption is the name for the account view.
 const usageOption = "--usage"
+
+// devOption is where Clauduct's own commands start: clauduct --dev --version.
+const devOption = "--dev"
+
+// devArgs is the command for devcmd when argv asks for one: --dev first, the way --update
+// is recognised, or the name clauduct-dev.exe that a copy from a 0.3.x updater carries.
+//
+// The name is compared without its .exe: cmd.exe hands a program the command line as typed,
+// so `clauduct-dev version` there arrives as argv[0] "clauduct-dev" -- and a miss would send
+// "version" to the client as a prompt, which is a billed session.
+func devArgs(argv []string) ([]string, bool) {
+	if len(argv) > 0 && hookcmd.Named(argv[0], "clauduct-dev") {
+		return argv[1:], true
+	}
+	if len(argv) > 1 && strings.EqualFold(argv[1], devOption) {
+		return argv[2:], true
+	}
+	return nil, false
+}
 
 // asked reports whether argv is exactly this option.
 //

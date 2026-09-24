@@ -110,7 +110,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 
 	// Nothing to do is a real answer, and it has to come before the question.
 	//
-	// Without this, running --update while already current replaces three files with the
+	// Without this, running --update while already current replaces the files with the
 	// same bytes and leaves a clauduct.exe.old behind, because the executable doing the
 	// replacing cannot delete its own predecessor. The user then has a leftover that looks
 	// like a fault and is the product of an update that changed nothing.
@@ -120,10 +120,17 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	// against the bytes on disk, so a file that is corrupt or was replaced by hand does not
 	// match and does get repaired.
 	if current(dir, sums) {
-		fmt.Fprintln(out, "already current -- the three installed files match", release.Tag)
+		fmt.Fprintln(out, "already current -- the installed binary matches", release.Tag)
 		return 0
 	}
 
+	// The retired copies go too (Apply), so they are named before the question: consent to an
+	// unnamed set is not consent.
+	for _, name := range Retired {
+		if isFile(filepath.Join(dir, name)) {
+			fmt.Fprintln(out, "   remove", name, "(a copy from 0.3.x; a session started before this update loses its hook)")
+		}
+	}
 	if !consented && !confirmed(in, out) {
 		fmt.Fprintln(out, "clauduct: nothing was changed")
 		return 0
@@ -132,7 +139,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	// A fresh deadline once somebody has answered.
 	//
 	// The one this was given covers the whole command, and the prompt sits inside it: a
-	// reader who takes longer than the budget to check three digests -- which is the point
+	// reader who takes longer than the budget to check the digests -- which is the point
 	// of printing them -- pressed y and got "context deadline exceeded". Waiting for a
 	// person is not part of the time budget for talking to a server.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), Timeout)
@@ -190,7 +197,7 @@ func digests(ctx context.Context, client *http.Client, release Release) (map[str
 // confirmed asks once. Anything that is not a yes is a no, including end of input: an
 // update that proceeds because nobody was there to object is not one anybody approved.
 func confirmed(in io.Reader, out io.Writer) bool {
-	fmt.Fprint(out, "replace these three files? [y/N] ")
+	fmt.Fprint(out, "replace "+strings.Join(Binaries, ", ")+"? [y/N] ")
 	return yes(in, out)
 }
 

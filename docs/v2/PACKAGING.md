@@ -8,15 +8,15 @@
 
 | 파일 | 하는 일 |
 |---|---|
-| `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다 |
-| `clauduct-hook.exe` | 클라이언트가 subagent 시작·종료에 실행한다. 게이트웨이에 역할을 보고한다 |
-| `clauduct-dev.exe` | 이 프로젝트 자신의 명령. `version` · `doctor` · `probe` |
+| `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·PDF 렌더러·`--dev` 명령이다 |
+| `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라가는 `clauduct.exe`의 바이트 동일 사본. 새 설치·업데이트는 받지 않는다(아래) |
 
-세 개뿐이다. 설정 파일도, 스크립트도, 데이터 디렉터리도 없다.
+하나뿐이다(v0.4.0부터, #112). 설정 파일도, 스크립트도, 데이터 디렉터리도 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`) — `clauduct`는 첫 인자로 온 `--update`·`--usage`·`--uninstall`·`--dev`와 아래 두 내부 인자 말고는 아무 옵션도 소유하지 않고, 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 예약한 이름이 측정된 native 옵션 표에 나타나면 테스트가 실패한다.
 
-**`clauduct-hook`은 `clauduct` 옆에 있어야 한다.** `findHook()`이 실행 파일 옆만 본다 — PATH를 뒤지면 이 빌드가 내보내지 않은 동명 프로그램을 찾을 수 있고, 클라이언트는 그 결과를 실행하라는 말을 듣게 된다. 옆에 없으면 hook이 설치되지 않고, **역할별 라우팅과 위임 메뉴의 effort가 조용히 동작하지 않는다.**
+**사본을 올리는 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. 새 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. v0.5.0부터는 사본을 올리지 않으며, 그때 남은 0.3.x 설치는 `install.ps1`로 다시 설치한다.
 
-**`clauduct-dev`가 따로 있는 이유**는 `clauduct`가 첫 인자로 온 `--update`·`--usage`·`--uninstall` 말고는 아무 옵션도 소유하지 않기 때문이다. 나머지 인자는 native로 그대로 간다 — `--version`과 `--help`를 포함해서. 그래서 이 빌드 자신에 대한 질문은 **다른 바이너리**로 물어야 하고, 그러면 native 옵션이나 그 값과 충돌할 수 없다.
+**hook은 실행 중인 파일 자신이다.** `findHook()`은 `os.Executable()`이고, 세션 설정의 hook 명령은 `"<clauduct.exe>" --clauduct-hook`, gateway의 PDF 렌더러는 `--clauduct-render-pdf`, native가 찾는 `pdftoppm.exe`는 세션 임시 폴더에 둔 하드링크다(이름으로 역할을 고른다). PATH는 뒤지지 않는다 — 클라이언트는 그 결과를 실행하라는 말을 듣게 된다.
+
 
 ## 2. 실행에 필요한 것
 
@@ -38,7 +38,7 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 
 모델을 호출하지 않는 명령은 아무것도 쓰지 않는다. `--version`·`--help`는 credential을 읽지 않고 `codex --version`도 띄우지 않는다. 둘 다 **첫 요청**에서만 일어난다. 테스트가 그것을 고정한다.
 
-검증용 실호출은 별개의 예산이다 — `clauduct-dev probe`, 경로 고정, 누적 상한. VALIDATION.md 1.6.1절.
+검증용 실호출은 별개의 예산이다 — `clauduct --dev --probe`, 경로 고정, 누적 상한. VALIDATION.md 1.6.1절.
 
 ## 4. 빌드와 신원
 
@@ -46,8 +46,8 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 cd go
 $env:CGO_ENABLED = '0'
 go build -trimpath -o clauduct.exe      ./cmd/clauduct
-go build -trimpath -o clauduct-hook.exe ./cmd/clauduct-hook
-go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
+# 하나다. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(#112, 1장).
+# v0.4.x 릴리스는 이것을 clauduct-hook.exe·clauduct-dev.exe로도 복사해 올린다(4.1).
 ```
 
 `-trimpath`는 빌드 머신의 디렉터리 배치가 바이너리에 남지 않게 한다. `CGO_ENABLED=0`은
@@ -58,7 +58,7 @@ go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
 아니다. 버전과 commit stamp는 Go toolchain의 VCS 기록에서 나오므로 **릴리스 스크립트가 잊을 수 없다.**
 
 ```powershell
-clauduct-dev version
+clauduct --dev --version
 # clauduct     <태그. 태그 없는 commit은 pseudo-version, 수정된 worktree는 끝에 +dirty>
 # commit       <40자 hash>
 # go           go1.27.1 windows/amd64
@@ -91,11 +91,11 @@ $env:CGO_ENABLED = '0'
 # 트리가 dirty가 되고 commit 스탬프에 +dirty가 붙는다 — 이 절차를 처음 실행하면서 실제로
 # 겪었다.
 go build -trimpath -o ../../release-assets/clauduct.exe      ./cmd/clauduct
-go build -trimpath -o ../../release-assets/clauduct-hook.exe ./cmd/clauduct-hook
-go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
+# v0.4.x 동안(1장): 0.3.x의 --update가 받을 수 있도록 같은 바이트를 옛 이름으로도 둔다.
+'clauduct-hook.exe', 'clauduct-dev.exe' | ForEach-Object { Copy-Item ../../release-assets/clauduct.exe ../../release-assets/$_ }
 
 # 버전이 태그와 같고 스탬프에 +dirty가 없는지 확인한다. 어긋나면 그 빌드는 릴리스 후보가 아니다.
-$version = & ../../release-assets/clauduct-dev.exe version
+$version = & ../../release-assets/clauduct.exe --dev --version
 $version
 if (-not ($version -match "^clauduct\s+$([regex]::Escape($tag))$")) { throw "VERSION_MISMATCH $tag" }
 if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
@@ -106,12 +106,12 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
 # 4. gh release create $tag clauduct.exe clauduct-hook.exe clauduct-dev.exe `
-#        install.ps1 uninstall.ps1 SHA256SUMS
+#        install.ps1 uninstall.ps1 SHA256SUMS      # 사본 둘은 v0.4.x까지(1장)
 ```
 
 | 자산 이름 | 왜 이 이름이어야 하나 |
 |---|---|
-| `clauduct.exe` · `clauduct-hook.exe` · `clauduct-dev.exe` | `update.Binaries`가 이 이름으로 찾는다. 셋 다 없으면 무엇이 빠졌는지 이름으로 말하고 멈춘다 |
+| `clauduct.exe` | `update.Binaries`가 이 이름으로 찾는다. 없으면 이름으로 말하고 멈춘다. **v0.4.x까지는 `clauduct-hook.exe`·`clauduct-dev.exe`도 같은 바이트로 올리고 `SHA256SUMS`에 셋을 적는다** — 0.3.x의 `update.Binaries`가 세 이름을 모두 요구한다 |
 | `install.ps1` · `uninstall.ps1` | `releases/latest/download/install.ps1`이 동작하게 하는 것이 이 자산이다. `--update`는 이 둘을 건드리지 않는다 — 설치된 집합이 아니다 |
 | `SHA256SUMS` | 유일한 무결성 근거다. 서명이 없으므로 여기에 적힌 digest와 릴리스 API가 말하는 digest **둘 다** 대조한다. **스크립트 둘도 여기 적는다** — 받아서 실행하라고 안내하는 파일이므로 대조할 수단이 있어야 한다. `update.Sums`는 이름으로 찾으므로 추가 항목은 무시된다 |
 
@@ -143,8 +143,8 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 
 ## 5. 설치
 
-PATH에 있는 디렉터리에 **세 파일**을 복사한다. `clauduct-hook`이 `clauduct` 옆에 없으면 역할
-라우팅과 메뉴의 effort가 조용히 동작하지 않는다(1장).
+PATH에 있는 디렉터리에 **`clauduct.exe` 하나**를 복사한다. 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`는
+교체가 끝난 뒤 지운다(1장). hook은 실행 중인 `clauduct.exe` 자신이라 옆에 둘 것이 없다.
 
 **그 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 안 된다.** MSYS/Git Bash의 PATH 탐색은 같은
 이름의 디렉터리에서 멈추고 `clauduct.exe`에 도달하지 못한다 — cmd는 PATHEXT로 찾으므로 셸에 따라
@@ -177,10 +177,10 @@ native `claude`가 "이 버전 카탈로그에 없는 모델"이라고 경고한
 # 릴리스에서 설치 (기본 최신 태그, 기본 위치 ~\.local\bin)
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
 scripts\install.ps1 -Tag v0.2.0                 # 태그 고정
-scripts\install.ps1 -FromPath .\dist            # 로컬 빌드 설치 (3개 + SHA256SUMS 필요)
+scripts\install.ps1 -FromPath .\dist            # 로컬 빌드 설치 (clauduct.exe + SHA256SUMS 필요)
 scripts\install.ps1 -NoPathUpdate               # PATH를 건드리지 않는다
 
-scripts\uninstall.ps1                           # 바이너리 3개 + --update가 남긴 *.old
+scripts\uninstall.ps1                           # clauduct.exe, 0.3.x의 두 이름, --update가 남긴 *.old
 scripts\uninstall.ps1 -Purge                    # %TEMP%\clauduct 진단 파일까지
 scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실행 파일이 없을 때만
 ```
@@ -195,9 +195,9 @@ scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실
 오염된 채 넘어올 수 있어 OS 사용자 기록에서 홈을 읽지만, 스크립트는 사용자 자신의 셸에서 도므로
 `$env:USERPROFILE`을 쓴다.
 
-**셋이 다 검증되기 전에는 하나도 복사하지 않는다.** digest가 어긋나면 `INSTALL_DIGEST_MISMATCH`로
-멈추고 대상 디렉터리는 손대지 않은 상태로 남는다. 새 바이너리 둘 옆에 옛 바이너리 하나는 어떤
-릴리스도 그 조합으로 시험된 적이 없다. 복사가 시작된 뒤에도 같다(v0.3.5): 셋을 대상 옆에 `.new`로 먼저 복사하고, 현재 것을 `.old`로 이름을 바꾼 뒤 `.new`를 제자리에 놓는다(`--update`의 `update.Apply`와 같은 방식). 실행 중인 바이너리는 덮어쓸 수 없지만 이름은 바꿀 수 있어 설치가 통과하고, 지우지 못한 `.old`는 이름을 알린다. 어느 단계든 실패하면 원래 셋을 되돌리고 `INSTALL_SWAP_FAILED`로 멈춘다. 한계도 `--update`와 같다 — 이전 교체가 남긴 `.old`가 아직 실행 중이면 그 이름을 비울 수 없어 거부하고 원래 셋을 둔다. 그 세션이 끝난 뒤 다시 설치한다.
+**검증이 끝나기 전에는 하나도 복사하지 않는다.** digest가 어긋나면 `INSTALL_DIGEST_MISMATCH`로
+멈추고 대상 디렉터리는 손대지 않은 상태로 남는다. 새 바이너리 옆에 옛 바이너리는 어떤
+릴리스도 그 조합으로 시험된 적이 없다. 복사가 시작된 뒤에도 같다(v0.3.5): 새 파일을 대상 옆에 `.new`로 먼저 복사하고, 현재 것을 `.old`로 이름을 바꾼 뒤 `.new`를 제자리에 놓는다(`--update`의 `update.Apply`와 같은 방식). 실행 중인 바이너리는 덮어쓸 수 없지만 이름은 바꿀 수 있어 설치가 통과하고, 지우지 못한 `.old`는 이름을 알린다. 어느 단계든 실패하면 원래 파일을 되돌리고 `INSTALL_SWAP_FAILED`로 멈춘다. 한계도 `--update`와 같다 — 이전 교체가 남긴 `.old`가 아직 실행 중이면 그 이름을 비울 수 없어 거부하고 원래 파일을 둔다. 그 세션이 끝난 뒤 다시 설치한다. 0.3.x가 남긴 두 이름은 교체가 끝난 뒤에만 지운다(v0.4.0) — 업데이트 전에 시작된 세션이 hook으로 실행 중이면 남기고 이름을 알린다. 지워진 뒤에는 그 세션의 하위 에이전트와 PDF가 hook 없이 거부되므로, **설치 전에 시작한 세션은 다시 시작한다.** 설치할 파일은 릴리스의 digest로 정한다: `clauduct-hook.exe`가 `clauduct.exe`와 다른 0.3.x 릴리스(`-Tag`로 되돌릴 때)는 셋을 모두 두고 아무것도 지우지 않는다.
 
 **설치 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 거부한다**(`INSTALL_DIRECTORY_SHADOW`).
 이유는 1장과 같다 — Git Bash가 거기서 멈춘다.
@@ -225,7 +225,7 @@ README가 시키는 `powershell -File install.ps1`을 PowerShell 7 터미널에�
 **설치 후 `Unblock-File`을 건다.** 방금 릴리스의 digest로 확인한 바이트이고, 그것이 SmartScreen
 대화상자가 묻는 질문이다.
 
-| 검사됨 | `internal/app/install_windows_test.go`(비공개 테스트) 11건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 대문자 digest 수용, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 11건 전부 잡힌다. v0.3.5에 교체 2건 — 배타 잠금된 대상이면 이전 셋 복원, 실행 중인 대상은 이름을 바꿔 교체. v0.3.4 스크립트에서 둘 다 실패하고, 복원 줄을 지운 변이는 잠금 쪽이 잡는다. 사전 검증 1건 — Codex가 앱 설치 위치나 npm 설치에만 있어도 찾는다(v0.3.4 스크립트에서 실패) |
+| 검사됨 | `internal/app/install_windows_test.go`(비공개 테스트) 11건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 대문자 digest 수용, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 11건 전부 잡힌다. v0.3.5에 교체 2건 — 배타 잠금된 대상이면 이전 셋 복원, 실행 중인 대상은 이름을 바꿔 교체. v0.3.4 스크립트에서 둘 다 실패하고, 복원 줄을 지운 변이는 잠금 쪽이 잡는다. 사전 검증 1건 — Codex가 앱 설치 위치나 npm 설치에만 있어도 찾는다(v0.3.4 스크립트에서 실패). v0.4.0(#112): v0.4 릴리스는 `clauduct.exe` 하나를 두고 옛 두 이름을 지우며, 0.3.x 릴리스는 셋을 둔다(각각 검사). 잠금 복원은 0.3.x 릴리스의 세 대상으로 검사하고, 실행 중인 옛 사본은 남기고 이름을 알린다 |
 |---|---|
 | 실측 2026-09-17 | **다운로드 경로가 실환경에서 돌았다.** v0.2.1 자산을 릴리스 URL에서 받아 digest를 대조하고 설치했고, 받은 세 파일이 `SHA256SUMS`와 일치했다. 사전 검증도 이때 처음 실제 머신에서 돌아 `claude.exe`와 `codex.exe`를 찾았다. 임시 폴더로 한 번, 이어서 공식 경로 `~\.local\bin`으로 한 번 — 두 번째는 PATH가 이미 있어 `already on it`으로 끝났다 |
 |---|---|
@@ -267,16 +267,16 @@ clauduct --update --yes  # 무인
 ```
 
 기준은 **최신 태그 릴리스**다. 순서가 안전의 전부다: 릴리스 메타데이터 → `SHA256SUMS` →
-**사용자에게 태그와 digest 3개를 보여주고 확인** → 내려받아 전부 검증 → 그 다음에야 교체.
+**사용자에게 태그와 digest를 보여주고 확인** → 내려받아 전부 검증 → 그 다음에야 교체.
 digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말하고 끝난다. 릴리스 API가 자기 digest를
 싣고 있으면 그것과도 대조한다 — 둘이 일치하는 것은 값이 적지만, **둘이 다르면 멈출 이유**다.
 
-교체는 셋을 함께 한다(`clauduct`·`clauduct-hook`·`clauduct-dev`). 실행 중인 exe는 덮어쓸 수
+교체 대상은 `clauduct.exe` 하나다(v0.4.0). 실행 중인 exe는 덮어쓸 수
 없지만 이름은 바꿀 수 있으므로 `*.old`로 옮기고 새 파일을 쓴다. 중간에 실패하면 옮긴 것을 전부
 되돌린다. 성공 후 `clauduct.exe.old`는 **이 프로세스가 끝나야** 지울 수 있고, 그래서 지우라고
-출력한다.
+출력한다. 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여준다 — 업데이트 전에 시작한 세션은 그 뒤 hook을 잃으므로 다시 시작한다.
 
-**이미 최신이면 아무것도 하지 않는다.** 설치된 세 파일의 digest가 릴리스가 말하는 것과 전부
+**이미 최신이면 아무것도 하지 않는다.** 설치된 `clauduct.exe`의 digest가 릴리스가 말하는 것과 전부
 같으면 묻지 않고 `already current`로 끝난다. 버전 문자열이 아니라 digest로 보는 이유는, 버전은
 빌드가 자기를 부르는 이름이고 두 빌드가 같은 이름을 쓸 수 있기 때문이다 — 손으로 갈아끼웠거나
 반만 받아진 파일은 일치하지 않으므로 그때는 고쳐진다. 이 검사가 없으면 같은 바이트로 교체하고
@@ -343,7 +343,7 @@ rename은 허용하고, **같은 볼륨이면 다른 폴더로도 옮겨진다**
 ## 5.2 이 계정이 얼마나 썼는지
 
 ```powershell
-clauduct --usage       # 또는 clauduct-dev usage — 같은 뷰다
+clauduct --usage       # 또는 clauduct --dev --usage — 같은 뷰다
 ```
 
 주간/보조 창의 사용률, 남은 시간, 어느 family가 in force인지를 보여준다. **요청을 만들지 않는다** —

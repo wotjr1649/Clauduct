@@ -7,7 +7,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# The same three the installer placed, plus what --update leaves behind: a running executable
+# clauduct.exe, and the two names a 0.3.x installation also had (a 0.3.x updater still writes
+# them as copies through v0.4.x), plus what --update leaves behind: a running executable
 # cannot be overwritten but can be renamed, so the updater moves the old one aside and tells
 # the user to delete it once the process ends. This is that deletion.
 $Names = @('clauduct.exe', 'clauduct-hook.exe', 'clauduct-dev.exe')

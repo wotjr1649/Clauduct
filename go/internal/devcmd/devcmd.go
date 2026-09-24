@@ -1,13 +1,14 @@
-// Command clauduct-dev holds Clauduct's own commands.
+// Package devcmd holds Clauduct's own commands: `clauduct --dev --version` and the rest.
 //
-// It is a separate binary from the product launcher so that asking Clauduct a question can
-// never be confused with passing an option to the native client. clauduct --version is
-// the native client's version; clauduct-dev version is this bridge's.
+// They sit behind --dev so that asking Clauduct a question can never be confused with
+// passing an option to the native client. clauduct --version is the native client's
+// version; clauduct --dev --version is this bridge's. Until v0.4.0 they were a separate
+// binary, clauduct-dev, and a copy of clauduct.exe by that name still lands here (#112).
 //
 // version and doctor read no credential and open no socket: doctor exists to answer "can
 // this machine even start a session" without starting one. probe is the exception and says
 // so — it sends real requests, and it refuses to do anything at all without --send.
-package main
+package devcmd
 
 import (
 	"fmt"
@@ -21,14 +22,13 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
-func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
-}
-
-func run(args []string, stdout, stderr io.Writer) int {
+// Run is one command. The command word is taken with or without its leading "--": the
+// --dev form writes --version, and the clauduct-dev.exe copy that 0.3.x updaters still
+// install is called the old way, as clauduct-dev version.
+func Run(args []string, stdout, stderr io.Writer) int {
 	command := ""
 	if len(args) > 0 {
-		command = args[0]
+		command = strings.TrimPrefix(args[0], "--")
 	}
 	switch command {
 	case "version":
@@ -40,7 +40,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct-dev [version|doctor|usage|probe]")
+		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--doctor|--usage|--probe]")
 		return 2
 	}
 }

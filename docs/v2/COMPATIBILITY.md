@@ -312,8 +312,8 @@ terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검
 | `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/COUNT-TOKENS.md) |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
-| **`clauduct --update`** | 태그 릴리스의 바이너리 3개를 SHA256SUMS로 검증한 뒤 교체. 확인을 받고, `--yes`로 무인. `clauduct update`는 그대로 통과해 **클라이언트**를 갱신한다 |
-| **`clauduct --usage`** (= `clauduct-dev usage`) | 이 **계정**의 주간/보조 한도 사용률·리셋·in force family를, 세션이 남긴 계정에서 읽어 보여준다. 요청 0회 |
+| **`clauduct --update`** | 태그 릴리스의 `clauduct.exe`를 SHA256SUMS로 검증한 뒤 교체하고, 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지운다. 확인을 받고, `--yes`로 무인. `clauduct update`는 그대로 통과해 **클라이언트**를 갱신한다 |
+| **`clauduct --usage`** (= `clauduct --dev --usage`) | 이 **계정**의 주간/보조 한도 사용률·리셋·in force family를, 세션이 남긴 계정에서 읽어 보여준다. 요청 0회 |
 | 종료 줄의 `quota=47%/7d` | 묻지 않아도 매 세션 보인다. 백엔드가 응답 헤더로 말한 값 |
 | Esc 이후 같은 세션 회복 | 정확 계수 중·부분 텍스트 출력 중·도구 전달 전 생성 취소 후 회복 확인. S45에서는 부분 인자 delta 563개/본문 0개 상태 취소, tool 실행·파일 생성 0, 같은 세션 후속 답변을 확인 |
 | `/context` 보고서의 실제 backend 입력 제외 | 검증된 native transcript 출처가 있는 조회 기록만 제외. [이전 수리 근거](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/context-fork-20260919/REPORT.md). native 화면·로컬 이력 추정치는 변경하지 않음 |
@@ -421,7 +421,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 
 | 항목 | 내용 |
 |---|---|
-| 소유하는 옵션 **3개** | `--update`(+`--yes`), `--usage`, `--uninstall`(+`--yes`). **첫 인자일 때만** 인식한다 — 프롬프트 안의 같은 문자열이 바이너리를 교체하면 안 되기 때문이다. 그 외 모든 인자는 그대로 전달된다 |
+| 소유하는 옵션 **4개** | `--update`(+`--yes`), `--usage`, `--uninstall`(+`--yes`), `--dev`(v0.4.0, 이 빌드 자신의 명령). **첫 인자일 때만** 인식한다 — 프롬프트 안의 같은 문자열이 바이너리를 교체하면 안 되기 때문이다. 그 외 모든 인자는 그대로 전달된다 |
 | 거부하는 native 옵션 **2개** | `--dangerously-skip-permissions`·`--allow-dangerously-skip-permissions`(권한). 사용자 settings는 필수 settings와 병합하며 충돌만 거부 |
 | 주입하는 것 | settings·위임 메뉴·세션 plugin·모델/도구/압축 관련 환경. 사용자 `--agents`는 메뉴를 대체할 수 있지만, [sessionRequirements](../../go/internal/app/session.go)의 필수 환경값은 사용자 값으로 자동 대체하지 않음 |
 | hook이 없으면 | 자식 확정 선택과 native 압축을 검증할 수 없으므로 해당 요청을 거부한다. `hookInstalled`에 기록 |

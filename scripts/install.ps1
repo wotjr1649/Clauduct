@@ -10,11 +10,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# The three travel together. clauduct-hook has to sit beside clauduct, because findHook()
-# looks only next to the executable; when it is missing the client still starts and exits 0,
-# and role routing and the delegation menu's effort just stop working. Measured 2026-09-17:
-# a copy run from a directory without it reports hookInstalled:false and says nothing else.
-$Names    = @('clauduct.exe', 'clauduct-hook.exe', 'clauduct-dev.exe')
+# One file since v0.4.0: clauduct.exe is also the hook, the PDF renderer and `clauduct --dev`
+# (#112). The names a 0.3.x installation also had are removed once it is in place; releases
+# through v0.4.x still publish them as copies, for the 0.3.x updater that requires all three.
+$Names    = @('clauduct.exe')
+$Retired  = @('clauduct-hook.exe', 'clauduct-dev.exe')
 $SumsName = 'SHA256SUMS'
 
 # Reads SHA256SUMS the way the built-in updater does (update.Sums): two whitespace-separated
@@ -52,8 +52,8 @@ function Get-Sha256([string] $Path) {
     return [BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
 }
 
-# Nothing is copied until all three match. A half-installed set is worse than a refused
-# install: two new binaries beside one old one is a combination no release was tested as.
+# Nothing is copied until every file matches. A half-installed set is worse than a refused
+# install: a new binary beside an old one is a combination no release was tested as.
 function Assert-Digests([string] $Dir) {
     $sumsPath = Join-Path $Dir $SumsName
     if (-not (Test-Path -LiteralPath $sumsPath -PathType Leaf)) { throw "INSTALL_SUMS_MISSING $sumsPath" }
@@ -70,7 +70,7 @@ function Assert-Digests([string] $Dir) {
     }
 }
 
-# All three or none once copying starts too, the way `clauduct --update` does it
+# All or none once copying starts too, the way `clauduct --update` does it
 # (update.Apply). Each is staged beside its target first, so a failed copy replaces nothing.
 # Then each current binary is renamed to .old and the staged one takes its name: a running
 # executable cannot be overwritten but can be renamed, and a running one is the lock a plain
@@ -113,6 +113,12 @@ function Install-Set([string] $Source, [string] $Root) {
         Remove-Item -LiteralPath "$target.old" -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath "$target.old") { Write-Host "note: $target.old is still running; delete it once it exits" }
     }
+    # Only after the new set is in place, so a failure above leaves a 0.3.x installation whole.
+    foreach ($name in $Retired) {
+        $path = Join-Path $Root $name
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $path) { Write-Host "note: $path is still running; delete it once it exits" }
+    }
 }
 
 function Get-Release([string] $Dir) {
@@ -121,9 +127,28 @@ function Get-Release([string] $Dir) {
     $ProgressPreference = 'SilentlyContinue'
     if ($Tag -eq 'latest') { $base = "https://github.com/$Repo/releases/latest/download" }
     else                   { $base = "https://github.com/$Repo/releases/download/$Tag" }
-    foreach ($name in ($Names + $SumsName)) {
+    # The digests first: they decide which files this release is (Select-Names).
+    try { Invoke-WebRequest -Uri "$base/$SumsName" -OutFile (Join-Path $Dir $SumsName) -UseBasicParsing }
+    catch { throw "INSTALL_DOWNLOAD_FAILED $SumsName $base/$SumsName" }
+    Select-Names $Dir
+    foreach ($name in $Names) {
         try { Invoke-WebRequest -Uri "$base/$name" -OutFile (Join-Path $Dir $name) -UseBasicParsing }
         catch { throw "INSTALL_DOWNLOAD_FAILED $name $base/$name" }
+    }
+}
+
+# Which files a release is. From v0.4.0 clauduct-hook.exe and clauduct-dev.exe are copies of
+# clauduct.exe, published only for 0.3.x updaters, and one file is the installation. A release
+# whose clauduct-hook.exe differs from its clauduct.exe is a 0.3.x one, where they are separate
+# programs that must sit beside it -- installing its clauduct.exe alone (a rollback with -Tag)
+# would leave a session with no hook. Decided by the release's own digests, not its tag.
+function Select-Names([string] $Dir) {
+    # Missing digests are Assert-Digests' refusal to make, by its own name.
+    if (-not (Test-Path -LiteralPath (Join-Path $Dir $SumsName) -PathType Leaf)) { return }
+    $sums = Read-Sums (Join-Path $Dir $SumsName)
+    if ($sums.ContainsKey('clauduct-hook.exe') -and $sums['clauduct-hook.exe'] -cne $sums['clauduct.exe']) {
+        $script:Names = @('clauduct.exe') + $Retired
+        $script:Retired = @()
     }
 }
 
@@ -253,6 +278,7 @@ $staging = $null
 try {
     if ($FromPath) {
         $source = [IO.Path]::GetFullPath($FromPath)
+        Select-Names $source
     } else {
         $staging = Join-Path ([IO.Path]::GetTempPath()) ('clauduct-install-' + [guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $staging -Force | Out-Null
@@ -293,6 +319,6 @@ if ($NoPathUpdate) {
 # Two commands because they prove different things, and the difference has confused a
 # reader already: this launcher passes everything it does not own to the client, so
 # `clauduct --version` is answered by Claude Code. It proves the launch path works.
-# What this build calls itself is a question for clauduct-dev.
-Write-Host "verify: clauduct-dev version   (this build)"
-Write-Host "        clauduct --version     (the client, through it)"
+# What this build calls itself is a question for clauduct --dev.
+Write-Host "verify: clauduct --dev --version   (this build)"
+Write-Host "        clauduct --version         (the client, through it)"

@@ -46,8 +46,8 @@
 ### 검증용 실호출은 별개의 예산이다
 
 ```powershell
-clauduct-dev probe          # 무엇을 쓸지 출력하고 아무것도 보내지 않는다 (exit 2)
-clauduct-dev probe <name> --send
+clauduct --dev --probe          # 무엇을 쓸지 출력하고 아무것도 보내지 않는다 (exit 2)
+clauduct --dev --probe <name> --send
 ```
 
 probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다. `probe accept <model> [effort...]`(표에 넣기 전 모델 수용 점검)는 이 예산 대신 Codex 캐시의 effort마다 경로별 상한을 두고, 보내기 전에 그 상한을 출력한다.
@@ -64,8 +64,8 @@ gofmt -l .               # 출력이 비어야 한다
 go vet ./...
 go build ./...
 
-go run ./cmd/clauduct-dev version
-go run ./cmd/clauduct-dev doctor     # 인증·소켓 없이 환경과 Codex 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 codex --version 하나
+go run ./cmd/clauduct --dev --version
+go run ./cmd/clauduct --dev --doctor  # 인증·소켓 없이 환경과 Codex 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 codex --version 하나
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
@@ -95,7 +95,7 @@ TUI 검사의 테스트와 단계 파일은 유지보수자 로컬에 있다. �
 빌드 산출물은 저장소 밖이나 이미 ignore되는 `.tmp/` 아래에 둔다. `go run`은 VCS 정보를 stamp하지 않으므로 `version`이 `(devel)`과 `commit unknown`을 말한다. 실제 commit을 확인하려면 빌드한다.
 
 ```powershell
-go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
+go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 ```
 
 출하 빌드는 `CGO_ENABLED=0`이다.
@@ -116,8 +116,8 @@ go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev
 
 | 경로 | 책임 |
 |---|---|
-| `cmd/clauduct` | 제품 launcher. 인자를 해석하지 않는다 |
-| `cmd/clauduct-dev` | Clauduct 자신의 명령. native 옵션과 절대 충돌하지 않도록 별도 바이너리다 |
+| `cmd/clauduct` | 제품 launcher. 첫 인자 몇 개(`--update`·`--usage`·`--uninstall`·`--dev`, hook·렌더러용 `--clauduct-*`) 말고는 인자를 해석하지 않는다 |
+| `internal/devcmd`·`internal/hookcmd` | `--dev` 명령과 hook. v0.3.x까지 별도 바이너리였고, 그 이름의 사본은 이름으로 같은 역할을 한다(#112) |
 | `cmd/ptydrive` | 유지보수 도구. ConPTY에서 TUI를 단계 파일대로 조작한다. 출하하지 않는다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |

@@ -99,7 +99,7 @@ func (d *documentRenderer) render(ctx context.Context, dataURL string) ([]bridge
 	}
 	bounded, cancel := context.WithTimeout(ctx, 35*time.Second)
 	defer cancel()
-	cmd := exec.Command(d.helper, "--render-pdf")
+	cmd := exec.Command(d.helper, pdf.RenderArg)
 	cmd.Stdin = bytes.NewReader(data)
 	// A renderer receives no credentials, profile, PATH, prompt or user filenames.
 	cmd.Env = []string{}

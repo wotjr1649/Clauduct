@@ -64,10 +64,10 @@ type SessionFacts struct {
 	NativeContextDefaults NativeContextDefaults `json:"nativeContextDefaults"`
 	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
 	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
-	// HookInstalled is whether the subagent hook was found beside this executable.
+	// HookInstalled is whether the session got a hook: since #112 this executable itself.
 	//
-	// Reported because its absence is silent otherwise. findHook looks beside the binary
-	// and nowhere else, so a package that shipped without clauduct-hook runs perfectly --
+	// Reported because its absence is silent otherwise. findHook is os.Executable, so a
+	// platform that cannot name the running file starts a session that runs perfectly --
 	// and role routing never happens, and the delegation menu moves the model without the
 	// effort. That is a failure nobody would think to look for.
 	HookInstalled bool `json:"hookInstalled"`
@@ -305,7 +305,7 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 // the figure on every response and each session already writes it down.
 //
 // One field, not the whole report -- the window that is in force, how much of it is gone.
-// `clauduct-dev usage` is where the rest lives, including how old a reading is.
+// `clauduct --usage` is where the rest lives, including how old a reading is.
 // brokenField names streams that broke after their status was sent, and only when there are
 // any.
 //

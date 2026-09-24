@@ -6,7 +6,7 @@ Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 그대로 담당
 추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다.
 Codex app-server를 호출하거나 실행 중인 Codex 앱 세션에 요청을 넘기는 구현이 아닙니다.
 
-제품은 Go 단일 바이너리 `clauduct`(+`clauduct-hook`, `clauduct-dev`)입니다. 현행 동작·제약·미지원은
+제품은 Go 단일 바이너리 `clauduct.exe` 하나입니다(v0.4.0부터, hook·`--dev` 명령 포함). 현행 동작·제약·미지원은
 [docs/v2/COMPATIBILITY.md](docs/v2/COMPATIBILITY.md) 하나가 소유합니다.
 
 이전 Node 구현(v1, `clauduct-node`)은 v0.3.3에서 저장소에서 은퇴했습니다. 마지막 소스와 문서는
@@ -51,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
 
 cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑재이기 때문입니다.
 
-최신 릴리스에서 바이너리 3개와 `SHA256SUMS`를 받아 **셋이 모두 대조된 뒤에** `~\.local\bin`에
+최신 릴리스에서 `clauduct.exe`와 `SHA256SUMS`를 받아 **대조가 끝난 뒤에** `~\.local\bin`에
 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. 받은 바이트가 릴리스가 말하는 digest와 다르면
 `INSTALL_DIGEST_MISMATCH`로 멈추고 **대상 폴더는 손대지 않은 상태로 남습니다.**
 
@@ -59,7 +59,7 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 
 ```powershell
 .\scripts\install.ps1 -Tag v0.3.0        # 태그 고정
-.\scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (3개 + SHA256SUMS 필요)
+.\scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (clauduct.exe + SHA256SUMS 필요)
 .\scripts\install.ps1 -NoPathUpdate      # PATH는 직접 관리
 .\scripts\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
 ```
@@ -68,19 +68,19 @@ cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑�
 명령입니다.
 
 ```powershell
-clauduct-dev version   # Clauduct 자신: 버전, commit, Go 버전
-clauduct --version     # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
+clauduct --dev --version   # Clauduct 자신: 버전, commit, Go 버전
+clauduct --version         # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
 
-**둘이 다른 것을 확인합니다.** 이 런처는 자기가 소유한 세 옵션(`--update`·`--usage`·`--uninstall`)
+**둘이 다른 것을 확인합니다.** 이 런처는 자기가 소유한 첫 인자(`--update`·`--usage`·`--uninstall`·`--dev`)
 말고는 **전부 클라이언트에 그대로 넘깁니다.** `--version`도 그중 하나라 Claude Code가 답합니다 —
 버그가 아니라 설계이고, 덕분에 그 명령은 "런처가 클라이언트를 띄울 수 있다"까지 증명합니다.
-Clauduct 자신에 대한 질문은 `clauduct-dev`가 받습니다.
+Clauduct 자신에 대한 질문은 `clauduct --dev`(`--version`·`--doctor`·`--usage`·`--probe`)가 받습니다.
 
 ### 업데이트
 
 ```powershell
-clauduct --update        # 태그와 digest 3개를 보여주고 확인을 받습니다
+clauduct --update        # 태그와 digest를 보여주고 확인을 받습니다
 clauduct --update --yes  # 무인
 ```
 
@@ -120,11 +120,11 @@ clauduct --continue
 clauduct -p "Summarize the current task"
 clauduct --update      # Clauduct 자신을 갱신. `clauduct update`는 그대로 전달되어 Claude Code를 갱신
 clauduct --usage       # 이 계정이 주간 한도를 얼마나 썼는지. 요청 0회
-clauduct-dev doctor    # 이 빌드 자신에 대한 질문은 별도 바이너리로
+clauduct --dev --doctor  # 이 빌드 자신에 대한 질문은 --dev 뒤로
 ```
 
-거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`·`--usage`·`--uninstall`
-셋이고(모두 **첫 인자일 때만** 인식), 거부하는 것은 **둘**입니다(권한 해제 2종).
+거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`·`--usage`·`--uninstall`·`--dev`
+넷이고(모두 **첫 인자일 때만** 인식), 거부하는 것은 **둘**입니다(권한 해제 2종).
 `--settings`는 0.3.0부터 거부 대신 필수 settings와 **병합**됩니다 — 필수 연결이나 hook과
 충돌할 때만 거부합니다. `--setting-sources`는 그대로 native에 전달됩니다.
 

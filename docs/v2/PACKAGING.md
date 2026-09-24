@@ -80,7 +80,7 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 # 0. 태그보다 먼저 버전 상수를 올린다. go/internal/buildinfo/buildinfo.go의 Version을 태그에서
 #    v를 뺀 값으로 바꾼 커밋을 병합하고, 태그는 그 커밋 위에 둔다. `clauduct-dev version`은 태그가
 #    아니라 이 상수를 말한다 — v0.3.2는 상수가 0.3.1인 커밋에 태그가 붙을 뻔했다.
-$tag = 'v0.3.3'
+$tag = 'v0.3.4'
 
 # 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
 #    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).

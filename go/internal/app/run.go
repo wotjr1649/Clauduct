@@ -211,6 +211,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		settings = *o.Settings
 	} else {
 		effort = startupModel.Effort
+		// A model named without an effort runs at that model's own default, as the Node
+		// launcher did (#87); the startup effort is for the startup model. A user's --effort
+		// still lands after this one and wins.
+		if model, named := optionValue(o.Args, "--model"); named {
+			if _, pinned := optionValue(o.Args, "--effort"); !pinned {
+				if route, err := bridge.SelectRoute(model, ""); err == nil {
+					effort = route.Effort
+				}
+			}
+		}
 		hook = findHook()
 		result.HookInstalled = hook != ""
 		if built, ok := sessionSettings(hook); ok {

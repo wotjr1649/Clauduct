@@ -7,6 +7,27 @@ import "strings"
 // existing role scanner's contract. Unknown options cannot prove where
 // a later settings/role option begins. This is not native option validation.
 // end is exclusive; a missing required value returns len(args)+1.
+// optionValue reports the last value argv gives a native option, read with the boundaries
+// native uses, so a prompt that mentions the option is not taken for it. An unknown option
+// stops the scan: past it, what looks like a name may be a value.
+func optionValue(args []string, option string) (value string, found bool) {
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		if !known || end > len(args) {
+			break
+		}
+		name, attached, hasValue := strings.Cut(args[i], "=")
+		if name == option {
+			value, found = attached, true
+			if !hasValue && end == i+2 {
+				value = args[i+1]
+			}
+		}
+		i = end
+	}
+	return value, found
+}
+
 func nativeArgEnd(args []string, i int) (end int, known bool) {
 	arg := args[i]
 	if len(arg) > 2 && arg[0] == '-' && arg[1] != '-' {

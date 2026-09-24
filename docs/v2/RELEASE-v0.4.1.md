@@ -35,3 +35,26 @@ v0.5.0부터는 올리지 않는다. 설치와 업데이트는 [패키징 안내
 **되돌리기.** `install.ps1 -Tag v0.4.0`. v0.4.1이 남기는 기록 가운데 v0.4.0이 읽지 못하는 것은 없다.
 
 Windows 전용이며 서명하지 않는다. 지원 기능과 남은 조건은 [호환성 문서](COMPATIBILITY.md)의 v0.4.1 절을 참조한다.
+
+## 출하 검사 (2026-09-24)
+
+태그 `v0.4.1`은 `4f56f94`(#128 병합 커밋)을 가리키고, [Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.4.1)에 자산 6개가 있다.
+검증 기록은 공개 저장소에 두지 않으므로 결과만 적는다.
+
+- **빌드.** 태그의 깨끗한 checkout 두 곳에서 빌드했고, 두 번째는 별도 build cache를 썼다.
+  `clauduct.exe`는 바이트 단위로 같았다(`d9c6d729…`, 사본 둘도 같은 digest).
+  `clauduct --dev --version`은 `v0.4.1`, commit `4f56f94a8f2b13c801e5b5160165e799958afecf`이고 `+dirty`는 없다.
+  설치 스크립트 둘은 v0.4.0과 같다.
+- **격리 설치.** 모든 단계에서 파일 집합·digest·버전 스탬프가 맞았고 PATH는 바뀌지 않았다.
+  - 새 설치
+  - v0.4.0 발행 자산 설치
+  - 새 설치 스크립트로 교체
+  - v0.4.0 스크립트로 되돌리기
+- **실제 backend 세션(시도 5회).** 설치한 v0.4.1로 입력, `/clear`, 백그라운드 자식 위임을 보냈다.
+  부모 `gpt-6-luna`/max, 자식 `clauduct-luna`에 `effort: low`였고, 거부·끊김·실패는 0이었다.
+  발행 전에는 같은 코드의 개발 빌드로 SDK 위임 세션과 TUI 수용을 10회 돌렸다.
+- **발행 후 대조.** 받은 자산 6개는 빌드한 파일과 같았고, Release API의 digest는 `SHA256SUMS`와 같았다.
+- **업데이트.** `install.ps1 -Tag v0.4.1`로 GitHub에서 설치했다. v0.4.0의 `clauduct --update --yes`는 v0.4.1로 올렸다.
+  남은 `.old`는 다음 실행에서 사라졌고, 두 번째 `--update`는 `already current`였다.
+- **사본이 있는 설치.** 0.3.5 updater가 남기는 v0.4.0(`clauduct.exe`와 사본 둘)에서도 `--update`는 사본 둘을 이름으로 알린 뒤 지우고
+  v0.4.1이 됐다. 다음 실행 뒤에는 `clauduct.exe` 하나만 남았다.

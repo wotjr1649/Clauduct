@@ -319,9 +319,17 @@ func roleCLI(args []string, injected, cwd string) (map[string]roleDefault, []str
 	return defs, plugins, nil
 }
 
-func sessionRoleSources(config, cwd, injected string, args []string, env map[string]string, role string) roleSources {
-	cli, plugins, err := roleCLI(args, injected, cwd)
-	s := roleSources{cli: cli, err: err, defaultModel: env["CLAUDE_CODE_SUBAGENT_MODEL"]}
+// cliRoles is what argv defines, read once when the session starts, as native reads --agents
+// and an --agents file: a file changed or removed later must not change or refuse routing.
+type cliRoles struct {
+	defs    map[string]roleDefault
+	plugins []string
+	err     error
+}
+
+func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string, role string) roleSources {
+	plugins := append([]string(nil), cli.plugins...) // appended to below; cli is shared across calls
+	s := roleSources{cli: cli.defs, err: cli.err, defaultModel: env["CLAUDE_CODE_SUBAGENT_MODEL"]}
 	// Native's platform directories; no invented environment override.
 	managed := "/etc/claude-code"
 	if runtime.GOOS == "darwin" {

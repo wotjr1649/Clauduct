@@ -138,6 +138,15 @@ func routeCategory(err error) string {
 	return "UNSUPPORTED_MODEL_OR_EFFORT"
 }
 
+// selectionCategory names a refused agent selection. A child started on a retired route is
+// told so, rather than only that its selection could not be verified.
+func selectionCategory(err error) string {
+	if errors.Is(err, bridge.ErrRetiredRoute) {
+		return "MODEL_RETIRED"
+	}
+	return "AGENT_SELECTION_UNVERIFIED"
+}
+
 func refusalMessage(category string) string {
 	switch category {
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":
@@ -157,7 +166,7 @@ func refusalMessage(category string) string {
 		}
 		slices.Sort(retired)
 		return category + "; Clauduct v0.3.4 retired " + strings.Join(retired, ", ") +
-			", and the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). No replacement was executed."
+			", and the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). A session or child an earlier build started on one of them cannot be resumed; start a new one. No replacement was executed."
 	}
 	if category != "UNSUPPORTED_MODEL_OR_EFFORT" {
 		return category

@@ -6,7 +6,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
-// The delegation menu: one agent type per model and effort this build can reach.
+// The delegation menu: one agent type per model this build can reach.
 //
 // Role defaults come from bridge.RoleRoute. The gateway also accepts an explicit
 // model and effort on Agent calls and correlates that choice with the native child.

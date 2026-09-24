@@ -145,7 +145,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	override, releaseAgent, err := g.agentSelection(r, request, entry)
 	defer releaseAgent()
 	if err != nil {
-		g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
+		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
 	}
 	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)
@@ -315,6 +315,9 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			binding := g.agents.bindingOf(agent)
 			resolvedScope, continued := g.continuationScope(scope, agent, binding)
 			route, found, err := g.delegations.route(resolvedScope, agent, binding, r.Context())
+			if errors.Is(err, bridge.ErrRetiredRoute) {
+				return nil, releaseAgent, err
+			}
 			if err != nil {
 				return nil, releaseAgent, errDelegationUnverified
 			}
@@ -324,6 +327,9 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				// successful or authorize execution.
 				entry.route(request.Model, route.Model, route.Effort, route.Source)
 				observed, err := bridge.SelectRoute(request.Model, "")
+				if errors.Is(err, bridge.ErrRetiredRoute) {
+					return nil, releaseAgent, err
+				}
 				if err != nil || observed.Model != route.Model && !g.delegations.resumeModel(scope, agent, observed.Model) {
 					return nil, releaseAgent, errDelegationUnverified
 				}

@@ -251,10 +251,14 @@ func menuRoute(role string) (Route, bool) {
 // clauduct-sol-high. Those names meant a GPT-5.6 model for sol and luna, so reading them
 // through the new table would silently run GPT-6; they are refused, astra and terra alike,
 // rather than parsed (decided 2026-09-24).
+//
+// The keys and efforts are that menu's, written out: they are history, and a later table change
+// must not widen or narrow what counts as an old name.
 func RetiredRole(role string) bool {
 	rest, ok := strings.CutPrefix(role, MenuPrefix)
 	key, effort, split := strings.Cut(rest, "-")
-	return ok && split && slices.Contains(lowToMax, effort) && slices.ContainsFunc(Models, func(m Model) bool { return m.Key == key })
+	return ok && split && slices.Contains([]string{"astra", "sol", "terra", "luna"}, key) &&
+		slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort)
 }
 
 // ForAlias reports the model a Claude tier belongs to.

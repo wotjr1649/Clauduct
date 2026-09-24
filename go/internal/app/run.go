@@ -216,7 +216,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// still lands after this one and wins.
 		if model, named := optionValue(o.Args, "--model"); named {
 			if _, pinned := optionValue(o.Args, "--effort"); !pinned {
-				if route, err := bridge.SelectRoute(model, ""); err == nil {
+				// Native trims and lowercases a model name before resolving it.
+				if route, err := bridge.SelectRoute(strings.ToLower(strings.TrimSpace(model)), ""); err == nil {
 					effort = route.Effort
 				}
 			}
@@ -327,8 +328,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			spec.Env = append(filtered, "CLAUDUCT_PDF_PROJECTS_ROOT="+filepath.Join(configDir, "projects"))
 		}
+		var cli cliRoles
+		cli.defs, cli.plugins, cli.err = roleCLI(o.Args, agents, o.Cwd)
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
-			return sessionRoleSources(configDir, o.Cwd, agents, o.Args, o.Env, role).resolve(role, parent)
+			return sessionRoleSources(configDir, o.Cwd, cli, o.Env, role).resolve(role, parent)
 		})
 	}
 

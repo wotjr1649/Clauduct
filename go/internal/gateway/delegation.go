@@ -296,6 +296,9 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		// conflicting child choice instead of silently substituting either model.
 		if explicitModel {
 			requested, err := bridge.SelectRoute(modelID, effort)
+			if errors.Is(err, bridge.ErrRetiredRoute) {
+				return nil, err
+			}
 			if err != nil || requested.Model != parent.route.Model || hasEffort && requested.Effort != parent.route.Effort {
 				return nil, delegationFailure("PARENT_OVERRIDE_CONFLICT")
 			}

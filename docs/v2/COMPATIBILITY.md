@@ -475,9 +475,9 @@ v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수�
 | gateway 요청당 비용(#110) | **측정으로 종결.** fixture backend의 대표 main turn(요청 약 230–310 KiB, 자식 0/3/30개)에서 gateway가 쓰는 시간은 요청당 약 15.6/15.6/24.9 ms로, 수 초인 backend 턴의 0.5–2%다. 가장 큰 몫은 요청 해독(DecodeRequest, 약 절반)이고 issue에 적힌 파일 읽기·잠금 항목은 각각 수 % 이하였다. 고치지 않는다. 동시 요청의 경합은 재지 않았다 |
 | V1 격차: Retry-After(#91) | **고침.** backend가 이름 붙인 시각까지 이 세션의 추론·검색 시도를 credential·소켓 전에 `UPSTREAM_RETRY_DEFERRED`로 거부하고(시도로 세지 않는다) 클라이언트에 429와 `Retry-After`를 보낸다. 실제 429는 유도하지 못했다 |
 | V1 격차: 반환 model·effort(#91) | **고침.** 먼저 기록해 4개 모델 모두 보낸 이름과 정확히 같음을 확인한 뒤, 이름이 다르면 `MODEL_EFFORT_MISMATCH`로 거부한다. 응답이 이름을 싣지 않으면 불일치로 보지 않는다. 요청 기록에 `returnedModel`·`returnedEffort` |
-| V1 격차: admission(#91) | **v0.4.0.** 지금은 동시 요청 64의 고정 상한뿐이고 memory budget·대기열은 없다. 관측된 장애는 없다 |
+| V1 격차: admission(#91) | **v0.4.2(#119).** 지금은 동시 요청 64의 고정 상한뿐이고 memory budget·대기열은 없다. 관측된 장애는 없다 |
 | V1 격차: `system` block(#91) | **고침.** 문자열이거나, 메시지 text와 같은 규칙(닫힌 키, `cache_control` 검사)을 따르는 text block이어야 한다. 그 밖은 거부 |
-| V1 격차: downstream keepalive(#91) | **의도.** 첫 출력 전에 ping을 쓰지 않는다. ping으로 200을 먼저 보내면 429·400·`X-Should-Retry`의 실패 처리가 SSE 오류 frame으로 바뀐다. 첫 바이트가 195초 뒤였던 요청도 끊기지 않았다(v0.3.3 재판정). 더 긴 무출력의 측정은 v0.4.0 |
+| V1 격차: downstream keepalive(#91) | **의도.** 첫 출력 전에 ping을 쓰지 않는다. ping으로 200을 먼저 보내면 429·400·`X-Should-Retry`의 실패 처리가 SSE 오류 frame으로 바뀐다. 첫 바이트가 195초 뒤였던 요청도 끊기지 않았다(v0.3.3 재판정). 더 긴 무출력의 측정은 v0.4.1(#120) |
 | V1 격차: WebSearch 401(#91) | **고침.** 저장소를 다시 읽어 토큰이 바뀐 경우에만 1회 재시도한다. 같은 토큰의 재시도는 같은 거절이었다 |
 | V1 격차: usage(#91) | **고침.** backend가 `input_tokens`에 포함해 세는 cached 입력을 `cache_read_input_tokens`로 나눠 보낸다. 합계는 같다(실측: 11,926 = 6,294 + 5,632) |
 | V1 격차: 지연 텍스트(#91) | **고침.** Workflow·SDK 대기 응답의 text part를 줄바꿈으로 이어 block 하나로 보낸다. 마지막 block만 읽는 쪽이 답의 일부만 보지 않게 한다 |

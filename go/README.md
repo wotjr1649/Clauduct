@@ -1,6 +1,6 @@
 # Clauduct Go V2 — 개발 안내
 
-이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 모듈을 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
+이 디렉터리가 V2 제품 구현의 **유일한 위치**다. 설계·판정·검증 계획은 `docs/v2/`가 소유한다. 여기에는 이 디렉터리의 코드를 어떻게 빌드하고 무엇을 지켜야 하는지만 적는다.
 
 현재 지원 기능·버전별 근거·제약은 [호환성 문서](../docs/v2/COMPATIBILITY.md)가 관리한다.
 아래 WP01–WP06 목록은 초기 구현 기록이며 최신 지원 여부를 판정하는 목록이 아니다.
@@ -65,7 +65,7 @@ go vet ./...
 go build ./...
 
 go run ./cmd/clauduct --dev --version
-go run ./cmd/clauduct --dev --doctor  # 인증·소켓 없이 환경과 Codex 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 codex --version 하나
+go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측정 버전, Codex 로그인 사용 가능 여부(범주·만료만), 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 claude --version·codex --version
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
@@ -128,7 +128,7 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 | `internal/protocol/anthropic` | Claude 쪽 요청 해독과 이벤트 방출 |
 | `internal/protocol/codex` | backend 쪽 이벤트 어휘 |
 | `internal/protocol/bridge` | 두 형식 사이 변환과 모델 라우팅. 양쪽을 import하는 유일한 package |
-| `internal/upstream` | backend 실행 인터페이스, fixture, 그리고 실제 HTTPS 전송. 이 모듈에서 네트워크에 닿는 **유일한** 곳이다 |
+| `internal/upstream` | backend 실행 인터페이스, fixture, 그리고 실제 HTTPS 전송. 제품 코드에서 backend에 닿는 **유일한** 곳이다 |
 | `internal/auth` | 읽기 전용 credential provider. 아무것도 쓰지 않고 갱신하지 않는다 |
 | `internal/platform` | OS 경계. 실행 파일 해석 |
 | `internal/buildinfo` | 바이너리 신원. commit을 지어내지 않고, 수정된 worktree는 반드시 그렇게 말한다 |

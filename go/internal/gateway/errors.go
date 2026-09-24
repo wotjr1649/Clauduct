@@ -34,6 +34,9 @@ var (
 	refuseEncoding   = refusal{"UNSUPPORTED_ENCODING", http.StatusUnsupportedMediaType}
 	refuseVersion    = refusal{"UNSUPPORTED_VERSION", http.StatusBadRequest}
 	refuseSessionID  = refusal{"INVALID_SESSION_ID", http.StatusBadRequest}
+	// A request class this build does not know. Named apart from INVALID_HEADER because a
+	// new class is what a client update sends, and a repeated header is not (#127).
+	refuseRequestClass = refusal{"REQUEST_CLASS_UNKNOWN", http.StatusBadRequest}
 )
 
 // Refusals a subagent registration can produce. Errors rather than refusals because the
@@ -78,6 +81,15 @@ func (g *Gateway) refuseCategory(w http.ResponseWriter, status int, category str
 }
 
 func (g *Gateway) refuse(w http.ResponseWriter, r refusal) { g.refuseDetail(w, r, "") }
+
+// refuseHeaders answers a failed header check, keeping an unknown request class's value:
+// it is the one fact the change that accepts it needs.
+func (g *Gateway) refuseHeaders(w http.ResponseWriter, r *http.Request, bad refusal) {
+	if bad == refuseRequestClass {
+		g.noteElement(bad.category, r.Header.Get("X-Claude-Code-Request-Class"))
+	}
+	g.refuse(w, bad)
+}
 
 // refuseDetail refuses with a detail after the category. The detail is empty or built from
 // fixed vocabularies, like the category itself.
@@ -157,6 +169,8 @@ func refusalMessage(category string) string {
 		return category + "; this session reached its execution tracking limit. Start a new session before sending more requests. No replacement was executed."
 	case "CONTEXT_REQUEST_CLASS_UNVERIFIED":
 		return category + "; this session requires X-Claude-Code-Request-Class. Update Claude Code or repair the local integration. Reference client: " + ReferenceClient + "."
+	case "REQUEST_CLASS_UNKNOWN":
+		return category + "; this Clauduct build does not know the X-Claude-Code-Request-Class Claude Code sent. Update Clauduct; the session status names the class under requests.refusedElements. Reference client: " + ReferenceClient + "."
 	case "CONTEXT_SESSION_UNVERIFIED":
 		return category + "; the Clauduct session hook has not registered a transcript. Check the hook error, restore the connection and submit the prompt again. Context recovery was not bypassed."
 	case "MODEL_RETIRED":

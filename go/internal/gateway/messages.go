@@ -20,10 +20,29 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
-// readChunk is how much of the backend body is taken at a time. The parser does not care —
+// readChunk is the most of the backend body taken at a time. The parser does not care —
 // chunk boundaries carry no meaning to it — so this is purely about not holding more than
 // necessary.
 const readChunk = 32 * 1024
+
+// A quiet response is kept alive, because the client ends one that sends it nothing for six
+// minutes -- before its first output or after -- and nothing reaches the client while the
+// model thinks (#120, measured on claude 2.1.281 through ANTHROPIC_BASE_URL; the client's
+// documented timeout settings did not move it). An SSE ping resets it.
+//
+// After the first output a ping goes out whenever the client has heard nothing for pingQuiet.
+// Before it the status is not yet sent, and a refusal is still answered with its status
+// code, which the client acts on (429 and Retry-After, 400 for a context overflow). So the
+// message is opened only at openQuiet with nothing written: longer than the longest request
+// measured, first output and all (218 s over 400), and well inside the six minutes. A failure after that
+// arrives as an error event instead of a status.
+//
+// Vars so a test can shorten them, as writeStall is. Nothing outside a test assigns to them.
+var (
+	pingQuiet  = 30 * time.Second
+	openQuiet  = 240 * time.Second
+	quietCheck = 5 * time.Second
+)
 
 // handleMessages runs one inference request end to end.
 //
@@ -41,7 +60,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if bad, ok := checkRequestHeaders(r); !ok {
-		g.refuse(w, bad)
+		g.refuseHeaders(w, r, bad)
 		return
 	}
 	// Capability, not the version label, decides admission. Check before
@@ -105,6 +124,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var refusal *anthropic.RequestError
 		if errors.As(err, &refusal) {
+			g.noteUnknown(refusal.Code, err)
 			g.refuseCategory(w, http.StatusBadRequest, refusal.Code)
 			return
 		}
@@ -409,7 +429,7 @@ func checkRequestHeaders(r *http.Request) (refusal, bool) {
 	switch r.Header.Get("X-Claude-Code-Request-Class") {
 	case "", "main", "subagent", "workflow", "auxiliary", "compaction":
 	default:
-		return refuseHeader, false
+		return refuseRequestClass, false
 	}
 	for _, name := range correlationHeaders {
 		if value := r.Header.Get(name); value != "" && !correlationShape.MatchString(value) {
@@ -689,6 +709,8 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}
 
 	committed := false
+	// The client has been waiting since the request arrived, not since the backend answered.
+	lastWrite := recordOf(w).began()
 	var message anthropic.ResponseMessage
 	emit := func(frames []anthropic.Frame) error {
 		if request.NonStreaming {
@@ -697,6 +719,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		if len(frames) == 0 {
 			return nil
 		}
+		defer func() { lastWrite = time.Now() }()
 		if !committed {
 			committed = true
 			header := w.Header()
@@ -755,12 +778,61 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		_ = control.Flush()
 	}
 
-	buffer := make([]byte, readChunk)
+	// The body is read on its own goroutine so a quiet one can be answered with a keepalive;
+	// every write to the client stays on this one. The caller closes the body when this
+	// returns, which ends a read still waiting.
+	type chunk struct {
+		data []byte
+		err  error
+	}
+	chunks := make(chan chunk)
+	stopReading := make(chan struct{})
+	defer close(stopReading)
+	go func() {
+		// One buffer, and each read handed over as a copy of what arrived. A backend delta
+		// is a few hundred bytes, so a fresh readChunk per read would allocate a hundred
+		// times the answer; reusing the buffer uncopied would let the next read overwrite a
+		// chunk this loop has not parsed yet.
+		buffer := make([]byte, readChunk)
+		for {
+			n, err := response.Body.Read(buffer)
+			select {
+			case chunks <- chunk{append([]byte(nil), buffer[:n]...), err}:
+			case <-stopReading:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	check := time.NewTicker(quietCheck)
+	defer check.Stop()
+
 	for {
-		n, readErr := response.Body.Read(buffer)
+		var read chunk
+		select {
+		case read = <-chunks:
+		case <-check.C:
+			// A cancelled client is left to the read, which reports it with its evidence.
+			quiet := time.Since(lastWrite)
+			if request.NonStreaming || ctx.Err() != nil || committed && quiet < pingQuiet || !committed && quiet < openQuiet {
+				continue
+			}
+			opening := !committed
+			if err := emit(translator.Builder().Ping()); err != nil {
+				g.deliveryFailed(ctx, w)
+				return false
+			}
+			if opening && committed {
+				recordOf(w).openedByKeepalive()
+			}
+			continue
+		}
+		n, readErr := len(read.data), read.err
 		lastReadErr = readErr
 		if n > 0 {
-			events, err := parser.Push(buffer[:n])
+			events, err := parser.Push(read.data)
 			if err != nil {
 				fail(err)
 				return false

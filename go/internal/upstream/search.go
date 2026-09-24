@@ -89,10 +89,7 @@ func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	if credential.Synthetic {
 		return nil, ErrSyntheticMixing
 	}
-	if d.Version == nil {
-		return nil, ErrNoClientVersion
-	}
-	version, err := d.Version()
+	version, err := d.clientVersion()
 	if err != nil {
 		return nil, err
 	}

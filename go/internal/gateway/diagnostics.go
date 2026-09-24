@@ -63,6 +63,10 @@ const recentRequests = 16
 // anything on this machine that can guess the port can put entries here.
 const refusedPathLimit = 8
 
+// refusedElementLimit bounds the refused request elements the account will name, for the
+// same two reasons.
+const refusedElementLimit = 8
+
 // RequestRecord is one request's account of itself.
 type RequestRecord struct {
 	Seq                int64  `json:"seq"`
@@ -119,7 +123,11 @@ type RequestRecord struct {
 	// question a reader has is how long things took, not what time it was.
 	StartedMs   int64  `json:"startedMs"`
 	FirstByteMs *int64 `json:"firstByteMs,omitempty"`
-	EndedMs     *int64 `json:"endedMs,omitempty"`
+	// KeepaliveOpenedMs is when a keepalive opened a message that had no output yet (#120).
+	// FirstByteMs is then that moment, not the first output, and a count of these says how
+	// often a first output takes longer than the keepalive waits.
+	KeepaliveOpenedMs *int64 `json:"keepaliveOpenedMs,omitempty"`
+	EndedMs           *int64 `json:"endedMs,omitempty"`
 }
 
 type ContextEstimate struct {
@@ -447,6 +455,16 @@ func (r *record) wrote() {
 	}
 }
 
+func (r *record) openedByKeepalive() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	elapsed := time.Since(r.epoch).Milliseconds()
+	r.data.KeepaliveOpenedMs = &elapsed
+}
+
 // finish closes the record. A request that was never refused succeeded.
 func (r *record) finish() {
 	if r == nil {
@@ -468,6 +486,17 @@ func (r *record) finish() {
 	if r.owner != nil {
 		r.owner.count(r.data)
 	}
+}
+
+// began is when the request arrived, which is when the client started waiting. Now for a
+// request nothing recorded.
+func (r *record) began() time.Time {
+	if r == nil {
+		return time.Now()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.epoch.Add(time.Duration(r.data.StartedMs) * time.Millisecond)
 }
 
 // path reports where this record's request was addressed.
@@ -783,12 +812,22 @@ type ClientReport struct {
 	RequestClassMissing  int64 `json:"requestClassMissing"`
 }
 
+// CodexReport is the Codex CLI version resolved for this session's requests and how it compares
+// with the one the wire was measured against. Absent until a request resolved one. Status is
+// upstream.Status: a version match only, never a check of the wire.
+type CodexReport struct {
+	Version   string `json:"version"`
+	Reference string `json:"reference"`
+	Status    string `json:"status"`
+}
+
 type Diagnostics struct {
 	UptimeMs            int64                          `json:"uptimeMs"`
 	Requests            RequestCounts                  `json:"requests"`
 	Agents              AgentCounts                    `json:"agents"`
 	Betas               BetaReport                     `json:"betas"`
 	Client              ClientReport                   `json:"client"`
+	Codex               *CodexReport                   `json:"codex,omitempty"`
 	Features            []FeatureEvidence              `json:"features"`
 	Progress            NativeProgressReport           `json:"progress"`
 	Limits              *RateLimitReport               `json:"rateLimit,omitempty"`
@@ -820,6 +859,10 @@ type RequestCounts struct {
 	// gateway does not serve", so the path is the finding; a set at exactly the cap may be
 	// truncated and a reader should treat it as "at least these".
 	RefusedPaths []string `json:"refusedPaths,omitempty"`
+	// RefusedElements names what a refused body or request class carried that this build
+	// does not know, as "CATEGORY name", up to refusedElementLimit of them. A client update
+	// that adds a field fails every request with one category; this says which field (#127).
+	RefusedElements []string `json:"refusedElements,omitempty"`
 	// Broken is responses that started and then stopped, for the life of the session.
 	Broken     int64 `json:"broken"`
 	Active     int64 `json:"active"`
@@ -878,6 +921,12 @@ func (g *Gateway) Snapshot() Diagnostics {
 		snapshot := counter.CountStats()
 		countStats = &snapshot
 	}
+	var codex *CodexReport
+	if sender, ok := g.transport.(interface{ SentVersion() string }); ok {
+		if version := sender.SentVersion(); version != "" {
+			codex = &CodexReport{Version: version, Reference: upstream.ReferenceClientVersion, Status: upstream.Status(version)}
+		}
+	}
 	if g.delegations != nil {
 		results = g.delegations.results.report()
 		selections = g.delegations.selectionReport()
@@ -886,10 +935,11 @@ func (g *Gateway) Snapshot() Diagnostics {
 		UptimeMs: time.Since(g.ring.epoch).Milliseconds(),
 		Requests: RequestCounts{
 			Received: received, Refused: refused,
-			RefusedBy:    refusedBy,
-			RefusedPaths: g.RefusedPaths(),
-			Broken:       g.broken.Load(),
-			Active:       active, ModelLists: g.ModelLists(),
+			RefusedBy:       refusedBy,
+			RefusedPaths:    g.RefusedPaths(),
+			RefusedElements: g.RefusedElements(),
+			Broken:          g.broken.Load(),
+			Active:          active, ModelLists: g.ModelLists(),
 		},
 		Agents: AgentCounts{
 			Registered:          g.agents.Registered(),
@@ -909,6 +959,7 @@ func (g *Gateway) Snapshot() Diagnostics {
 			RequestClassRequired: g.contexts != nil,
 			RequestClassMissing:  refusedBy["CONTEXT_REQUEST_CLASS_UNVERIFIED"],
 		},
+		Codex:               codex,
 		Features:            g.ring.featureReport(),
 		Progress:            g.nativeProgressReport(),
 		Limits:              g.limits.report(),

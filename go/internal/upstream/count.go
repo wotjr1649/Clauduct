@@ -71,10 +71,7 @@ func (d *Direct) Count(ctx context.Context, call Call) (int64, error) {
 	if credential.Synthetic {
 		return 0, ErrSyntheticMixing
 	}
-	if d.Version == nil {
-		return 0, ErrNoClientVersion
-	}
-	version, err := d.Version()
+	version, err := d.clientVersion()
 	if err != nil {
 		return 0, err
 	}

@@ -14,7 +14,6 @@ import (
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
-	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
 // The Codex CLI keeps the account's model catalogue in models_cache.json, refetched when
@@ -49,9 +48,8 @@ type catalogModel struct {
 
 // catalogue reads the cache from the OS user's Codex home, the one whose credential a
 // session uses (auth.OSCodexHome ignores CODEX_HOME for the same reason).
-func catalogue(out io.Writer) {
+func catalogue(out io.Writer, installed string, versionErr error) {
 	raw, err := readCatalogue()
-	installed, versionErr := upstream.InstalledVersion()()
 	if versionErr != nil {
 		installed = "unavailable"
 	}

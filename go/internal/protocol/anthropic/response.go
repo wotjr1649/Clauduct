@@ -98,7 +98,10 @@ type Builder struct {
 	model      string
 	responseID string
 
-	started    bool
+	started bool
+	// announced is whether message_start has been handed to the client. Not the same as
+	// started: deferred text opens the message and discards the frame until Complete.
+	announced  bool
 	completed  bool
 	nextIndex  int
 	parts      map[partKey]*textPart
@@ -251,9 +254,9 @@ func (b *Builder) ResponseID() string {
 
 // AppendText adds a text delta at a content index and returns the frames it produces.
 //
-// The first delta for a response opens the message; the first delta for a content index
-// opens its block. Opening lazily is what keeps an empty response from announcing a block
-// that never gets any content.
+// The first delta for a response opens the message, unless a keepalive already did; the
+// first delta for a content index opens its block. Opening lazily is what keeps an empty
+// response from announcing a block that never gets any content.
 func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Frame, error) {
 	if b.completed {
 		return nil, ErrStreamOrder
@@ -270,6 +273,7 @@ func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Fra
 	var frames []Frame
 	if !b.started {
 		b.started = true
+		b.announced = !b.deferText
 		frames = append(frames, b.messageStart())
 	}
 
@@ -331,6 +335,21 @@ func (b *Builder) FinishText(item string, contentIndex int, snapshot string) ([]
 	return []Frame{contentBlockStop(part.index)}, nil
 }
 
+// Ping keeps a quiet stream alive: an SSE ping, after message_start when the client has not
+// been sent one. It opens the message only once the backend has named the response, since
+// message_start carries that name, and never after the response is complete.
+func (b *Builder) Ping() []Frame {
+	if b.completed || !b.announced && b.responseID == "" {
+		return nil
+	}
+	var frames []Frame
+	if !b.announced {
+		b.started, b.announced = true, true
+		frames = append(frames, b.messageStart())
+	}
+	return append(frames, Frame{Type: "ping", Data: []byte(`{"type":"ping"}`)})
+}
+
 // Complete ends the response. Any block still open is closed first, in the order the
 // blocks were opened, so a client reading sequentially never sees a message end with a
 // block still outstanding.
@@ -339,17 +358,16 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		return nil, ErrStreamOrder
 	}
 	b.completed = true
-	if b.WaitingForChildren() {
-		b.started = true
-		return []Frame{b.messageStart(), contentBlockStart(0), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false), {Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}}, nil
-	}
-
 	var frames []Frame
-	if !b.started || b.deferText {
-		// A response that produced only tool calls still needs its message frames, or the
-		// client is left waiting for a message that never started.
-		b.started = true
+	if !b.announced {
+		// A response that produced only tool calls, or deferred its text, still needs its
+		// message frames, or the client is left waiting for a message that never started.
+		// One that a keepalive already opened must not be opened twice.
+		b.started, b.announced = true, true
 		frames = append(frames, b.messageStart())
+	}
+	if b.WaitingForChildren() {
+		return append(frames, contentBlockStart(0), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false), Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}), nil
 	}
 
 	// Closing in index order rather than map order: a client reading these sequentially

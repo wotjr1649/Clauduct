@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -204,10 +205,10 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	if writeErr != nil {
 		where = "none"
 	}
-	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s attempts=%d inferences=%d%s status=%s\n",
+	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused,
-		brokenField(account), account.Attempts, account.Inferences, quotaField(account), where)
+		brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
 	}
@@ -322,6 +323,23 @@ func brokenField(account Status) string {
 		return fmt.Sprintf(" broken=%d", broken)
 	}
 	return ""
+}
+
+// unmeasuredField names a client this session ran that is not the version Clauduct was last
+// measured against. Both clients update on their own, and this line is the one place a user
+// sees every session: it says a re-measure is due, not that anything failed (#127).
+func unmeasuredField(account Status) string {
+	var names []string
+	if client := account.Gateway.Client; client.Version != "" && client.Version != client.Reference {
+		names = append(names, "claude/"+client.Version)
+	}
+	if codex := account.Gateway.Codex; codex != nil && codex.Version != codex.Reference {
+		names = append(names, "codex/"+codex.Version)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	return " unmeasured=" + strings.Join(names, ",")
 }
 
 func quotaField(account Status) string {

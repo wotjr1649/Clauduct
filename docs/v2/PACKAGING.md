@@ -74,7 +74,7 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 
 ## 4.1 릴리스 만들기
 
-`--update`가 읽는 것은 **최신 태그 릴리스의 자산**이므로, 이름과 형식이 계약이다.
+`--update`가 읽는 것은 **최신 태그 릴리스의 자산**이므로, 이름과 형식이 계약이다. 태그 전 로컬 검사에는 과금 없는 TUI 검사를 `go/cmd/ptydrive`로 돌리는 것이 들어간다([go/README.md](../../go/README.md#tui-검사-conpty)). 이 도구는 자산이 아니다.
 
 ```powershell
 # 0. 태그보다 먼저 버전 상수를 올린다. go/internal/buildinfo/buildinfo.go의 Version을 태그에서
@@ -188,8 +188,8 @@ scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실
 **내려받기 전에 Claude Code와 Codex CLI를 찾는다.** 둘 중 하나라도 없으면
 `INSTALL_PREREQUISITE_MISSING`과 함께 런타임과 **같은 이름**(`CLAUDE_NOT_FOUND`·`CODEX_NOT_FOUND`)을
 내고 멈춘다 — 어느 표면이 보고했든 검색하면 같은 답에 닿게 하기 위해서다. 찾는 방식은
-`platform.Resolver.find`를 그대로 따른다: 표준 위치(`~\.local\bin`) 먼저, 그다음 PATH를 **64개까지**,
-따옴표 제거, 절대 경로만, **작업 디렉터리 제외**, 중복 제거. 런처보다 넓게 찾으면 통과시켜 놓고
+`platform.Resolver`를 그대로 따른다: 표준 위치(`~\.local\bin`) 먼저, 그다음 PATH를 **64개까지**,
+따옴표 제거, 절대 경로만, **작업 디렉터리 제외**, 중복 제거. Codex는 두 곳을 더 본다(v0.3.5) — PATH 앞에 Codex 앱의 설치 위치(`~\AppData\Local\Programs\OpenAI\Codex\bin`), 맨 끝에 npm 설치(`~\AppData\Roaming\npm`과 위 PATH 항목 아래)가 싣는 native `codex.exe`(`node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin`). Node로 `codex.js`를 돌리지 않는다. 런처보다 넓게 찾으면 통과시켜 놓고
 첫 실행에서 `CLAUDE_NOT_FOUND`가 나는데, **런타임과 어긋나는 사전 검증은 없느니만 못하다.**
 `-SkipPreflight`로 건너뛴다. 한 가지 차이는 숨기지 않고 적는다 — 런처는 `%USERPROFILE%`이
 오염된 채 넘어올 수 있어 OS 사용자 기록에서 홈을 읽지만, 스크립트는 사용자 자신의 셸에서 도므로
@@ -197,7 +197,7 @@ scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실
 
 **셋이 다 검증되기 전에는 하나도 복사하지 않는다.** digest가 어긋나면 `INSTALL_DIGEST_MISMATCH`로
 멈추고 대상 디렉터리는 손대지 않은 상태로 남는다. 새 바이너리 둘 옆에 옛 바이너리 하나는 어떤
-릴리스도 그 조합으로 시험된 적이 없다.
+릴리스도 그 조합으로 시험된 적이 없다. 복사가 시작된 뒤에도 같다(v0.3.5): 셋을 대상 옆에 `.new`로 먼저 복사하고, 현재 것을 `.old`로 이름을 바꾼 뒤 `.new`를 제자리에 놓는다(`--update`의 `update.Apply`와 같은 방식). 실행 중인 바이너리는 덮어쓸 수 없지만 이름은 바꿀 수 있어 설치가 통과하고, 지우지 못한 `.old`는 이름을 알린다. 어느 단계든 실패하면 원래 셋을 되돌리고 `INSTALL_SWAP_FAILED`로 멈춘다. 한계도 `--update`와 같다 — 이전 교체가 남긴 `.old`가 아직 실행 중이면 그 이름을 비울 수 없어 거부하고 원래 셋을 둔다. 그 세션이 끝난 뒤 다시 설치한다.
 
 **설치 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 거부한다**(`INSTALL_DIRECTORY_SHADOW`).
 이유는 1장과 같다 — Git Bash가 거기서 멈춘다.
@@ -225,7 +225,7 @@ README가 시키는 `powershell -File install.ps1`을 PowerShell 7 터미널에�
 **설치 후 `Unblock-File`을 건다.** 방금 릴리스의 digest로 확인한 바이트이고, 그것이 SmartScreen
 대화상자가 묻는 질문이다.
 
-| 검사됨 | `internal/app/install_windows_test.go`(비공개 테스트) 8건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 대문자 digest 수용, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 11건 전부 잡힌다 |
+| 검사됨 | `internal/app/install_windows_test.go`(비공개 테스트) 11건 — 셋 배치, 변조 거부(부분 복사 0), 폴더 그림자 거부, 대문자 digest 수용, 제거가 남의 파일을 안 지움, 그리고 사전 검증 3건(둘 다 있으면 통과, 없으면 이름과 함께 거부, **작업 디렉터리에만 있는 것은 못 본 척**). 돌연변이 11건 전부 잡힌다. v0.3.5에 교체 2건 — 배타 잠금된 대상이면 이전 셋 복원, 실행 중인 대상은 이름을 바꿔 교체. v0.3.4 스크립트에서 둘 다 실패하고, 복원 줄을 지운 변이는 잠금 쪽이 잡는다. 사전 검증 1건 — Codex가 앱 설치 위치나 npm 설치에만 있어도 찾는다(v0.3.4 스크립트에서 실패) |
 |---|---|
 | 실측 2026-09-17 | **다운로드 경로가 실환경에서 돌았다.** v0.2.1 자산을 릴리스 URL에서 받아 digest를 대조하고 설치했고, 받은 세 파일이 `SHA256SUMS`와 일치했다. 사전 검증도 이때 처음 실제 머신에서 돌아 `claude.exe`와 `codex.exe`를 찾았다. 임시 폴더로 한 번, 이어서 공식 경로 `~\.local\bin`으로 한 번 — 두 번째는 PATH가 이미 있어 `already on it`으로 끝났다 |
 |---|---|

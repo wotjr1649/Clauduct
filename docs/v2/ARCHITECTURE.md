@@ -242,7 +242,7 @@ socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 
 빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
 자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
 
-다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. connect(30초)·header(120초)·idle(backend 무바이트 10분, 기준선 규칙)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
+다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. 현재 제품은 첫 출력 전에 ping을 쓰지 않는다(v0.3.5에 의도로 기록, #91) — ping이 200을 먼저 보내면 429·400·`X-Should-Retry`로 답하는 실패 처리가 SSE 오류 frame으로 바뀌고, 첫 바이트가 195초 뒤였던 요청도 클라이언트가 끊지 않았다. connect(30초)·header(120초)·idle(backend 무바이트 10분, 기준선 규칙)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
 
 ## 9. retry
 
@@ -254,9 +254,9 @@ socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 
 | 시도 시작, downstream 미전달 | 상태·실패 종류를 확인한 제한 retry만 |
 | 의미 있는 응답 전달 이후 | **자동 replay 금지** |
 | 전달 여부 불명확 | 성공으로 간주도, 자동 재실행도 하지 않음 |
-| 401 | 같은 account의 읽기 전용 재확인. 무한 반복 금지 |
+| 401 | 같은 account의 읽기 전용 재확인. 무한 반복 금지. WebSearch는 다시 읽은 토큰이 바뀐 경우에만 1회 재시도한다(v0.3.5, #91) |
 | 403·정책 거부·TLS 검증 실패 | 우회·자동 credential 교체 금지 |
-| 429·일시적 5xx | Retry-After·총 예산·시도 제한·취소를 함께 적용 |
+| 429·일시적 5xx | Retry-After·총 예산·시도 제한·취소를 함께 적용. v0.3.5부터 backend가 이름 붙인 시각까지 이 세션의 추론·검색 시도를 credential·소켓 전에 `UPSTREAM_RETRY_DEFERRED`로 거부하고(시도로 세지 않고 replay 키도 돌려준다), 클라이언트에는 429와 `Retry-After`를 보낸다(#91) |
 | 긴 Retry-After | delay를 보존해 deferred 보고. 임의 조기 retry 금지 |
 | user cancel | retry 금지 |
 
@@ -315,9 +315,9 @@ fake upstream은 synthetic credential만 받는다. production credential이 loo
 
 가능하면 실제 `.exe`를 직접 실행한다. shell 문자열 조립으로 user argument를 연결하지 않는다. npm `.cmd`만 발견되면 설치 방식을 식별해 검증된 adapter를 쓰거나 지원 한계를 알린다. 어떤 `.cmd`든 내용을 대충 파싱하거나 `cmd /c`에 인자를 이어붙이는 fallback은 금지한다. cwd에서 우연히 발견한 동명 프로그램을 신뢰된 설치로 취급하지 않는다.
 
-기준선의 실행 파일 해석 계약([`src/runtime-paths.mjs`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/src/runtime-paths.mjs))은 Windows 전용이다 — PATH를 `;`로 나누고, PATH 항목 중 cwd와 같은 것을 제외하고, 절대경로만 받고, 64개로 제한하며, npm shim은 `package.json`의 `name`/`bin` 일치까지 확인한 뒤에만 Node 경유로 실행한다. 이 다섯 가지 방어는 Go에서도 유지한다.
+기준선의 실행 파일 해석 계약([`src/runtime-paths.mjs`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/src/runtime-paths.mjs))은 Windows 전용이다 — PATH를 `;`로 나누고, PATH 항목 중 cwd와 같은 것을 제외하고, 절대경로만 받고, 64개로 제한하며, npm shim은 `package.json`의 `name`/`bin` 일치까지 확인한 뒤에만 Node 경유로 실행한다. 이 다섯 가지 방어는 Go에서도 유지한다. 다섯째는 Go에서 모양이 다르다(v0.3.5): Node를 실행하지 않으므로 npm 설치에서는 패키지가 싣는 native `codex.exe`를 패키지 안의 고정 경로(npm의 nested x64 배치)로만 찾는다. Codex를 찾는 순서는 `~\.local\bin` → Codex 앱 설치 위치(`~\AppData\Local\Programs\OpenAI\Codex\bin`) → PATH → npm(`~\AppData\Roaming\npm`, 이어서 PATH 항목. 홈은 OS 사용자 기록에서 읽으므로 `%APPDATA%`를 따르지 않는다)이고, 설치 스크립트의 사전 검증도 같다.
 
-기본 interactive 실행은 native console과 stdin/stdout/stderr를 상속한다. 새 PTY를 만들어 native UI를 재구현하지 않는다. `Esc`·`Ctrl+C`·prompt 편집·취소가 baseline과 맞아야 한다. `Ctrl+C`를 무조건 parent 종료로 해석하는 구현도, 모든 signal을 무시하는 구현도 금지한다. 같은 console event를 중복 전달해 도구·세션을 두 번 취소하지 않는다.
+기본 interactive 실행은 native console과 stdin/stdout/stderr를 상속한다. 새 PTY를 만들어 native UI를 재구현하지 않는다. `Esc`·`Ctrl+C`·prompt 편집·취소가 baseline과 맞아야 한다. `Ctrl+C`를 무조건 parent 종료로 해석하는 구현도, 모든 signal을 무시하는 구현도 금지한다. 같은 console event를 중복 전달해 도구·세션을 두 번 취소하지 않는다. v0.3.5부터 런처는 세션 동안 `os.Interrupt`를 받는다(#86). 받지 않으면 Go 런타임이 Ctrl+C를 기본 처리기에 넘겨 런처가 보고·정리 없이 끝나고, 런처가 쥔 Job이 자식까지 끝낸다. interactive에서는 native에 맡기고, `-p`에서는 `USER_CANCELLED`로 기록한 뒤 같은 이벤트를 받은 자식이 스스로 끝나기를 기다리며 5초 안에 끝나지 않을 때만 정지한다. 종료 코드는 자식의 것이다. 이벤트는 전달하지 않는다. 자식을 띄우기 전에 온 Ctrl+C는 받을 자식이 없었으므로 시작 자체를 취소한다(정리 후 `USER_CANCELLED`).
 
 Job Object 등 OS 수단으로 **이 실행에서 소유한 process tree만** 정리한다. 이름이 `claude`나 `codex`인 모든 프로세스를 종료하지 않는다. 자식이 손자를 만들기 전 소유권 확보 race, 기존 job 안에서 실행되는 경우, nested job 제약, IDE terminal·보안 제품의 권한 거부를 검증한다. 지원 불가 조합은 정확히 보고하고 정책 우회로 해결하지 않는다.
 
@@ -331,7 +331,7 @@ child `Wait`만으로 모든 손자가 종료됐다고 단정하지 않는다. n
 
 ## 12. 자원·상태·로그
 
-활성 요청·연결·대기열·개별 frame·총 응답·로그·종료 대기에 명시적 상한을 둔다. goroutine이 가볍다는 이유로 무제한 작업을 만들지 않는다. 각 자원에 생성자·취소 원인·해제 조건·테스트가 있어야 한다. G4 이전에 limit registry의 단위·값·초과 동작·테스트를 모두 확정하며, 필수 제한을 `unknown`이나 무제한으로 둔 채 제품 후보로 승격하지 않는다. 높은 동시성 × 큰 요청 크기가 프로세스 memory budget을 넘지 않도록 admission을 설계한다.
+활성 요청·연결·대기열·개별 frame·총 응답·로그·종료 대기에 명시적 상한을 둔다. goroutine이 가볍다는 이유로 무제한 작업을 만들지 않는다. 각 자원에 생성자·취소 원인·해제 조건·테스트가 있어야 한다. G4 이전에 limit registry의 단위·값·초과 동작·테스트를 모두 확정하며, 필수 제한을 `unknown`이나 무제한으로 둔 채 제품 후보로 승격하지 않는다. 높은 동시성 × 큰 요청 크기가 프로세스 memory budget을 넘지 않도록 admission을 설계한다. 현재는 동시 요청 64의 고정 상한뿐이고 memory budget과 대기열은 없다 — v0.4.0 과제다(#91).
 
 로그에는 timestamp·run/request ID·고정 오류 분류·byte 수·소요 시간·지원 버전·비밀이 아닌 모델 식별자를 남긴다. prompt 원문·tool arguments·파일 내용·credential·cookie·전체 URL query·환경 dump는 남기지 않는다. 서버에서 온 문자열을 무제한 metric label로 쓰지 않는다. rotation과 run별 총 크기 제한을 두고, 만료·삭제는 자기가 만든 run 자료에만 적용한다.
 

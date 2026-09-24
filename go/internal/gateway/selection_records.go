@@ -103,7 +103,7 @@ func (d *delegations) rejectedSelection(scope delegationScope, call string, raw 
 		failure = string(reason)
 	}
 	if errors.Is(err, bridge.ErrUnsupportedRoute) {
-		failure = "UNSUPPORTED_MODEL_OR_EFFORT"
+		failure = routeCategory(err)
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()

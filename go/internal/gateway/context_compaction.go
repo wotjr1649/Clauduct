@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -76,7 +77,9 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 	s := c.states[contextKey(session, agent)]
 	if s == nil {
 		s = &contextState{}
-		if g.restoreContext(session, agent, s) != nil {
+		if err := g.restoreContext(session, agent, s); errors.Is(err, bridge.ErrRetiredRoute) {
+			return nil, false, "MODEL_RETIRED"
+		} else if err != nil {
 			return nil, false, "CONTEXT_JOURNAL_UNVERIFIED"
 		}
 	}
@@ -85,7 +88,7 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 	}
 	route, err := bridge.ResolveRoute(request, override...)
 	if err != nil {
-		return nil, false, "UNSUPPORTED_MODEL_OR_EFFORT"
+		return nil, false, routeCategory(err)
 	}
 	stripCompactReceipts(request)
 	return []bridge.Route{compactRoute(route, valid && receipt.trigger == "auto")}, true, ""

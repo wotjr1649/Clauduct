@@ -30,7 +30,6 @@ type agentDefinition struct {
 	Prompt      string   `json:"prompt"`
 	Tools       []string `json:"tools"`
 	Model       string   `json:"model"`
-	Effort      string   `json:"effort,omitempty"`
 }
 
 // agentPrompt is what every worker in the menu is told.
@@ -48,21 +47,21 @@ const agentPrompt = "Complete the delegated development task within its requeste
 // agentTools is what a delegated worker gets. Enough to read, change and check.
 var agentTools = []string{"ToolSearch", "Read", "Grep", "Glob", "Bash", "Edit", "Write", "Agent", "TaskOutput", "SendMessage"}
 
-// agentDefinitions builds the menu from the catalogue.
+// agentDefinitions builds the menu from the catalogue: one agent per model.
 //
-// The menu and explicit routing offer the same backend-verified combinations.
+// Every description is in the Agent tool's text on every request that carries it, so the
+// menu is one entry per model (decided 2026-09-24), not one per model and effort. The effort
+// comes from the gateway's Agent effort argument, or the model's default. No definition sets
+// effort: native would show that fixed value on the task even when the argument changed it.
 func agentDefinitions() map[string]agentDefinition {
-	menu := make(map[string]agentDefinition, len(bridge.Models)*len(bridge.Efforts))
+	menu := make(map[string]agentDefinition, len(bridge.Models)+1)
 	for _, model := range bridge.Models {
-		for _, effort := range model.Efforts {
-			menu[bridge.MenuPrefix+model.Key+"-"+effort] = agentDefinition{
-				Description: "General development worker with " + model.ID + "/" + effort +
-					". Select this agent type when that model choice is requested.",
-				Prompt: agentPrompt,
-				Tools:  agentTools,
-				Model:  model.ID,
-				Effort: effort,
-			}
+		menu[bridge.MenuPrefix+model.Key] = agentDefinition{
+			Description: "Development worker on " + model.ID + ". Runs at " + model.Effort +
+				" unless the effort argument names another.",
+			Prompt: agentPrompt,
+			Tools:  agentTools,
+			Model:  model.ID,
 		}
 	}
 	// Use the parent route when no separate task selection was requested. The

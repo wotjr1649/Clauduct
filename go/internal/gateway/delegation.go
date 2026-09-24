@@ -247,6 +247,9 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			return nil, delegationFailure("INVALID_ROLE")
 		}
 	}
+	if bridge.RetiredRole(role) {
+		return nil, bridge.ErrRetiredRoute
+	}
 	effort := ""
 	if value, exists := fields["effort"]; exists {
 		if json.Unmarshal(value, &effort) != nil || effort == "" {
@@ -739,7 +742,14 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || !roleMatches(saved.Role, meta.AgentType, saved.CustomRole) || !metadataModelMatches(saved.Role, saved.Alias, meta.Model, saved.Source, saved.CustomRole) || meta.StoppedByUser {
 		return empty, false, errDelegationUnverified
 	}
+	// A child started on a route v0.3.4 retired is refused by name, not resumed elsewhere.
+	if bridge.RetiredRole(saved.Role) {
+		return empty, false, bridge.ErrRetiredRoute
+	}
 	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
+	if errors.Is(err, bridge.ErrRetiredRoute) {
+		return empty, false, err
+	}
 	if err != nil {
 		return empty, false, errDelegationUnverified
 	}

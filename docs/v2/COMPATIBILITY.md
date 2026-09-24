@@ -302,7 +302,7 @@ terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검
 | MCP 서버(`--mcp-config`) | G5. 서버가 뜨고 툴이 제공되고 **상속 환경이 살아남는다** |
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` · `--bare` | G5, 전부 동작으로 측정 |
 | 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
-| 위임 메뉴 21종 | `clauduct-<model>-<effort>` 20종 + `clauduct-inherit`. [카탈로그 기반 생성](../../go/internal/app/agents.go). 메뉴 존재는 모든 조합의 최신 TUI 통과를 뜻하지 않음 |
+| 위임 메뉴 5종·모델 표 | v0.3.4부터 `clauduct-<model>` 4종 + `clauduct-inherit`. effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6-sol, sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
 | 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. 최근 TUI에서 ROOT → A → B → C의 완료 결과 전달 확인 |
 | 완료 Agent의 SendMessage 재개 | 최근 TUI에서 동일 child ID의 Sol/high 유지·두 번째 결과 수신 확인 |
 | inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |

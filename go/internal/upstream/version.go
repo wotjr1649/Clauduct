@@ -14,12 +14,14 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
-// ReferenceClientVersion is the version this project measured the wire against.
+// ReferenceClientVersion is the Codex CLI version last re-measured against this bridge's wire.
 //
 // Evidence, not a pin. A different installed version still runs and is reported as
 // unverified, because refusing to start on a version nobody has checked would be stricter
-// than the evidence supports and would break on every Codex release.
-const ReferenceClientVersion = "0.153.4"
+// than the evidence supports and would break on every Codex release. A re-measure records
+// how the installed client's requests differ from this bridge's; it does not copy them, so
+// matching this version says the difference is known, not that there is none (#121).
+const ReferenceClientVersion = "0.156.1"
 
 var codexVersionLine = regexp.MustCompile(`^codex-cli (\S+)$`)
 

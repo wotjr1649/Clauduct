@@ -92,7 +92,7 @@ TUI 검사의 테스트와 단계 파일은 유지보수자 로컬에 있다. �
 출하 절차에서 이 도구로 돌리고, 실제 backend 검사는 과금 스위치 뒤에 둔다. 검사 바이너리와 `TEMP`는
 `C:\Users` 밖에 둔다 — 요청에 그 경로가 실리면 검사의 전송 guard가 backend에 보내지 않는다.
 
-빌드 산출물은 저장소 밖이나 이미 ignore되는 `.tmp/` 아래에 둔다. `go run`은 VCS 정보를 stamp하지 않으므로 `version`이 `commit unknown`을 말한다. 실제 commit을 확인하려면 빌드한다.
+빌드 산출물은 저장소 밖이나 이미 ignore되는 `.tmp/` 아래에 둔다. `go run`은 VCS 정보를 stamp하지 않으므로 `version`이 `(devel)`과 `commit unknown`을 말한다. 실제 commit을 확인하려면 빌드한다.
 
 ```powershell
 go build -trimpath -o $env:TEMP\clauduct-dev.exe ./cmd/clauduct-dev

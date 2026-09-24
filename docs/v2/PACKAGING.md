@@ -55,11 +55,11 @@ go build -trimpath -o clauduct-dev.exe  ./cmd/clauduct-dev
 없어서 Windows에서 동작은 같지만, cgo가 켜진 채로 빌드하면 바이트가 달라진다. 재현성 테스트는
 같은 환경에서 두 번 빌드해 비교하므로 이 차이를 볼 수 없고, 그래서 산출물 쪽에서 고정한다
 (`TestTheShippedBinaryIsBuiltWithoutCgo`). 예외는 race job 하나이고, 그 바이너리는 출하 대상이
-아니다. commit stamp는 Go toolchain의 VCS 기록에서 나오므로 **릴리스 스크립트가 잊을 수 없다.**
+아니다. 버전과 commit stamp는 Go toolchain의 VCS 기록에서 나오므로 **릴리스 스크립트가 잊을 수 없다.**
 
 ```powershell
 clauduct-dev version
-# clauduct     <buildinfo.Version>
+# clauduct     <태그. 태그 없는 commit은 pseudo-version, 수정된 worktree는 끝에 +dirty>
 # commit       <40자 hash>
 # go           go1.27.1 windows/amd64
 ```
@@ -77,10 +77,10 @@ worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다
 `--update`가 읽는 것은 **최신 태그 릴리스의 자산**이므로, 이름과 형식이 계약이다. 태그 전 로컬 검사에는 과금 없는 TUI 검사를 `go/cmd/ptydrive`로 돌리는 것이 들어간다([go/README.md](../../go/README.md#tui-검사-conpty)). 이 도구는 자산이 아니다.
 
 ```powershell
-# 0. 태그보다 먼저 버전 상수를 올린다. go/internal/buildinfo/buildinfo.go의 Version을 태그에서
-#    v를 뺀 값으로 바꾼 커밋을 병합하고, 태그는 그 커밋 위에 둔다. `clauduct-dev version`은 태그가
-#    아니라 이 상수를 말한다 — v0.3.2는 상수가 0.3.1인 커밋에 태그가 붙을 뻔했다.
-$tag = 'v0.3.5'
+# 0. 버전을 올리는 PR은 v0.4.0부터 없다. go.mod가 저장소 루트에 있어 toolchain이 태그를 그대로
+#    버전으로 stamp한다(#111). v0.3.x까지는 태그보다 먼저 상수를 올리는 커밋이 필요했고, v0.3.2는
+#    상수가 0.3.1인 커밋에 태그가 붙을 뻔했다. 아래 검사가 버전과 태그를 그대로 비교한다.
+$tag = 'v0.4.0'
 
 # 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
 #    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).
@@ -97,7 +97,7 @@ go build -trimpath -o ../../release-assets/clauduct-dev.exe  ./cmd/clauduct-dev
 # 버전이 태그와 같고 스탬프에 +dirty가 없는지 확인한다. 어긋나면 그 빌드는 릴리스 후보가 아니다.
 $version = & ../../release-assets/clauduct-dev.exe version
 $version
-if (-not ($version -match "^clauduct\s+$([regex]::Escape($tag.TrimStart('v')))$")) { throw "VERSION_MISMATCH $tag" }
+if (-not ($version -match "^clauduct\s+$([regex]::Escape($tag))$")) { throw "VERSION_MISMATCH $tag" }
 if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 
 # 2. 자산 이름 그대로 SHA256SUMS를 만든다. 파서는 공백으로 나뉜 두 필드를 읽고 이름 앞의

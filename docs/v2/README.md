@@ -9,7 +9,7 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 | 최신 출시 | **v0.3.3** (태그 `v0.3.3` → `3ecbc4a`). 변경과 출하 검사는 [RELEASE-v0.3.3.md](RELEASE-v0.3.3.md) |
 | 실행기 | `clauduct` = Go 빌드 (+`clauduct-hook`, `clauduct-dev`). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct/go`, go 1.27.1, **CGO_ENABLED=0**. 정확 계수를 위해 검토·고정한 의존성 3개: [결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | claude **2.1.280**(기준 상수·인자 표·native fixture·실제 backend TUI). v0.3.3 검사는 자동 갱신된 2.1.281에서 돌았고 공개 옵션 인자 형태가 같았다. Windows, go 1.27.1 |
+| 측정된 클라이언트 | claude **2.1.281**(기준 상수·인자 표·native fixture·실제 backend TUI, v0.3.4 재측정). 이전 기준은 2.1.280. Windows, go 1.27.1 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build만 본다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는

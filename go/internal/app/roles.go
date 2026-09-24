@@ -265,7 +265,7 @@ func parseRoleFile(raw []byte) (roleDefault, bool, error) {
 // Required-value options consume their next token even if it begins with '--'.
 // This read-only scan never changes forwarded argv. Unknown options make --agents
 // discovery unverified rather than misreading a prompt value as a routing policy.
-func roleCLI(args []string, injected string) (map[string]roleDefault, []string, error) {
+func roleCLI(args []string, injected, cwd string) (map[string]roleDefault, []string, error) {
 	hasCLI := false
 	for _, arg := range args {
 		if arg == "--agents" || strings.HasPrefix(arg, "--agents=") || strings.HasPrefix(arg, "--plugin-dir") {
@@ -294,8 +294,21 @@ func roleCLI(args []string, injected string) (map[string]roleDefault, []string, 
 		}
 		i = end
 	}
+	raw := []byte(selected)
+	// Native 2.1.281 also takes, with --print, the path of a file that holds the object.
+	// Read as the settings file is: bounded, regular, relative to the working directory.
+	if selected != "" && !strings.HasPrefix(strings.TrimSpace(selected), "{") {
+		path := selected
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(cwd, path)
+		}
+		var err error
+		if raw, err = boundedRoleFile(path); err != nil {
+			return nil, nil, errRoleDefaults
+		}
+	}
 	defs := map[string]roleDefault{}
-	if selected != "" && (len(selected) > 1<<20 || json.Unmarshal([]byte(selected), &defs) != nil) {
+	if len(raw) > 0 && (len(raw) > 1<<20 || json.Unmarshal(raw, &defs) != nil) {
 		return nil, nil, errRoleDefaults
 	}
 	for name, def := range defs {
@@ -307,7 +320,7 @@ func roleCLI(args []string, injected string) (map[string]roleDefault, []string, 
 }
 
 func sessionRoleSources(config, cwd, injected string, args []string, env map[string]string, role string) roleSources {
-	cli, plugins, err := roleCLI(args, injected)
+	cli, plugins, err := roleCLI(args, injected, cwd)
 	s := roleSources{cli: cli, err: err, defaultModel: env["CLAUDE_CODE_SUBAGENT_MODEL"]}
 	// Native's platform directories; no invented environment override.
 	managed := "/etc/claude-code"

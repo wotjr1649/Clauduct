@@ -116,7 +116,9 @@ func refuseFields(code, object string, err error) error {
 }
 
 // refuseUnknown refuses a type this build does not know, naming it.
-func refuseUnknown(code, kind string) error { return &RequestError{Code: code, Field: kind, Unknown: true} }
+func refuseUnknown(code, kind string) error {
+	return &RequestError{Code: code, Field: kind, Unknown: true}
+}
 
 // identifier matches the baseline's id() shape, used for names the backend will echo.
 var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)

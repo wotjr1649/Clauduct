@@ -445,11 +445,9 @@ func (g *Gateway) reconcileNativeResults() {
 func (g *Gateway) retireEndedChildren() {
 	l := &g.executions
 	l.Lock()
-	var open []nativeTurnReceipt
-	for id, c := range l.current {
-		if id[1] != "" && !c.ended && correlationShape.MatchString(id[1]) && correlationShape.MatchString(c.turn) {
-			open = append(open, nativeTurnReceipt{Session: id[0], Agent: id[1], Turn: c.turn})
-		}
+	open := make([]nativeTurnReceipt, 0, len(l.open))
+	for id, turn := range l.open {
+		open = append(open, nativeTurnReceipt{Session: id[0], Agent: id[1], Turn: turn})
 	}
 	l.Unlock()
 	for _, want := range open {

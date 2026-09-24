@@ -28,8 +28,14 @@ type nativeExecutionKey struct {
 type nativeExecutions struct {
 	sync.Mutex
 	seen map[nativeExecutionKey]struct{}
-	// The newest turn claimed per session and agent, by publication number.
+	// The newest turn claimed per session and agent, by publication number. An ended turn
+	// stays here for the session: a stale request of it has no bound on when it can arrive,
+	// and dropping the marker would admit it against keys that are gone.
 	current map[[2]string]claimedTurn
+	// open is the child turns in current that have not ended, with identifiers checked when
+	// stored, so the per-request retire walk visits what can still end rather than every
+	// child the session has had (#109).
+	open map[[2]string]string
 	// How many finished child turns gave their keys back (#70).
 	retired int64
 }
@@ -58,12 +64,31 @@ func (l *nativeExecutions) retire(session, agent, turn string) {
 	}
 	last.ended = true
 	l.current[id] = last
+	delete(l.open, id)
 	l.retired++
 	for spent := range l.seen {
 		if spent.session == session && spent.agent == agent && spent.turn == turn {
 			delete(l.seen, spent)
 		}
 	}
+}
+
+// claim makes turn the newest of its agent. Caller holds the lock. A child's turn is also
+// recorded as one that can still end; root turns and identifiers a receipt file name could
+// not carry are not, since no end receipt can retire them.
+func (l *nativeExecutions) claim(id [2]string, turn string, sequence int) {
+	if l.current == nil {
+		l.current = make(map[[2]string]claimedTurn)
+	}
+	l.current[id] = claimedTurn{turn: turn, sequence: sequence}
+	delete(l.open, id)
+	if id[1] == "" || !correlationShape.MatchString(id[1]) || !correlationShape.MatchString(turn) {
+		return
+	}
+	if l.open == nil {
+		l.open = make(map[[2]string]string)
+	}
+	l.open[id] = turn
 }
 
 type nativeExecution struct {
@@ -137,10 +162,7 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 			}
 		}
 		if !known || sequence > last.sequence {
-			if ledger.current == nil {
-				ledger.current = make(map[[2]string]claimedTurn)
-			}
-			ledger.current[agent] = claimedTurn{turn: key.turn, sequence: sequence}
+			ledger.claim(agent, key.turn, sequence)
 		}
 	}
 	if _, exists := ledger.seen[key]; exists {

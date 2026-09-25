@@ -73,13 +73,8 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Admission happens before the body is read, so a request that cannot be served does
 	// not first cost the memory of its own payload.
-	_, ctx, release, err := g.requests.admit(r.Context())
-	if err != nil {
-		if errors.Is(err, errGatewayClosed) {
-			g.refuse(w, refuseClosed)
-			return
-		}
-		g.refuse(w, refuseBusy)
+	ctx, release, admitted := g.admitRequest(w, r, maxRequestBytes, modelAdmission)
+	if !admitted {
 		return
 	}
 	defer release()

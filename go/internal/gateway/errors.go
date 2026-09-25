@@ -51,7 +51,6 @@ var (
 	// errBindingLimit means the table is full of registrations that are all busy.
 	errBindingLimit = errors.New("AGENT_BINDING_LIMIT")
 	refuseTooLarge  = refusal{"INPUT_TOO_LARGE", http.StatusRequestEntityTooLarge}
-	refuseBusy      = refusal{"TOO_MANY_REQUESTS", http.StatusTooManyRequests}
 	refuseClosed    = refusal{"GATEWAY_CLOSED", http.StatusServiceUnavailable}
 	refuseCancelled = refusal{"CANCELLED", 499} // client went away; nothing will read this
 	// The route exists and is intended, but its implementation lands in a later package.
@@ -98,14 +97,17 @@ func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) 
 	// invites a retry only trades this category for NATIVE_REQUEST_REPLAY_BLOCKED in front of
 	// the user (#84). The client checks x-should-retry before the status class (claude
 	// 2.1.281); without the ledger nothing is refused and the class decides as before.
-	if recordOf(w).dispatched() {
+	// Memory admission now owns its bounded wait. Claude 2.1.282 also needs this
+	// header on its local 429, or it repeats that wait instead of reporting refusal.
+	if recordOf(w).dispatched() || strings.HasPrefix(r.category, "MEMORY_") {
 		w.Header().Set("X-Should-Retry", "false")
 	}
 	g.countRefusal(r.category, recordOf(w).path())
 	recordOf(w).refusedWith(r.status, r.category)
 	control := http.NewResponseController(w)
 	switch r.category {
-	case refuseCancelled.category, refuseTooLarge.category, refuseBusy.category:
+	case refuseCancelled.category, refuseTooLarge.category,
+		errMemoryBudget.Error(), errMemoryQueue.Error(), errMemoryTimeout.Error(), errMemoryStatus.Error():
 		// These close without reading more. A cancelled read must not be pooled with the
 		// next turn, even when a filter still delivers this refusal; an oversized body is
 		// already past its limit and the closing socket is drained by httpguard; a busy

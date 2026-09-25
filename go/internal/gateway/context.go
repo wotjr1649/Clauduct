@@ -135,10 +135,11 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, refuseMediaType)
 		return
 	}
-	raw, ok := g.readBounded(w, r, maxBindingBytes)
+	raw, release, ok := g.readBounded(w, r, maxBindingBytes)
 	if !ok {
 		return
 	}
+	defer release()
 	fields, err := wire.Fields(raw, []string{"event", "sessionId", "agentId", "transcriptPath", "trigger"})
 	var event struct {
 		Event      string `json:"event"`

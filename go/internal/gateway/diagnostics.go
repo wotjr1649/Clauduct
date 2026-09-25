@@ -822,6 +822,7 @@ type CodexReport struct {
 }
 
 type Diagnostics struct {
+	Admission           AdmissionReport                `json:"admission"`
 	UptimeMs            int64                          `json:"uptimeMs"`
 	Requests            RequestCounts                  `json:"requests"`
 	Agents              AgentCounts                    `json:"agents"`
@@ -932,7 +933,8 @@ func (g *Gateway) Snapshot() Diagnostics {
 		selections = g.delegations.selectionReport()
 	}
 	return Diagnostics{
-		UptimeMs: time.Since(g.ring.epoch).Milliseconds(),
+		Admission: g.requests.report(),
+		UptimeMs:  time.Since(g.ring.epoch).Milliseconds(),
 		Requests: RequestCounts{
 			Received: received, Refused: refused,
 			RefusedBy:       refusedBy,

@@ -27,13 +27,8 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseHeaders(w, r, bad)
 		return
 	}
-	_, ctx, release, err := g.requests.admit(r.Context())
-	if err != nil {
-		if errors.Is(err, errGatewayClosed) {
-			g.refuse(w, refuseClosed)
-			return
-		}
-		g.refuse(w, refuseBusy)
+	ctx, release, admitted := g.admitRequest(w, r, maxRequestBytes, modelAdmission)
+	if !admitted {
 		return
 	}
 	defer release()

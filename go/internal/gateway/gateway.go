@@ -143,6 +143,10 @@ type Gateway struct {
 // keeping the listener has no such window. The caller passes the resulting address to the
 // child, so there is never a guess about which port is live.
 func Start(transport upstream.Transport) (*Gateway, error) {
+	physical, _, err := systemMemory()
+	if err != nil {
+		return nil, err
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -162,7 +166,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		listener:  listener,
 		token:     token,
 		expected:  listener.Addr().String(),
-		requests:  newRegistry(),
+		requests:  newRegistry(physical),
 		agents:    newAgentRegistry(),
 		transport: transport,
 		served:    make(chan error, 1),

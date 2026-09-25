@@ -19,6 +19,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -87,6 +88,8 @@ type Options struct {
 	DeadlineGrace time.Duration
 	// Checkpoint persists metadata while the child runs; nil disables checkpoints.
 	Checkpoint func(Status) error
+	// BackgroundReady transfers an explicit --bg session to its resident owner.
+	BackgroundReady func(BackgroundSession) error
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
 	interrupts chan os.Signal
 }
@@ -207,6 +210,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// nothing to a binary that is not the native client, and would arrive as an argument it
 	// does not understand.
 	settings, agents, effort := "", "", ""
+	var background *sessionlink.Server
 	nativePlugin := ""
 	nativeCleanupReady := true // No child owns the directory until spawn succeeds.
 	defer func() {
@@ -247,6 +251,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		if menu, ok := sessionAgents(); ok {
 			agents = menu
+		}
+		if BackgroundRequested(o.Args) {
+			background, err = sessionlink.Start(context.Background(), sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()})
+			if err == nil {
+				defer background.Close()
+				settings, err = backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env)
+			}
+			if err != nil {
+				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+				return result, err
+			}
 		}
 	}
 	if userSettings != nil {
@@ -364,7 +379,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return result, ErrInterrupted
 	default:
 	}
-	process, startErr := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)
+	var dispatchOutput backgroundOutput
+	stdout, stderr := o.Stdout, o.Stderr
+	if background != nil {
+		stdout, stderr = &dispatchOutput, &dispatchOutput
+	}
+	process, startErr := o.StartProcess(spec, o.Stdin, stdout, stderr)
 	if startErr != nil {
 		// The child never ran, so the port it was going to use must not outlive the
 		// attempt. Cleanup failure here is reported alongside the start failure rather
@@ -381,6 +401,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	result.NativeStarted = true
 	nativeCleanupReady = false
+	if background != nil {
+		backgroundCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		process = &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
+			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr}
+	}
 
 	waitErr, reaped, lifecycle := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
 	result.Lifecycle = &lifecycle

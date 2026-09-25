@@ -21,7 +21,7 @@ import (
 // than the evidence supports and would break on every Codex release. A re-measure records
 // how the installed client's requests differ from this bridge's; it does not copy them, so
 // matching this version says the difference is known, not that there is none (#121).
-const ReferenceClientVersion = "0.156.1"
+const ReferenceClientVersion = "0.157.0"
 
 var codexVersionLine = regexp.MustCompile(`^codex-cli (\S+)$`)
 

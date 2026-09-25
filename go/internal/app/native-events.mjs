@@ -27,7 +27,7 @@ async function observe($, progress, p, signal) {
     await p.write;
 }
 export const register = on => {
-  const state = {mode:'unclassified'};
+  const state = {mode:'unclassified',peerMode:'unclassified'};
   const turns = new Map();
   let turnSequence=0,seeding;
   const cancelledTurns = new Set();
@@ -37,6 +37,7 @@ export const register = on => {
     origin=e.origin?.kind || 'unclassified';
     if (origin==='composer') state.mode='native_tui';
     else if (origin==='sdk') state.mode='sdk';
+    else if (origin==='peer' && state.mode==='unclassified') state.mode=state.peerMode;
     const p=progress.get('');
     if (e.turnId && p?.turn===e.turnId && origin!=='task-notification') p.intervened=true;
     return next(e);
@@ -46,6 +47,9 @@ export const register = on => {
     return next(e);
   });
   on('session.start', async ($, e, next) => {
+    // Native 2.1.282 delivers SendMessage as peer on both surfaces. Its
+    // session evidence selects the response contract; other origins stay unknown.
+    state.peerMode=e.isInteractive===true?'native_tui':e.isInteractive===false?'sdk':'unclassified';
     await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($)}));
     return next(e);
   });

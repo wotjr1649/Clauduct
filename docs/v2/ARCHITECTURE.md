@@ -86,6 +86,13 @@ Claude Code 2.1.282의 공개 옵션 형태(2.1.281과 같고, `--agents`가 `--
 
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
 
+명시적 `--bg`·`--background` 생성은 세션별 연결 유지 프로세스가 맡는다. 최초 실행기는 native의
+생성 판정과 같이 정확한 두 토큰을 일반 옵션 경계보다 먼저 찾는다. native 2.1.282는 도움말·버전 옵션이나
+`--` 뒤에 이 토큰이 있어도 작업을 생성하므로, 일반 옵션 조회로 분류하면 살아 있는 작업의 연결이 끊긴다.
+생성 완료와 세션 ID를 확인한 뒤 반환한다. `clauduct --background-stop <connection-id>`는 그 연결과
+해당 native 작업의 종료를 요청하고 유지 프로세스의 종료 결과까지 확인한다. 관리·메시지·attach·stop은
+native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. 생명주기는 11절을 따른다.
+
 ## 5. 환경·설정 overlay
 
 최소 후보는 session-local `ANTHROPIC_BASE_URL`, loopback 인증 token, 필요한 gateway discovery 설정이다. 실제 native 버전에서 endpoint·credential 우선순위를 검증해 필요한 것만 더한다.
@@ -100,7 +107,16 @@ Claude Code 2.1.282의 공개 옵션 형태(2.1.281과 같고, `--agents`가 `--
 
 기존의 광범위 secret 제거를 축소하면 MCP 호환은 개선되지만 **child에 보이는 secret 범위가 넓어진다.** 이를 보안상 동일한 동작으로 표현하지 않는다.
 
-기본 모드에서 system prompt 교체, agent 목록 주입, picker 교체, permission 우회, telemetry 변경, context window 확대, resume policy 변경을 하지 않는다. 기준선이 지금 하고 있는 주입 3키·agent 14개·hook 3이벤트는 V2 기본 경로에 없다([DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md) 2.5·2.7).
+현행 기본 경로는 [sessionEnvironment·sessionRequirements](../../go/internal/app/session.go),
+[필수 hook·picker](../../go/internal/app/settings.go), 위임 메뉴와 세션 전용 native plugin을 주입한다.
+사용자 설정은 이 필수 연결을 보존하며 병합한다. permission 검사는 native가 소유한다.
+초기 설계에서 overlay를 제외했던 결정은 현재 주입 항목의 목록이 아니다.
+
+background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경로, `apiKeyHelper`와 비밀이 아닌
+연결 식별자를 남긴다. 임의의 상속 환경을 직렬화하지 않는다. 일반 세션처럼 전달하는 환경과 재기동을 위해
+저장하는 설정은 별개이며, 저장 가능한 셸 기본값은 알려진 스칼라 선호값으로 제한한다. 인증 토큰은 설정·argv·파일에
+쓰지 않는다. helper와 hook은 [로그인 제한 IPC](../../go/internal/sessionlink/link_windows.go)로 살아 있는
+유지 프로세스에서 연결을 받는다. 상위 사용자 설정·native 보안 정책이 연결을 막으면 우회하지 않는다.
 
 ## 6. HTTP façade
 
@@ -111,10 +127,10 @@ Claude Code 2.1.282의 공개 옵션 형태(2.1.281과 같고, `--agents`가 `--
 | `GET /v1/models` | 로컬 검증 catalog | query·paging·auth·timeout·picker 상호작용 |
 | `HEAD /api/hello` | 최소 readiness 응답 | 인증 없이도 비밀·상태 노출 없음 |
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
-| agent registration | **기본 실행의 필수 조건 아님** | optional overlay에서만 |
+| `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |
 | 기타 | 명확한 unsupported 응답 | 침묵 성공·임의 upstream forwarding 금지 |
 
-기준선의 4번째 endpoint `POST /clauduct/agents`는 V2에서 overlay 전용이다.
+기본 실행은 필수 hook을 구성하며 위임이 생기면 이 등록 경로를 사용한다.
 
 listener는 `127.0.0.1:0`에만 bind한다. 세션마다 충분히 긴 난수 token을 만들고 비교는 timing leakage를 줄인다. token을 커맨드라인·일반 로그·오류에 표시하지 않는다. Host·Origin·method·content type·payload size를 검증하고, browser-origin·잘못된 인증·임의 target URL·cross-session token 재사용의 거부 테스트를 만든다. 같은 OS 사용자에게 process 환경을 숨기는 sandbox라고 주장하지 않는다.
 
@@ -127,7 +143,8 @@ native 버전별로 `/v1/models` 요청에 인증 header가 둘 이상 실릴 �
 완료 기준은 보호가 켜진 환경에서의 제품 실제 동작이다. 독립 Node·.NET·raw TCP 반례는
 환경 진단으로 보존하며 제품 합격으로 덮어쓰지 않는다. 특정 필터 이름·버전에 분기하거나
 외부 프로그램·보호 설정을 바꾸지 않고, native 프로세스를 유지하는 복구를 먼저 구현한다.
-native 자동 재시작은 현재 복구 범위에 포함하지 않는다.
+HTTP 복구 계층은 native를 자동 재시작하지 않는다. native가 소유하는 background worker 재기동과
+그 뒤의 연결 유지에는 11절의 별도 생명주기가 적용된다.
 
 큰 body를 읽기 전에 거부하면 `net/http`가 keep-alive 요청도 종료할 수 있다.
 [거부 처리](../../go/internal/gateway/errors.go)는 남은 body를 최대 1초·32MiB+1 byte까지만
@@ -242,7 +259,18 @@ socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 
 빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
 자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
 
-다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. 현재 제품은 첫 출력 전에 ping을 쓰지 않는다(v0.3.5에 의도로 기록, #91) — ping이 200을 먼저 보내면 429·400·`X-Should-Retry`로 답하는 실패 처리가 SSE 오류 frame으로 바뀌고, 첫 바이트가 195초 뒤였던 요청도 클라이언트가 끊지 않았다. connect(30초)·header(120초)·idle(backend 무바이트 10분, 기준선 규칙)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
+입력 출처 `composer`·`sdk`와 실제 측정한 `peer`만 부모 대기 모드를 정한다. `peer`로 처음 시작하면
+native의 `session.start.isInteractive`가 TUI·SDK 응답 방식을 고른다. 나머지 출처는 추정하지 않는다.
+새 명시 입력 index 0, 출처 없는 자식 index 0, 같은 턴에 들어온 개입은 대기로 바꾸지 않는다.
+`/clear` 뒤에도 매 영수증의 현재 session ID로 상관관계를 검증한다.
+
+다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. 현재 제품은 첫 출력 전 무출력이
+240초 지속되면 메시지를 열어 연결을 유지하고, 출력 이후에는 30초간 무출력일 때 ping을 보낸다(v0.4.1,
+#120). 열리기 전 거부는 원래 HTTP 상태로, 열린 뒤 실패는 SSE 오류로 전달한다. 상태의
+`keepaliveOpenedMs`는 이 개방 시각이며 첫 모델 출력 시각이 아니다. connect(30초)·header(120초)·
+idle(backend 무바이트 10분)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global
+`WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를
+위해 무제한 event queue를 만들지 않는다.
 
 ## 9. retry
 
@@ -299,7 +327,7 @@ turn 정보 없는 기록이다. native가 child turn의 종료 영수증을 남
 ```text
 CredentialProvider  필요 시점에 읽기 전용 조회 / account 일관성 검사 / 고정 오류 분류만 반환
 Upstream            검증된 요청 실행 / 검증 가능한 event stream / context 취소 수용 / owned connection 정리
-AttemptBudget       socket 열기 전 시도 예약 / main·search·retry 공통 cap / 미승인 실호출 차단
+AttemptBudget       credential·socket 전 시도 예약 / 검증 실행의 프로세스 공통 cap / 검증 중 search 거부
 RouteRegistry       requested와 effective를 분리 기록 / capability 판정
 ```
 
@@ -310,6 +338,13 @@ backend target은 신뢰된 제품 설정으로 고정한다. 프로젝트 파�
 fake upstream은 synthetic credential만 받는다. production credential이 loopback fixture나 테스트 로그에 들어오면 실패해야 한다. 제품의 일반 native 인자로 실제 backend URL을 바꿀 수 없게 한다.
 
 실호출 cap이 HTTP attempt 기준인지 logical inference 기준인지 명시하고 둘 다 기록한다. 검색·retry·보조 모델 요청을 누락하지 않는다. 허용되지 않은 추가 요청은 socket을 열기 전에 거부한다. 토큰·비용·캐시 절감은 관측값만 보고하며, 값이 없으면 `unknown`이지 0이 아니다.
+
+검증용 상한은 일반 세션의 Unlimited와 별개다. `CLAUDUCT_VERIFICATION_BUDGET`을 설정한 실행은
+동일 디렉터리의 불변 계획과 배타적 예약 파일을 공유한다. `Ledger.Reserve`가 프로세스별 예산과 공유
+예산을 모두 통과한 뒤에만 credential을 읽는다. 취소·실패·재기동은 예약을 반환하지 않으며,
+계수도 같은 상한을 쓴다. 검색은 별도 경로이므로 검증 중에는 credential 전에 거부한다.
+하네스는 시작 전 바이너리의 예산 프로토콜을 확인하고, 같은 실행에 새 원장을 만들어 상한을 초기화하지
+않는다. 형식과 운영 한계는 [개발 안내](../../go/README.md#검증용-실호출은-별개의-예산이다)에 있다.
 
 ## 11. Windows 프로세스
 
@@ -328,6 +363,18 @@ Job Object 등 OS 수단으로 **이 실행에서 소유한 process tree만** �
 ```
 
 child `Wait`만으로 모든 손자가 종료됐다고 단정하지 않는다. native exit code를 가능한 한 보존하고, 정리 실패가 원래 실패를 덮어쓰지 않게 한다. headless stdout에 bridge 진단을 섞지 않는다.
+
+명시적 background 생성은 연결을 소유하는 별도 `clauduct.exe` 하나를 콘솔 창 없이 시작한다. native를
+호출하는 생성 프로세스의 Job 계약은 유지하고, 그 뒤의 worker는 native supervisor가 소유한다. 연결 유지
+프로세스는 gateway·검증 예산·필수 plugin 수명을 맡아 worker stop·재기동 사이에도 이를 보존한다.
+native `stop`은 나중에 깨울 수 있도록 연결을 남기며, 세션 삭제나 `--background-stop`은 연결도 끝낸다.
+worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업 상태 파일의
+부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다.
+
+Windows named pipe는 동일 로그인 SID의 접근만 허용하고 원격 접속을 거부한다. helper도 서버의 로그인
+SID를 확인하며 요청 대기에는 3초 상한을 둔다. helper의 토큰 출력은 pipe로만 허용한다. 새 전역 서비스나
+로그인 자동 실행 항목은 만들지 않는다. 유지 프로세스 강제 종료·로그아웃·PC 재부팅 뒤 자동 복원은 하지 않으며,
+끊긴 연결을 다른 backend로 대체하거나 모델 요청을 재실행하지 않는다. 남은 native 세션은 사용자가 관리한다.
 
 ## 12. 자원·상태·로그
 

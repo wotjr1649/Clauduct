@@ -25,8 +25,10 @@ import (
 const hookTimeout = 5
 
 type childSettings struct {
-	Hooks       map[string][]hookMatcher `json:"hooks,omitempty"`
-	ModelPicker *modelPicker             `json:"modelPicker,omitempty"`
+	Hooks        map[string][]hookMatcher `json:"hooks,omitempty"`
+	ModelPicker  *modelPicker             `json:"modelPicker,omitempty"`
+	Env          map[string]string        `json:"env,omitempty"`
+	APIKeyHelper string                   `json:"apiKeyHelper,omitempty"`
 }
 
 type hookMatcher struct {

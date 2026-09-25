@@ -134,7 +134,24 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 		out[key] = value
 	}
 	for key, value := range base {
-		if key == "hooks" {
+		if key == "env" {
+			// takeUserSettings already rejects connection/required-key overrides.
+			// Other user preferences keep their normal precedence over defaults.
+			merged, err := wire.Fields(value, nil)
+			if err != nil {
+				return "", errUserSettings
+			}
+			if specified, ok := user[key]; ok {
+				extra, err := wire.Fields(specified, nil)
+				if err != nil {
+					return "", errUserSettings
+				}
+				for name, value := range extra {
+					merged[name] = value
+				}
+			}
+			out[key], _ = json.Marshal(merged)
+		} else if key == "hooks" {
 			merged, err := mergeHookSettings(value, user[key])
 			if err != nil {
 				return "", err

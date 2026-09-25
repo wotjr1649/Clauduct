@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
 	"net"
 	"net/http"
@@ -51,6 +52,27 @@ func Dispatch(argv []string) (int, bool) {
 	}
 	args := argv[1:]
 	alone := func(arg string) bool { return len(args) == 1 && args[0] == arg }
+	if len(args) == 2 && (args[0] == Arg || args[0] == "--clauduct-background-key") {
+		connection, err := sessionlink.Read(args[1])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "BACKGROUND_CONNECTION_UNAVAILABLE: restart this session with Clauduct")
+			return 2, true
+		}
+		if args[0] == "--clauduct-background-key" {
+			// apiKeyHelper consumes this anonymous output pipe; never a file or argv.
+			info, err := os.Stdout.Stat()
+			if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+				return 2, true
+			}
+			if _, err = fmt.Fprintln(os.Stdout, connection.Token); err != nil {
+				return 2, true
+			}
+			return 0, true
+		}
+		env := environ()
+		env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
+		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, env), true
+	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
 		return nativePDF(args, os.Stdout, os.Stderr), true

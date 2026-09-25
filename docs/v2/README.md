@@ -2,14 +2,14 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-25, v0.4.3 출시)
+## 1. 현재 상태 (2026-09-26, v0.4.4 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.4.3** (태그 `v0.4.3` → `8ed1de4`). 변경과 출하 검사는 [RELEASE-v0.4.3.md](RELEASE-v0.4.3.md). 그 전은 [v0.4.2](RELEASE-v0.4.2.md) |
+| 최신 출시 | **v0.4.4** (태그 `v0.4.4` → `90067da`). 변경과 출하 검사는 [RELEASE-v0.4.4.md](RELEASE-v0.4.4.md). 그 전은 [v0.4.3](RELEASE-v0.4.3.md) |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
-| Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), go 1.27.1, **CGO_ENABLED=0**. 정확 계수를 위해 검토·고정한 의존성 3개: [결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | Claude Code **2.1.282**, Codex CLI **0.157.0**(무료 CLI/API·exec wire 재측정과 순수 출하 바이너리의 실제 backend 메시지 TUI·SDK·background 검증). 제품 요청 형식은 유지하며 Codex 자체 TUI·검색·계수의 재검증은 별도다. Windows, Go 1.27.1 |
+| Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
+| 측정된 클라이언트 | Claude Code **2.1.282**, Codex CLI **0.157.0**. v0.4.4 순수 출하 바이너리의 실제 WebSearch·SDK 위임·TUI 압축/취소/복구와 무료 peer SDK·background 재연결을 확인했다. v0.4.3의 실제 peer/background·idle 근거는 해당 릴리스 기록에 유지한다. 제품 요청 형식은 유지하며 Codex 자체 TUI·검색·계수의 재검증은 별도다. Windows, Go 1.27.1 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build만 본다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는
@@ -18,9 +18,9 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)에
 고정돼 있다.
 
-v0.4.3의 #130 메시지 기반 부모 대기, #133 명시적 background 생성·연결 유지,
-#134 검증 실행 전체의 backend 시도 상한을 출하했다. 수정한 자연 idle 하네스의 전체 재실행과
-순수 출하 바이너리의 실제 backend 21회, 재현 빌드·설치·업데이트 검증은 [릴리스 노트](RELEASE-v0.4.3.md)에 기록했다.
+v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 같은 총상한 아래에서 검증한다.
+전체 기능 감사와 수정 후 회귀, 순수 태그의 실제 backend 16회, 재현 빌드·설치·공개 업데이트 및
+실제 설치본 확인을 [릴리스 노트](RELEASE-v0.4.4.md)에 기록했다. 전체 로컬 기능의 최종 인수는 아직 완료하지 않았다.
 
 ## 2. 문서 위치와 책임
 

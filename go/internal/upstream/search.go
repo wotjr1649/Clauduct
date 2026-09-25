@@ -68,12 +68,12 @@ func (d *Direct) searchTarget() (string, error) {
 // Retried exactly once, and only on a failure that could pass. A search is an idempotent
 // read so one retry cannot duplicate an effect, and one is the limit because a side query
 // the client is waiting on is not the place to spend a retry budget. The ledger is not
-// consulted for ordinary sessions: search is not an inference. A verification
-// run explicitly excludes search before credentials or any external operation.
+// consulted for ordinary sessions: search is not an inference. Verification
+// requires explicit search opt-in and reserves each attempt before credentials.
 func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	d.searchCounts.requests.Add(1)
 	if d.Ledger != nil {
-		if err := d.Ledger.verificationSearch(); err != nil {
+		if err := d.Ledger.verificationSearch(false); err != nil {
 			return nil, err
 		}
 	}
@@ -115,6 +115,11 @@ func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	var retryable Failure
 	if !errors.As(failure, &retryable) || retryable.Disposition != Retryable {
 		return nil, failure
+	}
+	if d.Ledger != nil {
+		if err := d.Ledger.verificationSearch(true); err != nil {
+			return nil, err
+		}
 	}
 	// A 401 is worth another try only on a different token: the same one gets the same
 	// answer. The store is read again because the Codex CLI may have refreshed it since, and

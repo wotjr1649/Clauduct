@@ -251,7 +251,8 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 
 native 공식 Workflow 재개는 중단·실패한 agent를 다시 실행할 수 있다. Clauduct의
 현재 정책은 시작한 단계의 자동 재실행을 금지하므로 native 재개와 완전히 같은 의미가 아니다.
-동일 의미로 바꾸려면 재실행 정책도 별도로 정해야 한다. 실행 여부를 확인할 수 없는
+2026-09-26에는 검증된 native 재개에서 native의 재실행 규칙을 허용하는 정책을 채택했다.
+구현은 v0.5.x 대기이며 현행 동작은 아직 바뀌지 않았다. 실행 여부를 확인할 수 없는
 외부 효과에 대해 기록·멱등성 협력 없이 무조건 중복 없는 재실행을 보장하지 않는다.
 [native 재개 의미](https://code.claude.com/docs/en/workflows#resume-after-a-pause),
 [settings와 setting-sources의 구분](https://code.claude.com/docs/en/cli-reference#cli-flags).
@@ -421,7 +422,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 
 | 항목 | 내용 |
 |---|---|
-| 소유하는 옵션 **4개** | `--update`(+`--yes`), `--usage`, `--uninstall`(+`--yes`), `--dev`(v0.4.0, 이 빌드 자신의 명령). **첫 인자일 때만** 인식한다 — 프롬프트 안의 같은 문자열이 바이너리를 교체하면 안 되기 때문이다. 그 외 모든 인자는 그대로 전달된다 |
+| 소유하는 옵션 **5개** | `--update`(+`--yes`), `--usage`, `--uninstall`(+`--yes`), `--dev`, `--background-stop <connection-id>`. **첫 인자일 때만** 인식한다. native의 `--bg`·`--background` 생성 경로에는 연결 유지 처리를 더하며 나머지 native 인자를 전달한다 |
 | 거부하는 native 옵션 **2개** | `--dangerously-skip-permissions`·`--allow-dangerously-skip-permissions`(권한). 사용자 settings는 필수 settings와 병합하며 충돌만 거부 |
 | 주입하는 것 | settings·위임 메뉴·세션 plugin·모델/도구/압축 관련 환경. 사용자 `--agents`는 메뉴를 대체할 수 있지만, [sessionRequirements](../../go/internal/app/session.go)의 필수 환경값은 사용자 값으로 자동 대체하지 않음 |
 | hook이 없으면 | 자식 확정 선택과 native 압축을 검증할 수 없으므로 해당 요청을 거부한다. `hookInstalled`에 기록 |
@@ -456,8 +457,9 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
-**설치된 클라이언트가 보내지 않는다** — 2.1.274 바이너리에 그 타입 이름이 없다(2026-09-17 실측).
-API에는 있으나 이 조합에서는 도달 경로가 없다.
+2.1.274 바이너리에서는 그 타입 이름과 전송 경로를 발견하지 못했다(2026-09-17 실측).
+이는 해당 버전의 관측이며 2.1.282 전체의 부재를 증명하지 않는다. native 로컬 `WebFetch`·`Bash`·`Edit`와
+같은 기능 이름이 붙은 hosted API 도구도 구분한다. 미측정 경로를 지원 완료로 취급하지 않는다.
 
 ### v0.3.5 — 남은 결함·격차의 처분
 
@@ -544,6 +546,26 @@ TUI 5회(생성·압축·취소·복구·종료)와 SDK 5회(입력·`/clear`·�
 회귀 5회로 합격했다. 성공 실행의 종료 코드·cleanup·자식 결과 수신·메모리 예약 반환을 함께 판정했다.
 출하 검증 21회와 실패 실행을 포함한 누계 67회 및 상한은 [릴리스 노트](RELEASE-v0.4.3.md)에 기록한다. Codex 기준 0.157.0은
 exec wire 차이와 이 제품 경로를 측정한 뜻이며, Codex 자체 TUI·검색·계수의 재검증은 아니다.
+
+### v0.4.4 — 검색 검증의 공유 예산
+
+검증 실행이 `budget.json`에 `allowSearch:true`를 명시하면 검색도 모델 호출과 같은 영속 예약 파일과
+총상한을 사용한다. 최초 시도·한 번의 허용된 검색 재시도 모두 credential 읽기·재조회와 전송보다
+먼저 예약한다. 실패·취소 뒤 슬롯 반환, 새 프로세스의 상한 초기화는 하지 않는다. 기존 계획은 검색을
+계속 거부하고 일반 사용자 세션의 검색 정책과 별도 전송 통계는 유지한다.
+[설정 형식](../../go/README.md#검증용-실호출은-별개의-예산), [릴리스 검증](RELEASE-v0.4.4.md).
+
+2026-09-26 감사에서는 native 2.1.282의 SDK 초기화 목록과 공식 문서를 대조했다. 목록에 나타난 도구·명령은
+기능 합격 목록이 아니다. 실제 backend에서 기본 생성, 파일 수정, 구조화 출력, 이미지/PDF, MCP,
+루트 forked Skill, 단순 Workflow, 세션 재개와 TUI 압축·취소·복구를 검사했다. Luna의 PDF 식별자 판독에서
+한 글자 누락 1건이 있었고 Sol의 별도 실행은 성공했다. 무료 native 검사에서 원본 문서와 페이지 이미지의
+backend 전달 바이트는 보존됐다. 이는 모델별 모든 판독의 정확성을 보장하는 결과가 아니다.
+
+최종 목표는 Windows의 로컬 기능과 backend로 구현 가능한 기능 전체다. subagent 내부 forked Skill,
+fork 자식 재개, 역할 기본값 수집 확대, Workflow 재실행 resume, review-diff 헬퍼와 native 도구를 통한
+Office 처리는 구현·인수 검증 대기다. 서비스 전용 제약은
+[공식 기능 가용성](https://code.claude.com/docs/en/feature-availability)에 따라 별도로 관리한다.
+모든 로컬 slash command와 조합을 실측했거나 API 오류가 언제나 없다는 판정은 하지 않는다.
 
 ## 4. 제3자 구현이라는 사실
 

@@ -111,6 +111,8 @@ type Attempt struct {
 	Retry bool
 	// A warmup is a metered backend attempt, but it generates no model response.
 	CountOnly bool
+	// Search is a verification reservation, not a model inference or route.
+	Search bool
 }
 
 // RouteRecord is one distinct route a session used.

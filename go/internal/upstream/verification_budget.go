@@ -60,12 +60,18 @@ func (v *verificationBudget) reserve(a Attempt) error {
 	if readErr != nil || closeErr != nil || len(raw) > 16<<10 || v.plan != nil && !bytes.Equal(v.plan, raw) {
 		return errVerificationBudget
 	}
-	fields, err := wire.Fields(raw, []string{"version", "limit", "routes"})
+	fields, err := wire.Fields(raw, []string{"version", "limit", "routes", "allowSearch"})
 	if err != nil {
 		return errVerificationBudget
 	}
 	var version, limit int
 	var routes []json.RawMessage
+	var allowSearch bool
+	if value, present := fields["allowSearch"]; present {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, &allowSearch) != nil {
+			return errVerificationBudget
+		}
+	}
 	if json.Unmarshal(fields["version"], &version) != nil || version != VerificationBudgetVersion ||
 		json.Unmarshal(fields["limit"], &limit) != nil || limit < 1 || limit > 10000 ||
 		json.Unmarshal(fields["routes"], &routes) != nil || len(routes) == 0 || len(routes) > 32 {
@@ -80,6 +86,9 @@ func (v *verificationBudget) reserve(a Attempt) error {
 			return errVerificationBudget
 		}
 		authorised = authorised || model == a.Model && effort == a.Effort
+	}
+	if a.Search {
+		authorised = allowSearch
 	}
 	if !authorised {
 		return ErrRouteNotAuthorised
@@ -100,7 +109,8 @@ func (v *verificationBudget) reserve(a Attempt) error {
 			Model, Effort string
 			Count, Retry  bool
 			PID           int
-		}{a.Model, a.Effort, a.CountOnly, a.Retry, os.Getpid()})
+			Search        bool `json:",omitempty"`
+		}{a.Model, a.Effort, a.CountOnly, a.Retry, os.Getpid(), a.Search})
 		if err == nil {
 			err = claim.Sync()
 		}
@@ -113,14 +123,23 @@ func (v *verificationBudget) reserve(a Attempt) error {
 	return ErrBudgetExhausted
 }
 
-// Search has its own accounting and no model/effort tuple. Verification runs
-// explicitly exclude it; ordinary sessions keep their existing search policy.
-func (l *Ledger) verificationSearch() error {
+// Only explicit verification opt-in charges search to the shared total. The
+// reservation precedes credentials, including the refresh read before a retry.
+// Ordinary sessions retain separate search accounting and their existing policy.
+func (l *Ledger) verificationSearch(retry bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.verification != nil {
-		l.refused++
-		return ErrRouteNotAuthorised
+	if l.verification == nil {
+		return nil
 	}
+	if !l.budget.authorises() || !l.budget.Unrestricted && l.attempts >= l.budget.Limit {
+		l.refused++
+		return ErrBudgetExhausted
+	}
+	if err := l.verification.reserve(Attempt{Search: true, Retry: retry}); err != nil {
+		l.refused++
+		return err
+	}
+	l.attempts++
 	return nil
 }

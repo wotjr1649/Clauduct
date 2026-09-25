@@ -18,7 +18,9 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)에
 고정돼 있다.
 
-v0.4.2의 메모리 수용 제어를 출하했다. [릴리스 노트](RELEASE-v0.4.2.md)에 재현 빌드·실제 backend·설치·업데이트 검사를 기록했다. 다음 v0.4.3은 [#130](https://github.com/wotjr1649/Clauduct/issues/130)의 입력 출처 격차를 다룬다.
+v0.4.2의 메모리 수용 제어를 출하했다. [릴리스 노트](RELEASE-v0.4.2.md)에 재현 빌드·실제 backend·설치·업데이트 검사를 기록했다.
+v0.4.3은 [개발 초안](RELEASE-v0.4.3.md)의 #130 메시지 기반 부모 대기, #133 명시적 background 생성·연결 유지,
+#134 검증 실행 전체의 backend 시도 상한을 개발 중이다. 설치본 변경이나 출하 완료를 뜻하지 않는다.
 
 ## 2. 문서 위치와 책임
 

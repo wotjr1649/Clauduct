@@ -448,7 +448,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
 | PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
-| 빈 응답 제어의 전체 실행 모드 지원 | 부모 대기 모드는 `composer`(TUI 입력)·`sdk`(`-p`·Agent SDK)만 정한다. 2.1.282의 `PromptOrigin` 16종 중 별도 처리하는 `task-notification`을 뺀 나머지 13종(다른 세션의 메시지, Remote Control, 예약 실행, 채널, Slack 등)은 모드를 정하지 않는다. 그런 입력만 받은 세션에서는 백그라운드 자식을 기다리는 동안의 빈 응답이 기존 오류 처리로 간다. 이미 TUI 모드인 세션의 같은 회차에 들어온 다른 출처 입력은 개입으로 처리하고 모드는 유지한다. 출처 없는 자식 새 회차 index 0·새 사용자 입력의 빈 응답도 기존 오류 처리 유지. [#130](https://github.com/wotjr1649/Clauduct/issues/130)(v0.4.3)에서 측정·수정 |
+| 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3 개발본은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin 12종은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다. 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
@@ -523,6 +523,24 @@ Windows가 보고하는 물리 메모리가 4 GiB 미만이면 제어용 용량�
 로컬 전체 test·race, vet 3종·build, 핵심 동작의 변이 9개 검출을 통과했다. Claude Code 2.1.282의 실제 native로
 새 429 거부가 요청 1회 뒤 자동 재시도 없이 끝남을 과금 없이 확인했다. 개발 commit `bf68243`은 실제 backend
 TUI 5회(생성·압축·취소·복구·종료)와 SDK 5회(입력·`/clear`·자식 위임·완료)를 통과했다. 태그의 격리 설치본도 실제 backend 5회를 통과했으며, [출하 기록](RELEASE-v0.4.2.md#출하-검사-2026-09-25)에 설치·업데이트 검사를 함께 적었다.
+
+### v0.4.3 — 메시지, background, 검증 예산
+
+**개발 중·미출하.** 실제 backend 및 자동 유휴 종료 후 깨우기는 아직 완료하지 않았다.
+아래 무료 검증은 실제 native 2.1.282를 사용하며, backend 응답만 합성한 결과다.
+
+| 항목 | 구현·관측 범위 |
+|---|---|
+| 메시지 기반 부모 대기(#130) | 입력 없는 TUI·SDK가 다른 native 세션의 `SendMessage`를 `peer`로 받는 경로를 실측했다. 수정 전 각각 EMPTY_REPLY 1회, 수정 후 부모 3·자식 1회와 결과 수신 1회, 오류 0. 도중의 두 번째 메시지는 native가 새 턴으로 큐잉했으며 정상 답변을 표시했다. same-turn 개입은 모듈 정책 검사로 구분한다 |
+| `/clear`·`/reload-plugins` | 이후 실제 peer와 부모 대기를 TUI·SDK에서 확인했다. TUI의 reload는 CLI `--agents`로 준 사용자 역할을 제거했다. 이는 native 동작이며 그 역할의 reload 유지까지 지원하지 않는다. 기본 native 역할의 부모 대기는 확인했다 |
+| 명시적 background 생성(#133) | `clauduct --bg`·`--background`로 생성하고 native agents·attach·stop·respawn·메시지·삭제로 관리한다. 세션별 Clauduct 연결 유지 프로세스 1개가 최초 실행기 종료 뒤 남는다. 순수 바이너리의 실행기 종료·연결 종료도 과금 없이 확인했다 |
+| 동일 로그인 내 재기동 | native stop→attach와 respawn→peer에서 gateway·모델·effort·필수 hook 연결을 확인했다. 자동 유휴 종료와 예상치 못한 worker 종료는 별도 관측이 필요하다. PC 재부팅·로그아웃 뒤 자동 복원은 범위 밖이다 |
+| 연결 유지와 실패 | native stop은 연결을 남긴다. native 세션 삭제 또는 `clauduct --background-stop <connection-id>`가 연결도 끝낸다. 토큰은 메모리에만 두고 동일 Windows 로그인에서 IPC로 받는다. 유지 프로세스 종료 뒤 자동 재시작·backend 전환·요청 재실행은 하지 않는다. native agents 화면에서 새 작업을 Clauduct로 만드는 경로는 범위 밖이다 |
+| 검증 예산(#134) | `CLAUDUCT_VERIFICATION_BUDGET`으로 실행 전체 model/effort와 시도 수를 제한한다. 실패·취소·재시도·backend 계수도 차감하며 검색은 검증 중 거부한다. 여러 프로세스와 새 원장에서도 N+1은 credential·소켓 전에 거부된다. 예약 파일 삭제·교체는 지원하지 않는다. 일반 세션의 요청 수 정책은 유지한다 |
+
+일반·race 전체 각 21개 패키지와 기본/태그 vet·build·gofmt를 통과했다. `peer` 지원을 제거한 변이는
+실제 native SDK에서 EMPTY_REPLY assertion으로 실패했고, 공유 예약을 제거한 변이는 N+1 전송 assertion으로
+실패했다. 실제 backend의 결과·사용량과 남은 관측은 [릴리스 초안](RELEASE-v0.4.3.md)을 갱신한다.
 
 ## 4. 제3자 구현이라는 사실
 

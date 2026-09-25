@@ -68,10 +68,15 @@ func (d *Direct) searchTarget() (string, error) {
 // Retried exactly once, and only on a failure that could pass. A search is an idempotent
 // read so one retry cannot duplicate an effect, and one is the limit because a side query
 // the client is waiting on is not the place to spend a retry budget. The ledger is not
-// consulted: a search is not an inference and counting it as one would make a budget stated
-// in inferences stop meaning that.
+// consulted for ordinary sessions: search is not an inference. A verification
+// run explicitly excludes search before credentials or any external operation.
 func (d *Direct) Search(ctx context.Context, body []byte) ([]byte, error) {
 	d.searchCounts.requests.Add(1)
+	if d.Ledger != nil {
+		if err := d.Ledger.verificationSearch(); err != nil {
+			return nil, err
+		}
+	}
 	target, err := d.searchTarget()
 	if err != nil {
 		return nil, err

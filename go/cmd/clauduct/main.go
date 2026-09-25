@@ -17,16 +17,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/devcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"github.com/wotjr1649/Clauduct/go/internal/update"
 )
 
@@ -43,6 +46,27 @@ func run() int {
 	if args, ok := devArgs(os.Args); ok {
 		return devcmd.Run(args, os.Stdout, os.Stderr)
 	}
+	args := os.Args[1:]
+	resident := len(args) > 0 && args[0] == app.BackgroundRole
+	ready := false
+	if resident {
+		args = args[1:]
+		defer func() {
+			if !ready {
+				_ = json.NewEncoder(os.Stdout).Encode(app.BackgroundReply{Error: "BACKGROUND_START_FAILED"})
+			}
+		}()
+		if !app.BackgroundRequested(args) {
+			return 1
+		}
+	}
+	if len(args) == 2 && args[0] == "--background-stop" {
+		if err := sessionlink.StopAndWait(args[1]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
 
 	// An update cannot delete the binary it was running, so it renames it aside and says
 	// which file is left. This process is not running that file, so it can finish the job --
@@ -54,17 +78,17 @@ func run() int {
 	// The one option this launcher owns, checked before anything else happens. It updates
 	// Clauduct, not the client: `clauduct update` still reaches the client's own updater,
 	// because that one is a bare subcommand and this one is not.
-	if wanted, _ := update.Requested(os.Args[1:]); wanted {
+	if wanted, _ := update.Requested(args); wanted {
 		ctx, cancel := context.WithTimeout(context.Background(), update.Timeout)
 		defer cancel()
-		return update.Run(ctx, os.Args[1:], os.Stdin, os.Stdout)
+		return update.Run(ctx, args, os.Stdin, os.Stdout)
 	}
 
 	// The second option this launcher owns: what this account has spent. Recognised the
 	// same way, and only as the first argument, because a prompt is an argument like any
 	// other. The client defines no --usage of its own (measured on 2.1.274) and its own
 	// /usage cannot answer for this backend, so nothing is being taken over.
-	if asked(os.Args[1:], usageOption) {
+	if asked(args, usageOption) {
 		return app.WriteUsage("", os.Stdout)
 	}
 
@@ -74,8 +98,8 @@ func run() int {
 	// as --update, and it asks before it deletes anything for the same reason --update does.
 	// The diagnostics directory is handed over rather than looked up there: the package that
 	// writes those files owns where they live.
-	if wanted, _ := update.UninstallRequested(os.Args[1:]); wanted {
-		return update.Uninstall(os.Args[1:], app.StatusDir(), os.Stdin, os.Stdout)
+	if wanted, _ := update.UninstallRequested(args); wanted {
+		return update.Uninstall(args, app.StatusDir(), os.Stdin, os.Stdout)
 	}
 
 	cwd, err := os.Getwd()
@@ -91,13 +115,38 @@ func run() int {
 		return 1
 	}
 	resolve := platform.Resolver{}.Claude
-	result, err := app.Run(context.Background(), app.Options{
-		Args:           os.Args[1:],
-		Env:            env,
-		Cwd:            cwd,
-		ResolveClaude:  resolve,
-		SessionTimeout: sessionDuration,
-		Checkpoint:     app.WriteCheckpoint,
+	if !resident && app.BackgroundRequested(args) {
+		if err := app.StartBackground(context.Background(), args, cwd, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "clauduct:", err)
+			return 1
+		}
+		return 0
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var backgroundReady func(app.BackgroundSession) error
+	if resident {
+		bootstrap := time.AfterFunc(60*time.Second, cancel)
+		defer bootstrap.Stop()
+		backgroundReady = func(session app.BackgroundSession) error {
+			bootstrap.Stop()
+			if err := json.NewEncoder(os.Stdout).Encode(app.BackgroundReply{Session: &session}); err != nil {
+				return err
+			}
+			ready = true
+			os.Stdout.Close()
+			os.Stderr.Close()
+			return nil
+		}
+	}
+	result, err := app.Run(ctx, app.Options{
+		Args:            args,
+		Env:             env,
+		Cwd:             cwd,
+		ResolveClaude:   resolve,
+		SessionTimeout:  sessionDuration,
+		Checkpoint:      app.WriteCheckpoint,
+		BackgroundReady: backgroundReady,
 	})
 
 	// What the session did, said once, at the end. The native client owns the terminal

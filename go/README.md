@@ -52,9 +52,32 @@ clauduct --dev --probe <name> --send
 
 probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다. `probe accept <model> [effort...]`(표에 넣기 전 모델 수용 점검)는 이 예산 대신 Codex 캐시의 effort마다 경로별 상한을 두고, 보내기 전에 그 상한을 출력한다.
 
+검증 하네스는 `CLAUDUCT_VERIFICATION_BUDGET`에 실행 전용 디렉터리의 절대경로를 지정해 추가 상한을
+강제할 수 있다. 먼저 `clauduct --dev --verification-budget-version`이 `1`을 반환하는지 확인한다.
+구형 바이너리는 이 환경변수를 모르므로 이 확인 전에 검증 세션을 시작하지 않는다.
+디렉터리의 `budget.json` 형식은 다음과 같다.
+
+```json
+{"version":1,"limit":6,"routes":[{"model":"gpt-6-luna","effort":"low"}]}
+```
+
+원장은 credential·소켓 전에 `attempt-00001.json`부터 예약 파일을 배타적으로 만들고 디스크에 반영한다.
+같은 실행의 모든 프로세스는 동일 디렉터리를 사용한다. 실패·취소·재시도·backend 계수도 예약을 반환하지
+않으며, 재기동해도 기존 예약은 남는다. 검증 모드의 검색은 `ROUTE_NOT_AUTHORISED`로 거부한다.
+상한은 1–10,000회, 허용 경로는 1–32개다. 환경변수가 없을 때 일반 세션 정책은 그대로이고,
+빈 값·잘못된 계획·읽기/쓰기 실패는 제한 해제가 아니라 `REQUEST_BUDGET` 거부다.
+예약 파일이나 디렉터리를 지우거나 바꾸면 실행 전체 상한을 보장할 수 없으므로 검증 중에는 보존한다.
+`attempts`는 각 프로세스의 예약 수이며, 실행 전체 예약 수는 디렉터리에 남은 파일 수로 별도 대조한다.
+이 설정은 과금 승인 자체를 대신하지 않는다.
+
 이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 [`docs/v2/VALIDATION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md) 1.1.2에 있다.
 
 ## 명령
+
+명시적 background 생성은 `clauduct --bg "작업 내용"`을 사용한다. 출력된 native 작업 ID로
+`claude agents`·`claude attach <id>`·`claude stop <id>`에서 관리한다. native stop 뒤에도 연결 유지
+프로세스는 남는다. 연결까지 끝내려면 출력된 식별자로 `clauduct --background-stop <connection-id>`를 실행한다.
+동일 로그인 중의 지원·검증 범위와 실패 정책은 [호환성 문서](../docs/v2/COMPATIBILITY.md#v043--메시지-background-검증-예산)를 따른다.
 
 ```powershell
 cd go
@@ -121,6 +144,7 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 | `cmd/ptydrive` | 유지보수 도구. ConPTY에서 TUI를 단계 파일대로 조작한다. 출하하지 않는다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |
+| `internal/sessionlink` | background 연결 정보를 메모리로만 전달하는 Windows 로그인 제한 named pipe |
 | `internal/gateway` | loopback listener, 요청 경계·인증·registry |
 | `internal/httpguard` | OS와 무관한 HTTP 응답 framing·제한된 연결 drain·취소 시 읽기 중단 |
 | `internal/stream` | backend SSE 파싱과 전달 상태. 의미 해석은 하지 않는다 |

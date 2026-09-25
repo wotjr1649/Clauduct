@@ -37,6 +37,9 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	switch command {
 	case "version":
 		return version(stdout)
+	case "verification-budget-version":
+		fmt.Fprintln(stdout, upstream.VerificationBudgetVersion)
+		return 0
 	case "doctor":
 		return doctor(stdout)
 	case "usage":
@@ -44,7 +47,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--doctor|--usage|--probe]")
+		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--doctor|--usage|--probe]")
 		return 2
 	}
 }

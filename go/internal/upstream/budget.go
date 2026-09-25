@@ -86,6 +86,8 @@ func ApprovedBudget() Budget {
 // happened by the time the report is written.
 type Ledger struct {
 	budget Budget
+	// Optional verification-only ceiling shared by every process in one run.
+	verification *verificationBudget
 
 	mu sync.Mutex
 	// HTTP attempts and logical inferences are counted separately because they are
@@ -120,7 +122,9 @@ func (r RouteRecord) String() string {
 	return fmt.Sprintf("%s -> %s/%s (%s)", r.Requested, r.Model, r.Effort, r.Source)
 }
 
-func NewLedger(budget Budget) *Ledger { return &Ledger{budget: budget} }
+func NewLedger(budget Budget) *Ledger {
+	return &Ledger{budget: budget, verification: verificationFromEnvironment()}
+}
 
 // Reserve claims one attempt on a route, before anything is dialled.
 //
@@ -143,6 +147,12 @@ func (l *Ledger) Reserve(a Attempt) error {
 		if l.attempts >= l.budget.Limit {
 			l.refused++
 			return ErrBudgetExhausted
+		}
+	}
+	if l.verification != nil {
+		if err := l.verification.reserve(a); err != nil {
+			l.refused++
+			return err
 		}
 	}
 

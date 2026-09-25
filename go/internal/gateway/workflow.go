@@ -91,11 +91,12 @@ func (g *Gateway) handleWorkflow(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, 400, "AGENT_SELECTION_UNVERIFIED")
 		return
 	}
-	raw, ok := g.readBounded(w, r, 8192)
+	raw, release, ok := g.readBounded(w, r, 8192)
 	var link workflowLink
 	if !ok {
 		return
 	}
+	defer release()
 	_, err := wire.Fields(raw, []string{"sessionId", "parent", "toolUseId", "runId", "workflowName", "transcriptPath", "transcriptDir", "scriptPath"})
 	if err != nil || json.Unmarshal(raw, &link) != nil || g.delegations.linkWorkflow(link) != nil {
 		g.refuseCategory(w, 400, "AGENT_SELECTION_UNVERIFIED")

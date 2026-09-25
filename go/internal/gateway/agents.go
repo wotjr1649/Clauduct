@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -211,10 +210,11 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	// Bound the identity fields plus one existing completion report. No arbitrary
 	// native event payload or transcript is accepted by this endpoint.
-	body, ok := g.readBounded(w, r, maxBindingBytes)
+	body, release, ok := g.readBounded(w, r, maxBindingBytes)
 	if !ok {
 		return
 	}
+	defer release()
 
 	binding, err := decodeAgentBinding(body)
 	if err != nil {
@@ -252,33 +252,28 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 // maxBindingBytes bounds a hook's report.
 const maxBindingBytes = resultBodyLimit*6 + 8192 // worst-case JSON escaping; decoded report remains bounded
 
-// Event uploads need the same shutdown cancellation and body deadline as model
-// requests. Their admission is held only while reading the bounded event body.
-func (g *Gateway) readBounded(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, bool) {
-	_, ctx, release, err := g.requests.admit(r.Context())
-	if err != nil {
-		if errors.Is(err, errGatewayClosed) {
-			g.refuse(w, refuseClosed)
-		} else {
-			g.refuse(w, refuseBusy)
-		}
-		return nil, false
+// The caller holds the reservation through decoding and event processing, not
+// just the upload. A small completion event can also recover an existing report.
+func (g *Gateway) readBounded(w http.ResponseWriter, r *http.Request, limit int64) ([]byte, func(), bool) {
+	ctx, release, admitted := g.admitRequest(w, r, limit, controlAdmission)
+	if !admitted {
+		return nil, nil, false
 	}
-	defer release()
 	control := http.NewResponseController(w)
 	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
 	stop := httpguard.WatchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
 	defer stop()
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
+		defer release()
 		if ctx.Err() != nil {
 			g.refuse(w, refuseCancelled)
 		} else {
 			g.refuse(w, refuseTooLarge)
 		}
-		return nil, false
+		return nil, nil, false
 	}
-	return body, true
+	return body, release, true
 }
 
 // decodeAgentBinding validates a hook's report before any of it is believed.

@@ -3,7 +3,7 @@ package app
 import "strings"
 
 // The settings rewrite and read-only role scan share native value boundaries.
-// Public arities follow Claude Code 2.1.281 --help; hidden entries retain the
+// Public arities follow Claude Code 2.1.282 --help; hidden entries retain the
 // existing role scanner's contract. Unknown options cannot prove where
 // a later settings/role option begins. This is not native option validation.
 // end is exclusive; a missing required value returns len(args)+1.

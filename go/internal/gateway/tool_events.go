@@ -62,10 +62,11 @@ func (g *Gateway) handleToolFailure(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, refuseMediaType)
 		return
 	}
-	raw, ok := g.readBounded(w, r, 2048)
+	raw, release, ok := g.readBounded(w, r, 2048)
 	if !ok {
 		return
 	}
+	defer release()
 	fields, err := wire.Fields(raw, []string{"session", "agent", "call", "tool", "interrupted"})
 	var event ToolFailureRecord
 	validTool := false

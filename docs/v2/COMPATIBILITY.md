@@ -170,8 +170,8 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 | 구분 | 확인한 기준 |
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/build.json), [개발 경로 반영](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.281`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.3.5 개발본, gpt-6-luna/low 실제 backend, 2026-09-24: 생성·압축·취소·복구·종료 PASS(공개 `go/cmd/ptydrive`로 조작). 그 전: v0.3.4 개발본(GPT-6 표), 같은 날 같은 항목 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
-| 인자 표·native fixture 재측정 | Claude Code `2.1.281`, 2026-09-24(v0.3.4). `--help` 차이는 `--agents <json-or-file>` 하나다: `--print`와 함께 JSON 파일 경로를 받는다. 인자 수는 같고, 역할 탐색이 그 파일을 읽도록 고쳤다. 모듈이 쓰는 plugin 이벤트 타입은 같고 `$.session.version()`만 추가됐다. 설치 native를 쓰는 fixture 검사 통과. 이전 기준: `2.1.280`, 2026-09-23 [재측정 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-client-2.1.280-20260923/README.md) |
+| 최근 실제 TUI | Claude Code `2.1.282`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.4.2 개발본(`bf68243`), gpt-6-luna/low 실제 backend 5회, 2026-09-25: 생성·압축·취소·복구·종료 PASS(공개 `go/cmd/ptydrive`로 조작). 그 전: v0.4.1 개발본(2.1.281), 2026-09-24 같은 항목 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.282`, 2026-09-25(v0.4.2). `--help`와 모듈이 쓰는 plugin 이벤트 타입은 2.1.281과 같다. 설치 native를 쓰는 fixture 검사와 첫 출력 전·뒤 무출력 7분 검사 통과(로컬 backend, 과금 없음). 이전 기준: 2.1.281 |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/evidence.json), [TUI 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 
@@ -448,7 +448,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
 | PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
-| 빈 응답 제어의 전체 실행 모드 지원 | TUI 무출력 대기와 SDK 상태 메시지는 확인된 회차에 한정. 분류되지 않은 출처·출처 없는 자식 새 회차 index 0·새 사용자 입력의 빈 응답은 기존 오류 처리 유지 |
+| 빈 응답 제어의 전체 실행 모드 지원 | 부모 대기 모드는 `composer`(TUI 입력)·`sdk`(`-p`·Agent SDK)만 정한다. 2.1.282의 `PromptOrigin` 16종 중 별도 처리하는 `task-notification`을 뺀 나머지 13종(다른 세션의 메시지, Remote Control, 예약 실행, 채널, Slack 등)은 모드를 정하지 않는다. 그런 입력만 받은 세션에서는 백그라운드 자식을 기다리는 동안의 빈 응답이 기존 오류 처리로 간다. 이미 TUI 모드인 세션의 같은 회차에 들어온 다른 출처 입력은 개입으로 처리하고 모드는 유지한다. 출처 없는 자식 새 회차 index 0·새 사용자 입력의 빈 응답도 기존 오류 처리 유지. [#130](https://github.com/wotjr1649/Clauduct/issues/130)(v0.4.3)에서 측정·수정 |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
@@ -475,7 +475,7 @@ v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수�
 | gateway 요청당 비용(#110) | **측정으로 종결.** fixture backend의 대표 main turn(요청 약 230–310 KiB, 자식 0/3/30개)에서 gateway가 쓰는 시간은 요청당 약 15.6/15.6/24.9 ms로, 수 초인 backend 턴의 0.5–2%다. 가장 큰 몫은 요청 해독(DecodeRequest, 약 절반)이고 issue에 적힌 파일 읽기·잠금 항목은 각각 수 % 이하였다. 고치지 않는다. 동시 요청의 경합은 재지 않았다 |
 | V1 격차: Retry-After(#91) | **고침.** backend가 이름 붙인 시각까지 이 세션의 추론·검색 시도를 credential·소켓 전에 `UPSTREAM_RETRY_DEFERRED`로 거부하고(시도로 세지 않는다) 클라이언트에 429와 `Retry-After`를 보낸다. 실제 429는 유도하지 못했다 |
 | V1 격차: 반환 model·effort(#91) | **고침.** 먼저 기록해 4개 모델 모두 보낸 이름과 정확히 같음을 확인한 뒤, 이름이 다르면 `MODEL_EFFORT_MISMATCH`로 거부한다. 응답이 이름을 싣지 않으면 불일치로 보지 않는다. 요청 기록에 `returnedModel`·`returnedEffort` |
-| V1 격차: admission(#91) | **v0.4.2(#119).** 지금은 동시 요청 64의 고정 상한뿐이고 memory budget·대기열은 없다. 관측된 장애는 없다 |
+| V1 격차: admission(#91) | **v0.4.2에서 구현(#119).** 측정 뒤 확정한 메모리 예약 예산·현재 여유 메모리 보호·유한 대기열을 본문 읽기 전에 적용한다. 생성·계수와 hook·이벤트의 용량을 분리했다. [정책과 한계](#v042--메모리-수용-제어) |
 | V1 격차: `system` block(#91) | **고침.** 문자열이거나, 메시지 text와 같은 규칙(닫힌 키, `cache_control` 검사)을 따르는 text block이어야 한다. 그 밖은 거부 |
 | V1 격차: downstream keepalive(#91) | **v0.4.1에서 바꿈(#120).** 측정해 보니 클라이언트가 6분 무출력에서 끊었다. 처분은 아래 v0.4.1 절의 "무출력 대기" |
 | V1 격차: WebSearch 401(#91) | **고침.** 저장소를 다시 읽어 토큰이 바뀐 경우에만 1회 재시도한다. 같은 토큰의 재시도는 같은 거절이었다 |
@@ -488,7 +488,7 @@ v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수�
 ### v0.4.1 — 클라이언트 업데이트 따라가기
 
 두 클라이언트는 따로 업데이트된다. 버전을 고정하지 않고, 업데이트가 무엇을 바꿨는지 과금 없이 드러나게 한다(#127, #121).
-고친 것은 수정을 되돌리면 실패하는 로컬 테스트가 있다. 런타임 변경의 실제 backend 확인은 출하 검사에서 한다.
+고친 것은 수정을 되돌리면 실패하는 로컬 테스트가 있다. 런타임 변경은 개발 빌드 10회와, 발행 전 격리 설치한 v0.4.1 5회로 실제 backend에서 확인했다.
 
 | 항목 | 처분 |
 |---|---|
@@ -496,6 +496,33 @@ v0.3.3 재판정과 코드 읽기에서 나온 항목이다. 고친 것은 수�
 | 업데이트 알림(#127) | 측정하지 않은 버전이면 종료 줄에 `unmeasured=claude/<버전>,codex/<버전>`이 붙고, `clauduct --dev --doctor`가 `re-measure due`라고 말한다. 세션은 막지 않는다. 상태의 `gateway.codex`는 요청에 실린 Codex 버전과 판정이다 |
 | Codex 요청 모양(#121) | **재측정, 모양은 유지.** 설치된 Codex CLI 0.156.1의 `codex exec` 요청을 과금 없이 캡처해 이 빌드의 요청과 비교했다. 0.156.1은 WebSocket을 먼저 쓰고, `instructions`·`tools` 대신 입력 항목으로 도구를 싣는 모양이며, 세션 식별 헤더와 zstd 본문을 쓴다. 이 빌드는 HTTP SSE와 `instructions`·`tools`로 보낸다 — 0.156.1에서 실제 backend를 통과한 모양이다(v0.4.0 출하 검사). 측정 기준을 0.156.1로 옮겼고, 새 모양을 따를지는 v0.5.0에서 정한다. TUI의 요청은 시작할 때 계정 확인이 필요해 과금 없이 캡처하지 못했다 |
 | 무출력 대기(#120) | **keepalive 추가.** 과금 없이 측정했다(로컬 backend): Claude Code 2.1.281은 gateway를 거칠 때 바이트가 360초 동안 오지 않으면 연결을 끊고 재시도한다. 첫 출력 전후, `-p`와 TUI가 같고, `CLAUDE_STREAM_IDLE_TIMEOUT_MS`·`API_TIMEOUT_MS`로는 바뀌지 않았다. 이 빌드는 모델이 생각하는 동안 아무것도 보내지 않으므로, 그 재시도가 replay 차단(`NATIVE_REQUEST_REPLAY_BLOCKED`)에 걸려 턴이 사라졌다. 이제 첫 출력 뒤에는 30초 무출력마다 SSE `ping`을 보낸다. 첫 출력 전에는 240초 동안 아무것도 쓰지 않았으면 메시지를 열고(`message_start`) ping을 보낸다. 240초 전의 실패는 지금처럼 상태 코드(429·400 등)로 답하고, 그 뒤의 실패는 오류 이벤트로 온다. 측정된 가장 긴 요청은 218초였다 |
+
+### v0.4.2 — 메모리 수용 제어
+
+큰 요청이 겹칠 때의 메모리 증폭을 로컬에서 측정하고 사용자와 수용 정책을 정했다([#119](https://github.com/wotjr1649/Clauduct/issues/119)).
+32 MiB 요청 한 건은 heap objects가 약 400–503 MiB 늘었고, 작은 완료 알림의 transcript 복구도 약 230 MiB까지 늘었다.
+아래 값은 이 관측에 여유를 둔 시작 정책이다. 실제 RSS의 강제 상한이나 모든 입력에 대한 메모리 보장은 아니다.
+
+| 항목 | v0.4.2 정책 |
+|---|---|
+| 프로세스별 총 예약 예산 | 시작할 때 Windows가 보고한 물리 메모리로 `min(물리 메모리 / 8, 4 GiB)` 계산 |
+| 제어용 용량 | 총예산 안에서 `min(총예산 / 2, 512 MiB)`를 hook·이벤트 업로드에 배정. 생성·계수는 나머지를 사용하며 서로 빌려 쓰지 않음 |
+| 생성·토큰 계수 한 건 | `16 MiB + 본문 바이트 × 24` 예약. Content-Length를 모르면 본문 상한 32 MiB로 계산. 기존 동시 실행 64건 상한도 유지 |
+| 제어 요청 한 건 | 본문 크기와 무관하게 256 MiB 예약. 작은 완료 알림도 transcript 복구를 할 수 있기 때문 |
+| 현재 여유 메모리 보호 | 현재 여유 물리 메모리가 기존 예약 전체 + 새 예약 + `max(256 MiB, min(물리 메모리 / 10, 1 GiB))` 이상이어야 수용. 대기 중에는 재조회하며 이미 실행 중인 요청을 메모리 압박만으로 취소하지 않음 |
+| 대기 | 본문을 읽기 전 FIFO. 생성·계수 공용 128건·30초, 제어 전용 16건·0.5초. 처리 시간은 별도여서 hook의 3초 HTTP 제한 내 완료를 보장하지 않음 |
+| 거부 | 한 요청이 용량을 넘으면 `MEMORY_BUDGET_EXCEEDED`, 대기열 포화는 `MEMORY_QUEUE_FULL`, 시간 초과는 `MEMORY_ADMISSION_TIMEOUT`, Windows 메모리 조회 실패는 `MEMORY_STATUS_UNAVAILABLE`. HTTP 429와 `X-Should-Retry: false`로 자동 재시도를 막음. 시작 시 조회 실패는 gateway 시작 실패 |
+| 예약 수명·상태 | 취소 통지만으로 반환하지 않고 handler가 끝날 때 반환. 종료는 양쪽 대기열을 깨움. 상태 파일의 `gateway.admission`에 총예산·여유분, 각 용량의 예약량·실행 수·대기 수·누적 대기·시간 초과를 보고 |
+| PromptOrigin 격차(#130) | 알려진 제한으로 기록. [미지원·미검증 표](#3-미지원미검증구현-대기)의 “빈 응답 제어의 전체 실행 모드 지원” 행에서 범위를 정하며, v0.4.3의 #130에서 측정·수정 |
+
+32 MiB 요청은 784 MiB를 예약하므로, 물리 메모리 8 GiB 장비의 생성·계수 예산 512 MiB에는 들어가지 않는다.
+Windows가 보고하는 물리 메모리가 4 GiB 미만이면 제어용 용량이 256 MiB보다 작아 제어 요청을 수용할 수 없다.
+현재 여유 메모리 검사에서 이미 할당된 예약도 다시 빼므로 일찍 기다릴 수 있다. 여러 Clauduct 프로세스의 예약을 합산하지 않으며,
+본문 크기만으로 실제 transport·큰 응답·장기 세션·PDF 자식 프로세스의 모든 비용을 제한하는 것은 아니다.
+
+로컬 전체 test·race, vet 3종·build, 핵심 동작의 변이 9개 검출을 통과했다. Claude Code 2.1.282의 실제 native로
+새 429 거부가 요청 1회 뒤 자동 재시도 없이 끝남을 과금 없이 확인했다. 개발 commit `bf68243`은 실제 backend
+TUI 5회(생성·압축·취소·복구·종료)와 SDK 5회(입력·`/clear`·자식 위임·완료)를 통과했다. 출하 검사는 별도다.
 
 ## 4. 제3자 구현이라는 사실
 

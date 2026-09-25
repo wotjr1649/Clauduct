@@ -125,10 +125,10 @@ background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경�
 | `GET /v1/models` | 로컬 검증 catalog | query·paging·auth·timeout·picker 상호작용 |
 | `HEAD /api/hello` | 최소 readiness 응답 | 인증 없이도 비밀·상태 노출 없음 |
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
-| agent registration | **기본 실행의 필수 조건 아님** | optional overlay에서만 |
+| `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |
 | 기타 | 명확한 unsupported 응답 | 침묵 성공·임의 upstream forwarding 금지 |
 
-기준선의 4번째 endpoint `POST /clauduct/agents`는 V2에서 overlay 전용이다.
+기본 실행은 필수 hook을 구성하며 위임이 생기면 이 등록 경로를 사용한다.
 
 listener는 `127.0.0.1:0`에만 bind한다. 세션마다 충분히 긴 난수 token을 만들고 비교는 timing leakage를 줄인다. token을 커맨드라인·일반 로그·오류에 표시하지 않는다. Host·Origin·method·content type·payload size를 검증하고, browser-origin·잘못된 인증·임의 target URL·cross-session token 재사용의 거부 테스트를 만든다. 같은 OS 사용자에게 process 환경을 숨기는 sandbox라고 주장하지 않는다.
 
@@ -262,7 +262,13 @@ native의 `session.start.isInteractive`가 TUI·SDK 응답 방식을 고른다. 
 새 명시 입력 index 0, 출처 없는 자식 index 0, 같은 턴에 들어온 개입은 대기로 바꾸지 않는다.
 `/clear` 뒤에도 매 영수증의 현재 session ID로 상관관계를 검증한다.
 
-다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. 현재 제품은 첫 출력 전에 ping을 쓰지 않는다(v0.3.5에 의도로 기록, #91) — ping이 200을 먼저 보내면 429·400·`X-Should-Retry`로 답하는 실패 처리가 SSE 오류 frame으로 바뀌고, 첫 바이트가 195초 뒤였던 요청도 클라이언트가 끊지 않았다. connect(30초)·header(120초)·idle(backend 무바이트 10분, 기준선 규칙)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global `WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를 위해 무제한 event queue를 만들지 않는다.
+다운스트림 ping은 연결 유지용일 뿐 모델 진전의 증거가 아니다. 현재 제품은 첫 출력 전 무출력이
+240초 지속되면 메시지를 열어 연결을 유지하고, 출력 이후에는 30초간 무출력일 때 ping을 보낸다(v0.4.1,
+#120). 열리기 전 거부는 원래 HTTP 상태로, 열린 뒤 실패는 SSE 오류로 전달한다. 상태의
+`keepaliveOpenedMs`는 이 개방 시각이며 첫 모델 출력 시각이 아니다. connect(30초)·header(120초)·
+idle(backend 무바이트 10분)·overall(60분 천장)·user-cancel timeout을 분리한다. HTTP global
+`WriteTimeout` 하나로 긴 SSE를 자르지 않는다. `ResponseWriter`는 한 소유자가 관리하고, 느린 client를
+위해 무제한 event queue를 만들지 않는다.
 
 ## 9. retry
 

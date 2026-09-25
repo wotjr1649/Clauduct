@@ -9,7 +9,7 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 | 최신 출시 | **v0.4.2** (태그 `v0.4.2` → `a752342`). 변경과 출하 검사는 [RELEASE-v0.4.2.md](RELEASE-v0.4.2.md). 그 전은 [v0.4.1](RELEASE-v0.4.1.md) |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), go 1.27.1, **CGO_ENABLED=0**. 정확 계수를 위해 검토·고정한 의존성 3개: [결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | claude **2.1.282**(기준 상수·인자 표·native fixture, v0.4.2 재측정. 실제 backend TUI·SDK는 v0.4.2 개발본에서 통과했고, 태그의 격리 설치본도 실제 backend 세션 5회 통과). Codex CLI 기준은 0.156.1(v0.4.1 재측정: 설치본 요청과의 차이를 기록하고 이 빌드의 요청 모양은 유지, #121), 설치본은 계속 바뀐다. 이전 기준은 2.1.281. Windows, go 1.27.1 |
+| 측정된 클라이언트 | Claude Code **2.1.282**, Codex CLI **0.157.0**(v0.4.3 개발본: 무료 CLI/API·exec wire 재측정과 실제 backend 메시지 TUI·SDK·background 검증). 제품 요청 형식은 유지하며 Codex 자체 TUI·검색·계수의 재검증은 별도다. 배포된 v0.4.2의 Codex 기준은 0.156.1. Windows, Go 1.27.1 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build만 본다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는
@@ -20,7 +20,8 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 
 v0.4.2의 메모리 수용 제어를 출하했다. [릴리스 노트](RELEASE-v0.4.2.md)에 재현 빌드·실제 backend·설치·업데이트 검사를 기록했다.
 v0.4.3은 [개발 초안](RELEASE-v0.4.3.md)의 #130 메시지 기반 부모 대기, #133 명시적 background 생성·연결 유지,
-#134 검증 실행 전체의 backend 시도 상한을 개발 중이다. 설치본 변경이나 출하 완료를 뜻하지 않는다.
+#134 검증 실행 전체의 backend 시도 상한을 구현·검증했다. 자동 idle 회수 후 같은 연결의 새 응답도 확인했다.
+설치본 변경이나 출하 완료를 뜻하지 않는다.
 
 ## 2. 문서 위치와 책임
 

@@ -70,7 +70,12 @@ probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 �
 `attempts`는 각 프로세스의 예약 수이며, 실행 전체 예약 수는 디렉터리에 남은 파일 수로 별도 대조한다.
 이 설정은 과금 승인 자체를 대신하지 않는다.
 
-이 계약의 규칙은 추측이 아니라 설치된 claude 2.1.272에 일회용 listener를 붙여 **측정**한 것이다. 관측값은 [`docs/v2/VALIDATION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md) 1.1.2에 있다.
+일반 세션의 요청 수 정책을 정할 때 사용한 초기 native 2.1.272 관측은
+[`docs/v2/VALIDATION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)
+1.1.2에 있다. 위 공유 검증 예산은 v0.4.3에서 추가했으며 현재 근거는
+[호환성 문서](../docs/v2/COMPATIBILITY.md#v043--메시지-background-검증-예산)를 따른다.
+native background 상태 분류 같은 보조 생성도 예산에 포함한다. 2.1.282의 본문을 `gpt-6-luna/low`로
+실행했을 때 상태 분류는 `gpt-6-luna/max`로 요청됐으므로, 검증 계획은 실측한 보조 경로도 명시해야 한다.
 
 ## 명령
 
@@ -139,7 +144,7 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 
 | 경로 | 책임 |
 |---|---|
-| `cmd/clauduct` | 제품 launcher. 첫 인자 몇 개(`--update`·`--usage`·`--uninstall`·`--dev`, hook·렌더러용 `--clauduct-*`) 말고는 인자를 해석하지 않는다 |
+| `cmd/clauduct` | 제품 launcher. native 인자를 전달하며 `--bg`·`--background`는 연결 유지 프로세스를 시작한다. `--background-stop`과 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`), 내부 `--clauduct-*` 역할을 처리한다 |
 | `internal/devcmd`·`internal/hookcmd` | `--dev` 명령과 hook. v0.3.x까지 별도 바이너리였고, 그 이름의 사본은 이름으로 같은 역할을 한다(#112) |
 | `cmd/ptydrive` | 유지보수 도구. ConPTY에서 TUI를 단계 파일대로 조작한다. 출하하지 않는다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |

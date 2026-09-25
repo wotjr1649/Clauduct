@@ -6,6 +6,11 @@
 - #133: `clauduct --bg`로 생성한 세션마다 연결 유지 프로세스를 두어 native stop·재기동 사이에 gateway·필수 hook과 모델 경로를 유지한다. 인증은 동일 Windows 로그인에 제한된 IPC로 복원한다.
 - #134: 검증 실행의 모델·effort와 backend 시도 상한을 여러 프로세스·재기동에 걸쳐 전송 전에 강제한다. 일반 사용자 세션의 Unlimited는 유지한다.
 
+출하 전 재리뷰에서 background 판정을 보완했다. native 2.1.282는 `--bg`·`--background` 토큰이
+도움말·버전 옵션과 함께 있거나 `--` 뒤에 있어도 작업을 생성한다. 이때 연결을 조기에 닫던 경로를 고쳤고,
+실제 native의 생성·attach·새 응답·respawn·메시지 완료로 검증했다. 도움말·버전만 조회하려면 background
+인자 없이 실행한다.
+
 Claude Code 2.1.282에서 실제 native와 로컬 backend로 메시지 대기, `/clear`·`/reload-plugins`, background
 stop→attach·respawn→메시지·삭제를 검사했다. 순수 제품 바이너리의 생성 실행기 종료 뒤 연결 유지와 명시적
 종료도 과금 없이 확인했다. 최종 일반·race 각 21개 패키지, 기본·policy_evidence·runtime_evidence vet, build,

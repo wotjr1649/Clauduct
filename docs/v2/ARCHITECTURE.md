@@ -87,6 +87,8 @@ Claude Code 2.1.282의 공개 옵션 형태(2.1.281과 같고, `--agents`가 `--
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
 
 명시적 `--bg`·`--background` 생성은 세션별 연결 유지 프로세스가 맡는다. 최초 실행기는 native의
+생성 판정과 같이 정확한 두 토큰을 일반 옵션 경계보다 먼저 찾는다. native 2.1.282는 도움말·버전 옵션이나
+`--` 뒤에 이 토큰이 있어도 작업을 생성하므로, 일반 옵션 조회로 분류하면 살아 있는 작업의 연결이 끊긴다.
 생성 완료와 세션 ID를 확인한 뒤 반환한다. `clauduct --background-stop <connection-id>`는 그 연결과
 해당 native 작업의 종료를 요청하고 유지 프로세스의 종료 결과까지 확인한다. 관리·메시지·attach·stop은
 native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. 생명주기는 11절을 따른다.

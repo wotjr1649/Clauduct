@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -27,14 +28,10 @@ type BackgroundSession struct {
 }
 
 func BackgroundRequested(args []string) bool {
-	for _, name := range []string{"--help", "-h", "--version", "-v"} {
-		if _, present := optionValue(args, name); present {
-			return false
-		}
-	}
-	_, bg := optionValue(args, "--bg")
-	_, background := optionValue(args, "--background")
-	return bg || background
+	// Native 2.1.282 dispatches exact background tokens before option parsing,
+	// including after -- or --name and alongside --help/--version. Match that
+	// dispatch boundary or the launcher closes a live worker's gateway.
+	return slices.Contains(args, "--bg") || slices.Contains(args, "--background")
 }
 
 func backgroundSettings(settings, hook, id, base string, inherited map[string]string) (string, error) {

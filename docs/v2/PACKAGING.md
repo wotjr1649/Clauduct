@@ -11,7 +11,7 @@
 | `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·PDF 렌더러·`--dev` 명령이다 |
 | `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라가는 `clauduct.exe`의 바이트 동일 사본. 새 설치·업데이트는 받지 않는다(아래) |
 
-하나뿐이다(v0.4.0부터, #112). 설정 파일도, 스크립트도, 데이터 디렉터리도 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`) — `clauduct`는 첫 인자로 온 `--update`·`--usage`·`--uninstall`·`--dev`와 아래 두 내부 인자 말고는 아무 옵션도 소유하지 않고, 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 예약한 이름이 측정된 native 옵션 표에 나타나면 테스트가 실패한다.
+하나뿐이다(v0.4.0부터, #112). 별도로 설치하는 설정 파일·스크립트·데이터 디렉터리는 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`). 첫 인자의 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`·`--background-stop`)과 내부 `--clauduct-*` 역할은 제품이 처리한다. `--bg`·`--background`는 native에 전달하면서 연결 유지 프로세스를 시작한다. 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 전체 CLI 계약은 [ARCHITECTURE.md](ARCHITECTURE.md#4-cli-계약)를 따른다.
 
 **사본을 올리는 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. 새 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. v0.5.0부터는 사본을 올리지 않으며, 그때 남은 0.3.x 설치는 `install.ps1`로 다시 설치한다.
 
@@ -38,7 +38,7 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 
 모델을 호출하지 않는 명령은 아무것도 쓰지 않는다. `--version`·`--help`는 credential을 읽지 않고 `codex --version`도 띄우지 않는다. 둘 다 **첫 요청**에서만 일어난다. 테스트가 그것을 고정한다.
 
-검증용 실호출은 별개의 예산이다 — `clauduct --dev --probe`, 경로 고정, 누적 상한. VALIDATION.md 1.6.1절.
+검증용 실호출은 별개의 예산이다. v0.4.3의 `CLAUDUCT_VERIFICATION_BUDGET`은 여러 프로세스·worker 재기동에 걸쳐 모델·effort와 시도 상한을 전송 전에 강제한다. 실제 출하 바이너리의 protocol 버전도 실행 전에 확인한다. 형식과 운영 조건은 [개발 안내](../../go/README.md#검증용-실호출은-별개의-예산이다)를 따른다.
 
 ## 4. 빌드와 신원
 

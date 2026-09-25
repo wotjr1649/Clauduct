@@ -448,7 +448,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
 | PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
-| 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3 개발본은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin 12종은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다. 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
+| 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin 12종은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다. 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
@@ -526,8 +526,8 @@ TUI 5회(생성·압축·취소·복구·종료)와 SDK 5회(입력·`/clear`·�
 
 ### v0.4.3 — 메시지, background, 검증 예산
 
-**개발 검증 완료·미출하.** Claude Code 2.1.282에서 무료 native 재현과 순수 제품의 실제 backend 검증을
-함께 수행했다. 자동 유휴 회수·OS 종료 뒤 같은 연결로 새 응답을 받는 경로도 확인했다.
+**2026-09-25 출하.** Claude Code 2.1.282에서 무료 native 재현과 순수 출하 바이너리의 실제 backend 검증을
+함께 수행했다. 수정한 약 61분 하네스도 전체 재실행해 자동 유휴 회수·OS 종료·같은 연결의 새 응답·정리를 확인했다.
 
 | 항목 | 구현·관측 범위 |
 |---|---|
@@ -542,7 +542,7 @@ TUI 5회(생성·압축·취소·복구·종료)와 SDK 5회(입력·`/clear`·�
 실제 native SDK에서 EMPTY_REPLY assertion으로 실패했고, 공유 예약을 제거한 변이는 N+1 전송 assertion으로
 실패했다. 실제 backend에서는 메시지로 시작한 TUI·SDK 각각 5회, background 관리 6회, 최종 SDK
 회귀 5회로 합격했다. 성공 실행의 종료 코드·cleanup·자식 결과 수신·메모리 예약 반환을 함께 판정했다.
-실패 실행을 포함한 총 46회와 제한은 [릴리스 초안](RELEASE-v0.4.3.md)에 기록한다. Codex 기준 0.157.0은
+출하 검증 21회와 실패 실행을 포함한 누계 67회 및 상한은 [릴리스 노트](RELEASE-v0.4.3.md)에 기록한다. Codex 기준 0.157.0은
 exec wire 차이와 이 제품 경로를 측정한 뜻이며, Codex 자체 TUI·검색·계수의 재검증은 아니다.
 
 ## 4. 제3자 구현이라는 사실

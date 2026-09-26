@@ -79,8 +79,7 @@ func sessionEnvironment() map[string]string {
 		// asks for that classifier on every main request (the `safeguards` field); the
 		// gateway refuses the field and native re-sends without it, one refused request per
 		// turn. This is native's documented switch for a gateway that cannot provide the
-		// check. Native's own classifier requests carry stop_sequences and are refused
-		// (UNSUPPORTED_SAMPLING), so an action that needs a verdict is denied as before.
+		// check. Native then asks its own classifier, which the backend answers (#149).
 		"CLAUDE_CODE_AUTO_MODE_SERVER": "0",
 		// Deferred schemas are discovered through the client's native ToolSearch.
 		"ENABLE_TOOL_SEARCH": "true",

@@ -2,14 +2,14 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-26, v0.4.4 출시)
+## 1. 현재 상태 (2026-09-26, v0.5.0 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.4.4** (태그 `v0.4.4` → `90067da`). 변경과 출하 검사는 [RELEASE-v0.4.4.md](RELEASE-v0.4.4.md). 그 전은 [v0.4.3](RELEASE-v0.4.3.md) |
+| 최신 출시 | **v0.5.0** (태그 `v0.5.0` → `d665e18`). 변경과 출하 검사는 [RELEASE-v0.5.0.md](RELEASE-v0.5.0.md). 그 전은 [v0.4.4](RELEASE-v0.4.4.md) |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | Claude Code **2.1.283**(인자 표·native fixture, v0.5.0 개발 재측정), Codex CLI **0.157.0**. 아래 실제 backend 근거는 2.1.282에서의 것이다. v0.4.4 순수 출하 바이너리의 실제 WebSearch·SDK 위임·TUI 압축/취소/복구와 무료 peer SDK·background 재연결을 확인했다. v0.4.3의 실제 peer/background·idle 근거는 해당 릴리스 기록에 유지한다. 제품 요청 형식은 유지하며 Codex 자체 TUI·검색·계수의 재검증은 별도다. Windows, Go 1.27.1 |
+| 측정된 클라이언트 | Claude Code **2.1.283**, Codex CLI **0.157.0**. v0.5.0 순수 출하 바이너리의 실제 TUI 압축/취소/복구, SDK 위임, 역할 기본값, subagent 안 forked Skill, fork 자식 재개를 확인했다. v0.4.4의 실제 WebSearch 근거와 v0.4.3의 peer/background·idle 근거는 해당 릴리스 기록(2.1.282)에 유지한다. 요청은 HTTP SSE와 기존 본문에 세션 식별을 더했고(#135), Codex 0.157.0의 exec·TUI 요청 구조는 과금 없이 캡처했다. Windows, Go 1.27.1 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build만 본다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는

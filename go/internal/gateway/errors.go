@@ -155,6 +155,9 @@ func routeCategory(err error) string {
 // selectionCategory names a refused agent selection. A child started on a retired route is
 // told so, rather than only that its selection could not be verified.
 func selectionCategory(err error) string {
+	if errors.Is(err, errClassifierContract) {
+		return "AUTO_MODE_CLASSIFIER_UNVERIFIED"
+	}
 	if errors.Is(err, bridge.ErrRetiredRoute) {
 		return "MODEL_RETIRED"
 	}

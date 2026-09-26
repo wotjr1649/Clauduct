@@ -2,11 +2,12 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-26, v0.5.1 출시)
+## 1. 현재 상태 (2026-09-27, v0.5.1 출시·v0.5.2 후보 검증)
 
 | 항목 | 값 |
 |---|---|
 | 최신 출시 | **v0.5.1** (태그 `v0.5.1` → `197ff48`). 변경과 출하 검사는 [RELEASE-v0.5.1.md](RELEASE-v0.5.1.md). 그 전은 [v0.5.0](RELEASE-v0.5.0.md) |
+| 다음 후보 | **v0.5.2 미출하**. native auto 분류기 Luna/high 경로와 세션별 추가 규칙 두 개를 구현했다. 원래·독립 표본, 민감 사례 반복, 실제 native 분류 요청/응답과 허용·거부를 검증했다. 범위와 남은 출하 검사는 [후보 기록](RELEASE-v0.5.2.md) |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
 | 측정된 클라이언트 | Claude Code **2.1.283**, Codex CLI **0.157.1**. v0.5.1 출하 바이너리의 실제 backend 위임·내장 역할 env·zip plugin 역할과 실제 TUI의 세션 중 `/cd`를 확인했다. Codex 0.157.1은 과금 없는 재측정에서 CLI·plugin API·exec 요청 구조가 0.157.0과 같았다. v0.5.0 순수 출하 바이너리의 실제 TUI 압축/취소/복구, SDK 위임, 역할 기본값, subagent 안 forked Skill, fork 자식 재개를 확인했다. v0.4.4의 실제 WebSearch 근거와 v0.4.3의 peer/background·idle 근거는 해당 릴리스 기록(2.1.282)에 유지한다. 요청은 HTTP SSE와 기존 본문에 세션 식별을 더했고(#135), Codex 0.157.0의 exec·TUI 요청 구조는 과금 없이 캡처했다. Windows, Go 1.27.1 |
@@ -41,9 +42,9 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
 - **커스텀 역할 기본값**은 v0.5.0에서 `--add-dir`·`--setting-sources`·settings의 `CLAUDE_CODE_SUBAGENT_MODEL`까지
   native와 같게 수집한다. managed 경로·세션 중 `/add-dir`·`/cd`·ZIP/URL plugin은 측정하지 않았다. 제품은 자식 선택을
   검증하지 못하면 실행 전에 거부한다.
-- **auto 권한 모드의 분류기**는 지원하지 않는다. Claude Code 2.1.283의 기본값인 auto 모드에서 판정이 필요한 행동은
-  `Classifier unavailable`로 거부된다(v0.5.0은 서버 분류기 요청 자체를 끈다, COMPATIBILITY.md 3절). v0.5.2에서 native 자체
-  분류기를 이 backend로 돌린 안전 관문은 위험 표본 30개 중 5개를 자동 승인해 불합격이었고, 거부를 유지한다(#149).
+- **출시된 v0.5.1의 auto 권한 분류기**는 미지원이며 판정이 필요한 행동은 `Classifier unavailable`로 거부된다.
+  v0.5.2 후보는 초기 실패를 보존한 뒤 실제 GPT 모델명에서 native가 만드는 block 프로토콜로 다시 검증했다.
+  Luna/high와 추가 규칙 두 개가 정한 관문을 통과했으며, 순수 태그 출하·설치 검사는 남아 있다.
 - **Workflow의 원 script 재실행 resume**은 하지 않는다. 저널 검증과 결과 회수, 독립 계획의 미실행 단계
   재개만 한다(COMPATIBILITY.md 3절).
 - **WebSearch**는 native ToolSearch→WebSearch 시험이 추가됐다. 실제 검색 backend와 native의 조합 전체를 모든 역할에서 실측한 것은 아니다.

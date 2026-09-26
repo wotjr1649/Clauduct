@@ -3,7 +3,7 @@ package app
 import "strings"
 
 // The settings rewrite and read-only role scan share native value boundaries.
-// Public arities follow Claude Code 2.1.282 --help; hidden entries retain the
+// Public arities follow Claude Code 2.1.283 --help; hidden entries retain the
 // existing role scanner's contract. Unknown options cannot prove where
 // a later settings/role option begins. This is not native option validation.
 // end is exclusive; a missing required value returns len(args)+1.
@@ -35,7 +35,7 @@ func nativeArgEnd(args []string, i int) (end int, known bool) {
 	switch name {
 	case "--add-dir", "--agent", "--agents", "--append-system-prompt", "--append-system-prompt-file",
 		"--append-subagent-system-prompt", "--append-subagent-system-prompt-file", "--allowedTools", "--allowed-tools",
-		"--autocompact", "--betas", "--claude-md-file", "--debug-file", "--disallowedTools", "--disallowed-tools",
+		"--autocompact", "--betas", "--claude-md-file", "--client-data-url", "--debug-file", "--disallowedTools", "--disallowed-tools",
 		"--effort", "--environment", "--fallback-model", "--file", "--input-format", "--json-schema",
 		"--max-budget-usd", "--max-turns", "--mcp-config", "--model", "--name", "-n", "--output-format",
 		"--permission-mode", "--permission-prompt-tool", "--permission-prompts", "--plugin-dir", "--plugin-dir-no-mcp",

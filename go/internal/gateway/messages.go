@@ -232,9 +232,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if g.delegations != nil {
-		if entry.snapshot().Kind != "compaction" {
-			g.delegations.describeWorkflowStep(backendRequest, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
-		}
 		if err := g.delegations.describe(backendRequest.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
 			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
 			return

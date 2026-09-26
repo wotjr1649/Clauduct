@@ -96,15 +96,8 @@ func (d *delegations) prepareResume(scope delegationScope, call string, raw json
 	if err != nil {
 		return nil, errDelegationUnverified
 	}
-	if choice.isFork() {
-		if input.Message == "" {
-			return nil, errDelegationUnverified
-		}
-		fields["message"], _ = json.Marshal("Your previous task has completed. This is a new task on the same agent, not an interruption of the previous task. Preserve the existing constraints and answer the new coordinator request below. Do not repeat the prior answer unless this request asks for it.\n\n" + input.Message)
-		raw, err = json.Marshal(fields)
-		if err != nil {
-			return nil, err
-		}
+	if choice.isFork() && input.Message == "" {
+		return nil, errDelegationUnverified
 	}
 	d.resumes[id] = &resumeBinding{session: scope.session, parent: scope.parent, call: call, nativeModel: native.Model}
 	return raw, nil

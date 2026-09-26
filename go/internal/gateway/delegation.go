@@ -173,10 +173,6 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		if tools[i].Name != "Agent" {
 			continue
 		}
-		tools[i].Description += " Complete delegated research with a self-contained report including findings, evidence, and unverified work. Parent must acquire and review the report, not merely a completion notice. Prefer completion events, do not periodically poll; retrieve an existing result once if absent, request only missing report sections, and report unavailable results without automatically rerunning the task."
-		tools[i].Description += " Preserve task-specific constraints in every descendant's prompt, including permitted files, tool restrictions, and completion requirements."
-		tools[i].Description += " When yielding for an existing child, end the turn with a brief visible waiting acknowledgment; an empty or reasoning-only response is not a deliverable answer."
-		tools[i].Description += " The native UI uses compatibility aliases; Clauduct status records the original selection and effective backend route separately. Verified original model/effort arguments are restored in your tool history. Omit isolation unless worktree or remote isolation was explicitly requested."
 		var schema map[string]json.RawMessage
 		var properties map[string]json.RawMessage
 		var model map[string]json.RawMessage
@@ -194,7 +190,6 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		}
 		if pinned.Model != "" {
 			names = []string{pinned.Model, "inherit"}
-			tools[i].Description += " This delegated task is fixed to " + pinned.Model + "/" + pinned.Effort + ". Omit model and effort for every descendant; conflicting overrides are refused."
 		}
 		model["enum"], _ = json.Marshal(names)
 		properties["model"], _ = json.Marshal(model)

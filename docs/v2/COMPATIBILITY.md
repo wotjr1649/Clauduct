@@ -581,6 +581,50 @@ Claude Code 2.1.283·Codex CLI 0.157.0에서 무료 native 재현과 실제 back
 | auto 권한 모드(2.1.283 기본값) | auto 모드의 서버 측 분류기(`safeguards` 요청 필드)는 Anthropic 서버의 기능이라 이 backend에서 실행할 수 없다. 2.1.283 TUI는 메인 요청마다 이를 요청했고, gateway가 거부하면 native가 필드를 빼고 다시 보내 턴마다 거부 1건이 생겼다. v0.5.0은 native가 이런 gateway에 권하는 `CLAUDE_CODE_AUTO_MODE_SERVER=0`을 기본으로 둔다(사용자가 정한 값이 이긴다). native의 자체 분류기 요청은 `stop_sequences`를 써서 `UNSUPPORTED_SAMPLING`으로 거부되므로, **판정이 필요한 행동은 auto 모드에서 거부된다**(`Classifier unavailable`). 작업 폴더 안의 행동처럼 native가 판정 없이 허용하는 행동은 그대로 실행된다. 분류기 판정이 필요하면 `Shift+Tab`으로 다른 권한 모드를 쓴다. 이 동작은 v0.4.4에서도 같았고, 분류기 지원은 후속 대상이다 |
 | 릴리스 자산(#136) | `clauduct.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS` 넷. 0.3.x 설치의 `--update`는 사본이 없어 멈추므로 설치 스크립트로 다시 설치한다([PACKAGING.md](PACKAGING.md#1-나가는-것)) |
 
+### v0.5.1 — 주입 감사, 내장 역할 env, 세션 중 `/cd`, plugin·managed
+
+Claude Code 2.1.283·Codex CLI 0.157.1에서 측정했다. 0.157.1은 과금 없는 재측정에서 도움말·plugin API 스냅샷과
+exec HTTP·WebSocket 요청 구조가 0.157.0과 같았다(버전 문자열과 키 순서만 다름). 실행 횟수와 출하 검증은
+[릴리스 노트](RELEASE-v0.5.1.md)에 적는다.
+
+**주입 감사(#144).** Clauduct가 요청에 더하던 문장을 실제 backend에서 그룹별로 빼고, 원래 문제가 났던 시나리오를
+10회씩 돌렸다. 재현이 없으면 제거하고, 하나라도 재현되면 유지했다.
+
+| 항목 | 결과 |
+|---|---|
+| 고정 top-level `instructions` | 제거. backend는 이것이 없는 요청을 받고 developer 턴(시스템 프롬프트)을 따랐다. 로컬 토큰 계수의 기본값을 13에서 1로 바꿨고, 네 모델 16칸과 luna 18칸이 backend usage와 일치했다 |
+| 실패한 도구 결과 앞의 `Tool execution failed:` | 제거. backend 입력에는 실패 표지가 없고 참조 클라이언트(Codex 0.157.1)도 본문만 보낸다. native의 실패 본문은 스스로 실패를 말한다 |
+| Agent 설명의 보고·제약 보존·대기 문장, 고정 경로 문장, 메뉴 역할의 prompt, fork 재개 설명, 취소·실패·결과 미확보 보충 | 제거(10회 재현 0). 부모 앞에 없는 완료 보고는 Clauduct 문장 없이 native의 `<task-notification>` 형식으로 전달한다 |
+| ToolSearch의 역할 탐색 문장, Workflow의 TaskStop 문장, Workflow worker 역할 지침 | 제거(각 10회 재현 0) |
+| 위임 영수증 | **유지.** 빼면 native 실행 결과가 agent ID를 사용자에게 알리지 말라고 표시한 탓에, 사용자가 자식 ID를 물어도 부모가 답하지 않았다 |
+| inherit 메뉴의 "model 인자를 넘기지 말라"와 Agent의 별칭·isolation 문장 | **유지.** 둘을 뺐을 때 부모가 요청 없이 model을 넘겨 자식이 세션 route를 벗어났다. 둘 중 어느 쪽이 필요한지는 나눠 재지 않았다 |
+| SendMessage 문장 | **유지.** 빼면 이미 재개된 자식에게 완료 알림을 요청하는 빈 메시지를 다시 보내 도구 오류가 났다 |
+| 압축 효율 지침 | **유지.** 같은 입력에서 빼면 압축 시간이 기준보다 50% 넘게 길어진 경우가 10회 중 4회였다 |
+| Agent 스키마의 모델 목록·effort, Workflow plan-v1·`agent()` 옵션 안내, 역할 메뉴 | 기능 노출이라 제거 대상이 아니다 |
+| SDK 대기 응답(`[Clauduct] Waiting for background task notification.` 등) | 유지. SDK는 빈 응답 블록을 다시 요청하고 알림 뒤의 빈 응답을 거부한다 |
+
+**측정 중 재현되어 고친 결함.**
+
+| 결함 | 수정 |
+|---|---|
+| Workflow `meta.name`에 파일 이름에 쓰지 않는 문자(`:` 등)가 있으면 연결이 거부돼 모든 자식이 `AGENT_SELECTION_UNVERIFIED`로 실패 | native가 만든 script 파일을 위치와 run ID로 확인한다 |
+| plan-v1이나 `resumeFromRunId` 호출에 native 스키마가 무시한다고 밝힌 `description`·`title`이 있으면 거부 | 두 필드는 문자열이면 받아서 버린다 |
+| plan-v1을 `name` 필드에 넣은 호출 거부 | plan 표지로 처리한다 |
+| `--resume`으로 새로 연 세션에서 이전 Workflow script를 다시 보내면 어댑터가 두 번 붙어 native가 거부 | 이전 어댑터를 잘라 내고 하나만 붙인다 |
+| 세션 중 `/cd` 뒤 첫 프롬프트가 `CLAUDUCT_CONTEXT_SESSION_UNVERIFIED`로 막힘 | native가 transcript를 실제로 옮겼을 때만 새 경로를 받고, Clauduct의 context journal을 함께 옮긴다 |
+| `.zip` `--plugin-dir`와 여러 plugin을 담은 `--plugin-dir` 폴더의 역할 호출이 `PREPARE_UNVERIFIED`로 거부 | 폴더는 하위 plugin을 읽고, zip은 `--plugin-url` plugin처럼 native의 선택으로 실행한다 |
+
+**역할·경로(#145–#148, 과금 없는 native fixture와 로컬 PTY).**
+
+| 항목 | 결과 |
+|---|---|
+| 내장 역할과 `CLAUDE_CODE_SUBAGENT_MODEL` | 값이 있으면 model·effort 인자 없이 부른 내장 역할은 native의 선택으로 실행한다. 2.1.283은 general-purpose에 env 모델, Explore에 자기 모델(sol), Plan에 부모 모델을 주고 모두 부모 effort를 쓴다. 값이 없으면 기존 역할 표를 쓴다. model을 명시한 호출의 규칙은 그대로다 |
+| 세션 중 `/add-dir` | 추가 폴더의 역할을 native가 싣고, Clauduct는 native의 선택으로 정의대로 실행한다 |
+| 세션 중 `/cd` | native는 새 폴더의 역할을 싣지 않는다(native 동작). 세션은 위 수정으로 이어진다 |
+| forked Skill 자식 | 모델의 TaskStop 뒤 재개는 Agent 자식과 같이 허용된다. native는 모델이 멈춘 자식에 `stoppedByUser`를 남기지 않는다. 사용자가 UI에서 멈춘 경우는 측정하지 않았다. subagent 안의 fork가 background 자식을 띄우면 Skill 결과가 바로 돌아오고, native는 그 fork를 다시 깨우지 않는다 |
+| ZIP·URL plugin | native와 같은 route로 실행한다 |
+| managed 역할(`C:\Program Files\ClaudeCode\.claude\agents`) | native와 같게 가장 높은 우선순위로 읽는다(임시 역할로 확인한 뒤 제거). managed `env`는 그 PC의 모든 세션에 영향을 줘 측정하지 않았다. Clauduct는 `managed-settings.json`에 `CLAUDE_CODE_SUBAGENT_MODEL`이 있으면 거부하고, `managed-settings.d`와 registry 정책은 읽지 않는다 |
+
 2026-09-26 감사에서는 native 2.1.282의 SDK 초기화 목록과 공식 문서를 대조했다. 목록에 나타난 도구·명령은
 기능 합격 목록이 아니다. 실제 backend에서 기본 생성, 파일 수정, 구조화 출력, 이미지/PDF, MCP,
 루트 forked Skill, 단순 Workflow, 세션 재개와 TUI 압축·취소·복구를 검사했다. Luna의 PDF 식별자 판독에서

@@ -568,6 +568,41 @@ func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string,
 }
 
 func pluginRoleDirectories(dir string) ([]roleDirectory, error) {
+	// Native 2.1.283 (measured, #148) also takes a .zip, and a folder whose children are
+	// plugins. A zip is not unpacked here: its roles resolve as unknown and run on native's
+	// own choice, as a --plugin-url plugin's already do. A folder of plugins is read child
+	// by child.
+	if info, err := os.Stat(dir); err == nil && info.Mode().IsRegular() && strings.EqualFold(filepath.Ext(dir), ".zip") {
+		return nil, nil
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".claude-plugin", "plugin.json")); errors.Is(err, fs.ErrNotExist) {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) > 128 {
+			return nil, errRoleDefaults
+		}
+		var out []roleDirectory
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if _, err := os.Stat(filepath.Join(dir, e.Name(), ".claude-plugin", "plugin.json")); err != nil {
+				continue
+			}
+			directories, err := pluginManifestDirectories(filepath.Join(dir, e.Name()))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, directories...)
+		}
+		if len(out) == 0 {
+			return nil, errRoleDefaults
+		}
+		return out, nil
+	}
+	return pluginManifestDirectories(dir)
+}
+
+func pluginManifestDirectories(dir string) ([]roleDirectory, error) {
 	var manifest struct {
 		Name   string
 		Agents json.RawMessage

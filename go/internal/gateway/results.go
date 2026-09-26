@@ -460,8 +460,20 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 		if !e.stopped || e.Session != session || e.parent != parent || !deliverable(e.State) {
 			continue
 		}
-		// Delivery shares the next parent request; it never polls or starts another
-		// model turn.
+		// Supply the verified correlation ID independently of native launch prose
+		// and of the child's untrusted answer. Delivery shares the next parent
+		// request; it never polls or starts another model turn. Kept by #144: native's
+		// launch result calls the ID internal and not for the user, and without this the
+		// parent refused a user who asked for it (1 of 3 runs).
+		if e.body != "" && e.Selection.Model != "" {
+			receipt, _ := json.Marshal(struct {
+				Agent  string `json:"agentId"`
+				Parent string `json:"parentAgentId,omitempty"`
+				Model  string `json:"model"`
+				Effort string `json:"effort"`
+			}{e.Agent, e.parent, e.Selection.Model, e.Selection.Effort})
+			supplements = append(supplements, "Clauduct verified delegation receipt: "+string(receipt)+". These are task correlation IDs, available for reporting when the user requests them. The receipt verifies identity and routing, not the findings in the child report.")
+		}
 		present := false
 		if e.body != "" {
 			for _, m := range req.Messages {

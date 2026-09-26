@@ -20,7 +20,7 @@ type contextUsageAnchor struct {
 // conversation sets the first on every request; a counter built on it would measure
 // "there was a conversation" rather than the window it exists to show.
 func estimateTextInput(r *bridge.Request) (int64, bool, bool) {
-	size := int64(len(r.Instruction))
+	var size int64
 	opaque, media := false, false
 	parts := func(items []bridge.InputPart) {
 		for _, p := range items {

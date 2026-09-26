@@ -85,12 +85,15 @@ func unsupportedEvent(eventType string) error {
 
 // Request is what the backend is asked for. It is assembled here from a decoded Anthropic
 // request so that neither protocol package has to know the other's shape.
+//
+// There is no top-level instructions field. The system prompt is the leading developer turn,
+// where per-turn effort and cache markers apply to it as to any other turn, and the backend
+// accepts a request without instructions and follows that turn (#144, measured 2026-09-26).
 type Request struct {
-	Model       string          `json:"model"`
-	Instruction string          `json:"instructions,omitempty"`
-	Input       []InputEntry    `json:"input"`
-	Stream      bool            `json:"stream"`
-	Effort      *ReasoningParam `json:"reasoning,omitempty"`
+	Model  string          `json:"model"`
+	Input  []InputEntry    `json:"input"`
+	Stream bool            `json:"stream"`
+	Effort *ReasoningParam `json:"reasoning,omitempty"`
 	// Source names the rule that resolved Model — catalogue, alias, family or direct. Not
 	// part of the wire format: it is how the answer was reached, not part of the question.
 	// It travels here so the ledger can record what a request was actually run on (CAP03).
@@ -122,14 +125,6 @@ type SchemaFormat struct {
 	// best-effort one is the case it cannot tell apart from success.
 	Strict bool `json:"strict"`
 }
-
-// Instruction is what every request sends as its top-level instructions.
-//
-// It is a fixed string, not the caller's system prompt. The system prompt is a developer
-// turn inside the conversation, where per-turn effort and cache markers apply to it the
-// same way they apply to any other turn. Hoisting it up here would move it out of the
-// conversation the caller described.
-const Instruction = "Follow the developer instructions in the conversation."
 
 // Include asks for the reasoning the backend would otherwise keep to itself. It is
 // requested because a multi-turn tool exchange needs it carried forward, not because it is
@@ -313,12 +308,11 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 	}
 
 	out := &Request{
-		Input:       make([]InputEntry, 0),
-		Model:       route.Model,
-		Instruction: Instruction,
-		Stream:      true,
-		Include:     Include,
-		Store:       false,
+		Input:   make([]InputEntry, 0),
+		Model:   route.Model,
+		Stream:  true,
+		Include: Include,
+		Store:   false,
 		// Always sent. The catalogue supplies an effort when the request does not name
 		// one, so there is no case where the backend is left to pick, and the baseline
 		// sends it unconditionally for the same reason.
@@ -453,13 +447,11 @@ func BuildRequest(request *anthropic.Request, override ...Route) (*Request, erro
 
 // resultParts flattens a tool result for the backend.
 //
-// A failed result is announced rather than left to be inferred from its text: the client
-// said the tool failed, and dropping that flag would present the failure as output.
+// A failed result goes as its body alone. The backend's function_call_output has no
+// failure flag, the reference client sends a failed body the same way, and native's
+// failure bodies say they failed (#144, measured 2026-09-26).
 func resultParts(block anthropic.Block) []InputPart {
-	parts := make([]InputPart, 0, len(block.Result)+1)
-	if block.IsError {
-		parts = append(parts, InputPart{Type: "input_text", Text: "Tool execution failed:"})
-	}
+	parts := make([]InputPart, 0, len(block.Result))
 	for _, part := range block.Result {
 		switch part.Type {
 		case "image":

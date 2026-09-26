@@ -13,6 +13,8 @@ import (
 //go:embed workflow-agent.js
 var workflowAgentWrapper string
 
+var workflowWrapperFirstLine, _, _ = strings.Cut(strings.ReplaceAll(workflowAgentWrapper, "\r\n", "\n"), "\n")
+
 // A hoisted local function wraps native's existing VM global; native still
 // validates and executes the script. No JS parser, extra process or model call.
 func (d *delegations) adaptWorkflow(scope delegationScope, id string, raw json.RawMessage) (json.RawMessage, error) {
@@ -37,6 +39,13 @@ func (d *delegations) adaptWorkflow(scope delegationScope, id string, raw json.R
 	}
 	if json.Unmarshal(fields["script"], &script) != nil || len(script) > 500<<10 || strings.Contains(script, "__CLAUDUCT_") {
 		return nil, errDelegationUnverified
+	}
+	// After a restart the history still shows the wrapper appended last time (the restore
+	// record is per process), and a model that resubmits that script sends it back; native
+	// then refuses the second copy (v0.5.1 G3). The wrapper always ends the script, so cut
+	// from its first line; this only ever removes code.
+	if at := strings.Index(script, "\n"+workflowWrapperFirstLine); at >= 0 {
+		script = script[:at]
 	}
 	var plan *workflowPlan
 	if script == bridge.WorkflowPlanMarker {

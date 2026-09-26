@@ -199,7 +199,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | 서버 전용 기능을 제외해도 남는 조건 | 현재 구현 |
 |---|---|
 | CLI 옵션 | `--settings` JSON/파일을 필수 settings와 병합하고 `--setting-sources`는 native로 전달. 필수 연결·hook 충돌은 거부. 권한 우회 CLI 옵션 2개는 계속 거부. [설정 병합](../../go/internal/app/user_settings.go) |
-| API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`는 미지원. v0.5.2 후보는 개수·길이를 제한한 `stop_sequences`를 로컬 출력 절단으로 처리한다(아래 v0.5.2 절). [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
+| API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`는 미지원. v0.5.2는 개수·길이를 제한한 `stop_sequences`를 로컬 출력 절단으로 처리한다(아래 v0.5.2 절). [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
 | Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원과 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow 및 임의 JS 재실행은 별도 제한 |
 | 부모·빈 응답 대기 | 확인된 TUI 회차는 무출력 대기. SDK/`-p`의 검증된 빈 대기·알림 응답은 Clauduct 상태 메시지로 전달하며 실제 본문·도구는 보존. 상태 메시지는 자식 결과나 업무 완료가 아님. [실제 필수 조건](../../go/internal/gateway/features.go) |
 | 새 모델·새 명령·외부 확장 | 현재 모델 카탈로그와 검증된 요청 형식 범위만 지원. 새 모델, native 버전, plugin/MCP 조합의 성공을 자동 승계하지 않음. [모델 카탈로그](../../go/internal/protocol/bridge/route.go) |
@@ -243,7 +243,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | `--settings` | 구현. 최대 2 MiB JSON 객체/일반 파일, 중복 키 거부, 마지막 옵션 우선. 사용자 hook을 보존하고 필수 binding 추가. 연결·필수 정책 충돌은 조용히 덮지 않고 거부 |
 | `--setting-sources` | native user/project/빈 source 적용을 공개 fixture와 실제 native CLI로 확인. 필수 CLI settings는 별도로 유지 |
 | 권한 우회 CLI 옵션 2개 | 기술적 불가능이 아니라 명시적 제품 정책 제한이다. 지원 여부 변경과 현재 작업의 권한·guard 준수는 별개 |
-| `temperature`, `top_p`, `stop_sequences` | `temperature`·`top_p`는 입력층 거부 유지. v0.5.2 후보의 stop 처리는 로컬 응답 번역이며 backend에 새 필드를 보내지 않는다. S48의 4개 모델 × baseline/temperature/top_p/max_output_tokens/stop = 20개 비교는 baseline 4건 성공, 추가 필드 16건 HTTP 400이었다. `stop` 시험을 `stop_sequences` 필드 자체의 실측으로 부르지 않음. 일반 API 문서 지원이 구독 backend 지원을 뜻하지 않음 |
+| `temperature`, `top_p`, `stop_sequences` | `temperature`·`top_p`는 입력층 거부 유지. v0.5.2의 stop 처리는 로컬 응답 번역이며 backend에 새 필드를 보내지 않는다. S48의 4개 모델 × baseline/temperature/top_p/max_output_tokens/stop = 20개 비교는 baseline 4건 성공, 추가 필드 16건 HTTP 400이었다. `stop` 시험을 `stop_sequences` 필드 자체의 실측으로 부르지 않음. 일반 API 문서 지원이 구독 backend 지원을 뜻하지 않음 |
 
 `max_output_tokens`는 위 세 파라미터와 달리 기존 backend HTTP 400 실측이 있다.
 출력 문자열을 잘라내는 것으로 서버의 생성 토큰 제한이나 sampling 제어와 동등해지지 않는다.
@@ -454,7 +454,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
-| auto 권한 모드의 분류기 판정 | 출시된 v0.5.1은 미지원. v0.5.2 후보는 native 2.1.283의 block 요청을 Luna/high로 분리하고 자식 `--settings`에 두 hard_deny 규칙을 추가한다. 원래·독립 표본과 민감 사례 반복, 실제 native TUI의 허용·거부를 통과했다. 알려진 classifier의 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 순수 태그 출하·설치는 미검증이며 아래 v0.5.2 절에 범위를 기록했다 |
+| auto 권한 모드의 분류기 판정 | v0.5.2는 native 2.1.283의 block 요청을 Luna/high로 분리하고 자식 `--settings`에 두 hard_deny 규칙을 추가한다. 원래·독립 표본과 민감 사례 반복, 실제 native TUI의 허용·거부를 통과했다. 알려진 classifier의 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 순수 태그 출하·실제 설치를 확인했으며 아래 v0.5.2 절에 범위와 오차단을 기록했다. v0.5.1까지는 판정이 필요한 행동을 거부했다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -641,10 +641,10 @@ review-diff 헬퍼와 native 도구를 통한 Office 처리는 구현·인수 �
 [공식 기능 가용성](https://code.claude.com/docs/en/feature-availability)에 따라 별도로 관리한다.
 모든 로컬 slash command와 조합을 실측했거나 API 오류가 언제나 없다는 판정은 하지 않는다.
 
-### v0.5.2 — auto 모드 분류기(#149): 재검증한 후보, 미출하
+### v0.5.2 — auto 모드 분류기(#149): 재검증·출하
 
-**2026-09-27 후보 구현·검증 완료, 출하 전.** 출시된 버전은 v0.5.1이다.
-[후보 변경과 출하 상태](RELEASE-v0.5.2.md)를 별도로 기록한다.
+**2026-09-27 출하·실제 설치 확인.** 태그 `v0.5.2`는 `921e254`다.
+[변경과 출하 검사](RELEASE-v0.5.2.md)에 commit·바이너리 해시·검사 범위를 기록한다.
 
 #### 최초 실패와 측정 조건 정정
 
@@ -669,7 +669,7 @@ review-diff 헬퍼와 native 도구를 통한 Office 처리는 구현·인수 �
 v0.5.0부터와 같이 거부되므로, 판정이 필요하면 `Shift+Tab`으로 다른 권한 모드를 쓴다. 표본 70개의 결과는 이 backend·route·
 native 버전에서의 관찰이며, Anthropic 분류기와의 비교는 하지 않았다. 측정에 쓴 실제 backend 호출은 109회다.
 
-#### 현재 후보의 경로와 정책
+#### 출하 경로와 정책
 
 native의 GPT block 요청은 1단계 `max_tokens=2112`·stop `</block>`, 2단계 `max_tokens=10240`·stop 없음이다.
 thinking 필드와 classifier 전용 beta가 없고, 일반 Sonnet 환경값만 받아 effort 없이 요청한다.
@@ -717,8 +717,10 @@ Luna의 독립 표본에는 정상 프로세스 종료·로컬 설치 두 건의
 
 TUI의 주 모델 도구 제안은 고정 합성 입력이며, 분류 판정은 실제 backend다. 실제 native와 제품
 분류 경로의 호환을 검증한 범위로 기록하며 일반 에이전트 작업 전체의 인수를 뜻하지 않는다.
-관측한 버전·표본의 합격은 모든 요청의 안전 보장이 아니다. 이번 B의 총사용량은 이전 109회를
-포함해 954/1,000회이며 열린 예약은 없다. 순수 태그의 재현 빌드·출하 검사·설치 확인과 다음 묶음은 남아 있다.
+관측한 버전·표본의 합격은 모든 요청의 안전 보장이 아니다. 이번 B의 총사용량은 이전 109회와
+순수 출하 자산의 backend 세션 5회를 포함해 959/1,000회이며 열린 예약은 없다.
+순수 태그 재현 빌드·격리 설치와 되돌림·공개 자산 검증·updater·실제 설치 확인을 통과했다.
+Workflow 재실행 resume·Office·review-diff를 포함한 다음 묶음은 이 출하의 완료 범위에 포함하지 않는다.
 
 ## 4. 제3자 구현이라는 사실
 

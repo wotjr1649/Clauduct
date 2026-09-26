@@ -32,6 +32,7 @@ type roleSources struct {
 	managed      int
 	err          error
 	defaultModel string
+	defaultErr   error // CLAUDE_CODE_SUBAGENT_MODEL could not be verified; matters only when used
 	pluginError  error
 }
 
@@ -82,9 +83,15 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	}
 	model, effort := def.Model, def.Effort
 	named := model != "" && model != "inherit"
-	if model == "" && s.defaultModel != "inherit" {
-		model = s.defaultModel
-		named = model != ""
+	// CLAUDE_CODE_SUBAGENT_MODEL fills only a definition without a model, and its effort is
+	// still the parent's (native 2.1.283: parent low gives sol/low; a definition effort wins).
+	if model == "" {
+		if s.defaultErr != nil {
+			return bridge.Route{}, false, errRoleDefaults
+		}
+		if s.defaultModel != "inherit" {
+			model = s.defaultModel
+		}
 	}
 	if model == "" || model == "inherit" {
 		model = parent.Model
@@ -95,7 +102,8 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	// ways: a role pinned to astra ran at a max parent's effort rather than astra's own, and
 	// a parent at low silently downgraded a role whose model defaults higher. Inheritance is
 	// still right when the definition names no model -- then the parent's route is the whole
-	// answer, and a parent without one is still unverified.
+	// answer (its effort, even under CLAUDE_CODE_SUBAGENT_MODEL), and a parent without one is
+	// still unverified.
 	if effort == "" && !named {
 		effort = parent.Effort
 	}
@@ -325,11 +333,167 @@ type cliRoles struct {
 	defs    map[string]roleDefault
 	plugins []string
 	err     error
+	// addDirs are the --add-dir directories, absolute, in argv order.
+	addDirs []string
+	// sources is --setting-sources; nil when absent, which is native's default of all three.
+	sources map[string]bool
+	// flagModel is CLAUDE_CODE_SUBAGENT_MODEL from --settings, when flagSet.
+	flagModel string
+	flagSet   bool
+	flagErr   error
+}
+
+func (c cliRoles) source(name string) bool { return c.sources == nil || c.sources[name] }
+
+const subagentModelKey = "CLAUDE_CODE_SUBAGENT_MODEL"
+
+func sessionCLIRoles(args []string, injected, cwd string) cliRoles {
+	var cli cliRoles
+	cli.defs, cli.plugins, cli.err = roleCLI(args, injected, cwd)
+	if cli.err == nil {
+		cli.err = cli.scope(args, cwd)
+	}
+	return cli
+}
+
+// scope reads what argv adds to or removes from the role sources: every --add-dir directory
+// (variadic in native: it takes values until the next option), --setting-sources and the
+// --settings subagent model. An unknown option hides where any of these after it begin.
+func (c *cliRoles) scope(args []string, cwd string) error {
+	sources, sourcesSet, settings := "", false, ""
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		if !known {
+			for _, arg := range args[i+1:] {
+				if name, _, _ := strings.Cut(arg, "="); name == "--add-dir" || name == "--setting-sources" || name == "--settings" {
+					return errRoleDefaults
+				}
+			}
+			break
+		}
+		if end > len(args) {
+			return errRoleDefaults
+		}
+		name, value, attached := strings.Cut(args[i], "=")
+		if !attached && end == i+2 {
+			value = args[i+1]
+		}
+		switch name {
+		case "--add-dir":
+			dirs := []string{value}
+			for !attached && end < len(args) && !(len(args[end]) > 1 && args[end][0] == '-') {
+				dirs = append(dirs, args[end])
+				end++
+			}
+			for _, dir := range dirs {
+				if !filepath.IsAbs(dir) {
+					dir = filepath.Join(cwd, dir)
+				}
+				c.addDirs = append(c.addDirs, dir)
+			}
+		case "--setting-sources":
+			sources, sourcesSet = value, true
+		case "--settings":
+			settings = value
+		}
+		i = end
+	}
+	if sourcesSet {
+		c.sources = map[string]bool{}
+		for _, part := range strings.Split(sources, ",") {
+			switch part = strings.TrimSpace(part); part {
+			case "":
+			case "user", "project", "local":
+				c.sources[part] = true
+			default:
+				return errRoleDefaults // native 2.1.283 exits: Invalid setting source
+			}
+		}
+	}
+	if settings != "" {
+		raw := []byte(settings)
+		if !strings.HasPrefix(strings.TrimSpace(settings), "{") {
+			path := settings
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(cwd, path)
+			}
+			var err error
+			if raw, err = boundedRoleFile(path); err != nil {
+				c.flagErr = errRoleDefaults
+				return nil
+			}
+		}
+		c.flagModel, c.flagSet, c.flagErr = settingsSubagentModel(raw)
+	}
+	return nil
+}
+
+// settingsSubagentModel reads CLAUDE_CODE_SUBAGENT_MODEL from one settings object's env.
+func settingsSubagentModel(raw []byte) (string, bool, error) {
+	var values struct {
+		Env map[string]json.RawMessage `json:"env"`
+	}
+	if json.Unmarshal(raw, &values) != nil {
+		return "", false, errRoleDefaults
+	}
+	value, found := values.Env[subagentModelKey]
+	var model string
+	if found && json.Unmarshal(value, &model) != nil {
+		return "", false, errRoleDefaults
+	}
+	return model, found, nil
+}
+
+// subagentModel is CLAUDE_CODE_SUBAGENT_MODEL as native 2.1.283 applies it (measured):
+// settings env overrides the process environment, user < project < local < --settings,
+// each file only when its source is loaded, project and local from the session directory
+// only (not the git root). The managed settings rank is unmeasured, so a managed value is
+// unverified rather than placed.
+func subagentModel(config, cwd, managed string, cli cliRoles, env map[string]string) (string, error) {
+	model := env[subagentModelKey]
+	for _, file := range []struct{ source, path string }{
+		{"user", filepath.Join(config, "settings.json")},
+		{"project", filepath.Join(cwd, ".claude", "settings.json")},
+		{"local", filepath.Join(cwd, ".claude", "settings.local.json")},
+	} {
+		if !cli.source(file.source) {
+			continue
+		}
+		raw, err := boundedRoleFile(file.path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", errRoleDefaults
+		}
+		value, found, err := settingsSubagentModel(raw)
+		if err != nil {
+			return "", err
+		}
+		if found {
+			model = value
+		}
+	}
+	if cli.flagErr != nil {
+		return "", cli.flagErr
+	}
+	if cli.flagSet {
+		model = cli.flagModel
+	}
+	if raw, err := boundedRoleFile(filepath.Join(managed, "managed-settings.json")); !os.IsNotExist(err) {
+		if err != nil {
+			return "", errRoleDefaults
+		}
+		if _, found, err := settingsSubagentModel(raw); err != nil || found {
+			return "", errRoleDefaults
+		}
+	}
+	return model, nil
 }
 
 func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string, role string) roleSources {
 	plugins := append([]string(nil), cli.plugins...) // appended to below; cli is shared across calls
-	s := roleSources{cli: cli.defs, err: cli.err, defaultModel: env["CLAUDE_CODE_SUBAGENT_MODEL"]}
+	s := roleSources{cli: cli.defs, err: cli.err}
 	// Native's platform directories; no invented environment override.
 	managed := "/etc/claude-code"
 	if runtime.GOOS == "darwin" {
@@ -338,25 +502,38 @@ func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string,
 	if runtime.GOOS == "windows" {
 		managed = `C:\Program Files\ClaudeCode`
 	}
+	s.defaultModel, s.defaultErr = subagentModel(config, cwd, managed, cli, env)
 	if managed != "" {
 		s.directories = append(s.directories, roleDirectory{path: filepath.Join(managed, ".claude", "agents")})
 		s.managed = 1
 	}
+	// Native 2.1.283 (measured): CLI > project > --add-dir > user, the later --add-dir first;
+	// project and --add-dir definitions load only with the project source, user ones only
+	// with the user source. An --add-dir is read at its own .claude/agents, not walked.
 	var projectDirs []string
 	for dir := cwd; dir != ""; dir = filepath.Dir(dir) {
 		projectDirs = append(projectDirs, dir)
-		s.directories = append(s.directories, roleDirectory{path: filepath.Join(dir, ".claude", "agents")})
+		if cli.source("project") {
+			s.directories = append(s.directories, roleDirectory{path: filepath.Join(dir, ".claude", "agents")})
+		}
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil || filepath.Dir(dir) == dir {
 			break
 		}
 	}
-	s.directories = append(s.directories, roleDirectory{path: filepath.Join(config, "agents")})
+	if cli.source("project") {
+		for i := len(cli.addDirs) - 1; i >= 0; i-- {
+			s.directories = append(s.directories, roleDirectory{path: filepath.Join(cli.addDirs[i], ".claude", "agents")})
+		}
+	}
+	if cli.source("user") {
+		s.directories = append(s.directories, roleDirectory{path: filepath.Join(config, "agents")})
+	}
 	// Plugin roles are namespaced. Ordinary role resolution needs no plugin
 	// registry/manifest I/O, even in a workspace with many installed plugins.
 	if !strings.Contains(role, ":") {
 		return s
 	}
-	installed, err := installedRolePlugins(config, projectDirs, managed)
+	installed, err := installedRolePlugins(config, projectDirs, managed, cli.source)
 	if err != nil {
 		s.pluginError = err
 	}
@@ -415,10 +592,20 @@ func pluginRoleDirectories(dir string) ([]roleDirectory, error) {
 
 // Only enabled installed plugins are inspected. No plugin code, hooks, commands
 // or MCP configuration is run by this loader. Native remains the execution owner.
-func installedRolePlugins(config string, projects []string, managed string) ([]string, error) {
-	settings := []string{filepath.Join(config, "settings.json")}
+// Settings of a source --setting-sources excludes enable nothing (measured on 2.1.283 for
+// user and project).
+func installedRolePlugins(config string, projects []string, managed string, source func(string) bool) ([]string, error) {
+	var settings []string
+	if source("user") {
+		settings = append(settings, filepath.Join(config, "settings.json"))
+	}
 	for i := len(projects) - 1; i >= 0; i-- {
-		settings = append(settings, filepath.Join(projects[i], ".claude", "settings.json"), filepath.Join(projects[i], ".claude", "settings.local.json"))
+		if source("project") {
+			settings = append(settings, filepath.Join(projects[i], ".claude", "settings.json"))
+		}
+		if source("local") {
+			settings = append(settings, filepath.Join(projects[i], ".claude", "settings.local.json"))
+		}
 	}
 	settings = append(settings, filepath.Join(managed, "managed-settings.json"))
 	enabled := map[string]bool{}

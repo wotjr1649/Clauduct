@@ -361,8 +361,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			spec.Env = append(filtered, "CLAUDUCT_PDF_PROJECTS_ROOT="+filepath.Join(configDir, "projects"))
 		}
-		var cli cliRoles
-		cli.defs, cli.plugins, cli.err = roleCLI(o.Args, agents, o.Cwd)
+		cli := sessionCLIRoles(o.Args, agents, o.Cwd)
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
 			return sessionRoleSources(configDir, o.Cwd, cli, o.Env, role).resolve(role, parent)
 		})

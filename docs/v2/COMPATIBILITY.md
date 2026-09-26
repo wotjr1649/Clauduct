@@ -170,7 +170,7 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 | 구분 | 확인한 기준 |
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/build.json), [개발 경로 반영](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
-| 최근 실제 TUI | Claude Code `2.1.282`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.4.2 개발본(`bf68243`), gpt-6-luna/low 실제 backend 5회, 2026-09-25: 생성·압축·취소·복구·종료 PASS(공개 `go/cmd/ptydrive`로 조작). 그 전: v0.4.1 개발본(2.1.281), 2026-09-24 같은 항목 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
+| 최근 실제 TUI | Claude Code `2.1.283`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.5.0 태그 바이너리(`d665e18`), gpt-6-luna 실제 backend 8회, 2026-09-26: 생성·압축·취소·복구·종료 PASS, API 실패 0(공개 `go/cmd/ptydrive`로 조작). 그 전: `2.1.282`, v0.4.2 개발본(`bf68243`), 2026-09-25 같은 항목 PASS. 그 전: v0.4.1 개발본(2.1.281), 2026-09-24 같은 항목 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
 | 인자 표·native fixture 재측정 | Claude Code `2.1.283`, 2026-09-26(v0.5.0 개발). `--help`에 필수값 옵션 `--client-data-url <url>`이 더해졌고, 이전 인자 표가 이를 모르는 옵션으로 읽어 뒤의 `--settings`·`--model`·`-p` 경계를 잃었다. 인자 표에 더해 고쳤다. native는 `https://downloads.claude.ai/` 외의 값을 모델 요청 전에 exit 1로 거부한다(loopback 재현, 모델 요청 0). 서명 구성 기능 자체의 지원을 뜻하지 않는다. 모듈이 쓰는 plugin 이벤트 타입은 같다. 설치 native를 쓰는 fixture 검사와 전체 일반·race 회귀 통과(로컬 backend, 과금 없음). 이전 기준: `2.1.282`, 2026-09-25(v0.4.2) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/evidence.json), [TUI 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
@@ -559,6 +559,8 @@ exec wire 차이와 이 제품 경로를 측정한 뜻이며, Codex 자체 TUI·
 [설정 형식](../../go/README.md#검증용-실호출은-별개의-예산), [릴리스 검증](RELEASE-v0.4.4.md).
 
 ### v0.5.0 — 요청 세션 식별, 역할·fork 범위, 자산 넷
+
+**2026-09-26 출하·실제 설치 확인 완료.** 태그 바이너리의 실제 backend 검증은 35회로 통과했다([릴리스 검증](RELEASE-v0.5.0.md#출하-검사-2026-09-26)). 아래는 개발 과정의 기록이다.
 
 Claude Code 2.1.283·Codex CLI 0.157.0에서 무료 native 재현과 실제 backend 검증을 함께 수행했다. 개발 후보
 `002563e`의 실제 backend 결과는 아래와 같다. 각 실행은 실행 전에 만든 영속 총상한 안에서 돌았다.

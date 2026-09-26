@@ -18,6 +18,10 @@ Claude Code 2.1.283·Codex CLI 0.157.0 기준. 개발 후보의 무료 회귀와
 - **subagent 안의 forked Skill.** 검증된 subagent가 부른 `context: fork` skill의 자식을 받아들인다. 이전 빌드는
   `AGENT_SELECTION_UNVERIFIED`로 거부했다. fork 자식의 `SendMessage` 재개를 "거부한다"고 적은 이전 문서도 바로잡았다.
   2.1.283에서 native는 이 재개를 받아들이고, 제품은 같은 자식을 native 영수증과 대조해 실행한다.
+- **auto 권한 모드.** Claude Code 2.1.283의 기본값인 auto 모드는 메인 요청마다 Anthropic 서버의 분류기를
+  요청해, 이 gateway에서는 턴마다 거부 1건이 생겼다. native의 공식 스위치 `CLAUDE_CODE_AUTO_MODE_SERVER=0`을 기본으로
+  둬 이를 없앴다(사용자가 정한 값이 이긴다). native 자체 분류기는 여전히 지원하지 않아, 판정이 필요한 행동은 auto
+  모드에서 `Classifier unavailable`로 거부된다. 필요하면 `Shift+Tab`으로 다른 권한 모드를 쓴다.
 - **릴리스 자산 넷(#136).** `clauduct.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`. v0.4.x가 0.3.x updater를 위해
   함께 올리던 `clauduct-hook.exe`·`clauduct-dev.exe` 사본은 더 이상 올리지 않는다.
 

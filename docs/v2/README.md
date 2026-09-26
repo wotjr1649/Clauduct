@@ -41,6 +41,8 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
 - **커스텀 역할 기본값**은 v0.5.0에서 `--add-dir`·`--setting-sources`·settings의 `CLAUDE_CODE_SUBAGENT_MODEL`까지
   native와 같게 수집한다. managed 경로·세션 중 `/add-dir`·`/cd`·ZIP/URL plugin은 측정하지 않았다. 제품은 자식 선택을
   검증하지 못하면 실행 전에 거부한다.
+- **auto 권한 모드의 분류기**는 지원하지 않는다. Claude Code 2.1.283의 기본값인 auto 모드에서 판정이 필요한 행동은
+  `Classifier unavailable`로 거부된다(v0.5.0은 서버 분류기 요청 자체를 끈다, COMPATIBILITY.md 3절).
 - **Workflow의 원 script 재실행 resume**은 하지 않는다. 저널 검증과 결과 회수, 독립 계획의 미실행 단계
   재개만 한다(COMPATIBILITY.md 3절).
 - **WebSearch**는 native ToolSearch→WebSearch 시험이 추가됐다. 실제 검색 backend와 native의 조합 전체를 모든 역할에서 실측한 것은 아니다.

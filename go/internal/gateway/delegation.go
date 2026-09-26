@@ -159,9 +159,6 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		d.mu.Unlock()
 	}
 	for i := range tools {
-		if tools[i].Name == "ToolSearch" {
-			tools[i].Description += " Before declaring an Agent role unavailable, discover Agent and read the resulting role-list reminder; deferred Agent roles may not be listed until discovery completes."
-		}
 		if tools[i].Name == "Workflow" {
 			tools[i].Description += " Clauduct: ordinary script resumeFromRunId returns verified completed child reports only, never replays arbitrary JavaScript. For resumable independent steps, use script=\"clauduct:plan-v1\" and args={steps:[{id,prompt,model?,effort?,tools?}]} (1-16 unique IDs). For a step that must use no tools, set tools:[]; this is enforced by the gateway. Omitted tools preserves native tools; a list of exact tool names (up to 64) narrows the native catalogue and callable set, never adds permissions. To continue an interrupted plan, first stop its native task with TaskStop, then pass resumeFromRunId alone. Started steps are never rerun: completed reports are reused, unavailable results reported, and only never-started steps execute. Each source run can be continued once. Model/effort and tool restrictions remain fixed from the original plan."
 			tools[i].Description += " Use the native workflow-authoring contract for agent() options. Clauduct enforces tools:[] and exact tool-name allowlists for agent() as well as plan steps. Custom agentType preserves the native role's instructions, tools and maxTurns; omitted model/effort uses its verified definition defaults. scriptPath and local named .js files are read through native Read with its permissions; partial reads are refused. Same-session recovery after a reaped launcher exit revalidates saved metadata; missing or changed evidence is not replayed. A maxTurns option directly on agent() is unsupported; use the native agent definition."

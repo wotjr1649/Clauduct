@@ -94,9 +94,6 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if g.delegations != nil {
-		if !compact {
-			g.delegations.describeWorkflowStep(built, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"))
-		}
 		if err := g.delegations.describe(built.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
 			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
 			return

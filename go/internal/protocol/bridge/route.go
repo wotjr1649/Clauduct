@@ -202,6 +202,12 @@ func CanonicalRole(role string) string {
 	return role
 }
 
+// BuiltinRole is one of native's own roles in the role table (not a menu entry).
+func BuiltinRole(role string) bool {
+	_, ok := roleRoutes[CanonicalRole(role)]
+	return ok
+}
+
 func KnownRole(role string) bool {
 	_, routed := RoleRoute(role)
 	return routed || InheritsParent(role)

@@ -27,13 +27,14 @@ func CountInput(request *Request) (int64, error) {
 			break
 		}
 	}
-	if !known || request.Instruction != "Follow the developer instructions in the conversation." || len(request.Tools) != 0 || request.Text != nil || len(request.Input) == 0 || len(request.Input) > 256 {
+	if !known || len(request.Tools) != 0 || request.Text != nil || len(request.Input) == 0 || len(request.Input) > 256 {
 		return 0, ErrTokenCountUnsupported
 	}
-	// The fixed instructions contribute 13 tokens. A plain developer string adds
-	// 4 framing tokens; a text-part message adds 5. Multi-part text is newline-joined.
-	// These constants matched 64 live cells across all four catalogue models.
-	total := int64(13)
+	// The request itself contributes 1 token. A plain developer string adds 4 framing
+	// tokens; a text-part message adds 5. Multi-part text is newline-joined. The framing
+	// matched 64 live cells across all four catalogue models; the base was 13 while a fixed
+	// instructions string was sent and measured 1 without it (#144, 16 cells, 2026-09-26).
+	total := int64(1)
 	bytesLeft := 4 << 20
 	texts := make([]string, 0, len(request.Input))
 	wantRole := "user"
@@ -102,7 +103,7 @@ func BackendCountSupported(request *Request) bool {
 	for _, model := range Models {
 		known = known || request.Model == model.ID && model.CountValidated
 	}
-	if !known || request.Instruction != Instruction {
+	if !known {
 		return false
 	}
 	for _, tool := range request.Tools {

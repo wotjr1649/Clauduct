@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
@@ -104,14 +106,29 @@ func (g *Gateway) handleWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// A workflow name is the script's own meta.name, reported as written: "clauduct:plan-v1"
+// is valid. It only labels the run, so it is bounded, not shaped.
+func workflowNameOK(name string) bool {
+	return name != "" && len(name) <= 200 && utf8.ValidString(name) && !strings.ContainsFunc(name, unicode.IsControl)
+}
+
+// Native names the script file from the workflow name with characters it does not keep in a
+// file name replaced (":" became "-"), so the file is checked by where it is and whose run
+// it holds rather than rebuilt from the name.
+func workflowScriptName(file, run string) bool {
+	stem, found := strings.CutSuffix(file, "-"+run+".js")
+	return found && stem != "" && filepath.IsLocal(file) && !strings.ContainsAny(file, `:\/`)
+}
+
 func (d *delegations) linkWorkflow(link workflowLink) error {
-	if !correlationShape.MatchString(link.Session) || !correlationShape.MatchString(link.Call) || !correlationShape.MatchString(link.Run) || !strings.HasPrefix(link.Run, "wf_") || !correlationShape.MatchString(link.Name) || link.Parent != "" || filepath.Base(link.Transcript) != link.Session+".jsonl" {
+	if !correlationShape.MatchString(link.Session) || !correlationShape.MatchString(link.Call) || !correlationShape.MatchString(link.Run) || !strings.HasPrefix(link.Run, "wf_") || !workflowNameOK(link.Name) || link.Parent != "" || filepath.Base(link.Transcript) != link.Session+".jsonl" {
 		return errDelegationUnverified
 	}
 	base := filepath.Join(filepath.Dir(link.Transcript), link.Session)
 	dir := filepath.Join(base, "subagents", "workflows", link.Run)
-	script := filepath.Join(base, "workflows", "scripts", link.Name+"-"+link.Run+".js")
-	if filepath.Clean(link.Directory) != dir || filepath.Clean(link.Script) != script {
+	script := filepath.Clean(link.Script)
+	if filepath.Clean(link.Directory) != dir || filepath.Dir(script) != filepath.Join(base, "workflows", "scripts") || !workflowScriptName(filepath.Base(script), link.Run) {
 		return errDelegationUnverified
 	}
 	relDir, err := filepath.Rel(d.projects, dir)

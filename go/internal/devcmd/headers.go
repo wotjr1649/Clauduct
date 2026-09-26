@@ -27,8 +27,7 @@ var rateLimitField = regexp.MustCompile(`^x-[a-z0-9-]*-(primary|secondary)-(used
 
 func headersProbe(transport upstream.Transport, budget upstream.Budget, out io.Writer) int {
 	body, err := json.Marshal(map[string]any{
-		"model":        budget.Model,
-		"instructions": "Follow the developer instructions in the conversation.",
+		"model": budget.Model,
 		"input": []any{
 			map[string]any{"role": "developer", "content": probeInstruction},
 			map[string]any{"role": "user",

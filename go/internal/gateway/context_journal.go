@@ -38,7 +38,9 @@ func (g *Gateway) contextSession(session, transcript string) error {
 		return errContextJournal
 	}
 	if prior := g.contexts.sessions[session]; prior != "" && prior != rel {
-		return errContextJournal
+		if err := g.moveContextSession(session, prior, rel); err != nil {
+			return err
+		}
 	}
 	g.contexts.sessions[session] = rel
 	g.delegations.mu.Lock()
@@ -48,6 +50,66 @@ func (g *Gateway) contextSession(session, transcript string) error {
 	g.delegations.workflowSessions[session] = rel
 	g.delegations.mu.Unlock()
 	return nil
+}
+
+// /cd moves a session: native takes <session>.jsonl and the <session> folder to the new
+// project folder and reports the new transcript (v0.5.1 #146, measured on 2.1.283). The
+// move is accepted only when it happened -- the old transcript is gone and the new one
+// exists -- so a hook cannot point a live session at another journal. This bridge's own
+// journal beside the transcript is carried along, and the paths it holds for the session
+// follow the same prefix. Caller holds contexts.mu.
+func (g *Gateway) moveContextSession(session, prior, next string) error {
+	root, err := g.delegations.openProjects(".")
+	if err != nil {
+		return errContextJournal
+	}
+	defer root.Close()
+	if _, err := root.Stat(prior); !errors.Is(err, os.ErrNotExist) {
+		return errContextJournal
+	}
+	if info, err := root.Stat(next); err != nil || !info.Mode().IsRegular() {
+		return errContextJournal
+	}
+	from, to := strings.TrimSuffix(prior, ".jsonl"), strings.TrimSuffix(next, ".jsonl")
+	if _, err := root.Stat(from + ".clauduct-context.json"); err == nil {
+		if _, err := root.Stat(to + ".clauduct-context.json"); !errors.Is(err, os.ErrNotExist) || root.Rename(from+".clauduct-context.json", to+".clauduct-context.json") != nil {
+			return errContextJournal
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return errContextJournal
+	}
+	moved := func(p string) string {
+		if rest, ok := strings.CutPrefix(p, from); ok {
+			return to + rest
+		}
+		return p
+	}
+	for key, state := range g.contexts.states {
+		if strings.HasPrefix(key, session+"/") {
+			state.journal = moved(state.journal)
+		}
+	}
+	d := g.delegations
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	absolute := func(p string) string { return filepath.Join(d.projects, moved(mustRel(d.projects, p))) }
+	for key, run := range d.workflows {
+		if run.Session == session {
+			run.directory, run.script = moved(run.directory), moved(run.script)
+			run.Transcript, run.Directory, run.Script = absolute(run.Transcript), absolute(run.Directory), absolute(run.Script)
+			d.workflows[key] = run
+		}
+	}
+	return nil
+}
+
+// mustRel is filepath.Rel for a path already verified to lie under base.
+func mustRel(base, p string) string {
+	rel, err := filepath.Rel(base, p)
+	if err != nil {
+		return p
+	}
+	return rel
 }
 
 func (g *Gateway) restoreContext(session, agent string, state *contextState) error {

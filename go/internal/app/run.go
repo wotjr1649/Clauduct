@@ -367,6 +367,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
 			return sessionRoleSources(configDir, o.Cwd, cli, o.Env, role).resolve(role, parent)
 		})
+		// An env this cannot read counts as set: native's own choice is never the wrong
+		// answer for what native runs.
+		gw.ConfigureNativeBuiltinRoles(func() bool {
+			model, err := cli.subagent()
+			return model != "" || err != nil
+		})
 	}
 
 	// Pressed before there was a child to receive it: the launch is what was cancelled, and

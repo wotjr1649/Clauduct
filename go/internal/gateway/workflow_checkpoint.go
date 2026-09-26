@@ -237,7 +237,7 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 	var saved workflowCheckpoint
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&saved) != nil || saved.Version != 1 || saved.Link.Session != session || saved.Link.Run != source || saved.Link.Parent != "" || !correlationShape.MatchString(saved.Link.Call) || !correlationShape.MatchString(saved.Link.Name) || len(saved.Children) > maxAgents || saved.AdapterBytes < 0 || saved.Created.IsZero() || saved.Created.After(time.Now()) {
+	if decoder.Decode(&saved) != nil || saved.Version != 1 || saved.Link.Session != session || saved.Link.Run != source || saved.Link.Parent != "" || !correlationShape.MatchString(saved.Link.Call) || !workflowNameOK(saved.Link.Name) || len(saved.Children) > maxAgents || saved.AdapterBytes < 0 || saved.Created.IsZero() || saved.Created.After(time.Now()) {
 		return zero, errWorkflowRecoveryUnverified
 	}
 	if decoder.Decode(new(any)) != io.EOF {
@@ -249,7 +249,10 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 	}
 	link := saved.Link
 	expectedTranscript := filepath.Join(d.projects, transcript)
-	expectedScript := filepath.Join(d.projects, dir, link.Name+"-"+source+".js")
+	expectedScript := filepath.Join(d.projects, scriptPath) // found above by its run's suffix
+	if !workflowScriptName(filepath.Base(scriptPath), source) {
+		return zero, errWorkflowRecoveryUnverified
+	}
 	expectedDirectory := filepath.Join(strings.TrimSuffix(expectedTranscript, ".jsonl"), "subagents", "workflows", source)
 	if link.Transcript != expectedTranscript || link.Script != expectedScript || link.Directory != expectedDirectory || filepath.Join(d.projects, scriptPath) != expectedScript {
 		return zero, errWorkflowRecoveryUnverified

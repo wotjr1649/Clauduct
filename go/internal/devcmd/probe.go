@@ -37,9 +37,8 @@ import (
 // the cheapest route and makes the difference visible.
 const probePrompt = "Count from 1 to 40, separated by commas. Numbers only."
 
-// probeInstruction is the developer turn. The baseline always sends one, and the fixed
-// top-level instructions string points at it, so a request without one is not the request
-// this bridge actually makes.
+// probeInstruction is the developer turn. The bridge always sends the system prompt as one,
+// so a request without one is not the request this bridge actually makes.
 const probeInstruction = "You are a test fixture. Answer exactly what is asked, nothing else."
 
 // probeLimits are the caps under test, and there are two of them for a reason.
@@ -267,8 +266,7 @@ func (o outcome) String() string {
 // limit is the thing being measured.
 func send(transport upstream.Transport, budget upstream.Budget, limit int) outcome {
 	body := map[string]any{
-		"model":        budget.Model,
-		"instructions": "Follow the developer instructions in the conversation.",
+		"model": budget.Model,
 		"input": []any{
 			map[string]any{"role": "developer", "content": probeInstruction},
 			map[string]any{
@@ -494,8 +492,7 @@ func cacheProbe(transport upstream.Transport, budget upstream.Budget, out io.Wri
 
 func sendCache(transport upstream.Transport, budget upstream.Budget, prefix string) outcome {
 	body := map[string]any{
-		"model":        budget.Model,
-		"instructions": "Follow the developer instructions in the conversation.",
+		"model": budget.Model,
 		"input": []any{
 			map[string]any{"role": "developer", "content": probeInstruction},
 			map[string]any{

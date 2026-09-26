@@ -82,6 +82,7 @@ type delegations struct {
 	resolved            map[string]resolvedChoice
 	resumes             map[string]*resumeBinding
 	roleDefaults        func(string, bridge.Route) (bridge.Route, bool, error)
+	nativeBuiltins      func() bool
 	results             agentResults
 	workflowCalls       map[delegationKey]workflowOrigin
 	workflows           map[delegationKey]workflowRun
@@ -139,6 +140,17 @@ func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (brid
 	}
 }
 
+// ConfigureNativeBuiltinRoles reports whether the user set CLAUDE_CODE_SUBAGENT_MODEL (or
+// could not be shown not to). Then a built-in role called with neither model nor effort
+// runs on native's own choice rather than the role table (#145): native gives
+// general-purpose the env model and keeps Explore's and Plan's own, all at the parent's
+// effort (2.1.283, measured).
+func (g *Gateway) ConfigureNativeBuiltinRoles(set func() bool) {
+	if g.delegations != nil {
+		g.delegations.nativeBuiltins = set
+	}
+}
+
 // ConfigureDelegations prepares native's lazily created tree before launch.
 // Failure remains diagnostic; openProjects classifies each later access afresh.
 func (g *Gateway) ConfigureDelegations(projects string) {
@@ -159,23 +171,20 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		d.mu.Unlock()
 	}
 	for i := range tools {
-		if tools[i].Name == "ToolSearch" {
-			tools[i].Description += " Before declaring an Agent role unavailable, discover Agent and read the resulting role-list reminder; deferred Agent roles may not be listed until discovery completes."
-		}
 		if tools[i].Name == "Workflow" {
-			tools[i].Description += " A successful TaskStop result is the stop acknowledgement; do not wait for an additional workflow completion notification before requesting resume. Clauduct independently verifies stopped state and child termination before it permits remaining work."
 			tools[i].Description += " Clauduct: ordinary script resumeFromRunId returns verified completed child reports only, never replays arbitrary JavaScript. For resumable independent steps, use script=\"clauduct:plan-v1\" and args={steps:[{id,prompt,model?,effort?,tools?}]} (1-16 unique IDs). For a step that must use no tools, set tools:[]; this is enforced by the gateway. Omitted tools preserves native tools; a list of exact tool names (up to 64) narrows the native catalogue and callable set, never adds permissions. To continue an interrupted plan, first stop its native task with TaskStop, then pass resumeFromRunId alone. Started steps are never rerun: completed reports are reused, unavailable results reported, and only never-started steps execute. Each source run can be continued once. Model/effort and tool restrictions remain fixed from the original plan."
 			tools[i].Description += " Use the native workflow-authoring contract for agent() options. Clauduct enforces tools:[] and exact tool-name allowlists for agent() as well as plan steps. Custom agentType preserves the native role's instructions, tools and maxTurns; omitted model/effort uses its verified definition defaults. scriptPath and local named .js files are read through native Read with its permissions; partial reads are refused. Same-session recovery after a reaped launcher exit revalidates saved metadata; missing or changed evidence is not replayed. A maxTurns option directly on agent() is unsupported; use the native agent definition."
 		}
 		if tools[i].Name == "SendMessage" {
+			// Kept by #144: without it a parent sent a second, empty "notify when done"
+			// message to a child it had already resumed (2 of 5 runs).
 			tools[i].Description += " Native subagents emit completion events automatically. Omit notify_when_idle for subagents; that native flag is only for peer Claude sessions. A message to a completed child starts a new task on that same agent."
 		}
 		if tools[i].Name != "Agent" {
 			continue
 		}
-		tools[i].Description += " Complete delegated research with a self-contained report including findings, evidence, and unverified work. Parent must acquire and review the report, not merely a completion notice. Prefer completion events, do not periodically poll; retrieve an existing result once if absent, request only missing report sections, and report unavailable results without automatically rerunning the task."
-		tools[i].Description += " Preserve task-specific constraints in every descendant's prompt, including permitted files, tool restrictions, and completion requirements."
-		tools[i].Description += " When yielding for an existing child, end the turn with a brief visible waiting acknowledgment; an empty or reasoning-only response is not a deliverable answer."
+		// Kept by #144 with the inherit entry's sentence: removing both let a parent pass an
+		// unrequested model (1 of 5 runs). Native shows the gateway's alias in tool history.
 		tools[i].Description += " The native UI uses compatibility aliases; Clauduct status records the original selection and effective backend route separately. Verified original model/effort arguments are restored in your tool history. Omit isolation unless worktree or remote isolation was explicitly requested."
 		var schema map[string]json.RawMessage
 		var properties map[string]json.RawMessage
@@ -194,7 +203,6 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		}
 		if pinned.Model != "" {
 			names = []string{pinned.Model, "inherit"}
-			tools[i].Description += " This delegated task is fixed to " + pinned.Model + "/" + pinned.Effort + ". Omit model and effort for every descendant; conflicting overrides are refused."
 		}
 		model["enum"], _ = json.Marshal(names)
 		properties["model"], _ = json.Marshal(model)
@@ -324,7 +332,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			if custom {
 				route, known, source = definition, true, "agent-call-definition"
 			}
-			if !known {
+			if !known && (hasEffort || !bridge.BuiltinRole(role) || d.nativeBuiltins == nil || !d.nativeBuiltins()) {
 				route, known = bridge.RoleRoute(role)
 			}
 		}

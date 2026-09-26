@@ -56,8 +56,11 @@ func agentDefinitions() map[string]agentDefinition {
 	// Use the parent route when no separate task selection was requested. The
 	// gateway preserves a task-bound explicit choice automatically in descendants.
 	menu[bridge.InheritRole] = agentDefinition{
+		// The second sentence is kept by #144: without it a parent passed a model with this
+		// entry and moved the child off the session's route (1 of 5 runs).
 		Description: "General development worker that keeps the model and effort this " +
-			"session is already running on.",
+			"session is already running on. Do not pass a model argument with this agent " +
+			"type unless the user requested a separate model selection.",
 		Tools: agentTools,
 		Model: "inherit",
 	}

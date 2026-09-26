@@ -173,6 +173,9 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		if tools[i].Name != "Agent" {
 			continue
 		}
+		// Kept by #144 with the inherit entry's sentence: removing both let a parent pass an
+		// unrequested model (1 of 5 runs). Native shows the gateway's alias in tool history.
+		tools[i].Description += " The native UI uses compatibility aliases; Clauduct status records the original selection and effective backend route separately. Verified original model/effort arguments are restored in your tool history. Omit isolation unless worktree or remote isolation was explicitly requested."
 		var schema map[string]json.RawMessage
 		var properties map[string]json.RawMessage
 		var model map[string]json.RawMessage

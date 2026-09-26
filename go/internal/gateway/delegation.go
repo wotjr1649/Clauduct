@@ -82,6 +82,7 @@ type delegations struct {
 	resolved            map[string]resolvedChoice
 	resumes             map[string]*resumeBinding
 	roleDefaults        func(string, bridge.Route) (bridge.Route, bool, error)
+	nativeBuiltins      func() bool
 	results             agentResults
 	workflowCalls       map[delegationKey]workflowOrigin
 	workflows           map[delegationKey]workflowRun
@@ -136,6 +137,17 @@ func (d *delegations) toolFailures(session string, request *anthropic.Request) {
 func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (bridge.Route, bool, error)) {
 	if g.delegations != nil {
 		g.delegations.roleDefaults = resolve
+	}
+}
+
+// ConfigureNativeBuiltinRoles reports whether the user set CLAUDE_CODE_SUBAGENT_MODEL (or
+// could not be shown not to). Then a built-in role called with neither model nor effort
+// runs on native's own choice rather than the role table (#145): native gives
+// general-purpose the env model and keeps Explore's and Plan's own, all at the parent's
+// effort (2.1.283, measured).
+func (g *Gateway) ConfigureNativeBuiltinRoles(set func() bool) {
+	if g.delegations != nil {
+		g.delegations.nativeBuiltins = set
 	}
 }
 
@@ -320,7 +332,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			if custom {
 				route, known, source = definition, true, "agent-call-definition"
 			}
-			if !known {
+			if !known && (hasEffort || !bridge.BuiltinRole(role) || d.nativeBuiltins == nil || !d.nativeBuiltins()) {
 				route, known = bridge.RoleRoute(role)
 			}
 		}

@@ -314,7 +314,8 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
 		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
-		return nil, releaseAgent, nil
+		route, err := classifierSelection(request, r.URL.Path == "/v1/messages/count_tokens")
+		return route, releaseAgent, err
 	}
 	active, ok := g.pinNativeTurn(r, entry)
 	if !ok {

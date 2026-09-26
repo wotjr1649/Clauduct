@@ -513,6 +513,11 @@ type Translator struct {
 	// outputLimit is the caller's max_tokens. Nothing asks the backend to stop at it, so
 	// it is checked here against what the backend says it spent.
 	outputLimit int64
+	// answerOnly leaves the backend's reasoning out of that check: the caller turned
+	// thinking off, so its limit bounds the answer, and the reasoning is none of it. Native's
+	// auto mode classifier asks for 64 tokens this way, and the backend reasons past that
+	// before its first word (#149, measured 2026-09-26).
+	answerOnly bool
 	// streamedArgs accumulates tool call arguments as they stream, keyed by the item they
 	// belong to. Nothing is built from them; they exist to be checked against the snapshot
 	// the backend sends when it finishes writing them.
@@ -623,9 +628,10 @@ func NewTranslatorFor(request *anthropic.Request, effective string) *Translator 
 	if reported == "" {
 		reported = request.Model
 	}
-	t := &Translator{builder: anthropic.NewBuilder(reported), outputLimit: request.MaxTokens}
+	t := &Translator{builder: anthropic.NewBuilder(reported), outputLimit: request.MaxTokens, answerOnly: request.ThinkingDisabled}
 	callable := request.CallableNames()
 	t.builder.SetCallable(func(name string) bool { return callable[name] })
+	t.builder.SetStopSequences(request.StopSequences)
 	return t
 }
 
@@ -662,7 +668,12 @@ func (t *Translator) checkOutputLimit(usage codex.Usage) error {
 	if !usage.OutputKnown {
 		return ErrUsageUnknown
 	}
-	if usage.OutputTokens > t.outputLimit {
+	spent := usage.OutputTokens
+	// An unreported reasoning count is zero, and an impossible one is not subtracted.
+	if t.answerOnly && usage.ReasoningTokens <= spent {
+		spent -= usage.ReasoningTokens
+	}
+	if spent > t.outputLimit {
 		return ErrOutputLimitExceeded
 	}
 	return nil

@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -69,6 +71,25 @@ type textPart struct {
 	index   int
 	builder []byte
 	closed  bool
+	// With stop sequences: how much of builder the client has been given, and where the
+	// visible text ends once a sequence is found in this part. hidden is a part that began
+	// after the stop, which the client never sees.
+	emitted int
+	cut     bool
+	cutAt   int
+	hidden  bool
+}
+
+// visible is what the client is shown of this part: the whole text without stop
+// sequences, up to the sequence with one.
+func (p *textPart) visible() []byte {
+	switch {
+	case p.hidden:
+		return nil
+	case p.cut:
+		return p.builder[:p.cutAt]
+	}
+	return p.builder
 }
 
 // partKey identifies a text block by the item it belongs to as well as its index.
@@ -121,6 +142,62 @@ type Builder struct {
 	deferText         bool
 	waitChildren      bool
 	emptyNotification bool
+
+	// stops are the client's stop_sequences; hold is how many trailing bytes could still be
+	// the start of one; stopped is the sequence that ended the text.
+	stops   []string
+	hold    int
+	stopped string
+}
+
+// SetStopSequences ends the response's text at the first of these strings, as the client's
+// stop_sequences asks. The backend has no such parameter (#149), so the text is cut here:
+// the sequence and everything after it are not delivered, a streamed delta holds back what
+// could still begin one, and stop_reason says stop_sequence. The backend's own text is kept
+// whole for the checks that compare it.
+func (b *Builder) SetStopSequences(stops []string) {
+	b.stops = stops
+	b.hold = 0
+	for _, s := range stops {
+		b.hold = max(b.hold, len(s)-1)
+	}
+}
+
+// release hands out as much of part's text as the client may see now.
+func (b *Builder) release(part *textPart, final bool) string {
+	if part.hidden || part.cut {
+		return ""
+	}
+	if b.stopped != "" {
+		// Text another part wrote after the stop.
+		part.cut, part.cutAt = true, part.emitted
+		return ""
+	}
+	end := len(part.builder)
+	if len(b.stops) > 0 {
+		text := string(part.builder)
+		// Generation stops where the first sequence is complete: the earliest end, and of
+		// two ending together the longer.
+		at, which := -1, ""
+		for _, s := range b.stops {
+			i := strings.Index(text, s)
+			if i >= 0 && (at < 0 || i+len(s) < at+len(which) || i+len(s) == at+len(which) && i < at) {
+				at, which = i, s
+			}
+		}
+		switch {
+		case at >= 0:
+			end, part.cut, part.cutAt, b.stopped = max(at, part.emitted), true, at, which
+		case !final:
+			end = max(part.emitted, len(part.builder)-b.hold)
+			for end > part.emitted && end < len(part.builder) && !utf8.RuneStart(part.builder[end]) {
+				end--
+			}
+		}
+	}
+	out := string(part.builder[part.emitted:end])
+	part.emitted = end
+	return out
 }
 
 // DeferTextUntilComplete lets consumers that return only the last assistant block
@@ -191,6 +268,10 @@ func (b *Builder) SetCallable(callable func(name string) bool) {
 func (b *Builder) AddToolCall(id, name string, arguments []byte) error {
 	if b.completed {
 		return ErrStreamOrder
+	}
+	if b.stopped != "" {
+		// Generated after the stop sequence: the client asked for it not to exist.
+		return nil
 	}
 	// The id has to be addressable: a result comes back naming it, and an id outside this
 	// shape produces a result nothing can be matched to. The name is checked for the same
@@ -283,16 +364,24 @@ func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Fra
 		if len(b.parts) >= maxTextParts {
 			return nil, ErrResponseTooLarge
 		}
-		part = &textPart{index: b.nextIndex}
-		b.nextIndex++
+		if b.stopped != "" {
+			// Kept for the snapshot check, never shown, and numbered past every block the
+			// client can see so the ones it does see stay consecutive.
+			part = &textPart{index: maxTextParts + len(b.parts), hidden: true}
+		} else {
+			part = &textPart{index: b.nextIndex}
+			b.nextIndex++
+			frames = append(frames, contentBlockStart(part.index))
+		}
 		b.parts[key] = part
-		frames = append(frames, contentBlockStart(part.index))
 	}
 	if part.closed {
 		return nil, ErrStreamOrder
 	}
 	part.builder = append(part.builder, delta...)
-	frames = append(frames, contentBlockDelta(part.index, delta))
+	if released := b.release(part, false); released != "" || len(b.stops) == 0 {
+		frames = append(frames, contentBlockDelta(part.index, released))
+	}
 	if b.deferText {
 		return nil, nil
 	}
@@ -329,10 +418,14 @@ func (b *Builder) FinishText(item string, contentIndex int, snapshot string) ([]
 		return nil, ErrTextMismatch
 	}
 	part.closed = true
-	if b.deferText {
+	if b.deferText || part.hidden {
 		return nil, nil
 	}
-	return []Frame{contentBlockStop(part.index)}, nil
+	var frames []Frame
+	if rest := b.release(part, true); rest != "" {
+		frames = append(frames, contentBlockDelta(part.index, rest))
+	}
+	return append(frames, contentBlockStop(part.index)), nil
 }
 
 // Ping keeps a quiet stream alive: an SSE ping, after message_start when the client has not
@@ -367,29 +460,24 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		frames = append(frames, b.messageStart())
 	}
 	if b.WaitingForChildren() {
-		return append(frames, contentBlockStart(0), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false), Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}), nil
+		return append(frames, contentBlockStart(0), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false, ""), Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}), nil
 	}
 
 	// Closing in index order rather than map order: a client reading these sequentially
 	// must see a stable sequence, and Go's map iteration is deliberately not one.
-	open := make([]*textPart, 0, len(b.parts))
-	for _, part := range b.parts {
-		if !part.closed {
-			open = append(open, part)
+	ordered := b.ordered(nil)
+	for _, part := range ordered {
+		if part.closed {
+			continue
 		}
-	}
-	for i := 0; i < len(open); i++ {
-		for j := i + 1; j < len(open); j++ {
-			if open[j].index < open[i].index {
-				open[i], open[j] = open[j], open[i]
-			}
-		}
-	}
-	for _, part := range open {
 		part.closed = true
-		if !b.deferText {
-			frames = append(frames, contentBlockStop(part.index))
+		if b.deferText || part.hidden {
+			continue
 		}
+		if rest := b.release(part, true); rest != "" {
+			frames = append(frames, contentBlockDelta(part.index, rest))
+		}
+		frames = append(frames, contentBlockStop(part.index))
 	}
 	if b.deferText {
 		b.nextIndex = 0
@@ -406,9 +494,11 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 	// last assistant block -- Workflow agent(), the SDK -- otherwise saw only the last part
 	// of an answer the backend wrote in two (#91).
 	if b.deferText && len(b.parts) > 0 {
-		texts := make([]string, len(b.parts))
-		for _, part := range b.parts {
-			texts[part.index] = string(part.builder)
+		texts := make([]string, 0, len(ordered))
+		for _, part := range ordered {
+			if !part.hidden {
+				texts = append(texts, string(part.visible()))
+			}
 		}
 		index := b.nextIndex
 		b.nextIndex++
@@ -432,7 +522,7 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		return nil, ErrEmptyReply
 	}
 
-	frames = append(frames, messageDelta(usage, len(b.calls) > 0),
+	frames = append(frames, messageDelta(usage, len(b.calls) > 0, b.stopped),
 		Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)})
 	return frames, nil
 }
@@ -466,7 +556,7 @@ func toolBlockDelta(index int, input []byte) Frame {
 
 // Text reports what was accumulated, for a caller that needs the whole answer rather than
 // its deltas. Used by tests and by any non-streaming aggregation.
-func (b *Builder) Text() string { return b.textOf(nil) }
+func (b *Builder) Text() string { return b.textOf(nil, false) }
 
 // Answer excludes tool turns and incomplete responses. Reasoning is never text.
 func (b *Builder) Answer() string {
@@ -476,7 +566,7 @@ func (b *Builder) Answer() string {
 	if !b.completed || len(b.calls) != 0 {
 		return ""
 	}
-	return b.Text()
+	return b.textOf(nil, true)
 }
 
 // TextFor reports what one output item accumulated.
@@ -486,29 +576,32 @@ func (b *Builder) Answer() string {
 // checking item two's account against the whole response compares "B" with "AB" and calls
 // a sound response a mismatch.
 func (b *Builder) TextFor(item string) string {
-	return b.textOf(func(key partKey) bool { return key.item == item })
+	return b.textOf(func(key partKey) bool { return key.item == item }, false)
 }
 
-func (b *Builder) textOf(keep func(partKey) bool) string {
-	ordered := make([]*textPart, 0, len(b.parts))
-	for key, part := range b.parts {
-		if keep != nil && !keep(key) {
-			continue
-		}
-		ordered = append(ordered, part)
-	}
-	for i := 0; i < len(ordered); i++ {
-		for j := i + 1; j < len(ordered); j++ {
-			if ordered[j].index < ordered[i].index {
-				ordered[i], ordered[j] = ordered[j], ordered[i]
-			}
-		}
-	}
+// textOf joins the parts keep selects: as the backend wrote them, or as the client sees them.
+func (b *Builder) textOf(keep func(partKey) bool, shown bool) string {
 	var out []byte
-	for _, part := range ordered {
-		out = append(out, part.builder...)
+	for _, part := range b.ordered(keep) {
+		if shown {
+			out = append(out, part.visible()...)
+		} else {
+			out = append(out, part.builder...)
+		}
 	}
 	return string(out)
+}
+
+// ordered lists the parts keep selects (all, for nil) in the order they began.
+func (b *Builder) ordered(keep func(partKey) bool) []*textPart {
+	ordered := make([]*textPart, 0, len(b.parts))
+	for key, part := range b.parts {
+		if keep == nil || keep(key) {
+			ordered = append(ordered, part)
+		}
+	}
+	slices.SortFunc(ordered, func(x, y *textPart) int { return x.index - y.index })
+	return ordered
 }
 
 func (b *Builder) messageStart() Frame {
@@ -546,11 +639,14 @@ func contentBlockStop(index int) Frame {
 	return frame("content_block_stop", map[string]any{"type": "content_block_stop", "index": index})
 }
 
-func messageDelta(usage Usage, toolUse bool) Frame {
-	reason := "end_turn"
-	if toolUse {
+func messageDelta(usage Usage, toolUse bool, stopped string) Frame {
+	reason, sequence := "end_turn", any(nil)
+	switch {
+	case toolUse:
 		// The client reads this to know the turn is waiting on it rather than finished.
 		reason = "tool_use"
+	case stopped != "":
+		reason, sequence = "stop_sequence", stopped
 	}
 	counts := map[string]any{}
 	// Unknown stays unknown. Writing 0 for a count the backend never reported would turn
@@ -567,7 +663,7 @@ func messageDelta(usage Usage, toolUse bool) Frame {
 	}
 	return frame("message_delta", map[string]any{
 		"type":  "message_delta",
-		"delta": map[string]any{"stop_reason": reason, "stop_sequence": nil},
+		"delta": map[string]any{"stop_reason": reason, "stop_sequence": sequence},
 		"usage": counts,
 	})
 }

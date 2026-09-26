@@ -228,7 +228,21 @@ type Request struct {
 	// holds, and the model never hears about it -- the answer comes back as prose and
 	// whatever asked for structure fails somewhere further away from the cause.
 	OutputFormat *OutputFormat
+
+	// StopSequences end the answer's text at the first of them to appear.
+	StopSequences []string
+
+	// ThinkingDisabled is a request that turned thinking off, so its max_tokens bounds the
+	// answer alone.
+	ThinkingDisabled bool
 }
+
+// Bounds on stop_sequences. Every sequence is searched for in the text as it streams, and
+// the longest decides how much of a delta is held back, so both stay small.
+const (
+	maxStopSequences     = 16
+	maxStopSequenceBytes = 256
+)
 
 // OutputFormat is a structured output request, in the baseline's shape.
 type OutputFormat struct {
@@ -303,9 +317,21 @@ func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 
 	// Sampling controls the backend does not honour. Accepting and ignoring them would
 	// hand back output that silently disobeyed the request.
-	for _, name := range []string{"temperature", "top_p", "stop_sequences"} {
+	for _, name := range []string{"temperature", "top_p"} {
 		if _, presence := wire.Of(fields, name); presence != wire.Absent {
 			return nil, refuse(CodeUnsupportedSample, name)
+		}
+	}
+	// stop_sequences is honoured by cutting the backend's text (Builder.SetStopSequences).
+	if value, presence := wire.Of(fields, "stop_sequences"); presence != wire.Absent {
+		if presence != wire.Present || json.Unmarshal(value, &request.StopSequences) != nil ||
+			len(request.StopSequences) == 0 || len(request.StopSequences) > maxStopSequences {
+			return nil, refuse(CodeUnsupportedSample, "stop_sequences")
+		}
+		for _, s := range request.StopSequences {
+			if s == "" || len(s) > maxStopSequenceBytes {
+				return nil, refuse(CodeUnsupportedSample, "stop_sequences")
+			}
 		}
 	}
 
@@ -342,7 +368,7 @@ func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 	if err := decodeOutputConfig(fields, request); err != nil {
 		return nil, err
 	}
-	if err := decodeThinking(fields); err != nil {
+	if err := decodeThinking(fields, request); err != nil {
 		return nil, err
 	}
 	if err := decodeContextManagement(fields); err != nil {
@@ -785,7 +811,7 @@ func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) err
 // request from the same client look like two schemas depending on which build served it.
 const DefaultSchemaName = "structured_output"
 
-func decodeThinking(fields map[string]json.RawMessage) error {
+func decodeThinking(fields map[string]json.RawMessage, request *Request) error {
 	value, presence := wire.Of(fields, "thinking")
 	if presence != wire.Present {
 		return nil
@@ -802,6 +828,7 @@ func decodeThinking(fields map[string]json.RawMessage) error {
 	if kind != "adaptive" && kind != "enabled" && kind != "disabled" {
 		return refuseUnknown(CodeThinkingType, kind)
 	}
+	request.ThinkingDisabled = kind == "disabled"
 	if budget, present := wire.Of(thinking, "budget_tokens"); present == wire.Present {
 		number, err := exactInteger(budget)
 		if err != nil || number <= 0 || number > maxSafeInteger {

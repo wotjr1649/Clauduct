@@ -583,6 +583,8 @@ Claude Code 2.1.283·Codex CLI 0.157.0에서 무료 native 재현과 실제 back
 
 ### v0.5.1 — 주입 감사, 내장 역할 env, 세션 중 `/cd`, plugin·managed
 
+**2026-09-26 출하·실제 설치 확인 완료**([릴리스 검증](RELEASE-v0.5.1.md#출하-검사-2026-09-26)).
+
 Claude Code 2.1.283·Codex CLI 0.157.1에서 측정했다. 0.157.1은 과금 없는 재측정에서 도움말·plugin API 스냅샷과
 exec HTTP·WebSocket 요청 구조가 0.157.0과 같았다(버전 문자열과 키 순서만 다름). 실행 횟수와 출하 검증은
 [릴리스 노트](RELEASE-v0.5.1.md)에 적는다.

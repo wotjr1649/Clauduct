@@ -594,7 +594,8 @@ exec HTTP·WebSocket 요청 구조가 0.157.0과 같았다(버전 문자열과 �
 |---|---|
 | 고정 top-level `instructions` | 제거. backend는 이것이 없는 요청을 받고 developer 턴(시스템 프롬프트)을 따랐다. 로컬 토큰 계수의 기본값을 13에서 1로 바꿨고, 네 모델 16칸과 luna 18칸이 backend usage와 일치했다 |
 | 실패한 도구 결과 앞의 `Tool execution failed:` | 제거. backend 입력에는 실패 표지가 없고 참조 클라이언트(Codex 0.157.1)도 본문만 보낸다. native의 실패 본문은 스스로 실패를 말한다 |
-| Agent 설명의 보고·제약 보존·대기 문장, 고정 경로 문장, 메뉴 역할의 prompt, fork 재개 설명, 취소·실패·결과 미확보 보충 | 제거(10회 재현 0). 부모 앞에 없는 완료 보고는 Clauduct 문장 없이 native의 `<task-notification>` 형식으로 전달한다 |
+| Agent 설명의 보고·제약 보존·대기 문장, 고정 경로 문장, 메뉴 역할의 prompt, fork 재개 설명, 자식 취소 보충 | 제거(10회 재현 0) |
+| 되찾은 자식 보고의 "untrusted" 표시, 자식 오류·결과 미확보 보충 | 유지. 같은 측정에서 한 번도 발동하지 않아 제거 근거가 없다 |
 | ToolSearch의 역할 탐색 문장, Workflow의 TaskStop 문장, Workflow worker 역할 지침 | 제거(각 10회 재현 0) |
 | 위임 영수증 | **유지.** 빼면 native 실행 결과가 agent ID를 사용자에게 알리지 말라고 표시한 탓에, 사용자가 자식 ID를 물어도 부모가 답하지 않았다 |
 | inherit 메뉴의 "model 인자를 넘기지 말라"와 Agent의 별칭·isolation 문장 | **유지.** 둘을 뺐을 때 부모가 요청 없이 model을 넘겨 자식이 세션 route를 벗어났다. 둘 중 어느 쪽이 필요한지는 나눠 재지 않았다 |

@@ -7,9 +7,10 @@ Claude Code 2.1.283·Codex CLI 0.157.1 기준이다. 측정과 판정의 자세�
 
 - **요청에 더하던 문장을 줄였다(#144).** 고정 top-level `instructions`, 실패한 도구 결과 앞의
   `Tool execution failed:`, Agent·ToolSearch·Workflow 설명에 붙이던 행동 지시, 메뉴 역할의 prompt, Workflow worker
-  지침, fork 재개 설명, 취소·실패·결과 미확보 보충을 뺐다. 각 문장은 실제 backend에서 원래 문제 시나리오를 10회
-  돌려 재현이 없을 때만 뺐다. 재현된 위임 영수증, inherit 메뉴의 model 요청과 별칭·isolation 문장, SendMessage
-  문장, 압축 효율 지침은 유지했다. 로컬 토큰 계수 기본값은 13에서 1로 바뀌었다.
+  지침, fork 재개 설명, 자식 취소 보충을 뺐다. 각 문장은 실제 backend에서 원래 문제 시나리오를 10회 돌려 재현이
+  없을 때만 뺐다. 재현된 위임 영수증, inherit 메뉴의 model 요청과 별칭·isolation 문장, SendMessage 문장, 압축 효율
+  지침은 유지했다. 측정에서 발동하지 않은 되찾은 보고의 "untrusted" 표시와 오류·결과 미확보 보충도 유지했다.
+  로컬 토큰 계수 기본값은 13에서 1로 바뀌었다.
 - **Codex 기준 0.157.1.** 과금 없는 재측정에서 CLI·plugin API 스냅샷과 exec 요청 구조가 0.157.0과 같았다.
 - **내장 역할과 `CLAUDE_CODE_SUBAGENT_MODEL`(#145).** 이 값을 정했으면 model·effort 인자 없이 부른
   general-purpose·Explore·Plan은 native가 고른 모델·effort로 실행한다. 정하지 않았으면 기존 역할 표 그대로다.

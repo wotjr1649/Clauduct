@@ -341,6 +341,9 @@ type cliRoles struct {
 	flagModel string
 	flagSet   bool
 	flagErr   error
+	// subagent is CLAUDE_CODE_SUBAGENT_MODEL for the session, read from the environment and
+	// settings files once, at the first delegation, like the rest of this struct.
+	subagent func() (string, error)
 }
 
 func (c cliRoles) source(name string) bool { return c.sources == nil || c.sources[name] }
@@ -365,6 +368,9 @@ func (c *cliRoles) scope(args []string, cwd string) error {
 		end, known := nativeArgEnd(args, i)
 		if !known {
 			for _, arg := range args[i+1:] {
+				if arg == "--" {
+					break // native reads everything after it as data
+				}
 				if name, _, _ := strings.Cut(arg, "="); name == "--add-dir" || name == "--setting-sources" || name == "--settings" {
 					return errRoleDefaults
 				}
@@ -448,7 +454,7 @@ func settingsSubagentModel(raw []byte) (string, bool, error) {
 // settings env overrides the process environment, user < project < local < --settings,
 // each file only when its source is loaded, project and local from the session directory
 // only (not the git root). The managed settings rank is unmeasured, so a managed value is
-// unverified rather than placed.
+// unverified rather than placed. Native trims and lowercases a model name before resolving it.
 func subagentModel(config, cwd, managed string, cli cliRoles, env map[string]string) (string, error) {
 	model := env[subagentModelKey]
 	for _, file := range []struct{ source, path string }{
@@ -488,21 +494,30 @@ func subagentModel(config, cwd, managed string, cli cliRoles, env map[string]str
 			return "", errRoleDefaults
 		}
 	}
-	return model, nil
+	return strings.ToLower(strings.TrimSpace(model)), nil
+}
+
+// managedRoot is native's platform directory for managed settings and agents.
+func managedRoot() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "/Library/Application Support/ClaudeCode"
+	case "windows":
+		return `C:\Program Files\ClaudeCode`
+	}
+	return "/etc/claude-code"
 }
 
 func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string, role string) roleSources {
 	plugins := append([]string(nil), cli.plugins...) // appended to below; cli is shared across calls
 	s := roleSources{cli: cli.defs, err: cli.err}
 	// Native's platform directories; no invented environment override.
-	managed := "/etc/claude-code"
-	if runtime.GOOS == "darwin" {
-		managed = "/Library/Application Support/ClaudeCode"
+	managed := managedRoot()
+	if cli.subagent != nil {
+		s.defaultModel, s.defaultErr = cli.subagent()
+	} else {
+		s.defaultModel, s.defaultErr = subagentModel(config, cwd, managed, cli, env)
 	}
-	if runtime.GOOS == "windows" {
-		managed = `C:\Program Files\ClaudeCode`
-	}
-	s.defaultModel, s.defaultErr = subagentModel(config, cwd, managed, cli, env)
 	if managed != "" {
 		s.directories = append(s.directories, roleDirectory{path: filepath.Join(managed, ".claude", "agents")})
 		s.managed = 1

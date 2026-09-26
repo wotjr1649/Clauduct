@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
@@ -362,6 +363,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			spec.Env = append(filtered, "CLAUDUCT_PDF_PROJECTS_ROOT="+filepath.Join(configDir, "projects"))
 		}
 		cli := sessionCLIRoles(o.Args, agents, o.Cwd)
+		cli.subagent = sync.OnceValues(func() (string, error) { return subagentModel(configDir, o.Cwd, managedRoot(), cli, o.Env) })
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
 			return sessionRoleSources(configDir, o.Cwd, cli, o.Env, role).resolve(role, parent)
 		})

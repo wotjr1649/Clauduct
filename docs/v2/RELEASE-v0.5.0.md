@@ -16,7 +16,8 @@ Claude Code 2.1.283·Codex CLI 0.157.0 기준. 개발 후보의 무료 회귀와
   `CLAUDE_CODE_SUBAGENT_MODEL`과 그 effort를 native와 같게 읽는다. 이전 빌드는 네 경우에 native와 다른 모델·effort로
   자식을 실행했다(예: 부모 low에서 native sol/low, 이전 빌드 sol/xhigh).
 - **subagent 안의 forked Skill.** 검증된 subagent가 부른 `context: fork` skill의 자식을 받아들인다. 이전 빌드는
-  `AGENT_SELECTION_UNVERIFIED`로 거부했다. fork 자식의 `SendMessage` 재개가 받아들여진다는 문서의 오류도 고쳤다.
+  `AGENT_SELECTION_UNVERIFIED`로 거부했다. fork 자식의 `SendMessage` 재개를 "거부한다"고 적은 이전 문서도 바로잡았다.
+  2.1.283에서 native는 이 재개를 받아들이고, 제품은 같은 자식을 native 영수증과 대조해 실행한다.
 - **릴리스 자산 넷(#136).** `clauduct.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`. v0.4.x가 0.3.x updater를 위해
   함께 올리던 `clauduct-hook.exe`·`clauduct-dev.exe` 사본은 더 이상 올리지 않는다.
 

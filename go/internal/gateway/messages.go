@@ -277,6 +277,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Model:     backendRequest.Model,
 		Effort:    backendRequest.Effort.Effort,
 		Source:    backendRequest.Source,
+		Session:   g.promptCacheKey(scope.session),
 	})
 	execution.rejectedBeforeDispatch(err)
 	if err != nil {

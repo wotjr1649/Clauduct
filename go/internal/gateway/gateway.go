@@ -13,9 +13,11 @@ package gateway
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"mime"
 	"net"
@@ -97,6 +99,8 @@ type Gateway struct {
 	displays     displayHistory
 	toolFailures toolFailures
 	documents    documentRenderer
+	// cacheSalt keys promptCacheKey. Random per gateway, never sent.
+	cacheSalt [32]byte
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -175,6 +179,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		limits:    newLimitLedger(),
 		events:    newEventLedger(),
 	}
+	rand.Read(g.cacheSalt[:])
 	g.server = &http.Server{
 		Handler: http.HandlerFunc(g.handle),
 		// Header deadline only. A global WriteTimeout would eventually cut a long
@@ -191,6 +196,20 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		g.served <- err
 	}()
 	return g, nil
+}
+
+// promptCacheKey names a native session to the backend's prompt cache without sending the
+// session's own ID: a hash under this gateway's random salt, shaped as a UUID. Empty for a
+// request that names no session, which then goes without a key as before (#135).
+func (g *Gateway) promptCacheKey(session string) string {
+	if session == "" {
+		return ""
+	}
+	h := sha256.New()
+	h.Write(g.cacheSalt[:])
+	h.Write([]byte(session))
+	sum := h.Sum(nil)
+	return fmt.Sprintf("%x-%x-%x-%x-%x", sum[0:4], sum[4:6], sum[6:8], sum[8:10], sum[10:16])
 }
 
 func newToken() (string, error) {

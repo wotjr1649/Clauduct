@@ -9,11 +9,11 @@
 | 파일 | 하는 일 |
 |---|---|
 | `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·PDF 렌더러·`--dev` 명령이다 |
-| `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라가는 `clauduct.exe`의 바이트 동일 사본. 새 설치·업데이트는 받지 않는다(아래) |
+| `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라간 `clauduct.exe`의 바이트 동일 사본. v0.5.0부터 올리지 않는다(#136). 새 설치·업데이트는 받지 않는다(아래) |
 
 하나뿐이다(v0.4.0부터, #112). 별도로 설치하는 설정 파일·스크립트·데이터 디렉터리는 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`). 첫 인자의 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`·`--background-stop`)과 내부 `--clauduct-*` 역할은 제품이 처리한다. `--bg`·`--background`는 native에 전달하면서 연결 유지 프로세스를 시작한다. 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 전체 CLI 계약은 [ARCHITECTURE.md](ARCHITECTURE.md#4-cli-계약)를 따른다.
 
-**사본을 올리는 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. 새 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. v0.5.0부터는 사본을 올리지 않으며, 그때 남은 0.3.x 설치는 `install.ps1`로 다시 설치한다.
+**사본을 올렸던 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. v0.4.x의 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. **v0.5.0부터는 사본을 올리지 않는다.** 남은 0.3.x 설치의 `--update`는 `clauduct: release v0.5.0 does not carry clauduct-hook.exe, clauduct-dev.exe`로 멈추고 아무것도 바꾸지 않는다. 그 설치는 [README](../../README.md)의 설치 스크립트로 다시 설치한다. 설치 스크립트가 0.3.x의 세 파일을 `clauduct.exe` 하나로 바꾼다. 과거 릴리스의 자산은 그대로 둔다.
 
 **hook은 실행 중인 파일 자신이다.** `findHook()`은 `os.Executable()`이고, 세션 설정의 hook 명령은 `"<clauduct.exe>" --clauduct-hook`, gateway의 PDF 렌더러는 `--clauduct-render-pdf`, native가 찾는 `pdftoppm.exe`는 세션 임시 폴더에 둔 하드링크다(이름으로 역할을 고른다). PATH는 뒤지지 않는다 — 클라이언트는 그 결과를 실행하라는 말을 듣게 된다.
 
@@ -47,7 +47,7 @@ cd go
 $env:CGO_ENABLED = '0'
 go build -trimpath -o clauduct.exe      ./cmd/clauduct
 # 하나다. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(#112, 1장).
-# v0.4.x 릴리스는 이것을 clauduct-hook.exe·clauduct-dev.exe로도 복사해 올린다(4.1).
+# v0.4.x 릴리스만 이것을 clauduct-hook.exe·clauduct-dev.exe로도 복사해 올렸다(1장).
 ```
 
 `-trimpath`는 빌드 머신의 디렉터리 배치가 바이너리에 남지 않게 한다. `CGO_ENABLED=0`은
@@ -91,8 +91,8 @@ $env:CGO_ENABLED = '0'
 # 트리가 dirty가 되고 commit 스탬프에 +dirty가 붙는다 — 이 절차를 처음 실행하면서 실제로
 # 겪었다.
 go build -trimpath -o ../../release-assets/clauduct.exe      ./cmd/clauduct
-# v0.4.x 동안(1장): 0.3.x의 --update가 받을 수 있도록 같은 바이트를 옛 이름으로도 둔다.
-'clauduct-hook.exe', 'clauduct-dev.exe' | ForEach-Object { Copy-Item ../../release-assets/clauduct.exe ../../release-assets/$_ }
+# v0.4.x만(1장): 0.3.x의 --update가 받을 수 있도록 같은 바이트를 옛 이름으로도 뒀다.
+# v0.5.0부터 사본은 없다(#136). 자산은 clauduct.exe·install.ps1·uninstall.ps1·SHA256SUMS 넷이다.
 
 # 버전이 태그와 같고 스탬프에 +dirty가 없는지 확인한다. 어긋나면 그 빌드는 릴리스 후보가 아니다.
 $version = & ../../release-assets/clauduct.exe --dev --version
@@ -105,13 +105,13 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 #    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
-# 4. gh release create $tag clauduct.exe clauduct-hook.exe clauduct-dev.exe `
-#        install.ps1 uninstall.ps1 SHA256SUMS      # 사본 둘은 v0.4.x까지(1장)
+# 4. gh release create $tag clauduct.exe install.ps1 uninstall.ps1 SHA256SUMS
+#    v0.4.x는 사본 둘을 더한 여섯 개였다(1장). 태그별 자산 집합은 출하 검사가 태그로 정한다.
 ```
 
 | 자산 이름 | 왜 이 이름이어야 하나 |
 |---|---|
-| `clauduct.exe` | `update.Binaries`가 이 이름으로 찾는다. 없으면 이름으로 말하고 멈춘다. **v0.4.x까지는 `clauduct-hook.exe`·`clauduct-dev.exe`도 같은 바이트로 올리고 `SHA256SUMS`에 셋을 적는다** — 0.3.x의 `update.Binaries`가 세 이름을 모두 요구한다 |
+| `clauduct.exe` | `update.Binaries`가 이 이름으로 찾는다. 없으면 이름으로 말하고 멈춘다. **v0.4.x는 `clauduct-hook.exe`·`clauduct-dev.exe`도 같은 바이트로 올리고 `SHA256SUMS`에 셋을 적었다** — 0.3.x의 `update.Binaries`가 세 이름을 모두 요구한다. v0.5.0부터는 이 이름 하나다 |
 | `install.ps1` · `uninstall.ps1` | `releases/latest/download/install.ps1`이 동작하게 하는 것이 이 자산이다. `--update`는 이 둘을 건드리지 않는다 — 설치된 집합이 아니다 |
 | `SHA256SUMS` | 유일한 무결성 근거다. 서명이 없으므로 여기에 적힌 digest와 릴리스 API가 말하는 digest **둘 다** 대조한다. **스크립트 둘도 여기 적는다** — 받아서 실행하라고 안내하는 파일이므로 대조할 수단이 있어야 한다. `update.Sums`는 이름으로 찾으므로 추가 항목은 무시된다 |
 

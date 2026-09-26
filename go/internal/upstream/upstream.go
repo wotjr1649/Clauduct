@@ -51,6 +51,12 @@ type Call struct {
 	// Source names the rule that produced Model — catalogue, alias, family or direct. A
 	// reader who sees a surprising model needs to know which rule produced it.
 	Source string
+	// Session is sent as the session-id header, from which the backend derives prompt cache
+	// affinity (Codex rust-v0.157.0 client.rs), and as the body's prompt_cache_key. Body stays
+	// the canonical payload that counts and the exact-input cache compare; the transport adds
+	// the key when it sends. Measured on the real backend (#135): with both, a growing
+	// conversation's later turns hit the cache for 71-78% of their input, against 29-47%.
+	Session string
 }
 
 // Searcher is a transport that can answer the client's search side query.

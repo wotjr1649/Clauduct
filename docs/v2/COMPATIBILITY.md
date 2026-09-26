@@ -171,7 +171,7 @@ Read TUI에서 사전 계수 15,136 / backend 16,554로 `COUNT_INPUT_MISMATCH`�
 |---|---|
 | 개발 바이너리 | 제품 commit `31ff1184c21d7dac0fccd03394081aacd78b9db5`. [빌드 신원](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/build.json), [개발 경로 반영](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/promotion.json). 설치 명령으로 받은 release와 구분 |
 | 최근 실제 TUI | Claude Code `2.1.282`, Windows amd64, Go 1.27.1, CGO_ENABLED=0. v0.4.2 개발본(`bf68243`), gpt-6-luna/low 실제 backend 5회, 2026-09-25: 생성·압축·취소·복구·종료 PASS(공개 `go/cmd/ptydrive`로 조작). 그 전: v0.4.1 개발본(2.1.281), 2026-09-24 같은 항목 PASS. 이전: `2.1.280`, v0.3.2 후보, 2026-09-23 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md) |
-| 인자 표·native fixture 재측정 | Claude Code `2.1.282`, 2026-09-25(v0.4.2). `--help`와 모듈이 쓰는 plugin 이벤트 타입은 2.1.281과 같다. 설치 native를 쓰는 fixture 검사와 첫 출력 전·뒤 무출력 7분 검사 통과(로컬 backend, 과금 없음). 이전 기준: 2.1.281 |
+| 인자 표·native fixture 재측정 | Claude Code `2.1.283`, 2026-09-26(v0.5.0 개발). `--help`에 필수값 옵션 `--client-data-url <url>`이 더해졌고, 이전 인자 표가 이를 모르는 옵션으로 읽어 뒤의 `--settings`·`--model`·`-p` 경계를 잃었다. 인자 표에 더해 고쳤다. native는 `https://downloads.claude.ai/` 외의 값을 모델 요청 전에 exit 1로 거부한다(loopback 재현, 모델 요청 0). 서명 구성 기능 자체의 지원을 뜻하지 않는다. 모듈이 쓰는 plugin 이벤트 타입은 같다. 설치 native를 쓰는 fixture 검사와 전체 일반·race 회귀 통과(로컬 backend, 과금 없음). 이전 기준: `2.1.282`, 2026-09-25(v0.4.2) |
 | 이전 근거 | 2.1.275 등에서 수행한 검사는 해당 버전·빌드의 근거로 보존. 최신 버전의 재검증으로 승격하지 않음 |
 | 최근 검사 | S49 전체 회귀 17 packages/1,668 통과/3 skip. gateway race 567개, native Workflow/settings race 21개, 최종 부모 low 조건의 Workflow 105개 통과, vet exit 0. [검사 이력](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/evidence.json), [TUI 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/workflow-completion-20260920/REPORT.md). 최초 실패는 보존 |
 
@@ -442,7 +442,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 항목 | 상태 |
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
-| forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 루트 대화 아래 깊이 1의 general-purpose, skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). `-p`에서 직접 입력한 명령은 native가 agent ID 없이 실행하므로 루트 요청으로 처리된다. subagent 안에서 부른 fork와 fork 자식의 `SendMessage` 재개는 여전히 거부한다(2026-09-23, native 2.1.280 fixture) |
+| forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). `-p`에서 직접 입력한 명령은 native가 agent ID 없이 실행하므로 루트 요청으로 처리된다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. Agent 자식과 달리 재개 연결을 따로 검증하지 않으며, 사용자의 중지가 `stoppedByUser`로 남지 않아 중지된 자식을 막는 규칙(#91)이 fork 자식에는 적용되지 않는다 |
 | `review-diff` 헬퍼 | 미지원. 기준선의 경로 탈출 방지·2 MiB 상한은 없다 |
 | Workflow remote·자식의 별도 Workflow·범용 JS 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 임의 JS는 `resumeFromRunId` 단독의 결과 회수, 독립 계획은 미실행 단계만 재개. 다른 세션, 기록 없는 강제 종료, 불명확한 시작 단계의 자동 재실행은 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
@@ -558,6 +558,26 @@ exec wire 차이와 이 제품 경로를 측정한 뜻이며, Codex 자체 TUI·
 계속 거부하고 일반 사용자 세션의 검색 정책과 별도 전송 통계는 유지한다.
 [설정 형식](../../go/README.md#검증용-실호출은-별개의-예산), [릴리스 검증](RELEASE-v0.4.4.md).
 
+### v0.5.0 — 요청 세션 식별, 역할·fork 범위, 자산 넷
+
+Claude Code 2.1.283·Codex CLI 0.157.0에서 무료 native 재현과 실제 backend 검증을 함께 수행했다. 개발 후보
+`002563e`의 실제 backend 결과는 아래와 같다. 각 실행은 실행 전에 만든 영속 총상한 안에서 돌았다.
+
+| 실행 | 예약 / 상한 | 결과 |
+|---|---|---|
+| `--add-dir` 역할·settings env 모델 | 5 / 10 | PASS. add-dir 정의는 luna/medium, 모델 없는 정의는 env 모델 sol에 부모 effort low |
+| subagent 안 forked Skill | 10 / 10 → 6 / 10 | 첫 실행 FAIL: 루트 모델이 fork의 중간 알림에 Agent를 다시 띄워 상한을 소진했고 초과 요청은 전송 전에 거부됐다. 손자 자체는 `native-fork`로 성공했다. 반복 실행 금지 지시를 더한 재실행 PASS |
+| fork 자식의 `--resume` 뒤 `SendMessage` 재개 | 10 / 10 → 9 / 16 | 첫 실행 FAIL: 두 단계와 ToolSearch·SendMessage·TaskOutput 단계에 상한 10이 부족해 루트의 마지막 답이 거부됐다. 재개된 자식은 이미 `native-fork`로 성공했다. 상한 16 재실행 PASS(자식만 아는 재개 코드가 루트에 돌아옴) |
+
+| 항목 | 구현·관측 범위 |
+|---|---|
+| Claude Code 2.1.283 인자(`--client-data-url`) | 필수값 옵션으로 인자 표에 더했다. 이전 표는 모르는 옵션으로 읽어 뒤의 `--settings`·`--model`·`-p` 경계를 잃었다. 서명 구성 기능 자체는 native가 처리하며 지원을 주장하지 않는다 |
+| Codex 요청 형식(#135) | **HTTP SSE와 현행 본문을 유지하고 세션 식별을 더했다.** native 세션마다 불투명 키(게이트웨이 난수 salt와 세션 ID의 해시)를 `prompt_cache_key`와 `session-id` 헤더로 보낸다. native 세션 ID 자체는 보내지 않는다. 키는 게이트웨이 프로세스마다 새로 정해지므로 `--resume`으로 새로 연 세션은 새 키를 쓴다. 근거는 설치 Codex 0.157.0의 exec·TUI 구조 캡처(합성 credential, 과금 0)와 같은 대화를 세 형식으로 보낸 실제 backend 비교다. 현행 HTTP의 2턴 이후 캐시 적중은 29–47%, 세션 식별을 더한 HTTP는 71–78%, Codex 방식(WebSocket·lite·증분 전송)은 75–82%였다. 첫 텍스트까지의 시간과 총 시간은 세 형식이 잡음 범위에서 같았다. WebSocket은 전송량을 약 1/3로, 첫 이벤트를 약 0.35초로 줄였지만 소켓 수명·재연결·증분 상태라는 새 실패 경로를 들인다. 캐시 적중 상승이 사용량 한도와 큰 모델의 지연에 주는 효과는 측정하지 않았다 |
+| #135 재검토 조건 | backend가 옛 본문이나 HTTP SSE를 4xx로 거부하거나 폐지를 알릴 때, Codex가 HTTP나 옛 본문 경로를 제거할 때, 새 형식에서만 쓰이는 모델·기능이 필요할 때, 또는 WebSocket 전송의 체감 지연 이득이 측정될 때 |
+| 커스텀 역할 기본값 | native 2.1.283과 같게 수집한다. 같은 이름의 우선순위는 CLI > project > `--add-dir`(나중 것 우선) > user다. `--setting-sources`가 빼는 출처의 정의와 plugin 활성화는 읽지 않는다. `CLAUDE_CODE_SUBAGENT_MODEL`은 프로세스 env < user < project < local < `--settings` 순으로 읽고, 모델이 없는 정의에만 적용하며 effort는 부모를 따른다. managed settings에 이 값이 있으면 순위를 측정하지 않았으므로 거부한다. 내장 역할(Explore·Plan·general-purpose)은 기존 역할 표가 정하며 이 값을 따르지 않는다. 2.1.283 측정에서 native는 env가 있으면 general-purpose를 env 모델로, Explore는 자기 모델(sol)로 실행하고 effort는 부모를 따랐다. 세션 중 `/add-dir`·`/cd`, ZIP·URL plugin, managed 역할 경로는 측정하지 않았다 |
+| forked Skill | subagent 안의 fork를 받아들이고, fork 자식의 `SendMessage` 재개가 native 영수증과 대조돼 실행됨을 고정했다([3절](#3-미지원미검증구현-대기)) |
+| 릴리스 자산(#136) | `clauduct.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS` 넷. 0.3.x 설치의 `--update`는 사본이 없어 멈추므로 설치 스크립트로 다시 설치한다([PACKAGING.md](PACKAGING.md#1-나가는-것)) |
+
 2026-09-26 감사에서는 native 2.1.282의 SDK 초기화 목록과 공식 문서를 대조했다. 목록에 나타난 도구·명령은
 기능 합격 목록이 아니다. 실제 backend에서 기본 생성, 파일 수정, 구조화 출력, 이미지/PDF, MCP,
 루트 forked Skill, 단순 Workflow, 세션 재개와 TUI 압축·취소·복구를 검사했다. Luna의 PDF 식별자 판독에서
@@ -565,8 +585,8 @@ exec wire 차이와 이 제품 경로를 측정한 뜻이며, Codex 자체 TUI·
 backend 전달 바이트는 보존됐다. 이는 모델별 모든 판독의 정확성을 보장하는 결과가 아니다.
 
 최종 목표는 Windows의 로컬 기능과 backend로 구현 가능한 기능 전체다. subagent 내부 forked Skill,
-fork 자식 재개, 역할 기본값 수집 확대, Workflow 재실행 resume, review-diff 헬퍼와 native 도구를 통한
-Office 처리는 구현·인수 검증 대기다. 서비스 전용 제약은
+fork 자식 재개, 역할 기본값 수집 확대는 v0.5.0에서 다뤘다(아래 v0.5.0 절). Workflow 재실행 resume,
+review-diff 헬퍼와 native 도구를 통한 Office 처리는 구현·인수 검증 대기다. 서비스 전용 제약은
 [공식 기능 가용성](https://code.claude.com/docs/en/feature-availability)에 따라 별도로 관리한다.
 모든 로컬 slash command와 조합을 실측했거나 API 오류가 언제나 없다는 판정은 하지 않는다.
 

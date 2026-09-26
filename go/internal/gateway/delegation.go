@@ -878,7 +878,8 @@ func (d *delegations) subagentFile(binding agentBinding, suffix string, limit in
 // Native starts that child without an Agent call, so nothing was prepared for it and its
 // metadata carries no toolUseId: on 2.1.280 it is agentType, spawnDepth and two request
 // flags. What identifies it is the combination of a live SubagentStart registration, a
-// general-purpose child at depth 1 under the root conversation with no tool call, and a
+// general-purpose child with no tool call one level below the conversation that ran the
+// skill (the root at depth 1, or a verified subagent of this session at its depth + 1), and a
 // transcript that opens with the skill body as a meta user message. The body is not
 // matched: a skill from a file starts "Base directory for this skill: …", a built-in one
 // such as code-review starts with its own prompt (both measured on 2.1.280). The Node
@@ -891,8 +892,25 @@ func (d *delegations) subagentFile(binding agentBinding, suffix string, limit in
 // verifies the child again from the same evidence.
 func (d *delegations) nativeFork(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (resolvedChoice, bool) {
 	var none resolvedChoice
-	if scope.parent != "" || binding.ID != id || binding.SessionID != scope.session || bridge.CanonicalRole(binding.Role) != "general-purpose" {
+	if binding.ID != id || binding.SessionID != scope.session || bridge.CanonicalRole(binding.Role) != "general-purpose" {
 		return none, false
+	}
+	// A fork started inside a subagent sits one level below a child this gateway already
+	// verified in the same session, and its metadata names that child (measured on 2.1.283:
+	// spawnDepth 2, parentAgentId the subagent). The parent's own sidecar gives its depth.
+	depth := 1
+	if scope.parent != "" {
+		d.mu.Lock()
+		parent, verified := d.resolved[scope.parent]
+		d.mu.Unlock()
+		if !verified || parent.session != scope.session {
+			return none, false
+		}
+		parentMeta, err := d.readMetadata(agentBinding{ID: scope.parent, SessionID: scope.session, TranscriptPath: binding.TranscriptPath})
+		if err != nil || parentMeta.SpawnDepth < 1 || parentMeta.StoppedByUser {
+			return none, false
+		}
+		depth = parentMeta.SpawnDepth + 1
 	}
 	meta, first, err := d.forkEvidence(binding)
 	if errors.Is(err, errMetadataPending) && len(contexts) > 0 {
@@ -907,7 +925,7 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 			}
 		}
 	}
-	if err != nil || meta.ToolUseID != "" || meta.ParentAgentID != "" || meta.SpawnDepth != 1 || meta.StoppedByUser || !roleMatches("general-purpose", meta.AgentType, false) {
+	if err != nil || meta.ToolUseID != "" || meta.ParentAgentID != scope.parent || meta.SpawnDepth != depth || meta.StoppedByUser || !roleMatches("general-purpose", meta.AgentType, false) {
 		return none, false
 	}
 	var entry struct {
@@ -928,7 +946,7 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 		return none, false
 	}
 	route.Source = "native-fork"
-	choice := resolvedChoice{session: scope.session, role: "general-purpose", route: route}
+	choice := resolvedChoice{session: scope.session, parent: scope.parent, role: "general-purpose", route: route}
 	for _, model := range bridge.Models {
 		if model.ID == route.Model {
 			choice.alias = model.Alias
@@ -965,7 +983,7 @@ func (d *delegations) cacheFork(id string, choice resolvedChoice) (bridge.Route,
 		}
 		return chosen.route, true, nil
 	}
-	choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias})
+	choice.receipt = d.noteSelection(SelectionRecord{Session: choice.session, Parent: choice.parent, Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, NativeModel: choice.alias})
 	if err := d.cacheChoice(id, choice); err != nil {
 		return bridge.Route{}, false, err
 	}

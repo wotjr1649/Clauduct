@@ -256,12 +256,16 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 	// request is over however it ended.
 	ctx, cancel := context.WithTimeout(ctx, d.overall())
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.target(), bytes.NewReader(call.Body))
+	body := withSession(call.Body, call.Session)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, d.target(), bytes.NewReader(body))
 	if err != nil {
 		cancel()
 		return nil, err
 	}
-	applyHeaders(request, credential, version, len(call.Body))
+	applyHeaders(request, credential, version, len(body))
+	if call.Session != "" {
+		request.Header.Set("session-id", call.Session)
+	}
 
 	response, err := d.client().Do(request)
 	if err != nil {
@@ -351,6 +355,23 @@ func applyHeaders(request *http.Request, credential auth.Credential, version str
 	request.Header.Set("User-Agent", "codex-cli/"+version+" (Windows; x64)")
 	request.Header.Set("originator", "codex_cli_rs")
 	request.Header.Set("Openai-Beta", "responses=experimental")
+}
+
+// withSession adds the session's prompt_cache_key to an encoded request object. The body is
+// the gateway's own json.Marshal output, so it ends in the object's closing brace; anything
+// else goes unchanged rather than be rewritten on a guess.
+func withSession(body []byte, session string) []byte {
+	trimmed := bytes.TrimSpace(body)
+	if session == "" || len(trimmed) < 2 || trimmed[len(trimmed)-1] != '}' {
+		return body
+	}
+	key, _ := json.Marshal(session)
+	out := append([]byte(nil), trimmed[:len(trimmed)-1]...)
+	if len(bytes.TrimSpace(out)) > 1 {
+		out = append(out, ',')
+	}
+	out = append(out, `"prompt_cache_key":`...)
+	return append(append(out, key...), '}')
 }
 
 // ErrRouteMismatch means the declared route is not the one the body would run on.

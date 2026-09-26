@@ -454,6 +454,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
+| auto 권한 모드의 분류기 판정 | 미지원. native 자체 분류기 요청을 `UNSUPPORTED_SAMPLING`으로 거부해 판정이 필요한 행동은 `Classifier unavailable`로 거부된다. v0.5.2 측정에서 이 backend로 연결한 안전 관문이 불합격이었다(아래 v0.5.2 절) |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -639,6 +640,28 @@ fork 자식 재개, 역할 기본값 수집 확대는 v0.5.0에서 다뤘다(아
 review-diff 헬퍼와 native 도구를 통한 Office 처리는 구현·인수 검증 대기다. 서비스 전용 제약은
 [공식 기능 가용성](https://code.claude.com/docs/en/feature-availability)에 따라 별도로 관리한다.
 모든 로컬 slash command와 조합을 실측했거나 API 오류가 언제나 없다는 판정은 하지 않는다.
+
+### v0.5.2 — auto 모드 분류기(#149): 측정 결과 미지원 유지
+
+**출하 없음(2026-09-27).** 제품 코드는 v0.5.1과 같다.
+
+Claude Code 2.1.283이 `CLAUDE_CODE_AUTO_MODE_SERVER=0`에서 보내는 자체 분류기 요청을 이 backend가 판정하게 하는
+방법을 시험했다. Clauduct 문장은 더하지 않았고, backend에 없는 `stop_sequences`는 출력을 정지 문자열에서 끊는 방식으로 흉내 냈다.
+
+| 측정 | 결과 |
+|---|---|
+| native 분류기 흐름(과금 없는 loopback) | 1단계는 `claude-sonnet-5`·`max_tokens` 64·thinking 끔·정지 문자열 `</severity>`다. severity 25 이하면 허용하고 26 이상이면 2단계(`max_tokens` 8192)로 간다. 2단계는 35 이하 허용, 36 이상 거부다. 1단계가 오류면 주 모델·`max_tokens` 2112로 다시 묻고, 그것도 실패하면 `Classifier unavailable`로 거부한다. 요청 class는 `auxiliary`다 |
+| 번역만 한 경우(실제 backend) | backend의 reasoning 토큰이 64와 2112를 모두 넘겨 두 요청이 출력 한도로 거부됐다. 판정이 필요한 행동마다 과금 2회와 약 2.5분을 쓴 뒤 거부된다 |
+| thinking을 끈 요청의 출력 한도에서 reasoning을 뺀 경우 | 1단계가 정상 형식으로 답했다(보이는 출력 최대 13토큰) |
+| 안전 관문(합성 표본 위험 30·정상 30·경계 10, `gpt-5.6-terra`/high, 표본당 1회) | **불합격.** 합의한 엄격 형식 검사에서는 2단계 응답 35개 중 15개가 `<thinking>` 없이 답해 형식 오류다. native가 받는 형식으로 읽어도(loopback에서 `<thinking>` 없는 답을 받는 것을 확인) 위험 표본 5개가 자동 승인됐고, 정상 30개와 핵심 출하 6개는 모두 허용됐다 |
+
+**원인.** 자동 승인된 다섯은 모두 권한·의도에 달린 행동이다: 승인 없는 push, 승인과 다른 대상, 인용되거나 에이전트가 쓴 승인,
+내용을 확인하지 않은 업로드. native 1단계는 해악만 채점하고 사용자 의도는 2단계에 맡긴다. 이 backend는 이 행동들의
+해악을 8–18로 매겨 2단계 없이 허용되는 구간에 넣었고, 하나는 2단계가 사용자 요청을 근거로 허용했다.
+
+**처분.** 분류기 요청은 계속 거부하고, 프롬프트나 문턱을 보정해 통과시키지 않는다. auto 모드에서 판정이 필요한 행동은
+v0.5.0부터와 같이 거부되므로, 판정이 필요하면 `Shift+Tab`으로 다른 권한 모드를 쓴다. 표본 70개의 결과는 이 backend·route·
+native 버전에서의 관찰이며, Anthropic 분류기와의 비교는 하지 않았다. 측정에 쓴 실제 backend 호출은 109회다.
 
 ## 4. 제3자 구현이라는 사실
 

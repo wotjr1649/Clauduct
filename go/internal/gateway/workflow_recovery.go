@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
-	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 var errWorkflowRecoveryUnverified = errors.New("WORKFLOW_RECOVERY_UNVERIFIED")
@@ -35,7 +34,7 @@ func (d *delegations) rejectWorkflow(scope delegationScope, call string, raw jso
 // Recovery is a data-only Workflow, not replay of arbitrary JavaScript. Native
 // still owns its approval and result delivery. Uncertain effects are never retried.
 func (d *delegations) recoverWorkflow(scope delegationScope, call string, raw json.RawMessage) (json.RawMessage, error) {
-	fields, err := wire.Fields(raw, []string{"resumeFromRunId"})
+	fields, err := workflowFields(raw, "resumeFromRunId")
 	var source string
 	if err != nil || json.Unmarshal(fields["resumeFromRunId"], &source) != nil || !correlationShape.MatchString(source) || scope.parent != "" {
 		return nil, errWorkflowRecoveryUnverified

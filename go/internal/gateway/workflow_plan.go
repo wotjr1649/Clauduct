@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -155,8 +156,28 @@ func (d *delegations) restrictWorkflowTools(req *anthropic.Request, session, age
 	return true
 }
 
+// workflowFields reads a Workflow input limited to the named fields plus the two native's
+// schema marks "Ignored" (description, title), which models fill. Those must still be
+// strings and are dropped; any other field is refused.
+func workflowFields(raw []byte, names ...string) (map[string]json.RawMessage, error) {
+	fields, err := wire.Fields(raw, slices.Concat(names, []string{"description", "title"}))
+	if err != nil {
+		return nil, errWorkflowRecoveryUnverified
+	}
+	for _, name := range []string{"description", "title"} {
+		if value, present := fields[name]; present {
+			var text string
+			if json.Unmarshal(value, &text) != nil {
+				return nil, errWorkflowRecoveryUnverified
+			}
+			delete(fields, name)
+		}
+	}
+	return fields, nil
+}
+
 func parseWorkflowPlan(raw []byte, parent bridge.Route) (*workflowPlan, error) {
-	fields, err := wire.Fields(raw, []string{"script", "args"})
+	fields, err := workflowFields(raw, "script", "args")
 	if err != nil {
 		return nil, errWorkflowRecoveryUnverified
 	}

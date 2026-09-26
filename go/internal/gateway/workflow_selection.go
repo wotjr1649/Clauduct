@@ -24,6 +24,14 @@ func (d *delegations) adaptWorkflow(scope delegationScope, id string, raw json.R
 	if _, present := fields["resumeFromRunId"]; present {
 		return d.recoverWorkflow(scope, id, raw)
 	}
+	// Native's schema offers name for "a predefined workflow", and models put the plan
+	// marker there rather than in script (v0.5.1 G3: every such call was refused).
+	var name string
+	if fields["script"] == nil && fields["scriptPath"] == nil && json.Unmarshal(fields["name"], &name) == nil && name == bridge.WorkflowPlanMarker {
+		fields["script"] = fields["name"]
+		delete(fields, "name")
+		raw, _ = json.Marshal(fields)
+	}
 	if fields["scriptPath"] != nil || fields["script"] == nil && fields["name"] != nil {
 		return d.prepareWorkflowSource(scope, id, raw)
 	}

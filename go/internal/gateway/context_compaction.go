@@ -86,7 +86,7 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 	if s.route.Model != "" {
 		override = []bridge.Route{s.route}
 	}
-	route, err := bridge.ResolveRoute(request, override...)
+	route, err := g.selection.ResolveRoute(request, override...)
 	if err != nil {
 		return nil, false, routeCategory(err)
 	}

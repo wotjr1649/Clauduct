@@ -43,14 +43,15 @@ var agentTools = []string{"ToolSearch", "Read", "Grep", "Glob", "Bash", "Edit", 
 // menu is one entry per model (decided 2026-09-24), not one per model and effort. The effort
 // comes from the gateway's Agent effort argument, or the model's default. No definition sets
 // effort: native would show that fixed value on the task even when the argument changed it.
-func agentDefinitions() map[string]agentDefinition {
+func (config ClauductSettings) agentDefinitions() map[string]agentDefinition {
 	menu := make(map[string]agentDefinition, len(bridge.Models)+1)
 	for _, model := range bridge.Models {
+		route, _ := config.Selection.RoleRoute(bridge.MenuPrefix + model.Key)
 		menu[bridge.MenuPrefix+model.Key] = agentDefinition{
-			Description: "Development worker on " + model.ID + ". Runs at " + model.Effort +
+			Description: "Development worker on " + route.Model + ". Runs at " + route.Effort +
 				" unless the effort argument names another.",
 			Tools: agentTools,
-			Model: model.ID,
+			Model: route.Model,
 		}
 	}
 	// Use the parent route when no separate task selection was requested. The
@@ -68,8 +69,8 @@ func agentDefinitions() map[string]agentDefinition {
 }
 
 // sessionAgents encodes the menu, or reports that there is none to send.
-func sessionAgents() (string, bool) {
-	encoded, err := json.Marshal(agentDefinitions())
+func (config ClauductSettings) sessionAgents() (string, bool) {
+	encoded, err := json.Marshal(config.agentDefinitions())
 	if err != nil {
 		return "", false
 	}

@@ -2,6 +2,19 @@ package app
 
 import "strings"
 
+// Native handles background dispatch before its ordinary help/version flags.
+func nativeInformation(args []string) bool {
+	if BackgroundRequested(args) {
+		return false
+	}
+	for _, flag := range []string{"--help", "-h", "--version", "-v"} {
+		if _, found := optionValue(args, flag); found {
+			return true
+		}
+	}
+	return false
+}
+
 // The settings rewrite and read-only role scan share native value boundaries.
 // Public arities follow Claude Code 2.1.283 --help; hidden entries retain the
 // existing role scanner's contract. Unknown options cannot prove where

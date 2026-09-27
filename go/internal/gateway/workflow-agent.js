@@ -3,6 +3,7 @@
 function agent(prompt, options = {}) {
   const catalogue = __CLAUDUCT_CATALOGUE__;
   const parent = __CLAUDUCT_PARENT__;
+  const roles = __CLAUDUCT_ROLES__;
   if (!options || typeof options !== 'object' || Array.isArray(options)) throw Error('CLAUDUCT_WORKFLOW_OPTIONS_UNSUPPORTED');
   const opts = {...options};
   if (Object.hasOwn(opts, 'maxTurns')) throw Error('CLAUDUCT_WORKFLOW_OPTION_UNSUPPORTED: use a native agent definition for maxTurns; no agent started');
@@ -13,9 +14,10 @@ function agent(prompt, options = {}) {
   const hasModel = Object.hasOwn(opts, 'model'), hasEffort = Object.hasOwn(opts, 'effort');
   const model = hasModel ? opts.model : null, effort = hasEffort ? opts.effort : null;
   const explicit = hasModel && model !== 'inherit';
-  const selected = explicit && typeof model === 'string' && Object.hasOwn(catalogue, model) ? catalogue[model] : explicit ? null : parent;
+  const rolePair = hasRole && !hasModel && Object.hasOwn(roles, opts.agentType) ? roles[opts.agentType] : null;
+  const selected = explicit && typeof model === 'string' && Object.hasOwn(catalogue, model) ? catalogue[model] : explicit ? null : rolePair || parent;
   // A role without a model runs on the role's model, which only the gateway knows.
-  const accepts = hasRole && !hasModel ? Object.values(catalogue).some(v => v[2].includes(effort)) : selected && selected[2].includes(effort);
+  const accepts = hasRole && !hasModel && !rolePair ? Object.values(catalogue).some(v => v[2].includes(effort)) : selected && selected[2].includes(effort);
   if (!selected || hasEffort && !accepts) throw Error('UNSUPPORTED_MODEL_OR_EFFORT: use a listed Clauduct model and effort');
   const chosenEffort = hasEffort ? effort : selected[1];
   const label = opts.label === undefined ? 'agent' : opts.label;
@@ -23,7 +25,7 @@ function agent(prompt, options = {}) {
   const proof = [__CLAUDUCT_CALL__,model,effort];
   if (hasTools || hasRole) proof.push({...hasTools?{tools:opts.tools}:{},...hasRole?{agentType:opts.agentType}:{}});
   delete opts.tools; // Enforced by the gateway, not an ignored native VM option.
-  if (hasRole && !hasModel) return globalThis.agent(prompt, {...opts,
+  if (hasRole && !hasModel && !rolePair) return globalThis.agent(prompt, {...opts,
     label:label+' [clauduct:'+JSON.stringify(proof)+']'});
   return globalThis.agent(prompt, {...opts, model:selected[0], effort:chosenEffort,
     label:label+' [clauduct:'+JSON.stringify(proof)+']'});

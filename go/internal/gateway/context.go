@@ -140,18 +140,25 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	fields, err := wire.Fields(raw, []string{"event", "sessionId", "agentId", "transcriptPath", "trigger"})
+	fields, err := wire.Fields(raw, []string{"event", "sessionId", "agentId", "transcriptPath", "trigger", "source"})
 	var event struct {
 		Event      string `json:"event"`
 		Session    string `json:"sessionId"`
 		Agent      string `json:"agentId"`
 		Transcript string `json:"transcriptPath"`
 		Trigger    string `json:"trigger"`
+		Source     string `json:"source"`
 	}
 	if err != nil || len(fields) < 2 || json.Unmarshal(raw, &event) != nil ||
 		!correlationShape.MatchString(event.Session) || (event.Agent != "" && !correlationShape.MatchString(event.Agent)) ||
 		(event.Trigger != "" && event.Trigger != "manual" && event.Trigger != "auto") ||
 		(event.Event != "PreCompact" && event.Event != "PostCompact" && event.Event != "SessionStart") {
+		g.refuseCategory(w, 400, "INVALID_CONTEXT_EVENT")
+		return
+	}
+	switch event.Source {
+	case "", "startup", "resume", "clear", "compact", "fork":
+	default:
 		g.refuseCategory(w, 400, "INVALID_CONTEXT_EVENT")
 		return
 	}
@@ -165,6 +172,10 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 	if event.Event == "SessionStart" {
 		if err := g.contextSession(event.Session, event.Transcript); err != nil {
 			g.refuseCategory(w, 400, "CONTEXT_JOURNAL_UNVERIFIED")
+			return
+		}
+		if err := g.registerSessionProfile(event.Session, event.Source); err != nil {
+			g.refuseSessionProfile(w, event.Session, err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -275,7 +286,7 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 		if s.route.Model != "" {
 			override = []bridge.Route{s.route}
 		}
-		route, err := bridge.ResolveRoute(request, override...)
+		route, err := g.selection.ResolveRoute(request, override...)
 		if err != nil {
 			return override, func() {}, routeCategory(err)
 		}

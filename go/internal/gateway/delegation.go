@@ -65,6 +65,7 @@ func roleMatches(expected, observed string, custom bool) bool {
 // Correlate a resolved Agent call with native child metadata. Full IDs and native
 // aliases follow the same precedence; role prompts and tools stay with the client.
 type delegations struct {
+	selection bridge.Selection
 	// projectsErr is why the projects tree could not be created, for the diagnostic that
 	// would otherwise report only that every delegation was refused.
 	projectsErr error
@@ -89,6 +90,15 @@ type delegations struct {
 	workflowSessions    map[string]string
 	workflowPersistence WorkflowPersistenceReport
 	workflowSourceDirs  []string
+}
+
+// ConfigureSelection installs this launch's immutable routing defaults. It must
+// follow ConfigureDelegations and precede starting the native child.
+func (g *Gateway) ConfigureSelection(selection bridge.Selection) {
+	g.selection = selection.Snapshot()
+	if g.delegations != nil {
+		g.delegations.selection = g.selection
+	}
 }
 
 // Retire failed native tool calls, and retract only calls prepared by a failed
@@ -303,7 +313,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		// A task-bound explicit selection remains fixed in descendants. Refuse a
 		// conflicting child choice instead of silently substituting either model.
 		if explicitModel {
-			requested, err := bridge.SelectRoute(modelID, effort)
+			requested, err := d.selection.SelectRoute(modelID, effort)
 			if errors.Is(err, bridge.ErrRetiredRoute) {
 				return nil, err
 			}
@@ -317,7 +327,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		inherited = true
 		source = "delegation-inherited"
 	} else if explicitModel {
-		route, err = bridge.SelectRoute(modelID, effort)
+		route, err = d.selection.SelectRoute(modelID, effort)
 		if err != nil {
 			return nil, err
 		}
@@ -329,11 +339,14 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			source = "parent-route"
 		} else {
 			source = "agent-call-role"
-			if custom {
-				route, known, source = definition, true, "agent-call-definition"
+			if definition.Model != "" {
+				route, known = definition, true
+				if custom {
+					source = "agent-call-definition"
+				}
 			}
 			if !known && (hasEffort || !bridge.BuiltinRole(role) || d.nativeBuiltins == nil || !d.nativeBuiltins()) {
-				route, known = bridge.RoleRoute(role)
+				route, known = d.selection.RoleRoute(role)
 			}
 		}
 		if !known && !hasEffort && scope.route.Model != "" {
@@ -349,7 +362,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			return raw, nil // Custom role defaults still require definition evidence.
 		}
 		if hasEffort {
-			route, err = bridge.SelectRoute(route.Model, effort)
+			route, err = d.selection.SelectRoute(route.Model, effort)
 			if err != nil {
 				return nil, err
 			}
@@ -387,6 +400,12 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		nativeAlias = model.Alias
 		alias, _ := json.Marshal(nativeAlias)
 		fields["model"] = alias
+		// The tool schema still takes Claude aliases. The native spawn event
+		// accepts a full ID and pins the call identity, so duplicate alias mappings
+		// no longer make a backend model unreachable.
+		if d.events != "" {
+			nativeAlias = model.ID
+		}
 	}
 	encoded, err := json.Marshal(fields)
 	if err != nil {
@@ -403,6 +422,11 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	for _, chosen := range d.resolved {
 		if chosen.session == scope.session && chosen.call == id {
 			return nil, errDelegationUnverified
+		}
+	}
+	if model != nil && d.events != "" {
+		if err := d.writeNativeSelection(scope, id, role, route); err != nil {
+			return nil, err
 		}
 	}
 	receipt := d.noteSelection(SelectionRecord{Session: scope.session, Parent: scope.parent, Call: id, Role: role, CustomRole: custom, RequestedModel: requestedModel, RequestedEffort: effort, ModelProvided: modelProvided, EffortProvided: hasEffort, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: nativeAlias})
@@ -703,6 +727,9 @@ func (d *delegations) saveChoice(binding agentBinding, c resolvedChoice) error {
 	}
 	defer root.Close()
 	record := choiceJournal{Version: 2, Session: c.session, Parent: c.parent, Agent: binding.ID, Call: c.call, Role: c.role, CustomRole: c.custom, Alias: c.alias, Model: c.route.Model, Effort: c.route.Effort, Source: c.route.Source, Inherited: c.inherited}
+	if c.alias == c.route.Model {
+		record.Version = 3 // exact native selector, independent of configurable aliases
+	}
 	if c.receipt != nil && c.receipt.PresenceVerified {
 		record.Intent = &selectionIntent{c.receipt.RequestedModel, c.receipt.RequestedEffort, c.receipt.ModelProvided, c.receipt.EffortProvided}
 	}
@@ -755,7 +782,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	var saved choiceJournal
 	decodeErr := json.Unmarshal(raw, &saved)
 	saved.CustomRole = saved.CustomRole || strings.HasPrefix(saved.Source, "agent-call-definition")
-	if decodeErr != nil || (saved.Version != 1 && saved.Version != 2) || saved.Session != scope.session || saved.Parent != scope.parent || saved.Agent != id || !roleMatches(saved.Role, binding.Role, saved.CustomRole) {
+	if decodeErr != nil || (saved.Version != 1 && saved.Version != 2 && saved.Version != 3) || saved.Session != scope.session || saved.Parent != scope.parent || saved.Agent != id || !roleMatches(saved.Role, binding.Role, saved.CustomRole) {
 		return empty, false, errDelegationUnverified
 	}
 	meta, err := d.metadata(binding)
@@ -770,10 +797,13 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	if errors.Is(err, bridge.ErrRetiredRoute) {
 		return empty, false, err
 	}
-	if err != nil {
+	if err != nil || saved.Effort == "" || route.Model != saved.Model {
 		return empty, false, errDelegationUnverified
 	}
 	model, ok := bridge.ForAlias(saved.Alias)
+	if saved.Version == 3 {
+		model, ok = bridge.ModelByID(saved.Alias)
+	}
 	if !ok || model.ID != route.Model {
 		return empty, false, errDelegationUnverified
 	}
@@ -786,7 +816,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: saved.Alias, route: route, inherited: saved.Inherited, custom: saved.CustomRole}
 	if saved.Intent != nil {
 		intent := saved.Intent
-		if saved.Version != 2 {
+		if saved.Version < 2 {
 			return empty, false, errDelegationUnverified
 		}
 		if _, err := wire.Fields(fields["intent"], []string{"model", "effort", "modelProvided", "effortProvided"}); err != nil {

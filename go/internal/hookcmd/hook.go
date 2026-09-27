@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -208,6 +209,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		Agent      string `json:"agent_id"`
 		Transcript string `json:"transcript_path"`
 		Trigger    string `json:"trigger"`
+		Source     string `json:"source"`
 	}
 	if json.Unmarshal(raw, &compact) == nil && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit") {
 		if !identifier.MatchString(compact.Session) || (compact.Agent != "" && !identifier.MatchString(compact.Agent)) {
@@ -215,6 +217,9 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			return 2
 		}
 		fields := map[string]string{"event": compact.Event, "sessionId": compact.Session, "agentId": compact.Agent}
+		if compact.Event == "SessionStart" && compact.Source != "" {
+			fields["source"] = compact.Source
+		}
 		if compact.Trigger != "" {
 			if compact.Trigger != "auto" && compact.Trigger != "manual" {
 				return 2
@@ -234,6 +239,10 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		body, _ := json.Marshal(fields)
 		reply, err := postReply(body, env, "/clauduct/context")
 		if err != nil {
+			if errors.Is(err, errSessionRestart) {
+				fmt.Fprintf(errOut, "SESSION_RESTART_REQUIRED: save any draft, finish native, then run clauduct --resume %s with any native options you need.\n", compact.Session)
+				return 2
+			}
 			if compact.Event == "UserPromptSubmit" {
 				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_SESSION_UNVERIFIED: session registration failed; restore the Clauduct hook connection and submit the prompt again.")
 				return 2
@@ -405,12 +414,25 @@ func postReply(body []byte, env map[string]string, path string) ([]byte, error) 
 		return nil, errInvalidGateway
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		if path == "/clauduct/context" && response.StatusCode == http.StatusBadRequest {
+			var envelope struct {
+				Type  string `json:"type"`
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" &&
+				(envelope.Error.Message == errSessionRestart.Error() || strings.HasPrefix(envelope.Error.Message, errSessionRestart.Error()+";")) {
+				return nil, errSessionRestart // Never print arbitrary gateway response text.
+			}
+		}
 		return nil, fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
 	}
 	return reply, nil
 }
 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")
+var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
 
 func environ() map[string]string {
 	out := map[string]string{}

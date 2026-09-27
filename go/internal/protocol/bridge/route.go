@@ -302,19 +302,7 @@ var Efforts = func() (all []string) {
 // default applies. An empty model is refused: a request that names no model is not one to
 // answer with a guess.
 func SelectRoute(requested, effort string) (Route, error) {
-	if _, retired := Retired[requested]; retired {
-		return Route{}, ErrRetiredRoute
-	}
-	model, source := resolveKey(requested)
-	if source == "" || effort != "" && !slices.Contains(model.Efforts, effort) {
-		return Route{}, ErrUnsupportedRoute
-	}
-	route := Route{Model: model.ID, Effort: model.Effort, Source: source}
-	if effort != "" {
-		route.Effort = effort
-		route.Source = source + "+effort"
-	}
-	return route, nil
+	return (Selection{}).SelectRoute(requested, effort)
 }
 
 // resolveKey names the catalogue entry a requested model refers to, and the rule that said

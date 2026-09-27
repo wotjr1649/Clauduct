@@ -88,7 +88,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, failure)
 		return
 	}
-	built, err := bridge.BuildRequest(request, override...)
+	built, err := g.selection.BuildRequest(request, override...)
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return

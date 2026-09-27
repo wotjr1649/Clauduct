@@ -50,7 +50,7 @@ func (d *delegations) adaptWorkflow(scope delegationScope, id string, raw json.R
 	var plan *workflowPlan
 	if script == bridge.WorkflowPlanMarker {
 		var err error
-		plan, err = parseWorkflowPlan(raw, scope.route)
+		plan, err = parseWorkflowPlan(raw, scope.route, d.selection)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +63,10 @@ func (d *delegations) adaptWorkflow(scope delegationScope, id string, raw json.R
 // Called with either validated user JavaScript or a plan compiled from bounded
 // data. Compiler output is not reinterpreted as untrusted source input.
 func (d *delegations) adaptWorkflowBody(scope delegationScope, id string, fields map[string]json.RawMessage, script string, plan *workflowPlan, raw json.RawMessage) (json.RawMessage, error) {
-	trailer := workflowTrailer(scope, id)
+	trailer, err := d.workflowTrailer(scope, id)
+	if err != nil {
+		return nil, err
+	}
 	fields["script"], _ = json.Marshal(script + trailer)
 	encoded, _ := json.Marshal(fields)
 	if err := d.prepareWorkflow(scope, id, encoded); err != nil {
@@ -81,25 +84,45 @@ func (d *delegations) adaptWorkflowBody(scope delegationScope, id string, fields
 	return encoded, nil
 }
 
-func workflowTrailer(scope delegationScope, id string) string {
+func (d *delegations) workflowTrailer(scope delegationScope, id string) (string, error) {
 	// [id, default effort, accepted efforts], so the wrapper refuses before native starts a child.
 	catalogue := map[string][]any{}
 	parentEntry := []any{scope.route.Model, scope.route.Effort, []string{}}
 	for _, m := range bridge.Models {
-		for _, name := range []string{m.ID, m.Key, m.Alias} {
-			catalogue[name] = []any{m.ID, m.Effort, m.Efforts}
+		effort, _ := d.selection.DefaultFor(m.ID)
+		for _, name := range []string{m.ID, m.Key} {
+			catalogue[name] = []any{m.ID, effort, m.Efforts}
 		}
+		mapped, _ := d.selection.ForAlias(m.Alias)
+		mappedEffort, _ := d.selection.DefaultFor(mapped.ID)
+		catalogue[m.Alias] = []any{mapped.ID, mappedEffort, mapped.Efforts}
 		if m.ID == scope.route.Model {
 			parentEntry[2] = m.Efforts
 		}
 	}
+	roles := map[string][]any{}
+	for name := range d.selection.Agents {
+		if d.roleDefaults == nil {
+			return "", errDelegationUnverified
+		}
+		route, _, err := d.roleDefaults(name, scope.route)
+		if err != nil || route.Model == "" {
+			return "", errDelegationUnverified
+		}
+		model, ok := bridge.ModelByID(route.Model)
+		if !ok || !bridge.ValidPair(bridge.Pair{Model: route.Model, Effort: route.Effort}) {
+			return "", errDelegationUnverified
+		}
+		roles[name] = []any{route.Model, route.Effort, model.Efforts}
+	}
 	models, _ := json.Marshal(catalogue)
+	rolePairs, _ := json.Marshal(roles)
 	parent, _ := json.Marshal(parentEntry)
 	call, _ := json.Marshal(id)
 	// Git's Windows checkout can give the embedded helper CRLF. Native rejects CR
 	// in its approval dialog; normalize only our helper, never the user's script.
 	template := strings.ReplaceAll(workflowAgentWrapper, "\r\n", "\n")
-	return "\n" + strings.NewReplacer("__CLAUDUCT_CATALOGUE__", string(models), "__CLAUDUCT_PARENT__", string(parent), "__CLAUDUCT_CALL__", string(call)).Replace(template)
+	return "\n" + strings.NewReplacer("__CLAUDUCT_CATALOGUE__", string(models), "__CLAUDUCT_ROLES__", string(rolePairs), "__CLAUDUCT_PARENT__", string(parent), "__CLAUDUCT_CALL__", string(call)).Replace(template), nil
 }
 
 func workflowLabelParts(label string) ([]json.RawMessage, error) {
@@ -118,7 +141,7 @@ func workflowLabelParts(label string) ([]json.RawMessage, error) {
 	return parts, nil
 }
 
-func workflowLabelSelection(label string, run workflowRun, agent string, active *nativeTurnReceipt, defaults ...func(string, bridge.Route) (bridge.Route, bool, error)) (bridge.Route, *SelectionRecord, error) {
+func (d *delegations) workflowLabelSelection(label string, run workflowRun, agent string, active *nativeTurnReceipt) (bridge.Route, *SelectionRecord, error) {
 	parts, err := workflowLabelParts(label)
 	if err != nil || active == nil || !validActiveReceipt(*active, run.Session, agent) {
 		return bridge.Route{}, nil, errDelegationUnverified
@@ -143,11 +166,11 @@ func workflowLabelSelection(label string, run workflowRun, agent string, active 
 		}
 	}
 	if options.AgentType != "" && !hasModel {
-		if len(defaults) != 1 || defaults[0] == nil {
+		if d.roleDefaults == nil {
 			return bridge.Route{}, nil, errDelegationUnverified
 		}
-		roleRoute, found, err := defaults[0](options.AgentType, run.origin.scope.route)
-		if err != nil || !found {
+		roleRoute, _, err := d.roleDefaults(options.AgentType, run.origin.scope.route)
+		if err != nil || roleRoute.Model == "" {
 			return bridge.Route{}, nil, errDelegationUnverified
 		}
 		selectedModel = roleRoute.Model
@@ -155,7 +178,7 @@ func workflowLabelSelection(label string, run workflowRun, agent string, active 
 			selectedEffort = roleRoute.Effort
 		}
 	}
-	route, err := bridge.SelectRoute(selectedModel, selectedEffort)
+	route, err := d.selection.SelectRoute(selectedModel, selectedEffort)
 	if err != nil || active.Model != route.Model || active.Effort != route.Effort {
 		return bridge.Route{}, nil, errDelegationUnverified
 	}

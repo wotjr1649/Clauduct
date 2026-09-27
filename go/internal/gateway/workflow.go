@@ -289,7 +289,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		}
 		if run.origin.adapterBytes != 0 {
 			var err error
-			selected, receipt, err = workflowLabelSelection(label, run, id, scope.nativeTurn, d.roleDefaults)
+			selected, receipt, err = d.workflowLabelSelection(label, run, id, scope.nativeTurn)
 			// Native stores the invocation's optional model in this file, not the
 			// custom role's resolved default. The active turn independently proves
 			// the actual model/effort, and the definition resolver proves its source.
@@ -300,7 +300,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		} else if bridge.CanonicalRole(meta.AgentType) != "workflow-subagent" {
 			return bridge.Route{}, false, errDelegationUnverified
 		} else if meta.Model != "" {
-			selected, err := bridge.SelectRoute(meta.Model, "")
+			selected, err := d.selection.SelectRoute(meta.Model, "")
 			if err != nil || selected.Model != run.origin.scope.route.Model {
 				return bridge.Route{}, false, errDelegationUnverified
 			}

@@ -22,7 +22,7 @@ import (
 //
 // The baseline's DEFAULT_SELECTION, and deliberately not an alias of the catalogue defaults:
 // it is the main startup value and has to stay independently changeable.
-var startupModel = struct{ Model, Effort string }{Model: "gpt-6-astra", Effort: "low"}
+var startupModel = bridge.Pair{Model: "gpt-6-sol", Effort: "xhigh"}
 
 // effortEnv is the name that pins the effort for a whole session.
 //
@@ -48,7 +48,7 @@ func compactPercent() float64 {
 // Derived from bridge.Models rather than written out, so the tier defaults cannot drift
 // from what the gateway will actually route. Adding a backend model is still one line in
 // one table.
-func sessionEnvironment() map[string]string {
+func (config ClauductSettings) sessionEnvironment() map[string]string {
 	session := map[string]string{
 		"CLAUDE_CODE_RETRY_WATCHDOG": "0",
 		// Anthropic's reporting has nowhere to go from here.
@@ -62,13 +62,13 @@ func sessionEnvironment() map[string]string {
 		//
 		// The effort is deliberately not here. It travels as --effort instead, because that
 		// name does not behave the way this one does -- see launch.Overlay.Effort.
-		"ANTHROPIC_MODEL": startupModel.Model,
+		"ANTHROPIC_MODEL": config.Startup.Model,
 
 		// The picker entry for the startup route, and the discovery that fills the rest of
 		// the list from GET /v1/models. Without discovery the user's /model list is the
 		// client's built-in Anthropic one: names that do not exist on this backend.
-		"ANTHROPIC_CUSTOM_MODEL_OPTION":              startupModel.Model,
-		"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME":         startupModel.Model + " via Clauduct",
+		"ANTHROPIC_CUSTOM_MODEL_OPTION":              config.Startup.Model,
+		"ANTHROPIC_CUSTOM_MODEL_OPTION_NAME":         config.Startup.Model + " via Clauduct",
 		"ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION":  "Codex via Clauduct",
 		"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1",
 		"CLAUDE_CODE_GATEWAY_HINT_HEADERS":           "1",
@@ -100,7 +100,7 @@ func sessionEnvironment() map[string]string {
 		"sonnet": "ANTHROPIC_DEFAULT_SONNET_MODEL",
 		"opus":   "ANTHROPIC_DEFAULT_OPUS_MODEL",
 	} {
-		if model, known := bridge.ForAlias(alias); known {
+		if model, known := config.Selection.ForAlias(alias); known {
 			session[name] = model.ID
 		}
 	}
@@ -114,7 +114,7 @@ func sessionEnvironment() map[string]string {
 // silently replace the selected 500K/450K policy or obscure model transitions.
 func sessionRequirements() map[string]string {
 	values := map[string]string{"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1"}
-	defaults := sessionEnvironment()
+	defaults := defaultClauductSettings().sessionEnvironment()
 	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"} {
 		values[key] = defaults[key]
 	}

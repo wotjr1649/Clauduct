@@ -38,6 +38,7 @@ type parentStep struct {
 	Index    int    `json:"index"`
 	Eligible bool   `json:"eligible"`
 	Mode     string `json:"mode"`
+	Handback string `json:"handback,omitempty"`
 	waiting  bool   // gateway snapshot, never accepted from the native receipt
 }
 
@@ -50,11 +51,14 @@ func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
 	if id != "" {
 		name = "child-" + id
 	}
-	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode"}, &step)
+	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode", "handback"}, &step)
 	if err != nil {
 		return step, false, err
 	}
 	if found && (step.Session != session || step.Agent != id || !correlationShape.MatchString(step.Turn) || step.Index < 0 || step.Index > 65536 || step.Mode != "native_tui" && step.Mode != "sdk" && step.Mode != "unclassified" || step.Eligible && step.Mode != "native_tui" && step.Mode != "sdk") {
+		return step, false, errDelegationUnverified
+	}
+	if found && step.Handback != "" && (id == "" || step.Index == 0 || !correlationShape.MatchString(step.Handback)) {
 		return step, false, errDelegationUnverified
 	}
 	return step, found, nil
@@ -118,6 +122,13 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 	workflowLaunch := step.Eligible && len(readiness.Pending) == 0 && id == "" && step.Index > 0 && g.delegations.returnedWorkflowLaunch(request, session, id)
 	forkLaunch := step.Eligible && len(readiness.Pending) == 0 && id == "" && step.Index > 0 && returnedForkLaunch(request)
 	step.waiting = len(readiness.Pending) > 0
+	if step.Handback != "" {
+		if !step.Eligible || step.waiting || entry.nativeTurn == nil || entry.nativeTurn.Session != session || entry.nativeTurn.Agent != id || entry.nativeTurn.Turn != step.Turn || !returnedHandback(request, step.Handback) {
+			return nil, errDelegationUnverified
+		}
+		entry.checked("native_handback_delivered")
+		return &step, nil
+	}
 	// Eligible root index zero is published only for a task notification, never
 	// explicit user input. With no pending children it may consume only an empty
 	// terminal reply; a real answer or tool call must still reach native.
@@ -125,6 +136,33 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 		return &step, nil
 	}
 	return nil, nil
+}
+
+// Native's successful tool receipt must also name the immediately preceding
+// hand-back in this request. Earlier reports cannot excuse a later empty answer.
+func returnedHandback(request *anthropic.Request, id string) bool {
+	start := len(request.Messages) - 1
+	for start >= 0 && request.Messages[start].Role != "assistant" {
+		start--
+	}
+	if start < 0 {
+		return false
+	}
+	called := false
+	for _, block := range request.Messages[start].Blocks {
+		called = called || block.Type == "tool_use" && block.Name == "SubagentHandback" && block.ID == id
+	}
+	if !called {
+		return false
+	}
+	for _, message := range request.Messages[start+1:] {
+		for _, block := range message.Blocks {
+			if message.Role == "user" && block.Type == "tool_result" && block.ToolUseID == id && !block.IsError {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // forkLaunchMarker is how native 2.1.280 reports a forked skill that went to the background:

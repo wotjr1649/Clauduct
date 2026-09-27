@@ -93,35 +93,85 @@ var errClauductSettings = errors.New("CLAUDUCT_SETTINGS_INVALID")
 // ClauductSettings contains validated launch preferences. SessionProfile owns
 // the separately versioned persistent format.
 type ClauductSettings struct {
-	Startup   bridge.Pair
-	Selection bridge.Selection
+	Startup         bridge.Pair
+	Selection       bridge.Selection
+	StartupSource   string
+	SelectionSource string
 }
 
 func defaultClauductSettings() ClauductSettings {
-	return ClauductSettings{Startup: startupModel}
+	return ClauductSettings{Startup: startupModel, StartupSource: "factory.startup", SelectionSource: "factory"}
 }
 
-func (config ClauductSettings) effectiveStartup(spec launch.Spec) (bridge.Pair, error) {
+func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string) (bridge.Pair, string, string, error) {
 	model, named := optionValue(spec.Args, "--model")
 	effort, _ := optionValue(spec.Args, "--effort")
+	modelSource, effortSource := config.StartupSource, config.StartupSource
+	_, explicitModel := optionValue(requested, "--model")
+	_, explicitEffort := optionValue(requested, "--effort")
+	if explicitModel {
+		modelSource = "cli.model"
+	}
+	if explicitEffort {
+		effortSource = "cli.effort"
+	}
+	env := map[string]string{}
 	for _, entry := range spec.Env {
 		key, value, _ := strings.Cut(entry, "=")
-		if !named && strings.EqualFold(key, "ANTHROPIC_MODEL") {
-			model = value
+		if key = strings.ToUpper(key); key == "ANTHROPIC_MODEL" || key == effortEnv || key == "CLAUDE_CONFIG_DIR" {
+			env[key] = value
 		}
-		if strings.EqualFold(key, effortEnv) {
-			effort = value
+	}
+	cli := cliRoles{}
+	if err := cli.scope(spec.Args, spec.Dir); err != nil {
+		return bridge.Pair{}, "", "", err
+	}
+	configDir := nativeConfigDirectory(env, spec.Dir)
+	if !named {
+		value, source, err := nativeEnvironment(configDir, spec.Dir, managedRoot(), "ANTHROPIC_MODEL", cli, env)
+		if err != nil {
+			return bridge.Pair{}, "", "", err
 		}
+		model = value
+		if strings.HasPrefix(source, "native.") {
+			modelSource = source
+		}
+	}
+	value, source, err := nativeEnvironment(configDir, spec.Dir, managedRoot(), effortEnv, cli, env)
+	if err != nil {
+		return bridge.Pair{}, "", "", err
+	}
+	environmentEffort := source != "" && value != ""
+	if environmentEffort {
+		effort, effortSource = value, source
 	}
 	model = strings.ToLower(strings.TrimSpace(model))
 	route, err := config.Selection.SelectRoute(model, effort)
 	if err != nil {
 		if replacement, retired := bridge.Retired[model]; retired {
-			return bridge.Pair{}, fmt.Errorf("%w: %s -> %s", err, model, replacement)
+			return bridge.Pair{}, "", "", fmt.Errorf("%w: %s -> %s", err, model, replacement)
 		}
-		return bridge.Pair{}, err
+		return bridge.Pair{}, "", "", err
 	}
-	return bridge.Pair{Model: route.Model, Effort: route.Effort}, nil
+	if explicitModel && !explicitEffort && !environmentEffort {
+		effortSource = "factory.modelDefaults"
+		if _, configured := config.Selection.ModelDefaults[route.Model]; configured {
+			effortSource = config.SelectionSource + ".modelDefaults"
+		}
+	}
+	if strings.HasPrefix(route.Source, "alias") || strings.HasPrefix(route.Source, "family") {
+		for _, candidate := range bridge.Models {
+			if model == candidate.Alias || candidate.Family != "" && strings.HasPrefix(model, candidate.Family) {
+				mappingSource := "factory.modelMapping"
+				if _, configured := config.Selection.ModelMapping[candidate.Alias]; configured {
+					mappingSource = config.SelectionSource + ".modelMapping"
+				}
+				modelSource += "+" + mappingSource
+				break
+			}
+		}
+	}
+	return bridge.Pair{Model: route.Model, Effort: route.Effort}, modelSource, effortSource, nil
 }
 
 // loadClauductSettings reads only the Clauduct-owned file under the given home.
@@ -165,6 +215,7 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		if err != nil {
 			return bad()
 		}
+		settings.StartupSource = "settings.startup"
 	}
 	delete(fields, "version")
 	delete(fields, "startup")
@@ -176,5 +227,6 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	if err != nil {
 		return bad()
 	}
+	settings.SelectionSource = "settings"
 	return settings, nil
 }

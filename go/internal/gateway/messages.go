@@ -648,7 +648,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	relayCompleted := false
 	if g.delegations != nil && len(scopes) > 0 && scopes[0].parent != "" {
 		class := recordOf(w).snapshot().RequestClass
-		if class != "compaction" && class != "auxiliary" {
+		// A verified hand-back already owns the report. Native's optional closing
+		// text (or empty closing turn) must not erase or replace that report.
+		if class != "compaction" && class != "auxiliary" && (scopes[0].parentWait == nil || scopes[0].parentWait.Handback == "") {
 			finishAnswer := g.delegations.beginAnswer(scopes[0].session, scopes[0].parent)
 			defer func() {
 				answer := ""

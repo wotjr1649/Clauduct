@@ -22,7 +22,7 @@ import (
 //
 // The baseline's DEFAULT_SELECTION, and deliberately not an alias of the catalogue defaults:
 // it is the main startup value and has to stay independently changeable.
-var startupModel = bridge.Pair{Model: "gpt-6-sol", Effort: "xhigh"}
+var startupModel = bridge.DefaultStartup()
 
 // effortEnv is the name that pins the effort for a whole session.
 //
@@ -45,9 +45,8 @@ func compactPercent() float64 {
 
 // sessionEnvironment is what this build tells the native child about the session.
 //
-// Derived from bridge.Models rather than written out, so the tier defaults cannot drift
-// from what the gateway will actually route. Adding a backend model is still one line in
-// one table.
+// Derived from the supported catalogue and this session's selection, so native
+// tier defaults agree with the gateway's configured mapping.
 func (config ClauductSettings) sessionEnvironment() map[string]string {
 	session := map[string]string{
 		"CLAUDE_CODE_RETRY_WATCHDOG": "0",

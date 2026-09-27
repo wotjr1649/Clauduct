@@ -259,6 +259,12 @@ socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 
 빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
 자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
 
+v0.5.4는 native가 성공적으로 전달한 `SubagentHandback` 뒤의 빈 종료도 구분한다.
+native tool 결과에서 확인한 call ID와 같은 자식·turn·최신 call/result가 모두 맞고 대기 자식이
+없어야 한다. 이 경우 SDK와 TUI 모두 짧은 `[Clauduct]` 종료 상태를 반환해 같은 step의 재요청을
+막는다. 이미 전달한 보고서는 후속 closing text로 교체하지 않는다. 일반 빈 응답, 거부된 handback,
+새 입력·다른 turn에는 이 예외를 적용하지 않는다. classifier·권한·native 지침은 그대로다.
+
 입력 출처 `composer`·`sdk`와 실제 측정한 `peer`만 부모 대기 모드를 정한다. `peer`로 처음 시작하면
 native의 `session.start.isInteractive`가 TUI·SDK 응답 방식을 고른다. 나머지 출처는 추정하지 않는다.
 새 명시 입력 index 0, 출처 없는 자식 index 0, 같은 턴에 들어온 개입은 대기로 바꾸지 않는다.

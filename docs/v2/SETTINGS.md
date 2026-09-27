@@ -1,12 +1,17 @@
 # Clauduct 전용 설정
 
-v0.5.3에서 도입한 설정 형식이다. [출하·설치 검증](RELEASE-v0.5.3.md)을 완료했다.
+v0.5.3에서 도입한 설정 형식이다. v0.5.4 작업에서는 초기 문서와 적용값 진단을 보완한다.
+v0.5.4의 출하 검증은 진행 중이며, 이전 출하 기록은 [v0.5.3](RELEASE-v0.5.3.md)에 있다.
 
 Clauduct는 실행할 때 사용자 홈의 `.clauduct/settings.json`을 읽는다. 파일은 직접 편집한다.
-설치·업데이트와 일반 실행은 파일이 없을 때만 `{"version":1}`인 최소 파일을 생성한다.
+v0.5.4의 설치·업데이트와 일반 실행은 파일이 없을 때만 startup, modelDefaults, modelMapping,
+내장 agents를 모두 담은 [기본 문서](../../go/internal/settingsfile/defaults.json)를 생성한다.
+생성과 생략값 처리는 이 원본을 공유한다. v0.5.3이 만든 `{"version":1}` 파일도 기존 파일이므로 보존한다.
 생략한 항목은 아래의 내장 기본값을 사용한다. 기존 파일은 자동으로 덮어쓰거나 병합하지 않으며,
 잘못된 파일은 보존한 채 새 세션 실행을 거부한다. `--help`·`--version`은 파일을 생성하지 않는다.
 v0.5.2 이전 updater로 올린 경우에는 새 버전의 첫 일반 실행 또는 다시 실행한 `--update`에서 생성한다.
+v0.5.3 updater가 먼저 최소 파일을 만들었다면 새 버전도 이를 자동 확장하지 않는다.
+기존 파일을 완전한 문서로 바꾸려면 원본을 백업하고 위 기본 문서를 참고해 직접 편집한다.
 Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정에서 관리한다.
 
 ## 설정 예
@@ -105,6 +110,45 @@ snapshot이 없는 이전 세션은 현재 설정의 시작값으로 연다. `--
 
 `--no-session-persistence`로 실행한 작업은 새 선택을 세션 기록에 보존하지 않는다.
 기존 UUID를 명시하면 그 snapshot을 읽어 시작값을 복원한다.
+
+설정 snapshot을 복원하는 되돌림 대상은 v0.5.3 이상이다. v0.5.2 이하 바이너리는 snapshot을
+읽지 않으므로 이전 버전의 기본 모델·effort로 시작할 수 있다. v0.5.2 실측에서는 Sol/medium
+대화가 Astra/low로 열렸다. 그 버전에서 계속하려면 S로 원하는 값을 선택한다.
+바이너리 되돌림 때문에 설정이나 snapshot을 지우거나 변환하지 않는다. 기존 파일을 보존한 채
+현재 버전으로 돌아오면 UUID snapshot으로 재개할 수 있다. 구버전 backend 응답 자체는 이
+무과금 호환성 검사의 범위가 아니다.
+
+v0.5.4의 background worker는 같은 연결·같은 세션으로 재시작하고 마지막 선택이 시작 인자와
+일치할 때 현재 snapshot으로 재연결한다. 실행 중 settings.json 편집은 이 worker의 설정을 바꾸지 않는다.
+S로 시작값과 다른 선택을 저장했다면 원래 인자로 되살린 worker는 첫 요청을 거부하고 UUID 재개를 안내한다.
+다른 세션이나 일반 interactive resume에 이 재연결 예외를 적용하지 않는다.
+
+## 적용값 진단
+
+종료 상태 JSON의 `session.startupModel`과 `startupEffort`는 이 실행의 시작 선택이다.
+v0.5.4는 각각 `startupModelSource`, `startupEffortSource`도 기록한다.
+
+| 출처 | 의미 |
+|---|---|
+| `factory.startup` | 파일에서 생략한 시작 pair의 제품 기본값 |
+| `settings.startup` | 수동 파일에 명시한 시작 pair |
+| `session-snapshot.last` | UUID snapshot에서 복원한 마지막 선택 |
+| `cli.model`, `cli.effort` | 해당 CLI 인자에 명시한 값 |
+| `environment.CLAUDE_CODE_EFFORT_LEVEL` | native effort 환경변수로 고정한 값 |
+| `native.user.env.*`, `native.project.env.*`, `native.local.env.*`, `native.settings.env.*` | native 설정의 `env`가 선택한 모델 또는 effort. `--setting-sources`와 마지막 `--settings`를 반영 |
+| `factory.modelDefaults`, `settings.modelDefaults`, `session-snapshot.modelDefaults` | 모델만 명시한 선택의 effort 기본값 |
+
+alias나 버전형 Claude 이름으로 선택하면 model 출처에 `+factory.modelMapping`,
+`+settings.modelMapping` 또는 `+session-snapshot.modelMapping`이 붙는다.
+한쪽만 명시한 경우 두 출처는 다를 수 있다. 이 진단은 수동 파일을 쓰거나 모델 요청을 만들지 않는다.
+Windows 환경변수 이름의 대소문자는 구분하지 않는다. 같은 선택 키의 대소문자 중복이나 잘못된 값은
+거부한다. native managed 설정에서 선택 환경변수를 강제한 경우의 순위는 아직 검증되지 않았으므로
+추정한 시작값을 기록하지 않고 거부한다.
+
+실행 중 S 선택과 Agent의 실제 요청값은 `gateway.recent`와 `gateway.agentSelections`에서 확인한다.
+Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 경로, 실제 자식 연결·완료를 구분한다.
+기존 Agent의 `source`는 선택 경로 분류이며 원본 설정 파일 경로를 뜻하지 않는다.
+대화 본문·설정 원문·credential은 출처 진단에 넣지 않는다.
 
 ## 코드에 유지하는 정책
 

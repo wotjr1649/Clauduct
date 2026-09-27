@@ -151,8 +151,10 @@ func (s Selection) Snapshot() Selection {
 		if _, exists := copy.ModelDefaults[model.ID]; !exists {
 			copy.ModelDefaults[model.ID] = Default{Effort: model.Effort}
 		}
-		if _, exists := copy.ModelMapping[model.Alias]; !exists {
-			copy.ModelMapping[model.Alias] = model.ID
+	}
+	for alias, id := range builtinDefaults.ModelMapping {
+		if _, exists := copy.ModelMapping[alias]; !exists {
+			copy.ModelMapping[alias] = id
 		}
 	}
 	for name, route := range roleRoutes {

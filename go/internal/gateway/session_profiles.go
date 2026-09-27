@@ -229,25 +229,26 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 }
 
 type profileState struct {
-	mu       sync.Mutex
-	store    *SessionProfiles
-	startup  bridge.Pair
-	expected string
-	fork     bool
-	current  string
-	profiles map[string]*SessionProfile
-	pending  string
-	ready    bool
+	mu         sync.Mutex
+	store      *SessionProfiles
+	startup    bridge.Pair
+	expected   string
+	fork       bool
+	background bool
+	current    string
+	profiles   map[string]*SessionProfile
+	pending    string
+	ready      bool
 }
 
 // ConfigureSessionProfiles binds immutable routing preferences before native
 // starts. Choosing another saved session requires a fresh native launch with
 // that snapshot; a mismatched process never sends an inference first.
-func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridge.Pair, resumed *SessionProfile, fork bool) {
+func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridge.Pair, resumed *SessionProfile, fork, background bool) {
 	if g.contexts == nil || store == nil {
 		return
 	}
-	p := &profileState{store: store, startup: startup, fork: fork, profiles: make(map[string]*SessionProfile)}
+	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile)}
 	if resumed != nil && !fork {
 		copy := *resumed
 		copy.Last = startup
@@ -275,8 +276,18 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 	if source == "resume" && p.current != "" {
 		// Even a previously visited session can have a different last S effort.
 		// Native's in-process resume did not restore it in the measured client.
-		p.pending = session
-		return errSessionRestart
+		// A background worker respawns with its original flags. It can reconnect
+		// only to that same session, while those flags still match its last S.
+		current := p.profiles[session]
+		if p.background && p.current == session && current != nil {
+			if err := p.store.Refresh(current, g.delegations.projects, true); err != nil {
+				return err
+			}
+		}
+		if !p.background || p.current != session || current == nil || current.Last != p.startup {
+			p.pending = session
+			return errSessionRestart
+		}
 	}
 	if current := p.profiles[session]; current != nil {
 		next := *current

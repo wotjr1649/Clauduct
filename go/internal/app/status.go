@@ -63,6 +63,8 @@ type SessionFacts struct {
 	// Recent answers it per request, and exactly.
 	StartupModel          string                `json:"startupModel"`
 	StartupEffort         string                `json:"startupEffort"`
+	StartupModelSource    string                `json:"startupModelSource,omitempty"`
+	StartupEffortSource   string                `json:"startupEffortSource,omitempty"`
 	NativeContextDefaults NativeContextDefaults `json:"nativeContextDefaults"`
 	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
 	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
@@ -149,8 +151,10 @@ func Account(result Result) Status {
 		Attempts:   result.Attempts,
 		Inferences: result.Inferences,
 		Session: SessionFacts{
-			StartupModel:  result.Startup.Model,
-			StartupEffort: result.Startup.Effort,
+			StartupModel:        result.Startup.Model,
+			StartupEffort:       result.Startup.Effort,
+			StartupModelSource:  result.StartupModelSource,
+			StartupEffortSource: result.StartupEffortSource,
 			NativeContextDefaults: NativeContextDefaults{Window: contextWindow,
 				AutoCompactWindow: compactAt, CompactPercent: compactPercent(), ApplicationVerified: false},
 			NonStreamingFallback:  sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",

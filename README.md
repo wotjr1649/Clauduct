@@ -20,25 +20,25 @@ Windows 전용입니다. **Claude Code와 Codex CLI가 먼저 설치돼 있어�
 하나라도 없으면 설치 스크립트가 `CLAUDE_NOT_FOUND`·`CODEX_NOT_FOUND`로 **내려받기 전에** 멈춥니다.
 실사용에는 기존 Codex 로그인(`~/.codex/auth.json`)도 필요합니다. Node도 .NET도 필요하지 않습니다.
 
-설치 스크립트는 릴리스 자산입니다. 받아서 **읽어보고** 실행합니다 — 어느 셸에서 시작하든 실행은
-`powershell`이 합니다. 아래 셋 중 **당신이 지금 있는 셸의 블록 하나만** 통째로 붙여넣습니다.
+설치 스크립트는 릴리스 자산입니다. 받아서 **읽어보고** 실행합니다. 아래 예시는 검증한
+PowerShell 7(`pwsh`)을 사용합니다. **당신이 지금 있는 셸의 블록 하나만** 통째로 붙여넣습니다.
 
 ```powershell
 # PowerShell
 irm https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1 -OutFile clauduct-install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\clauduct-install.ps1
+pwsh -NoProfile -File .\clauduct-install.ps1
 ```
 
 ```bat
 rem cmd
 curl -fsSL -o clauduct-install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
+pwsh -NoProfile -File clauduct-install.ps1
 ```
 
 ```bash
 # Git Bash
 curl -fsSL -o clauduct-install.ps1 https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
+pwsh -NoProfile -File clauduct-install.ps1
 ```
 
 **세 가지가 다른 이유는 셸이 다르기 때문이고, 셋 다 실제로 겪은 것입니다.**
@@ -50,6 +50,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File clauduct-install.ps1
 | 받는 이름이 `clauduct-install.ps1` | v0.3.2까지는 저장소 루트에 **v1(Node) 설치기인 `install.ps1`이 있었습니다.** 클론 안에서 그 이름으로 받으면 그 파일을 덮어썼습니다. 이름은 그대로 둡니다 |
 
 cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑재이기 때문입니다.
+Windows PowerShell 5.1(`powershell`)용 구문 호환은 유지하지만 v0.5.4의 실제 설치 검사는 7에서 수행했습니다.
+실행 정책이 스크립트를 막으면 해당 환경의 정책에 따라 허용된 실행 경로를 사용해야 합니다.
 
 최신 릴리스에서 `clauduct.exe`와 `SHA256SUMS`를 받아 **대조가 끝난 뒤에** `~\.local\bin`에
 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. 받은 바이트가 릴리스가 말하는 digest와 다르면

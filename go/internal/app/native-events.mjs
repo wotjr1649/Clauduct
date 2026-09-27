@@ -112,8 +112,9 @@ export const register = on => {
     const name=agent?'child-'+agent:'root';
     // index 0 of an explicit new input is never withheld. Child wakeups without
     // ingress provenance remain outside this control until a later tool step.
-    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && p.delegated || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
-    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode}));
+    const handback=agent && e.index>0 && !p.intervened ? p.handback || '' : '';
+    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && (p.delegated || handback!=='') || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
+    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode,handback}));
     let held=false;
     try {
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
@@ -149,11 +150,14 @@ export const register = on => {
       const result=await stream.result;
       if (!decision?.hold) return result;
       if (result.toolUses.length || result.answer!=='' || result.stopReason!=='end_turn') throw new Error('CLAUDUCT_PARENT_WAIT_CONTROL_INVALID');
-      if (state.mode==='sdk') {
+      if (state.mode==='sdk' || handback) {
         // SDK retries an empty assistant block and rejects a dropped response
         // after a notification. Return an attributed status, never a child result
-        // or a claim of completion. Native owns the next background notification.
-        const answer=!agent && e.index===0
+        // or a claim of completion. Hand-back children also need a terminal
+        // answer on the TUI surface: dropping it makes native retry that step.
+        const answer=handback
+          ? '[Clauduct] Subagent report handed back; no additional response.'
+          : !agent && e.index===0
           ? '[Clauduct] Background task notification received; no additional response.'
           : '[Clauduct] Waiting for background task notification.';
         yield {kind:'text',index:0,text:answer};
@@ -203,6 +207,7 @@ export const register = on => {
 	}
     const p=progress.get(e.agentId?ident(e.agentId):'');
     if (!p) return next(e);
+    p.handback=''; // Any later tool invalidates the preceding hand-back step.
     // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
     if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;
     // Counted inside the guarded region. A throwing observe left the counter raised with
@@ -212,6 +217,11 @@ export const register = on => {
     try {
       await observe($,progress,p,'tool_started');
       const out=await next(e), value=out.result;
+      // The native classifier has already accepted and delivered this report.
+      // Record identity only; an attempted/denied hand-back grants nothing.
+      if (p.agent && e.tool==='SubagentHandback' && !out.deny && !out.isError && value?.success===true) {
+        p.handback=ident(e.tool_use_id);
+      }
       if (!out.deny && !out.isError && value && e.tool==='Workflow' && value.status==='async_launched' && value.taskType==='local_workflow') {
         const run=ident(value.runId), task=ident(value.taskId), call=ident(e.tool_use_id);
         if (run && task && call) await $.fs.write(root+'/workflow-'+run+'.json',JSON.stringify({session:await session($),run,task,call}));

@@ -57,7 +57,14 @@ func (d *delegations) restoreSelectionHistory(request *anthropic.Request, sessio
 			if fields["subagent_type"] == nil && r.Role == "general-purpose" {
 				matches = true
 			}
-			if alias != r.NativeModel || !matches || fields["effort"] != nil {
+			// The spawn hook pins a full backend ID, but prepare still writes the
+			// catalogue's compatibility alias into Agent arguments. Compare the
+			// actual tool field, independently of configurable alias routing.
+			nativeModel := r.NativeModel
+			if model, known := bridge.ModelByID(nativeModel); known {
+				nativeModel = model.Alias
+			}
+			if alias != nativeModel || !matches || fields["effort"] != nil {
 				continue
 			}
 			delete(fields, "model")

@@ -1,15 +1,22 @@
 // Package settingsfile creates the manual Clauduct preferences without ever
-// replacing a user's file. Omitted preferences use the runtime's own defaults.
+// replacing a user's file. The same document supplies omitted runtime preferences.
 package settingsfile
 
 import (
 	"crypto/rand"
+	_ "embed"
 	"errors"
 	"os"
 	"path/filepath"
 )
 
 var ErrCreate = errors.New("CLAUDUCT_SETTINGS_CREATE_FAILED")
+
+//go:embed defaults.json
+var defaults string
+
+// Defaults is the complete factory document, shared by initialization and routing.
+func Defaults() string { return defaults }
 
 func Ensure(home string) error {
 	if !filepath.IsAbs(home) {
@@ -38,7 +45,7 @@ func Ensure(home string) error {
 		return ErrCreate
 	}
 	defer root.Remove(temp)
-	_, writeErr := file.WriteString("{\n  \"version\": 1\n}\n")
+	_, writeErr := file.WriteString(defaults)
 	syncErr, closeErr := file.Sync(), file.Close()
 	if writeErr != nil || syncErr != nil || closeErr != nil {
 		return ErrCreate

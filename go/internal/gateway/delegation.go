@@ -196,6 +196,7 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		// Kept by #144 with the inherit entry's sentence: removing both let a parent pass an
 		// unrequested model (1 of 5 runs). Native shows the gateway's alias in tool history.
 		tools[i].Description += " The native UI uses compatibility aliases; Clauduct status records the original selection and effective backend route separately. Verified original model/effort arguments are restored in your tool history. Omit isolation unless worktree or remote isolation was explicitly requested."
+		tools[i].Description += " After an accepted asynchronous launch, you may end the current assistant turn while the agent is still running. To wait, emit a final_answer text message such as 'Waiting for the agent.' with NO function calls. This ends only your current turn, not the user's task; native will resume you when the completion notification arrives. Never call Agent to wait, poll, or retry an accepted task."
 		var schema map[string]json.RawMessage
 		var properties map[string]json.RawMessage
 		var model map[string]json.RawMessage

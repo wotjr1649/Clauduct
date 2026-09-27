@@ -1,5 +1,9 @@
 # v0.5.4 — 초기 설정 완성 및 background 결과 보존
 
+2026-09-28 [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.5.4)를 발행하고 실제 설치를 완료했다.
+태그는 `58f9491540d6a7f6ebe9f4d74787a829d114cd63`이며 출하 바이너리의 SHA-256은
+`ce9376872ae13e97f0b449681c02c7bcc668b07f6ed140b212937a5b9c9ba8e7`이다.
+
 v0.5.3에서 초기 파일이 `{"version":1}`로 생성되어 편집할 모델·effort·agent가 드러나지 않았던
 누락을 보완한다. 파일이 없으면 `startup`, `modelDefaults`, `modelMapping`, `agents`를 모두 담은
 [기본 문서](../../go/internal/settingsfile/defaults.json)를 생성한다. 설치와 runtime의 생략값 처리는
@@ -38,16 +42,34 @@ Agent 도구 설명에는 현재 assistant turn을 텍스트로 끝내고 native
 유지한다. 설명만으로 동일 호출을 막을 수 없어 위 제어를 보완했으며, 설명 제거 대조에서는 필수
 prompt가 없는 추가 Agent 호출이 관측됐다. native 전역 지침·B 안전 규칙·도구 권한은 변경하지 않는다.
 실제 backend의 동일 호출을 한 번 차단하고 원래 보고서와 최종 답변으로 정상 종료한 표본을
-확인했으며 최종 조합의 독립/전체 검증을 진행 중이다.
+확인했다. 최종 조합의 Luna/medium 일반·독립 표본과 Sol/xhigh background 재시작 일반·독립 표본도
+통과했다. 최초 출하 후보의 Luna 중복 실행 실패와 설명 제거 대조의 필수 prompt 누락은 실패로
+유지한다. 후자의 리뷰에서 발견한 검사기 누락도 고쳐 native 도구 실패 0을 필수로 검사한다.
 
 최초 감사에서 남은 미사용 선언 4개와 테스트 전용 제품 파일 2개를 제거했다.
 환경변수 변환 통합은 이전 v0.5.3의 변경이며 이번 정리량으로 다시 세지 않는다.
 새 의존성이나 별도 설정 프레임워크는 추가하지 않았다.
+상한 없이 수행한 정적 분석은 unused 0, dupl 2, staticcheck 62, unparam 16으로 총 80건·exit 1이다.
+SA 오류는 없지만 기존 스타일·공유 반환 계약 경고와 정책이 다른 이미지/PDF 유사 코드는 남아 있다.
+전체 분석기가 통과했다거나 모든 의미상 중복을 제거했다고 주장하지 않는다.
 
 설치·되돌림의 범위와 PowerShell 5.1 실행 미검증은 [PACKAGING.md](PACKAGING.md#6-되돌리기)에 있다.
 v0.5.3과 v0.5.2의 실제 바이너리로 설정·snapshot·S 선택·Agent 이력이 있는 대화를 되돌렸다가
 현재 코드로 복귀하는 검사를 수행했다. v0.5.3은 선택을 복원했고 v0.5.2는 이전 기본값으로 열었으며,
 둘 다 원래 파일과 이력을 보존했다. 구버전의 유료 backend 응답을 검증한 것은 아니다.
 
-출하 검증은 진행 중이다. 최종 실제 backend 횟수, 태그·재현 빌드·공개 자산·설치 결과는 완료 후 기록한다.
+최종 전체 일반·race는 각각 22개 패키지가 통과했고 gofmt·vet·build·문서 인용 검사도 통과했다.
+동일 호출 제어, call ID에서 자식 ID로의 연결, stop sequence 뒤 실행 준비, 진단 지문 제외를 각각
+제거한 네 대조에서는 해당 assertion이 실패했다. 수정이 없는 코드도 통과하는 검사로 대신하지 않았다.
+
+개발·실패·취소·재시도·출하를 합한 실제 backend 사용량은 **532/승인 2000 attempts**다.
+Go 1.27.1·CGO=0·trimpath의 깨끗한 태그를 독립 빌드 캐시 두 개로 빌드해 바이트 일치를 확인했다.
+그 설치본의 입력·clear·Agent 위임은 5회로 통과했으며 위 합계에 포함한다.
+자산 4개(`clauduct.exe`, `install.ps1`, `uninstall.ps1`, `SHA256SUMS`)의 공개 digest와 다운로드
+바이트를 대조했다. 신규 설치, v0.5.3의 공개 updater, 이미 최신인 경우의 무변경, v0.5.3 되돌림,
+v0.3.5 updater의 안전한 거부와 새 installer 전환도 통과했다.
+
+실제 설치본의 버전·commit·hash를 대조하고 기존 사용자 settings 파일과 PATH가 보존됨을 확인했다.
+측정된 클라이언트는 Claude Code 2.1.283과 Codex CLI 0.157.1이다. PowerShell 7 실행 검사는 PASS이며,
+Windows PowerShell 5.1은 AST 검사 PASS/실행 NOT_RUN이다. 실행 정책을 우회하지 않았다.
 묶음 C의 Workflow 확장·Office·전체 기능 최종 인수는 이 릴리스에 포함하지 않는다.

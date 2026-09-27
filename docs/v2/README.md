@@ -30,6 +30,7 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 책임 경계·프로토콜·생명주기의 stable contract |
 | [COMPATIBILITY.md](COMPATIBILITY.md) | 기능별 지원·제약·미검증 |
 | [PACKAGING.md](PACKAGING.md) | 출하물·런타임 의존·빌드·되돌리기 |
+| [SETTINGS.md](SETTINGS.md) | v0.5.3 개발 중인 Clauduct 전용 설정과 세션 선택. 출시 완료를 뜻하지 않는다 |
 | `RELEASE-v*.md` | 릴리스별 변경과 출하 검사 |
 | `go/README.md` | Go 모듈의 빌드 명령과 지켜야 할 runtime 계약 |
 

@@ -21,6 +21,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
+	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -57,6 +58,8 @@ type Options struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// ClauductHome overrides the home directory for isolated local checks.
+	ClauductHome string
 
 	// ResolveClaude returns the native executable and whether it was found.
 	ResolveClaude func() (string, bool, error)
@@ -102,6 +105,7 @@ type Options struct {
 // session that leaked a listener would hide exactly the defect this bridge has to prove it
 // does not have.
 type Result struct {
+	Startup        bridge.Pair
 	NativeStarted  bool
 	NativeExitCode int
 	GatewayAddr    string
@@ -158,7 +162,27 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
+	forward, resumeID := prepareSessionArgs(forward)
 	o.Args = forward
+	config := defaultClauductSettings()
+	clauductHome := o.ClauductHome
+	if o.Settings == nil && !nativeInformation(o.Args) {
+		if clauductHome == "" {
+			clauductHome, err = os.UserHomeDir()
+			if err != nil {
+				return Result{}, errClauductSettings
+			}
+		}
+		if err := settingsfile.Ensure(clauductHome); err != nil {
+			return Result{}, err
+		}
+		if resumeID == "" {
+			config, err = loadClauductSettings(clauductHome)
+			if err != nil {
+				return Result{}, err
+			}
+		}
+	}
 
 	exe, found, err := o.ResolveClaude()
 	if err != nil {
@@ -167,6 +191,36 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 
 	if !found {
 		return Result{}, ErrClaudeNotFound
+	}
+	var profiles *gateway.SessionProfiles
+	var resumed *gateway.SessionProfile
+	_, forkSession := optionValue(o.Args, "--fork-session")
+	_, ephemeral := optionValue(o.Args, "--no-session-persistence")
+	if clauductHome != "" && !nativeInformation(o.Args) && o.Settings == nil && (!ephemeral || resumeID != "") {
+		profiles, err = gateway.OpenSessionProfiles(filepath.Join(clauductHome, ".clauduct", "sessions"))
+		if err != nil {
+			return Result{}, err
+		}
+		defer func() { result.CleanupErr = errors.Join(result.CleanupErr, profiles.Close()) }()
+		if resumeID != "" {
+			saved, loadErr := profiles.Load(resumeID)
+			switch {
+			case errors.Is(loadErr, os.ErrNotExist):
+				// Older native sessions have no snapshot. Start them with today's
+				// configured pair; the user can choose another with S.
+				config, err = loadClauductSettings(clauductHome)
+				if err != nil {
+					return Result{}, err
+				}
+			case loadErr != nil:
+				return Result{}, loadErr
+			default:
+				if err := profiles.Refresh(&saved, filepath.Join(nativeConfigDirectory(o.Env, o.Cwd), "projects"), true); err != nil {
+					return Result{}, err
+				}
+				config.Selection, config.Startup, resumed = saved.Selection, saved.Last, &saved
+			}
+		}
 	}
 
 	// Ctrl+C reaches every process on the console, this one included. With nothing asking
@@ -188,7 +242,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// session ends here and the child is never spawned.
 		return Result{}, err
 	}
-	result = Result{GatewayAddr: gw.Addr()}
+	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -202,7 +256,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// measure one key does not want the other fifteen arriving with it.
 	session := o.Session
 	if session == nil {
-		session = sessionEnvironment()
+		session = config.sessionEnvironment()
 	}
 	// The hook program: this executable, unless the platform cannot name it. Without it the settings
 	// carry the picker and nothing else, which is the right answer: a hook pointing at a
@@ -233,31 +287,31 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
-		effort = startupModel.Effort
+		effort = config.Startup.Effort
 		// A model named without an effort runs at that model's own default, as the Node
 		// launcher did (#87); the startup effort is for the startup model. A user's --effort
 		// still lands after this one and wins.
 		if model, named := optionValue(o.Args, "--model"); named {
 			if _, pinned := optionValue(o.Args, "--effort"); !pinned {
 				// Native trims and lowercases a model name before resolving it.
-				if route, err := bridge.SelectRoute(strings.ToLower(strings.TrimSpace(model)), ""); err == nil {
+				if route, err := config.Selection.SelectRoute(strings.ToLower(strings.TrimSpace(model)), ""); err == nil {
 					effort = route.Effort
 				}
 			}
 		}
 		hook = findHook()
 		result.HookInstalled = hook != ""
-		if built, ok := sessionSettings(hook); ok {
+		if built, ok := config.sessionSettings(hook); ok {
 			settings = built
 		}
-		if menu, ok := sessionAgents(); ok {
+		if menu, ok := config.sessionAgents(); ok {
 			agents = menu
 		}
 		if BackgroundRequested(o.Args) {
 			background, err = sessionlink.Start(context.Background(), sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()})
 			if err == nil {
 				defer background.Close()
-				settings, err = backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env)
+				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env)
 			}
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
@@ -365,7 +419,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		cli := sessionCLIRoles(o.Args, agents, o.Cwd)
 		cli.subagent = sync.OnceValues(func() (string, error) { return subagentModel(configDir, o.Cwd, managedRoot(), cli, o.Env) })
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
-			return sessionRoleSources(configDir, o.Cwd, cli, o.Env, role).resolve(role, parent)
+			sources := sessionRoleSources(configDir, o.Cwd, cli, o.Env, role)
+			sources.selection = config.Selection
+			return sources.resolve(role, parent)
 		})
 		// An env this cannot read counts as set: native's own choice is never the wrong
 		// answer for what native runs.
@@ -373,6 +429,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			model, err := cli.subagent()
 			return model != "" || err != nil
 		})
+	}
+	gw.ConfigureSelection(config.Selection)
+	startup, startupErr := config.effectiveStartup(spec)
+	result.Startup = startup
+	if profiles != nil && startupErr != nil {
+		result.NativeExitCode = ExitCodeUnknown
+		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+		return result, startupErr
+	}
+	if !ephemeral {
+		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession)
 	}
 
 	// Pressed before there was a child to receive it: the launch is what was cancelled, and
@@ -437,6 +504,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 	if reaped {
 		gw.FinalizeNativeResults()
+		result.CleanupErr = errors.Join(result.CleanupErr, gw.CheckpointSessionProfiles(true))
 	}
 	result.Diagnostics = gw.Diagnose()
 	result.Lifecycle.ObservedAt = time.Now().UTC()

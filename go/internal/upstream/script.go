@@ -51,9 +51,6 @@ type ScriptTurn struct {
 // is generated without tools, and the conversation the user started carries all of them.
 func Conversation(body string) bool { return strings.Contains(body, `"tools":[`) }
 
-// SideRequest matches a request that carries no tools.
-func SideRequest(body string) bool { return !Conversation(body) }
-
 func (s *Script) Execute(ctx context.Context, call Call) (*Response, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

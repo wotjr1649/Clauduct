@@ -48,13 +48,16 @@ func (d *delegations) prepareWorkflowSource(scope delegationScope, call string, 
 			return nil, errDelegationUnverified
 		}
 	}
-	trailer := workflowTrailer(scope, call)
+	trailer, err := d.workflowTrailer(scope, call)
+	if err != nil {
+		return nil, err
+	}
 	previousTrailer := ""
 	d.mu.Lock()
 	for _, run := range d.workflows {
 		if run.Session == scope.session && path != "" && filepath.Clean(path) == filepath.Clean(run.Script) && run.origin.adapterBytes > 0 {
-			candidate := workflowTrailer(run.origin.scope, run.Call)
-			if len(candidate) == run.origin.adapterBytes {
+			candidate, err := d.workflowTrailer(run.origin.scope, run.Call)
+			if err == nil && len(candidate) == run.origin.adapterBytes {
 				previousTrailer = candidate
 			}
 		}
@@ -107,7 +110,8 @@ func (d *delegations) verifyWorkflowSource(link workflowLink, origin workflowOri
 	defer root.Close()
 	raw, err := workflowRead(root, "workflow-source-"+link.Call+".json", 320<<10)
 	var source workflowSource
-	if err != nil || json.Unmarshal(raw, &source) != nil || source.Session != link.Session || source.Call != link.Call || source.Trailer != workflowTrailer(origin.scope, link.Call) || len(script) < len(source.Trailer) || !strings.HasSuffix(string(script), source.Trailer) {
+	trailer, trailerErr := d.workflowTrailer(origin.scope, link.Call)
+	if err != nil || trailerErr != nil || json.Unmarshal(raw, &source) != nil || source.Session != link.Session || source.Call != link.Call || source.Trailer != trailer || len(script) < len(source.Trailer) || !strings.HasSuffix(string(script), source.Trailer) {
 		return false
 	}
 	raw, err = workflowRead(root, "workflow-read-"+link.Call+".json", 8192)

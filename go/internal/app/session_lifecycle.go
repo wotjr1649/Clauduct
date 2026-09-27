@@ -97,6 +97,9 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 	var idleSince time.Time
 	checkpoint := func() gateway.Diagnostics {
 		gw.ReconcileNativeCancellations()
+		if err := gw.CheckpointSessionProfiles(false); err != nil {
+			life.CheckpointFailures++
+		}
 		d := gw.Snapshot()
 		life.ObservedAt = time.Now().UTC()
 		if o.Checkpoint != nil {

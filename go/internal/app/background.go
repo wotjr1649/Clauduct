@@ -34,7 +34,7 @@ func BackgroundRequested(args []string) bool {
 	return slices.Contains(args, "--bg") || slices.Contains(args, "--background")
 }
 
-func backgroundSettings(settings, hook, id, base string, inherited map[string]string) (string, error) {
+func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string) (string, error) {
 	var s childSettings
 	if json.Unmarshal([]byte(settings), &s) != nil || hook == "" {
 		return "", errSettingsConflict
@@ -46,7 +46,7 @@ func backgroundSettings(settings, hook, id, base string, inherited map[string]st
 			}
 		}
 	}
-	env := sessionEnvironment()
+	env := config.sessionEnvironment()
 	// Only bounded scalar preferences may be persisted from the launch shell.
 	// Never serialize arbitrary environment entries into native's respawn flags.
 	for name, value := range inherited {

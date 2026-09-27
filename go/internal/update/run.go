@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/buildinfo"
+	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 )
 
 // Option is what this command owns on the command line.
@@ -121,7 +122,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	// match and does get repaired.
 	if current(dir, sums) {
 		fmt.Fprintln(out, "already current -- the installed binary matches", release.Tag)
-		return 0
+		return ensureSettings(out)
 	}
 
 	// The retired copies go too (Apply), so they are named before the question: consent to an
@@ -171,6 +172,18 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 		} else {
 			fmt.Fprintln(out, "leftover ", path, "(held by another process; delete it once that process has exited)")
 		}
+	}
+	return ensureSettings(out)
+}
+
+func ensureSettings(out io.Writer) int {
+	home, err := os.UserHomeDir()
+	if err == nil {
+		err = settingsfile.Ensure(home)
+	}
+	if err != nil {
+		fmt.Fprintln(out, "clauduct: CLAUDUCT_SETTINGS_CREATE_FAILED; the installed binary is available, but settings initialization failed")
+		return 1
 	}
 	return 0
 }

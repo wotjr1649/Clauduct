@@ -69,6 +69,11 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "CONTEXT_REQUEST_CLASS_UNVERIFIED")
 		return
 	}
+	session := r.Header.Get("X-Claude-Code-Session-Id")
+	if err := g.sessionProfileError(session); err != nil {
+		g.refuseSessionProfile(w, session, err)
+		return
+	}
 	g.ReconcileNativeCancellations()
 
 	// Admission happens before the body is read, so a request that cannot be served does
@@ -218,7 +223,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, contextError)
 		return
 	}
-	backendRequest, err := bridge.BuildRequest(request, override...)
+	backendRequest, err := g.selection.BuildRequest(request, override...)
 	if err != nil {
 		// CAP06: a model this build cannot route is the caller's answerable problem, not
 		// an internal failure. Reporting it as a 500 was wrong twice over -- it told the
@@ -341,7 +346,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				// selection or fails later admission. This does not mark any check
 				// successful or authorize execution.
 				entry.route(request.Model, route.Model, route.Effort, route.Source)
-				observed, err := bridge.SelectRoute(request.Model, "")
+				observed, err := g.selection.SelectRoute(request.Model, "")
 				if errors.Is(err, bridge.ErrRetiredRoute) {
 					return nil, releaseAgent, err
 				}
@@ -384,7 +389,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			if g.contexts != nil {
 				return nil, releaseAgent, errDelegationUnverified
 			}
-			if route, known := bridge.RoleRoute(role); known && registered {
+			if route, known := g.selection.RoleRoute(role); known && registered {
 				override = append(override, route)
 			}
 		}
@@ -456,7 +461,7 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 
-	route, err := bridge.ResolveRoute(request, override...)
+	route, err := g.selection.ResolveRoute(request, override...)
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, routeCategory(err))
 		return

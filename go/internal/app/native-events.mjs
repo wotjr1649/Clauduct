@@ -33,6 +33,18 @@ export const register = on => {
   const cancelledTurns = new Set();
   const progress = new Map();
   let origin='unclassified';
+  on('agent.spawn', async ($, e, next) => {
+    const sid=await session($),call=ident(e.tool_use_id),parent=e.parentAgentId?ident(e.parentAgentId):'';
+    if (!call || e.parentAgentId && !parent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+    const file=root+'/selection-'+sid+'-'+call+'.json';
+    if (!await $.fs.exists(file)) return next(e); // native/plugin-owned choices retain their own route
+    let choice;
+    try { choice=JSON.parse(await $.fs.read(file)); }
+    catch { throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED'); }
+    if (choice.session!==sid || choice.call!==call || choice.parent!==parent || choice.role!==e.subagentType || !__CLAUDUCT_MODELS__.includes(choice.model)) throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED');
+    if (e.fork) return next(e); // native owns fork inheritance
+    return next({...e,model:choice.model});
+  });
   on('prompt.submit', async ($, e, next) => {
     origin=e.origin?.kind || 'unclassified';
     if (origin==='composer') state.mode='native_tui';

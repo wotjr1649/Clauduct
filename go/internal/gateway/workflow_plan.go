@@ -176,7 +176,7 @@ func workflowFields(raw []byte, names ...string) (map[string]json.RawMessage, er
 	return fields, nil
 }
 
-func parseWorkflowPlan(raw []byte, parent bridge.Route) (*workflowPlan, error) {
+func parseWorkflowPlan(raw []byte, parent bridge.Route, selection bridge.Selection) (*workflowPlan, error) {
 	fields, err := workflowFields(raw, "script", "args")
 	if err != nil {
 		return nil, errWorkflowRecoveryUnverified
@@ -221,7 +221,7 @@ func parseWorkflowPlan(raw []byte, parent bridge.Route) (*workflowPlan, error) {
 				effort = parent.Effort
 			}
 		}
-		route, err := bridge.SelectRoute(model, effort)
+		route, err := selection.SelectRoute(model, effort)
 		if err != nil {
 			return nil, errWorkflowRecoveryUnverified
 		}

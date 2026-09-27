@@ -27,6 +27,7 @@ type roleDefault struct {
 }
 type roleDirectory struct{ path, prefix string }
 type roleSources struct {
+	selection    bridge.Selection
 	cli          map[string]roleDefault
 	directories  []roleDirectory // highest priority first
 	managed      int
@@ -44,16 +45,27 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		return bridge.Route{}, false, s.err
 	}
 	var def roleDefault
+	var configured *bridge.Pair
 	found := false
 	unverified := false
 	// Preserve readable definitions and their precedence. An unreadable ordinary
 	// definition may declare any name, so it cannot prove an unmatched role absent.
-	for i, dir := range s.directories {
+	for i := 0; i <= len(s.directories); i++ {
 		if i == s.managed {
+			if pair, ok := s.selection.Agents[bridge.CanonicalRole(role)]; ok {
+				if unverified {
+					return bridge.Route{}, false, errRoleDefaults
+				}
+				configured = &pair
+			}
 			if def, found = s.cli[role]; found {
 				break
 			}
 		}
+		if i == len(s.directories) {
+			break
+		}
+		dir := s.directories[i]
 		if dir.prefix != "" && !strings.HasPrefix(role, dir.prefix+":") {
 			continue
 		}
@@ -76,10 +88,23 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 		if strings.Contains(role, ":") && s.pluginError != nil {
 			return bridge.Route{}, false, s.pluginError
 		}
+		if configured != nil {
+			route, err := s.selection.SelectRoute(configured.Model, configured.Effort)
+			return route, false, err // A configured builtin is not a custom definition.
+		}
 		return bridge.Route{}, false, nil
 	}
 	if def.invalid {
 		return bridge.Route{}, false, errRoleDefaults
+	}
+	// A builtin's case-folded alias must not capture a distinct, exactly named
+	// native custom definition (for example a custom "explore" beside Explore).
+	if role != bridge.CanonicalRole(role) {
+		configured = nil
+	}
+	if configured != nil {
+		route, err := s.selection.SelectRoute(configured.Model, configured.Effort)
+		return route, true, err
 	}
 	model, effort := def.Model, def.Effort
 	named := model != "" && model != "inherit"
@@ -110,7 +135,7 @@ func (s roleSources) resolve(role string, parent bridge.Route) (bridge.Route, bo
 	if model == "" || (!named && effort == "") {
 		return bridge.Route{}, false, errRoleDefaults
 	}
-	route, err := bridge.SelectRoute(model, effort)
+	route, err := s.selection.SelectRoute(model, effort)
 	return route, true, err
 }
 

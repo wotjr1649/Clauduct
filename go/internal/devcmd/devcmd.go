@@ -91,7 +91,7 @@ func doctor(out io.Writer) int {
 		fmt.Fprintf(out, "home         %s (OS user, not %%USERPROFILE%%)\n", home)
 	}
 
-	source := environMap()
+	source := platform.Environment(os.Environ())
 	spec := launch.Build("", nil, source, "", launch.Overlay{BaseURL: "http://127.0.0.1:0", AuthToken: ""})
 	fmt.Fprintf(out, "env          %d parent vars, %d passed to child\n", len(source), len(spec.Env))
 	fmt.Fprintln(out, "env rule     drop ANTHROPIC_* and CLAUDE_CODE_OAUTH_TOKEN; everything else is inherited")
@@ -104,15 +104,4 @@ func doctor(out io.Writer) int {
 	credential, err := (&auth.Provider{}).Credential()
 	credentialReport(out, credential, err)
 	return status
-}
-
-func environMap() map[string]string {
-	entries := os.Environ()
-	out := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		if i := strings.IndexByte(entry, '='); i > 0 {
-			out[entry[:i]] = entry[i+1:]
-		}
-	}
-	return out
 }

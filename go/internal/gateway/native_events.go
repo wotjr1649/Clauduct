@@ -52,6 +52,36 @@ func (g *Gateway) ConfigureNativeEvents(directory string) {
 	}
 }
 
+// The native function hook receives this exact call's intended backend ID.
+// O_EXCL prevents replacing an intent already published to native.
+func (d *delegations) writeNativeSelection(scope delegationScope, call, role string, route bridge.Route) error {
+	root, err := os.OpenRoot(d.events)
+	if err != nil {
+		return errDelegationUnverified
+	}
+	defer root.Close()
+	raw, err := json.Marshal(struct {
+		Session string `json:"session"`
+		Parent  string `json:"parent"`
+		Call    string `json:"call"`
+		Role    string `json:"role"`
+		Model   string `json:"model"`
+	}{scope.session, scope.parent, call, role, route.Model})
+	if err != nil {
+		return errDelegationUnverified
+	}
+	f, err := root.OpenFile("selection-"+scope.session+"-"+call+".json", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return errDelegationUnverified
+	}
+	_, writeErr := f.Write(raw)
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		return errDelegationUnverified
+	}
+	return nil
+}
+
 func (g *Gateway) readNativeReceipt(name string, out any) (found bool, err error) {
 	found, err = g.readNativeJSON(name, []string{"session", "agent", "turn", "model", "effort", "reason"}, out)
 	if err != nil {

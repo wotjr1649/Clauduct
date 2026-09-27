@@ -2,8 +2,6 @@ package gateway
 
 import (
 	"encoding/json"
-
-	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 // A SendMessage can resume a stopped descendant from a different native caller.
@@ -92,7 +90,7 @@ func (d *delegations) prepareResume(scope delegationScope, call string, raw json
 		}
 		delete(d.resumes, evicted)
 	}
-	native, err := bridge.SelectRoute(scope.nativeModel, "")
+	native, err := d.selection.SelectRoute(scope.nativeModel, "")
 	if err != nil {
 		return nil, errDelegationUnverified
 	}

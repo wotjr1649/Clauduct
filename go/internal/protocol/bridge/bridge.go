@@ -274,9 +274,13 @@ type ReasoningParam struct {
 
 // ResolveRoute selects the same model and effort for generation and hosted search.
 func ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) {
+	return (Selection{}).ResolveRoute(request, override...)
+}
+
+func (s Selection) ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) {
 	// The client asks for a Claude model; the backend has never heard of one. Resolved
 	// here rather than forwarded, and refused rather than defaulted -- see route.go.
-	route, err := SelectRoute(request.Model, request.Effort)
+	route, err := s.SelectRoute(request.Model, request.Effort)
 	if err != nil {
 		return Route{}, err
 	}
@@ -302,7 +306,11 @@ func ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) 
 
 // BuildRequest converts a decoded Anthropic request into a backend request.
 func BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
-	route, err := ResolveRoute(request, override...)
+	return (Selection{}).BuildRequest(request, override...)
+}
+
+func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
+	route, err := s.ResolveRoute(request, override...)
 	if err != nil {
 		return nil, err
 	}

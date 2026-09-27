@@ -18,8 +18,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
@@ -69,7 +71,7 @@ func Dispatch(argv []string) (int, bool) {
 			}
 			return 0, true
 		}
-		env := environ()
+		env := platform.Environment(os.Environ())
 		env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
 		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, env), true
 	}
@@ -82,11 +84,11 @@ func Dispatch(argv []string) (int, bool) {
 		if alone("--render-pdf") {
 			return renderPDF(), true
 		}
-		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, environ()), true
+		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
 	case alone(pdf.RenderArg):
 		return renderPDF(), true
 	case alone(Arg):
-		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, environ()), true
+		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
 	}
 	return 0, false
 }
@@ -208,6 +210,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		Agent      string `json:"agent_id"`
 		Transcript string `json:"transcript_path"`
 		Trigger    string `json:"trigger"`
+		Source     string `json:"source"`
 	}
 	if json.Unmarshal(raw, &compact) == nil && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit") {
 		if !identifier.MatchString(compact.Session) || (compact.Agent != "" && !identifier.MatchString(compact.Agent)) {
@@ -215,6 +218,9 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			return 2
 		}
 		fields := map[string]string{"event": compact.Event, "sessionId": compact.Session, "agentId": compact.Agent}
+		if compact.Event == "SessionStart" && compact.Source != "" {
+			fields["source"] = compact.Source
+		}
 		if compact.Trigger != "" {
 			if compact.Trigger != "auto" && compact.Trigger != "manual" {
 				return 2
@@ -234,6 +240,10 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		body, _ := json.Marshal(fields)
 		reply, err := postReply(body, env, "/clauduct/context")
 		if err != nil {
+			if errors.Is(err, errSessionRestart) {
+				fmt.Fprintf(errOut, "SESSION_RESTART_REQUIRED: save any draft, finish native, then run clauduct --resume %s with any native options you need.\n", compact.Session)
+				return 2
+			}
 			if compact.Event == "UserPromptSubmit" {
 				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_SESSION_UNVERIFIED: session registration failed; restore the Clauduct hook connection and submit the prompt again.")
 				return 2
@@ -405,21 +415,22 @@ func postReply(body []byte, env map[string]string, path string) ([]byte, error) 
 		return nil, errInvalidGateway
 	}
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+		if path == "/clauduct/context" && response.StatusCode == http.StatusBadRequest {
+			var envelope struct {
+				Type  string `json:"type"`
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" &&
+				(envelope.Error.Message == errSessionRestart.Error() || strings.HasPrefix(envelope.Error.Message, errSessionRestart.Error()+";")) {
+				return nil, errSessionRestart // Never print arbitrary gateway response text.
+			}
+		}
 		return nil, fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
 	}
 	return reply, nil
 }
 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")
-
-func environ() map[string]string {
-	out := map[string]string{}
-	for _, entry := range os.Environ() {
-		if i := indexByte(entry, '='); i > 0 {
-			out[entry[:i]] = entry[i+1:]
-		}
-	}
-	return out
-}
-
-func indexByte(value string, b byte) int { return strings.IndexByte(value, b) }
+var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")

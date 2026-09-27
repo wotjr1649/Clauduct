@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -148,12 +149,12 @@ func Account(result Result) Status {
 		Attempts:   result.Attempts,
 		Inferences: result.Inferences,
 		Session: SessionFacts{
-			StartupModel:  startupModel.Model,
-			StartupEffort: startupModel.Effort,
+			StartupModel:  result.Startup.Model,
+			StartupEffort: result.Startup.Effort,
 			NativeContextDefaults: NativeContextDefaults{Window: contextWindow,
 				AutoCompactWindow: compactAt, CompactPercent: compactPercent(), ApplicationVerified: false},
 			NonStreamingFallback:  sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
-			DelegationMenuEntries: len(agentDefinitions()),
+			DelegationMenuEntries: len(bridge.Models) + 1,
 			HookInstalled:         result.HookInstalled,
 		},
 		Gateway:       result.Diagnostics,

@@ -64,8 +64,8 @@ type modelPickerRow struct {
 // that points at a program which is not there would make the client report a failed hook on
 // every subagent it starts -- worse than not routing them, because it is noise the user
 // cannot act on.
-func sessionSettings(hookPath string) (string, bool) {
-	settings := childSettings{ModelPicker: pickerRows(), AutoMode: json.RawMessage(nativeAutoMode)}
+func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
+	settings := childSettings{ModelPicker: config.pickerRows(), AutoMode: json.RawMessage(nativeAutoMode)}
 	if hookPath != "" {
 		entry := []hookMatcher{{
 			Matcher: "*",
@@ -105,14 +105,15 @@ func sessionSettings(hookPath string) (string, bool) {
 // with it -- a session pinned to low came back at medium. The context window that line was
 // warning about is settled by CLAUDE_CODE_MAX_CONTEXT_TOKENS instead, which leaves the
 // effort where the user put it.
-func pickerRows() *modelPicker {
+func (config ClauductSettings) pickerRows() *modelPicker {
 	routes := bridge.Models
 	rows := make([]modelPickerRow, 0, len(routes))
 	for _, model := range routes {
+		effort, _ := config.Selection.DefaultFor(model.ID)
 		rows = append(rows, modelPickerRow{
 			Model:       model.ID,
 			Label:       model.ID,
-			Description: "Default effort: " + model.Effort,
+			Description: "Default effort: " + effort,
 		})
 	}
 	return &modelPicker{ReplaceBuiltInOptions: true, Options: rows}

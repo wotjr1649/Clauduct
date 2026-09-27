@@ -431,6 +431,10 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		}
 	}
 	receipt := d.noteSelection(SelectionRecord{Session: scope.session, Parent: scope.parent, Call: id, Role: role, CustomRole: custom, RequestedModel: requestedModel, RequestedEffort: effort, ModelProvided: modelProvided, EffortProvided: hasEffort, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: nativeAlias})
+	if scope.nativeTurn != nil && scope.nativeTurn.Session == scope.session && scope.nativeTurn.Agent == scope.parent {
+		receipt.turn = scope.nativeTurn.Turn
+		receipt.arguments, _ = agentArguments(raw)
+	}
 	d.pending[key] = delegatedChoice{parent: scope.parent, role: role, alias: nativeAlias, route: route, inherited: inherited, receipt: receipt, custom: custom}
 	return encoded, nil
 }

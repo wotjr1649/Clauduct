@@ -300,7 +300,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	entry.at(stageDelivery)
 	resultsDelivered = g.relay(ctx, w, control, response, request, backendRequest.Model,
-		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source}})
+		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, nativeTurn: entry.nativeTurn, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source}})
 	g.rememberUsage(encoded, entry)
 	if resultsDelivered && g.delegations != nil {
 		g.delegations.observeBackend(r.Header.Get("X-Claude-Code-Agent-Id"), true)
@@ -667,6 +667,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		}
 	}()
 	if g.delegations != nil && len(scopes) > 0 {
+		translator.PendingToolCall = g.delegations.pendingAgentCalls(request, scopes[0], recordOf(w).snapshot().ParentReadiness)
 		translator.PrepareToolCall = func(id, name string, raw json.RawMessage) (json.RawMessage, error) {
 			if name == "Workflow" {
 				var fields map[string]json.RawMessage
@@ -859,6 +860,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 					if entry.data.ParentReadiness != nil {
 						snapshot := *entry.data.ParentReadiness
 						snapshot.Withheld = true
+						snapshot.DuplicateCalls = translator.PendingCalls()
 						snapshot.Empty = translator.Builder().ReplyEmpty()
 						entry.data.ParentReadiness = &snapshot
 					}

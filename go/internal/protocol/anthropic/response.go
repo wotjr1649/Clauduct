@@ -209,6 +209,19 @@ func (b *Builder) DeferTextUntilComplete() { b.deferText = true }
 // invented answer; the native hook consumes it without an empty-response retry.
 func (b *Builder) WaitForChildren() { b.waitChildren = true; b.deferText = true }
 
+// WaitForPendingCalls withholds validated calls already running in the native turn.
+// A consumer must have deferred text before streaming; never retract sent text.
+func (b *Builder) WaitForPendingCalls() error {
+	if !b.deferText || b.completed || len(b.calls) == 0 {
+		return ErrStreamOrder
+	}
+	b.calls = nil
+	b.WaitForChildren()
+	return nil
+}
+
+func (b *Builder) StoppedBySequence() bool { return b.stopped != "" }
+
 // A verified native task notification may have nothing new to report after its
 // result was already delivered. Preserve any actual text or tool call.
 func (b *Builder) ConsumeEmptyNotification() { b.emptyNotification = true; b.deferText = true }

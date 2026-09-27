@@ -516,6 +516,9 @@ func systemText(raw json.RawMessage) (string, bool) {
 // here rather than a default that happens somewhere else.
 type Translator struct {
 	PrepareToolCall func(id, name string, raw json.RawMessage) (json.RawMessage, error)
+	// Supplied only for a verified native wait step, before preparing any new call.
+	PendingToolCall func(name string, raw json.RawMessage) bool
+	pendingCalls    int
 	builder         *anthropic.Builder
 	usage           codex.Usage
 	// outputLimit is the caller's max_tokens. Nothing asks the backend to stop at it, so
@@ -690,6 +693,8 @@ func (t *Translator) checkOutputLimit(usage codex.Usage) error {
 // Builder exposes the response under construction, for a caller that needs what was
 // accumulated rather than the frames.
 func (t *Translator) Builder() *anthropic.Builder { return t.builder }
+
+func (t *Translator) PendingCalls() int { return t.pendingCalls }
 
 // Accept translates one backend event into client frames.
 //
@@ -910,17 +915,32 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 
 // release hands the assembled response to the builder. It runs once, on completion.
 func (t *Translator) release() error {
+	calls := 0
 	for _, index := range t.order {
 		held := t.held[index]
 		if !held.done {
-			// The backend said the response finished while an item was still open. Taking
-			// the partial one would deliver something it never said it had written.
 			return ErrOutputItemOrder
 		}
+		if held.item.Type == codex.ItemFunctionCall {
+			calls++
+			if t.PendingToolCall != nil && !t.builder.StoppedBySequence() && t.PendingToolCall(held.item.Name, held.item.Arguments) {
+				t.pendingCalls++
+			}
+		}
+	}
+	// Never discard independent work or prepare side effects in a mixed response.
+	if t.pendingCalls > 0 && t.pendingCalls != calls {
+		return anthropic.ErrUnsupportedToolCall
+	}
+	for _, index := range t.order {
+		held := t.held[index]
 		switch held.item.Type {
 		case codex.ItemFunctionCall:
+			if t.builder.StoppedBySequence() {
+				continue // Excluded calls must not reserve a native launch either.
+			}
 			arguments := held.item.Arguments
-			if t.PrepareToolCall != nil {
+			if t.pendingCalls == 0 && t.PrepareToolCall != nil {
 				var err error
 				arguments, err = t.PrepareToolCall(held.item.CallID, held.item.Name, arguments)
 				if err != nil {
@@ -941,6 +961,9 @@ func (t *Translator) release() error {
 				return err
 			}
 		}
+	}
+	if t.pendingCalls > 0 {
+		return t.builder.WaitForPendingCalls()
 	}
 	return nil
 }

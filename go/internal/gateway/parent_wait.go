@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,7 +10,73 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
+
+// Sort the Agent object's keys without decoding values through float64 or
+// collapsing absent/null fields. Nested values retain their own key ordering.
+func agentArguments(raw json.RawMessage) ([32]byte, bool) {
+	fields, err := wire.Fields(raw, nil)
+	if err != nil {
+		return [32]byte{}, false
+	}
+	canonical, err := json.Marshal(fields)
+	return sha256.Sum256(canonical), err == nil
+}
+
+// Snapshot only launches accepted in this native turn whose report was absent
+// from this request. A child finishing during inference still wakes native with
+// its real report. No prompt body or deduplication state survives this process.
+func (d *delegations) pendingAgentCalls(request *anthropic.Request, scope delegationScope, readiness *ParentReadiness) func(string, json.RawMessage) bool {
+	step, turn := scope.parentWait, scope.nativeTurn
+	if step == nil || !step.Eligible || !step.waiting || step.Index == 0 || turn == nil || readiness == nil ||
+		step.Session != scope.session || step.Agent != scope.parent || turn.Session != scope.session || turn.Agent != scope.parent || turn.Turn != step.Turn {
+		return nil
+	}
+	calls, accepted := map[string]bool{}, map[string]bool{}
+	for _, message := range request.Messages {
+		for _, block := range message.Blocks {
+			if message.Role == "assistant" && block.Type == "tool_use" && block.Name == "Agent" {
+				calls[block.ID] = true
+			}
+			if message.Role == "user" && block.Type == "tool_result" && calls[block.ToolUseID] {
+				accepted[block.ToolUseID] = !block.IsError
+			}
+		}
+	}
+	arguments := map[[32]byte]bool{}
+	pending := make(map[string]bool, len(readiness.Pending))
+	for _, id := range readiness.Pending {
+		pending[id] = true
+	}
+	add := func(receipt *SelectionRecord, pendingID string) {
+		if receipt != nil && receipt.turn == step.Turn && receipt.Session == scope.session && receipt.Parent == scope.parent &&
+			receipt.PresenceVerified && receipt.Failure == "" && accepted[receipt.Call] &&
+			(pending[pendingID] || pending[receipt.Call]) {
+			// Native may link a queued call to its child during backend inference.
+			// The immutable admission snapshot then still names the original call.
+			arguments[receipt.arguments] = true
+		}
+	}
+	d.mu.Lock()
+	for key, choice := range d.pending {
+		add(choice.receipt, key.call)
+	}
+	for id, choice := range d.resolved {
+		add(choice.receipt, id)
+	}
+	d.mu.Unlock()
+	if len(arguments) == 0 {
+		return nil
+	}
+	return func(name string, raw json.RawMessage) bool {
+		if name != "Agent" {
+			return false
+		}
+		key, ok := agentArguments(raw)
+		return ok && arguments[key]
+	}
+}
 
 // This is a structural completion condition, never a review of a child's findings.
 // Identifiers only: result bodies stay in the existing delivery path.
@@ -21,14 +88,15 @@ import (
 var errParentWaitUnverified = errors.New("PARENT_WAIT_UNVERIFIED")
 
 type ParentReadiness struct {
-	Pending     []string `json:"pending,omitempty"`
-	Included    []string `json:"includedResults,omitempty"`
-	Unavailable []string `json:"unavailableResults,omitempty"`
-	Eligible    bool     `json:"completionEligible"`
-	Meaning     string   `json:"meaning"`
-	Withheld    bool     `json:"replyWithheld"`
-	Empty       bool     `json:"backendReplyEmpty,omitempty"`
-	ControlMode string   `json:"waitControlMode,omitempty"`
+	Pending        []string `json:"pending,omitempty"`
+	Included       []string `json:"includedResults,omitempty"`
+	Unavailable    []string `json:"unavailableResults,omitempty"`
+	Eligible       bool     `json:"completionEligible"`
+	Meaning        string   `json:"meaning"`
+	Withheld       bool     `json:"replyWithheld"`
+	DuplicateCalls int      `json:"duplicateAgentCalls,omitempty"`
+	Empty          bool     `json:"backendReplyEmpty,omitempty"`
+	ControlMode    string   `json:"waitControlMode,omitempty"`
 }
 
 type parentStep struct {

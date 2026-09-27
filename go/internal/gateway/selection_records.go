@@ -118,6 +118,9 @@ func (d *delegations) rejectedSelection(scope delegationScope, call string, raw 
 }
 
 type SelectionRecord struct {
+	// Process-local launch identity; never persisted or restored as fresh authority.
+	turn               string
+	arguments          [32]byte
 	Session            string `json:"session"`
 	Parent             string `json:"parent,omitempty"`
 	Call               string `json:"call"`
@@ -201,7 +204,11 @@ func (d *delegations) selectionReport() SelectionReport {
 		out.Totals[k] = v
 	}
 	for i := len(d.selectionRecent) - 1; i >= 0; i-- {
-		out.Recent = append(out.Recent, *d.selectionRecent[i])
+		record := *d.selectionRecent[i]
+		// Diagnostic consumers may use fmt as well as JSON. Keep launch identity
+		// inside the live registry even when formatting an entire report value.
+		record.turn, record.arguments = "", [32]byte{}
+		out.Recent = append(out.Recent, record)
 	}
 	return out
 }

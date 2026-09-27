@@ -1,7 +1,9 @@
 # v0.5.5 — PowerShell 7·phase 보존·분석 경고 정리
 
 v0.5.5는 v0.5.4 감사에서 남은 항목을 보완한다. 묶음 C의 새 기능은 포함하지 않는다.
-출하 완료 신원과 설치 결과는 최종 자산 검증 후 이 문서에 기록한다.
+2026-09-28 [정식 latest Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.5.5)를 발행하고
+실제 설치를 완료했다. 태그 commit은 `d17f7fe5b10971193df72894097f138a29a3a7d6`,
+출하 바이너리 SHA-256은 `a0273e32787bdab212d9703a2202ffd93b24114c589e69efb3878984a43244fe`다.
 
 - 설치·제거·Windows 검증 스크립트의 최소 버전을 PowerShell 7로 통일했다. 5.1 지원은 종료한다.
   5.1 호환용 hash·TLS 코드를 표준 PowerShell 7 명령으로 줄였으며 실행 정책을 변경하지 않는다.
@@ -24,5 +26,23 @@ B의 native 분류기·추가 규칙·권한 설정도 유지한다. 지원 범�
 로컬 전체 일반·race는 각각 22개 패키지, gofmt·vet·build·문서 인용과 uncapped 분석이 통과했다.
 phase 해독·이력 재전송·snapshot 대조와 media 허용목록·PDF 문구·credential redaction 수정을
 되돌린 검사는 실패했다. Sol/medium·Luna/medium·Terra/high의 실제 phase 왕복과 backend 계수도
-통과했다. 후보 바이너리에서 전체 지침을 유지한 중복 차단 발동과 별도 정상 표본을 확인했다.
-이 후보 증거를 최종 태그 바이너리의 검사로 대체하지 않는다.
+통과했다. 실제 native ConPTY에서는 생성 3회·압축 1회·취소 1회와 이후 복구, 정상 종료 및
+이력의 사실·순서를 확인했다. 이 TUI 검사는 외부 요청 없는 로컬 전송으로 native 동작을 검사한다.
+
+최종 태그 바이너리에서 전체 Agent 안내를 유지한 중복 차단이 실제로 발동했다(`duplicateWait=1`).
+native Agent는 한 번 실행됐고 결과 전달·최종 응답·정상 종료·메모리 해제가 확인됐다.
+별도 정상 표본은 `duplicateWait=0`으로 같은 기준을 통과했다. 이미지/PDF·phase 포함 UUID 재개,
+v0.5.3/4의 명시 거부와 파일 보존, v0.5.5 복귀도 같은 최종 bytes로 확인했다.
+
+Go 1.27.1·CGO=0·trimpath의 깨끗한 태그를 독립 캐시 두 개에서 빌드해 바이트 일치를 확인했다.
+PowerShell 7.6.6에서 신규 설치·v0.5.4 업데이트·되돌림, 완전한 초기 설정 생성과 사용자 편집
+설정 보존을 확인했다. 공개 자산 4개의 API digest·다운로드 bytes·SHA256SUMS를 대조했으며,
+공개 태그 설치·v0.5.4 updater·반복 무변경·v0.3.5 updater의 안전한 거부와 새 installer 전환도 통과했다.
+실제 설치본의 신원·native 실행·doctor·backend 출하 세션과 기존 Clauduct/native settings·PATH 보존을 확인했다.
+
+v0.5.5의 실제 backend 사용량은 개발·후보·최종 자산·설치 확인을 합쳐 **48 attempts**다.
+기존 공유 원장의 누적은 **580 attempts**이며 최종 태그/설치본 검증 19회가 포함된다.
+필요한 backend 검증의 상시 승인 아래 각 단계의 유한 상한과 검색 차단을 유지했다.
+후보 검증기의 상대 경로·환경 누락과 첫 Windows CI의 cwd 오류는 실패 기록으로 남겼다.
+완료된 유료 단계를 불필요하게 반복하지 않았고, 수정 뒤 필요한 검사를 다시 통과했다.
+Windows PowerShell 5.1은 지원 종료이며 실행 PASS로 바꾸지 않는다. 측정한 native는 2.1.283이다.

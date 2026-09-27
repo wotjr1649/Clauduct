@@ -188,7 +188,7 @@ Windows PowerShell 5.1 지원은 종료한다. 이 요구사항은 Go 바이너�
 ```powershell
 # 릴리스에서 설치 (기본 최신 태그, 기본 위치 ~\.local\bin)
 pwsh -NoProfile -File scripts\install.ps1
-pwsh -NoProfile -File scripts\install.ps1 -Tag v0.5.4       # 태그 고정
+pwsh -NoProfile -File scripts\install.ps1 -Tag v0.5.5       # 태그 고정
 pwsh -NoProfile -File scripts\install.ps1 -FromPath .\dist  # 로컬 빌드 설치 (clauduct.exe + SHA256SUMS 필요)
 pwsh -NoProfile -File scripts\install.ps1 -NoPathUpdate     # PATH를 건드리지 않는다
 

@@ -98,7 +98,7 @@ func (n *nativeEventState) cancelLocked(p *nativeCancellation, source string) {
 	p.cancel()
 }
 
-// Called by the existing bounded session checkpoint and on new requests, not by
+// ReconcileNativeCancellations is called by the bounded session checkpoint and on new requests, not by
 // model polling. Private task-owned receipts contain only identity and reason.
 func (g *Gateway) ReconcileNativeCancellations() {
 	n := &g.nativeEvents

@@ -55,7 +55,7 @@ func SideQuery(request *anthropic.Request) (SearchQuery, bool) {
 	// always name the tool in tool_choice. Accept the shapes it can send and refuse
 	// anything pointing at a different tool, which would be a conversation.
 	if choice := request.ToolChoice; choice.Present {
-		if choice.Type != "auto" && !(choice.Type == "tool" && choice.Name == "web_search") {
+		if choice.Type != "auto" && (choice.Type != "tool" || choice.Name != "web_search") {
 			return SearchQuery{}, false
 		}
 	}

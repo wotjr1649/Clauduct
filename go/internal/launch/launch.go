@@ -19,10 +19,8 @@ type Spec struct {
 }
 
 // Overlay is the entire set of session values Clauduct adds to the child environment.
-// It is this small on purpose: the connection needs an endpoint and a token, and nothing
-// else in WP01 has earned a key. Context window, model defaults, retry counts, telemetry
-// and compaction are policy the gateway has not implemented yet; adding their keys now
-// would claim a behaviour that no code backs.
+// App supplies connection settings, model/context defaults and required gateway policy.
+// This builder preserves argv order; app resolves native option boundaries and merges settings.
 type Overlay struct {
 	BaseURL   string
 	AuthToken string

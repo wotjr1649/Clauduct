@@ -95,8 +95,8 @@ var serverDependentBetas = map[string]bool{
 // record outlives the session, so an unexpected value must not be able to grow it.
 var betaNameShape = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 
-// betaNames is how many distinct names of one kind are kept. The baseline's eight.
-const betaNames = 8
+// diagnosticNames bounds each distinct beta/event name set. The baseline's eight.
+const diagnosticNames = 8
 
 // BetaReport is what the session saw asked for.
 type BetaReport struct {
@@ -153,11 +153,11 @@ func (b *betaLedger) observe(header string) {
 		switch {
 		case nativeBetas[name]:
 		case judgedBetas[name] != "":
-			add(b.judged, judgedBetas[name], betaNames)
+			add(b.judged, judgedBetas[name])
 		case serverDependentBetas[name]:
-			add(b.serverDependent, name, betaNames)
+			add(b.serverDependent, name)
 		case betaNameShape.MatchString(name):
-			add(b.unknown, name, betaNames)
+			add(b.unknown, name)
 		default:
 			// An empty item, or text that is not a name at all. Counted and not written
 			// down: there is nothing safe to record about it. Still not refused.
@@ -171,8 +171,8 @@ func (b *betaLedger) observe(header string) {
 
 // add keeps a bounded set. Past the bound a new name is dropped rather than evicting one,
 // so what a reader sees is the first names the session met and not a window that slid.
-func add(set map[string]bool, name string, bound int) {
-	if len(set) >= bound && !set[name] {
+func add(set map[string]bool, name string) {
+	if len(set) >= diagnosticNames && !set[name] {
 		return
 	}
 	set[name] = true

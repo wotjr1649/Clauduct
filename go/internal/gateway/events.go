@@ -21,9 +21,6 @@ import (
 // The name is the backend's own string, so it is shaped and bounded before it is kept, and a
 // type that does not fit the shape leaves a fixed label instead. See bridge.unsupportedEvent.
 
-// eventNames is how many distinct names are kept.
-const eventNames = 8
-
 // EventReport is what the session could not read.
 type EventReport struct {
 	// Unsupported is how many responses were stopped by an event type.
@@ -55,12 +52,12 @@ func (e *eventLedger) observe(refusal *bridge.UnsupportedEvent) {
 	defer e.mu.Unlock()
 	e.unsupported++
 	if refusal.Name != "" {
-		add(e.names, refusal.Name, eventNames)
+		add(e.names, refusal.Name)
 		return
 	}
 	// Only the ones with no name are counted by label. A named one is already the better
 	// answer, and counting it twice would make the totals disagree with the list.
-	if len(e.formats) < eventNames || e.formats[refusal.Format] > 0 {
+	if len(e.formats) < diagnosticNames || e.formats[refusal.Format] > 0 {
 		e.formats[refusal.Format]++
 	}
 }

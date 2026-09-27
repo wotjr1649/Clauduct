@@ -77,7 +77,7 @@ type SessionFacts struct {
 	HookInstalled bool `json:"hookInstalled"`
 }
 
-// Launcher defaults may be overridden by the user's environment. They are not
+// NativeContextDefaults records launcher defaults that the user's environment may override. They are not
 // evidence that a native agent applied them or that gateway policy was enforced.
 type NativeContextDefaults struct {
 	Window              int     `json:"window"`
@@ -101,7 +101,7 @@ type Status struct {
 	CleanupFailed bool `json:"cleanupFailed"`
 }
 
-// Process exit, transport success and task completion are different claims.
+// CompletionFacts separates process exit, transport success and task completion.
 // Acceptance is never inferred from exit=0 or a model's own report.
 type CompletionFacts struct {
 	Acceptance            string `json:"acceptance"`
@@ -229,7 +229,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	}
 }
 
-// writeStatus puts the account somewhere it can be read after the fact.
+// StatusDir locates session accounts so they can be read after the fact.
 //
 // The temporary directory, not the working directory and not the user's configuration. A
 // diagnostic is disposable and writing one into a project would leave this build's litter in
@@ -238,8 +238,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 // One file per process. Files from finished sessions accumulate until the operating system
 // clears its temporary directory, which is what that directory is for; a sweep of our own
 // would be this build deleting files by pattern, which is a worse trade.
-// StatusDir is where session accounts are written and read. One place knows the location,
-// and the uninstall path needs to name it without owning it.
+// The uninstall path names this location without owning it.
 func StatusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
 
 // WriteCheckpoint uses the same bounded metadata schema and atomic file as the

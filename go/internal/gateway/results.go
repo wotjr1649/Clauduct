@@ -62,7 +62,7 @@ type AgentResultReport struct {
 	Current       map[string]int64    `json:"current"`
 }
 
-// Original selection and gateway route are independent of the native event's
+// ResultSelection records the original selection and gateway route, independent of the native event's
 // model/effort. These are immutable facts; completion is recorded separately.
 type ResultSelection struct {
 	RequestedModel   string `json:"requestedModel,omitempty"`
@@ -118,7 +118,7 @@ func (r *agentResults) start(id string, c resolvedChoice) bool {
 	}
 	if len(r.entries) >= maxAgents {
 		var oldest string
-		var seq uint64 = ^uint64(0)
+		var seq = ^uint64(0)
 		for key, e := range r.entries {
 			if resultReported(e.State) && e.sequence < seq {
 				oldest, seq = key, e.sequence
@@ -537,11 +537,12 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		for _, e := range receipts {
-			if e.State == "cancelled" {
+			switch e.State {
+			case "cancelled":
 				r.change(e, "cancellation_reported")
-			} else if e.State == "result_unavailable" {
+			case "result_unavailable":
 				r.change(e, "unavailable_reported")
-			} else if e.State == "awaiting_parent" {
+			case "awaiting_parent":
 				r.change(e, "parent_received")
 			}
 			r.bytes -= len(e.body)

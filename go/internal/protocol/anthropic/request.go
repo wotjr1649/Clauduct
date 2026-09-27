@@ -278,12 +278,6 @@ func (r *Request) ToolCount() int { return len(r.Tools) }
 // on to have sent what it meant.
 const maxSafeInteger = int64(1)<<53 - 1
 
-// DecodeRequest validates an inference request and returns what this build understands.
-//
-// It refuses rather than repairs. A stream flag with the wrong type, a sampling parameter this
-// bridge cannot honour, an unknown top-level field: each gets its own category, because
-// "the request was malformed" and "we do not support that" lead a user to different
-// actions.
 // Options are the facts about a request that do not live in its body.
 //
 // A struct rather than a parameter so that adding the next one does not touch every caller
@@ -295,6 +289,8 @@ type Options struct {
 	ToolChanges bool
 }
 
+// DecodeRequest validates an inference request and returns what this build understands.
+// It refuses malformed or unsupported fields rather than silently repairing them.
 func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 	var settings Options
 	if len(options) > 0 {
@@ -554,14 +550,14 @@ func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Blo
 		if role != "user" {
 			return Block{}, refuse(CodeImageRole, "image")
 		}
-		return decodeImage(raw)
+		return decodeMedia(raw, kind)
 	case "document":
 		// Same rule as an image and for the same reason: a file attached to an assistant
 		// turn is a transcript that has been edited, not a request to honour.
 		if role != "user" {
 			return Block{}, refuse(CodeDocumentRole, "document")
 		}
-		return decodeDocument(raw)
+		return decodeMedia(raw, kind)
 	case "tool_use":
 		return decodeToolUse(raw, role, state)
 	case "tool_result":
@@ -644,15 +640,17 @@ var imageMediaTypes = map[string]bool{
 // somebody's image on the way through.
 var base64Payload = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
 
-// decodeImage reads one image block.
-//
-// Both key sets are closed. An unknown key on the block or on its source is refused
-// rather than ignored, because an image carries its meaning in fields this build does not
-// interpret, and quietly dropping one would send a different picture than was attached.
-func decodeImage(raw json.RawMessage) (Block, error) {
+// decodeMedia reads native base64 image/document blocks, including tool results.
+// Both key sets are closed. URLs and file references require fetching or a Files API
+// and remain unsupported. PDF is the only document media type measured end to end.
+func decodeMedia(raw json.RawMessage, kind string) (Block, error) {
+	fieldsCode, sourceCode, unsupported := CodeImageFields, CodeImageSourceFields, CodeUnsupportedImage
+	if kind == "document" {
+		fieldsCode, sourceCode, unsupported = CodeDocumentFields, CodeDocumentSourceFields, CodeUnsupportedDocument
+	}
 	fields, err := wire.Fields(raw, []string{"type", "source", "cache_control"})
 	if err != nil {
-		return Block{}, refuseFields(CodeImageFields, "image", err)
+		return Block{}, refuseFields(fieldsCode, kind, err)
 	}
 	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
 		if err := checkCacheControl(control); err != nil {
@@ -661,83 +659,32 @@ func decodeImage(raw json.RawMessage) (Block, error) {
 	}
 	sourceValue, present := wire.Of(fields, "source")
 	if present != wire.Present {
-		return Block{}, refuse(CodeImageFields, "source")
+		return Block{}, refuse(fieldsCode, "source")
 	}
 	source, err := wire.Fields(sourceValue, []string{"type", "media_type", "data"})
 	if err != nil {
-		return Block{}, refuseFields(CodeImageSourceFields, "source", err)
+		return Block{}, refuseFields(sourceCode, "source", err)
 	}
 
-	var kind, mediaType, data string
+	var sourceKind, mediaType, data string
 	kindValue, ok := wire.Of(source, "type")
-	if ok != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "base64" {
-		return Block{}, refuse(CodeUnsupportedImage, "source.type")
+	if ok != wire.Present || json.Unmarshal(kindValue, &sourceKind) != nil || sourceKind != "base64" {
+		return Block{}, refuse(unsupported, "source.type")
 	}
 	typeValue, ok := wire.Of(source, "media_type")
-	if ok != wire.Present || json.Unmarshal(typeValue, &mediaType) != nil || !imageMediaTypes[mediaType] {
-		return Block{}, refuse(CodeUnsupportedImage, "source.media_type")
+	if ok != wire.Present || json.Unmarshal(typeValue, &mediaType) != nil {
+		return Block{}, refuse(unsupported, "source.media_type")
+	}
+	image := kind == "image" && imageMediaTypes[mediaType]
+	document := kind == "document" && mediaType == "application/pdf"
+	if !image && !document {
+		return Block{}, refuse(unsupported, "source.media_type")
 	}
 	dataValue, ok := wire.Of(source, "data")
 	if ok != wire.Present || json.Unmarshal(dataValue, &data) != nil || !base64Payload.MatchString(data) {
-		return Block{}, refuse(CodeUnsupportedImage, "source.data")
+		return Block{}, refuse(unsupported, "source.data")
 	}
-	return Block{Type: "image", Raw: raw, MediaType: mediaType, Data: data}, nil
-}
-
-// documentMediaTypes is what an attached file may be, and the list is one entry because
-// one entry is what has been measured.
-//
-// The backend reads a base64 PDF sent as an input_file data URL -- asked directly
-// (`clauduct-dev probe file --send`), and the model returned a token that existed only
-// inside the PDF. Nothing establishes any other type, and a type this build forwards
-// without evidence turns an attachment the user made into an answer about nothing.
-var documentMediaTypes = map[string]bool{"application/pdf": true}
-
-// decodeDocument reads one document block.
-//
-// The shape is the client's own, read out of claude 2.1.274 rather than from a
-// specification: {type:"document", source:{type:"base64", media_type:"application/pdf",
-// data}}. It arrives two ways -- attached to a user turn, and inside a tool_result when
-// Read opens a PDF -- and the second is the common one.
-//
-// Both key sets are closed, as for an image: a document carries its meaning in fields this
-// build does not interpret, and quietly dropping one would send a different file than was
-// attached.
-func decodeDocument(raw json.RawMessage) (Block, error) {
-	fields, err := wire.Fields(raw, []string{"type", "source", "cache_control"})
-	if err != nil {
-		return Block{}, refuseFields(CodeDocumentFields, "document", err)
-	}
-	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
-		if err := checkCacheControl(control); err != nil {
-			return Block{}, err
-		}
-	}
-	sourceValue, present := wire.Of(fields, "source")
-	if present != wire.Present {
-		return Block{}, refuse(CodeDocumentFields, "source")
-	}
-	source, err := wire.Fields(sourceValue, []string{"type", "media_type", "data"})
-	if err != nil {
-		return Block{}, refuseFields(CodeDocumentSourceFields, "source", err)
-	}
-
-	var kind, mediaType, data string
-	kindValue, ok := wire.Of(source, "type")
-	if ok != wire.Present || json.Unmarshal(kindValue, &kind) != nil || kind != "base64" {
-		// url and file sources name something this build would have to fetch or look up,
-		// and it has neither the Files API nor any business fetching a URL for the model.
-		return Block{}, refuse(CodeUnsupportedDocument, "source.type")
-	}
-	typeValue, ok := wire.Of(source, "media_type")
-	if ok != wire.Present || json.Unmarshal(typeValue, &mediaType) != nil || !documentMediaTypes[mediaType] {
-		return Block{}, refuse(CodeUnsupportedDocument, "source.media_type")
-	}
-	dataValue, ok := wire.Of(source, "data")
-	if ok != wire.Present || json.Unmarshal(dataValue, &data) != nil || !base64Payload.MatchString(data) {
-		return Block{}, refuse(CodeUnsupportedDocument, "source.data")
-	}
-	return Block{Type: "document", Raw: raw, MediaType: mediaType, Data: data}, nil
+	return Block{Type: kind, Raw: raw, MediaType: mediaType, Data: data}, nil
 }
 
 // checkCacheControl validates a caching hint without acting on it.

@@ -101,7 +101,8 @@ func (r *registry) admit(parent, wait context.Context, bytes uint64, class int) 
 			return 0, nil, nil, err
 		}
 		if room {
-			return r.reserve(parent, bytes, class)
+			id, ctx, release := r.reserve(parent, bytes, class)
+			return id, ctx, release, nil
 		}
 	}
 	if len(p.queue) >= p.maxQueued {
@@ -153,7 +154,8 @@ func (r *registry) admit(parent, wait context.Context, bytes uint64, class int) 
 			return 0, nil, nil, err
 		}
 		if room {
-			return r.reserve(parent, bytes, class)
+			id, ctx, release := r.reserve(parent, bytes, class)
+			return id, ctx, release, nil
 		}
 	}
 }
@@ -177,7 +179,7 @@ func (r *registry) room(bytes uint64, class int) (bool, error) {
 
 // Called with mu held. Only release gives memory back: cancelling a context may
 // still leave its handler decoding or cleaning up. release is idempotent.
-func (r *registry) reserve(parent context.Context, bytes uint64, class int) (id uint64, ctx context.Context, release func(), err error) {
+func (r *registry) reserve(parent context.Context, bytes uint64, class int) (id uint64, ctx context.Context, release func()) {
 	r.next++
 	id = r.next
 	ctx, cancel := context.WithCancelCause(parent)
@@ -200,7 +202,7 @@ func (r *registry) reserve(parent context.Context, bytes uint64, class int) (id 
 			cancel(context.Canceled)
 		})
 	}
-	return id, ctx, release, nil
+	return id, ctx, release
 }
 
 // Called with mu held. Waiters own their timers; no background poll survives them.

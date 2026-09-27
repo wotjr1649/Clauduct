@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"image/jpeg"
@@ -105,8 +106,9 @@ func nativePDF(args []string, out, errOut io.Writer) int {
 	pages, err := pdf.RenderRange(ctx, data, first, last, dpi)
 	if err != nil {
 		// Only the native engine's fixed categories and numeric range message travel.
-		if strings.HasPrefix(err.Error(), "Wrong page range given:") {
-			fmt.Fprintln(errOut, err.Error())
+		var pageRange pdf.PageRangeError
+		if errors.As(err, &pageRange) {
+			fmt.Fprintf(errOut, "Wrong page range given: last page (%d)\n", pageRange.LastPage)
 		} else {
 			fmt.Fprintln(errOut, "PDF_RENDER_FAILED")
 		}

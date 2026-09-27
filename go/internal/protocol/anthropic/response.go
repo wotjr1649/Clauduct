@@ -207,7 +207,7 @@ func (b *Builder) release(part *textPart, final bool) string {
 // Workflow results are returned only after completion; ordinary text still streams.
 func (b *Builder) DeferTextUntilComplete() { b.deferText = true }
 
-// Only a verified native wait step may use this control response. It carries no
+// WaitForChildren requires a verified native wait step. Its control response carries no
 // invented answer; the native hook consumes it without an empty-response retry.
 func (b *Builder) WaitForChildren() { b.waitChildren = true; b.deferText = true }
 
@@ -224,7 +224,7 @@ func (b *Builder) WaitForPendingCalls() error {
 
 func (b *Builder) StoppedBySequence() bool { return b.stopped != "" }
 
-// A verified native task notification may have nothing new to report after its
+// ConsumeEmptyNotification handles a verified native task notification with nothing new after its
 // result was already delivered. Preserve any actual text or tool call.
 func (b *Builder) ConsumeEmptyNotification() { b.emptyNotification = true; b.deferText = true }
 func (b *Builder) WaitingForChildren() bool {

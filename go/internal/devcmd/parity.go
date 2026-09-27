@@ -75,8 +75,8 @@ func parityProbe(transport upstream.Transport, budget upstream.Budget, out io.Wr
 			thought = candidate
 		}
 	}
-	switch {
-	case thought == "":
+	switch thought {
+	case "":
 		fmt.Fprintln(out, "reasoning back NOT_RUN — no turn came back with an encrypted record, "+
 			"so there was nothing to hand back. Not a pass.")
 	default:

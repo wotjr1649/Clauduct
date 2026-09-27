@@ -256,8 +256,8 @@ func decodeToolResult(raw json.RawMessage, role string, state *toolState) (Block
 	}
 
 	contentValue, present := wire.Of(fields, "content")
-	switch {
-	case present == wire.Absent:
+	switch present {
+	case wire.Absent:
 		// An answer with no content is still an answer.
 	default:
 		parts, err := decodeResultParts(contentValue, state)
@@ -318,7 +318,7 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 		case "image":
 			// No role check here: a tool result is already required to be a user turn, so
 			// the question the block-level check answers has been answered.
-			block, err := decodeImage(entry)
+			block, err := decodeMedia(entry, kind)
 			if err != nil {
 				return nil, err
 			}
@@ -326,7 +326,7 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 		case "document":
 			// This is where a PDF actually arrives. Read returns one as a tool result with
 			// a text part and a document part beside it, which is the client's own shape.
-			block, err := decodeDocument(entry)
+			block, err := decodeMedia(entry, kind)
 			if err != nil {
 				return nil, err
 			}

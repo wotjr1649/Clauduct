@@ -141,7 +141,7 @@ func (d *delegations) toolFailures(session string, request *anthropic.Request) {
 	}
 }
 
-// The launcher reads definition defaults; native still owns role prompts, tools,
+// ConfigureRoleDefaults installs the launcher's definition reader; native still owns role prompts, tools,
 // permission checks, loading and execution. Never substitute a request value for
 // a missing definition.
 func (g *Gateway) ConfigureRoleDefaults(resolve func(string, bridge.Route) (bridge.Route, bool, error)) {
@@ -294,7 +294,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	custom := false
 	if d.roleDefaults != nil {
 		definition, custom, err = d.roleDefaults(role, scope.route)
-		if err != nil && !(custom && errors.Is(err, bridge.ErrUnsupportedRoute) && (explicitModel || parentKnown && parent.inherited)) {
+		if err != nil && (!custom || !errors.Is(err, bridge.ErrUnsupportedRoute) || !explicitModel && (!parentKnown || !parent.inherited)) {
 			if errors.Is(err, bridge.ErrUnsupportedRoute) {
 				return nil, err
 			}
@@ -700,16 +700,6 @@ type selectionIntent struct {
 	EffortProvided bool   `json:"effortProvided"`
 }
 
-// Called only when the root opened but this child's journal is absent. Routed
-// roles require evidence; other roles retain admission's missing-choice policy.
-func (d *delegations) choiceAbsent(binding agentBinding) (resolvedChoice, bool, error) {
-	var empty resolvedChoice
-	if bridge.KnownRole(binding.Role) {
-		return empty, false, errDelegationUnverified
-	}
-	return empty, false, nil
-}
-
 func (d *delegations) choicePath(binding agentBinding) (*os.Root, string, error) {
 	if !correlationShape.MatchString(binding.ID) || !correlationShape.MatchString(binding.SessionID) || filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
 		return nil, "", errDelegationUnverified
@@ -766,7 +756,11 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	defer root.Close()
 	file, err := root.Open(path)
 	if os.IsNotExist(err) {
-		return d.choiceAbsent(binding)
+		// Routed roles require evidence; other roles retain admission's missing-choice policy.
+		if bridge.KnownRole(binding.Role) {
+			return empty, false, errDelegationUnverified
+		}
+		return empty, false, nil
 	}
 	if err != nil {
 		return empty, false, errDelegationUnverified

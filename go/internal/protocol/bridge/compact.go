@@ -25,7 +25,7 @@ const compactPrefix = "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\
 const compactSuffix = "\n\nREMINDER: Do NOT call any tools. Respond with plain text only — " +
 	"an <analysis> block followed by a <summary> block. Tool calls will be rejected and you will fail the task."
 
-// A summary preference, not a truncation or output-token cap. Explicit retention
+// CompactEfficiencyInstruction expresses a summary preference, not an output-token cap. Explicit retention
 // requirements take precedence, and the exact preflight counts this instruction.
 const CompactEfficiencyInstruction = " For this compaction, keep any requested analysis brief. In the summary preserve every explicit retention requirement, exact task data, decisions, constraints, agent/run IDs, verified outcomes, failures, and next actions. State each fact once; omit repeated narration, duplicate reports and unexecuted example scripts unless explicitly requested for retention. Aim for at most 1200 words when those requirements fit; exceed that target whenever needed to preserve required information. Keep the native summary format."
 

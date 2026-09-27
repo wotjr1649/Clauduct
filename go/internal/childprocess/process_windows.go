@@ -112,7 +112,7 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 	return err
 }
 
-// Go's SysProcAttr has no JOB_LIST. CreateProcessW with STARTUPINFOEX assigns the
+// Start uses CreateProcessW with STARTUPINFOEX because Go's SysProcAttr has no JOB_LIST. It assigns the
 // job before the first instruction, closing even the suspended-then-assign race.
 // The non-inheritable, unnamed job handle never enters the child's handle list.
 // stdio files and console group are preserved for the native TUI and Ctrl+C.

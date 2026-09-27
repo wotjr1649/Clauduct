@@ -151,7 +151,7 @@ func (r *record) contextEstimate(tokens int64, source string, opaque, media bool
 	r.data.ContextEstimate = &ContextEstimate{Input: tokens, Source: source, Opaque: opaque, Media: media}
 }
 
-// Closed labels and counters only. Never preserve transport error text, URLs,
+// StreamEndRecord contains closed labels and counters only. Never preserve transport error text, URLs,
 // headers or payloads in a diagnostic.
 type StreamEndRecord struct {
 	ReadError        string `json:"readError"`
@@ -527,7 +527,7 @@ type ring struct {
 	features     map[string]FeatureEvidence
 }
 
-// Preflight totals and completed backend usage are separate observations. Neither
+// ContextObservation separates preflight totals and completed backend usage. Neither
 // is a reading of the current size of an agent conversation between requests.
 type ContextObservation struct {
 	CountMatches    int64 `json:"countMatches"`
@@ -580,7 +580,7 @@ func (g *ring) contextReport() []ModelContextReport {
 	return out
 }
 
-// Totals count completed requests, including records evicted from Recent.
+// SessionTotals counts completed requests, including records evicted from Recent.
 // Keys are fixed request kinds, validated routes and project-owned categories.
 type SessionTotals struct {
 	MeasuredRequests      int64            `json:"requestsWithUsage"`
@@ -794,7 +794,6 @@ func recordOf(w http.ResponseWriter) *record {
 	return nil
 }
 
-// Diagnostics is the whole account, as GET /clauduct/status answers it.
 // ClientReport is which client this session ran against, and whether that is the one the
 // wire rules were measured on.
 //

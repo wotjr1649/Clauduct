@@ -108,7 +108,7 @@ go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측�
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
-공개 CI는 위 세 검사와 `internal/httpguard`의 Linux·macOS build만 본다.
+공개 CI는 위 세 검사, `internal/httpguard`의 Linux·macOS build와 PowerShell 7 스크립트의 AST·최소 버전을 검사한다.
 
 ### TUI 검사 (ConPTY)
 

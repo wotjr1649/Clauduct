@@ -1,6 +1,7 @@
 # v0.5.3 — Clauduct 설정과 세션 선택
 
-2026-09-27 출하 후보. 제품 구현·로컬 검사·실제 backend 검증은 완료했으며 태그·Release·설치 검증은 아직 진행하지 않았다.
+2026-09-27 정식 latest Release와 실제 설치 확인 완료. 태그 `v0.5.3`은
+`788a60ed2513785f036769441f0105b8d37dbb55`이며 [구현 PR #159](https://github.com/wotjr1649/Clauduct/pull/159)에서 병합했다.
 
 Clauduct의 모델 설정을 수동 `.clauduct/settings.json`에서 관리한다. 새 세션은 기본적으로 Sol/xhigh로 시작한다.
 `startup`, GPT별 `modelDefaults`, Claude alias의 `modelMapping`, 개별 `agents`의 model·effort를 분리했다.
@@ -34,5 +35,19 @@ native 전역 개인화, B의 추가 차단 규칙 두 개와 `$defaults`, Luna/
   Sol/xhigh 기본 시작, Sonnet→Luna/low 매핑 확인. 모든 사례에서 실패·거부 0.
 - 설정 생성·정리 변경 뒤 추가 1 attempt로 파일 없는 첫 실행의 생성과 Sol/xhigh 응답 확인. 누적 21회.
 
-출하 후 깨끗한 태그의 재현 빌드·자산 digest·업데이트·설치 결과를 이 문서에 추가한다.
+출하 검사:
+
+| 검사 | 결과 |
+|---|---|
+| Go 1.27.1, CGO=0, trimpath, 깨끗한 태그 | 독립 캐시 두 개에서 동일 바이트, 의존성 검증 통과, `+dirty` 없음 |
+| 순수 출하 바이너리 실제 backend | 5 attempts, 입력·clear·background child·최종 응답 PASS. 자식 선택 검증, 실패 0, 정상 종료·메모리 회수 확인 |
+| 공개 Release 자산 | `clauduct.exe`, `install.ps1`, `uninstall.ps1`, `SHA256SUMS` 네 개. API digest·크기·다운로드 바이트 모두 일치 |
+| 설치·업데이트·되돌림 | 신규 설치, v0.5.2 installer 업그레이드·되돌림, 이전 updater→latest, 두 번째 update 무교체 통과 |
+| 구형 설치 | v0.3.5 updater는 자산 부재를 명시하고 원본 유지. 새 installer로 단일 바이너리 전환 통과 |
+| 실제 설치본 | v0.5.3/동일 commit·digest. 없던 Clauduct settings 생성, `.old` 0개, 사용자 PATH 불변 |
+
+실제 backend 총사용량은 개발 21회 + 출하 5회 = **26/30 attempts**다. 이 수치는 B의 별도 예산과 합치지 않는다.
+`clauduct.exe` SHA-256은 `b4279f367e8d2b6ded220e50e4b76e42c79ad0c522a40db8b34243064b70675d`다.
+[정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.5.3)에서 자산을 받는다.
+
 Bundle C의 Workflow 확장·Office·최종 전체 기능 인수는 이 릴리스의 완료 항목이 아니다.

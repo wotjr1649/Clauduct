@@ -722,6 +722,20 @@ TUI의 주 모델 도구 제안은 고정 합성 입력이며, 분류 판정은 
 순수 태그 재현 빌드·격리 설치와 되돌림·공개 자산 검증·updater·실제 설치 확인을 통과했다.
 Workflow 재실행 resume·Office·review-diff를 포함한 다음 묶음은 이 출하의 완료 범위에 포함하지 않는다.
 
+### v0.5.3 — Clauduct 설정과 세션 선택
+
+**2026-09-27 출하·실제 설치 확인.** 태그 `v0.5.3`은 `788a60e`다.
+[설정 문서](SETTINGS.md)가 schema·우선순위·재개 범위를, [릴리스 기록](RELEASE-v0.5.3.md)이 검증을 소유한다.
+
+수동 설정에서 시작 pair·GPT별 effort·alias 매핑·agent pair를 분리한다. 기본 시작값은 Sol/xhigh이며
+native 개인화와 B 정책은 유지한다. 설치·업데이트·일반 실행은 파일이 없을 때만 생성하고 기존 파일을 보존한다.
+UUID 재개는 당시 snapshot과 마지막 S 선택을 복원한다. snapshot 없는 이전 세션은 현재 시작값을 사용한다.
+snapshot 있는 재개 목록·continue·실행 중 resume은 UUID 재실행을 안내하며 자동 종료는 하지 않는다.
+
+Go 일반·race 전체 22개 패키지와 native 2.1.283의 plugin·Workflow·S·fork·clear 표본을 확인했다.
+실제 backend 개발 21회와 순수 출하 5회가 통과했고, 공개 자산·업데이트·실제 설치를 대조했다.
+이 결과는 임의 plugin이나 미래 native 형식, Bundle C의 전체 기능 인수를 자동 보증하지 않는다.
+
 ## 4. 제3자 구현이라는 사실
 
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 **공식 지원하지 않는다고 명시**한다.

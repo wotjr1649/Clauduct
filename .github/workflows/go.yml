@@ -34,6 +34,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
+        working-directory: go
     timeout-minutes: 20
     env:
       # Pinned rather than left to the runner. CGO_ENABLED defaults to 1 wherever a C

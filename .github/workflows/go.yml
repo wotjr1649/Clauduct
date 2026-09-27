@@ -11,12 +11,14 @@ on:
       - 'go/**'
       - 'go.mod'
       - 'go.sum'
+      - 'scripts/**'
       - '.github/workflows/go.yml'
   pull_request:
     paths:
       - 'go/**'
       - 'go.mod'
       - 'go.sum'
+      - 'scripts/**'
       - '.github/workflows/go.yml'
 
 defaults:
@@ -29,6 +31,10 @@ jobs:
     # windows-tagged file and no other, so this module does not build elsewhere. That is
     # deliberate — a non-Windows target is new design under V2-04, not a port.
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: go
     timeout-minutes: 20
     env:
       # Pinned rather than left to the runner. CGO_ENABLED defaults to 1 wherever a C
@@ -45,13 +51,26 @@ jobs:
           cache: false
 
       - name: gofmt
-        shell: bash
         run: |
-          unformatted=$(gofmt -l .)
-          if [ -n "$unformatted" ]; then
-            echo "$unformatted"
+          $unformatted = @(gofmt -l .)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($unformatted.Count) {
+            $unformatted
             exit 1
-          fi
+          }
+
+      - name: PowerShell scripts
+        run: |
+          $PSVersionTable.PSVersion
+          foreach ($file in Get-ChildItem ../scripts/*.ps1) {
+            $tokens = $null
+            $errors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count) { $errors; exit 1 }
+            if ($ast.ScriptRequirements.RequiredPSVersion.Major -ne 7) {
+              throw "$($file.Name) must require PowerShell 7"
+            }
+          }
 
       - name: vet
         run: go vet ./...

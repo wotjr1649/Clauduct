@@ -11,9 +11,8 @@ import (
 
 // What goes in the child's --settings, and why anything does at all.
 //
-// The session's preferences travel by environment, which is what keeps this launcher from
-// having to parse an argument. Two things cannot: a hook is a settings entry and has no
-// environment form, and so is the model picker. Those go here.
+// Model/context defaults travel by environment. Hooks, the model picker and additive
+// native safety rules travel through settings. App resolves actual option boundaries.
 //
 // Measured 2026-09-16: a second --settings does not merge with the first, the last one
 // wins. So the moment this injects one, a --settings the user also passed would silently

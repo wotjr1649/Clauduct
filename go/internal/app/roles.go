@@ -411,7 +411,7 @@ func (c *cliRoles) scope(args []string, cwd string) error {
 		switch name {
 		case "--add-dir":
 			dirs := []string{value}
-			for !attached && end < len(args) && !(len(args[end]) > 1 && args[end][0] == '-') {
+			for !attached && end < len(args) && (len(args[end]) <= 1 || args[end][0] != '-') {
 				dirs = append(dirs, args[end])
 				end++
 			}

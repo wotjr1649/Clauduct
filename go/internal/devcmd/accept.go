@@ -208,8 +208,8 @@ func acceptProbe(plan acceptPlan, open func(effort string) upstream.Transport, o
 			thought = call.thought
 		}
 
-		switch {
-		case thought == "":
+		switch thought {
+		case "":
 			fmt.Fprintln(out, "reasoning back NOT_RUN — no turn came back with an encrypted record")
 			readings = append(readings, "reasoning NOT_RUN")
 		default:

@@ -8,7 +8,7 @@ import (
 
 var ErrContextLimit = errors.New("CONTEXT_LENGTH_EXCEEDED")
 
-// Inspect only a structured code. Wording, generic 400s and transport errors
+// ContextLimit inspects only a structured code. Wording, generic 400s and transport errors
 // never authorize compaction or replay. Duplicate fields are rejected.
 func ContextLimit(raw []byte) bool {
 	fields, err := wire.Fields(raw, nil)

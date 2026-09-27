@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// Native failures may occur without any further inference. Record their bounded
+// ToolFailureRecord covers native failures even without further inference. It records their bounded
 // identity, never the arbitrary error message, tool input or output.
 type ToolFailureRecord struct {
 	Session     string `json:"session"`

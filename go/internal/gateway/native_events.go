@@ -43,7 +43,7 @@ type nativeTurnReceipt struct {
 	sequence int
 }
 
-// Set once before spawning native. The generated plugin writes only bounded
+// ConfigureNativeEvents is called once before spawning native. The generated plugin writes only bounded
 // receipts into this private per-process directory; no prompt/answer is copied.
 func (g *Gateway) ConfigureNativeEvents(directory string) {
 	g.nativeEvents.directory = directory
@@ -495,7 +495,7 @@ func (g *Gateway) retireEndedChildren() {
 	}
 }
 
-// Called only after native exited/reaping succeeded. A missing terminal receipt
+// FinalizeNativeResults is called only after native exited/reaping succeeded. A missing terminal receipt
 // is unknown, never guessed to be cancellation or left falsely running.
 func (g *Gateway) FinalizeNativeResults() {
 	g.reconcileNativeResults()

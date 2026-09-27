@@ -19,7 +19,7 @@ type BackgroundReply struct {
 	Error   string             `json:"error,omitempty"`
 }
 
-// The resident is an explicit --bg owner, not a child of the foreground native
+// StartBackground starts an explicit --bg owner, not a child of the foreground native
 // job. CREATE_NO_WINDOW detaches it from the dispatching console; no global
 // service, startup entry or process execution policy is installed.
 func StartBackground(ctx context.Context, args []string, cwd string, out, errOut io.Writer) error {

@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// A completed request proves only the checks it actually reached. Historical
+// FeatureEvidence records only the checks a completed request actually reached. Historical
 // observations never grant admission to the next request or assert TUI acceptance.
 type FeatureEvidence struct {
 	Name                 string   `json:"name"`

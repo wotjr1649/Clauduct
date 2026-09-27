@@ -26,7 +26,7 @@ func SessionDuration(env map[string]string) (time.Duration, error) {
 	return time.Duration(ms) * time.Millisecond, nil
 }
 
-// An unfinished checkpoint is evidence of the last observed state, not proof
+// LifecycleFacts records the last observed state, not proof
 // that the process is still alive. Final is set only after native was waited on.
 type LifecycleFacts struct {
 	State               string    `json:"state"`
@@ -70,7 +70,7 @@ func drainReady(d gateway.Diagnostics) bool {
 }
 
 func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o Options, initial Result,
-	interrupts <-chan os.Signal, print bool) (error, bool, LifecycleFacts) {
+	interrupts <-chan os.Signal, print bool) (bool, LifecycleFacts, error) {
 	life := LifecycleFacts{State: "running", StartedAt: time.Now().UTC()}
 	// Keep caller cancellation immediate. A harness deadline gets a separate,
 	// bounded drain so it cannot destroy the gateway in the middle of compaction.
@@ -133,9 +133,9 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 				life.Reason = "native_exit"
 			}
 			if life.Reason == "caller_cancelled" && w.err == context.Canceled {
-				return ctx.Err(), w.reaped, life
+				return w.reaped, life, ctx.Err()
 			}
-			return w.err, w.reaped, life
+			return w.reaped, life, w.err
 		case <-caller:
 			caller = nil
 			deadline, grace = nil, nil

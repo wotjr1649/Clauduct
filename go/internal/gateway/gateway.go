@@ -274,7 +274,6 @@ func (g *Gateway) ClientVersion() string {
 	return version
 }
 
-// Stats reports counts only. Nothing here is derived from request content.
 // ModelLists reports how many times the client asked for the model list.
 //
 // Counted separately from the rest because it answers a question nothing else can: whether

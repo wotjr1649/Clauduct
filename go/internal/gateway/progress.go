@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Fixed event counters identify cancellation phases without retaining payloads.
+// BackendProgress identifies cancellation phases with fixed counters, without retaining payloads.
 type BackendProgress struct {
 	Events             int64 `json:"events"`
 	TextDeltas         int64 `json:"textDeltas"`

@@ -486,7 +486,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr}
 	}
 
-	waitErr, reaped, lifecycle := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
+	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
 	result.Lifecycle = &lifecycle
 	cleanupWaitErr := waitErr
 	if joined, ok := waitErr.(interface{ Unwrap() []error }); ok && len(joined.Unwrap()) == 1 {

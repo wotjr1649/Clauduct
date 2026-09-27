@@ -19,7 +19,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
 
-// A public connection identifier is not a credential. Native owns JobID; the
+// BackgroundSession identifies a public connection, not a credential. Native owns JobID; the
 // connection only lasts for this Windows login and this resident process.
 type BackgroundSession struct {
 	JobID        string `json:"jobId"`

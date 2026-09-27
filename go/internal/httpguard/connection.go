@@ -135,8 +135,8 @@ func (c *responseConn) drain() {
 	if !c.finished.Load() || c.closing.Err() != nil {
 		return
 	}
-	if c.Conn.SetReadDeadline(time.Now().Add(responseCloseGrace)) == nil {
-		stop := WatchReadCancellation(c.closing, func() { _ = c.Conn.SetReadDeadline(time.Now()) })
+	if c.SetReadDeadline(time.Now().Add(responseCloseGrace)) == nil {
+		stop := WatchReadCancellation(c.closing, func() { _ = c.SetReadDeadline(time.Now()) })
 		defer stop()
 		// Also consume a refused body, without executing another request or
 		// waiting indefinitely for a client that keeps writing.

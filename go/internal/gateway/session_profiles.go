@@ -322,7 +322,7 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 		return ErrSessionProfile // Never replace an existing session from startup/clear.
 	}
 	pair := p.startup
-	if source == "clear" || source == "fork" && !(p.fork && p.current == "") {
+	if source == "clear" || source == "fork" && (!p.fork || p.current != "") {
 		prior := p.profiles[p.current]
 		if prior == nil {
 			return ErrSessionProfile

@@ -85,6 +85,9 @@ native background 상태 분류 같은 보조 생성도 예산에 포함한다. 
 
 ## 명령
 
+Windows 개발·검증 명령은 PowerShell 7(`pwsh`)에서 실행한다. 현재 검증 환경은 7.6.6이다.
+PowerShell 5.1 지원은 v0.5.5부터 종료하며, 실행 정책을 변경해서 검사를 통과시키지 않는다.
+
 명시적 background 생성은 `clauduct --bg "작업 내용"`을 사용한다. 출력된 native 작업 ID로
 `claude agents`·`claude attach <id>`·`claude stop <id>`에서 관리한다. native stop 뒤에도 연결 유지
 프로세스는 남는다. 연결까지 끝내려면 출력된 식별자로 `clauduct --background-stop <connection-id>`를 실행한다.
@@ -105,7 +108,7 @@ go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측�
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
-공개 CI는 위 세 검사와 `internal/httpguard`의 Linux·macOS build만 본다.
+공개 CI는 위 세 검사, `internal/httpguard`의 Linux·macOS build와 PowerShell 7 스크립트의 AST·최소 버전을 검사한다.
 
 ### TUI 검사 (ConPTY)
 

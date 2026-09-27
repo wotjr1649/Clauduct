@@ -24,7 +24,7 @@ Windows 전용입니다. **Claude Code와 Codex CLI가 먼저 설치돼 있어�
 PowerShell 7(`pwsh`)을 사용합니다. **당신이 지금 있는 셸의 블록 하나만** 통째로 붙여넣습니다.
 
 ```powershell
-# PowerShell
+# PowerShell 7
 irm https://github.com/wotjr1649/Clauduct/releases/latest/download/install.ps1 -OutFile clauduct-install.ps1
 pwsh -NoProfile -File .\clauduct-install.ps1
 ```
@@ -45,12 +45,14 @@ pwsh -NoProfile -File clauduct-install.ps1
 
 | 차이 | 왜 |
 |---|---|
-| PowerShell만 `irm` | PowerShell 5.1에서 `curl`은 `Invoke-WebRequest`의 별칭이라 `-fsSL -o`를 받지 못합니다. Git Bash에는 반대로 `irm`이 없습니다 |
+| PowerShell만 `irm` | PowerShell의 기본 다운로드 명령을 사용합니다. cmd·Git Bash에서는 `curl.exe`를 사용합니다 |
 | PowerShell만 `.\` | Git Bash는 `.\`의 백슬래시를 이스케이프로 먹어 `.install.ps1`을 넘깁니다. cmd는 둘 다 되지만 맞춰서 뺐습니다 |
 | 받는 이름이 `clauduct-install.ps1` | v0.3.2까지는 저장소 루트에 **v1(Node) 설치기인 `install.ps1`이 있었습니다.** 클론 안에서 그 이름으로 받으면 그 파일을 덮어썼습니다. 이름은 그대로 둡니다 |
 
 cmd와 Git Bash가 같은 것은 `curl.exe`가 Windows 10 1803부터 기본 탑재이기 때문입니다.
-Windows PowerShell 5.1(`powershell`)용 구문 호환은 유지하지만 v0.5.4의 실제 설치 검사는 7에서 수행했습니다.
+v0.5.5부터 제공하는 설치·제거 스크립트와 Windows 개발·검증 절차는 PowerShell 7(`pwsh`)을 사용합니다.
+Windows PowerShell 5.1(`powershell`)은 지원하지 않습니다. 검증 환경은 PowerShell 7.6.6입니다.
+`clauduct.exe`와 내장 `--update`·`--uninstall`은 Go로 구현되어 PowerShell 런타임을 요구하지 않습니다.
 실행 정책이 스크립트를 막으면 해당 환경의 정책에 따라 허용된 실행 경로를 사용해야 합니다.
 
 최신 릴리스에서 `clauduct.exe`와 `SHA256SUMS`를 받아 **대조가 끝난 뒤에** `~\.local\bin`에
@@ -60,10 +62,10 @@ Windows PowerShell 5.1(`powershell`)용 구문 호환은 유지하지만 v0.5.4�
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-.\scripts\install.ps1 -Tag v0.3.0        # 태그 고정
-.\scripts\install.ps1 -FromPath .\dist   # 직접 빌드한 것으로 (clauduct.exe + SHA256SUMS 필요)
-.\scripts\install.ps1 -NoPathUpdate      # PATH는 직접 관리
-.\scripts\install.ps1 -SkipPreflight     # Claude Code·Codex CLI를 나중에 설치할 때
+pwsh -NoProfile -File .\scripts\install.ps1 -Tag v0.5.4       # 태그 고정
+pwsh -NoProfile -File .\scripts\install.ps1 -FromPath .\dist  # 직접 빌드한 것으로 (clauduct.exe + SHA256SUMS 필요)
+pwsh -NoProfile -File .\scripts\install.ps1 -NoPathUpdate     # PATH는 직접 관리
+pwsh -NoProfile -File .\scripts\install.ps1 -SkipPreflight    # Claude Code·Codex CLI를 나중에 설치할 때
 ```
 
 설치 뒤 **새 터미널**을 열고 확인합니다. Windows는 대소문자를 가리지 않으므로 `Clauduct`도 같은
@@ -74,10 +76,11 @@ clauduct --dev --version   # Clauduct 자신: 버전, commit, Go 버전
 clauduct --version         # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
 
-**둘이 다른 것을 확인합니다.** 이 런처는 자기가 소유한 첫 인자(`--update`·`--usage`·`--uninstall`·`--dev`)
-말고는 **전부 클라이언트에 그대로 넘깁니다.** `--version`도 그중 하나라 Claude Code가 답합니다 —
+**둘이 다른 것을 확인합니다.** `--version`은 native에 전달되므로 Claude Code가 답합니다 —
 버그가 아니라 설계이고, 덕분에 그 명령은 "런처가 클라이언트를 띄울 수 있다"까지 증명합니다.
 Clauduct 자신에 대한 질문은 `clauduct --dev`(`--version`·`--doctor`·`--usage`·`--probe`)가 받습니다.
+일반 native 인자는 보존하지만 `--settings` 병합·UUID 선택 복원·background 연결 관리는 Clauduct가
+보완합니다. [native와의 책임 경계](docs/v2/ARCHITECTURE.md#2-책임-경계)에 추가 동작을 명시합니다.
 
 ### 업데이트
 
@@ -105,8 +108,8 @@ clauduct --uninstall --yes  # 무인
 때문입니다. 그것까지 지우려면 저장소의 스크립트를 씁니다.
 
 ```powershell
-scripts\uninstall.ps1 -Purge       # 진단 파일(%TEMP%\clauduct)까지
-scripts\uninstall.ps1 -RemovePath  # PATH 항목까지 — 그 폴더에 다른 실행 파일이 없을 때만
+pwsh -NoProfile -File scripts\uninstall.ps1 -Purge       # 진단 파일(%TEMP%\clauduct)까지
+pwsh -NoProfile -File scripts\uninstall.ps1 -RemovePath  # PATH 항목까지 — 그 폴더에 다른 실행 파일이 없을 때만
 ```
 
 `clauduct-node`와 그 버전 저장소, `~/.claude` 아래 세션 상태는 어느 쪽도 건드리지 않습니다. 설치와

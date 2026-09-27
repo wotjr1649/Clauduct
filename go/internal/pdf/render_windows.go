@@ -24,6 +24,13 @@ const RenderArg = "--clauduct-render-pdf"
 
 var ErrRender = errors.New("PDF_RENDER_FAILED")
 
+// PageRangeError reports the document's page count when a requested range is invalid.
+type PageRangeError struct{ LastPage uint32 }
+
+func (e PageRangeError) Error() string {
+	return fmt.Sprintf("invalid page range: last page (%d)", e.LastPage)
+}
+
 type com struct{ table *[32]uintptr }
 
 // Keep Go out-parameters alive and on the heap for the complete native call.
@@ -105,7 +112,7 @@ func wait(ctx context.Context, operation *com) error {
 	}
 }
 
-// ABI declarations are Microsoft's Windows.Data.Pdf and Storage.Streams
+// Render uses Microsoft's Windows.Data.Pdf and Storage.Streams
 // interfaces. No PDF parsing or guessed image-token formula lives here.
 func Render(ctx context.Context, data []byte) (pages []string, err error) {
 	return RenderRange(ctx, data, 1, 0, 192)
@@ -180,7 +187,7 @@ func RenderRange(ctx context.Context, data []byte, first, last, dpi int) (pages 
 		last = int(count)
 	}
 	if first < 1 || first > last || last > int(count) {
-		return nil, fmt.Errorf("Wrong page range given: last page (%d)", count)
+		return nil, PageRangeError{LastPage: count}
 	}
 	if count == 0 || last-first+1 > MaxPages || dpi < 36 || dpi > 300 {
 		return nil, errors.New("PDF_PAGE_LIMIT")

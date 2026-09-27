@@ -133,12 +133,13 @@ func parseNativeChoice(command, text string, prior bridge.Pair) (bridge.Pair, er
 		return prior, nil
 	}
 	var pair bridge.Pair
-	if command == "model" {
+	switch command {
+	case "model":
 		parts := nativeModelChoice.FindStringSubmatch(text)
 		if len(parts) == 3 {
 			pair = bridge.Pair{Model: parts[1], Effort: parts[2]}
 		}
-	} else if command == "effort" {
+	case "effort":
 		parts := nativeEffortChoice.FindStringSubmatch(text)
 		if len(parts) == 2 {
 			pair = bridge.Pair{Model: prior.Model, Effort: parts[1]}

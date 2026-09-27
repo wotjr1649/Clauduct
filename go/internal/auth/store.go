@@ -76,12 +76,12 @@ func (r *tomlReader) scan() error {
 		if r.offset >= len(r.text) {
 			break
 		}
-		switch c := r.at(); {
-		case c == '#':
+		switch c := r.at(); c {
+		case '#':
 			r.comment()
-		case c == '\r' || c == '\n':
+		case '\r', '\n':
 			r.offset++
-		case c == '[':
+		case '[':
 			if err := r.tableHeader(); err != nil {
 				return err
 			}

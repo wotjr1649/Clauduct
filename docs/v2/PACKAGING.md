@@ -180,16 +180,21 @@ v0.5.3의 수동 Clauduct 설정은 native 홈을 격리하는 기능이 아니�
 `scripts/install.ps1`과 `scripts/uninstall.ps1`이 그 복사를 대신한다. v0.3.2까지 저장소 루트에
 있던 `install.ps1`은 v1(Node) 설치기였고 v0.3.3에서 저장소와 함께 은퇴했다.
 
+v0.5.5부터 두 스크립트와 Windows 개발·검증 절차는 PowerShell 7(`pwsh`)을 사용한다.
+스크립트의 `#requires -Version 7`이 이전 호스트의 실행을 거부한다. 실제 검증 환경은 7.6.6이다.
+Windows PowerShell 5.1 지원은 종료한다. 이 요구사항은 Go 바이너리와 내장 업데이트·제거 명령의
+런타임 의존성이 아니다. 실행 정책은 변경하지 않으며 스크립트가 허용된 환경에서 실행한다.
+
 ```powershell
 # 릴리스에서 설치 (기본 최신 태그, 기본 위치 ~\.local\bin)
-powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1
-scripts\install.ps1 -Tag v0.2.0                 # 태그 고정
-scripts\install.ps1 -FromPath .\dist            # 로컬 빌드 설치 (clauduct.exe + SHA256SUMS 필요)
-scripts\install.ps1 -NoPathUpdate               # PATH를 건드리지 않는다
+pwsh -NoProfile -File scripts\install.ps1
+pwsh -NoProfile -File scripts\install.ps1 -Tag v0.5.4       # 태그 고정
+pwsh -NoProfile -File scripts\install.ps1 -FromPath .\dist  # 로컬 빌드 설치 (clauduct.exe + SHA256SUMS 필요)
+pwsh -NoProfile -File scripts\install.ps1 -NoPathUpdate     # PATH를 건드리지 않는다
 
-scripts\uninstall.ps1                           # clauduct.exe, 0.3.x의 두 이름, --update가 남긴 *.old
-scripts\uninstall.ps1 -Purge                    # %TEMP%\clauduct 진단 파일까지
-scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실행 파일이 없을 때만
+pwsh -NoProfile -File scripts\uninstall.ps1              # clauduct.exe, 0.3.x의 두 이름, --update가 남긴 *.old
+pwsh -NoProfile -File scripts\uninstall.ps1 -Purge       # %TEMP%\clauduct 진단 파일까지
+pwsh -NoProfile -File scripts\uninstall.ps1 -RemovePath  # 그 디렉터리에 다른 실행 파일이 없을 때만
 ```
 
 **내려받기 전에 Claude Code와 Codex CLI를 찾는다.** 둘 중 하나라도 없으면
@@ -219,15 +224,11 @@ scripts\uninstall.ps1 -RemovePath               # 그 디렉터리에 다른 실
 건드리지 않는다. PATH 항목은 기본으로 두며, `-RemovePath`를 줘도 그 디렉터리에 다른 실행 파일이
 남아 있으면 `UNINSTALL_PATH_SHARED`로 거부한다 — 기본 설치에서 `claude.exe`가 거기 산다.
 
-**digest는 BCL로 계산하고 `-cne`로 비교한다.** `Get-FileHash`는 스냅인이 아니라
-`Microsoft.PowerShell.Utility` **모듈**이 얹어주는 cmdlet이라, PowerShell 7 세션에서 시작된
-`powershell.exe`가 PS7의 모듈 디렉터리를 먼저 보게 되면 **그 이름이 사라진다.** 2026-09-17 실측:
-같은 실행 파일, 같은 5.1.26100.8870, FullLanguage인데 PSModulePath 항목이 3개에서 6개가 되고
-`Get-FileHash`만 없어진다 — `Unblock-File`·`Invoke-WebRequest`·`Add-Type`·`New-Object`는 멀쩡하다.
-README가 시키는 `powershell -File install.ps1`을 PowerShell 7 터미널에서 실행하는 것이 정확히 그
-모양이고, CI의 go 스텝이 pwsh로 도는 덕에 잡혔다. 비교는 `-ne`가 아니라 `-cne`다 — PowerShell의
-문자열 비교는 기본이 대소문자 무시라 정규화가 깨져도 조용히 통과한다. 테스트는 pwsh가 있으면 그
-그림자를 **일부러 만들어** 돌므로 bash에서 돌려도 CI와 같은 것을 잰다.
+**digest는 `Get-FileHash -Algorithm SHA256 -LiteralPath`로 계산하고 `-cne`로 비교한다.**
+계산값과 SHA256SUMS의 값을 소문자로 정규화한 뒤 정확히 비교한다. PowerShell 5.1의 모듈 충돌을
+위한 자체 해시 함수와 테스트 전용 모듈 경로 주입은 v0.5.5에서 제거했다.
+다운로드는 `Invoke-WebRequest -SslProtocol Tls12`를 사용하고 기본 인증서 검증을 유지한다.
+PowerShell 7에서 효과가 없는 `ServicePointManager` 설정과 `-UseBasicParsing`은 사용하지 않는다.
 
 **설치 후 `Unblock-File`을 건다.** 방금 릴리스의 digest로 확인한 바이트이고, 그것이 SmartScreen
 대화상자가 묻는 질문이다.
@@ -365,6 +366,11 @@ clauduct --usage       # 또는 clauduct --dev --usage — 같은 뷰다
 
 ## 6. 되돌리기
 
+**v0.5.5의 phase 포함 대화.** 새 응답에 보존한 assistant `phase` 필드는 v0.5.3/4가 읽지 못한다.
+그 대화는 v0.5.5 이상에서 재개한다. 구버전으로 돌아가도 설정·snapshot·대화 파일을 삭제하거나
+변환하지 않으며, 구버전에서 계속 작업하려면 새 대화를 시작한다. 설정 snapshot 형식은 그대로다.
+설치 스크립트는 v0.5.5부터 PowerShell 7을 요구한다.
+
 **v0.5.4 설정과 v0.5.3 이전 버전.** 새 설치는 완전한 Clauduct 설정 문서를 생성하고 기존 파일은
 보존한다. 설치 스크립트가 초기화 문서를 중복 보유하지 않고 검증된 바이너리의
 `--dev --init-settings`를 호출한다. 이 명령이 없는 역사 버전은 안내 후 기존 설정을 보존한다.
@@ -401,6 +407,6 @@ v0.3.1 writer가 만든 bytes를 그대로 v0.3.0 reader에 넣어 확인했다.
 | 자동 업데이트 | 배경에서 도는 것은 없다. 사용자가 부르는 `clauduct --update`는 있다(5.1절) |
 | Windows 외 대상 | `internal/platform`에 windows 태그 파일 하나뿐이다. 다른 대상은 이식이 아니라 **새 설계**다 |
 | 서명 | **없고, 넣지 않기로 했다**(5.0.1절). 이유는 비용이 아니라 효과다 — 2024년 이후 어떤 인증서도 SmartScreen을 즉시 통과시키지 못한다 |
-| 공개 CI의 테스트 | **없다(v0.3.3부터).** 공개 CI는 Windows gofmt·vet·build와 httpguard의 Linux·macOS build만 본다. 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
+| 공개 CI의 테스트 | **없다(v0.3.3부터).** 공개 CI는 Windows gofmt·vet·build·PowerShell 7 AST/최소 버전과 httpguard의 Linux·macOS build를 본다. 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
 
 **미실행은 통과가 아니다.** 각 항목은 없다고 적혀 있지 괜찮다고 적혀 있지 않다.

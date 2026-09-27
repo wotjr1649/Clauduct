@@ -39,7 +39,7 @@ func CountInput(request *Request) (int64, error) {
 	texts := make([]string, 0, len(request.Input))
 	wantRole := "user"
 	for index, entry := range request.Input {
-		if entry.Type != "" || entry.Reasoning != nil || (entry.Role != "developer" && entry.Role != "user" && entry.Role != "assistant") {
+		if entry.Type != "" || entry.Reasoning != nil || entry.Phase != "" || (entry.Role != "developer" && entry.Role != "user" && entry.Role != "assistant") {
 			return 0, ErrTokenCountUnsupported
 		}
 		var text string

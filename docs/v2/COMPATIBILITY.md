@@ -1,5 +1,9 @@
 # V2 호환성 — 현재 / 제약 / 미지원
 
+v0.5.5부터 설치·제거 및 Windows 개발·검증의 PowerShell 호스트는 7(`pwsh`)이다.
+Windows PowerShell 5.1 지원은 종료한다. 실제 검증 버전과 설치 방법은
+[패키징 문서](PACKAGING.md#50-스크립트)에 기록한다. 아래 과거 릴리스의 5.1 측정 결과는 당시의 이력이다.
+
 Go 개발 빌드의 지원 기능과 제한을 이 문서에서 관리한다. 격차의 이력은
 [PARITY.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/PARITY.md), 이전 실행 증거는 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md),
 S41 수리와 실패 기록은 [S41 보고서](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/session41-repair-20260919/REPORT.md),

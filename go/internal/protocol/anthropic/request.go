@@ -133,6 +133,8 @@ type Block struct {
 	Type string
 	Text string
 	Raw  json.RawMessage
+	// Phase is Clauduct text metadata preserved by native, not an Anthropic API field.
+	Phase string
 
 	// tool_use
 	ID    string
@@ -397,7 +399,7 @@ func checkSystem(raw json.RawMessage) error {
 		return refuse(CodeTextValue, "system")
 	}
 	for _, block := range blocks {
-		if _, err := decodeBlock(block); err != nil {
+		if _, err := decodeBlock(block, "system"); err != nil {
 			return err
 		}
 	}
@@ -574,10 +576,10 @@ func decodeContentBlock(raw json.RawMessage, role string, state *toolState) (Blo
 		}
 		return decodeRedactedThinking(raw)
 	}
-	return decodeBlock(raw)
+	return decodeBlock(raw, role)
 }
 
-func decodeBlock(raw json.RawMessage) (Block, error) {
+func decodeBlock(raw json.RawMessage, role string) (Block, error) {
 	// The type is read from a loose parse first, so that an unimplemented block is named
 	// as unimplemented rather than as having the wrong fields for a text block.
 	loose, err := wire.Fields(raw, nil)
@@ -597,11 +599,17 @@ func decodeBlock(raw json.RawMessage) (Block, error) {
 		return Block{}, refuseUnknown(CodeUnsupportedContent, kind)
 	}
 
-	fields, err := wire.Fields(raw, []string{"type", "text", "cache_control", "citations"})
+	fields, err := wire.Fields(raw, []string{"type", "text", "cache_control", "citations", "phase"})
 	if err != nil {
 		return Block{}, refuseFields(CodeTextFields, "content", err)
 	}
 	block := Block{Type: kind, Raw: raw}
+	if value, presence := wire.Of(fields, "phase"); presence != wire.Absent {
+		if role != "assistant" || presence != wire.Present || json.Unmarshal(value, &block.Phase) != nil ||
+			block.Phase != "commentary" && block.Phase != "final_answer" {
+			return Block{}, refuse(CodeTextFields, "phase")
+		}
+	}
 	textValue, presence := wire.Of(fields, "text")
 	if presence != wire.Present || json.Unmarshal(textValue, &block.Text) != nil {
 		return Block{}, refuse(CodeTextValue, "text")

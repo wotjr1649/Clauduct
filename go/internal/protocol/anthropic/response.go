@@ -71,6 +71,7 @@ type textPart struct {
 	index   int
 	builder []byte
 	closed  bool
+	phase   string
 	// With stop sequences: how much of builder the client has been given, and where the
 	// visible text ends once a sequence is found in this part. hidden is a part that began
 	// after the stop, which the client never sees.
@@ -126,6 +127,7 @@ type Builder struct {
 	completed  bool
 	nextIndex  int
 	parts      map[partKey]*textPart
+	phases     map[string]string
 	totalBytes int
 
 	// Calls are held here until Complete releases them. Nothing writes a tool_use frame
@@ -343,6 +345,29 @@ func (b *Builder) ResponseID() string {
 	return "msg_clauduct_local"
 }
 
+// SetTextPhase records text metadata before its first streamed block is emitted.
+func (b *Builder) SetTextPhase(item, phase string) error {
+	if phase == "" {
+		return nil
+	}
+	if b.completed || item == "" {
+		return ErrStreamOrder
+	}
+	for key := range b.parts {
+		if key.item == item {
+			return ErrStreamOrder
+		}
+	}
+	if b.phases == nil {
+		b.phases = make(map[string]string)
+	}
+	if len(b.phases) >= maxTextParts {
+		return ErrResponseTooLarge
+	}
+	b.phases[item] = phase
+	return nil
+}
+
 // AppendText adds a text delta at a content index and returns the frames it produces.
 //
 // The first delta for a response opens the message, unless a keepalive already did; the
@@ -379,9 +404,9 @@ func (b *Builder) AppendText(item string, contentIndex int, delta string) ([]Fra
 			// client can see so the ones it does see stay consecutive.
 			part = &textPart{index: maxTextParts + len(b.parts), hidden: true}
 		} else {
-			part = &textPart{index: b.nextIndex}
+			part = &textPart{index: b.nextIndex, phase: b.phases[item]}
 			b.nextIndex++
-			frames = append(frames, contentBlockStart(part.index))
+			frames = append(frames, contentBlockStart(part.index, part.phase))
 		}
 		b.parts[key] = part
 	}
@@ -470,7 +495,7 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		frames = append(frames, b.messageStart())
 	}
 	if b.WaitingForChildren() {
-		return append(frames, contentBlockStart(0), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false, ""), Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}), nil
+		return append(frames, contentBlockStart(0, ""), contentBlockDelta(0, ""), contentBlockStop(0), messageDelta(usage, false, ""), Frame{Type: "message_stop", Data: []byte(`{"type":"message_stop"}`)}), nil
 	}
 
 	// Closing in index order rather than map order: a client reading these sequentially
@@ -500,19 +525,30 @@ func (b *Builder) Complete(usage Usage) ([]Frame, error) {
 		b.nextIndex++
 		frames = append(frames, thoughtBlockStart(index, data), contentBlockStop(index))
 	}
-	// One block, the parts joined as the baseline joined them: a reader that keeps only the
-	// last assistant block -- Workflow agent(), the SDK -- otherwise saw only the last part
-	// of an answer the backend wrote in two (#91).
+	// Join parts of the same phase for native consumers that keep only the last block.
+	// Commentary must stay separate from the final answer when the backend labels them.
 	if b.deferText && len(b.parts) > 0 {
-		texts := make([]string, 0, len(ordered))
+		var texts []string
+		phase := ""
+		flush := func() {
+			if len(texts) == 0 {
+				return
+			}
+			index := b.nextIndex
+			b.nextIndex++
+			frames = append(frames, contentBlockStart(index, phase), contentBlockDelta(index, strings.Join(texts, "\n")), contentBlockStop(index))
+			texts = nil
+		}
 		for _, part := range ordered {
 			if !part.hidden {
+				if phase != part.phase {
+					flush()
+				}
+				phase = part.phase
 				texts = append(texts, string(part.visible()))
 			}
 		}
-		index := b.nextIndex
-		b.nextIndex++
-		frames = append(frames, contentBlockStart(index), contentBlockDelta(index, strings.Join(texts, "\n")), contentBlockStop(index))
+		flush()
 	}
 
 	// Every text block is closed before the first tool block opens. A client reading
@@ -631,10 +667,14 @@ func (b *Builder) messageStart() Frame {
 	return frame("message_start", map[string]any{"type": "message_start", "message": message})
 }
 
-func contentBlockStart(index int) Frame {
+func contentBlockStart(index int, phase string) Frame {
+	block := map[string]any{"type": "text", "text": ""}
+	if phase != "" {
+		block["phase"] = phase
+	}
 	return frame("content_block_start", map[string]any{
 		"type": "content_block_start", "index": index,
-		"content_block": map[string]any{"type": "text", "text": ""},
+		"content_block": block,
 	})
 }
 

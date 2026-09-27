@@ -310,7 +310,7 @@ func decodeResultParts(raw json.RawMessage, state *toolState) ([]ResultPart, err
 
 		switch kind {
 		case "text":
-			block, err := decodeBlock(entry)
+			block, err := decodeBlock(entry, "user")
 			if err != nil {
 				return nil, err
 			}

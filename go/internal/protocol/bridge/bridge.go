@@ -150,6 +150,7 @@ type InputEntry struct {
 	// other.
 	Role    string `json:"role,omitempty"`
 	Content any    `json:"content,omitempty"`
+	Phase   string `json:"phase,omitempty"`
 
 	// function_call
 	CallID    string `json:"call_id,omitempty"`
@@ -384,16 +385,22 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 		// entry, in the order they appeared, so the backend sees the same sequence the
 		// client recorded.
 		var parts []InputPart
+		phase := ""
 		flush := func() {
 			if len(parts) > 0 {
-				out.Input = append(out.Input, InputEntry{Role: role, Content: parts})
+				out.Input = append(out.Input, InputEntry{Role: role, Content: parts, Phase: phase})
 			}
 			parts = nil
+			phase = ""
 		}
 
 		for _, block := range message.Blocks {
 			switch block.Type {
 			case "text":
+				if phase != block.Phase {
+					flush()
+				}
+				phase = block.Phase
 				parts = append(parts, InputPart{Type: kind, Text: block.Text})
 			case "image":
 				// Its own entry, which is the baseline's shape: an attached picture is not
@@ -871,6 +878,11 @@ func (t *Translator) openItem(event codex.OutputItemEvent) error {
 		return ErrOutputItemOrder
 	}
 	t.ids[event.Item.ID] = true
+	if event.Item.Type == codex.ItemMessage {
+		if err := t.builder.SetTextPhase(event.Item.ID, event.Item.Phase); err != nil {
+			return err
+		}
+	}
 	t.held[event.Index] = &heldItem{item: event.Item}
 	t.order = append(t.order, event.Index)
 	return nil
@@ -887,7 +899,7 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 		return ErrOutputItemOrder
 	}
 	final := event.Item
-	if final.ID != held.item.ID || final.Type != held.item.Type {
+	if final.ID != held.item.ID || final.Type != held.item.Type || final.Phase != held.item.Phase {
 		return ErrItemSnapshotMismatch
 	}
 	if final.Type == codex.ItemFunctionCall {
@@ -1031,7 +1043,7 @@ func (t *Translator) crossCheckCompleted(raw []byte) error {
 		held := t.held[t.order[i]].item
 		if stated.Type != held.Type || stated.ID != held.ID ||
 			stated.CallID != held.CallID || stated.Name != held.Name ||
-			string(stated.Arguments) != string(held.Arguments) {
+			string(stated.Arguments) != string(held.Arguments) || stated.Phase != held.Phase {
 			return ErrItemSnapshotMismatch
 		}
 	}

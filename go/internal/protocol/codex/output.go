@@ -28,6 +28,7 @@ type OutputItem struct {
 	Name      string
 	Arguments json.RawMessage
 	Text      []string
+	Phase     string
 
 	// reasoning. Encrypted is what makes a chain of thought replayable on the next turn;
 	// Summary is the visible part that travels beside it. Content is read only to tell a
@@ -202,6 +203,12 @@ func decodeItem(raw json.RawMessage, final bool) (OutputItem, error) {
 		}
 
 	case ItemMessage:
+		if value, presence := wire.Of(fields, "phase"); presence == wire.Present {
+			if json.Unmarshal(value, &item.Phase) != nil ||
+				item.Phase != "commentary" && item.Phase != "final_answer" {
+				return OutputItem{}, ErrEventShape
+			}
+		}
 		content, presence := wire.Of(fields, "content")
 		if presence != wire.Present {
 			if final {

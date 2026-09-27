@@ -49,13 +49,8 @@ type Route struct {
 
 // Model is one backend model this build can route to, with every name that reaches it.
 //
-// One entry per model and one place to edit. The routing table, the published order, the
-// client's model list and the client's own tier defaults are all derived from this slice,
-// so adding a model when the backend ships one is adding a line here and nothing else.
-// Before this was a single list the same facts lived in three tables, and they drifted:
-// sonnet and haiku both pointed at luna while terra had no Claude name at all, so two
-// entries in the user's picker ran the identical route and a fourth model could not be
-// selected. TestEveryModelIsReachableByAClaudeName now fails if that happens again.
+// Capabilities and legacy native identities live here. User-editable defaults
+// come from settingsfile/defaults.json and a session's Selection overrides.
 type Model struct {
 	// Key is the short catalogue name, which the client may also send outright.
 	Key string
@@ -69,7 +64,8 @@ type Model struct {
 	// global list would either refuse what a model takes or send what it refuses. An effort
 	// the backend lists but nobody has measured here stays out.
 	Efforts []string
-	// Alias is the Claude tier that belongs here.
+	// Alias is the stable legacy native identity. ForAlias and Selection resolve
+	// the effective configurable mapping; this field alone is not that mapping.
 	Alias string
 	// Family is the versioned Claude prefix for that tier. Matched by prefix so no version
 	// is pinned: claude-opus-5 and claude-opus-4-1 route the same way and a new release
@@ -99,12 +95,18 @@ type ContextPolicy struct {
 // tools, the reasoning round trip and images, and the local count matched the backend's
 // input_tokens on every text request. ultra was refused (HTTP 400) on sol, astra and terra,
 // so no model lists it. The context values are the GPT-5.6 ones on the same catalogue window.
-var Models = []Model{
-	{Key: "astra", ID: "gpt-6-astra", Effort: "medium", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
-	{Key: "sol", ID: "gpt-6-sol", Effort: "xhigh", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-	{Key: "terra", ID: "gpt-5.6-terra", Effort: "high", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-	{Key: "luna", ID: "gpt-6-luna", Effort: "max", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-}
+var Models = func() []Model {
+	models := []Model{
+		{Key: "astra", ID: "gpt-6-astra", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
+		{Key: "sol", ID: "gpt-6-sol", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+		{Key: "terra", ID: "gpt-5.6-terra", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+		{Key: "luna", ID: "gpt-6-luna", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+	}
+	for i := range models {
+		models[i].Effort = builtinDefaults.ModelDefaults[models[i].ID].Effort
+	}
+	return models
+}()
 
 var lowToMax = []string{"low", "medium", "high", "xhigh", "max"}
 
@@ -120,28 +122,15 @@ func Catalogue() []Route {
 	return out
 }
 
-// roleRoutes is where a subagent of a given role runs, whatever model the client asked for.
-//
-// The Node baseline's ROLE_MODELS. The point of it is that a role's cost is a property of
-// the role: exploring a repository and planning a change are not the same work, and neither
-// is the model the conversation happens to be using. Plan runs on the top model because a
-// plan is short and wants judgement; the other two run on the cheapest model at its own
-// default.
-//
-// The second recorded divergence from the baseline, after sonnet. The baseline gives Plan
-// the cheapest effort (src/models.mjs:20-21 at 1b1c5e1) and so did this until 2026-09-18, when the user
-// raised it to medium: a plan is the one piece of work whose mistakes are paid for by
-// everything built on it, and low was buying the saving in the wrong place.
-//
-// medium is also astra's catalogue default, which is a coincidence and not a reason. This
-// entry must stay written out: an override pins the model as well as the effort, and letting
-// it fall through to the catalogue would leave a Plan running on whatever the conversation
-// happened to ask for.
-var roleRoutes = map[string]Route{
-	"Explore":         {Model: "gpt-6-luna", Effort: "max", Source: "role"},
-	"Plan":            {Model: "gpt-6-astra", Effort: "medium", Source: "role"},
-	"general-purpose": {Model: "gpt-6-luna", Effort: "max", Source: "role"},
-}
+// Factory role pairs are independent of per-model effort defaults. They remain
+// fallbacks, below native definitions, until the user's file sets an agent pair.
+var roleRoutes = func() map[string]Route {
+	routes := make(map[string]Route, len(builtinDefaults.Agents))
+	for name, pair := range builtinDefaults.Agents {
+		routes[name] = Route{Model: pair.Model, Effort: pair.Effort, Source: "role"}
+	}
+	return routes
+}()
 
 // inheritRoles are roles this build knows about and deliberately does not reassign.
 //
@@ -269,16 +258,9 @@ func RetiredRole(role string) bool {
 
 // ForAlias reports the model a Claude tier belongs to.
 //
-// The launcher needs this to tell the client which backend model stands in for each of its
-// own tiers, and deriving it here rather than repeating the pairs there is what keeps the
-// two from disagreeing.
+// The default mapping comes from the same document used to create preferences.
 func ForAlias(alias string) (Model, bool) {
-	for _, model := range Models {
-		if model.Alias == alias {
-			return model, true
-		}
-	}
-	return Model{}, false
+	return ModelByID(builtinDefaults.ModelMapping[alias])
 }
 
 // Efforts is every effort some model accepts, cheapest first: the union of the models' own

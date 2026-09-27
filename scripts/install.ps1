@@ -259,25 +259,40 @@ function Assert-Prerequisites {
     }
 }
 
-# The version-only document uses the runtime defaults; model tables live in Go.
-# Publish a completed file with Move's no-replace contract. A concurrent installer
-# can win, but neither one overwrites an existing manual configuration.
+# Use the verified installed program's document and no-replace publication path.
+# The old three-program layout has no launcher --dev command.
 function Ensure-Settings {
     $dir = Join-Path $env:USERPROFILE '.clauduct'
     $target = Join-Path $dir 'settings.json'
     if (Test-Path -LiteralPath $target -PathType Leaf) { return }
     if (Test-Path -LiteralPath $target) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: settings.json is not a file' }
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: cannot create preferences through a redirected directory'
+    if ($Names.Count -ne 1) {
+        Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
+        return
     }
-    $temp = Join-Path $dir ('settings-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo.FileName = Join-Path $InstallRoot 'clauduct.exe'
+    $process.StartInfo.Arguments = '--dev --init-settings'
+    $process.StartInfo.UseShellExecute = $false
+    $process.StartInfo.CreateNoWindow = $true
+    $process.StartInfo.RedirectStandardOutput = $true
+    $process.StartInfo.RedirectStandardError = $true
     try {
-        [IO.File]::WriteAllText($temp, "{`n  `"version`": 1`n}`n", [Text.UTF8Encoding]::new($false))
-        try { [IO.File]::Move($temp, $target) }
-        catch [IO.IOException] { if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw } }
+        if (-not $process.Start()) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer did not start' }
+        if (-not $process.WaitForExit(10000)) {
+            $process.Kill()
+            if (-not $process.WaitForExit(5000)) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer cleanup unconfirmed' }
+            throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer timed out'
+        }
+        if ($process.ExitCode -eq 2) {
+            Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
+        } elseif ($process.ExitCode -ne 0) {
+            throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer failed; the installed binary is available'
+        } elseif (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer did not publish settings.json'
+        }
     } finally {
-        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+        $process.Dispose()
     }
 }
 

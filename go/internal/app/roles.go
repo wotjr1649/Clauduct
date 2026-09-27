@@ -362,10 +362,9 @@ type cliRoles struct {
 	addDirs []string
 	// sources is --setting-sources; nil when absent, which is native's default of all three.
 	sources map[string]bool
-	// flagModel is CLAUDE_CODE_SUBAGENT_MODEL from --settings, when flagSet.
-	flagModel string
-	flagSet   bool
-	flagErr   error
+	// flagEnv retains only selection keys from --settings, never other values.
+	flagEnv map[string]string
+	flagErr error
 	// subagent is CLAUDE_CODE_SUBAGENT_MODEL for the session, read from the environment and
 	// settings files once, at the first delegation, like the rest of this struct.
 	subagent func() (string, error)
@@ -454,22 +453,40 @@ func (c *cliRoles) scope(args []string, cwd string) error {
 				return nil
 			}
 		}
-		c.flagModel, c.flagSet, c.flagErr = settingsSubagentModel(raw)
+		c.flagEnv = map[string]string{}
+		for _, key := range []string{"ANTHROPIC_MODEL", effortEnv, subagentModelKey} {
+			value, found, err := settingsEnvironment(raw, key)
+			if err != nil {
+				c.flagErr = err
+				break
+			}
+			if found {
+				c.flagEnv[key] = value
+			}
+		}
 	}
 	return nil
 }
 
-// settingsSubagentModel reads CLAUDE_CODE_SUBAGENT_MODEL from one settings object's env.
-func settingsSubagentModel(raw []byte) (string, bool, error) {
+func settingsEnvironment(raw []byte, key string) (string, bool, error) {
 	var values struct {
 		Env map[string]json.RawMessage `json:"env"`
 	}
 	if json.Unmarshal(raw, &values) != nil {
 		return "", false, errRoleDefaults
 	}
-	value, found := values.Env[subagentModelKey]
+	var value json.RawMessage
+	found := false
+	for name, raw := range values.Env {
+		if strings.EqualFold(name, key) {
+			if found {
+				return "", false, errRoleDefaults
+			}
+			value, found = raw, true
+		}
+	}
 	var model string
-	if found && json.Unmarshal(value, &model) != nil {
+	if found && (len(value) == 0 || value[0] != '"' || json.Unmarshal(value, &model) != nil) {
 		return "", false, errRoleDefaults
 	}
 	return model, found, nil
@@ -481,7 +498,17 @@ func settingsSubagentModel(raw []byte) (string, bool, error) {
 // only (not the git root). The managed settings rank is unmeasured, so a managed value is
 // unverified rather than placed. Native trims and lowercases a model name before resolving it.
 func subagentModel(config, cwd, managed string, cli cliRoles, env map[string]string) (string, error) {
-	model := env[subagentModelKey]
+	model, _, err := nativeEnvironment(config, cwd, managed, subagentModelKey, cli, env)
+	return strings.ToLower(strings.TrimSpace(model)), err
+}
+
+// Read only the requested selection key. Settings env overrides the process env;
+// --setting-sources and --settings use the same precedence for all three keys.
+func nativeEnvironment(config, cwd, managed, key string, cli cliRoles, env map[string]string) (string, string, error) {
+	model, source := env[key], ""
+	if _, set := env[key]; set {
+		source = "environment." + key
+	}
 	for _, file := range []struct{ source, path string }{
 		{"user", filepath.Join(config, "settings.json")},
 		{"project", filepath.Join(cwd, ".claude", "settings.json")},
@@ -495,31 +522,32 @@ func subagentModel(config, cwd, managed string, cli cliRoles, env map[string]str
 			continue
 		}
 		if err != nil {
-			return "", errRoleDefaults
+			return "", "", errRoleDefaults
 		}
-		value, found, err := settingsSubagentModel(raw)
+		value, found, err := settingsEnvironment(raw, key)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if found {
 			model = value
+			source = "native." + file.source + ".env." + key
 		}
 	}
 	if cli.flagErr != nil {
-		return "", cli.flagErr
+		return "", "", cli.flagErr
 	}
-	if cli.flagSet {
-		model = cli.flagModel
+	if value, set := cli.flagEnv[key]; set {
+		model, source = value, "native.settings.env."+key
 	}
 	if raw, err := boundedRoleFile(filepath.Join(managed, "managed-settings.json")); !os.IsNotExist(err) {
 		if err != nil {
-			return "", errRoleDefaults
+			return "", "", errRoleDefaults
 		}
-		if _, found, err := settingsSubagentModel(raw); err != nil || found {
-			return "", errRoleDefaults
+		if _, found, err := settingsEnvironment(raw, key); err != nil || found {
+			return "", "", errRoleDefaults
 		}
 	}
-	return strings.ToLower(strings.TrimSpace(model)), nil
+	return model, source, nil
 }
 
 // managedRoot is native's platform directory for managed settings and agents.

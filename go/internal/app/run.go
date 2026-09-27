@@ -105,11 +105,13 @@ type Options struct {
 // session that leaked a listener would hide exactly the defect this bridge has to prove it
 // does not have.
 type Result struct {
-	Startup        bridge.Pair
-	NativeStarted  bool
-	NativeExitCode int
-	GatewayAddr    string
-	CleanupErr     error
+	Startup             bridge.Pair
+	StartupModelSource  string
+	StartupEffortSource string
+	NativeStarted       bool
+	NativeExitCode      int
+	GatewayAddr         string
+	CleanupErr          error
 	// Attempts and Inferences are what the session spent upstream. One inference retried
 	// twice is one inference and three attempts, and a claim about cost needs the unit it
 	// was measured in.
@@ -219,6 +221,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 					return Result{}, err
 				}
 				config.Selection, config.Startup, resumed = saved.Selection, saved.Last, &saved
+				config.StartupSource, config.SelectionSource = "session-snapshot.last", "session-snapshot"
 			}
 		}
 	}
@@ -431,15 +434,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		})
 	}
 	gw.ConfigureSelection(config.Selection)
-	startup, startupErr := config.effectiveStartup(spec)
+	startup, modelSource, effortSource, startupErr := config.effectiveStartup(spec, o.Args)
 	result.Startup = startup
+	result.StartupModelSource, result.StartupEffortSource = modelSource, effortSource
 	if profiles != nil && startupErr != nil {
 		result.NativeExitCode = ExitCodeUnknown
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		return result, startupErr
 	}
 	if !ephemeral {
-		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession)
+		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession, background != nil)
 	}
 
 	// Pressed before there was a child to receive it: the launch is what was cancelled, and

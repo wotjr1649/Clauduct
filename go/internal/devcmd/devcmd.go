@@ -23,6 +23,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -40,6 +41,20 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "verification-budget-version":
 		fmt.Fprintln(stdout, upstream.VerificationBudgetVersion)
 		return 0
+	case "init-settings":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "usage: clauduct --dev --init-settings")
+			return 2
+		}
+		home, err := os.UserHomeDir()
+		if err == nil {
+			err = settingsfile.Ensure(home)
+		}
+		if err != nil {
+			fmt.Fprintln(stderr, settingsfile.ErrCreate)
+			return 1
+		}
+		return 0
 	case "doctor":
 		return doctor(stdout)
 	case "usage":
@@ -47,7 +62,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--doctor|--usage|--probe]")
+		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--doctor|--usage|--probe]")
 		return 2
 	}
 }

@@ -53,10 +53,6 @@ var (
 	refuseTooLarge  = refusal{"INPUT_TOO_LARGE", http.StatusRequestEntityTooLarge}
 	refuseClosed    = refusal{"GATEWAY_CLOSED", http.StatusServiceUnavailable}
 	refuseCancelled = refusal{"CANCELLED", 499} // client went away; nothing will read this
-	// The route exists and is intended, but its implementation lands in a later package.
-	// Distinct from UNSUPPORTED_ROUTE on purpose: "not built yet" and "never going to be
-	// answered here" are different facts and a reader should not have to guess which.
-	refuseUnimplemented = refusal{"NOT_IMPLEMENTED", http.StatusNotImplemented}
 )
 
 // errorType maps a status onto the Anthropic error type the client expects, matching the

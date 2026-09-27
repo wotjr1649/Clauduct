@@ -96,10 +96,6 @@ func NewParser(limits Limits) *Parser {
 	return &Parser{limits: limits, IsTerminal: func(string) bool { return false }}
 }
 
-// MarkCompleted records that a terminal event was seen. The caller decides what terminal
-// means; the parser only needs to know it happened so it can police what may follow.
-func (p *Parser) MarkCompleted() { p.completed = true }
-
 // Completed reports whether a terminal event has been seen.
 func (p *Parser) Completed() bool { return p.completed }
 

@@ -259,6 +259,28 @@ function Assert-Prerequisites {
     }
 }
 
+# The version-only document uses the runtime defaults; model tables live in Go.
+# Publish a completed file with Move's no-replace contract. A concurrent installer
+# can win, but neither one overwrites an existing manual configuration.
+function Ensure-Settings {
+    $dir = Join-Path $env:USERPROFILE '.clauduct'
+    $target = Join-Path $dir 'settings.json'
+    if (Test-Path -LiteralPath $target -PathType Leaf) { return }
+    if (Test-Path -LiteralPath $target) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: settings.json is not a file' }
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    if ((Get-Item -LiteralPath $dir -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: cannot create preferences through a redirected directory'
+    }
+    $temp = Join-Path $dir ('settings-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        [IO.File]::WriteAllText($temp, "{`n  `"version`": 1`n}`n", [Text.UTF8Encoding]::new($false))
+        try { [IO.File]::Move($temp, $target) }
+        catch [IO.IOException] { if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw } }
+    } finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+    }
+}
+
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 
 # MSYS and Git Bash stop their PATH search at a directory carrying the command's name and
@@ -290,6 +312,7 @@ try {
 
     New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
     Install-Set $source $InstallRoot
+    Ensure-Settings
 } finally {
     if ($staging -and (Test-Path -LiteralPath $staging)) {
         Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue

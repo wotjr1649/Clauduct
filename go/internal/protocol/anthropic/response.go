@@ -237,9 +237,6 @@ func (b *Builder) AddThought(data string) {
 	b.thoughts = append(b.thoughts, data)
 }
 
-// ThoughtCount reports how many were recorded.
-func (b *Builder) ThoughtCount() int { return len(b.thoughts) }
-
 func NewBuilder(model string) *Builder {
 	return &Builder{
 		model:    model,

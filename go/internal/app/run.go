@@ -21,6 +21,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
+	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -171,6 +172,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if err != nil {
 				return Result{}, errClauductSettings
 			}
+		}
+		if err := settingsfile.Ensure(clauductHome); err != nil {
+			return Result{}, err
 		}
 		if resumeID == "" {
 			config, err = loadClauductSettings(clauductHome)

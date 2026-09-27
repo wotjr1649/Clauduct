@@ -108,7 +108,7 @@ func run() int {
 		return 1
 	}
 
-	env := environMap()
+	env := platform.Environment(os.Environ())
 	sessionDuration, err := app.SessionDuration(env)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct: INVALID_SESSION_TIMEOUT")
@@ -188,17 +188,6 @@ func run() int {
 		return 124
 	}
 	return result.NativeExitCode
-}
-
-func environMap() map[string]string {
-	entries := os.Environ()
-	out := make(map[string]string, len(entries))
-	for _, entry := range entries {
-		if i := strings.IndexByte(entry, '='); i > 0 {
-			out[entry[:i]] = entry[i+1:]
-		}
-	}
-	return out
 }
 
 // usageOption is the name for the account view.

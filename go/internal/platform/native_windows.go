@@ -57,7 +57,7 @@ func (r Resolver) resolved() (Resolver, error) {
 		r.IsFile = isRegularFile
 	}
 	if r.Env == nil {
-		r.Env = environMap(os.Environ())
+		r.Env = Environment(os.Environ())
 	}
 	if r.Cwd == "" {
 		cwd, err := os.Getwd()
@@ -76,7 +76,8 @@ func (r Resolver) resolved() (Resolver, error) {
 	return r, nil
 }
 
-func environMap(entries []string) map[string]string {
+// Environment converts process entries, excluding Windows drive-directory keys.
+func Environment(entries []string) map[string]string {
 	out := make(map[string]string, len(entries))
 	for _, entry := range entries {
 		if i := strings.IndexByte(entry, '='); i > 0 {

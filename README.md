@@ -76,10 +76,11 @@ clauduct --dev --version   # Clauduct 자신: 버전, commit, Go 버전
 clauduct --version         # Claude Code의 버전. 실행 경로 전체가 도는지를 봅니다
 ```
 
-**둘이 다른 것을 확인합니다.** 이 런처는 자기가 소유한 첫 인자(`--update`·`--usage`·`--uninstall`·`--dev`)
-말고는 **전부 클라이언트에 그대로 넘깁니다.** `--version`도 그중 하나라 Claude Code가 답합니다 —
+**둘이 다른 것을 확인합니다.** `--version`은 native에 전달되므로 Claude Code가 답합니다 —
 버그가 아니라 설계이고, 덕분에 그 명령은 "런처가 클라이언트를 띄울 수 있다"까지 증명합니다.
 Clauduct 자신에 대한 질문은 `clauduct --dev`(`--version`·`--doctor`·`--usage`·`--probe`)가 받습니다.
+일반 native 인자는 보존하지만 `--settings` 병합·UUID 선택 복원·background 연결 관리는 Clauduct가
+보완합니다. [native와의 책임 경계](docs/v2/ARCHITECTURE.md#2-책임-경계)에 추가 동작을 명시합니다.
 
 ### 업데이트
 

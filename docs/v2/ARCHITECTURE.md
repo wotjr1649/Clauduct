@@ -20,7 +20,25 @@ clauduct
 
 ## 2. 책임 경계
 
-Clauduct가 소유하는 것은 **모델 이름/effort 호환, API envelope·SSE 변환, loopback 생명주기** 셋뿐이다. TUI·도구 실행·MCP·플러그인·스킬·사용자 훅·permissions·worktree·session/resume은 native Claude와 사용자가 소유한다. Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하며 Clauduct는 읽기 전용으로만 접근한다.
+Clauduct는 native Claude의 TUI와 도구 실행기를 사용한다. 모델·프로토콜 변환 외에도 세션 설정,
+선택 기록, 위임 대기와 일부 Workflow 동작을 보완한다. 따라서 모델 이름만 바꾸는 전달기로 설명하지 않는다.
+Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하며 Clauduct는 읽기 전용으로 접근한다.
+
+| 경계 | native가 담당하는 것 | Clauduct가 더하는 것 |
+|---|---|---|
+| 실행·도구 | TUI·입력 편집·Read/Edit/Bash·MCP·plugin/skill 로딩·권한 판단 | loopback 연결, 프로세스 수명 관리, Windows PDF 렌더러 연결 |
+| 설정·모델 | 기존 Claude 설정과 picker 화면 | 전용 settings.json, 모델 매핑·시작 pair·agent pair, 세션용 `--settings` 병합과 GPT picker 항목 |
+| 안전 정책 | native 기본 규칙과 사용자 규칙, 승인 UI | `$defaults`를 보존한 B 추가 hard-deny 규칙 2개, gateway의 native classifier 경로 |
+| 세션 재개 | 대화 저장·목록·native resume | 설정 snapshot과 마지막 선택의 UUID 복원, 검증하지 못한 재개 경로의 명시적 거부·명령 안내 |
+| 위임 | Agent 실행·완료 알림·권한 | 정의/명시 선택의 GPT 변환, 선택 검증, Agent·SendMessage 설명 보완, 검증된 pending 호출의 중복 억제와 native 대기 제어 |
+| Workflow | 원 스크립트의 도구 실행과 역할 정의 | native Read를 통한 원문 확인, 결과 journal 검증, `clauduct:plan-v1` 미실행 단계 재개. 임의 JavaScript의 원 실행 재생은 지원하지 않음 |
+| 압축·응답 | native 압축 동작과 대화 기록 | 모델별 context 경계, 검증된 자동 압축의 effort 상한·요약 보완, assistant phase 운반 |
+
+필수 hook과 세션용 plugin은 [설정 구성](../../go/internal/app/settings.go)과
+[native 이벤트 모듈](../../go/internal/app/native-events.mjs)이 연결한다. native 실행 파일이나 전역 지침
+파일을 패치하지 않는다. 공개 command-hook 계약과 별도로 사용하는 `agent.spawn`·`turn.step` 모듈 동작은
+native 2.1.283 실측에 의존한다. 모든 native 미래 버전에 대한 안정 API라고 보장하지 않는다.
+지원 범위와 알려진 한계는 [호환성 문서](COMPATIBILITY.md), 설정/재개 정책은 [SETTINGS.md](SETTINGS.md)를 따른다.
 
 Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는 backend 측 hosted search 하나이며, 일반 도구와 구분해 별도 capability로 설계한다.
 
@@ -38,15 +56,20 @@ go/                           패키지 경로는 그대로 github.com/wotjr1649
     ├── protocol/{anthropic,codex,bridge}/
     ├── upstream/             interface + direct Codex transport
     ├── auth/                 읽기 전용 credential provider
-    ├── routing/              모델·effort·capability registry
+    ├── settingsfile/         초기 설정 JSON·원자 생성·읽기
     ├── stream/               SSE parsing·emission·delivery state
     ├── platform/             *_windows.go 등 OS 경계
-    ├── observability/        redacted diagnostics·bounded run record
-    ├── buildinfo/
-    └── testkit/              fake Claude/upstream·fault injection
+    ├── childprocess/         Windows 소유 process tree
+    ├── sessionlink/          background 연결용 로그인 제한 IPC
+    ├── httpguard/            HTTP framing·bounded drain
+    ├── pdf/                  Windows PDF 렌더러
+    ├── update/               digest 검증·설치 갱신·제거
+    ├── wire/                 엄격한 JSON 필드·presence 검사
+    └── buildinfo/
 ```
 
-**먼저 다 만들지 않는다.** 빈 package·빈 인터페이스 scaffolding은 하지 않는다. 첫 slice는 `launch` `gateway` `platform` `testkit` `buildinfo`만 만들고 나머지는 실제 책임이 생길 때 분리한다. 만능 `utils`/`manager`로 다시 합치지도 않는다.
+현재 실제 package 배치다. 모델 registry는 `protocol/bridge`, 진단은 `gateway`와 `app`에 있다.
+빈 package·미사용 인터페이스를 미리 만들지 않으며 별도 `routing`·`observability`·`testkit` package는 없다.
 
 `internal/` 아래를 뜻하며, module path에 `/v2` semantic-major suffix를 붙이지 않는다 — 제품 아키텍처 V2와 Go module major는 별개다. v0.4.0부터 go.mod는 저장소 루트에 있고 태그는 prefix 없는 `vX.Y.Z`다 — `go/` prefix 태그로는 toolchain이 버전을 stamp하지 않는다(#111). 초기 배포는 검증된 binary artifact 우선이며 `go install` 지원은 별도 검증 후에만 선언한다.
 

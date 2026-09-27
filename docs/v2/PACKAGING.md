@@ -407,6 +407,6 @@ v0.3.1 writer가 만든 bytes를 그대로 v0.3.0 reader에 넣어 확인했다.
 | 자동 업데이트 | 배경에서 도는 것은 없다. 사용자가 부르는 `clauduct --update`는 있다(5.1절) |
 | Windows 외 대상 | `internal/platform`에 windows 태그 파일 하나뿐이다. 다른 대상은 이식이 아니라 **새 설계**다 |
 | 서명 | **없고, 넣지 않기로 했다**(5.0.1절). 이유는 비용이 아니라 효과다 — 2024년 이후 어떤 인증서도 SmartScreen을 즉시 통과시키지 못한다 |
-| 공개 CI의 테스트 | **없다(v0.3.3부터).** 공개 CI는 Windows gofmt·vet·build와 httpguard의 Linux·macOS build만 본다. 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
+| 공개 CI의 테스트 | **없다(v0.3.3부터).** 공개 CI는 Windows gofmt·vet·build·PowerShell 7 AST/최소 버전과 httpguard의 Linux·macOS build를 본다. 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
 
 **미실행은 통과가 아니다.** 각 항목은 없다고 적혀 있지 괜찮다고 적혀 있지 않다.

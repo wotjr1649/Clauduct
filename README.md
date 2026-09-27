@@ -128,6 +128,11 @@ clauduct --dev --doctor  # 이 빌드 자신에 대한 질문은 --dev 뒤로
 `--settings`는 0.3.0부터 거부 대신 필수 settings와 **병합**됩니다 — 필수 연결이나 hook과
 충돌할 때만 거부합니다. `--setting-sources`는 그대로 native에 전달됩니다.
 
+v0.5.3부터 `~/.clauduct/settings.json`에서 시작 model·effort, GPT 기본 effort, alias 매핑과 agent별
+설정을 편집할 수 있습니다. 설치·업데이트·일반 실행은 파일이 없을 때만 생성하며 기존 파일은 보존합니다.
+native의 `S` 선택은 현재 세션에 적용하고, UUID 재개에서는 마지막 선택을 복원합니다.
+[설정 예와 재개 지원 범위](docs/v2/SETTINGS.md)를 참고하세요.
+
 클라이언트의 `/usage`·`/cost`는 GPT 플랜 사용량을 보여주지 못합니다 — 커스텀 base URL에는 계정
 엔드포인트를 묻지 않는 것으로 실측됐습니다. `clauduct --usage`가 그 질문에 답합니다.
 

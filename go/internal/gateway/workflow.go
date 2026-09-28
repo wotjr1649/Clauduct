@@ -213,6 +213,11 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	// Another first request may have resolved this child after route released mu.
+	// Reuse that verified choice before counting this child as the next plan step.
+	if route, found, err := d.cachedRoute(scope, id, binding); found || err != nil {
+		return route, found, err
+	}
 	root, err := d.openProjects(".")
 	if err != nil {
 		return bridge.Route{}, false, errDelegationUnverified

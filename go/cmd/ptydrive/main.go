@@ -19,7 +19,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -54,9 +56,10 @@ type startupInfoEx struct {
 }
 
 type step struct {
-	Wait     string   `json:"wait"`     // regexp on the screen text written after the previous step
-	Send     []string `json:"send"`     // written in order, 300ms apart
-	Optional bool     `json:"optional"` // a missing screen is skipped, not a failure
+	Wait     string   `json:"wait"`      // regexp on the screen text written after the previous step
+	WaitFile string   `json:"wait_file"` // optional fresh file containing exactly "ready\n"
+	Send     []string `json:"send"`      // written in order, 300ms apart
+	Optional bool     `json:"optional"`  // a missing screen is skipped, not a failure
 	Timeout  int      `json:"timeout_s"`
 	After    int      `json:"after_ms"` // pause between the match and the first write
 }
@@ -85,6 +88,21 @@ func main() {
 	check(err, "script")
 	var steps []step
 	check(json.Unmarshal(raw, &steps), "script")
+	for _, s := range steps {
+		if s.WaitFile == "" {
+			continue
+		}
+		if !filepath.IsAbs(s.WaitFile) {
+			check(fmt.Errorf("wait_file must be absolute"), "script")
+		}
+		_, err := os.Lstat(s.WaitFile)
+		if err == nil {
+			check(fmt.Errorf("wait_file already exists"), "script")
+		}
+		if !os.IsNotExist(err) {
+			check(err, "wait_file")
+		}
+	}
 
 	var inRead, inWrite, outRead, outWrite syscall.Handle
 	check(syscall.CreatePipe(&inRead, &inWrite, nil, 0), "input pipe")
@@ -178,12 +196,21 @@ func main() {
 		limit := time.Duration(max(s.Timeout, 1)) * time.Second
 		deadline := time.Now().Add(limit)
 		matched := false
+		screenMatched := false
+		var signalErr error
 		for time.Now().Before(deadline) {
 			current := compact()
-			if loc := pattern.FindStringIndex(current[min(from, len(current)):]); loc != nil {
-				from += loc[1]
-				matched = true
-				break
+			if !screenMatched {
+				if loc := pattern.FindStringIndex(current[min(from, len(current)):]); loc != nil {
+					from += loc[1]
+					screenMatched = true
+				}
+			}
+			if screenMatched {
+				matched, signalErr = readyFile(s.WaitFile)
+				if matched || signalErr != nil {
+					break
+				}
 			}
 			if exited(pi.Process) {
 				break
@@ -191,8 +218,16 @@ func main() {
 			time.Sleep(200 * time.Millisecond)
 		}
 		fmt.Printf("step=%d t=%.1fs wait=%q matched=%v\n", i, time.Since(started).Seconds(), s.Wait, matched)
-		if !matched && !s.Optional {
+		if signalErr != nil {
+			failed = "wait_file"
+			fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
+			break
+		}
+		if !matched && (!s.Optional || screenMatched && s.WaitFile != "") {
 			failed = s.Wait
+			if screenMatched && s.WaitFile != "" {
+				failed = "wait_file"
+			}
 			fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
 			break
 		}
@@ -232,6 +267,29 @@ func main() {
 }
 
 const screenTail = 4000
+
+func readyFile(name string) (bool, error) {
+	if name == "" {
+		return true, nil
+	}
+	info, err := os.Lstat(name)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, fmt.Errorf("wait_file is not a regular file")
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	raw, err := io.ReadAll(io.LimitReader(f, 7))
+	return string(raw) == "ready\n", err
+}
 
 // tail keeps the end of s, cut at a rune boundary.
 func tail(s string, n int) string {

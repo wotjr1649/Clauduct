@@ -461,12 +461,29 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
 | forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). `-p`에서 직접 입력한 명령은 native가 agent ID 없이 실행하므로 루트 요청으로 처리된다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. Agent 자식과 달리 재개 연결을 따로 검증하지 않으며, 사용자의 중지가 `stoppedByUser`로 남지 않아 중지된 자식을 막는 규칙(#91)이 fork 자식에는 적용되지 않는다 |
-| `review-diff` 헬퍼 | 미지원. 기준선의 경로 탈출 방지·2 MiB 상한은 없다 |
+| V1 `review-diff` 헬퍼 | **v0.6.0에서 문서상 정식 은퇴.** native `/code-review`의 tracked/untracked 파일 대상과 독립 결함 표본을 실제 backend로 확인했다. V2에는 이 헬퍼가 없으므로 제품 코드를 삭제한 변경은 아님. native 읽기 권한과 현행 다른 경로의 용량·경로 보호는 유지 |
 | Workflow remote·자식의 별도 Workflow·근거 없는 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 같은 run의 검증된 명시적 source 재개는 위 native 규칙을 따르며, 결과 회수·독립 계획은 별도 계약. 다른 세션과 기록 없는 강제 종료의 재개는 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
 | PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
+
+### 파일 대상 code-review 인수 — v0.6.0
+
+native 2.1.283의 `/code-review <파일 경로>`로 tracked 변경과 untracked 파일을 각각 검토했다.
+대표 표본은 수량 곱셈 누락·clamp 상한 오류, 독립 표본은 할인 백분율 계산·18세 경계 오류다.
+모두 대상 파일·함수·결함 원인과 반례를 확인하고 원본 파일은 보존했다. 실제 Sol/medium의 네 리뷰는
+각 2–3회 요청, 33,976–54,691 bytes의 누적 JSON 본문, 약 10.6–15.3초였다. 이 수치는 작은 합성 파일의
+관측치이며 일반 코드의 비용·탐지율 보장이 아니다.
+
+직접 slash command를 `-p`로 실행하면 stdout은 `Command completed`이고 실제 리뷰는 native 자식
+transcript에 남았다. 완료 문구를 결함 탐지로 간주하지 않고 그 리뷰 본문과 실제 파일 읽기를 판정했다.
+모델이 `Skill` 도구로 호출한 리뷰는 native의 도구 결과 전달 경로를 따른다. V1 헬퍼의 전처리와
+2 MiB 제한을 다른 현행 기능에 적용하거나 제거한 변경은 없다.
+
+진단의 `backendRequestBytes`는 session cache key를 포함해 전송한 JSON 본문의 크기다.
+HTTP 200 응답을 받은 요청만 측정하며 `requestsWithBackendBytes`와 함께 누적한다. HTTP 실패·계수·검색의
+미측정 값을 0-byte 전송으로 해석하지 않는다. 본문·header·자격 증명은 이 진단에 기록하지 않는다.
 
 ### Office 로컬 도구 인수 — v0.6.0
 

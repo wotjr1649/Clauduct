@@ -291,6 +291,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer response.Body.Close()
+	entry.backendBytes(response.RequestBytes)
 	if g.delegations != nil {
 		g.delegations.observeBackend(r.Header.Get("X-Claude-Code-Agent-Id"), false)
 	}

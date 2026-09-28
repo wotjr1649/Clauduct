@@ -17,6 +17,9 @@ var ErrNoTransport = errors.New("NO_UPSTREAM_TRANSPORT")
 // is responsible for closing it.
 type Response struct {
 	Body io.ReadCloser
+	// RequestBytes is the transmitted JSON body length, including the session key,
+	// when an HTTP 200 response was received. Zero means unmeasured, not no request.
+	RequestBytes int64
 	// Header is what the backend sent alongside the body, or nil from a transport that has
 	// none. The rate limit observation reads six numeric fields out of it and nothing else;
 	// it is kept whole here rather than digested because a transport is not the place to

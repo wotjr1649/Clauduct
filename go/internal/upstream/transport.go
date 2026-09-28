@@ -289,8 +289,9 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 		return nil, failure
 	}
 	return &Response{
-		Body:   &releaseOnClose{ReadCloser: response.Body, release: cancel, idle: time.AfterFunc(d.idle(), cancel), every: d.idle()},
-		Header: response.Header,
+		Body:         &releaseOnClose{ReadCloser: response.Body, release: cancel, idle: time.AfterFunc(d.idle(), cancel), every: d.idle()},
+		Header:       response.Header,
+		RequestBytes: int64(len(body)),
 	}, nil
 }
 

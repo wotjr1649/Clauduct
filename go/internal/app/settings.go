@@ -82,7 +82,7 @@ func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 			"SubagentStop":       entry,
 			"PreCompact":         entry,
 			"PreToolUse":         {{Matcher: "Workflow", Hooks: entry[0].Hooks}},
-			"PostToolUse":        {{Matcher: "Workflow", Hooks: entry[0].Hooks}},
+			"PostToolUse":        {{Matcher: "Workflow|EnterWorktree|ExitWorktree", Hooks: entry[0].Hooks}},
 			"PostToolUseFailure": entry,
 		}
 	}

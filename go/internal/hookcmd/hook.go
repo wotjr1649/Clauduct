@@ -207,9 +207,16 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		Transcript string `json:"transcript_path"`
 		Trigger    string `json:"trigger"`
 		Source     string `json:"source"`
+		Tool       string `json:"tool_name"`
 	}
-	if json.Unmarshal(raw, &compact) == nil && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit") {
+	decoded := json.Unmarshal(raw, &compact) == nil
+	worktreeMove := decoded && compact.Event == "PostToolUse" && (compact.Tool == "EnterWorktree" || compact.Tool == "ExitWorktree")
+	if decoded && (compact.Event == "PreCompact" || compact.Event == "PostCompact" || compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit" || worktreeMove) {
 		if !identifier.MatchString(compact.Session) || (compact.Agent != "" && !identifier.MatchString(compact.Agent)) {
+			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_INVALID")
+			return 2
+		}
+		if worktreeMove && compact.Agent != "" {
 			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_INVALID")
 			return 2
 		}
@@ -223,13 +230,15 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			}
 			fields["trigger"] = compact.Trigger
 		}
-		if compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit" {
+		if compact.Event == "SessionStart" || compact.Event == "UserPromptSubmit" || worktreeMove {
 			if compact.Transcript == "" || len(compact.Transcript) > 4096 {
 				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_INVALID")
 				return 2
 			}
 			// SessionStart cannot block native startup. Reconfirm the same
 			// idempotent registration before each prompt, without sending its text.
+			// Worktree tools move the transcript without a new prompt. The gateway
+			// verifies the actual move before reusing its context and profile.
 			fields["event"] = "SessionStart"
 			fields["transcriptPath"] = compact.Transcript
 		}

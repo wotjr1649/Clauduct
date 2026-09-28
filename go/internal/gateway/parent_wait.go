@@ -191,9 +191,11 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 	forkLaunch := step.Eligible && len(readiness.Pending) == 0 && id == "" && step.Index > 0 && returnedForkLaunch(request)
 	step.waiting = len(readiness.Pending) > 0
 	if step.Handback != "" {
-		if !step.Eligible || step.waiting || entry.nativeTurn == nil || entry.nativeTurn.Session != session || entry.nativeTurn.Agent != id || entry.nativeTurn.Turn != step.Turn || !returnedHandback(request, step.Handback) {
+		if !step.Eligible || entry.nativeTurn == nil || entry.nativeTurn.Session != session || entry.nativeTurn.Agent != id || entry.nativeTurn.Turn != step.Turn || !returnedHandback(request, step.Handback) {
 			return nil, errDelegationUnverified
 		}
+		// Native can deliver an interim report while children are still running.
+		// Delivery permits this step; the pending snapshot still requires a wait.
 		entry.checked("native_handback_delivered")
 		return &step, nil
 	}

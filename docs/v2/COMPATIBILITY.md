@@ -293,6 +293,11 @@ SDK는 실제 본문을 억제하지 않는다. 새 명시적 사용자 입력·
 terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검증을 각각 기록했다.
 근거는 [`verification/v031-review-fixes-20260922/batch-04/REPORT.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-review-fixes-20260922/batch-04/REPORT.md)에 있다.
 
+v0.6.0에서는 native가 `SubagentHandback` 보고를 받아들인 뒤에도 손자가 남아 있으면 기존 대기를
+이어 간다. 같은 session·agent·turn과 직전 성공한 호출을 검증하며, 보고 전달을 손자 완료로 간주하지
+않는다. native 2.1.283의 `SubagentHandback`은 실행당 한 번만 보고한다. 후속 연락은 native의
+`SendMessage` 규칙을 따르며, SDK의 기본 실행 모드는 바꾸지 않는다.
+
 | 기능군 | 실행 전에 확보해야 할 조건 | 실행 중·후에 확인할 사항 |
 |---|---|---|
 | 일반 생성 | 지원 입력 형식, 확정 모델·effort, 모델별 예방 압축 정책과 agent 식별 | backend input/output usage 기록, 미확보는 unknown, 전달·취소 분류 |

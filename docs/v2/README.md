@@ -2,14 +2,14 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-28, v0.6.0 출시)
+## 1. 현재 상태 (2026-09-28, v0.6.1 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.6.0** (태그 `v0.6.0` → `28d14b8`). native Workflow 재개, Office 세 형식과 파일 대상 `/code-review` 검증, Worktree 이동·중간 handback 대기 수정을 출하했다. 같은 출시 bytes의 필수 보고서 40개, 전체 일반/race·분석·독립 표본·공개 업데이트·되돌림·실제 설치를 확인했다. Bundle C의 실제 backend 예약은 실패 포함 1201회, 공유 원장 누적 2077회다. [변경·출하 검사와 미실행 범위](RELEASE-v0.6.0.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.0). 설정 계약은 [v0.5.4](RELEASE-v0.5.4.md), phase 호환 범위는 [v0.5.5](RELEASE-v0.5.5.md), 권한 분류·media 보완은 [v0.5.6](RELEASE-v0.5.6.md)에 보존한다 |
+| 최신 출시 | **v0.6.1** (태그 `v0.6.1` → `900b99e`). 동일 Workflow plan 자식의 동시 첫 요청이 검증된 선택을 재사용하도록 고쳤다. 일반/race 각각 22패키지와 같은 출시 bytes의 필수 보고서 20개, 독립 표본·공개 업데이트·되돌림·실제 설치를 확인했다. [변경·출하 검사와 남은 경계](RELEASE-v0.6.1.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.1). Bundle C와 전체 목록은 [v0.6.0](RELEASE-v0.6.0.md), 설정 계약은 [v0.5.4](RELEASE-v0.5.4.md), phase 호환 범위는 [v0.5.5](RELEASE-v0.5.5.md), 권한 분류·media 보완은 [v0.5.6](RELEASE-v0.5.6.md)에 보존한다 |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | Claude Code **2.1.283**, Codex CLI **0.157.1**, Windows, Go 1.27.1, PowerShell 7.6.6. v0.6.0 출시 bytes로 SDK/TUI 위임·중첩·명시적 재개, forked Skill, background/peer/respawn, 설정·S·UUID/fork/clear, Worktree 이동, 압축·취소·복구·media·phase, 공개 검색과 Bundle C를 확인했다. 실제 실행과 개별 NOT_RUN은 [릴리스 기록](RELEASE-v0.6.0.md)에서 구분한다. Codex 0.157.1의 CLI·plugin API·exec 요청 구조는 기존 무과금 재측정 기준과 같다 |
+| 측정된 클라이언트 | Claude Code **2.1.283**, Codex CLI **0.157.1**, Windows, Go 1.27.1, PowerShell 7.6.6. v0.6.1 출시 bytes로 Workflow·Agent·Skill 재개와 중첩, background/peer/respawn, 설정·S·UUID/fork/clear, TUI 압축·취소·복구를 다시 확인했다. [v0.6.1 실행 결과](RELEASE-v0.6.1.md), Worktree·media·phase·검색·Bundle C와 식별자별 NOT_RUN은 [v0.6.0 기록](RELEASE-v0.6.0.md)에서 구분한다. Codex 0.157.1의 CLI·plugin API·exec 요청 구조는 기존 무과금 재측정 기준과 같다 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build와 PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는

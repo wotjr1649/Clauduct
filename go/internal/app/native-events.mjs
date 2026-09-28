@@ -157,11 +157,11 @@ export const register = on => {
       const result=await stream.result;
       if (!decision?.hold) return result;
       if (result.toolUses.length || result.answer!=='' || result.stopReason!=='end_turn') throw new Error('CLAUDUCT_PARENT_WAIT_CONTROL_INVALID');
-      if (state.mode==='sdk' || handback) {
+      if (state.mode==='sdk' || handback && !decision.wait) {
         // SDK retries an empty assistant block and rejects a dropped response
         // after a notification. Return an attributed status, never a child result
-        // or a claim of completion. Hand-back children also need a terminal
-        // answer on the TUI surface: dropping it makes native retry that step.
+        // or a claim of completion. A TUI hand-back needs a terminal answer only
+        // when its children are done; an interim report keeps the native wait.
         const answer=handback
           ? '[Clauduct] Subagent report handed back; no additional response.'
           : !agent && e.index===0

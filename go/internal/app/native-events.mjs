@@ -29,7 +29,7 @@ async function observe($, progress, p, signal) {
 export const register = on => {
   const state = {mode:'unclassified',peerMode:'unclassified'};
   const turns = new Map();
-  let turnSequence=0,seeding;
+  let turnSequence=0;
   const cancelledTurns = new Set();
   const progress = new Map();
   let origin='unclassified';
@@ -68,14 +68,6 @@ export const register = on => {
   on('turn.step', async function* ($, e, next) {
     const agent=e.agentId?ident(e.agentId):'', turn=ident(e.turnId);
     if (!turn || (e.agentId && !agent)) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
-    // The plugin API loads a module again on a reload, an enable or a worker respawn. A
-    // counter restarted at 1 would lose to the receipts already published, since the
-    // gateway takes the highest number as current, so the counter starts at the clock.
-    // ponytail: a clock stepped back past the previous instance's count still loses.
-    await (seeding??=$.clock.now().then(now => {
-      if (!Number.isSafeInteger(now) || now<0) throw new Error('CLAUDUCT_NATIVE_CLOCK_INVALID');
-      turnSequence=Math.max(turnSequence,now);
-    }).catch(error => {seeding=undefined;throw error;}));
     let p=progress.get(agent);
     if (!p || p.turn!==turn) {
       if (progress.size>=4096 && !p) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
@@ -89,8 +81,23 @@ export const register = on => {
     if (current?.turn!==turn) {
       if (turns.size>=4096 && !current) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
       const name=agent?'child-'+agent:'root';
-      const file=root+'/active/'+name+'/'+(++turnSequence)+'-'+turn;
+      const directory=root+'/active/'+name, prior=current?.publication;
       const publication=(async () => {
+        // Reload/respawn loses module state, but not the journal. Include unfinished
+        // bodies too: reusing their number could publish a partial earlier attempt.
+        // Serialize one agent's publications; different agents keep running in parallel.
+        if (prior) await prior;
+        const entries=await $.fs.exists(directory)?await $.fs.list(directory):[];
+        if (entries.length>16384) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+        for (const entry of entries) {
+          if (!entry.name.endsWith('.json')) continue;
+          const match=/^([1-9][0-9]*)-([A-Za-z0-9_-]{1,200})\.json$/.exec(entry.name);
+          const number=match?Number(match[1]):NaN;
+          if (entry.kind!=='file' || !Number.isSafeInteger(number)) throw new Error('CLAUDUCT_NATIVE_SEQUENCE_INVALID');
+          turnSequence=Math.max(turnSequence,number);
+        }
+        if (turnSequence>=Number.MAX_SAFE_INTEGER) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+        const file=directory+'/'+(++turnSequence)+'-'+turn;
         const receipt={session:await session($),agent,turn};
         if (agent) {
           receipt.model=__CLAUDUCT_MODELS__.includes(e.model)?e.model:'unlisted';

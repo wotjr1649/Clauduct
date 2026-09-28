@@ -79,34 +79,34 @@ func newRegistry(physical uint64) *registry {
 // admit waits before reading a body. wait can also end on a native turn receipt;
 // the admitted request's parent stays separate so ending that wait cannot cancel
 // the execution that just acquired its reservation.
-func (r *registry) admit(parent, wait context.Context, bytes uint64, class int) (id uint64, ctx context.Context, release func(), err error) {
+func (r *registry) admit(parent, wait context.Context, bytes uint64, class int) (ctx context.Context, release func(), err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.closed {
-		return 0, nil, nil, errGatewayClosed
+		return nil, nil, errGatewayClosed
 	}
 	if err := wait.Err(); err != nil {
-		return 0, nil, nil, err
+		return nil, nil, err
 	}
 	if err := parent.Err(); err != nil {
-		return 0, nil, nil, err
+		return nil, nil, err
 	}
 	p := &r.pools[class]
 	if bytes > p.budget {
-		return 0, nil, nil, errMemoryBudget
+		return nil, nil, errMemoryBudget
 	}
 	if len(p.queue) == 0 {
 		room, err := r.room(bytes, class)
 		if err != nil {
-			return 0, nil, nil, err
+			return nil, nil, err
 		}
 		if room {
-			id, ctx, release := r.reserve(parent, bytes, class)
-			return id, ctx, release, nil
+			ctx, release := r.reserve(parent, bytes, class)
+			return ctx, release, nil
 		}
 	}
 	if len(p.queue) >= p.maxQueued {
-		return 0, nil, nil, errMemoryQueue
+		return nil, nil, errMemoryQueue
 	}
 	waiter := &admissionWaiter{entered: time.Now()}
 	p.queue = append(p.queue, waiter)
@@ -133,17 +133,17 @@ func (r *registry) admit(parent, wait context.Context, bytes uint64, class int) 
 		}
 		r.mu.Lock()
 		if r.closed {
-			return 0, nil, nil, errGatewayClosed
+			return nil, nil, errGatewayClosed
 		}
 		if err := wait.Err(); err != nil {
-			return 0, nil, nil, err
+			return nil, nil, err
 		}
 		if err := parent.Err(); err != nil {
-			return 0, nil, nil, err
+			return nil, nil, err
 		}
 		if !time.Now().Before(deadline) {
 			p.timedOut++
-			return 0, nil, nil, errMemoryTimeout
+			return nil, nil, errMemoryTimeout
 		}
 		// FIFO prevents a large request being starved by smaller newcomers.
 		if p.queue[0] != waiter {
@@ -151,11 +151,11 @@ func (r *registry) admit(parent, wait context.Context, bytes uint64, class int) 
 		}
 		room, err := r.room(bytes, class)
 		if err != nil {
-			return 0, nil, nil, err
+			return nil, nil, err
 		}
 		if room {
-			id, ctx, release := r.reserve(parent, bytes, class)
-			return id, ctx, release, nil
+			ctx, release := r.reserve(parent, bytes, class)
+			return ctx, release, nil
 		}
 	}
 }
@@ -179,9 +179,9 @@ func (r *registry) room(bytes uint64, class int) (bool, error) {
 
 // Called with mu held. Only release gives memory back: cancelling a context may
 // still leave its handler decoding or cleaning up. release is idempotent.
-func (r *registry) reserve(parent context.Context, bytes uint64, class int) (id uint64, ctx context.Context, release func()) {
+func (r *registry) reserve(parent context.Context, bytes uint64, class int) (ctx context.Context, release func()) {
 	r.next++
-	id = r.next
+	id := r.next
 	ctx, cancel := context.WithCancelCause(parent)
 	r.active[id] = cancel
 	r.pools[class].reserved += bytes
@@ -202,29 +202,11 @@ func (r *registry) reserve(parent context.Context, bytes uint64, class int) (id 
 			cancel(context.Canceled)
 		})
 	}
-	return id, ctx, release
+	return ctx, release
 }
 
 // Called with mu held. Waiters own their timers; no background poll survives them.
 func (r *registry) notify() { close(r.changed); r.changed = make(chan struct{}) }
-
-// cancel stops one request. It reports whether that request was still registered, which is
-// how a caller tells "cancelled it" from "it had already finished" — those are different
-// answers and collapsing them hides late-arriving cancellations.
-func (r *registry) cancel(id uint64, cause error) bool {
-	r.mu.Lock()
-	cancel, ok := r.active[id]
-	if ok {
-		delete(r.active, id)
-	}
-	r.mu.Unlock()
-
-	if !ok {
-		return false
-	}
-	cancel(cause)
-	return true
-}
 
 // closeAll refuses further admissions and cancels everything currently in flight.
 //

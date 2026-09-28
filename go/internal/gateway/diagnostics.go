@@ -621,11 +621,9 @@ func (g *ring) count(r RequestRecord) {
 		observed.Compactions++
 		g.contextUsage[r.Model] = observed
 	}
-	// The backend refused for length on a request whose estimate could not see part of its
-	// own input. BACKEND_CONTEXT_COMPACTION_REQUIRED is the control this build sets when it
-	// turns that refusal into a compaction; pairing it with an opaque estimate is what makes
-	// the case visible instead of derivable.
-	if r.Control == "BACKEND_CONTEXT_COMPACTION_REQUIRED" && r.ContextEstimate != nil && r.ContextEstimate.Media {
+	// Count backend length refusals both before and after compaction. The latter stops
+	// instead of requesting another compaction, but its unestimated media still matters.
+	if (r.Control == "BACKEND_CONTEXT_COMPACTION_REQUIRED" || r.Control == "BACKEND_CONTEXT_COMPACTION_INSUFFICIENT") && r.ContextEstimate != nil && r.ContextEstimate.Media {
 		observed := g.contextUsage[r.Model]
 		observed.MediaOverflows++
 		g.contextUsage[r.Model] = observed

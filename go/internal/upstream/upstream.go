@@ -1,9 +1,4 @@
-// Package upstream is where a backend request is executed.
-//
-// WP03 ships the interface and a fixture that replays canned bytes. There is no network
-// client here and no credential reading: a real transport is WP05, and until it exists
-// this module cannot reach a provider even by mistake. That is a structural claim, not an
-// observation about a particular run.
+// Package upstream executes requests on the configured backend.
 package upstream
 
 import (
@@ -11,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"sync/atomic"
 )
 
 // ErrNoTransport means nothing is configured to execute the request. It is returned rather
@@ -75,120 +69,6 @@ type Searcher interface {
 // cancelled request into one that runs to completion unobserved.
 type Transport interface {
 	Execute(ctx context.Context, call Call) (*Response, error)
-}
-
-// Fixture replays a fixed byte sequence. It exists so the whole pipeline can be driven end
-// to end without a network, which is what makes the protocol tests cheap enough to run on
-// every change.
-type Fixture struct {
-	// SSE is the response body to replay.
-	SSE string
-	// Err, when set, is returned instead of a body.
-	Err error
-	// ChunkSize splits the body across reads. Zero delivers it whole. Setting it to 1
-	// drives the parser one byte at a time, which is how the framing tests establish that
-	// chunk boundaries carry no meaning.
-	ChunkSize int
-	// SearchJSON is what Search replays. Empty makes a search request an error, which is
-	// the right default for a fixture that was not set up to answer one.
-	SearchJSON string
-	// SearchErr, when set, is returned instead of SearchJSON.
-	SearchErr error
-	// ReadErr is returned in place of io.EOF once the body has been delivered. A
-	// connection that drops after a complete-looking body is still a failed transfer, and
-	// without a way to produce one nothing checks that the difference is noticed.
-	ReadErr error
-	// Header is what the replayed response carries alongside its body. A real response has
-	// headers and the rate limit reading is taken from them, so a fixture that cannot have
-	// any could only test that path by going around it.
-	Header http.Header
-
-	calls      atomic.Int64
-	searches   atomic.Int64
-	lastSearch atomic.Value
-	lastBody   atomic.Value
-}
-
-// Execute returns the canned body. It records the request so a test can assert what the
-// bridge actually asked for rather than what it meant to ask for.
-func (f *Fixture) Execute(ctx context.Context, call Call) (*Response, error) {
-	f.calls.Add(1)
-	f.lastBody.Store(string(call.Body))
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if f.Err != nil {
-		return nil, f.Err
-	}
-	return &Response{
-		Body:   io.NopCloser(&replay{source: f.SSE, size: f.ChunkSize, end: f.ReadErr}),
-		Header: f.Header,
-	}, nil
-}
-
-// Search replays a canned search answer and records the request.
-func (f *Fixture) Search(ctx context.Context, body []byte) ([]byte, error) {
-	f.searches.Add(1)
-	f.lastSearch.Store(string(body))
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if f.SearchErr != nil {
-		return nil, f.SearchErr
-	}
-	if f.SearchJSON == "" {
-		return nil, ErrSearchUnavailable
-	}
-	return []byte(f.SearchJSON), nil
-}
-
-// Searches reports how many search round trips this fixture answered.
-func (f *Fixture) Searches() int64 { return f.searches.Load() }
-
-// LastSearch reports the most recent search request body.
-func (f *Fixture) LastSearch() string {
-	if value, ok := f.lastSearch.Load().(string); ok {
-		return value
-	}
-	return ""
-}
-
-// Calls reports how many times this fixture was asked to execute. A budget claim rests on
-// a count, so the count is kept where the test can read it.
-func (f *Fixture) Calls() int64 { return f.calls.Load() }
-
-// LastRequest reports the most recent request body.
-func (f *Fixture) LastRequest() string {
-	if value, ok := f.lastBody.Load().(string); ok {
-		return value
-	}
-	return ""
-}
-
-// replay hands out the body, optionally a fixed number of bytes at a time, and ends with
-// io.EOF or with a chosen failure.
-type replay struct {
-	source string
-	size   int
-	end    error
-	offset int
-}
-
-func (r *replay) Read(p []byte) (int, error) {
-	if r.offset >= len(r.source) {
-		if r.end != nil {
-			return 0, r.end
-		}
-		return 0, io.EOF
-	}
-	limit := len(r.source)
-	if r.size > 0 && r.offset+r.size < limit {
-		limit = r.offset + r.size
-	}
-	n := copy(p, r.source[r.offset:limit])
-	r.offset += n
-	return n, nil
 }
 
 // None is a transport that refuses. It is the default so that a build with no transport

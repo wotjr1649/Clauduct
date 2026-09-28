@@ -160,6 +160,7 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 		return receipt, false, errDelegationUnverified
 	}
 	latest, stem, turn := 0, "", ""
+	ambiguous := false
 	for _, entry := range entries {
 		file, ok := strings.CutSuffix(entry.Name(), ".json")
 		if !ok {
@@ -172,7 +173,13 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 		}
 		if sequence > latest {
 			latest, stem, turn = sequence, file, identity
+			ambiguous = false
+		} else if sequence == latest {
+			ambiguous = true
 		}
+	}
+	if ambiguous {
+		return receipt, false, errDelegationUnverified
 	}
 	if stem == "" {
 		return receipt, false, nil
@@ -260,44 +267,6 @@ func (g *Gateway) nativeEventReport() NativeEventReport {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, RetiredTurns: retired}
-}
-
-// Bind the current native turn before inference, not by time proximity. A
-// resumed agent's previous end receipt cannot terminate this new execution.
-// readActiveTurn answers everything about the receipt that can refuse a request, and
-// changes nothing. It is separate from applying it because the handler runs beginResult in
-// between, and beginResult is destructive: it clears NativeTurn, NativeEndObserved and
-// EndReason for an awaiting_children parent and drops the body of an awaiting_native_stop
-// child. A refusal after that point left the request unrun and the evidence gone, and
-// gone for good -- continuation requires exactly the fields it wiped, and
-// reconcileNativeResults only looks at entries that still have a NativeTurn.
-//
-// The one check that cannot move is the turn comparison below, since clearing the old turn
-// is what beginResult is for.
-func (g *Gateway) readActiveTurn(session, id string) (nativeTurnReceipt, bool, bool) {
-	var receipt nativeTurnReceipt
-	if g.delegations == nil || id == "" || !correlationShape.MatchString(id) {
-		return receipt, false, true
-	}
-	receipt, found, err := g.readCurrentNativeTurn(id)
-	if err != nil {
-		return receipt, false, false
-	}
-	if !found {
-		return receipt, false, g.nativeEvents.directory == ""
-	}
-	if !validActiveReceipt(receipt, session, id) {
-		return receipt, false, false
-	}
-	return receipt, true, true
-}
-
-func (g *Gateway) bindNativeTurn(session, id string) bool {
-	receipt, present, ok := g.readActiveTurn(session, id)
-	if !ok || !present {
-		return ok
-	}
-	return g.applyNativeTurn(id, receipt)
 }
 
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {

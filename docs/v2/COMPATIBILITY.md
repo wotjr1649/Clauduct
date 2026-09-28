@@ -26,7 +26,8 @@ Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사�
 바인딩을 판정한다. 독립 `auxiliary` 요청은 현재 root turn 안에서만 한 번 실행하고, 다음 turn의 같은
 요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴
 세션이 요청 16,384개에서 멈추지 않는다. 남는 한도는 agent마다 마지막 turn의 기록과 turn 정보 없는
-기록(`--bare`)의 합이다. native 모듈이 다시 등록돼도 시계가 크게 되돌아가지 않는 한 새 게시의 순번이 이전 게시보다 크다.
+기록(`--bare`)의 합이다. 당시 모듈 재등록 순서는 시계 기반이었다. v0.5.5 재감사에서 시계가 증가해도
+이전 누적 순번보다 작으면 과거 turn을 선택하는 경계를 재현했고, v0.5.6은 기존 게시 순번을 이어 쓰도록 고쳤다.
 후보 전체의 실제 backend TUI(생성·압축·취소·복구·종료)는 2.1.280에서 PASS했다.
 [TUI 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-tui-20260923/README.md)
 [재실행 방지 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v032-replay-ledger-20260923/README.md)
@@ -686,7 +687,8 @@ native 버전에서의 관찰이며, Anthropic 분류기와의 비교는 하지 
 
 native의 GPT block 요청은 1단계 `max_tokens=2112`·stop `</block>`, 2단계 `max_tokens=10240`·stop 없음이다.
 thinking 필드와 classifier 전용 beta가 없고, 일반 Sonnet 환경값만 받아 effort 없이 요청한다.
-기존 독립 auxiliary 경로에서 이 요청 형식을 식별해 **`gpt-6-luna/high`**로 보낸다.
+v0.5.2에서는 기존 독립 auxiliary 경로에서 이 요청 형식을 식별해 **`gpt-6-luna/high`**로 보냈다.
+v0.5.6의 분류 모델 보완과 별도 표본은 아래 v0.5.6 절을 따른다.
 [classifier 선택](../../go/internal/gateway/classifier.go)은 요청/실제 모델과 `native-auto-mode` 출처를
 기록하며 정책·transcript를 다시 쓰지 않는다. count_tokens도 같은 선택을 따른다.
 형식을 확인할 수 없는 알려진 classifier 요청과 알 수 없는 모델·effort는 전송 전에 거부한다.
@@ -774,6 +776,28 @@ native 지침·B 규칙·권한은 유지한다. 모든 모델의 행동이나 �
 실패 0·완료 보고서·최종 응답·정상 종료·메모리 해제 PASS다. 같은 bytes의 phase UUID 재개,
 이미지/PDF 및 구버전 거부 뒤 복귀도 확인했다. [출하 기록](RELEASE-v0.5.5.md)이 신원·설치와
 분석 80→0·PowerShell 7 지원 범위를 소유한다. 모든 모델·임의 프롬프트를 보증한다는 뜻은 아니다.
+
+### v0.5.6 — C 전 품질 보완
+
+native publication 번호를 시계에서 분리하고 기존 journal의 마지막 번호를 이어 쓴다.
+reload·worker 재시작 후 과거 턴을 선택하던 결함을 고쳤으며, 같은 agent의 동시 게시를 직렬화한다.
+최신 번호가 충돌하거나 게시가 불완전하면 실행 전에 거부한다.
+
+auto 권한 분류 전용 경로는 `gpt-5.6-terra/high`다. v0.5.5의 Luna/high에서 승인 PR/Release의
+오차단을 재현한 뒤 모델·effort를 비교했다. native 지침·두 추가 규칙을 유지한 Terra/high는
+원래 70개 표본에서 위험 허용 0/30·정상 허용 30/30, 동결 후 독립 표본에서 위험 차단 8/8·정상
+허용 8/8을 기록했다. 이 경로는 일반 Sonnet 매핑이나 사용자 모델 기본값을 바꾸지 않는다.
+과거 Luna/high의 성공·오차단 기록은 위에 보존한다. 모든 가능한 작업에 대한 안전 보증은 아니다.
+
+media 길이 거부 진단은 압축을 새로 요청한 경우와 압축 직후에도 길이를 초과해 중단한 경우를
+모두 집계한다. 압축 후 이미지를 넣은 실제 backend 계속 실행과 새 usage 기준도 확인했다.
+추가 사전 계수 없이 native media 범위를 유지하므로 이미지/PDF의 길이 초과를 모두 사전에
+예측하지는 못한다. 압축 직후에도 길이가 초과되면 `CONTEXT_COMPACTION_INSUFFICIENT`로 중단하고
+같은 실행을 자동 재시도하지 않는다. 이는 #50에서 합의한 지원 범위다.
+
+제품 전용 미사용 선언·테스트 전용 조회 래퍼를 제거하고 공용 테스트 전송 도구를 제품 패키지에서
+분리했다. 모든 PowerShell 실행 진입점은 7을 요구하며, 과거 스크립트의 미실행 이력을 소급하여
+통과로 바꾸지 않는다. 출하 인수 결과는 [릴리스 기록](RELEASE-v0.5.6.md)이 소유한다.
 
 ## 4. 제3자 구현이라는 사실
 

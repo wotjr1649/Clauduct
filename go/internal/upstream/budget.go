@@ -200,25 +200,6 @@ func (l *Ledger) Spent() (attempts, inferences, refused int) {
 	return l.attempts, l.inferences, l.refused
 }
 
-// Remaining reports how many attempts are left. It answers through the same condition
-// Reserve uses, so a ledger that will refuse everything never reports attempts to spend.
-func (l *Ledger) Remaining() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if !l.budget.authorises() {
-		return 0
-	}
-	if l.budget.Unrestricted {
-		// Not a number. Reporting a large one would invite a caller to treat it as a
-		// ceiling, and there is not one.
-		return -1
-	}
-	if l.budget.Limit <= l.attempts {
-		return 0
-	}
-	return l.budget.Limit - l.attempts
-}
-
 func (l *Ledger) String() string {
 	attempts, inferences, refused := l.Spent()
 	if l.budget.Unrestricted {

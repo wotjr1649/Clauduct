@@ -29,7 +29,7 @@ func (g *Gateway) admitRequest(w http.ResponseWriter, r *http.Request, limit int
 		wait, finish = g.bindNativeCancellation(wait, r, recordOf(w), true)
 		defer finish()
 	}
-	_, ctx, release, err := g.requests.admit(r.Context(), wait, reserved, class)
+	ctx, release, err := g.requests.admit(r.Context(), wait, reserved, class)
 	if err == nil {
 		return ctx, release, true
 	}

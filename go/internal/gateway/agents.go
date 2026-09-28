@@ -146,18 +146,6 @@ func (a *agentRegistry) bindingOf(id string) agentBinding {
 	return agentBinding{}
 }
 
-// roleOf reports the role a registration was started as.
-func (a *agentRegistry) roleOf(id string) (string, bool) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	state, known := a.byID[id]
-	if !known {
-		return "", false
-	}
-	state.lastUsed = time.Now()
-	return state.role, true
-}
-
 // begin claims a registration for the duration of one request.
 //
 // The count is what makes "never sweep something with work in progress" true rather than

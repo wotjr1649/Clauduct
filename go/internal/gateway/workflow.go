@@ -26,6 +26,7 @@ type workflowOrigin struct {
 	adapterBytes  int
 	recoveryOf    string
 	recoveryInput json.RawMessage
+	nativeResume  bool
 	rejected      bool
 	plan          *workflowPlan
 	source        bool
@@ -149,7 +150,8 @@ func (d *delegations) linkWorkflow(link workflowLink) error {
 		d.workflows = map[delegationKey]workflowRun{}
 	}
 	key := delegationKey{link.Session, link.Run}
-	if _, exists := d.workflows[key]; exists || len(d.workflows) >= 128 {
+	previous, exists := d.workflows[key]
+	if exists && (!origin.nativeResume || origin.recoveryOf != link.Run) || !exists && (origin.nativeResume || len(d.workflows) >= 128) {
 		return errDelegationUnverified
 	}
 	root, err := d.openProjects(".")
@@ -171,7 +173,21 @@ func (d *delegations) linkWorkflow(link workflowLink) error {
 	if hex.EncodeToString(digest[:]) != origin.digest {
 		return errDelegationUnverified
 	}
-	d.workflows[key] = workflowRun{workflowLink: link, origin: origin, directory: relDir, script: relScript}
+	run := workflowRun{workflowLink: link, origin: origin, directory: relDir, script: relScript}
+	if exists {
+		// Native appends new children to the same run. Keep the earlier children's
+		// proven choices/results; their original selection receipts remain intact.
+		run.observed = previous.observed
+		// The previous tool call still exists in native history. Retain its bounded
+		// origin so its own adapter can still be removed from the next request.
+		d.workflowCalls[delegationKey{link.Session, previous.Call}] = previous.origin
+		for id := range run.observed {
+			choice := d.resolved[id]
+			choice.call = link.Call
+			d.resolved[id] = choice
+		}
+	}
+	d.workflows[key] = run
 	delete(d.workflowCalls, delegationKey{link.Session, link.Call})
 	return nil
 }
@@ -270,6 +286,13 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		}
 		digest := sha256.Sum256(text)
 		if hex.EncodeToString(digest[:]) != run.origin.digest {
+			// A native replay replaces the script before its PostToolUse link arrives.
+			// Wait only for an already-prepared replay; never accept the changed bytes.
+			for key, pending := range d.workflowCalls {
+				if key.session == run.Session && pending.nativeResume && pending.recoveryOf == run.Run {
+					return bridge.Route{}, false, nil
+				}
+			}
 			return bridge.Route{}, false, errDelegationUnverified
 		}
 		metaRaw, err := workflowRead(root, filepath.Join(run.directory, "agent-"+id+".meta.json"), 16384)

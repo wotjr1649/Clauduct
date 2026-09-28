@@ -155,5 +155,5 @@ Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 �
 ## 코드에 유지하는 정책
 
 모델의 지원 기능, context 한도, 입력 검증과 처리 상한, native hook 연결 및 보안 규칙은 코드에서 관리한다.
-추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 Luna/high 선택도
+추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 Terra/high 선택도
 개인화 설정으로 변경하지 않는다.

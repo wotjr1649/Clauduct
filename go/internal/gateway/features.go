@@ -37,6 +37,7 @@ var featureRequirements = []FeatureEvidence{
 	{Name: "parent_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_wait_control"}},
 	{Name: "empty_reply_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_wait_control"}},
 	{Name: "workflow_resume", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_plan_resume"}},
+	{Name: "workflow_native_resume", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_native_resume"}},
 	{Name: "workflow_restore", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_checkpoint"}},
 }
 
@@ -104,6 +105,8 @@ func featureApplies(name string, r RequestRecord) bool {
 		return r.Kind == "generation" && slices.Contains(r.VerifiedChecks, "workflow_recovery_request")
 	case "workflow_resume":
 		return r.Kind == "generation" && slices.Contains(r.VerifiedChecks, "workflow_plan_resume")
+	case "workflow_native_resume":
+		return r.Kind == "generation" && slices.Contains(r.VerifiedChecks, "workflow_native_resume")
 	case "workflow_restore":
 		return r.Kind == "generation" && slices.Contains(r.VerifiedChecks, "workflow_checkpoint")
 	case "parent_wait":

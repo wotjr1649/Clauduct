@@ -704,6 +704,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 					if origin.plan != nil {
 						recordOf(w).checked("workflow_plan_resume")
 					}
+					if origin.nativeResume {
+						recordOf(w).checked("workflow_native_resume")
+					}
 				}
 			}
 			return adapted, err

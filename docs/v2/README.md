@@ -48,8 +48,9 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
   오차단을 재검사했다. 초기 실패 기록과 버전별 관측 범위는 COMPATIBILITY.md 3절에 보존한다.
 - **media 용량을 모두 사전에 예측하지는 못한다.** 추가 사전 계수 없이 native 사용 범위를 유지하며,
   압축 직후에도 backend가 길이를 거부하면 자동 재시도 없이 중단한다. 진단 누락은 v0.5.6에서 고쳤다.
-- **Workflow의 원 script 재실행 resume**은 하지 않는다. 저널 검증과 결과 회수, 독립 계획의 미실행 단계
-  재개만 한다(COMPATIBILITY.md 3절).
+- **Workflow 재개는 exactly-once를 보장하지 않는다.** v0.6.0 작업에서 검증된 원 run에 source를 함께
+  전달하는 명시적 native 재개를 구현했다. 실패·중단·prompt 변경 지점 이후 효과가 반복될 수 있으며,
+  결과 회수와 독립 계획의 미실행 단계 재개는 기존 의미를 유지한다(COMPATIBILITY.md 3절).
 - **WebSearch**는 native ToolSearch→WebSearch 시험이 추가됐다. 실제 검색 backend와 native의 조합 전체를 모든 역할에서 실측한 것은 아니다.
 - **`POST /v1/messages/count_tokens`**는 2026-09-18 결정에 따라 검증한 로컬 텍스트 계수와 구독 backend의 출력 없는 정확 계수를 지원한다. 미지원 입력은 명시적으로 거부한다.
 - **비Windows 대상은 없다.** `internal/platform`의 구현은 Windows 전용이다.

@@ -468,7 +468,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
-| auto 권한 모드의 분류기 판정 | v0.5.2는 native 2.1.283의 block 요청을 Luna/high로 분리하고 자식 `--settings`에 두 hard_deny 규칙을 추가한다. 원래·독립 표본과 민감 사례 반복, 실제 native TUI의 허용·거부를 통과했다. 알려진 classifier의 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 순수 태그 출하·실제 설치를 확인했으며 아래 v0.5.2 절에 범위와 오차단을 기록했다. v0.5.1까지는 판정이 필요한 행동을 거부했다 |
+| auto 권한 모드의 분류기 판정 | v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는

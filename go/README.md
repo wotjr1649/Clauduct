@@ -117,6 +117,11 @@ interactive TUI 검사는 실제 pseudo console에서 사람이 입력해야 하
 `timeout_s`, `after_ms`)대로 화면 문구를 기다려 입력한다. 출하 자산이 아니다. 대기가 시간 초과되면 보고 있던
 화면의 끝을 stderr에 출력한다 — 단계는 클라이언트 화면에 달려 있어 native가 바뀌면 여기서 먼저 깨진다.
 
+`wait_file`을 지정하면 화면 조건과 함께 해당 절대경로 파일의 정확한 내용 `ready\n`을 기다린다.
+파일은 실행 전에 없어야 하며, 외부 검증기가 실제 작업 완료를 확인한 뒤 생성한다. 이전 실행의 신호,
+부분 쓰기, 다른 내용은 완료로 취급하지 않는다. 같은 `timeout_s`가 두 조건에 적용된다.
+파일 신호는 검증기의 동기화 수단이며 제품이나 native의 완료 판정을 대신하지 않는다.
+
 ```powershell
 go build -o ..\.tmp\ptydrive.exe ./cmd/ptydrive
 ..\.tmp\ptydrive.exe -dir <cwd> -script <steps.json> -log raw.log -text screen.txt -env K=V -- <exe> <args...>

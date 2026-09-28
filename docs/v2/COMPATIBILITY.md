@@ -465,8 +465,25 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | Workflow remote·자식의 별도 Workflow·근거 없는 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 같은 run의 검증된 명시적 source 재개는 위 native 규칙을 따르며, 결과 회수·독립 계획은 별도 계약. 다른 세션과 기록 없는 강제 종료의 재개는 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
-| PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
+| PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
+
+### Office 로컬 도구 인수 — v0.6.0
+
+DOCX·XLSX·PPTX는 사용 환경에 준비한 로컬 편집 도구를 native `Bash` 등으로 호출해 읽고 편집한다.
+제품에 새 Office API나 라이브러리 의존성을 추가하지 않았다. 2026-09-28의 Python 3.14.6과
+python-docx 1.2.0·openpyxl 3.1.5·python-pptx 1.0.2로 실제 Codex backend를 거쳐 다음을 확인했다.
+
+| 형식 | 대표 표본·별도 독립 표본 | 파일 자체 확인 |
+|---|---|---|
+| DOCX | 문단 run·표 cell의 텍스트 한 곳 편집 | ZIP/XML·관계 유효성, 다시 연 내용·bold, 다른 문단과 part 보존 |
+| XLSX | 서로 다른 셀의 문자열 편집 | ZIP/XML·관계 유효성, 셀 값·bold, 무관한 셀·수식 보존 |
+| PPTX | textbox·다른 slide의 table cell 편집 | ZIP/XML·관계 유효성, 텍스트·bold, 무관한 slide와 part 보존 |
+
+native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대조했다. 독립 표본의 첫 XLSX 실행은
+모델이 허용 명령을 `eval`로 감싸 native가 거부했고, 명령 안내를 명확히 한 재실행은 세 형식 모두
+통과했다. 이 실패를 브리지 오류나 성공으로 집계하지 않았다. 매크로·암호 문서·복잡한 Office 객체,
+모든 서식·렌더링 보존까지 검증한 것은 아니다. 편집 도구가 필요하며 제품이 자동 설치하지 않는다.
 | 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin 12종은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다. 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |

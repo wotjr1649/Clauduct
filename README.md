@@ -62,7 +62,7 @@ Windows PowerShell 5.1(`powershell`)은 지원하지 않습니다. 검증 환경
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-pwsh -NoProfile -File .\scripts\install.ps1 -Tag v0.5.6       # 태그 고정
+pwsh -NoProfile -File .\scripts\install.ps1 -Tag v0.6.0       # 태그 고정
 pwsh -NoProfile -File .\scripts\install.ps1 -FromPath .\dist  # 직접 빌드한 것으로 (clauduct.exe + SHA256SUMS 필요)
 pwsh -NoProfile -File .\scripts\install.ps1 -NoPathUpdate     # PATH는 직접 관리
 pwsh -NoProfile -File .\scripts\install.ps1 -SkipPreflight    # Claude Code·Codex CLI를 나중에 설치할 때

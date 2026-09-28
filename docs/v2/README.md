@@ -2,14 +2,14 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-09-28, v0.5.6 출시)
+## 1. 현재 상태 (2026-09-28, v0.6.0 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.5.6** (태그 `v0.5.6` → `57f22f6`). native 재등록 순번·B 정상 작업 오차단·media 진단 누락을 보완하고 미사용 선언과 제품 패키지의 테스트 전용 코드를 정리했다. 전체 일반/race·분석·독립 표본·출시 bytes·공개 업데이트·되돌림·실제 설치를 확인했다. 이 릴리스의 실제 backend 예약은 실패 포함 296회, 공유 원장 누적 876회다. [변경·출하 검사](RELEASE-v0.5.6.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.5.6). 설정 계약은 [v0.5.4](RELEASE-v0.5.4.md), phase 호환 범위는 [v0.5.5](RELEASE-v0.5.5.md), B의 추가 규칙 도입 기록은 [v0.5.2](RELEASE-v0.5.2.md)에 보존한다 |
+| 최신 출시 | **v0.6.0** (태그 `v0.6.0` → `28d14b8`). native Workflow 재개, Office 세 형식과 파일 대상 `/code-review` 검증, Worktree 이동·중간 handback 대기 수정을 출하했다. 같은 출시 bytes의 필수 보고서 40개, 전체 일반/race·분석·독립 표본·공개 업데이트·되돌림·실제 설치를 확인했다. Bundle C의 실제 backend 예약은 실패 포함 1201회, 공유 원장 누적 2077회다. [변경·출하 검사와 미실행 범위](RELEASE-v0.6.0.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.0). 설정 계약은 [v0.5.4](RELEASE-v0.5.4.md), phase 호환 범위는 [v0.5.5](RELEASE-v0.5.5.md), 권한 분류·media 보완은 [v0.5.6](RELEASE-v0.5.6.md)에 보존한다 |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | Claude Code **2.1.283**, Codex CLI **0.157.1**. v0.5.1 출하 바이너리의 실제 backend 위임·내장 역할 env·zip plugin 역할과 실제 TUI의 세션 중 `/cd`를 확인했다. Codex 0.157.1은 과금 없는 재측정에서 CLI·plugin API·exec 요청 구조가 0.157.0과 같았다. v0.5.0 순수 출하 바이너리의 실제 TUI 압축/취소/복구, SDK 위임, 역할 기본값, subagent 안 forked Skill, fork 자식 재개를 확인했다. v0.4.4의 실제 WebSearch 근거와 v0.4.3의 peer/background·idle 근거는 해당 릴리스 기록(2.1.282)에 유지한다. 요청은 HTTP SSE와 기존 본문에 세션 식별을 더했고(#135), Codex 0.157.0의 exec·TUI 요청 구조는 과금 없이 캡처했다. Windows, Go 1.27.1 |
+| 측정된 클라이언트 | Claude Code **2.1.283**, Codex CLI **0.157.1**, Windows, Go 1.27.1, PowerShell 7.6.6. v0.6.0 출시 bytes로 SDK/TUI 위임·중첩·명시적 재개, forked Skill, background/peer/respawn, 설정·S·UUID/fork/clear, Worktree 이동, 압축·취소·복구·media·phase, 공개 검색과 Bundle C를 확인했다. 실제 실행과 개별 NOT_RUN은 [릴리스 기록](RELEASE-v0.6.0.md)에서 구분한다. Codex 0.157.1의 CLI·plugin API·exec 요청 구조는 기존 무과금 재측정 기준과 같다 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build와 PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는
@@ -20,7 +20,8 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 
 v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 같은 총상한 아래에서 검증한다.
 전체 기능 감사와 수정 후 회귀, 순수 태그의 실제 backend 16회, 재현 빌드·설치·공개 업데이트 및
-실제 설치본 확인을 [릴리스 노트](RELEASE-v0.4.4.md)에 기록했다. 전체 로컬 기능의 최종 인수는 아직 완료하지 않았다.
+실제 설치본 확인을 [릴리스 노트](RELEASE-v0.4.4.md)에 기록했다. v0.6.0에서는 최종 바이너리의 필수
+대표·경계 인수를 완료했다. 열거한 모든 native UI·옵션의 개별 실행을 완료했다는 뜻은 아니다.
 
 ## 2. 문서 위치와 책임
 
@@ -48,7 +49,7 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
   오차단을 재검사했다. 초기 실패 기록과 버전별 관측 범위는 COMPATIBILITY.md 3절에 보존한다.
 - **media 용량을 모두 사전에 예측하지는 못한다.** 추가 사전 계수 없이 native 사용 범위를 유지하며,
   압축 직후에도 backend가 길이를 거부하면 자동 재시도 없이 중단한다. 진단 누락은 v0.5.6에서 고쳤다.
-- **Workflow 재개는 exactly-once를 보장하지 않는다.** v0.6.0 작업에서 검증된 원 run에 source를 함께
+- **Workflow 재개는 exactly-once를 보장하지 않는다.** v0.6.0에서 검증된 원 run에 source를 함께
   전달하는 명시적 native 재개를 구현했다. 실패·중단·prompt 변경 지점 이후 효과가 반복될 수 있으며,
   결과 회수와 독립 계획의 미실행 단계 재개는 기존 의미를 유지한다(COMPATIBILITY.md 3절).
 - **WebSearch**는 native ToolSearch→WebSearch 시험이 추가됐다. 실제 검색 backend와 native의 조합 전체를 모든 역할에서 실측한 것은 아니다.

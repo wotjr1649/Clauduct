@@ -223,8 +223,11 @@ func main() {
 			fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
 			break
 		}
-		if !matched && !s.Optional {
+		if !matched && (!s.Optional || screenMatched && s.WaitFile != "") {
 			failed = s.Wait
+			if screenMatched && s.WaitFile != "" {
+				failed = "wait_file"
+			}
 			fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
 			break
 		}

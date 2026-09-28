@@ -291,6 +291,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer response.Body.Close()
+	entry.backendBytes(response.RequestBytes)
 	if g.delegations != nil {
 		g.delegations.observeBackend(r.Header.Get("X-Claude-Code-Agent-Id"), false)
 	}
@@ -703,6 +704,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 					}
 					if origin.plan != nil {
 						recordOf(w).checked("workflow_plan_resume")
+					}
+					if origin.nativeResume {
+						recordOf(w).checked("workflow_native_resume")
 					}
 				}
 			}

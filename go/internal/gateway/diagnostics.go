@@ -93,6 +93,7 @@ type RequestRecord struct {
 	Kind                  string           `json:"kind"`
 	RequestClass          string           `json:"nativeRequestClass,omitempty"`
 	InputTokens           *int64           `json:"backendInputTokens,omitempty"`
+	BackendRequestBytes   int64            `json:"backendRequestBytes,omitempty"`
 	OutputTokens          *int64           `json:"backendOutputTokens,omitempty"`
 	CachedInputTokens     *int64           `json:"backendCachedInputTokens,omitempty"`
 	ReasoningTokens       *int64           `json:"backendReasoningTokens,omitempty"`
@@ -307,6 +308,15 @@ func (r *record) usage(usage codex.Usage) {
 		value := usage.ReasoningTokens
 		r.data.ReasoningTokens = &value
 	}
+}
+
+func (r *record) backendBytes(size int64) {
+	if r == nil || size <= 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.BackendRequestBytes = size
 }
 
 func (r *record) kind(kind string) {
@@ -584,6 +594,8 @@ func (g *ring) contextReport() []ModelContextReport {
 // Keys are fixed request kinds, validated routes and project-owned categories.
 type SessionTotals struct {
 	MeasuredRequests      int64            `json:"requestsWithUsage"`
+	ByteMeasuredRequests  int64            `json:"requestsWithBackendBytes"`
+	BackendRequestBytes   int64            `json:"backendRequestBytes"`
 	UnmeasuredRequests    int64            `json:"generationRequestsWithoutUsage"`
 	InputTokens           int64            `json:"backendInputTokens"`
 	OutputTokens          int64            `json:"backendOutputTokens"`
@@ -609,6 +621,10 @@ func (g *ring) count(r RequestRecord) {
 	g.totals.Completed++
 	g.totals.RejectedWorkflowCalls += r.RejectedWorkflowCalls
 	g.totals.Kinds[r.Kind]++
+	if r.BackendRequestBytes > 0 {
+		g.totals.ByteMeasuredRequests++
+		g.totals.BackendRequestBytes += r.BackendRequestBytes
+	}
 	if r.InputTokens != nil && r.OutputTokens != nil {
 		g.totals.MeasuredRequests++
 		g.totals.InputTokens += *r.InputTokens

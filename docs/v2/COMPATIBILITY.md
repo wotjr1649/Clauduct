@@ -214,7 +214,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 |---|---|
 | CLI 옵션 | `--settings` JSON/파일을 필수 settings와 병합하고 `--setting-sources`는 native로 전달. 필수 연결·hook 충돌은 거부. 권한 우회 CLI 옵션 2개는 계속 거부. [설정 병합](../../go/internal/app/user_settings.go) |
 | API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`는 미지원. v0.5.2는 개수·길이를 제한한 `stop_sequences`를 로컬 출력 절단으로 처리한다(아래 v0.5.2 절). [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
-| Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원과 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow 및 임의 JS 재실행은 별도 제한 |
+| Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원, 명시적 source의 native 재개와 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow와 근거 없는 재개는 제한 |
 | 부모·빈 응답 대기 | 확인된 TUI 회차는 무출력 대기. SDK/`-p`의 검증된 빈 대기·알림 응답은 Clauduct 상태 메시지로 전달하며 실제 본문·도구는 보존. 상태 메시지는 자식 결과나 업무 완료가 아님. [실제 필수 조건](../../go/internal/gateway/features.go) |
 | 새 모델·새 명령·외부 확장 | 현재 모델 카탈로그와 검증된 요청 형식 범위만 지원. 새 모델, native 버전, plugin/MCP 조합의 성공을 자동 승계하지 않음. [모델 카탈로그](../../go/internal/protocol/bridge/route.go) |
 | native 전역 effort 고정 | `CLAUDE_CODE_EFFORT_LEVEL`은 native의 명시적 자식 effort·피커보다 우선할 수 있음. S49 실제 영수증으로 재확인. 부모 시작 기본값에는 `--effort` 사용. 전역 고정과 자식 선택이 충돌하면 선택 검증을 우회하지 않음 |
@@ -253,7 +253,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | Workflow `tools` | 구현. raw agent와 계획 step 모두 최대 64개 정확 이름 목록 또는 빈 목록. native 도구 목록과 교집합이며 과거 도구 기록이 새 호출 권한이 되지 않음. 지연 발견 도구가 필요하면 `ToolSearch` 자체도 허용 목록에 포함해야 함 |
 | Workflow `maxTurns`, custom `agentType` | 역할 지침·도구·`maxTurns`는 native 유지. S49는 모델 생략 시 역할 정의와 실제 native turn을 대조한다. native metadata의 빈 model은 요청에서 모델을 생략했다는 뜻일 수 있으므로 실제 turn과 구분. 직접 `agent(...,{maxTurns})`는 native가 적용하지 않아 거부하며 역할 정의를 사용 |
 | named/scriptPath Workflow | S49 구현. native `Read`의 권한·훅·실제 전체 결과를 통과한 텍스트에만 adapter 적용. `scriptPath` 우선; named 파일은 cwd부터 Git root까지 `.claude/workflows` 및 profile의 `workflows` 순서로 탐색. 최대 500 KiB, native Read 부분 결과는 거부. plugin/bundled named resolver 전체와 동일하다는 주장은 하지 않음 |
-| launcher 재시작 후 Workflow 복원 | S49 구현. native 수거 후 본문 없는 메타데이터 저장, 같은 UUID의 SessionStart 경로에서만 복원, native script/journal/metadata 해시와 선택·종료 근거 재검증. 독립 계획 재개는 디스크의 배타적 claim으로 중복 실행 방지. 강제 종료로 최종 근거를 저장하지 못했거나 기록이 변경되면 재개 거부 |
+| launcher 재시작 후 Workflow 복원 | native 수거 후 본문 없는 메타데이터 저장, 같은 UUID의 SessionStart 경로에서만 복원. journal/metadata 해시와 선택·종료 근거 재검증. 결과 회수·plan-v1은 원 script 해시도 확인하고, 명시적 native 재개는 편집한 source 허용. 독립 계획 재개는 디스크의 배타적 claim, native 재개는 native의 동시 실행 거부를 유지. 강제 종료로 근거가 없거나 캐시 기록이 변경되면 거부 |
 | `--settings` | 구현. 최대 2 MiB JSON 객체/일반 파일, 중복 키 거부, 마지막 옵션 우선. 사용자 hook을 보존하고 필수 binding 추가. 연결·필수 정책 충돌은 조용히 덮지 않고 거부 |
 | `--setting-sources` | native user/project/빈 source 적용을 공개 fixture와 실제 native CLI로 확인. 필수 CLI settings는 별도로 유지 |
 | 권한 우회 CLI 옵션 2개 | 기술적 불가능이 아니라 명시적 제품 정책 제한이다. 지원 여부 변경과 현재 작업의 권한·guard 준수는 별개 |
@@ -263,10 +263,14 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 출력 문자열을 잘라내는 것으로 서버의 생성 토큰 제한이나 sampling 제어와 동등해지지 않는다.
 [출력 상한의 기존 실측](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md), [현재 변환 계약](../../go/internal/protocol/bridge/bridge.go).
 
-native 공식 Workflow 재개는 중단·실패한 agent를 다시 실행할 수 있다. Clauduct의
-현재 정책은 시작한 단계의 자동 재실행을 금지하므로 native 재개와 완전히 같은 의미가 아니다.
-2026-09-26에는 검증된 native 재개에서 native의 재실행 규칙을 허용하는 정책을 채택했다.
-구현은 v0.5.x 대기이며 현행 동작은 아직 바뀌지 않았다. 실행 여부를 확인할 수 없는
+v0.6.0은 검증된 같은 UUID/run의 `resumeFromRunId`와 `script`·`scriptPath`·지원되는 로컬 `name`을
+함께 전달하면 native Workflow 재개를 수행한다. source 편집도 명시적 새 입력으로 허용한다.
+native는 완료된 앞 agent 결과를 재사용하고 실패·중단·변경된 prompt 지점과 그 뒤 agent를
+다시 실행할 수 있다. 이미 완료한 뒤쪽 agent도 포함되므로 파일 쓰기 등 효과가 반복될 수 있다.
+실행 중인 자식은 먼저 중지하고 종료를 확인해야 한다. native의 cache·승인·동시 실행 거부를 유지한다.
+launcher 종료 후에는 저장한 journal·child metadata·선택·종료 근거를 재검증하며, 근거 없는 강제 종료나
+캐시 변조는 거부한다. 새 script의 변경과 캐시 근거의 변조는 구분한다. 원본 run을 plan-v1으로 바꾸는
+혼합 재개도 거부한다. `resumeFromRunId` 단독의 결과 회수와 plan-v1의 미실행 단계 재개는 그대로다.
 외부 효과에 대해 기록·멱등성 협력 없이 무조건 중복 없는 재실행을 보장하지 않는다.
 [native 재개 의미](https://code.claude.com/docs/en/workflows#resume-after-a-pause),
 [settings와 setting-sources의 구분](https://code.claude.com/docs/en/cli-reference#cli-flags).
@@ -318,7 +322,7 @@ terminal 뒤 `EMPTY_REPLY`를 관측했고, 고정 fixture와 구독 backend 검
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` · `--bare` | G5, 전부 동작으로 측정 |
 | 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
 | 위임 메뉴 5종·모델 표 | v0.3.4부터 `clauduct-<model>` 4종 + `clauduct-inherit`. effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6-sol, sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
-| 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. 최근 TUI에서 ROOT → A → B → C의 완료 결과 전달 확인 |
+| 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. TUI에서 ROOT → A → B → C의 완료 결과 전달 확인. native 2.1.283 SDK 기본 모드에서는 손자 결과가 루트에 도착해도 중간 Agent가 자동으로 다시 답하지 않을 수 있다. 루트가 실제 손자 결과를 확인한 뒤 중간 Agent ID로 `SendMessage`를 보내 재개한다. UUID 재시작 뒤의 이 절차도 실제 backend로 확인했다. SDK 기본값은 바꾸지 않으며, 명시적인 `CLAUDE_CODE_FORK_SUBAGENT=1`은 native의 문맥 상속·백그라운드 실행 의미를 따른다 |
 | 완료 Agent의 SendMessage 재개 | 최근 TUI에서 동일 child ID의 Sol/high 유지·두 번째 결과 수신 확인 |
 | inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |
 | Agent 결과 회수와 Workflow StructuredOutput | 일반 결과와 검증된 native journal 결과를 부모에게 전달. 범용 Workflow 재실행·복구 기능은 아님 |
@@ -457,12 +461,46 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
 | forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). `-p`에서 직접 입력한 명령은 native가 agent ID 없이 실행하므로 루트 요청으로 처리된다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. Agent 자식과 달리 재개 연결을 따로 검증하지 않으며, 사용자의 중지가 `stoppedByUser`로 남지 않아 중지된 자식을 막는 규칙(#91)이 fork 자식에는 적용되지 않는다 |
-| `review-diff` 헬퍼 | 미지원. 기준선의 경로 탈출 방지·2 MiB 상한은 없다 |
-| Workflow remote·자식의 별도 Workflow·범용 JS 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 임의 JS는 `resumeFromRunId` 단독의 결과 회수, 독립 계획은 미실행 단계만 재개. 다른 세션, 기록 없는 강제 종료, 불명확한 시작 단계의 자동 재실행은 거부 |
+| V1 `review-diff` 헬퍼 | **v0.6.0에서 문서상 정식 은퇴.** native `/code-review`의 tracked/untracked 파일 대상과 독립 결함 표본을 실제 backend로 확인했다. V2에는 이 헬퍼가 없으므로 제품 코드를 삭제한 변경은 아님. native 읽기 권한과 현행 다른 경로의 용량·경로 보호는 유지 |
+| Workflow remote·자식의 별도 Workflow·근거 없는 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 같은 run의 검증된 명시적 source 재개는 위 native 규칙을 따르며, 결과 회수·독립 계획은 별도 계약. 다른 세션과 기록 없는 강제 종료의 재개는 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
-| PPTX·DOCX·XLSX 직접 입력 | 이미지/PDF API 입력과 별개. 현행 bridge의 직접 document 입력으로 지원하지 않음. 별도 native 도구의 텍스트·페이지 추출 결과를 처리하는 것과 원본 Office 형식 지원을 혼동하지 않음 |
+| PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
+
+### 파일 대상 code-review 인수 — v0.6.0
+
+native 2.1.283의 `/code-review <파일 경로>`로 tracked 변경과 untracked 파일을 각각 검토했다.
+대표 표본은 수량 곱셈 누락·clamp 상한 오류, 독립 표본은 할인 백분율 계산·18세 경계 오류다.
+모두 대상 파일·함수·결함 원인과 반례를 확인하고 원본 파일은 보존했다. 실제 Sol/medium의 네 리뷰는
+각 2–3회 요청, 33,976–54,691 bytes의 누적 JSON 본문, 약 10.6–15.3초였다. 이 수치는 작은 합성 파일의
+관측치이며 일반 코드의 비용·탐지율 보장이 아니다.
+
+직접 slash command를 `-p`로 실행하면 stdout은 `Command completed`이고 실제 리뷰는 native 자식
+transcript에 남았다. 완료 문구를 결함 탐지로 간주하지 않고 그 리뷰 본문과 실제 파일 읽기를 판정했다.
+모델이 `Skill` 도구로 호출한 리뷰는 native의 도구 결과 전달 경로를 따른다. V1 헬퍼의 전처리와
+2 MiB 제한을 다른 현행 기능에 적용하거나 제거한 변경은 없다.
+
+진단의 `backendRequestBytes`는 session cache key를 포함해 전송한 JSON 본문의 크기다.
+HTTP 200 응답을 받은 요청만 측정하며 `requestsWithBackendBytes`와 함께 누적한다. HTTP 실패·계수·검색의
+미측정 값을 0-byte 전송으로 해석하지 않는다. 본문·header·자격 증명은 이 진단에 기록하지 않는다.
+
+### Office 로컬 도구 인수 — v0.6.0
+
+DOCX·XLSX·PPTX는 사용 환경에 준비한 로컬 편집 도구를 native `Bash` 등으로 호출해 읽고 편집한다.
+제품에 새 Office API나 라이브러리 의존성을 추가하지 않았다. 2026-09-28의 Python 3.14.6과
+python-docx 1.2.0·openpyxl 3.1.5·python-pptx 1.0.2로 실제 Codex backend를 거쳐 다음을 확인했다.
+
+| 형식 | 대표 표본·별도 독립 표본 | 파일 자체 확인 |
+|---|---|---|
+| DOCX | 문단 run·표 cell의 텍스트 한 곳 편집 | ZIP/XML·관계 유효성, 다시 연 내용·bold, 다른 문단과 part 보존 |
+| XLSX | 서로 다른 셀의 문자열 편집 | ZIP/XML·관계 유효성, 셀 값·bold, 무관한 셀·수식 보존 |
+| PPTX | textbox·다른 slide의 table cell 편집 | ZIP/XML·관계 유효성, 텍스트·bold, 무관한 slide와 part 보존 |
+
+native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대조했다. 독립 표본의 첫 XLSX 실행은
+모델이 허용 명령을 `eval`로 감싸 native가 거부했고, 명령 안내를 명확히 한 재실행은 세 형식 모두
+통과했다. 이 실패를 브리지 오류나 성공으로 집계하지 않았다. 매크로·암호 문서·복잡한 Office 객체,
+모든 서식·렌더링 보존까지 검증한 것은 아니다. 편집 도구가 필요하며 제품이 자동 설치하지 않는다.
 | 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin 12종은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다. 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
@@ -814,7 +852,7 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 | 작업 성공과 실패 처리·회복 합격을 구분 | 판정 기준 채택. 외부 장애를 정확히 보고하고 이력·결과를 보존하며 다음 요청이 동작해야 회복 합격. 모든 장애 조합 실측은 남음 |
 | 실제 실행 중인 자식과 대기 회차가 검증된 부모의 빈 응답은 대기로 유지 | TUI는 무출력 대기, SDK는 완료를 주장하지 않는 Clauduct 상태 메시지. 실제 backend의 빈 응답과 결정적 native fixture를 모두 관측. 자식 결과 수신과 상태 표시를 분리 |
 | 진행 미관측만으로 강제 종료하지 않음 | 마지막 실제 이벤트·경과 시간·도구 대기 수를 보고. 누락/미종료는 drain 완료로 간주하지 않음. 기존 명시적 deadline/grace만 적용 |
-| 검증된 native 재개에서는 native 재실행 규칙을 허용 | 2026-09-26 채택, 묶음 C의 [#150](https://github.com/wotjr1649/Clauduct/issues/150) 구현 대기. 현행 결과 회수와 독립 계획의 미실행 단계 재개는 유지하며 시작했지만 결과 없는 단계는 아직 `started_not_reexecuted`·전체 `complete:false`로 보고 |
+| 검증된 native 재개에서는 native 재실행 규칙을 허용 | v0.6.0 [#150](https://github.com/wotjr1649/Clauduct/issues/150)에서 명시적 source 재개 구현. 실패·취소·수정 script·동일 UUID 재시작·cache 재사용을 확인. 기존 결과 회수와 plan-v1은 유지하며 plan-v1의 시작했지만 결과 없는 단계는 `started_not_reexecuted`·전체 `complete:false`로 보고 |
 | 버전 번호 대신 기능별 필수 조건으로 실행 판정 | 기존 실행 경계 검사 결과를 기능별로 집계. `/context` 출처도 관측 버전과 구조를 대조. 버전 일치와 전체 기능 합격을 구분 |
 | 지원 기능을 별도 문서로 관리 | 이 문서를 현행 지원 목록으로 사용. 세션별 보고서는 변경 당시의 근거로 보존 |
 

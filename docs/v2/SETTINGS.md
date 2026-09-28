@@ -99,6 +99,11 @@ snapshot을 따른다. `--model`, `--effort`와 사용자가 지정한 native ef
 `/clear`는 현재 실행의 snapshot과 선택을 유지한다. 파일 편집은 새로운 Clauduct 실행에서 읽으며,
 저장된 세션을 재개할 때는 그 세션의 snapshot을 사용한다.
 
+`EnterWorktree`·`ExitWorktree`는 native가 옮긴 transcript 경로에 snapshot과 context journal을 연결한다.
+기존 transcript가 사라지고 같은 UUID의 새 파일이 native projects 안에 존재하는지 확인한다.
+다른 살아 있는 transcript로 바꾸거나 경계를 벗어나는 경로는 거부한다. native의 권한과 worktree 격리
+규칙은 그대로 적용한다. v0.6.0에서 도구 실행 직후 경로 갱신 누락을 수정했다([#185](https://github.com/wotjr1649/Clauduct/issues/185)).
+
 snapshot이 있는 세션을 재개 목록, `--continue`·`-c`, 실행 중 `/resume`에서 선택하면 첫 backend
 요청을 차단하고 해당 UUID의 `clauduct --resume <UUID>` 명령을 안내한다. 초안을 정리하고 native를
 종료한 뒤 그 명령에 필요한 native 옵션을 함께 지정한다. Clauduct가 화면을 자동 종료하지 않는다.
@@ -155,5 +160,5 @@ Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 �
 ## 코드에 유지하는 정책
 
 모델의 지원 기능, context 한도, 입력 검증과 처리 상한, native hook 연결 및 보안 규칙은 코드에서 관리한다.
-추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 Luna/high 선택도
+추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 Terra/high 선택도
 개인화 설정으로 변경하지 않는다.

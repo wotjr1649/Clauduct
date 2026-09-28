@@ -31,7 +31,7 @@ Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하�
 | 안전 정책 | native 기본 규칙과 사용자 규칙, 승인 UI | `$defaults`를 보존한 B 추가 hard-deny 규칙 2개, gateway의 native classifier 경로 |
 | 세션 재개 | 대화 저장·목록·native resume | 설정 snapshot과 마지막 선택의 UUID 복원, 검증하지 못한 재개 경로의 명시적 거부·명령 안내 |
 | 위임 | Agent 실행·완료 알림·권한 | 정의/명시 선택의 GPT 변환, 선택 검증, Agent·SendMessage 설명 보완, 검증된 pending 호출의 중복 억제와 native 대기 제어 |
-| Workflow | 원 스크립트의 도구 실행과 역할 정의 | native Read를 통한 원문 확인, 결과 journal 검증, `clauduct:plan-v1` 미실행 단계 재개. 임의 JavaScript의 원 실행 재생은 지원하지 않음 |
+| Workflow | 원 스크립트의 도구 실행·역할 정의·명시적 재개의 cache/replay | native Read 원문 확인, 결과 journal·종료 근거 검증, 같은 run의 재연결. `resumeFromRunId` 단독 결과 회수와 `clauduct:plan-v1` 미실행 단계 재개는 별도 계약 |
 | 압축·응답 | native 압축 동작과 대화 기록 | 모델별 context 경계, 검증된 자동 압축의 effort 상한·요약 보완, assistant phase 운반 |
 
 필수 hook과 세션용 plugin은 [설정 구성](../../go/internal/app/settings.go)과
@@ -420,7 +420,7 @@ SID를 확인하며 요청 대기에는 3초 상한을 둔다. helper의 토큰 
 
 기준선 catalog는 출발점이며 V2가 실제로 지원하는 조합을 별도 기록한다. hardcoded 최신 모델명을 추측하지 않는다.
 
-기본 실행에서 Clauduct 전용 agent와 routing hook을 필수 주입하지 않는다(V2-03). 세션·agent·parent header가 있으면 correlation evidence로 쓰되, 신뢰된 권한 증명이나 모든 native 버전에 반드시 존재하는 ID로 취급하지 않는다.
+현재 실행은 5절의 필수 세션 overlay와 native 이벤트·역할 연결 hook을 사용한다. 초기 V2-03의 무주입 원칙은 현행 실행 모드가 아니다. 세션·agent·parent header만을 신뢰된 권한 증명이나 모든 native 버전에 반드시 존재하는 ID로 취급하지 않는다.
 
 ```text
 route sufficient + lineage unavailable
@@ -430,9 +430,9 @@ route ambiguous for an explicitly requested managed feature
   → 해당 기능에 한정된 오류/제약
 ```
 
-overlay에는 ID·목적·주입 키/훅·host 충돌 검사·제거 방법·테스트 ID가 있어야 한다. overlay는 기존 user hook을 치환하지 않으며, hook 실패가 기본 연결 자체를 깨뜨리는지 명시한다. **overlay를 끈 상태가 정상적인 제품 모드다.**
+overlay의 목적·주입 키/훅·충돌 검사·검증 범위는 5절과 구현에서 관리한다. 기존 user hook을 보존하며 필수 연결과 충돌하면 시작을 거부한다. 필수 overlay를 끈 제품 모드는 지원하지 않는다.
 
-V1에서 만든 transcript를 V2가 무조건 재개할 수 있다고 선언하지 않는다. 완료 여부가 불명확한 tool 부작용을 resume 과정에서 재실행하지 않는다. context window·auto compact 수치를 backend capacity·native 처리 검증 없이 확대하지 않는다.
+V1에서 만든 transcript를 V2가 무조건 재개할 수 있다고 선언하지 않는다. 일반 요청의 불명확한 tool 부작용을 자동 재시도하지 않는다. v0.6.0의 명시적 Workflow 재개는 검증된 종료 근거 아래 native의 재실행 규칙을 적용하며 효과가 반복될 수 있다. context window·auto compact 수치를 backend capacity·native 처리 검증 없이 확대하지 않는다.
 
 ## 14. 의존성 정책
 

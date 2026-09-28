@@ -27,6 +27,7 @@ type workflowCheckpoint struct {
 	RecoveryOf, ContinuedBy              string
 	Plan                                 *[]workflowStepOffset
 	Children                             []workflowChildProof
+	NativeResume                         bool `json:",omitempty"`
 }
 type workflowStepOffset struct {
 	ID, Model, Effort string
@@ -37,6 +38,7 @@ type workflowChildProof struct {
 	Agent, Role, Model, Effort, Source, Turn, Reason, MetaDigest string
 	Key                                                          string
 	Ended                                                        bool
+	Call                                                         string `json:",omitempty"`
 }
 type WorkflowPersistenceReport struct {
 	Saved    int64 `json:"saved"`
@@ -151,6 +153,7 @@ func (d *delegations) saveWorkflowCheckpoint(root *os.Root, run workflowRun) err
 		return err
 	}
 	saved := workflowCheckpoint{Version: 1, Link: run.workflowLink, Model: run.origin.scope.route.Model, Effort: run.origin.scope.route.Effort, Digest: run.origin.digest, JournalDigest: workflowDigest(journal), Created: run.origin.created, AdapterBytes: run.origin.adapterBytes, RecoveryOf: run.origin.recoveryOf, ContinuedBy: run.continuedBy, Plan: plan}
+	saved.NativeResume = run.origin.nativeResume
 	for id, observation := range run.observed {
 		choice, ok := d.resolved[id]
 		if !ok || choice.session != run.Session || choice.call != run.Call {
@@ -161,6 +164,9 @@ func (d *delegations) saveWorkflowCheckpoint(root *os.Root, run workflowRun) err
 			return errWorkflowRecoveryUnverified
 		}
 		child := workflowChildProof{Agent: id, Role: choice.role, Model: choice.route.Model, Effort: choice.route.Effort, Source: choice.route.Source, Key: observation.Key, MetaDigest: workflowDigest(meta)}
+		if choice.receipt != nil && choice.receipt.Call != run.Call {
+			child.Call = choice.receipt.Call
+		}
 		d.results.mu.Lock()
 		if e := d.results.entries[id]; e != nil && e.Session == run.Session && e.stopped {
 			child.Turn, child.Reason, child.Ended = e.NativeTurn, e.EndReason, e.NativeEndObserved
@@ -194,7 +200,7 @@ func (d *delegations) saveWorkflowCheckpoint(root *os.Root, run workflowRun) err
 
 // SessionStart supplies the only directory eligible for lookup. No home-wide
 // search, inferred UUID, old process receipt directory or arbitrary path fallback.
-func (d *delegations) restoreWorkflow(session, source string) (workflowRun, error) {
+func (d *delegations) restoreWorkflowState(session, source string, nativeResume bool) (workflowRun, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	var zero workflowRun
@@ -262,7 +268,7 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 		return zero, errWorkflowRecoveryUnverified
 	}
 	script, err := workflowRead(root, scriptPath, 512<<10)
-	if err != nil || saved.AdapterBytes > len(script) || workflowDigest(script) != saved.Digest {
+	if err != nil || (!nativeResume || saved.Plan != nil) && (saved.AdapterBytes > len(script) || workflowDigest(script) != saved.Digest) {
 		return zero, errWorkflowRecoveryUnverified
 	}
 	directory, _ := filepath.Rel(d.projects, expectedDirectory)
@@ -270,11 +276,15 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 	if err != nil || workflowDigest(journal) != saved.JournalDigest {
 		return zero, errWorkflowRecoveryUnverified
 	}
-	plan, err := restoreCheckpointPlan(string(script[:len(script)-saved.AdapterBytes]), saved.Plan)
-	if err != nil {
-		return zero, err
+	var plan *workflowPlan
+	if saved.Plan != nil {
+		plan, err = restoreCheckpointPlan(string(script[:len(script)-saved.AdapterBytes]), saved.Plan)
+		if err != nil {
+			return zero, err
+		}
 	}
 	run := workflowRun{workflowLink: link, directory: directory, script: scriptPath, continuedBy: saved.ContinuedBy, restored: true, observed: map[string]workflowObservation{}, origin: workflowOrigin{scope: delegationScope{session: session, route: route}, digest: saved.Digest, created: saved.Created, adapterBytes: saved.AdapterBytes, recoveryOf: saved.RecoveryOf, plan: plan}}
+	run.origin.nativeResume = saved.NativeResume
 	choices := map[string]resolvedChoice{}
 	for _, child := range saved.Children {
 		if !correlationShape.MatchString(child.Agent) || !correlationShape.MatchString(strings.ReplaceAll(child.Role, ":", "_")) || choices[child.Agent].session != "" || (child.Source != "workflow-parent" && child.Source != "workflow-selection") {
@@ -309,10 +319,17 @@ func (d *delegations) restoreWorkflow(session, source string) (workflowRun, erro
 			_ = json.Unmarshal(parts[0], &originalCall)
 			_ = json.Unmarshal(parts[1], &model)
 			_ = json.Unmarshal(parts[2], &effort)
-			if originalCall != link.Call {
+			expectedCall := link.Call
+			if child.Call != "" {
+				if !saved.NativeResume || !correlationShape.MatchString(child.Call) {
+					return zero, errWorkflowRecoveryUnverified
+				}
+				expectedCall = child.Call
+			}
+			if originalCall != expectedCall {
 				return zero, errWorkflowRecoveryUnverified
 			}
-			choice.receipt = &SelectionRecord{Session: session, Call: link.Call, Agent: child.Agent, Role: child.Role, RequestedModel: selectionModelLabel(model), RequestedEffort: effort, ModelProvided: string(parts[1]) != "null", EffortProvided: string(parts[2]) != "null", PresenceVerified: true, Model: child.Model, Effort: child.Effort, Source: child.Source}
+			choice.receipt = &SelectionRecord{Session: session, Call: expectedCall, Agent: child.Agent, Role: child.Role, RequestedModel: selectionModelLabel(model), RequestedEffort: effort, ModelProvided: string(parts[1]) != "null", EffortProvided: string(parts[2]) != "null", PresenceVerified: true, Model: child.Model, Effort: child.Effort, Source: child.Source}
 		}
 		choices[child.Agent] = choice
 		if _, exists := d.resolved[child.Agent]; exists {

@@ -451,6 +451,7 @@ func (g *Gateway) recoverContextOverflow(w http.ResponseWriter, session, agent, 
 	}
 	entry := recordOf(w)
 	if s.phase == "compacting" || s.phase == "recount" || s.phase == "failed" || entry.snapshot().Kind == "compaction" {
+		entry.control("BACKEND_CONTEXT_COMPACTION_INSUFFICIENT")
 		s.phase = "failed"
 		if g.saveContext(s) != nil {
 			g.refuseCategory(w, 400, "CONTEXT_JOURNAL_FAILED")

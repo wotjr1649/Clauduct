@@ -270,9 +270,6 @@ type HostedSearch struct {
 	Location map[string]string
 }
 
-// ToolCount reports how many definitions were supplied.
-func (r *Request) ToolCount() int { return len(r.Tools) }
-
 // maxSafeInteger is JavaScript's Number.MAX_SAFE_INTEGER. The baseline validates against
 // it, and a client that round-trips a larger value through a JSON number cannot be relied
 // on to have sent what it meant.

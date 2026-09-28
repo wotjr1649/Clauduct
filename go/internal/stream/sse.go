@@ -99,9 +99,6 @@ func NewParser(limits Limits) *Parser {
 // Completed reports whether a terminal event has been seen.
 func (p *Parser) Completed() bool { return p.completed }
 
-// SawDone reports whether the [DONE] sentinel has been seen.
-func (p *Parser) SawDone() bool { return p.sentinel }
-
 // Push feeds the next chunk of the response body and returns any events it completed.
 //
 // Chunk boundaries carry no meaning: a frame, a JSON token, a CRLF pair and a multi-byte

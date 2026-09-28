@@ -276,13 +276,6 @@ func (p *Provider) Credential() (Credential, error) {
 	return credential, nil
 }
 
-// BoundAccount reports the account this session is pinned to, if one has been read.
-func (p *Provider) BoundAccount() string {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.boundAccount
-}
-
 func (p *Provider) selectCredential(raw string) (Credential, error) {
 	var doc struct {
 		AuthMode string `json:"auth_mode"`

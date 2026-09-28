@@ -131,10 +131,6 @@ var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 // it can be.
 var loopback = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}$`)
 
-func run(in io.Reader, errOut io.Writer, env map[string]string) int {
-	return runWithOutput(in, io.Discard, errOut, env)
-}
-
 func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
 	if err != nil || len(raw) > maxEventBytes {

@@ -70,5 +70,5 @@ func classifierSelection(request *anthropic.Request, count bool) ([]bridge.Route
 		return nil, errClassifierContract
 	}
 	// ResolveRoute still validates the requested model/effort before applying this override.
-	return []bridge.Route{{Model: "gpt-6-luna", Effort: "high", Source: "native-auto-mode"}}, nil
+	return []bridge.Route{{Model: "gpt-5.6-terra", Effort: "high", Source: "native-auto-mode"}}, nil
 }

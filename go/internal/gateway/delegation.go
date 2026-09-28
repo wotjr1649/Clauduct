@@ -439,10 +439,9 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	return encoded, nil
 }
 
-func (d *delegations) route(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (bridge.Route, bool, error) {
-	d.mu.Lock()
+// Caller holds mu. Every cache hit retains the same identity and native-stop checks.
+func (d *delegations) cachedRoute(scope delegationScope, id string, binding agentBinding) (bridge.Route, bool, error) {
 	if chosen, found := d.resolved[id]; found {
-		defer d.mu.Unlock()
 		resume, err := d.resumed(scope, id, binding, chosen)
 		if err != nil || chosen.session != scope.session || chosen.parent != scope.parent && resume == nil || binding.ID != id || !roleMatches(chosen.role, binding.Role, chosen.custom) || binding.SessionID != scope.session {
 			return bridge.Route{}, false, errDelegationUnverified
@@ -461,6 +460,15 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 			route.Source = "verified-resume"
 		}
 		return route, true, nil
+	}
+	return bridge.Route{}, false, nil
+}
+
+func (d *delegations) route(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (bridge.Route, bool, error) {
+	d.mu.Lock()
+	if route, found, err := d.cachedRoute(scope, id, binding); found || err != nil {
+		d.mu.Unlock()
+		return route, found, err
 	}
 	hasPending := false
 	for key, choice := range d.pending {

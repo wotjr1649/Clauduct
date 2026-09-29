@@ -77,11 +77,12 @@ type Model struct {
 	CountValidated bool
 }
 
-// ContextPolicy supplies preventive management targets, not exact admission caps. Native displays its
-// shared process envelope; it does not display an independent child window.
+// ContextPolicy supplies preventive management targets, not exact admission caps.
+// All models share the launcher's configured window and compaction target.
 type ContextPolicy struct {
-	Window    int64 `json:"window"`
-	CompactAt int64 `json:"compactAt"`
+	Window    int64  `json:"window"`
+	CompactAt int64  `json:"compactAt"`
+	EffortCap string `json:"autoCompactEffortCap"`
 }
 
 // Models is the catalogue in published order.
@@ -94,16 +95,17 @@ type ContextPolicy struct {
 // (there is no GPT-6 Terra). Measured 2026-09-24 with probe accept: both take low..max,
 // tools, the reasoning round trip and images, and the local count matched the backend's
 // input_tokens on every text request. ultra was refused (HTTP 400) on sol, astra and terra,
-// so no model lists it. The context values are the GPT-5.6 ones on the same catalogue window.
+// so no model lists it. Context defaults come from the shared settings document.
 var Models = func() []Model {
 	models := []Model{
-		{Key: "astra", ID: "gpt-6-astra", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", Context: ContextPolicy{500000, 450000}, CountValidated: true},
-		{Key: "sol", ID: "gpt-6-sol", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-		{Key: "terra", ID: "gpt-5.6-terra", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
-		{Key: "luna", ID: "gpt-6-luna", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", Context: ContextPolicy{272000, 239000}, CountValidated: true},
+		{Key: "astra", ID: "gpt-6-astra", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", CountValidated: true},
+		{Key: "sol", ID: "gpt-6-sol", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", CountValidated: true},
+		{Key: "terra", ID: "gpt-5.6-terra", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", CountValidated: true},
+		{Key: "luna", ID: "gpt-6-luna", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", CountValidated: true},
 	}
 	for i := range models {
 		models[i].Effort = builtinDefaults.ModelDefaults[models[i].ID].Effort
+		models[i].Context = DefaultContextPolicy()
 	}
 	return models
 }()

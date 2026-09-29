@@ -332,7 +332,7 @@ v0.6.0에서는 native가 `SubagentHandback` 보고를 받아들인 뒤에도 �
 | inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |
 | Agent 결과 회수와 Workflow StructuredOutput | 일반 결과와 검증된 native journal 결과를 부모에게 전달. 범용 Workflow 재실행·복구 기능은 아님 |
 | 모델 피커 + `GET /v1/models` discovery | A3 + B1 |
-| 모델별 실측 사용량·예방 압축 | Astra 500K/450K, Sol·Terra·Luna 272K/239K는 관리 목표이며 정확 사전 차단 상한이 아니다. 기존 확정 모델을 유지하며 v0.3.1 개발본은 검증된 자동 압축만 medium effort 상한을 적용한다. 이후 생성·수동 압축은 원래 effort 유지. native 공통 표시/환경 기본값은 500K. 새 대용량 입력의 최초 초과 가능성이 있으며 추정과 실제 usage를 구분 |
+| 실측 사용량·예방 압축 | v0.6.2 준비본은 모든 모델에 공통 window 272K·비율 90%(목표 244,800)를 기본으로 사용한다. [전역 설정](SETTINGS.md#전역-context와-압축-목표-v062-준비)으로 변경하며 UUID 재개에도 현재 값을 적용한다. native가 실제 압축을 담당하고 자체 여유 공간 때문에 더 일찍 실행할 수 있다. 검증된 자동 압축은 기존 확정 모델을 유지하며 현재 effort와 설정 상한 `auto_compact_effort_cap`(기본 medium) 중 낮은 값을 사용한다. 이후 생성·수동 압축은 원래 effort를 유지한다. 관리 목표는 정확 사전 차단 상한이 아니며 새 대용량 입력의 최초 초과 가능성과 추정/실제 usage 구분은 유지한다. v0.6.1 출시본의 Astra 500K/450K, 나머지 272K/239K와 native 표시 500K는 이전 정책이다 |
 | `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/COUNT-TOKENS.md) |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
@@ -477,9 +477,10 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | side query가 아닌 hosted 도구 요청 | `HOSTED_TOOL_UNSUPPORTED`로 거부. 기준선은 조용히 성공시킨다 — 의도적 divergence |
 | 사전 출력 토큰 상한 | 기존 실측에서 backend가 `max_output_tokens`를 HTTP 400으로 거부해 해당 방식은 미지원. 완료 후 usage 검사와 구분하며, 미래의 모든 구현 가능성까지 부정하지 않음 |
 | 게이트웨이 재시도 | 일반 생성의 자동 재시도와 [WebSearch의 제한된 읽기 재시도](../../go/internal/upstream/search.go)를 구분. 전 경로가 재시도 0이라는 뜻이 아님. backend로 보낸 뒤의 실패는 native가 재시도해도 replay 보호에 막히므로, `X-Should-Retry: false`로 재시도를 막고 원인 범주를 그대로 보인다. backend 실패 이벤트는 고정 어휘로 줄인 code·type·incomplete 사유를 함께 싣는다(v0.3.3, #84). 이전에는 사용자가 원인 대신 `NATIVE_REQUEST_REPLAY_BLOCKED`만 봤다 |
-| native context 표시 | 공통 500K 환경과 native 로컬 추정은 모델별 gateway 정책의 적용 근거가 아님. 모델별 정책·실제 계수는 status로 확인 |
+| native context 표시 | v0.6.2 준비본은 전역 window·유효 비율을 native에 전달한다. native 로컬 추정과 여유 공간은 gateway의 예방 목표와 다를 수 있다. 적용값·출처·실제 계수는 status로 확인하며, 과거 공통 500K 표시는 v0.6.1 이전 정책이다 |
 | 정확 계수 성능 | 연결 재사용·동일 입력 캐시·동시 요청 공유 구현. 새 입력의 backend 왕복 지연은 남으며 전후 성능 무저하를 입증하지 않음 |
 | native 첫 본문 표시 | Clauduct와 hook 없는 native 2.1.278에서도 SSE 진행 중 counter만 증가하고 완료 후 본문이 보이는 현상을 재현. 정확한 screen paint 시각/내부 원인은 미확정. 제품이 native 표시부를 패치하지 않음 |
+| SDK·`--print`의 부분 본문 | 마지막 assistant block에서 최종 답변을 잃지 않도록 gateway가 reasoning 뒤에 답변을 완료 시 전달한다. `--include-partial-messages`로도 이 보류를 해제하지 않는다. backend 텍스트 진행과 사용자 첫 본문 시각이 다르므로 완료 전 취소는 active 요청·진행 상태를 기준으로 검증한다. 원래 90초 marker 미관측 기록과 새 비교는 [#207](https://github.com/wotjr1649/Clauduct/issues/207)에서 구분한다 |
 | `/context` 최초 조회 | 정확 계수의 첫 backend 왕복 지연이 남음. 조회 자체가 모델 본문 생성을 뜻하지 않고, 검증된 조회 기록은 실제 다음 모델 입력에서 제외. native 로컬 이력/추정 표시와 실제 usage는 다름 |
 | 런타임 의존 | `claude.exe` + `codex.exe`(버전이 요청 헤더) + `~/.codex/auth.json` |
 

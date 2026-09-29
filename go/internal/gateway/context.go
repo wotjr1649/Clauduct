@@ -79,6 +79,7 @@ func (g *Gateway) agentContexts() []AgentContextReport {
 
 type contextGuard struct {
 	mu       sync.Mutex
+	policy   bridge.ContextPolicy
 	states   map[string]*contextState
 	tickets  map[string]compactTicket
 	sessions map[string]string
@@ -95,7 +96,17 @@ var compactTicketPattern = regexp.MustCompile(`\[clauduct-compact:([A-Za-z0-9_-]
 // EnableContextPolicy is wired by the production launcher before starting Claude.
 // Generation uses observed usage and preventive estimates, never a remote preflight.
 func (g *Gateway) EnableContextPolicy() {
-	g.contexts = &contextGuard{states: make(map[string]*contextState), tickets: make(map[string]compactTicket), sessions: make(map[string]string)}
+	g.contexts = &contextGuard{policy: bridge.DefaultContextPolicy(), states: make(map[string]*contextState), tickets: make(map[string]compactTicket), sessions: make(map[string]string)}
+}
+
+// ConfigureContextPolicy installs the already validated launch-time policy.
+// It never enables a guard that the caller deliberately left disabled.
+func (g *Gateway) ConfigureContextPolicy(policy bridge.ContextPolicy) {
+	if g.contexts != nil {
+		g.contexts.mu.Lock()
+		g.contexts.policy = policy
+		g.contexts.mu.Unlock()
+	}
 }
 
 func contextKey(session, agent string) string { return session + "/" + agent }
@@ -291,7 +302,7 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 			return override, func() {}, routeCategory(err)
 		}
 		s.route = route
-		override = []bridge.Route{compactRoute(route, validReceipt && receipt.trigger == "auto")}
+		override = []bridge.Route{compactRoute(route, validReceipt && receipt.trigger == "auto", c.policy.EffortCap)}
 		if validReceipt {
 			delete(c.tickets, ticket)
 		}
@@ -321,9 +332,11 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 			} else {
 				s.phase = "failed"
 			}
-		} else if result.InputTokens != nil && result.OutputTokens != nil {
+		} else if result.Status == 200 && result.Category == "" && result.InputTokens != nil && result.OutputTokens != nil {
+			// Refused completions retain expenditure in diagnostics, but their
+			// undelivered output is not an anchor for the next conversation turn.
 			s.usage = &contextUsageAnchor{Model: result.Model, Effort: result.Effort, Input: *result.InputTokens, Output: *result.OutputTokens, TextEstimate: s.textEstimate}
-			if result.Category == "" && result.Status == 200 && s.phase == "recount" {
+			if s.phase == "recount" {
 				s.phase, s.target = "", ""
 			}
 		}
@@ -339,7 +352,7 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 		return true
 	}
 	entry := recordOf(w)
-	policy, known := policyFor(built.Model)
+	_, known := policyFor(built.Model)
 	if !known {
 		g.refuseCategory(w, 400, "CONTEXT_POLICY_UNVERIFIED")
 		return false
@@ -347,6 +360,7 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 	c := g.contexts
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	policy := c.policy
 	s := c.states[contextKey(r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"))]
 	if !conversationRequest(r, request) {
 		s = nil // A title/classifier shares identity headers, never conversation usage.

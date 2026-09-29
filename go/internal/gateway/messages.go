@@ -855,14 +855,15 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			for _, event := range events {
 				recordOf(w).backendEvent(event.Type)
 				frames, err := translator.Accept(event)
+				// A rejected completion can still report what the backend spent.
+				recordOf(w).usage(translator.ObservedUsage())
+				// Compare observed usage even when this completion is refused.
+				// A drifting optional counter must not remain trusted afterwards.
+				_ = g.verifyCount(recordOf(w))
 				if err != nil {
 					fail(err)
 					return false
 				}
-				recordOf(w).usage(translator.ObservedUsage())
-				// A count-source mismatch quarantines that optional counter, not
-				// a valid model response. The provider usage remains authoritative.
-				_ = g.verifyCount(recordOf(w))
 				if translator.Builder().WaitingForChildren() {
 					if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {
 						fail(errParentWaitUnverified)

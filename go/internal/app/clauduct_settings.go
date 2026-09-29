@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -93,14 +95,24 @@ var errClauductSettings = errors.New("CLAUDUCT_SETTINGS_INVALID")
 // ClauductSettings contains validated launch preferences. SessionProfile owns
 // the separately versioned persistent format.
 type ClauductSettings struct {
-	Startup         bridge.Pair
-	Selection       bridge.Selection
-	StartupSource   string
-	SelectionSource string
+	Startup                 bridge.Pair
+	Selection               bridge.Selection
+	StartupSource           string
+	SelectionSource         string
+	Context                 bridge.ContextSettings
+	ContextRequestedPercent json.Number
+	ContextPolicy           bridge.ContextPolicy
+	ContextWindowSource     string
+	ContextPercentSource    string
+	ContextEffortCapSource  string
 }
 
 func defaultClauductSettings() ClauductSettings {
-	return ClauductSettings{Startup: startupModel, StartupSource: "factory.startup", SelectionSource: "factory"}
+	return ClauductSettings{Startup: startupModel, StartupSource: "factory.startup", SelectionSource: "factory",
+		Context: bridge.DefaultContextSettings(), ContextPolicy: bridge.DefaultContextPolicy(),
+		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
+		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
+		ContextEffortCapSource: "factory.auto_compact_effort_cap"}
 }
 
 func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string) (bridge.Pair, string, string, error) {
@@ -175,14 +187,15 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 }
 
 // loadClauductSettings reads only the Clauduct-owned file under the given home.
-// A missing file uses built-in defaults; a present malformed file fails closed.
+// A missing file uses the complete document Ensure will publish, including its
+// explicit agent pairs. A present malformed file fails closed.
 func loadClauductSettings(home string) (ClauductSettings, error) {
 	if !filepath.IsAbs(home) {
 		return ClauductSettings{}, errClauductSettings
 	}
 	file, err := os.Open(filepath.Join(home, ".clauduct", "settings.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return defaultClauductSettings(), nil
+		return parseClauductSettings([]byte(settingsfile.Defaults()))
 	}
 	if err != nil {
 		return ClauductSettings{}, errClauductSettings
@@ -201,7 +214,7 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
-	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents"})
+	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "auto_compact_effort_cap"})
 	if err != nil {
 		return bad()
 	}
@@ -216,6 +229,37 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 			return bad()
 		}
 		settings.StartupSource = "settings.startup"
+	}
+	if value, present := fields["context_window"]; present {
+		if string(value) == "null" || json.Unmarshal(value, &settings.Context.Window) != nil {
+			return bad()
+		}
+		settings.ContextWindowSource = "settings.context_window"
+		delete(fields, "context_window")
+	}
+	if value, present := fields["auto_compact_token_limit_percent"]; present {
+		// Fields already validated the JSON token. Reject non-integer notation;
+		// positive int64 overflow is still above 90 and must clamp, not fail.
+		number := string(value)
+		percent, parseErr := strconv.ParseInt(number, 10, 64)
+		if strings.ContainsAny(number, ".eE") || parseErr != nil && !errors.Is(parseErr, strconv.ErrRange) || percent < 1 {
+			return bad()
+		}
+		settings.Context.Percent = percent
+		settings.ContextRequestedPercent = json.Number(number)
+		settings.ContextPercentSource = "settings.auto_compact_token_limit_percent"
+		delete(fields, "auto_compact_token_limit_percent")
+	}
+	if value, present := fields["auto_compact_effort_cap"]; present {
+		if string(value) == "null" || json.Unmarshal(value, &settings.Context.EffortCap) != nil || !slices.Contains(bridge.Efforts, settings.Context.EffortCap) {
+			return bad()
+		}
+		settings.ContextEffortCapSource = "settings.auto_compact_effort_cap"
+		delete(fields, "auto_compact_effort_cap")
+	}
+	settings.ContextPolicy, err = settings.Context.Policy()
+	if err != nil {
+		return bad()
 	}
 	delete(fields, "version")
 	delete(fields, "startup")

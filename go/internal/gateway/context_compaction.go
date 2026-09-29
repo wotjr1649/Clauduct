@@ -31,9 +31,9 @@ func (g *Gateway) compactReceipt(session, agent string, request *anthropic.Reque
 	return ticket, receipt, valid
 }
 
-func compactRoute(route bridge.Route, automatic bool) bridge.Route {
-	if automatic && slices.Index(bridge.Efforts, route.Effort) > slices.Index(bridge.Efforts, "medium") {
-		route.Effort, route.Source = "medium", route.Source+"+auto-compact"
+func compactRoute(route bridge.Route, automatic bool, cap string) bridge.Route {
+	if automatic && slices.Index(bridge.Efforts, route.Effort) > slices.Index(bridge.Efforts, cap) {
+		route.Effort, route.Source = cap, route.Source+"+auto-compact"
 	}
 	return route // A copy: the session's route and subsequent generation stay intact.
 }
@@ -91,5 +91,5 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 		return nil, false, routeCategory(err)
 	}
 	stripCompactReceipts(request)
-	return []bridge.Route{compactRoute(route, valid && receipt.trigger == "auto")}, true, ""
+	return []bridge.Route{compactRoute(route, valid && receipt.trigger == "auto", c.policy.EffortCap)}, true, ""
 }

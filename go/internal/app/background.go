@@ -58,7 +58,7 @@ func (config ClauductSettings) backgroundSettings(settings, hook, id, base strin
 			env[key] = value
 		}
 	}
-	for k, v := range sessionRequirements() {
+	for k, v := range config.sessionRequirements() {
 		env[k] = v
 	}
 	env["ANTHROPIC_BASE_URL"] = base

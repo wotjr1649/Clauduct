@@ -66,6 +66,7 @@ type SessionFacts struct {
 	StartupModelSource    string                `json:"startupModelSource,omitempty"`
 	StartupEffortSource   string                `json:"startupEffortSource,omitempty"`
 	NativeContextDefaults NativeContextDefaults `json:"nativeContextDefaults"`
+	Context               ContextFacts          `json:"context"`
 	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
 	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
 	// HookInstalled is whether the session got a hook: since #112 this executable itself.
@@ -77,13 +78,33 @@ type SessionFacts struct {
 	HookInstalled bool `json:"hookInstalled"`
 }
 
-// NativeContextDefaults records launcher defaults that the user's environment may override. They are not
-// evidence that a native agent applied them or that gateway policy was enforced.
+// NativeContextDefaults records the configured native envelope, not proof that
+// native applied it or compacted at the gateway's preventive threshold.
 type NativeContextDefaults struct {
 	Window              int     `json:"window"`
 	AutoCompactWindow   int     `json:"autoCompactWindow"`
 	CompactPercent      float64 `json:"compactPercent"`
 	ApplicationVerified bool    `json:"applicationVerified"`
+}
+
+// ContextFacts separates user input from its clamped, computed launch policy.
+// Values and closed source labels only; no settings document or user path.
+type ContextFacts struct {
+	Window               int64       `json:"window"`
+	RequestedPercent     json.Number `json:"requestedPercent"`
+	EffectivePercent     int64       `json:"effectivePercent"`
+	AutoCompactTokens    int64       `json:"autoCompactTokenLimit"`
+	WindowSource         string      `json:"windowSource"`
+	PercentSource        string      `json:"percentSource"`
+	AutoCompactEffortCap string      `json:"autoCompactEffortCap"`
+	EffortCapSource      string      `json:"effortCapSource"`
+}
+
+func (config ClauductSettings) contextFacts() ContextFacts {
+	return ContextFacts{Window: config.ContextPolicy.Window, RequestedPercent: config.ContextRequestedPercent,
+		EffectivePercent: min(config.Context.Percent, 90), AutoCompactTokens: config.ContextPolicy.CompactAt,
+		WindowSource: config.ContextWindowSource, PercentSource: config.ContextPercentSource,
+		AutoCompactEffortCap: config.ContextPolicy.EffortCap, EffortCapSource: config.ContextEffortCapSource}
 }
 
 // Status is the whole account of one session.
@@ -144,6 +165,10 @@ func completionFacts(d gateway.Diagnostics) CompletionFacts {
 
 // Account assembles what this session did.
 func Account(result Result) Status {
+	context := result.Context
+	if context.Window == 0 {
+		context = defaultClauductSettings().contextFacts()
+	}
 	return Status{
 		Completion: completionFacts(result.Diagnostics),
 		Category:   result.Category,
@@ -155,9 +180,10 @@ func Account(result Result) Status {
 			StartupEffort:       result.Startup.Effort,
 			StartupModelSource:  result.StartupModelSource,
 			StartupEffortSource: result.StartupEffortSource,
-			NativeContextDefaults: NativeContextDefaults{Window: contextWindow,
-				AutoCompactWindow: compactAt, CompactPercent: compactPercent(), ApplicationVerified: false},
-			NonStreamingFallback:  sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
+			NativeContextDefaults: NativeContextDefaults{Window: int(context.Window),
+				AutoCompactWindow: int(context.Window), CompactPercent: float64(context.EffectivePercent), ApplicationVerified: false},
+			Context:               context,
+			NonStreamingFallback:  defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
 			DelegationMenuEntries: len(bridge.Models) + 1,
 			HookInstalled:         result.HookInstalled,
 		},

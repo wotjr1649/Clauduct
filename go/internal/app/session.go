@@ -30,19 +30,6 @@ var startupModel = bridge.DefaultStartup()
 // a user who wants the pin and never by this build. See launch.Overlay.Effort.
 const effortEnv = "CLAUDE_CODE_EFFORT_LEVEL"
 
-// Native has one process-wide envelope. The gateway enforces each model's
-// smaller policy before dispatch. Native's own reservation remains a backstop.
-const (
-	contextWindow = 500000
-	compactAt     = 500000
-	outputReserve = 0
-)
-
-// compactPercent is where compaction lands once the output reserve is taken out.
-func compactPercent() float64 {
-	return float64(compactAt) / float64(contextWindow-outputReserve) * 100
-}
-
 // sessionEnvironment is what this build tells the native child about the session.
 //
 // Derived from the supported catalogue and this session's selection, so native
@@ -83,11 +70,11 @@ func (config ClauductSettings) sessionEnvironment() map[string]string {
 		// Deferred schemas are discovered through the client's native ToolSearch.
 		"ENABLE_TOOL_SEARCH": "true",
 
-		// Shared native display/envelope, not the selected model's enforced limit.
-		// The gateway signals native compaction at 239K or 450K using exact input.
-		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  strconv.Itoa(contextWindow),
-		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": strconv.Itoa(compactAt),
-		"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": strconv.FormatFloat(compactPercent(), 'f', -1, 64),
+		// The same launch-wide window serves every model. Native retains its
+		// own output reserve and may compact before the gateway's estimate target.
+		"CLAUDE_CODE_MAX_CONTEXT_TOKENS":  strconv.FormatInt(config.ContextPolicy.Window, 10),
+		"CLAUDE_CODE_AUTO_COMPACT_WINDOW": strconv.FormatInt(config.ContextPolicy.Window, 10),
+		"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": strconv.FormatInt(min(config.Context.Percent, 90), 10),
 	}
 
 	// The client's own tiers, pointed at the models they belong to. Measured: with these
@@ -108,12 +95,11 @@ func (config ClauductSettings) sessionEnvironment() map[string]string {
 
 // sessionRequirements is what the child does not get to run without.
 //
-// The transport needs streaming, request classes and a native envelope large
-// enough for every fixed gateway policy. An inherited 400K environment must not
-// silently replace the selected 500K/450K policy or obscure model transitions.
-func sessionRequirements() map[string]string {
+// The transport needs streaming, request classes and the resolved context
+// settings. Inherited values must not silently replace this launch's policy.
+func (config ClauductSettings) sessionRequirements() map[string]string {
 	values := map[string]string{"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1"}
-	defaults := defaultClauductSettings().sessionEnvironment()
+	defaults := config.sessionEnvironment()
 	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"} {
 		values[key] = defaults[key]
 	}

@@ -108,6 +108,7 @@ type Result struct {
 	Startup             bridge.Pair
 	StartupModelSource  string
 	StartupEffortSource string
+	Context             ContextFacts
 	NativeStarted       bool
 	NativeExitCode      int
 	GatewayAddr         string
@@ -160,12 +161,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if option, refused := launch.Refused(o.Args); refused {
 		return Result{}, &RefusedOptionError{Option: option}
 	}
-	forward, userSettings, settingsSlots, err := takeUserSettings(o.Args, o.Cwd)
-	if err != nil {
-		return Result{}, err
-	}
-	forward, resumeID := prepareSessionArgs(forward)
-	o.Args = forward
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome
 	if o.Settings == nil && !nativeInformation(o.Args) {
@@ -175,14 +170,22 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				return Result{}, errClauductSettings
 			}
 		}
-		if err := settingsfile.Ensure(clauductHome); err != nil {
+		// Context is global launch configuration, including UUID resume. Only
+		// model/effort preferences are subsequently restored from the snapshot.
+		config, err = loadClauductSettings(clauductHome)
+		if err != nil {
 			return Result{}, err
 		}
-		if resumeID == "" {
-			config, err = loadClauductSettings(clauductHome)
-			if err != nil {
-				return Result{}, err
-			}
+	}
+	forward, userSettings, settingsSlots, err := config.takeUserSettings(o.Args, o.Cwd)
+	if err != nil {
+		return Result{}, err
+	}
+	forward, resumeID := prepareSessionArgs(forward)
+	o.Args = forward
+	if o.Settings == nil && !nativeInformation(o.Args) {
+		if err := settingsfile.Ensure(clauductHome); err != nil {
+			return Result{}, err
 		}
 	}
 
@@ -208,12 +211,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			saved, loadErr := profiles.Load(resumeID)
 			switch {
 			case errors.Is(loadErr, os.ErrNotExist):
-				// Older native sessions have no snapshot. Start them with today's
-				// configured pair; the user can choose another with S.
-				config, err = loadClauductSettings(clauductHome)
-				if err != nil {
-					return Result{}, err
-				}
+				// No snapshot: retain today's settings, including the startup pair.
 			case loadErr != nil:
 				return Result{}, loadErr
 			default:
@@ -245,7 +243,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// session ends here and the child is never spawned.
 		return Result{}, err
 	}
-	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup}
+	gw.ConfigureContextPolicy(config.ContextPolicy)
+	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts()}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -359,7 +358,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		AuthToken: gw.Token(),
 		Session:   session,
 		Effort:    effort,
-		Enforced:  sessionRequirements(),
+		Enforced:  config.sessionRequirements(),
 		Settings:  settings,
 		Agents:    agents,
 	})

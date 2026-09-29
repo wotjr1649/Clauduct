@@ -997,10 +997,17 @@ func (g *Gateway) Snapshot() Diagnostics {
 
 func (g *Gateway) modelContexts() []ModelContextReport {
 	reports := g.ring.contextReport()
+	var policy bridge.ContextPolicy
+	if g.contexts != nil {
+		g.contexts.mu.Lock()
+		policy = g.contexts.policy
+		g.contexts.mu.Unlock()
+	}
 	g.counts.mu.Lock()
 	defer g.counts.mu.Unlock()
 	if g.contexts != nil {
 		for i := range reports {
+			reports[i].Target = policy
 			reports[i].Application = "gateway_usage_preventive_compaction"
 			reports[i].Verification = "not_observed"
 			reports[i].Reason = "MANAGEMENT_TARGET_NOT_EXACT_ADMISSION_CAP"

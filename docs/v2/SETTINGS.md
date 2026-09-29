@@ -19,6 +19,9 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 ```json
 {
   "version": 1,
+  "context_window": 272000,
+  "auto_compact_token_limit_percent": 90,
+  "auto_compact_effort_cap": "medium",
   "startup": {
     "model": "gpt-6-sol",
     "effort": "xhigh"
@@ -55,6 +58,9 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `modelDefaults` | 모델만 선택하고 effort를 명시하지 않은 경로의 GPT 기본 effort |
 | `modelMapping` | Claude alias 및 해당 버전형 이름이 가리키는 GPT 모델 |
 | `agents` | 해당 agent의 모델·effort 기본 pair |
+| `context_window` | 모든 모델에 공통인 context 관리값. 기본 272,000, 정수 100,000–872,000 |
+| `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
+| `auto_compact_effort_cap` | 검증된 자동 압축 요청의 effort 상한. 기본 `medium`. 현재 대화 effort를 높이지 않음 |
 
 시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
 Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
@@ -72,7 +78,36 @@ Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바�
 | `haiku` | `gpt-6-luna` | max |
 
 여러 alias를 같은 GPT 모델에 매핑해도 된다. 전체 GPT ID를 명시한 선택은 그 모델을 직접 선택한다.
-지원 모델·effort 목록과 context 한도를 설정 파일로 늘릴 수는 없다.
+지원 모델·effort 목록과 backend 자체의 최대 용량을 설정 파일로 늘릴 수는 없다.
+
+## 전역 context와 압축 목표 (v0.6.2 준비)
+
+두 context 항목은 모델별 설정이 아니다. Sol·Luna·Astra·Terra와 자식 Agent에 같은 값을 적용한다.
+Clauduct는 실행 시 `floor(context_window * min(auto_compact_token_limit_percent, 90) / 100)`으로
+gateway의 예방 압축 목표를 한 번 계산한다. 기본값은 244,800 tokens다. 절대값을 따로 저장하는
+`auto_compact_token_limit` 항목은 받지 않는다. 1% 미만, 소수, 문자열, null은 오류이며,
+90% 초과는 입력 파일을 수정하지 않고 실행값만 90%로 제한한다. window의 범위 밖 값은 거부한다.
+
+window 하한은 native `CLAUDE_CODE_AUTO_COMPACT_WINDOW`의 100,000에 맞췄다.
+상한 872,000과 기본 272,000은 Codex CLI 0.158.0의 관리 범위를 기준으로 정한 제품 설정 범위다.
+이는 모델 API의 최대 context 용량이나 모든 크기에서 실측한 성공 보장이 아니다.
+
+압축은 Claude Code(native)가 수행한다. Clauduct는 해당 window와 유효 비율을 native 환경에
+전달하고, 관측된 사용량·예방 추정이 gateway 목표에 이르면 기존 native 압축 경로를 요청한다.
+별도 Codex 압축 엔진이나 대화 강제 절삭을 추가하지 않는다. native는 출력 여유 공간과 자체
+정책 때문에 더 일찍 압축할 수 있다. native 2.1.284의 기본 `/context` 실측은 272k와 33k의
+autocompact buffer였으며, 이를 gateway 목표 244,800과 같은 trigger라고 해석하지 않는다.
+설정값은 정확한 요청 차단 상한이 아니며 큰 신규 입력의 최초 초과 가능성은 남는다.
+도구 없는 보조 요청도 이 공통 목표를 사용한다. 보조 요청은 대화 이력을 직접 압축할 수 없으므로
+예방 추정값이 목표에 도달하면 기존 `CONTEXT_COMPACTION_UNAVAILABLE` 거부를 유지한다.
+
+자동 압축의 effort는 현재 대화 effort와 `auto_compact_effort_cap` 중 낮은 값이다.
+지원값은 `low`, `medium`, `high`, `xhigh`, `max`이며 잘못된 값은 거부한다.
+기본 상한 `medium`에서 대화가 `low`이면 압축도 `low`, 대화가 `max`이면 압축은 `medium`이다.
+상한을 `max`로 설정해도 `low` 대화의 압축을 높이지 않는다. `modelDefaults`를 다시 적용하지 않는다.
+압축 모델은 기존 확정 모델을 유지하고 이후 생성은 원래 effort로 돌아간다. 수동 `/compact`는
+기존 대화 effort를 유지한다. 이 상한은 native가 실행하는 요약 요청의 backend effort에만 적용하며,
+압축 시작·권한·완료 판단을 바꾸지 않는다. 낮은 effort가 기억 보존 품질까지 보장하지는 않는다.
 
 외부 플러그인 agent는 `plugin-name:agent-name`처럼 native의 실제 이름을 사용한다.
 Clauduct의 pair는 역할의 실행 선택을 바꾼다. 역할의 원래 prompt·tools·권한은 native가 읽고 적용한다.
@@ -96,8 +131,16 @@ Clauduct는 `.clauduct/sessions/<UUID>.json`에 당시 모델 매핑·기본값�
 snapshot을 따른다. `--model`, `--effort`와 사용자가 지정한 native effort 환경변수는 명시적인 선택으로 적용한다.
 `--fork-session`은 원본의 snapshot과 선택을 복제한다.
 
+context window·비율·자동 압축 상한은 snapshot에 저장하지 않는다. UUID 재개 시에도
+**현재 전역 settings.json**의 세 값을 읽는다. 따라서 재개 전에 window를 줄이면 기존 사용량이 새 목표에 도달하여 압축이
+필요할 수 있다. 모델·effort snapshot과 대화는 그대로 유지한다. 현재 설정 파일이 잘못되었다면
+UUID 재개도 native 실행 전에 거부하며 원본 파일은 보존한다.
+이 검증은 파일 전체에 적용한다. 현재 파일에 모르는 모델·effort가 있으면 이를 무시하지 않고 오류로
+알린다. 유효한 파일을 읽은 뒤에는 저장된 모델·effort 선택을 사용하며 현재 파일의 선택값으로 바꾸지 않는다.
+
 `/clear`는 현재 실행의 snapshot과 선택을 유지한다. 파일 편집은 새로운 Clauduct 실행에서 읽으며,
-저장된 세션을 재개할 때는 그 세션의 snapshot을 사용한다.
+저장된 세션의 모델·effort는 snapshot, context는 현재 전역 설정을 사용한다.
+실행 중인 세션과 `/clear`에는 편집한 context를 즉시 다시 읽어 적용하지 않는다.
 
 `EnterWorktree`·`ExitWorktree`는 native가 옮긴 transcript 경로에 snapshot과 context journal을 연결한다.
 기존 transcript가 사라지고 같은 UUID의 새 파일이 native projects 안에 존재하는지 확인한다.
@@ -124,6 +167,10 @@ snapshot이 없는 이전 세션은 현재 설정의 시작값으로 연다. `--
 `phase`가 포함된 대화는 v0.5.5 이상이 필요하다. v0.5.3/4는 그 대화의 후속 요청을 거부한다.
 설정 snapshot 호환성과 대화 payload 호환성은 별개다. 구버전 backend 응답 자체는 이
 무과금 호환성 검사의 범위가 아니다.
+
+v0.6.1 이하 설정 parser는 새 context·effort 상한 키를 알 수 없는 필드로 거부한다. 그 버전으로 되돌리려면
+현재 파일을 백업한 뒤 세 키를 제외한 구버전 호환 설정을 직접 사용한다. 바이너리 되돌림이
+설정·대화·snapshot을 자동 삭제하거나 변환하지 않는다.
 
 v0.5.4의 background worker는 같은 연결·같은 세션으로 재시작하고 마지막 선택이 시작 인자와
 일치할 때 현재 snapshot으로 재연결한다. 실행 중 settings.json 편집은 이 worker의 설정을 바꾸지 않는다.
@@ -157,8 +204,15 @@ Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 �
 기존 Agent의 `source`는 선택 경로 분류이며 원본 설정 파일 경로를 뜻하지 않는다.
 대화 본문·설정 원문·credential은 출처 진단에 넣지 않는다.
 
+`session.context`는 window, 요청한 `requestedPercent`, clamp 후 `effectivePercent`, 계산한
+`autoCompactTokenLimit`, `autoCompactEffortCap`과 각 설정의 `factory.*` 또는 `settings.*` 출처를 기록한다.
+실제 압축 요청에 사용한 effort는 `gateway.recent`의 `kind: compaction` 기록에서 확인한다.
+`gateway.modelContexts[].target`은 이 실행의 공통 목표다. `nativeContextDefaults`는 전달한
+native 값이며, `applicationVerified:false`는 native가 그 정확한 시점에 압축했다는 증거가
+아니라는 뜻이다. 낮은 비율에서 반복 압축이 발생하면 비율과 실제 입력 크기를 함께 확인한다.
+
 ## 코드에 유지하는 정책
 
-모델의 지원 기능, context 한도, 입력 검증과 처리 상한, native hook 연결 및 보안 규칙은 코드에서 관리한다.
-추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 Terra/high 선택도
-개인화 설정으로 변경하지 않는다.
+모델의 지원 기능, context 설정의 허용 범위, 입력 검증과 처리 상한, native hook 연결 및 보안 규칙은 코드에서 관리한다.
+추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 기존 Terra/high 선택은
+이번 context 변경 범위에 포함하지 않는다. 설정화·지원 범위 검증은 [별도 작업](https://github.com/wotjr1649/Clauduct/issues/218)으로 추적한다.

@@ -21,7 +21,7 @@ var errSettingsConflict = errors.New("SETTINGS_CONFLICT: required Clauduct hooks
 // Read the last real --settings source and record every settings slot for Run to
 // replace with the merged blob. Keep each slot: removing it lets an earlier
 // optional/variadic option consume the following prompt. Other argv is unchanged.
-func takeUserSettings(args []string, cwd string) ([]string, map[string]json.RawMessage, []int, error) {
+func (config ClauductSettings) takeUserSettings(args []string, cwd string) ([]string, map[string]json.RawMessage, []int, error) {
 	forward := make([]string, 0, len(args))
 	var slots []int
 	value, present := "", false
@@ -104,7 +104,7 @@ func takeUserSettings(args []string, cwd string) ([]string, map[string]json.RawM
 				return nil, nil, nil, errUserSettings
 			}
 			upper := strings.ToUpper(key)
-			if required, ok := sessionRequirements()[upper]; ok && value != required {
+			if required, ok := config.sessionRequirements()[upper]; ok && value != required {
 				return nil, nil, nil, errSettingsConflict
 			}
 			switch upper {

@@ -142,6 +142,17 @@ interactive TUI 검사는 실제 pseudo console에서 사람이 입력해야 하
 `optional`은 화면이 없을 때만 건너뛴다. 화면이 나타난 뒤 완료 파일을 기다리다 시간 초과되면 실패한다.
 파일 신호는 검증기의 동기화 수단이며 제품이나 native의 완료 판정을 대신하지 않는다.
 
+선택 항목 `-cleanup-script cleanup.json`은 단계 실패 뒤 같은 형식의 정리 단계를 실행한다.
+원래 실패 사유와 종료 코드 1은 정리 성공 후에도 유지한다. 정상 단계 완료에는 실행하지 않는다.
+두 스크립트의 정규식과 `wait_file` 경로·기존 파일 여부는 자식 실행 전에 검사한다.
+정리용 `wait_file`은 본 작업 스크립트의 파일과 달라야 한다. 음수나 계산 범위를 넘는 시간은
+실행 전에 거부하며, `timeout_s` 생략값·0은 기존과 같이 1초다.
+Windows device namespace·운영체제의 예약 장치 이름·마침표나 공백으로 끝나는 경로 구성요소는 거부하고, 정리 시작 때도
+정리용 완료 파일이 아직 없는지 검사한다. 정리 오류는 원래 `failed_wait`와 별도인 `cleanup_error`에 남는다.
+정리는 실패 시점 이후의 화면을 기다리므로 즉시 취소 입력을 보내려면 첫 `wait`를 비워 둔다.
+필수 단계의 `timeout_s`가 끝나면 정리를 중단하고, 자식이 5초 안에 종료하지 않으면 강제 종료한다.
+검증기는 합성 세션에 필요한 취소·종료 입력과 유한 단계 시간을 직접 지정해야 한다.
+
 ```powershell
 go build -o ..\.tmp\ptydrive.exe ./cmd/ptydrive
 ..\.tmp\ptydrive.exe -dir <cwd> -script <steps.json> -log raw.log -text screen.txt -env K=V -- <exe> <args...>

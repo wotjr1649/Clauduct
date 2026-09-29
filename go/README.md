@@ -76,6 +76,14 @@ null·boolean 이외 값·중복 키는 잘못된 계획이다. 형식 버전은
 `attempts`는 각 프로세스의 예약 수이며, 실행 전체 예약 수는 디렉터리에 남은 파일 수로 별도 대조한다.
 이 설정은 과금 승인 자체를 대신하지 않는다.
 
+v0.6.2 준비본은 검증 route에 선택적인 `sources` 목록을 지원한다. 예를 들어
+`{"model":"gpt-5.6-terra","effort":"high","sources":["native-auto-mode","native-auto-mode+auxiliary-cap"]}`는
+해당 모델·effort의 권한 분류 요청만 허용한다. 일반 Agent나 대화 요청은 같은 모델·effort라도
+credential 조회·전송·예약 파일 생성 전에 거부한다. 목록은 비어 있지 않은 정확한 출처 문자열이며
+wildcard를 받지 않는다. 생략한 route는 이전처럼 모델·effort만 제한한다. 계수 요청도 원래 선택 출처로
+검사하며 `Count`로 생성 요청과 구분한다. 새 예약은 `Source`를 함께 기록하고 과거 예약은 바꾸지 않는다.
+형식 버전은 1을 유지한다. `sources`를 모르는 구형 바이너리는 알 수 없는 필드로 계획 전체를 거부한다.
+
 일반 세션의 요청 수 정책을 정할 때 사용한 초기 native 2.1.272 관측은
 [`docs/v2/VALIDATION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)
 1.1.2에 있다. 위 공유 검증 예산은 v0.4.3에서 추가했으며 현재 근거는

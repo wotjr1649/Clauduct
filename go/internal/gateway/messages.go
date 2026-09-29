@@ -273,7 +273,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
 		return
 	}
-	response, err := g.transport.Execute(ctx, upstream.Call{
+	response, err := g.transport.Execute(entry.traceUpstream(ctx), upstream.Call{
 		Body:      encoded,
 		Requested: request.Model,
 		Model:     backendRequest.Model,
@@ -281,6 +281,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Source:    backendRequest.Source,
 		Session:   g.promptCacheKey(scope.session),
 	})
+	entry.upstreamReturned(err, ctx, r.Context())
 	execution.rejectedBeforeDispatch(err)
 	if err != nil {
 		if categoryFor(err) == "CONTEXT_LENGTH_EXCEEDED" && g.recoverContextOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), backendRequest.Model) {

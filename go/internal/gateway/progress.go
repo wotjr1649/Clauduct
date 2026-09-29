@@ -20,6 +20,10 @@ func (r *record) backendEvent(kind string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data.LastObservedMs = time.Since(r.epoch).Milliseconds()
+	if r.data.FirstBackendEventMs == nil {
+		first := r.data.LastObservedMs
+		r.data.FirstBackendEventMs = &first
+	}
 	r.data.BackendProgress.Events++
 	switch kind {
 	case "response.output_text.delta":

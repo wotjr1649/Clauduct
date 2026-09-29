@@ -428,6 +428,7 @@ func (g *Gateway) reconcileNativeResults() {
 			}
 		}
 		r.mu.Unlock()
+		g.finishNativeAgentStop(receipt)
 		// Only this task-created validated receipt is removed; active metadata stays.
 		if root, err := os.OpenRoot(g.nativeEvents.directory); err == nil {
 			_ = root.Remove(name)
@@ -457,10 +458,21 @@ func (g *Gateway) retireEndedChildren() {
 		switch receipt.Reason {
 		case "answer", "aborted", "refusal", "error":
 			// The body must name the turn its file is named for; retire keys on the session.
-			if receipt.Agent == want.Agent && receipt.Turn == want.Turn {
+			if receipt.Session == want.Session && receipt.Agent == want.Agent && receipt.Turn == want.Turn {
+				g.finishNativeAgentStop(receipt)
 				l.retire(receipt.Session, receipt.Agent, receipt.Turn)
 			}
 		}
+	}
+}
+
+func (g *Gateway) finishNativeAgentStop(receipt nativeTurnReceipt) {
+	if g.agents == nil || receipt.Reason != "answer" && receipt.Reason != "aborted" && receipt.Reason != "error" && receipt.Reason != "refusal" {
+		return
+	}
+	binding, found := g.agents.finishStop(receipt)
+	if found && receipt.Reason == "answer" && g.delegations != nil {
+		g.delegations.stoppedTurn(binding, receipt.Turn)
 	}
 }
 

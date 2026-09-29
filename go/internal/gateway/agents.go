@@ -15,8 +15,9 @@ import (
 //
 // A subagent is started by the client, not by this gateway, so the only way to know one
 // exists -- and what role it was started as -- is for the client to say so. A SubagentStart
-// hook posts that, a SubagentStop hook withdraws it, and what the registration is for is
-// deciding which model the subagent's requests run on.
+// hook posts that. With native event receipts, SubagentStop withdraws it only after
+// that turn actually ends; another Stop hook can request more work in the same turn.
+// The registration decides which model the subagent's requests run on.
 //
 // Stop events additionally carry the existing final answer for parent delivery.
 // Bodies remain transient; diagnostics expose only delivery state and byte count.
@@ -60,6 +61,13 @@ type agentState struct {
 	// active is how many requests this registration currently has in flight. A
 	// registration with live work is never swept and never evicted.
 	active int
+	stop   *agentStop
+}
+
+// SubagentStop is a proposal: another native hook may keep the same turn alive.
+type agentStop struct {
+	binding agentBinding
+	turn    string
 }
 
 // agentRegistry is the table of live subagent registrations.
@@ -131,10 +139,63 @@ func (a *agentRegistry) register(binding agentBinding, now time.Time) (registere
 	if existing, known := a.byID[binding.ID]; known {
 		existing.binding = binding
 		existing.role, existing.context, existing.lastUsed = binding.Role, binding.Context, now
+		existing.stop = nil
 		return true, nil
 	}
 	a.byID[binding.ID] = &agentState{binding: binding, role: binding.Role, lastUsed: now, context: binding.Context}
 	return true, nil
+}
+
+func (a *agentRegistry) deferStop(binding agentBinding, turn string) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := a.byID[binding.ID]
+	if s == nil {
+		return false, nil
+	}
+	if s.role != binding.Role || s.binding.SessionID != binding.SessionID || s.binding.TranscriptPath != binding.TranscriptPath {
+		return false, errBindingConflict
+	}
+	bytes := len(binding.Result)
+	for id, state := range a.byID {
+		if id != binding.ID && state.stop != nil {
+			bytes += len(state.stop.binding.Result)
+		}
+	}
+	if bytes > resultMemoryLimit {
+		return false, errBindingLimit
+	}
+	s.stop = &agentStop{binding: binding, turn: turn}
+	return true, nil
+}
+
+func (a *agentRegistry) stopOf(id string) *agentStop {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if s := a.byID[id]; s != nil {
+		return s.stop
+	}
+	return nil
+}
+
+func (a *agentRegistry) continueStop(id string, stop *agentStop) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if s := a.byID[id]; s != nil && s.stop == stop {
+		s.stop = nil
+	}
+}
+
+func (a *agentRegistry) finishStop(receipt nativeTurnReceipt) (agentBinding, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s := a.byID[receipt.Agent]
+	if s == nil || s.stop == nil || s.stop.turn != receipt.Turn || s.stop.binding.SessionID != receipt.Session {
+		return agentBinding{}, false
+	}
+	binding := s.stop.binding
+	delete(a.byID, receipt.Agent)
+	return binding, true
 }
 
 func (a *agentRegistry) bindingOf(id string) agentBinding {
@@ -216,12 +277,33 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	registered, err := g.agents.register(binding, time.Now())
+	var registered bool
+	deferred := binding.Stop && g.nativeEvents.directory != ""
+	if deferred {
+		turn, found, readErr := g.readCurrentNativeTurn(binding.ID)
+		if readErr != nil || !found || !validActiveReceipt(turn, binding.SessionID, binding.ID) {
+			g.refuseCategory(w, http.StatusBadRequest, "INVALID_AGENT_BINDING")
+			return
+		}
+		registered, err = g.agents.deferStop(binding, turn.Turn)
+		if err == nil && g.delegations != nil {
+			r := &g.delegations.results
+			r.mu.Lock()
+			if e := r.entries[binding.ID]; e != nil && e.Session == turn.Session && e.NativeTurn == turn.Turn && e.NativeEndObserved {
+				turn.Reason = e.EndReason
+			}
+			r.mu.Unlock()
+			g.finishNativeAgentStop(turn)
+			registered = g.agents.bindingOf(binding.ID).ID != ""
+		}
+	} else {
+		registered, err = g.agents.register(binding, time.Now())
+	}
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if binding.Stop && g.delegations != nil {
+	if binding.Stop && !deferred && g.delegations != nil {
 		g.delegations.stopped(binding)
 	}
 

@@ -334,6 +334,12 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 		entry.agent(agent, scope.parent, role, false)
 		if g.delegations != nil {
 			binding := g.agents.bindingOf(agent)
+			stop := g.agents.stopOf(agent)
+			if stop != nil {
+				if meta, err := g.delegations.readMetadata(binding); err != nil || meta.StoppedByUser {
+					return nil, releaseAgent, errDelegationUnverified
+				}
+			}
 			resolvedScope, continued := g.continuationScope(scope, agent, binding)
 			route, found, err := g.delegations.route(resolvedScope, agent, binding, r.Context())
 			if errors.Is(err, bridge.ErrRetiredRoute) {
@@ -372,6 +378,9 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				entry.checked("selection")
 				if continued || route.Source == "verified-resume" {
 					entry.checked("continuation")
+				}
+				if r.URL.Path == "/v1/messages" && conversationRequest(r, request) && r.Header.Get("X-Claude-Code-Request-Class") != "compaction" {
+					g.agents.continueStop(agent, stop)
 				}
 			}
 		}

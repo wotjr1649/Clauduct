@@ -715,9 +715,10 @@ exec HTTP·WebSocket 요청 구조가 0.157.0과 같았다(버전 문자열과 �
 한 글자 누락 1건이 있었고 Sol의 별도 실행은 성공했다. 무료 native 검사에서 원본 문서와 페이지 이미지의
 backend 전달 바이트는 보존됐다. 이는 모델별 모든 판독의 정확성을 보장하는 결과가 아니다.
 
-최종 목표는 Windows의 로컬 기능과 backend로 구현 가능한 기능 전체다. subagent 내부 forked Skill,
-fork 자식 재개, 역할 기본값 수집 확대는 v0.5.0에서 다뤘다(아래 v0.5.0 절). Workflow 재실행 resume,
-review-diff 헬퍼와 native 도구를 통한 Office 처리는 구현·인수 검증 대기다. 서비스 전용 제약은
+이 감사 당시의 후속 항목 중 subagent 내부 forked Skill, fork 자식 재개, 역할 기본값 수집 확대는
+v0.5.0에서 다뤘다(아래 v0.5.0 절). Workflow의 검증된 명시적 source 재개, native 도구의 기본 Office 인수,
+native code-review 인수와 V1 review-diff의 문서상 은퇴는 [v0.6.0](RELEASE-v0.6.0.md)에서 완료했다.
+현재 v0.6.x 작업은 [현행 Windows 지원 범위의 후속 검증](QUALITY-v0.6.x.md)이며 서비스 전용 제약은
 [공식 기능 가용성](https://code.claude.com/docs/en/feature-availability)에 따라 별도로 관리한다.
 모든 로컬 slash command와 조합을 실측했거나 API 오류가 언제나 없다는 판정은 하지 않는다.
 

@@ -110,6 +110,17 @@ go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측�
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,
 공개 CI는 위 세 검사, `internal/httpguard`의 Linux·macOS build와 PowerShell 7 스크립트의 AST·최소 버전을 검사한다.
 
+성능 벤치마크는 기본 `go test`에서 실행되지 않는다. 유지보수자의 비공개 검사가 있는 작업 폴더에서
+다음과 같이 별도로 실행한다. 일반 회귀에도 벤치마크의 대표 준비 경로를 포함해 native 선택 증거가
+낡으면 측정 전 실패를 발견한다. `-mutexprofile`은 현재 Windows/Go 검증 환경에서 사용하지 않는다.
+
+```powershell
+go test -run '^$' -bench 'Benchmark(MainTurnOverhead|RetireWithManyEndedChildren)$' -benchmem -benchtime=20x -count=3 ./internal/gateway
+```
+
+로컬 전송 fixture로 잰 시간·할당은 backend 추론과 별개의 지표다. [v0.6.x 품질 검증](../docs/v2/QUALITY-v0.6.x.md)에
+실제 바이너리의 자원·backend 표본과 측정 한계를 구분한다.
+
 ### TUI 검사 (ConPTY)
 
 interactive TUI 검사는 실제 pseudo console에서 사람이 입력해야 하는데, 에이전트의 셸에는 터미널이 없다.

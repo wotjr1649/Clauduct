@@ -116,14 +116,22 @@ type RequestRecord struct {
 	BackendProgress       BackendProgress  `json:"backendProgress"`
 	ParentReadiness       *ParentReadiness `json:"parentReadiness,omitempty"`
 
+	UpstreamEnd *UpstreamEndRecord `json:"upstreamEnd,omitempty"`
+
 	// What a backend failure event said about itself, in fixed vocabularies (#84).
 	UpstreamFailure *codex.FailureDetail `json:"upstreamFailure,omitempty"`
 
 	// Milliseconds from when this gateway started. Relative rather than wall clock: a
 	// diagnostic that travels should not carry when the machine was running, and the
 	// question a reader has is how long things took, not what time it was.
-	StartedMs   int64  `json:"startedMs"`
-	FirstByteMs *int64 `json:"firstByteMs,omitempty"`
+	StartedMs           int64  `json:"startedMs"`
+	FirstByteMs         *int64 `json:"firstByteMs,omitempty"`
+	UpstreamStartedMs   *int64 `json:"upstreamStartedMs,omitempty"`
+	UpstreamConnectedMs *int64 `json:"upstreamConnectedMs,omitempty"`
+	UpstreamWrittenMs   *int64 `json:"upstreamWrittenMs,omitempty"`
+	UpstreamHeaderMs    *int64 `json:"upstreamHeaderMs,omitempty"`
+	UpstreamReturnedMs  *int64 `json:"upstreamReturnedMs,omitempty"`
+	FirstBackendEventMs *int64 `json:"firstBackendEventMs,omitempty"`
 	// KeepaliveOpenedMs is when a keepalive opened a message that had no output yet (#120).
 	// FirstByteMs is then that moment, not the first output, and a count of these says how
 	// often a first output takes longer than the keepalive waits.

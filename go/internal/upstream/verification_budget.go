@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -24,6 +25,7 @@ const VerificationBudgetVersion = 1
 
 var errVerificationBudget = fmt.Errorf("VERIFICATION_BUDGET_INVALID: %w", ErrBudgetExhausted)
 var verificationLabel = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,99}$`)
+var verificationSource = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]{0,99}$`)
 
 type verificationBudget struct {
 	directory string
@@ -79,19 +81,35 @@ func (v *verificationBudget) reserve(a Attempt) error {
 	}
 	authorised := false
 	for _, route := range routes {
-		fields, err := wire.Fields(route, []string{"model", "effort"})
+		fields, err := wire.Fields(route, []string{"model", "effort", "sources"})
 		var model, effort string
 		if err != nil || json.Unmarshal(fields["model"], &model) != nil || json.Unmarshal(fields["effort"], &effort) != nil ||
 			!verificationLabel.MatchString(model) || !verificationLabel.MatchString(effort) {
 			return errVerificationBudget
 		}
-		authorised = authorised || model == a.Model && effort == a.Effort
+		sourceAllowed := true
+		if raw, present := fields["sources"]; present {
+			var sources []string
+			if json.Unmarshal(raw, &sources) != nil || len(sources) == 0 {
+				return errVerificationBudget
+			}
+			for _, source := range sources {
+				if !verificationSource.MatchString(source) {
+					return errVerificationBudget
+				}
+			}
+			sourceAllowed = slices.Contains(sources, a.Source)
+		}
+		authorised = authorised || model == a.Model && effort == a.Effort && sourceAllowed
 	}
 	if a.Search {
 		authorised = allowSearch
 	}
 	if !authorised {
 		return ErrRouteNotAuthorised
+	}
+	if a.Source != "" && !verificationSource.MatchString(a.Source) {
+		return errVerificationBudget // never persist an unshaped source value
 	}
 	v.plan = raw
 	// O_EXCL is the cross-process reservation. A crash, partial write or failed
@@ -109,8 +127,9 @@ func (v *verificationBudget) reserve(a Attempt) error {
 			Model, Effort string
 			Count, Retry  bool
 			PID           int
-			Search        bool `json:",omitempty"`
-		}{a.Model, a.Effort, a.CountOnly, a.Retry, os.Getpid(), a.Search})
+			Search        bool   `json:",omitempty"`
+			Source        string `json:",omitempty"`
+		}{a.Model, a.Effort, a.CountOnly, a.Retry, os.Getpid(), a.Search, a.Source})
 		if err == nil {
 			err = claim.Sync()
 		}

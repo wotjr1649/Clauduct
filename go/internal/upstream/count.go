@@ -58,7 +58,7 @@ func (d *Direct) Count(ctx context.Context, call Call) (int64, error) {
 		return 0, ctx.Err()
 	}
 	defer func() { <-d.counts.slots }()
-	if err := d.Ledger.Reserve(Attempt{Requested: call.Requested, Model: call.Model, Effort: call.Effort, Source: "backend-count", CountOnly: true}); err != nil {
+	if err := d.Ledger.Reserve(Attempt{Requested: call.Requested, Model: call.Model, Effort: call.Effort, Source: call.Source, CountOnly: true}); err != nil {
 		return 0, err
 	}
 	if d.Credentials == nil {

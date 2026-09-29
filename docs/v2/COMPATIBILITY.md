@@ -355,6 +355,29 @@ A/G/LIFE 등의 식별자는 [이전 검증 기록](https://github.com/wotjr1649
 그 행을 최근 빌드에서 모두 다시 실측했다는 뜻은 아니다. 이미지·PDF·MCP·WebSearch 등은
 이전 실측을 보존하며, 전체 형식·환경·plugin 조합의 보장으로 확대하지 않는다.
 
+### v0.6.1 이후 Agent·background 경계 (미출하)
+
+2026-09-29 개발 후보에서 [#195](https://github.com/wotjr1649/Clauduct/issues/195)의
+`SubagentStop` 조기 종료를 수정했다. native Stop hook이 추가 작업을 요구할 수 있으므로,
+같은 session·agent·turn의 실제 종료 영수증까지 등록과 완료 보고를 보류한다. 검증된 후속 생성 요청은
+이전 종료 후보를 폐기하며, 토큰 계수·auxiliary·compaction 요청은 이를 소비하지 않는다.
+사용자 중지·신원 검증과 새 입력의 `EMPTY_REPLY` 거부는 유지한다.
+[native SubagentStop 계약](https://code.claude.com/docs/en/hooks#subagentstop)을 따르는 수정이며
+SDK 기본 모드나 `SubagentHandback` 횟수 정책을 변경하지 않는다.
+
+실제 Codex backend에서 수정 전 Stop 피드백 뒤 `AGENT_SELECTION_UNVERIFIED`를 재현했다.
+후보의 일반·독립 Stop 피드백 표본과 handback 뒤 손자가 실행 중인 `SendMessage` 1회 표본은
+새 입력 응답·손자 결과·루트 수신까지 오류 없이 통과했다. 의도적으로 빈 답을 만든 무과금 native
+회복 검사는 `EMPTY_REPLY` 1건을 그대로 요구한다. 이는 모든 개입 시점과 입력의 보장이 아니다.
+
+[#196](https://github.com/wotjr1649/Clauduct/issues/196)은 같은 위임의 최종 답변만 marker와
+marker+완료 문장으로 바꿔 비교했다. 일반·독립 pair 네 표본 모두 실제 backend에서 완료됐다.
+답변 도착 뒤에도 native `working`이 남다가 `done`으로 전환한 관측이 있으므로,
+문장형 답변만 성공한다는 인과관계나 임의 marker의 즉시 완료를 주장하지 않는다. 과거 timeout의
+정확한 원인은 미확정이다. 완료는 `done`·실제 결과·root `turn_answer`·child native end와
+`parent_received`·요청/대기/예약 메모리 0의 서로 다른 두 안정 checkpoint를 모두 요구한다.
+native background 상태·권한·scheduler와 과거 FAIL·미확인 기록을 보존한다.
+
 ### 부모 대기·계획 재개의 실제 근거
 
 사용자 UUID `8544df8b-bc32-4df0-bffe-fce86176e3e1`에서 새 입력이 LEAF 도구 완료 전에

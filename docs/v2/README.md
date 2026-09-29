@@ -19,6 +19,9 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)에
 고정돼 있다.
 
+v0.6.x 후속 작업은 현행 Windows 지원 범위를 검증한다. [우선순위·성능·자원·직접 인수 범위](QUALITY-v0.6.x.md)에
+출하 대기와 개발 검증을 구분했다. 다음 태그·Release·설치는 별도 출하 작업이며 현재 설치본은 위 출시 버전이다.
+
 v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 같은 총상한 아래에서 검증한다.
 전체 기능 감사와 수정 후 회귀, 순수 태그의 실제 backend 16회, 재현 빌드·설치·공개 업데이트 및
 실제 설치본 확인을 [릴리스 노트](RELEASE-v0.4.4.md)에 기록했다. v0.6.0에서는 최종 바이너리의 필수

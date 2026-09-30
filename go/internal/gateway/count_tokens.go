@@ -79,6 +79,11 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
 	}
+	if r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" {
+		var finishCancellation func()
+		ctx, finishCancellation = g.bindNativeCancellation(ctx, r, entry, false)
+		defer finishCancellation()
+	}
 	if g.delegations != nil && !g.delegations.restrictWorkflowTools(request, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"), entry) {
 		g.refuseCategory(w, 400, "WORKFLOW_TOOL_POLICY")
 		return

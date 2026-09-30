@@ -122,6 +122,18 @@ export const register = on => {
     return next(e);
   });
   on('turn.start', async ($, e, next) => {
+    const restart=state.permissionRestart;
+    // Native /clear continues under another session ID without session.start.
+    // Only a fresh native turn can reopen it, never a delayed old tool hook.
+    if (state.permissionClosed && restart && ident(e.turnId) && e.turnId!==restart.turn) {
+      const sid=await session($);
+      if (sid!==restart.session) {
+        await preparePermissions($,state);
+        if (state.permissionClosed && state.permissionRestart===restart) {
+          state.permissionClosed=false;state.permissionRestart=null;
+        }
+      }
+    }
     state.rootTurn=e.turnId;state.rootOrigin=origin;origin='unclassified';
     return next(e);
   });
@@ -130,13 +142,15 @@ export const register = on => {
     // session evidence selects the response contract; other origins stay unknown.
     state.peerMode=e.isInteractive===true?'native_tui':e.isInteractive===false?'sdk':'unclassified';
     await preparePermissions($,state);
-    state.permissionClosed=false;
+    state.permissionClosed=false;state.permissionRestart=null;
     if (!state.permissionTimer) state.permissionTimer=$.clock.every(250,()=>{void answerConfirmations($,state);});
     await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($)}));
     return next(e);
   });
   on('session.end', async ($, e, next) => {
     state.permissionClosed=true;
+    state.permissionRestart=['clear','resume'].includes(e.reason) && ident(e.sessionId)?{session:e.sessionId,turn:state.rootTurn}:null;
+    for (const p of progress.values()) p.phase='turn_ended';
     state.permissionTimer?.cancel();state.permissionTimer=null;
     await state.permissionPublication;
     state.requests.clear();
@@ -146,6 +160,14 @@ export const register = on => {
     await preparePermissions($,state);
     const agent=e.agentId?ident(e.agentId):'', turn=ident(e.turnId);
     if (!turn || (e.agentId && !agent)) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+    if (state.permissionClosed && state.permissionRestart) {
+      // An anonymous typed fork has no turn.start to prove the replacement
+      // session. Refuse that scope without latching later verified user turns.
+      const answer='[Clauduct] NATIVE_REQUEST_ORIGIN_UNVERIFIED: no live native turn proved this request; this request was not sent.';
+      yield {kind:'text',index:0,text:answer};
+      yield {kind:'stop',stopReason:'refusal',usage:null};
+      return {turnId:e.turnId,index:e.index,answer,toolUses:[],stopReason:'refusal',usage:null};
+    }
     let p=progress.get(agent);
     if (!p || p.turn!==turn) {
       if (progress.size>=4096 && !p) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
@@ -316,7 +338,7 @@ export const register = on => {
     // Native can request a long tool's background decision after inference ended.
     // Its auxiliary scope cannot authorize ordinary inference or hosted search.
     const active={session:await session($),agent:p.agent,turn:p.turn,index:p.index,search:e.tool==='WebSearch',auxiliary:e.tool!=='WebSearch'};
-    if (p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
+    if (progress.get(p.agent)!==p || p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
     p.handback=''; // Any later tool invalidates the preceding hand-back step.
     // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
     if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;
@@ -363,13 +385,15 @@ export const register = on => {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
       const p=progress.get(agent);if (p?.turn===turn) p.phase='turn_ended';
-      if (!cancelledTurns.has(turn)) {
-        cancelledTurns.add(turn);
-        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
+      const first=!cancelledTurns.has(turn);
+      cancelledTurns.add(turn);
+      for (const active of state.requests) if (active.agent===agent && active.turn===turn) await endConfirmation($,state,active);
+      if (first) {
+        try { await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason})); }
+        catch (error) { state.permissionFailed=true;throw error; }
         // Duplicates follow the turn that just ended; forget the oldest, not the session.
         if (cancelledTurns.size>4096) cancelledTurns.delete(cancelledTurns.values().next().value);
       }
-      for (const active of state.requests) if (active.agent===agent && active.turn===turn) await endConfirmation($,state,active);
     }
     if (e.agentId) {
       const agent=ident(e.agentId),turn=ident(e.turnId);

@@ -516,13 +516,17 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 		g.deliverMessage(ctx, w, control, &message)
 		return
 	}
+	if ctx.Err() != nil {
+		g.deliveryFailed(ctx, w)
+		return
+	}
 	header := w.Header()
 	header.Set("Content-Type", "text/event-stream")
 	header.Set("Cache-Control", "no-cache")
 	header.Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 
-	bounded := &chunkedWriter{to: w, control: control}
+	bounded := &chunkedWriter{ctx: ctx, to: w, control: control}
 	defer func() { _ = control.SetWriteDeadline(time.Time{}) }()
 	for _, frame := range frames {
 		if _, err := frame.WriteTo(bounded); err != nil {
@@ -530,7 +534,7 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 			return
 		}
 	}
-	if err := control.Flush(); err != nil {
+	if err := bounded.flush(); err != nil {
 		g.deliveryFailed(ctx, w)
 	}
 }
@@ -582,6 +586,7 @@ func (g *Gateway) handleModels(w http.ResponseWriter) {
 // backpressure per chunk, against the same 30 s timeout. This arrived at the timeout
 // independently and missed the chunking, which is the half that gives it its meaning.
 type chunkedWriter struct {
+	ctx     context.Context
 	to      io.Writer
 	control *http.ResponseController
 }
@@ -589,6 +594,9 @@ type chunkedWriter struct {
 func (c *chunkedWriter) Write(p []byte) (int, error) {
 	written := 0
 	for len(p) > 0 {
+		if err := c.ctx.Err(); err != nil {
+			return written, err
+		}
 		size := len(p)
 		if size > writeChunk {
 			size = writeChunk
@@ -596,12 +604,25 @@ func (c *chunkedWriter) Write(p []byte) (int, error) {
 		_ = c.control.SetWriteDeadline(time.Now().Add(writeStall))
 		n, err := c.to.Write(p[:size])
 		written += n
+		if err == nil {
+			err = c.ctx.Err()
+		}
 		if err != nil {
 			return written, err
 		}
 		p = p[size:]
 	}
 	return written, nil
+}
+
+func (c *chunkedWriter) flush() error {
+	if err := c.ctx.Err(); err != nil {
+		return err
+	}
+	if err := c.control.Flush(); err != nil {
+		return err
+	}
+	return c.ctx.Err()
 }
 
 // relay reads the backend stream and writes client frames as they are produced.
@@ -729,6 +750,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	lastWrite := recordOf(w).began()
 	var message anthropic.ResponseMessage
 	emit := func(frames []anthropic.Frame) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if request.NonStreaming {
 			return message.Add(frames)
 		}
@@ -752,7 +776,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// Without it a client that stops reading blocks the write once the socket buffer
 		// fills, and holds a goroutine, the upstream connection and a request that is still
 		// running on the user's subscription -- for as long as it likes.
-		bounded := &chunkedWriter{to: w, control: control}
+		bounded := &chunkedWriter{ctx: ctx, to: w, control: control}
 		for _, frame := range frames {
 			if _, err := frame.WriteTo(bounded); err != nil {
 				return err
@@ -760,7 +784,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		}
 		// Flushed per batch. Without this the client sees nothing until the handler
 		// returns, which turns a streaming response into a slow non-streaming one.
-		return control.Flush()
+		return bounded.flush()
 	}
 
 	fail := func(err error) {
@@ -771,10 +795,10 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		if errors.As(err, &unsupported) {
 			g.events.observe(unsupported)
 		}
+		detail := recordOf(w).upstreamFailure(err)
 		// Its own deadline: the path that got here may be the write that just stalled, and
 		// an error frame must not inherit a deadline that has already passed.
 		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
-		detail := recordOf(w).upstreamFailure(err)
 		if !committed {
 			if errors.Is(err, codex.ErrContextLimit) && len(scopes) > 0 && g.recoverContextOverflow(w, scopes[0].session, scopes[0].parent, effective) {
 				return
@@ -790,16 +814,18 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// nothing marked the record, so a stream that broke halfway was filed as a clean
 		// success and the session reported nothing wrong.
 		g.streamBroke(w, categoryFor(err))
-		_, _ = anthropic.ErrorFrame(refusalMessage(categoryFor(err)) + detail).WriteTo(w)
-		_ = control.Flush()
+		bounded := &chunkedWriter{ctx: ctx, to: w, control: control}
+		_, _ = anthropic.ErrorFrame(refusalMessage(categoryFor(err)) + detail).WriteTo(bounded)
+		_ = bounded.flush()
 	}
 
 	// The body is read on its own goroutine so a quiet one can be answered with a keepalive;
 	// every write to the client stays on this one. The caller closes the body when this
 	// returns, which ends a read still waiting.
 	type chunk struct {
-		data []byte
-		err  error
+		data       []byte
+		err        error
+		contextErr error
 	}
 	chunks := make(chan chunk)
 	stopReading := make(chan struct{})
@@ -812,8 +838,10 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		buffer := make([]byte, readChunk)
 		for {
 			n, err := response.Body.Read(buffer)
+			// A later owner cancellation must not erase an already observed read error.
+			readContextErr := ctx.Err()
 			select {
-			case chunks <- chunk{append([]byte(nil), buffer[:n]...), err}:
+			case chunks <- chunk{data: append([]byte(nil), buffer[:n]...), err: err, contextErr: readContextErr}:
 			case <-stopReading:
 				return
 			}
@@ -847,6 +875,16 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		}
 		n, readErr := len(read.data), read.err
 		lastReadErr = readErr
+		// A cancelled read can still return bytes buffered before cancellation.
+		// Do not translate or deliver them after their owner has ended.
+		if ctx.Err() != nil {
+			if readErr != nil && !errors.Is(readErr, io.EOF) && read.contextErr == nil {
+				fail(stream.ErrTruncatedStream)
+			} else {
+				g.deliveryFailed(ctx, w)
+			}
+			return false
+		}
 		if n > 0 {
 			events, err := parser.Push(read.data)
 			if err != nil {
@@ -892,12 +930,6 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			}
 		}
 		if readErr != nil {
-			// A transport read interrupted by the client's cancelled context is
-			// cancellation evidence. An upstream reset/deadline alone is not.
-			if errors.Is(ctx.Err(), context.Canceled) {
-				g.deliveryFailed(ctx, w)
-				return false
-			}
 			// A read error that is not EOF means the body did not arrive whole, and the
 			// parser is told so rather than being asked to judge well-formed framing.
 			if err := parser.Finish(errors.Is(readErr, io.EOF)); err != nil {
@@ -906,12 +938,20 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			}
 			if request.NonStreaming {
 				committed = g.deliverMessage(ctx, w, control, &message)
+				if !committed {
+					return false
+				}
 			}
 			if !committed && !request.NonStreaming {
 				// Well formed, terminal, and it produced nothing to send. The client
 				// still needs a message, which Complete would have emitted — reaching
 				// here means the backend ended without one.
 				g.refuseCategory(w, http.StatusBadGateway, "EMPTY_UPSTREAM_RESPONSE")
+				return false
+			}
+			if ctx.Err() != nil {
+				g.deliveryFailed(ctx, w)
+				return false
 			}
 			relayCompleted = committed
 			return committed
@@ -937,11 +977,12 @@ func (g *Gateway) deliverMessage(ctx context.Context, w http.ResponseWriter, con
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
 	w.WriteHeader(http.StatusOK)
-	if _, err = (&chunkedWriter{to: w, control: control}).Write(raw); err != nil {
+	bounded := &chunkedWriter{ctx: ctx, to: w, control: control}
+	if _, err = bounded.Write(raw); err != nil {
 		g.deliveryFailed(ctx, w)
 		return false
 	}
-	if err = control.Flush(); err != nil {
+	if err = bounded.flush(); err != nil {
 		g.deliveryFailed(ctx, w)
 		return false
 	}

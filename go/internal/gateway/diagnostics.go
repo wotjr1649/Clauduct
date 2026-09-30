@@ -394,6 +394,12 @@ func (g *Gateway) streamBroke(w http.ResponseWriter, category string) {
 }
 
 func (g *Gateway) deliveryFailed(ctx context.Context, w http.ResponseWriter) {
+	if err := ctx.Err(); err != nil {
+		if entry := recordOf(w); entry != nil && entry.snapshot().Status == 0 {
+			g.refuseCategory(w, statusForUpstream(err), categoryFor(err))
+			return
+		}
+	}
 	if errors.Is(ctx.Err(), context.Canceled) {
 		recordOf(w).brokeAfterCommitting(refuseCancelled.category)
 		return

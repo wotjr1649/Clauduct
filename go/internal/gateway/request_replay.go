@@ -100,7 +100,8 @@ func (g *Gateway) savedNativeTurn(id [2]string) (last claimedTurn, found bool, e
 }
 
 func (g *Gateway) saveNativeTurn(id [2]string, last claimedTurn) error {
-	known, err := g.nativeReplayKnown(id)
+	// A cached live owner must not silently repair damaged saved history.
+	_, known, err := g.savedNativeTurn(id)
 	if err != nil {
 		return err
 	}

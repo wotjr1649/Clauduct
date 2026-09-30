@@ -877,7 +877,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		lastReadErr = readErr
 		// A cancelled read can still return bytes buffered before cancellation.
 		// Do not translate or deliver them after their owner has ended.
-		if errors.Is(ctx.Err(), context.Canceled) {
+		if ctx.Err() != nil {
 			if readErr != nil && !errors.Is(readErr, io.EOF) && read.contextErr == nil {
 				fail(stream.ErrTruncatedStream)
 			} else {
@@ -938,12 +938,16 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			}
 			if request.NonStreaming {
 				committed = g.deliverMessage(ctx, w, control, &message)
+				if !committed {
+					return false
+				}
 			}
 			if !committed && !request.NonStreaming {
 				// Well formed, terminal, and it produced nothing to send. The client
 				// still needs a message, which Complete would have emitted — reaching
 				// here means the backend ended without one.
 				g.refuseCategory(w, http.StatusBadGateway, "EMPTY_UPSTREAM_RESPONSE")
+				return false
 			}
 			if ctx.Err() != nil {
 				g.deliveryFailed(ctx, w)

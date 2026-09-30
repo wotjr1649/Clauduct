@@ -395,6 +395,11 @@ func (g *Gateway) streamBroke(w http.ResponseWriter, category string) {
 
 func (g *Gateway) deliveryFailed(ctx context.Context, w http.ResponseWriter) {
 	if errors.Is(ctx.Err(), context.Canceled) {
+		if entry := recordOf(w); entry != nil && entry.snapshot().Status == 0 {
+			g.countRefusal(refuseCancelled.category, entry.path())
+			entry.refusedWith(refuseCancelled.status, refuseCancelled.category)
+			return
+		}
 		recordOf(w).brokeAfterCommitting(refuseCancelled.category)
 		return
 	}

@@ -778,10 +778,20 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		if errors.As(err, &unsupported) {
 			g.events.observe(unsupported)
 		}
+		detail := recordOf(w).upstreamFailure(err)
+		// Preserve an observed upstream error without writing to a cancelled owner.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			if committed {
+				g.streamBroke(w, categoryFor(err))
+			} else {
+				g.countRefusal(categoryFor(err), recordOf(w).path())
+				recordOf(w).refusedWith(statusForUpstream(err), categoryFor(err))
+			}
+			return
+		}
 		// Its own deadline: the path that got here may be the write that just stalled, and
 		// an error frame must not inherit a deadline that has already passed.
 		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
-		detail := recordOf(w).upstreamFailure(err)
 		if !committed {
 			if errors.Is(err, codex.ErrContextLimit) && len(scopes) > 0 && g.recoverContextOverflow(w, scopes[0].session, scopes[0].parent, effective) {
 				return
@@ -805,8 +815,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	// every write to the client stays on this one. The caller closes the body when this
 	// returns, which ends a read still waiting.
 	type chunk struct {
-		data []byte
-		err  error
+		data       []byte
+		err        error
+		contextErr error
 	}
 	chunks := make(chan chunk)
 	stopReading := make(chan struct{})
@@ -819,8 +830,10 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		buffer := make([]byte, readChunk)
 		for {
 			n, err := response.Body.Read(buffer)
+			// A later owner cancellation must not erase an already observed read error.
+			readContextErr := ctx.Err()
 			select {
-			case chunks <- chunk{append([]byte(nil), buffer[:n]...), err}:
+			case chunks <- chunk{data: append([]byte(nil), buffer[:n]...), err: err, contextErr: readContextErr}:
 			case <-stopReading:
 				return
 			}
@@ -857,7 +870,11 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// A cancelled read can still return bytes buffered before cancellation.
 		// Do not translate or deliver them after their owner has ended.
 		if errors.Is(ctx.Err(), context.Canceled) {
-			g.deliveryFailed(ctx, w)
+			if readErr != nil && !errors.Is(readErr, io.EOF) && read.contextErr == nil {
+				fail(stream.ErrTruncatedStream)
+			} else {
+				g.deliveryFailed(ctx, w)
+			}
 			return false
 		}
 		if n > 0 {
@@ -905,12 +922,6 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			}
 		}
 		if readErr != nil {
-			// A transport read interrupted by the client's cancelled context is
-			// cancellation evidence. An upstream reset/deadline alone is not.
-			if errors.Is(ctx.Err(), context.Canceled) {
-				g.deliveryFailed(ctx, w)
-				return false
-			}
 			// A read error that is not EOF means the body did not arrive whole, and the
 			// parser is told so rather than being asked to judge well-formed framing.
 			if err := parser.Finish(errors.Is(readErr, io.EOF)); err != nil {

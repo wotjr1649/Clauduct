@@ -1,9 +1,13 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 type nativeConfirmation struct {
@@ -26,11 +30,24 @@ func anonymousNativeFork(r *http.Request) bool {
 // not inference. Three fixed mailbox files bound storage over a long session.
 func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt, search bool) (proof *nativeConfirmation) {
 	n := &g.nativeEvents
-	n.confirmationMu.Lock()
-	defer n.confirmationMu.Unlock()
-	if n.confirmationFailed || r.Context().Err() != nil || g.closing.Err() != nil {
+	// A queued request does not own the mailbox yet. Bound the whole queue by
+	// the admitted request count, while cancellation and shutdown remain immediate.
+	const handshakeTimeout = 2 * time.Second
+	ctx, cancel := context.WithTimeout(r.Context(), maxActiveRequests*handshakeTimeout)
+	defer cancel()
+	select {
+	case n.confirmationGate <- struct{}{}:
+		defer func() { <-n.confirmationGate }()
+	case <-ctx.Done():
+		return nil
+	case <-g.closing.Done():
 		return nil
 	}
+	if n.confirmationFailed || ctx.Err() != nil || g.closing.Err() != nil {
+		return nil
+	}
+	ctx, finishHandshake := context.WithTimeout(ctx, handshakeTimeout)
+	defer finishHandshake()
 	// An active sibling is not proof of which child sent an anonymous request.
 	if anonymousNativeFork(r) {
 		return &nativeConfirmation{Unmatched: true}
@@ -47,7 +64,29 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	if !correlationShape.MatchString(want.Session) {
 		return nil
 	}
-	step, found, err := g.readNativeStep(want.Session, want.Agent)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	// Native overwrites its fixed step in place. Wait for a complete document
+	// within the same request deadline; never authorize from partial bytes.
+	readStep := func() (parentStep, bool, error) {
+		for {
+			step, found, err := g.readNativeStep(want.Session, want.Agent)
+			if !errors.Is(err, wire.ErrMalformed) {
+				return step, found, err
+			}
+			select {
+			case <-ctx.Done():
+				return step, false, err
+			case <-g.closing.Done():
+				return step, false, err
+			case <-tick.C:
+			}
+		}
+	}
+	step, found, err := readStep()
+	if errors.Is(err, errNativeStepUnmatched) || errors.Is(err, wire.ErrMalformed) {
+		return &nativeConfirmation{Unmatched: true}
+	}
 	if err != nil {
 		return nil
 	}
@@ -63,10 +102,6 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	if err = g.writeNativeControl("confirmation-request.json", body); err != nil {
 		return nil
 	}
-	timer := time.NewTimer(2 * time.Second)
-	defer timer.Stop()
-	tick := time.NewTicker(5 * time.Millisecond)
-	defer tick.Stop()
 	for {
 		var ready struct {
 			Nonce string `json:"nonce"`
@@ -98,8 +133,11 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 			if reply.Agent != want.Agent || reply.Turn != want.Turn || reply.Index != want.Index {
 				return nil
 			}
-			step, found, err := g.readNativeStep(want.Session, reply.Agent)
-			if err != nil || r.Context().Err() != nil || g.closing.Err() != nil {
+			step, found, err := readStep()
+			if errors.Is(err, errNativeStepUnmatched) || errors.Is(err, wire.ErrMalformed) {
+				return &nativeConfirmation{Unmatched: true}
+			}
+			if err != nil || ctx.Err() != nil || g.closing.Err() != nil {
 				return nil
 			}
 			if !found || step.Turn != reply.Turn || step.Index != reply.Index {
@@ -108,11 +146,9 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 			return &reply
 		}
 		select {
-		case <-r.Context().Done():
+		case <-ctx.Done():
 			return nil
 		case <-g.closing.Done():
-			return nil
-		case <-timer.C:
 			return nil
 		case <-tick.C:
 		}

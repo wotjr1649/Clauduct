@@ -137,7 +137,8 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 				if key.class != "compaction" && request != nil && conversationRequest(r, request) {
 					// One native step owns its control decision. A changed body or
 					// conversation class cannot admit a second writer for that step.
-					key.class, key.body = "conversation", [32]byte{}
+					// Keep the fingerprint too: a delayed old body cannot own a new step.
+					key.class = "conversation"
 				}
 			}
 		}
@@ -170,6 +171,15 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 	}
 	if _, exists := ledger.seen[key]; exists {
 		return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
+	}
+	if key.class == "conversation" {
+		// ponytail: scan at most 16,384 existing keys, without another cache.
+		// Index by turn if measured admission cost requires it.
+		for spent := range ledger.seen {
+			if spent.class == key.class && spent.session == key.session && spent.agent == key.agent && spent.turn == key.turn && (spent.step == key.step || spent.body == key.body) {
+				return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
+			}
+		}
 	}
 	if len(ledger.seen) >= maxNativeExecutions {
 		return nil, "NATIVE_REQUEST_CAPACITY"

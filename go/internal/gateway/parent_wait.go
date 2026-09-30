@@ -110,6 +110,8 @@ type parentStep struct {
 	waiting  bool   // gateway snapshot, never accepted from the native receipt
 }
 
+var errNativeStepUnmatched = errors.New("native step belongs to another scope")
+
 func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
 	var step parentStep
 	if !correlationShape.MatchString(session) || id != "" && !correlationShape.MatchString(id) {
@@ -123,11 +125,14 @@ func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
 	if err != nil {
 		return step, false, err
 	}
-	if found && (step.Session != session || step.Agent != id || !correlationShape.MatchString(step.Turn) || step.Index < 0 || step.Index > 65536 || step.Mode != "native_tui" && step.Mode != "sdk" && step.Mode != "unclassified" || step.Eligible && step.Mode != "native_tui" && step.Mode != "sdk") {
+	if found && (!correlationShape.MatchString(step.Session) || step.Agent != "" && !correlationShape.MatchString(step.Agent) || !correlationShape.MatchString(step.Turn) || step.Index < 0 || step.Index > 65536 || step.Mode != "native_tui" && step.Mode != "sdk" && step.Mode != "unclassified" || step.Eligible && step.Mode != "native_tui" && step.Mode != "sdk") {
 		return step, false, errDelegationUnverified
 	}
 	if found && step.Handback != "" && (id == "" || step.Index == 0 || !correlationShape.MatchString(step.Handback)) {
 		return step, false, errDelegationUnverified
+	}
+	if found && (step.Session != session || step.Agent != id) {
+		return step, false, errNativeStepUnmatched
 	}
 	return step, found, nil
 }

@@ -170,19 +170,20 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 	}
 	closing, stopClose := context.WithCancel(context.Background())
 	g := &Gateway{
-		closing:   closing,
-		stopClose: stopClose,
-		listener:  listener,
-		token:     token,
-		expected:  listener.Addr().String(),
-		requests:  newRegistry(physical),
-		agents:    newAgentRegistry(),
-		transport: transport,
-		served:    make(chan error, 1),
-		ring:      newRing(),
-		betas:     newBetaLedger(),
-		limits:    newLimitLedger(),
-		events:    newEventLedger(),
+		closing:      closing,
+		stopClose:    stopClose,
+		listener:     listener,
+		token:        token,
+		expected:     listener.Addr().String(),
+		requests:     newRegistry(physical),
+		agents:       newAgentRegistry(),
+		transport:    transport,
+		served:       make(chan error, 1),
+		ring:         newRing(),
+		betas:        newBetaLedger(),
+		limits:       newLimitLedger(),
+		events:       newEventLedger(),
+		nativeEvents: nativeEventState{confirmationGate: make(chan struct{}, 1)},
 
 		auxiliaryEffortCap: bridge.DefaultAuxiliaryEffortCap(),
 	}

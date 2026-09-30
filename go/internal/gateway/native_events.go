@@ -17,8 +17,8 @@ import (
 
 type nativeEventState struct {
 	confirmationsRequired bool // immutable launcher requirement
-	confirmationMu        sync.Mutex
-	confirmationFailed    bool // guarded by confirmationMu; no writable marker required
+	confirmationGate      chan struct{}
+	confirmationFailed    bool // guarded by confirmationGate; no writable marker required
 	mu                    sync.Mutex
 	directory             string
 	verified              bool

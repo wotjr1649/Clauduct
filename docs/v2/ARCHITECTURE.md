@@ -317,7 +317,7 @@ idle(backend 무바이트 10분)·overall(60분 천장)·user-cancel timeout을 
 | 403·정책 거부·TLS 검증 실패 | 우회·자동 credential 교체 금지 |
 | 429·일시적 5xx | Retry-After·총 예산·시도 제한·취소를 함께 적용. v0.3.5부터 backend가 이름 붙인 시각까지 이 세션의 추론·검색 시도를 credential·소켓 전에 `UPSTREAM_RETRY_DEFERRED`로 거부하고(시도로 세지 않고 replay 키도 돌려준다), 클라이언트에는 429와 `Retry-After`를 보낸다(#91) |
 | 긴 Retry-After | delay를 보존해 deferred 보고. 임의 조기 retry 금지 |
-| user cancel | retry 금지 |
+| user cancel | 같은 실행의 자동 retry 금지. 사용자의 새 turn 재입력은 별도 실행 |
 
 "text가 아직 없다"만으로 재시도 안전성을 추정하지 않는다.
 
@@ -326,7 +326,10 @@ v0.3.1의 native 경로는 session·agent·turn·step으로 대화 실행 소유
 별도 compaction·독립 auxiliary·step 없는 경로는 class와 원문 body의 SHA-256도 구분한다.
 동일 실행의 진행 중·완료 후·취소 후 재전송은 선택과 결과 변경 전에
 `NATIVE_REQUEST_REPLAY_BLOCKED`로 거부한다. 본문이나 지문을 로그·journal에 저장하지 않는다.
-새 native step과 명시적인 새 turn은 구분한다. `--bare`처럼 turn 정보가 없으면 동일 입력은
+v0.6.2 준비본은 원문 body의 지문을 같은 turn의 다음 step에서도 대조한다. 이미 전송한 본문이
+늦게 다시 도착해 새 step의 소유권을 차지하는 것을 막는다. 내용이 달라진 다음 step은 허용하며,
+사용자가 취소 후 같은 문장을 직접 재제출해 시작한 새 turn도 별도 실행으로 허용한다.
+`--bare`처럼 turn 정보가 없으면 동일 입력은
 세션 전체에서 사용된 것으로 보존하며, 식별 정보 부재를 재실행 허가로 삼지 않는다.
 요청은 처음 읽은 turn 영수증 하나를 끝까지 쓴다(v0.3.2). 업로드 취소 바인딩, 실행 예약, 선택이
 같은 값을 보므로 그 사이에 새 turn이 게시돼도 서로 어긋나지 않는다. 대화 요청은 본문을 받기 전에

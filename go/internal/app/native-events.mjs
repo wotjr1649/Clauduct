@@ -35,8 +35,8 @@ async function answerConfirmations($, state) {
       if (published) return; // A late prior module may have displaced either file.
     }
     state.permissionNonce=request.nonce;
-    const verified=await confirmationsVerified($) && await session($)===request.session;
-    const step=[...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search);
+    const verified=await confirmationsVerified($);
+    const step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search);
     const confirmations=verified && !!step && !state.permissionFailed;
     const unmatched=verified && !step && !state.permissionFailed;
     const reply={...request,agent:step?.agent||'',turn:step?.turn||'',index:step?.index??-1,confirmations,unmatched};
@@ -272,7 +272,9 @@ export const register = on => {
 	  if (!selected) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_MISSING: no agent started; provide an existing scriptPath or inline script'};
 	  // This is the actual native Read tool. A denial/partial read never falls
 	  // back to $.fs.read(source), nor to the original unadapted Workflow.
-	  const read=await $.tool.call({tool:'Read',file_path:selected});
+	  let read;
+	  try { read=await $.tool.call({tool:'Read',file_path:selected}); }
+	  catch { return {deny:'CLAUDUCT_WORKFLOW_SOURCE_READ_UNVERIFIED'}; }
 	  const result=read.result;
 	  if (read.deny || read.isError || result?.type!=='text' || result.file?.startLine!==1 || result.file.numLines!==result.file.totalLines || result.file.truncatedByTokenCap || typeof result.file.content!=='string' || result.file.content.includes('__CLAUDUCT_')) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_READ_UNVERIFIED'};
 	  let text=result.file.content;

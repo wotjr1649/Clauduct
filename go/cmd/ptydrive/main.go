@@ -62,6 +62,7 @@ type step struct {
 	Optional bool     `json:"optional"`  // a missing screen is skipped, not a failure
 	Timeout  int      `json:"timeout_s"`
 	After    int      `json:"after_ms"` // pause between the match and the first write
+	pattern  *regexp.Regexp
 }
 
 type envList []string
@@ -74,6 +75,7 @@ var control = regexp.MustCompile(`\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]
 func main() {
 	dir := flag.String("dir", "", "working directory")
 	script := flag.String("script", "", "JSON steps")
+	cleanupScript := flag.String("cleanup-script", "", "JSON steps run only after a failed step; the run still fails")
 	rawLog := flag.String("log", "", "raw output file")
 	textLog := flag.String("text", "", "screen text file")
 	total := flag.Int("timeout", 600, "seconds before the child is abandoned")
@@ -84,24 +86,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage: ptydrive -script steps.json [-dir d] [-env K=V]... -- exe args...")
 		os.Exit(2)
 	}
-	raw, err := os.ReadFile(*script)
+	steps, err := loadSteps(*script, nil)
 	check(err, "script")
-	var steps []step
-	check(json.Unmarshal(raw, &steps), "script")
-	for _, s := range steps {
-		if s.WaitFile == "" {
-			continue
-		}
-		if !filepath.IsAbs(s.WaitFile) {
-			check(fmt.Errorf("wait_file must be absolute"), "script")
-		}
-		_, err := os.Lstat(s.WaitFile)
-		if err == nil {
-			check(fmt.Errorf("wait_file already exists"), "script")
-		}
-		if !os.IsNotExist(err) {
-			check(err, "wait_file")
-		}
+	var cleanup []step
+	if *cleanupScript != "" {
+		cleanup, err = loadSteps(*cleanupScript, steps)
+		check(err, "cleanup-script")
 	}
 
 	var inRead, inWrite, outRead, outWrite syscall.Handle
@@ -183,65 +173,84 @@ func main() {
 	// The TUI places words with cursor moves, so stripped text loses its spaces; steps
 	// match against the text with all whitespace removed and are written without spaces.
 	compact := func() string { return strings.Join(strings.Fields(text()), "") }
-	write := func(s string) {
+	write := func(s string) error {
 		var n uint32
-		check(syscall.WriteFile(inWrite, []byte(s), &n, nil), "write")
+		if err := syscall.WriteFile(inWrite, []byte(s), &n, nil); err != nil {
+			return err
+		}
+		if int(n) != len(s) {
+			return io.ErrShortWrite
+		}
+		return nil
 	}
 
 	started := time.Now()
-	from := 0
-	failed := ""
-	for i, s := range steps {
-		pattern := regexp.MustCompile(s.Wait)
-		limit := time.Duration(max(s.Timeout, 1)) * time.Second
-		deadline := time.Now().Add(limit)
-		matched := false
-		screenMatched := false
-		var signalErr error
-		for time.Now().Before(deadline) {
-			current := compact()
-			if !screenMatched {
-				if loc := pattern.FindStringIndex(current[min(from, len(current)):]); loc != nil {
-					from += loc[1]
-					screenMatched = true
+	runSteps := func(steps []step, phase string, from int) string {
+		for i, s := range steps {
+			limit := time.Duration(max(s.Timeout, 1)) * time.Second
+			deadline := time.Now().Add(limit)
+			matched := false
+			screenMatched := false
+			var signalErr error
+			for time.Now().Before(deadline) {
+				current := compact()
+				if !screenMatched {
+					if loc := s.pattern.FindStringIndex(current[min(from, len(current)):]); loc != nil {
+						from += loc[1]
+						screenMatched = true
+					}
 				}
-			}
-			if screenMatched {
-				matched, signalErr = readyFile(s.WaitFile)
-				if matched || signalErr != nil {
+				if screenMatched {
+					matched, signalErr = readyFile(s.WaitFile)
+					if matched || signalErr != nil {
+						break
+					}
+				}
+				if exited(pi.Process) {
 					break
 				}
+				time.Sleep(200 * time.Millisecond)
 			}
-			if exited(pi.Process) {
-				break
+			fmt.Printf("%sstep=%d t=%.1fs wait=%q matched=%v\n", phase, i, time.Since(started).Seconds(), s.Wait, matched)
+			if signalErr != nil {
+				fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
+				return "wait_file"
 			}
-			time.Sleep(200 * time.Millisecond)
-		}
-		fmt.Printf("step=%d t=%.1fs wait=%q matched=%v\n", i, time.Since(started).Seconds(), s.Wait, matched)
-		if signalErr != nil {
-			failed = "wait_file"
-			fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
-			break
-		}
-		if !matched && (!s.Optional || screenMatched && s.WaitFile != "") {
-			failed = s.Wait
-			if screenMatched && s.WaitFile != "" {
-				failed = "wait_file"
+			if !matched && (!s.Optional || screenMatched && s.WaitFile != "") {
+				failed := s.Wait
+				if screenMatched && s.WaitFile != "" {
+					failed = "wait_file"
+				}
+				fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
+				return failed
 			}
-			fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
-			break
-		}
-		if !matched {
-			continue
-		}
-		time.Sleep(time.Duration(s.After) * time.Millisecond)
-		for j, part := range s.Send {
-			if j > 0 {
-				time.Sleep(300 * time.Millisecond)
+			if !matched {
+				continue
 			}
-			write(part)
+			time.Sleep(time.Duration(s.After) * time.Millisecond)
+			// Replies can arrive while later parts of the same input are still being sent.
+			from = len(compact())
+			for j, part := range s.Send {
+				if j > 0 {
+					time.Sleep(300 * time.Millisecond)
+				}
+				if err := write(part); err != nil {
+					fmt.Fprintf(os.Stderr, "write: %v\n", err)
+					return "write"
+				}
+			}
 		}
-		from = len(compact())
+		return ""
+	}
+	failed := runSteps(steps, "", 0)
+	if failed != "" && len(cleanup) > 0 && !exited(pi.Process) {
+		cleanupFailed := "wait_file"
+		if err := signalsAbsent(cleanup); err != nil {
+			fmt.Fprintf(os.Stderr, "cleanup signal: %v\n", err)
+		} else {
+			cleanupFailed = runSteps(cleanup, "cleanup_", len(compact()))
+		}
+		fmt.Printf("cleanup_error=%q\n", cleanupFailed)
 	}
 	wait := uint32(*total * 1000)
 	if failed != "" {
@@ -267,6 +276,77 @@ func main() {
 }
 
 const screenTail = 4000
+
+func loadSteps(name string, previous []step) ([]step, error) {
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+	var steps []step
+	if err := json.Unmarshal(raw, &steps); err != nil {
+		return nil, err
+	}
+	previousSignals := make(map[string]bool)
+	for _, s := range previous {
+		if s.WaitFile != "" {
+			previousSignals[strings.ToLower(filepath.Clean(s.WaitFile))] = true
+		}
+	}
+	for i := range steps {
+		s := &steps[i]
+		if s.Timeout < 0 || int64(s.Timeout) > (1<<63-1)/int64(time.Second) || s.After < 0 || int64(s.After) > (1<<63-1)/int64(time.Millisecond) {
+			return nil, fmt.Errorf("step duration out of range")
+		}
+		s.pattern, err = regexp.Compile(s.Wait)
+		if err != nil {
+			return nil, err
+		}
+		if s.WaitFile == "" {
+			continue
+		}
+		if !filepath.IsAbs(s.WaitFile) {
+			return nil, fmt.Errorf("wait_file must be absolute")
+		}
+		if clean := filepath.Clean(s.WaitFile); strings.HasPrefix(clean, `\\?\`) || strings.HasPrefix(clean, `\\.\`) {
+			return nil, fmt.Errorf("wait_file must not use a device namespace")
+		}
+		name := filepath.FromSlash(s.WaitFile)
+		for _, part := range strings.Split(name, string(filepath.Separator)) {
+			if part == "" || part == "." || part == ".." {
+				continue
+			}
+			if strings.TrimRight(part, ". ") != part {
+				return nil, fmt.Errorf("wait_file contains an ambiguous component")
+			}
+		}
+		if !filepath.IsLocal(strings.TrimLeft(name[len(filepath.VolumeName(name)):], string(filepath.Separator))) {
+			return nil, fmt.Errorf("wait_file contains a reserved component")
+		}
+		if previousSignals[strings.ToLower(filepath.Clean(s.WaitFile))] {
+			return nil, fmt.Errorf("cleanup wait_file reused from primary script")
+		}
+	}
+	if err := signalsAbsent(steps); err != nil {
+		return nil, err
+	}
+	return steps, nil
+}
+
+func signalsAbsent(steps []step) error {
+	for _, s := range steps {
+		if s.WaitFile == "" {
+			continue
+		}
+		_, err := os.Lstat(s.WaitFile)
+		if err == nil {
+			return fmt.Errorf("wait_file already exists")
+		}
+		if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
+}
 
 func readyFile(name string) (bool, error) {
 	if name == "" {

@@ -17,6 +17,7 @@ type nativeConfirmation struct {
 	Turn          string `json:"turn"`
 	Index         int    `json:"index"`
 	Search        bool   `json:"search"`
+	Auxiliary     bool   `json:"auxiliary,omitempty"`
 	Confirmations bool   `json:"confirmations,omitempty"`
 	Unmatched     bool   `json:"unmatched,omitempty"`
 }
@@ -60,7 +61,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	if n.directory == "" {
 		return nil // No confirmation module was configured for this launcher.
 	}
-	want := nativeConfirmation{Session: r.Header.Get("X-Claude-Code-Session-Id"), Agent: r.Header.Get("X-Claude-Code-Agent-Id"), Index: -1, Search: search}
+	want := nativeConfirmation{Session: r.Header.Get("X-Claude-Code-Session-Id"), Agent: r.Header.Get("X-Claude-Code-Agent-Id"), Index: -1, Search: search, Auxiliary: !search && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary"}
 	if !correlationShape.MatchString(want.Session) {
 		return nil
 	}
@@ -110,13 +111,13 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		var reply nativeConfirmation
 		var found bool
 		if readyErr == nil && published && ready.Nonce == want.Nonce {
-			found, err = g.readNativeJSON("confirmation-reply.json", []string{"nonce", "session", "agent", "turn", "index", "search", "confirmations", "unmatched"}, &reply)
+			found, err = g.readNativeJSON("confirmation-reply.json", []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"}, &reply)
 		}
 		// Native writes in place. A partial document is never admitted, but may
 		// finish before the fixed deadline. The ready nonce is written only after
 		// the body is complete, so a mixed old/new body cannot authorize early.
 		if err == nil && found && reply.Nonce == want.Nonce {
-			if reply.Session != want.Session || reply.Search != want.Search {
+			if reply.Session != want.Session || reply.Search != want.Search || reply.Auxiliary != want.Auxiliary {
 				return nil
 			}
 			// A policy-verified negative answer about a stale/missing scope rejects

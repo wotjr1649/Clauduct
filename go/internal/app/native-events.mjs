@@ -26,7 +26,7 @@ async function answerConfirmations($, state) {
     const file=root+'/confirmation-request.json';
     if (!await $.fs.exists(file)) return;
     const request=JSON.parse(await $.fs.read(file));
-    if (!/^[A-Za-z0-9_-]{43}$/.test(request.nonce) || !ident(request.session) || typeof request.search!=='boolean') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+    if (!/^[A-Za-z0-9_-]{43}$/.test(request.nonce) || !ident(request.session) || typeof request.search!=='boolean' || request.auxiliary!==undefined && typeof request.auxiliary!=='boolean') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
     if (request.nonce===state.permissionNonce) {
       const body=await $.fs.read(root+'/confirmation-reply.json');
       const ready=await $.fs.read(root+'/confirmation-ready.json');
@@ -36,7 +36,7 @@ async function answerConfirmations($, state) {
     }
     state.permissionNonce=request.nonce;
     const verified=await confirmationsVerified($);
-    const step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search);
+    const step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search && !!p.auxiliary===!!request.auxiliary);
     const confirmations=verified && !!step && !state.permissionFailed;
     const unmatched=verified && !step && !state.permissionFailed;
     const reply={...request,agent:step?.agent||'',turn:step?.turn||'',index:step?.index??-1,confirmations,unmatched};
@@ -290,9 +290,9 @@ export const register = on => {
 	}
     const p=progress.get(e.agentId?ident(e.agentId):'');
     if (!p) return next(e);
-    // Native WebSearch issues its hosted HTTP request inside the tool, after
-    // its generating step ended. Keep that exact tool's scope live until return.
-    const active=e.tool==='WebSearch'?{session:await session($),agent:p.agent,turn:p.turn,index:p.index,search:true}:null;
+    // Native can request a long tool's background decision after inference ended.
+    // Its auxiliary scope cannot authorize ordinary inference or hosted search.
+    const active={session:await session($),agent:p.agent,turn:p.turn,index:p.index,search:e.tool==='WebSearch',auxiliary:e.tool!=='WebSearch'};
     p.handback=''; // Any later tool invalidates the preceding hand-back step.
     // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
     if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;

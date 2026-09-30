@@ -40,6 +40,9 @@ type NativeEventReport struct {
 	// ReplayKeys is how many executions the replay ledger holds; it refuses new work at
 	// maxNativeExecutions (#70).
 	ReplayKeys int `json:"replayKeys"`
+	// Identities with live keys stay in memory; older markers are in the event directory.
+	ReplayIdentities  int  `json:"replayIdentities"`
+	ReplayStateFailed bool `json:"replayStateFailed"`
 	// RetiredTurns is how many finished child turns gave their keys back.
 	RetiredTurns int64 `json:"retiredTurns"`
 }
@@ -277,12 +280,12 @@ func prunePublications(root *os.Root, directory string, entries []os.DirEntry, l
 
 func (g *Gateway) nativeEventReport() NativeEventReport {
 	g.executions.Lock()
-	keys, retired := len(g.executions.seen), g.executions.retired
+	keys, identities, retired, failed := len(g.executions.seen), len(g.executions.current), g.executions.retired, g.executions.failed
 	g.executions.Unlock()
 	n := &g.nativeEvents
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, RetiredTurns: retired}
+	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired}
 }
 
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
@@ -420,7 +423,7 @@ func (g *Gateway) reconcileNativeResults() {
 		default:
 			continue
 		}
-		g.executions.retire(receipt.Session, receipt.Agent, receipt.Turn)
+		g.retireNativeExecution(receipt.Session, receipt.Agent, receipt.Turn)
 		// A turn that starts an asynchronous child can end before the delegated
 		// task ends. Only SubagentStop supplies its successful completion body.
 		if receipt.Reason == "answer" {
@@ -476,7 +479,7 @@ func (g *Gateway) retireEndedChildren() {
 			// The body must name the turn its file is named for; retire keys on the session.
 			if receipt.Session == want.Session && receipt.Agent == want.Agent && receipt.Turn == want.Turn {
 				g.finishNativeAgentStop(receipt)
-				l.retire(receipt.Session, receipt.Agent, receipt.Turn)
+				g.retireNativeExecution(receipt.Session, receipt.Agent, receipt.Turn)
 			}
 		}
 	}

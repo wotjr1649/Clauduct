@@ -84,7 +84,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		}
 	}
 	step, found, err := readStep()
-	if errors.Is(err, errNativeStepUnmatched) || errors.Is(err, wire.ErrMalformed) {
+	if errors.Is(err, errNativeStepUnmatched) {
 		return &nativeConfirmation{Unmatched: true}
 	}
 	if err != nil {
@@ -134,7 +134,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 				return nil
 			}
 			step, found, err := readStep()
-			if errors.Is(err, errNativeStepUnmatched) || errors.Is(err, wire.ErrMalformed) {
+			if errors.Is(err, errNativeStepUnmatched) {
 				return &nativeConfirmation{Unmatched: true}
 			}
 			if err != nil || ctx.Err() != nil || g.closing.Err() != nil {

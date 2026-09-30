@@ -179,6 +179,8 @@ func refusalMessage(category string) string {
 		return category + "; auto permission classification supports " + strings.Join(classifierModels, ", ") + " at each model's supported efforts, subject to auxiliary_effort_cap. Configure modelMapping/modelDefaults; no replacement was executed."
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":
 		return category + "; an earlier attempt may already have executed. Automatic replay was blocked. Check the previous outcome before submitting a new prompt; the current native session can continue."
+	case "NATIVE_REPLAY_STATE_UNVERIFIED":
+		return category + "; execution history could not be preserved or verified. This request was not sent. Restart the launcher and check the previous outcome before submitting a new prompt."
 	case "NATIVE_TURN_ENDED":
 		return category + "; native had already reported this agent turn complete, so nothing was executed. The current native session can continue."
 	case "NATIVE_REQUEST_CAPACITY":

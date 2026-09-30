@@ -59,10 +59,11 @@ function beginConfirmation($, state, active) {
   }
   state.requests.add(active);
 }
-async function endConfirmation($, state, active) {
-  // Publication and revocation have one order; an awaited ready write cannot
-  // finish affirmatively after this scope has been removed.
-  await state.permissionPublication;
+async function endConfirmation($, state, active, cancelled=false) {
+  // Normal handback waits for its publication. Cancellation removes scopes
+  // immediately: its terminal receipt must reach the gateway before waiting
+  // for a late ready write, which the gateway cannot accept for that turn.
+  if (!cancelled && state.requests.has(active)) await state.permissionPublication;
   state.requests.delete(active);
   if (!state.requests.size) {
     state.permissionTimer?.cancel();
@@ -387,7 +388,7 @@ export const register = on => {
       const p=progress.get(agent);if (p?.turn===turn) p.phase='turn_ended';
       const first=!cancelledTurns.has(turn);
       cancelledTurns.add(turn);
-      for (const active of state.requests) if (active.agent===agent && active.turn===turn) await endConfirmation($,state,active);
+      await Promise.all([...state.requests].filter(active=>active.agent===agent && active.turn===turn).map(active=>endConfirmation($,state,active,true)));
       if (first) {
         try { await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason})); }
         catch (error) { state.permissionFailed=true;throw error; }

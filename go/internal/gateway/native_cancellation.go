@@ -22,7 +22,10 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 		return ctx, func() {}
 	}
 	class := r.Header.Get("X-Claude-Code-Request-Class")
-	if class != "main" && class != "subagent" && class != "workflow" && (class != "auxiliary" || reading) {
+	// Root auxiliary is indistinguishable from an independent classifier before
+	// decode. An identified child can pin its own reading turn without borrowing
+	// a conversation's cancellation or replacing a sibling upload.
+	if class != "main" && class != "subagent" && class != "workflow" && (class != "auxiliary" || reading && r.Header.Get("X-Claude-Code-Agent-Id") == "") {
 		return ctx, func() {}
 	}
 	session, agent := r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id")

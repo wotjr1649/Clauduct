@@ -27,7 +27,7 @@ async function answerConfirmations($, state) {
     if (!await $.fs.exists(file)) return;
     const request=JSON.parse(await $.fs.read(file));
     if (!/^[A-Za-z0-9_-]{43}$/.test(request.nonce) || !ident(request.session) || typeof request.search!=='boolean' || request.auxiliary!==undefined && typeof request.auxiliary!=='boolean') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
-    if (request.nonce===state.permissionNonce) {
+    if (request.nonce===state.permissionNonce && await $.fs.exists(root+'/confirmation-reply.json') && await $.fs.exists(root+'/confirmation-ready.json')) {
       const body=await $.fs.read(root+'/confirmation-reply.json');
       const ready=await $.fs.read(root+'/confirmation-ready.json');
       let published=false;
@@ -46,20 +46,23 @@ async function answerConfirmations($, state) {
     await $.fs.write(root+'/confirmation-reply.json',JSON.stringify(reply));
     if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
     if (state.permissionClosed || step && !state.requests.has(step)) return;
-    await $.fs.write(root+'/confirmation-ready.json',JSON.stringify({nonce:request.nonce}));
+    await (state.permissionPublication=$.fs.write(root+'/confirmation-ready.json',JSON.stringify({nonce:request.nonce})));
   } catch { state.permissionFailed=true; }
-  finally { state.permissionBusy=false; }
+  finally { state.permissionPublication=null;state.permissionBusy=false; }
 }
 function beginConfirmation($, state, active) {
+  if (state.permissionClosed) throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
   if (state.requests.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
   if (!state.requests.size) {
-    state.permissionClosed=false;
     state.permissionTimer?.cancel();
     state.permissionTimer=$.clock.every(25,()=>{void answerConfirmations($,state);});
   }
   state.requests.add(active);
 }
-function endConfirmation($, state, active) {
+async function endConfirmation($, state, active) {
+  // Publication and revocation have one order; an awaited ready write cannot
+  // finish affirmatively after this scope has been removed.
+  await state.permissionPublication;
   state.requests.delete(active);
   if (!state.requests.size) {
     state.permissionTimer?.cancel();
@@ -132,9 +135,11 @@ export const register = on => {
     await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($)}));
     return next(e);
   });
-  on('session.end', ($, e, next) => {
-    state.permissionClosed=true;state.requests.clear();
+  on('session.end', async ($, e, next) => {
+    state.permissionClosed=true;
     state.permissionTimer?.cancel();state.permissionTimer=null;
+    await state.permissionPublication;
+    state.requests.clear();
     return next(e);
   });
   on('turn.step', async function* ($, e, next) {
@@ -252,8 +257,8 @@ export const register = on => {
       return {...result,answer:'',stopReason:null};
     }
     finally {
-      endConfirmation($,state,active);
-      if (!held) {
+      await endConfirmation($,state,active);
+      if (!held && p.phase!=='turn_ended') {
         p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
         await observe($,progress,p,'request_returned');
       }
@@ -311,6 +316,7 @@ export const register = on => {
     // Native can request a long tool's background decision after inference ended.
     // Its auxiliary scope cannot authorize ordinary inference or hosted search.
     const active={session:await session($),agent:p.agent,turn:p.turn,index:p.index,search:e.tool==='WebSearch',auxiliary:e.tool!=='WebSearch'};
+    if (p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
     p.handback=''; // Any later tool invalidates the preceding hand-back step.
     // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
     if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;
@@ -338,8 +344,8 @@ export const register = on => {
       return out;
     }
     finally {
-      if (active) endConfirmation($,state,active);
-      p.pendingTools--;p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
+      if (active) await endConfirmation($,state,active);
+      p.pendingTools--;if (p.phase!=='turn_ended') p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
       await observe($,progress,p,'tool_returned');
     }
   }).catch(($, e, next) => {
@@ -356,13 +362,14 @@ export const register = on => {
     if (['aborted','error','refusal'].includes(e.reason)) {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
-      for (const active of state.requests) if (active.agent===agent && active.turn===turn) endConfirmation($,state,active);
+      const p=progress.get(agent);if (p?.turn===turn) p.phase='turn_ended';
       if (!cancelledTurns.has(turn)) {
-        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
         cancelledTurns.add(turn);
+        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
         // Duplicates follow the turn that just ended; forget the oldest, not the session.
         if (cancelledTurns.size>4096) cancelledTurns.delete(cancelledTurns.values().next().value);
       }
+      for (const active of state.requests) if (active.agent===agent && active.turn===turn) await endConfirmation($,state,active);
     }
     if (e.agentId) {
       const agent=ident(e.agentId),turn=ident(e.turnId);

@@ -144,6 +144,13 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 			if !found || step.Turn != reply.Turn || step.Index != reply.Index {
 				return &nativeConfirmation{Unmatched: true}
 			}
+			source, err := g.nativeCancellationSource(nativeTurnReceipt{Session: want.Session, Agent: want.Agent, Turn: want.Turn})
+			if err != nil {
+				return nil
+			}
+			if source != "" {
+				return &nativeConfirmation{Unmatched: true}
+			}
 			return &reply
 		}
 		select {

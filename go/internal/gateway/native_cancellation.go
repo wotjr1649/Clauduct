@@ -98,6 +98,23 @@ func (n *nativeEventState) cancelLocked(p *nativeCancellation, source string) {
 	p.cancel()
 }
 
+func (g *Gateway) nativeCancellationSource(id nativeTurnReceipt) (string, error) {
+	var receipt nativeTurnReceipt
+	found, err := g.readNativeJSON("cancel-"+id.Turn+".json", []string{"session", "agent", "turn", "reason"}, &receipt)
+	if !found || err != nil || receipt.Session != id.Session || receipt.Agent != id.Agent || receipt.Turn != id.Turn {
+		return "", err
+	}
+	switch receipt.Reason {
+	case "aborted":
+		return "native_abort_receipt", nil
+	case "error":
+		return "native_error_receipt", nil
+	case "refusal":
+		return "native_refusal_receipt", nil
+	}
+	return "", nil
+}
+
 // ReconcileNativeCancellations is called by the bounded session checkpoint and on new requests, not by
 // model polling. Private task-owned receipts contain only identity and reason.
 func (g *Gateway) ReconcileNativeCancellations() {
@@ -109,20 +126,8 @@ func (g *Gateway) ReconcileNativeCancellations() {
 	}
 	n.mu.Unlock()
 	for _, p := range pending {
-		var receipt nativeTurnReceipt
-		found, err := g.readNativeJSON("cancel-"+p.identity.Turn+".json", []string{"session", "agent", "turn", "reason"}, &receipt)
-		if !found || err != nil || receipt.Session != p.identity.Session || receipt.Agent != p.identity.Agent || receipt.Turn != p.identity.Turn {
-			continue
-		}
-		var source string
-		switch receipt.Reason {
-		case "aborted":
-			source = "native_abort_receipt"
-		case "error":
-			source = "native_error_receipt"
-		case "refusal":
-			source = "native_refusal_receipt"
-		default:
+		source, err := g.nativeCancellationSource(p.identity)
+		if err != nil || source == "" {
 			continue
 		}
 		n.mu.Lock()

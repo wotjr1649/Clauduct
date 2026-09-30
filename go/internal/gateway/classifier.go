@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"slices"
@@ -11,14 +12,60 @@ import (
 )
 
 var errClassifierContract = errors.New("AUTO_MODE_CLASSIFIER_UNVERIFIED")
+var errClassifierModel = errors.New("AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED")
+
+//go:embed classifier-models.json
+var classifierModelDocument string
+
+// Classifier support scope, not a fallback or a user preference. Each model's
+// existing effort catalogue and the configured auxiliary cap still apply.
+var classifierModels = func() []string {
+	var models []string
+	if json.Unmarshal([]byte(classifierModelDocument), &models) != nil || len(models) == 0 {
+		panic("invalid embedded classifier models")
+	}
+	for i, model := range models {
+		route, err := bridge.SelectRoute(model, "")
+		if err != nil || route.Model != model || slices.Contains(models[:i], model) {
+			panic("invalid embedded classifier model")
+		}
+	}
+	return models
+}()
 
 const classifierPolicyPrefix = "You are a security monitor for autonomous AI coding agents.\n"
 
+// ConfigureAuxiliaryEffortCap installs the validated global limit before native starts.
+func (g *Gateway) ConfigureAuxiliaryEffortCap(cap string) { g.auxiliaryEffortCap = cap }
+
+func (g *Gateway) auxiliarySelection(request *anthropic.Request, count bool) ([]bridge.Route, error) {
+	routes, err := g.classifierSelection(request, count)
+	if err != nil {
+		return nil, err
+	}
+	classifier := len(routes) != 0
+	if len(routes) == 0 {
+		route, err := g.selection.SelectRoute(request.Model, request.Effort)
+		if err != nil {
+			return nil, nil
+		} // Preserve BuildRequest's explicit route refusal.
+		routes = []bridge.Route{route}
+	}
+	if slices.Index(bridge.Efforts, routes[0].Effort) > slices.Index(bridge.Efforts, g.auxiliaryEffortCap) {
+		routes[0].Effort = g.auxiliaryEffortCap
+		routes[0].Source += "+auxiliary-cap"
+	}
+	if classifier && !slices.Contains(classifierModels, routes[0].Model) {
+		return nil, errClassifierModel
+	}
+	return routes, nil
+}
+
 // classifierSelection is called only for independent, tool-less root auxiliary requests.
 // Native 2.1.283 uses its Sonnet model without an effort or a dedicated classifier beta.
-// Its measured block protocol gets the separately verified route; titles keep their route.
+// Its measured block protocol uses the session's model mapping and effort defaults.
 // Identification changes routing, never permission, policy text, or the classifier verdict.
-func classifierSelection(request *anthropic.Request, count bool) ([]bridge.Route, error) {
+func (g *Gateway) classifierSelection(request *anthropic.Request, count bool) ([]bridge.Route, error) {
 	// A changed policy heading must not quietly send the known block envelope back
 	// to Sonnet. These independent markers also catch that form of native drift.
 	envelope := slices.Contains(request.StopSequences, "</block>")
@@ -69,6 +116,12 @@ func classifierSelection(request *anthropic.Request, count bool) ([]bridge.Route
 		second && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
 		return nil, errClassifierContract
 	}
-	// ResolveRoute still validates the requested model/effort before applying this override.
-	return []bridge.Route{{Model: "gpt-5.6-terra", Effort: "high", Source: "native-auto-mode"}}, nil
+	route, err := g.selection.SelectRoute(request.Model, request.Effort)
+	if err != nil {
+		// BuildRequest rejects the unchanged request with the generation/count
+		// route error it used before. Do not substitute a valid fallback route.
+		return nil, nil
+	}
+	route.Source = "native-auto-mode"
+	return []bridge.Route{route}, nil
 }

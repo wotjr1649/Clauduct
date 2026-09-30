@@ -168,6 +168,8 @@ type StreamEndRecord struct {
 	TerminalObserved bool   `json:"terminalObserved"`
 	Events           int    `json:"events"`
 	Bytes            int    `json:"bytes"`
+	DoneObserved     bool   `json:"doneObserved"`
+	TrailingEvent    string `json:"trailingEvent,omitempty"`
 }
 
 func streamErrorLabel(err error) string {
@@ -187,13 +189,13 @@ func streamErrorLabel(err error) string {
 	}
 }
 
-func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, bytes int) {
+func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, bytes int, done bool, trailing string) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data.StreamEnd = &StreamEndRecord{streamErrorLabel(readErr), streamErrorLabel(clientErr), terminal, events, bytes}
+	r.data.StreamEnd = &StreamEndRecord{streamErrorLabel(readErr), streamErrorLabel(clientErr), terminal, events, bytes, done, trailing}
 }
 
 // record is the live half of a RequestRecord, mutated as the request proceeds.

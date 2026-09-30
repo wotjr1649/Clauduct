@@ -16,12 +16,23 @@ import (
 )
 
 type nativeEventState struct {
-	mu            sync.Mutex
-	directory     string
-	verified      bool
-	invalid       int64
-	cancellations map[*nativeCancellation]struct{}
+	confirmationsRequired bool // immutable launcher requirement
+	confirmationMu        sync.Mutex
+	confirmationFailed    bool // guarded by confirmationMu; no writable marker required
+	mu                    sync.Mutex
+	directory             string
+	verified              bool
+	invalid               int64
+	cancellations         map[*nativeCancellation]struct{}
 }
+
+var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")
+var errNativeOriginUnverified = errors.New("NATIVE_REQUEST_ORIGIN_UNVERIFIED")
+
+// RequireNativeConfirmations makes missing/ignored native ask rules a refusal,
+// including when managed policy excludes the launcher's settings or event module.
+func (g *Gateway) RequireNativeConfirmations() { g.nativeEvents.confirmationsRequired = true }
+
 type NativeEventReport struct {
 	Configured bool  `json:"configured"`
 	Observed   bool  `json:"observed"`
@@ -213,6 +224,11 @@ func (g *Gateway) pinNativeTurn(r *http.Request, entry *record) (turn *nativeTur
 	entry.turnPinned = true
 	entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
 	session, agent := r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id")
+	// Native omits the originating identity on a directly typed fork. Neither a
+	// root receipt nor an active sibling proves that anonymous request's origin.
+	if g.nativeEvents.confirmationsRequired && agent == "" && r.Header.Get("X-Claude-Code-Request-Class") == "subagent" {
+		return nil, false
+	}
 	// Capture the predecessor before reading the receipt. A later refusal may
 	// replace only this unchanged result, never a turn admitted in the meantime.
 	if g.delegations != nil {

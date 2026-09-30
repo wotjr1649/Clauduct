@@ -3,6 +3,7 @@
   "context_window": 272000,
   "auto_compact_token_limit_percent": 90,
   "auto_compact_effort_cap": "medium",
+  "auxiliary_effort_cap": "medium",
   "startup": {
     "model": "gpt-6-sol",
     "effort": "xhigh"

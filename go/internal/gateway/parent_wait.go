@@ -153,6 +153,11 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 	if g.delegations == nil || !conversationRequest(r, request) || r.Header.Get("X-Claude-Code-Request-Class") == "compaction" {
 		return nil, nil
 	}
+	// A directly typed fork has no agent header and no root step of its own.
+	// It must not consume a prior main turn's wait decision, including after /clear.
+	if r.Header.Get("X-Claude-Code-Request-Class") == "subagent" && r.Header.Get("X-Claude-Code-Agent-Id") == "" {
+		return nil, nil
+	}
 	session, id := r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id")
 	if !correlationShape.MatchString(session) || id != "" && !correlationShape.MatchString(id) {
 		return nil, nil
@@ -328,17 +333,21 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 	if step.Agent != "" {
 		name = "child-" + step.Agent
 	}
-	root, err := os.OpenRoot(g.nativeEvents.directory)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
 	decision, _ := json.Marshal(struct {
 		Turn  string `json:"turn"`
 		Index int    `json:"index"`
 		Hold  bool   `json:"hold"`
 		Wait  bool   `json:"wait"`
 	}{step.Turn, step.Index, hold, hold && step.waiting})
+	return g.writeNativeControl("decision-"+name+".json", decision)
+}
+
+func (g *Gateway) writeNativeControl(name string, body []byte) error {
+	root, err := os.OpenRoot(g.nativeEvents.directory)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	// Written through a temporary and renamed, the way every other file this plugin reads is
 	// written. WriteFile truncates in place, so a read landing in that window returns a
 	// partial document; the plugin parses this one with a bare JSON.parse, and the
@@ -348,8 +357,8 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 	if err != nil {
 		return err
 	}
-	temp := "decision-" + name + "." + nonce + ".tmp"
-	if err := root.WriteFile(temp, decision, 0600); err != nil {
+	temp := name + "." + nonce + ".tmp"
+	if err := root.WriteFile(temp, body, 0600); err != nil {
 		return err
 	}
 	defer root.Remove(temp)
@@ -362,7 +371,7 @@ func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
 	// sharing violation into a hard PARENT_WAIT_UNVERIFIED.
 	var renameErr error
 	for attempt := 0; attempt < 5; attempt++ {
-		if renameErr = root.Rename(temp, "decision-"+name+".json"); renameErr == nil {
+		if renameErr = root.Rename(temp, name); renameErr == nil {
 			return nil
 		}
 		if attempt == 4 {

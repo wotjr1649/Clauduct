@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
 )
 
 // Limits bound what one response may cost. The values match the Node baseline so a stream
@@ -78,8 +80,9 @@ type Parser struct {
 	// completed records that a terminal event has been seen, sentinel that [DONE] has.
 	// They are separate because the contract allows a terminal event without [DONE] and
 	// refuses [DONE] without a terminal event, and collapsing them would permit both.
-	completed bool
-	sentinel  bool
+	completed     bool
+	sentinel      bool
+	trailingEvent string // closed diagnostic labels only; never an arbitrary backend value
 
 	sequenceMode bool
 	nextSequence int64
@@ -167,6 +170,9 @@ func (p *Parser) drain() ([]Event, error) {
 			// No complete frame yet. What is buffered still counts against the ceiling,
 			// or a sender could hold memory open by never closing a frame.
 			if len(text) > p.limits.MaxFrameBytes {
+				if p.completed {
+					p.trailingEvent = "unclassified_large"
+				}
 				return out, ErrFrameTooLarge
 			}
 			return out, nil
@@ -178,6 +184,11 @@ func (p *Parser) drain() ([]Event, error) {
 
 		event, emit, err := p.frame(value)
 		if err != nil {
+			if p.completed && (err == ErrInvalidSSE || err == ErrIncompleteResponse) {
+				p.trailingEvent = "invalid_event"
+			} else if p.completed && err == ErrFrameTooLarge {
+				p.trailingEvent = "unclassified_large"
+			}
 			return out, err
 		}
 		if emit {
@@ -251,6 +262,7 @@ func (p *Parser) frame(value string) (Event, bool, error) {
 	raw := strings.Join(data, "\n")
 
 	if p.sentinel {
+		p.recordTrailingEvent(raw, name, named)
 		return Event{}, false, ErrEventAfterCompletion
 	}
 	if raw == "[DONE]" {
@@ -261,6 +273,7 @@ func (p *Parser) frame(value string) (Event, bool, error) {
 		return Event{}, false, nil
 	}
 	if p.completed {
+		p.recordTrailingEvent(raw, name, named)
 		return Event{}, false, ErrEventAfterCompletion
 	}
 
@@ -318,6 +331,45 @@ func (p *Parser) validate(raw, name string, named bool) (string, error) {
 
 // Stats reports what this response has cost so far. Counts only; no content.
 func (p *Parser) Stats() (events, bytes int) { return p.events, p.total }
+
+// Tail distinguishes data after completion from data after [DONE]. The rejection
+// is unchanged, and unknown names and payloads never enter diagnostics.
+func (p *Parser) Tail() (done bool, event string) { return p.sentinel, p.trailingEvent }
+
+func (p *Parser) recordTrailingEvent(raw, name string, named bool) {
+	// Diagnostics must not fully decode a refused multi-megabyte object.
+	// This cap changes only the label, never the framing limits or refusal.
+	if len(raw) > 4096 {
+		p.trailingEvent = "unclassified_large"
+		return
+	}
+	if raw == "[DONE]" {
+		p.trailingEvent = "done_sentinel"
+		if named {
+			p.trailingEvent = "invalid_event"
+		}
+		return
+	}
+	// Validate metadata with the same rules without advancing this stream.
+	check := Parser{sequenceMode: p.sequenceMode, nextSequence: p.nextSequence}
+	kind, err := check.validate(raw, name, named)
+	if err != nil {
+		p.trailingEvent = "invalid_event"
+		return
+	}
+	switch kind {
+	case codex.Created, codex.InProgress, codex.Queued,
+		codex.OutputItemAdd, codex.OutputItemDone, codex.ContentPartAdd, codex.ContentPartDon,
+		codex.TextDelta, codex.TextDone, codex.Completed, codex.Failed, codex.Incomplete, codex.ErrorEvent,
+		codex.ReasoningPartAdd, codex.ReasoningPartDone, codex.ReasoningSummaryAdd, codex.ReasoningSummaryDone,
+		codex.ReasoningSummaryTxtD, codex.ReasoningSummaryTxtF, codex.ReasoningTextDelta, codex.ReasoningTextDone,
+		codex.Keepalive, codex.Ping, codex.FuncArgsDelta, codex.FuncArgsDone,
+		codex.RateLimitsUpdated, codex.CodexRateLimits, codex.CodexMetadata, codex.WebsocketTiming:
+		p.trailingEvent = kind
+	default:
+		p.trailingEvent = "other_json"
+	}
+}
 
 func (p *Parser) String() string {
 	return fmt.Sprintf("stream.Parser{events:%d bytes:%d completed:%t done:%t}",

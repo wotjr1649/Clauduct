@@ -105,6 +105,9 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 		return nil, ""
 	}
 	key := nativeExecutionKey{session: r.Header.Get("X-Claude-Code-Session-Id"), agent: r.Header.Get("X-Claude-Code-Agent-Id"), class: r.Header.Get("X-Claude-Code-Request-Class"), step: -1, body: sha256.Sum256(body)}
+	if g.nativeEvents.confirmationsRequired && anonymousNativeFork(r) {
+		return nil, errNativeOriginUnverified.Error()
+	}
 	auxiliary := independentAuxiliary(r, request)
 	var turn *nativeTurnReceipt
 	if auxiliary {

@@ -270,7 +270,9 @@ SSE parser는 byte 경계가 UTF-8 문자·JSON token·CRLF·빈 줄 가운데�
 terminal 이벤트·`[DONE]`·중복 완료·완료 이후 trailing data·비정상 EOF의 의미를 backend 계약으로 고정한다. terminal을 봤다는 이유로 뒤의 프로토콜 위반을 정상 처리하지 않는다.
 
 `StreamEnd`는 모든 relay 반환 경로에서 마지막 read 오류, client context, terminal 관측,
-event 수와 읽은 byte 수를 기록한다. 파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
+event 수와 읽은 byte 수를 기록한다. `DoneObserved`는 `[DONE]` 관측 여부이며 `TrailingEvent`는
+종료 뒤 거부한 데이터의 정해진 종류만 기록한다. 미등록 이름과 본문은 기록하지 않는다.
+파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
 있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
 socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.
 

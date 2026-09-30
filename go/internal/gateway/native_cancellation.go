@@ -22,7 +22,7 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 		return ctx, func() {}
 	}
 	class := r.Header.Get("X-Claude-Code-Request-Class")
-	if class != "main" && class != "subagent" && class != "workflow" {
+	if class != "main" && class != "subagent" && class != "workflow" && (class != "auxiliary" || reading) {
 		return ctx, func() {}
 	}
 	session, agent := r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id")
@@ -45,7 +45,7 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 	if !validActiveReceipt(id, session, agent) {
 		return ctx, func() {}
 	}
-	if !reading {
+	if !reading && class != "auxiliary" {
 		g.cancelNativeReads(&id)
 	}
 	ctx, cancel := context.WithCancel(ctx)

@@ -20,7 +20,7 @@ async function preparePermissions($, state) {
   state.permissionReady=true;
 }
 async function answerConfirmations($, state) {
-  if (state.permissionBusy || state.permissionFailed || !state.requests.size) return;
+  if (state.permissionBusy || state.permissionFailed || state.permissionClosed) return;
   state.permissionBusy=true;
   try {
     const file=root+'/confirmation-request.json';
@@ -36,27 +36,35 @@ async function answerConfirmations($, state) {
     }
     state.permissionNonce=request.nonce;
     const verified=await confirmationsVerified($);
+    if (!verified) state.permissionFailed=true;
     const step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search && !!p.auxiliary===!!request.auxiliary);
     const confirmations=verified && !!step && !state.permissionFailed;
     const unmatched=verified && !step && !state.permissionFailed;
     const reply={...request,agent:step?.agent||'',turn:step?.turn||'',index:step?.index??-1,confirmations,unmatched};
     if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
+    if (state.permissionClosed || step && !state.requests.has(step)) return;
     await $.fs.write(root+'/confirmation-reply.json',JSON.stringify(reply));
     if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
+    if (state.permissionClosed || step && !state.requests.has(step)) return;
     await $.fs.write(root+'/confirmation-ready.json',JSON.stringify({nonce:request.nonce}));
   } catch { state.permissionFailed=true; }
   finally { state.permissionBusy=false; }
 }
 function beginConfirmation($, state, active) {
   if (state.requests.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+  if (!state.requests.size) {
+    state.permissionClosed=false;
+    state.permissionTimer?.cancel();
+    state.permissionTimer=$.clock.every(25,()=>{void answerConfirmations($,state);});
+  }
   state.requests.add(active);
-  if (!state.permissionTimer) state.permissionTimer=$.clock.every(25,()=>{void answerConfirmations($,state);});
 }
-function endConfirmation(state, active) {
+function endConfirmation($, state, active) {
   state.requests.delete(active);
   if (!state.requests.size) {
     state.permissionTimer?.cancel();
-    state.permissionTimer=null;
+    // A late request needs an explicit unmatched reply, not a storage-failure latch.
+    state.permissionTimer=state.permissionClosed?null:$.clock.every(250,()=>{void answerConfirmations($,state);});
   }
 }
 const ident = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : '';
@@ -119,7 +127,14 @@ export const register = on => {
     // session evidence selects the response contract; other origins stay unknown.
     state.peerMode=e.isInteractive===true?'native_tui':e.isInteractive===false?'sdk':'unclassified';
     await preparePermissions($,state);
+    state.permissionClosed=false;
+    if (!state.permissionTimer) state.permissionTimer=$.clock.every(250,()=>{void answerConfirmations($,state);});
     await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($)}));
+    return next(e);
+  });
+  on('session.end', ($, e, next) => {
+    state.permissionClosed=true;state.requests.clear();
+    state.permissionTimer?.cancel();state.permissionTimer=null;
     return next(e);
   });
   on('turn.step', async function* ($, e, next) {
@@ -237,7 +252,7 @@ export const register = on => {
       return {...result,answer:'',stopReason:null};
     }
     finally {
-      endConfirmation(state,active);
+      endConfirmation($,state,active);
       if (!held) {
         p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
         await observe($,progress,p,'request_returned');
@@ -256,7 +271,10 @@ export const register = on => {
   on('tool.call', async ($, e, next) => {
 	if (!state.permissionReady || state.permissionFailed) return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
 	// Settings can change while inference is in flight. Recheck at execution too.
-	if ((requiredConfirmations.includes(e.tool) || e.tool.startsWith('mcp__')) && !await confirmationsVerified($)) return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
+	if ((requiredConfirmations.includes(e.tool) || e.tool.startsWith('mcp__')) && !await confirmationsVerified($)) {
+      state.permissionFailed=true;
+      return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
+    }
 	if (e.tool==='Workflow' && (e.scriptPath!==undefined || e.script===undefined && e.name!==undefined)) {
 	  const call=ident(e.tool_use_id),sid=await session($);
 	  if (!call) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
@@ -320,7 +338,7 @@ export const register = on => {
       return out;
     }
     finally {
-      if (active) endConfirmation(state,active);
+      if (active) endConfirmation($,state,active);
       p.pendingTools--;p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
       await observe($,progress,p,'tool_returned');
     }
@@ -338,6 +356,7 @@ export const register = on => {
     if (['aborted','error','refusal'].includes(e.reason)) {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+      for (const active of state.requests) if (active.agent===agent && active.turn===turn) endConfirmation($,state,active);
       if (!cancelledTurns.has(turn)) {
         await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
         cancelledTurns.add(turn);

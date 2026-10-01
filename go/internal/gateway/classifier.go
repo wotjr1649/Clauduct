@@ -28,6 +28,9 @@ func classifierSelection(request *anthropic.Request, count bool) ([]bridge.Route
 	envelope := slices.Contains(request.StopSequences, "</block>")
 	for _, message := range request.Messages {
 		blocks := message.Blocks
+		for _, block := range blocks {
+			envelope = envelope || strings.HasPrefix(block.Text, classifierContextPrefix)
+		}
 		envelope = envelope || len(blocks) >= 4 && blocks[0].Text == "<transcript>\n" &&
 			blocks[len(blocks)-2].Text == "</transcript>\n" && strings.Contains(blocks[len(blocks)-1].Text, "<block>")
 	}

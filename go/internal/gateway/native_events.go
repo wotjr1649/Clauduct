@@ -378,12 +378,8 @@ func (g *Gateway) reconcileNativeResults() {
 	}
 	pending := make([]snapshot, 0, len(r.entries))
 	for key, e := range r.entries {
-		// A receipt settles a turn whose outcome is still open. Once the report has reached
-		// the parent there is nothing left for it to settle, and applying one anyway undid
-		// the delivery: a late aborted receipt cleared the body and moved the entry to
-		// cancelled, so the next turn told a parent that already held the real report that
-		// no completed report was expected from it. The pointer guard below protects a
-		// resumed entry, which is a different entry; this is the same one.
+		// Receipt must precede acknowledgment; completed historical reports stay
+		// unchanged when a later abort or duplicate receipt arrives.
 		if !e.NativeEndObserved && e.NativeTurn != "" && !resultReported(e.State) {
 			pending = append(pending, snapshot{key, e, e.AgentResultRecord})
 		}
@@ -415,7 +411,7 @@ func (g *Gateway) reconcileNativeResults() {
 		if current := r.entries[item.key]; current == item.entry && current.NativeTurn == receipt.Turn {
 			current.EndReason = receipt.Reason
 			current.NativeEndObserved = true
-			if receipt.Reason != "answer" {
+			if !resultReported(current.State) && receipt.Reason != "answer" {
 				current.stopped = true
 				r.bytes -= len(current.body)
 				current.body = ""
@@ -425,6 +421,9 @@ func (g *Gateway) reconcileNativeResults() {
 				} else {
 					r.change(current, "result_unavailable")
 				}
+			}
+			if receipt.Reason == "answer" {
+				r.acknowledge(current)
 			}
 		}
 		r.mu.Unlock()
@@ -478,6 +477,7 @@ func (g *Gateway) finishNativeAgentStop(receipt nativeTurnReceipt) {
 		r.mu.Lock()
 		if e := r.entries[binding.ID]; e != nil && e.Session == receipt.Session && e.NativeTurn == receipt.Turn && !e.NativeEndObserved {
 			e.NativeEndObserved, e.EndReason = true, receipt.Reason
+			r.acknowledge(e)
 		}
 		r.mu.Unlock()
 		g.delegations.stoppedTurn(binding, receipt.Turn)

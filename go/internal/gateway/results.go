@@ -39,6 +39,13 @@ type agentResult struct {
 	stopBinding      *agentBinding
 	continuationTurn string
 	parentBody       *[32]byte
+	deliveryFailed   bool
+	parentInput      *parentInputBoundary
+	resumeInput      *parentInputBoundary
+}
+type parentInputBoundary struct {
+	messages int
+	digest   [32]byte
 }
 type AgentResultRecord struct {
 	Selection         ResultSelection `json:"selection"`
@@ -182,6 +189,10 @@ func (r *agentResults) beginLocked(id string) bool {
 		delete(r.entries, oldest)
 	}
 	next := &agentResult{AgentResultRecord: AgentResultRecord{Agent: e.Agent, Session: e.Session, Call: e.Call, Selection: e.Selection, Review: "not_assessed_by_gateway"}, parent: e.parent, since: time.Now().Truncate(time.Millisecond)}
+	next.resumeInput = e.parentInput
+	if next.resumeInput == nil {
+		next.resumeInput = &parentInputBoundary{messages: -1} // No known prefix can prove a fresh resumed report.
+	}
 	if e.stopped {
 		r.entries[id+"/"+strconv.FormatUint(e.sequence, 10)] = e
 	} else {
@@ -268,6 +279,7 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 	}
 	r.bytes -= len(e.body)
 	e.body, e.Bytes = "", 0
+	e.parentBody, e.deliveryFailed = nil, false
 	e.streaming = true
 	turn := e.NativeTurn
 	r.mu.Unlock()
@@ -284,6 +296,7 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 			if delivered {
 				r.body(e, body, "delivered_response")
 			} else {
+				e.parentBody, e.deliveryFailed = nil, true
 				r.bytes -= len(e.body)
 				e.body, e.Bytes = "", 0
 				if binding != nil {
@@ -344,6 +357,11 @@ func (d *delegations) stoppedResult(binding agentBinding, turn string, expected 
 		e.stopBinding = &binding
 		return
 	}
+	if e.deliveryFailed {
+		e.stopped, e.EndReason = true, "delivery_failed"
+		r.change(e, "result_unavailable")
+		return
+	}
 	if e.body == "" {
 		r.body(e, binding.Result, "native_stop")
 	}
@@ -366,12 +384,36 @@ func (d *delegations) stoppedResult(binding agentBinding, turn string, expected 
 		r.change(e, "result_unavailable")
 	} else {
 		r.change(e, "awaiting_parent")
-		if e.parentBody != nil && *e.parentBody == sha256.Sum256([]byte(e.body)) {
-			r.change(e, "parent_received")
-			r.bytes -= len(e.body)
-			e.body = ""
+		r.acknowledge(e)
+	}
+}
+
+// A task-stop binding and a successful parent response do not replace the
+// independent end receipt for a verified native turn.
+func (r *agentResults) acknowledge(e *agentResult) {
+	if !e.stopped || e.State != "awaiting_parent" || e.deliveryFailed || e.parentBody == nil ||
+		e.NativeTurn != "" && !e.NativeEndObserved || *e.parentBody != sha256.Sum256([]byte(e.body)) {
+		return
+	}
+	r.change(e, "parent_received")
+	r.bytes -= len(e.body)
+	e.body = ""
+}
+
+// Hash each message once. Resume anchors keep only a count and digest, never a
+// second conversation. Compacted or changed prefixes cannot prove early receipt.
+func parentInputPrefixes(req *anthropic.Request, wanted map[int][32]byte) *parentInputBoundary {
+	digest := sha256.New()
+	encoder := json.NewEncoder(digest)
+	for i, message := range req.Messages {
+		if err := encoder.Encode(message); err != nil {
+			return nil
+		}
+		if _, found := wanted[i+1]; found {
+			wanted[i+1] = [32]byte(digest.Sum(nil))
 		}
 	}
+	return &parentInputBoundary{len(req.Messages), [32]byte(digest.Sum(nil))}
 }
 
 func (d *delegations) existingResult(binding agentBinding, since time.Time) (string, bool) {
@@ -442,6 +484,20 @@ func (d *delegations) existingResult(binding agentBinding, since time.Time) (str
 func (r *agentResults) deliver(req *anthropic.Request, session, parent string, evidence ...*ParentReadiness) func(bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	prefixes := map[int][32]byte{0: sha256.Sum256(nil)}
+	hasParent := false
+	for id, e := range r.entries {
+		if id == e.Agent && e.Session == session && e.parent == parent {
+			hasParent = true
+			if e.resumeInput != nil && e.resumeInput.messages > 0 && e.resumeInput.messages <= len(req.Messages) {
+				prefixes[e.resumeInput.messages] = [32]byte{}
+			}
+		}
+	}
+	var currentInput *parentInputBoundary
+	if hasParent {
+		currentInput = parentInputPrefixes(req, prefixes)
+	}
 	var receipts []*agentResult
 	// Native may deliver a handback before its task-end event. Retain only
 	// the digest of that exact report; completion still requires native stop.
@@ -467,20 +523,32 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 		if id != e.Agent {
 			continue
 		}
+		reportRequest := req
+		if e.Session == session && e.parent == parent {
+			e.parentInput = currentInput
+			if boundary := e.resumeInput; boundary != nil {
+				reportRequest = nil
+				if digest, found := prefixes[boundary.messages]; currentInput != nil && found && digest == boundary.digest && boundary.messages < len(req.Messages) {
+					copy := *req
+					copy.Messages = req.Messages[boundary.messages:]
+					reportRequest = &copy
+				}
+			}
+		}
 		if len(evidence) > 0 && e.Session == session && e.parent == parent && !resultReported(e.State) {
 			if !e.stopped || !deliverable(e.State) {
 				evidence[0].Pending = append(evidence[0].Pending, e.Agent)
 			}
 		}
 		if !e.stopped || e.Session != session || e.parent != parent || !deliverable(e.State) {
-			if !e.stopped && e.Session == session && e.parent == parent && e.NativeTurn != "" &&
+			if reportRequest != nil && !e.deliveryFailed && !e.stopped && e.Session == session && e.parent == parent && e.NativeTurn != "" &&
 				(e.State == "running" || e.State == "awaiting_native_stop") {
-				if containsResult(req, e) {
+				if containsResult(reportRequest, e) {
 					early = append(early, earlyReceipt{e, e.NativeTurn, sha256.Sum256([]byte(e.body))})
 				} else if e.streaming && e.body == "" {
 					// Native can request the parent before the child's HTTP handler
 					// stores its delivered response. Compare this digest at completion.
-					if body, found := pendingResultFingerprint(req, e); found {
+					if body, found := pendingResultFingerprint(reportRequest, e); found {
 						early = append(early, earlyReceipt{e, e.NativeTurn, body})
 					}
 				}
@@ -501,7 +569,7 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 			}{e.Agent, e.parent, e.Selection.Model, e.Selection.Effort})
 			supplements = append(supplements, "Clauduct verified delegation receipt: "+string(receipt)+". These are task correlation IDs, available for reporting when the user requests them. The receipt verifies identity and routing, not the findings in the child report.")
 		}
-		present := containsResult(req, e)
+		present := reportRequest != nil && containsResult(reportRequest, e)
 		// A cancellation is native's to report (#144: removing this sentence reproduced
 		// nothing in 10 runs). The other three were never triggered by that measurement, so
 		// they stay; the first keeps a recovered report visibly data.
@@ -546,7 +614,7 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 		defer r.mu.Unlock()
 		for _, receipt := range early {
 			e := receipt.entry
-			if (!e.stopped && r.entries[e.Agent] != e) || e.NativeTurn != receipt.turn ||
+			if e.deliveryFailed || (!e.stopped && r.entries[e.Agent] != e) || e.NativeTurn != receipt.turn ||
 				(e.body == "" && (!e.streaming || e.stopped)) ||
 				(e.body != "" && sha256.Sum256([]byte(e.body)) != receipt.body) ||
 				(e.State != "running" && e.State != "awaiting_native_stop" && e.State != "awaiting_parent") {
@@ -566,7 +634,10 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 			case "result_unavailable":
 				r.change(e, "unavailable_reported")
 			case "awaiting_parent":
-				r.change(e, "parent_received")
+				body := sha256.Sum256([]byte(e.body))
+				e.parentBody = &body
+				r.acknowledge(e)
+				continue // An unobserved native end must retain its report until receipt.
 			}
 			r.bytes -= len(e.body)
 			e.body = ""
@@ -583,8 +654,11 @@ func containsResult(req *anthropic.Request, e *agentResult) bool {
 			continue
 		}
 		for _, b := range m.Blocks {
-			if body, ok := nativeHandbackResult(b.Text, e.Agent); ok && body == e.body {
-				return true
+			if strings.HasPrefix(b.Text, "Another Claude session sent a message:\n<agent-message from=\""+e.Agent+"\">") {
+				if body, ok := nativeHandbackResult(b.Text, e.Agent); ok && body == e.body {
+					return true
+				}
+				continue // A malformed frame cannot fall back through tags in report data.
 			}
 			if strings.Contains(b.Text, "<task-id>"+e.Agent+"</task-id>") && strings.Contains(b.Text, "<result>"+e.body+"</result>") {
 				return true
@@ -609,8 +683,8 @@ func nativeHandbackResult(text, agent string) (string, bool) {
 		return "", false
 	}
 	_, report, found := strings.Cut(text[len(prefix):], "The report follows:\n")
-	body, _, closed := strings.Cut(report, "\n</agent-message>\n")
-	if !found || !closed || len(body) > 3*resultBodyLimit {
+	body, suffix, closed := strings.Cut(report, "\n</agent-message>\n")
+	if !found || !closed || strings.TrimSpace(suffix) != "" || len(body) > 3*resultBodyLimit {
 		return "", false
 	}
 	var decoded strings.Builder

@@ -107,6 +107,7 @@ type parentStep struct {
 	Eligible bool   `json:"eligible"`
 	Mode     string `json:"mode"`
 	Handback string `json:"handback,omitempty"`
+	Peer     bool   `json:"peer,omitempty"`
 	waiting  bool   // gateway snapshot, never accepted from the native receipt
 }
 
@@ -119,7 +120,7 @@ func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
 	if id != "" {
 		name = "child-" + id
 	}
-	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode", "handback"}, &step)
+	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode", "handback", "peer"}, &step)
 	if err != nil {
 		return step, false, err
 	}
@@ -127,6 +128,9 @@ func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
 		return step, false, errDelegationUnverified
 	}
 	if found && step.Handback != "" && (id == "" || step.Index == 0 || !correlationShape.MatchString(step.Handback)) {
+		return step, false, errDelegationUnverified
+	}
+	if found && step.Peer && (id != "" || step.Index != 0) {
 		return step, false, errDelegationUnverified
 	}
 	return step, found, nil
@@ -199,10 +203,13 @@ func (g *Gateway) prepareParentWait(r *http.Request, request *anthropic.Request,
 		entry.checked("native_handback_delivered")
 		return &step, nil
 	}
-	// Eligible root index zero is published only for a task notification, never
-	// explicit user input. With no pending children it may consume only an empty
-	// terminal reply; a real answer or tool call must still reach native.
-	if step.Eligible && (step.waiting || workflowLaunch || forkLaunch || id == "" && step.Index == 0) {
+	// Native 2.1.286 exposes task notifications as peer input. A peer's first
+	// root step needs both its exact native turn and verified child bodies in
+	// this request; origin alone never permits an empty answer.
+	peerReport := step.Peer && readiness.Eligible && len(readiness.Included) > 0 &&
+		len(readiness.Pending) == 0 && len(readiness.Unavailable) == 0 && entry.nativeTurn != nil &&
+		entry.nativeTurn.Session == session && entry.nativeTurn.Agent == "" && entry.nativeTurn.Turn == step.Turn
+	if step.Eligible && (step.waiting && !step.Peer || workflowLaunch || forkLaunch || id == "" && step.Index == 0 && (!step.Peer || peerReport)) {
 		return &step, nil
 	}
 	return nil, nil

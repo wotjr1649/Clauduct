@@ -22,6 +22,13 @@ S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수�
 같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
+**native 2.1.286 후속 후보 — 미출하.** 새 turn의 첫 step에서 빈 완료 알림을 처리할 출처
+증거를 현재 plugin API로 확보할 수 없다. `prompt.submit.turnId`는 이전 실행 중 turn의 ID이며,
+새 ID를 생성하는 `turn.start`에는 출처가 없다. 후보는 이 빈 응답을 `EMPTY_REPLY`로 명시적으로
+거부한다. 자식 보고가 요청에 있다는 사실만으로 출처를 추정하지 않는다. 일반 답변·도구 실행과
+확인된 이후 step의 대기·handback은 유지한다. 아래 과거 버전의 완료 알림 PASS는 2.1.286의
+지원 증거로 재사용하지 않는다. 후보의 실제 backend·최종 바이너리·병합 후 검증은 아직 미완료다.
+
 **2026-09-23 v0.3.2 재실행 방지 묶음 — 미출하.** 요청은 처음 읽은 turn 영수증 하나로 예약·선택·취소
 바인딩을 판정한다. 독립 `auxiliary` 요청은 현재 root turn 안에서만 한 번 실행하고, 다음 turn의 같은
 요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴
@@ -213,6 +220,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | 서버 전용 기능을 제외해도 남는 조건 | 현재 구현 |
 |---|---|
 | CLI 옵션 | `--settings` JSON/파일을 필수 settings와 병합하고 `--setting-sources`는 native로 전달. 필수 연결·hook 충돌은 거부. 권한 우회 CLI 옵션 2개는 계속 거부. [설정 병합](../../go/internal/app/user_settings.go) |
+| Claude Desktop 실행 | `--desktop` 인자 경계는 인식하나 별도 앱의 backend·세션 수명은 미지원. 설정 읽기와 native 실행 전에 `DESKTOP_UNSUPPORTED`로 거부하며 native 터미널 사용을 안내. 값이 붙은 알 수 없는 옵션 뒤에서도 검사한다. 알 수 없는 옵션 때문에 뒤의 `--desktop`이 옵션인지 값인지 증명할 수 없으면 `DESKTOP_OPTION_UNVERIFIED`로 거부한다. 확인된 문자열 값과 `--` 뒤 데이터는 보존 |
 | API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`는 미지원. v0.5.2는 개수·길이를 제한한 `stop_sequences`를 로컬 출력 절단으로 처리한다(아래 v0.5.2 절). [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
 | Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원, 명시적 source의 native 재개와 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow와 근거 없는 재개는 제한 |
 | 부모·빈 응답 대기 | 확인된 TUI 회차는 무출력 대기. SDK/`-p`의 검증된 빈 대기·알림 응답은 Clauduct 상태 메시지로 전달하며 실제 본문·도구는 보존. 상태 메시지는 자식 결과나 업무 완료가 아님. [실제 필수 조건](../../go/internal/gateway/features.go) |

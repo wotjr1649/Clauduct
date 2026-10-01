@@ -2,6 +2,36 @@ package app
 
 import "strings"
 
+// Only known native arities prove that an option-shaped token is a value.
+// Attached unknown values are self-contained; ambiguous Desktop tokens cannot launch.
+func nativeDesktop(args []string) error {
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		name, _, attached := strings.Cut(args[i], "=")
+		if !known {
+			if attached && strings.HasPrefix(name, "--") {
+				i++
+				continue
+			}
+			for _, token := range args[i+1:] {
+				name, _, _ := strings.Cut(token, "=")
+				if name == "--desktop" {
+					return ErrDesktopBoundary
+				}
+			}
+			return nil
+		}
+		if name == "--desktop" {
+			return ErrDesktopUnsupported
+		}
+		if end > len(args) {
+			return nil
+		}
+		i = end
+	}
+	return nil
+}
+
 // Native handles background dispatch before its ordinary help/version flags.
 func nativeInformation(args []string) bool {
 	if BackgroundRequested(args) {
@@ -16,7 +46,7 @@ func nativeInformation(args []string) bool {
 }
 
 // The settings rewrite and read-only role scan share native value boundaries.
-// Public arities follow Claude Code 2.1.283 --help; hidden entries retain the
+// Public arities follow Claude Code 2.1.286 --help; hidden entries retain the
 // existing role scanner's contract. Unknown options cannot prove where
 // a later settings/role option begins. This is not native option validation.
 // end is exclusive; a missing required value returns len(args)+1.
@@ -66,7 +96,7 @@ func nativeArgEnd(args []string, i int) (end int, known bool) {
 		"--disable-slash-commands", "--no-session-persistence", "--include-partial-messages", "--replay-user-messages",
 		"--debug-to-stderr", "--mcp-debug", "--no-chrome", "--chrome", "--ide", "--fork-session", "--version", "-v",
 		"--help", "-h", "--forward-subagent-text", "--ax-screen-reader", "--bg", "--background", "--brief",
-		"--exclude-dynamic-system-prompt-sections", "--include-hook-events", "--restricted", "--tmux":
+		"--exclude-dynamic-system-prompt-sections", "--include-hook-events", "--restricted", "--tmux", "--desktop":
 	default:
 		return end, !strings.HasPrefix(name, "-") || name == "-"
 	}

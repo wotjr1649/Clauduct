@@ -378,12 +378,8 @@ func (g *Gateway) reconcileNativeResults() {
 	}
 	pending := make([]snapshot, 0, len(r.entries))
 	for key, e := range r.entries {
-		// A receipt settles a turn whose outcome is still open. Once the report has reached
-		// the parent there is nothing left for it to settle, and applying one anyway undid
-		// the delivery: a late aborted receipt cleared the body and moved the entry to
-		// cancelled, so the next turn told a parent that already held the real report that
-		// no completed report was expected from it. The pointer guard below protects a
-		// resumed entry, which is a different entry; this is the same one.
+		// Receipt must precede acknowledgment; completed historical reports stay
+		// unchanged when a later abort or duplicate receipt arrives.
 		if !e.NativeEndObserved && e.NativeTurn != "" && !resultReported(e.State) {
 			pending = append(pending, snapshot{key, e, e.AgentResultRecord})
 		}
@@ -411,11 +407,23 @@ func (g *Gateway) reconcileNativeResults() {
 			g.delegations.noteNativeAnswer(e.Agent, receipt.Turn)
 		}
 		r.mu.Lock()
-		// Pointer identity prevents a concurrent resume from being closed by an old receipt.
-		if current := r.entries[item.key]; current == item.entry && current.NativeTurn == receipt.Turn {
+		// A resume can archive this entry while its receipt is being read.
+		// Settle that same entry, never the replacement native turn.
+		current := r.entries[item.key]
+		if current != item.entry {
+			current = nil
+			for _, archived := range r.entries {
+				if archived == item.entry {
+					current = archived
+					break
+				}
+			}
+		}
+		applied := current != nil && current.NativeTurn == receipt.Turn && current.Session == receipt.Session
+		if applied && !current.NativeEndObserved {
 			current.EndReason = receipt.Reason
 			current.NativeEndObserved = true
-			if receipt.Reason != "answer" {
+			if !resultReported(current.State) && receipt.Reason != "answer" {
 				current.stopped = true
 				r.bytes -= len(current.body)
 				current.body = ""
@@ -426,8 +434,14 @@ func (g *Gateway) reconcileNativeResults() {
 					r.change(current, "result_unavailable")
 				}
 			}
+			if receipt.Reason == "answer" {
+				r.acknowledge(current)
+			}
 		}
 		r.mu.Unlock()
+		if !applied {
+			continue
+		} // Keep the receipt if no matching entry could consume it.
 		g.finishNativeAgentStop(receipt)
 		// Only this task-created validated receipt is removed; active metadata stays.
 		if root, err := os.OpenRoot(g.nativeEvents.directory); err == nil {
@@ -472,6 +486,15 @@ func (g *Gateway) finishNativeAgentStop(receipt nativeTurnReceipt) {
 	}
 	binding, found := g.agents.finishStop(receipt)
 	if found && receipt.Reason == "answer" && g.delegations != nil {
+		// The replay-ledger path also consumes this matched receipt. Record its
+		// evidence before stopping the task, even without result reconciliation.
+		r := &g.delegations.results
+		r.mu.Lock()
+		if e := r.entries[binding.ID]; e != nil && e.Session == receipt.Session && e.NativeTurn == receipt.Turn && !e.NativeEndObserved {
+			e.NativeEndObserved, e.EndReason = true, receipt.Reason
+			r.acknowledge(e)
+		}
+		r.mu.Unlock()
 		g.delegations.stoppedTurn(binding, receipt.Turn)
 	}
 }

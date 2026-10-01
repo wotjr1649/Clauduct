@@ -32,6 +32,10 @@ var ErrClaudeNotFound = errors.New("CLAUDE_NOT_FOUND")
 // ErrInterrupted means Ctrl+C arrived before the child was started, so nothing was.
 var ErrInterrupted = errors.New(CategoryCancelled)
 
+// Desktop dispatch leaves the terminal bridge and uses a separately configured backend.
+var ErrDesktopUnsupported = errors.New("DESKTOP_UNSUPPORTED: --desktop opens a separate app outside this bridge; use a native terminal session")
+var ErrDesktopBoundary = errors.New("DESKTOP_OPTION_UNVERIFIED: unknown native option hides whether --desktop is an option or a value; use unambiguous terminal arguments")
+
 // RefusedOptionError names a native option this launcher will not forward. Only the
 // permission-bypass options qualify; see internal/launch for why the list is two entries
 // and not the baseline's thirty.
@@ -160,6 +164,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// executable lookup or a port, and must not leave either to be cleaned up.
 	if option, refused := launch.Refused(o.Args); refused {
 		return Result{}, &RefusedOptionError{Option: option}
+	}
+	if err := nativeDesktop(o.Args); err != nil {
+		return Result{}, err
 	}
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome

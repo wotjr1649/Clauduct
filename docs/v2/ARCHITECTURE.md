@@ -93,10 +93,16 @@ Go 제품 정보는 `clauduct --dev --version`에서 본다(D06). 처리 순서�
    그대로 복사한다. 사용자 설정 옵션이 없을 때만 병합할 필요 없는 세션 설정을 앞에 추가한다. overlay의 `--effort`는 시작 effort이고, 사용자가 `--effort` 없이 `--model`을 주면 그 모델의 기본 effort다(v0.3.4). 사용자의 `--effort`는 뒤에 놓여 이긴다.
 
 값 경계는 [공통 탐색 함수](../../go/internal/app/native_args.go)를 읽기 전용 역할 검색과 공유한다.
-Claude Code 2.1.283의 공개 옵션 형태(2.1.282에 필수값 옵션 `--client-data-url <url>` 하나가 더해졌다. `--agents`는 `--print`와 함께 JSON 파일 경로도 받는다. 역할 탐색은 그 파일을 설정 파일처럼 제한해 읽는다)와 기존 hidden 옵션 목록을 사용하며 native 전체 구문을
+Claude Code 2.1.286의 공개 옵션 형태(2.1.283의 필수값 옵션 `--client-data-url <url>`과 2.1.285의 boolean 옵션 `--desktop`을 포함한다. `--agents`는 `--print`와 함께 JSON 파일 경로도 받는다. 역할 탐색은 그 파일을 설정 파일처럼 제한해 읽는다)와 기존 hidden 옵션 목록을 사용하며 native 전체 구문을
 재구현하지 않는다(D05). 모르는 옵션 뒤에 `--settings` 후보가 있으면 경계를 확정할 수 없으므로
 `SETTINGS_INVALID`로 거부한다. 그런 후보가 없으면 모르는 옵션의 판정은 native에 맡긴다.
 거부 검사를 통과한 옵션 값과 `--` 뒤 데이터는 재해석하지 않는다.
+
+`--desktop`은 인자 경계를 인식하되 `DESKTOP_UNSUPPORTED`로 설정 읽기·gateway 생성·native 실행 전에
+거부한다. 이 옵션은 터미널을 종료하고 별도 Claude Desktop을 여므로 현재 터미널 브리지의 backend와
+세션 수명을 이어갈 수 없다. 옵션 값이나 `--` 뒤의 같은 문자열은 실행 옵션으로 취급하지 않는다.
+현재 세션은 native 터미널 모드로 실행한다. [공식 CLI](https://code.claude.com/docs/en/cli-reference)와
+[Desktop 구성](https://code.claude.com/docs/en/desktop)은 별도 경로를 설명한다.
 
 결합 short 옵션은 `-cp`처럼 boolean을 순서대로 읽고, `-pdapi`·`-pnPUBLIC`처럼 값을 받는
 첫 옵션부터 나머지를 그 값으로 취급한다. settings와 역할 탐색이 같은 경계를 사용한다.
@@ -274,13 +280,41 @@ event 수와 읽은 byte 수를 기록한다. 파싱·변환이 EOF 전에 실�
 있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
 socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.
 
-검증된 native 회차의 대기 자식, 방금 반환된 Workflow 실행, 루트 완료 알림에만 빈 응답
+검증된 native 회차의 대기 자식, 방금 반환된 Workflow 실행, 전달된 자식 handback에만 빈 응답
 제어를 허용한다. TUI는 무출력 대기를 유지한다. SDK는 빈 메시지를 재요청하거나 알림 뒤
 메시지 부재를 실행 오류로 처리하므로 `[Clauduct]` 출처의 짧은 대기·알림 상태를 전달한다.
 이 상태는 backend 답변·자식 보고서·업무 성공이 아니다. SDK의 실제 본문과 도구는 보존하고,
 후속 실행은 native의 기존 완료 알림에 맡긴다. 별도 상태 확인용 모델 호출을 만들지 않는다.
 빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
 자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
+
+native 2.1.286은 완료 알림을 `prompt.submit`에서 `peer`로 전달하지만, 그 이벤트의 `turnId`는
+이전 실행 중 turn을 가리킨다. 새 ID는 출처 없는 `turn.start`에서 생성되며, submit 반환 뒤
+발생하는 순서도 관측했다. 따라서 새 turn의 첫 step을 peer 알림으로 입증할 수 없고,
+그 빈 응답은 `EMPTY_REPLY`로 거부한다. 같은 세션의 확인된 자식 보고만으로 이 출처를
+추정하지 않는다. 실제 답변·도구 호출과 확인된 이후 step의 대기·handback 제어는 유지한다.
+이 제어가 자식의 업무 성공이나 실행 승인을 뜻하지는 않는다.
+
+native의 `[Subagent hand-back]` 보고는 정확한 Agent ID의 `agent-message` 프레임과 본문 각 줄의
+들여쓰기를 함께 읽는다. 단일·닫힌 프레임의 제한된 본문만 전달 자료로 비교하며, 본문 안의 태그는
+보고 데이터로 유지한다. 일치한 보고가 부모 요청에 포함됐어도 native 종료·최종 본문 일치·부모
+전달 성공이 모두 확인되기 전에는 완료 수신으로 기록하지 않는다. 보고 안의 승인은 권한이 아니다.
+본문 앞 header도 측정한 native 2.1.286 문구와 정확히 일치해야 한다. 이미 본문을 확보한 경우에도
+같은 자식의 모든 frame을 비교하며, 뒤의 충돌·손상 frame을 첫 일치로 건너뛰지 않는다. 모호한
+입력은 수신 증거로 쓰지 않고, 독립적으로 완료한 보고를 기존의 인용된 일반 전달 경로로 보낸다.
+`task-id`·`result` 태그의 부분 일치는 보고 수신 증거로 쓰지 않는다. 엄격한 native hand-back이나
+동일 call ID의 성공한 tool result로 비교하며, 확인된 완료 보고의 일반 전달 경로는 유지한다.
+본문 미확인 조기 수신은 엄격한 native hand-back을 우선 비교한다. 원래 Agent tool result는 실행
+접수 문구일 수 있으므로 hand-back과 충돌하는 보고로 취급하지 않는다. 프레임이 없으면 기존의
+동일 call ID 성공 result와 독립 완료 본문의 최종 일치를 요구한다. 프레임의 끝에는 측정한 native
+descendant 권한 안내와 응답 안내만 허용하며 다른 추가 내용은 거부한다. 조기 수신 digest는 자식 HTTP 전달 실패 시 폐기하며 native
+종료 본문으로 복구하지 않는다. 전달 실패는 같은 결과의 다음 step에서도 유지하고, 별도로 확인한
+새 결과 객체에서만 초기화한다.
+성공한 보고 도구 응답 뒤 native hand-back 저장 전의 수신도 digest로 보존한다. 실패한 전달의
+늦은 hand-back 본문은 저장하지 않는다. 최종 일치·독립 종료·부모 전달 조건은 유지한다.
+재개되거나 저장된 선택에서 복원된 자식은 알림의 child ID만으로 현재 turn의 보고임을 증명할 수 없다. 입력에 뒤늦게 추가된
+옛 알림도 같은 ID와 본문일 수 있으므로 조기 수신을 추정하지 않고 확인된 현재 turn의 완료
+보고를 일반 경로로 전달한다. 대화 본문이나 입력 prefix를 따로 저장하지 않는다.
 
 v0.5.4는 native가 성공적으로 전달한 `SubagentHandback` 뒤의 빈 종료도 구분한다.
 native tool 결과에서 확인한 call ID와 같은 자식·turn·최신 call/result가 모두 맞고 대기 자식이

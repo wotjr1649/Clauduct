@@ -300,7 +300,12 @@ native의 `[Subagent hand-back]` 보고는 정확한 Agent ID의 `agent-message`
 전달 성공이 모두 확인되기 전에는 완료 수신으로 기록하지 않는다. 보고 안의 승인은 권한이 아니다.
 `task-id`·`result` 태그의 부분 일치는 보고 수신 증거로 쓰지 않는다. 엄격한 native hand-back이나
 동일 call ID의 성공한 tool result로 비교하며, 확인된 완료 보고의 일반 전달 경로는 유지한다.
-조기 수신 digest는 자식 HTTP 전달 실패 시 폐기하며 native 종료 본문으로 복구하지 않는다.
+본문 미확인 조기 수신은 엄격한 native hand-back을 우선 비교한다. 원래 Agent tool result는 실행
+접수 문구일 수 있으므로 hand-back과 충돌하는 보고로 취급하지 않는다. 프레임이 없으면 기존의
+동일 call ID 성공 result와 독립 완료 본문의 최종 일치를 요구한다. 프레임의 끝에는 측정한 native
+descendant 권한 안내와 응답 안내만 허용하며 다른 추가 내용은 거부한다. 조기 수신 digest는 자식 HTTP 전달 실패 시 폐기하며 native
+종료 본문으로 복구하지 않는다. 전달 실패는 같은 결과의 다음 step에서도 유지하고, 별도로 확인한
+새 결과 객체에서만 초기화한다.
 성공한 보고 도구 응답 뒤 native hand-back 저장 전의 수신도 digest로 보존한다. 실패한 전달의
 늦은 hand-back 본문은 저장하지 않는다. 최종 일치·독립 종료·부모 전달 조건은 유지한다.
 재개된 자식은 알림의 child ID만으로 현재 turn의 보고임을 증명할 수 없다. 입력에 뒤늦게 추가된

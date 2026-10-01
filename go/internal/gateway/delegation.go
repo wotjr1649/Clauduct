@@ -45,6 +45,7 @@ type resolvedChoice struct {
 	route                 bridge.Route
 	inherited             bool
 	custom                bool
+	restored              bool
 }
 
 func (c resolvedChoice) isWorkflow() bool {
@@ -820,7 +821,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		return empty, false, errDelegationUnverified
 	}
 	route.Source = saved.Source
-	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: saved.Alias, route: route, inherited: saved.Inherited, custom: saved.CustomRole}
+	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: saved.Alias, route: route, inherited: saved.Inherited, custom: saved.CustomRole, restored: true}
 	if saved.Intent != nil {
 		intent := saved.Intent
 		if saved.Version < 2 {

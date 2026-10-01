@@ -142,6 +142,7 @@ func (r *agentResults) start(id string, c resolvedChoice) bool {
 		selection.ModelProvided, selection.EffortProvided, selection.PresenceVerified = c.receipt.ModelProvided, c.receipt.EffortProvided, c.receipt.PresenceVerified
 	}
 	e := &agentResult{AgentResultRecord: AgentResultRecord{Agent: id, Session: c.session, Call: c.call, Selection: selection, Review: "not_assessed_by_gateway"}, parent: c.parent, since: time.Now().Truncate(time.Millisecond)}
+	e.resumed = c.restored
 	r.entries[id] = e
 	r.change(e, "running")
 	return true

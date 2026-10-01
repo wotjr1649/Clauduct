@@ -16,7 +16,7 @@
 - 요청 경계: 정확한 Host, loopback 원격 주소, 중복 header 거부, proxy/browser header 거부, `cookie`·`proxy-authorization` 거부
 - 인증: `Authorization: Bearer` 상수시간 비교. `x-api-key`는 같은 세션 token일 때만 허용
 - `POST /v1/messages`: method·content-type·32 MiB 본문 상한 검사, 요청 등록, 취소·300s 상한
-- 옵션 거부: `--dangerously-skip-permissions` 계열 2개만. 나머지 native 옵션은 전부 전달
+- 옵션 거부: `--dangerously-skip-permissions` 계열 2개. 별도 Desktop 실행인 `--desktop`은 미지원으로 거부하며 다른 native 옵션은 전달
 - SSE parser: frame 경계·UTF-8·중복 key·trailing JSON·terminal 순서·`[DONE]`·크기와 개수 상한
 - 요청 registry: 요청별 취소, 형제 비전파, 멱등 해제, 동시 실행 상한 64
 - 종료: 새 요청 거부 → in-flight 취소 → drain → listener 해제

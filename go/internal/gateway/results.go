@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -37,6 +38,7 @@ type agentResult struct {
 	streaming        bool
 	stopBinding      *agentBinding
 	continuationTurn string
+	parentBody       *[32]byte
 }
 type AgentResultRecord struct {
 	Selection         ResultSelection `json:"selection"`
@@ -364,6 +366,11 @@ func (d *delegations) stoppedResult(binding agentBinding, turn string, expected 
 		r.change(e, "result_unavailable")
 	} else {
 		r.change(e, "awaiting_parent")
+		if e.parentBody != nil && *e.parentBody == sha256.Sum256([]byte(e.body)) {
+			r.change(e, "parent_received")
+			r.bytes -= len(e.body)
+			e.body = ""
+		}
 	}
 }
 
@@ -436,6 +443,14 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	var receipts []*agentResult
+	// Native may deliver a handback before its task-end event. Retain only
+	// the digest of that exact report; completion still requires native stop.
+	type earlyReceipt struct {
+		entry *agentResult
+		turn  string
+		body  [32]byte
+	}
+	var early []earlyReceipt
 	var supplements []string
 	keys := make([]string, 0, len(r.entries))
 	for id := range r.entries {
@@ -458,6 +473,18 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 			}
 		}
 		if !e.stopped || e.Session != session || e.parent != parent || !deliverable(e.State) {
+			if !e.stopped && e.Session == session && e.parent == parent && e.NativeTurn != "" &&
+				(e.State == "running" || e.State == "awaiting_native_stop") {
+				if containsResult(req, e) {
+					early = append(early, earlyReceipt{e, e.NativeTurn, sha256.Sum256([]byte(e.body))})
+				} else if e.streaming && e.body == "" {
+					// Native can request the parent before the child's HTTP handler
+					// stores its delivered response. Compare this digest at completion.
+					if body, found := pendingResultFingerprint(req, e); found {
+						early = append(early, earlyReceipt{e, e.NativeTurn, body})
+					}
+				}
+			}
 			continue
 		}
 		// Supply the verified correlation ID independently of native launch prose
@@ -474,26 +501,7 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 			}{e.Agent, e.parent, e.Selection.Model, e.Selection.Effort})
 			supplements = append(supplements, "Clauduct verified delegation receipt: "+string(receipt)+". These are task correlation IDs, available for reporting when the user requests them. The receipt verifies identity and routing, not the findings in the child report.")
 		}
-		present := false
-		if e.body != "" {
-			for _, m := range req.Messages {
-				if m.Role != "user" {
-					continue
-				}
-				for _, b := range m.Blocks {
-					if strings.Contains(b.Text, "<task-id>"+e.Agent+"</task-id>") && strings.Contains(b.Text, "<result>"+e.body+"</result>") {
-						present = true
-						break
-					}
-					for _, part := range b.Result {
-						if b.ToolUseID == e.Call && strings.TrimSpace(part.Text) == e.body {
-							present = true
-							break
-						}
-					}
-				}
-			}
-		}
+		present := containsResult(req, e)
 		// A cancellation is native's to report (#144: removing this sentence reproduced
 		// nothing in 10 runs). The other three were never triggered by that measurement, so
 		// they stay; the first keeps a recovered report visibly data.
@@ -536,6 +544,21 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
+		for _, receipt := range early {
+			e := receipt.entry
+			if (!e.stopped && r.entries[e.Agent] != e) || e.NativeTurn != receipt.turn ||
+				(e.body == "" && (!e.streaming || e.stopped)) ||
+				(e.body != "" && sha256.Sum256([]byte(e.body)) != receipt.body) ||
+				(e.State != "running" && e.State != "awaiting_native_stop" && e.State != "awaiting_parent") {
+				continue
+			}
+			e.parentBody = &receipt.body
+			if e.stopped && e.State == "awaiting_parent" {
+				// A resumed child archives its confirmed previous report. This
+				// receipt acknowledges that entry, never the new live turn.
+				receipts = append(receipts, e)
+			}
+		}
 		for _, e := range receipts {
 			switch e.State {
 			case "cancelled":
@@ -549,6 +572,109 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 			e.body = ""
 		}
 	}
+}
+
+func containsResult(req *anthropic.Request, e *agentResult) bool {
+	if e.body == "" {
+		return false
+	}
+	for _, m := range req.Messages {
+		if m.Role != "user" {
+			continue
+		}
+		for _, b := range m.Blocks {
+			if body, ok := nativeHandbackResult(b.Text, e.Agent); ok && body == e.body {
+				return true
+			}
+			if strings.Contains(b.Text, "<task-id>"+e.Agent+"</task-id>") && strings.Contains(b.Text, "<result>"+e.body+"</result>") {
+				return true
+			}
+			if b.Type == "tool_result" && b.ToolUseID == e.Call && !b.IsError {
+				for _, part := range b.Result {
+					if strings.TrimSpace(part.Text) == e.body {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}
+
+// Native frames a hand-back under its exact child ID and indents every body line.
+// Decode that data for delivery only: the report grants no user authority or stop.
+func nativeHandbackResult(text, agent string) (string, bool) {
+	prefix := "Another Claude session sent a message:\n<agent-message from=\"" + agent + "\">\n[Subagent hand-back] "
+	if !strings.HasPrefix(text, prefix) || strings.Count(text, "\n<agent-message ") != 1 || strings.Count(text, "\n</agent-message>") != 1 {
+		return "", false
+	}
+	_, report, found := strings.Cut(text[len(prefix):], "The report follows:\n")
+	body, _, closed := strings.Cut(report, "\n</agent-message>\n")
+	if !found || !closed || len(body) > 3*resultBodyLimit {
+		return "", false
+	}
+	var decoded strings.Builder
+	for line := range strings.SplitSeq(body, "\n") {
+		if !strings.HasPrefix(line, "  ") {
+			return "", false
+		}
+		decoded.WriteString(line[2:])
+		decoded.WriteByte('\n')
+	}
+	body = strings.TrimSpace(decoded.String())
+	return body, body != "" && len(body) <= resultBodyLimit
+}
+
+// Unknown reports grant no completion: retain one unambiguous, bounded digest
+// from the existing native result forms until the independently delivered body agrees.
+func pendingResultFingerprint(req *anthropic.Request, e *agentResult) ([32]byte, bool) {
+	var digest [32]byte
+	found := false
+	add := func(body string) bool {
+		body = strings.TrimSpace(body)
+		if body == "" || len(body) > resultBodyLimit {
+			return false
+		}
+		next := sha256.Sum256([]byte(body))
+		if found && next != digest {
+			return false
+		}
+		digest, found = next, true
+		return true
+	}
+	for _, message := range req.Messages {
+		if message.Role != "user" {
+			continue
+		}
+		for _, block := range message.Blocks {
+			if strings.HasPrefix(block.Text, "Another Claude session sent a message:\n<agent-message from=\""+e.Agent+"\">") {
+				body, ok := nativeHandbackResult(block.Text, e.Agent)
+				if !ok || !add(body) {
+					return digest, false
+				}
+				continue // Indented report tags are data, not a second envelope.
+			}
+			if strings.Contains(block.Text, "<task-id>"+e.Agent+"</task-id>") {
+				if strings.Count(block.Text, "<task-id>") != 1 || strings.Count(block.Text, "</task-id>") != 1 ||
+					strings.Count(block.Text, "<result>") != 1 || strings.Count(block.Text, "</result>") != 1 {
+					return digest, false
+				}
+				_, text, _ := strings.Cut(block.Text, "<result>")
+				body, _, closed := strings.Cut(text, "</result>")
+				if !closed || !add(body) {
+					return digest, false
+				}
+			}
+			if block.Type == "tool_result" && block.ToolUseID == e.Call && !block.IsError {
+				for _, part := range block.Result {
+					if part.Type == "text" && !add(part.Text) {
+						return digest, false
+					}
+				}
+			}
+		}
+	}
+	return digest, found
 }
 
 func (r *agentResults) report() AgentResultReport {

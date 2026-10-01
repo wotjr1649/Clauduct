@@ -16,7 +16,7 @@ func nativeInformation(args []string) bool {
 }
 
 // The settings rewrite and read-only role scan share native value boundaries.
-// Public arities follow Claude Code 2.1.283 --help; hidden entries retain the
+// Public arities follow Claude Code 2.1.286 --help; hidden entries retain the
 // existing role scanner's contract. Unknown options cannot prove where
 // a later settings/role option begins. This is not native option validation.
 // end is exclusive; a missing required value returns len(args)+1.
@@ -66,7 +66,7 @@ func nativeArgEnd(args []string, i int) (end int, known bool) {
 		"--disable-slash-commands", "--no-session-persistence", "--include-partial-messages", "--replay-user-messages",
 		"--debug-to-stderr", "--mcp-debug", "--no-chrome", "--chrome", "--ide", "--fork-session", "--version", "-v",
 		"--help", "-h", "--forward-subagent-text", "--ax-screen-reader", "--bg", "--background", "--brief",
-		"--exclude-dynamic-system-prompt-sections", "--include-hook-events", "--restricted", "--tmux":
+		"--exclude-dynamic-system-prompt-sections", "--include-hook-events", "--restricted", "--tmux", "--desktop":
 	default:
 		return end, !strings.HasPrefix(name, "-") || name == "-"
 	}

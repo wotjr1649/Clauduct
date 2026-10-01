@@ -120,8 +120,9 @@ export const register = on => {
     // index 0 of an explicit new input is never withheld. Child wakeups without
     // ingress provenance remain outside this control until a later tool step.
     const handback=agent && e.index>0 && !p.intervened ? p.handback || '' : '';
-    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && (p.delegated || handback!=='') || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification');
-    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode,handback}));
+    const peer=!agent && e.index===0 && state.rootTurn===turn && state.rootOrigin==='peer';
+    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && (p.delegated || handback!=='') || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification' || peer);
+    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode,handback,peer}));
     let held=false;
     try {
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
@@ -164,6 +165,8 @@ export const register = on => {
         // when its children are done; an interim report keeps the native wait.
         const answer=handback
           ? '[Clauduct] Subagent report handed back; no additional response.'
+          : peer
+          ? '[Clauduct] Verified child report received; no additional response.'
           : !agent && e.index===0
           ? '[Clauduct] Background task notification received; no additional response.'
           : '[Clauduct] Waiting for background task notification.';

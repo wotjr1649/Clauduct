@@ -472,6 +472,14 @@ func (g *Gateway) finishNativeAgentStop(receipt nativeTurnReceipt) {
 	}
 	binding, found := g.agents.finishStop(receipt)
 	if found && receipt.Reason == "answer" && g.delegations != nil {
+		// The replay-ledger path also consumes this matched receipt. Record its
+		// evidence before stopping the task, even without result reconciliation.
+		r := &g.delegations.results
+		r.mu.Lock()
+		if e := r.entries[binding.ID]; e != nil && e.Session == receipt.Session && e.NativeTurn == receipt.Turn && !e.NativeEndObserved {
+			e.NativeEndObserved, e.EndReason = true, receipt.Reason
+		}
+		r.mu.Unlock()
 		g.delegations.stoppedTurn(binding, receipt.Turn)
 	}
 }

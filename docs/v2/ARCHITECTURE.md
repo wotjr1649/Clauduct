@@ -40,6 +40,10 @@ Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하�
 native 2.1.283 실측에 의존한다. 모든 native 미래 버전에 대한 안정 API라고 보장하지 않는다.
 지원 범위와 알려진 한계는 [호환성 문서](COMPATIBILITY.md), 설정/재개 정책은 [SETTINGS.md](SETTINGS.md)를 따른다.
 
+`SessionStart`의 loopback 메타데이터 등록은 일시적인 HTTP 503 때 원래 내용을 한 번 더 전달한다.
+두 시도는 기존 3초 기한을 공유한다. 최초 snapshot의 source를 추측하지 않으며 명시적 거부·
+다른 hook 이벤트·모델 요청을 재시도하지 않는다. 계속 실패하면 세션 검증과 입력 거부를 유지한다.
+
 Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는 backend 측 hosted search 하나이며, 일반 도구와 구분해 별도 capability로 설계한다.
 
 ## 3. 패키지 구조

@@ -33,6 +33,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -388,6 +389,7 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 
 	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
 	defer cancel()
+	var dialed atomic.Bool
 	client := &http.Client{
 		Timeout: requestTimeout,
 		// A connection to anywhere but the loopback address is refused at the dial, so a
@@ -397,6 +399,11 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 				host, _, err := net.SplitHostPort(address)
 				if err != nil || host != "127.0.0.1" {
+					return nil, errInvalidGateway
+				}
+				// A registration retry may reuse this connection, never a new
+				// listener that acquired the same loopback port after it closed.
+				if retryRegistration && dialed.Swap(true) {
 					return nil, errInvalidGateway
 				}
 				return (&net.Dialer{Timeout: requestTimeout}).DialContext(ctx, network, address)
@@ -425,7 +432,7 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 		// Only the original SessionStart can carry the first profile's source.
 		// Retry its metadata once on temporary unavailability, within the SAME
 		// three-second budget. Explicit refusals and all other events stay final.
-		if retryRegistration && path == "/clauduct/context" && attempt == 0 && response.StatusCode == http.StatusServiceUnavailable {
+		if retryRegistration && path == "/clauduct/context" && attempt == 0 && response.StatusCode == http.StatusServiceUnavailable && len(reply) == 0 {
 			continue
 		}
 		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {

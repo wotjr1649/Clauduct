@@ -31,21 +31,17 @@ type agentResults struct {
 }
 type agentResult struct {
 	AgentResultRecord
-	parent, body     string
-	stopped          bool
-	sequence         uint64
-	since            time.Time
-	streaming        bool
-	stopBinding      *agentBinding
-	continuationTurn string
-	parentBody       *[32]byte
-	deliveryFailed   bool
-	parentInput      *parentInputBoundary
-	resumeInput      *parentInputBoundary
-}
-type parentInputBoundary struct {
-	messages int
-	digest   [32]byte
+	parent, body      string
+	stopped           bool
+	sequence          uint64
+	since             time.Time
+	streaming         bool
+	stopBinding       *agentBinding
+	continuationTurn  string
+	parentBody        *[32]byte
+	deliveryFailed    bool
+	responseDelivered bool
+	resumed           bool
 }
 type AgentResultRecord struct {
 	Selection         ResultSelection `json:"selection"`
@@ -189,10 +185,7 @@ func (r *agentResults) beginLocked(id string) bool {
 		delete(r.entries, oldest)
 	}
 	next := &agentResult{AgentResultRecord: AgentResultRecord{Agent: e.Agent, Session: e.Session, Call: e.Call, Selection: e.Selection, Review: "not_assessed_by_gateway"}, parent: e.parent, since: time.Now().Truncate(time.Millisecond)}
-	next.resumeInput = e.parentInput
-	if next.resumeInput == nil {
-		next.resumeInput = &parentInputBoundary{messages: -1} // No known prefix can prove a fresh resumed report.
-	}
+	next.resumed = true
 	if e.stopped {
 		r.entries[id+"/"+strconv.FormatUint(e.sequence, 10)] = e
 	} else {
@@ -256,7 +249,7 @@ func (r *agentResults) body(e *agentResult, body, source string) {
 func (r *agentResults) handback(session, id, body string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if e := r.entries[id]; e != nil && e.Session == session && !e.stopped {
+	if e := r.entries[id]; e != nil && e.Session == session && !e.stopped && !e.deliveryFailed {
 		r.body(e, body, "native_handback")
 	}
 }
@@ -280,6 +273,7 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 	r.bytes -= len(e.body)
 	e.body, e.Bytes = "", 0
 	e.parentBody, e.deliveryFailed = nil, false
+	e.responseDelivered = false
 	e.streaming = true
 	turn := e.NativeTurn
 	r.mu.Unlock()
@@ -290,6 +284,7 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 			return
 		}
 		e.streaming = false
+		e.responseDelivered = delivered
 		binding := e.stopBinding
 		e.stopBinding = nil
 		if !e.stopped {
@@ -400,22 +395,6 @@ func (r *agentResults) acknowledge(e *agentResult) {
 	e.body = ""
 }
 
-// Hash each message once. Resume anchors keep only a count and digest, never a
-// second conversation. Compacted or changed prefixes cannot prove early receipt.
-func parentInputPrefixes(req *anthropic.Request, wanted map[int][32]byte) *parentInputBoundary {
-	digest := sha256.New()
-	encoder := json.NewEncoder(digest)
-	for i, message := range req.Messages {
-		if err := encoder.Encode(message); err != nil {
-			return nil
-		}
-		if _, found := wanted[i+1]; found {
-			wanted[i+1] = [32]byte(digest.Sum(nil))
-		}
-	}
-	return &parentInputBoundary{len(req.Messages), [32]byte(digest.Sum(nil))}
-}
-
 func (d *delegations) existingResult(binding agentBinding, since time.Time) (string, bool) {
 	root, path, err := d.choicePath(binding)
 	if err != nil {
@@ -484,20 +463,6 @@ func (d *delegations) existingResult(binding agentBinding, since time.Time) (str
 func (r *agentResults) deliver(req *anthropic.Request, session, parent string, evidence ...*ParentReadiness) func(bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	prefixes := map[int][32]byte{0: sha256.Sum256(nil)}
-	hasParent := false
-	for id, e := range r.entries {
-		if id == e.Agent && e.Session == session && e.parent == parent {
-			hasParent = true
-			if e.resumeInput != nil && e.resumeInput.messages > 0 && e.resumeInput.messages <= len(req.Messages) {
-				prefixes[e.resumeInput.messages] = [32]byte{}
-			}
-		}
-	}
-	var currentInput *parentInputBoundary
-	if hasParent {
-		currentInput = parentInputPrefixes(req, prefixes)
-	}
 	var receipts []*agentResult
 	// Native may deliver a handback before its task-end event. Retain only
 	// the digest of that exact report; completion still requires native stop.
@@ -524,16 +489,10 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 			continue
 		}
 		reportRequest := req
-		if e.Session == session && e.parent == parent {
-			e.parentInput = currentInput
-			if boundary := e.resumeInput; boundary != nil {
-				reportRequest = nil
-				if digest, found := prefixes[boundary.messages]; currentInput != nil && found && digest == boundary.digest && boundary.messages < len(req.Messages) {
-					copy := *req
-					copy.Messages = req.Messages[boundary.messages:]
-					reportRequest = &copy
-				}
-			}
+		if e.resumed {
+			// Native reports name the child, not its turn. Even an appended frame
+			// may be delayed old input: deliver this turn's verified body ourselves.
+			reportRequest = nil
 		}
 		if len(evidence) > 0 && e.Session == session && e.parent == parent && !resultReported(e.State) {
 			if !e.stopped || !deliverable(e.State) {
@@ -545,9 +504,9 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 				(e.State == "running" || e.State == "awaiting_native_stop") {
 				if containsResult(reportRequest, e) {
 					early = append(early, earlyReceipt{e, e.NativeTurn, sha256.Sum256([]byte(e.body))})
-				} else if e.streaming && e.body == "" {
-					// Native can request the parent before the child's HTTP handler
-					// stores its delivered response. Compare this digest at completion.
+				} else if (e.streaming || e.responseDelivered) && e.body == "" {
+					// Parent input can precede HTTP storage, or follow a successful
+					// tool-only response before native handback storage. Compare at completion.
 					if body, found := pendingResultFingerprint(reportRequest, e); found {
 						early = append(early, earlyReceipt{e, e.NativeTurn, body})
 					}
@@ -615,7 +574,7 @@ func (r *agentResults) deliver(req *anthropic.Request, session, parent string, e
 		for _, receipt := range early {
 			e := receipt.entry
 			if e.deliveryFailed || (!e.stopped && r.entries[e.Agent] != e) || e.NativeTurn != receipt.turn ||
-				(e.body == "" && (!e.streaming || e.stopped)) ||
+				(e.body == "" && ((!e.streaming && !e.responseDelivered) || e.stopped)) ||
 				(e.body != "" && sha256.Sum256([]byte(e.body)) != receipt.body) ||
 				(e.State != "running" && e.State != "awaiting_native_stop" && e.State != "awaiting_parent") {
 				continue

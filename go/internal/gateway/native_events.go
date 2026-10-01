@@ -407,8 +407,20 @@ func (g *Gateway) reconcileNativeResults() {
 			g.delegations.noteNativeAnswer(e.Agent, receipt.Turn)
 		}
 		r.mu.Lock()
-		// Pointer identity prevents a concurrent resume from being closed by an old receipt.
-		if current := r.entries[item.key]; current == item.entry && current.NativeTurn == receipt.Turn {
+		// A resume can archive this entry while its receipt is being read.
+		// Settle that same entry, never the replacement native turn.
+		current := r.entries[item.key]
+		if current != item.entry {
+			current = nil
+			for _, archived := range r.entries {
+				if archived == item.entry {
+					current = archived
+					break
+				}
+			}
+		}
+		applied := current != nil && current.NativeTurn == receipt.Turn && current.Session == receipt.Session
+		if applied && !current.NativeEndObserved {
 			current.EndReason = receipt.Reason
 			current.NativeEndObserved = true
 			if !resultReported(current.State) && receipt.Reason != "answer" {
@@ -427,6 +439,9 @@ func (g *Gateway) reconcileNativeResults() {
 			}
 		}
 		r.mu.Unlock()
+		if !applied {
+			continue
+		} // Keep the receipt if no matching entry could consume it.
 		g.finishNativeAgentStop(receipt)
 		// Only this task-created validated receipt is removed; active metadata stays.
 		if root, err := os.OpenRoot(g.nativeEvents.directory); err == nil {

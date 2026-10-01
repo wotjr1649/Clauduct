@@ -301,9 +301,11 @@ native의 `[Subagent hand-back]` 보고는 정확한 Agent ID의 `agent-message`
 `task-id`·`result` 태그의 부분 일치는 보고 수신 증거로 쓰지 않는다. 엄격한 native hand-back이나
 동일 call ID의 성공한 tool result로 비교하며, 확인된 완료 보고의 일반 전달 경로는 유지한다.
 조기 수신 digest는 자식 HTTP 전달 실패 시 폐기하며 native 종료 본문으로 복구하지 않는다.
-재개된 자식의 조기 수신은 재개 전 부모 입력의 개수·digest와 일치하는 prefix 뒤의 새 보고만
-비교한다. 대화 본문을 별도로 저장하지 않으며, prefix가 압축·변경돼 일치하지 않으면 조기 완료를
-추정하지 않고 기존의 확인된 완료 보고 전달 경로를 사용한다.
+성공한 보고 도구 응답 뒤 native hand-back 저장 전의 수신도 digest로 보존한다. 실패한 전달의
+늦은 hand-back 본문은 저장하지 않는다. 최종 일치·독립 종료·부모 전달 조건은 유지한다.
+재개된 자식은 알림의 child ID만으로 현재 turn의 보고임을 증명할 수 없다. 입력에 뒤늦게 추가된
+옛 알림도 같은 ID와 본문일 수 있으므로 조기 수신을 추정하지 않고 확인된 현재 turn의 완료
+보고를 일반 경로로 전달한다. 대화 본문이나 입력 prefix를 따로 저장하지 않는다.
 
 v0.5.4는 native가 성공적으로 전달한 `SubagentHandback` 뒤의 빈 종료도 구분한다.
 native tool 결과에서 확인한 call ID와 같은 자식·turn·최신 call/result가 모두 맞고 대기 자식이

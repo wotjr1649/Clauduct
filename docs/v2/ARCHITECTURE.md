@@ -280,7 +280,7 @@ event 수와 읽은 byte 수를 기록한다. 파싱·변환이 EOF 전에 실�
 있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
 socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.
 
-검증된 native 회차의 대기 자식, 방금 반환된 Workflow 실행, 루트 완료 알림에만 빈 응답
+검증된 native 회차의 대기 자식, 방금 반환된 Workflow 실행, 전달된 자식 handback에만 빈 응답
 제어를 허용한다. TUI는 무출력 대기를 유지한다. SDK는 빈 메시지를 재요청하거나 알림 뒤
 메시지 부재를 실행 오류로 처리하므로 `[Clauduct]` 출처의 짧은 대기·알림 상태를 전달한다.
 이 상태는 backend 답변·자식 보고서·업무 성공이 아니다. SDK의 실제 본문과 도구는 보존하고,
@@ -288,11 +288,12 @@ socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 
 빈 알림을 소비하는 `hold`와 실제 pending 자식을 기다리는 `wait`는 분리한다. 이미 끝난 알림이나
 자식 없는 Workflow의 실행 기록만으로 `awaiting_children` 상태를 만들지 않는다.
 
-native 2.1.286은 완료 알림을 `prompt.submit`에서 `peer`로 전달한다. 이 출처의 새 루트 turn
-첫 step은 같은 세션의 확인된 자식 본문이 현재 요청에 포함되고, 대기·미확보 보고가 없으며,
-gateway가 확인한 현재 native turn과 일치할 때만 빈 응답을 소비한다. 보고 없는 peer 입력,
-직접 `composer`·`sdk` 입력, 다른 turn·자식 step에는 적용하지 않는다. 실제 답변·도구 호출은
-계속 전달하며, 이 제어가 자식의 업무 성공이나 실행 승인을 뜻하지는 않는다.
+native 2.1.286은 완료 알림을 `prompt.submit`에서 `peer`로 전달하지만, 그 이벤트의 `turnId`는
+이전 실행 중 turn을 가리킨다. 새 ID는 출처 없는 `turn.start`에서 생성되며, submit 반환 뒤
+발생하는 순서도 관측했다. 따라서 새 turn의 첫 step을 peer 알림으로 입증할 수 없고,
+그 빈 응답은 `EMPTY_REPLY`로 거부한다. 같은 세션의 확인된 자식 보고만으로 이 출처를
+추정하지 않는다. 실제 답변·도구 호출과 확인된 이후 step의 대기·handback 제어는 유지한다.
+이 제어가 자식의 업무 성공이나 실행 승인을 뜻하지는 않는다.
 
 native의 `[Subagent hand-back]` 보고는 정확한 Agent ID의 `agent-message` 프레임과 본문 각 줄의
 들여쓰기를 함께 읽는다. 단일·닫힌 프레임의 제한된 본문만 전달 자료로 비교하며, 본문 안의 태그는

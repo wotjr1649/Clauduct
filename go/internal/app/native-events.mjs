@@ -32,7 +32,6 @@ export const register = on => {
   let turnSequence=0;
   const cancelledTurns = new Set();
   const progress = new Map();
-  let origin='unclassified';
   on('agent.spawn', async ($, e, next) => {
     const sid=await session($),call=ident(e.tool_use_id),parent=e.parentAgentId?ident(e.parentAgentId):'';
     if (!call || e.parentAgentId && !parent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
@@ -46,16 +45,12 @@ export const register = on => {
     return next({...e,model:choice.model});
   });
   on('prompt.submit', async ($, e, next) => {
-    origin=e.origin?.kind || 'unclassified';
+    const origin=e.origin?.kind || 'unclassified';
     if (origin==='composer') state.mode='native_tui';
     else if (origin==='sdk') state.mode='sdk';
     else if (origin==='peer' && state.mode==='unclassified') state.mode=state.peerMode;
     const p=progress.get('');
     if (e.turnId && p?.turn===e.turnId && origin!=='task-notification') p.intervened=true;
-    return next(e);
-  });
-  on('turn.start', async ($, e, next) => {
-    state.rootTurn=e.turnId;state.rootOrigin=origin;origin='unclassified';
     return next(e);
   });
   on('session.start', async ($, e, next) => {
@@ -120,9 +115,10 @@ export const register = on => {
     // index 0 of an explicit new input is never withheld. Child wakeups without
     // ingress provenance remain outside this control until a later tool step.
     const handback=agent && e.index>0 && !p.intervened ? p.handback || '' : '';
-    const peer=!agent && e.index===0 && state.rootTurn===turn && state.rootOrigin==='peer';
-    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && (e.index>0 && (p.delegated || handback!=='') || !agent && state.rootTurn===turn && state.rootOrigin==='task-notification' || peer);
-    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode,handback,peer}));
+    // prompt.submit has the previous turn's ID; turn.start mints a new ID
+    // without origin. Their ordering cannot attest a first-step peer input.
+    const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && e.index>0 && (p.delegated || handback!=='');
+    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode,handback,peer:false}));
     let held=false;
     try {
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
@@ -165,10 +161,6 @@ export const register = on => {
         // when its children are done; an interim report keeps the native wait.
         const answer=handback
           ? '[Clauduct] Subagent report handed back; no additional response.'
-          : peer
-          ? '[Clauduct] Verified child report received; no additional response.'
-          : !agent && e.index===0
-          ? '[Clauduct] Background task notification received; no additional response.'
           : '[Clauduct] Waiting for background task notification.';
         yield {kind:'text',index:0,text:answer};
         yield {kind:'stop',stopReason:'end_turn',usage:result.usage};

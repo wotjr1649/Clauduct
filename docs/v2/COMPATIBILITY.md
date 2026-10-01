@@ -22,6 +22,13 @@ S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수�
 같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
+**native 2.1.286 후속 후보 — 미출하.** 새 turn의 첫 step에서 빈 완료 알림을 처리할 출처
+증거를 현재 plugin API로 확보할 수 없다. `prompt.submit.turnId`는 이전 실행 중 turn의 ID이며,
+새 ID를 생성하는 `turn.start`에는 출처가 없다. 후보는 이 빈 응답을 `EMPTY_REPLY`로 명시적으로
+거부한다. 자식 보고가 요청에 있다는 사실만으로 출처를 추정하지 않는다. 일반 답변·도구 실행과
+확인된 이후 step의 대기·handback은 유지한다. 아래 과거 버전의 완료 알림 PASS는 2.1.286의
+지원 증거로 재사용하지 않는다. 후보의 실제 backend·최종 바이너리·병합 후 검증은 아직 미완료다.
+
 **2026-09-23 v0.3.2 재실행 방지 묶음 — 미출하.** 요청은 처음 읽은 turn 영수증 하나로 예약·선택·취소
 바인딩을 판정한다. 독립 `auxiliary` 요청은 현재 root turn 안에서만 한 번 실행하고, 다음 turn의 같은
 요청은 새로 실행한다. agent의 새 turn이 예약되면 그 agent의 이전 turn 실행 기록을 지운다. 그래서 긴

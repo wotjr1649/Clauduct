@@ -33,6 +33,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -173,7 +174,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			tool = "MCP"
 		}
 		body, _ := json.Marshal(map[string]any{"session": failure.Session, "agent": failure.Agent, "call": failure.Call, "tool": tool, "interrupted": failure.Interrupted})
-		if _, err := postReply(body, env, "/clauduct/tool-failures"); err != nil {
+		if _, err := postReply(body, env, "/clauduct/tool-failures", false); err != nil {
 			fmt.Fprintln(errOut, "CLAUDUCT_TOOL_EVENT_FAILED")
 			return 1
 		}
@@ -194,7 +195,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			return 1
 		}
 		body, _ := json.Marshal(map[string]string{"sessionId": workflow.Session, "parent": workflow.Parent, "toolUseId": workflow.Call, "transcriptPath": workflow.Transcript, "runId": workflow.Result.RunID, "workflowName": workflow.Result.WorkflowName, "transcriptDir": workflow.Result.TranscriptDir, "scriptPath": workflow.Result.ScriptPath})
-		if _, err := postReply(body, env, "/clauduct/workflows"); err != nil {
+		if _, err := postReply(body, env, "/clauduct/workflows", false); err != nil {
 			fmt.Fprintln(errOut, "CLAUDUCT_WORKFLOW_UNVERIFIED")
 			return 1
 		}
@@ -243,7 +244,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			fields["transcriptPath"] = compact.Transcript
 		}
 		body, _ := json.Marshal(fields)
-		reply, err := postReply(body, env, "/clauduct/context")
+		reply, err := postReply(body, env, "/clauduct/context", compact.Event == "SessionStart")
 		if err != nil {
 			if errors.Is(err, errSessionRestart) {
 				fmt.Fprintf(errOut, "SESSION_RESTART_REQUIRED: save any draft, finish native, then run clauduct --resume %s with any native options you need.\n", compact.Session)
@@ -367,11 +368,11 @@ func positiveInt(value string) (int64, bool) {
 
 // post sends the binding to this session's gateway and nowhere else.
 func post(body []byte, env map[string]string) error {
-	_, err := postReply(body, env, "/clauduct/agents")
+	_, err := postReply(body, env, "/clauduct/agents", false)
 	return err
 }
 
-func postReply(body []byte, env map[string]string, path string) ([]byte, error) {
+func postReply(body []byte, env map[string]string, path string, retryRegistration bool) ([]byte, error) {
 	base := env["ANTHROPIC_BASE_URL"]
 	token := env["ANTHROPIC_AUTH_TOKEN"]
 	if !loopback.MatchString(base) || token == "" {
@@ -386,14 +387,9 @@ func postReply(body []byte, env map[string]string, path string) ([]byte, error) 
 		return nil, errInvalidGateway
 	}
 
-	request, err := http.NewRequest(http.MethodPost, base+path, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Content-Length", strconv.Itoa(len(body)))
-
+	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	defer cancel()
+	var dialed atomic.Bool
 	client := &http.Client{
 		Timeout: requestTimeout,
 		// A connection to anywhere but the loopback address is refused at the dial, so a
@@ -405,36 +401,58 @@ func postReply(body []byte, env map[string]string, path string) ([]byte, error) 
 				if err != nil || host != "127.0.0.1" {
 					return nil, errInvalidGateway
 				}
+				// A registration retry may reuse this connection, never a new
+				// listener that acquired the same loopback port after it closed.
+				if retryRegistration && dialed.Swap(true) {
+					return nil, errInvalidGateway
+				}
 				return (&net.Dialer{Timeout: requestTimeout}).DialContext(ctx, network, address)
 			},
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidGateway },
 	}
-	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	reply, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(reply) > 4096 {
-		return nil, errInvalidGateway
-	}
-	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
-		if path == "/clauduct/context" && response.StatusCode == http.StatusBadRequest {
-			var envelope struct {
-				Type  string `json:"type"`
-				Error struct {
-					Message string `json:"message"`
-				} `json:"error"`
-			}
-			if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" &&
-				(envelope.Error.Message == errSessionRestart.Error() || strings.HasPrefix(envelope.Error.Message, errSessionRestart.Error()+";")) {
-				return nil, errSessionRestart // Never print arbitrary gateway response text.
-			}
+	defer client.CloseIdleConnections()
+	for attempt := 0; attempt < 2; attempt++ {
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, bytes.NewReader(body))
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+		response, err := client.Do(request)
+		if err != nil {
+			return nil, err
+		}
+		reply, err := io.ReadAll(io.LimitReader(response.Body, 4097))
+		response.Body.Close()
+		if err != nil || len(reply) > 4096 {
+			return nil, errInvalidGateway
+		}
+		// Only the original SessionStart can carry the first profile's source.
+		// Retry its metadata once on temporary unavailability, within the SAME
+		// three-second budget. Explicit refusals and all other events stay final.
+		if retryRegistration && path == "/clauduct/context" && attempt == 0 && response.StatusCode == http.StatusServiceUnavailable && len(reply) == 0 {
+			continue
+		}
+		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+			if path == "/clauduct/context" && response.StatusCode == http.StatusBadRequest {
+				var envelope struct {
+					Type  string `json:"type"`
+					Error struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" &&
+					(envelope.Error.Message == errSessionRestart.Error() || strings.HasPrefix(envelope.Error.Message, errSessionRestart.Error()+";")) {
+					return nil, errSessionRestart // Never print arbitrary gateway response text.
+				}
+			}
+			return nil, fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
+		}
+		return reply, nil
 	}
-	return reply, nil
+	return nil, errInvalidGateway
 }
 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")

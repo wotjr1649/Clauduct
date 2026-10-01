@@ -292,18 +292,18 @@ func (d *delegations) beginAnswer(session, id string) func(string, bool) {
 		e.streaming = false
 		binding := e.stopBinding
 		e.stopBinding = nil
-		if !e.stopped && e.State != "awaiting_children" {
-			if delivered {
-				r.body(e, body, "delivered_response")
-			} else {
+		if !e.stopped {
+			if !delivered {
 				e.parentBody, e.deliveryFailed = nil, true
 				r.bytes -= len(e.body)
 				e.body, e.Bytes = "", 0
-				if binding != nil {
+				if binding != nil && e.State != "awaiting_children" {
 					e.stopped = true
 					e.EndReason = "delivery_failed"
 					r.change(e, "result_unavailable")
 				}
+			} else if e.State != "awaiting_children" {
+				r.body(e, body, "delivered_response")
 			}
 		}
 		r.mu.Unlock()
@@ -660,9 +660,6 @@ func containsResult(req *anthropic.Request, e *agentResult) bool {
 				}
 				continue // A malformed frame cannot fall back through tags in report data.
 			}
-			if strings.Contains(b.Text, "<task-id>"+e.Agent+"</task-id>") && strings.Contains(b.Text, "<result>"+e.body+"</result>") {
-				return true
-			}
 			if b.Type == "tool_result" && b.ToolUseID == e.Call && !b.IsError {
 				for _, part := range b.Result {
 					if strings.TrimSpace(part.Text) == e.body {
@@ -727,17 +724,6 @@ func pendingResultFingerprint(req *anthropic.Request, e *agentResult) ([32]byte,
 					return digest, false
 				}
 				continue // Indented report tags are data, not a second envelope.
-			}
-			if strings.Contains(block.Text, "<task-id>"+e.Agent+"</task-id>") {
-				if strings.Count(block.Text, "<task-id>") != 1 || strings.Count(block.Text, "</task-id>") != 1 ||
-					strings.Count(block.Text, "<result>") != 1 || strings.Count(block.Text, "</result>") != 1 {
-					return digest, false
-				}
-				_, text, _ := strings.Cut(block.Text, "<result>")
-				body, _, closed := strings.Cut(text, "</result>")
-				if !closed || !add(body) {
-					return digest, false
-				}
 			}
 			if block.Type == "tool_result" && block.ToolUseID == e.Call && !block.IsError {
 				for _, part := range block.Result {

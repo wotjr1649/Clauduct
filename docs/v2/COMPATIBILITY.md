@@ -213,7 +213,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | 서버 전용 기능을 제외해도 남는 조건 | 현재 구현 |
 |---|---|
 | CLI 옵션 | `--settings` JSON/파일을 필수 settings와 병합하고 `--setting-sources`는 native로 전달. 필수 연결·hook 충돌은 거부. 권한 우회 CLI 옵션 2개는 계속 거부. [설정 병합](../../go/internal/app/user_settings.go) |
-| Claude Desktop 실행 | `--desktop` 인자 경계는 인식하나 별도 앱의 backend·세션 수명은 미지원. 설정 읽기와 native 실행 전에 `DESKTOP_UNSUPPORTED`로 거부하며 native 터미널 사용을 안내. 문자열 값과 `--` 뒤 데이터는 보존 |
+| Claude Desktop 실행 | `--desktop` 인자 경계는 인식하나 별도 앱의 backend·세션 수명은 미지원. 설정 읽기와 native 실행 전에 `DESKTOP_UNSUPPORTED`로 거부하며 native 터미널 사용을 안내. 값이 붙은 알 수 없는 옵션 뒤에서도 검사한다. 알 수 없는 옵션 때문에 뒤의 `--desktop`이 옵션인지 값인지 증명할 수 없으면 `DESKTOP_OPTION_UNVERIFIED`로 거부한다. 확인된 문자열 값과 `--` 뒤 데이터는 보존 |
 | API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`는 미지원. v0.5.2는 개수·길이를 제한한 `stop_sequences`를 로컬 출력 절단으로 처리한다(아래 v0.5.2 절). [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
 | Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원, 명시적 source의 native 재개와 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow와 근거 없는 재개는 제한 |
 | 부모·빈 응답 대기 | 확인된 TUI 회차는 무출력 대기. SDK/`-p`의 검증된 빈 대기·알림 응답은 Clauduct 상태 메시지로 전달하며 실제 본문·도구는 보존. 상태 메시지는 자식 결과나 업무 완료가 아님. [실제 필수 조건](../../go/internal/gateway/features.go) |

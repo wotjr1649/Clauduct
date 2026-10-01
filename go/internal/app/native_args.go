@@ -2,6 +2,36 @@ package app
 
 import "strings"
 
+// Only known native arities prove that an option-shaped token is a value.
+// Attached unknown values are self-contained; ambiguous Desktop tokens cannot launch.
+func nativeDesktop(args []string) error {
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		name, _, attached := strings.Cut(args[i], "=")
+		if !known {
+			if attached && strings.HasPrefix(name, "--") {
+				i++
+				continue
+			}
+			for _, token := range args[i+1:] {
+				name, _, _ := strings.Cut(token, "=")
+				if name == "--desktop" {
+					return ErrDesktopBoundary
+				}
+			}
+			return nil
+		}
+		if name == "--desktop" {
+			return ErrDesktopUnsupported
+		}
+		if end > len(args) {
+			return nil
+		}
+		i = end
+	}
+	return nil
+}
+
 // Native handles background dispatch before its ordinary help/version flags.
 func nativeInformation(args []string) bool {
 	if BackgroundRequested(args) {

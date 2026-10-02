@@ -21,6 +21,12 @@ var nativeEventModule string
 // worker's environment carries no gateway token; its helper reads the link instead,
 // as its hooks do.
 func prepareNativeEvents(link string) (directory string, err error) {
+	return prepareNativeEventsFor(link, true)
+}
+
+// prepareNativeEventsFor writes the module; without requireAsk its required ask list is
+// empty, matching settings that carry none (bypassLaunch).
+func prepareNativeEventsFor(link string, requireAsk bool) (directory string, err error) {
 	directory, err = os.MkdirTemp("", "clauduct-native-events-")
 	if err != nil {
 		return "", err
@@ -33,7 +39,7 @@ func prepareNativeEvents(link string) (directory string, err error) {
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name":"clauduct-native-events","version":"1.0.0","description":"Per-session native child identity and terminal receipts for Clauduct status","author":{"name":"Clauduct"}}`,
 		"hooks/hooks.json":           `{"modules":["./events.mjs"]}`,
-		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts"), link),
+		"hooks/events.mjs":           nativeEventSourceFor(filepath.Join(directory, "receipts"), link, requireAsk),
 	}
 	for name, body := range files {
 		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
@@ -47,6 +53,14 @@ func prepareNativeEvents(link string) (directory string, err error) {
 // the routing table: a model missing there is labelled unlisted, and the gateway cannot
 // route a fork or a native selection from an unlisted receipt.
 func nativeEventSource(receipts, link string) string {
+	return nativeEventSourceFor(receipts, link, true)
+}
+
+func nativeEventSourceFor(receipts, link string, requireAsk bool) string {
+	required := nativePermissions
+	if !requireAsk {
+		required = `{"ask":[]}`
+	}
 	root, _ := json.Marshal(filepath.ToSlash(receipts))
 	models := make([]string, 0, len(bridge.Models))
 	for _, model := range bridge.Models {
@@ -60,7 +74,7 @@ func nativeEventSource(receipts, link string) string {
 		args = append(args, link)
 	}
 	helperArgs, _ := json.Marshal(args)
-	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_CONFIRMATION_ARGS__", string(helperArgs), "__CLAUDUCT_REQUIRED_PERMISSIONS__", nativePermissions, "__CLAUDUCT_MODELS__", string(ids),
+	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_CONFIRMATION_ARGS__", string(helperArgs), "__CLAUDUCT_REQUIRED_PERMISSIONS__", required, "__CLAUDUCT_MODELS__", string(ids),
 		"__CLAUDUCT_EFFORTS__", string(efforts)).Replace(nativeEventModule)
 }
 

@@ -23,8 +23,9 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
   "auto_compact_token_limit_percent": 90,
   "auto_compact_effort_cap": "medium",
   "auxiliary_effort_cap": "medium",
+  "classifier_model": "gpt-5.6-terra",
   "startup": {
-    "model": "gpt-6-sol",
+    "model": "gpt-6.1-sol",
     "effort": "xhigh"
   },
   "modelDefaults": {
@@ -63,21 +64,31 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
 | `auto_compact_effort_cap` | 검증된 자동 압축 요청의 effort 상한. 기본 `medium`. 현재 대화 effort를 높이지 않음 |
 | `auxiliary_effort_cap` | native의 독립 보조 요청 effort 상한. 기본 `medium`. 기존 매핑·기본값·명시값으로 선택한 effort를 높이지 않음 |
+| `classifier_model` | auto 권한 모드 분류기가 쓸 GPT 모델의 전체 ID. 분류기 지원 범위(`gpt-5.6-terra`·`gpt-6.1-sol`·`gpt-6-sol`·`gpt-6-astra`, Terra 이상) 밖이나 모르는 값은 시작 시 거부한다. 없으면 native의 Sonnet 요청을 `modelMapping.sonnet`대로 보낸다(기본 Terra). 분류기 모델만 바꾸며 `sonnet` 별칭은 그대로다. effort는 그 모델의 기본 effort와 `auxiliary_effort_cap`을 따른다 |
 
 시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
 Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
 
 ## 모델과 agent
 
-지원 모델은 `gpt-6-astra`, `gpt-6-sol`, `gpt-5.6-terra`, `gpt-6-luna`다.
+지원 모델은 `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-5.6-terra`, `gpt-6-luna`다.
 설정 파일에는 이 전체 ID를 사용한다. 지원 effort는 `low`, `medium`, `high`, `xhigh`, `max`다.
+v0.6.3부터 `sol` 키·`opus` 별칭·공장 시작 모델은 `gpt-6.1-sol`이다. `gpt-6-sol`은 전체 ID,
+`sol6` 키, `clauduct-sol6` 위임 메뉴로 계속 쓴다(native Agent 인자에는 `opus` 단계로 적지만 실제
+경로는 native 생성 이벤트가 전체 ID로 고정한다).
 
 | Claude alias | 내장 GPT 매핑 | GPT 공통 기본 effort |
 |---|---|---|
 | `fable` | `gpt-6-astra` | medium |
-| `opus` | `gpt-6-sol` | xhigh |
+| `opus` | `gpt-6.1-sol` | xhigh |
 | `sonnet` | `gpt-5.6-terra` | high |
 | `haiku` | `gpt-6-luna` | max |
+
+모델 목록·키·별칭·effort·계수 허용·은퇴 매핑은 코드가 아니라 내장 제품 자료
+(`go/internal/protocol/bridge/models.json`)다. 실행 시작 때 검증하고, 잘못된 자료면 실행하지 않는다.
+사용자 설정으로 모델을 추가할 수는 없다(측정하지 않은 모델을 실행하지 않기 위해서다).
+측정 기준 Claude Code·Codex CLI 버전도 내장 자료(`go/internal/upstream/measured-clients.json`)이며,
+설치된 버전은 실행할 때마다 기계에서 읽는다.
 
 여러 alias를 같은 GPT 모델에 매핑해도 된다. 전체 GPT ID를 명시한 선택은 그 모델을 직접 선택한다.
 지원 모델·effort 목록과 backend 자체의 최대 용량을 설정 파일로 늘릴 수는 없다.
@@ -142,6 +153,13 @@ Clauduct는 실행할 때 native `permissions.ask`에 다음 도구를 추가한
 - 실행: `Bash`, `PowerShell`, `Monitor`, `Workflow`, `Skill`
 - 외부 통신: `mcp__*`, `WebFetch`, `WebSearch`, `ListMcpResourcesTool`, `ReadMcpResourceTool`,
   `Artifact`, `PushNotification`, `RemoteTrigger`, `SendUserFile`, `ShareOnboardingGuide`, `SendMessage`, `DesignSync`
+
+사용자가 native bypass 모드로 시작한 세션에는 이 목록을 추가하지 않는다(v0.6.3). 시작 모드는
+`--permission-mode bypassPermissions` 또는 native 설정의 `permissions.defaultMode`(user < project <
+local < `--settings`, `--setting-sources`가 읽는 범위)로 정한다. 관리 정책이 모드를 정하거나 bypass를
+끄는 경우, 또는 설정을 읽을 수 없는 경우에는 목록을 유지한다. 세션 도중 모드를 바꿔도 시작 때의 결정을
+따른다. 실행 상태 파일의 `requiredAsk`가 그 세션의 결정을 기록한다. `--dangerously-skip-permissions`는
+계속 전달하지 않는다.
 
 native의 우선순위는 `deny` → `ask` → `allow`다. 따라서 빌드·테스트·읽기 전용 MCP와 같은
 작업도 확인 대상이며, 더 좁은 `allow` 규칙이나 auto 분류기의 허용 판정으로 확인을 생략하지 않는다.

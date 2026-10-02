@@ -69,7 +69,16 @@ type modelPickerRow struct {
 // every subagent it starts -- worse than not routing them, because it is noise the user
 // cannot act on.
 func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
-	settings := childSettings{ModelPicker: config.pickerRows(), AutoMode: json.RawMessage(nativeAutoMode), Permissions: json.RawMessage(nativePermissions)}
+	return config.sessionSettingsFor(hookPath, true)
+}
+
+// sessionSettingsFor omits the required ask rules for a session the user started in
+// native bypass mode (bypassLaunch); every other part of the settings is unchanged.
+func (config ClauductSettings) sessionSettingsFor(hookPath string, requireAsk bool) (string, bool) {
+	settings := childSettings{ModelPicker: config.pickerRows(), AutoMode: json.RawMessage(nativeAutoMode)}
+	if requireAsk {
+		settings.Permissions = json.RawMessage(nativePermissions)
+	}
 	if hookPath != "" {
 		entry := []hookMatcher{{
 			Matcher: "*",

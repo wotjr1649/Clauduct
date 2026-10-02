@@ -117,10 +117,12 @@ type Result struct {
 	AuxiliaryEffortCapSource string
 	ClassifierModel          string
 	ClassifierModelSource    string
-	NativeStarted            bool
-	NativeExitCode           int
-	GatewayAddr              string
-	CleanupErr               error
+	// RequiredAsk is false when the user started the session in native bypass mode.
+	RequiredAsk    bool
+	NativeStarted  bool
+	NativeExitCode int
+	GatewayAddr    string
+	CleanupErr     error
 	// Attempts and Inferences are what the session spent upstream. One inference retried
 	// twice is one inference and three attempts, and a claim about cost needs the unit it
 	// was measured in.
@@ -306,6 +308,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}()
 	nativePDF := ""
 	hook := ""
+	requireAsk := true
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
@@ -323,7 +326,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		hook = findHook()
 		result.HookInstalled = hook != ""
-		if built, ok := config.sessionSettings(hook); ok {
+		requireAsk = !bypassLaunch(o.Args, userSettings, nativeConfigDirectory(o.Env, o.Cwd), o.Cwd)
+		result.RequiredAsk = requireAsk
+		if built, ok := config.sessionSettingsFor(hook, requireAsk); ok {
 			settings = built
 		}
 		if menu, ok := config.sessionAgents(); ok {
@@ -363,7 +368,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if background != nil {
 				link = background.ID
 			}
-			nativePlugin, err = prepareNativeEvents(link)
+			nativePlugin, err = prepareNativeEventsFor(link, requireAsk)
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")

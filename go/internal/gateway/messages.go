@@ -335,7 +335,11 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// Native compaction precedes the next turn.step after resume. Context admission
 	// still authorizes it below, and relay refuses every tool call from a summary.
 	compacting := g.contexts != nil && r.Header.Get("X-Claude-Code-Request-Class") == "compaction" && request.HostedSearch == nil
-	if g.nativeEvents.confirmationsRequired && !compacting {
+	// A root count answers with a number: it cannot carry a tool call or decide one,
+	// and native counts outside any turn (/context). Generation and child counts keep
+	// the step proof.
+	counting := r.URL.Path == "/v1/messages/count_tokens" && r.Header.Get("X-Claude-Code-Agent-Id") == ""
+	if g.nativeEvents.confirmationsRequired && !compacting && !counting {
 		proof := g.nativeConfirmationFor(r, active, request.HostedSearch != nil)
 		if proof != nil && proof.cancellation != nil {
 			return nil, releaseAgent, proof.cancellation

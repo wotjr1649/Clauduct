@@ -165,6 +165,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	override, releaseAgent, err := g.agentSelection(r, request, entry)
 	defer releaseAgent()
 	if err != nil {
+		entry.selectionRefused(err)
 		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
 	}
@@ -314,6 +315,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, entry *record) ([]bridge.Route, func(), error) {
 	var override []bridge.Route
 	releaseAgent := func() {}
+	if g.nativeEvents.confirmationsRequired && anonymousNativeFork(r) {
+		return nil, releaseAgent, errNativeOriginUnverified
+	}
 	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
 	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
 	// A tool-less root title/classifier request is independent of the conversation
@@ -321,24 +325,48 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
 		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
-		route, err := classifierSelection(request, r.URL.Path == "/v1/messages/count_tokens")
+		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens")
 		return route, releaseAgent, err
 	}
 	active, ok := g.pinNativeTurn(r, entry)
 	if !ok {
 		return nil, releaseAgent, errDelegationUnverified
 	}
+	// Native compaction precedes the next turn.step after resume. Context admission
+	// still authorizes it below, and relay refuses every tool call from a summary.
+	compacting := g.contexts != nil && r.Header.Get("X-Claude-Code-Request-Class") == "compaction" && request.HostedSearch == nil
+	// A root auxiliary count answers with a number: it cannot carry a tool call or
+	// decide one, and native sends it outside any turn (/context). Generation, main
+	// counts inside a turn and child counts keep the step proof.
+	counting := r.URL.Path == "/v1/messages/count_tokens" && r.Header.Get("X-Claude-Code-Agent-Id") == "" && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary"
+	if g.nativeEvents.confirmationsRequired && !compacting && !counting {
+		proof := g.nativeConfirmationFor(r, active, request.HostedSearch != nil)
+		if proof != nil && proof.cancellation != nil {
+			return nil, releaseAgent, proof.cancellation
+		}
+		if proof != nil && proof.Unmatched {
+			return nil, releaseAgent, errNativeOriginUnverified
+		}
+		if proof == nil || !proof.Confirmations {
+			return nil, releaseAgent, errNativeConfirmations
+		}
+		entry.nativeConfirmation = proof
+		releaseAgent = proof.close
+	}
 	scope.nativeTurn = active
 	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
 		role, release, registered := g.agents.begin(agent)
-		releaseAgent = release
+		finishConfirmation := releaseAgent
+		releaseAgent = func() { release(); finishConfirmation() }
 		entry.agent(agent, scope.parent, role, false)
 		if g.delegations != nil {
 			binding := g.agents.bindingOf(agent)
 			stop := g.agents.stopOf(agent)
 			if stop != nil {
-				if meta, err := g.delegations.readMetadata(binding); err != nil || meta.StoppedByUser {
-					return nil, releaseAgent, errDelegationUnverified
+				if meta, err := g.delegations.readMetadata(binding); err != nil {
+					return nil, releaseAgent, refusedAs(err, "metadata_unreadable")
+				} else if meta.StoppedByUser {
+					return nil, releaseAgent, refusedBecause("child_stopped")
 				}
 			}
 			resolvedScope, continued := g.continuationScope(scope, agent, binding)
@@ -347,7 +375,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				return nil, releaseAgent, err
 			}
 			if err != nil {
-				return nil, releaseAgent, errDelegationUnverified
+				return nil, releaseAgent, refusedAs(err, "route_unverified")
 			}
 			if found {
 				// Preserve the proven origin even if this request contradicts the
@@ -359,13 +387,13 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 					return nil, releaseAgent, err
 				}
 				if err != nil || observed.Model != route.Model && !g.delegations.resumeModel(scope, agent, observed.Model) {
-					return nil, releaseAgent, errDelegationUnverified
+					return nil, releaseAgent, refusedBecause("request_model_mismatch")
 				}
 				// Where native chose the route, every request must match native's receipt for
 				// its current turn.
 				nativeChosen := route.Source == "workflow-selection" || route.Source == "native-selection" || route.Source == "native-fork"
 				if (strings.HasPrefix(route.Source, "workflow-") || nativeChosen) && (request.Effort != route.Effort || nativeChosen && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
-					return nil, releaseAgent, errDelegationUnverified
+					return nil, releaseAgent, refusedBecause("request_effort_mismatch")
 				}
 				if strings.HasPrefix(route.Source, "workflow-") {
 					entry.checked("workflow_selection")
@@ -398,7 +426,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				g.unroutedRoles.Add(1)
 			}
 			if g.contexts != nil {
-				return nil, releaseAgent, errDelegationUnverified
+				return nil, releaseAgent, refusedBecause("child_unregistered_or_unrouted")
 			}
 			if route, known := g.selection.RoleRoute(role); known && registered {
 				override = append(override, route)
@@ -645,7 +673,8 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// Parsing or translation can stop before EOF, including on a terminal
 		// empty reply. Keep the observed read state on every exit, not just EOF.
 		events, bytes := parser.Stats()
-		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.Completed(), events, bytes)
+		done, trailing := parser.Tail()
+		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.Completed(), events, bytes, done, trailing)
 	}()
 	// The translator is told which tools are callable now, so a call naming a withdrawn
 	// tool is refused rather than passed to a client that would try to run it.
@@ -653,14 +682,25 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	if len(scopes) > 0 {
 		translator.ExpectRoute(scopes[0].route.Model, scopes[0].route.Effort)
 	}
+	if g.nativeEvents.confirmationsRequired {
+		var proof *nativeConfirmation
+		if entry := recordOf(w); entry != nil {
+			proof = entry.nativeConfirmation
+		}
+		translator.ToolUseID = func(callID string) (string, error) { return nativeToolUseID(proof, callID) }
+	}
 	// Which item types the backend actually sends, kept for the session, so refusing an
 	// unknown one is decided on what sessions see (#85).
 	defer func() {
 		g.events.observeItems(translator.ItemTypes())
 		recordOf(w).returned(translator.Returned())
+		recordOf(w).output(translator.ItemTypes(), len(translator.Answer()))
 	}()
 	if entry := recordOf(w); entry != nil {
 		record := entry.snapshot()
+		if record.Kind == "compaction" {
+			translator.Builder().SetCallable(func(string) bool { return false })
+		}
 		if len(scopes) > 0 && scopes[0].parentWait != nil {
 			// SDK keeps real answers and emits only a verified empty-reply status;
 			// its native scheduler owns background task completion.

@@ -152,8 +152,12 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 				}
 			}
 			out[key], _ = json.Marshal(merged)
-		} else if key == "autoMode" {
-			merged, err := mergeAutoModeSettings(value, user[key])
+		} else if key == "autoMode" || key == "permissions" {
+			field := "hard_deny"
+			if key == "permissions" {
+				field = "ask"
+			}
+			merged, err := mergeRequiredRules(value, user[key], field)
 			if err != nil {
 				return "", err
 			}
@@ -217,9 +221,9 @@ func jsonEqual(a, b json.RawMessage) bool {
 	return string(one) == string(two)
 }
 
-// Preserve all user auto-mode fields and append the required hard-deny entries.
+// Preserve user fields and append the required native rule list without duplicates.
 // Other native scopes are combined by native itself; no global file is read or written.
-func mergeAutoModeSettings(required, user json.RawMessage) (json.RawMessage, error) {
+func mergeRequiredRules(required, user json.RawMessage, field string) (json.RawMessage, error) {
 	if len(user) == 0 {
 		return required, nil
 	}
@@ -232,10 +236,10 @@ func mergeAutoModeSettings(required, user json.RawMessage) (json.RawMessage, err
 		return nil, errUserSettings
 	}
 	var mandatory, extra []string
-	if json.Unmarshal(base["hard_deny"], &mandatory) != nil || mandatory == nil {
+	if json.Unmarshal(base[field], &mandatory) != nil || mandatory == nil {
 		return nil, errUserSettings
 	}
-	if raw, ok := fields["hard_deny"]; ok {
+	if raw, ok := fields[field]; ok {
 		if json.Unmarshal(raw, &extra) != nil || extra == nil {
 			return nil, errUserSettings
 		}
@@ -250,7 +254,7 @@ func mergeAutoModeSettings(required, user json.RawMessage) (json.RawMessage, err
 			extra = append(extra, rule)
 		}
 	}
-	fields["hard_deny"], err = json.Marshal(extra)
+	fields[field], err = json.Marshal(extra)
 	if err != nil {
 		return nil, errUserSettings
 	}

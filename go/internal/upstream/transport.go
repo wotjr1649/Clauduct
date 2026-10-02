@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -180,6 +181,33 @@ func (d *Direct) client() *http.Client {
 	return sharedClient
 }
 
+// send posts request and classifies a failure by phase. A timeout after the
+// request was fully written is the response-header deadline on either protocol:
+// HTTP/1.1 reports it as a deadline, HTTP/2 as a bare net timeout, which read as
+// a retryable CONNECTION_TIMEOUT and let native resend the whole request (#213).
+// A timeout before the write completes stays a connection timeout.
+func send(client *http.Client, request *http.Request) (*http.Response, error) {
+	var written atomic.Bool
+	// Each connection attempt starts unwritten: the transport may retry a request
+	// on a new connection, and a dial or TLS timeout there is a connection failure.
+	trace := &httptrace.ClientTrace{
+		GetConn:      func(string) { written.Store(false) },
+		WroteRequest: func(info httptrace.WroteRequestInfo) { written.Store(info.Err == nil) },
+	}
+	response, err := client.Do(request.WithContext(httptrace.WithClientTrace(request.Context(), trace)))
+	if err == nil {
+		return response, nil
+	}
+	if errors.Is(err, ErrRedirected) {
+		return nil, ErrRedirected
+	}
+	failure := ClassifyTransport(err)
+	if written.Load() && failure.Category == "CONNECTION_TIMEOUT" {
+		failure = Failure{Category: "REQUEST_TIMEOUT", Disposition: Terminal}
+	}
+	return nil, failure
+}
+
 func newClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// The user's proxy and CA configuration is their own network and is left alone. What
@@ -267,13 +295,10 @@ func (d *Direct) Execute(ctx context.Context, call Call) (*Response, error) {
 		request.Header.Set("session-id", call.Session)
 	}
 
-	response, err := d.client().Do(request)
+	response, err := send(d.client(), request)
 	if err != nil {
 		cancel()
-		if errors.Is(err, ErrRedirected) {
-			return nil, ErrRedirected
-		}
-		return nil, ClassifyTransport(err)
+		return nil, err
 	}
 	if response.StatusCode != http.StatusOK {
 		failure := ClassifyStatus(response.StatusCode, response.Header, time.Now())

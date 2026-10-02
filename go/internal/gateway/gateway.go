@@ -105,6 +105,8 @@ type Gateway struct {
 	// cacheSalt keys promptCacheKey. Random per gateway, never sent.
 	cacheSalt [32]byte
 
+	auxiliaryEffortCap string // immutable launch preference
+
 	received   atomic.Int64
 	modelLists atomic.Int64
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
@@ -168,19 +170,22 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 	}
 	closing, stopClose := context.WithCancel(context.Background())
 	g := &Gateway{
-		closing:   closing,
-		stopClose: stopClose,
-		listener:  listener,
-		token:     token,
-		expected:  listener.Addr().String(),
-		requests:  newRegistry(physical),
-		agents:    newAgentRegistry(),
-		transport: transport,
-		served:    make(chan error, 1),
-		ring:      newRing(),
-		betas:     newBetaLedger(),
-		limits:    newLimitLedger(),
-		events:    newEventLedger(),
+		closing:      closing,
+		stopClose:    stopClose,
+		listener:     listener,
+		token:        token,
+		expected:     listener.Addr().String(),
+		requests:     newRegistry(physical),
+		agents:       newAgentRegistry(),
+		transport:    transport,
+		served:       make(chan error, 1),
+		ring:         newRing(),
+		betas:        newBetaLedger(),
+		limits:       newLimitLedger(),
+		events:       newEventLedger(),
+		nativeEvents: nativeEventState{confirmationGate: make(chan struct{}, 1)},
+
+		auxiliaryEffortCap: bridge.DefaultAuxiliaryEffortCap(),
 	}
 	rand.Read(g.cacheSalt[:])
 	g.server = &http.Server{
@@ -441,7 +446,12 @@ func (g *Gateway) refusedTotal() int64 {
 }
 
 func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
-	g.received.Add(1)
+	// A confirmation helper holds one connection per model request. Counting it would
+	// double requests= and push model requests out of the recent ring.
+	helper := r.URL.Path == "/clauduct/confirmation"
+	if !helper {
+		g.received.Add(1)
+	}
 
 	// The record opens before anything is checked, so a refused boundary, version or
 	// encoding is a diagnosed failure rather than an unrecorded 400. The Node baseline
@@ -449,7 +459,7 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	//
 	// Reading the diagnostics is not traffic. Sixteen status reads would otherwise erase
 	// every record of what the session did, which is the one thing the reader came for.
-	if r.URL.Path != statusPath {
+	if r.URL.Path != statusPath && !helper {
 		entry := g.ring.open(r.Method, r.URL.Path)
 		defer entry.finish()
 		w = &tracked{ResponseWriter: w, rec: entry, body: r.Body}
@@ -505,6 +515,10 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/clauduct/tool-failures" {
 		g.handleToolFailure(w, r)
+		return
+	}
+	if r.URL.Path == "/clauduct/confirmation" {
+		g.handleNativeConfirmation(w, r)
 		return
 	}
 

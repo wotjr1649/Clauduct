@@ -59,6 +59,17 @@ type AgentResultRecord struct {
 	Bytes             int             `json:"bytes"`
 	Recovered         bool            `json:"recovered"`
 	Review            string          `json:"review"`
+	// Timeline orders the child's result, the parent's receipt and native's end
+	// in one record, so a late completion says which step came late (#206).
+	Timeline ResultTimeline `json:"timeline"`
+}
+
+// ResultTimeline is when a result first reached each completion step, in ms
+// after it started. Absent means not reached. Each value is set once.
+type ResultTimeline struct {
+	AwaitingParentMs *int64 `json:"awaitingParentMs,omitempty"`
+	ParentReceivedMs *int64 `json:"parentReceivedMs,omitempty"`
+	NativeEndMs      *int64 `json:"nativeEndMs,omitempty"`
 }
 type AgentResultReport struct {
 	Recent        []AgentResultRecord `json:"recent"`
@@ -111,6 +122,20 @@ func (r *agentResults) change(e *agentResult, state string) {
 	r.sequence++
 	e.sequence = r.sequence
 	e.State = state
+	switch state {
+	case "awaiting_parent":
+		e.mark(&e.Timeline.AwaitingParentMs)
+	case "parent_received":
+		e.mark(&e.Timeline.ParentReceivedMs)
+	}
+}
+
+// mark keeps the first time this result reached a step.
+func (e *agentResult) mark(step **int64) {
+	if *step == nil {
+		ms := time.Since(e.since).Milliseconds()
+		*step = &ms
+	}
 }
 func (r *agentResults) start(id string, c resolvedChoice) bool {
 	r.mu.Lock()

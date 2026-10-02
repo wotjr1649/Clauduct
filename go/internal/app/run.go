@@ -109,14 +109,16 @@ type Options struct {
 // session that leaked a listener would hide exactly the defect this bridge has to prove it
 // does not have.
 type Result struct {
-	Startup             bridge.Pair
-	StartupModelSource  string
-	StartupEffortSource string
-	Context             ContextFacts
-	NativeStarted       bool
-	NativeExitCode      int
-	GatewayAddr         string
-	CleanupErr          error
+	Startup                  bridge.Pair
+	StartupModelSource       string
+	StartupEffortSource      string
+	Context                  ContextFacts
+	AuxiliaryEffortCap       string
+	AuxiliaryEffortCapSource string
+	NativeStarted            bool
+	NativeExitCode           int
+	GatewayAddr              string
+	CleanupErr               error
 	// Attempts and Inferences are what the session spent upstream. One inference retried
 	// twice is one inference and three attempts, and a claim about cost needs the unit it
 	// was measured in.
@@ -129,6 +131,9 @@ type Result struct {
 	// Diagnostics is the final account after in-flight requests have drained.
 	Diagnostics gateway.Diagnostics
 	Lifecycle   *LifecycleFacts
+	// NativeReplaced is whether claude.exe changed on disk while this session ran:
+	// an updater ran meanwhile, from this native or another process (#229).
+	NativeReplaced bool
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -204,6 +209,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if !found {
 		return Result{}, ErrClaudeNotFound
 	}
+	nativeBefore, _ := os.Stat(exe)
+	defer func() { result.NativeReplaced = nativeReplaced(exe, nativeBefore) }()
 	var profiles *gateway.SessionProfiles
 	var resumed *gateway.SessionProfile
 	_, forkSession := optionValue(o.Args, "--fork-session")
@@ -251,7 +258,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return Result{}, err
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
-	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts()}
+	gw.ConfigureAuxiliaryEffortCap(config.AuxiliaryEffortCap)
+	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
+		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -343,9 +352,14 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		settings = "" // Already present at the user's original option boundaries.
 	}
 	if o.Settings == nil {
+		gw.RequireNativeConfirmations()
 		gw.ConfigurePDFRenderer(hook)
 		if hook != "" {
-			nativePlugin, err = prepareNativeEvents()
+			link := ""
+			if background != nil {
+				link = background.ID
+			}
+			nativePlugin, err = prepareNativeEvents(link)
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")
@@ -636,4 +650,15 @@ func (o Options) withDefaults() Options {
 		o.DeadlineGrace = 3 * time.Minute
 	}
 	return o
+}
+
+// nativeReplaced compares claude.exe with what was resolved at launch. Size and
+// modification time, not a hash: this runs on every session and an updater
+// rewrites both. A file gone or unreadable afterwards also counts as replaced.
+func nativeReplaced(exe string, before os.FileInfo) bool {
+	if before == nil {
+		return false
+	}
+	after, err := os.Stat(exe)
+	return err != nil || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime())
 }

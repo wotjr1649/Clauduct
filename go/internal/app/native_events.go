@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
@@ -16,7 +17,10 @@ var nativeEventModule string
 
 // Per-session CLI plugin only; no user profile/plugin installation changes.
 // Native permission/trust validation remains responsible for loading this code.
-func prepareNativeEvents() (directory string, err error) {
+// link is the background session link id, or empty in the foreground. A background
+// worker's environment carries no gateway token; its helper reads the link instead,
+// as its hooks do.
+func prepareNativeEvents(link string) (directory string, err error) {
 	directory, err = os.MkdirTemp("", "clauduct-native-events-")
 	if err != nil {
 		return "", err
@@ -29,7 +33,7 @@ func prepareNativeEvents() (directory string, err error) {
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name":"clauduct-native-events","version":"1.0.0","description":"Per-session native child identity and terminal receipts for Clauduct status","author":{"name":"Clauduct"}}`,
 		"hooks/hooks.json":           `{"modules":["./events.mjs"]}`,
-		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts")),
+		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts"), link),
 	}
 	for name, body := range files {
 		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
@@ -42,7 +46,7 @@ func prepareNativeEvents() (directory string, err error) {
 // nativeEventSource fills in the module. The receipt's model and effort labels come from
 // the routing table: a model missing there is labelled unlisted, and the gateway cannot
 // route a fork or a native selection from an unlisted receipt.
-func nativeEventSource(receipts string) string {
+func nativeEventSource(receipts, link string) string {
 	root, _ := json.Marshal(filepath.ToSlash(receipts))
 	models := make([]string, 0, len(bridge.Models))
 	for _, model := range bridge.Models {
@@ -50,7 +54,13 @@ func nativeEventSource(receipts string) string {
 	}
 	ids, _ := json.Marshal(models)
 	efforts, _ := json.Marshal(bridge.Efforts)
-	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_MODELS__", string(ids),
+	helper, _ := json.Marshal(filepath.ToSlash(findHook()))
+	args := []string{hookcmd.ConfirmationArg}
+	if link != "" {
+		args = append(args, link)
+	}
+	helperArgs, _ := json.Marshal(args)
+	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_CONFIRMATION_ARGS__", string(helperArgs), "__CLAUDUCT_REQUIRED_PERMISSIONS__", nativePermissions, "__CLAUDUCT_MODELS__", string(ids),
 		"__CLAUDUCT_EFFORTS__", string(efforts)).Replace(nativeEventModule)
 }
 

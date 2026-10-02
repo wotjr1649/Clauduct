@@ -1,9 +1,146 @@
-// No environment mutation, network, process or report-body access. Native identity,
+// No environment mutation, arbitrary process or report-body access. Native identity,
 // progress and terminal receipts are recorded. Workflow source files use native Read
 // with its permission checks. A verified dependency wait consumes only the gateway's
 // empty control response. Native commands are untouched.
 const root = __CLAUDUCT_EVENT_ROOT__;
+const confirmationHelper = __CLAUDUCT_CONFIRMATION_HELPER__;
+const confirmationArgs = __CLAUDUCT_CONFIRMATION_ARGS__;
+const requiredConfirmations = __CLAUDUCT_REQUIRED_PERMISSIONS__.ask;
+async function confirmationsVerified($) {
+  try {
+    let settings = await $.settings.read();
+    if (settings.allowManagedPermissionRulesOnly === true) settings = await $.settings.read({source:'policy'});
+    const ask = settings.permissions?.ask, deny = settings.permissions?.deny;
+    return requiredConfirmations.every(tool => [ask,deny].some(rules => Array.isArray(rules) && (rules.includes(tool) || rules.includes('*'))));
+  } catch { return false; }
+}
+async function preparePermissions($, state) {
+  if (state.permissionFailed || !await confirmationsVerified($)) {
+    state.permissionFailed=true;
+    throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+  }
+  // Reload keeps the gateway's last challenge. Consume its nonce before this
+  // module forwards any new request, so a finished helper cannot poison it.
+  state.permissionBaseline ??= (async()=>{
+    const file=root+'/confirmation-request.json';
+    if (await $.fs.exists(file)) {
+      const previous=JSON.parse(await $.fs.read(file));
+      if (!/^[A-Za-z0-9_-]{43}$/.test(previous.nonce)) throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+      state.permissionNonce=previous.nonce;
+    }
+  })();
+  await state.permissionBaseline;
+  state.permissionReady=true;
+}
+async function answerConfirmations($, state) {
+  if (state.permissionJob || state.permissionFailed || state.permissionClosed) return;
+  const job={};state.permissionJob=job;
+  try {
+    const file=root+'/confirmation-request.json';
+    if (!await $.fs.exists(file)) return;
+    const request=JSON.parse(await $.fs.read(file));
+    if (!/^[A-Za-z0-9_-]{43}$/.test(request.nonce) || !ident(request.session) || typeof request.search!=='boolean' || request.auxiliary!==undefined && typeof request.auxiliary!=='boolean') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+    if (request.nonce===state.permissionNonce) return;
+    state.permissionNonce=request.nonce;
+    if (state.cancelledTurns.has(request.turn)) return;
+    const verified=await confirmationsVerified($);
+    if (!verified) state.permissionFailed=true;
+    let step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search && !!p.auxiliary===!!request.auxiliary);
+    if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
+    if (step && !state.requests.has(step)) {
+      // Its scope ended during the awaits above; an identical twin may still own
+      // a live request. Without one the request is answered unmatched: silence
+      // would time out the handshake and latch every later request.
+      step=[...state.requests].find(p=>p.session===step.session && p.agent===step.agent && p.turn===step.turn && p.index===step.index && p.search===step.search && !!p.auxiliary===!!step.auxiliary);
+    }
+    const confirmations=verified && !!step && !state.permissionFailed;
+    const unmatched=verified && !step && !state.permissionFailed;
+    const reply={...request,agent:step?.agent||'',turn:step?.turn||'',index:step?.index??-1,confirmations,unmatched};
+    if (!verified || state.permissionClosed || state.permissionJob!==job) return;
+    if (state.permissionLeases.size>=64) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+    const stream=$.process.spawn({argv:[confirmationHelper,...confirmationArgs],input:JSON.stringify(reply)});
+    const lease={stream,active:step,stopped:false};state.permissionLeases.add(lease);job.lease=lease;
+    let marker='';
+    do {
+      let chunk;
+      try {chunk=await stream.next();}
+      catch {await closeConfirmation(state,lease);return;}
+      if (chunk.done && chunk.value?.code===3) {await closeConfirmation(state,lease);return;} // stale: the request already ended
+      if (chunk.done || chunk.value.stream!=='stdout') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+      marker+=chunk.value.text;
+      if (marker.length>64 || state.permissionClosed || lease.stopped) throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+    } while(!marker.includes('\n'));
+    if (marker!=='CLAUDUCT_CONFIRMATION_CONNECTED\n') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+    void (async()=>{
+      try {
+        const ended=await stream.next();
+        if (!ended.done || ended.value.code!==0) {
+          if (!lease.stopped && !state.permissionClosed && !state.cancelledTurns.has(lease.active?.turn)) state.permissionFailed=true;
+          throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+        }
+        state.permissionLeases.delete(lease);
+      } catch {
+        // Native abort can interrupt this pull before turn cleanup runs. Close
+        // this request's proof; a cancelled connection is not a policy failure.
+        await closeConfirmation(state,lease);
+      }
+
+    })().catch(()=>{state.permissionFailed=true;});
+  } catch {
+    if (state.permissionJob===job && !job.lease?.stopped && !state.permissionClosed) state.permissionFailed=true;
+    if (job.lease) await closeConfirmation(state,job.lease);
+  }
+  finally {if(state.permissionJob===job) state.permissionJob=null;}
+}
+async function settleConfirmations(promises) {
+  const results=await Promise.allSettled(promises);
+  const failed=results.find(result=>result.status==='rejected');
+  if (failed) throw failed.reason;
+}
+async function closeConfirmation(state, lease) {
+  lease.stopped=true;
+  try {await lease.stream.return();state.permissionLeases.delete(lease);}
+  catch (error) {state.permissionFailed=true;throw error;}
+}
+function beginConfirmation($, state, active) {
+  if (state.permissionClosed) throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
+  if (state.requests.size>=4096) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
+  if (!state.requests.size) {
+    state.permissionTimer?.cancel();
+    state.permissionTimer=$.clock.every(25,()=>{void answerConfirmations($,state).catch(()=>{state.permissionFailed=true;});});
+  }
+  state.requests.add(active);
+}
+// A scope that ends normally leaves an admitted request alone: its proof closes
+// with that HTTP request. Cutting it would fail work native still awaits
+// (measured: a child's progress check outlived its step by seconds and native
+// ended it itself). Cancellation closes the turn's proofs instead (closeTurn).
+async function endConfirmation($, state, active) {
+  state.requests.delete(active);
+  if (!state.requests.size) {
+    state.permissionTimer?.cancel();
+    // A late request needs an explicit unmatched reply, not a storage-failure latch.
+    state.permissionTimer=state.permissionClosed?null:$.clock.every(250,()=>{void answerConfirmations($,state).catch(()=>{state.permissionFailed=true;});});
+  }
+}
+async function closeTurn(state, agent, turn) {
+  if (state.permissionJob?.lease?.active?.agent===agent && state.permissionJob.lease.active.turn===turn) state.permissionJob=null;
+  await settleConfirmations([...state.permissionLeases].filter(lease=>lease.active?.agent===agent && lease.active?.turn===turn).map(lease=>closeConfirmation(state,lease)));
+}
+async function cancelTurn($, state, scope, reason) {
+    if (state.cancelledTurns.has(scope.turn)) return;
+    state.cancelledTurns.add(scope.turn);
+    try {await $.fs.write(root+'/cancel-'+scope.turn+'.json',JSON.stringify({session:scope.session||await session($),agent:scope.agent,turn:scope.turn,reason}));}
+    catch (error) {state.cancelledTurns.delete(scope.turn);state.permissionFailed=true;throw error;}
+    if (state.cancelledTurns.size>4096) state.cancelledTurns.delete(state.cancelledTurns.values().next().value);
+  }
 const ident = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,200}$/.test(value) ? value : '';
+// Same tag as the gateway's nativeToolUseID: one native step, not a secret.
+const toolMark = /^[A-Za-z0-9_-]+__cdt([0-9a-f]{12})$/;
+async function stepTag(p) {
+  const bytes=new TextEncoder().encode([p.session,p.agent,p.turn,String(p.index)].join('\n'));
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)).slice(0,6),v=>v.toString(16).padStart(2,'0')).join('');
+}
 // /clear starts a new native session in this process without registering this module
 // again. Read the id for every receipt: a cached first id signed later turns for the
 // cleared session, and the gateway refused every request after /clear.
@@ -27,10 +164,10 @@ async function observe($, progress, p, signal) {
     await p.write;
 }
 export const register = on => {
-  const state = {mode:'unclassified',peerMode:'unclassified'};
+  const state = {mode:'unclassified',peerMode:'unclassified',permissionReady:false,requests:new Set(),permissionLeases:new Set()};
   const turns = new Map();
   let turnSequence=0;
-  const cancelledTurns = new Set();
+  const cancelledTurns = state.cancelledTurns=new Set();
   const progress = new Map();
   on('agent.spawn', async ($, e, next) => {
     const sid=await session($),call=ident(e.tool_use_id),parent=e.parentAgentId?ident(e.parentAgentId):'';
@@ -53,23 +190,62 @@ export const register = on => {
     if (e.turnId && p?.turn===e.turnId && origin!=='task-notification') p.intervened=true;
     return next(e);
   });
+  on('turn.start', async ($, e, next) => {
+    const restart=state.permissionRestart;
+    // Native /clear continues under another session ID without session.start.
+    // Only a fresh native turn can reopen it, never a delayed old tool hook.
+    if (state.permissionClosed && restart && ident(e.turnId) && e.turnId!==restart.turn) {
+      const sid=await session($);
+      if (sid!==restart.session) {
+        await preparePermissions($,state);
+        if (state.permissionClosed && state.permissionRestart===restart) {
+          state.permissionClosed=false;state.permissionRestart=null;
+        }
+      }
+    }
+    state.rootTurn=e.turnId;
+    return next(e);
+  });
   on('session.start', async ($, e, next) => {
     // Native 2.1.282 delivers SendMessage as peer on both surfaces. Its
     // session evidence selects the response contract; other origins stay unknown.
     state.peerMode=e.isInteractive===true?'native_tui':e.isInteractive===false?'sdk':'unclassified';
+    await preparePermissions($,state);
+    state.permissionClosed=false;state.permissionRestart=null;
+    if (!state.permissionTimer) state.permissionTimer=$.clock.every(250,()=>{void answerConfirmations($,state).catch(()=>{state.permissionFailed=true;});});
     await $.fs.write(root + '/ready.json', JSON.stringify({session:await session($)}));
     return next(e);
   });
+  on('session.end', async ($, e, next) => {
+    state.permissionClosed=true;
+    state.permissionRestart=['clear','resume'].includes(e.reason) && ident(e.sessionId)?{session:e.sessionId,turn:state.rootTurn}:null;
+    const scopes=[...progress.values()].filter(p=>p.session && p.phase!=='turn_ended');
+    for (const p of progress.values()) p.phase='turn_ended';
+    state.permissionTimer?.cancel();state.permissionTimer=null;
+    state.requests.clear();
+    state.permissionJob=null;
+    await settleConfirmations([...state.permissionLeases].map(lease=>closeConfirmation(state,lease)).concat(scopes.map(p=>cancelTurn($,state,p,'aborted'))));
+    return next(e);
+  });
   on('turn.step', async function* ($, e, next) {
+    await preparePermissions($,state);
     const agent=e.agentId?ident(e.agentId):'', turn=ident(e.turnId);
     if (!turn || (e.agentId && !agent)) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+    if (state.permissionClosed && state.permissionRestart) {
+      // An anonymous typed fork has no turn.start to prove the replacement
+      // session. Refuse that scope without latching later verified user turns.
+      const answer='[Clauduct] NATIVE_REQUEST_ORIGIN_UNVERIFIED: no live native turn proved this request; this request was not sent.';
+      yield {kind:'text',index:0,text:answer};
+      yield {kind:'stop',stopReason:'refusal',usage:null};
+      return {turnId:e.turnId,index:e.index,answer,toolUses:[],stopReason:'refusal',usage:null};
+    }
     let p=progress.get(agent);
     if (!p || p.turn!==turn) {
       if (progress.size>=4096 && !p) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
       p={agent,turn,sequence:0,pendingTools:0,permissionRequests:0,phase:'request',write:p?.write};
       progress.set(agent,p);
     }
-    p.phase='request';
+    p.phase='request';p.index=e.index;
     // One publication per agent's current turn: completed turns release their slot,
     // so 4096 bounds concurrently active agents, not turns over a session's life.
     let current=turns.get(agent);
@@ -118,9 +294,17 @@ export const register = on => {
     // prompt.submit has the previous turn's ID; turn.start mints a new ID
     // without origin. Their ordering cannot attest a first-step peer input.
     const eligible=(state.mode==='native_tui' || state.mode==='sdk') && !p.intervened && e.index>0 && (p.delegated || handback!=='');
-    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:await session($),agent,turn,index:e.index,eligible,mode:state.mode,handback,peer:false}));
+    const sid=await session($);
+    p.session=sid;
+    await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:sid,agent,turn,index:e.index,eligible,mode:state.mode,handback,peer:false}));
+    const active={session:sid,agent,turn,index:e.index,search:false};
+    // Native also asks auxiliary questions about a step while it is still inferring
+    // (a child's progress check after ~30 s). Same Agent/turn/step proof unit; the
+    // ordinary inference request cannot borrow it (auxiliary must match).
+    const asking={...active,auxiliary:true};
     let held=false;
     try {
+      beginConfirmation($,state,active);beginConfirmation($,state,asking);
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
       const stream=next(e);
       let decision;
@@ -171,13 +355,36 @@ export const register = on => {
       return {...result,answer:'',stopReason:null};
     }
     finally {
-      if (!held) {
+      await endConfirmation($,state,active);await endConfirmation($,state,asking);
+      if (!held && p.phase!=='turn_ended') {
         p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
         await observe($,progress,p,'request_returned');
       }
     }
+  }).catch(async function* ($, e, next) {
+    // Before next, any unverified step must refuse instead of invoking native's
+    // default fallback. Once called, preserve unrelated upstream failures.
+    if (!state.permissionFailed && next.called) return undefined;
+    state.permissionFailed=true;
+    const answer='[Clauduct] NATIVE_CONFIRMATION_UNVERIFIED: native step could not be verified; restart this session.';
+    yield {kind:'text',index:0,text:answer};
+    yield {kind:'stop',stopReason:'refusal',usage:null};
+    return {turnId:e.turnId,index:e.index,answer,toolUses:[],stopReason:'refusal',usage:null};
   });
   on('tool.call', async ($, e, next) => {
+    // Model calls carry the gateway's mark of the step they were issued to.
+    // An unmarked call is a hook module's direct $.tool.call: native rules
+    // still apply, but it gets no turn scope and cannot delegate (#214).
+    const mark=toolMark.exec(typeof e.tool_use_id==='string'?e.tool_use_id:'');
+    const agent=e.agentId?ident(e.agentId):'',p=mark?progress.get(agent):undefined;
+    if (state.permissionClosed || mark && (e.agentId && !agent || !p || p.phase==='turn_ended' || cancelledTurns.has(p.turn) || mark[1]!==await stepTag(p))) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
+	if (!state.permissionReady || state.permissionFailed) return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
+	// Settings can change while inference is in flight. Recheck at execution too.
+	if ((requiredConfirmations.includes(e.tool) || e.tool.startsWith('mcp__')) && !await confirmationsVerified($)) {
+      state.permissionFailed=true;
+      return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
+    }
+    if (!mark) return ['Agent','SendMessage','Workflow','Skill'].includes(e.tool)?{deny:'NATIVE_DIRECT_DELEGATION_UNSUPPORTED'}:next(e);
 	if (e.tool==='Workflow' && (e.scriptPath!==undefined || e.script===undefined && e.name!==undefined)) {
 	  const call=ident(e.tool_use_id),sid=await session($);
 	  if (!call) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
@@ -193,7 +400,9 @@ export const register = on => {
 	  if (!selected) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_MISSING: no agent started; provide an existing scriptPath or inline script'};
 	  // This is the actual native Read tool. A denial/partial read never falls
 	  // back to $.fs.read(source), nor to the original unadapted Workflow.
-	  const read=await $.tool.call({tool:'Read',file_path:selected});
+	  let read;
+	  try { read=await $.tool.call({tool:'Read',file_path:selected}); }
+	  catch { return {deny:'CLAUDUCT_WORKFLOW_SOURCE_READ_UNVERIFIED'}; }
 	  const result=read.result;
 	  if (read.deny || read.isError || result?.type!=='text' || result.file?.startLine!==1 || result.file.numLines!==result.file.totalLines || result.file.truncatedByTokenCap || typeof result.file.content!=='string' || result.file.content.includes('__CLAUDUCT_')) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_READ_UNVERIFIED'};
 	  let text=result.file.content;
@@ -207,8 +416,10 @@ export const register = on => {
 	  await $.fs.write(root+'/workflow-read-'+call+'.json',JSON.stringify({session:sid,call,path:selected,digest}));
 	  e={...e,script:text+source.trailer};delete e.scriptPath;delete e.name;
 	}
-    const p=progress.get(e.agentId?ident(e.agentId):'');
-    if (!p) return next(e);
+    // Native can request a long tool's background decision after inference ended.
+    // Its auxiliary scope cannot authorize ordinary inference or hosted search.
+    const active={session:await session($),agent:p.agent,turn:p.turn,index:p.index,search:e.tool==='WebSearch',auxiliary:e.tool!=='WebSearch'};
+    if (state.permissionClosed || progress.get(p.agent)!==p || p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
     p.handback=''; // Any later tool invalidates the preceding hand-back step.
     // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
     if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;
@@ -217,6 +428,7 @@ export const register = on => {
     // then burned the whole deadline grace and was force-stopped instead of drained.
     p.pendingTools++;p.phase='tool_pending';
     try {
+      if (active) beginConfirmation($,state,active);
       await observe($,progress,p,'tool_started');
       const out=await next(e), value=out.result;
       // The native classifier has already accepted and delivered this report.
@@ -235,9 +447,16 @@ export const register = on => {
       return out;
     }
     finally {
-      p.pendingTools--;p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
-      await observe($,progress,p,'tool_returned');
+      try { if (active) await endConfirmation($,state,active); }
+      finally {
+        p.pendingTools--;if (p.phase!=='turn_ended') p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
+        await observe($,progress,p,'tool_returned');
+      }
     }
+  }).catch(($, e, next) => {
+    if (next.called) return undefined;
+    state.permissionFailed=true;
+    return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
   });
   on('classic.PermissionRequest', async ($, e, next) => {
     const p=progress.get(e.agent_id?ident(e.agent_id):'');
@@ -248,12 +467,8 @@ export const register = on => {
     if (['aborted','error','refusal'].includes(e.reason)) {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
-      if (!cancelledTurns.has(turn)) {
-        await $.fs.write(root+'/cancel-'+turn+'.json',JSON.stringify({session:await session($),agent,turn,reason:e.reason}));
-        cancelledTurns.add(turn);
-        // Duplicates follow the turn that just ended; forget the oldest, not the session.
-        if (cancelledTurns.size>4096) cancelledTurns.delete(cancelledTurns.values().next().value);
-      }
+      const p=progress.get(agent);if (p?.turn===turn) p.phase='turn_ended';
+      await settleConfirmations([...state.requests].filter(active=>active.agent===agent && active.turn===turn).map(active=>endConfirmation($,state,active)).concat(closeTurn(state,agent,turn),cancelTurn($,state,{session:p?.turn===turn?p.session:'',agent,turn},e.reason)));
     }
     if (e.agentId) {
       const agent=ident(e.agentId),turn=ident(e.turnId);

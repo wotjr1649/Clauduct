@@ -22,6 +22,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
   "context_window": 272000,
   "auto_compact_token_limit_percent": 90,
   "auto_compact_effort_cap": "medium",
+  "auxiliary_effort_cap": "medium",
   "startup": {
     "model": "gpt-6-sol",
     "effort": "xhigh"
@@ -61,6 +62,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `context_window` | 모든 모델에 공통인 context 관리값. 기본 272,000, 정수 100,000–872,000 |
 | `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
 | `auto_compact_effort_cap` | 검증된 자동 압축 요청의 effort 상한. 기본 `medium`. 현재 대화 effort를 높이지 않음 |
+| `auxiliary_effort_cap` | native의 독립 보조 요청 effort 상한. 기본 `medium`. 기존 매핑·기본값·명시값으로 선택한 effort를 높이지 않음 |
 
 시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
 Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
@@ -118,6 +120,101 @@ Clauduct의 pair는 역할의 실행 선택을 바꾼다. 역할의 원래 promp
 내장 역할은 `Explore`, `Plan`, `general-purpose`의 이름으로 설정한다.
 native의 부모 상속 역할(`fork`, `workflow-subagent`, `clauduct-inherit`)은 별도 pair로 바꾸지 않는다.
 
+## 보조 요청의 effort 상한 (v0.6.2 준비)
+
+권한 분류와 background 완료 판정 등 도구 없는 독립 보조 요청은 기존 `modelMapping`,
+`modelDefaults`와 요청의 명시 effort로 선택한 뒤 `auxiliary_effort_cap` 이하로만 낮춘다.
+상한의 지원값은 `low`, `medium`, `high`, `xhigh`, `max`이며 잘못된 값은 거부한다.
+기본 상한에서 `low`는 `low`, `max`는 `medium`으로 실행된다. 같은 요청의 token count와
+generation은 같은 선택을 사용한다. 일반 대화·Agent와 자동 압축의 별도 상한은 바꾸지 않는다.
+
+Auto 권한 분류의 지원 목표는 Terra·Sol·Astra의 유효 effort 전부다. Haiku에 대응하는 Luna는
+분류 요청만 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 전송 전에 거부한다. 다른 모델로
+대체하지 않으며 일반 대화·Agent·background 완료 보조 요청의 Luna 사용은 유지한다.
+현재 확대 범위의 품질 관문은 미완료다. 과거 오허용과 미검증 조합은
+[#218](https://github.com/wotjr1649/Clauduct/issues/218)에 남기며 이 설정의 구현을 안전성 통과로 해석하지 않는다.
+
+## 실행·외부 통신의 native 확인 (v0.6.2 준비)
+
+Clauduct는 실행할 때 native `permissions.ask`에 다음 도구를 추가한다.
+기존 사용자 `allow`·`ask`·`deny`와 다른 native 설정은 보존하며 전역 설정 파일은 수정하지 않는다.
+
+- 실행: `Bash`, `PowerShell`, `Monitor`, `Workflow`, `Skill`
+- 외부 통신: `mcp__*`, `WebFetch`, `WebSearch`, `ListMcpResourcesTool`, `ReadMcpResourceTool`,
+  `Artifact`, `PushNotification`, `RemoteTrigger`, `SendUserFile`, `ShareOnboardingGuide`, `SendMessage`, `DesignSync`
+
+native의 우선순위는 `deny` → `ask` → `allow`다. 따라서 빌드·테스트·읽기 전용 MCP와 같은
+작업도 확인 대상이며, 더 좁은 `allow` 규칙이나 auto 분류기의 허용 판정으로 확인을 생략하지 않는다.
+`SendMessage`는 다른 세션에도 전송할 수 있어 같은 세션의 Agent 메시지까지 확인한다.
+일반 파일 `Read`·`Edit`·`Write` 및 `Agent` 생성에는 이 목록만으로 새로운 확인 규칙을 추가하지 않는다.
+[native 권한 규칙](https://code.claude.com/docs/en/permissions).
+
+승인 화면과 결정은 native가 관리한다. 사용자가 구성한 `PermissionRequest` hook도 native의
+승인 주체가 될 수 있으므로 그런 hook의 효과는 유지한다. 명시적 `deny`는 그 승인보다 우선한다.
+대화에 적은 승인 문구만으로 확인 화면을 자동 처리하지 않는다. 확인을 처리할 수 없는 headless나
+background 작업은 native 모드에 따라 대기하거나 거부될 수 있다. native 2.1.284의 로컬 검증에서
+`default`는 지정된 `PermissionRequest` hook으로 승인했고, `dontAsk`는 같은 hook을 호출하지 않고
+거부했다. [native hook 규약](https://code.claude.com/docs/en/hooks#permissionrequest).
+
+매 native step과 실행·외부 통신 도구의 실행 직전에 필수 `ask` 또는 `deny` 규칙을 확인한다. 관리 정책의
+`allowManagedPermissionRulesOnly`가 활성화되어 있으면 관리 규칙 자체를 확인한다. 필수 규칙을
+확인하지 못하면 해당 native 추론을 `NATIVE_CONFIRMATION_UNVERIFIED`로 거부한다.
+직접 입력한 forked Skill은 native 이벤트에 Agent ID가 있어도 첫 HTTP 요청에는 그 ID가 없다.
+활성 자식이 하나여도 이전 자식의 지연 요청과 구별할 수 없으므로, v0.6.2에서는 이 직접 입력 경로를
+지원하지 않는다. 도구 유무와 관계없이 생성·계수 요청을 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로
+backend 전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 식별된 병렬 실행은 유지한다.
+출처나 현재 scope가 맞지 않아 거부한 요청은 이후 정상 요청을 막는 저장 실패 상태로 취급하지 않는다.
+모델이 낸 도구 호출의 `tool_use_id`에는 gateway가 그 호출을 받은 native step의 표지를 붙인다
+(`<backend call_id>__cdt<12자리 16진수>`). backend에는 원래 `call_id`를 그대로 돌려보낸다. native가
+도구를 실행할 때 표지가 현재 session·Agent·turn·step과 맞지 않으면, 이전 turn이나 step의 늦은 호출로 보고
+`NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 실행 전에 거부한다. 표지가 없는 호출은 plugin hook 모듈이 모델 호출 없이
+`$.tool.call`로 직접 실행한 도구다(native 2.1.287 측정: `toolu_plugin_…` ID). 이런 호출은 위 native 확인
+규칙을 그대로 거쳐 실행되지만, 현재 turn의 진행 상태·보조 요청 확인·위임 판정을 사용하지 못한다. 직접 실행한
+`Agent`·`SendMessage`·`Workflow`·`Skill`은 `NATIVE_DIRECT_DELEGATION_UNSUPPORTED`로 거부한다. 표지가 없는
+이전 대화의 도구 기록은 resume 후에도 그대로 backend로 전달된다.
+도구 요청마다 새로운 일회성 확인값에 대해 현재 native step이 응답해야 한다. 세션 시작이나
+과거의 응답만으로 새 요청을 허용하지 않는다. native `WebSearch`의 별도 검색 요청은 해당
+도구가 실행 중인 동안 확인하며 일반 추론 요청과 구분한다.
+긴 도구의 background 판정용 `auxiliary`도 확인된 session·Agent·turn·step의 활성 도구 구간에서
+처리한다. 같은 step이 아직 추론 중일 때 native가 보내는 `auxiliary`(예: 30초가 지난 자식 Agent의 진행 확인)도
+그 step의 확인으로 처리한다. native 요청에 원래 `tool_use_id`가 없으므로 같은 step의 개별 도구를 구별하는 증명은
+제공하지 않는다. 이 확인은 보조 요청의 출처 확인이며, 실제 도구 실행 승인은 위 native 규칙을
+계속 따른다. 일반 추론·검색·다른 Agent·turn·step은 그 보조 요청의 확인을 빌리지 못한다.
+취소·오류·거부로 종료된 turn의 확인은 사용할 수 없으며, 사용자 재입력으로 시작한 새 turn은
+별도 요청으로 처리한다. 확인 응답은 현재 Clauduct 바이너리의 내장 helper가 고정 인자로 실행되어
+전달한다. 일회성 확인값과 scope는 stdin으로 전달하고, 인증된 loopback 연결은 원래 요청이 끝나거나
+native가 helper stream을 반환할 때까지 유지한다. 연결 종료만으로 이전 확인값을 새 요청에 사용할
+수 없으며, 확인된 연결의 종료는 현재 요청을 거부하거나 취소하고 이후 사용자 재입력을 막지 않는다.
+임의 명령·외부 runtime·전역 설정 변경은 사용하지 않는다. 내부 정책 확인 통신은 왕복당2초이며,
+대기열 전체에는 최대64건×2초 상한을 적용한다. 더 짧은 요청 deadline·사용자 취소·launcher 종료는
+대기 중에도 적용한다. 대기 중인 요청의 취소·시간 초과만으로 이후 정상 요청을 막지는 않는다.
+승인 화면은 native의 기존 규칙을 따른다. 확인 저장소 I/O 오류나 실제 확인 왕복 시간 초과가 발생하면 gateway는
+실패 표시 파일을 쓰지 못해도 이후 도구 요청을 거부한다. 이 상태는 `/clear`나 plugin reload로
+해제하지 않으며 launcher를 다시 실행해야 한다. native 모듈도 확인 오류 후 대기 중인 도구를
+거부하고, 검증되지 않은 step이 기본 실행으로 이어지지 않도록 명시적 refusal을 반환한다.
+사용자에게는 `NATIVE_CONFIRMATION_UNVERIFIED`를 표시한다.
+native가 제자리에서 쓰는 취소 영수증을 쓰는 중에 읽었다면(일부만 쓰였거나 읽기가 막힌 경우) 판정을 미루고
+다음 확인에서 다시 읽는다. 2초가 넘도록 읽을 수 없을 때만 위 실패 상태로 처리한다. 같은 step에서 같은 종류의
+도구가 동시에 실행되면(예: 검색 두 개) 요청으로는 둘을 구별할 수 없으므로 같은 step의 확인으로 처리한다.
+step이나 도구 구간이 정상으로 끝나도 이미 받아들인 요청의 확인 연결은 그 HTTP 요청이 끝날 때 함께 닫힌다.
+turn이 중단·오류·거부로 끝나거나 세션이 끝나면 그 turn의 확인 연결을 즉시 닫아 진행 중인 요청을 취소한다.
+native가 더는 필요 없는 요청을 스스로 끊은 경우는 클라이언트 취소로 기록하며 확인 연결 종료로 표시하지 않는다. gateway가 이미 기다리지 않는 확인값에 늦게 연결한 helper는 410을 받고 종료 코드 3으로
+끝나며, 이는 실패 상태가 아니다. helper 연결은 종료 줄의 요청 수와 최근 요청 기록에 넣지 않는다.
+동시에 유지하는 확인 연결은 64개까지이며, 넘으면 위 실패 상태가 된다.
+백그라운드 작업(`--bg`)의 native 환경에는 gateway 토큰이 없으므로, 그때 helper는 백그라운드 hook과 같은
+세션 연결에서 주소와 토큰을 읽는다. helper 인자는 실행 시점에 정해지며 요청이 바꿀 수 없다.
+`/context`처럼 turn 밖에서 보내는 루트 `auxiliary` 토큰 계수 요청은 숫자만 돌려주므로 step 확인 증명을 요구하지
+않는다. 생성 요청, turn 안의 `main` 계수와 자식 Agent의 계수 요청은 증명을 계속 요구한다.
+관리 정책을 덮어쓰거나 무시하지 않는다. 관리자가 동등한 확인·거부 규칙을 제공하지 않는 환경에서는
+이 경로를 실행할 수 없다. [관리 규칙의 적용 범위](https://code.claude.com/docs/en/settings-reference#allowmanagedpermissionrulesonly).
+
+native 압축은 다음 step보다 먼저 실행될 수 있는 요약 전용 경로다. 기존 context 검증을 거친 뒤
+count와 generation 모두 도구 선택을 `none`으로 보내며, 압축 응답에 도구 호출이 오면 거부한다.
+이렇게 UUID 재개 시 필요한 압축을 유지하면서 요약 요청이 도구를 실행하지 못하게 한다.
+
+이 확인 절차는 모델의 원래 판정 품질을 바꾸지 않는다. raw 분류 오허용의 이력과 최종 실행 차단의
+검증 결과를 구분하며, 확대 지원의 전체 검증이 끝나기 전까지 관련 Issue를 완료 처리하지 않는다.
+
 ## 현재 세션의 선택과 저장
 
 native의 모델·effort 화면에서 `S`로 확정하면 현재 세션의 선택이 된다. 이 선택은 수동
@@ -131,8 +228,8 @@ Clauduct는 `.clauduct/sessions/<UUID>.json`에 당시 모델 매핑·기본값�
 snapshot을 따른다. `--model`, `--effort`와 사용자가 지정한 native effort 환경변수는 명시적인 선택으로 적용한다.
 `--fork-session`은 원본의 snapshot과 선택을 복제한다.
 
-context window·비율·자동 압축 상한은 snapshot에 저장하지 않는다. UUID 재개 시에도
-**현재 전역 settings.json**의 세 값을 읽는다. 따라서 재개 전에 window를 줄이면 기존 사용량이 새 목표에 도달하여 압축이
+context window·비율·자동 압축 상한·보조 요청 상한은 snapshot에 저장하지 않는다. UUID 재개 시에도
+**현재 전역 settings.json**의 네 값을 읽는다. 따라서 재개 전에 window를 줄이면 기존 사용량이 새 목표에 도달하여 압축이
 필요할 수 있다. 모델·effort snapshot과 대화는 그대로 유지한다. 현재 설정 파일이 잘못되었다면
 UUID 재개도 native 실행 전에 거부하며 원본 파일은 보존한다.
 이 검증은 파일 전체에 적용한다. 현재 파일에 모르는 모델·effort가 있으면 이를 무시하지 않고 오류로
@@ -169,7 +266,7 @@ snapshot이 없는 이전 세션은 현재 설정의 시작값으로 연다. `--
 무과금 호환성 검사의 범위가 아니다.
 
 v0.6.1 이하 설정 parser는 새 context·effort 상한 키를 알 수 없는 필드로 거부한다. 그 버전으로 되돌리려면
-현재 파일을 백업한 뒤 세 키를 제외한 구버전 호환 설정을 직접 사용한다. 바이너리 되돌림이
+현재 파일을 백업한 뒤 네 키를 제외한 구버전 호환 설정을 직접 사용한다. 바이너리 되돌림이
 설정·대화·snapshot을 자동 삭제하거나 변환하지 않는다.
 
 v0.5.4의 background worker는 같은 연결·같은 세션으로 재시작하고 마지막 선택이 시작 인자와
@@ -207,6 +304,8 @@ Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 �
 `session.context`는 window, 요청한 `requestedPercent`, clamp 후 `effectivePercent`, 계산한
 `autoCompactTokenLimit`, `autoCompactEffortCap`과 각 설정의 `factory.*` 또는 `settings.*` 출처를 기록한다.
 실제 압축 요청에 사용한 effort는 `gateway.recent`의 `kind: compaction` 기록에서 확인한다.
+`session.auxiliaryEffortCap`과 `auxiliaryEffortCapSource`는 보조 요청의 상한과 출처다.
+상한으로 effort가 낮아진 실제 요청은 `gateway.recent[].source`에 `+auxiliary-cap`을 기록한다.
 `gateway.modelContexts[].target`은 이 실행의 공통 목표다. `nativeContextDefaults`는 전달한
 native 값이며, `applicationVerified:false`는 native가 그 정확한 시점에 압축했다는 증거가
 아니라는 뜻이다. 낮은 비율에서 반복 압축이 발생하면 비율과 실제 입력 크기를 함께 확인한다.
@@ -214,5 +313,6 @@ native 값이며, `applicationVerified:false`는 native가 그 정확한 시점�
 ## 코드에 유지하는 정책
 
 모델의 지원 기능, context 설정의 허용 범위, 입력 검증과 처리 상한, native hook 연결 및 보안 규칙은 코드에서 관리한다.
-추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 기존 Terra/high 선택은
-이번 context 변경 범위에 포함하지 않는다. 설정화·지원 범위 검증은 [별도 작업](https://github.com/wotjr1649/Clauduct/issues/218)으로 추적한다.
+추가된 두 native 차단 규칙은 `$defaults`와 함께 유지한다. Auto mode classifier의 실행값은
+위 매핑·기본값·상한을 따르며, 지원 모델 목록은 별도 제품 자료로 관리한다.
+개발용 probe의 지출 범위는 일반 세션 설정과 독립된 제품 자료이며 설정 변경으로 확대되지 않는다.

@@ -22,6 +22,26 @@ import (
 var errDelegationUnverified = errors.New("AGENT_SELECTION_UNVERIFIED")
 var errMetadataPending = errors.New("AGENT_METADATA_PENDING")
 
+// selectionRefusal is errDelegationUnverified with a fixed reason label, kept in
+// the request's diagnostics so the next intermittent refusal names its branch
+// (#211, #215). The label never carries file content or identifiers.
+type selectionRefusal string
+
+func (selectionRefusal) Error() string        { return errDelegationUnverified.Error() }
+func (selectionRefusal) Is(target error) bool { return target == errDelegationUnverified }
+
+func refusedBecause(reason string) error { return selectionRefusal(reason) }
+
+// refusedAs keeps err's label when it has one and otherwise names the caller's
+// branch. Either way the result is errDelegationUnverified to every caller.
+func refusedAs(err error, reason string) error {
+	var refusal selectionRefusal
+	if errors.As(err, &refusal) {
+		return refusal
+	}
+	return refusedBecause(reason)
+}
+
 type delegationScope struct {
 	workflow        bool
 	session, parent string
@@ -536,7 +556,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 			}
 			select {
 			case <-ctx.Done():
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("metadata_wait_expired")
 			case <-time.After(delay):
 				meta, err = d.metadata(binding)
 			}
@@ -547,7 +567,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		if fork, ok := d.nativeFork(scope, id, binding, contexts...); ok {
 			return d.cacheFork(id, fork)
 		}
-		return bridge.Route{}, false, errDelegationUnverified
+		return bridge.Route{}, false, refusedAs(err, "metadata_unreadable")
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -881,8 +901,13 @@ func (d *delegations) readMetadata(binding agentBinding) (delegationMetadata, er
 	if err != nil {
 		return meta, err
 	}
+	// Native writes the sidecar in place: an empty or cut-off document is still
+	// arriving, like an absent one, and gets the same bounded first wait.
+	if partialJSON(raw) {
+		return meta, errMetadataPending
+	}
 	if _, err = wire.Fields(raw, nil); err != nil || json.Unmarshal(raw, &meta) != nil {
-		return meta, errDelegationUnverified
+		return meta, refusedBecause("metadata_invalid")
 	}
 	return meta, nil
 }
@@ -1012,8 +1037,8 @@ func (d *delegations) forkEvidence(binding agentBinding) (delegationMetadata, []
 	if err != nil {
 		return meta, nil, err
 	}
-	first, _, _ := bytes.Cut(raw, []byte("\n"))
-	if len(bytes.TrimSpace(first)) == 0 {
+	first, _, ended := bytes.Cut(raw, []byte("\n"))
+	if len(bytes.TrimSpace(first)) == 0 || !ended && partialJSON(first) {
 		return meta, nil, errMetadataPending
 	}
 	return meta, first, nil

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -151,6 +152,18 @@ func routeCategory(err error) string {
 // selectionCategory names a refused agent selection. A child started on a retired route is
 // told so, rather than only that its selection could not be verified.
 func selectionCategory(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return categoryFor(err)
+	}
+	if errors.Is(err, errNativeOriginUnverified) {
+		return errNativeOriginUnverified.Error()
+	}
+	if errors.Is(err, errNativeConfirmations) {
+		return errNativeConfirmations.Error()
+	}
+	if errors.Is(err, errClassifierModel) {
+		return errClassifierModel.Error()
+	}
 	if errors.Is(err, errClassifierContract) {
 		return "AUTO_MODE_CLASSIFIER_UNVERIFIED"
 	}
@@ -162,8 +175,16 @@ func selectionCategory(err error) string {
 
 func refusalMessage(category string) string {
 	switch category {
+	case "NATIVE_REQUEST_ORIGIN_UNVERIFIED":
+		return category + "; no matching live native scope proved this request's origin. This request was not sent; other verified requests remain available."
+	case "NATIVE_CONFIRMATION_UNVERIFIED":
+		return category + "; required native confirmation rules or request origin could not be verified. This request was not sent. Preserve managed policy and check that execution and outbound tools require native confirmation."
+	case "AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED":
+		return category + "; auto permission classification supports " + strings.Join(classifierModels, ", ") + " at each model's supported efforts, subject to auxiliary_effort_cap. Configure modelMapping/modelDefaults; no replacement was executed."
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":
 		return category + "; an earlier attempt may already have executed. Automatic replay was blocked. Check the previous outcome before submitting a new prompt; the current native session can continue."
+	case "NATIVE_REPLAY_STATE_UNVERIFIED":
+		return category + "; execution history could not be preserved or verified. This request was not sent. Restart the launcher and check the previous outcome before submitting a new prompt."
 	case "NATIVE_TURN_ENDED":
 		return category + "; native had already reported this agent turn complete, so nothing was executed. The current native session can continue."
 	case "NATIVE_REQUEST_CAPACITY":

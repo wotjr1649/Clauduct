@@ -10,18 +10,31 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 type nativeEventState struct {
-	mu            sync.Mutex
-	directory     string
-	verified      bool
-	invalid       int64
-	cancellations map[*nativeCancellation]struct{}
+	confirmationsRequired bool // immutable launcher requirement
+	confirmationGate      chan struct{}
+	confirmationFailed    atomic.Bool // latched confirmation or cancellation verification failure
+	mu                    sync.Mutex
+	directory             string
+	verified              bool
+	invalid               int64
+	cancellations         map[*nativeCancellation]struct{}
+	confirmations         map[string]*pendingConfirmation
 }
+
+var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")
+var errNativeOriginUnverified = errors.New("NATIVE_REQUEST_ORIGIN_UNVERIFIED")
+
+// RequireNativeConfirmations makes missing/ignored native ask rules a refusal,
+// including when managed policy excludes the launcher's settings or event module.
+func (g *Gateway) RequireNativeConfirmations() { g.nativeEvents.confirmationsRequired = true }
+
 type NativeEventReport struct {
 	Configured bool  `json:"configured"`
 	Observed   bool  `json:"observed"`
@@ -29,6 +42,9 @@ type NativeEventReport struct {
 	// ReplayKeys is how many executions the replay ledger holds; it refuses new work at
 	// maxNativeExecutions (#70).
 	ReplayKeys int `json:"replayKeys"`
+	// Identities with live keys stay in memory; older markers are in the event directory.
+	ReplayIdentities  int  `json:"replayIdentities"`
+	ReplayStateFailed bool `json:"replayStateFailed"`
 	// RetiredTurns is how many finished child turns gave their keys back.
 	RetiredTurns int64 `json:"retiredTurns"`
 }
@@ -213,6 +229,11 @@ func (g *Gateway) pinNativeTurn(r *http.Request, entry *record) (turn *nativeTur
 	entry.turnPinned = true
 	entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
 	session, agent := r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id")
+	// Native omits the originating identity on a directly typed fork. Neither a
+	// root receipt nor an active sibling proves that anonymous request's origin.
+	if g.nativeEvents.confirmationsRequired && agent == "" && r.Header.Get("X-Claude-Code-Request-Class") == "subagent" {
+		return nil, false
+	}
 	// Capture the predecessor before reading the receipt. A later refusal may
 	// replace only this unchanged result, never a turn admitted in the meantime.
 	if g.delegations != nil {
@@ -261,12 +282,12 @@ func prunePublications(root *os.Root, directory string, entries []os.DirEntry, l
 
 func (g *Gateway) nativeEventReport() NativeEventReport {
 	g.executions.Lock()
-	keys, retired := len(g.executions.seen), g.executions.retired
+	keys, identities, retired, failed := len(g.executions.seen), len(g.executions.current), g.executions.retired, g.executions.failed
 	g.executions.Unlock()
 	n := &g.nativeEvents
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, RetiredTurns: retired}
+	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired}
 }
 
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
@@ -400,7 +421,7 @@ func (g *Gateway) reconcileNativeResults() {
 		default:
 			continue
 		}
-		g.executions.retire(receipt.Session, receipt.Agent, receipt.Turn)
+		g.retireNativeExecution(receipt.Session, receipt.Agent, receipt.Turn)
 		// A turn that starts an asynchronous child can end before the delegated
 		// task ends. Only SubagentStop supplies its successful completion body.
 		if receipt.Reason == "answer" {
@@ -423,6 +444,7 @@ func (g *Gateway) reconcileNativeResults() {
 		if applied && !current.NativeEndObserved {
 			current.EndReason = receipt.Reason
 			current.NativeEndObserved = true
+			current.mark(&current.Timeline.NativeEndMs)
 			if !resultReported(current.State) && receipt.Reason != "answer" {
 				current.stopped = true
 				r.bytes -= len(current.body)
@@ -474,7 +496,7 @@ func (g *Gateway) retireEndedChildren() {
 			// The body must name the turn its file is named for; retire keys on the session.
 			if receipt.Session == want.Session && receipt.Agent == want.Agent && receipt.Turn == want.Turn {
 				g.finishNativeAgentStop(receipt)
-				l.retire(receipt.Session, receipt.Agent, receipt.Turn)
+				g.retireNativeExecution(receipt.Session, receipt.Agent, receipt.Turn)
 			}
 		}
 	}

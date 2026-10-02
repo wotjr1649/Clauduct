@@ -1,5 +1,20 @@
 # V2 호환성 — 현재 / 제약 / 미지원
 
+v0.6.2 준비 변경은 실행·외부 통신 도구 전체에 native 확인을 요구한다. 빌드·테스트·MCP 및
+같은 세션의 `SendMessage`도 포함한다. headless/background에서 확인을 처리할 수 없으면
+native가 대기하거나 거부할 수 있으며, 관리 정책 때문에 필수 규칙을 확인할 수 없으면 도구 요청을
+전송 전에 거부한다. 기존 파일 작업과 Agent 생성의 native 규칙은 유지한다.
+구체적인 도구 목록과 승인 hook·관리 정책의 경계는 [설정 문서](SETTINGS.md#실행외부-통신의-native-확인-v062-준비)를 따른다.
+이 변경의 전체 회귀·실제 backend·최종 바이너리 검증은 아직 완료하지 않았다.
+Agent ID가 없는 직접 입력 fork는 출처를 증명할 수 없어 지원하지 않는다. 활성 자식이 하나여도
+이전 자식의 지연 요청과 구별할 수 없으므로 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 backend
+전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 식별된 병렬 실행은 유지한다.
+모델 도구 호출은 받은 native step의 표지를 `tool_use_id`에 달고 실행 시점에 그 step과 대조한다. 이전 turn·step의
+늦은 호출은 실행 전에 거부한다. plugin hook 모듈의 직접 도구 호출은 native 확인 규칙대로 실행하되 turn 상태와
+위임은 사용하지 못한다([설정 문서](SETTINGS.md#실행외부-통신의-native-확인-v062-준비)).
+세션 중에 claude.exe가 교체되면(native 자동 업데이트 등) 종료 줄에 `native_replaced=1`을 표시한다.
+실행 중인 native는 기존 이미지로 계속 돌고, 다음 세션부터 새 버전이 실행된다.
+
 v0.5.5부터 설치·제거 및 Windows 개발·검증의 PowerShell 호스트는 7(`pwsh`)이다.
 Windows PowerShell 5.1 지원은 종료한다. 실제 검증 버전과 설치 방법은
 [패키징 문서](PACKAGING.md#50-스크립트)에 기록한다. 아래 과거 릴리스의 5.1 측정 결과는 당시의 이력이다.
@@ -387,6 +402,13 @@ marker+완료 문장으로 바꿔 비교했다. 일반·독립 pair 네 표본 �
 `parent_received`·요청/대기/예약 메모리 0의 서로 다른 두 안정 checkpoint를 모두 요구한다.
 native background 상태·권한·scheduler와 과거 FAIL·미확인 기록을 보존한다.
 
+v0.6.2 준비 변경은 독립 보조 요청의 effort를 [전역 상한](SETTINGS.md#보조-요청의-effort-상한-v062-준비)
+이하로만 낮춘다. 권한 분류는 고정 Terra/high 대신 기존 모델 매핑·기본값·명시값을 따른다.
+Luna는 권한 분류에서만 거부하고 일반 대화·Agent·background 완료 요청에서는 유지한다.
+native 정책 문구·두 단계 판정·완료 의미는 보존한다. 확대된 Terra·Sol·Astra 전 effort 범위의
+분류 품질 관문은 아직 미완료이며, 과거 Terra/high 오허용과 background timeout을
+[#218](https://github.com/wotjr1649/Clauduct/issues/218), [#206](https://github.com/wotjr1649/Clauduct/issues/206)에 보존한다.
+
 ### 부모 대기·계획 재개의 실제 근거
 
 사용자 UUID `8544df8b-bc32-4df0-bffe-fce86176e3e1`에서 새 입력이 LEAF 도구 완료 전에
@@ -498,7 +520,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 항목 | 상태 |
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
-| forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). `-p`에서 직접 입력한 명령은 native가 agent ID 없이 실행하므로 루트 요청으로 처리된다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. Agent 자식과 달리 재개 연결을 따로 검증하지 않으며, 사용자의 중지가 `stoppedByUser`로 남지 않아 중지된 자식을 막는 규칙(#91)이 fork 자식에는 적용되지 않는다 |
+| forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). v0.6.2에서는 `-p` 등에서 직접 입력한 fork 명령의 HTTP에 Agent ID가 없으면 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 거부한다. 식별자가 있는 모델 호출 경로는 유지한다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. Agent 자식과 달리 재개 연결을 따로 검증하지 않으며, 사용자의 중지가 `stoppedByUser`로 남지 않아 중지된 자식을 막는 규칙(#91)이 fork 자식에는 적용되지 않는다 |
 | V1 `review-diff` 헬퍼 | **v0.6.0에서 문서상 정식 은퇴.** native `/code-review`의 tracked/untracked 파일 대상과 독립 결함 표본을 실제 backend로 확인했다. V2에는 이 헬퍼가 없으므로 제품 코드를 삭제한 변경은 아님. native 읽기 권한과 현행 다른 경로의 용량·경로 보호는 유지 |
 | Workflow remote·자식의 별도 Workflow·근거 없는 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 같은 run의 검증된 명시적 source 재개는 위 native 규칙을 따르며, 결과 회수·독립 계획은 별도 계약. 다른 세션과 기록 없는 강제 종료의 재개는 거부 |
 | Workflow plugin/bundled 이름 전체 | 로컬 `.js` 이름과 scriptPath는 지원. native 내부 resolver를 우회해 plugin 출처·우선순위를 임의로 추정하지 않음. 확인된 파일은 native Read가 허용하는 scriptPath로 실행 가능 |
@@ -516,6 +538,7 @@ native 2.1.283의 `/code-review <파일 경로>`로 tracked 변경과 untracked 
 
 직접 slash command를 `-p`로 실행하면 stdout은 `Command completed`이고 실제 리뷰는 native 자식
 transcript에 남았다. 완료 문구를 결함 탐지로 간주하지 않고 그 리뷰 본문과 실제 파일 읽기를 판정했다.
+이는 당시 버전의 검증 이력이다. v0.6.2에서는 Agent ID 없는 직접 입력 fork를 출처 미확인으로 거부한다.
 모델이 `Skill` 도구로 호출한 리뷰는 native의 도구 결과 전달 경로를 따른다. V1 헬퍼의 전처리와
 2 MiB 제한을 다른 현행 기능에 적용하거나 제거한 변경은 없다.
 

@@ -111,24 +111,21 @@ function beginConfirmation($, state, active) {
   }
   state.requests.add(active);
 }
+// A scope that ends normally leaves an admitted request alone: its proof closes
+// with that HTTP request. Cutting it would turn finished work into an API error
+// (measured: a child's progress check cut at its step end, then native aborted
+// the parent's turn). Cancellation closes the turn's proofs instead (closeTurn).
 async function endConfirmation($, state, active) {
   state.requests.delete(active);
-  const leases=[...state.permissionLeases].filter(lease=>lease.active===active);
-  // Parallel identical scopes (two searches or long tools in one step) cannot be
-  // told apart by a request. Hand their proofs to a remaining twin; the last one
-  // to end closes them, so one tool ending never cuts a sibling's request.
-  const twin=[...state.requests].find(p=>p.session===active.session && p.agent===active.agent && p.turn===active.turn && p.index===active.index && p.search===active.search && !!p.auxiliary===!!active.auxiliary);
-  if (twin) {
-    for (const lease of leases) lease.active=twin;
-    return;
-  }
-  if (state.permissionJob?.lease?.active===active) state.permissionJob=null;
-  await settleConfirmations(leases.map(lease=>closeConfirmation(state,lease)));
   if (!state.requests.size) {
     state.permissionTimer?.cancel();
     // A late request needs an explicit unmatched reply, not a storage-failure latch.
     state.permissionTimer=state.permissionClosed?null:$.clock.every(250,()=>{void answerConfirmations($,state).catch(()=>{state.permissionFailed=true;});});
   }
+}
+async function closeTurn(state, agent, turn) {
+  if (state.permissionJob?.lease?.active?.agent===agent && state.permissionJob.lease.active.turn===turn) state.permissionJob=null;
+  await settleConfirmations([...state.permissionLeases].filter(lease=>lease.active?.agent===agent && lease.active?.turn===turn).map(lease=>closeConfirmation(state,lease)));
 }
 async function cancelTurn($, state, scope, reason) {
     if (state.cancelledTurns.has(scope.turn)) return;
@@ -301,9 +298,13 @@ export const register = on => {
     p.session=sid;
     await $.fs.write(root+'/step-'+name+'.json',JSON.stringify({session:sid,agent,turn,index:e.index,eligible,mode:state.mode,handback,peer:false}));
     const active={session:sid,agent,turn,index:e.index,search:false};
+    // Native also asks auxiliary questions about a step while it is still inferring
+    // (a child's progress check after ~30 s). Same Agent/turn/step proof unit; the
+    // ordinary inference request cannot borrow it (auxiliary must match).
+    const asking={...active,auxiliary:true};
     let held=false;
     try {
-      beginConfirmation($,state,active);
+      beginConfirmation($,state,active);beginConfirmation($,state,asking);
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
       const stream=next(e);
       let decision;
@@ -354,7 +355,7 @@ export const register = on => {
       return {...result,answer:'',stopReason:null};
     }
     finally {
-      await endConfirmation($,state,active);
+      await endConfirmation($,state,active);await endConfirmation($,state,asking);
       if (!held && p.phase!=='turn_ended') {
         p.phase=p.pendingTools?'tool_pending':'progress_unconfirmed';
         await observe($,progress,p,'request_returned');
@@ -467,7 +468,7 @@ export const register = on => {
       const agent=e.agentId?ident(e.agentId):'',turn=ident(e.turnId);
       if (!turn || e.agentId && !agent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
       const p=progress.get(agent);if (p?.turn===turn) p.phase='turn_ended';
-      await settleConfirmations([...state.requests].filter(active=>active.agent===agent && active.turn===turn).map(active=>endConfirmation($,state,active)).concat(cancelTurn($,state,{session:p?.turn===turn?p.session:'',agent,turn},e.reason)));
+      await settleConfirmations([...state.requests].filter(active=>active.agent===agent && active.turn===turn).map(active=>endConfirmation($,state,active)).concat(closeTurn(state,agent,turn),cancelTurn($,state,{session:p?.turn===turn?p.session:'',agent,turn},e.reason)));
     }
     if (e.agentId) {
       const agent=ident(e.agentId),turn=ident(e.turnId);

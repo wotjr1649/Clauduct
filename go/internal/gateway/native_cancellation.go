@@ -76,7 +76,16 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 	stopLease := func() bool { return false }
 	if !reading && entry.nativeConfirmation != nil {
 		lease := entry.nativeConfirmation.lease
-		closeLease := func() { n.mu.Lock(); n.cancelLocked(binding, "native_confirmation_closed"); n.mu.Unlock() }
+		closeLease := func() {
+			// The lease derives from the client request: when the client left first, this
+			// is its cancellation, not a closed proof.
+			if r.Context().Err() != nil {
+				return
+			}
+			n.mu.Lock()
+			n.cancelLocked(binding, "native_confirmation_closed")
+			n.mu.Unlock()
+		}
 		stopLease = context.AfterFunc(lease, closeLease)
 		if lease.Err() != nil {
 			closeLease()

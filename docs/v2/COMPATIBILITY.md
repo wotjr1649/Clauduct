@@ -37,7 +37,7 @@ S42에서 발견한 거부 후 회복·역할 발견·압축 보완은 [S42 수�
 같은 바이너리의 사용자 S43 실행 판정은 [S43 사용자 검수](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/parent-wait-20260920/S43-USER-ACCEPTANCE.md)에 있다.
 Node V1 및 설치 명령으로 받은 릴리즈의 지원표로 그대로 사용하지 않는다.
 
-**native 2.1.286 후속 후보 — 미출하.** 새 turn의 첫 step에서 빈 완료 알림을 처리할 출처
+**native 2.1.286 후속 — v0.6.2 출하.** 새 turn의 첫 step에서 빈 완료 알림을 처리할 출처
 증거를 현재 plugin API로 확보할 수 없다. `prompt.submit.turnId`는 이전 실행 중 turn의 ID이며,
 새 ID를 생성하는 `turn.start`에는 출처가 없다. 후보는 이 빈 응답을 `EMPTY_REPLY`로 명시적으로
 거부한다. 자식 보고가 요청에 있다는 사실만으로 출처를 추정하지 않는다. 일반 답변·도구 실행과
@@ -379,7 +379,7 @@ A/G/LIFE 등의 식별자는 [이전 검증 기록](https://github.com/wotjr1649
 그 행을 최근 빌드에서 모두 다시 실측했다는 뜻은 아니다. 이미지·PDF·MCP·WebSearch 등은
 이전 실측을 보존하며, 전체 형식·환경·plugin 조합의 보장으로 확대하지 않는다.
 
-### v0.6.1 이후 Agent·background 경계 (미출하)
+### v0.6.1 이후 Agent·background 경계 (v0.6.2 출하)
 
 2026-09-29 개발 후보에서 [#195](https://github.com/wotjr1649/Clauduct/issues/195)의
 `SubagentStop` 조기 종료를 수정했다. native Stop hook이 추가 작업을 요구할 수 있으므로,

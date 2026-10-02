@@ -66,4 +66,4 @@ package part 목록·관계·media와 비대상 XML을 비교하고 파일을 �
 
 Office GUI·매크로·암호 문서·외부 연결·수식 계산 엔진은 이 표본에 포함하지 않는다.
 [v0.6.0의 296항목 목록](RELEASE-v0.6.0.md)의 과거 63 PASS/233 NOT_RUN은 유지하며 새 직접 근거를 별도로 연결한다.
-남은 식별자를 일괄 PASS 처리하지 않는다. 과거 background timeout의 [원인 미확정](COMPATIBILITY.md#v061-이후-agentbackground-경계-미출하)도 유지한다.
+남은 식별자를 일괄 PASS 처리하지 않는다. 과거 background timeout의 [원인 미확정](COMPATIBILITY.md#v061-이후-agentbackground-경계-v062-출하)도 유지한다.

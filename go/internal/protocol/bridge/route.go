@@ -1,7 +1,11 @@
 package bridge
 
 import (
+	_ "embed"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -31,11 +35,11 @@ type retiredRoute struct{}
 func (retiredRoute) Error() string { return "MODEL_RETIRED" }
 func (retiredRoute) Unwrap() error { return ErrUnsupportedRoute }
 
-// Retired maps each backend model v0.3.4 stopped routing to the model that took its tier
-// (decided 2026-09-24). A request, a picker value or a journal from an earlier session that
-// names one is refused with this answer; running the replacement instead would bill a model
-// nobody chose.
-var Retired = map[string]string{"gpt-5.6-sol": "gpt-6-sol", "gpt-5.6-luna": "gpt-6-luna"}
+// Retired maps each backend model this build stopped routing to the model that took its
+// tier (v0.3.4: 2026-09-24). A request, a picker value or a journal from an earlier session
+// that names one is refused with this answer; running the replacement instead would bill a
+// model nobody chose. Product data: models.json.
+var Retired = catalogue.Retired
 
 // Route is a resolved destination.
 type Route struct {
@@ -101,14 +105,12 @@ type ContextPolicy struct {
 // the same day with probe accept: low..max accepted, ultra refused (HTTP 400), tools,
 // reasoning and an image passed, and the local count matched input_tokens on 5 of 5 text
 // requests. GPT-6 Sol stays routable by its ID and the sol6 key; it is not retired.
+//
+// The entries are product data (models.json), not code: adding a measured model changes
+// that file. The loader refuses a malformed catalogue at start, and an unknown model is
+// still refused per request; nothing here lets a user setting add a model.
 var Models = func() []Model {
-	models := []Model{
-		{Key: "astra", ID: "gpt-6-astra", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", CountValidated: true},
-		{Key: "sol", ID: "gpt-6.1-sol", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", CountValidated: true},
-		{Key: "sol6", ID: "gpt-6-sol", Efforts: lowToMax, CountValidated: true},
-		{Key: "terra", ID: "gpt-5.6-terra", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", CountValidated: true},
-		{Key: "luna", ID: "gpt-6-luna", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", CountValidated: true},
-	}
+	models := slices.Clone(catalogue.Models)
 	for i := range models {
 		models[i].Effort = builtinDefaults.ModelDefaults[models[i].ID].Effort
 		models[i].Context = DefaultContextPolicy()
@@ -116,7 +118,91 @@ var Models = func() []Model {
 	return models
 }()
 
+// lowToMax is the backend's effort vocabulary, cheapest first. A model's own subset is data.
 var lowToMax = []string{"low", "medium", "high", "xhigh", "max"}
+
+//go:embed models.json
+var catalogueDocument []byte
+
+var catalogueKey = regexp.MustCompile(`^[a-z][a-z0-9]{0,31}$`)
+var catalogueID = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
+
+type catalogueData struct {
+	Models         []Model
+	Retired        map[string]string
+	RetiredKeys    []string
+	RetiredEfforts []string
+}
+
+var errCatalogue = errors.New("invalid model catalogue")
+
+// catalogue is decoded and checked once; an invalid embedded document stops the program
+// rather than routing on a partial table.
+var catalogue = func() catalogueData {
+	c, err := parseCatalogue(catalogueDocument)
+	if err != nil {
+		panic("invalid embedded model catalogue: " + err.Error())
+	}
+	return c
+}()
+
+// parseCatalogue refuses unknown fields, unordered or unknown efforts, half-declared
+// aliases, duplicate names and retired routes that are live or point nowhere.
+func parseCatalogue(document []byte) (c catalogueData, err error) {
+	var doc struct {
+		Version int `json:"version"`
+		Models  []struct {
+			Key            string   `json:"key"`
+			ID             string   `json:"id"`
+			Efforts        []string `json:"efforts"`
+			Alias          string   `json:"alias"`
+			Family         string   `json:"family"`
+			CountValidated bool     `json:"countValidated"`
+		} `json:"models"`
+		Retired      map[string]string `json:"retired"`
+		RetiredRoles struct {
+			Keys    []string `json:"keys"`
+			Efforts []string `json:"efforts"`
+		} `json:"retiredRoles"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(document)))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&doc) != nil || doc.Version != 1 || len(doc.Models) == 0 {
+		return c, errCatalogue
+	}
+	seen := map[string]bool{}
+	for _, m := range doc.Models {
+		ordered := len(m.Efforts) > 0
+		for i, effort := range m.Efforts {
+			at := slices.Index(lowToMax, effort)
+			ordered = ordered && at >= 0 && (i == 0 || at > slices.Index(lowToMax, m.Efforts[i-1]))
+		}
+		names := []string{m.Key, m.ID, m.Alias}
+		if !catalogueKey.MatchString(m.Key) || !catalogueID.MatchString(m.ID) || !ordered ||
+			(m.Alias == "") != (m.Family == "") || m.Alias != "" && (!catalogueKey.MatchString(m.Alias) || !strings.HasPrefix(m.Family, "claude-")) {
+			return c, fmt.Errorf("%w: model %q", errCatalogue, m.ID)
+		}
+		for _, name := range names {
+			if name != "" && seen[name] {
+				return c, fmt.Errorf("%w: duplicate name %q", errCatalogue, name)
+			}
+			seen[name] = true
+		}
+		c.Models = append(c.Models, Model{Key: m.Key, ID: m.ID, Efforts: m.Efforts, Alias: m.Alias, Family: m.Family, CountValidated: m.CountValidated})
+	}
+	for old, replacement := range doc.Retired {
+		if seen[old] || !seen[replacement] || !catalogueID.MatchString(old) {
+			return c, fmt.Errorf("%w: retired route %q", errCatalogue, old)
+		}
+	}
+	for _, effort := range doc.RetiredRoles.Efforts {
+		if !slices.Contains(lowToMax, effort) {
+			return c, fmt.Errorf("%w: retired role effort %q", errCatalogue, effort)
+		}
+	}
+	c.Retired, c.RetiredKeys, c.RetiredEfforts = doc.Retired, doc.RetiredRoles.Keys, doc.RetiredRoles.Efforts
+	return c, nil
+}
 
 // Catalogue lists the routes this build offers, in published order.
 //
@@ -260,8 +346,7 @@ func menuRoute(role string) (Route, bool) {
 func RetiredRole(role string) bool {
 	rest, ok := strings.CutPrefix(role, MenuPrefix)
 	key, effort, split := strings.Cut(rest, "-")
-	return ok && split && slices.Contains([]string{"astra", "sol", "terra", "luna"}, key) &&
-		slices.Contains([]string{"low", "medium", "high", "xhigh", "max"}, effort)
+	return ok && split && slices.Contains(catalogue.RetiredKeys, key) && slices.Contains(catalogue.RetiredEfforts, effort)
 }
 
 // ForAlias reports the model a Claude tier belongs to.

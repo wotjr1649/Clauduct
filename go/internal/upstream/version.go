@@ -3,6 +3,8 @@ package upstream
 import (
 	"bytes"
 	"context"
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"os/exec"
 	"regexp"
@@ -15,13 +17,53 @@ import (
 )
 
 // ReferenceClientVersion is the Codex CLI version last re-measured against this bridge's wire.
+// It is product data (measured-clients.json, written by the re-measure's --accept), not
+// code; the installed version is always read from the machine at run time.
 //
 // Evidence, not a pin. A different installed version still runs and is reported as
 // unverified, because refusing to start on a version nobody has checked would be stricter
 // than the evidence supports and would break on every Codex release. A re-measure records
 // how the installed client's requests differ from this bridge's; it does not copy them, so
 // matching this version says the difference is known, not that there is none (#121).
-const ReferenceClientVersion = "0.159.3"
+var ReferenceClientVersion = measured.codex
+
+// ReferenceClaudeVersion is the Claude Code version last re-measured, from the same file.
+var ReferenceClaudeVersion = measured.claude
+
+//go:embed measured-clients.json
+var measuredDocument []byte
+
+var measuredVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+var measured = func() measuredClients {
+	m, err := parseMeasured(measuredDocument)
+	if err != nil {
+		panic("invalid embedded measured clients")
+	}
+	return m
+}()
+
+type measuredClients struct{ claude, codex string }
+
+var errMeasured = errors.New("invalid measured clients")
+
+// parseMeasured reads the re-measure's own versions.json shape, so --accept writes one file.
+func parseMeasured(document []byte) (m measuredClients, err error) {
+	var doc struct {
+		Claude string `json:"claude"`
+		Codex  string `json:"codex"`
+	}
+	if json.Unmarshal(document, &doc) != nil {
+		return m, errMeasured
+	}
+	claude, okClaude := strings.CutSuffix(doc.Claude, " (Claude Code)")
+	codex, okCodex := strings.CutPrefix(doc.Codex, "codex-cli ")
+	if !okClaude || !okCodex || !measuredVersion.MatchString(claude) || !measuredVersion.MatchString(codex) {
+		return m, errMeasured
+	}
+	m.claude, m.codex = claude, codex
+	return m, nil
+}
 
 var codexVersionLine = regexp.MustCompile(`^codex-cli (\S+)$`)
 

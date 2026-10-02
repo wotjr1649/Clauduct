@@ -107,6 +107,8 @@ type ClauductSettings struct {
 	ContextEffortCapSource   string
 	AuxiliaryEffortCap       string
 	AuxiliaryEffortCapSource string
+	ClassifierModel          string
+	ClassifierModelSource    string
 }
 
 func defaultClauductSettings() ClauductSettings {
@@ -115,7 +117,8 @@ func defaultClauductSettings() ClauductSettings {
 		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
 		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
 		ContextEffortCapSource: "factory.auto_compact_effort_cap",
-		AuxiliaryEffortCap:     bridge.DefaultAuxiliaryEffortCap(), AuxiliaryEffortCapSource: "factory.auxiliary_effort_cap"}
+		AuxiliaryEffortCap:     bridge.DefaultAuxiliaryEffortCap(), AuxiliaryEffortCapSource: "factory.auxiliary_effort_cap",
+		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "factory.classifier_model"}
 }
 
 func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string) (bridge.Pair, string, string, error) {
@@ -217,7 +220,7 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
-	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "auto_compact_effort_cap", "auxiliary_effort_cap"})
+	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "auto_compact_effort_cap", "auxiliary_effort_cap", "classifier_model"})
 	if err != nil {
 		return bad()
 	}
@@ -268,6 +271,15 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 			*field.source = "settings." + field.name
 			delete(fields, field.name)
 		}
+	}
+	if value, present := fields["classifier_model"]; present {
+		// An exact supported model ID: an alias would move with modelMapping, and an
+		// unknown or unsupported model is refused here rather than replaced.
+		if string(value) == "null" || json.Unmarshal(value, &settings.ClassifierModel) != nil || !gateway.ClassifierModel(settings.ClassifierModel) {
+			return bad()
+		}
+		settings.ClassifierModelSource = "settings.classifier_model"
+		delete(fields, "classifier_model")
 	}
 	settings.ContextPolicy, err = settings.Context.Policy()
 	if err != nil {

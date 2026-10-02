@@ -106,6 +106,7 @@ type Gateway struct {
 	cacheSalt [32]byte
 
 	auxiliaryEffortCap string // immutable launch preference
+	classifierModel    string // immutable launch preference; empty follows native's Sonnet
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -245,7 +246,7 @@ func (g *Gateway) Token() string { return g.token }
 // rather than by a defect. What the account gets instead is the observed version beside
 // this one, so a session that starts failing after an update says so in one line rather
 // than becoming a bisect.
-const ReferenceClient = "2.1.283"
+var ReferenceClient = upstream.ReferenceClaudeVersion
 
 // clientAgent matches the client naming itself.
 //

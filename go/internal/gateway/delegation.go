@@ -419,7 +419,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	}
 	nativeAlias := ""
 	if model != nil {
-		nativeAlias = model.Alias
+		nativeAlias = model.AgentAlias
 		alias, _ := json.Marshal(nativeAlias)
 		fields["model"] = alias
 		// The tool schema still takes Claude aliases. The native spawn event
@@ -610,7 +610,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		choice.route = actual
 		for _, model := range bridge.Models {
 			if model.ID == actual.Model {
-				choice.alias = model.Alias
+				choice.alias = model.AgentAlias
 				break
 			}
 		}
@@ -831,6 +831,12 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	model, ok := bridge.ForAlias(saved.Alias)
 	if saved.Version == 3 {
 		model, ok = bridge.ModelByID(saved.Alias)
+	} else if !ok || model.ID != route.Model {
+		// The tier alias moved (v0.6.3: opus is GPT-6.1 Sol) or the model has none: accept
+		// only the model the journal names, and only when its own Agent tier is the alias.
+		if byID, known := bridge.ModelByID(route.Model); known && byID.Alias == "" && byID.AgentAlias != "" {
+			model, ok = byID, byID.AgentAlias == saved.Alias
+		}
 	}
 	if !ok || model.ID != route.Model {
 		return empty, false, errDelegationUnverified
@@ -1020,7 +1026,7 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 	choice := resolvedChoice{session: scope.session, parent: scope.parent, role: "general-purpose", route: route}
 	for _, model := range bridge.Models {
 		if model.ID == route.Model {
-			choice.alias = model.Alias
+			choice.alias = model.AgentAlias
 		}
 	}
 	return choice, true

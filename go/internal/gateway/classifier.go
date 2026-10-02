@@ -42,6 +42,14 @@ const classifierContextPrefix = "The following is the user's CLAUDE.md configura
 // ConfigureAuxiliaryEffortCap installs the validated global limit before native starts.
 func (g *Gateway) ConfigureAuxiliaryEffortCap(cap string) { g.auxiliaryEffortCap = cap }
 
+// ConfigureClassifierModel installs the validated classifier_model before native starts.
+// Empty keeps native's Sonnet model under the session's model mapping.
+func (g *Gateway) ConfigureClassifierModel(model string) { g.classifierModel = model }
+
+// ClassifierModel reports whether model is in the classifier support scope. Settings
+// validation uses it so an unsupported choice fails at launch, not at the first prompt.
+func ClassifierModel(model string) bool { return slices.Contains(classifierModels, model) }
+
 func (g *Gateway) auxiliarySelection(request *anthropic.Request, count bool) ([]bridge.Route, error) {
 	routes, err := g.classifierSelection(request, count)
 	if err != nil {
@@ -135,12 +143,21 @@ func (g *Gateway) classifierSelection(request *anthropic.Request, count bool) ([
 		second && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
 		return nil, errClassifierContract
 	}
-	route, err := g.selection.SelectRoute(request.Model, request.Effort)
+	requested, source := request.Model, "native-auto-mode"
+	if g.classifierModel != "" {
+		// The preference replaces only the model; the request's effort, the model's
+		// default effort and the auxiliary cap apply exactly as for native's choice.
+		requested, source = g.classifierModel, "native-auto-mode+classifier_model"
+	}
+	route, err := g.selection.SelectRoute(requested, request.Effort)
 	if err != nil {
+		if g.classifierModel != "" {
+			return nil, errClassifierModel
+		}
 		// BuildRequest rejects the unchanged request with the generation/count
 		// route error it used before. Do not substitute a valid fallback route.
 		return nil, nil
 	}
-	route.Source = "native-auto-mode"
+	route.Source = source
 	return []bridge.Route{route}, nil
 }

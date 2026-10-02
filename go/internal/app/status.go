@@ -69,6 +69,9 @@ type SessionFacts struct {
 	Context                  ContextFacts          `json:"context"`
 	AuxiliaryEffortCap       string                `json:"auxiliaryEffortCap"`
 	AuxiliaryEffortCapSource string                `json:"auxiliaryEffortCapSource"`
+	ClassifierModel          string                `json:"classifierModel,omitempty"`
+	ClassifierModelSource    string                `json:"classifierModelSource"`
+	RequiredAsk              bool                  `json:"requiredAsk"`
 	NonStreamingFallback     bool                  `json:"nonStreamingFallbackDisabled"`
 	DelegationMenuEntries    int                   `json:"delegationMenuEntries"`
 	// HookInstalled is whether the session got a hook: since #112 this executable itself.
@@ -189,6 +192,9 @@ func Account(result Result) Status {
 			Context:                  context,
 			AuxiliaryEffortCap:       result.AuxiliaryEffortCap,
 			AuxiliaryEffortCapSource: result.AuxiliaryEffortCapSource,
+			ClassifierModel:          result.ClassifierModel,
+			ClassifierModelSource:    result.ClassifierModelSource,
+			RequiredAsk:              result.RequiredAsk,
 			NonStreamingFallback:     defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
 			DelegationMenuEntries:    len(bridge.Models) + 1,
 			HookInstalled:            result.HookInstalled,

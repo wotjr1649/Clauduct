@@ -14,6 +14,7 @@ var builtinDefaults = func() (config struct {
 	Version            int    `json:"version"`
 	Startup            Pair   `json:"startup"`
 	AuxiliaryEffortCap string `json:"auxiliary_effort_cap"`
+	ClassifierModel    string `json:"classifier_model"`
 	ContextSettings
 	Selection
 }) {
@@ -27,6 +28,9 @@ var builtinDefaults = func() (config struct {
 func DefaultStartup() Pair { return builtinDefaults.Startup }
 
 func DefaultAuxiliaryEffortCap() string { return builtinDefaults.AuxiliaryEffortCap }
+
+// DefaultClassifierModel is the factory classifier_model; empty follows native's Sonnet.
+func DefaultClassifierModel() string { return builtinDefaults.ClassifierModel }
 
 // ContextSettings is shared by every model in one launcher. It is not part of
 // Selection: resuming a saved selection still uses today's context preferences.

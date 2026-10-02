@@ -115,10 +115,14 @@ type Result struct {
 	Context                  ContextFacts
 	AuxiliaryEffortCap       string
 	AuxiliaryEffortCapSource string
-	NativeStarted            bool
-	NativeExitCode           int
-	GatewayAddr              string
-	CleanupErr               error
+	ClassifierModel          string
+	ClassifierModelSource    string
+	// RequiredAsk is false when the user started the session in native bypass mode.
+	RequiredAsk    bool
+	NativeStarted  bool
+	NativeExitCode int
+	GatewayAddr    string
+	CleanupErr     error
 	// Attempts and Inferences are what the session spent upstream. One inference retried
 	// twice is one inference and three attempts, and a claim about cost needs the unit it
 	// was measured in.
@@ -259,8 +263,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureAuxiliaryEffortCap(config.AuxiliaryEffortCap)
+	gw.ConfigureClassifierModel(config.ClassifierModel)
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
-		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource}
+		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource,
+		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -302,6 +308,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}()
 	nativePDF := ""
 	hook := ""
+	requireAsk := true
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
@@ -319,7 +326,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		hook = findHook()
 		result.HookInstalled = hook != ""
-		if built, ok := config.sessionSettings(hook); ok {
+		requireAsk = !bypassLaunch(o.Args, userSettings, nativeConfigDirectory(o.Env, o.Cwd), o.Cwd)
+		result.RequiredAsk = requireAsk
+		if built, ok := config.sessionSettingsFor(hook, requireAsk); ok {
 			settings = built
 		}
 		if menu, ok := config.sessionAgents(); ok {
@@ -359,7 +368,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if background != nil {
 				link = background.ID
 			}
-			nativePlugin, err = prepareNativeEvents(link)
+			nativePlugin, err = prepareNativeEventsFor(link, requireAsk)
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")

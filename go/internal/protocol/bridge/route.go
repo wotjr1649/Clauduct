@@ -96,10 +96,16 @@ type ContextPolicy struct {
 // tools, the reasoning round trip and images, and the local count matched the backend's
 // input_tokens on every text request. ultra was refused (HTTP 400) on sol, astra and terra,
 // so no model lists it. Context defaults come from the shared settings document.
+//
+// v0.6.3 added GPT-6.1 Sol as the opus tier and the sol key (decided 2026-10-02). Measured
+// the same day with probe accept: low..max accepted, ultra refused (HTTP 400), tools,
+// reasoning and an image passed, and the local count matched input_tokens on 5 of 5 text
+// requests. GPT-6 Sol stays routable by its ID and the sol6 key; it is not retired.
 var Models = func() []Model {
 	models := []Model{
 		{Key: "astra", ID: "gpt-6-astra", Efforts: lowToMax, Alias: "fable", Family: "claude-fable-", CountValidated: true},
-		{Key: "sol", ID: "gpt-6-sol", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", CountValidated: true},
+		{Key: "sol", ID: "gpt-6.1-sol", Efforts: lowToMax, Alias: "opus", Family: "claude-opus-", CountValidated: true},
+		{Key: "sol6", ID: "gpt-6-sol", Efforts: lowToMax, CountValidated: true},
 		{Key: "terra", ID: "gpt-5.6-terra", Efforts: lowToMax, Alias: "sonnet", Family: "claude-sonnet-", CountValidated: true},
 		{Key: "luna", ID: "gpt-6-luna", Efforts: lowToMax, Alias: "haiku", Family: "claude-haiku-", CountValidated: true},
 	}

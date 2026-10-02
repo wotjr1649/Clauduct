@@ -106,6 +106,7 @@ type Gateway struct {
 	cacheSalt [32]byte
 
 	auxiliaryEffortCap string // immutable launch preference
+	classifierModel    string // immutable launch preference; empty follows native's Sonnet
 
 	received   atomic.Int64
 	modelLists atomic.Int64

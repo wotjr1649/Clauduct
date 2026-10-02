@@ -115,6 +115,8 @@ type Result struct {
 	Context                  ContextFacts
 	AuxiliaryEffortCap       string
 	AuxiliaryEffortCapSource string
+	ClassifierModel          string
+	ClassifierModelSource    string
 	NativeStarted            bool
 	NativeExitCode           int
 	GatewayAddr              string
@@ -259,8 +261,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureAuxiliaryEffortCap(config.AuxiliaryEffortCap)
+	gw.ConfigureClassifierModel(config.ClassifierModel)
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
-		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource}
+		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource,
+		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.

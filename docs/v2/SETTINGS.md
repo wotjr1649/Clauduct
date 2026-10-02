@@ -156,8 +156,10 @@ Clauduct는 실행할 때 native `permissions.ask`에 다음 도구를 추가한
 
 사용자가 native bypass 모드로 시작한 세션에는 이 목록을 추가하지 않는다(v0.6.3). 시작 모드는
 `--permission-mode bypassPermissions` 또는 native 설정의 `permissions.defaultMode`(user < project <
-local < `--settings`, `--setting-sources`가 읽는 범위)로 정한다. 관리 정책이 모드를 정하거나 bypass를
-끄는 경우, 또는 설정을 읽을 수 없는 경우에는 목록을 유지한다. 세션 도중 모드를 바꿔도 시작 때의 결정을
+local < `--settings`, `--setting-sources`가 읽는 범위)로 정한다. 다음 경우에는 목록을 유지한다: 관리 정책
+(`managed-settings.json`이 모드를 정하거나 bypass를 끔, `managed-settings.d` 드롭인, `HKLM`·`HKCU`의 `SOFTWARE\Policies\ClaudeCode`
+레지스트리 정책)이 있을 때, 읽는 설정 어디든 `disableBypassPermissionsMode`가 있을 때, 실행기가 끝까지 해석하지
+못하는 인자가 있을 때, 설정을 읽을 수 없을 때. 세션 도중 모드를 바꿔도 시작 때의 결정을
 따른다. 실행 상태 파일의 `requiredAsk`가 그 세션의 결정을 기록한다. `--dangerously-skip-permissions`는
 계속 전달하지 않는다.
 

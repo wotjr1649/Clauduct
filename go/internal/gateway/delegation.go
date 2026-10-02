@@ -831,6 +831,12 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	model, ok := bridge.ForAlias(saved.Alias)
 	if saved.Version == 3 {
 		model, ok = bridge.ModelByID(saved.Alias)
+	} else if !ok || model.ID != route.Model {
+		// The tier alias moved (v0.6.3: opus is GPT-6.1 Sol) or the model has none: accept
+		// only the model the journal names, and only when its own Agent tier is the alias.
+		if byID, known := bridge.ModelByID(route.Model); known && byID.Alias == "" && byID.AgentAlias != "" {
+			model, ok = byID, byID.AgentAlias == saved.Alias
+		}
 	}
 	if !ok || model.ID != route.Model {
 		return empty, false, errDelegationUnverified

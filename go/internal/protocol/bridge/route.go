@@ -118,6 +118,9 @@ var Models = func() []Model {
 	for i := range models {
 		models[i].Effort = builtinDefaults.ModelDefaults[models[i].ID].Effort
 		models[i].Context = DefaultContextPolicy()
+		if !slices.Contains(models[i].Efforts, models[i].Effort) {
+			panic("embedded defaults give no routable effort for " + models[i].ID)
+		}
 	}
 	return models
 }()
@@ -172,7 +175,7 @@ func parseCatalogue(document []byte) (c catalogueData, err error) {
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(document)))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&doc) != nil || doc.Version != 1 || len(doc.Models) == 0 {
+	if decoder.Decode(&doc) != nil || decoder.More() || doc.Version != 1 || len(doc.Models) == 0 {
 		return c, errCatalogue
 	}
 	seen := map[string]bool{}
@@ -200,6 +203,14 @@ func parseCatalogue(document []byte) (c catalogueData, err error) {
 			return c, fmt.Errorf("%w: model %q names agentAlias beside its alias", errCatalogue, m.ID)
 		}
 		c.Models = append(c.Models, Model{Key: m.Key, ID: m.ID, Efforts: m.Efforts, Alias: m.Alias, AgentAlias: agentAlias, Family: m.Family, CountValidated: m.CountValidated})
+	}
+	// Families are matched by prefix; overlapping prefixes would let one silently win.
+	for i, a := range c.Models {
+		for _, b := range c.Models[i+1:] {
+			if a.Family != "" && b.Family != "" && (strings.HasPrefix(a.Family, b.Family) || strings.HasPrefix(b.Family, a.Family)) {
+				return c, fmt.Errorf("%w: overlapping families %q and %q", errCatalogue, a.Family, b.Family)
+			}
+		}
 	}
 	// Every model must be delegable: its Agent tier is one of the catalogue's tier aliases.
 	for _, m := range c.Models {

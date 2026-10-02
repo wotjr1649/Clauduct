@@ -151,6 +151,9 @@ func (g *Gateway) classifierSelection(request *anthropic.Request, count bool) ([
 	}
 	route, err := g.selection.SelectRoute(requested, request.Effort)
 	if err != nil {
+		if g.classifierModel != "" {
+			return nil, errClassifierModel
+		}
 		// BuildRequest rejects the unchanged request with the generation/count
 		// route error it used before. Do not substitute a valid fallback route.
 		return nil, nil

@@ -567,6 +567,7 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
+| 세션 중 `/model`·`/effort` 기록(native 2.1.287) | native 2.1.287은 로컬 명령 caveat 문구와 `/model` 결과 문구("for this session only" 또는 "and saved as your default for new sessions", effort 생략 가능, 뒤따르는 안내)를 바꿨다. v0.6.3은 두 형식을 모두 엔진의 정확한 문구로만 읽어 UUID 재개 snapshot에 반영한다. effort가 없는 모델 변경은 기존 effort를 유지한다(실측). 이전 버전은 2.1.287에서 이 변경을 snapshot에 반영하지 못해 재개 시 이전 모델·effort로 시작했다 |
 | auto 권한 모드의 분류기 판정 | v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 

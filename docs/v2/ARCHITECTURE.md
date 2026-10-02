@@ -285,6 +285,24 @@ event 수와 읽은 byte 수를 기록한다. `DoneObserved`는 `[DONE]` 관측 
 파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
 있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
 socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.
+v0.6.2 준비본은 요청마다 backend 출력 항목의 종류별 개수(`outputItems`)와 전달한 답변 길이
+(`answerChars`)를 기록한다. 빈 응답이 backend가 아무것도 보내지 않은 것인지, reasoning만 보낸 것인지,
+빈 message였는지를 구분하기 위한 것이며 본문은 기록하지 않는다. 자식 선택을 거부한 요청은 거부한
+검증 분기를 고정된 이름(`selectionRefusal`, 예: `journal_invalid`·`child_meta_mismatch`·
+`workflow_evidence_wait_expired`)으로 남기고, 이름을 붙이지 않은 분기는 `unclassified`다.
+자식 결과 기록의 `timeline`은 결과 저장 후 부모 전달 대기·부모 수신·native 종료를 처음 관측한 시점을
+시작 후 ms로 남겨, 늦은 완료가 어느 단계에서 늦었는지 한 기록에서 보인다.
+
+backend가 요청을 다 받은 뒤 응답 헤더를 보내지 않아 헤더 대기 시간(120초)이 지나면 HTTP/1.1과 HTTP/2
+모두 `REQUEST_TIMEOUT`으로 턴을 끝낸다. 이전에는 HTTP/2에서 같은 상황이 재시도 가능한
+`CONNECTION_TIMEOUT`으로 분류되어 native가 전체 요청을 다시 보냈다. 요청을 다 쓰기 전의 연결·TLS
+단계 timeout은 그대로 `CONNECTION_TIMEOUT`이다.
+
+Workflow 자식의 선택 근거(`journal.jsonl`, 자식 `meta.json`, transcript 첫 줄)와 일반 Agent의
+`meta.json`은 native가 쓰는 중일 수 있다. 줄바꿈으로 끝나지 않은 journal 줄, 비었거나 중간에서 끊긴
+JSON은 아직 게시되지 않은 것으로 보고 기존의 첫 선택 대기(최대 1초) 안에서 다시 읽는다. 끝까지 쓰인
+뒤에도 형식이 틀리거나 값이 맞지 않으면 기존대로 거부한다. 복구·재개 경로는 이 완화 없이 끝까지 쓰인
+기록만 받는다.
 
 검증된 native 회차의 대기 자식, 방금 반환된 Workflow 실행, 전달된 자식 handback에만 빈 응답
 제어를 허용한다. TUI는 무출력 대기를 유지한다. SDK는 빈 메시지를 재요청하거나 알림 뒤
@@ -393,6 +411,9 @@ v0.6.2 준비본은 실행 기록이 없는 식별자의 최신 turn·게시 순
 native 이벤트 디렉터리에 저장하고 메모리에서 회수한다. 요청 본문·본문 지문은 저장하지 않는다.
 식별자마다 상태 파일 하나와 게시 표식 하나를 유지하며, 같은 식별자의 다음 turn은 그 상태를 갱신한다.
 종료된 Agent의 누적 개수에는 새 상한을 두지 않는다. 남아 있는 실행 기록의 기존16,384개 상한은 유지한다.
+서로 다른 식별자의 임시 파일 수와 디스크 사용량은 누적 Agent 수에 비례한다. 이 기록은 지연 재전송을
+거부하는 근거이며 launcher 종료 시 회수한다. 디스크 부족 등 저장 실패 시에는 기록을 버리지 않고
+아래의 실패 상태로 새 실행을 거부한다. 메모리 회수는 디스크 사용량이 일정하다는 보장이 아니다.
 전송 전 예약 반환도 최신 turn을 보존하므로 이전 turn의 지연 요청을 다시 허용하지 않는다.
 저장·읽기 오류, 불완전한 기록 또는 게시 표식과 상태 파일의 불일치가 생기면
 `NATIVE_REPLAY_STATE_UNVERIFIED`로 새 실행을 거부하며 launcher 재시작이 필요하다.

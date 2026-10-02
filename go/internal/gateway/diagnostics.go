@@ -75,6 +75,7 @@ type RequestRecord struct {
 	Stage              string `json:"stage"`
 	Outcome            string `json:"outcome"`
 	Category           string `json:"category,omitempty"`
+	SelectionRefusal   string `json:"selectionRefusal,omitempty"` // fixed label of the refusing branch
 	CancellationSource string `json:"cancellationSource,omitempty"`
 	ToolPolicy         string `json:"toolPolicy,omitempty"`
 	Control            string `json:"control,omitempty"`
@@ -87,8 +88,13 @@ type RequestRecord struct {
 	Effort    string `json:"effort,omitempty"`
 	// ReturnedModel and ReturnedEffort are what the backend says it ran, shaped before they
 	// are kept since the backend chooses them (#91).
-	ReturnedModel         string           `json:"returnedModel,omitempty"`
-	ReturnedEffort        string           `json:"returnedEffort,omitempty"`
+	ReturnedModel  string `json:"returnedModel,omitempty"`
+	ReturnedEffort string `json:"returnedEffort,omitempty"`
+	// OutputItems counts the backend's output items by type label, and AnswerChars
+	// the answer text delivered. An empty reply then says whether the backend sent
+	// nothing, only reasoning, or an empty message (#212, #220). No content is kept.
+	OutputItems           map[string]int   `json:"outputItems,omitempty"`
+	AnswerChars           int              `json:"answerChars,omitempty"`
 	Source                string           `json:"source,omitempty"`
 	Kind                  string           `json:"kind"`
 	RequestClass          string           `json:"nativeRequestClass,omitempty"`
@@ -201,16 +207,17 @@ func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, byte
 // record is the live half of a RequestRecord, mutated as the request proceeds.
 type record struct {
 	// Handler-owned identity, pinned before selection and never serialized.
-	nativeTurn       *nativeTurnReceipt
-	turnPinned       bool // pinNativeTurn has read the receipt
-	turnValid        bool
-	execution        *nativeExecution
-	nativeResult     *agentResult
-	nativeResultTurn string
-	mu               sync.Mutex
-	epoch            time.Time
-	data             RequestRecord
-	owner            *ring
+	nativeTurn         *nativeTurnReceipt
+	nativeConfirmation *nativeConfirmation
+	turnPinned         bool // pinNativeTurn has read the receipt
+	turnValid          bool
+	execution          *nativeExecution
+	nativeResult       *agentResult
+	nativeResultTurn   string
+	mu                 sync.Mutex
+	epoch              time.Time
+	data               RequestRecord
+	owner              *ring
 }
 
 func (r *record) rejectedWorkflow() {
@@ -220,6 +227,21 @@ func (r *record) rejectedWorkflow() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data.RejectedWorkflowCalls++
+}
+
+// selectionRefused keeps which verification branch refused a child's selection.
+func (r *record) selectionRefused(err error) {
+	if r == nil || !errors.Is(err, errDelegationUnverified) {
+		return
+	}
+	reason := "unclassified"
+	var refusal selectionRefusal
+	if errors.As(err, &refusal) {
+		reason = string(refusal)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.SelectionRefusal = reason
 }
 
 func (r *record) requestClass(class string) {
@@ -281,6 +303,15 @@ func (r *record) continuation(parent string) {
 
 // returnedShape is what a returned model or effort may be written down as.
 var returnedShape = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
+
+func (r *record) output(items map[string]int, answerChars int) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.OutputItems, r.data.AnswerChars = maps.Clone(items), answerChars
+}
 
 func (r *record) returned(model, effort string) {
 	if r == nil {
@@ -501,6 +532,7 @@ func (r *record) finish() {
 	// The record stays in the recent-request ring after its handler returned; the
 	// handler's own pointers must not keep a delivered result or its report alive.
 	r.nativeTurn, r.execution, r.nativeResult = nil, nil, nil
+	r.nativeConfirmation = nil
 	if r.data.EndedMs != nil {
 		return
 	}

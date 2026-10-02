@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"time"
 )
 
 type nativeCancellation struct {
@@ -10,7 +12,16 @@ type nativeCancellation struct {
 	cancel   context.CancelFunc
 	record   *record
 	reading  bool
+	// unreadSince is when its receipt was first seen but not readable; guarded by mu.
+	unreadSince time.Time
 }
+
+// errCancellationPending: a terminal receipt exists but cannot be read whole
+// yet. Native writes it in place, so a reader can meet partial bytes or a
+// read refused mid-write. That is not a verdict until it outlasts this grace.
+var errCancellationPending = errors.New("NATIVE_CANCELLATION_PENDING")
+
+const cancellationReadGrace = 2 * time.Second
 
 // A filter can retain the client socket after native aborts or loses its response.
 // Bind the terminal failure receipt to this exact request's turn. Unlike current
@@ -59,12 +70,22 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 	}
 	n.cancellations[binding] = struct{}{}
 	n.mu.Unlock()
+	stopLease := func() bool { return false }
+	if !reading && entry.nativeConfirmation != nil {
+		lease := entry.nativeConfirmation.lease
+		closeLease := func() { n.mu.Lock(); n.cancelLocked(binding, "native_confirmation_closed"); n.mu.Unlock() }
+		stopLease = context.AfterFunc(lease, closeLease)
+		if lease.Err() != nil {
+			closeLease()
+		}
+	}
 	// New-request reconciliation already ran before reading. Let a complete
 	// input reach the replay ledger; checkpoints still cancel a blocked read.
 	if !reading {
 		g.ReconcileNativeCancellations()
 	}
 	return ctx, func() {
+		stopLease()
 		n.mu.Lock()
 		delete(n.cancellations, binding)
 		n.mu.Unlock()
@@ -104,8 +125,14 @@ func (n *nativeEventState) cancelLocked(p *nativeCancellation, source string) {
 func (g *Gateway) nativeCancellationSource(id nativeTurnReceipt) (string, error) {
 	var receipt nativeTurnReceipt
 	found, err := g.readNativeJSON("cancel-"+id.Turn+".json", []string{"session", "agent", "turn", "reason"}, &receipt)
-	if !found || err != nil || receipt.Session != id.Session || receipt.Agent != id.Agent || receipt.Turn != id.Turn {
+	if err != nil && !errors.Is(err, errDelegationUnverified) {
+		return "", errCancellationPending
+	}
+	if !found || err != nil {
 		return "", err
+	}
+	if receipt.Session != id.Session || receipt.Agent != id.Agent || receipt.Turn != id.Turn {
+		return "", errNativeConfirmations
 	}
 	switch receipt.Reason {
 	case "aborted":
@@ -115,7 +142,7 @@ func (g *Gateway) nativeCancellationSource(id nativeTurnReceipt) (string, error)
 	case "refusal":
 		return "native_refusal_receipt", nil
 	}
-	return "", nil
+	return "", errNativeConfirmations
 }
 
 // ReconcileNativeCancellations is called by the bounded session checkpoint and on new requests, not by
@@ -130,7 +157,23 @@ func (g *Gateway) ReconcileNativeCancellations() {
 	n.mu.Unlock()
 	for _, p := range pending {
 		source, err := g.nativeCancellationSource(p.identity)
-		if err != nil || source == "" {
+		if errors.Is(err, errCancellationPending) {
+			n.mu.Lock()
+			if p.unreadSince.IsZero() {
+				p.unreadSince = time.Now()
+			}
+			waited := time.Since(p.unreadSince)
+			n.mu.Unlock()
+			if waited < cancellationReadGrace {
+				continue
+			}
+			err = errNativeConfirmations
+		}
+		if err != nil {
+			n.confirmationFailed.Store(true)
+			source = "native_cancellation_unverified"
+		}
+		if source == "" {
 			continue
 		}
 		n.mu.Lock()

@@ -85,10 +85,11 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	override, releaseAgent, err := g.agentSelection(r, request, entry)
 	defer releaseAgent()
 	if err != nil {
+		entry.selectionRefused(err)
 		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
 	}
-	if r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" {
+	if r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" || entry.nativeConfirmation != nil {
 		var finishCancellation func()
 		ctx, finishCancellation = g.bindNativeCancellation(ctx, r, entry, false)
 		defer finishCancellation()

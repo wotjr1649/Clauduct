@@ -440,7 +440,7 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 				flush()
 				out.Input = append(out.Input, InputEntry{
 					Type:      "function_call",
-					CallID:    block.ID,
+					CallID:    BackendCallID(block.ID),
 					Name:      block.Name,
 					Arguments: string(block.Input),
 				})
@@ -448,7 +448,7 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 				flush()
 				out.Input = append(out.Input, InputEntry{
 					Type:   "function_call_output",
-					CallID: block.ToolUseID,
+					CallID: BackendCallID(block.ToolUseID),
 					Output: resultParts(block),
 				})
 			default:
@@ -458,6 +458,30 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 		flush()
 	}
 	return out, nil
+}
+
+// A native tool_use id carries the native step it was issued to, so a call that
+// native runs later cannot use another step's scope (#214). The backend never
+// sees the mark: its call_id goes back exactly as it came.
+var nativeToolMark = regexp.MustCompile(`^(.+)__cdt[0-9a-f]{12}$`)
+var stepTagShape = regexp.MustCompile(`^[0-9a-f]{12}$`)
+
+// NativeToolID marks a backend call_id with a step tag. A call_id that already
+// looks marked is refused: removing the mark later could not restore it.
+func NativeToolID(callID, tag string) (string, error) {
+	if nativeToolMark.MatchString(callID) || !stepTagShape.MatchString(tag) {
+		return "", anthropic.ErrUnsupportedToolCall
+	}
+	return callID + "__cdt" + tag, nil
+}
+
+// BackendCallID removes NativeToolID's mark. Unmarked ids, including those of
+// conversations from earlier builds, pass unchanged.
+func BackendCallID(id string) string {
+	if match := nativeToolMark.FindStringSubmatch(id); match != nil {
+		return match[1]
+	}
+	return id
 }
 
 // resultParts flattens a tool result for the backend.
@@ -522,6 +546,8 @@ func systemText(raw json.RawMessage) (string, bool) {
 // It holds the whole mapping in one place so that adding an event type is a decision made
 // here rather than a default that happens somewhere else.
 type Translator struct {
+	// ToolUseID names a backend call for native, before any preparation sees it.
+	ToolUseID       func(callID string) (string, error)
 	PrepareToolCall func(id, name string, raw json.RawMessage) (json.RawMessage, error)
 	// Supplied only for a verified native wait step, before preparing any new call.
 	PendingToolCall func(name string, raw json.RawMessage) bool
@@ -951,15 +977,21 @@ func (t *Translator) release() error {
 			if t.builder.StoppedBySequence() {
 				continue // Excluded calls must not reserve a native launch either.
 			}
-			arguments := held.item.Arguments
+			arguments, id := held.item.Arguments, held.item.CallID
+			if t.ToolUseID != nil {
+				var err error
+				if id, err = t.ToolUseID(id); err != nil {
+					return err
+				}
+			}
 			if t.pendingCalls == 0 && t.PrepareToolCall != nil {
 				var err error
-				arguments, err = t.PrepareToolCall(held.item.CallID, held.item.Name, arguments)
+				arguments, err = t.PrepareToolCall(id, held.item.Name, arguments)
 				if err != nil {
 					return err
 				}
 			}
-			if err := t.builder.AddToolCall(held.item.CallID, held.item.Name, arguments); err != nil {
+			if err := t.builder.AddToolCall(id, held.item.Name, arguments); err != nil {
 				return err
 			}
 		case codex.ItemMessage:

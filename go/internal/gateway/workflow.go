@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -87,6 +89,28 @@ func workflowRead(root *os.Root, path string, limit int64) ([]byte, error) {
 		return nil, errDelegationUnverified
 	}
 	return raw, nil
+}
+
+// publishedJournal is the part of a live journal native has finished writing.
+// Native ends every entry with a newline (measured on every kept journal); a
+// line without one is still being written, e.g. one child's result while the
+// next child starts (#215). It is not yet evidence either way.
+func publishedJournal(root *os.Root, path string, limit int64) ([]byte, error) {
+	raw, err := workflowRead(root, path, limit)
+	if err != nil {
+		return nil, err
+	}
+	return raw[:bytes.LastIndexByte(raw, '\n')+1], nil
+}
+
+// partialJSON reports a document native has not finished writing: empty, or a
+// valid prefix that ends early. A complete but invalid document is not partial.
+func partialJSON(raw []byte) bool {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return true
+	}
+	var v any
+	return errors.Is(json.NewDecoder(bytes.NewReader(raw)).Decode(&v), io.ErrUnexpectedEOF)
 }
 
 func (g *Gateway) handleWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +226,7 @@ func (d *delegations) workflowRoute(ctx context.Context, scope delegationScope, 
 		}
 		select {
 		case <-ctx.Done():
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("workflow_evidence_wait_expired")
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -235,12 +259,12 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		if run.Session != scope.session || run.Transcript != binding.TranscriptPath {
 			continue
 		}
-		raw, err := workflowRead(root, filepath.Join(run.directory, "journal.jsonl"), bytesLeft)
+		raw, err := publishedJournal(root, filepath.Join(run.directory, "journal.jsonl"), bytesLeft)
 		if os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("journal_unreadable")
 		}
 		bytesLeft -= int64(len(raw))
 		scanner := bufio.NewScanner(strings.NewReader(string(raw)))
@@ -258,36 +282,36 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 			}
 			rows++
 			if rows > 65536 {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("journal_limit")
 			}
 			var entry struct{ Type, AgentID, Key, Label string }
 			if json.Unmarshal(scanner.Bytes(), &entry) != nil {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("journal_invalid")
 			}
 			if rows == 1 && entry.Type != "launched" {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("journal_invalid")
 			}
 			if entry.AgentID != id {
 				continue
 			}
 			if found || entry.Type != "started" || !strings.HasPrefix(entry.Key, "v2:") || len(entry.Key) != 67 {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("journal_child_entry")
 			}
 			found, label = true, entry.Label
 			observation = workflowObservation{Key: entry.Key, Label: entry.Label}
 		}
 		if scanner.Err() != nil {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("journal_invalid")
 		}
 		if !found {
 			continue
 		}
 		if matched != nil {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("workflow_ambiguous")
 		}
 		text, err := workflowRead(root, run.script, 512<<10)
 		if err != nil {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("script_unreadable")
 		}
 		digest := sha256.Sum256(text)
 		if hex.EncodeToString(digest[:]) != run.origin.digest {
@@ -298,14 +322,14 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 					return bridge.Route{}, false, nil
 				}
 			}
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("script_changed")
 		}
 		metaRaw, err := workflowRead(root, filepath.Join(run.directory, "agent-"+id+".meta.json"), 16384)
-		if os.IsNotExist(err) {
+		if os.IsNotExist(err) || err == nil && partialJSON(metaRaw) {
 			continue
 		}
 		if err != nil {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("child_meta_unreadable")
 		}
 		var meta struct {
 			AgentType, Description, ToolUseID, ParentAgentID, Model string
@@ -313,7 +337,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 			StoppedByUser                                           bool
 		}
 		if json.Unmarshal(metaRaw, &meta) != nil || meta.AgentType != binding.Role || meta.Description != label || meta.ToolUseID != "" || meta.ParentAgentID != "" || meta.SpawnDepth != 1 || meta.StoppedByUser {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("child_meta_mismatch")
 		}
 		if run.origin.adapterBytes != 0 {
 			var err error
@@ -323,14 +347,14 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 			// the actual model/effort, and the definition resolver proves its source.
 			roleDefault := err == nil && receipt.CustomRole && !receipt.ModelProvided && meta.Model == ""
 			if err != nil || meta.Model != selected.Model && !roleDefault || receipt.Role != meta.AgentType {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("child_selection_mismatch")
 			}
 		} else if bridge.CanonicalRole(meta.AgentType) != "workflow-subagent" {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("child_meta_mismatch")
 		} else if meta.Model != "" {
 			selected, err := d.selection.SelectRoute(meta.Model, "")
 			if err != nil || selected.Model != run.origin.scope.route.Model {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, refusedBecause("child_selection_mismatch")
 			}
 		}
 		transcript, err := workflowRead(root, filepath.Join(run.directory, "agent-"+id+".jsonl"), 1<<20)
@@ -340,13 +364,16 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		if err != nil {
 			return bridge.Route{}, false, errDelegationUnverified
 		}
-		line, _, _ := strings.Cut(string(transcript), "\n")
+		line, _, ended := strings.Cut(string(transcript), "\n")
+		if !ended && partialJSON([]byte(line)) {
+			continue
+		}
 		var first struct {
 			Type, AgentID, SessionID string
 			Timestamp                time.Time
 		}
 		if json.Unmarshal([]byte(line), &first) != nil || first.Type != "user" || first.AgentID != id || first.SessionID != scope.session || first.Timestamp.Before(run.origin.created) || first.Timestamp.After(time.Now()) {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("child_transcript_mismatch")
 		}
 		matched = &run
 	}
@@ -371,7 +398,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		}
 		step := run.origin.plan.Steps[index]
 		if !strings.HasPrefix(observation.Label, "clauduct-step:"+step.ID+" [clauduct:") || route.Model != step.Model || route.Effort != step.Effort {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, refusedBecause("plan_step_mismatch")
 		}
 	}
 	key := delegationKey{matched.Session, matched.Run}

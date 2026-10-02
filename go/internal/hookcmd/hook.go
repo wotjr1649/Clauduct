@@ -55,6 +55,12 @@ func Dispatch(argv []string) (int, bool) {
 	}
 	args := argv[1:]
 	alone := func(arg string) bool { return len(args) == 1 && args[0] == arg }
+	if alone(ConfirmationArg) {
+		return confirmation(os.Stdin, os.Stdout, platform.Environment(os.Environ())), true
+	}
+	if len(args) > 0 && args[0] == ConfirmationArg {
+		return 2, true
+	}
 	if len(args) == 2 && (args[0] == Arg || args[0] == "--clauduct-background-key") {
 		connection, err := sessionlink.Read(args[1])
 		if err != nil {

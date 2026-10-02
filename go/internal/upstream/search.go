@@ -163,12 +163,9 @@ func (d *Direct) searchOnce(ctx context.Context, target string, body []byte,
 	request.Header.Set("x-codex-turn-metadata", searchTurnMetadata(time.Now()))
 
 	d.searchCounts.attempts.Add(1)
-	response, err := d.client().Do(request)
+	response, err := send(d.client(), request)
 	if err != nil {
-		if errors.Is(err, ErrRedirected) {
-			return nil, ErrRedirected
-		}
-		return nil, ClassifyTransport(err)
+		return nil, err
 	}
 	defer response.Body.Close()
 

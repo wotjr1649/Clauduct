@@ -9,6 +9,11 @@ native가 대기하거나 거부할 수 있으며, 관리 정책 때문에 필�
 Agent ID가 없는 직접 입력 fork는 출처를 증명할 수 없어 지원하지 않는다. 활성 자식이 하나여도
 이전 자식의 지연 요청과 구별할 수 없으므로 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 backend
 전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 식별된 병렬 실행은 유지한다.
+모델 도구 호출은 받은 native step의 표지를 `tool_use_id`에 달고 실행 시점에 그 step과 대조한다. 이전 turn·step의
+늦은 호출은 실행 전에 거부한다. plugin hook 모듈의 직접 도구 호출은 native 확인 규칙대로 실행하되 turn 상태와
+위임은 사용하지 못한다([설정 문서](SETTINGS.md#실행외부-통신의-native-확인-v062-준비)).
+세션 중에 claude.exe가 교체되면(native 자동 업데이트 등) 종료 줄에 `native_replaced=1`을 표시한다.
+실행 중인 native는 기존 이미지로 계속 돌고, 다음 세션부터 새 버전이 실행된다.
 
 v0.5.5부터 설치·제거 및 Windows 개발·검증의 PowerShell 호스트는 7(`pwsh`)이다.
 Windows PowerShell 5.1 지원은 종료한다. 실제 검증 버전과 설치 방법은

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -151,6 +152,9 @@ func routeCategory(err error) string {
 // selectionCategory names a refused agent selection. A child started on a retired route is
 // told so, rather than only that its selection could not be verified.
 func selectionCategory(err error) string {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return categoryFor(err)
+	}
 	if errors.Is(err, errNativeOriginUnverified) {
 		return errNativeOriginUnverified.Error()
 	}

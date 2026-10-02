@@ -50,7 +50,8 @@ func nativeEventSource(receipts string) string {
 	}
 	ids, _ := json.Marshal(models)
 	efforts, _ := json.Marshal(bridge.Efforts)
-	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_REQUIRED_PERMISSIONS__", nativePermissions, "__CLAUDUCT_MODELS__", string(ids),
+	helper, _ := json.Marshal(filepath.ToSlash(findHook()))
+	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_REQUIRED_PERMISSIONS__", nativePermissions, "__CLAUDUCT_MODELS__", string(ids),
 		"__CLAUDUCT_EFFORTS__", string(efforts)).Replace(nativeEventModule)
 }
 

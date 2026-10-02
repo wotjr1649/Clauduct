@@ -119,6 +119,8 @@ type Status struct {
 	Session    SessionFacts        `json:"session"`
 	Gateway    gateway.Diagnostics `json:"gateway"`
 	Lifecycle  *LifecycleFacts     `json:"lifecycle,omitempty"`
+	// NativeReplaced: claude.exe changed on disk during this session (#229).
+	NativeReplaced bool `json:"nativeReplaced,omitempty"`
 	// CleanupFailed is whether releasing what the session owned failed. Only the fact: the
 	// error text can name paths, and it is on stderr already (#91).
 	CleanupFailed bool `json:"cleanupFailed"`
@@ -191,9 +193,10 @@ func Account(result Result) Status {
 			DelegationMenuEntries:    len(bridge.Models) + 1,
 			HookInstalled:            result.HookInstalled,
 		},
-		Gateway:       result.Diagnostics,
-		Lifecycle:     result.Lifecycle,
-		CleanupFailed: result.CleanupErr != nil,
+		Gateway:        result.Diagnostics,
+		Lifecycle:      result.Lifecycle,
+		NativeReplaced: result.NativeReplaced,
+		CleanupFailed:  result.CleanupErr != nil,
 	}
 }
 
@@ -243,7 +246,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused,
-		brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account), where)
+		brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account)+replacedField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
 	}
@@ -374,6 +377,15 @@ func unmeasuredField(account Status) string {
 		return ""
 	}
 	return " unmeasured=" + strings.Join(names, ",")
+}
+
+// replacedField says claude.exe was replaced while this session ran. The running
+// process kept its old image; the next session starts the new one.
+func replacedField(account Status) string {
+	if account.NativeReplaced {
+		return " native_replaced=1"
+	}
+	return ""
 }
 
 func quotaField(account Status) string {

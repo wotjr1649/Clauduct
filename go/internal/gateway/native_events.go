@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
@@ -18,12 +19,13 @@ import (
 type nativeEventState struct {
 	confirmationsRequired bool // immutable launcher requirement
 	confirmationGate      chan struct{}
-	confirmationFailed    bool // guarded by confirmationGate; no writable marker required
+	confirmationFailed    atomic.Bool // latched confirmation or cancellation verification failure
 	mu                    sync.Mutex
 	directory             string
 	verified              bool
 	invalid               int64
 	cancellations         map[*nativeCancellation]struct{}
+	confirmations         map[string]*pendingConfirmation
 }
 
 var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")
@@ -442,6 +444,7 @@ func (g *Gateway) reconcileNativeResults() {
 		if applied && !current.NativeEndObserved {
 			current.EndReason = receipt.Reason
 			current.NativeEndObserved = true
+			current.mark(&current.Timeline.NativeEndMs)
 			if !resultReported(current.State) && receipt.Reason != "answer" {
 				current.stopped = true
 				r.bytes -= len(current.body)

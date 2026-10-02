@@ -131,6 +131,9 @@ type Result struct {
 	// Diagnostics is the final account after in-flight requests have drained.
 	Diagnostics gateway.Diagnostics
 	Lifecycle   *LifecycleFacts
+	// NativeReplaced is whether claude.exe changed on disk while this session ran:
+	// an updater ran meanwhile, from this native or another process (#229).
+	NativeReplaced bool
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -206,6 +209,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if !found {
 		return Result{}, ErrClaudeNotFound
 	}
+	nativeBefore, _ := os.Stat(exe)
+	defer func() { result.NativeReplaced = nativeReplaced(exe, nativeBefore) }()
 	var profiles *gateway.SessionProfiles
 	var resumed *gateway.SessionProfile
 	_, forkSession := optionValue(o.Args, "--fork-session")
@@ -641,4 +646,15 @@ func (o Options) withDefaults() Options {
 		o.DeadlineGrace = 3 * time.Minute
 	}
 	return o
+}
+
+// nativeReplaced compares claude.exe with what was resolved at launch. Size and
+// modification time, not a hash: this runs on every session and an updater
+// rewrites both. A file gone or unreadable afterwards also counts as replaced.
+func nativeReplaced(exe string, before os.FileInfo) bool {
+	if before == nil {
+		return false
+	}
+	after, err := os.Stat(exe)
+	return err != nil || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime())
 }

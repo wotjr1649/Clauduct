@@ -164,6 +164,14 @@ background 작업은 native 모드에 따라 대기하거나 거부될 수 있�
 지원하지 않는다. 도구 유무와 관계없이 생성·계수 요청을 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로
 backend 전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 식별된 병렬 실행은 유지한다.
 출처나 현재 scope가 맞지 않아 거부한 요청은 이후 정상 요청을 막는 저장 실패 상태로 취급하지 않는다.
+모델이 낸 도구 호출의 `tool_use_id`에는 gateway가 그 호출을 받은 native step의 표지를 붙인다
+(`<backend call_id>__cdt<12자리 16진수>`). backend에는 원래 `call_id`를 그대로 돌려보낸다. native가
+도구를 실행할 때 표지가 현재 session·Agent·turn·step과 맞지 않으면, 이전 turn이나 step의 늦은 호출로 보고
+`NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 실행 전에 거부한다. 표지가 없는 호출은 plugin hook 모듈이 모델 호출 없이
+`$.tool.call`로 직접 실행한 도구다(native 2.1.287 측정: `toolu_plugin_…` ID). 이런 호출은 위 native 확인
+규칙을 그대로 거쳐 실행되지만, 현재 turn의 진행 상태·보조 요청 확인·위임 판정을 사용하지 못한다. 직접 실행한
+`Agent`·`SendMessage`·`Workflow`·`Skill`은 `NATIVE_DIRECT_DELEGATION_UNSUPPORTED`로 거부한다. 표지가 없는
+이전 대화의 도구 기록은 resume 후에도 그대로 backend로 전달된다.
 도구 요청마다 새로운 일회성 확인값에 대해 현재 native step이 응답해야 한다. 세션 시작이나
 과거의 응답만으로 새 요청을 허용하지 않는다. native `WebSearch`의 별도 검색 요청은 해당
 도구가 실행 중인 동안 확인하며 일반 추론 요청과 구분한다.
@@ -172,7 +180,11 @@ backend 전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 �
 제공하지 않는다. 이 확인은 보조 요청의 출처 확인이며, 실제 도구 실행 승인은 위 native 규칙을
 계속 따른다. 일반 추론·검색·다른 Agent·turn·step은 그 보조 요청의 확인을 빌리지 못한다.
 취소·오류·거부로 종료된 turn의 확인은 사용할 수 없으며, 사용자 재입력으로 시작한 새 turn은
-별도 요청으로 처리한다. 내부 정책 확인 통신은 왕복당2초이며,
+별도 요청으로 처리한다. 확인 응답은 현재 Clauduct 바이너리의 내장 helper가 고정 인자로 실행되어
+전달한다. 일회성 확인값과 scope는 stdin으로 전달하고, 인증된 loopback 연결은 원래 요청이 끝나거나
+native가 helper stream을 반환할 때까지 유지한다. 연결 종료만으로 이전 확인값을 새 요청에 사용할
+수 없으며, 확인된 연결의 종료는 현재 요청을 거부하거나 취소하고 이후 사용자 재입력을 막지 않는다.
+임의 명령·외부 runtime·전역 설정 변경은 사용하지 않는다. 내부 정책 확인 통신은 왕복당2초이며,
 대기열 전체에는 최대64건×2초 상한을 적용한다. 더 짧은 요청 deadline·사용자 취소·launcher 종료는
 대기 중에도 적용한다. 대기 중인 요청의 취소·시간 초과만으로 이후 정상 요청을 막지는 않는다.
 승인 화면은 native의 기존 규칙을 따른다. 확인 저장소 I/O 오류나 실제 확인 왕복 시간 초과가 발생하면 gateway는
@@ -180,6 +192,12 @@ backend 전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 �
 해제하지 않으며 launcher를 다시 실행해야 한다. native 모듈도 확인 오류 후 대기 중인 도구를
 거부하고, 검증되지 않은 step이 기본 실행으로 이어지지 않도록 명시적 refusal을 반환한다.
 사용자에게는 `NATIVE_CONFIRMATION_UNVERIFIED`를 표시한다.
+native가 제자리에서 쓰는 취소 영수증을 쓰는 중에 읽었다면(일부만 쓰였거나 읽기가 막힌 경우) 판정을 미루고
+다음 확인에서 다시 읽는다. 2초가 넘도록 읽을 수 없을 때만 위 실패 상태로 처리한다. 같은 step에서 같은 종류의
+도구가 동시에 실행되면(예: 검색 두 개) 요청으로는 둘을 구별할 수 없으므로 확인 연결을 함께 쓰고, 마지막
+도구가 끝날 때 닫는다. gateway가 이미 기다리지 않는 확인값에 늦게 연결한 helper는 410을 받고 종료 코드 3으로
+끝나며, 이는 실패 상태가 아니다. helper 연결은 종료 줄의 요청 수와 최근 요청 기록에 넣지 않는다.
+동시에 유지하는 확인 연결은 64개까지이며, 넘으면 위 실패 상태가 된다.
 관리 정책을 덮어쓰거나 무시하지 않는다. 관리자가 동등한 확인·거부 규칙을 제공하지 않는 환경에서는
 이 경로를 실행할 수 없다. [관리 규칙의 적용 범위](https://code.claude.com/docs/en/settings-reference#allowmanagedpermissionrulesonly).
 

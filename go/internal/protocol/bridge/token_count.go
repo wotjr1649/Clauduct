@@ -20,14 +20,8 @@ func CountInput(request *Request) (int64, error) {
 	if request == nil {
 		return 0, ErrTokenCountUnsupported
 	}
-	known := false
-	for _, model := range Models {
-		if request.Model == model.ID && model.CountValidated {
-			known = true
-			break
-		}
-	}
-	if !known || len(request.Tools) != 0 || request.Text != nil || len(request.Input) == 0 || len(request.Input) > 256 {
+	model, known := legacyByID(request.Model)
+	if !known || !model.CountValidated || len(request.Tools) != 0 || request.Text != nil || len(request.Input) == 0 || len(request.Input) > 256 {
 		return 0, ErrTokenCountUnsupported
 	}
 	// The request itself contributes 1 token. A plain developer string adds 4 framing
@@ -99,13 +93,8 @@ func BackendCountSupported(request *Request) bool {
 	if request == nil {
 		return false
 	}
-	known := false
-	for _, model := range Models {
-		known = known || request.Model == model.ID && model.CountValidated
-	}
-	if !known {
-		return false
-	}
+	// The backend counts any model the account routes; only the local formula is limited
+	// to the measured models.
 	for _, tool := range request.Tools {
 		if tool.Type != "function" {
 			return false

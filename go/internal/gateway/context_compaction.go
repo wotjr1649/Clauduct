@@ -3,7 +3,6 @@ package gateway
 import (
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
@@ -31,11 +30,19 @@ func (g *Gateway) compactReceipt(session, agent string, request *anthropic.Reque
 	return ticket, receipt, valid
 }
 
-func compactRoute(route bridge.Route, automatic bool, cap string) bridge.Route {
-	if automatic && slices.Index(bridge.Efforts, route.Effort) > slices.Index(bridge.Efforts, cap) {
-		route.Effort, route.Source = cap, route.Source+"+auto-compact"
+// compactionRoute is the current selection of the session or Agent being compacted,
+// automatic and manual alike: the Agent's own route, or the model and effort native states
+// on the request itself. The route of an earlier request is not reused, a one-shot turn
+// effort does not apply, and no cap lowers the effort.
+func (g *Gateway) compactionRoute(request *anthropic.Request, override []bridge.Route) (bridge.Route, error) {
+	if len(override) > 0 {
+		return g.selection.ResolveRoute(request, override[0])
 	}
-	return route // A copy: the session's route and subsequent generation stay intact.
+	route, err := g.selection.SelectRoute(request.Model, request.Effort)
+	if err != nil {
+		return bridge.Route{}, err
+	}
+	return g.selection.ResolveRoute(request, route)
 }
 
 func stripCompactReceipts(request *anthropic.Request) {
@@ -71,7 +78,7 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 	if g.delegations != nil && c.sessions[session] == "" {
 		return nil, false, "CONTEXT_SESSION_UNVERIFIED"
 	}
-	_, receipt, valid := g.compactReceipt(session, agent, request)
+	_, _, valid := g.compactReceipt(session, agent, request)
 	if !nativeCompact && !valid {
 		return nil, false, "CONTEXT_COMPACTION_UNVERIFIED"
 	}
@@ -84,13 +91,10 @@ func (g *Gateway) previewCompaction(r *http.Request, request *anthropic.Request,
 			return nil, false, "CONTEXT_JOURNAL_UNVERIFIED"
 		}
 	}
-	if s.route.Model != "" {
-		override = []bridge.Route{s.route}
-	}
-	route, err := g.selection.ResolveRoute(request, override...)
+	route, err := g.compactionRoute(request, override)
 	if err != nil {
 		return nil, false, routeCategory(err)
 	}
 	stripCompactReceipts(request)
-	return []bridge.Route{compactRoute(route, valid && receipt.trigger == "auto", c.policy.EffortCap)}, true, ""
+	return []bridge.Route{route}, true, ""
 }

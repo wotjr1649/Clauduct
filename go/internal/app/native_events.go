@@ -20,13 +20,8 @@ var nativeEventModule string
 // link is the background session link id, or empty in the foreground. A background
 // worker's environment carries no gateway token; its helper reads the link instead,
 // as its hooks do.
-func prepareNativeEvents(link string) (directory string, err error) {
-	return prepareNativeEventsFor(link, true)
-}
-
-// prepareNativeEventsFor writes the module; without requireAsk its required ask list is
-// empty, matching settings that carry none (bypassLaunch).
-func prepareNativeEventsFor(link string, requireAsk bool) (directory string, err error) {
+// catalogue is the session's account list, the same snapshot the gateway routes with.
+func prepareNativeEvents(link string, catalogue *bridge.Catalogue) (directory string, err error) {
 	directory, err = os.MkdirTemp("", "clauduct-native-events-")
 	if err != nil {
 		return "", err
@@ -39,7 +34,7 @@ func prepareNativeEventsFor(link string, requireAsk bool) (directory string, err
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name":"clauduct-native-events","version":"1.0.0","description":"Per-session native child identity and terminal receipts for Clauduct status","author":{"name":"Clauduct"}}`,
 		"hooks/hooks.json":           `{"modules":["./events.mjs"]}`,
-		"hooks/events.mjs":           nativeEventSourceFor(filepath.Join(directory, "receipts"), link, requireAsk),
+		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts"), link, catalogue),
 	}
 	for name, body := range files {
 		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
@@ -50,31 +45,23 @@ func prepareNativeEventsFor(link string, requireAsk bool) (directory string, err
 }
 
 // nativeEventSource fills in the module. The receipt's model and effort labels come from
-// the routing table: a model missing there is labelled unlisted, and the gateway cannot
-// route a fork or a native selection from an unlisted receipt.
-func nativeEventSource(receipts, link string) string {
-	return nativeEventSourceFor(receipts, link, true)
-}
-
-func nativeEventSourceFor(receipts, link string, requireAsk bool) string {
-	required := nativePermissions
-	if !requireAsk {
-		required = `{"ask":[]}`
-	}
+// the session's account list: a model missing there is labelled unlisted, and the gateway
+// cannot route a fork or a native selection from an unlisted receipt.
+func nativeEventSource(receipts, link string, catalogue *bridge.Catalogue) string {
 	root, _ := json.Marshal(filepath.ToSlash(receipts))
-	models := make([]string, 0, len(bridge.Models))
-	for _, model := range bridge.Models {
+	models := []string{}
+	for _, model := range catalogue.Models() {
 		models = append(models, model.ID)
 	}
 	ids, _ := json.Marshal(models)
-	efforts, _ := json.Marshal(bridge.Efforts)
+	efforts, _ := json.Marshal(append([]string{}, catalogue.Efforts()...))
 	helper, _ := json.Marshal(filepath.ToSlash(findHook()))
 	args := []string{hookcmd.ConfirmationArg}
 	if link != "" {
 		args = append(args, link)
 	}
 	helperArgs, _ := json.Marshal(args)
-	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_CONFIRMATION_ARGS__", string(helperArgs), "__CLAUDUCT_REQUIRED_PERMISSIONS__", required, "__CLAUDUCT_MODELS__", string(ids),
+	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_CONFIRMATION_ARGS__", string(helperArgs), "__CLAUDUCT_MODELS__", string(ids),
 		"__CLAUDUCT_EFFORTS__", string(efforts)).Replace(nativeEventModule)
 }
 

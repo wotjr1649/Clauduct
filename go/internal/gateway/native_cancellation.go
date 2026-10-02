@@ -59,7 +59,7 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 		}
 		id = *entry.nativeTurn
 	}
-	if !validActiveReceipt(id, session, agent) {
+	if !validActiveReceipt(g.selection, id, session, agent) {
 		return ctx, func() {}
 	}
 	if !reading && class != "auxiliary" {

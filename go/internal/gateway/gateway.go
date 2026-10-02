@@ -105,8 +105,7 @@ type Gateway struct {
 	// cacheSalt keys promptCacheKey. Random per gateway, never sent.
 	cacheSalt [32]byte
 
-	auxiliaryEffortCap string // immutable launch preference
-	classifierModel    string // immutable launch preference; empty follows native's Sonnet
+	classifierModel bridge.Pair // immutable launch preference; zero follows native's request
 
 	received   atomic.Int64
 	modelLists atomic.Int64
@@ -185,8 +184,6 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		limits:       newLimitLedger(),
 		events:       newEventLedger(),
 		nativeEvents: nativeEventState{confirmationGate: make(chan struct{}, 1)},
-
-		auxiliaryEffortCap: bridge.DefaultAuxiliaryEffortCap(),
 	}
 	rand.Read(g.cacheSalt[:])
 	g.server = &http.Server{

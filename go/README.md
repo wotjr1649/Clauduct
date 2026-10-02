@@ -50,7 +50,7 @@ clauduct --dev --probe          # 무엇을 쓸지 출력하고 아무것도 보
 clauduct --dev --probe <name> --send
 ```
 
-probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다. `probe accept <model> [effort...]`(표에 넣기 전 모델 수용 점검)는 이 예산 대신 Codex 캐시의 effort마다 경로별 상한을 두고, 보내기 전에 그 상한을 출력한다.
+probe의 예산(`upstream.ApprovedBudget`)은 **이 프로젝트가 검증에 쓸 수 있는 양**이지 사용자 세션의 상한이 아니다. 경로가 `gpt-6-luna`/`low`로 고정돼 있고 누적 100회다. 제품 세션은 `upstream.Unlimited()`로 돌며 클라이언트가 요청한 모델을 쓴다. `probe accept <model> [effort...]`(모델 수용 점검)는 이 예산 대신 Codex 캐시의 effort마다 경로별 상한을 두고, 보내기 전에 그 상한을 출력한다.
 
 검증 하네스는 `CLAUDUCT_VERIFICATION_BUDGET`에 실행 전용 디렉터리의 절대경로를 지정해 추가 상한을
 강제할 수 있다. 먼저 `clauduct --dev --verification-budget-version`이 `1`을 반환하는지 확인한다.
@@ -77,7 +77,7 @@ null·boolean 이외 값·중복 키는 잘못된 계획이다. 형식 버전은
 이 설정은 과금 승인 자체를 대신하지 않는다.
 
 v0.6.2 준비본은 검증 route에 선택적인 `sources` 목록을 지원한다. 예를 들어
-`{"model":"gpt-5.6-terra","effort":"high","sources":["native-auto-mode","native-auto-mode+auxiliary-cap"]}`는
+`{"model":"gpt-5.6-terra","effort":"low","sources":["native-auto-mode+classifier_model"]}`는
 해당 모델·effort의 권한 분류 요청만 허용한다. 일반 Agent나 대화 요청은 같은 모델·effort라도
 credential 조회·전송·예약 파일 생성 전에 거부한다. 목록은 비어 있지 않은 정확한 출처 문자열이며
 wildcard를 받지 않는다. 생략한 route는 이전처럼 모델·effort만 제한한다. 계수 요청도 원래 선택 출처로
@@ -112,7 +112,7 @@ go vet ./...
 go build ./...
 
 go run ./cmd/clauduct --dev --version
-go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측정 버전, Codex 로그인 사용 가능 여부(범주·만료만), 모델 캐시(~/.codex/models_cache.json)의 표 차이를 본다. 자식은 claude --version·codex --version
+go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측정 버전, Codex 로그인 사용 가능 여부(범주·만료만), 모델 캐시(~/.codex/models_cache.json)를 참고로 나열한다(세션의 모델 목록 근거는 아니다). 자식은 claude --version·codex --version
 ```
 
 v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 유지보수자가 로컬에서 돌리며,

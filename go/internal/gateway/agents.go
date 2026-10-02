@@ -281,7 +281,7 @@ func (g *Gateway) handleAgents(w http.ResponseWriter, r *http.Request) {
 	deferred := binding.Stop && g.nativeEvents.directory != ""
 	if deferred {
 		turn, found, readErr := g.readCurrentNativeTurn(binding.ID)
-		if readErr != nil || !found || !validActiveReceipt(turn, binding.SessionID, binding.ID) {
+		if readErr != nil || !found || !validActiveReceipt(g.selection, turn, binding.SessionID, binding.ID) {
 			g.refuseCategory(w, http.StatusBadRequest, "INVALID_AGENT_BINDING")
 			return
 		}

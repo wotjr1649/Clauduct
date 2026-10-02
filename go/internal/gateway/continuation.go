@@ -16,7 +16,7 @@ func (g *Gateway) continuationScope(scope delegationScope, id string, binding ag
 		return scope, false
 	}
 	active := scope.nativeTurn
-	if active == nil || !validActiveReceipt(*active, scope.session, id) || active.Model != choice.route.Model {
+	if active == nil || !validActiveReceipt(g.selection, *active, scope.session, id) || active.Model != choice.route.Model {
 		return scope, false
 	}
 	meta, err := d.metadata(binding)

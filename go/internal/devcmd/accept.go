@@ -146,7 +146,7 @@ func acceptProbe(plan acceptPlan, open func(effort string) upstream.Transport, o
 		transports[effort] = open(effort)
 	}
 	// The request names a table model only so it decodes; the override is what is sent.
-	head := fmt.Sprintf(`{"model":%q,"max_tokens":2048,"stream":true,"system":"You are a verification fixture. Be brief.",`, bridge.Models[0].ID)
+	head := fmt.Sprintf(`{"model":%q,"max_tokens":2048,"stream":true,"system":"You are a verification fixture. Be brief.",`, plan.model)
 	events, items := map[string]int{}, map[string]int{}
 	failed, counted, matched := 0, 0, 0
 	run := func(label, effort, body string) exchange {
@@ -251,7 +251,7 @@ func localCount(request *bridge.Request) (int64, bool) {
 	if request == nil {
 		return 0, false
 	}
-	for _, model := range bridge.Models {
+	for _, model := range bridge.LegacyModels() {
 		if model.CountValidated {
 			probe := *request
 			probe.Model = model.ID

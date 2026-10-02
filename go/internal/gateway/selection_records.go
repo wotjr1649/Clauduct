@@ -3,7 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"errors"
-	"slices"
+	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -61,8 +61,8 @@ func (d *delegations) restoreSelectionHistory(request *anthropic.Request, sessio
 			// catalogue's compatibility alias into Agent arguments. Compare the
 			// actual tool field, independently of configurable alias routing.
 			nativeModel := r.NativeModel
-			if model, known := bridge.ModelByID(nativeModel); known {
-				nativeModel = model.AgentAlias
+			if model, known := d.selection.ModelByID(nativeModel); known {
+				nativeModel = model.AgentAlias // empty: prepare omitted the argument
 			}
 			if alias != nativeModel || !matches || fields["effort"] != nil {
 				continue
@@ -98,10 +98,10 @@ func (d *delegations) rejectedSelection(scope delegationScope, call string, raw 
 	_ = json.Unmarshal(fields["model"], &model)
 	_ = json.Unmarshal(fields["effort"], &effort)
 	_ = json.Unmarshal(fields["subagent_type"], &role)
-	if !bridge.KnownRole(role) {
+	if !d.selection.KnownRole(role) {
 		role = "unlisted"
 	}
-	if effort != "" && !slices.Contains(bridge.Efforts, effort) {
+	if effort != "" && !bridge.TransmittableEffort(effort) {
 		effort = "unlisted"
 	}
 	failure := "PREPARE_UNVERIFIED"
@@ -150,10 +150,16 @@ func selectionModelLabel(value string) string {
 	if value == "" || value == "inherit" {
 		return value
 	}
-	for _, m := range bridge.Models {
-		if value == m.ID || value == m.Alias || value == m.Key {
-			return value
+	for _, m := range bridge.LegacyModels() {
+		if value == m.Alias || value == m.Key || m.Family != "" && strings.HasPrefix(value, m.Family) {
+			if value == m.Alias || value == m.Key {
+				return value
+			}
+			return "model-family"
 		}
+	}
+	if bridge.ValidModelID(value) {
+		return value // a backend ID, bounded in shape
 	}
 	return "model-family"
 }

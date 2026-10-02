@@ -51,7 +51,7 @@ func fileProbe(transport upstream.Transport, budget upstream.Budget, out io.Writ
 		fmt.Fprintln(out, "file           REFUSED REQUEST_DECODE", err)
 		return 1
 	}
-	backend, err := bridge.BuildRequest(request)
+	backend, err := probeSelection(bridge.Route{Model: budget.Model, Effort: budget.Effort}).BuildRequest(request)
 	if err != nil {
 		fmt.Fprintln(out, "file           REFUSED BUILD_REQUEST", err)
 		return 1

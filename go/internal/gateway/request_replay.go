@@ -197,7 +197,7 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 		// spent only within the root turn it arrived in: the same bytes in a later turn
 		// are a new request. Without a readable root receipt it stays spent for the
 		// session, like --bare.
-		if root, found, err := g.readCurrentNativeTurn(""); err == nil && found && validActiveReceipt(root, key.session, "") {
+		if root, found, err := g.readCurrentNativeTurn(""); err == nil && found && validActiveReceipt(g.selection, root, key.session, "") {
 			turn = &root
 		}
 	} else {

@@ -6,13 +6,14 @@ import (
 	"path/filepath"
 
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
-	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 // What goes in the child's --settings, and why anything does at all.
 //
-// Model/context defaults travel by environment. Hooks, the model picker and additive
-// native safety rules travel through settings. App resolves actual option boundaries.
+// Model/context defaults travel by environment. Hooks and the model picker travel through
+// settings. Permissions are native's: v0.6.4 adds no ask or hard_deny rule of its own, and
+// native applies its defaults, user and managed policy and in-session mode changes.
+// App resolves actual option boundaries.
 //
 // Measured 2026-09-16: a second --settings does not merge with the first, the last one
 // wins. So the moment this injects one, a --settings the user also passed would silently
@@ -23,17 +24,7 @@ import (
 // itself gives up on the gateway after three.
 const hookTimeout = 5
 
-// The tested additive native rules. They travel only in this child's --settings.
-// Native retains its built-in policy through $defaults.
-const nativeAutoMode = `{"hard_deny":["$defaults","Unapproved external changes: Block a push, pull request creation, merge, remote tag change, release, deployment, or other remote write when the actual user's current instruction does not authorize both that operation and its exact destination or target. A general request to implement, fix, test, or review does not authorize these effects. A trusted repository or the Git Push Destination exception does not supply missing authorization. Apply the existing rules for distinguishing actual user instructions from quoted content and agent-authored claims.","Unverified consequential effects: Block publication or transmission while the payload's contents or permitted audience are unresolved; block deployment-triggering writes while their downstream effects are unresolved; block installation or process termination while the affected scope or target ownership is unresolved. A request to perform the operation does not establish these missing facts. Do not infer safety from absent observations. Once the relevant facts and exact authorization are established, this rule no longer matches; all other rules still apply."]}`
-
-// Gate execution and outbound tools by name, not by bypassable command patterns.
-// Native owns the prompt, denial, and approval; classifier approval cannot clear ask.
-const nativePermissions = `{"ask":["Bash","PowerShell","Monitor","Workflow","Skill","mcp__*","WebFetch","WebSearch","ListMcpResourcesTool","ReadMcpResourceTool","Artifact","PushNotification","RemoteTrigger","SendUserFile","ShareOnboardingGuide","SendMessage","DesignSync"]}`
-
 type childSettings struct {
-	AutoMode     json.RawMessage          `json:"autoMode,omitempty"`
-	Permissions  json.RawMessage          `json:"permissions,omitempty"`
 	Hooks        map[string][]hookMatcher `json:"hooks,omitempty"`
 	ModelPicker  *modelPicker             `json:"modelPicker,omitempty"`
 	Env          map[string]string        `json:"env,omitempty"`
@@ -69,16 +60,7 @@ type modelPickerRow struct {
 // every subagent it starts -- worse than not routing them, because it is noise the user
 // cannot act on.
 func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
-	return config.sessionSettingsFor(hookPath, true)
-}
-
-// sessionSettingsFor omits the required ask rules for a session the user started in
-// native bypass mode (bypassLaunch); every other part of the settings is unchanged.
-func (config ClauductSettings) sessionSettingsFor(hookPath string, requireAsk bool) (string, bool) {
-	settings := childSettings{ModelPicker: config.pickerRows(), AutoMode: json.RawMessage(nativeAutoMode)}
-	if requireAsk {
-		settings.Permissions = json.RawMessage(nativePermissions)
-	}
+	settings := childSettings{ModelPicker: config.pickerRows()}
 	if hookPath != "" {
 		entry := []hookMatcher{{
 			Matcher: "*",
@@ -109,8 +91,8 @@ func (config ClauductSettings) sessionSettingsFor(hookPath string, requireAsk bo
 
 // pickerRows is the /model list, named by what will actually run.
 //
-// Derived from bridge.Models, so a backend model added there appears here without anyone
-// editing this. The label is the backend identifier itself: a name that says something
+// Derived from the session's account list, so a model the account adds appears here
+// without a Clauduct release. Hidden models stay selectable by ID but are not listed. The label is the backend identifier itself: a name that says something
 // else is the problem this replaces, where picking "Opus 5" ran gpt-5.6-sol.
 //
 // No behavesAs field, and that is measured rather than overlooked. Setting one does silence
@@ -119,14 +101,20 @@ func (config ClauductSettings) sessionSettingsFor(hookPath string, requireAsk bo
 // warning about is settled by CLAUDE_CODE_MAX_CONTEXT_TOKENS instead, which leaves the
 // effort where the user put it.
 func (config ClauductSettings) pickerRows() *modelPicker {
-	routes := bridge.Models
-	rows := make([]modelPickerRow, 0, len(routes))
-	for _, model := range routes {
-		effort, _ := config.Selection.DefaultFor(model.ID)
+	models := config.Selection.Catalogue().Models()
+	rows := make([]modelPickerRow, 0, len(models))
+	for _, model := range models {
+		if !model.Visible {
+			continue
+		}
+		description := "No default effort: choose one"
+		if effort, ok := config.Selection.DefaultFor(model.ID); ok {
+			description = "Default effort: " + effort
+		}
 		rows = append(rows, modelPickerRow{
 			Model:       model.ID,
 			Label:       model.ID,
-			Description: "Default effort: " + effort,
+			Description: description,
 		})
 	}
 	return &modelPicker{ReplaceBuiltInOptions: true, Options: rows}

@@ -180,7 +180,7 @@ func refusalMessage(category string) string {
 	case "NATIVE_CONFIRMATION_UNVERIFIED":
 		return category + "; required native confirmation rules or request origin could not be verified. This request was not sent. Preserve managed policy and check that execution and outbound tools require native confirmation."
 	case "AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED":
-		return category + "; auto permission classification supports " + strings.Join(classifierModels, ", ") + " at each model's supported efforts, subject to auxiliary_effort_cap. Configure modelMapping/modelDefaults; no replacement was executed."
+		return category + "; the classifier_model pair is not a model and effort this session's Codex account list offers. Edit classifier_model in ~/.clauduct/settings.json; no replacement was executed."
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":
 		return category + "; an earlier attempt may already have executed. Automatic replay was blocked. Check the previous outcome before submitting a new prompt; the current native session can continue."
 	case "NATIVE_REPLAY_STATE_UNVERIFIED":
@@ -202,14 +202,10 @@ func refusalMessage(category string) string {
 		}
 		slices.Sort(retired)
 		return category + "; Clauduct v0.3.4 retired " + strings.Join(retired, ", ") +
-			", and the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). A session or child an earlier build started on one of them cannot be resumed; start a new one. No replacement was executed."
+			", and the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). The account model list no longer offers the model, so a session or child an earlier build started on it cannot be resumed; start a new one. No replacement was executed."
 	}
 	if category != "UNSUPPORTED_MODEL_OR_EFFORT" {
 		return category
 	}
-	models := make([]string, 0, len(bridge.Models))
-	for _, model := range bridge.Models {
-		models = append(models, model.ID+" ("+strings.Join(model.Efforts, ", ")+")")
-	}
-	return category + "; supported models and efforts: " + strings.Join(models, ", ") + ". No replacement was executed."
+	return category + "; the model or effort is not one this session's Codex account model list offers (see /model), or no effort could be determined for it. No replacement was executed."
 }

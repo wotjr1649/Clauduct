@@ -19,9 +19,11 @@ type Default struct {
 	Effort string `json:"effort"`
 }
 
-// Selection contains one session's validated, read-only routing preferences.
-// The supported catalogue and classifier routes are product data. Global
-// context and effort caps are launch preferences, not saved selection state.
+// Selection contains one session's read-only routing preferences and the account model
+// list fixed at session start. Preferences are checked for shape when parsed and against
+// the account list when a request actually uses them: an entry naming a model the account
+// no longer lists is kept, and only selecting it fails. Global context preferences are
+// launch preferences, not saved selection state.
 type Selection struct {
 	ModelDefaults map[string]Default `json:"modelDefaults,omitempty"`
 	ModelMapping  map[string]string  `json:"modelMapping,omitempty"`
@@ -29,9 +31,14 @@ type Selection struct {
 	// RoleDefaults freezes builtin fallbacks in saved sessions. The manual
 	// settings schema exposes Agents, not this snapshot field.
 	RoleDefaults map[string]Pair `json:"roleDefaults,omitempty"`
+
+	// catalogue is the session's account list. Never saved: a resumed session checks its
+	// saved choice against the list of the session that resumes it.
+	catalogue *Catalogue
 }
 
 // ParseSelection applies the same strict schema to preferences and saved sessions.
+// It checks shape only; availability belongs to the session's account list.
 func ParseSelection(raw []byte) (Selection, error) {
 	bad := func() (Selection, error) { return Selection{}, ErrUnsupportedRoute }
 	fields, err := wire.Fields(raw, []string{"modelDefaults", "modelMapping", "agents", "roleDefaults"})
@@ -41,18 +48,14 @@ func ParseSelection(raw []byte) (Selection, error) {
 	var selection Selection
 	if value, ok := fields["modelDefaults"]; ok {
 		entries, err := wire.Fields(value, nil)
-		if err != nil {
+		if err != nil || len(entries) > 1024 {
 			return bad()
 		}
 		selection.ModelDefaults = make(map[string]Default, len(entries))
 		for id, value := range entries {
-			model, ok := ModelByID(id)
-			if !ok {
-				return bad()
-			}
 			fields, err := wire.Fields(value, []string{"effort"})
 			var effort string
-			if err != nil || len(fields) != 1 || json.Unmarshal(fields["effort"], &effort) != nil || !slices.Contains(model.Efforts, effort) {
+			if !ValidModelID(id) || err != nil || len(fields) != 1 || json.Unmarshal(fields["effort"], &effort) != nil || !TransmittableEffort(effort) {
 				return bad()
 			}
 			selection.ModelDefaults[id] = Default{Effort: effort}
@@ -65,14 +68,8 @@ func ParseSelection(raw []byte) (Selection, error) {
 		}
 		selection.ModelMapping = make(map[string]string, len(entries))
 		for alias, value := range entries {
-			if _, ok := ForAlias(alias); !ok {
-				return bad()
-			}
 			var id string
-			if json.Unmarshal(value, &id) != nil {
-				return bad()
-			}
-			if _, ok := ModelByID(id); !ok {
+			if !LegacyAlias(alias) || json.Unmarshal(value, &id) != nil || !ValidModelID(id) {
 				return bad()
 			}
 			selection.ModelMapping[alias] = id
@@ -119,24 +116,38 @@ func ParseSelection(raw []byte) (Selection, error) {
 	return selection, nil
 }
 
+// ParsePair requires both halves in the shape a backend model and a transmittable effort
+// have. Whether the account offers the pair is checked when it is used.
 func ParsePair(raw []byte) (Pair, error) {
 	fields, err := wire.Fields(raw, []string{"model", "effort"})
 	var pair Pair
-	if err != nil || len(fields) != 2 || json.Unmarshal(fields["model"], &pair.Model) != nil || json.Unmarshal(fields["effort"], &pair.Effort) != nil || !ValidPair(pair) {
+	if err != nil || len(fields) != 2 || json.Unmarshal(fields["model"], &pair.Model) != nil || json.Unmarshal(fields["effort"], &pair.Effort) != nil ||
+		!ValidModelID(pair.Model) || !TransmittableEffort(pair.Effort) {
 		return Pair{}, ErrUnsupportedRoute
 	}
 	return pair, nil
 }
 
-// Clone gives a caller its own maps when it needs to retain a selection.
-func (s Selection) Clone() Selection {
-	return Selection{ModelDefaults: maps.Clone(s.ModelDefaults), ModelMapping: maps.Clone(s.ModelMapping), Agents: maps.Clone(s.Agents), RoleDefaults: maps.Clone(s.RoleDefaults)}
+// WithCatalogue fixes the session's account list.
+func (s Selection) WithCatalogue(catalogue *Catalogue) Selection {
+	s.catalogue = catalogue
+	return s
 }
 
-// Snapshot records effective defaults, not just sparse overrides. Otherwise a
-// future build's defaults would silently change an old session on resume.
-// Builtin fallbacks remain separate from explicit agent overrides so recording
-// them never promotes them above a native custom definition.
+// Catalogue is the session's account list; nil when none was fixed.
+func (s Selection) Catalogue() *Catalogue { return s.catalogue }
+
+// Clone gives a caller its own maps when it needs to retain a selection.
+func (s Selection) Clone() Selection {
+	return Selection{ModelDefaults: maps.Clone(s.ModelDefaults), ModelMapping: maps.Clone(s.ModelMapping), Agents: maps.Clone(s.Agents), RoleDefaults: maps.Clone(s.RoleDefaults), catalogue: s.catalogue}
+}
+
+// Snapshot records the effective alias mapping and role fallbacks, not just sparse
+// overrides, so a future build's defaults never silently change an old session on resume.
+// modelDefaults is recorded as configured: a model it does not name takes the account's
+// default level of the session that runs (v0.6.4), never a hidden factory value. Builtin
+// fallbacks remain separate from explicit agent overrides so recording them never
+// promotes them above a native custom definition.
 func (s Selection) Snapshot() Selection {
 	copy := s.Clone()
 	if copy.ModelDefaults == nil {
@@ -147,11 +158,6 @@ func (s Selection) Snapshot() Selection {
 	}
 	if copy.RoleDefaults == nil {
 		copy.RoleDefaults = map[string]Pair{}
-	}
-	for _, model := range Models {
-		if _, exists := copy.ModelDefaults[model.ID]; !exists {
-			copy.ModelDefaults[model.ID] = Default{Effort: model.Effort}
-		}
 	}
 	for alias, id := range builtinDefaults.ModelMapping {
 		if _, exists := copy.ModelMapping[alias]; !exists {
@@ -166,43 +172,40 @@ func (s Selection) Snapshot() Selection {
 	return copy
 }
 
-// ModelByID returns only a backend model supported by this build.
-func ModelByID(id string) (Model, bool) {
-	for _, model := range Models {
-		if model.ID == id {
-			return model, true
-		}
-	}
-	return Model{}, false
-}
+// ModelByID returns the account model with this ID.
+func (s Selection) ModelByID(id string) (Model, bool) { return s.catalogue.ByID(id) }
 
-// ValidPair checks both halves against the fixed catalogue.
-func ValidPair(pair Pair) bool {
-	model, ok := ModelByID(pair.Model)
+// ValidPair checks both halves against the session's account list.
+func (s Selection) ValidPair(pair Pair) bool {
+	model, ok := s.ModelByID(pair.Model)
 	return ok && slices.Contains(model.Efforts, pair.Effort)
 }
 
-// ForAlias resolves a Claude tier to the configured backend model, if any.
+// ForAlias resolves a Claude tier to the configured backend model, if the account offers it.
 func (s Selection) ForAlias(alias string) (Model, bool) {
-	if id, configured := s.ModelMapping[alias]; configured {
-		return ModelByID(id)
+	id, configured := s.ModelMapping[alias]
+	if !configured {
+		id = builtinDefaults.ModelMapping[alias]
 	}
-	return ForAlias(alias)
+	return s.ModelByID(id)
 }
 
-// DefaultFor resolves the configured effort for a backend model.
+// DefaultFor resolves the effort for a model chosen without one: the session's
+// modelDefaults, then the account's default level. A configured effort the model does not
+// take is an error, not a reason to use another one.
 func (s Selection) DefaultFor(id string) (string, bool) {
-	model, ok := ModelByID(id)
+	model, ok := s.ModelByID(id)
 	if !ok {
 		return "", false
 	}
 	if configured, ok := s.ModelDefaults[id]; ok {
-		return configured.Effort, true
+		return configured.Effort, slices.Contains(model.Efforts, configured.Effort)
 	}
-	return model.Effort, true
+	return model.Effort, model.Effort != ""
 }
 
 // RoleRoute applies an explicitly configured agent pair, then the fixed role rules.
+// The pair is checked against the account list when a request uses it.
 func (s Selection) RoleRoute(role string) (Route, bool) {
 	role = CanonicalRole(role)
 	if pair, ok := s.Agents[role]; ok {
@@ -214,38 +217,59 @@ func (s Selection) RoleRoute(role string) (Route, bool) {
 	if route, ok := roleRoutes[role]; ok {
 		return route, true
 	}
-	if route, ok := menuRoute(role); ok {
-		route.Effort, _ = s.DefaultFor(route.Model)
-		return route, true
-	}
-	return Route{}, false
+	return s.menuRoute(role)
 }
 
 // SelectRoute preserves explicit model and effort choices. A configured Claude
 // alias applies to both the short name and its versioned family.
 func (s Selection) SelectRoute(requested, effort string) (Route, error) {
-	if _, retired := Retired[requested]; retired {
-		return Route{}, ErrRetiredRoute
+	model, source := s.resolveKey(requested)
+	if source == "" {
+		if _, retired := Retired[requested]; retired {
+			return Route{}, ErrRetiredRoute
+		}
+		return Route{}, ErrUnsupportedRoute
 	}
-	model, source := s.resolve(requested)
-	if source == "" || effort != "" && !slices.Contains(model.Efforts, effort) {
+	if effort != "" && !slices.Contains(model.Efforts, effort) {
 		return Route{}, ErrUnsupportedRoute
 	}
 	if effort == "" {
-		effort, _ = s.DefaultFor(model.ID)
+		effort, ok := s.DefaultFor(model.ID)
+		if !ok {
+			return Route{}, ErrUnsupportedRoute
+		}
 		return Route{Model: model.ID, Effort: effort, Source: source}, nil
 	}
 	return Route{Model: model.ID, Effort: effort, Source: source + "+effort"}, nil
 }
 
-func (s Selection) resolve(requested string) (Model, string) {
-	model, source := resolveKey(requested)
-	if source == "alias" || source == "family" {
-		selected, ok := s.ForAlias(model.Alias)
-		if !ok {
-			return Model{}, ""
+// Problems lists preferences the account list cannot honour. They are kept as written and
+// only fail when a request selects them; the launcher shows them so the user can edit.
+func (s Selection) Problems() []string {
+	var problems []string
+	for _, id := range slices.Sorted(maps.Keys(s.ModelDefaults)) {
+		model, ok := s.ModelByID(id)
+		switch {
+		case !ok:
+			problems = append(problems, "modelDefaults."+id+": not in the account model list")
+		case !slices.Contains(model.Efforts, s.ModelDefaults[id].Effort):
+			problems = append(problems, "modelDefaults."+id+": effort "+s.ModelDefaults[id].Effort+" is not supported")
 		}
-		model = selected
 	}
-	return model, source
+	for _, alias := range slices.Sorted(maps.Keys(s.ModelMapping)) {
+		if _, ok := s.ForAlias(alias); !ok {
+			problems = append(problems, "modelMapping."+alias+": "+s.ModelMapping[alias]+" is not in the account model list")
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.Agents)) {
+		if !s.ValidPair(s.Agents[name]) {
+			problems = append(problems, "agents."+name+": "+s.Agents[name].Model+"/"+s.Agents[name].Effort+" is not offered by the account")
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(s.RoleDefaults)) {
+		if _, explicit := s.Agents[name]; !explicit && !s.ValidPair(s.RoleDefaults[name]) {
+			problems = append(problems, "agents."+name+" (factory): "+s.RoleDefaults[name].Model+"/"+s.RoleDefaults[name].Effort+" is not offered by the account")
+		}
+	}
+	return problems
 }

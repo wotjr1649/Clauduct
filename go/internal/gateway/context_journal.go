@@ -158,20 +158,18 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 			return errContextJournal
 		}
 	}
-	// A session an earlier build ran on a retired route is refused by name, not continued
-	// on the replacement.
-	if _, retired := bridge.Retired[saved.Target]; retired {
-		return bridge.ErrRetiredRoute
-	}
-	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
-	if errors.Is(err, bridge.ErrRetiredRoute) {
+	// The saved route must still be one the session's account offers. A session an earlier
+	// build ran on a retired route the account no longer lists is refused by name, not
+	// continued on the replacement.
+	if err := g.offeredRoute(saved.Model, saved.Effort); err != nil {
 		return err
 	}
-	if err != nil || route.Model != saved.Model {
-		return errContextJournal
-	}
+	route := bridge.Route{Model: saved.Model, Effort: saved.Effort, Source: "journal"}
 	if saved.Target != "" {
-		if _, ok := policyFor(saved.Target); !ok {
+		if _, ok := g.policyFor(saved.Target); !ok {
+			if _, retired := bridge.Retired[saved.Target]; retired {
+				return bridge.ErrRetiredRoute
+			}
 			return errContextJournal
 		}
 	}
@@ -189,18 +187,27 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 			return errContextJournal
 		}
 		u := saved.Usage
-		if _, err := bridge.SelectRoute(u.Model, u.Effort); errors.Is(err, bridge.ErrRetiredRoute) {
+		if err := g.offeredRoute(u.Model, u.Effort); err != nil {
 			return err
-		} else if err != nil || u.Effort == "" {
-			return errContextJournal
 		}
-		if _, ok := policyFor(u.Model); !ok || u.Input < 0 || u.Output < 0 || u.TextEstimate < 0 || u.Input > 1<<40 || u.Output > 1<<40 || u.TextEstimate > 1<<40 {
+		if _, ok := g.policyFor(u.Model); !ok || u.Input < 0 || u.Output < 0 || u.TextEstimate < 0 || u.Input > 1<<40 || u.Output > 1<<40 || u.TextEstimate > 1<<40 {
 			return errContextJournal
 		}
 		state.usage = u
 	}
 	state.saved = string(raw)
 	return nil
+}
+
+// offeredRoute accepts a saved pair the session's account list still offers.
+func (g *Gateway) offeredRoute(model, effort string) error {
+	if g.selection.ValidPair(bridge.Pair{Model: model, Effort: effort}) {
+		return nil
+	}
+	if _, retired := bridge.Retired[model]; retired {
+		return bridge.ErrRetiredRoute
+	}
+	return errContextJournal
 }
 
 func (g *Gateway) saveContext(state *contextState) error {

@@ -422,7 +422,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			switch {
 			case !registered:
 				g.unregisteredAgents.Add(1)
-			case !bridge.KnownRole(role):
+			case !g.selection.KnownRole(role):
 				g.unroutedRoles.Add(1)
 			}
 			if g.contexts != nil {
@@ -575,18 +575,20 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 // backend model -- terra -- that no entry could reach. Answering here is what lets the
 // picker name what will actually run.
 //
-// Nothing about the account, the credential or the session appears in the reply. It is the
-// build's own catalogue, which is a constant.
+// No credential or account identifier appears in the reply: it is the visible part of the
+// session's account model list, the same snapshot the picker and routing use.
 func (g *Gateway) handleModels(w http.ResponseWriter) {
 	type entry struct {
 		ID      string `json:"id"`
 		Object  string `json:"object"`
 		OwnedBy string `json:"owned_by"`
 	}
-	routes := bridge.Catalogue()
-	data := make([]entry, 0, len(routes))
-	for _, route := range routes {
-		data = append(data, entry{ID: route.Model, Object: "model", OwnedBy: "openai"})
+	models := g.selection.Catalogue().Models()
+	data := make([]entry, 0, len(models))
+	for _, model := range models {
+		if model.Visible {
+			data = append(data, entry{ID: model.ID, Object: "model", OwnedBy: "openai"})
+		}
 	}
 	body, err := json.Marshal(struct {
 		Object string  `json:"object"`

@@ -71,6 +71,10 @@ type Options struct {
 	// transport behind it; a test substitutes a fixture, or a failing one to prove the
 	// child is never started without a gateway.
 	StartGateway func() (*gateway.Gateway, error)
+	// ModelList fixes the session's account model list before native starts. Zero uses the
+	// account's list through the same transport and credential provider as StartGateway's
+	// default, falling back to the same account's last good list.
+	ModelList func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error)
 	// Session is what this session tells the native child about itself, beyond the endpoint
 	// and the credential. Empty leaves the child on its own defaults.
 	Session map[string]string
@@ -109,16 +113,16 @@ type Options struct {
 // session that leaked a listener would hide exactly the defect this bridge has to prove it
 // does not have.
 type Result struct {
-	Startup                  bridge.Pair
-	StartupModelSource       string
-	StartupEffortSource      string
-	Context                  ContextFacts
-	AuxiliaryEffortCap       string
-	AuxiliaryEffortCapSource string
-	ClassifierModel          string
-	ClassifierModelSource    string
-	// RequiredAsk is false when the user started the session in native bypass mode.
-	RequiredAsk    bool
+	Startup               bridge.Pair
+	StartupModelSource    string
+	StartupEffortSource   string
+	Context               ContextFacts
+	ClassifierModel       bridge.Pair
+	ClassifierModelSource string
+	ModelList             ModelListFacts
+	DeprecatedSettings    []string
+	// MenuEntries counts the delegation menu, the inherit entry included.
+	MenuEntries    int
 	NativeStarted  bool
 	NativeExitCode int
 	GatewayAddr    string
@@ -179,18 +183,35 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome
-	if o.Settings == nil && !nativeInformation(o.Args) {
+	information := nativeInformation(o.Args)
+	if clauductHome == "" && !information {
+		clauductHome, _ = os.UserHomeDir()
+	}
+	if o.Settings == nil && !information {
 		if clauductHome == "" {
-			clauductHome, err = os.UserHomeDir()
-			if err != nil {
-				return Result{}, errClauductSettings
-			}
+			return Result{}, errClauductSettings
+		}
+		// An updater older than this build never runs its settings sync, so the first
+		// normal start adds the top-level keys this build's defaults have and the file
+		// lacks. A file that is invalid is left exactly as it is and refused below.
+		// A sync that cannot write (a held file, a busy lock, a disk error) is reported, never
+		// shown as done, and does not stop the session: an omitted key still takes its
+		// factory value at run time, and the next start tries again.
+		synced, syncErr := settingsfile.Sync(clauductHome)
+		if syncErr != nil && !errors.Is(syncErr, settingsfile.ErrSyncInvalid) && !errors.Is(syncErr, settingsfile.ErrSyncVersion) {
+			fmt.Fprintf(o.Stderr, "clauduct: CLAUDUCT_SETTINGS_SYNC_FAILED: %v; continuing with the file as it is, and the next start tries again\n", syncErr)
+		}
+		if len(synced.Added) > 0 {
+			fmt.Fprintf(o.Stderr, "clauduct: settings: added %s; previous file kept as %s\n", strings.Join(synced.Added, ", "), synced.Backup)
 		}
 		// Context is global launch configuration, including UUID resume. Only
 		// model/effort preferences are subsequently restored from the snapshot.
 		config, err = loadClauductSettings(clauductHome)
 		if err != nil {
 			return Result{}, err
+		}
+		if len(config.Deprecated) > 0 {
+			fmt.Fprintf(o.Stderr, "clauduct: settings: %s no longer applied since v0.6.4; the keys stay in the file and may be removed\n", strings.Join(config.Deprecated, ", "))
 		}
 	}
 	forward, userSettings, settingsSlots, err := config.takeUserSettings(o.Args, o.Cwd)
@@ -199,9 +220,25 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	forward, resumeID := prepareSessionArgs(forward)
 	o.Args = forward
-	if o.Settings == nil && !nativeInformation(o.Args) {
-		if err := settingsfile.Ensure(clauductHome); err != nil {
+	// One account list per session, fixed before native starts and shared by display,
+	// routing, Agent schemas and native hooks. Help and version never fetch one.
+	var catalogue *bridge.Catalogue
+	var listFacts ModelListFacts
+	if !information {
+		catalogue, listFacts, err = o.ModelList(ctx, clauductHome)
+		if err != nil {
 			return Result{}, err
+		}
+		config.Selection = config.Selection.WithCatalogue(catalogue)
+		listFacts.Problems = config.Selection.Problems()
+		if config.ClassifierModel != (bridge.Pair{}) && !config.Selection.ValidPair(config.ClassifierModel) {
+			listFacts.Problems = append(listFacts.Problems, "classifier_model: "+config.ClassifierModel.Model+"/"+config.ClassifierModel.Effort+" is not offered by the account")
+		}
+		if listFacts.Source == "last-good" {
+			fmt.Fprintf(o.Stderr, "clauduct: the account model list could not be fetched (%s); using this account's list from %s\n", listFacts.FetchFailure, listFacts.FetchedAt)
+		}
+		for _, problem := range listFacts.Problems {
+			fmt.Fprintf(o.Stderr, "clauduct: settings: %s; kept as written, refused only when selected\n", problem)
 		}
 	}
 
@@ -233,7 +270,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			case loadErr != nil:
 				return Result{}, loadErr
 			default:
-				if err := profiles.Refresh(&saved, filepath.Join(nativeConfigDirectory(o.Env, o.Cwd), "projects"), true); err != nil {
+				saved.Selection = saved.Selection.WithCatalogue(catalogue)
+				if err := profiles.Refresh(&saved, filepath.Join(nativeConfigDirectory(o.Env, o.Cwd), "projects"), true, saved.Selection); err != nil {
 					return Result{}, err
 				}
 				config.Selection, config.Startup, resumed = saved.Selection, saved.Last, &saved
@@ -262,11 +300,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return Result{}, err
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
-	gw.ConfigureAuxiliaryEffortCap(config.AuxiliaryEffortCap)
 	gw.ConfigureClassifierModel(config.ClassifierModel)
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
-		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource,
-		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource}
+		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource,
+		ModelList: listFacts, DeprecatedSettings: config.Deprecated}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -308,7 +345,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}()
 	nativePDF := ""
 	hook := ""
-	requireAsk := true
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
@@ -319,6 +355,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if model, named := optionValue(o.Args, "--model"); named {
 			if _, pinned := optionValue(o.Args, "--effort"); !pinned {
 				// Native trims and lowercases a model name before resolving it.
+				// No effort determinable for it: pass none rather than the startup effort,
+				// so the start is refused below instead of running on an effort nobody chose.
+				effort = ""
 				if route, err := config.Selection.SelectRoute(strings.ToLower(strings.TrimSpace(model)), ""); err == nil {
 					effort = route.Effort
 				}
@@ -326,13 +365,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		hook = findHook()
 		result.HookInstalled = hook != ""
-		requireAsk = !bypassLaunch(o.Args, userSettings, nativeConfigDirectory(o.Env, o.Cwd), o.Cwd)
-		result.RequiredAsk = requireAsk
-		if built, ok := config.sessionSettingsFor(hook, requireAsk); ok {
+		if built, ok := config.sessionSettings(hook); ok {
 			settings = built
 		}
 		if menu, ok := config.sessionAgents(); ok {
 			agents = menu
+			result.MenuEntries = len(config.agentDefinitions())
 		}
 		if BackgroundRequested(o.Args) {
 			background, err = sessionlink.Start(context.Background(), sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()})
@@ -368,7 +406,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if background != nil {
 				link = background.ID
 			}
-			nativePlugin, err = prepareNativeEventsFor(link, requireAsk)
+			nativePlugin, err = prepareNativeEvents(link, config.Selection.Catalogue())
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")
@@ -640,13 +678,25 @@ func (o Options) withDefaults() Options {
 		// for, and a count cap would stop a long session partway through. The verification
 		// budget is a separate thing and lives in clauduct --dev --probe.
 		ledger := o.Ledger
+		direct := upstream.NewDirect(&auth.Provider{}, ledger, upstream.InstalledVersion())
 		o.StartGateway = func() (*gateway.Gateway, error) {
-			g, err := gateway.Start(upstream.NewDirect(
-				&auth.Provider{}, ledger, upstream.InstalledVersion()))
+			g, err := gateway.Start(direct)
 			if err == nil {
 				g.EnableContextPolicy()
 			}
 			return g, err
+		}
+		if o.ModelList == nil {
+			// The same Direct: the list and every request bind the same account.
+			o.ModelList = func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error) {
+				return accountModelList(ctx, direct, home)
+			}
+		}
+	}
+	if o.ModelList == nil {
+		direct := upstream.NewDirect(&auth.Provider{}, o.Ledger, upstream.InstalledVersion())
+		o.ModelList = func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error) {
+			return accountModelList(ctx, direct, home)
 		}
 	}
 	if o.StartProcess == nil {

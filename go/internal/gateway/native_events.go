@@ -246,7 +246,7 @@ func (g *Gateway) pinNativeTurn(r *http.Request, entry *record) (turn *nativeTur
 		results.mu.Unlock()
 	}
 	receipt, found, err := g.readCurrentNativeTurn(agent)
-	entry.turnValid = err == nil && (!found || validActiveReceipt(receipt, session, agent))
+	entry.turnValid = err == nil && (!found || validActiveReceipt(g.selection, receipt, session, agent))
 	if found && entry.turnValid {
 		entry.nativeTurn = &receipt
 	}
@@ -313,18 +313,16 @@ func (g *Gateway) applyNativeTurnLocked(id string, receipt nativeTurnReceipt) bo
 	return true
 }
 
-func validActiveReceipt(receipt nativeTurnReceipt, session, id string) bool {
+func validActiveReceipt(selection bridge.Selection, receipt nativeTurnReceipt, session, id string) bool {
 	if receipt.Session != session || receipt.Agent != id || !correlationShape.MatchString(receipt.Turn) || receipt.Reason != "" {
 		return false
 	}
 	if id == "" {
 		return receipt.Model == "" && receipt.Effort == ""
 	}
-	modelKnown := receipt.Model == "unlisted"
-	for _, model := range bridge.Models {
-		modelKnown = modelKnown || receipt.Model == model.ID
-	}
-	return modelKnown && (receipt.Effort == "unlisted" || slices.Contains(bridge.Efforts, receipt.Effort))
+	_, listed := selection.ModelByID(receipt.Model)
+	modelKnown := receipt.Model == "unlisted" || listed
+	return modelKnown && (receipt.Effort == "unlisted" || slices.Contains(selection.Catalogue().Efforts(), receipt.Effort))
 }
 
 // A selection refusal may occur before normal result binding. Attach its fixed
@@ -341,7 +339,7 @@ func (g *Gateway) recordFailedAgentRequest(session, id string, record *record) {
 		return
 	}
 	active := record.nativeTurn
-	if active == nil || !validActiveReceipt(*active, session, id) {
+	if active == nil || !validActiveReceipt(g.selection, *active, session, id) {
 		return
 	}
 	d := g.delegations

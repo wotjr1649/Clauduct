@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/http"
 	"regexp"
+	"slices"
 	"sync"
 	"time"
 
@@ -583,6 +584,10 @@ type ring struct {
 	totals       SessionTotals
 	contextUsage map[string]ContextObservation
 	features     map[string]FeatureEvidence
+	// models is the session's account list, fixed before native starts. It bounds the
+	// per-model tables so no request-supplied name accumulates.
+	models []string
+	policy bridge.ContextPolicy
 }
 
 // ContextObservation separates preflight totals and completed backend usage. Neither
@@ -620,9 +625,9 @@ type ModelContextReport struct {
 func (g *ring) contextReport() []ModelContextReport {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	out := make([]ModelContextReport, 0, len(bridge.Models))
-	for _, model := range bridge.Models {
-		observed := g.contextUsage[model.ID]
+	out := make([]ModelContextReport, 0, len(g.models))
+	for _, id := range g.models {
+		observed := g.contextUsage[id]
 		if observed.LastInputTokens != nil {
 			value := *observed.LastInputTokens
 			observed.LastInputTokens = &value
@@ -631,7 +636,7 @@ func (g *ring) contextReport() []ModelContextReport {
 			value := *observed.PeakInputTokens
 			observed.PeakInputTokens = &value
 		}
-		out = append(out, ModelContextReport{Model: model.ID, Target: model.Context,
+		out = append(out, ModelContextReport{Model: id, Target: g.policy,
 			Application: "not_enforced", Verification: "unverified",
 			Reason: "MODEL_CONTEXT_ENFORCEMENT_NOT_IMPLEMENTED", Observed: observed})
 	}
@@ -657,7 +662,7 @@ type SessionTotals struct {
 }
 
 func newRing() *ring {
-	return &ring{epoch: time.Now(), contextUsage: map[string]ContextObservation{}, totals: SessionTotals{
+	return &ring{epoch: time.Now(), policy: bridge.DefaultContextPolicy(), contextUsage: map[string]ContextObservation{}, totals: SessionTotals{
 		Kinds: map[string]int64{}, Routes: map[string]int64{}, KindRoutes: map[string]int64{}, Failures: map[string]int64{}, Controls: map[string]int64{},
 	}}
 }
@@ -699,7 +704,7 @@ func (g *ring) count(r RequestRecord) {
 	// CountAgreement is unaffected: it needs backend usage from a generation, which a count
 	// request does not have.
 	if r.CountSource != "" {
-		if _, known := policyFor(r.Model); known {
+		if slices.Contains(g.models, r.Model) {
 			observed := g.contextUsage[r.Model]
 			if r.CountSource != "prior-count-cache" {
 				observed.Preflights++
@@ -743,8 +748,8 @@ func (g *ring) count(r RequestRecord) {
 	if r.InputTokens != nil {
 		// Bound this table to the owned catalogue, even if a future caller records
 		// an unvalidated model name. No request-supplied keys accumulate here.
-		for _, model := range bridge.Models {
-			if model.ID != r.Model {
+		for _, id := range g.models {
+			if id != r.Model {
 				continue
 			}
 			seen := g.contextUsage[r.Model]

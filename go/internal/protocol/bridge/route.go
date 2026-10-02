@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"slices"
 	"strings"
@@ -175,7 +176,7 @@ func parseCatalogue(document []byte) (c catalogueData, err error) {
 	}
 	decoder := json.NewDecoder(strings.NewReader(string(document)))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&doc) != nil || decoder.More() || doc.Version != 1 || len(doc.Models) == 0 {
+	if decoder.Decode(&doc) != nil || decoder.Decode(&struct{}{}) != io.EOF || doc.Version != 1 || len(doc.Models) == 0 {
 		return c, errCatalogue
 	}
 	seen := map[string]bool{}

@@ -1,5 +1,6 @@
-// Package settingsfile creates the manual Clauduct preferences without ever
-// replacing a user's file. The same document supplies omitted runtime preferences.
+// Package settingsfile creates the manual Clauduct preferences and, through Sync, appends
+// top-level keys a newer release added without changing any value the user's file holds.
+// The same document supplies omitted runtime preferences.
 package settingsfile
 
 import (

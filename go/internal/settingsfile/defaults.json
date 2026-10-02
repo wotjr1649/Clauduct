@@ -2,17 +2,14 @@
   "version": 1,
   "context_window": 272000,
   "auto_compact_token_limit_percent": 90,
-  "auto_compact_effort_cap": "medium",
-  "auxiliary_effort_cap": "medium",
   "startup": {
     "model": "gpt-6.1-sol",
-    "effort": "xhigh"
+    "effort": "high"
   },
   "modelDefaults": {
     "gpt-6-astra": { "effort": "medium" },
-    "gpt-6.1-sol": { "effort": "xhigh" },
-    "gpt-6-sol": { "effort": "xhigh" },
-    "gpt-5.6-terra": { "effort": "high" },
+    "gpt-6.1-sol": { "effort": "high" },
+    "gpt-5.6-terra": { "effort": "medium" },
     "gpt-6-luna": { "effort": "max" }
   },
   "modelMapping": {
@@ -23,7 +20,11 @@
   },
   "agents": {
     "Explore": { "model": "gpt-6-luna", "effort": "max" },
-    "Plan": { "model": "gpt-6-astra", "effort": "medium" },
-    "general-purpose": { "model": "gpt-6-luna", "effort": "max" }
+    "Plan": { "model": "gpt-6.1-sol", "effort": "high" },
+    "general-purpose": { "model": "gpt-6.1-sol", "effort": "high" }
+  },
+  "classifier_model": {
+    "model": "gpt-5.6-terra",
+    "effort": "low"
   }
 }

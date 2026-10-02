@@ -237,40 +237,67 @@ function Assert-Prerequisites {
     }
 }
 
-# Use the verified installed program's document and no-replace publication path.
-# The old three-program layout has no launcher --dev command.
-function Ensure-Settings {
-    $dir = Join-Path $env:USERPROFILE '.clauduct'
-    $target = Join-Path $dir 'settings.json'
-    if (Test-Path -LiteralPath $target -PathType Leaf) { return }
-    if (Test-Path -LiteralPath $target) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: settings.json is not a file' }
-    if ($Names.Count -ne 1) {
-        Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
-        return
-    }
+# Runs the installed clauduct.exe with fixed arguments, no shell, and a 10 s bound, and
+# returns its exit code and what it printed. $Code and $Role name a failure to start or finish.
+function Invoke-Installed([string] $Arguments, [string] $Code, [string] $Role) {
     $process = [Diagnostics.Process]::new()
     $process.StartInfo.FileName = Join-Path $InstallRoot 'clauduct.exe'
-    $process.StartInfo.Arguments = '--dev --init-settings'
+    $process.StartInfo.Arguments = $Arguments
     $process.StartInfo.UseShellExecute = $false
     $process.StartInfo.CreateNoWindow = $true
     $process.StartInfo.RedirectStandardOutput = $true
     $process.StartInfo.RedirectStandardError = $true
     try {
-        if (-not $process.Start()) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer did not start' }
+        if (-not $process.Start()) { throw "${Code}: $Role did not start" }
+        # Read while it runs, so a full pipe can never hold the process.
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit(10000)) {
             $process.Kill()
-            if (-not $process.WaitForExit(5000)) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer cleanup unconfirmed' }
-            throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer timed out'
+            if (-not $process.WaitForExit(5000)) { throw "${Code}: $Role cleanup unconfirmed" }
+            throw "${Code}: $Role timed out"
         }
-        if ($process.ExitCode -eq 2) {
-            Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
-        } elseif ($process.ExitCode -ne 0) {
-            throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer failed; the installed binary is available'
-        } elseif (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-            throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer did not publish settings.json'
-        }
+        return [pscustomobject]@{ ExitCode = $process.ExitCode; Output = ($stdout.Result + $stderr.Result).Trim() }
     } finally {
         $process.Dispose()
+    }
+}
+
+# The verified installed program owns the settings document. An absent settings.json is
+# created through its no-replace publication path. An existing one gets only the top-level
+# keys this release added, after the program has published a backup of the original bytes;
+# no value already in the file changes. The old three-program layout has no --dev command.
+function Ensure-Settings {
+    $dir = Join-Path $env:USERPROFILE '.clauduct'
+    $target = Join-Path $dir 'settings.json'
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        if ($Names.Count -ne 1) { return }
+        $sync = Invoke-Installed '--dev --sync-settings' 'CLAUDUCT_SETTINGS_SYNC_FAILED' 'settings sync'
+        # Every release since v0.4.0 answers an unknown --dev word with its usage line and
+        # exit 2. A crash can also exit 2, so the usage line is what identifies an old release.
+        if ($sync.ExitCode -eq 2 -and $sync.Output.Contains('usage: clauduct --dev [')) {
+            Write-Host 'note: this release predates settings sync; existing preferences were preserved'
+        } elseif ($sync.ExitCode -ne 0) {
+            # The program's own refusal is one line: a code, and the backup path when it made one.
+            $reason = ($sync.Output -split "`r?`n")[0]
+            throw "CLAUDUCT_SETTINGS_SYNC_FAILED: binary installed; settings sync failed; original preserved (backup if any): $reason"
+        } elseif ($sync.Output) {
+            Write-Host $sync.Output
+        }
+        return
+    }
+    if (Test-Path -LiteralPath $target) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: settings.json is not a file' }
+    if ($Names.Count -ne 1) {
+        Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
+        return
+    }
+    $init = Invoke-Installed '--dev --init-settings' 'CLAUDUCT_SETTINGS_CREATE_FAILED' 'initializer'
+    if ($init.ExitCode -eq 2) {
+        Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
+    } elseif ($init.ExitCode -ne 0) {
+        throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer failed; the installed binary is available'
+    } elseif (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+        throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: initializer did not publish settings.json'
     }
 }
 

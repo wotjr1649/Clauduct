@@ -419,7 +419,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	}
 	nativeAlias := ""
 	if model != nil {
-		nativeAlias = model.Alias
+		nativeAlias = model.AgentAlias
 		alias, _ := json.Marshal(nativeAlias)
 		fields["model"] = alias
 		// The tool schema still takes Claude aliases. The native spawn event
@@ -610,7 +610,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		choice.route = actual
 		for _, model := range bridge.Models {
 			if model.ID == actual.Model {
-				choice.alias = model.Alias
+				choice.alias = model.AgentAlias
 				break
 			}
 		}
@@ -1020,7 +1020,7 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 	choice := resolvedChoice{session: scope.session, parent: scope.parent, role: "general-purpose", route: route}
 	for _, model := range bridge.Models {
 		if model.ID == route.Model {
-			choice.alias = model.Alias
+			choice.alias = model.AgentAlias
 		}
 	}
 	return choice, true

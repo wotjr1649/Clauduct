@@ -71,6 +71,10 @@ type Model struct {
 	// Alias is the stable legacy native identity. ForAlias and Selection resolve
 	// the effective configurable mapping; this field alone is not that mapping.
 	Alias string
+	// AgentAlias is the tier written into native's Agent tool argument, whose schema only
+	// takes Claude tier names. It is Alias, or for a model without one the catalogue's
+	// agentAlias. Routing never reads it: the native spawn event pins the full model ID.
+	AgentAlias string
 	// Family is the versioned Claude prefix for that tier. Matched by prefix so no version
 	// is pinned: claude-opus-5 and claude-opus-4-1 route the same way and a new release
 	// needs no code change. An unknown name still fails closed.
@@ -156,6 +160,7 @@ func parseCatalogue(document []byte) (c catalogueData, err error) {
 			ID             string   `json:"id"`
 			Efforts        []string `json:"efforts"`
 			Alias          string   `json:"alias"`
+			AgentAlias     string   `json:"agentAlias"`
 			Family         string   `json:"family"`
 			CountValidated bool     `json:"countValidated"`
 		} `json:"models"`
@@ -188,7 +193,19 @@ func parseCatalogue(document []byte) (c catalogueData, err error) {
 			}
 			seen[name] = true
 		}
-		c.Models = append(c.Models, Model{Key: m.Key, ID: m.ID, Efforts: m.Efforts, Alias: m.Alias, Family: m.Family, CountValidated: m.CountValidated})
+		agentAlias := m.Alias
+		if m.Alias == "" {
+			agentAlias = m.AgentAlias
+		} else if m.AgentAlias != "" {
+			return c, fmt.Errorf("%w: model %q names agentAlias beside its alias", errCatalogue, m.ID)
+		}
+		c.Models = append(c.Models, Model{Key: m.Key, ID: m.ID, Efforts: m.Efforts, Alias: m.Alias, AgentAlias: agentAlias, Family: m.Family, CountValidated: m.CountValidated})
+	}
+	// Every model must be delegable: its Agent tier is one of the catalogue's tier aliases.
+	for _, m := range c.Models {
+		if !slices.ContainsFunc(c.Models, func(t Model) bool { return t.Alias != "" && t.Alias == m.AgentAlias }) {
+			return c, fmt.Errorf("%w: model %q has no Agent tier", errCatalogue, m.ID)
+		}
 	}
 	for old, replacement := range doc.Retired {
 		if seen[old] || !seen[replacement] || !catalogueID.MatchString(old) {

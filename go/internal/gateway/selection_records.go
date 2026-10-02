@@ -62,7 +62,7 @@ func (d *delegations) restoreSelectionHistory(request *anthropic.Request, sessio
 			// actual tool field, independently of configurable alias routing.
 			nativeModel := r.NativeModel
 			if model, known := bridge.ModelByID(nativeModel); known {
-				nativeModel = model.Alias
+				nativeModel = model.AgentAlias
 			}
 			if alias != nativeModel || !matches || fields["effort"] != nil {
 				continue

@@ -93,9 +93,11 @@ func (d *delegations) workflowTrailer(scope delegationScope, id string) (string,
 		for _, name := range []string{m.ID, m.Key} {
 			catalogue[name] = []any{m.ID, effort, m.Efforts}
 		}
-		mapped, _ := d.selection.ForAlias(m.Alias)
-		mappedEffort, _ := d.selection.DefaultFor(mapped.ID)
-		catalogue[m.Alias] = []any{mapped.ID, mappedEffort, mapped.Efforts}
+		if m.Alias != "" { // a model without a tier alias is reachable by its ID and key only
+			mapped, _ := d.selection.ForAlias(m.Alias)
+			mappedEffort, _ := d.selection.DefaultFor(mapped.ID)
+			catalogue[m.Alias] = []any{mapped.ID, mappedEffort, mapped.Efforts}
+		}
 		if m.ID == scope.route.Model {
 			parentEntry[2] = m.Efforts
 		}

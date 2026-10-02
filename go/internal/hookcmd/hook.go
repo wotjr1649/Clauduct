@@ -58,6 +58,9 @@ func Dispatch(argv []string) (int, bool) {
 	if alone(ConfirmationArg) {
 		return confirmation(os.Stdin, os.Stdout, platform.Environment(os.Environ())), true
 	}
+	if len(args) == 2 && args[0] == ConfirmationArg {
+		return linkedConfirmation(args[1], os.Stdin, os.Stdout, platform.Environment(os.Environ())), true
+	}
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
 	}

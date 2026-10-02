@@ -4,6 +4,7 @@
 // empty control response. Native commands are untouched.
 const root = __CLAUDUCT_EVENT_ROOT__;
 const confirmationHelper = __CLAUDUCT_CONFIRMATION_HELPER__;
+const confirmationArgs = __CLAUDUCT_CONFIRMATION_ARGS__;
 const requiredConfirmations = __CLAUDUCT_REQUIRED_PERMISSIONS__.ask;
 async function confirmationsVerified($) {
   try {
@@ -57,7 +58,7 @@ async function answerConfirmations($, state) {
     }
     if (!verified || state.permissionClosed || state.permissionJob!==job) return;
     if (state.permissionLeases.size>=64) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
-    const stream=$.process.spawn({argv:[confirmationHelper,'--clauduct-confirmation'],input:JSON.stringify(reply)});
+    const stream=$.process.spawn({argv:[confirmationHelper,...confirmationArgs],input:JSON.stringify(reply)});
     const lease={stream,active:step,stopped:false};state.permissionLeases.add(lease);job.lease=lease;
     let marker='';
     do {

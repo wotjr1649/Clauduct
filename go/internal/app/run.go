@@ -355,7 +355,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		gw.RequireNativeConfirmations()
 		gw.ConfigurePDFRenderer(hook)
 		if hook != "" {
-			nativePlugin, err = prepareNativeEvents()
+			link := ""
+			if background != nil {
+				link = background.ID
+			}
+			nativePlugin, err = prepareNativeEvents(link)
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")

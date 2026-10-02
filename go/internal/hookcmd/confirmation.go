@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync/atomic"
 
+	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -18,6 +19,18 @@ const ConfirmationArg = "--clauduct-confirmation"
 // ConfirmationStale is the helper's exit code when the gateway no longer waits
 // for its nonce: the request ended first. The module closes it without failing.
 const ConfirmationStale = 3
+
+// linkedConfirmation is a background worker's helper. The worker's environment
+// carries no gateway token, so the connection comes from the session link, as
+// it does for the background hooks.
+func linkedConfirmation(link string, in io.Reader, out io.Writer, env map[string]string) int {
+	connection, err := sessionlink.Read(link)
+	if err != nil {
+		return 2
+	}
+	env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
+	return confirmation(in, out, env)
+}
 
 // No shell, argv payload, filesystem, credential store, redirect, proxy or retry.
 // Native supplies a bounded identity proof on stdin and owns this child's life.

@@ -109,14 +109,16 @@ type Options struct {
 // session that leaked a listener would hide exactly the defect this bridge has to prove it
 // does not have.
 type Result struct {
-	Startup             bridge.Pair
-	StartupModelSource  string
-	StartupEffortSource string
-	Context             ContextFacts
-	NativeStarted       bool
-	NativeExitCode      int
-	GatewayAddr         string
-	CleanupErr          error
+	Startup                  bridge.Pair
+	StartupModelSource       string
+	StartupEffortSource      string
+	Context                  ContextFacts
+	AuxiliaryEffortCap       string
+	AuxiliaryEffortCapSource string
+	NativeStarted            bool
+	NativeExitCode           int
+	GatewayAddr              string
+	CleanupErr               error
 	// Attempts and Inferences are what the session spent upstream. One inference retried
 	// twice is one inference and three attempts, and a claim about cost needs the unit it
 	// was measured in.
@@ -251,7 +253,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return Result{}, err
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
-	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts()}
+	gw.ConfigureAuxiliaryEffortCap(config.AuxiliaryEffortCap)
+	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
+		AuxiliaryEffortCap: config.AuxiliaryEffortCap, AuxiliaryEffortCapSource: config.AuxiliaryEffortCapSource}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -343,6 +347,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		settings = "" // Already present at the user's original option boundaries.
 	}
 	if o.Settings == nil {
+		gw.RequireNativeConfirmations()
 		gw.ConfigurePDFRenderer(hook)
 		if hook != "" {
 			nativePlugin, err = prepareNativeEvents()

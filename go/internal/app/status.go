@@ -61,14 +61,16 @@ type SessionFacts struct {
 	// There is no single honest value for that. A session runs its parent and its
 	// subagents on different routes at the same time, which is the point of role routing.
 	// Recent answers it per request, and exactly.
-	StartupModel          string                `json:"startupModel"`
-	StartupEffort         string                `json:"startupEffort"`
-	StartupModelSource    string                `json:"startupModelSource,omitempty"`
-	StartupEffortSource   string                `json:"startupEffortSource,omitempty"`
-	NativeContextDefaults NativeContextDefaults `json:"nativeContextDefaults"`
-	Context               ContextFacts          `json:"context"`
-	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
-	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
+	StartupModel             string                `json:"startupModel"`
+	StartupEffort            string                `json:"startupEffort"`
+	StartupModelSource       string                `json:"startupModelSource,omitempty"`
+	StartupEffortSource      string                `json:"startupEffortSource,omitempty"`
+	NativeContextDefaults    NativeContextDefaults `json:"nativeContextDefaults"`
+	Context                  ContextFacts          `json:"context"`
+	AuxiliaryEffortCap       string                `json:"auxiliaryEffortCap"`
+	AuxiliaryEffortCapSource string                `json:"auxiliaryEffortCapSource"`
+	NonStreamingFallback     bool                  `json:"nonStreamingFallbackDisabled"`
+	DelegationMenuEntries    int                   `json:"delegationMenuEntries"`
 	// HookInstalled is whether the session got a hook: since #112 this executable itself.
 	//
 	// Reported because its absence is silent otherwise. findHook is os.Executable, so a
@@ -182,10 +184,12 @@ func Account(result Result) Status {
 			StartupEffortSource: result.StartupEffortSource,
 			NativeContextDefaults: NativeContextDefaults{Window: int(context.Window),
 				AutoCompactWindow: int(context.Window), CompactPercent: float64(context.EffectivePercent), ApplicationVerified: false},
-			Context:               context,
-			NonStreamingFallback:  defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
-			DelegationMenuEntries: len(bridge.Models) + 1,
-			HookInstalled:         result.HookInstalled,
+			Context:                  context,
+			AuxiliaryEffortCap:       result.AuxiliaryEffortCap,
+			AuxiliaryEffortCapSource: result.AuxiliaryEffortCapSource,
+			NonStreamingFallback:     defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
+			DelegationMenuEntries:    len(bridge.Models) + 1,
+			HookInstalled:            result.HookInstalled,
 		},
 		Gateway:       result.Diagnostics,
 		Lifecycle:     result.Lifecycle,

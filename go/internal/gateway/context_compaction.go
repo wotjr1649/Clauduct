@@ -51,6 +51,7 @@ func stripCompactReceipts(request *anthropic.Request) {
 
 func addCompactGuidance(built *bridge.Request) {
 	built.Input = append([]bridge.InputEntry{{Role: "developer", Content: bridge.CompactEfficiencyInstruction}}, built.Input...)
+	built.ToolChoice = "none" // Native summaries cannot execute tools; count uses the same payload.
 }
 
 // Read-only preview. Generation still validates phase, claims the state, consumes

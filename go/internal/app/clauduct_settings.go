@@ -95,16 +95,18 @@ var errClauductSettings = errors.New("CLAUDUCT_SETTINGS_INVALID")
 // ClauductSettings contains validated launch preferences. SessionProfile owns
 // the separately versioned persistent format.
 type ClauductSettings struct {
-	Startup                 bridge.Pair
-	Selection               bridge.Selection
-	StartupSource           string
-	SelectionSource         string
-	Context                 bridge.ContextSettings
-	ContextRequestedPercent json.Number
-	ContextPolicy           bridge.ContextPolicy
-	ContextWindowSource     string
-	ContextPercentSource    string
-	ContextEffortCapSource  string
+	Startup                  bridge.Pair
+	Selection                bridge.Selection
+	StartupSource            string
+	SelectionSource          string
+	Context                  bridge.ContextSettings
+	ContextRequestedPercent  json.Number
+	ContextPolicy            bridge.ContextPolicy
+	ContextWindowSource      string
+	ContextPercentSource     string
+	ContextEffortCapSource   string
+	AuxiliaryEffortCap       string
+	AuxiliaryEffortCapSource string
 }
 
 func defaultClauductSettings() ClauductSettings {
@@ -112,7 +114,8 @@ func defaultClauductSettings() ClauductSettings {
 		Context: bridge.DefaultContextSettings(), ContextPolicy: bridge.DefaultContextPolicy(),
 		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
 		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
-		ContextEffortCapSource: "factory.auto_compact_effort_cap"}
+		ContextEffortCapSource: "factory.auto_compact_effort_cap",
+		AuxiliaryEffortCap:     bridge.DefaultAuxiliaryEffortCap(), AuxiliaryEffortCapSource: "factory.auxiliary_effort_cap"}
 }
 
 func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string) (bridge.Pair, string, string, error) {
@@ -214,7 +217,7 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
-	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "auto_compact_effort_cap"})
+	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "auto_compact_effort_cap", "auxiliary_effort_cap"})
 	if err != nil {
 		return bad()
 	}
@@ -250,12 +253,21 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		settings.ContextPercentSource = "settings.auto_compact_token_limit_percent"
 		delete(fields, "auto_compact_token_limit_percent")
 	}
-	if value, present := fields["auto_compact_effort_cap"]; present {
-		if string(value) == "null" || json.Unmarshal(value, &settings.Context.EffortCap) != nil || !slices.Contains(bridge.Efforts, settings.Context.EffortCap) {
-			return bad()
+	for _, field := range []struct {
+		name   string
+		value  *string
+		source *string
+	}{
+		{"auto_compact_effort_cap", &settings.Context.EffortCap, &settings.ContextEffortCapSource},
+		{"auxiliary_effort_cap", &settings.AuxiliaryEffortCap, &settings.AuxiliaryEffortCapSource},
+	} {
+		if value, present := fields[field.name]; present {
+			if string(value) == "null" || json.Unmarshal(value, field.value) != nil || !slices.Contains(bridge.Efforts, *field.value) {
+				return bad()
+			}
+			*field.source = "settings." + field.name
+			delete(fields, field.name)
 		}
-		settings.ContextEffortCapSource = "settings.auto_compact_effort_cap"
-		delete(fields, "auto_compact_effort_cap")
 	}
 	settings.ContextPolicy, err = settings.Context.Policy()
 	if err != nil {

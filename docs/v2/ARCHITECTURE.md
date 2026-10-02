@@ -280,7 +280,9 @@ SSE parser는 byte 경계가 UTF-8 문자·JSON token·CRLF·빈 줄 가운데�
 terminal 이벤트·`[DONE]`·중복 완료·완료 이후 trailing data·비정상 EOF의 의미를 backend 계약으로 고정한다. terminal을 봤다는 이유로 뒤의 프로토콜 위반을 정상 처리하지 않는다.
 
 `StreamEnd`는 모든 relay 반환 경로에서 마지막 read 오류, client context, terminal 관측,
-event 수와 읽은 byte 수를 기록한다. 파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
+event 수와 읽은 byte 수를 기록한다. `DoneObserved`는 `[DONE]` 관측 여부이며 `TrailingEvent`는
+종료 뒤 거부한 데이터의 정해진 종류만 기록한다. 미등록 이름과 본문은 기록하지 않는다.
+파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
 있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
 socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.
 
@@ -353,7 +355,7 @@ idle(backend 무바이트 10분)·overall(60분 천장)·user-cancel timeout을 
 | 403·정책 거부·TLS 검증 실패 | 우회·자동 credential 교체 금지 |
 | 429·일시적 5xx | Retry-After·총 예산·시도 제한·취소를 함께 적용. v0.3.5부터 backend가 이름 붙인 시각까지 이 세션의 추론·검색 시도를 credential·소켓 전에 `UPSTREAM_RETRY_DEFERRED`로 거부하고(시도로 세지 않고 replay 키도 돌려준다), 클라이언트에는 429와 `Retry-After`를 보낸다(#91) |
 | 긴 Retry-After | delay를 보존해 deferred 보고. 임의 조기 retry 금지 |
-| user cancel | retry 금지 |
+| user cancel | 같은 실행의 자동 retry 금지. 사용자의 새 turn 재입력은 별도 실행 |
 
 "text가 아직 없다"만으로 재시도 안전성을 추정하지 않는다.
 
@@ -362,7 +364,10 @@ v0.3.1의 native 경로는 session·agent·turn·step으로 대화 실행 소유
 별도 compaction·독립 auxiliary·step 없는 경로는 class와 원문 body의 SHA-256도 구분한다.
 동일 실행의 진행 중·완료 후·취소 후 재전송은 선택과 결과 변경 전에
 `NATIVE_REQUEST_REPLAY_BLOCKED`로 거부한다. 본문이나 지문을 로그·journal에 저장하지 않는다.
-새 native step과 명시적인 새 turn은 구분한다. `--bare`처럼 turn 정보가 없으면 동일 입력은
+v0.6.2 준비본은 원문 body의 지문을 같은 turn의 다음 step에서도 대조한다. 이미 전송한 본문이
+늦게 다시 도착해 새 step의 소유권을 차지하는 것을 막는다. 내용이 달라진 다음 step은 허용하며,
+사용자가 취소 후 같은 문장을 직접 재제출해 시작한 새 turn도 별도 실행으로 허용한다.
+`--bare`처럼 turn 정보가 없으면 동일 입력은
 세션 전체에서 사용된 것으로 보존하며, 식별 정보 부재를 재실행 허가로 삼지 않는다.
 요청은 처음 읽은 turn 영수증 하나를 끝까지 쓴다(v0.3.2). 업로드 취소 바인딩, 실행 예약, 선택이
 같은 값을 보므로 그 사이에 새 turn이 게시돼도 서로 어긋나지 않는다. 대화 요청은 본문을 받기 전에
@@ -384,6 +389,15 @@ agent의 새 turn이 예약되면 그 agent의 이전 turn 기록을 지운다. 
 키를 정하므로 이전 turn의 키는 다시 맞지 않는다. 새 turn보다 먼저 영수증을 읽은 요청은 지운 turn의
 키로 예약하지 않고 `NATIVE_TURN_UNVERIFIED`로 거부한다. 남는 기록은 agent마다 끝나지 않은 마지막 turn의 기록과
 turn 정보 없는 기록이다. native가 child turn의 종료 영수증을 남기면 그 turn의 기록도 지우고 turn은 끝난 것으로 표시한다. 이후 그 turn의 요청은 `NATIVE_TURN_ENDED`로 거부하므로, 지운 기록이 재실행을 허용하지 않는다(v0.3.3, #70). native 2.1.281은 끝난 turn의 요청을 보내지 않았고, SendMessage·fork 재개는 새 turn으로 왔다. 상태의 `nativeEvents.replayKeys`와 `retiredTurns`가 현재 기록 수와 돌려받은 child turn 수를 보인다. 이것을 세션당 16,384개로 제한하고, 한도에서 기록을 지워 재실행을 허용하지 않는다.
+v0.6.2 준비본은 실행 기록이 없는 식별자의 최신 turn·게시 순서·종료 여부를 기존 launcher의 임시
+native 이벤트 디렉터리에 저장하고 메모리에서 회수한다. 요청 본문·본문 지문은 저장하지 않는다.
+식별자마다 상태 파일 하나와 게시 표식 하나를 유지하며, 같은 식별자의 다음 turn은 그 상태를 갱신한다.
+종료된 Agent의 누적 개수에는 새 상한을 두지 않는다. 남아 있는 실행 기록의 기존16,384개 상한은 유지한다.
+전송 전 예약 반환도 최신 turn을 보존하므로 이전 turn의 지연 요청을 다시 허용하지 않는다.
+저장·읽기 오류, 불완전한 기록 또는 게시 표식과 상태 파일의 불일치가 생기면
+`NATIVE_REPLAY_STATE_UNVERIFIED`로 새 실행을 거부하며 launcher 재시작이 필요하다.
+`nativeEvents.replayIdentities`는 메모리에 남은 식별자 수, `replayStateFailed`는 이 실패 상태를 보인다.
+이 임시 기록의 수명은 해당 launcher이며 사용자 대화·snapshot의 저장 형식에는 추가하지 않는다.
 이 보호는 native 이벤트 경로가 구성된 제품 세션에 적용하며 gateway 내부 재시도는 계속 0이다.
 429도 원인 분류이며 재실행 허가는 아니다. transport 시도 뒤 같은 step은 거부하고,
 사용자의 명시적인 새 turn은 별도 실행으로 처리한다. transport 시도 뒤의 실패는 `X-Should-Retry: false`와 함께 거부한다(v0.3.3, #84). 그 재시도는 어차피 거부되므로, 재시도를 부르는 상태만으로는 사용자가 실제 원인 대신 `NATIVE_REQUEST_REPLAY_BLOCKED`를 보게 된다. 상태 코드(책임 구분)는 바꾸지 않는다. native 2.1.281은 상태 코드보다 이 헤더를 먼저 보며, 헤더를 붙인 `prompt is too long` 뒤의 압축도 그대로 동작한다. backend 실패 이벤트의 code·type·incomplete 사유는 고정 어휘로 줄여 오류 메시지와 요청 기록의 `upstreamFailure`에 싣고, 목록 밖의 값은 `other`로 적는다. backend가 보낸 원문 메시지는 싣지 않는다.

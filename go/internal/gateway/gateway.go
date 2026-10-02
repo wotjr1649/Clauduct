@@ -105,6 +105,8 @@ type Gateway struct {
 	// cacheSalt keys promptCacheKey. Random per gateway, never sent.
 	cacheSalt [32]byte
 
+	auxiliaryEffortCap string // immutable launch preference
+
 	received   atomic.Int64
 	modelLists atomic.Int64
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
@@ -168,19 +170,22 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 	}
 	closing, stopClose := context.WithCancel(context.Background())
 	g := &Gateway{
-		closing:   closing,
-		stopClose: stopClose,
-		listener:  listener,
-		token:     token,
-		expected:  listener.Addr().String(),
-		requests:  newRegistry(physical),
-		agents:    newAgentRegistry(),
-		transport: transport,
-		served:    make(chan error, 1),
-		ring:      newRing(),
-		betas:     newBetaLedger(),
-		limits:    newLimitLedger(),
-		events:    newEventLedger(),
+		closing:      closing,
+		stopClose:    stopClose,
+		listener:     listener,
+		token:        token,
+		expected:     listener.Addr().String(),
+		requests:     newRegistry(physical),
+		agents:       newAgentRegistry(),
+		transport:    transport,
+		served:       make(chan error, 1),
+		ring:         newRing(),
+		betas:        newBetaLedger(),
+		limits:       newLimitLedger(),
+		events:       newEventLedger(),
+		nativeEvents: nativeEventState{confirmationGate: make(chan struct{}, 1)},
+
+		auxiliaryEffortCap: bridge.DefaultAuxiliaryEffortCap(),
 	}
 	rand.Read(g.cacheSalt[:])
 	g.server = &http.Server{

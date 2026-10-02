@@ -3,8 +3,11 @@ package gateway
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"sync"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
@@ -28,9 +31,8 @@ type nativeExecutionKey struct {
 type nativeExecutions struct {
 	sync.Mutex
 	seen map[nativeExecutionKey]struct{}
-	// The newest turn claimed per session and agent, by publication number. An ended turn
-	// stays here for the session: a stale request of it has no bound on when it can arrive,
-	// and dropping the marker would admit it against keys that are gone.
+	// Only identities with live replay keys remain in memory. Before forgetting an
+	// identity, its newest turn is saved in the existing per-launcher event directory.
 	current map[[2]string]claimedTurn
 	// open is the child turns in current that have not ended, with identifiers checked when
 	// stored, so the per-request retire walk visits what can still end rather than every
@@ -38,6 +40,7 @@ type nativeExecutions struct {
 	open map[[2]string]string
 	// How many finished child turns gave their keys back (#70).
 	retired int64
+	failed  bool // a journal failure cannot make forgotten history look unused
 }
 
 type claimedTurn struct {
@@ -48,22 +51,101 @@ type claimedTurn struct {
 	ended bool
 }
 
-// retire forgets a child agent's turn once native has reported it complete (#70). A finished
-// child never starts another turn, so its last turn's keys used to stay for the session and
-// a session with enough children reached maxNativeExecutions. The turn keeps its place in
-// current, marked ended, so a later request of it is refused rather than admitted against
-// keys that are gone: native does not send one after the turn completes, and if it ever did,
-// refusing is the side that cannot execute twice.
-func (l *nativeExecutions) retire(session, agent, turn string) {
+type savedNativeTurn struct {
+	Identity string `json:"identity"`
+	Turn     string `json:"turn"`
+	Sequence int    `json:"sequence"`
+	Ended    *bool  `json:"ended"`
+}
+
+func nativeReplayFile(id [2]string) string {
+	// Hash only the owner identity to keep the filename short and inside the root.
+	return fmt.Sprintf("replay-%x.json", sha256.Sum256([]byte(id[0]+"\x00"+id[1])))
+}
+
+func (g *Gateway) nativeReplayKnown(id [2]string) (bool, error) {
+	root, err := os.OpenRoot(g.nativeEvents.directory)
+	if err != nil {
+		return false, err
+	}
+	defer root.Close()
+	info, err := root.Stat(nativeReplayFile(id) + ".known")
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Size() != 0 {
+		return false, errDelegationUnverified
+	}
+	return true, nil
+}
+
+// Caller holds executions.Mutex. No request body or fingerprint is persisted.
+func (g *Gateway) savedNativeTurn(id [2]string) (last claimedTurn, found bool, err error) {
+	var saved savedNativeTurn
+	found, err = g.readNativeJSON(nativeReplayFile(id), []string{"identity", "turn", "sequence", "ended"}, &saved)
+	if err != nil {
+		return last, found, err
+	}
+	known, err := g.nativeReplayKnown(id)
+	if err != nil || known != found {
+		return last, false, errDelegationUnverified
+	}
+	if !found {
+		return last, false, nil
+	}
+	if saved.Identity != id[0]+"\x00"+id[1] || !correlationShape.MatchString(saved.Turn) || saved.Sequence < 1 || saved.Sequence > maxNativeSequence || saved.Ended == nil {
+		return last, false, errDelegationUnverified
+	}
+	return claimedTurn{turn: saved.Turn, sequence: saved.Sequence, ended: *saved.Ended}, true, nil
+}
+
+func (g *Gateway) saveNativeTurn(id [2]string, last claimedTurn) error {
+	// A cached live owner must not silently repair damaged saved history.
+	_, known, err := g.savedNativeTurn(id)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(savedNativeTurn{Identity: id[0] + "\x00" + id[1], Turn: last.turn, Sequence: last.sequence, Ended: &last.ended})
+	if err != nil {
+		return err
+	}
+	if err := g.writeNativeControl(nativeReplayFile(id), raw); err != nil {
+		return err
+	}
+	if !known {
+		// Absence of a previously saved state must never mean first use again.
+		return g.writeNativeControl(nativeReplayFile(id)+".known", nil)
+	}
+	return nil
+}
+
+// Save an ended marker before releasing memory. Delayed requests still read it.
+func (g *Gateway) retireNativeExecution(session, agent, turn string) {
+	l := &g.executions
 	l.Lock()
 	defer l.Unlock()
+	if l.failed {
+		return
+	}
 	id := [2]string{session, agent}
 	last, known := l.current[id]
-	if !known || last.turn != turn || turn == "" {
+	if !known {
+		var err error
+		last, known, err = g.savedNativeTurn(id)
+		if err != nil {
+			l.failed = true
+			return
+		}
+	}
+	if !known || last.turn != turn || turn == "" || last.ended {
 		return // Never claimed, or a newer turn has already forgotten it.
 	}
 	last.ended = true
-	l.current[id] = last
+	if g.saveNativeTurn(id, last) != nil {
+		l.failed = true
+		return // Keep all in-memory history if storage could not preserve it.
+	}
+	delete(l.current, id)
 	delete(l.open, id)
 	l.retired++
 	for spent := range l.seen {
@@ -92,7 +174,7 @@ func (l *nativeExecutions) claim(id [2]string, turn string, sequence int) {
 }
 
 type nativeExecution struct {
-	owner      *nativeExecutions
+	owner      *Gateway
 	key        nativeExecutionKey
 	dispatched bool // handler-owned, including hosted search
 }
@@ -105,6 +187,9 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 		return nil, ""
 	}
 	key := nativeExecutionKey{session: r.Header.Get("X-Claude-Code-Session-Id"), agent: r.Header.Get("X-Claude-Code-Agent-Id"), class: r.Header.Get("X-Claude-Code-Request-Class"), step: -1, body: sha256.Sum256(body)}
+	if g.nativeEvents.confirmationsRequired && anonymousNativeFork(r) {
+		return nil, errNativeOriginUnverified.Error()
+	}
 	auxiliary := independentAuxiliary(r, request)
 	var turn *nativeTurnReceipt
 	if auxiliary {
@@ -134,7 +219,8 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 				if key.class != "compaction" && request != nil && conversationRequest(r, request) {
 					// One native step owns its control decision. A changed body or
 					// conversation class cannot admit a second writer for that step.
-					key.class, key.body = "conversation", [32]byte{}
+					// Keep the fingerprint too: a delayed old body cannot own a new step.
+					key.class = "conversation"
 				}
 			}
 		}
@@ -145,9 +231,42 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 	ledger := &g.executions
 	ledger.Lock()
 	defer ledger.Unlock()
+	if ledger.failed {
+		return nil, "NATIVE_REPLAY_STATE_UNVERIFIED"
+	}
+	agent := [2]string{key.session, key.agent}
+	last, known := ledger.current[agent]
+	retiring := 0
 	if key.turn != "" {
-		agent := [2]string{key.session, key.agent}
-		last, known := ledger.current[agent]
+		if !known {
+			var err error
+			last, known, err = g.savedNativeTurn(agent)
+			if err != nil {
+				ledger.failed = true
+				return nil, "NATIVE_REPLAY_STATE_UNVERIFIED"
+			}
+			// A pre-dispatch release may leave no keys to reconcile. Check the
+			// native end receipt before reopening that same saved child turn.
+			if known && !last.ended && key.agent != "" && key.turn == last.turn {
+				var end nativeTurnReceipt
+				found, err := g.readNativeReceipt("end-"+key.agent+"-"+key.turn+".json", &end)
+				if err != nil || found && (end.Session != key.session || end.Agent != key.agent || end.Turn != key.turn) {
+					return nil, "NATIVE_TURN_UNVERIFIED"
+				}
+				if found {
+					switch end.Reason {
+					case "answer", "aborted", "refusal", "error":
+						last.ended = true
+						if g.saveNativeTurn(agent, last) != nil {
+							ledger.failed = true
+							return nil, "NATIVE_REPLAY_STATE_UNVERIFIED"
+						}
+					default:
+						return nil, "NATIVE_TURN_UNVERIFIED"
+					}
+				}
+			}
+		}
 		if known && key.turn == last.turn && last.ended {
 			return nil, "NATIVE_TURN_ENDED"
 		}
@@ -157,25 +276,41 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 			}
 			for spent := range ledger.seen {
 				if spent.session == key.session && spent.agent == key.agent && spent.turn != "" && spent.turn != key.turn {
-					delete(ledger.seen, spent)
+					retiring++
 				}
 			}
-		}
-		if !known || sequence > last.sequence {
-			ledger.claim(agent, key.turn, sequence)
 		}
 	}
 	if _, exists := ledger.seen[key]; exists {
 		return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
 	}
-	if len(ledger.seen) >= maxNativeExecutions {
+	if key.class == "conversation" {
+		// ponytail: scan at most 16,384 existing keys, without another cache.
+		// Index by turn if measured admission cost requires it.
+		for spent := range ledger.seen {
+			if spent.class == key.class && spent.session == key.session && spent.agent == key.agent && spent.turn == key.turn && (spent.step == key.step || spent.body == key.body) {
+				return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
+			}
+		}
+	}
+	if len(ledger.seen)-retiring >= maxNativeExecutions {
 		return nil, "NATIVE_REQUEST_CAPACITY"
+	}
+	if key.turn != "" {
+		if retiring > 0 {
+			for spent := range ledger.seen {
+				if spent.session == key.session && spent.agent == key.agent && spent.turn != "" && spent.turn != key.turn {
+					delete(ledger.seen, spent)
+				}
+			}
+		}
+		ledger.claim(agent, key.turn, max(sequence, last.sequence))
 	}
 	if ledger.seen == nil {
 		ledger.seen = make(map[nativeExecutionKey]struct{})
 	}
 	ledger.seen[key] = struct{}{}
-	return &nativeExecution{owner: ledger, key: key}, ""
+	return &nativeExecution{owner: g, key: key}, ""
 }
 
 func independentAuxiliary(r *http.Request, request *anthropic.Request) bool {
@@ -212,8 +347,28 @@ func deferredLocally(err error) bool {
 
 func (e *nativeExecution) release() {
 	if e != nil && !e.dispatched {
-		e.owner.Lock()
-		delete(e.owner.seen, e.key)
-		e.owner.Unlock()
+		l := &e.owner.executions
+		l.Lock()
+		defer l.Unlock()
+		delete(l.seen, e.key)
+		if l.failed || e.key.turn == "" {
+			return
+		}
+		id := [2]string{e.key.session, e.key.agent}
+		last, held := l.current[id]
+		if !held {
+			return
+		}
+		for spent := range l.seen {
+			if spent.session == id[0] && spent.agent == id[1] {
+				return
+			}
+		}
+		if e.owner.saveNativeTurn(id, last) != nil {
+			l.failed = true
+			return
+		}
+		delete(l.current, id)
+		delete(l.open, id)
 	}
 }

@@ -1,6 +1,8 @@
 package upstream
 
 import (
+	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -75,9 +77,21 @@ func (b Budget) authorises() bool {
 // The route is the part that is not delegated. The user's standing instruction is to spend
 // on luna without asking and to ask before astra, so a change of model is a new decision
 // even though a change of count is not.
-func ApprovedBudget() Budget {
-	return Budget{Model: "gpt-6-luna", Effort: "low", Limit: 100}
-}
+func ApprovedBudget() Budget { return approvedProbeBudget }
+
+// The probe's spending policy is data separate from user session preferences.
+// Changing a conversation model must never expand a diagnostic's authority.
+//
+//go:embed probe-budget.json
+var probeBudgetDocument string
+
+var approvedProbeBudget = func() Budget {
+	var budget Budget
+	if json.Unmarshal([]byte(probeBudgetDocument), &budget) != nil || !budget.authorises() || budget.Unrestricted {
+		panic("invalid embedded probe budget")
+	}
+	return budget
+}()
 
 // Ledger enforces a budget and records what was spent.
 //

@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -33,12 +34,20 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 	control := http.NewResponseController(w)
-	_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
-	stopReadCancellation := httpguard.WatchReadCancellation(ctx, func() { _ = control.SetReadDeadline(time.Now()) })
-	defer stopReadCancellation()
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+	body, err := func() ([]byte, error) {
+		readCtx, finish := g.bindNativeCancellation(ctx, r, recordOf(w), true)
+		defer finish()
+		_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
+		stop := httpguard.WatchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
+		defer stop()
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxRequestBytes))
+		if readCtx.Err() != nil {
+			return nil, readCtx.Err()
+		}
+		return body, err
+	}()
 	if err != nil {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 			g.refuse(w, refuseCancelled)
 			return
 		}
@@ -78,6 +87,11 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
 		return
+	}
+	if r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" {
+		var finishCancellation func()
+		ctx, finishCancellation = g.bindNativeCancellation(ctx, r, entry, false)
+		defer finishCancellation()
 	}
 	if g.delegations != nil && !g.delegations.restrictWorkflowTools(request, r.Header.Get("X-Claude-Code-Session-Id"), r.Header.Get("X-Claude-Code-Agent-Id"), entry) {
 		g.refuseCategory(w, 400, "WORKFLOW_TOOL_POLICY")

@@ -11,8 +11,9 @@ import (
 // Only the embedded, release-checked document is read here. User files use the
 // strict session parser and never mutate these process-wide factory fallbacks.
 var builtinDefaults = func() (config struct {
-	Version int  `json:"version"`
-	Startup Pair `json:"startup"`
+	Version            int    `json:"version"`
+	Startup            Pair   `json:"startup"`
+	AuxiliaryEffortCap string `json:"auxiliary_effort_cap"`
 	ContextSettings
 	Selection
 }) {
@@ -24,6 +25,8 @@ var builtinDefaults = func() (config struct {
 
 // DefaultStartup stays independent from per-model and per-agent effort defaults.
 func DefaultStartup() Pair { return builtinDefaults.Startup }
+
+func DefaultAuxiliaryEffortCap() string { return builtinDefaults.AuxiliaryEffortCap }
 
 // ContextSettings is shared by every model in one launcher. It is not part of
 // Selection: resuming a saved selection still uses today's context preferences.

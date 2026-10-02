@@ -20,8 +20,8 @@ type Default struct {
 }
 
 // Selection contains one session's validated, read-only routing preferences.
-// The supported catalogue and classifier stay in code. Global context and
-// automatic compaction effort are launch preferences, not saved selection state.
+// The supported catalogue and classifier routes are product data. Global
+// context and effort caps are launch preferences, not saved selection state.
 type Selection struct {
 	ModelDefaults map[string]Default `json:"modelDefaults,omitempty"`
 	ModelMapping  map[string]string  `json:"modelMapping,omitempty"`

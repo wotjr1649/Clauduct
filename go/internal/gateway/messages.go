@@ -314,6 +314,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, entry *record) ([]bridge.Route, func(), error) {
 	var override []bridge.Route
 	releaseAgent := func() {}
+	if g.nativeEvents.confirmationsRequired && anonymousNativeFork(r) {
+		return nil, releaseAgent, errNativeOriginUnverified
+	}
 	scope := delegationScope{session: r.Header.Get("X-Claude-Code-Session-Id"), parent: r.Header.Get("X-Claude-Code-Parent-Agent-Id")}
 	scope.workflow = r.Header.Get("X-Claude-Code-Request-Class") == "workflow"
 	// A tool-less root title/classifier request is independent of the conversation
@@ -321,12 +324,24 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
 		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
-		route, err := classifierSelection(request, r.URL.Path == "/v1/messages/count_tokens")
+		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens")
 		return route, releaseAgent, err
 	}
 	active, ok := g.pinNativeTurn(r, entry)
 	if !ok {
 		return nil, releaseAgent, errDelegationUnverified
+	}
+	// Native compaction precedes the next turn.step after resume. Context admission
+	// still authorizes it below, and relay refuses every tool call from a summary.
+	compacting := g.contexts != nil && r.Header.Get("X-Claude-Code-Request-Class") == "compaction" && request.HostedSearch == nil
+	if g.nativeEvents.confirmationsRequired && !compacting && (len(request.Tools) != 0 || request.HostedSearch != nil || r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary") {
+		proof := g.nativeConfirmationFor(r, active, request.HostedSearch != nil)
+		if proof != nil && proof.Unmatched {
+			return nil, releaseAgent, errNativeOriginUnverified
+		}
+		if proof == nil || !proof.Confirmations {
+			return nil, releaseAgent, errNativeConfirmations
+		}
 	}
 	scope.nativeTurn = active
 	if agent := r.Header.Get("X-Claude-Code-Agent-Id"); agent != "" {
@@ -645,7 +660,8 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// Parsing or translation can stop before EOF, including on a terminal
 		// empty reply. Keep the observed read state on every exit, not just EOF.
 		events, bytes := parser.Stats()
-		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.Completed(), events, bytes)
+		done, trailing := parser.Tail()
+		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.Completed(), events, bytes, done, trailing)
 	}()
 	// The translator is told which tools are callable now, so a call naming a withdrawn
 	// tool is refused rather than passed to a client that would try to run it.
@@ -661,6 +677,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}()
 	if entry := recordOf(w); entry != nil {
 		record := entry.snapshot()
+		if record.Kind == "compaction" {
+			translator.Builder().SetCallable(func(string) bool { return false })
+		}
 		if len(scopes) > 0 && scopes[0].parentWait != nil {
 			// SDK keeps real answers and emits only a verified empty-reply status;
 			// its native scheduler owns background task completion.

@@ -46,16 +46,16 @@ async function answerConfirmations($, state) {
     const verified=await confirmationsVerified($);
     if (!verified) state.permissionFailed=true;
     let step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search && !!p.auxiliary===!!request.auxiliary);
+    if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
+    if (step && !state.requests.has(step)) {
+      // Its scope ended during the awaits above; an identical twin may still own
+      // a live request. Without one the request is answered unmatched: silence
+      // would time out the handshake and latch every later request.
+      step=[...state.requests].find(p=>p.session===step.session && p.agent===step.agent && p.turn===step.turn && p.index===step.index && p.search===step.search && !!p.auxiliary===!!step.auxiliary);
+    }
     const confirmations=verified && !!step && !state.permissionFailed;
     const unmatched=verified && !step && !state.permissionFailed;
     const reply={...request,agent:step?.agent||'',turn:step?.turn||'',index:step?.index??-1,confirmations,unmatched};
-    if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
-    if (step && !state.requests.has(step)) {
-      // Its tool ended during the awaits above; an identical twin may still own a live request.
-      const twin=[...state.requests].find(p=>p.session===step.session && p.agent===step.agent && p.turn===step.turn && p.index===step.index && p.search===step.search && !!p.auxiliary===!!step.auxiliary);
-      if (!twin) return;
-      step=twin;
-    }
     if (!verified || state.permissionClosed || state.permissionJob!==job) return;
     if (state.permissionLeases.size>=64) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
     const stream=$.process.spawn({argv:[confirmationHelper,...confirmationArgs],input:JSON.stringify(reply)});
@@ -112,9 +112,9 @@ function beginConfirmation($, state, active) {
   state.requests.add(active);
 }
 // A scope that ends normally leaves an admitted request alone: its proof closes
-// with that HTTP request. Cutting it would turn finished work into an API error
-// (measured: a child's progress check cut at its step end, then native aborted
-// the parent's turn). Cancellation closes the turn's proofs instead (closeTurn).
+// with that HTTP request. Cutting it would fail work native still awaits
+// (measured: a child's progress check outlived its step by seconds and native
+// ended it itself). Cancellation closes the turn's proofs instead (closeTurn).
 async function endConfirmation($, state, active) {
   state.requests.delete(active);
   if (!state.requests.size) {

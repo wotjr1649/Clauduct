@@ -3,8 +3,11 @@ package gateway
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"net/http"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 type nativeCancellation struct {
@@ -125,7 +128,10 @@ func (n *nativeEventState) cancelLocked(p *nativeCancellation, source string) {
 func (g *Gateway) nativeCancellationSource(id nativeTurnReceipt) (string, error) {
 	var receipt nativeTurnReceipt
 	found, err := g.readNativeJSON("cancel-"+id.Turn+".json", []string{"session", "agent", "turn", "reason"}, &receipt)
-	if err != nil && !errors.Is(err, errDelegationUnverified) {
+	// Cut-off JSON or a read refused mid-write is still being written. A complete
+	// document with an unknown field, a duplicate or the wrong types is a verdict.
+	var pathErr *fs.PathError
+	if errors.Is(err, wire.ErrMalformed) || errors.As(err, &pathErr) {
 		return "", errCancellationPending
 	}
 	if !found || err != nil {

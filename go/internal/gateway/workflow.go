@@ -216,6 +216,11 @@ func (d *delegations) linkWorkflow(link workflowLink) error {
 	return nil
 }
 
+// errWorkflowWaitExpired is the bounded wait ending, wherever it ends: between two looks or
+// in the middle of one. Under load the deadline often passed inside findWorkflow, which
+// reported it unlabelled, so the same expiry was filed as "unclassified" (#259).
+var errWorkflowWaitExpired = refusedBecause("workflow_evidence_wait_expired")
+
 func (d *delegations) workflowRoute(ctx context.Context, scope delegationScope, id string, binding agentBinding) (bridge.Route, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -226,7 +231,7 @@ func (d *delegations) workflowRoute(ctx context.Context, scope delegationScope, 
 		}
 		select {
 		case <-ctx.Done():
-			return bridge.Route{}, false, refusedBecause("workflow_evidence_wait_expired")
+			return bridge.Route{}, false, errWorkflowWaitExpired
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
@@ -254,7 +259,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 	bytesLeft := int64(16 << 20)
 	for _, run := range d.workflows {
 		if ctx.Err() != nil {
-			return bridge.Route{}, false, errDelegationUnverified
+			return bridge.Route{}, false, errWorkflowWaitExpired
 		}
 		if run.Session != scope.session || run.Transcript != binding.TranscriptPath {
 			continue
@@ -278,7 +283,7 @@ func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, i
 		rows := 0
 		for scanner.Scan() {
 			if ctx.Err() != nil {
-				return bridge.Route{}, false, errDelegationUnverified
+				return bridge.Route{}, false, errWorkflowWaitExpired
 			}
 			rows++
 			if rows > 65536 {

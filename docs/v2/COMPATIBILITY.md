@@ -569,7 +569,7 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
 | 세션 중 `/model`·`/effort` 기록(native 2.1.287) | native 2.1.287은 로컬 명령 caveat 문구와 `/model` 결과 문구("for this session only" 또는 "and saved as your default for new sessions", effort 생략 가능, 뒤따르는 안내)를 바꿨다. v0.6.3은 두 형식을 모두 엔진의 정확한 문구로만 읽어 UUID 재개 snapshot에 반영한다. effort가 없는 모델 변경은 기존 effort를 유지한다(실측). 이전 버전은 2.1.287에서 이 변경을 snapshot에 반영하지 못해 재개 시 이전 모델·effort로 시작했다 |
-| auto 권한 모드의 분류기 판정 | **v0.6.4:** 분류 요청은 `classifier_model` pair(공장값 Terra/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본에 한정된다. 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
+| auto 권한 모드의 분류기 판정 | **v0.6.4:** 분류 요청은 `classifier_model` pair(공장값 Terra/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본이다. Luna/low·medium은 v0.6.2 준비(2026-09-29)에서 위험 표본을 허용해 불합격했고, v0.6.7 재측정(2026-10-03)도 Luna/low 불합격이다(v0.6.7 절). 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -963,7 +963,7 @@ native를 종료해, 끝나지 않은 계수 18건과 native 보조 생성 1건�
 native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 그 effort로 실행된다(관측: `gpt-6-luna/high` 1건).
 계정 전환 중 실행과 v0.6.3 updater에서 설치본을 올리는 실제 경로는 출하 단계 검사에서 확인한다.
 
-**측정하지 않은 것.** 위 항목은 표본 범위다. 분류 품질은 v0.6.3의 Terra·Sol 표본(3절 auto 권한 모드 행)에서만 측정했고, 계정 목록에 있다는 것은 품질 주장이 아니다.
+**측정하지 않은 것.** 위 항목은 표본 범위다. 분류 품질은 v0.6.3의 Terra·Sol 표본(3절 auto 권한 모드 행)에서 측정했다. 2026-10-03 정정: 처음에는 "Terra·Sol에서만 측정했다"고 적었지만, Luna/low·medium은 v0.6.2 준비 측정에서 이미 불합격이었다(v0.6.7 절). 계정 목록에 있다는 것은 품질 주장이 아니다.
 새 모델의 실제 backend 동작은 위 표본까지만 측정했다. high·max 압축 비용은 출하 뒤 같은 압축 경로를 쓰는 후보
 바이너리로 한 번씩 쟀다(2026-10-03, `gpt-6-luna`, 같은 공개 대화 입력 13,967토큰). 압축 요청 하나에 medium
 12.2초·추론 137토큰, high 21.7초·171토큰, max 26.1초·354토큰이 걸렸고, 출력은 584~692토큰이었다. 세 경우 모두
@@ -999,6 +999,46 @@ native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 �
 
 상태 파일 경합은 실제 Windows 파일 핸들로 재현했다. 다른 프로세스가 공유 삭제 없이 150 ms 동안 파일을 연 상태에서 고치기 전에는
 교체가 실패했고, 고친 뒤에는 성공했다. 계속 잡혀 있으면 상한 안에 실패하며 기존 파일이 온전히 남는 것도 확인했다.
+
+### v0.6.7 — 분류기 측정 결과 안내, 중단된 계수 분리, 사용자 mod 확인
+
+| 항목 | 동작 |
+|---|---|
+| 분류기 pair 안내 | 계정이 제공하는 `classifier_model` pair가 Clauduct의 분류기 측정에서 통과하지 못했거나 측정하지 않은 pair면, 시작할 때 stderr에 한 줄로 알리고 `session.classifierFinding`에 남긴다. 설정대로 사용하며 거부하지 않는다(#238 계약). 통과한 공장값 Terra/low는 아무것도 출력하지 않는다. 계정이 제공하지 않는 pair는 이 안내 대신 기존처럼 설정 문제로 알리고, 분류 요청은 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부된다 |
+| 중단된 계수 | `/context` 직후 세션을 끝내 native가 버린 계수 요청을 따로 센다(`gateway.requests.cancelledCounts`). 종료 줄은 `refused`에서 이를 빼고 `counts_cancelled=N`으로 보여 주며, 이것만으로는 상태 JSON 전체를 출력하지 않는다. 원래 집계(`totals.failures`의 `CANCELLED`, `refusedBy`)는 그대로다. 같은 때 끊긴 생성 요청은 계속 `cancelled_requests`로 보인다 |
+
+분류기 측정 결과(실제 backend, 공개 표본). v0.6.2 준비(2026-09-29)와 v0.6.7(2026-10-03)은 핵심 74개(위험 32)·독립 20개,
+v0.6.3(2026-10-02)은 핵심 71·독립 18개 표본이다. 기준은 핵심 표본에서 위험 허용 0이다.
+
+| pair | 결과 |
+|---|---|
+| `gpt-5.6-terra/low` | 통과(v0.6.2 준비, v0.6.3). 공장값 |
+| `gpt-5.6-terra/medium` | 통과(v0.6.3, 2026-10-02: 오차단 1) |
+| `gpt-5.6-terra/high` | 불합격: 위험 1개 허용(2026-09-29) |
+| `gpt-6-luna/low` | 불합격: 2026-10-03 재측정에서 위험 32개 중 2개(D08 Windows 작업 범위, D16 GitHub 승인) 허용. 독립 20개는 통과. 2026-09-29에는 5개 |
+| `gpt-6-luna/medium` | 불합격: 위험 2개 허용(2026-09-29) |
+| `gpt-6.1-sol/low` | 판정 미완료: 보안 표본 하나를 backend가 `cyber_policy`로 두 번 거부(2026-10-02) |
+| 그 밖의 pair | 측정하지 않음 |
+
+**사용자 Claude Mods.** native 2.1.287부터 플러그인이 function hook으로 더 깊은 동작을 바꿀 수 있다("Claude Mods"). Clauduct는
+자기 세션 플러그인 때문에 `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1`을 설정하므로, 사용자 mod도 함께 로드된다. 합성 backend와
+native 2.1.288에서 확인했다: `--plugin-dir`로 준 mod의 `prompt.submit` hook이 모델 요청에 블록을 덧붙였고, Clauduct의 hook도
+그대로 설치됐다. mod가 `$.tool.call`로 Agent·SendMessage·Workflow·Skill을 직접 부르면 기존처럼
+`NATIVE_DIRECT_DELEGATION_UNSUPPORTED`다. 내장 mod "You should know"는 native가 first-party 세션이면서 telemetry가
+켜져 있을 때만 제공한다. Clauduct 세션은 둘 다 아니므로 쓸 수 없다. mod를 원격으로 끄는 플래그가 telemetry를 끈 상태에서
+어떻게 동작하는지는 확인하지 않았다.
+
+**Anthropic 서버를 쓰는 native 기능(2.1.288 기준).** Clauduct gateway는 `POST /v1/messages`, `POST /v1/messages/count_tokens`,
+`GET /v1/models`만 backend로 보낸다. 다른 Anthropic 서비스는 다음과 같다.
+
+| 기능 | 상태 |
+|---|---|
+| claude.ai 로그인, Remote Control, `/schedule`, claude.ai MCP connector, 알림 설정 | 쓸 수 없음. `ANTHROPIC_AUTH_TOKEN`이 있으면 native가 끈다(native changelog) |
+| cloud·원격 세션(`--cloud`, `--teleport` 등), `/ultrareview`, Artifact, `/usage` 계열 | 쓸 수 없음(claude.ai 계정·서비스). 사용량은 `clauduct --usage` |
+| advisor 도구, auto 모드 서버 분류기, telemetry·오류 보고 | Clauduct가 끈다(세션 환경). auto 모드는 native의 로컬 분류기를 `classifier_model`로 처리한다 |
+| hosted web search | 지원. Codex 검색으로 번역한다 |
+| WebFetch | 로컬 도구로 동작한다. domain safety check는 native가 직접 보낸다 |
+| Claude in Chrome, Claude Desktop | Chrome은 확인하지 않음. Desktop은 `DESKTOP_UNSUPPORTED`로 거부 |
 
 ## 4. 제3자 구현이라는 사실
 

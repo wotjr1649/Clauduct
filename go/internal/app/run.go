@@ -120,6 +120,7 @@ type Result struct {
 	Context               ContextFacts
 	ClassifierModel       bridge.Pair
 	ClassifierModelSource string
+	ClassifierFinding     string
 	ModelList             ModelListFacts
 	DeprecatedSettings    []string
 	// MenuEntries counts the delegation menu, the inherit entry included.
@@ -224,6 +225,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// One account list per session, fixed before native starts and shared by display,
 	// routing, Agent schemas and native hooks. Help and version never fetch one.
 	var catalogue *bridge.Catalogue
+	var classifierFinding string // printed only for a pair the account offers; status says the same
 	var listFacts ModelListFacts
 	if !information {
 		catalogue, listFacts, err = o.ModelList(ctx, clauductHome)
@@ -234,6 +236,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		listFacts.Problems = config.Selection.Problems()
 		if config.ClassifierModel != (bridge.Pair{}) && !config.Selection.ValidPair(config.ClassifierModel) {
 			listFacts.Problems = append(listFacts.Problems, "classifier_model: "+config.ClassifierModel.Model+"/"+config.ClassifierModel.Effort+" is not offered by the account")
+		} else if classifierFinding = classifierFindingOf(config.ClassifierModel); classifierFinding != "" {
+			fmt.Fprintf(o.Stderr, "clauduct: %s\n", classifierFinding)
 		}
 		if listFacts.Source == "last-good" {
 			fmt.Fprintf(o.Stderr, "clauduct: the account model list could not be fetched (%s); using this account's list from %s\n", listFacts.FetchFailure, listFacts.FetchedAt)
@@ -303,7 +307,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureClassifierModel(config.ClassifierModel)
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
-		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource,
+		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource, ClassifierFinding: classifierFinding,
 		ModelList: listFacts, DeprecatedSettings: config.Deprecated}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is

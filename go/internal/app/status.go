@@ -70,10 +70,13 @@ type SessionFacts struct {
 	ClassifierModel       string                `json:"classifierModel,omitempty"`
 	ClassifierEffort      string                `json:"classifierEffort,omitempty"`
 	ClassifierModelSource string                `json:"classifierModelSource"`
-	ModelList             ModelListFacts        `json:"modelList"`
-	DeprecatedSettings    []string              `json:"deprecatedSettings,omitempty"`
-	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
-	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
+	// ClassifierFinding is the start-up notice for a pair that did not pass Clauduct's
+	// classifier measurement (v0.6.7); empty for one that did.
+	ClassifierFinding     string         `json:"classifierFinding,omitempty"`
+	ModelList             ModelListFacts `json:"modelList"`
+	DeprecatedSettings    []string       `json:"deprecatedSettings,omitempty"`
+	NonStreamingFallback  bool           `json:"nonStreamingFallbackDisabled"`
+	DelegationMenuEntries int            `json:"delegationMenuEntries"`
 	// HookInstalled is whether the session got a hook: since #112 this executable itself.
 	//
 	// Reported because its absence is silent otherwise. findHook is os.Executable, so a
@@ -129,14 +132,18 @@ type Status struct {
 // CompletionFacts separates process exit, transport success and task completion.
 // Acceptance is never inferred from exit=0 or a model's own report.
 type CompletionFacts struct {
-	Acceptance            string `json:"acceptance"`
-	APIFailures           int64  `json:"apiFailures"`
-	CancelledRequests     int64  `json:"cancelledRequests"`
-	NativeCancellations   int64  `json:"nativeCancellations"`
-	NativeToolFailures    int64  `json:"nativeToolFailures"`
-	RejectedWorkflowCalls int64  `json:"rejectedWorkflowCalls"`
-	UnacquiredResults     int    `json:"unacquiredResultsInRecent"`
-	ControlTransitions    int64  `json:"controlTransitions"`
+	Acceptance        string `json:"acceptance"`
+	APIFailures       int64  `json:"apiFailures"`
+	CancelledRequests int64  `json:"cancelledRequests"`
+	// CancelledCounts is count_tokens native abandoned (v0.6.7). Kept out of
+	// CancelledRequests: a count is no part of any task, and quitting right after /context
+	// abandons a dozen of them.
+	CancelledCounts       int64 `json:"cancelledCounts,omitempty"`
+	NativeCancellations   int64 `json:"nativeCancellations"`
+	NativeToolFailures    int64 `json:"nativeToolFailures"`
+	RejectedWorkflowCalls int64 `json:"rejectedWorkflowCalls"`
+	UnacquiredResults     int   `json:"unacquiredResultsInRecent"`
+	ControlTransitions    int64 `json:"controlTransitions"`
 }
 
 func completionFacts(d gateway.Diagnostics) CompletionFacts {
@@ -148,6 +155,8 @@ func completionFacts(d gateway.Diagnostics) CompletionFacts {
 			out.APIFailures += n
 		}
 	}
+	out.CancelledCounts = min(d.Requests.CancelledCounts, out.CancelledRequests)
+	out.CancelledRequests -= out.CancelledCounts
 	out.NativeCancellations = d.AgentResults.Totals["cancelled"]
 	out.RejectedWorkflowCalls = d.Totals.RejectedWorkflowCalls
 	for _, n := range d.Totals.Controls {
@@ -190,6 +199,7 @@ func Account(result Result) Status {
 			ClassifierModel:       result.ClassifierModel.Model,
 			ClassifierEffort:      result.ClassifierModel.Effort,
 			ClassifierModelSource: result.ClassifierModelSource,
+			ClassifierFinding:     result.ClassifierFinding,
 			ModelList:             result.ModelList,
 			DeprecatedSettings:    result.DeprecatedSettings,
 			NonStreamingFallback:  defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
@@ -216,7 +226,7 @@ func (s Status) noteworthy() bool {
 		(s.Lifecycle != nil && s.Lifecycle.CheckpointFailures > 0) ||
 		s.Gateway.WorkflowPersistence.Failed > 0 ||
 		!s.Session.HookInstalled ||
-		s.Gateway.Requests.Refused > s.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]+s.Completion.ControlTransitions || s.Gateway.BrokenStreams() > 0 ||
+		s.Gateway.Requests.Refused > s.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]+s.Completion.ControlTransitions+s.Gateway.Requests.CancelledCounts || s.Gateway.BrokenStreams() > 0 ||
 		s.Completion.NativeToolFailures > 0 || s.Completion.RejectedWorkflowCalls > 0 || s.Completion.UnacquiredResults > 0 || s.Gateway.NativeToolFailures.CapacityExceeded ||
 		s.Gateway.Events.Unsupported > 0 ||
 		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 || s.Gateway.Agents.Evicted > 0 ||
@@ -246,10 +256,12 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	if writeErr != nil {
 		where = "none"
 	}
-	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s attempts=%d inferences=%d%s%s status=%s\n",
+	// Counts native abandoned are named apart from refusals (v0.6.7): a session ended right
+	// after /context otherwise read "refused=18" and dumped its whole account.
+	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
-		account.Gateway.Requests.Received, account.Gateway.Requests.Refused,
-		brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account)+replacedField(account), where)
+		account.Gateway.Requests.Received, account.Gateway.Requests.Refused-account.Gateway.Requests.CancelledCounts,
+		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account)+replacedField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
 	}
@@ -372,6 +384,14 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 func brokenField(account Status) string {
 	if broken := account.Gateway.BrokenStreams(); broken > 0 {
 		return fmt.Sprintf(" broken=%d", broken)
+	}
+	return ""
+}
+
+// countsCancelledField names exact counts native abandoned, only when there are any.
+func countsCancelledField(account Status) string {
+	if n := account.Gateway.Requests.CancelledCounts; n > 0 {
+		return fmt.Sprintf(" counts_cancelled=%d", n)
 	}
 	return ""
 }

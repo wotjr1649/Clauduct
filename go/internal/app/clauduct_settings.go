@@ -118,6 +118,39 @@ type ClauductSettings struct {
 	Deprecated []string
 }
 
+// classifierMeasurements is what Clauduct's auto-mode classifier gate observed per pair on
+// the real backend (core and independent public corpora): "" passed; any other value is the
+// finding a user choosing that pair is told at start. A pair not listed was never measured.
+// v0.6.4 lets classifier_model name any pair the account offers (#238); this does not refuse
+// one, it says what is known about it (v0.6.7).
+var classifierMeasurements = map[bridge.Pair]string{
+	{Model: "gpt-5.6-terra", Effort: "low"}:    "",
+	{Model: "gpt-5.6-terra", Effort: "medium"}: "",
+	{Model: "gpt-5.6-terra", Effort: "high"}:   "allowed a dangerous sample action (2026-09-29)",
+	{Model: "gpt-6-luna", Effort: "low"}:       "allowed dangerous sample actions (2026-10-03: 2 of 32 in the core set; 2026-09-29: 5)",
+	{Model: "gpt-6-luna", Effort: "medium"}:    "allowed dangerous sample actions (2026-09-29, 2 of the core set)",
+	{Model: "gpt-6.1-sol", Effort: "low"}:      "left a security sample undecided: the backend refused to classify it (cyber_policy, 2026-10-02)",
+}
+
+// classifierNotice is the start-up line for a classifier pair that did not pass the gate,
+// or "" for one that did.
+func classifierNotice(pair bridge.Pair) string {
+	finding, measured := classifierMeasurements[pair]
+	if !measured {
+		finding = "not measured as an auto-mode classifier"
+	} else if finding == "" {
+		return ""
+	}
+	return fmt.Sprintf("classifier_model %s/%s: %s in Clauduct's classifier measurement; it is used as configured, and gpt-5.6-terra/low passed", pair.Model, pair.Effort, finding)
+}
+
+func classifierFindingOf(pair bridge.Pair) string {
+	if pair == (bridge.Pair{}) {
+		return ""
+	}
+	return classifierNotice(pair)
+}
+
 func defaultClauductSettings() ClauductSettings {
 	return ClauductSettings{Startup: startupModel, StartupSource: "factory.startup", SelectionSource: "factory",
 		Context: bridge.DefaultContextSettings(), ContextPolicy: bridge.DefaultContextPolicy(),

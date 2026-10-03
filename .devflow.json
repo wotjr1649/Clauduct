@@ -1,0 +1,13 @@
+{
+  "integration": "pr-ci",
+  "agentsMd": "private",
+  "branch": "{type}/{issue}-{slug}",
+  "private": ["docs/prompts/", "docs/plans/", "artifacts/", ".work/", "_ref/", "verification/", "go/.verification/"],
+  "protected": ["_ref/**"],
+  "highRisk": ["scripts/**", "go/internal/platform/**", "go/internal/upstream/**", ".github/workflows/**"],
+  "checks": {
+    "go/**": "cd go && CGO_ENABLED=0 gofmt -l . && CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go build ./...",
+    "**/*.md": "node verification/test-doc-citations.mjs"
+  },
+  "verify": "cd go && CGO_ENABLED=0 gofmt -l . && CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go test -count=1 -timeout=120m ./... && CGO_ENABLED=1 go test -count=1 -race -timeout=120m ./... && cd .. && node verification/test-doc-citations.mjs"
+}

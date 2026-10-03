@@ -93,7 +93,8 @@ type RequestError struct {
 	// or one the request used -- a key, a type, a tool name.
 	Field string
 	// Unknown says Field is something this build does not know -- a key outside the
-	// allowlist, or a block or thinking type -- which is what a client update adds. A known
+	// allowlist, a block or thinking type, or a thinking display -- which is what a client
+	// update adds (2.1.288 added the display "updates"). A known
 	// member with a bad value, or a repeated key, is not Unknown (#127).
 	Unknown bool
 }
@@ -715,9 +716,9 @@ func checkCacheControl(raw json.RawMessage) error {
 	// scope is the client's prompt-caching-scope extension, not the public API's, and the
 	// client writes only "global" (native 2.1.288). Any other value is a scope nobody here
 	// knows, accepted until now only because nothing read it (#253).
-	if scopeValue, present := wire.Of(fields, "scope"); present != wire.Absent {
+	if scopeValue, present := wire.Of(fields, "scope"); present == wire.Present {
 		var scope string
-		if present != wire.Present || json.Unmarshal(scopeValue, &scope) != nil || scope != "global" {
+		if json.Unmarshal(scopeValue, &scope) != nil || scope != "global" {
 			return refuse(CodeCacheValue, "scope")
 		}
 	}
@@ -824,8 +825,10 @@ func decodeThinking(fields map[string]json.RawMessage, request *Request) error {
 	// Each type carries only its own members, the public API's variants. A budget on an
 	// adaptive or disabled request, or a display on a disabled one, was accepted while
 	// nothing read either (#253).
-	for name := range thinking {
-		if name != "type" && !members[name] {
+	// A null member is an absent one, as everywhere else in this package. Checked in a fixed
+	// order so the member a refusal names does not depend on map iteration.
+	for _, name := range []string{"budget_tokens", "display"} {
+		if _, present := wire.Of(thinking, name); present == wire.Present && !members[name] {
 			return refuse(CodeThinkingFields, name)
 		}
 	}
@@ -834,7 +837,7 @@ func decodeThinking(fields map[string]json.RawMessage, request *Request) error {
 	if kind == "enabled" && present != wire.Present {
 		return refuse(CodeThinkingBudget, "budget_tokens")
 	}
-	if present != wire.Absent {
+	if present == wire.Present {
 		number, err := exactInteger(budget)
 		if err != nil || number <= 0 || number > maxSafeInteger {
 			return refuse(CodeThinkingBudget, "budget_tokens")
@@ -863,7 +866,8 @@ var thinkingMembers = map[string]map[string]bool{
 // thinkingDisplays are the public API's two values and the client's own two. Measured on
 // native 2.1.288 (#253): omitted from a print session, updates from a TUI or a verbose
 // stream, summarized with showThinkingSummaries. highlights is in the client and was not
-// reached; it is accepted because refusing it would cost a turn the client then retries.
+// reached. The client keeps a path that resends with omitted once a server rejects it, so
+// refusing it would only add a refused request in front of the same answer.
 var thinkingDisplays = map[string]bool{"summarized": true, "omitted": true, "updates": true, "highlights": true}
 
 // The one context edit the baseline consumes is a semantic no-op. Anything else changes

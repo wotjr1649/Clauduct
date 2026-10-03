@@ -157,7 +157,7 @@ type InputEntry struct {
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
 
-	// function_call_output
+	// function_call_output. Empty, it is written as "" by MarshalJSON, never left out.
 	Output []InputPart `json:"output,omitempty"`
 
 	// reasoning. Carried apart from the rest because its shape shares no field with them
@@ -178,7 +178,8 @@ type ReasoningPart struct {
 	Text string `json:"text"`
 }
 
-// MarshalJSON writes a reasoning entry in its own shape and everything else unchanged.
+// MarshalJSON writes a reasoning entry and an empty function_call_output in their own shapes
+// and everything else unchanged.
 //
 // The summary is written even when empty. omitempty would drop it, and the backend is
 // being handed back exactly what it produced -- an empty summary is a summary with nothing

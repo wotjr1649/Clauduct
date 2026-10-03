@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
@@ -152,16 +151,6 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 				}
 			}
 			out[key], _ = json.Marshal(merged)
-		} else if key == "autoMode" || key == "permissions" {
-			field := "hard_deny"
-			if key == "permissions" {
-				field = "ask"
-			}
-			merged, err := mergeRequiredRules(value, user[key], field)
-			if err != nil {
-				return "", err
-			}
-			out[key] = merged
 		} else if key == "hooks" {
 			merged, err := mergeHookSettings(value, user[key])
 			if err != nil {
@@ -219,44 +208,4 @@ func jsonEqual(a, b json.RawMessage) bool {
 	one, _ := json.Marshal(first)
 	two, _ := json.Marshal(second)
 	return string(one) == string(two)
-}
-
-// Preserve user fields and append the required native rule list without duplicates.
-// Other native scopes are combined by native itself; no global file is read or written.
-func mergeRequiredRules(required, user json.RawMessage, field string) (json.RawMessage, error) {
-	if len(user) == 0 {
-		return required, nil
-	}
-	base, err := wire.Fields(required, nil)
-	if err != nil {
-		return nil, errUserSettings
-	}
-	fields, err := wire.Fields(user, nil)
-	if err != nil {
-		return nil, errUserSettings
-	}
-	var mandatory, extra []string
-	if json.Unmarshal(base[field], &mandatory) != nil || mandatory == nil {
-		return nil, errUserSettings
-	}
-	if raw, ok := fields[field]; ok {
-		if json.Unmarshal(raw, &extra) != nil || extra == nil {
-			return nil, errUserSettings
-		}
-		for _, rule := range extra {
-			if strings.TrimSpace(rule) == "" {
-				return nil, errUserSettings
-			}
-		}
-	}
-	for _, rule := range mandatory {
-		if !slices.Contains(extra, rule) {
-			extra = append(extra, rule)
-		}
-	}
-	fields[field], err = json.Marshal(extra)
-	if err != nil {
-		return nil, errUserSettings
-	}
-	return json.Marshal(fields)
 }

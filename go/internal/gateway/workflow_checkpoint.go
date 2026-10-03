@@ -77,7 +77,7 @@ func checkpointPlan(script string, plan *workflowPlan) (*[]workflowStepOffset, e
 	return &steps, nil
 }
 
-func restoreCheckpointPlan(script string, offsets *[]workflowStepOffset) (*workflowPlan, error) {
+func restoreCheckpointPlan(script string, offsets *[]workflowStepOffset, selection bridge.Selection) (*workflowPlan, error) {
 	if offsets == nil {
 		return nil, nil
 	}
@@ -103,8 +103,7 @@ func restoreCheckpointPlan(script string, offsets *[]workflowStepOffset) (*workf
 		if json.Unmarshal([]byte(script[s.Start:s.Start+s.Length]), &step.Prompt) != nil {
 			return nil, errWorkflowRecoveryUnverified
 		}
-		route, err := bridge.SelectRoute(s.Model, s.Effort)
-		if err != nil || route.Model != s.Model || s.Effort == "" {
+		if !selection.ValidPair(bridge.Pair{Model: s.Model, Effort: s.Effort}) {
 			return nil, errWorkflowRecoveryUnverified
 		}
 		p.Steps = append(p.Steps, step)
@@ -263,10 +262,10 @@ func (d *delegations) restoreWorkflowState(session, source string, nativeResume 
 	if link.Transcript != expectedTranscript || link.Script != expectedScript || link.Directory != expectedDirectory || filepath.Join(d.projects, scriptPath) != expectedScript {
 		return zero, errWorkflowRecoveryUnverified
 	}
-	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
-	if err != nil || route.Model != saved.Model || saved.Effort == "" {
+	if !d.selection.ValidPair(bridge.Pair{Model: saved.Model, Effort: saved.Effort}) {
 		return zero, errWorkflowRecoveryUnverified
 	}
+	route := bridge.Route{Model: saved.Model, Effort: saved.Effort}
 	script, err := workflowRead(root, scriptPath, 512<<10)
 	if err != nil || (!nativeResume || saved.Plan != nil) && (saved.AdapterBytes > len(script) || workflowDigest(script) != saved.Digest) {
 		return zero, errWorkflowRecoveryUnverified
@@ -278,7 +277,7 @@ func (d *delegations) restoreWorkflowState(session, source string, nativeResume 
 	}
 	var plan *workflowPlan
 	if saved.Plan != nil {
-		plan, err = restoreCheckpointPlan(string(script[:len(script)-saved.AdapterBytes]), saved.Plan)
+		plan, err = restoreCheckpointPlan(string(script[:len(script)-saved.AdapterBytes]), saved.Plan, d.selection)
 		if err != nil {
 			return zero, err
 		}
@@ -290,10 +289,10 @@ func (d *delegations) restoreWorkflowState(session, source string, nativeResume 
 		if !correlationShape.MatchString(child.Agent) || !correlationShape.MatchString(strings.ReplaceAll(child.Role, ":", "_")) || choices[child.Agent].session != "" || (child.Source != "workflow-parent" && child.Source != "workflow-selection") {
 			return zero, errWorkflowRecoveryUnverified
 		}
-		selected, err := bridge.SelectRoute(child.Model, child.Effort)
-		if err != nil || selected.Model != child.Model || child.Effort == "" {
+		if !d.selection.ValidPair(bridge.Pair{Model: child.Model, Effort: child.Effort}) {
 			return zero, errWorkflowRecoveryUnverified
 		}
+		selected := bridge.Route{Model: child.Model, Effort: child.Effort}
 		selected.Source = child.Source
 		meta, err := workflowRead(root, filepath.Join(directory, "agent-"+child.Agent+".meta.json"), 16384)
 		if err != nil || workflowDigest(meta) != child.MetaDigest {

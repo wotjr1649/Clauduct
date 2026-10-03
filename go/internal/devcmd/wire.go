@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -162,6 +163,22 @@ func (e exchange) String() string {
 	return text
 }
 
+// probeSelection offers exactly the routes a probe is authorised for. A probe never reads
+// an account list: its spend is decided by its own budget, not by what an account offers.
+func probeSelection(routes ...bridge.Route) bridge.Selection {
+	var models []bridge.AccountModel
+	for _, route := range routes {
+		at := slices.IndexFunc(models, func(m bridge.AccountModel) bool { return m.ID == route.Model })
+		if at < 0 {
+			models = append(models, bridge.AccountModel{ID: route.Model, Default: route.Effort})
+			at = len(models) - 1
+		}
+		models[at].Efforts = append(models[at].Efforts, route.Effort)
+	}
+	catalogue, _, _ := bridge.NewCatalogue(models)
+	return bridge.Selection{}.WithCatalogue(catalogue)
+}
+
 // probeHead is the request prefix every probe shares.
 //
 // The effort is stated rather than left out, and that is a correction. Without it
@@ -199,7 +216,11 @@ func routedTrip(transport upstream.Transport, out io.Writer, label, requestJSON 
 		fmt.Fprintf(out, "%-14s %s\n", label, result)
 		return result
 	}
-	backend, err := bridge.BuildRequest(request, route...)
+	offered := route
+	if len(offered) == 0 {
+		offered = []bridge.Route{{Model: request.Model, Effort: request.Effort}}
+	}
+	backend, err := probeSelection(offered...).BuildRequest(request, route...)
 	if err != nil {
 		result := exchange{category: "BUILD_REQUEST: " + err.Error()}
 		fmt.Fprintf(out, "%-14s %s\n", label, result)

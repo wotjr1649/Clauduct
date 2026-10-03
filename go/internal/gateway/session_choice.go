@@ -40,7 +40,7 @@ type choiceRow struct {
 // the engine's meta caveat and two distinct, linked rows with one prompt ID.
 // User text resembling a command is insufficient. No conversation body is retained.
 // An unfinished triple is reread from its first byte on the next observation.
-func readSessionChoice(file io.ReadSeeker, session string, offset int64, prior bridge.Pair) (bridge.Pair, int64, bool, error) {
+func readSessionChoice(file io.ReadSeeker, session string, offset int64, prior bridge.Pair, selection bridge.Selection) (bridge.Pair, int64, bool, error) {
 	if offset < 0 {
 		return prior, offset, false, errSessionSelection
 	}
@@ -87,7 +87,7 @@ func readSessionChoice(file io.ReadSeeker, session string, offset int64, prior b
 				phase = 2
 			}
 		case phase == 2 && linked && !row.IsMeta:
-			pair, err := parseNativeChoice(command, text, prior)
+			pair, err := parseNativeChoice(command, text, prior, selection)
 			if err != nil {
 				return prior, tripleStart, changed, errSessionSelection
 			}
@@ -139,7 +139,7 @@ func parseChoiceRow(raw []byte, session string) (choiceRow, string, bool) {
 	return row, text, valid
 }
 
-func parseNativeChoice(command, text string, prior bridge.Pair) (bridge.Pair, error) {
+func parseNativeChoice(command, text string, prior bridge.Pair, selection bridge.Selection) (bridge.Pair, error) {
 	if text == "<local-command-stdout>Cancelled</local-command-stdout>" {
 		return prior, nil
 	}
@@ -162,7 +162,8 @@ func parseNativeChoice(command, text string, prior bridge.Pair) (bridge.Pair, er
 			pair = bridge.Pair{Model: prior.Model, Effort: parts[1]}
 		}
 	}
-	if !bridge.ValidPair(pair) {
+	// The session's account list decides; a resumed session checks its own list again.
+	if !selection.ValidPair(pair) {
 		return prior, errSessionSelection
 	}
 	return pair, nil

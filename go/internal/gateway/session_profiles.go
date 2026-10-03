@@ -138,10 +138,9 @@ func parseSessionProfile(raw []byte, id string) (SessionProfile, error) {
 	if err != nil {
 		return bad()
 	}
-	frozen := profile.Selection.Snapshot()
-	if len(frozen.ModelDefaults) != len(profile.Selection.ModelDefaults) || len(frozen.ModelMapping) != len(profile.Selection.ModelMapping) || len(frozen.RoleDefaults) != len(profile.Selection.RoleDefaults) {
-		return bad()
-	}
+	// The saved snapshot is checked for shape only. Its entry count is not compared with
+	// today's lists: an account that offers one more model must not refuse an old profile.
+	// Whether the saved choice is still available is the resuming session's check.
 	profile.Last, err = bridge.ParsePair(fields["last"])
 	if err != nil {
 		return bad()
@@ -182,7 +181,7 @@ func (s *SessionProfiles) Save(profile SessionProfile) error {
 
 // Refresh reads only the recorded native path below its projects root. A partial
 // append is retryable while native runs; a final/resume read must reach EOF.
-func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, final bool) error {
+func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, final bool, selection bridge.Selection) error {
 	if profile.Transcript == "" {
 		return nil
 	}
@@ -212,7 +211,7 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 			return ErrSessionProfile
 		}
 	}
-	pair, offset, _, err := readSessionChoice(file, profile.ID, profile.Offset, profile.Last)
+	pair, offset, _, err := readSessionChoice(file, profile.ID, profile.Offset, profile.Last, selection)
 	if err != nil || final && offset != info.Size() {
 		return errSessionSelection
 	}
@@ -280,7 +279,7 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 		// only to that same session, while those flags still match its last S.
 		current := p.profiles[session]
 		if p.background && p.current == session && current != nil {
-			if err := p.store.Refresh(current, g.delegations.projects, true); err != nil {
+			if err := p.store.Refresh(current, g.delegations.projects, true, g.selection); err != nil {
 				return err
 			}
 		}
@@ -292,7 +291,7 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 	if current := p.profiles[session]; current != nil {
 		next := *current
 		next.Transcript = g.contexts.sessions[session]
-		if err := p.store.Refresh(&next, g.delegations.projects, false); err != nil {
+		if err := p.store.Refresh(&next, g.delegations.projects, false, g.selection); err != nil {
 			return err
 		}
 		if p.current == "" || current.Transcript != next.Transcript {
@@ -327,7 +326,7 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 		if prior == nil {
 			return ErrSessionProfile
 		}
-		if err := p.store.Refresh(prior, g.delegations.projects, true); err != nil {
+		if err := p.store.Refresh(prior, g.delegations.projects, true, g.selection); err != nil {
 			return err
 		}
 		pair = prior.Last
@@ -378,7 +377,7 @@ func (g *Gateway) CheckpointSessionProfiles(final bool) error {
 	defer p.mu.Unlock()
 	var result error
 	for _, profile := range p.profiles {
-		result = errors.Join(result, p.store.Refresh(profile, g.delegations.projects, final))
+		result = errors.Join(result, p.store.Refresh(profile, g.delegations.projects, final, g.selection))
 	}
 	if result != nil {
 		p.ready = false

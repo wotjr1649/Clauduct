@@ -107,6 +107,9 @@ func (g *Gateway) ConfigureContextPolicy(policy bridge.ContextPolicy) {
 		g.contexts.policy = policy
 		g.contexts.mu.Unlock()
 	}
+	g.ring.mu.Lock()
+	g.ring.policy = policy
+	g.ring.mu.Unlock()
 }
 
 func contextKey(session, agent string) string { return session + "/" + agent }
@@ -126,13 +129,12 @@ func conversationRequest(r *http.Request, request *anthropic.Request) bool {
 	}
 }
 
-func policyFor(model string) (bridge.ContextPolicy, bool) {
-	for _, entry := range bridge.Models {
-		if model == entry.ID {
-			return entry.Context, true
-		}
+// policyFor is the launch's shared policy for a model the session's account list offers.
+func (g *Gateway) policyFor(model string) (bridge.ContextPolicy, bool) {
+	if _, ok := g.selection.ModelByID(model); !ok || g.contexts == nil {
+		return bridge.ContextPolicy{}, false
 	}
-	return bridge.ContextPolicy{}, false
+	return g.contexts.policy, true
 }
 
 // Compaction is authorized by the client's event on the authenticated loopback
@@ -294,15 +296,12 @@ func (g *Gateway) beginContext(r *http.Request, request *anthropic.Request, entr
 		if (!nativeCompact && !validReceipt) || (phase != "" && phase != "required") {
 			return override, func() {}, "CONTEXT_COMPACTION_UNVERIFIED"
 		}
-		if s.route.Model != "" {
-			override = []bridge.Route{s.route}
-		}
-		route, err := g.selection.ResolveRoute(request, override...)
+		route, err := g.compactionRoute(request, override)
 		if err != nil {
 			return override, func() {}, routeCategory(err)
 		}
 		s.route = route
-		override = []bridge.Route{compactRoute(route, validReceipt && receipt.trigger == "auto", c.policy.EffortCap)}
+		override = []bridge.Route{route}
 		if validReceipt {
 			delete(c.tickets, ticket)
 		}
@@ -352,7 +351,7 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 		return true
 	}
 	entry := recordOf(w)
-	_, known := policyFor(built.Model)
+	_, known := g.policyFor(built.Model)
 	if !known {
 		g.refuseCategory(w, 400, "CONTEXT_POLICY_UNVERIFIED")
 		return false

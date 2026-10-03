@@ -15,6 +15,7 @@ function agent(prompt, options = {}) {
   const model = hasModel ? opts.model : null, effort = hasEffort ? opts.effort : null;
   const explicit = hasModel && model !== 'inherit';
   const rolePair = hasRole && !hasModel && Object.hasOwn(roles, opts.agentType) ? roles[opts.agentType] : null;
+  if (rolePair && rolePair.length === 0) throw Error('UNSUPPORTED_MODEL_OR_EFFORT: the configured agent pair is not in the account model list');
   const selected = explicit && typeof model === 'string' && Object.hasOwn(catalogue, model) ? catalogue[model] : explicit ? null : rolePair || parent;
   // A role without a model runs on the role's model, which only the gateway knows.
   const accepts = hasRole && !hasModel && !rolePair ? Object.values(catalogue).some(v => v[2].includes(effort)) : selected && selected[2].includes(effort);

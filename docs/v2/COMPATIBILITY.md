@@ -1,17 +1,17 @@
 # V2 호환성 — 현재 / 제약 / 미지원
 
-v0.6.2 준비 변경은 실행·외부 통신 도구 전체에 native 확인을 요구한다. 빌드·테스트·MCP 및
-같은 세션의 `SendMessage`도 포함한다. headless/background에서 확인을 처리할 수 없으면
-native가 대기하거나 거부할 수 있으며, 관리 정책 때문에 필수 규칙을 확인할 수 없으면 도구 요청을
-전송 전에 거부한다. 기존 파일 작업과 Agent 생성의 native 규칙은 유지한다.
-구체적인 도구 목록과 승인 hook·관리 정책의 경계는 [설정 문서](SETTINGS.md#실행외부-통신의-native-확인-v062-준비)를 따른다.
-이 변경의 전체 회귀·실제 backend·최종 바이너리 검증은 아직 완료하지 않았다.
+v0.6.4(준비 중, 미출하)부터 Clauduct는 native 권한 규칙을 더하지 않는다. v0.6.2–v0.6.3이 요구하던
+실행·외부 통신 도구 17개의 native 확인(`permissions.ask`)과 v0.5.2부터의 `autoMode.hard_deny` 2개는 이전 버전의
+동작이다. 이제 auto 모드의 `Bash`·`WebFetch` 같은 도구는 native 규칙과 native 분류기만으로 결정된다.
+계정 모델 목록·설정 동기화를 포함한 변경 전체와 검증 상태는 아래 3절의 v0.6.4 절에 있다.
+그 절의 실제 backend 검증은 아직 실행하지 않았다(NOT_RUN).
+요청 출처 확인은 유지한다([설정 문서](SETTINGS.md#권한과-요청-출처-확인-v064)).
 Agent ID가 없는 직접 입력 fork는 출처를 증명할 수 없어 지원하지 않는다. 활성 자식이 하나여도
 이전 자식의 지연 요청과 구별할 수 없으므로 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 backend
 전송 전에 거부한다. Agent ID가 있는 native Agent·fork 및 식별된 병렬 실행은 유지한다.
 모델 도구 호출은 받은 native step의 표지를 `tool_use_id`에 달고 실행 시점에 그 step과 대조한다. 이전 turn·step의
-늦은 호출은 실행 전에 거부한다. plugin hook 모듈의 직접 도구 호출은 native 확인 규칙대로 실행하되 turn 상태와
-위임은 사용하지 못한다([설정 문서](SETTINGS.md#실행외부-통신의-native-확인-v062-준비)).
+늦은 호출은 실행 전에 거부한다. plugin hook 모듈의 직접 도구 호출은 native 권한 규칙대로 실행하되 turn 상태와
+위임은 사용하지 못한다([설정 문서](SETTINGS.md#권한과-요청-출처-확인-v064)).
 세션 중에 claude.exe가 교체되면(native 자동 업데이트 등) 종료 줄에 `native_replaced=1`을 표시한다.
 실행 중인 native는 기존 이미지로 계속 돌고, 다음 세션부터 새 버전이 실행된다.
 
@@ -239,7 +239,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | API 요청 형태 | `stream:false`와 생략은 완료된 JSON 응답을 반환. malformed stream 값은 거부. `temperature`, `top_p`는 미지원. v0.5.2는 개수·길이를 제한한 `stop_sequences`를 로컬 출력 절단으로 처리한다(아래 v0.5.2 절). [요청 decoder](../../go/internal/protocol/anthropic/request.go). 자동 fallback 재생성은 계속 비활성 |
 | Workflow 범위 | inline, native Read로 읽은 `scriptPath`·프로젝트/사용자 named `.js`, custom 역할 기본 선택, `pipeline`·중첩 `parallel` 콜백 지원. 정상 종료/수거 완료 후 같은 세션의 기록 복원, 명시적 source의 native 재개와 독립 계획의 미실행 단계 재개. `maxTurns`는 native 역할 정의에 지정. 자식 안의 별도 Workflow와 근거 없는 재개는 제한 |
 | 부모·빈 응답 대기 | 확인된 TUI 회차는 무출력 대기. SDK/`-p`의 검증된 빈 대기·알림 응답은 Clauduct 상태 메시지로 전달하며 실제 본문·도구는 보존. 상태 메시지는 자식 결과나 업무 완료가 아님. [실제 필수 조건](../../go/internal/gateway/features.go) |
-| 새 모델·새 명령·외부 확장 | 현재 모델 카탈로그와 검증된 요청 형식 범위만 지원. 새 모델, native 버전, plugin/MCP 조합의 성공을 자동 승계하지 않음. [모델 카탈로그](../../go/internal/protocol/bridge/route.go) |
+| 새 모델·새 명령·외부 확장 | v0.6.4부터 계정 목록에 있는 모델은 새 릴리스 없이 라우팅한다. 라우팅할 수 있다는 것이 그 모델의 실제 동작을 검증했다는 뜻은 아니며, 새 모델, native 버전, plugin/MCP 조합의 성공을 자동 승계하지 않음. 검증된 요청 형식 범위는 그대로. [기존 이름 표](../../go/internal/protocol/bridge/route.go) |
 | native 전역 effort 고정 | `CLAUDE_CODE_EFFORT_LEVEL`은 native의 명시적 자식 effort·피커보다 우선할 수 있음. S49 실제 영수증으로 재확인. 부모 시작 기본값에는 `--effort` 사용. 전역 고정과 자식 선택이 충돌하면 선택 검증을 우회하지 않음 |
 
 인자를 native로 전달하거나 메뉴가 나타나는 것은 그 명령의 모든 후속 경로를 검증했다는
@@ -350,13 +350,13 @@ v0.6.0에서는 native가 `SubagentHandback` 보고를 받아들인 뒤에도 �
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` | G5, 동작으로 측정 |
 | `--bare` 대화 실행 | 현재 지원 범위에서 제외한다. 과거 G5는 context·세션 profile을 검증하지 않은 연결 검사였다. native 2.1.284에서 제품 정책을 켠 두 표본(도구 목록 있음·없음)은 `SESSION_PROFILE_UNVERIFIED`로 거부됐다. `--bare`를 제외한 표준 native 모드를 사용한다. 과거 연결 PASS와 현재 거부를 구분하며 [#223](https://github.com/wotjr1649/Clauduct/issues/223)에서 최종 검증을 추적한다 |
 | 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
-| 위임 메뉴·모델 표 | v0.3.4부터 `clauduct-<model>` 메뉴 + `clauduct-inherit`. v0.6.3부터 5종(`clauduct-sol`은 gpt-6.1-sol, `clauduct-sol6`은 gpt-6-sol). effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6.1-sol(v0.6.3, 이전 gpt-6-sol), sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
+| 위임 메뉴·모델 표 | v0.6.4부터 메뉴는 세션의 계정 목록에서 만든다: 기존 모델은 `clauduct-<key>`, 새 모델은 `clauduct-<전체 ID>`, 이름이 겹치면 항목 없이 Agent model 인자로 사용. 은퇴 표는 계정이 그 이름을 나열하지 않을 때만 `MODEL_RETIRED` 이유가 되며, effort는 계정 지원 수준 ∩ low–max만 보낸다(아래 v0.6.4 절). 이하 v0.6.3까지의 기록: v0.3.4부터 `clauduct-<model>` 메뉴 + `clauduct-inherit`. v0.6.3부터 5종(`clauduct-sol`은 gpt-6.1-sol, `clauduct-sol6`은 gpt-6-sol). effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6.1-sol(v0.6.3, 이전 gpt-6-sol), sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
 | 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. TUI에서 ROOT → A → B → C의 완료 결과 전달 확인. native 2.1.283 SDK 기본 모드에서는 손자 결과가 루트에 도착해도 중간 Agent가 자동으로 다시 답하지 않을 수 있다. 루트가 실제 손자 결과를 확인한 뒤 중간 Agent ID로 `SendMessage`를 보내 재개한다. UUID 재시작 뒤의 이 절차도 실제 backend로 확인했다. SDK 기본값은 바꾸지 않으며, 명시적인 `CLAUDE_CODE_FORK_SUBAGENT=1`은 native의 문맥 상속·백그라운드 실행 의미를 따른다 |
 | 완료 Agent의 SendMessage 재개 | 최근 TUI에서 동일 child ID의 Sol/high 유지·두 번째 결과 수신 확인 |
 | inline Workflow의 자식 선택 | model+effort / model만 / effort만 / 둘 다 생략을 runtime 선택과 child ID에 연결. 최근 TUI 네 자식 병렬 실행 확인 |
 | Agent 결과 회수와 Workflow StructuredOutput | 일반 결과와 검증된 native journal 결과를 부모에게 전달. 범용 Workflow 재실행·복구 기능은 아님 |
-| 모델 피커 + `GET /v1/models` discovery | A3 + B1 |
-| 실측 사용량·예방 압축 | v0.6.2 준비본은 모든 모델에 공통 window 272K·비율 90%(목표 244,800)를 기본으로 사용한다. [전역 설정](SETTINGS.md#전역-context와-압축-목표-v062-준비)으로 변경하며 UUID 재개에도 현재 값을 적용한다. native가 실제 압축을 담당하고 자체 여유 공간 때문에 더 일찍 실행할 수 있다. 검증된 자동 압축은 기존 확정 모델을 유지하며 현재 effort와 설정 상한 `auto_compact_effort_cap`(기본 medium) 중 낮은 값을 사용한다. 이후 생성·수동 압축은 원래 effort를 유지한다. 관리 목표는 정확 사전 차단 상한이 아니며 새 대용량 입력의 최초 초과 가능성과 추정/실제 usage 구분은 유지한다. v0.6.1 출시본의 Astra 500K/450K, 나머지 272K/239K와 native 표시 500K는 이전 정책이다 |
+| 모델 피커 + `GET /v1/models` discovery | A3 + B1. v0.6.4부터 세션 계정 목록 중 숨기지 않은 모델 |
+| 실측 사용량·예방 압축 | v0.6.2 준비본은 모든 모델에 공통 window 272K·비율 90%(목표 244,800)를 기본으로 사용한다. [전역 설정](SETTINGS.md#전역-context와-압축-목표-v062-준비)으로 변경하며 UUID 재개에도 현재 값을 적용한다. native가 실제 압축을 담당하고 자체 여유 공간 때문에 더 일찍 실행할 수 있다. v0.6.4부터 자동·수동 압축은 현재 선택(Agent의 자기 route 또는 native가 압축 요청에 적은 모델·effort)을 쓰고 effort 상한은 없다. 모델을 바꾼 뒤의 압축은 새 모델에서 실행된다. v0.6.2–v0.6.3은 기존 확정 모델과 `auto_compact_effort_cap`(기본 medium)을 적용했다. 관리 목표는 정확 사전 차단 상한이 아니며 새 대용량 입력의 최초 초과 가능성과 추정/실제 usage 구분은 유지한다. v0.6.1 출시본의 Astra 500K/450K, 나머지 272K/239K와 native 표시 500K는 이전 정책이다 |
 | `POST /v1/messages/count_tokens` | 검증 범위의 로컬 텍스트 계수 또는 구독 backend `generate:false`, 동일 입력의 실제 usage 캐시. 도구 결과 안의 이미지/PDF warmup은 S45 불일치로 미지원. 일반 생성의 필수 조건이 아님. 이전 근거: [COUNT-TOKENS.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/COUNT-TOKENS.md) |
 | 진단(`GET /clauduct/status`)·종료 요약·상태 파일·rate limit 헤더 관찰 | D1–D6 |
 | 취소·프로세스 트리 정리·동시 세션 격리 | LIFE·REL 계열 |
@@ -402,12 +402,13 @@ marker+완료 문장으로 바꿔 비교했다. 일반·독립 pair 네 표본 �
 `parent_received`·요청/대기/예약 메모리 0의 서로 다른 두 안정 checkpoint를 모두 요구한다.
 native background 상태·권한·scheduler와 과거 FAIL·미확인 기록을 보존한다.
 
-v0.6.2 준비 변경은 독립 보조 요청의 effort를 [전역 상한](SETTINGS.md#보조-요청의-effort-상한-v062-준비)
-이하로만 낮춘다. 권한 분류는 고정 Terra/high 대신 기존 모델 매핑·기본값·명시값을 따른다.
+v0.6.2 준비 변경은 독립 보조 요청의 effort를 전역 상한 `auxiliary_effort_cap`
+이하로만 낮췄다(v0.6.4에서 은퇴, [현행 설정](SETTINGS.md#보조-요청과-auto-권한-분류기-v064)). 권한 분류는 고정 Terra/high 대신 기존 모델 매핑·기본값·명시값을 따른다.
 Luna는 권한 분류에서만 거부하고 일반 대화·Agent·background 완료 요청에서는 유지한다.
 native 정책 문구·두 단계 판정·완료 의미는 보존한다. 확대된 Terra·Sol·Astra 전 effort 범위의
 분류 품질 관문은 아직 미완료이며, 과거 Terra/high 오허용과 background timeout을
 [#218](https://github.com/wotjr1649/Clauduct/issues/218), [#206](https://github.com/wotjr1649/Clauduct/issues/206)에 보존한다.
+v0.6.4의 권한 분류는 `classifier_model` pair를 쓰며 Luna를 포함해 계정이 제공하는 pair를 모두 허용한다.
 
 ### 부모 대기·계획 재개의 실제 근거
 
@@ -568,7 +569,7 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
 | 세션 중 `/model`·`/effort` 기록(native 2.1.287) | native 2.1.287은 로컬 명령 caveat 문구와 `/model` 결과 문구("for this session only" 또는 "and saved as your default for new sessions", effort 생략 가능, 뒤따르는 안내)를 바꿨다. v0.6.3은 두 형식을 모두 엔진의 정확한 문구로만 읽어 UUID 재개 snapshot에 반영한다. effort가 없는 모델 변경은 기존 effort를 유지한다(실측). 이전 버전은 2.1.287에서 이 변경을 snapshot에 반영하지 못해 재개 시 이전 모델·effort로 시작했다 |
-| auto 권한 모드의 분류기 판정 | v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
+| auto 권한 모드의 분류기 판정 | **v0.6.4(미출하):** 분류 요청은 `classifier_model` pair(공장값 Terra/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본에 한정된다. 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -806,6 +807,7 @@ v0.5.6의 분류 모델 보완과 별도 표본은 아래 v0.5.6 절을 따른�
 설정은 [자식 설정](../../go/internal/app/settings.go)과 [사용자 설정 병합](../../go/internal/app/user_settings.go)을
 통해 이 빌드가 시작하는 native의 `--settings`에만 전달한다. 전역/managed 설정과 native 본체를 수정하지 않는다.
 [native 공식 설정 결합 규칙](https://code.claude.com/docs/en/auto-mode-config#where-the-classifier-reads-configuration)을 따른다.
+v0.6.4부터 이 두 규칙을 더하지 않는다. 그 뒤로는 native 기본 규칙과 사용자·관리 정책만 적용된다(아래 v0.6.4 절).
 
 stop 문자열은 1–16개, 각각 비어 있지 않은 최대 256바이트다. stream과 JSON 응답에서 문자열과
 그 뒤 텍스트·도구 호출을 전달하지 않고 `stop_reason=stop_sequence`를 반환한다. 원래 backend
@@ -899,6 +901,65 @@ media 길이 거부 진단은 압축을 새로 요청한 경우와 압축 직후
 제품 전용 미사용 선언·테스트 전용 조회 래퍼를 제거하고 공용 테스트 전송 도구를 제품 패키지에서
 분리했다. 모든 PowerShell 실행 진입점은 7을 요구하며, 과거 스크립트의 미실행 이력을 소급하여
 통과로 바꾸지 않는다. 출하 인수 결과는 [릴리스 기록](RELEASE-v0.5.6.md)이 소유한다.
+
+### v0.6.4 — 계정 모델 목록, 권한 규칙 제거, 설정 동기화
+
+**준비 중, 미출하.** 후보 `bf984f2`(native 2.1.288, Codex CLI 0.160.0)로 2026-10-03 실제 backend 검증을 통과했다
+(아래 실측 표). 태그·Release는 아직 없다. 설정 형식과 우선순위는 [설정 문서](SETTINGS.md)가 소유한다.
+
+| 항목 | v0.6.4 동작 |
+|---|---|
+| 권한 | native `permissions.ask`(실행·외부 통신 도구 17개)와 `autoMode.hard_deny` 규칙 2개를 더하지 않으며 bypass 시작 모드 분기도 없다. native 기본값, user·project·local 설정, 관리 정책, 세션 중 모드 전환이 정하고 사용자·관리 정책의 `ask`·`deny`는 그대로 전달한다. status `session.requiredAsk`는 없어졌다. **auto 모드에서 `Bash`·`WebFetch` 같은 도구는 native 규칙과 native 분류기만으로 결정되며 Clauduct의 추가 확인은 적용되지 않는다** |
+| 요청 출처 확인 | 유지. 요청마다 현재 native session·Agent·turn·step이 내장 helper로 일회성 확인값에 응답하고, `tool_use_id` step 표지(`__cdt…`), `NATIVE_REQUEST_ORIGIN_UNVERIFIED`, `NATIVE_DIRECT_DELEGATION_UNSUPPORTED`도 그대로다. `NATIVE_CONFIRMATION_UNVERIFIED`는 출처 증명 실패 상태(확인 교환의 I/O 오류·시간 초과)만 뜻한다. 필수 ask 존재 확인과 `allowManagedPermissionRulesOnly` 검사는 없어졌다 |
+| 계정 모델 목록 | 일반 세션 시작마다 Codex 계정 목록을 그 세션의 credential provider로 받는다(10초, 4 MiB, 512개, redirect 거부, 고정 목적지). 성공하면 `~/.clauduct/account-models.json`에 저장하고, 실패하면 같은 계정의 마지막 정상 목록과 stderr 안내, 그것도 없으면 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 시작을 거부한다. Codex의 `models_cache.json`은 근거가 아니다. 목록은 세션 동안 고정되며 검증 예산 원장에 예약하지 않는다 |
+| 모델 선택 | 계정이 나열하는 모델은 새 릴리스 없이 전체 ID로 고른다. 숨긴 모델은 `/model`에 없지만 ID로 선택할 수 있다. `models.json`은 기존 이름(키·별칭·단계·`countValidated`)과 은퇴 표만 담고 선택 범위를 제한하지 않는다. 은퇴 표는 계정이 그 이름을 나열하지 않을 때 거부 이유만 설명한다 |
+| effort | 계정의 지원 수준 ∩ low·medium·high·xhigh·max만 보낸다. `ultra` 등은 보내지 않고, 명시 요청은 낮추지 않고 거부한다. 순서는 명시값 → 세션 설정 `modelDefaults` → 계정 `default_reasoning_level`. 기본값이 없는 모델은 effort를 명시해야 한다 |
+| 위임 메뉴 | 기존 모델은 `clauduct-<key>`, 새 모델은 `clauduct-<전체 ID>`. 기존 키·`inherit`·과거 effort별 이름과 겹치면 항목이 없고 Agent model 인자로 쓴다. 기존 단계가 없는 모델은 Agent `model` 인자를 생략하고 native 생성 이벤트가 전체 ID를 고정한다(native 이벤트 모듈 필요) |
+| 토큰 계수 | 로컬 공식은 측정한 기존 모델(`countValidated`)에만 쓴다. 다른 모델은 backend 계수를 쓰며 실패해도 추정값으로 대신하지 않는다 |
+| 목록에 없는 선택 | `modelDefaults`·`modelMapping`·`agents`·`classifier_model`의 항목은 파일에 남기고 stderr와 `session.modelList.problems`에 알리며, 실제로 선택될 때만 실패한다 |
+| auto 분류기 | `classifier_model`은 `{"model","effort"}` 객체(공장값 terra/low)다. v0.6.3의 문자열은 `CLAUDUCT_SETTINGS_INVALID`이며 자동 변환하지 않는다. 계정이 제공하는 모델·effort를 모두 허용한다(Terra 이상 규칙·내장 허용 목록 제거, Luna 가능). 출처는 `native-auto-mode+classifier_model`. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부하고 대체하지 않는다 |
+| 상한 은퇴 | `auxiliary_effort_cap`·`auto_compact_effort_cap`은 적용하지 않는다. 알려진 은퇴 키로 받아 파일에 두고 stderr와 `session.deprecatedSettings`에 알리며, 다른 모르는 키는 계속 거부한다. 압축은 현재 선택(Agent의 자기 route 또는 native가 압축 요청에 적은 모델·effort)을 쓰므로 모델을 바꾼 뒤에는 새 모델로 압축한다(v0.6.3까지는 이전 route) |
+| UUID 재개 | snapshot 항목 수가 현재 목록과 같을 필요가 없다. `modelDefaults`는 적은 대로 저장하고 공장값을 고정하지 않는다. 마지막 선택·context journal·Agent 선택 기록은 현재 계정 목록과 대조하며, 쓸 수 없는 선택은 대체하지 않고 오류다 |
+| 설정 동기화 | 일반 실행·`--dev --sync-settings`·`--update`·`install.ps1`에서 빠진 최상위 키만 덧붙이고 원본 백업을 남긴다. `{"version":1}` 같은 v0.5.3 시절 파일도 이제 확장된다. v0.6.4보다 오래된 바이너리로 되돌리려면 백업을 복원하거나 파일을 편집한다 |
+
+**로컬에서 측정한 것.** 분류기 실패 처리는 2026-10-03 합성 backend와 native 2.1.288로 측정했다(과금 없음, auto 모드에서 Agent 실행을
+대상으로 함. 작업 폴더 안 쓰기는 native가 분류기 없이 허용해 대상이 될 수 없었다). HTTP 500, 정책 거부 형태의 HTTP 400,
+시간 초과, 읽을 수 없는 판정, 완료 전에 끊긴 응답, 계정이 제공하지 않는 pair(`AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`)
+여섯 경우 모두 native는 분류 요청을 한 번 더 보낸 뒤 해당 호출을 거부 목록(`permission_denials`)에 남기고 실행하지 않았으며,
+같은 turn을 정상 완료했다. 읽을 수 없는 판정 뒤의 재요청은 gateway의 replay 차단(`NATIVE_REQUEST_REPLAY_BLOCKED`)으로
+거부됐다. Clauduct는 허용 판정·모델 대체·모드 전환을 만들지 않는다. 실제 backend의 `cyber_policy` 거부와 TUI 표시는
+아직 측정하지 않았다.
+
+새 모델(내장 이름이 없는 `gpt-9-new` 합성 목록)은 native 2.1.288에서 세션 모델, `clauduct-gpt-9-new` 메뉴,
+Agent `model` 인자 세 경로 모두 자식 요청까지 그 모델과 계정 기본 effort로 실행됐다. 압축은 native가 압축 요청에
+현재 선택을 싣는 것을 확인했다: 자동 압축은 세션의 effort(상한 없이 high), 병렬 자식은 자식 route, 모델을 바꾼 UUID
+재개는 새 모델·effort로 압축했다.
+
+Windows 파일 경합은 설정 동기화에서 재현했다: 다른 프로세스가 `settings.json`을 삭제 공유 없이 열고 있으면
+교체가 실패해 `CLAUDUCT_SETTINGS_SYNC_FAILED`를 알리고, 원본과 이름이 표시된 백업은 같은 바이트이며 임시 파일은
+남지 않는다. 재시도는 하지 않으며 일반 실행은 안내 후 파일을 그대로 두고 진행하고 다음 시작에서 다시 시도한다.
+상태·세션 기록의 지속 잠금과 종료 쓰기 경합은 기존 동작을 바꾸지 않았고 이번에 다시 측정하지 않았다.
+
+**실제 backend 실측 (2026-10-03, 후보 `bf984f2`, 사용자 승인, 14개 시나리오 PASS).** 검증 예산 원장으로 경로를 제한했다.
+
+| 시나리오 | 결과 |
+|---|---|
+| 계정 목록·설정 동기화 | 실제 `GET models`(client_version 0.160.0)가 10개 모델을 돌려줬고(`hide` 2개 포함, 일부 모델은 `ultra` 표기) 파서가 받아들였다. `account-models.json`에는 계정 해시와 모델 필드만 남았다. v0.6.3 형식 파일에 `context_window`·`auto_compact_token_limit_percent`·`classifier_model`만 덧붙고 원본 백업과 은퇴 키 안내가 나왔으며, 두 번째 시작은 파일을 바꾸지 않았다 |
+| 모델 선택 | `gpt-6.1-sol/low` 생성. 내장 이름이 없는 `gpt-5.5`는 `--model`만 주면 계정 기본값(medium)으로 실행됐고 출처는 `account.default_reasoning_level`. 은퇴 표에 있는 `gpt-5.6-luna`도 계정이 나열해 그대로 실행됐다 |
+| Agent | `clauduct-gpt-5.5` 메뉴와 Agent `model:"gpt-5.5"`·`effort:"low"` 인자 모두 자식이 `gpt-5.5`로 실행됐다 |
+| auto 분류기 | pair terra/low와 luna/low가 분류 요청(출처 `native-auto-mode+classifier_model`)을 처리했고 Agent 실행을 허용했다. 계정에 없는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부되고 Agent는 실행되지 않았으며 turn은 끝났다 |
+| 압축 | 큰 대화를 낮은 목표로 재개하자 자동 압축이 세션 effort(luna/high, 상한 없음)로 실행되고 코드를 기억했다. 모델을 바꿔 재개한 `/compact`는 새 선택(terra/low)으로 압축했다 |
+| 권한 | bypass는 Bash 실행, bypass + 사용자 `deny`는 차단, dontAsk는 거부, dontAsk + `--allowedTools Bash`는 실행. `NATIVE_CONFIRMATION_UNVERIFIED` 없음 |
+| TUI | `/model`에 계정의 표시 모델 8개가 계정 순서로 나왔고 `/model gpt-5.5` 뒤 요청은 `gpt-5.5/low`, `/context` 계수는 backend 계수로 성공했으며 UUID snapshot의 마지막 선택이 `gpt-5.5/low`였다 |
+
+관측: 로컬 계수식이 없는 모델은 TUI의 계수가 backend로 가서(요청당 약 1.4초) native가 대체된 이전 계수 요청을 스스로
+끊는다. 이것이 HTTP 499 `CANCELLED`로 종료 줄과 실패 집계에 남는다(측정 표본에서 /context 한 번에 13~15건).
+native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 그 effort로 실행된다(관측: `gpt-6-luna/high` 1건).
+계정 전환 중 실행과 v0.6.3 updater에서 설치본을 올리는 실제 경로는 출하 단계 검사에서 확인한다.
+
+**측정하지 않은 것.** 위 항목은 표본 범위다. 분류 품질은 v0.6.3의 Terra·Sol 표본(3절 auto 권한 모드 행)에서만 측정했고, 계정 목록에 있다는 것은 품질 주장이 아니다.
+high·max 압축의 시간·사용량 영향과 새 모델의 실제 backend 동작도 측정하지 않았다. 설치된 클라이언트와
+측정 기준의 차이는 [현재 상태](README.md)가 기록한다.
 
 ## 4. 제3자 구현이라는 사실
 

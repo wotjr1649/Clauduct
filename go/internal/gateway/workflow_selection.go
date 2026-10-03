@@ -88,18 +88,25 @@ func (d *delegations) workflowTrailer(scope delegationScope, id string) (string,
 	// [id, default effort, accepted efforts], so the wrapper refuses before native starts a child.
 	catalogue := map[string][]any{}
 	parentEntry := []any{scope.route.Model, scope.route.Effort, []string{}}
-	for _, m := range bridge.Models {
+	for _, m := range d.selection.Catalogue().Models() {
 		effort, _ := d.selection.DefaultFor(m.ID)
 		for _, name := range []string{m.ID, m.Key} {
-			catalogue[name] = []any{m.ID, effort, m.Efforts}
-		}
-		if m.Alias != "" { // a model without a tier alias is reachable by its ID and key only
-			mapped, _ := d.selection.ForAlias(m.Alias)
-			mappedEffort, _ := d.selection.DefaultFor(mapped.ID)
-			catalogue[m.Alias] = []any{mapped.ID, mappedEffort, mapped.Efforts}
+			if name != "" {
+				catalogue[name] = []any{m.ID, effort, m.Efforts}
+			}
 		}
 		if m.ID == scope.route.Model {
 			parentEntry[2] = m.Efforts
+		}
+	}
+	// Tier aliases follow the session's mapping, and only to a model the account offers.
+	for _, m := range bridge.LegacyModels() {
+		if m.Alias == "" {
+			continue
+		}
+		if mapped, ok := d.selection.ForAlias(m.Alias); ok {
+			mappedEffort, _ := d.selection.DefaultFor(mapped.ID)
+			catalogue[m.Alias] = []any{mapped.ID, mappedEffort, mapped.Efforts}
 		}
 	}
 	roles := map[string][]any{}
@@ -111,9 +118,11 @@ func (d *delegations) workflowTrailer(scope delegationScope, id string) (string,
 		if err != nil || route.Model == "" {
 			return "", errDelegationUnverified
 		}
-		model, ok := bridge.ModelByID(route.Model)
-		if !ok || !bridge.ValidPair(bridge.Pair{Model: route.Model, Effort: route.Effort}) {
-			return "", errDelegationUnverified
+		model, ok := d.selection.ModelByID(route.Model)
+		if !ok || !d.selection.ValidPair(bridge.Pair{Model: route.Model, Effort: route.Effort}) {
+			// Kept and refused when used: other roles and models stay available.
+			roles[name] = []any{}
+			continue
 		}
 		roles[name] = []any{route.Model, route.Effort, model.Efforts}
 	}
@@ -145,7 +154,7 @@ func workflowLabelParts(label string) ([]json.RawMessage, error) {
 
 func (d *delegations) workflowLabelSelection(label string, run workflowRun, agent string, active *nativeTurnReceipt) (bridge.Route, *SelectionRecord, error) {
 	parts, err := workflowLabelParts(label)
-	if err != nil || active == nil || !validActiveReceipt(*active, run.Session, agent) {
+	if err != nil || active == nil || !validActiveReceipt(d.selection, *active, run.Session, agent) {
 		return bridge.Route{}, nil, errDelegationUnverified
 	}
 	var call, model, effort string

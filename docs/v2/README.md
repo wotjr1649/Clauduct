@@ -2,15 +2,16 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-10-02, v0.6.3 출시)
+## 1. 현재 상태 (2026-10-03, v0.6.3 출시 · v0.6.4 준비 중)
 
 | 항목 | 값 |
 |---|---|
 | 최신 출시 | **v0.6.3** (태그 `v0.6.3` → `19c638e`). GPT-6.1 Sol을 `sol`·`opus`·공장 시작 모델로 추가하고, `classifier_model`로 auto 분류기 모델을 고르게 했다. bypass로 시작한 세션은 필수 확인 목록 없이 실행된다. 모델 목록과 측정 기준 버전은 내장 제품 자료로 옮겼고, Claude Code 2.1.287의 `/model`·`/effort` 기록을 다시 읽는다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.3.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.3). 직전 출시 [v0.6.2](RELEASE-v0.6.2.md)와 [v0.6.1](RELEASE-v0.6.1.md), Bundle C와 전체 목록 [v0.6.0](RELEASE-v0.6.0.md), 설정 계약 [v0.5.4](RELEASE-v0.5.4.md), phase 호환 범위 [v0.5.5](RELEASE-v0.5.5.md), 권한 분류·media 보완 [v0.5.6](RELEASE-v0.5.6.md)의 기록은 보존한다 |
 | 출하 후 후속 | 남은 공백은 [알려진 제한](RELEASE-v0.6.3.md#알려진-제한)에 적었다 |
+| 준비 중 | **v0.6.4**(#238, 미출하). 모델 목록을 세션 시작마다 Codex 계정에서 받고(전체 ID로 새 모델 선택), Clauduct가 더하던 native 권한 규칙(`permissions.ask` 17개·`autoMode.hard_deny` 2개)을 없앴다 — auto 모드의 `Bash`·`WebFetch` 등은 native 규칙과 native 분류기만으로 결정된다. `classifier_model`은 `{"model","effort"}` 객체, 두 effort 상한은 은퇴, 설정 파일은 빠진 최상위 키만 동기화한다. 후보 `bf984f2`로 실제 backend 검증 14개 시나리오 **PASS**(2026-10-03, 사용자 승인). 태그·Release는 아직 없다. [변경 범위](COMPATIBILITY.md)의 3절 v0.6.4 절, [설정](SETTINGS.md) |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 클라이언트 | Claude Code **2.1.287**, Codex CLI **0.159.3**(측정 기준과 같다), Windows, Go 1.27.1, PowerShell 7.6.6. [v0.6.3 실행 결과](RELEASE-v0.6.3.md), Worktree·media·phase·Bundle C와 식별자별 NOT_RUN은 [v0.6.0 기록](RELEASE-v0.6.0.md)에서 구분한다 |
+| 측정된 클라이언트 | Claude Code **2.1.288**, Codex CLI **0.160.0**(`measured-clients.json`의 측정 기준, v0.6.4 준비본에서 2026-10-03 무과금 재측정: 도움말 차이는 native `project` 명령이 `purge`로 바뀐 것뿐이고 fixture 검사 통과. v0.6.3 출시본의 기준은 2.1.287·0.159.3), Windows, Go 1.27.1, PowerShell 7.6.6. [v0.6.3 실행 결과](RELEASE-v0.6.3.md), Worktree·media·phase·Bundle C와 식별자별 NOT_RUN은 [v0.6.0 기록](RELEASE-v0.6.0.md)에서 구분한다 |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build와 PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는
@@ -51,6 +52,8 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
 - **auto 권한 분류기의 모든 행동을 검증한 것은 아니다.** v0.5.6은 native 지침·두 추가 규칙을 유지한
   Terra/high로 기존 70개와 새 독립 표본을 통과했다. 기존 정상 프로세스 종료·로컬 설치 및 승인 PR/Release
   오차단을 재검사했다. 초기 실패 기록과 버전별 관측 범위는 COMPATIBILITY.md 3절에 보존한다.
+  준비 중인 v0.6.4는 두 추가 규칙을 더하지 않는다. 분류기가 판정을 내지 못한 여섯 실패 경우 native가 호출을
+  실행하지 않고 turn을 마치는 것을 합성 backend로 확인했고, 실제 backend 동작은 아직 측정하지 않았다.
 - **media 용량을 모두 사전에 예측하지는 못한다.** 추가 사전 계수 없이 native 사용 범위를 유지하며,
   압축 직후에도 backend가 길이를 거부하면 자동 재시도 없이 중단한다. 진단 누락은 v0.5.6에서 고쳤다.
 - **Workflow 재개는 exactly-once를 보장하지 않는다.** v0.6.0에서 검증된 원 run에 source를 함께

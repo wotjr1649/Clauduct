@@ -274,22 +274,23 @@ type ReasoningParam struct {
 }
 
 // ResolveRoute selects the same model and effort for generation and hosted search.
-func ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) {
-	return (Selection{}).ResolveRoute(request, override...)
-}
-
+// Every answer, an override included, must be a pair the session's account list offers.
 func (s Selection) ResolveRoute(request *anthropic.Request, override ...Route) (Route, error) {
 	// The client asks for a Claude model; the backend has never heard of one. Resolved
 	// here rather than forwarded, and refused rather than defaulted -- see route.go.
-	route, err := s.SelectRoute(request.Model, request.Effort)
-	if err != nil {
-		return Route{}, err
-	}
 	// An override replaces that entirely and carries its own source, so a reader of the
-	// record can tell a route the client chose from one this build reassigned.
+	// record can tell a route the client chose from one this build reassigned. The request's
+	// own name is then not resolved: a classifier pair must not depend on native's alias.
+	var route Route
 	if len(override) > 0 {
 		route = override[0]
-	} else if turn := turnEffort(request); turn != "" {
+	} else {
+		var err error
+		if route, err = s.SelectRoute(request.Model, request.Effort); err != nil {
+			return Route{}, err
+		}
+	}
+	if turn := turnEffort(request); turn != "" && len(override) == 0 {
 		// A system turn may set the effort for this turn alone, and the baseline applies it
 		// (native-protocol.mjs:347). This build decoded it and read it nowhere, so a turn
 		// that asked for high ran at whatever the session was using -- accepted and
@@ -297,19 +298,18 @@ func (s Selection) ResolveRoute(request *anthropic.Request, override ...Route) (
 		//
 		// Skipped when a role override is in force, which is the baseline's rule too: a
 		// subagent routed by what it is doing does not take an effort from the transcript.
-		if _, err := SelectRoute(route.Model, turn); err != nil {
+		if _, err := s.SelectRoute(route.Model, turn); err != nil {
 			return Route{}, err
 		}
 		route.Effort, route.Source = turn, route.Source+"+turn"
+	}
+	if !s.ValidPair(Pair{Model: route.Model, Effort: route.Effort}) {
+		return Route{}, ErrUnsupportedRoute
 	}
 	return route, nil
 }
 
 // BuildRequest converts a decoded Anthropic request into a backend request.
-func BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
-	return (Selection{}).BuildRequest(request, override...)
-}
-
 func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
 	route, err := s.ResolveRoute(request, override...)
 	if err != nil {

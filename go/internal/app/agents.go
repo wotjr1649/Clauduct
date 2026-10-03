@@ -37,21 +37,29 @@ type agentDefinition struct {
 // agentTools is what a delegated worker gets. Enough to read, change and check.
 var agentTools = []string{"ToolSearch", "Read", "Grep", "Glob", "Bash", "Edit", "Write", "Agent", "TaskOutput", "SendMessage"}
 
-// agentDefinitions builds the menu from the catalogue: one agent per model.
+// agentDefinitions builds the menu from the session's account list: one agent per model
+// that has a collision-free menu name.
 //
 // Every description is in the Agent tool's text on every request that carries it, so the
 // menu is one entry per model (decided 2026-09-24), not one per model and effort. The effort
 // comes from the gateway's Agent effort argument, or the model's default. No definition sets
 // effort: native would show that fixed value on the task even when the argument changed it.
 func (config ClauductSettings) agentDefinitions() map[string]agentDefinition {
-	menu := make(map[string]agentDefinition, len(bridge.Models)+1)
-	for _, model := range bridge.Models {
-		route, _ := config.Selection.RoleRoute(bridge.MenuPrefix + model.Key)
-		menu[bridge.MenuPrefix+model.Key] = agentDefinition{
-			Description: "Development worker on " + route.Model + ". Runs at " + route.Effort +
-				" unless the effort argument names another.",
-			Tools: agentTools,
-			Model: route.Model,
+	models := config.Selection.Catalogue().Models()
+	menu := make(map[string]agentDefinition, len(models)+1)
+	for _, model := range models {
+		if model.Menu == "" {
+			continue
+		}
+		route, _ := config.Selection.RoleRoute(bridge.MenuPrefix + model.Menu)
+		runs := " Runs at " + route.Effort + " unless the effort argument names another."
+		if route.Effort == "" {
+			runs = " Pass the effort argument; this model has no default effort."
+		}
+		menu[bridge.MenuPrefix+model.Menu] = agentDefinition{
+			Description: "Development worker on " + route.Model + "." + runs,
+			Tools:       agentTools,
+			Model:       route.Model,
 		}
 	}
 	// Use the parent route when no separate task selection was requested. The

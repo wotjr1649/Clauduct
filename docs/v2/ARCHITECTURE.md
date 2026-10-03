@@ -27,12 +27,12 @@ Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하�
 | 경계 | native가 담당하는 것 | Clauduct가 더하는 것 |
 |---|---|---|
 | 실행·도구 | TUI·입력 편집·Read/Edit/Bash·MCP·plugin/skill 로딩·권한 판단 | loopback 연결, 프로세스 수명 관리, Windows PDF 렌더러 연결 |
-| 설정·모델 | 기존 Claude 설정과 picker 화면 | 전용 settings.json, 모델 매핑·시작 pair·agent pair, 세션용 `--settings` 병합과 GPT picker 항목 |
-| 안전 정책 | native 기본 규칙과 사용자 규칙, 승인 UI | `$defaults`를 보존한 B 추가 hard-deny 규칙 2개, gateway의 native classifier 경로 |
+| 설정·모델 | 기존 Claude 설정과 picker 화면 | 전용 settings.json과 누락 키 동기화, 세션 시작 때 받아 고정하는 계정 모델 목록, 모델 매핑·시작 pair·agent pair, 세션용 `--settings` 병합과 GPT picker 항목 |
+| 안전 정책 | native 기본 규칙과 사용자·관리 규칙, auto 분류기 판정, 승인 UI | 권한 규칙은 더하지 않는다(v0.6.4). gateway의 native classifier 경로(`classifier_model` pair)와 요청 출처 확인 |
 | 세션 재개 | 대화 저장·목록·native resume | 설정 snapshot과 마지막 선택의 UUID 복원, 검증하지 못한 재개 경로의 명시적 거부·명령 안내 |
 | 위임 | Agent 실행·완료 알림·권한 | 정의/명시 선택의 GPT 변환, 선택 검증, Agent·SendMessage 설명 보완, 검증된 pending 호출의 중복 억제와 native 대기 제어 |
 | Workflow | 원 스크립트의 도구 실행·역할 정의·명시적 재개의 cache/replay | native Read 원문 확인, 결과 journal·종료 근거 검증, 같은 run의 재연결. `resumeFromRunId` 단독 결과 회수와 `clauduct:plan-v1` 미실행 단계 재개는 별도 계약 |
-| 압축·응답 | native 압축 동작과 대화 기록 | 모델별 context 경계, 검증된 자동 압축의 effort 상한·요약 보완, assistant phase 운반 |
+| 압축·응답 | native 압축 동작과 대화 기록 | 모델별 context 경계, 현재 선택으로 하는 압축 route·요약 보완, assistant phase 운반 |
 
 필수 hook과 세션용 plugin은 [설정 구성](../../go/internal/app/settings.go)과
 [native 이벤트 모듈](../../go/internal/app/native-events.mjs)이 연결한다. native 실행 파일이나 전역 지침
@@ -60,7 +60,7 @@ go/                           패키지 경로는 그대로 github.com/wotjr1649
     ├── protocol/{anthropic,codex,bridge}/
     ├── upstream/             interface + direct Codex transport
     ├── auth/                 읽기 전용 credential provider
-    ├── settingsfile/         초기 설정 JSON·원자 생성·읽기
+    ├── settingsfile/         초기 설정 JSON·원자 생성·누락 키 동기화·읽기
     ├── stream/               SSE parsing·emission·delivery state
     ├── platform/             *_windows.go 등 OS 경계
     ├── childprocess/         Windows 소유 process tree
@@ -157,7 +157,7 @@ background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경�
 |---|---|---|
 | `POST /v1/messages` | 핵심 지원 | stream·tool·error·cancel 계약 검증 |
 | `/v1/messages`의 query | 지원 native query 보존·검사 | `?beta=true` 등 실제 요청 fixture |
-| `GET /v1/models` | 로컬 검증 catalog | query·paging·auth·timeout·picker 상호작용 |
+| `GET /v1/models` | 세션에 고정한 계정 모델 목록 중 숨기지 않은 모델 | query·paging·auth·timeout·picker 상호작용 |
 | `HEAD /api/hello` | 최소 readiness 응답 | 인증 없이도 비밀·상태 노출 없음 |
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
 | `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |

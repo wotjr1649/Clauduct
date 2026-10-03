@@ -5,17 +5,10 @@
 const root = __CLAUDUCT_EVENT_ROOT__;
 const confirmationHelper = __CLAUDUCT_CONFIRMATION_HELPER__;
 const confirmationArgs = __CLAUDUCT_CONFIRMATION_ARGS__;
-const requiredConfirmations = __CLAUDUCT_REQUIRED_PERMISSIONS__.ask;
-async function confirmationsVerified($) {
-  try {
-    let settings = await $.settings.read();
-    if (settings.allowManagedPermissionRulesOnly === true) settings = await $.settings.read({source:'policy'});
-    const ask = settings.permissions?.ask, deny = settings.permissions?.deny;
-    return requiredConfirmations.every(tool => [ask,deny].some(rules => Array.isArray(rules) && (rules.includes(tool) || rules.includes('*'))));
-  } catch { return false; }
-}
+// Permission rules are native's own (v0.6.4): this module adds and checks none. What it
+// keeps is the origin proof -- a fresh nonce answered for the live session/Agent/turn/step.
 async function preparePermissions($, state) {
-  if (state.permissionFailed || !await confirmationsVerified($)) {
+  if (state.permissionFailed) {
     state.permissionFailed=true;
     throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
   }
@@ -43,8 +36,6 @@ async function answerConfirmations($, state) {
     if (request.nonce===state.permissionNonce) return;
     state.permissionNonce=request.nonce;
     if (state.cancelledTurns.has(request.turn)) return;
-    const verified=await confirmationsVerified($);
-    if (!verified) state.permissionFailed=true;
     let step=await session($)===request.session && [...state.requests].find(p=>p.session===request.session && p.agent===request.agent && p.turn===request.turn && p.index===request.index && p.search===request.search && !!p.auxiliary===!!request.auxiliary);
     if (JSON.parse(await $.fs.read(file)).nonce!==request.nonce) return;
     if (step && !state.requests.has(step)) {
@@ -53,10 +44,10 @@ async function answerConfirmations($, state) {
       // would time out the handshake and latch every later request.
       step=[...state.requests].find(p=>p.session===step.session && p.agent===step.agent && p.turn===step.turn && p.index===step.index && p.search===step.search && !!p.auxiliary===!!step.auxiliary);
     }
-    const confirmations=verified && !!step && !state.permissionFailed;
-    const unmatched=verified && !step && !state.permissionFailed;
+    const confirmations=!!step && !state.permissionFailed;
+    const unmatched=!step && !state.permissionFailed;
     const reply={...request,agent:step?.agent||'',turn:step?.turn||'',index:step?.index??-1,confirmations,unmatched};
-    if (!verified || state.permissionClosed || state.permissionJob!==job) return;
+    if (state.permissionClosed || state.permissionJob!==job) return;
     if (state.permissionLeases.size>=64) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
     const stream=$.process.spawn({argv:[confirmationHelper,...confirmationArgs],input:JSON.stringify(reply)});
     const lease={stream,active:step,stopped:false};state.permissionLeases.add(lease);job.lease=lease;
@@ -379,11 +370,6 @@ export const register = on => {
     const agent=e.agentId?ident(e.agentId):'',p=mark?progress.get(agent):undefined;
     if (state.permissionClosed || mark && (e.agentId && !agent || !p || p.phase==='turn_ended' || cancelledTurns.has(p.turn) || mark[1]!==await stepTag(p))) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
 	if (!state.permissionReady || state.permissionFailed) return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
-	// Settings can change while inference is in flight. Recheck at execution too.
-	if ((requiredConfirmations.includes(e.tool) || e.tool.startsWith('mcp__')) && !await confirmationsVerified($)) {
-      state.permissionFailed=true;
-      return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
-    }
     if (!mark) return ['Agent','SendMessage','Workflow','Skill'].includes(e.tool)?{deny:'NATIVE_DIRECT_DELEGATION_UNSUPPORTED'}:next(e);
 	if (e.tool==='Workflow' && (e.scriptPath!==undefined || e.script===undefined && e.name!==undefined)) {
 	  const call=ident(e.tool_use_id),sid=await session($);

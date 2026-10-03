@@ -92,23 +92,30 @@ const clauductSettingsBytes = 1 << 20
 
 var errClauductSettings = errors.New("CLAUDUCT_SETTINGS_INVALID")
 
+// errClassifierSettings explains the one shape change v0.6.4 made to an existing key. The
+// file is never converted: the user edits it, and nothing runs on a guessed effort.
+var errClassifierSettings = fmt.Errorf(`%w: classifier_model must be an object with both model and effort, for example "classifier_model": {"model": "gpt-5.6-terra", "effort": "low"}; the v0.6.3 string form is no longer accepted. Edit ~/.clauduct/settings.json`, errClauductSettings)
+
+// deprecatedSettings are keys v0.6.4 stopped applying. They are accepted, left in the file
+// and reported; every other unknown key is still refused.
+var deprecatedSettings = []string{"auto_compact_effort_cap", "auxiliary_effort_cap"}
+
 // ClauductSettings contains validated launch preferences. SessionProfile owns
 // the separately versioned persistent format.
 type ClauductSettings struct {
-	Startup                  bridge.Pair
-	Selection                bridge.Selection
-	StartupSource            string
-	SelectionSource          string
-	Context                  bridge.ContextSettings
-	ContextRequestedPercent  json.Number
-	ContextPolicy            bridge.ContextPolicy
-	ContextWindowSource      string
-	ContextPercentSource     string
-	ContextEffortCapSource   string
-	AuxiliaryEffortCap       string
-	AuxiliaryEffortCapSource string
-	ClassifierModel          string
-	ClassifierModelSource    string
+	Startup                 bridge.Pair
+	Selection               bridge.Selection
+	StartupSource           string
+	SelectionSource         string
+	Context                 bridge.ContextSettings
+	ContextRequestedPercent json.Number
+	ContextPolicy           bridge.ContextPolicy
+	ContextWindowSource     string
+	ContextPercentSource    string
+	ClassifierModel         bridge.Pair
+	ClassifierModelSource   string
+	// Deprecated names keys present in the file that this build ignores.
+	Deprecated []string
 }
 
 func defaultClauductSettings() ClauductSettings {
@@ -116,8 +123,6 @@ func defaultClauductSettings() ClauductSettings {
 		Context: bridge.DefaultContextSettings(), ContextPolicy: bridge.DefaultContextPolicy(),
 		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
 		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
-		ContextEffortCapSource: "factory.auto_compact_effort_cap",
-		AuxiliaryEffortCap:     bridge.DefaultAuxiliaryEffortCap(), AuxiliaryEffortCapSource: "factory.auxiliary_effort_cap",
 		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "factory.classifier_model"}
 }
 
@@ -172,13 +177,13 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 		return bridge.Pair{}, "", "", err
 	}
 	if explicitModel && !explicitEffort && !environmentEffort {
-		effortSource = "factory.modelDefaults"
+		effortSource = "account.default_reasoning_level"
 		if _, configured := config.Selection.ModelDefaults[route.Model]; configured {
 			effortSource = config.SelectionSource + ".modelDefaults"
 		}
 	}
 	if strings.HasPrefix(route.Source, "alias") || strings.HasPrefix(route.Source, "family") {
-		for _, candidate := range bridge.Models {
+		for _, candidate := range bridge.LegacyModels() {
 			if model == candidate.Alias || candidate.Family != "" && strings.HasPrefix(model, candidate.Family) {
 				mappingSource := "factory.modelMapping"
 				if _, configured := config.Selection.ModelMapping[candidate.Alias]; configured {
@@ -220,7 +225,7 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
-	fields, err := wire.Fields(raw, []string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "auto_compact_effort_cap", "auxiliary_effort_cap", "classifier_model"})
+	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model"}, deprecatedSettings...))
 	if err != nil {
 		return bad()
 	}
@@ -256,27 +261,22 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		settings.ContextPercentSource = "settings.auto_compact_token_limit_percent"
 		delete(fields, "auto_compact_token_limit_percent")
 	}
-	for _, field := range []struct {
-		name   string
-		value  *string
-		source *string
-	}{
-		{"auto_compact_effort_cap", &settings.Context.EffortCap, &settings.ContextEffortCapSource},
-		{"auxiliary_effort_cap", &settings.AuxiliaryEffortCap, &settings.AuxiliaryEffortCapSource},
-	} {
-		if value, present := fields[field.name]; present {
-			if string(value) == "null" || json.Unmarshal(value, field.value) != nil || !slices.Contains(bridge.Efforts, *field.value) {
-				return bad()
-			}
-			*field.source = "settings." + field.name
-			delete(fields, field.name)
+	for _, name := range deprecatedSettings {
+		if _, present := fields[name]; present {
+			settings.Deprecated = append(settings.Deprecated, name)
+			delete(fields, name)
 		}
 	}
 	if value, present := fields["classifier_model"]; present {
-		// An exact supported model ID: an alias would move with modelMapping, and an
-		// unknown or unsupported model is refused here rather than replaced.
-		if string(value) == "null" || json.Unmarshal(value, &settings.ClassifierModel) != nil || !gateway.ClassifierModel(settings.ClassifierModel) {
-			return bad()
+		// Both halves of an exact backend ID and a transmittable effort. An alias would move
+		// with modelMapping; the account list decides availability when it is used.
+		var legacy string
+		if json.Unmarshal(value, &legacy) == nil {
+			return ClauductSettings{}, errClassifierSettings
+		}
+		settings.ClassifierModel, err = bridge.ParsePair(value)
+		if err != nil {
+			return ClauductSettings{}, errClassifierSettings
 		}
 		settings.ClassifierModelSource = "settings.classifier_model"
 		delete(fields, "classifier_model")

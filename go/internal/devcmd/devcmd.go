@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -55,6 +56,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		return 0
+	case "sync-settings":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "usage: clauduct --dev --sync-settings")
+			return 2
+		}
+		return syncSettings(stdout, stderr)
 	case "doctor":
 		return doctor(stdout)
 	case "usage":
@@ -62,9 +69,37 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--doctor|--usage|--probe]")
+		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--sync-settings|--doctor|--usage|--probe]")
 		return 2
 	}
+}
+
+// syncSettings appends the top-level keys this release's defaults have and the user's
+// settings.json lacks. It reads no credential and opens no socket; installers and the
+// updater run it with the newly installed binary so the defaults are that release's.
+func syncSettings(stdout, stderr io.Writer) int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintln(stderr, settingsfile.ErrSyncTarget)
+		return 1
+	}
+	result, err := settingsfile.Sync(home)
+	if err != nil {
+		// The error is a fixed code and, when one was made, the backup's path.
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	switch {
+	case result.Created:
+		fmt.Fprintln(stdout, "settings created", filepath.Join(home, ".clauduct", "settings.json"))
+	case len(result.Added) == 0:
+		fmt.Fprintln(stdout, "settings unchanged")
+	}
+	if len(result.Added) > 0 {
+		fmt.Fprintln(stdout, "settings added", strings.Join(result.Added, ", "))
+		fmt.Fprintln(stdout, "settings backup", result.Backup)
+	}
+	return 0
 }
 
 func version(out io.Writer) int {

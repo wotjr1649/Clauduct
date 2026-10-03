@@ -93,6 +93,9 @@ type Direct struct {
 	idleFor      time.Duration
 	counts       countConnections
 	searchCounts searchCounters
+	modelCounts  modelListCounters
+	// modelsFor replaces the model list bound in a test. Zero is the product.
+	modelsFor time.Duration
 	// notBefore is when the backend last said this account may come back, in Unix
 	// nanoseconds. Every attempt waits for it, not only the one that was told (#91).
 	notBefore atomic.Int64
@@ -370,17 +373,23 @@ func (d *Direct) idle() time.Duration {
 // applyHeaders builds the identity the reference client presents. It is one function so a
 // probe and the gateway cannot drift apart on the wire.
 func applyHeaders(request *http.Request, credential auth.Credential, version string, size int) {
-	request.Header.Set("Authorization", "Bearer "+credential.Token())
-	request.Header.Set("chatgpt-account-id", credential.Account)
+	applyIdentity(request, credential, version)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "text/event-stream")
 	// No compression: nothing to decompress, nothing to bound, no bomb to defend against.
 	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("Content-Length", strconv.Itoa(size))
+	request.Header.Set("Openai-Beta", "responses=experimental")
+}
+
+// applyIdentity is the credential and the client identity every codex_cli_rs request
+// carries, inference or model list, so the two cannot drift apart.
+func applyIdentity(request *http.Request, credential auth.Credential, version string) {
+	request.Header.Set("Authorization", "Bearer "+credential.Token())
+	request.Header.Set("chatgpt-account-id", credential.Account)
 	request.Header.Set("Version", version)
 	request.Header.Set("User-Agent", "codex-cli/"+version+" (Windows; x64)")
 	request.Header.Set("originator", "codex_cli_rs")
-	request.Header.Set("Openai-Beta", "responses=experimental")
 }
 
 // withSession adds the session's prompt_cache_key to an encoded request object. The body is

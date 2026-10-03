@@ -91,38 +91,28 @@ func catalogueReport(out io.Writer, raw []byte, readErr error, installed string,
 	}
 	fmt.Fprintln(out, "models       "+versions)
 
-	listed := map[string]catalogModel{}
+	// v0.6.4 sessions fetch the account's own list at start; this cache is only a hint
+	// about it, never the session's authority. Listed per model, with the efforts this
+	// build can transmit, so a user can see what /model would offer.
 	for _, entry := range cache.Models {
-		listed[entry.Slug] = entry
-	}
-	for _, model := range bridge.Models {
-		entry, found := listed[model.ID]
-		if !found {
-			fmt.Fprintf(out, "models       %s: routed here, absent from the backend catalogue\n", model.ID)
-			continue
-		}
+		offered := efforts(entry)
+		sendable := slices.DeleteFunc(slices.Clone(offered), func(e string) bool { return !bridge.TransmittableEffort(e) })
+		visibility := "listed"
 		if entry.Visibility != "list" {
-			fmt.Fprintf(out, "models       %s: routed here, hidden by the backend\n", model.ID)
+			visibility = "hidden"
+		}
+		fmt.Fprintf(out, "models       %s: %s, efforts %s, context %d (max %d)\n",
+			entry.Slug, visibility, strings.Join(sendable, ", "), entry.ContextWindow, entry.MaxContextWindow)
+		if extra := without(offered, sendable); len(extra) > 0 {
+			fmt.Fprintf(out, "models       %s: the backend also offers %s, which native cannot send\n", entry.Slug, strings.Join(extra, ", "))
 		}
 		if entry.Upgrade != nil && entry.Upgrade.Model != "" {
-			fmt.Fprintf(out, "models       %s: the backend names a successor, %s, retiring %s\n", model.ID, entry.Upgrade.Model, orUnknown(entry.Upgrade.RetirementAt))
-		}
-		offered := efforts(entry)
-		if extra := without(offered, model.Efforts); len(extra) > 0 {
-			fmt.Fprintf(out, "models       %s: the backend offers %s, not routed here\n", model.ID, strings.Join(extra, ", "))
-		}
-		if missing := without(model.Efforts, offered); len(missing) > 0 {
-			fmt.Fprintf(out, "models       %s: routed here at %s, not offered by the backend\n", model.ID, strings.Join(missing, ", "))
-		}
-		if entry.ContextWindow != model.Context.Window {
-			fmt.Fprintf(out, "models       %s: context %d here, backend %d (max %d)\n", model.ID, model.Context.Window, entry.ContextWindow, entry.MaxContextWindow)
+			fmt.Fprintf(out, "models       %s: the backend names a successor, %s, retiring %s\n", entry.Slug, entry.Upgrade.Model, orUnknown(entry.Upgrade.RetirementAt))
 		}
 	}
-	for _, entry := range cache.Models {
-		routed := slices.ContainsFunc(bridge.Models, func(m bridge.Model) bool { return m.ID == entry.Slug })
-		if entry.Visibility == "list" && entry.SupportedInAPI && !routed {
-			fmt.Fprintf(out, "models       %s: listed by the backend, not routed here (efforts %s, context %d, max %d)\n",
-				entry.Slug, strings.Join(efforts(entry), ", "), entry.ContextWindow, entry.MaxContextWindow)
+	for _, model := range bridge.LegacyModels() {
+		if !slices.ContainsFunc(cache.Models, func(entry catalogModel) bool { return entry.Slug == model.ID }) {
+			fmt.Fprintf(out, "models       %s: a legacy name (%s) the cached list does not offer\n", model.ID, model.Key)
 		}
 	}
 }

@@ -120,6 +120,12 @@ func (g *Gateway) ConfigureSelection(selection bridge.Selection) {
 	if g.delegations != nil {
 		g.delegations.selection = g.selection
 	}
+	g.ring.mu.Lock()
+	g.ring.models = g.ring.models[:0]
+	for _, model := range g.selection.Catalogue().Models() {
+		g.ring.models = append(g.ring.models, model.ID)
+	}
+	g.ring.mu.Unlock()
 }
 
 // Retire failed native tool calls, and retract only calls prepared by a failed
@@ -186,7 +192,7 @@ func (g *Gateway) ConfigureNativeBuiltinRoles(set func() bool) {
 // Failure remains diagnostic; openProjects classifies each later access afresh.
 func (g *Gateway) ConfigureDelegations(projects string) {
 	mkdirErr := os.MkdirAll(projects, 0o700)
-	g.delegations = &delegations{projects: projects, events: g.nativeEvents.directory, projectsErr: mkdirErr,
+	g.delegations = &delegations{selection: g.selection, projects: projects, events: g.nativeEvents.directory, projectsErr: mkdirErr,
 		pending: map[delegationKey]delegatedChoice{}, resolved: map[string]resolvedChoice{}}
 }
 
@@ -230,7 +236,7 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		if json.Unmarshal(model["enum"], &names) != nil {
 			return errDelegationUnverified
 		}
-		for _, entry := range bridge.Models {
+		for _, entry := range d.selection.Catalogue().Models() {
 			names = append(names, entry.ID)
 		}
 		if pinned.Model != "" {
@@ -242,7 +248,7 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 			Type        string   `json:"type"`
 			Enum        []string `json:"enum"`
 			Description string   `json:"description"`
-		}{"string", bridge.Efforts, "Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."})
+		}{"string", d.selection.Catalogue().Efforts(), "Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."})
 		if pinned.Model != "" {
 			properties["effort"], _ = json.Marshal(map[string]any{"type": "string", "enum": []string{pinned.Effort}, "description": "Omit effort to retain this task's verified selection."})
 		}
@@ -397,11 +403,8 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		return nil, bridge.ErrUnsupportedRoute
 	}
 	var model *bridge.Model
-	for i := range bridge.Models {
-		if bridge.Models[i].ID == modelID {
-			model = &bridge.Models[i]
-			break
-		}
+	if offered, ok := d.selection.ModelByID(modelID); ok {
+		model = &offered
 	}
 	if model == nil && source != "native-selection" {
 		if hasEffort {
@@ -420,8 +423,17 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	nativeAlias := ""
 	if model != nil {
 		nativeAlias = model.AgentAlias
-		alias, _ := json.Marshal(nativeAlias)
-		fields["model"] = alias
+		if nativeAlias != "" {
+			alias, _ := json.Marshal(nativeAlias)
+			fields["model"] = alias
+		} else if d.events == "" {
+			// A model without a legacy tier can only be pinned by the spawn event.
+			return nil, bridge.ErrUnsupportedRoute
+		} else {
+			// Native's argument takes only its tier names, and no tier is guessed for an
+			// account model without one. The spawn event below pins the full ID.
+			delete(fields, "model")
+		}
 		// The tool schema still takes Claude aliases. The native spawn event
 		// accepts a full ID and pins the call identity, so duplicate alias mappings
 		// no longer make a backend model unreachable.
@@ -599,20 +611,17 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	}
 	if choice.route.Source == "native-selection" {
 		active := scope.nativeTurn
-		if active == nil || !validActiveReceipt(*active, scope.session, id) {
+		if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
 			return bridge.Route{}, false, errDelegationUnverified
 		}
-		actual, err := bridge.SelectRoute(active.Model, active.Effort)
+		actual, err := d.selection.SelectRoute(active.Model, active.Effort)
 		if err != nil {
 			return bridge.Route{}, false, errDelegationUnverified
 		}
 		actual.Source = "native-selection"
 		choice.route = actual
-		for _, model := range bridge.Models {
-			if model.ID == actual.Model {
-				choice.alias = model.AgentAlias
-				break
-			}
+		if model, ok := d.selection.ModelByID(actual.Model); ok {
+			choice.alias = model.AgentAlias
 		}
 	}
 	switch {
@@ -786,7 +795,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	file, err := root.Open(path)
 	if os.IsNotExist(err) {
 		// Routed roles require evidence; other roles retain admission's missing-choice policy.
-		if bridge.KnownRole(binding.Role) {
+		if d.selection.KnownRole(binding.Role) {
 			return empty, false, errDelegationUnverified
 		}
 		return empty, false, nil
@@ -821,20 +830,21 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	if bridge.RetiredRole(saved.Role) {
 		return empty, false, bridge.ErrRetiredRoute
 	}
-	route, err := bridge.SelectRoute(saved.Model, saved.Effort)
-	if errors.Is(err, bridge.ErrRetiredRoute) {
-		return empty, false, err
-	}
-	if err != nil || saved.Effort == "" || route.Model != saved.Model {
+	// The saved pair must still be offered by this session's account list.
+	if !d.selection.ValidPair(bridge.Pair{Model: saved.Model, Effort: saved.Effort}) {
+		if _, retired := bridge.Retired[saved.Model]; retired {
+			return empty, false, bridge.ErrRetiredRoute
+		}
 		return empty, false, errDelegationUnverified
 	}
-	model, ok := bridge.ForAlias(saved.Alias)
+	route := bridge.Route{Model: saved.Model, Effort: saved.Effort}
+	model, ok := d.selection.ForAlias(saved.Alias)
 	if saved.Version == 3 {
-		model, ok = bridge.ModelByID(saved.Alias)
+		model, ok = d.selection.ModelByID(saved.Alias)
 	} else if !ok || model.ID != route.Model {
 		// The tier alias moved (v0.6.3: opus is GPT-6.1 Sol) or the model has none: accept
 		// only the model the journal names, and only when its own Agent tier is the alias.
-		if byID, known := bridge.ModelByID(route.Model); known && byID.Alias == "" && byID.AgentAlias != "" {
+		if byID, known := d.selection.ModelByID(route.Model); known && byID.Alias == "" && byID.AgentAlias != "" {
 			model, ok = byID, byID.AgentAlias == saved.Alias
 		}
 	}
@@ -857,10 +867,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 			return empty, false, errDelegationUnverified
 		}
 		modelOK := intent.Model == "model-family" || selectionModelLabel(intent.Model) == intent.Model
-		effortOK := intent.Effort == ""
-		for _, effort := range bridge.Efforts {
-			effortOK = effortOK || intent.Effort == effort
-		}
+		effortOK := intent.Effort == "" || bridge.TransmittableEffort(intent.Effort)
 		if !modelOK || !effortOK || !intent.ModelProvided && intent.Model != "" || intent.EffortProvided != (intent.Effort != "") {
 			return empty, false, errDelegationUnverified
 		}
@@ -1015,19 +1022,17 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 		return none, false
 	}
 	active := scope.nativeTurn
-	if active == nil || !validActiveReceipt(*active, scope.session, id) {
+	if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
 		return none, false
 	}
-	route, err := bridge.SelectRoute(active.Model, active.Effort)
+	route, err := d.selection.SelectRoute(active.Model, active.Effort)
 	if err != nil {
 		return none, false
 	}
 	route.Source = "native-fork"
 	choice := resolvedChoice{session: scope.session, parent: scope.parent, role: "general-purpose", route: route}
-	for _, model := range bridge.Models {
-		if model.ID == route.Model {
-			choice.alias = model.AgentAlias
-		}
+	if model, ok := d.selection.ModelByID(route.Model); ok {
+		choice.alias = model.AgentAlias
 	}
 	return choice, true
 }

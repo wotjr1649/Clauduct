@@ -2,17 +2,19 @@ package update
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/buildinfo"
-	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 )
 
 // Option is what this command owns on the command line.
@@ -122,7 +124,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	// match and does get repaired.
 	if current(dir, sums) {
 		fmt.Fprintln(out, "already current -- the installed binary matches", release.Tag)
-		return ensureSettings(out)
+		return installedSettings(ctx, dir, out)
 	}
 
 	// The retired copies go too (Apply), so they are named before the question: consent to an
@@ -173,19 +175,107 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 			fmt.Fprintln(out, "leftover ", path, "(held by another process; delete it once that process has exited)")
 		}
 	}
-	return ensureSettings(out)
+	return installedSettings(ctx, dir, out)
 }
 
-func ensureSettings(out io.Writer) int {
-	home, err := os.UserHomeDir()
-	if err == nil {
-		err = settingsfile.Ensure(home)
+// installedSettings completes settings.json with the binary now installed in dir.
+//
+// That binary, not this process: an update is run by the build it replaces, and that
+// build's defaults are the old release's, so completing the file from them would add the
+// keys the user is updating away from. A failure here never undoes the binary update; the
+// report says the binary is installed and leaves the settings to the backup the child names.
+func installedSettings(ctx context.Context, dir string, out io.Writer) int {
+	ctx = context.WithoutCancel(ctx) // a fresh budget per run, not what the download left
+	exe := filepath.Join(dir, Binaries[0])
+	code, printed, err := runInstalled(ctx, exe, "--dev", "--sync-settings")
+	if err == nil && unknownCommand(code, printed) {
+		// The release predates --sync-settings. Its initializer still creates an absent
+		// file and leaves an existing one alone.
+		code, printed, err = runInstalled(ctx, exe, "--dev", "--init-settings")
+		if err == nil && unknownCommand(code, printed) {
+			fmt.Fprintln(out, "note: the installed release has no settings initializer; settings.json was left as it is")
+			return 0
+		}
+		_, _ = out.Write(printed)
+		if err == nil && code == 0 {
+			fmt.Fprintln(out, "note: the installed release predates settings sync; an existing settings.json was left as it is")
+			return 0
+		}
+	} else {
+		_, _ = out.Write(printed)
 	}
-	if err != nil {
-		fmt.Fprintln(out, "clauduct: CLAUDUCT_SETTINGS_CREATE_FAILED; the installed binary is available, but settings initialization failed")
+	if err != nil || code != 0 {
+		fmt.Fprintln(out, "clauduct: CLAUDUCT_SETTINGS_SYNC_FAILED; the binary is installed, but settings sync failed")
+		fmt.Fprintln(out, "          settings.json was not replaced unless a backup is named above; a named backup holds its original bytes")
 		return 1
 	}
 	return 0
+}
+
+// unknownCommand reports whether the installed binary refused the --dev word as one it does
+// not have: every release since v0.4.0 prints its --dev usage line and exits 2. The exit
+// code alone is not enough, because a Go program that panics also exits 2, and a crash
+// must be reported as a failure rather than as an older release.
+func unknownCommand(code int, printed []byte) bool {
+	return code == 2 && bytes.Contains(printed, []byte("usage: clauduct --dev ["))
+}
+
+// settingsTimeout bounds one run of the installed binary's settings command. A variable
+// only so a test can show that the bound is applied.
+var settingsTimeout = 10 * time.Second
+
+// runInstalled runs the installed binary. A variable so tests can stand in for a release
+// binary, which their fake installations do not contain.
+var runInstalled = runChild
+
+// childEnvironment is what the settings command is given: where home and temporary files
+// are, and what Windows needs to start a process. Nothing else -- no credential, proxy or
+// API variable -- since the command reads none of them.
+var childEnvironment = []string{"SystemRoot", "SystemDrive", "windir", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP"}
+
+// runChild runs exe with fixed arguments, no shell and no input. It returns the exit code
+// and at most a few kilobytes of what the process printed, or an error when it did not
+// start or did not finish within settingsTimeout.
+func runChild(ctx context.Context, exe string, args ...string) (int, []byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, settingsTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Env = []string{}
+	for _, entry := range os.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		for _, kept := range childEnvironment {
+			if strings.EqualFold(name, kept) {
+				cmd.Env = append(cmd.Env, entry)
+			}
+		}
+	}
+	printed := &boundedBuffer{limit: 8 << 10}
+	cmd.Stdout, cmd.Stderr = printed, printed
+	cmd.WaitDelay = 2 * time.Second
+	err := cmd.Run()
+	var exit *exec.ExitError
+	switch {
+	case ctx.Err() != nil:
+		return -1, printed.Bytes(), ctx.Err()
+	case errors.As(err, &exit):
+		return exit.ExitCode(), printed.Bytes(), nil
+	case err != nil:
+		return -1, printed.Bytes(), err
+	}
+	return 0, printed.Bytes(), nil
+}
+
+// boundedBuffer keeps the first limit bytes written to it and discards the rest.
+type boundedBuffer struct {
+	bytes.Buffer
+	limit int
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	if room := b.limit - b.Len(); room > 0 {
+		b.Buffer.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
 }
 
 // digests reads the release's SHA256SUMS.

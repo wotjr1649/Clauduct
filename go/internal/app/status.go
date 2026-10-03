@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
-	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -61,19 +60,19 @@ type SessionFacts struct {
 	// There is no single honest value for that. A session runs its parent and its
 	// subagents on different routes at the same time, which is the point of role routing.
 	// Recent answers it per request, and exactly.
-	StartupModel             string                `json:"startupModel"`
-	StartupEffort            string                `json:"startupEffort"`
-	StartupModelSource       string                `json:"startupModelSource,omitempty"`
-	StartupEffortSource      string                `json:"startupEffortSource,omitempty"`
-	NativeContextDefaults    NativeContextDefaults `json:"nativeContextDefaults"`
-	Context                  ContextFacts          `json:"context"`
-	AuxiliaryEffortCap       string                `json:"auxiliaryEffortCap"`
-	AuxiliaryEffortCapSource string                `json:"auxiliaryEffortCapSource"`
-	ClassifierModel          string                `json:"classifierModel,omitempty"`
-	ClassifierModelSource    string                `json:"classifierModelSource"`
-	RequiredAsk              bool                  `json:"requiredAsk"`
-	NonStreamingFallback     bool                  `json:"nonStreamingFallbackDisabled"`
-	DelegationMenuEntries    int                   `json:"delegationMenuEntries"`
+	StartupModel          string                `json:"startupModel"`
+	StartupEffort         string                `json:"startupEffort"`
+	StartupModelSource    string                `json:"startupModelSource,omitempty"`
+	StartupEffortSource   string                `json:"startupEffortSource,omitempty"`
+	NativeContextDefaults NativeContextDefaults `json:"nativeContextDefaults"`
+	Context               ContextFacts          `json:"context"`
+	ClassifierModel       string                `json:"classifierModel,omitempty"`
+	ClassifierEffort      string                `json:"classifierEffort,omitempty"`
+	ClassifierModelSource string                `json:"classifierModelSource"`
+	ModelList             ModelListFacts        `json:"modelList"`
+	DeprecatedSettings    []string              `json:"deprecatedSettings,omitempty"`
+	NonStreamingFallback  bool                  `json:"nonStreamingFallbackDisabled"`
+	DelegationMenuEntries int                   `json:"delegationMenuEntries"`
 	// HookInstalled is whether the session got a hook: since #112 this executable itself.
 	//
 	// Reported because its absence is silent otherwise. findHook is os.Executable, so a
@@ -95,21 +94,18 @@ type NativeContextDefaults struct {
 // ContextFacts separates user input from its clamped, computed launch policy.
 // Values and closed source labels only; no settings document or user path.
 type ContextFacts struct {
-	Window               int64       `json:"window"`
-	RequestedPercent     json.Number `json:"requestedPercent"`
-	EffectivePercent     int64       `json:"effectivePercent"`
-	AutoCompactTokens    int64       `json:"autoCompactTokenLimit"`
-	WindowSource         string      `json:"windowSource"`
-	PercentSource        string      `json:"percentSource"`
-	AutoCompactEffortCap string      `json:"autoCompactEffortCap"`
-	EffortCapSource      string      `json:"effortCapSource"`
+	Window            int64       `json:"window"`
+	RequestedPercent  json.Number `json:"requestedPercent"`
+	EffectivePercent  int64       `json:"effectivePercent"`
+	AutoCompactTokens int64       `json:"autoCompactTokenLimit"`
+	WindowSource      string      `json:"windowSource"`
+	PercentSource     string      `json:"percentSource"`
 }
 
 func (config ClauductSettings) contextFacts() ContextFacts {
 	return ContextFacts{Window: config.ContextPolicy.Window, RequestedPercent: config.ContextRequestedPercent,
 		EffectivePercent: min(config.Context.Percent, 90), AutoCompactTokens: config.ContextPolicy.CompactAt,
-		WindowSource: config.ContextWindowSource, PercentSource: config.ContextPercentSource,
-		AutoCompactEffortCap: config.ContextPolicy.EffortCap, EffortCapSource: config.ContextEffortCapSource}
+		WindowSource: config.ContextWindowSource, PercentSource: config.ContextPercentSource}
 }
 
 // Status is the whole account of one session.
@@ -189,15 +185,15 @@ func Account(result Result) Status {
 			StartupEffortSource: result.StartupEffortSource,
 			NativeContextDefaults: NativeContextDefaults{Window: int(context.Window),
 				AutoCompactWindow: int(context.Window), CompactPercent: float64(context.EffectivePercent), ApplicationVerified: false},
-			Context:                  context,
-			AuxiliaryEffortCap:       result.AuxiliaryEffortCap,
-			AuxiliaryEffortCapSource: result.AuxiliaryEffortCapSource,
-			ClassifierModel:          result.ClassifierModel,
-			ClassifierModelSource:    result.ClassifierModelSource,
-			RequiredAsk:              result.RequiredAsk,
-			NonStreamingFallback:     defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
-			DelegationMenuEntries:    len(bridge.Models) + 1,
-			HookInstalled:            result.HookInstalled,
+			Context:               context,
+			ClassifierModel:       result.ClassifierModel.Model,
+			ClassifierEffort:      result.ClassifierModel.Effort,
+			ClassifierModelSource: result.ClassifierModelSource,
+			ModelList:             result.ModelList,
+			DeprecatedSettings:    result.DeprecatedSettings,
+			NonStreamingFallback:  defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
+			DelegationMenuEntries: result.MenuEntries,
+			HookInstalled:         result.HookInstalled,
 		},
 		Gateway:        result.Diagnostics,
 		Lifecycle:      result.Lifecycle,

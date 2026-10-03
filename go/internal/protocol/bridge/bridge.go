@@ -157,7 +157,7 @@ type InputEntry struct {
 	Name      string `json:"name,omitempty"`
 	Arguments string `json:"arguments,omitempty"`
 
-	// function_call_output
+	// function_call_output. Empty, it is written as "" by MarshalJSON, never left out.
 	Output []InputPart `json:"output,omitempty"`
 
 	// reasoning. Carried apart from the rest because its shape shares no field with them
@@ -178,7 +178,8 @@ type ReasoningPart struct {
 	Text string `json:"text"`
 }
 
-// MarshalJSON writes a reasoning entry in its own shape and everything else unchanged.
+// MarshalJSON writes a reasoning entry and an empty function_call_output in their own shapes
+// and everything else unchanged.
 //
 // The summary is written even when empty. omitempty would drop it, and the backend is
 // being handed back exactly what it produced -- an empty summary is a summary with nothing
@@ -195,6 +196,18 @@ func (e InputEntry) MarshalJSON() ([]byte, error) {
 			Summary   []ReasoningPart `json:"summary"`
 			Encrypted string          `json:"encrypted_content"`
 		}{"reasoning", e.Reasoning.ID, summary, e.Reasoning.Encrypted})
+	}
+	// A result always carries its output, even an empty one (#252). omitempty dropped the key
+	// for a tool_result with no content, and the backend answers that with HTTP 400. An empty
+	// result goes as the empty string, not the baseline's empty list: measured 2026-10-03
+	// (luna/low, 3 each), the model read "" as no output every time and answered an empty
+	// list by calling the tool again every time.
+	if e.Type == "function_call_output" && len(e.Output) == 0 {
+		return json.Marshal(struct {
+			Type   string `json:"type"`
+			CallID string `json:"call_id"`
+			Output string `json:"output"`
+		}{e.Type, e.CallID, ""})
 	}
 	// The alias stops this from calling itself and keeps the existing shape exactly.
 	type plain InputEntry

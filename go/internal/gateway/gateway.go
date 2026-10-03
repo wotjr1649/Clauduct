@@ -125,6 +125,11 @@ type Gateway struct {
 	// fact drift, and the one that would have drifted here is the one a reader trusts.
 	refusalMu sync.Mutex
 	refusals  map[string]int64
+	// overflowed holds the session/agent pairs whose side request last overflowed the backend
+	// window, so one streak asks native for one compaction (#255). An entry leaves when a side
+	// request of the same pair succeeds; at most one per agent that overflowed.
+	overflowMu sync.Mutex
+	overflowed map[string]bool
 	// cancelledCounts is the part of refusals["CANCELLED"] answered on count_tokens: native
 	// went away before an exact count finished, most often by ending the session within
 	// seconds of /context. Nothing was lost; the account names it apart (v0.6.7).

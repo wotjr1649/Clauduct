@@ -285,7 +285,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	entry.upstreamReturned(err, ctx, r.Context())
 	execution.rejectedBeforeDispatch(err)
 	if err != nil {
-		if categoryFor(err) == "CONTEXT_LENGTH_EXCEEDED" && g.recoverContextOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), backendRequest.Model) {
+		if categoryFor(err) == "CONTEXT_LENGTH_EXCEEDED" && (g.recoverContextOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"), backendRequest.Model) || g.auxiliaryOverflow(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))) {
 			return
 		}
 		retryAfter(w, err)
@@ -305,6 +305,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	resultsDelivered = g.relay(ctx, w, control, response, request, backendRequest.Model,
 		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, nativeTurn: entry.nativeTurn, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source}})
 	g.rememberUsage(encoded, entry)
+	if resultsDelivered {
+		g.auxiliaryAnswered(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
+	}
 	if resultsDelivered && g.delegations != nil {
 		g.delegations.observeBackend(r.Header.Get("X-Claude-Code-Agent-Id"), true)
 	}
@@ -842,7 +845,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// an error frame must not inherit a deadline that has already passed.
 		_ = control.SetWriteDeadline(time.Now().Add(writeStall))
 		if !committed {
-			if errors.Is(err, codex.ErrContextLimit) && len(scopes) > 0 && g.recoverContextOverflow(w, scopes[0].session, scopes[0].parent, effective) {
+			if errors.Is(err, codex.ErrContextLimit) && len(scopes) > 0 && (g.recoverContextOverflow(w, scopes[0].session, scopes[0].parent, effective) || g.auxiliaryOverflow(w, scopes[0].session, scopes[0].parent)) {
 				return
 			}
 			g.refuseDetail(w, refusal{categoryFor(err), statusForUpstream(err)}, detail)

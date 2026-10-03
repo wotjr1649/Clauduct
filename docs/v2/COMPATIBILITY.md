@@ -1002,6 +1002,8 @@ native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 �
 
 ### v0.6.7 — 분류기 측정 결과 안내, 중단된 계수 분리, 사용자 mod 확인
 
+**2026-10-03 출하**(태그 `v0.6.7` → `62b84f2`, [기록](RELEASE-v0.6.7.md)). 릴리스 바이트로 실제 backend 18개 시나리오를 통과했다.
+
 | 항목 | 동작 |
 |---|---|
 | 분류기 pair 안내 | 계정이 제공하는 `classifier_model` pair가 Clauduct의 분류기 측정에서 통과하지 못했거나 측정하지 않은 pair면, 시작할 때 stderr에 한 줄로 알리고 `session.classifierFinding`에 남긴다. 설정대로 사용하며 거부하지 않는다(#238 계약). 통과한 공장값 Terra/low는 아무것도 출력하지 않는다. 계정이 제공하지 않는 pair는 이 안내 대신 기존처럼 설정 문제로 알리고, 분류 요청은 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부된다 |

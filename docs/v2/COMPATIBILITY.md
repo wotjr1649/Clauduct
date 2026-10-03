@@ -530,12 +530,12 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | `metadata` | VALIDATED/NOT_FORWARDED | 객체이고 멤버는 `user_id` 하나다. 값은 512자 이하 문자열 또는 null이다. backend로 보내지 않는다 |
 | `cache_control` | VALIDATED/IGNORED | `type: ephemeral`, `ttl` `5m`·`1h`, Claude Code 확장 `scope: global`만 받는다. breakpoint는 backend로 옮기지 않는다. backend 캐시는 세션 단위 `prompt_cache_key`로 따로 동작한다. 실측에서 native 2.1.288은 `{type: ephemeral}`만 보냈다 |
 | `max_tokens` | POSTHOC_CHECK | backend가 `max_output_tokens`를 HTTP 400으로 거부하므로 그 지점에서 생성을 멈출 수 없다. 완료 뒤 보고된 usage와 대조하고, 넘으면 `OUTPUT_TOKEN_LIMIT_EXCEEDED` 오류로 끝난다. Anthropic처럼 `stop_reason: max_tokens`로 정상 종료하지 않는다. text를 보류하지 않는 스트리밍(TUI 등)에서는 오류 전에 이미 전달된 text가 남을 수 있다. thinking을 끈 요청은 reasoning을 빼고 대조한다 |
-| `stop_sequences` | CLIENT_SIDE_EMULATION | backend에 보내지 않는다. 받은 text를 Clauduct가 첫 정지 문자열에서 잘라 전달하고 `stop_reason: stop_sequence`로 끝낸다. 정지 문자열 뒤에 생성된 함수 호출은 버린다. backend의 생성은 계속되므로 비용과 지연은 줄지 않는다. 1~16개, 빈 문자열 없이 문자열당 256바이트까지 받는다 |
+| `stop_sequences` | CLIENT_SIDE_EMULATION | backend에 보내지 않는다. 받은 text를 Clauduct가 첫 정지 문자열에서 잘라 전달하고 `stop_reason: stop_sequence`로 끝낸다. 정지 문자열에 걸린 응답의 함수 호출은 순서와 관계없이 모두 버린다. backend의 생성은 계속되므로 비용과 지연은 줄지 않는다. 1~16개, 빈 문자열 없이 문자열당 256바이트까지 받는다 |
 | tool `defer_loading` | NATIVE_TOOLSEARCH_ADAPTATION | 발견되지 않은 deferred 도구는 backend에 보내지 않는다. 발견은 native ToolSearch의 `tool_reference`, 대화 이력의 `tool_use` 이름, `tool_addition`으로 한다(`ENABLE_TOOL_SEARCH`). Anthropic 서버의 tool search와는 캐시 의미가 같지 않다 |
 | `tool_result.is_error` | LOCAL_SIGNAL_ONLY | Clauduct의 진단과 위임 상태에만 쓴다. backend의 `function_call_output`에는 실패 표시 필드가 없어 결과 본문만 보낸다. 실패 문구를 지어 붙이지 않는다(#144) |
 | 빈 `tool_result` | ADAPTED | content가 없거나 `[]`이면 `function_call_output.output`을 빈 문자열로 보낸다. v0.6.7까지는 `output` 키가 빠져 backend가 요청 전체를 HTTP 400으로 거부했다. 빈 목록을 쓰지 않는 이유는 실측에서 모델이 도구를 다시 불렀기 때문이다(#252). `content: ""`·null·빈 text 블록 하나는 빈 `input_text` 하나로 나가며, 실측에서 모델이 빈 결과로 읽었다 |
 | 함수 도구의 `strict`·`allowed_callers`·`input_examples`·`eager_input_streaming` | REFUSED | 받지 않는다(`TOOL_FIELDS`). native 2.1.288 경로는 이 필드를 보내지 않는다 |
-| hosted web search 도구 | VALIDATED, 일부 IGNORED | `allowed_domains`·`blocked_domains`·`user_location`은 검사해 검색 요청으로 보낸다. `max_uses`·`allowed_callers`·`response_inclusion`은 키만 받고 값은 검사하지도 쓰지도 않는다(검색 요청의 호출자는 항상 direct). native 2.1.288은 `max_uses`를 보낸다 |
+| hosted web search 도구 | VALIDATED, 일부 IGNORED | `allowed_domains`·`blocked_domains`·`user_location`은 검사해 검색 요청으로 보낸다. `max_uses`·`allowed_callers`·`response_inclusion`·`cache_control`은 키만 받고 값은 검사하지도 쓰지도 않는다(검색 요청의 호출자는 항상 direct). 이 도구의 `cache_control`은 위 `cache_control` 행의 검사를 받지 않는다. native 2.1.288은 `max_uses`를 보내고 `cache_control`은 보내지 않는다 |
 | 응답의 refusal | REFUSED | `response.refusal.*` 이벤트가 오면 요청이 실패한다. 측정한 경로에서는 관측되지 않았다 |
 | 응답의 citation | 일부 | `response.output_text.annotation.added` 이벤트가 오면 요청이 실패한다. 완료된 메시지 안의 annotation은 읽지 않아 전달되지 않는다 |
 | `stop_reason: pause_turn` | 해당 없음 | Anthropic 서버 도구 반복의 종료 사유다. 이 bridge의 backend 경로에는 해당하는 것이 없다 |

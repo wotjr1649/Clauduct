@@ -1,6 +1,6 @@
 # V2 호환성 — 현재 / 제약 / 미지원
 
-v0.6.4(준비 중, 미출하)부터 Clauduct는 native 권한 규칙을 더하지 않는다. v0.6.2–v0.6.3이 요구하던
+v0.6.4부터 Clauduct는 native 권한 규칙을 더하지 않는다. v0.6.2–v0.6.3이 요구하던
 실행·외부 통신 도구 17개의 native 확인(`permissions.ask`)과 v0.5.2부터의 `autoMode.hard_deny` 2개는 이전 버전의
 동작이다. 이제 auto 모드의 `Bash`·`WebFetch` 같은 도구는 native 규칙과 native 분류기만으로 결정된다.
 계정 모델 목록·설정 동기화를 포함한 변경 전체와 검증 상태는 아래 3절의 v0.6.4 절에 있다.
@@ -569,7 +569,7 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
 | 세션 중 `/model`·`/effort` 기록(native 2.1.287) | native 2.1.287은 로컬 명령 caveat 문구와 `/model` 결과 문구("for this session only" 또는 "and saved as your default for new sessions", effort 생략 가능, 뒤따르는 안내)를 바꿨다. v0.6.3은 두 형식을 모두 엔진의 정확한 문구로만 읽어 UUID 재개 snapshot에 반영한다. effort가 없는 모델 변경은 기존 effort를 유지한다(실측). 이전 버전은 2.1.287에서 이 변경을 snapshot에 반영하지 못해 재개 시 이전 모델·effort로 시작했다 |
-| auto 권한 모드의 분류기 판정 | **v0.6.4(미출하):** 분류 요청은 `classifier_model` pair(공장값 Terra/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본에 한정된다. 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
+| auto 권한 모드의 분류기 판정 | **v0.6.4:** 분류 요청은 `classifier_model` pair(공장값 Terra/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본에 한정된다. 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -904,8 +904,8 @@ media 길이 거부 진단은 압축을 새로 요청한 경우와 압축 직후
 
 ### v0.6.4 — 계정 모델 목록, 권한 규칙 제거, 설정 동기화
 
-**준비 중, 미출하.** 후보 `bf984f2`(native 2.1.288, Codex CLI 0.160.0)로 2026-10-03 실제 backend 검증을 통과했다
-(아래 실측 표). 태그·Release는 아직 없다. 설정 형식과 우선순위는 [설정 문서](SETTINGS.md)가 소유한다.
+**2026-10-03 출하**(태그 `v0.6.4` → `3273786`, [기록](RELEASE-v0.6.4.md)). 후보 `bf984f2`와 릴리스 바이트 모두
+native 2.1.288, Codex CLI 0.160.0으로 실제 backend 검증을 통과했다(아래 실측 표). 설정 형식과 우선순위는 [설정 문서](SETTINGS.md)가 소유한다.
 
 | 항목 | v0.6.4 동작 |
 |---|---|

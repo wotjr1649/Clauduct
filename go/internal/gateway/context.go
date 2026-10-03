@@ -449,6 +449,22 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 	return checkpoint()
 }
 
+// auxiliaryOverflow answers a side request the backend found too long with the overflow
+// wording native acts on. Auto mode's classifier carries the conversation, and since 2.1.288
+// native compacts the conversation when its classifier reports the transcript too long,
+// instead of failing every tool call that needs a verdict. A 502 CONTEXT_LENGTH_EXCEEDED read
+// to native as a classifier that was unavailable, so the action was denied and nothing was
+// compacted (#255, measured on 2.1.288). Only a structured backend code reaches here.
+func (g *Gateway) auxiliaryOverflow(w http.ResponseWriter) bool {
+	entry := recordOf(w)
+	if entry == nil || entry.snapshot().RequestClass != "auxiliary" {
+		return false
+	}
+	entry.control("AUXILIARY_CONTEXT_OVERFLOW")
+	g.refuseCategory(w, 400, "prompt is too long")
+	return true
+}
+
 // Only a structured backend overflow, before any delivered operation, reaches
 // this path. One native compaction is allowed; an insufficient summary stops.
 func (g *Gateway) recoverContextOverflow(w http.ResponseWriter, session, agent, model string) bool {

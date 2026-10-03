@@ -76,11 +76,13 @@ v0.6.7이 남긴 세 위험을 측정했다.
 
 | 제안 | 하지 않은 이유 | 다시 볼 조건 |
 |---|---|---|
-| `metadata`·`budget_tokens`를 거부 | native가 매 요청에 `metadata`를 보내므로 거부하면 세션이 깨진다 | — |
+| `metadata`를 거부 | native가 모든 `/v1/messages` 요청에 `metadata`를 보내므로 거부하면 세션이 깨진다 | — |
+| `budget_tokens`를 거부 | 공개 API에서 `thinking.type: enabled`의 필수 멤버라, 거부하면 그 형태 전체를 받지 못한다. 측정한 native 경로는 보내지 않았다 | — |
 | `budget_tokens < max_tokens` 교차 검사 | budget이 backend에 정확히 대응하지 않고, `/context` 계수 요청의 `max_tokens`에는 생성 의미가 없다 | — |
 | 함수 도구의 `strict`·`allowed_callers`·`input_examples`·`eager_input_streaming` 지원 | native 2.1.288 경로가 보내지 않는다. `strict`를 정확히 옮길 수 있는 범위는 Anthropic과 OpenAI 스키마 제약이 겹치는 부분뿐이다 | native가 보내기 시작해 거부가 관측될 때 |
 | backend의 `cache_write_tokens`를 `cache_creation_input_tokens`로 연결 | backend 값의 의미가 확인되지 않았다 | 실측에서 0이 아닌 값이 관측될 때 |
-| refusal·`pause_turn`을 stop_reason으로 연결 | 측정한 경로에서 도달하지 않는다. 만나면 지금처럼 거부한다 | 실제 세션에서 관측될 때 |
+| refusal을 stop_reason으로 연결 | 측정한 경로에서 도달하지 않는다. 만나면 지금처럼 거부한다 | 실제 세션에서 관측될 때 |
+| `pause_turn`을 stop_reason으로 연결 | backend 경로에 대응하는 종료 사유가 없다(COMPATIBILITY 2절) | backend가 서버 도구 반복의 중단을 알리는 신호를 낼 때 |
 | OpenAI `tool_search` 실측 | native ToolSearch 경로가 동작한다 | 그 경로가 깨지거나 성능·캐시 문제가 생길 때 |
 | 매일 도는 유료 drift 실측 | beta 기록과 처음 보는 이름 진단으로 대신한다 | — |
 | provider IR 분리 | 다중 provider 계획이 없다 | 그런 계획이 생길 때 |

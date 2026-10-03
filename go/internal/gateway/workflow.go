@@ -217,8 +217,9 @@ func (d *delegations) linkWorkflow(link workflowLink) error {
 }
 
 // errWorkflowWaitExpired is the bounded wait ending, wherever it ends: between two looks or
-// in the middle of one. Under load the deadline often passed inside findWorkflow, which
-// reported it unlabelled, so the same expiry was filed as "unclassified" (#259).
+// in the middle of one. A deadline that passed inside findWorkflow came back unlabelled, so
+// the same expiry was filed under the caller's fallback label (route_unverified) or, recorded
+// directly, as unclassified -- which a loaded test run hit (#259).
 var errWorkflowWaitExpired = refusedBecause("workflow_evidence_wait_expired")
 
 func (d *delegations) workflowRoute(ctx context.Context, scope delegationScope, id string, binding agentBinding) (bridge.Route, bool, error) {

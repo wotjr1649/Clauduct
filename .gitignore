@@ -34,3 +34,14 @@
 # Markers written by live validation runs.
 /clauduct-check.txt
 /clauduct-agent-validation-*.txt
+
+# >>> devflow (managed)
+/docs/prompts/
+/docs/plans/
+/artifacts/
+/.work/
+/_ref/
+/.claude/worktrees/
+/.claude/settings.local.json
+CLAUDE.local.md
+# <<< devflow

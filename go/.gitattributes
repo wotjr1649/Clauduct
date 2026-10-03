@@ -6,8 +6,8 @@
 # windows-latest checked out fresh and flagged all of them, which is the first thing that
 # run found.
 #
-# Scoped to this directory rather than the repository root: the Node baseline's checkout
-# behaviour is not this branch's to change.
+# Written when the root had no default; since #248 the root .gitattributes also makes every
+# text file LF. These rules stay so the module's own requirement is stated where it applies.
 *.go text eol=lf
 # Embedded module bytes and PDF xref offsets must survive a Windows checkout.
 internal/app/native-events.mjs text eol=lf

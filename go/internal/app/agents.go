@@ -37,8 +37,9 @@ type agentDefinition struct {
 // agentTools is what a delegated worker gets. Enough to read, change and check.
 var agentTools = []string{"ToolSearch", "Read", "Grep", "Glob", "Bash", "Edit", "Write", "Agent", "TaskOutput", "SendMessage"}
 
-// agentDefinitions builds the menu from the session's account list: one agent per model
-// that has a collision-free menu name.
+// agentDefinitions builds the menu from the session's account list: one agent per listed
+// model that has a collision-free menu name. A model the account hides from its picker gets
+// no entry, as in /model; the Agent model argument still takes its full ID.
 //
 // Every description is in the Agent tool's text on every request that carries it, so the
 // menu is one entry per model (decided 2026-09-24), not one per model and effort. The effort
@@ -48,7 +49,7 @@ func (config ClauductSettings) agentDefinitions() map[string]agentDefinition {
 	models := config.Selection.Catalogue().Models()
 	menu := make(map[string]agentDefinition, len(models)+1)
 	for _, model := range models {
-		if model.Menu == "" {
+		if model.Menu == "" || !model.Visible {
 			continue
 		}
 		route, _ := config.Selection.RoleRoute(bridge.MenuPrefix + model.Menu)

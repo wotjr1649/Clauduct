@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -236,8 +237,23 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 		if json.Unmarshal(model["enum"], &names) != nil {
 			return errDelegationUnverified
 		}
-		for _, entry := range d.selection.Catalogue().Models() {
-			names = append(names, entry.ID)
+		// Only what the account lists in its picker is offered; a hidden model's full ID is
+		// still accepted when passed (the enum is advisory: the tool is not strict).
+		models := d.selection.Catalogue().Models()
+		for _, entry := range models {
+			if entry.Visible {
+				names = append(names, entry.ID)
+			}
+		}
+		// Likewise the efforts: one only a hidden model takes is not offered.
+		var efforts []string
+		for _, effort := range d.selection.Catalogue().Efforts() {
+			if slices.ContainsFunc(models, func(m bridge.Model) bool { return m.Visible && slices.Contains(m.Efforts, effort) }) {
+				efforts = append(efforts, effort)
+			}
+		}
+		if len(efforts) == 0 {
+			efforts = d.selection.Catalogue().Efforts() // an account that lists nothing in its picker
 		}
 		if pinned.Model != "" {
 			names = []string{pinned.Model, "inherit"}
@@ -248,7 +264,7 @@ func (d *delegations) describe(tools []bridge.ToolSpec, agentIDs ...string) erro
 			Type        string   `json:"type"`
 			Enum        []string `json:"enum"`
 			Description string   `json:"description"`
-		}{"string", d.selection.Catalogue().Efforts(), "Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."})
+		}{"string", efforts, "Model without effort uses the selected model's default effort. Effort without model uses the role's default model. Omit unrequested model and effort. A task-bound parent choice is retained by descendants; conflicting overrides are refused."})
 		if pinned.Model != "" {
 			properties["effort"], _ = json.Marshal(map[string]any{"type": "string", "enum": []string{pinned.Effort}, "description": "Omit effort to retain this task's verified selection."})
 		}

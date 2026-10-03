@@ -915,7 +915,7 @@ native 2.1.288, Codex CLI 0.160.0으로 실제 backend 검증을 통과했다(�
 | 모델 선택 | 계정이 나열하는 모델은 새 릴리스 없이 전체 ID로 고른다. 숨긴 모델은 `/model`에 없지만 ID로 선택할 수 있다. `models.json`은 기존 이름(키·별칭·단계·`countValidated`)과 은퇴 표만 담고 선택 범위를 제한하지 않는다. 은퇴 표는 계정이 그 이름을 나열하지 않을 때 거부 이유만 설명한다 |
 | effort | 계정의 지원 수준 ∩ low·medium·high·xhigh·max만 보낸다. `ultra` 등은 보내지 않고, 명시 요청은 낮추지 않고 거부한다. 순서는 명시값 → 세션 설정 `modelDefaults` → 계정 `default_reasoning_level`. 기본값이 없는 모델은 effort를 명시해야 한다 |
 | 위임 메뉴 | 기존 모델은 `clauduct-<key>`, 새 모델은 `clauduct-<전체 ID>`. 기존 키·`inherit`·과거 effort별 이름과 겹치면 항목이 없고 Agent model 인자로 쓴다. 기존 단계가 없는 모델은 Agent `model` 인자를 생략하고 native 생성 이벤트가 전체 ID를 고정한다(native 이벤트 모듈 필요) |
-| 토큰 계수 | 로컬 공식은 측정한 기존 모델(`countValidated`)에만 쓴다. 다른 모델은 backend 계수를 쓰며 실패해도 추정값으로 대신하지 않는다 |
+| 토큰 계수 | 모든 모델이 backend 계수(정확값)를 먼저 쓴다. v0.6.3도 기존 모델은 backend로 계수했고, v0.6.4는 그 모델 조건만 없앴다. 로컬 공식은 backend 계수를 쓸 수 없는 요청 형태에서만, 측정한 기존 모델(`countValidated`)에 쓰는 대체 경로다. 계수가 실패해도 추정값으로 대신하지 않는다 |
 | 목록에 없는 선택 | `modelDefaults`·`modelMapping`·`agents`·`classifier_model`의 항목은 파일에 남기고 stderr와 `session.modelList.problems`에 알리며, 실제로 선택될 때만 실패한다 |
 | auto 분류기 | `classifier_model`은 `{"model","effort"}` 객체(공장값 terra/low)다. v0.6.3의 문자열은 `CLAUDUCT_SETTINGS_INVALID`이며 자동 변환하지 않는다. 계정이 제공하는 모델·effort를 모두 허용한다(Terra 이상 규칙·내장 허용 목록 제거, Luna 가능). 출처는 `native-auto-mode+classifier_model`. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부하고 대체하지 않는다 |
 | 상한 은퇴 | `auxiliary_effort_cap`·`auto_compact_effort_cap`은 적용하지 않는다. 알려진 은퇴 키로 받아 파일에 두고 stderr와 `session.deprecatedSettings`에 알리며, 다른 모르는 키는 계속 거부한다. 압축은 현재 선택(Agent의 자기 route 또는 native가 압축 요청에 적은 모델·effort)을 쓰므로 모델을 바꾼 뒤에는 새 모델로 압축한다(v0.6.3까지는 이전 route) |
@@ -952,13 +952,22 @@ Windows 파일 경합은 설정 동기화에서 재현했다: 다른 프로세�
 | 권한 | bypass는 Bash 실행, bypass + 사용자 `deny`는 차단, dontAsk는 거부, dontAsk + `--allowedTools Bash`는 실행. `NATIVE_CONFIRMATION_UNVERIFIED` 없음 |
 | TUI | `/model`에 계정의 표시 모델 8개가 계정 순서로 나왔고 `/model gpt-5.5` 뒤 요청은 `gpt-5.5/low`, `/context` 계수는 backend 계수로 성공했으며 UUID snapshot의 마지막 선택이 `gpt-5.5/low`였다 |
 
-관측: 로컬 계수식이 없는 모델은 TUI의 계수가 backend로 가서(요청당 약 1.4초) native가 대체된 이전 계수 요청을 스스로
-끊는다. 이것이 HTTP 499 `CANCELLED`로 종료 줄과 실패 집계에 남는다(측정 표본에서 /context 한 번에 13~15건).
+관측(2026-10-03 정정): `/context`는 계수 요청을 한꺼번에 보낸다(측정 표본 19~20건). backend 계수는 1건에 약
+1초이고 동시에 8건까지 처리하므로, 전부 끝나는 데 몇 초가 걸린다. 출하 TUI 검사는 `/context` 화면이 뜬 0.8초 뒤에
+native를 종료해, 끝나지 않은 계수 18건과 native 보조 생성 1건이 HTTP 499 `CANCELLED`로 종료 줄과 실패 집계에
+남았다. 처음에는 "로컬 계수식이 없는 모델이라 native가 이전 계수를 끊는다"고 적었지만, 이 설명은 틀렸다. 원인은
+모델이 아니라 세션 종료다. 합성 backend 재현에서 Esc로 화면을 닫는 것만으로는 계수가 끊기지 않았고 `/exit`에서만
+끊겼다. 실제 backend 재검사에서 Esc로 화면을 바로 닫고 20초 뒤에 종료하자, 계수 20건이 모두 성공하고 실패는 0건이었다.
+`/context` 직후 몇 초 안에 세션을 끝내면 같은 499가 남을 수 있다. 이는 끝나지 않은 요청을 클라이언트가 끊었다는
+기록일 뿐 계수 오류가 아니다.
 native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 그 effort로 실행된다(관측: `gpt-6-luna/high` 1건).
 계정 전환 중 실행과 v0.6.3 updater에서 설치본을 올리는 실제 경로는 출하 단계 검사에서 확인한다.
 
 **측정하지 않은 것.** 위 항목은 표본 범위다. 분류 품질은 v0.6.3의 Terra·Sol 표본(3절 auto 권한 모드 행)에서만 측정했고, 계정 목록에 있다는 것은 품질 주장이 아니다.
-high·max 압축의 시간·사용량 영향과 새 모델의 실제 backend 동작도 측정하지 않았다. 설치된 클라이언트와
+새 모델의 실제 backend 동작은 위 표본까지만 측정했다. high·max 압축 비용은 출하 뒤 같은 압축 경로를 쓰는 후보
+바이너리로 한 번씩 쟀다(2026-10-03, `gpt-6-luna`, 같은 공개 대화 입력 13,967토큰). 압축 요청 하나에 medium
+12.2초·추론 137토큰, high 21.7초·171토큰, max 26.1초·354토큰이 걸렸고, 출력은 584~692토큰이었다. 세 경우 모두
+압축 뒤 코드를 기억했다. 표본이 하나씩이라 경향만 보여 주며, 요약 품질을 비교한 것은 아니다. 설치된 클라이언트와
 측정 기준의 차이는 [현재 상태](README.md)가 기록한다.
 
 ## 4. 제3자 구현이라는 사실

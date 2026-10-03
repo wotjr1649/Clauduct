@@ -930,6 +930,9 @@ type RequestCounts struct {
 	// does not know, as "CATEGORY name", up to refusedElementLimit of them. A client update
 	// that adds a field fails every request with one category; this says which field (#127).
 	RefusedElements []string `json:"refusedElements,omitempty"`
+	// CancelledCounts is the count_tokens part of RefusedBy["CANCELLED"]: counts native
+	// abandoned (typically by exiting right after /context). Already inside Refused.
+	CancelledCounts int64 `json:"cancelledCounts,omitempty"`
 	// Broken is responses that started and then stopped, for the life of the session.
 	Broken     int64 `json:"broken"`
 	Active     int64 `json:"active"`
@@ -1006,6 +1009,7 @@ func (g *Gateway) Snapshot() Diagnostics {
 			RefusedBy:       refusedBy,
 			RefusedPaths:    g.RefusedPaths(),
 			RefusedElements: g.RefusedElements(),
+			CancelledCounts: g.CancelledCounts(),
 			Broken:          g.broken.Load(),
 			Active:          active, ModelLists: g.ModelLists(),
 		},

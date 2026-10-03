@@ -125,6 +125,10 @@ type Gateway struct {
 	// fact drift, and the one that would have drifted here is the one a reader trusts.
 	refusalMu sync.Mutex
 	refusals  map[string]int64
+	// cancelledCounts is the part of refusals["CANCELLED"] answered on count_tokens: native
+	// went away before an exact count finished, most often by ending the session within
+	// seconds of /context. Nothing was lost; the account names it apart (v0.6.7).
+	cancelledCounts int64
 	// refusedPaths are the distinct paths refusals were answered on, first ones kept.
 	refusedPaths []string
 	// refusedElements are the distinct unknown request elements, first ones kept.
@@ -322,7 +326,18 @@ func (g *Gateway) countRefusal(category, path string) {
 		g.refusals = make(map[string]int64)
 	}
 	g.refusals[category]++
+	if category == refuseCancelled.category && path == "/v1/messages/count_tokens" {
+		g.cancelledCounts++
+	}
 	g.notePath(path)
+}
+
+// CancelledCounts is how many count_tokens requests native abandoned before the count
+// finished. Included in the CANCELLED refusals, never subtracted from them.
+func (g *Gateway) CancelledCounts() int64 {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	return g.cancelledCounts
 }
 
 // notePath records a refused path once, while there is room. Caller holds refusalMu.

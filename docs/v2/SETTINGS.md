@@ -230,7 +230,10 @@ v0.6.3의 문자열 형식(`"classifier_model": "gpt-5.6-terra"`)은 v0.6.4에�
 대체하지 않는다. 판정을 얻지 못한 경우(HTTP 오류, 정책 거부, 시간 초과, 읽을 수 없거나 끊긴 판정, 제공되지
 않는 pair) native는 해당 호출을 실행하지 않고 turn을 마쳤다. 측정 범위는 [호환성 문서](COMPATIBILITY.md)의 v0.6.4 절을 따른다.
 
-분류 품질은 v0.6.3에서 Terra·Sol 표본으로만 측정했다([COMPATIBILITY.md](COMPATIBILITY.md) 3절의 auto 권한 모드 행).
+분류 품질은 같은 공개 표본(핵심·독립)으로 일부 pair만 측정했다. 통과한 pair는 Terra/low·medium이다.
+Terra/high, Luna/low·medium은 위험 표본을 허용했고(Luna/low는 2026-10-03 재측정에서도 32개 중 2개), Sol 6.1/low는
+보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 받지 못했다. v0.6.7부터는 통과하지 않았거나 측정하지 않은
+pair를 고르면 시작할 때 그 사실을 한 줄로 알리고, 설정대로 사용한다([COMPATIBILITY.md](COMPATIBILITY.md) v0.6.7 절).
 계정 목록에 있다는 사실은 분류 품질에 대한 주장이 아니다. 과거 오허용과 미검증 조합은
 [#218](https://github.com/wotjr1649/Clauduct/issues/218)에 남기며 이 설정의 구현을 안전성 통과로 해석하지 않는다.
 

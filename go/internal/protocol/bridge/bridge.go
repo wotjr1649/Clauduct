@@ -196,6 +196,18 @@ func (e InputEntry) MarshalJSON() ([]byte, error) {
 			Encrypted string          `json:"encrypted_content"`
 		}{"reasoning", e.Reasoning.ID, summary, e.Reasoning.Encrypted})
 	}
+	// A result always carries its output, even an empty one (#252). omitempty dropped the key
+	// for a tool_result with no content, and the backend answers that with HTTP 400. An empty
+	// result goes as the empty string, not the baseline's empty list: measured 2026-10-03
+	// (luna/low, 3 each), the model read "" as no output every time and answered an empty
+	// list by calling the tool again every time.
+	if e.Type == "function_call_output" && len(e.Output) == 0 {
+		return json.Marshal(struct {
+			Type   string `json:"type"`
+			CallID string `json:"call_id"`
+			Output string `json:"output"`
+		}{e.Type, e.CallID, ""})
+	}
 	// The alias stops this from calling itself and keeps the existing shape exactly.
 	type plain InputEntry
 	return json.Marshal(plain(e))

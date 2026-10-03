@@ -454,17 +454,18 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 // native compacts the conversation when its classifier reports the transcript too long,
 // instead of failing every tool call that needs a verdict. A 502 CONTEXT_LENGTH_EXCEEDED read
 // to native as a classifier that was unavailable, so the action was denied and nothing was
-// compacted (#255, measured on 2.1.288). Only a structured backend code reaches here, and it
-// applies to every side request class, not the classifier alone.
+// compacted (#255, measured on 2.1.288). Only a structured backend code reaches here, and only
+// a request routed as the classifier: the other side requests were not measured, and sharing
+// one streak with them would let a title overflow deny a classifier its compaction.
 //
 // One compaction per overflow streak, as recoverContextOverflow allows one per conversation:
-// a side request that overflows again before one from the same session and agent has
+// a classifier request that overflows again before one from the same session and agent has
 // succeeded is answered as an insufficient summary, which native does not compact on. Each
 // compaction is a billed request, and nothing else here would stop a transcript that
 // compaction cannot shrink from asking for one on every tool call.
 func (g *Gateway) auxiliaryOverflow(w http.ResponseWriter, session, agent string) bool {
 	entry := recordOf(w)
-	if entry == nil || entry.snapshot().RequestClass != "auxiliary" {
+	if !classifierRequest(entry) {
 		return false
 	}
 	key := contextKey(session, agent)
@@ -485,9 +486,18 @@ func (g *Gateway) auxiliaryOverflow(w http.ResponseWriter, session, agent string
 	return true
 }
 
-// auxiliaryAnswered ends a side request's overflow streak.
+// classifierRequest is a side request routed as auto mode's classifier (classifier.go).
+func classifierRequest(entry *record) bool {
+	if entry == nil {
+		return false
+	}
+	r := entry.snapshot()
+	return r.RequestClass == "auxiliary" && strings.HasPrefix(r.Source, "native-auto-mode")
+}
+
+// auxiliaryAnswered ends a classifier's overflow streak.
 func (g *Gateway) auxiliaryAnswered(w http.ResponseWriter, session, agent string) {
-	if entry := recordOf(w); entry == nil || entry.snapshot().RequestClass != "auxiliary" {
+	if !classifierRequest(recordOf(w)) {
 		return
 	}
 	g.overflowMu.Lock()

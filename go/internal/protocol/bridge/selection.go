@@ -181,6 +181,15 @@ func (s Selection) ValidPair(pair Pair) bool {
 	return ok && slices.Contains(model.Efforts, pair.Effort)
 }
 
+// Retires reports a retired name the session's account no longer lists. A retired name it
+// still lists (gpt-5.5 until 2026-10-14) is a live model, and an effort it does not take is
+// an ordinary refusal, not a retirement.
+func (s Selection) Retires(model string) bool {
+	_, retired := Retired[model]
+	_, listed := s.ModelByID(model)
+	return retired && !listed
+}
+
 // ForAlias resolves a Claude tier to the configured backend model, if the account offers it.
 func (s Selection) ForAlias(alias string) (Model, bool) {
 	id, configured := s.ModelMapping[alias]

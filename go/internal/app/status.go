@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -240,7 +241,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 		return
 	}
 
-	path, writeErr := writeStatus(encoded)
+	path, writeErr := writeStatus(encoded, 40)
 	where := path
 	if writeErr != nil {
 		where = "none"
@@ -283,11 +284,11 @@ func WriteCheckpoint(account Status) error {
 	if err != nil {
 		return err
 	}
-	_, err = writeStatus(encoded)
+	_, err = writeStatus(encoded, 1) // the next tick writes again; never stall the session loop
 	return err
 }
 
-func writeStatus(encoded []byte) (string, error) {
+func writeStatus(encoded []byte, renames int) (string, error) {
 	if len(encoded) > 8<<20 {
 		return "", fmt.Errorf("STATUS_TOO_LARGE")
 	}
@@ -310,10 +311,21 @@ func writeStatus(encoded []byte) (string, error) {
 			return "", err
 		}
 	}
-	if err := os.Rename(temp, path); err != nil {
-		return "", err
+	// Bounded retry, as in gateway/parent_wait.go: Windows refuses to replace a file that a
+	// reader opened without FILE_SHARE_DELETE ("Access is denied."). A statusline, antivirus
+	// or indexer reading the account at the moment the session ends then cost the only file
+	// copy (v0.6.3 known limit). The old file stays whole until a rename succeeds.
+	// Only the final report waits (40 x 25 ms); a checkpoint is rewritten on the next tick.
+	// ponytail: fixed 1 s ceiling; a reader holding it longer still loses the final write.
+	for attempt := 1; ; attempt++ {
+		if err = os.Rename(temp, path); err == nil {
+			return path, nil
+		}
+		if attempt >= renames {
+			return "", err
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
-	return path, nil
 }
 
 // endedAs names how the session ended.

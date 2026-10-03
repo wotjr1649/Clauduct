@@ -36,8 +36,9 @@ type retiredRoute struct{}
 func (retiredRoute) Error() string { return "MODEL_RETIRED" }
 func (retiredRoute) Unwrap() error { return ErrUnsupportedRoute }
 
-// Retired maps each backend model this build stopped routing to the model that took its
-// tier (v0.3.4: 2026-09-24). It only explains a refusal: a name the account's list still
+// Retired maps each retired backend model to the model that took its tier (v0.3.4:
+// 2026-09-24; gpt-5.5 by the account's own retirement notice for 2026-10-14, successor
+// gpt-6.1-sol). It only explains a refusal: a name the account's list still
 // offers is routed normally, and one it lacks is refused with this answer. Running the
 // replacement instead would bill a model nobody chose. Product data: models.json.
 var Retired = legacy.Retired

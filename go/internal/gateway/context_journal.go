@@ -167,7 +167,7 @@ func (g *Gateway) restoreContext(session, agent string, state *contextState) err
 	route := bridge.Route{Model: saved.Model, Effort: saved.Effort, Source: "journal"}
 	if saved.Target != "" {
 		if _, ok := g.policyFor(saved.Target); !ok {
-			if _, retired := bridge.Retired[saved.Target]; retired {
+			if g.selection.Retires(saved.Target) {
 				return bridge.ErrRetiredRoute
 			}
 			return errContextJournal
@@ -204,7 +204,7 @@ func (g *Gateway) offeredRoute(model, effort string) error {
 	if g.selection.ValidPair(bridge.Pair{Model: model, Effort: effort}) {
 		return nil
 	}
-	if _, retired := bridge.Retired[model]; retired {
+	if g.selection.Retires(model) {
 		return bridge.ErrRetiredRoute
 	}
 	return errContextJournal

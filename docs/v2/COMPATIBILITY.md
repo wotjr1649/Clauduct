@@ -904,8 +904,8 @@ media 길이 거부 진단은 압축을 새로 요청한 경우와 압축 직후
 
 ### v0.6.4 — 계정 모델 목록, 권한 규칙 제거, 설정 동기화
 
-**준비 중, 미출하.** 로컬 구현 상태다. 실제 backend 검증은 NOT_RUN이며(과금되므로 사용자 승인이 필요하다)
-아래 동작을 실제 backend로 확인했다는 뜻이 아니다. 설정 형식과 우선순위는 [설정 문서](SETTINGS.md)가 소유한다.
+**준비 중, 미출하.** 후보 `bf984f2`(native 2.1.288, Codex CLI 0.160.0)로 2026-10-03 실제 backend 검증을 통과했다
+(아래 실측 표). 태그·Release는 아직 없다. 설정 형식과 우선순위는 [설정 문서](SETTINGS.md)가 소유한다.
 
 | 항목 | v0.6.4 동작 |
 |---|---|
@@ -940,7 +940,24 @@ Windows 파일 경합은 설정 동기화에서 재현했다: 다른 프로세�
 남지 않는다. 재시도는 하지 않으며 일반 실행은 안내 후 파일을 그대로 두고 진행하고 다음 시작에서 다시 시도한다.
 상태·세션 기록의 지속 잠금과 종료 쓰기 경합은 기존 동작을 바꾸지 않았고 이번에 다시 측정하지 않았다.
 
-**측정하지 않은 것.** 위 항목은 로컬 검사 범위다. 분류 품질은 v0.6.3의 Terra·Sol 표본(3절 auto 권한 모드 행)에서만 측정했고, 계정 목록에 있다는 것은 품질 주장이 아니다.
+**실제 backend 실측 (2026-10-03, 후보 `bf984f2`, 사용자 승인, 14개 시나리오 PASS).** 검증 예산 원장으로 경로를 제한했다.
+
+| 시나리오 | 결과 |
+|---|---|
+| 계정 목록·설정 동기화 | 실제 `GET models`(client_version 0.160.0)가 10개 모델을 돌려줬고(`hide` 2개 포함, 일부 모델은 `ultra` 표기) 파서가 받아들였다. `account-models.json`에는 계정 해시와 모델 필드만 남았다. v0.6.3 형식 파일에 `context_window`·`auto_compact_token_limit_percent`·`classifier_model`만 덧붙고 원본 백업과 은퇴 키 안내가 나왔으며, 두 번째 시작은 파일을 바꾸지 않았다 |
+| 모델 선택 | `gpt-6.1-sol/low` 생성. 내장 이름이 없는 `gpt-5.5`는 `--model`만 주면 계정 기본값(medium)으로 실행됐고 출처는 `account.default_reasoning_level`. 은퇴 표에 있는 `gpt-5.6-luna`도 계정이 나열해 그대로 실행됐다 |
+| Agent | `clauduct-gpt-5.5` 메뉴와 Agent `model:"gpt-5.5"`·`effort:"low"` 인자 모두 자식이 `gpt-5.5`로 실행됐다 |
+| auto 분류기 | pair terra/low와 luna/low가 분류 요청(출처 `native-auto-mode+classifier_model`)을 처리했고 Agent 실행을 허용했다. 계정에 없는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부되고 Agent는 실행되지 않았으며 turn은 끝났다 |
+| 압축 | 큰 대화를 낮은 목표로 재개하자 자동 압축이 세션 effort(luna/high, 상한 없음)로 실행되고 코드를 기억했다. 모델을 바꿔 재개한 `/compact`는 새 선택(terra/low)으로 압축했다 |
+| 권한 | bypass는 Bash 실행, bypass + 사용자 `deny`는 차단, dontAsk는 거부, dontAsk + `--allowedTools Bash`는 실행. `NATIVE_CONFIRMATION_UNVERIFIED` 없음 |
+| TUI | `/model`에 계정의 표시 모델 8개가 계정 순서로 나왔고 `/model gpt-5.5` 뒤 요청은 `gpt-5.5/low`, `/context` 계수는 backend 계수로 성공했으며 UUID snapshot의 마지막 선택이 `gpt-5.5/low`였다 |
+
+관측: 로컬 계수식이 없는 모델은 TUI의 계수가 backend로 가서(요청당 약 1.4초) native가 대체된 이전 계수 요청을 스스로
+끊는다. 이것이 HTTP 499 `CANCELLED`로 종료 줄과 실패 집계에 남는다(측정 표본에서 /context 한 번에 13~15건).
+native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 그 effort로 실행된다(관측: `gpt-6-luna/high` 1건).
+계정 전환 중 실행과 v0.6.3 updater에서 설치본을 올리는 실제 경로는 출하 단계 검사에서 확인한다.
+
+**측정하지 않은 것.** 위 항목은 표본 범위다. 분류 품질은 v0.6.3의 Terra·Sol 표본(3절 auto 권한 모드 행)에서만 측정했고, 계정 목록에 있다는 것은 품질 주장이 아니다.
 high·max 압축의 시간·사용량 영향과 새 모델의 실제 backend 동작도 측정하지 않았다. 설치된 클라이언트와
 측정 기준의 차이는 [현재 상태](README.md)가 기록한다.
 

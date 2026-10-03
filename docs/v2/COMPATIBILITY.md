@@ -524,18 +524,21 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 
 | 필드 | 분류 | 실제 처리 |
 |---|---|---|
-| `thinking.type` | VALIDATED | `adaptive`·`enabled`·`disabled`만 받는다. type마다 허용 멤버가 정해져 있다. adaptive는 `display`, enabled는 `budget_tokens`(필수)와 `display`, disabled는 type만이다. null 멤버는 생략과 같다. native 2.1.288은 항상 `adaptive`를 보내거나 thinking을 생략한다. 공개 API의 `between_tools`는 받지 않는다 |
-| `thinking.budget_tokens` | VALIDATED/IGNORED | 양의 정수인지만 검사한다. 추론량은 model과 effort가 정한다. budget을 effort로 환산하지 않는다. `max_tokens`보다 작은지도 검사하지 않는다. native가 생성 요청에서 범위를 보장하고, `/context` 계수 요청의 `max_tokens`는 생성 의미가 없기 때문이다 |
-| `thinking.display` | VALIDATED/NOT_RENDERED | `summarized`·`omitted`, Claude Code 확장 `updates`·`highlights`, null만 받는다. 실측값은 `omitted`(-p text·json), `updates`(TUI, `--verbose` stream), `summarized`(`showThinkingSummaries`)다. Clauduct는 backend의 reasoning을 thinking 요약으로 보여 주지 않는다. 다음 요청에 돌려줄 암호화된 기록(`redacted_thinking`)만 남긴다 |
-| `metadata` | VALIDATED/NOT_FORWARDED | 객체이고 멤버는 `user_id` 하나다. 값은 512자 이하 문자열 또는 null이다. backend로 보내지 않는다(ChatGPT 요금제 경로는 `metadata`를 받지 않는다) |
+| `thinking.type` | VALIDATED | `adaptive`·`enabled`·`disabled`만 받는다. type마다 허용 멤버가 정해져 있다. adaptive는 `display`, enabled는 `budget_tokens`(필수)와 `display`, disabled는 type만이다. null 멤버는 생략과 같다. 측정한 경로에서 native 2.1.288은 `adaptive`를 보내거나 thinking을 생략했다. 공개 API의 `between_tools`는 받지 않는다 |
+| `thinking.budget_tokens` | VALIDATED/IGNORED | 1 이상 2^53−1 이하의 정수인지만 검사한다. 추론량은 model과 effort가 정한다. budget을 effort로 환산하지 않는다. `max_tokens`보다 작은지는 검사하지 않는다. `/context` 계수 요청은 `max_tokens`를 1로 채워 같은 검사를 거치므로 그 대조가 의미 없다. 측정한 native 경로는 `budget_tokens`를 보내지 않았다 |
+| `thinking.display` | VALIDATED/NOT_RENDERED | `summarized`·`omitted`, Claude Code 확장 `updates`·`highlights`, null만 받는다. 실측값은 `omitted`(`--verbose` 없는 -p text·json), `updates`(TUI, `--verbose`의 json·stream-json), `summarized`(`showThinkingSummaries`)다. Clauduct는 backend의 reasoning을 thinking 요약으로 보여 주지 않는다. 다음 요청에 돌려줄 암호화된 기록(`redacted_thinking`)만 남긴다 |
+| `metadata` | VALIDATED/NOT_FORWARDED | 객체이고 멤버는 `user_id` 하나다. 값은 512자 이하 문자열 또는 null이다. backend로 보내지 않는다 |
 | `cache_control` | VALIDATED/IGNORED | `type: ephemeral`, `ttl` `5m`·`1h`, Claude Code 확장 `scope: global`만 받는다. breakpoint는 backend로 옮기지 않는다. backend 캐시는 세션 단위 `prompt_cache_key`로 따로 동작한다. 실측에서 native 2.1.288은 `{type: ephemeral}`만 보냈다 |
-| `max_tokens` | POSTHOC_CHECK | backend가 `max_output_tokens`를 HTTP 400으로 거부하므로 그 지점에서 생성을 멈출 수 없다. 완료 뒤 보고된 usage와 대조하고, 넘으면 `OUTPUT_TOKEN_LIMIT_EXCEEDED`로 실패한다. Anthropic처럼 부분 응답과 `stop_reason: max_tokens`를 돌려주지 않는다. thinking을 끈 요청은 reasoning을 빼고 대조한다 |
-| `stop_sequences` | CLIENT_SIDE_EMULATION | backend에 보내지 않는다. 받은 text를 Clauduct가 첫 정지 문자열에서 잘라 전달하고 `stop_reason: stop_sequence`로 끝낸다. backend의 생성은 계속되므로 비용과 지연은 줄지 않는다. 16개, 문자열당 256바이트까지 받는다 |
-| tool `defer_loading` | NATIVE_TOOLSEARCH_ADAPTATION | 발견되지 않은 deferred 도구는 backend에 보내지 않는다. 발견은 native ToolSearch와 `tool_reference`로 한다(`ENABLE_TOOL_SEARCH`). Anthropic 서버의 tool search와는 캐시 의미가 같지 않다 |
+| `max_tokens` | POSTHOC_CHECK | backend가 `max_output_tokens`를 HTTP 400으로 거부하므로 그 지점에서 생성을 멈출 수 없다. 완료 뒤 보고된 usage와 대조하고, 넘으면 `OUTPUT_TOKEN_LIMIT_EXCEEDED` 오류로 끝난다. Anthropic처럼 `stop_reason: max_tokens`로 정상 종료하지 않는다. text를 보류하지 않는 스트리밍(TUI 등)에서는 오류 전에 이미 전달된 text가 남을 수 있다. thinking을 끈 요청은 reasoning을 빼고 대조한다 |
+| `stop_sequences` | CLIENT_SIDE_EMULATION | backend에 보내지 않는다. 받은 text를 Clauduct가 첫 정지 문자열에서 잘라 전달하고 `stop_reason: stop_sequence`로 끝낸다. 정지 문자열 뒤에 생성된 함수 호출은 버린다. backend의 생성은 계속되므로 비용과 지연은 줄지 않는다. 1~16개, 빈 문자열 없이 문자열당 256바이트까지 받는다 |
+| tool `defer_loading` | NATIVE_TOOLSEARCH_ADAPTATION | 발견되지 않은 deferred 도구는 backend에 보내지 않는다. 발견은 native ToolSearch의 `tool_reference`, 대화 이력의 `tool_use` 이름, `tool_addition`으로 한다(`ENABLE_TOOL_SEARCH`). Anthropic 서버의 tool search와는 캐시 의미가 같지 않다 |
 | `tool_result.is_error` | LOCAL_SIGNAL_ONLY | Clauduct의 진단과 위임 상태에만 쓴다. backend의 `function_call_output`에는 실패 표시 필드가 없어 결과 본문만 보낸다. 실패 문구를 지어 붙이지 않는다(#144) |
-| 빈 `tool_result` | ADAPTED | content가 없거나 비어 있으면 `function_call_output.output`을 빈 문자열로 보낸다. v0.6.7까지는 `output` 키가 빠져 backend가 요청 전체를 HTTP 400으로 거부했다. 빈 목록을 쓰지 않는 이유는 실측에서 모델이 도구를 다시 불렀기 때문이다(#252) |
-| tool `strict`·`allowed_callers`·`input_examples`·`eager_input_streaming` | REFUSED | 받지 않는다(`TOOL_FIELDS`). native 2.1.288 경로는 이 필드를 보내지 않는다 |
-| 응답의 refusal·`pause_turn`·citation | REFUSED | 측정한 native 경로에서는 도달하지 않는다. backend가 보내면 지원하지 않는 이벤트로 요청이 실패한다 |
+| 빈 `tool_result` | ADAPTED | content가 없거나 `[]`이면 `function_call_output.output`을 빈 문자열로 보낸다. v0.6.7까지는 `output` 키가 빠져 backend가 요청 전체를 HTTP 400으로 거부했다. 빈 목록을 쓰지 않는 이유는 실측에서 모델이 도구를 다시 불렀기 때문이다(#252). `content: ""`·null·빈 text 블록 하나는 빈 `input_text` 하나로 나가며, 실측에서 모델이 빈 결과로 읽었다 |
+| 함수 도구의 `strict`·`allowed_callers`·`input_examples`·`eager_input_streaming` | REFUSED | 받지 않는다(`TOOL_FIELDS`). native 2.1.288 경로는 이 필드를 보내지 않는다 |
+| hosted web search 도구 | VALIDATED, 일부 IGNORED | `allowed_domains`·`blocked_domains`·`user_location`은 검사해 검색 요청으로 보낸다. `max_uses`·`allowed_callers`·`response_inclusion`은 키만 받고 값은 검사하지도 쓰지도 않는다(검색 요청의 호출자는 항상 direct). native 2.1.288은 `max_uses`를 보낸다 |
+| 응답의 refusal | REFUSED | `response.refusal.*` 이벤트가 오면 요청이 실패한다. 측정한 경로에서는 관측되지 않았다 |
+| 응답의 citation | 일부 | `response.output_text.annotation.added` 이벤트가 오면 요청이 실패한다. 완료된 메시지 안의 annotation은 읽지 않아 전달되지 않는다 |
+| `stop_reason: pause_turn` | 해당 없음 | Anthropic 서버 도구 반복의 종료 사유다. 이 bridge의 backend 경로에는 해당하는 것이 없다 |
 
 ## 3. 미지원·미검증·구현 대기
 
@@ -1072,14 +1075,14 @@ native 2.1.288에서 확인했다: `--plugin-dir`로 준 mod의 `prompt.submit` 
 | 요청 값 검증(#253) | 위 2절 "Anthropic 요청 필드의 실제 처리" 표대로 thinking·metadata·`cache_control.scope`의 값을 검사한다. 잘못된 값은 이름을 밝혀 거부한다(`THINKING_FIELDS`·`THINKING_DISPLAY`·`METADATA_FIELDS`·`METADATA_VALUE`·`CACHE_VALUE`). native 2.1.288이 실제로 보내는 형태는 하나도 거부하지 않는다 |
 | 빈 tool 결과(#252) | content 없는 `tool_result`가 backend 요청 전체를 HTTP 400으로 실패시키던 것을 고쳤다. 빈 결과는 `output: ""`로 보낸다 |
 | 분류기 transcript 압축(#255) | native 2.1.288은 auto 모드 분류기가 transcript를 너무 길다고 보고하면 대화를 압축한다. Clauduct는 분류기 요청의 backend context 초과를 502 `CONTEXT_LENGTH_EXCEEDED`로 답해서 native가 분류기 불가로 읽었고, 도구 호출이 거부됐다. 이제 분류기 요청에 한해 400 `prompt is too long`으로 답해 native가 압축한다. 같은 분류기가 성공하기 전에 다시 넘치면 `CONTEXT_COMPACTION_INSUFFICIENT`로 답해 압축은 한 번만 일어난다 |
-| Workflow 대기 만료 라벨(#259) | 자식 선택 근거를 기다리던 1초가 부하로 근거를 읽는 도중에 끝나면 `route_unverified`로 기록되던 것을 고쳤다. 이제 `workflow_evidence_wait_expired`로 기록한다. 거부 판단은 같다 |
+| Workflow 대기 만료 라벨(#259) | 자식 선택 근거를 기다리던 1초가 부하로 근거를 읽는 도중에 끝나면 gateway 경로에서는 `route_unverified`, 직접 기록하면 미분류로 남던 것을 고쳤다. 이제 `workflow_evidence_wait_expired`로 기록한다. 거부 판단은 같다 |
 
 native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 
 | 변경점 | 판정 |
 |---|---|
-| 응답 도중 끊긴 뒤 이어 쓰기(비대화형·subagent) | `-p`와 그 subagent는 text를 완료까지 보류한다. 그래서 끊겨도 부분 응답이 전달되지 않고, 커밋 전 오류로 끝나 이어 쓰기가 생기지 않는다. 부분 text가 전달되는 TUI subagent에서는 native가 이어서 요청하고, replay 보호는 이를 새 step으로 받아 통과시킨다(loopback 3회, 실제 backend 3회). 실제 모델은 이어 쓰지 않고 답 전체를 다시 낸다. 부모가 받는 보고는 완전하다. 화면에는 앞서 전달된 부분 text 뒤에 전체 보고가 이어진다 |
-| thinking만 있는 응답의 재시도 | Clauduct는 thinking만 있는 정상 응답을 내보내지 않는다. backend가 reasoning만 내면 `EMPTY_REPLY`로 실패한다. 커밋 전에는 502와 `X-Should-Retry: false`, 커밋 뒤에는 오류 이벤트다. native는 main·subagent의 두 경로 모두에서 다시 요청하지 않았다. 사용자에게는 `API Error: EMPTY_REPLY`가 보인다 |
+| 응답 도중 끊긴 뒤 이어 쓰기(비대화형·subagent) | `-p`와 그 subagent는 text를 완료까지 보류한다. 그래서 끊겨도 부분 응답이 전달되지 않고, 커밋 전 오류로 끝나 이어 쓰기가 생기지 않는다. 부분 text가 전달되는 TUI subagent에서는 native가 이어서 요청하고, replay 보호는 이를 새 step으로 받아 통과시킨다. 이어 쓰기 요청은 전달된 부분을 정확히 담았다(loopback 3회, 실제 backend 8회). 숫자 1~40을 쓰는 과제를 다섯 번째 숫자 뒤에서 끊은 실제 backend 7회 중 5회는 모델이 보고에 1~40 전체를 다시 냈다. 2회는 이미 전달된 1~5까지만 냈다. **이어 쓰기 뒤 부모가 받는 보고가 끊긴 지점에서 멈출 수 있다.** 처리 방침은 #264에서 정한다 |
+| thinking만 있는 응답의 재시도 | Clauduct는 thinking만 있는 정상 응답을 내보내지 않는다. backend가 reasoning만 내면 `EMPTY_REPLY`로 실패한다(검증된 부모 대기 경로는 대기로 처리한다). 커밋 전에는 502와 `X-Should-Retry: false`, 커밋 뒤에는 오류 이벤트다. native는 main·subagent의 두 경로 모두에서 다시 요청하지 않았다. 실제 backend에서 reasoning만 낸 자식 응답에서도 같았다. 사용자에게는 `API Error: EMPTY_REPLY`가 보인다 |
 | 첫 요청이 서버 출력 한도를 최대 1.5초 기다림 | 관측되지 않았다. `/v1/models` 뒤 첫 대화 요청까지 새 설정 796~1424ms, 기존 설정 669~960ms(4회)였다. native는 `/v1/models/{id}`를 부르지 않았다 |
 | 분류기 transcript 압축 | 위 #255로 동작한다 |
 

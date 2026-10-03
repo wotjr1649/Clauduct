@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -47,6 +48,9 @@ const (
 	CodeThinkingFields       = "THINKING_FIELDS"
 	CodeThinkingType         = "THINKING_TYPE"
 	CodeThinkingBudget       = "THINKING_BUDGET"
+	CodeThinkingDisplay      = "THINKING_DISPLAY"
+	CodeMetadataFields       = "METADATA_FIELDS"
+	CodeMetadataValue        = "METADATA_VALUE"
 	CodeContextFields        = "CONTEXT_FIELDS"
 	CodeUnsupportedEdit      = "UNSUPPORTED_CONTEXT_EDIT"
 	CodeUnsupportedSample    = "UNSUPPORTED_SAMPLING"
@@ -89,7 +93,8 @@ type RequestError struct {
 	// or one the request used -- a key, a type, a tool name.
 	Field string
 	// Unknown says Field is something this build does not know -- a key outside the
-	// allowlist, or a block or thinking type -- which is what a client update adds. A known
+	// allowlist, a block or thinking type, or a thinking display -- which is what a client
+	// update adds (2.1.288 added the display "updates"). A known
 	// member with a bad value, or a repeated key, is not Unknown (#127).
 	Unknown bool
 }
@@ -364,6 +369,9 @@ func DecodeRequest(body []byte, options ...Options) (*Request, error) {
 		return nil, err
 	}
 	if err := decodeThinking(fields, request); err != nil {
+		return nil, err
+	}
+	if err := checkMetadata(fields); err != nil {
 		return nil, err
 	}
 	if err := decodeContextManagement(fields); err != nil {
@@ -705,8 +713,41 @@ func checkCacheControl(raw json.RawMessage) error {
 			return refuse(CodeCacheValue, "ttl")
 		}
 	}
+	// scope is the client's prompt-caching-scope extension, not the public API's, and the
+	// client writes only "global" (native 2.1.288). Any other value is a scope nobody here
+	// knows, accepted until now only because nothing read it (#253).
+	if scopeValue, present := wire.Of(fields, "scope"); present == wire.Present {
+		var scope string
+		if json.Unmarshal(scopeValue, &scope) != nil || scope != "global" {
+			return refuse(CodeCacheValue, "scope")
+		}
+	}
 	return nil
 }
+
+// checkMetadata holds metadata to the public shape: an object whose only member is user_id,
+// absent, null or a string of at most 512 characters. It is never forwarded -- the backend
+// does not take it -- but a member nobody defined is still a request nobody read (#253).
+func checkMetadata(fields map[string]json.RawMessage) error {
+	value, presence := wire.Of(fields, "metadata")
+	if presence != wire.Present {
+		return nil
+	}
+	metadata, err := wire.Fields(value, []string{"user_id"})
+	if err != nil {
+		return refuseFields(CodeMetadataFields, "metadata", err)
+	}
+	if id, present := wire.Of(metadata, "user_id"); present == wire.Present {
+		var text string
+		if json.Unmarshal(id, &text) != nil || utf8.RuneCountInString(text) > maxUserIDLength {
+			return refuse(CodeMetadataValue, "user_id")
+		}
+	}
+	return nil
+}
+
+// maxUserIDLength is the public API's bound on metadata.user_id. The client's is 150.
+const maxUserIDLength = 512
 
 func decodeOutputConfig(fields map[string]json.RawMessage, request *Request) error {
 	value, presence := wire.Of(fields, "output_config")
@@ -777,18 +818,57 @@ func decodeThinking(fields map[string]json.RawMessage, request *Request) error {
 	if present != wire.Present || json.Unmarshal(kindValue, &kind) != nil {
 		return refuse(CodeThinkingType, "type")
 	}
-	if kind != "adaptive" && kind != "enabled" && kind != "disabled" {
+	members, known := thinkingMembers[kind]
+	if !known {
 		return refuseUnknown(CodeThinkingType, kind)
 	}
+	// Each type carries only its own members, the public API's variants. A budget on an
+	// adaptive or disabled request, or a display on a disabled one, was accepted while
+	// nothing read either (#253).
+	// A null member is an absent one, as everywhere else in this package. Checked in a fixed
+	// order so the member a refusal names does not depend on map iteration.
+	for _, name := range []string{"budget_tokens", "display"} {
+		if _, present := wire.Of(thinking, name); present == wire.Present && !members[name] {
+			return refuse(CodeThinkingFields, name)
+		}
+	}
 	request.ThinkingDisabled = kind == "disabled"
-	if budget, present := wire.Of(thinking, "budget_tokens"); present == wire.Present {
+	budget, present := wire.Of(thinking, "budget_tokens")
+	if kind == "enabled" && present != wire.Present {
+		return refuse(CodeThinkingBudget, "budget_tokens")
+	}
+	if present == wire.Present {
 		number, err := exactInteger(budget)
 		if err != nil || number <= 0 || number > maxSafeInteger {
 			return refuse(CodeThinkingBudget, "budget_tokens")
 		}
 	}
+	// display is read here and nowhere else: this bridge shows no thinking either way.
+	if value, present := wire.Of(thinking, "display"); present == wire.Present {
+		var display string
+		if json.Unmarshal(value, &display) != nil {
+			return refuse(CodeThinkingDisplay, "display")
+		}
+		if !thinkingDisplays[display] {
+			return refuseUnknown(CodeThinkingDisplay, display)
+		}
+	}
 	return nil
 }
+
+// thinkingMembers is what each thinking type may carry besides its type.
+var thinkingMembers = map[string]map[string]bool{
+	"adaptive": {"display": true},
+	"enabled":  {"budget_tokens": true, "display": true},
+	"disabled": {},
+}
+
+// thinkingDisplays are the public API's two values and the client's own two. Measured on
+// native 2.1.288 (#253): omitted from a print session, updates from a TUI or a verbose
+// stream, summarized with showThinkingSummaries. highlights is in the client and was not
+// reached. The client keeps a path that resends with omitted once a server rejects it, so
+// refusing it would only add a refused request in front of the same answer.
+var thinkingDisplays = map[string]bool{"summarized": true, "omitted": true, "updates": true, "highlights": true}
 
 // The one context edit the baseline consumes is a semantic no-op. Anything else changes
 // what the model is asked to remember, and honouring an edit this bridge has not

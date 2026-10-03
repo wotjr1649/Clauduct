@@ -408,7 +408,8 @@ func (g *Gateway) noteElement(category, name string) {
 }
 
 // noteUnknown records what a refused body carried that this build does not know: a key
-// outside an allowlist or an unknown type. A known member with a bad value is not recorded;
+// outside an allowlist, an unknown type or an unknown thinking display -- vocabulary a client
+// update adds, bounded by noteElement. A known member with a bad value is not recorded;
 // its name is not the fix, and a value is the request's own.
 func (g *Gateway) noteUnknown(category string, err error) {
 	var refusal *anthropic.RequestError

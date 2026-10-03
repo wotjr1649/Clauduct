@@ -454,15 +454,45 @@ func (g *Gateway) checkContext(w http.ResponseWriter, r *http.Request, request *
 // native compacts the conversation when its classifier reports the transcript too long,
 // instead of failing every tool call that needs a verdict. A 502 CONTEXT_LENGTH_EXCEEDED read
 // to native as a classifier that was unavailable, so the action was denied and nothing was
-// compacted (#255, measured on 2.1.288). Only a structured backend code reaches here.
-func (g *Gateway) auxiliaryOverflow(w http.ResponseWriter) bool {
+// compacted (#255, measured on 2.1.288). Only a structured backend code reaches here, and it
+// applies to every side request class, not the classifier alone.
+//
+// One compaction per overflow streak, as recoverContextOverflow allows one per conversation:
+// a side request that overflows again before one from the same session and agent has
+// succeeded is answered as an insufficient summary, which native does not compact on. Each
+// compaction is a billed request, and nothing else here would stop a transcript that
+// compaction cannot shrink from asking for one on every tool call.
+func (g *Gateway) auxiliaryOverflow(w http.ResponseWriter, session, agent string) bool {
 	entry := recordOf(w)
 	if entry == nil || entry.snapshot().RequestClass != "auxiliary" {
 		return false
 	}
+	key := contextKey(session, agent)
+	g.overflowMu.Lock()
+	again := g.overflowed[key]
+	if g.overflowed == nil {
+		g.overflowed = map[string]bool{}
+	}
+	g.overflowed[key] = true
+	g.overflowMu.Unlock()
+	if again {
+		entry.control("AUXILIARY_CONTEXT_COMPACTION_INSUFFICIENT")
+		g.refuseCategory(w, 400, "CONTEXT_COMPACTION_INSUFFICIENT")
+		return true
+	}
 	entry.control("AUXILIARY_CONTEXT_OVERFLOW")
 	g.refuseCategory(w, 400, "prompt is too long")
 	return true
+}
+
+// auxiliaryAnswered ends a side request's overflow streak.
+func (g *Gateway) auxiliaryAnswered(w http.ResponseWriter, session, agent string) {
+	if entry := recordOf(w); entry == nil || entry.snapshot().RequestClass != "auxiliary" {
+		return
+	}
+	g.overflowMu.Lock()
+	delete(g.overflowed, contextKey(session, agent))
+	g.overflowMu.Unlock()
 }
 
 // Only a structured backend overflow, before any delivered operation, reaches

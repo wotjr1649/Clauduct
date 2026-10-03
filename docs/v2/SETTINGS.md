@@ -131,7 +131,7 @@ v0.6.3부터 `sol` 키·`opus` 별칭·공장 시작 모델은 `gpt-6.1-sol`이�
 로컬 계수 허용(`countValidated`), 은퇴 표다. 이 자료는 선택 범위를 제한하지 않는다. 은퇴 표는 계정이 그 이름을
 더는 나열하지 않을 때 거부 이유를 설명하는 데만 쓴다. 예를 들어 계정이 `gpt-5.6-sol`을 나열하면 그 모델은 다시 라우팅된다.
 계정이 숨긴(visibility가 `list`가 아닌) 모델은 `/model`에 나오지 않지만 전체 ID로 선택할 수 있다.
-v0.6.5 후보(미출시)부터는 위임 메뉴와 Agent의 `model`·`effort` 선택지에도 나오지 않는다. 모델이 숨김 모델을 스스로
+v0.6.5부터는 위임 메뉴와 Agent의 `model`·`effort` 선택지에도 나오지 않는다. 모델이 숨김 모델을 스스로
 고르지 않게 하려는 것이다. 사용자가 전체 ID를 지정하면 Agent `model` 인자와 Workflow는 그대로 실행한다.
 측정 기준 Claude Code·Codex CLI 버전도 내장 자료(`go/internal/upstream/measured-clients.json`)이며,
 설치된 버전은 실행할 때마다 기계에서 읽는다.

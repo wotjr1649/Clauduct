@@ -848,7 +848,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	}
 	// The saved pair must still be offered by this session's account list.
 	if !d.selection.ValidPair(bridge.Pair{Model: saved.Model, Effort: saved.Effort}) {
-		if _, retired := bridge.Retired[saved.Model]; retired {
+		if d.selection.Retires(saved.Model) {
 			return empty, false, bridge.ErrRetiredRoute
 		}
 		return empty, false, errDelegationUnverified

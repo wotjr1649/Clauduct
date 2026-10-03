@@ -171,8 +171,8 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 	model = strings.ToLower(strings.TrimSpace(model))
 	route, err := config.Selection.SelectRoute(model, effort)
 	if err != nil {
-		if replacement, retired := bridge.Retired[model]; retired {
-			return bridge.Pair{}, "", "", fmt.Errorf("%w: %s -> %s", err, model, replacement)
+		if config.Selection.Retires(model) {
+			return bridge.Pair{}, "", "", fmt.Errorf("%w: %s -> %s", err, model, bridge.Retired[model])
 		}
 		return bridge.Pair{}, "", "", err
 	}

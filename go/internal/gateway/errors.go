@@ -201,8 +201,8 @@ func refusalMessage(category string) string {
 			retired = append(retired, old+" (use "+replacement+")")
 		}
 		slices.Sort(retired)
-		return category + "; Clauduct v0.3.4 retired " + strings.Join(retired, ", ") +
-			", and the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). The account model list no longer offers the model, so a session or child an earlier build started on it cannot be resumed; start a new one. No replacement was executed."
+		return category + "; retired models: " + strings.Join(retired, ", ") +
+			". Clauduct v0.3.4 also retired the per-effort agent types such as clauduct-sol-high (use clauduct-<model> with the effort argument). The account model list no longer offers the model, so a session or child started on it cannot be resumed; start a new one. No replacement was executed."
 	}
 	if category != "UNSUPPORTED_MODEL_OR_EFFORT" {
 		return category

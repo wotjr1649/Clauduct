@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
+	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -542,6 +543,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// lines below already says what this build says about an answer it does not have.
 		result.NativeExitCode = ExitCodeUnknown
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+		var long *childprocess.CommandLineTooLong
+		if errors.As(startErr, &long) {
+			// The account list is what grows it (#238 A): name that, and that nothing was cut.
+			startErr = fmt.Errorf("%w. The delegation menu (%d entries) and the /model list are passed as launch arguments, one entry per model the account lists in its picker. Nothing was started and no model was left out", startErr, result.MenuEntries)
+		}
 		return result, startErr
 	}
 	result.NativeStarted = true

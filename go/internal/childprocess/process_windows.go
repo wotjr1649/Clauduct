@@ -4,6 +4,7 @@ package childprocess
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,18 @@ import (
 	"syscall"
 	"unsafe"
 )
+
+// maxCommandLine is CreateProcessW's limit in UTF-16 units, the terminating NUL included
+// (measured: 32,766 characters start, 32,767 fail with ERROR_FILENAME_EXCED_RANGE).
+const maxCommandLine = 32767
+
+// CommandLineTooLong is a launch Start refused before creating anything, because Windows
+// would refuse it. Nothing is cut to fit: the caller says what made it long.
+type CommandLineTooLong struct{ Characters int }
+
+func (e *CommandLineTooLong) Error() string {
+	return fmt.Sprintf("NATIVE_COMMAND_LINE_TOO_LONG: the native command line is %d characters; Windows allows %d", e.Characters, maxCommandLine-1)
+}
 
 // ERROR_NO_DATA. The pipe is being closed from the other end -- what a child that stopped
 // reading produces on Windows, beside ERROR_BROKEN_PIPE. Not in syscall, so it is named here.
@@ -129,6 +142,17 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 	cmd.SysProcAttr.CreationFlags = syscall.CREATE_UNICODE_ENVIRONMENT | 0x80000
 	if cmd.Err != nil {
 		return nil, cmd.Err
+	}
+	args := make([]string, len(cmd.Args))
+	for i, arg := range cmd.Args {
+		args[i] = syscall.EscapeArg(arg)
+	}
+	line, err := syscall.UTF16FromString(strings.Join(args, " "))
+	if err != nil {
+		return nil, err
+	}
+	if len(line) > maxCommandLine {
+		return nil, &CommandLineTooLong{Characters: len(line) - 1}
 	}
 	p := &Process{cmd: cmd}
 	job, _, callErr := createJob.Call(0, 0)
@@ -265,14 +289,6 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 	if err != nil {
 		return nil, err
 	}
-	args := make([]string, len(cmd.Args))
-	for i, arg := range cmd.Args {
-		args[i] = syscall.EscapeArg(arg)
-	}
-	line, err := syscall.UTF16PtrFromString(strings.Join(args, " "))
-	if err != nil {
-		return nil, err
-	}
 	var dir *uint16
 	if cmd.Dir != "" {
 		dir, err = syscall.UTF16PtrFromString(cmd.Dir)
@@ -295,7 +311,7 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 	}
 	block = append(block, 0, 0)
 	var pi syscall.ProcessInformation
-	err = syscall.CreateProcess(app, line, nil, nil, true, cmd.SysProcAttr.CreationFlags, &block[0], dir, &info.StartupInfo, &pi)
+	err = syscall.CreateProcess(app, &line[0], nil, nil, true, cmd.SysProcAttr.CreationFlags, &block[0], dir, &info.StartupInfo, &pi)
 	runtime.KeepAlive(attributes)
 	runtime.KeepAlive(handles)
 	runtime.KeepAlive(p)

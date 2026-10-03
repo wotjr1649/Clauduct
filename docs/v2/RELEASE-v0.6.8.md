@@ -70,6 +70,21 @@ v0.6.7이 남긴 세 위험을 측정했다.
   - 두 번째 `--update` 무변경
 - **이 머신의 실제 설치본**: v0.6.7에서 `--update --yes`로 v0.6.8이 됐다. digest 일치, `.old` 정리, 두 번째 `--update` 무변경, 설정 변경 없음.
 
+## 하지 않은 것과 다시 볼 조건
+
+외부 감사에서 나온 제안 중 이번에 하지 않은 것이다. 판단 근거는 [#257](https://github.com/wotjr1649/Clauduct/issues/257)에 있다.
+
+| 제안 | 하지 않은 이유 | 다시 볼 조건 |
+|---|---|---|
+| `metadata`·`budget_tokens`를 거부 | native가 매 요청에 `metadata`를 보내므로 거부하면 세션이 깨진다 | — |
+| `budget_tokens < max_tokens` 교차 검사 | budget이 backend에 정확히 대응하지 않고, `/context` 계수 요청의 `max_tokens`에는 생성 의미가 없다 | — |
+| 함수 도구의 `strict`·`allowed_callers`·`input_examples`·`eager_input_streaming` 지원 | native 2.1.288 경로가 보내지 않는다. `strict`를 정확히 옮길 수 있는 범위는 Anthropic과 OpenAI 스키마 제약이 겹치는 부분뿐이다 | native가 보내기 시작해 거부가 관측될 때 |
+| backend의 `cache_write_tokens`를 `cache_creation_input_tokens`로 연결 | backend 값의 의미가 확인되지 않았다 | 실측에서 0이 아닌 값이 관측될 때 |
+| refusal·`pause_turn`을 stop_reason으로 연결 | 측정한 경로에서 도달하지 않는다. 만나면 지금처럼 거부한다 | 실제 세션에서 관측될 때 |
+| OpenAI `tool_search` 실측 | native ToolSearch 경로가 동작한다 | 그 경로가 깨지거나 성능·캐시 문제가 생길 때 |
+| 매일 도는 유료 drift 실측 | beta 기록과 처음 보는 이름 진단으로 대신한다 | — |
+| provider IR 분리 | 다중 provider 계획이 없다 | 그런 계획이 생길 때 |
+
 ## 알려진 제한
 
 - TUI subagent의 응답이 도중에 끊기면 native가 이어서 요청하는데, 이어진 보고가 이미 전달된 부분에서 멈출 수 있다(실제 backend 7회 중 2회). 방침은 [#264](https://github.com/wotjr1649/Clauduct/issues/264)에서 정한다.

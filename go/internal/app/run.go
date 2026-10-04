@@ -315,6 +315,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureClassifierModel(config.ClassifierModel)
+	gw.ExpectTools(expectedTools(o.Args, upstream.ReferenceCoreTools))
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
 		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource, ClassifierFinding: classifierFinding,
 		ModelList: listFacts, DeprecatedSettings: config.Deprecated}

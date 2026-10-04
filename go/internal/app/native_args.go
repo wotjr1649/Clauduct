@@ -129,6 +129,36 @@ func printMode(args []string) bool {
 	return false
 }
 
+// expectedTools picks the re-measured core tools for this launch's mode (#300), or nil when
+// argv narrows what native offers -- those are the user's choice, not a missing tool -- or
+// when the session is a background one, whose worker mode was not measured. An option the
+// scanner does not know hides the mode and any narrowing after it, so nothing is judged.
+func expectedTools(args []string, core map[string][]string) []string {
+	if BackgroundRequested(args) {
+		return nil
+	}
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		if !known || end > len(args) {
+			return nil
+		}
+		i = end
+	}
+	for _, option := range []string{"--tools", "--disallowedTools", "--disallowed-tools", "--agent", "--bare",
+		"--disable-slash-commands", "--safe-mode", "--restricted"} {
+		if _, found := optionValue(args, option); found {
+			return nil
+		}
+	}
+	if mode, _ := optionValue(args, "--permission-mode"); mode == "plan" {
+		return nil // native leaves out the tool that enters plan mode
+	}
+	if printMode(args) {
+		return core["print"]
+	}
+	return core["tui"]
+}
+
 // optionValue reports the last value argv gives a native option, read with the boundaries
 // native uses, so a prompt that mentions the option is not taken for it. An unknown option
 // stops the scan: past it, what looks like a name may be a value.

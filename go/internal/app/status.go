@@ -413,9 +413,13 @@ func unmeasuredField(account Status) string {
 	if len(names) > 0 {
 		field = " unmeasured=" + strings.Join(names, ",")
 	}
-	// #297: tools native offered that the re-measured native did not.
-	if tools := account.Gateway.Client.UnmeasuredTools; len(tools) > 0 {
-		field += " unmeasured_tools=" + strings.Join(tools, ",")
+	// #297, #300: tools native offered that the re-measured native did not, and measured
+	// tools of this mode it never offered.
+	if tools := account.Gateway.Client.AddedTools; len(tools) > 0 {
+		field += " added_tools=" + strings.Join(tools, ",")
+	}
+	if tools := account.Gateway.Client.MissingTools; len(tools) > 0 {
+		field += " missing_tools=" + strings.Join(tools, ",")
 	}
 	return field
 }

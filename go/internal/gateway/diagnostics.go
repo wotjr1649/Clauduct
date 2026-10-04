@@ -906,9 +906,12 @@ type ClientReport struct {
 	// of Verified. A later successful request does not erase earlier failures.
 	RequestClassRequired bool  `json:"requestClassRequired"`
 	RequestClassMissing  int64 `json:"requestClassMissing"`
-	// UnmeasuredTools are tool names native offered this session that the re-measured native
-	// did not, MCP tools aside (#297). A report, never a refusal.
-	UnmeasuredTools []string `json:"unmeasuredTools,omitempty"`
+	// AddedTools are tool names native offered this session that the re-measured native did
+	// not, MCP tools aside (#297). MissingTools are the tools Clauduct's own launch was offered
+	// in this mode when re-measured that no request of this session offered (#300). Reports,
+	// never refusals.
+	AddedTools   []string `json:"addedTools,omitempty"`
+	MissingTools []string `json:"missingTools,omitempty"`
 }
 
 // CodexReport is the Codex CLI version resolved for this session's requests and how it compares
@@ -1063,7 +1066,8 @@ func (g *Gateway) Snapshot() Diagnostics {
 			VerifiedMeaning:      "version_match_only",
 			RequestClassRequired: g.contexts != nil,
 			RequestClassMissing:  refusedBy["CONTEXT_REQUEST_CLASS_UNVERIFIED"],
-			UnmeasuredTools:      g.tools.report(),
+			AddedTools:           g.tools.report(),
+			MissingTools:         g.tools.missing(),
 		},
 		Codex:               codex,
 		Features:            g.ring.featureReport(),

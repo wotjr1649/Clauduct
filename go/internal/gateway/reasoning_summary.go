@@ -19,19 +19,16 @@ const (
 
 // summaryStep is the native step a summary would be shown in, or nil when this request
 // asked for none or no step can be matched. A summary is asked for only when it is non-nil,
-// since asking delays the first text. Only the conversation request itself (a side question
-// in the same step would replace the step's summary with its own), and only in the TUI: in
-// -p and the SDK a $.ui.log line would add to output that must stay as it was.
+// since asking delays the first text. Only the main turn's own request (#286): native does
+// not write a subagent's or teammate's thinking into the main transcript either, and a side
+// question in the same step would replace the step's summary with its own. Only in the TUI:
+// in -p and the SDK a $.ui.log line would add to output that must stay as it was.
 func (g *Gateway) summaryStep(r *http.Request, request *anthropic.Request, session string) *parentStep {
-	class := r.Header.Get("X-Claude-Code-Request-Class")
-	if request.ThinkingDisplay != "summarized" || g.nativeEvents.directory == "" || !conversationRequest(r, request) || class == "compaction" {
+	if request.ThinkingDisplay != "summarized" || g.nativeEvents.directory == "" ||
+		r.Header.Get("X-Claude-Code-Request-Class") != "main" || r.Header.Get("X-Claude-Code-Agent-Id") != "" {
 		return nil
 	}
-	agent := r.Header.Get("X-Claude-Code-Agent-Id")
-	if class == "subagent" && agent == "" {
-		return nil
-	}
-	step, found, err := g.readNativeStep(session, agent)
+	step, found, err := g.readNativeStep(session, "")
 	if err != nil || !found || step.Mode != "native_tui" {
 		return nil
 	}

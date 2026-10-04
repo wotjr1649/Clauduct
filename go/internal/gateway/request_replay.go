@@ -205,9 +205,9 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 	}
 	auxiliary := independentAuxiliary(r, request)
 	// The auto mode classifier asks about an action; it is not one. Native asks it again in
-	// the same bytes when sibling agents take the same action at once, and a refusal left the
-	// second action unrun (#288). It keeps no replay key (#289), so native's own second ask
-	// after an unreadable verdict reaches the backend too.
+	// the same bytes when sibling agents take the same action at once, and the second ask was
+	// refused, leaving that action without a verdict (#288). It keeps no replay key (#289), so
+	// native's own second ask after an unreadable verdict reaches the backend too.
 	if auxiliary {
 		if classifier, err := autoModeClassifier(request, false); classifier && err == nil {
 			return &nativeExecution{owner: g, key: key, unkeyed: true}, ""

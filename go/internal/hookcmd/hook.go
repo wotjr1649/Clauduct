@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -64,6 +65,11 @@ func Dispatch(argv []string) (int, bool) {
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
 	}
+	if len(args) == 2 && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
+		// Foreground: the gateway is on the command line and the token in the environment.
+		env := platform.Environment(os.Environ())
+		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, os.Stdin, os.Stdout, os.Stderr, env), true
+	}
 	if len(args) == 2 && (args[0] == Arg || args[0] == "--clauduct-background-key") {
 		connection, err := sessionlink.Read(args[1])
 		if err != nil {
@@ -81,9 +87,7 @@ func Dispatch(argv []string) (int, bool) {
 			}
 			return 0, true
 		}
-		env := platform.Environment(os.Environ())
-		env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
-		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, env), true
+		return routed(connection, os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
@@ -140,6 +144,44 @@ var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 // says. It is pinned to the loopback host, which is where the gateway is and the only place
 // it can be.
 var loopback = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}$`)
+
+// RoutingMismatchPath is where a hook reports that native is not using its gateway.
+const RoutingMismatchPath = "/clauduct/routing-mismatch"
+
+// routed runs a hook named with its session's gateway (#295): the URL on a foreground hook's
+// command line, or the background session link. A hook inherits the environment native
+// applied its settings to, so it sees where native's requests go. When that is not the
+// gateway -- another endpoint, a cloud provider, a unix socket -- model requests are leaving
+// Clauduct: say so, tell the gateway so the launcher ends the session, and fail the event,
+// which blocks a prompt. Nothing is posted to the other destination and its value is not
+// printed.
+func routed(connection sessionlink.Connection, in io.Reader, out, errOut io.Writer, env map[string]string) int {
+	if routedElsewhere(env, connection.BaseURL) {
+		fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native is not sending model requests to this session's Clauduct gateway; the session is being ended.")
+		postReply([]byte("{}"), map[string]string{"ANTHROPIC_BASE_URL": connection.BaseURL, "ANTHROPIC_AUTH_TOKEN": connection.Token}, RoutingMismatchPath, false)
+		return 2
+	}
+	env["ANTHROPIC_AUTH_TOKEN"] = connection.Token
+	return runWithOutput(in, out, errOut, env)
+}
+
+// routedElsewhere reads names as Windows does, without case: a settings file may spell one
+// in lower case.
+func routedElsewhere(env map[string]string, gateway string) bool {
+	upper := make(map[string]string, len(env))
+	for name, value := range env {
+		upper[strings.ToUpper(name)] = value
+	}
+	if upper["ANTHROPIC_BASE_URL"] != gateway || upper["ANTHROPIC_UNIX_SOCKET"] != "" {
+		return true
+	}
+	for _, name := range launch.ProviderSwitches {
+		if value := strings.ToLower(upper[name]); value != "" && value != "0" && value != "false" {
+			return true
+		}
+	}
+	return false
+}
 
 func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))

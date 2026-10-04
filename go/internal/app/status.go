@@ -41,6 +41,8 @@ const (
 	CategoryBudget      = "REQUEST_BUDGET"
 	CategoryCancelled   = "USER_CANCELLED"
 	CategoryDeadline    = "SESSION_DEADLINE"
+	// CategoryRouting is a session ended because its model requests could leave the gateway (#295).
+	CategoryRouting = "ROUTING_UNVERIFIED"
 )
 
 // SessionFacts describe launcher defaults and installed integration components.

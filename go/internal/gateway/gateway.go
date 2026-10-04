@@ -109,6 +109,8 @@ type Gateway struct {
 
 	received   atomic.Int64
 	modelLists atomic.Int64
+	// routingMismatch is set when this session's own hook saw native use another endpoint (#295).
+	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
 	// role has no route, runs on what the client asked for -- and these are how often that
 	// happened, so "routing quietly did nothing" is a number rather than a silence.
@@ -293,6 +295,10 @@ func (g *Gateway) ClientVersion() string {
 // Anthropic one, and the only difference visible from here is that this request never
 // arrives.
 func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
+
+// RoutingMismatch reports whether a hook of this session found native configured for an
+// endpoint other than this gateway. The launcher ends the session on it (#295).
+func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 
 // Unrouted reports the subagent requests this build had no route of its own for: one count
 // for a registration that never arrived, one for a role with no route, which runs on the
@@ -534,6 +540,16 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/clauduct/tool-failures" {
 		g.handleToolFailure(w, r)
+		return
+	}
+	if r.URL.Path == "/clauduct/routing-mismatch" {
+		if r.Method != http.MethodPost {
+			g.refuse(w, refuseMethod)
+			return
+		}
+		// Only the fact travels; the hook sends no endpoint and nothing is read.
+		g.routingMismatch.Store(true)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	if r.URL.Path == "/clauduct/confirmation" {

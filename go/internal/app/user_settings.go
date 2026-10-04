@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -106,6 +107,11 @@ func (config ClauductSettings) takeUserSettings(args []string, cwd string) ([]st
 			if required, ok := config.sessionRequirements()[upper]; ok && value != required {
 				return nil, nil, nil, errSettingsConflict
 			}
+			// Routing belongs to this launcher (#295): every name its settings env pins, but
+			// NO_PROXY, which keeps the user's entries and gains loopback below.
+			if _, pinned := routingSettingsEnv(nil, "")[upper]; pinned && upper != "NO_PROXY" {
+				return nil, nil, nil, errSettingsConflict
+			}
 			switch upper {
 			case "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CLAUDUCT_PDF_PROJECTS_ROOT":
 				return nil, nil, nil, errSettingsConflict
@@ -148,6 +154,13 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 				}
 				for name, value := range extra {
 					merged[name] = value
+				}
+			}
+			// The user's NO_PROXY keeps its entries and gains the loopback hosts (#295).
+			for name, raw := range merged {
+				var value string
+				if strings.EqualFold(name, "NO_PROXY") && json.Unmarshal(raw, &value) == nil {
+					merged[name], _ = json.Marshal(launch.WithLoopbackNoProxy(value))
 				}
 			}
 			out[key], _ = json.Marshal(merged)

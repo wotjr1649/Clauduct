@@ -61,6 +61,9 @@ func (config ClauductSettings) backgroundSettings(settings, hook, id, base strin
 	for k, v := range config.sessionRequirements() {
 		env[k] = v
 	}
+	for k, v := range routingSettingsEnv(inherited, base) {
+		env[k] = v
+	}
 	env["ANTHROPIC_BASE_URL"] = base
 	env["ANTHROPIC_AUTH_TOKEN"], env["ANTHROPIC_API_KEY"], env["ANTHROPIC_CUSTOM_HEADERS"], env["CLAUDE_CODE_OAUTH_TOKEN"] = "", "", "", ""
 	env["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = "1"

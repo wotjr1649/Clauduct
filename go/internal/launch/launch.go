@@ -5,6 +5,7 @@
 package launch
 
 import (
+	"slices"
 	"sort"
 	"strings"
 )
@@ -89,9 +90,61 @@ type Overlay struct {
 // The tradeoff the user accepted: the native child now sees the same secrets it would see
 // if the user ran claude directly. Clauduct is not an extra secret barrier and must not be
 // described as one.
+//
+// The provider switches and the host flag are dropped for routing, not secrecy (#295): native
+// ranks a cloud provider above every credential here, and measured with
+// CLAUDE_CODE_USE_BEDROCK set the gateway saw no request at all.
 func denied(key string) bool {
 	upper := strings.ToUpper(key)
-	return strings.HasPrefix(upper, "ANTHROPIC_") || upper == "CLAUDE_CODE_OAUTH_TOKEN"
+	return strings.HasPrefix(upper, "ANTHROPIC_") || upper == "CLAUDE_CODE_OAUTH_TOKEN" ||
+		upper == HostRoutedEnv || slices.Contains(ProviderSwitches, upper)
+}
+
+// ProviderSwitches are native's cloud provider selectors, read from 2.1.289's own list. Not a
+// prefix: CLAUDE_CODE_USE_POWERSHELL_TOOL and its like are ordinary options. An empty value
+// counts as unset for provider selection, which is how a settings env clears one.
+var ProviderSwitches = []string{"CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+	"CLAUDE_CODE_USE_ANTHROPIC_AWS", "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD", "CLAUDE_CODE_USE_MANTLE", "CLAUDE_CODE_USE_GATEWAY"}
+
+// HostRoutedEnv is native's flag for an embedding host that owns routing. It makes native
+// ignore settings files' model selection as well (measured 2.1.289, #295), so this launcher
+// never sets it and never lets it through.
+const HostRoutedEnv = "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"
+
+// loopbackHosts never go through a proxy. Measured 2.1.289 (#295): with HTTP(S)_PROXY set and
+// no NO_PROXY, native sent the plain-http gateway request, token and conversation included,
+// to the proxy. The gateway itself binds 127.0.0.1 only.
+var loopbackHosts = []string{"127.0.0.1", "localhost", "::1"}
+
+// WithLoopbackNoProxy returns a NO_PROXY value that keeps every entry already listed and adds
+// the loopback hosts it lacks.
+func WithLoopbackNoProxy(value string) string {
+	entries := noProxyEntries(value)
+	for _, host := range loopbackHosts {
+		found := false
+		for _, entry := range entries {
+			found = found || strings.EqualFold(entry, host)
+		}
+		if !found {
+			entries = append(entries, host)
+		}
+	}
+	return strings.Join(entries, ",")
+}
+
+// NoProxyCoversGateway reports whether a NO_PROXY value keeps the gateway's address,
+// 127.0.0.1, off a proxy: by naming it or by "*".
+func NoProxyCoversGateway(value string) bool {
+	for _, entry := range noProxyEntries(value) {
+		if entry == "*" || entry == "127.0.0.1" {
+			return true
+		}
+	}
+	return false
+}
+
+func noProxyEntries(value string) []string {
+	return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })
 }
 
 // Build produces the launch spec.
@@ -158,6 +211,11 @@ func buildEnv(source map[string]string, overlay Overlay) []string {
 		folded[key] = name
 		kept[key] = value
 	}
+	// Under the name already present, so Windows' case-insensitive lookup sees one entry.
+	if _, present := folded["NO_PROXY"]; !present {
+		folded["NO_PROXY"] = "NO_PROXY"
+	}
+	kept["NO_PROXY"] = WithLoopbackNoProxy(kept["NO_PROXY"])
 
 	// The session values. The three blanks are the second half of ENV02: a name that is
 	// merely absent lets the client fall back to a stored credential, so each one is set

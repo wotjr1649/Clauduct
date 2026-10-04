@@ -516,6 +516,8 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | SDK·`--print`의 부분 본문 | 마지막 assistant block에서 최종 답변을 잃지 않도록 gateway가 reasoning 뒤에 답변을 완료 시 전달한다. `--include-partial-messages`로도 이 보류를 해제하지 않는다. v0.6.9부터 subagent의 text는 TUI에서도 완료까지 보류한다(#264). native는 응답 도중 끊긴 subagent를 이미 받은 text에서 이어 쓰게 하는데, 실제 backend에서 이어진 보고가 끊긴 지점에서 멈춘 경우가 7회 중 2회 있었다. 보류하면 backend 실패는 부분 보고 대신 자식의 명시적 API 오류가 된다(실제 backend 유효 7회 모두). 그래서 TUI의 자식 화면은 답이 끝날 때 한 번에 보인다. root TUI는 계속 스트리밍한다. backend 텍스트 진행과 사용자 첫 본문 시각이 다르므로 완료 전 취소는 active 요청·진행 상태를 기준으로 검증한다. 원래 90초 marker 미관측 기록과 새 비교는 [#207](https://github.com/wotjr1649/Clauduct/issues/207)에서 구분한다 |
 | `/context` 최초 조회 | 정확 계수의 첫 backend 왕복 지연이 남음. 조회 자체가 모델 본문 생성을 뜻하지 않고, 검증된 조회 기록은 실제 다음 모델 입력에서 제외. native 로컬 이력/추정 표시와 실제 usage는 다름 |
 | 런타임 의존 | `claude.exe` + `codex.exe`(버전이 요청 헤더) + `~/.codex/auth.json` |
+| 라우팅 불변식(#295) | 모델 요청은 이 세션의 loopback gateway로만 간다. foreground·background 모두 gateway 주소, 빈 provider 선택 변수(native 목록 7종)·`ANTHROPIC_UNIX_SOCKET`·`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, loopback을 더한 `NO_PROXY`, 필수 환경을 `--settings` env로 넣는다(user·project·local settings보다 높다). 셸의 provider 선택 변수는 넘기지 않는다. hook은 native가 적용한 환경의 endpoint·provider·unix socket을 gateway와 대조해, 다르면 prompt를 막고 세션을 끝낸다(`ROUTING_UNVERIFIED`). settings 파일의 `ANTHROPIC_AUTH_TOKEN`은 세션 token을 대신해 gateway가 거부한다(목적지는 바뀌지 않고 실패로 끝난다) |
+| 거부하는 기기 정책 | managed 출처(HKLM·HKCU 레지스트리 `SOFTWARE\Policies\ClaudeCode`, `C:\Program Files\ClaudeCode`와 `CLAUDE_CODE_MANAGED_SETTINGS_PATH`의 `managed-settings.json`·`managed-settings.d`, native가 원격 managed 설정으로 읽는 `CLAUDE_CODE_REMOTE_SETTINGS_PATH` 파일)에 라우팅 env(endpoint·인증·unix socket·provider·host 변수, `127.0.0.1`이 빠진 `NO_PROXY`), `apiKeyHelper`, `policyHelper`, `forceLoginMethod: "gateway"`, `forceLoginGatewayUrl`, `allowedProviders`가 있으면 아무것도 띄우지 않고 `MANAGED_ROUTING_POLICY`로 거부한다. 읽을 수 없는 정책은 `MANAGED_POLICY_UNREADABLE`. 세션 중 생기면 native를 끝낸다(읽지 못한 상태는 연속 세 번 뒤에) |
 
 ### Anthropic 요청 필드의 실제 처리 (v0.6.8)
 
@@ -637,6 +639,12 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | doctor가 측정 기준보다 새 클라이언트에 `re-measure due`를 표시(v0.6.2) | `OUT_OF_SCOPE` | 설계 안내이며 세션은 그대로 실행된다. v0.6.9 기준은 Claude Code 2.1.289 | native가 새 버전을 낼 때마다 재측정한다 |
 | 미지 SSE 이벤트에서 요청 실패 | `OUT_OF_SCOPE` | 설계(fail-closed). 이름은 계정에 남긴다 | 새 이벤트가 관측될 때 처리를 더한다 |
 | Anthropic 서버 기능(claude.ai 로그인, Remote Control, `/schedule`, cloud 세션, `/ultrareview`, Artifact, advisor 도구와 서버 의존 베타 7종, 서버 분류기, telemetry) | `OUT_OF_SCOPE` | 3절 v0.6.7 표와 미지원 표 | backend 쪽에 대응 서비스가 생길 때 |
+| settings 파일(user·project·local) env가 모델 요청을 다른 endpoint나 cloud provider로 보낼 수 있었다(v0.6.10 이하, 2.1.289 실측) | `FIXED` | v0.6.11(#295): `--settings` env로 endpoint·provider·unix socket·`NO_PROXY`를 고정. 실제 native 실측 시험(user·project·local settings가 endpoint·Bedrock·Google Cloud·Vertex·unix socket·`NO_PROXY`·token을 바꾸는 경우) | native가 provider 선택 변수를 더하거나 settings 우선순위를 바꿀 때. 실행 중 hook 대조가 알려진 경로를 감지한다 |
+| 저장된 Claude apps gateway 로그인은 native가 `ANTHROPIC_BASE_URL`보다 먼저 쓴다(2.1.289 문자열 근거, 실측 안 함) | `MEASURE` | 이 로그인은 managed `forceLoginMethod`·`forceLoginGatewayUrl`이 있어야 만들 수 있고(공식 문서), Clauduct는 그 정책에서 시작하지 않는다. 정책을 지운 뒤에도 로그인이 남아 있는 기기는 막지 않는다. 막으려면 자격 증명 저장소(credman·평문 파일)를 읽어야 해서 따로 정한다 | 그런 기기가 보고되거나 저장소 검사를 결정할 때 |
+| native가 새 provider 선택 변수나 요청 목적지 변수를 더하면 settings 파일로 우회할 수 있다 | `MEASURE` | v0.6.11(#295)은 2.1.289의 provider 목록 7종과 `ANTHROPIC_UNIX_SOCKET`만 막는다. 이름 접두어로 막지 않는 이유는 같은 접두어의 일반 옵션 때문이다 | native 새 버전마다 provider 목록을 재측정과 표면 차등 관문(#294)으로 비교한다 |
+| `HTTP(S)_PROXY`가 있고 `NO_PROXY`에 loopback이 없으면 gateway 요청(token·대화 포함)이 proxy로 갔다(v0.6.10 이하) | `FIXED` | v0.6.11(#295): `NO_PROXY`에 loopback을 더한다. 사용자 항목은 유지 | — |
+| 라우팅을 정하는 기기 정책(managed 출처)에서는 실행하지 않음 | `OUT_OF_SCOPE` | 설계(#295): managed는 Clauduct보다 높아 gateway를 보장할 수 없다. HKCU는 admin 출처가 있으면 native가 무시하지만 Clauduct는 보수적으로 거부한다 | 오거부가 보고되거나 native가 출처 선택을 노출할 때 |
+| user·project settings 파일의 `NO_PROXY` 항목은 Clauduct 세션에서 셸 값(+loopback)으로 대체된다 | `OUT_OF_SCOPE` | v0.6.11(#295): `--settings` env가 파일보다 높다. `--settings`로 준 `NO_PROXY`는 유지되고 loopback만 더해진다 | 필요한 사용 사례가 보고될 때 |
 | loopback을 검사·중계하는 보안 필터(AdGuard 등) | `OUT_OF_SCOPE` | 필터 기능을 끄고 같은 probe로 전후 비교(2절) | 특정 필터 제품의 호환 문제가 보고될 때 |
 | 비Windows | `OUT_OF_SCOPE` | 이식이 아니라 새 설계 | 다른 OS 지원을 설계할 때 |
 

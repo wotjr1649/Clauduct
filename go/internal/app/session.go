@@ -2,7 +2,9 @@ package app
 
 import (
 	"strconv"
+	"strings"
 
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
@@ -91,6 +93,32 @@ func (config ClauductSettings) sessionEnvironment() map[string]string {
 		}
 	}
 	return session
+}
+
+// routingSettingsEnv goes in the child's --settings env, which native ranks above user,
+// project and local settings files and keeps above them when one changes mid-session
+// (measured 2.1.289, #295). A settings file env otherwise replaces the process environment:
+// measured, it moved the endpoint, selected a cloud provider, and dropped the loopback hosts
+// from NO_PROXY so the gateway request went through a proxy. ANTHROPIC_UNIX_SOCKET would send
+// every API request to a socket. Empty clears a switch. The endpoint is not a secret; the
+// token is, and never goes on a command line. NO_PROXY is the launch shell's plus loopback.
+func routingSettingsEnv(env map[string]string, base string) map[string]string {
+	noProxy := ""
+	for name, value := range env {
+		if strings.EqualFold(name, "NO_PROXY") {
+			noProxy = value
+		}
+	}
+	out := map[string]string{
+		"ANTHROPIC_BASE_URL":    base,
+		"ANTHROPIC_UNIX_SOCKET": "",
+		launch.HostRoutedEnv:    "",
+		"NO_PROXY":              launch.WithLoopbackNoProxy(noProxy),
+	}
+	for _, name := range launch.ProviderSwitches {
+		out[name] = ""
+	}
+	return out
 }
 
 // sessionRequirements is what the child does not get to run without.

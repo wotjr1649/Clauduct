@@ -133,10 +133,28 @@ native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. �
 | 변수군 | 처리 |
 |---|---|
 | Anthropic endpoint·인증 선택 | gateway 연결로 일관되게 정리. 원래 Anthropic credential이 gateway·Codex로 새지 않게 한다 |
+| cloud provider 선택(native 목록 7종: `CLAUDE_CODE_USE_BEDROCK`·`_VERTEX`·`_FOUNDRY`·`_ANTHROPIC_AWS`·`_ANTHROPIC_GOOGLE_CLOUD`·`_MANTLE`·`_GATEWAY`) | 상속하지 않고, 설정 env에서는 빈 값으로 덮는다. native는 provider를 모든 credential보다 먼저 고른다(#295). 같은 접두어의 다른 옵션(`CLAUDE_CODE_USE_POWERSHELL_TOOL` 등)은 그대로 둔다 |
 | `GITHUB_TOKEN`·AWS/service key·MCP secret | 무차별 삭제하지 않는다. native child 환경에서만 보존 |
 | `CLAUDE_CONFIG_DIR` | 사용자의 명시적 선택을 보존. 기본 별도 프로필을 강제하지 않는다 |
-| proxy·CA 설정 | 신뢰된 사용자 네트워크 구성으로 취급. TLS 검증 완화는 하지 않는다 |
+| proxy·CA 설정 | 신뢰된 사용자 네트워크 구성으로 취급. TLS 검증 완화는 하지 않는다. 다만 `NO_PROXY`에 loopback(`127.0.0.1`·`localhost`·`::1`)을 더해 평문 gateway 요청이 proxy를 거치지 않게 한다(#295) |
 | bridge 내부 run-id·port·token | 자기 프로세스와 child에 필요한 범위만 |
+
+**라우팅 불변식(#295).** native는 settings 파일 `env`를 프로세스 환경 위에 적용하고, 실행 중에도 다시
+적용한다. 2.1.289 실측에서 user·project·local settings의 endpoint가 요청을 받았고, provider 변수는 요청을
+cloud로 보냈다. 그래서 다음을 함께 둔다.
+
+- foreground·background 모두 `--settings` env에 gateway 주소, 빈 provider 선택 변수(native 목록 7종), 빈
+  `ANTHROPIC_UNIX_SOCKET`·`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, loopback을 더한 `NO_PROXY`, 필수 환경을 넣는다.
+  native는 `--settings`를 user·project·local settings보다 높게 두고, 파일이 실행 중 바뀌어도 그렇다. token은
+  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다).
+- `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`는 쓰지 않는다. 실측에서 settings 파일의 모델 선택까지 무시하게 했고,
+  hook 환경의 token도 지웠다. 상속도 하지 않는다.
+- managed 설정은 Clauduct보다 높다. HKLM·HKCU 레지스트리 정책, `managed-settings.json`과 drop-in(기본 위치와
+  `CLAUDE_CODE_MANAGED_SETTINGS_PATH`), `CLAUDE_CODE_REMOTE_SETTINGS_PATH` 파일에 라우팅 env, `apiKeyHelper`, `policyHelper`, gateway 로그인 강제,
+  `allowedProviders`가 있으면 시작하지 않는다. 세션 중 생기면 native를 끝내고 `ROUTING_UNVERIFIED`로 보고한다.
+  잠깐 읽지 못한 출처는 연속 세 번 확인한 뒤에만 세션을 끝낸다.
+- hook은 명령 인수(foreground)나 세션 연결(background)로 gateway를 안다. native가 적용한 환경의 endpoint,
+  provider 선택, unix socket을 이것과 대조해, 다르면 prompt를 막고 gateway에 알려 세션을 끝낸다.
 
 기존의 광범위 secret 제거를 축소하면 MCP 호환은 개선되지만 **child에 보이는 secret 범위가 넓어진다.** 이를 보안상 동일한 동작으로 표현하지 않는다.
 
@@ -161,6 +179,7 @@ background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경�
 | `HEAD /api/hello` | 최소 readiness 응답 | 인증 없이도 비밀·상태 노출 없음 |
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
 | `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |
+| `POST /clauduct/routing-mismatch` | 이 세션 hook이 native의 다른 endpoint 사용을 알림 | 인증 필요, 본문을 읽지 않음, launcher가 세션을 끝냄(#295) |
 | 기타 | 명확한 unsupported 응답 | 침묵 성공·임의 upstream forwarding 금지 |
 
 기본 실행은 필수 hook을 구성하며 위임이 생기면 이 등록 경로를 사용한다.
@@ -169,7 +188,7 @@ listener는 `127.0.0.1:0`에만 bind한다. 세션마다 충분히 긴 난수 to
 
 native 버전별로 `/v1/models` 요청에 인증 header가 둘 이상 실릴 수 있다. 모든 auth 값을 검증하되 **같은 loopback token이 두 header에 실렸다는 이유로 정상 discovery를 깨뜨리지 않는다.** 서로 다른 credential을 허용하거나 upstream으로 전달해서는 안 된다.
 
-`ANTHROPIC_BASE_URL`을 바꿨다는 사실만으로 Claude의 모든 통신이 gateway를 통과한다고 선언하지 않는다. 지원하는 모델 추론 요청만 route trace로 확인한다. native 서비스 점검·WebFetch domain safety·플러그인·MCP의 별도 네트워크는 별도 범주다. Go V2는 OS 수준 egress sandbox가 아니다.
+`ANTHROPIC_BASE_URL`을 바꿨다는 사실만으로 Claude의 모든 통신이 gateway를 통과한다고 선언하지 않는다. 지원하는 모델 추론 요청만 route trace로 확인하고, 그 요청이 gateway를 떠나지 않게 하는 장치는 5절 라우팅 불변식이다. native 서비스 점검·WebFetch domain safety·플러그인·MCP의 별도 네트워크는 별도 범주다. Go V2는 OS 수준 egress sandbox가 아니다.
 
 ### 6.1. 필터가 활성화된 환경의 연결 종료
 

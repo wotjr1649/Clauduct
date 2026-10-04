@@ -89,6 +89,28 @@ func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 	return string(encoded), true
 }
 
+// foregroundSettings binds a foreground session's settings to its routing (#295). Every hook
+// command names this session's gateway, so the hook can compare it with where native's
+// requests actually go. The settings env carries the values a settings file must not replace
+// (routingSettingsEnv and the requirements): --settings outranks user, project and local
+// settings (measured 2.1.289). The token never goes on a command line.
+func foregroundSettings(settings, gateway string, env map[string]string) (string, error) {
+	var s childSettings
+	if json.Unmarshal([]byte(settings), &s) != nil {
+		return "", errSettingsConflict
+	}
+	for _, matchers := range s.Hooks {
+		for i := range matchers {
+			for j := range matchers[i].Hooks {
+				matchers[i].Hooks[j].Command += " " + gateway
+			}
+		}
+	}
+	s.Env = env
+	encoded, err := json.Marshal(s)
+	return string(encoded), err
+}
+
 // pickerRows is the /model list, named by what will actually run.
 //
 // Derived from the session's account list, so a model the account adds appears here

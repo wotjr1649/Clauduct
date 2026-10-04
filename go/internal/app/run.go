@@ -101,6 +101,8 @@ type Options struct {
 	DeadlineGrace time.Duration
 	// Checkpoint persists metadata while the child runs; nil disables checkpoints.
 	Checkpoint func(Status) error
+	// ManagedPolicy reads the machine's managed settings sources. Zero reads the real ones.
+	ManagedPolicy func() ([]policyDocument, error)
 	// BackgroundReady transfers an explicit --bg session to its resident owner.
 	BackgroundReady func(BackgroundSession) error
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
@@ -186,6 +188,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome
 	information := nativeInformation(o.Args)
+	// Before anything is fetched or bound: a machine policy that can move model requests off
+	// the gateway is one this launcher cannot outrank (#295). Help and version send none.
+	if !information {
+		if err := managedRouting(o.ManagedPolicy()); err != nil {
+			return Result{}, err
+		}
+	}
 	if clauductHome == "" && !information {
 		clauductHome, _ = os.UserHomeDir()
 	}
@@ -372,6 +381,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.HookInstalled = hook != ""
 		if built, ok := config.sessionSettings(hook); ok {
 			settings = built
+		}
+		if settings != "" && !BackgroundRequested(o.Args) {
+			env := routingSettingsEnv(o.Env, gw.BaseURL())
+			for name, value := range config.sessionRequirements() {
+				env[name] = value
+			}
+			if settings, err = foregroundSettings(settings, gw.BaseURL(), env); err != nil {
+				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+				return result, err
+			}
 		}
 		if menu, ok := config.sessionAgents(); ok {
 			agents = menu
@@ -564,6 +583,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 
 	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
+	// A hook that blocked the prompt may have ended a short session before the next checkpoint
+	// saw its report; the report still decides how the session ended (#295).
+	if gw.RoutingMismatch() && lifecycle.Reason != "managed_routing_policy" {
+		lifecycle.Reason, lifecycle.Detail = "routing_mismatch", routingMismatchDetail
+	}
 	result.Lifecycle = &lifecycle
 	cleanupWaitErr := waitErr
 	if joined, ok := waitErr.(interface{ Unwrap() []error }); ok && len(joined.Unwrap()) == 1 {
@@ -605,6 +629,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if errors.Is(waitErr, context.Canceled) {
 			waitErr = nil
 		}
+	}
+
+	if lifecycle.Reason == "routing_mismatch" || lifecycle.Reason == "managed_routing_policy" {
+		result.Category = CategoryRouting
+		return result, fmt.Errorf("ROUTING_UNVERIFIED: %s; the session was ended so no further model request could leave this session's gateway", lifecycle.Detail)
 	}
 
 	// A non-zero native exit is the native process's answer, not this bridge's error. Only
@@ -674,6 +703,10 @@ func (o Options) withDefaults() Options {
 	}
 	if o.Ledger == nil {
 		o.Ledger = upstream.NewLedger(upstream.Unlimited())
+	}
+	if o.ManagedPolicy == nil {
+		env := o.Env
+		o.ManagedPolicy = func() ([]policyDocument, error) { return readManagedPolicy(env) }
 	}
 	if o.StartGateway == nil {
 		// G7: the real transport. Every inference in a session started by this binary now

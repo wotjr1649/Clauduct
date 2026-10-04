@@ -12,6 +12,12 @@ import (
 
 const checkpointInterval = 2 * time.Second
 
+// policyRetries is how many checkpoints in a row a managed policy source may be unreadable
+// before the session is ended for it (#295).
+const policyRetries = 3
+
+const routingMismatchDetail = "a hook of this session found native configured for another endpoint"
+
 // SessionDuration parses only the explicit launcher setting. It is never inferred
 // from a model, prompt, or native option. Invalid limits fail before spawning.
 func SessionDuration(env map[string]string) (time.Duration, error) {
@@ -41,6 +47,9 @@ type LifecycleFacts struct {
 	NativeStopRequested bool      `json:"nativeStopRequested,omitempty"`
 	NativeReaped        bool      `json:"nativeReaped"`
 	CheckpointFailures  int       `json:"checkpointFailures,omitempty"`
+	// Detail says why a routing stop happened (#295): the policy source and key, or that a
+	// hook saw native use another endpoint. Never an endpoint value.
+	Detail string `json:"detail,omitempty"`
 }
 
 func drainReady(d gateway.Diagnostics) bool {
@@ -95,6 +104,7 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 	var lastReceived, lastActive int64 = -1, -1
 	var lastDrainReceived int64 = -1
 	var idleSince time.Time
+	unreadable := 0
 	checkpoint := func() gateway.Diagnostics {
 		gw.ReconcileNativeCancellations()
 		if err := gw.CheckpointSessionProfiles(false); err != nil {
@@ -170,6 +180,30 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 		case now := <-tick.C:
 			received, _, active := gw.Stats()
 			if life.State == "stopping" {
+				continue
+			}
+			// Native re-reads settings while it runs (#295). Ending the session is the only
+			// answer once its requests may no longer come here; a turn in flight is not drained.
+			if gw.RoutingMismatch() {
+				life.Reason, life.Detail = "routing_mismatch", routingMismatchDetail
+				deadline, grace = nil, nil
+				stop()
+				continue
+			}
+			// A source being rewritten can be unreadable for a moment; only one that stays
+			// unreadable for policyRetries ticks ends the session. A routing key ends it at once.
+			err := managedRouting(o.ManagedPolicy())
+			if errors.Is(err, errPolicyUnreadable) {
+				if unreadable++; unreadable < policyRetries {
+					err = nil
+				}
+			} else {
+				unreadable = 0
+			}
+			if err != nil {
+				life.Reason, life.Detail = "managed_routing_policy", err.Error()
+				deadline, grace = nil, nil
+				stop()
 				continue
 			}
 			if life.State == "draining" {

@@ -554,7 +554,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
 
-### 알려진 제한 원장 (v0.6.9)
+### 알려진 제한 원장 (v0.6.10)
 
 v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알려진 제한과 미검증 항목을 한곳에 모았다(#273).
 각 항목의 근거는 해당 릴리스 기록과 이 문서의 절에 있다. "구조상 불가"로 영구 종결하지 않고, 다시 볼 조건을 항목마다 둔다.
@@ -595,6 +595,9 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | 사용자 mod를 원격으로 끄는 플래그(v0.6.7) | `MEASURE` | telemetry를 끈 Clauduct 세션에서의 동작 미확인 | 원격 플래그가 관측될 때 |
 | native가 teammate 모델을 고르는 경로(v0.6.9) | `MEASURE` | 단위 시험만. loopback에서 그 분기가 타지 않았다 | 그 분기가 실제로 관측될 때 |
 | 첫 출력 전 240초 뒤 keepalive 이후의 subagent 실패(v0.6.9) | `MEASURE` | 부분 text는 0. native가 명시적 오류로 끝내는지 실제 backend로 재지 않음 | 오래 걸리는 자식에서 실패가 관측될 때 |
+| 추론 요약은 main turn에서만 보인다(subagent·teammate·workflow agent 제외) | `OUT_OF_SCOPE` | v0.6.10 설계(#286): 자식 요청은 요약을 요청하지 않아 지연이 없다 | 자식 agent의 요약을 보여 달라는 요청이 있을 때 |
+| `--agent`로 띄운 main-thread agent의 추론 요약 | `MEASURE` | main 요청이 agent id 헤더를 보내면 요약을 받지 못한다. 그 요청 형태는 수집하지 않았다. 틀린 표시는 생기지 않는다 | 그 세션의 요청 형태를 수집할 때 |
+| 요약 표시가 native의 `$.ui.log`와 chunk 순서에 기댐 | `MEASURE` | native 2.1.289에서만 확인. 무과금 재측정이 `$.ui` 선언과 `log` 문서를 비교하고, 요약 TUI 회귀를 native 새 버전 절차와 발행 전 회귀에 넣었다(#286) | 재측정이 `$.ui` 차이를 보이거나 요약 회귀가 실패할 때 |
 | backend 추론 요약 표시 | `FIXED` | v0.6.10: TUI main turn에서 `thinking.display`가 `summarized`인 요청만 요약을 요청해 화면에만 보인다(#277, #286). `updates`(TUI 기본)는 지연 때문에 요청하지 않는다 | — |
 | 빈 응답 제어의 나머지 origin 12종 | `MEASURE` | `composer`·`sdk`·`peer`와 따로 처리하는 `task-notification`만 측정했고, 그 밖의 12종은 단독 입력으로 모드를 정하지 않으며 미측정 | native가 그 origin을 실제로 쓸 때 |
 | forked Skill 자식에는 사용자 중지 차단 규칙(#91)이 적용되지 않음 | `MEASURE` | 사용자의 중지가 `stoppedByUser`로 남지 않는다(3절 forked Skill 행) | native가 fork 자식의 중지를 기록할 때 |
@@ -1182,7 +1185,7 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 | Agent teams(#269) | 1절 "Agent teams" 행. v0.6.8 이하는 2.1.289의 teammate 요청을 모두 `INVALID_SESSION_ID`로 거부했다 |
 | subagent text 보류(#264) | 2절 "SDK·`--print`의 부분 본문" 행. TUI에서도 subagent의 text를 완료까지 보류한다 |
 | hosted web search `max_uses`(#272) | 2절 hosted web search 행. 1 이상의 정수만 받는다 |
-| 알려진 제한(#273) | 3절 "알려진 제한 원장 (v0.6.9)" |
+| 알려진 제한(#273) | 3절 "알려진 제한 원장" |
 
 ## 4. 제3자 구현이라는 사실
 

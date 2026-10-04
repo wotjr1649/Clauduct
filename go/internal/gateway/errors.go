@@ -94,6 +94,9 @@ func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) 
 	// invites a retry only trades this category for NATIVE_REQUEST_REPLAY_BLOCKED in front of
 	// the user (#84). The client checks x-should-retry before the status class (claude
 	// 2.1.281); without the ledger nothing is refused and the class decides as before.
+	// The auto mode classifier keeps no ledger key (#289) but still records dispatch, and
+	// still gets the header: without it native's client retried a failed classifier reply up
+	// to ten times instead of the two it makes with the header (measured, #289 review).
 	// Memory admission now owns its bounded wait. Claude 2.1.282 also needs this
 	// header on its local 429, or it repeats that wait instead of reporting refusal.
 	if recordOf(w).dispatched() || strings.HasPrefix(r.category, "MEMORY_") {

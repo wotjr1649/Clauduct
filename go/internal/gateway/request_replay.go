@@ -187,6 +187,9 @@ type nativeExecution struct {
 	owner      *Gateway
 	key        nativeExecutionKey
 	dispatched bool // handler-owned, including hosted search
+	// unkeyed is an execution the ledger does not hold (the auto mode classifier, #289). It
+	// still records dispatch, which is what tells a failed reply not to be retried (#84).
+	unkeyed bool
 }
 
 // Reserve before selection/result mutation. A retry can arrive while its first
@@ -201,6 +204,15 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 		return nil, errNativeOriginUnverified.Error()
 	}
 	auxiliary := independentAuxiliary(r, request)
+	// The auto mode classifier asks about an action; it is not one. Native asks it again in
+	// the same bytes when sibling agents take the same action at once, and a refusal left the
+	// second action unrun (#288). It keeps no replay key (#289), so native's own second ask
+	// after an unreadable verdict reaches the backend too.
+	if auxiliary {
+		if classifier, err := autoModeClassifier(request, false); classifier && err == nil {
+			return &nativeExecution{owner: g, key: key, unkeyed: true}, ""
+		}
+	}
 	var turn *nativeTurnReceipt
 	if auxiliary {
 		// An independent side request (a title or a classifier) owns no turn, but it is
@@ -367,7 +379,7 @@ func deferredLocally(err error) bool {
 }
 
 func (e *nativeExecution) release() {
-	if e != nil && !e.dispatched {
+	if e != nil && !e.dispatched && !e.unkeyed {
 		l := &e.owner.executions
 		l.Lock()
 		defer l.Unlock()

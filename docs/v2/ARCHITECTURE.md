@@ -382,6 +382,9 @@ v0.3.1의 native 경로는 session·agent·turn·step으로 대화 실행 소유
 별도 compaction·독립 auxiliary·step 없는 경로는 class와 원문 body의 SHA-256도 구분한다.
 동일 실행의 진행 중·완료 후·취소 후 재전송은 선택과 결과 변경 전에
 `NATIVE_REQUEST_REPLAY_BLOCKED`로 거부한다. 본문이나 지문을 로그·journal에 저장하지 않는다.
+예외는 auto 모드 분류기 요청이다(v0.6.10, #289). 분류 질문은 동작이 아니라 동작에 대한 질문이고, native는 형제 agent가
+거의 동시에 같은 동작을 하면 같은 바이트로 묻는다. 그래서 분류기 envelope 계약을 통과한 요청은 replay 키를 만들지 않는다.
+거부된 요청의 기록에는 먼저 같은 키를 차지한 요청(`replayOf`: seq, 경과 ms, 규칙)을 남긴다(#288).
 v0.6.2 준비본은 원문 body의 지문을 같은 turn의 다음 step에서도 대조한다. 이미 전송한 본문이
 늦게 다시 도착해 새 step의 소유권을 차지하는 것을 막는다. 내용이 달라진 다음 step은 허용하며,
 사용자가 취소 후 같은 문장을 직접 재제출해 시작한 새 turn도 별도 실행으로 허용한다.

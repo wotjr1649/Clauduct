@@ -580,7 +580,9 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | `/context` 직후 종료한 계수가 종료 줄의 거부로 보임(v0.6.4·v0.6.5) | `FIXED` | v0.6.7: 종료 줄에서 `counts_cancelled`로 분리. 상태 JSON의 원래 집계(`totals.failures`의 `CANCELLED`, `refusedBy`)는 설계대로 그대로다 | — |
 | 빠른 종료 때 진행 중이던 생성 요청이 함께 취소되면 상태가 출력됨 | `OUT_OF_SCOPE` | v0.6.7 설계: 생성 취소는 숨기지 않는다. v0.6.8·v0.6.9 출하 검증의 빠른 종료 표본에서 시점에 따라 관측 | 사용자에게 불필요한 출력으로 보고될 때 |
 | 분류기가 판정을 받지 못할 때 native 동작을 재지 않음(v0.6.3) | `FIXED` | v0.6.4에서 측정: native는 그 호출을 실행하지 않고 turn을 마친다 | — |
-| 분류기 판정을 읽을 수 없을 때 native가 같은 바이트로 다시 보낸 요청은 replay 차단(v0.6.5) | `OUT_OF_SCOPE` | 설계: 이미 실행됐을 수 있는 요청의 자동 재실행을 막는다. 그 도구는 실행되지 않는다 | replay 정책을 바꿀 때 |
+| 분류기 판정을 읽을 수 없을 때 native가 같은 바이트로 다시 보낸 요청은 replay 차단(v0.6.5) | `FIXED` | v0.6.10: 분류기 요청은 replay 키를 만들지 않는다(#289). 재요청은 backend에 가고, 판정을 끝내 받지 못한 호출은 전처럼 실행되지 않는다 | — |
+| 형제 agent가 거의 동시에 같은 동작을 하면 두 번째 분류 질문이 replay로 차단됨(v0.6.5~v0.6.9) | `FIXED` | v0.6.10(#289). native는 같은 바이트로 묻는다. 실제 backend 회귀에서 1회 관측, #288 진단 기록과 합성 backend로 재현(6/6) | — |
+| 분류기가 계속 읽을 수 없는 판정을 내면 native가 분류 요청을 10번까지 보낸다(v0.6.10) | `OUT_OF_SCOPE` | 설계: native의 재질문을 따른다. 판정 없이 호출을 실행하지 않는다. HTTP 오류·시간 초과·끊긴 응답은 전처럼 2번이다 | 비용이나 지연이 문제로 보고될 때 |
 | bypass 세션 도중 모드 전환 시 필수 확인 목록(v0.6.3) | `FIXED` | v0.6.4에서 Clauduct 권한 규칙을 없애 해당 없음 | — |
 | `/model`·`/effort` TUI, 다른 세션으로 가는 `SendMessage` 승인, gateway 경유 `WebSearch`·native `WebFetch`를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.3 최종 후보와 출시 바이트에서 실제 backend로 통과. `/model`은 그 뒤 출하마다 TUI 회귀에서 확인. v0.6.4부터 `SendMessage` 승인은 native 규칙이 정한다 | — |
 | 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Luna low·medium. Sol 6.1 low는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
@@ -1033,7 +1035,9 @@ native 2.1.288, Codex CLI 0.160.0으로 실제 backend 검증을 통과했다(�
 시간 초과, 읽을 수 없는 판정, 완료 전에 끊긴 응답, 계정이 제공하지 않는 pair(`AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`)
 여섯 경우 모두 native는 분류 요청을 한 번 더 보낸 뒤 해당 호출을 거부 목록(`permission_denials`)에 남기고 실행하지 않았으며,
 같은 turn을 정상 완료했다. 읽을 수 없는 판정 뒤의 재요청은 gateway의 replay 차단(`NATIVE_REQUEST_REPLAY_BLOCKED`)으로
-거부됐다. Clauduct는 허용 판정·모델 대체·모드 전환을 만들지 않는다. 실제 backend의 `cyber_policy` 거부와 TUI 표시는
+거부됐다. v0.6.10부터 분류기 요청은 replay 키를 만들지 않는다(#289). 그래서 읽을 수 없는 판정 뒤의 재요청도 backend에
+간다. native 2.1.289는 이 경우 분류 요청을 10번 보낸 뒤 그 호출을 실행하지 않았다(합성 backend). backend에 닿은 뒤 실패한
+응답에는 전처럼 `X-Should-Retry: false`를 붙이므로 HTTP 500(재시도 가능·불가), 시간 초과, 끊긴 응답은 전과 같이 2번이다. Clauduct는 허용 판정·모델 대체·모드 전환을 만들지 않는다. 실제 backend의 `cyber_policy` 거부와 TUI 표시는
 아직 측정하지 않았다.
 
 새 모델(내장 이름이 없는 `gpt-9-new` 합성 목록)은 native 2.1.288에서 세션 모델, `clauduct-gpt-9-new` 메뉴,

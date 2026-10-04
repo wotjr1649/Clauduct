@@ -47,70 +47,8 @@ func (g *Gateway) auxiliarySelection(request *anthropic.Request, count bool) ([]
 // Its measured block protocol uses the session's model mapping and effort defaults.
 // Identification changes routing, never permission, policy text, or the classifier verdict.
 func (g *Gateway) classifierSelection(request *anthropic.Request, count bool) ([]bridge.Route, error) {
-	// A changed policy heading must not quietly send the known block envelope back
-	// to Sonnet. These independent markers also catch that form of native drift.
-	envelope := slices.Contains(request.StopSequences, "</block>")
-	for _, message := range request.Messages {
-		blocks := message.Blocks
-		for _, block := range blocks {
-			envelope = envelope || strings.HasPrefix(block.Text, classifierContextPrefix)
-		}
-		envelope = envelope || len(blocks) >= 4 && blocks[0].Text == "<transcript>\n" &&
-			blocks[len(blocks)-2].Text == "</transcript>\n" && strings.Contains(blocks[len(blocks)-1].Text, "<block>")
-	}
-	var system []struct{ Text string }
-	if json.Unmarshal(request.System, &system) != nil {
-		var text string
-		if envelope || json.Unmarshal(request.System, &text) == nil && strings.HasPrefix(text, classifierPolicyPrefix) {
-			return nil, errClassifierContract
-		}
-		return nil, nil
-	}
-	found := false
-	for _, block := range system {
-		found = found || strings.HasPrefix(block.Text, classifierPolicyPrefix)
-	}
-	if !found {
-		if envelope {
-			return nil, errClassifierContract
-		}
-		return nil, nil
-	}
-	if len(system) < 2 || !strings.HasPrefix(system[0].Text, "x-anthropic-billing-header: ") ||
-		!strings.HasPrefix(system[1].Text, classifierPolicyPrefix) || len(request.Messages) < 1 || len(request.Messages) > 2 ||
-		request.OutputFormat != nil || len(request.Fields["thinking"]) != 0 {
-		return nil, errClassifierContract
-	}
-	if len(request.Messages) == 2 {
-		context := request.Messages[0]
-		if context.Role != "user" || len(context.Blocks) != 1 || context.Blocks[0].Type != "text" ||
-			!strings.HasPrefix(context.Blocks[0].Text, classifierContextPrefix) ||
-			!strings.HasSuffix(context.Blocks[0].Text, "\n</user_claude_md>") {
-			return nil, errClassifierContract
-		}
-	}
-	message := request.Messages[len(request.Messages)-1]
-	if message.Role != "user" {
-		return nil, errClassifierContract
-	}
-	blocks := message.Blocks
-	if len(blocks) < 4 || blocks[0].Text != "<transcript>\n" || blocks[len(blocks)-2].Text != "</transcript>\n" {
-		return nil, errClassifierContract
-	}
-	for _, block := range blocks {
-		if block.Type != "text" {
-			return nil, errClassifierContract
-		}
-	}
-	// Transcript cache chunks and native meta lines vary; only the protocol envelope
-	// is inspected. Unknown envelopes fail before dispatch instead of using Sonnet's default.
-	suffix := blocks[len(blocks)-1].Text
-	first := strings.HasPrefix(suffix, "\nErr on the side of blocking. Stage 1 does NOT apply user intent or ALLOW exceptions") && strings.Contains(suffix, "<block>")
-	second := strings.HasPrefix(suffix, "\nReview the classification process and follow it carefully,") && strings.Contains(suffix, "before responding with <block>")
-	if !first && !second || !count && (!request.NonStreaming ||
-		first && (request.MaxTokens != 2112 || len(request.StopSequences) != 1 || request.StopSequences[0] != "</block>") ||
-		second && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
-		return nil, errClassifierContract
+	if classifier, err := autoModeClassifier(request, count); !classifier || err != nil {
+		return nil, err
 	}
 	if pair := g.classifierModel; pair != (bridge.Pair{}) {
 		// The configured pair replaces native's model and effort together. A pair the
@@ -128,4 +66,76 @@ func (g *Gateway) classifierSelection(request *anthropic.Request, count bool) ([
 	}
 	route.Source = "native-auto-mode"
 	return []bridge.Route{route}, nil
+}
+
+// autoModeClassifier says whether request is native's auto mode classifier question, by its
+// measured envelope alone, whatever model it would route to. A request carrying part of the
+// envelope but not all of it is a contract error, not an ordinary request.
+func autoModeClassifier(request *anthropic.Request, count bool) (bool, error) {
+	// A changed policy heading must not quietly send the known block envelope back
+	// to Sonnet. These independent markers also catch that form of native drift.
+	envelope := slices.Contains(request.StopSequences, "</block>")
+	for _, message := range request.Messages {
+		blocks := message.Blocks
+		for _, block := range blocks {
+			envelope = envelope || strings.HasPrefix(block.Text, classifierContextPrefix)
+		}
+		envelope = envelope || len(blocks) >= 4 && blocks[0].Text == "<transcript>\n" &&
+			blocks[len(blocks)-2].Text == "</transcript>\n" && strings.Contains(blocks[len(blocks)-1].Text, "<block>")
+	}
+	var system []struct{ Text string }
+	if json.Unmarshal(request.System, &system) != nil {
+		var text string
+		if envelope || json.Unmarshal(request.System, &text) == nil && strings.HasPrefix(text, classifierPolicyPrefix) {
+			return false, errClassifierContract
+		}
+		return false, nil
+	}
+	found := false
+	for _, block := range system {
+		found = found || strings.HasPrefix(block.Text, classifierPolicyPrefix)
+	}
+	if !found {
+		if envelope {
+			return false, errClassifierContract
+		}
+		return false, nil
+	}
+	if len(system) < 2 || !strings.HasPrefix(system[0].Text, "x-anthropic-billing-header: ") ||
+		!strings.HasPrefix(system[1].Text, classifierPolicyPrefix) || len(request.Messages) < 1 || len(request.Messages) > 2 ||
+		request.OutputFormat != nil || len(request.Fields["thinking"]) != 0 {
+		return false, errClassifierContract
+	}
+	if len(request.Messages) == 2 {
+		context := request.Messages[0]
+		if context.Role != "user" || len(context.Blocks) != 1 || context.Blocks[0].Type != "text" ||
+			!strings.HasPrefix(context.Blocks[0].Text, classifierContextPrefix) ||
+			!strings.HasSuffix(context.Blocks[0].Text, "\n</user_claude_md>") {
+			return false, errClassifierContract
+		}
+	}
+	message := request.Messages[len(request.Messages)-1]
+	if message.Role != "user" {
+		return false, errClassifierContract
+	}
+	blocks := message.Blocks
+	if len(blocks) < 4 || blocks[0].Text != "<transcript>\n" || blocks[len(blocks)-2].Text != "</transcript>\n" {
+		return false, errClassifierContract
+	}
+	for _, block := range blocks {
+		if block.Type != "text" {
+			return false, errClassifierContract
+		}
+	}
+	// Transcript cache chunks and native meta lines vary; only the protocol envelope
+	// is inspected. Unknown envelopes fail before dispatch instead of using Sonnet's default.
+	suffix := blocks[len(blocks)-1].Text
+	first := strings.HasPrefix(suffix, "\nErr on the side of blocking. Stage 1 does NOT apply user intent or ALLOW exceptions") && strings.Contains(suffix, "<block>")
+	second := strings.HasPrefix(suffix, "\nReview the classification process and follow it carefully,") && strings.Contains(suffix, "before responding with <block>")
+	if !first && !second || !count && (!request.NonStreaming ||
+		first && (request.MaxTokens != 2112 || len(request.StopSequences) != 1 || request.StopSequences[0] != "</block>") ||
+		second && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
+		return false, errClassifierContract
+	}
+	return true, nil
 }

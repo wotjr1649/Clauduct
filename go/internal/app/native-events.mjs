@@ -164,13 +164,23 @@ export const register = on => {
     const sid=await session($),call=ident(e.tool_use_id),parent=e.parentAgentId?ident(e.parentAgentId):'';
     if (!call || e.parentAgentId && !parent) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
     const file=root+'/selection-'+sid+'-'+call+'.json';
-    if (!await $.fs.exists(file)) return next(e); // native/plugin-owned choices retain their own route
-    let choice;
-    try { choice=JSON.parse(await $.fs.read(file)); }
-    catch { throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED'); }
-    if (choice.session!==sid || choice.call!==call || choice.parent!==parent || choice.role!==e.subagentType || !__CLAUDUCT_MODELS__.includes(choice.model)) throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED');
-    if (e.fork) return next(e); // native owns fork inheritance
-    return next({...e,model:choice.model});
+    let forwarded=e; // native/plugin-owned choices retain their own route
+    if (await $.fs.exists(file)) {
+      let choice;
+      try { choice=JSON.parse(await $.fs.read(file)); }
+      catch { throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED'); }
+      if (choice.session!==sid || choice.call!==call || choice.parent!==parent || choice.role!==e.subagentType || !__CLAUDUCT_MODELS__.includes(choice.model)) throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED');
+      if (!e.fork) forwarded={...e,model:choice.model}; // native owns fork inheritance
+    }
+    const answer=await next(forwarded);
+    // An Agent teams teammate's HTTP requests carry its address (<name>@<team>) while its
+    // hook events carry the loop id (native 2.1.289). Record the pair for the gateway (#269).
+    if (e.isTeammate===true && answer?.deny===undefined) {
+      const agent=ident(answer?.agentId), address=answer?.teammateId;
+      if (!agent || typeof address!=='string' || !/^[A-Za-z0-9_-]{1,100}@[A-Za-z0-9_-]{1,100}$/.test(address)) throw new Error('CLAUDUCT_NATIVE_ID_INVALID');
+      await $.fs.write(root+'/teammate-'+sid+'-'+address+'.json',JSON.stringify({session:sid,agent,address,call,role:e.subagentType}));
+    }
+    return answer;
   });
   on('prompt.submit', async ($, e, next) => {
     const origin=e.origin?.kind || 'unclassified';

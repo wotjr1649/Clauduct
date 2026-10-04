@@ -24,6 +24,11 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}
+	r, teammateOK := g.resolveTeammate(r)
+	if !teammateOK {
+		g.refuseCategory(w, http.StatusBadRequest, errNativeOriginUnverified.Error())
+		return
+	}
 	if bad, ok := checkRequestHeaders(r); !ok {
 		g.refuseHeaders(w, r, bad)
 		return

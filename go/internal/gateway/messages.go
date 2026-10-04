@@ -59,6 +59,11 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuse(w, refuseMediaType)
 		return
 	}
+	r, teammateOK := g.resolveTeammate(r)
+	if !teammateOK {
+		g.refuseCategory(w, http.StatusBadRequest, errNativeOriginUnverified.Error())
+		return
+	}
 	if bad, ok := checkRequestHeaders(r); !ok {
 		g.refuseHeaders(w, r, bad)
 		return
@@ -373,6 +378,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				}
 			}
 			resolvedScope, continued := g.continuationScope(scope, agent, binding)
+			resolvedScope.teammate = teammateOf(r.Context())
 			route, found, err := g.delegations.route(resolvedScope, agent, binding, r.Context())
 			if errors.Is(err, bridge.ErrRetiredRoute) {
 				return nil, releaseAgent, err

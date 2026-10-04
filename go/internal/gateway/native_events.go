@@ -1,16 +1,19 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
@@ -30,6 +33,62 @@ type nativeEventState struct {
 
 var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")
 var errNativeOriginUnverified = errors.New("NATIVE_REQUEST_ORIGIN_UNVERIFIED")
+
+// teammateAddress is an Agent teams teammate's address, <name>@<team>. Native 2.1.289
+// sends it as a teammate's X-Claude-Code-Agent-Id while every hook event of the teammate's
+// loop carries the loop's own id (#269).
+var teammateAddress = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}@[A-Za-z0-9_-]{1,100}$`)
+
+// teammateLink is what the session plugin recorded when native started a teammate: the
+// loop id its hooks carry, the address its requests carry, and the Agent call and role.
+type teammateLink struct{ Session, Agent, Address, Call, Role string }
+
+type teammateKey struct{}
+
+// resolveTeammate swaps a teammate address in the agent header for the loop id the session
+// plugin recorded when native spawned that teammate, so every later check sees the id the
+// hooks use, and carries the record on the request for the route check. An address with no
+// such record was not seen starting in this session and is refused like any other unproven
+// origin. Anything that is not an address passes untouched.
+func (g *Gateway) resolveTeammate(r *http.Request) (*http.Request, bool) {
+	address, session := r.Header.Get("X-Claude-Code-Agent-Id"), r.Header.Get("X-Claude-Code-Session-Id")
+	if !teammateAddress.MatchString(address) {
+		return r, true
+	}
+	var link teammateLink
+	found, err := false, error(nil)
+	if correlationShape.MatchString(session) {
+		read := func() {
+			found, err = g.readNativeJSON("teammate-"+session+"-"+address+".json", []string{"session", "agent", "address", "call", "role"}, &link)
+		}
+		read()
+		// The plugin records the pair after native answers agent.spawn, and the teammate's
+		// loop can start first. Wait for absence only, at most a second, as for metadata.
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		// $.fs.write is not atomic, so a record caught mid-write reads as malformed: within
+		// the window that is waited out like absence, and refused only if it stays so.
+		for delay := 5 * time.Millisecond; err != nil || !found; delay = min(delay*2, 100*time.Millisecond) {
+			select {
+			case <-ctx.Done():
+				return r, false
+			case <-time.After(delay):
+				read()
+			}
+		}
+	}
+	if err != nil || !found || link.Session != session || link.Address != address || !correlationShape.MatchString(link.Agent) ||
+		!correlationShape.MatchString(link.Call) || link.Role == "" || len(link.Role) > 200 {
+		return r, false
+	}
+	r.Header.Set("X-Claude-Code-Agent-Id", link.Agent)
+	return r.WithContext(context.WithValue(r.Context(), teammateKey{}, &link)), true
+}
+
+func teammateOf(ctx context.Context) *teammateLink {
+	link, _ := ctx.Value(teammateKey{}).(*teammateLink)
+	return link
+}
 
 // RequireNativeConfirmations makes missing/ignored native ask rules a refusal,
 // including when managed policy excludes the launcher's settings or event module.

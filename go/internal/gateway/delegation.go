@@ -50,6 +50,7 @@ type delegationScope struct {
 	route           bridge.Route
 	nativeTurn      *nativeTurnReceipt
 	parentWait      *parentStep
+	teammate        *teammateLink
 }
 type delegationKey struct{ session, call string }
 type delegatedChoice struct {
@@ -67,6 +68,9 @@ type resolvedChoice struct {
 	inherited             bool
 	custom                bool
 	restored              bool
+	// teammate: an Agent teams teammate (#269). Native delivers its reports to the lead as
+	// idle notifications, so this gateway keeps no result entry for it.
+	teammate bool
 }
 
 func (c resolvedChoice) isWorkflow() bool {
@@ -514,7 +518,17 @@ func (d *delegations) cachedRoute(scope delegationScope, id string, binding agen
 }
 
 func (d *delegations) route(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (bridge.Route, bool, error) {
+	// A teammate's binding role is its name, not a role: it never takes the cached check below.
+	if scope.teammate != nil {
+		return d.teammateRoute(scope, id, binding, contexts...)
+	}
 	d.mu.Lock()
+	// A teammate's requests carry its address. Its loop id arriving bare would skip the
+	// teammate checks (task, address, stop) that only the address path makes.
+	if chosen, held := d.resolved[id]; held && chosen.teammate {
+		d.mu.Unlock()
+		return bridge.Route{}, false, errDelegationUnverified
+	}
 	if route, found, err := d.cachedRoute(scope, id, binding); found || err != nil {
 		d.mu.Unlock()
 		return route, found, err
@@ -675,10 +689,119 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 	return choice.route, true, nil
 }
 
+// teammateRoute binds an Agent teams teammate (#269) to the Agent call that started it.
+// Its native metadata names no tool call or parent: the call and role come from the spawn
+// the session plugin saw. Every request checks that the metadata is still a teammate task
+// at the address the request carried, with no tool call or parent and not stopped; the first
+// also checks the model against the call's choice (or native's receipt) and consumes the
+// lead's pending choice for that call, as an ordinary child's is.
+func (d *delegations) teammateRoute(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (bridge.Route, bool, error) {
+	link := scope.teammate
+	if binding.ID != id || binding.SessionID != scope.session || link.Agent != id || link.Session != scope.session {
+		return bridge.Route{}, false, errDelegationUnverified
+	}
+	meta, err := d.readMetadata(binding)
+	if errors.Is(err, errMetadataPending) && len(contexts) != 0 {
+		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
+		defer cancel()
+		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
+			select {
+			case <-ctx.Done():
+				return bridge.Route{}, false, refusedBecause("metadata_wait_expired")
+			case <-time.After(delay):
+				meta, err = d.readMetadata(binding)
+			}
+		}
+	}
+	if err != nil {
+		return bridge.Route{}, false, refusedAs(err, "metadata_unreadable")
+	}
+	// Every request, not only the first: the record must still be this teammate's, and a
+	// teammate the user stopped stays stopped.
+	identity := meta.TaskKind == "in_process_teammate" && meta.Name+"@"+meta.TeamName == link.Address && meta.ToolUseID == "" &&
+		meta.ParentAgentID == scope.parent && binding.Role == meta.Name && !meta.StoppedByUser
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if !identity {
+		// Before its first request binds, this teammate will never bind: release the call so
+		// the lead's completion check is not held open by a choice nothing can consume.
+		if _, bound := d.resolved[id]; !bound {
+			delete(d.pending, delegationKey{scope.session, link.Call})
+		}
+		return bridge.Route{}, false, errDelegationUnverified
+	}
+	if chosen, found := d.resolved[id]; found {
+		if chosen.session != scope.session || chosen.parent != scope.parent || chosen.call != link.Call || !roleMatches(chosen.role, link.Role, chosen.custom) {
+			return bridge.Route{}, false, errDelegationUnverified
+		}
+		return chosen.route, true, nil
+	}
+	key := delegationKey{scope.session, link.Call}
+	choice, found := d.pending[key]
+	if !found {
+		return bridge.Route{}, false, errDelegationUnverified
+	}
+	custom := choice.custom || strings.HasPrefix(choice.route.Source, "agent-call-definition")
+	role := choice.role
+	if !custom {
+		role = bridge.CanonicalRole(role)
+	}
+	failure := ""
+	// Where native chose the model, its receipt for this teammate's turn names it, as for
+	// an ordinary child; the metadata then records what native actually ran.
+	if choice.route.Source == "native-selection" {
+		active := scope.nativeTurn
+		if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
+			failure = "NATIVE_RECEIPT_UNVERIFIED"
+		} else if actual, err := d.selection.SelectRoute(active.Model, active.Effort); err != nil {
+			failure = "NATIVE_RECEIPT_UNVERIFIED"
+		} else {
+			actual.Source = "native-selection"
+			choice.route = actual
+			if model, ok := d.selection.ModelByID(actual.Model); ok {
+				choice.alias = model.AgentAlias
+			}
+		}
+	}
+	switch {
+	case failure != "":
+	case choice.parent != scope.parent:
+		failure = "PARENT_MISMATCH"
+	case !roleMatches(role, link.Role, custom):
+		failure = "ROLE_MISMATCH"
+	case meta.Model != choice.route.Model && !(choice.route.Source == "native-selection" && meta.Model == ""):
+		failure = "METADATA_MODEL_MISMATCH"
+	}
+	if failure != "" {
+		if choice.receipt != nil {
+			choice.receipt.Agent, choice.receipt.Failure = id, failure
+			d.selectionState(choice.receipt, "selection_failed")
+		}
+		// The spawn succeeded, so no tool failure will clear this choice; left pending it
+		// would hold the lead's completion check open for the rest of the session.
+		delete(d.pending, key)
+		return bridge.Route{}, false, errDelegationUnverified
+	}
+	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: link.Call, role: role, alias: choice.alias, route: choice.route, inherited: choice.inherited, custom: custom, teammate: true}
+	chosen.receipt = choice.receipt
+	if chosen.receipt != nil {
+		chosen.receipt.Role = role
+		chosen.receipt.Model, chosen.receipt.Effort, chosen.receipt.NativeModel = choice.route.Model, choice.route.Effort, choice.alias
+	}
+	if err := d.saveChoice(binding, chosen); err != nil {
+		return bridge.Route{}, false, err
+	}
+	if err := d.cacheChoice(id, chosen); err != nil {
+		return bridge.Route{}, false, err
+	}
+	delete(d.pending, key)
+	return choice.route, true, nil
+}
+
 // startResult opens the child's delegated-result entry. A forked skill's child gets none:
 // native returns its report as the Skill tool's result (see nativeFork).
 func (d *delegations) startResult(id string, choice resolvedChoice) bool {
-	return choice.route.Source == "native-fork" || d.results.start(id, choice)
+	return choice.route.Source == "native-fork" || choice.teammate || d.results.start(id, choice)
 }
 
 func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
@@ -698,7 +821,10 @@ func (d *delegations) cacheChoice(id string, choice resolvedChoice) error {
 		// none does this refuses rather than discarding live work.
 		evicted := ""
 		d.results.mu.Lock()
-		for key := range d.resolved {
+		for key, held := range d.resolved {
+			if held.teammate {
+				continue // owes no result, but its choice cannot be rebuilt once dropped
+			}
 			if e := d.results.entries[key]; e == nil || resultReported(e.State) {
 				evicted = key
 				break
@@ -899,6 +1025,10 @@ type delegationMetadata struct {
 	Model         string `json:"model"`
 	SpawnDepth    int    `json:"spawnDepth"`
 	StoppedByUser bool   `json:"stoppedByUser"`
+	// An Agent teams teammate records these instead of a tool call and parent (native 2.1.289).
+	TaskKind string `json:"taskKind"`
+	Name     string `json:"name"`
+	TeamName string `json:"teamName"`
 }
 
 // 2.1.276 records inherit for native fork, rather than Agent's compatibility

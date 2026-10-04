@@ -66,7 +66,9 @@ func (g *Gateway) resolveTeammate(r *http.Request) (*http.Request, bool) {
 		// loop can start first. Wait for absence only, at most a second, as for metadata.
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		defer cancel()
-		for delay := 5 * time.Millisecond; err == nil && !found; delay = min(delay*2, 100*time.Millisecond) {
+		// $.fs.write is not atomic, so a record caught mid-write reads as malformed: within
+		// the window that is waited out like absence, and refused only if it stays so.
+		for delay := 5 * time.Millisecond; err != nil || !found; delay = min(delay*2, 100*time.Millisecond) {
 			select {
 			case <-ctx.Done():
 				return r, false

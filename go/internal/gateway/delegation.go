@@ -718,12 +718,18 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 	}
 	// Every request, not only the first: the record must still be this teammate's, and a
 	// teammate the user stopped stays stopped.
-	if meta.TaskKind != "in_process_teammate" || meta.Name+"@"+meta.TeamName != link.Address || meta.ToolUseID != "" ||
-		meta.ParentAgentID != scope.parent || binding.Role != meta.Name || meta.StoppedByUser {
-		return bridge.Route{}, false, errDelegationUnverified
-	}
+	identity := meta.TaskKind == "in_process_teammate" && meta.Name+"@"+meta.TeamName == link.Address && meta.ToolUseID == "" &&
+		meta.ParentAgentID == scope.parent && binding.Role == meta.Name && !meta.StoppedByUser
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if !identity {
+		// Before its first request binds, this teammate will never bind: release the call so
+		// the lead's completion check is not held open by a choice nothing can consume.
+		if _, bound := d.resolved[id]; !bound {
+			delete(d.pending, delegationKey{scope.session, link.Call})
+		}
+		return bridge.Route{}, false, errDelegationUnverified
+	}
 	if chosen, found := d.resolved[id]; found {
 		if chosen.session != scope.session || chosen.parent != scope.parent || chosen.call != link.Call || !roleMatches(chosen.role, link.Role, chosen.custom) {
 			return bridge.Route{}, false, errDelegationUnverified
@@ -763,7 +769,7 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 		failure = "PARENT_MISMATCH"
 	case !roleMatches(role, link.Role, custom):
 		failure = "ROLE_MISMATCH"
-	case meta.Model != choice.route.Model:
+	case meta.Model != choice.route.Model && !(choice.route.Source == "native-selection" && meta.Model == ""):
 		failure = "METADATA_MODEL_MISMATCH"
 	}
 	if failure != "" {

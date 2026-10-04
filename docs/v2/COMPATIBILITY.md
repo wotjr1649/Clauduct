@@ -577,13 +577,15 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | 공개 protocol contract test 없음(#256) | `FIXED` | v0.6.9: 합성 테스트를 공개 CI에서 실행(#271) | — |
 | native 2.1.288 위험 셋: 이어 쓰기와 replay, 첫 요청 대기, 분류기 압축(v0.6.7) | `FIXED` | v0.6.8에서 판정(3절 v0.6.8) | — |
 | 종료 상태 파일 교체 실패(v0.6.3) | `FIXED` | v0.6.6: 약 1초 재시도. 1초를 넘게 잡히는 경우는 아래 `OUT_OF_SCOPE` 행 | — |
-| `/context` 직후 종료한 계수가 실패로 집계(v0.6.4·v0.6.5) | `FIXED` | v0.6.7: `counts_cancelled`로 분리 | — |
-| 분류기가 판정을 받지 못할 때 native 동작(v0.6.3) | `FIXED` | 측정됨: native는 그 호출을 실행하지 않고 turn을 마친다(v0.6.4). 같은 바이트 재전송은 replay 차단(v0.6.5) | — |
+| `/context` 직후 종료한 계수가 종료 줄의 거부로 보임(v0.6.4·v0.6.5) | `FIXED` | v0.6.7: 종료 줄에서 `counts_cancelled`로 분리. 상태 JSON의 원래 집계(`totals.failures`의 `CANCELLED`, `refusedBy`)는 설계대로 그대로다 | — |
+| 빠른 종료 때 진행 중이던 생성 요청이 함께 취소되면 상태가 출력됨 | `OUT_OF_SCOPE` | v0.6.7 설계: 생성 취소는 숨기지 않는다. v0.6.8·v0.6.9 출하 검증의 빠른 종료 표본에서 시점에 따라 관측 | 사용자에게 불필요한 출력으로 보고될 때 |
+| 분류기가 판정을 받지 못할 때 native 동작을 재지 않음(v0.6.3) | `FIXED` | v0.6.4에서 측정: native는 그 호출을 실행하지 않고 turn을 마친다 | — |
+| 분류기 판정을 읽을 수 없을 때 native가 같은 바이트로 다시 보낸 요청은 replay 차단(v0.6.5) | `OUT_OF_SCOPE` | 설계: 이미 실행됐을 수 있는 요청의 자동 재실행을 막는다. 그 도구는 실행되지 않는다 | replay 정책을 바꿀 때 |
 | bypass 세션 도중 모드 전환 시 필수 확인 목록(v0.6.3) | `FIXED` | v0.6.4에서 Clauduct 권한 규칙을 없애 해당 없음 | — |
-| `/model` TUI를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.5부터 출하마다 실제 backend TUI 회귀에서 `/model` 목록·선택을 확인 | — |
+| `/model`·`/effort` TUI, 다른 세션으로 가는 `SendMessage` 승인, gateway 경유 `WebSearch`·native `WebFetch`를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.3 최종 후보와 출시 바이트에서 실제 backend로 통과. `/model`은 그 뒤 출하마다 TUI 회귀에서 확인. v0.6.4부터 `SendMessage` 승인은 native 규칙이 정한다 | — |
 | 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Luna low·medium. Sol 6.1 low는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
-| `/effort` TUI, gateway 경유 WebSearch·WebFetch, 다른 세션으로 가는 `SendMessage` 승인(v0.6.2) | `MEASURE` | WebSearch side query는 2.1.289 loopback에서 거부 0(#267). 실제 backend 재실행은 v0.3.5 이후 없음 | 해당 경로를 바꿀 때 |
-| background stop·attach 직후 이전 완료 보고 반복(v0.6.2, 4회 중 3회) | `MEASURE` | 원인 미확정 | 재현될 때 |
+| hosted web search의 `allowed_callers`·`response_inclusion`·`cache_control` 값을 검사하지 않음(v0.6.8) | `OUT_OF_SCOPE` | 키만 받고 쓰지 않는다. native 2.1.289는 보내지 않는다(`cache_control` 포함) | native가 보내기 시작할 때 |
+| background stop·attach 직후 첫 입력에서 이전 완료 보고 반복(v0.6.2) | `MEASURE` | #234(v0.6.3)에서 v0.6.1과 v0.6.2가 각각 4회 중 2회 재현돼 v0.6.2 회귀가 아니라고 판정. native가 대기 중이던 완료 알림을 입력 앞에 붙이고 backend가 새로 생성한 응답이다 | native가 알림 전달 방식을 바꾸거나 사용자 영향이 보고될 때 |
 | 원인 미확정 과거 간헐 실패 #206 #211 #212 #213 #215 #220 #229 | `MEASURE` | 고장 주입으로 안전한 처리를 확인했고 진단을 넣었다 | 재발할 때 진단으로 가른다 |
 | effort가 생략된 `/model` 결과가 기존 effort를 유지(v0.6.3) | `MEASURE` | 근거 실측 1건 | native가 문구를 바꿀 때 |
 | 세션 중 계정 전환(v0.6.4) | `MEASURE` | 기존 거부 계약 유지, 재측정 안 함 | 계정·인증 경로를 바꿀 때 |
@@ -592,43 +594,46 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | native가 teammate 모델을 고르는 경로(v0.6.9) | `MEASURE` | 단위 시험만. loopback에서 그 분기가 타지 않았다 | 그 분기가 실제로 관측될 때 |
 | 첫 출력 전 240초 뒤 keepalive 이후의 subagent 실패(v0.6.9) | `MEASURE` | 부분 text는 0. native가 명시적 오류로 끝내는지 실제 backend로 재지 않음 | 오래 걸리는 자식에서 실패가 관측될 때 |
 | backend 추론 요약 표시 | `MEASURE` | 표시 경로를 확인했고 구현은 #277 | #277 |
-| 빈 응답 제어의 origin 12종 | `MEASURE` | `composer`·`sdk`·`peer`와 `task-notification`만 측정 | native가 새 origin을 쓸 때 |
+| 빈 응답 제어의 나머지 origin 12종 | `MEASURE` | `composer`·`sdk`·`peer`와 따로 처리하는 `task-notification`만 측정했고, 그 밖의 12종은 단독 입력으로 모드를 정하지 않으며 미측정 | native가 그 origin을 실제로 쓸 때 |
+| forked Skill 자식에는 사용자 중지 차단 규칙(#91)이 적용되지 않음 | `MEASURE` | 사용자의 중지가 `stoppedByUser`로 남지 않는다(3절 forked Skill 행) | native가 fork 자식의 중지를 기록할 때 |
 | 부분 도구 인자 생성 중 취소의 자연 발생 조건 | `MEASURE` | 실제 TUI와 고정 backend로 확인. 구독 backend의 자연 발생 조건 전부는 아님 | 관련 실패가 관측될 때 |
 | Claude in Chrome | `MEASURE` | 확인하지 않음 | 사용 요청이 있을 때 |
 | 새 모델·native 버전·plugin·MCP 조합 | `MEASURE` | 라우팅된다는 것이 실제 동작 검증은 아니다. native 버전마다 무과금 재측정으로 hook 타입·인자·요청 형태를 비교한다(#268) | 재측정이 차이를 보고할 때 |
 | `gpt-5.5` 은퇴 뒤 계정 목록 | `DATE_BOUND` | 합성 목록으로만 확인 | 2026-10-14T19:00Z 이후(#274) |
 | `max_tokens`가 생성 한도가 아닌 사후 검사 | `CURRENT_BACKEND_UNMAPPABLE` | backend가 `max_output_tokens`를 HTTP 400으로 거부 | backend가 받기 시작할 때(재실측) |
-| `temperature`·`top_p` 거부 | `CURRENT_BACKEND_UNMAPPABLE` | GPT-5 계열 reasoning 모델은 effort `none`일 때만 받는다. native 2.1.289는 보내지 않는다 | native가 보내거나 backend가 받을 때 |
+| `temperature`·`top_p` 거부 | `CURRENT_BACKEND_UNMAPPABLE` | S48 실측에서 4개 모델 모두 HTTP 400. Clauduct는 effort를 low~max로 보낸다. native 2.1.289는 이 필드를 보내지 않는다 | native가 보내거나 backend가 받을 때(재실측) |
 | `stop_sequences`가 로컬 절단이라 비용·지연이 줄지 않음 | `CURRENT_BACKEND_UNMAPPABLE` | backend 생성은 계속된다 | backend가 정지 문자열을 받을 때 |
 | `tool_result.is_error`가 backend에 전달되지 않음 | `CURRENT_BACKEND_UNMAPPABLE` | `function_call_output`에 실패 필드가 없다 | backend에 그 필드가 생길 때 |
 | `metadata` 미전송, `thinking.budget_tokens` 무시 | `CURRENT_BACKEND_UNMAPPABLE` | 대응 필드가 없다. 추론량은 model·effort가 정한다 | backend에 대응 필드가 생길 때 |
 | `cache_control` breakpoint 무시 | `CURRENT_BACKEND_UNMAPPABLE` | backend 캐시는 세션 단위 `prompt_cache_key`로 동작 | backend가 breakpoint를 받을 때 |
-| 응답의 refusal·annotation 이벤트에서 요청 실패, citation 미전달 | `CURRENT_BACKEND_UNMAPPABLE` | 측정한 경로에서 관측되지 않음 | 실제 세션에서 관측될 때 |
-| `cache_write_tokens`를 `cache_creation_input_tokens`로 연결하지 않음 | `CURRENT_BACKEND_UNMAPPABLE` | backend 값의 의미 미확인 | 0이 아닌 값이 관측될 때 |
+| 응답의 refusal·annotation 이벤트에서 요청 실패, 완료 메시지 안 citation 미전달 | `MEASURE` | backend는 이 이벤트를 보낼 수 있지만 Clauduct가 연결하지 않았다. 측정한 경로에서 관측되지 않음 | 실제 세션에서 관측될 때 연결을 더한다 |
+| `cache_write_tokens`를 `cache_creation_input_tokens`로 연결하지 않음 | `MEASURE` | backend 값의 의미 미확인 | 0이 아닌 값이 관측될 때 |
 | `pause_turn` | `CURRENT_BACKEND_UNMAPPABLE` | backend 경로에 대응 종료 사유가 없다 | backend가 서버 도구 반복 중단을 알릴 때 |
 | 도구 결과 안 이미지·PDF의 warmup 계수 | `CURRENT_BACKEND_UNMAPPABLE` | 계수와 실제 usage 불일치(S45)로 그 계수만 미지원. 일반 생성은 무관 | backend 계수가 usage와 맞을 때 |
 | 클라이언트 `/usage`·`/cost`의 플랜 사용량 | `NATIVE_CLIENT_LIMIT` | native가 custom base URL에는 계정 엔드포인트를 묻지 않는다. `clauduct --usage`로 대신한다 | native가 묻기 시작할 때 |
 | 클라이언트 `/cost`의 금액 | `NATIVE_CLIENT_LIMIT` | native 가격표에 `gpt-*`가 없다. 토큰 수는 실제 값이다 | native가 가격을 받을 수 있을 때 |
-| `/model`에서 Enter가 기본값을 저장 | `NATIVE_CLIENT_LIMIT` | native 동작. 이번 세션에만 쓰려면 `s` | — |
+| `/model`에서 Enter가 기본값을 저장 | `NATIVE_CLIENT_LIMIT` | native 동작. 이번 세션에만 쓰려면 `s` | native가 동작을 바꿀 때 |
 | native 첫 본문이 완료 후 보임 | `NATIVE_CLIENT_LIMIT` | hook 없는 native에서도 재현. 제품이 표시부를 고치지 않는다 | native가 바뀔 때 |
 | `/resume` 뒤 teammate 미복원, teammate split pane, `-p`의 teammate | `NATIVE_CLIENT_LIMIT` | native 제한(Windows split pane 미지원, `-p`는 teammate를 만들지 않음) | native가 바뀔 때 |
-| 내장 mod "You should know" | `NATIVE_CLIENT_LIMIT` | native가 first-party·telemetry 켜짐 세션에만 제공 | — |
+| 내장 mod "You should know" | `NATIVE_CLIENT_LIMIT` | native가 first-party·telemetry 켜짐 세션에만 제공 | native가 제공 조건을 바꿀 때 |
 | 권한 우회 CLI 옵션 2개 | `OUT_OF_SCOPE` | 제품 정책상 거부 | 정책을 바꿀 때 |
 | `--desktop` | `OUT_OF_SCOPE` | 별도 앱의 backend·세션 수명 미지원. `DESKTOP_UNSUPPORTED` | Desktop 지원을 설계할 때 |
 | `--bare` | `OUT_OF_SCOPE` | context·세션 profile을 검증할 수 없어 `SESSION_PROFILE_UNVERIFIED`(#223, v0.6.2 출하 때 재확인) | 검증할 수단이 생길 때 |
 | Agent ID 없는 직접 입력 forked Skill | `OUT_OF_SCOPE` | 출처를 증명할 수 없어 `NATIVE_REQUEST_ORIGIN_UNVERIFIED` | native가 식별자를 보낼 때 |
 | mod의 `$.tool.call`로 Agent·SendMessage·Workflow·Skill 직접 호출 | `OUT_OF_SCOPE` | `NATIVE_DIRECT_DELEGATION_UNSUPPORTED` | 출처를 증명할 수단이 생길 때 |
 | Workflow의 직접 `maxTurns`, plugin·bundled named resolver 전체, remote·자식 Workflow·근거 없는 재개 | `OUT_OF_SCOPE` | 3절 표대로 거부하거나 제한 | native 규칙이 바뀔 때 |
-| PPTX·DOCX·XLSX 직접 API 입력 | `OUT_OF_SCOPE` | native 로컬 도구로 읽고 편집한다(v0.6.0) | — |
-| 처음 쓰는 계정이 오프라인이고 저장 목록도 없으면 시작 불가 | `OUT_OF_SCOPE` | backend 없이는 어차피 요청할 수 없다 | — |
+| PPTX·DOCX·XLSX 직접 API 입력 | `OUT_OF_SCOPE` | native 로컬 도구로 읽고 편집한다(v0.6.0) | 직접 입력이 필요한 사용 사례가 생길 때 |
+| 임의 Workflow JavaScript 전체 | `OUT_OF_SCOPE` | native VM이 받는 `pipeline`·중첩 `parallel` 콜백의 `agent()` 형태만 검증(3절) | native Workflow 규칙이 바뀔 때 |
+| 처음 쓰는 계정이 오프라인이고 저장 목록도 없으면 시작 불가 | `OUT_OF_SCOPE` | 모델 목록 없이는 선택을 검증할 수 없다. 이 상태에서는 backend 요청도 할 수 없다 | 오프라인으로 설정만 점검할 필요가 생길 때 |
 | 숨긴 모델의 전체 ID 직접 지정은 실행됨 | `OUT_OF_SCOPE` | v0.6.5 설계: 선택지는 권고 | 강제하기로 정할 때 |
 | 종료 상태 파일을 1초 넘게 잡으면 최종 기록이 stderr에만 남음 | `OUT_OF_SCOPE` | 재시도 상한(v0.6.6). 기존 파일은 온전하다 | 실제로 관측될 때 |
-| v0.6.4 이전 버전은 객체형 `classifier_model`을 읽지 못함 | `OUT_OF_SCOPE` | 되돌릴 때 백업으로 복원 | — |
+| v0.6.4 이전 버전은 객체형 `classifier_model`을 읽지 못함 | `OUT_OF_SCOPE` | 되돌릴 때 백업으로 복원 | 되돌리기 지원 범위를 바꿀 때 |
 | native가 effort를 명시한 보조 요청·high·max 세션의 압축은 그 effort로 실행 | `OUT_OF_SCOPE` | v0.6.4 설계(압축 시간 medium 12.2초, max 26.1초 실측) | 비용 문제가 관측될 때 |
+| doctor가 측정 기준보다 새 클라이언트에 `re-measure due`를 표시(v0.6.2) | `OUT_OF_SCOPE` | 설계 안내이며 세션은 그대로 실행된다. v0.6.9 기준은 Claude Code 2.1.289 | native가 새 버전을 낼 때마다 재측정한다 |
 | 미지 SSE 이벤트에서 요청 실패 | `OUT_OF_SCOPE` | 설계(fail-closed). 이름은 계정에 남긴다 | 새 이벤트가 관측될 때 처리를 더한다 |
-| Anthropic 서버 기능(claude.ai 로그인, Remote Control, `/schedule`, cloud 세션, `/ultrareview`, Artifact, advisor, 서버 분류기, telemetry) | `OUT_OF_SCOPE` | 3절 v0.6.7 표 | — |
-| loopback을 검사·중계하는 보안 필터(AdGuard 등) | `OUT_OF_SCOPE` | 필터 기능을 끄고 같은 probe로 전후 비교(2절) | — |
-| 비Windows | `OUT_OF_SCOPE` | 이식이 아니라 새 설계 | — |
+| Anthropic 서버 기능(claude.ai 로그인, Remote Control, `/schedule`, cloud 세션, `/ultrareview`, Artifact, advisor 도구와 서버 의존 베타 7종, 서버 분류기, telemetry) | `OUT_OF_SCOPE` | 3절 v0.6.7 표와 미지원 표 | backend 쪽에 대응 서비스가 생길 때 |
+| loopback을 검사·중계하는 보안 필터(AdGuard 등) | `OUT_OF_SCOPE` | 필터 기능을 끄고 같은 probe로 전후 비교(2절) | 특정 필터 제품의 호환 문제가 보고될 때 |
+| 비Windows | `OUT_OF_SCOPE` | 이식이 아니라 새 설계 | 다른 OS 지원을 설계할 때 |
 
 ### 파일 대상 code-review 인수 — v0.6.0
 

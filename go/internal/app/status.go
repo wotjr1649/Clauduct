@@ -409,10 +409,15 @@ func unmeasuredField(account Status) string {
 	if codex := account.Gateway.Codex; codex != nil && codex.Version != codex.Reference {
 		names = append(names, "codex/"+codex.Version)
 	}
-	if len(names) == 0 {
-		return ""
+	field := ""
+	if len(names) > 0 {
+		field = " unmeasured=" + strings.Join(names, ",")
 	}
-	return " unmeasured=" + strings.Join(names, ",")
+	// #297: tools native offered that the re-measured native did not.
+	if tools := account.Gateway.Client.UnmeasuredTools; len(tools) > 0 {
+		field += " unmeasured_tools=" + strings.Join(tools, ",")
+	}
+	return field
 }
 
 // replacedField says claude.exe was replaced while this session ran. The running

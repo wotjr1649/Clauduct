@@ -143,6 +143,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// header of a request that never became one is not counted as a feature the session
 	// asked for.
 	g.betas.observe(r.Header.Get("Anthropic-Beta"))
+	g.tools.observe(request.Tools, body)
 
 	entry := recordOf(w)
 	entry.checked("input")

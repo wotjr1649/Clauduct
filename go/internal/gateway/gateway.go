@@ -95,6 +95,7 @@ type Gateway struct {
 	betas        *betaLedger
 	limits       *limitLedger
 	events       *eventLedger
+	tools        *toolSurface
 	delegations  *delegations
 	counts       countCache
 	contexts     *contextGuard
@@ -194,6 +195,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		betas:        newBetaLedger(),
 		limits:       newLimitLedger(),
 		events:       newEventLedger(),
+		tools:        newToolSurface(referenceTools),
 		nativeEvents: nativeEventState{confirmationGate: make(chan struct{}, 1)},
 	}
 	rand.Read(g.cacheSalt[:])

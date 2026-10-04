@@ -242,6 +242,9 @@ type Request struct {
 	// ThinkingDisabled is a request that turned thinking off, so its max_tokens bounds the
 	// answer alone.
 	ThinkingDisabled bool
+
+	// ThinkingDisplay is thinking.display as sent, empty when absent.
+	ThinkingDisplay string
 }
 
 // Bounds on stop_sequences. Every sequence is searched for in the text as it streams, and
@@ -843,7 +846,8 @@ func decodeThinking(fields map[string]json.RawMessage, request *Request) error {
 			return refuse(CodeThinkingBudget, "budget_tokens")
 		}
 	}
-	// display is read here and nowhere else: this bridge shows no thinking either way.
+	// display never produces a thinking block. summarized asks the backend for its reasoning
+	// summary, which the session plugin shows on screen only (#277).
 	if value, present := wire.Of(thinking, "display"); present == wire.Present {
 		var display string
 		if json.Unmarshal(value, &display) != nil {
@@ -852,6 +856,7 @@ func decodeThinking(fields map[string]json.RawMessage, request *Request) error {
 		if !thinkingDisplays[display] {
 			return refuseUnknown(CodeThinkingDisplay, display)
 		}
+		request.ThinkingDisplay = display
 	}
 	return nil
 }

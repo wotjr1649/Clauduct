@@ -108,8 +108,9 @@ func TestAChainOfThoughtReachesTheTranscript(t *testing.T) {
 	if saved.ID != "rs_1" || saved.Encrypted != "ENCRYPTEDPAYLOAD" {
 		t.Fatalf("the record changed on the way through: %+v", saved)
 	}
-	if len(saved.Summary) != 1 || saved.Summary[0].Text != "considered two paths" {
-		t.Fatalf("the summary did not survive: %+v", saved.Summary)
+	// The summary is for the screen only (#277): the record keeps none of it.
+	if len(saved.Summary) != 0 {
+		t.Fatalf("the summary was kept for the next turn: %+v", saved.Summary)
 	}
 }
 
@@ -214,8 +215,11 @@ func TestWhatIsWrittenCanBeReadBackByTheOtherHalf(t *testing.T) {
 		t.Fatalf("the next turn could not carry back what this one wrote: %v", err)
 	}
 	encoded, _ := json.Marshal(built)
+	if strings.Contains(string(encoded), "considered two paths") {
+		t.Fatalf("the summary went back to the model: %s", encoded)
+	}
 	for _, want := range []string{`"id":"rs_round"`, `"encrypted_content":"PAYLOAD"`,
-		`"text":"considered two paths"`} {
+		`"summary":[]`} {
 		if !strings.Contains(string(encoded), want) {
 			t.Fatalf("the round trip lost %s: %s", want, encoded)
 		}

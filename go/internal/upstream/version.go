@@ -30,6 +30,11 @@ var ReferenceClientVersion = measured.codex
 // ReferenceClaudeVersion is the Claude Code version last re-measured, from the same file.
 var ReferenceClaudeVersion = measured.claude
 
+// ReferenceTools are the tool names native offered a Clauduct session when it was last
+// re-measured, sorted (#297). The surface gate writes them with the versions; a session
+// reports a name outside them rather than refusing it. Empty when none were recorded.
+var ReferenceTools = measured.tools
+
 //go:embed measured-clients.json
 var measuredDocument []byte
 
@@ -43,15 +48,21 @@ var measured = func() measuredClients {
 	return m
 }()
 
-type measuredClients struct{ claude, codex string }
+type measuredClients struct {
+	claude, codex string
+	tools         []string
+}
+
+var toolName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
 var errMeasured = errors.New("invalid measured clients")
 
 // parseMeasured reads the re-measure's own versions.json shape, so --accept writes one file.
 func parseMeasured(document []byte) (m measuredClients, err error) {
 	var doc struct {
-		Claude string `json:"claude"`
-		Codex  string `json:"codex"`
+		Claude string   `json:"claude"`
+		Codex  string   `json:"codex"`
+		Tools  []string `json:"tools"`
 	}
 	if json.Unmarshal(document, &doc) != nil {
 		return m, errMeasured
@@ -61,7 +72,12 @@ func parseMeasured(document []byte) (m measuredClients, err error) {
 	if !okClaude || !okCodex || !measuredVersion.MatchString(claude) || !measuredVersion.MatchString(codex) {
 		return m, errMeasured
 	}
-	m.claude, m.codex = claude, codex
+	for i, name := range doc.Tools {
+		if !toolName.MatchString(name) || i > 0 && doc.Tools[i-1] >= name {
+			return m, errMeasured
+		}
+	}
+	m.claude, m.codex, m.tools = claude, codex, doc.Tools
 	return m, nil
 }
 

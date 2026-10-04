@@ -906,6 +906,9 @@ type ClientReport struct {
 	// of Verified. A later successful request does not erase earlier failures.
 	RequestClassRequired bool  `json:"requestClassRequired"`
 	RequestClassMissing  int64 `json:"requestClassMissing"`
+	// UnmeasuredTools are tool names native offered this session that the re-measured native
+	// did not, MCP tools aside (#297). A report, never a refusal.
+	UnmeasuredTools []string `json:"unmeasuredTools,omitempty"`
 }
 
 // CodexReport is the Codex CLI version resolved for this session's requests and how it compares
@@ -1060,6 +1063,7 @@ func (g *Gateway) Snapshot() Diagnostics {
 			VerifiedMeaning:      "version_match_only",
 			RequestClassRequired: g.contexts != nil,
 			RequestClassMissing:  refusedBy["CONTEXT_REQUEST_CLASS_UNVERIFIED"],
+			UnmeasuredTools:      g.tools.report(),
 		},
 		Codex:               codex,
 		Features:            g.ring.featureReport(),

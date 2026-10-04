@@ -1168,6 +1168,18 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 | 첫 요청이 서버 출력 한도를 최대 1.5초 기다림 | 관측되지 않았다. `/v1/models` 뒤 첫 대화 요청까지 새 설정 796~1424ms, 기존 설정 669~960ms(4회)였다. native는 `/v1/models/{id}`를 부르지 않았다 |
 | 분류기 transcript 압축 | 위 #255로 동작한다 |
 
+### v0.6.9 — native 2.1.289 기준, Agent teams, TUI subagent 부분 보고 제거
+
+**2026-10-04 출하**(태그 `v0.6.9` → `b780a15`, [기록](RELEASE-v0.6.9.md)). 릴리스 바이트로 실제 backend 회귀 18개를 통과했다.
+측정 기준은 Claude Code 2.1.289다.
+
+| 항목 | 동작 |
+|---|---|
+| Agent teams(#269) | 1절 "Agent teams" 행. v0.6.8 이하는 2.1.289의 teammate 요청을 모두 `INVALID_SESSION_ID`로 거부했다 |
+| subagent text 보류(#264) | 2절 "SDK·`--print`의 부분 본문" 행. TUI에서도 subagent의 text를 완료까지 보류한다 |
+| hosted web search `max_uses`(#272) | 2절 hosted web search 행. 1 이상의 정수만 받는다 |
+| 알려진 제한(#273) | 3절 "알려진 제한 원장 (v0.6.9)" |
+
 ## 4. 제3자 구현이라는 사실
 
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 **공식 지원하지 않는다고 명시**한다.

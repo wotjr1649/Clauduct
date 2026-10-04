@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -28,9 +29,18 @@ type nativeExecutionKey struct {
 	body                        [32]byte
 }
 
+// spentBy is the request that first claimed a key: its record's sequence number and when it
+// claimed, so a refused replay can name what it repeated (#288). Never the body or the
+// fingerprint. The claim time, not the record's start: keys are claimed in the order bodies
+// finish arriving, so a request that started later can own the key.
+type spentBy struct {
+	seq     int64
+	claimed time.Time
+}
+
 type nativeExecutions struct {
 	sync.Mutex
-	seen map[nativeExecutionKey]struct{}
+	seen map[nativeExecutionKey]spentBy
 	// Only identities with live replay keys remain in memory. Before forgetting an
 	// identity, its newest turn is saved in the existing per-launcher event directory.
 	current map[[2]string]claimedTurn
@@ -281,16 +291,27 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 			}
 		}
 	}
-	if _, exists := ledger.seen[key]; exists {
+	if prior, exists := ledger.seen[key]; exists {
+		entry.replayOf(prior, "same_key")
 		return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
 	}
 	if key.class == "conversation" {
 		// ponytail: scan at most 16,384 existing keys, without another cache.
 		// Index by turn if measured admission cost requires it.
-		for spent := range ledger.seen {
+		// Every match is read so the record names the earliest one, not whichever map order
+		// happened to reach first.
+		var first spentBy
+		match := ""
+		for spent, prior := range ledger.seen {
 			if spent.class == key.class && spent.session == key.session && spent.agent == key.agent && spent.turn == key.turn && (spent.step == key.step || spent.body == key.body) {
-				return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
+				if match == "" || prior.seq < first.seq {
+					first, match = prior, map[bool]string{true: "same_step", false: "same_body"}[spent.step == key.step]
+				}
 			}
+		}
+		if match != "" {
+			entry.replayOf(first, match)
+			return nil, "NATIVE_REQUEST_REPLAY_BLOCKED"
 		}
 	}
 	if len(ledger.seen)-retiring >= maxNativeExecutions {
@@ -307,9 +328,9 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 		ledger.claim(agent, key.turn, max(sequence, last.sequence))
 	}
 	if ledger.seen == nil {
-		ledger.seen = make(map[nativeExecutionKey]struct{})
+		ledger.seen = make(map[nativeExecutionKey]spentBy)
 	}
-	ledger.seen[key] = struct{}{}
+	ledger.seen[key] = entry.spentBy()
 	return &nativeExecution{owner: g, key: key}, ""
 }
 

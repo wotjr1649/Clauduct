@@ -122,6 +122,10 @@ type RequestRecord struct {
 	LastObservedMs        int64            `json:"lastObservedMs"`
 	BackendProgress       BackendProgress  `json:"backendProgress"`
 	ParentReadiness       *ParentReadiness `json:"parentReadiness,omitempty"`
+	// ReplayOf is the request a NATIVE_REQUEST_REPLAY_BLOCKED refusal repeated: its seq, how
+	// long before this refusal it claimed the key, and which rule matched (same_key,
+	// same_step, same_body; the earliest claim when several match). Diagnostic only (#288).
+	ReplayOf *ReplayOf `json:"replayOf,omitempty"`
 
 	UpstreamEnd *UpstreamEndRecord `json:"upstreamEnd,omitempty"`
 
@@ -243,6 +247,32 @@ func (r *record) selectionRefused(err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.data.SelectionRefusal = reason
+}
+
+// ReplayOf names the earlier request a refused replay matched.
+type ReplayOf struct {
+	Seq   int64  `json:"seq"`
+	AgeMs int64  `json:"ageMs"`
+	Match string `json:"match"`
+}
+
+// spentBy is what the replay ledger keeps of the request claiming a key.
+func (r *record) spentBy() spentBy {
+	if r == nil {
+		return spentBy{}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return spentBy{seq: r.data.Seq, claimed: time.Now()}
+}
+
+func (r *record) replayOf(prior spentBy, match string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.ReplayOf = &ReplayOf{Seq: prior.seq, AgeMs: time.Since(prior.claimed).Milliseconds(), Match: match}
 }
 
 func (r *record) requestClass(class string) {

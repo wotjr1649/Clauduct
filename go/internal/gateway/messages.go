@@ -716,8 +716,13 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			}
 		}
 		// Native SDK/print returns the last assistant block. Keep opaque reasoning
-		// before the final text there, as for Workflow; TUI text still streams.
-		if record.RequestClass == "workflow" || record.ParentReadiness != nil && record.ParentReadiness.ControlMode == "sdk" {
+		// before the final text there, as for Workflow. A subagent's text is held on
+		// every surface: native continues a child cut mid-answer from the text it
+		// already has, and the continued report can stop where the cut was (#264).
+		// Held, a failure ends the child as an error its parent sees. Root TUI text
+		// still streams.
+		child := len(scopes) > 0 && scopes[0].parent != ""
+		if record.RequestClass == "workflow" || child || record.ParentReadiness != nil && record.ParentReadiness.ControlMode == "sdk" {
 			translator.Builder().DeferTextUntilComplete()
 		}
 	}

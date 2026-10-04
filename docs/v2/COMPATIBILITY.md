@@ -512,7 +512,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | native context 표시 | v0.6.2 준비본은 전역 window·유효 비율을 native에 전달한다. native 로컬 추정과 여유 공간은 gateway의 예방 목표와 다를 수 있다. 적용값·출처·실제 계수는 status로 확인하며, 과거 공통 500K 표시는 v0.6.1 이전 정책이다 |
 | 정확 계수 성능 | 연결 재사용·동일 입력 캐시·동시 요청 공유 구현. 새 입력의 backend 왕복 지연은 남으며 전후 성능 무저하를 입증하지 않음 |
 | native 첫 본문 표시 | Clauduct와 hook 없는 native 2.1.278에서도 SSE 진행 중 counter만 증가하고 완료 후 본문이 보이는 현상을 재현. 정확한 screen paint 시각/내부 원인은 미확정. 제품이 native 표시부를 패치하지 않음 |
-| SDK·`--print`의 부분 본문 | 마지막 assistant block에서 최종 답변을 잃지 않도록 gateway가 reasoning 뒤에 답변을 완료 시 전달한다. `--include-partial-messages`로도 이 보류를 해제하지 않는다. backend 텍스트 진행과 사용자 첫 본문 시각이 다르므로 완료 전 취소는 active 요청·진행 상태를 기준으로 검증한다. 원래 90초 marker 미관측 기록과 새 비교는 [#207](https://github.com/wotjr1649/Clauduct/issues/207)에서 구분한다 |
+| SDK·`--print`의 부분 본문 | 마지막 assistant block에서 최종 답변을 잃지 않도록 gateway가 reasoning 뒤에 답변을 완료 시 전달한다. `--include-partial-messages`로도 이 보류를 해제하지 않는다. v0.6.9부터 subagent의 text는 TUI에서도 완료까지 보류한다(#264). native는 응답 도중 끊긴 subagent를 이미 받은 text에서 이어 쓰게 하는데, 실제 backend에서 이어진 보고가 끊긴 지점에서 멈춘 경우가 7회 중 2회 있었다. 보류하면 backend 실패는 부분 보고 대신 자식의 명시적 API 오류가 된다(실제 backend 유효 7회 모두). 그래서 TUI의 자식 화면은 답이 끝날 때 한 번에 보인다. root TUI는 계속 스트리밍한다. backend 텍스트 진행과 사용자 첫 본문 시각이 다르므로 완료 전 취소는 active 요청·진행 상태를 기준으로 검증한다. 원래 90초 marker 미관측 기록과 새 비교는 [#207](https://github.com/wotjr1649/Clauduct/issues/207)에서 구분한다 |
 | `/context` 최초 조회 | 정확 계수의 첫 backend 왕복 지연이 남음. 조회 자체가 모델 본문 생성을 뜻하지 않고, 검증된 조회 기록은 실제 다음 모델 입력에서 제외. native 로컬 이력/추정 표시와 실제 usage는 다름 |
 | 런타임 의존 | `claude.exe` + `codex.exe`(버전이 요청 헤더) + `~/.codex/auth.json` |
 
@@ -1081,7 +1081,7 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 
 | 변경점 | 판정 |
 |---|---|
-| 응답 도중 끊긴 뒤 이어 쓰기(비대화형·subagent) | `-p`와 그 subagent는 text를 완료까지 보류한다. 그래서 끊겨도 부분 응답이 전달되지 않고, 커밋 전 오류로 끝나 이어 쓰기가 생기지 않는다. 부분 text가 전달되는 TUI subagent에서는 native가 이어서 요청하고, replay 보호는 이를 새 step으로 받아 통과시킨다. 이어 쓰기 요청은 전달된 부분을 정확히 담았다(loopback 3회, 실제 backend 8회). 숫자 1~40을 쓰는 과제를 다섯 번째 숫자 뒤에서 끊은 실제 backend 7회 중 5회는 모델이 보고에 1~40 전체를 다시 냈다. 2회는 이미 전달된 1~5까지만 냈다. **이어 쓰기 뒤 부모가 받는 보고가 끊긴 지점에서 멈출 수 있다.** 처리 방침은 #264에서 정한다 |
+| 응답 도중 끊긴 뒤 이어 쓰기(비대화형·subagent) | `-p`와 그 subagent는 text를 완료까지 보류한다. 그래서 끊겨도 부분 응답이 전달되지 않고, 커밋 전 오류로 끝나 이어 쓰기가 생기지 않는다. 부분 text가 전달되는 TUI subagent에서는 native가 이어서 요청하고, replay 보호는 이를 새 step으로 받아 통과시킨다. 이어 쓰기 요청은 전달된 부분을 정확히 담았다(loopback 3회, 실제 backend 8회). 숫자 1~40을 쓰는 과제를 다섯 번째 숫자 뒤에서 끊은 실제 backend 7회 중 5회는 모델이 보고에 1~40 전체를 다시 냈다. 2회는 이미 전달된 1~5까지만 냈다. **이어 쓰기 뒤 부모가 받는 보고가 끊긴 지점에서 멈출 수 있다.** 처리 방침은 #264에서 정했다: v0.6.9부터 TUI subagent의 text도 완료까지 보류해 이 경로를 없앴다(2절 "SDK·`--print`의 부분 본문" 행) |
 | thinking만 있는 응답의 재시도 | Clauduct는 thinking만 있는 정상 응답을 내보내지 않는다. backend가 reasoning만 내면 `EMPTY_REPLY`로 실패한다(검증된 부모 대기 경로는 대기로 처리한다). 커밋 전에는 502와 `X-Should-Retry: false`, 커밋 뒤에는 오류 이벤트다. native는 main·subagent의 두 경로 모두에서 다시 요청하지 않았다. 실제 backend에서 reasoning만 낸 자식 응답에서도 같았다. 사용자에게는 `API Error: EMPTY_REPLY`가 보인다 |
 | 첫 요청이 서버 출력 한도를 최대 1.5초 기다림 | 관측되지 않았다. `/v1/models` 뒤 첫 대화 요청까지 새 설정 796~1424ms, 기존 설정 669~960ms(4회)였다. native는 `/v1/models/{id}`를 부르지 않았다 |
 | 분류기 transcript 압축 | 위 #255로 동작한다 |

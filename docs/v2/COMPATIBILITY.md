@@ -348,7 +348,7 @@ v0.6.0에서는 native가 `SubagentHandback` 보고를 받아들인 뒤에도 �
 | **구조화 출력**(`output_config.format` → `text.format`) | 2026-09-17. 그 전까지는 검증만 하고 버렸다 |
 | MCP 서버(`--mcp-config`) | G5. 서버가 뜨고 툴이 제공되고 **상속 환경이 살아남는다** |
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` | G5, 동작으로 측정 |
-| `--bare` 대화 실행 | 현재 지원 범위에서 제외한다. 과거 G5는 context·세션 profile을 검증하지 않은 연결 검사였다. native 2.1.284에서 제품 정책을 켠 두 표본(도구 목록 있음·없음)은 `SESSION_PROFILE_UNVERIFIED`로 거부됐다. `--bare`를 제외한 표준 native 모드를 사용한다. 과거 연결 PASS와 현재 거부를 구분하며 [#223](https://github.com/wotjr1649/Clauduct/issues/223)에서 최종 검증을 추적한다 |
+| `--bare` 대화 실행 | 현재 지원 범위에서 제외한다. 과거 G5는 context·세션 profile을 검증하지 않은 연결 검사였다. native 2.1.284에서 제품 정책을 켠 두 표본(도구 목록 있음·없음)은 `SESSION_PROFILE_UNVERIFIED`로 거부됐다. `--bare`를 제외한 표준 native 모드를 사용한다. 과거 연결 PASS와 현재 거부를 구분하며 [#223](https://github.com/wotjr1649/Clauduct/issues/223)에서 v0.6.2 출하 때 최종 바이너리로 거부를 다시 확인하고 닫았다 |
 | 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
 | 위임 메뉴·모델 표 | v0.6.4부터 메뉴는 세션의 계정 목록에서 만든다: 기존 모델은 `clauduct-<key>`, 새 모델은 `clauduct-<전체 ID>`, 이름이 겹치면 항목 없이 Agent model 인자로 사용. 은퇴 표는 계정이 그 이름을 나열하지 않을 때만 `MODEL_RETIRED` 이유가 되며, effort는 계정 지원 수준 ∩ low–max만 보낸다(아래 v0.6.4 절). 이하 v0.6.3까지의 기록: v0.3.4부터 `clauduct-<model>` 메뉴 + `clauduct-inherit`. v0.6.3부터 5종(`clauduct-sol`은 gpt-6.1-sol, `clauduct-sol6`은 gpt-6-sol). effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6.1-sol(v0.6.3, 이전 gpt-6-sol), sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
 | 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. TUI에서 ROOT → A → B → C의 완료 결과 전달 확인. native 2.1.283 SDK 기본 모드에서는 손자 결과가 루트에 도착해도 중간 Agent가 자동으로 다시 답하지 않을 수 있다. 루트가 실제 손자 결과를 확인한 뒤 중간 Agent ID로 `SendMessage`를 보내 재개한다. UUID 재시작 뒤의 이 절차도 실제 backend로 확인했다. SDK 기본값은 바꾸지 않으며, 명시적인 `CLAUDE_CODE_FORK_SUBAGENT=1`은 native의 문맥 상속·백그라운드 실행 의미를 따른다 |
@@ -553,6 +553,82 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | Workflow `agent()`의 직접 `maxTurns` 옵션 | 거부. native 역할 정의의 maxTurns를 사용. `tools` 정확 이름 목록은 자체 강제하며 모든 native 옵션 조합의 적용을 검증했다는 뜻은 아님 |
 | PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
+
+### 알려진 제한 원장 (v0.6.9)
+
+v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알려진 제한과 미검증 항목을 한곳에 모았다(#273).
+각 항목의 근거는 해당 릴리스 기록과 이 문서의 절에 있다. "구조상 불가"로 영구 종결하지 않고, 다시 볼 조건을 항목마다 둔다.
+
+| 분류 | 뜻 |
+|---|---|
+| `FIXED` | 고쳤거나 원인이 사라졌다 |
+| `MEASURE` | 동작은 정해져 있으나 실측이 없거나 부족하다 |
+| `DATE_BOUND` | 정해진 날짜 이후에만 확인할 수 있다 |
+| `CURRENT_BACKEND_UNMAPPABLE` | 지금 backend에 정확히 대응하는 기능이 없다 |
+| `NATIVE_CLIENT_LIMIT` | native Claude Code 쪽 동작이나 제한이다 |
+| `OUT_OF_SCOPE` | 제품 설계·정책상 지원하지 않거나 이 제품의 범위 밖이다 |
+
+| 항목 | 분류 | 현재 상태 | 다시 볼 조건 |
+|---|---|---|---|
+| TUI subagent가 응답 도중 실패한 뒤 이어진 보고가 끊긴 지점에서 멈춤(v0.6.8) | `FIXED` | v0.6.9: subagent text를 완료까지 보류(#264). 실제 backend 유효 7회 모두 부분 보고 0, 명시적 실패 | — |
+| native 2.1.289 Agent teams의 teammate 요청을 모두 거부(v0.6.8 이하) | `FIXED` | v0.6.9: teammate 지원(#269). 위 1절 행 | native가 teammate의 요청 식별을 바꿀 때 |
+| hosted web search `max_uses` 값을 검사하지 않음(v0.6.8) | `FIXED` | v0.6.9: 1 이상의 정수만(#272) | — |
+| 재측정이 hook 타입 일부만 비교(2.1.289 teammate 변경을 놓침) | `FIXED` | v0.6.9: 세션 plugin이 쓰는 모든 이벤트의 타입과 참조 타입 비교(#268) | — |
+| 공개 protocol contract test 없음(#256) | `FIXED` | v0.6.9: 합성 테스트를 공개 CI에서 실행(#271) | — |
+| native 2.1.288 위험 셋: 이어 쓰기와 replay, 첫 요청 대기, 분류기 압축(v0.6.7) | `FIXED` | v0.6.8에서 판정(3절 v0.6.8) | — |
+| 종료 상태 파일 교체 실패(v0.6.3) | `FIXED` | v0.6.6: 약 1초 재시도. 1초를 넘게 잡히는 경우는 아래 `OUT_OF_SCOPE` 행 | — |
+| `/context` 직후 종료한 계수가 실패로 집계(v0.6.4·v0.6.5) | `FIXED` | v0.6.7: `counts_cancelled`로 분리 | — |
+| 분류기가 판정을 받지 못할 때 native 동작(v0.6.3) | `FIXED` | 측정됨: native는 그 호출을 실행하지 않고 turn을 마친다(v0.6.4). 같은 바이트 재전송은 replay 차단(v0.6.5) | — |
+| bypass 세션 도중 모드 전환 시 필수 확인 목록(v0.6.3) | `FIXED` | v0.6.4에서 Clauduct 권한 규칙을 없애 해당 없음 | — |
+| `/model` TUI를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.5부터 출하마다 실제 backend TUI 회귀에서 `/model` 목록·선택을 확인 | — |
+| 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Luna low·medium. Sol 6.1 low는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
+| `/effort` TUI, gateway 경유 WebSearch·WebFetch, 다른 세션으로 가는 `SendMessage` 승인(v0.6.2) | `MEASURE` | WebSearch side query는 2.1.289 loopback에서 거부 0(#267). 실제 backend 재실행은 v0.3.5 이후 없음 | 해당 경로를 바꿀 때 |
+| background stop·attach 직후 이전 완료 보고 반복(v0.6.2, 4회 중 3회) | `MEASURE` | 원인 미확정 | 재현될 때 |
+| 원인 미확정 과거 간헐 실패 #206 #211 #212 #213 #215 #220 #229 | `MEASURE` | 고장 주입으로 안전한 처리를 확인했고 진단을 넣었다 | 재발할 때 진단으로 가른다 |
+| effort가 생략된 `/model` 결과가 기존 effort를 유지(v0.6.3) | `MEASURE` | 근거 실측 1건 | native가 문구를 바꿀 때 |
+| 세션 중 계정 전환(v0.6.4) | `MEASURE` | 기존 거부 계약 유지, 재측정 안 함 | 계정·인증 경로를 바꿀 때 |
+| native 명령행 한도 초과(v0.6.5) | `MEASURE` | 합성 목록으로만 확인. 실제 계정 목록으로는 도달하지 않음 | 계정 모델 수가 늘어 실제로 가까워질 때 |
+| 사용자 mod를 원격으로 끄는 플래그(v0.6.7) | `MEASURE` | telemetry를 끈 Clauduct 세션에서의 동작 미확인 | 원격 플래그가 관측될 때 |
+| native가 teammate 모델을 고르는 경로(v0.6.9) | `MEASURE` | 단위 시험만. loopback에서 그 분기가 타지 않았다 | 그 분기가 실제로 관측될 때 |
+| 첫 출력 전 240초 뒤 keepalive 이후의 subagent 실패(v0.6.9) | `MEASURE` | 부분 text는 0. native가 명시적 오류로 끝내는지 실제 backend로 재지 않음 | 오래 걸리는 자식에서 실패가 관측될 때 |
+| backend 추론 요약 표시 | `MEASURE` | 표시 경로를 확인했고 구현은 #277 | #277 |
+| 빈 응답 제어의 origin 12종 | `MEASURE` | `composer`·`sdk`·`peer`와 `task-notification`만 측정 | native가 새 origin을 쓸 때 |
+| 부분 도구 인자 생성 중 취소의 자연 발생 조건 | `MEASURE` | 실제 TUI와 고정 backend로 확인. 구독 backend의 자연 발생 조건 전부는 아님 | 관련 실패가 관측될 때 |
+| Claude in Chrome | `MEASURE` | 확인하지 않음 | 사용 요청이 있을 때 |
+| 새 모델·native 버전·plugin·MCP 조합 | `MEASURE` | 라우팅된다는 것이 실제 동작 검증은 아니다. native 버전마다 무과금 재측정으로 hook 타입·인자·요청 형태를 비교한다(#268) | 재측정이 차이를 보고할 때 |
+| `gpt-5.5` 은퇴 뒤 계정 목록 | `DATE_BOUND` | 합성 목록으로만 확인 | 2026-10-14T19:00Z 이후(#274) |
+| `max_tokens`가 생성 한도가 아닌 사후 검사 | `CURRENT_BACKEND_UNMAPPABLE` | backend가 `max_output_tokens`를 HTTP 400으로 거부 | backend가 받기 시작할 때(재실측) |
+| `temperature`·`top_p` 거부 | `CURRENT_BACKEND_UNMAPPABLE` | GPT-5 계열 reasoning 모델은 effort `none`일 때만 받는다. native 2.1.289는 보내지 않는다 | native가 보내거나 backend가 받을 때 |
+| `stop_sequences`가 로컬 절단이라 비용·지연이 줄지 않음 | `CURRENT_BACKEND_UNMAPPABLE` | backend 생성은 계속된다 | backend가 정지 문자열을 받을 때 |
+| `tool_result.is_error`가 backend에 전달되지 않음 | `CURRENT_BACKEND_UNMAPPABLE` | `function_call_output`에 실패 필드가 없다 | backend에 그 필드가 생길 때 |
+| `metadata` 미전송, `thinking.budget_tokens` 무시 | `CURRENT_BACKEND_UNMAPPABLE` | 대응 필드가 없다. 추론량은 model·effort가 정한다 | backend에 대응 필드가 생길 때 |
+| `cache_control` breakpoint 무시 | `CURRENT_BACKEND_UNMAPPABLE` | backend 캐시는 세션 단위 `prompt_cache_key`로 동작 | backend가 breakpoint를 받을 때 |
+| 응답의 refusal·annotation 이벤트에서 요청 실패, citation 미전달 | `CURRENT_BACKEND_UNMAPPABLE` | 측정한 경로에서 관측되지 않음 | 실제 세션에서 관측될 때 |
+| `cache_write_tokens`를 `cache_creation_input_tokens`로 연결하지 않음 | `CURRENT_BACKEND_UNMAPPABLE` | backend 값의 의미 미확인 | 0이 아닌 값이 관측될 때 |
+| `pause_turn` | `CURRENT_BACKEND_UNMAPPABLE` | backend 경로에 대응 종료 사유가 없다 | backend가 서버 도구 반복 중단을 알릴 때 |
+| 도구 결과 안 이미지·PDF의 warmup 계수 | `CURRENT_BACKEND_UNMAPPABLE` | 계수와 실제 usage 불일치(S45)로 그 계수만 미지원. 일반 생성은 무관 | backend 계수가 usage와 맞을 때 |
+| 클라이언트 `/usage`·`/cost`의 플랜 사용량 | `NATIVE_CLIENT_LIMIT` | native가 custom base URL에는 계정 엔드포인트를 묻지 않는다. `clauduct --usage`로 대신한다 | native가 묻기 시작할 때 |
+| 클라이언트 `/cost`의 금액 | `NATIVE_CLIENT_LIMIT` | native 가격표에 `gpt-*`가 없다. 토큰 수는 실제 값이다 | native가 가격을 받을 수 있을 때 |
+| `/model`에서 Enter가 기본값을 저장 | `NATIVE_CLIENT_LIMIT` | native 동작. 이번 세션에만 쓰려면 `s` | — |
+| native 첫 본문이 완료 후 보임 | `NATIVE_CLIENT_LIMIT` | hook 없는 native에서도 재현. 제품이 표시부를 고치지 않는다 | native가 바뀔 때 |
+| `/resume` 뒤 teammate 미복원, teammate split pane, `-p`의 teammate | `NATIVE_CLIENT_LIMIT` | native 제한(Windows split pane 미지원, `-p`는 teammate를 만들지 않음) | native가 바뀔 때 |
+| 내장 mod "You should know" | `NATIVE_CLIENT_LIMIT` | native가 first-party·telemetry 켜짐 세션에만 제공 | — |
+| 권한 우회 CLI 옵션 2개 | `OUT_OF_SCOPE` | 제품 정책상 거부 | 정책을 바꿀 때 |
+| `--desktop` | `OUT_OF_SCOPE` | 별도 앱의 backend·세션 수명 미지원. `DESKTOP_UNSUPPORTED` | Desktop 지원을 설계할 때 |
+| `--bare` | `OUT_OF_SCOPE` | context·세션 profile을 검증할 수 없어 `SESSION_PROFILE_UNVERIFIED`(#223, v0.6.2 출하 때 재확인) | 검증할 수단이 생길 때 |
+| Agent ID 없는 직접 입력 forked Skill | `OUT_OF_SCOPE` | 출처를 증명할 수 없어 `NATIVE_REQUEST_ORIGIN_UNVERIFIED` | native가 식별자를 보낼 때 |
+| mod의 `$.tool.call`로 Agent·SendMessage·Workflow·Skill 직접 호출 | `OUT_OF_SCOPE` | `NATIVE_DIRECT_DELEGATION_UNSUPPORTED` | 출처를 증명할 수단이 생길 때 |
+| Workflow의 직접 `maxTurns`, plugin·bundled named resolver 전체, remote·자식 Workflow·근거 없는 재개 | `OUT_OF_SCOPE` | 3절 표대로 거부하거나 제한 | native 규칙이 바뀔 때 |
+| PPTX·DOCX·XLSX 직접 API 입력 | `OUT_OF_SCOPE` | native 로컬 도구로 읽고 편집한다(v0.6.0) | — |
+| 처음 쓰는 계정이 오프라인이고 저장 목록도 없으면 시작 불가 | `OUT_OF_SCOPE` | backend 없이는 어차피 요청할 수 없다 | — |
+| 숨긴 모델의 전체 ID 직접 지정은 실행됨 | `OUT_OF_SCOPE` | v0.6.5 설계: 선택지는 권고 | 강제하기로 정할 때 |
+| 종료 상태 파일을 1초 넘게 잡으면 최종 기록이 stderr에만 남음 | `OUT_OF_SCOPE` | 재시도 상한(v0.6.6). 기존 파일은 온전하다 | 실제로 관측될 때 |
+| v0.6.4 이전 버전은 객체형 `classifier_model`을 읽지 못함 | `OUT_OF_SCOPE` | 되돌릴 때 백업으로 복원 | — |
+| native가 effort를 명시한 보조 요청·high·max 세션의 압축은 그 effort로 실행 | `OUT_OF_SCOPE` | v0.6.4 설계(압축 시간 medium 12.2초, max 26.1초 실측) | 비용 문제가 관측될 때 |
+| 미지 SSE 이벤트에서 요청 실패 | `OUT_OF_SCOPE` | 설계(fail-closed). 이름은 계정에 남긴다 | 새 이벤트가 관측될 때 처리를 더한다 |
+| Anthropic 서버 기능(claude.ai 로그인, Remote Control, `/schedule`, cloud 세션, `/ultrareview`, Artifact, advisor, 서버 분류기, telemetry) | `OUT_OF_SCOPE` | 3절 v0.6.7 표 | — |
+| loopback을 검사·중계하는 보안 필터(AdGuard 등) | `OUT_OF_SCOPE` | 필터 기능을 끄고 같은 probe로 전후 비교(2절) | — |
+| 비Windows | `OUT_OF_SCOPE` | 이식이 아니라 새 설계 | — |
 
 ### 파일 대상 code-review 인수 — v0.6.0
 
@@ -1082,7 +1158,7 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 
 | 변경점 | 판정 |
 |---|---|
-| 응답 도중 끊긴 뒤 이어 쓰기(비대화형·subagent) | `-p`와 그 subagent는 text를 완료까지 보류한다. 그래서 끊겨도 부분 응답이 전달되지 않고, 커밋 전 오류로 끝나 이어 쓰기가 생기지 않는다. 부분 text가 전달되는 TUI subagent에서는 native가 이어서 요청하고, replay 보호는 이를 새 step으로 받아 통과시킨다. 이어 쓰기 요청은 전달된 부분을 정확히 담았다(loopback 3회, 실제 backend 8회). 숫자 1~40을 쓰는 과제를 다섯 번째 숫자 뒤에서 끊은 실제 backend 7회 중 5회는 모델이 보고에 1~40 전체를 다시 냈다. 2회는 이미 전달된 1~5까지만 냈다. **이어 쓰기 뒤 부모가 받는 보고가 끊긴 지점에서 멈출 수 있다.** 처리 방침은 #264에서 정했다: v0.6.9부터 TUI subagent의 text도 완료까지 보류해 이 경로를 없앴다(2절 "SDK·`--print`의 부분 본문" 행) |
+| 응답 도중 끊긴 뒤 이어 쓰기(비대화형·subagent) | `-p`와 그 subagent는 text를 완료까지 보류한다. 그래서 끊겨도 부분 응답이 전달되지 않고, 커밋 전 오류로 끝나 이어 쓰기가 생기지 않는다. 부분 text가 전달되는 TUI subagent에서는 native가 이어서 요청하고, replay 보호는 이를 새 step으로 받아 통과시킨다. 이어 쓰기 요청은 전달된 부분을 정확히 담았다(loopback 3회, 실제 backend에서 끊김이 성립한 표본 8회 모두. 첫 delta에서 끊은 1회 포함). 그중 숫자 1~40을 쓰는 과제를 다섯 번째 숫자 뒤에서 끊은 7회 중 5회는 모델이 보고에 1~40 전체를 다시 냈다. 2회는 이미 전달된 1~5까지만 냈다. **이어 쓰기 뒤 부모가 받는 보고가 끊긴 지점에서 멈출 수 있다.** 처리 방침은 #264에서 정했다: v0.6.9부터 TUI subagent의 text도 완료까지 보류해 이 경로를 없앴다(2절 "SDK·`--print`의 부분 본문" 행) |
 | thinking만 있는 응답의 재시도 | Clauduct는 thinking만 있는 정상 응답을 내보내지 않는다. backend가 reasoning만 내면 `EMPTY_REPLY`로 실패한다(검증된 부모 대기 경로는 대기로 처리한다). 커밋 전에는 502와 `X-Should-Retry: false`, 커밋 뒤에는 오류 이벤트다. native는 main·subagent의 두 경로 모두에서 다시 요청하지 않았다. 실제 backend에서 reasoning만 낸 자식 응답에서도 같았다. 사용자에게는 `API Error: EMPTY_REPLY`가 보인다 |
 | 첫 요청이 서버 출력 한도를 최대 1.5초 기다림 | 관측되지 않았다. `/v1/models` 뒤 첫 대화 요청까지 새 설정 796~1424ms, 기존 설정 669~960ms(4회)였다. native는 `/v1/models/{id}`를 부르지 않았다 |
 | 분류기 transcript 압축 | 위 #255로 동작한다 |

@@ -1,8 +1,10 @@
 name: go
 
-# Compile-only since v0.3.3. Tests, the race run, evidence checks and their inputs are not in
-# the public tree; the maintainer runs them locally before a push. A `go test` here would
-# report "no test files" and read as a pass, so this workflow does not run one.
+# Since v0.6.9 (#271) the public tree carries the synthetic protocol contract tests
+# (internal/protocol, internal/stream, internal/wire), and this workflow runs them. Every
+# other test, the race run, evidence checks and their inputs stay off the public tree; the
+# maintainer runs them locally before a push. Only packages that have public tests are named,
+# because `go test` on one without would report "no test files" and read as a pass.
 
 on:
   push:
@@ -79,6 +81,10 @@ jobs:
 
       - name: build
         run: go build ./...
+
+      # The public contract tests (#271). Named packages only: each has public tests.
+      - name: contract tests
+        run: go test -count=1 ./internal/protocol/anthropic ./internal/protocol/bridge ./internal/protocol/codex ./internal/stream ./internal/wire
 
   httpguard-portable:
     # This compiles the shared filter only; the full launcher remains Windows-only.

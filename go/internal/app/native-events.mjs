@@ -154,6 +154,23 @@ async function observe($, progress, p, signal) {
     })();
     await p.write;
 }
+// The backend's reasoning summary for this step, written by the gateway (#277). $.ui.log
+// draws a line on screen that is not sent to the model. Best effort: a summary that cannot
+// be read or matched to this step is not shown, and never fails the step.
+async function showSummary($, name, scope, shown) {
+  try {
+    const file=root+'/summary-'+name+'.json';
+    if (!await $.fs.exists(file)) return shown;
+    const s=JSON.parse(await $.fs.read(file));
+    if (s.session!==scope.session || s.agent!==scope.agent || s.turn!==scope.turn || s.index!==scope.index || !Array.isArray(s.parts) || s.parts.length>8) return shown;
+    for (; shown<s.parts.length; shown++) {
+      const text=s.parts[shown];
+      if (typeof text!=='string' || [...text].length>240 || /[\u0000-\u001f\u007f-\u009f]/.test(text)) return shown;
+      $.ui.log('∴ '+text);
+    }
+  } catch {}
+  return shown;
+}
 export const register = on => {
   const state = {mode:'unclassified',peerMode:'unclassified',permissionReady:false,requests:new Set(),permissionLeases:new Set()};
   const turns = new Map();
@@ -308,9 +325,12 @@ export const register = on => {
       beginConfirmation($,state,active);beginConfirmation($,state,asking);
       if (state.mode!=='native_tui' && state.mode!=='sdk') return yield* next(e);
       const stream=next(e);
-      let decision;
+      let decision,summaries=0,summaryChecked=false;
       const prefix=[];
       for await (const chunk of stream) {
+        // The gateway writes the summary before the answer's first chunk; read it then,
+        // and once more at the end for any part that finished later.
+        if (!summaryChecked && ['text','thinking','tool'].includes(chunk.kind)) {summaryChecked=true;summaries=await showSummary($,name,active,summaries);}
         // Retry/envelope engine chunks may precede the HTTP response. Resolve
         // the control only at its first semantic chunk, after gateway admission.
         if (eligible && !decision) {
@@ -336,6 +356,7 @@ export const register = on => {
         else if (!decision.hold) yield chunk;
       }
       if (!decision) yield* prefix;
+      await showSummary($,name,active,summaries);
       const result=await stream.result;
       if (!decision?.hold) return result;
       if (result.toolUses.length || result.answer!=='' || result.stopReason!=='end_turn') throw new Error('CLAUDUCT_PARENT_WAIT_CONTROL_INVALID');

@@ -281,9 +281,14 @@ func (p InputPart) MarshalJSON() ([]byte, error) {
 // keeps the request free of anything derived from the user's paths or prompt.
 const DocumentFilename = "document.pdf"
 
-// ReasoningParam carries the effort the caller asked for.
+// ReasoningParam carries the effort the caller asked for, and the summary only when the caller
+// asked to see one.
 type ReasoningParam struct {
 	Effort string `json:"effort"`
+	// Summary is set by the gateway, and only where the summary will be shown (#277).
+	// Measured on the real backend (2026-10-04, 10 calls per arm): input and cache reads did
+	// not move, but the first text came 0.9-2.7 s later.
+	Summary string `json:"summary,omitempty"`
 }
 
 // ResolveRoute selects the same model and effort for generation and hosted search.
@@ -595,6 +600,7 @@ type Translator struct {
 	// expectModel and expectEffort the route it was sent on (#91).
 	returnedModel, returnedEffort string
 	expectModel, expectEffort     string
+	summaries                     []string
 }
 
 // Returned is the model and effort the completed response names, empty when it names none.
@@ -643,6 +649,10 @@ func itemLabel(kind string) string {
 func (t *Translator) ObservedUsage() codex.Usage { return t.usage }
 
 func (t *Translator) Answer() string { return t.builder.Answer() }
+
+// Summaries is the reasoning summary text the backend has finished so far, unfiltered. It is
+// for display only and never reaches the client's messages (#277).
+func (t *Translator) Summaries() []string { return t.summaries }
 
 // heldItem is one output item and whether the backend has finished writing it.
 type heldItem struct {
@@ -961,6 +971,13 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 	}
 	held.item = final
 	held.done = true
+	// Collected as the item closes, which is before the answer's text streams, so a display
+	// can show it first. The record that goes back next turn leaves it out (recordThought).
+	if final.Type == codex.ItemReasoning {
+		for _, part := range final.Summary {
+			t.summaries = append(t.summaries, part.Text)
+		}
+	}
 	return nil
 }
 
@@ -1043,10 +1060,10 @@ func (t *Translator) recordThought(item codex.OutputItem) error {
 		return nil
 	}
 
-	summary := make([]ReasoningPart, 0, len(item.Summary))
-	for _, part := range item.Summary {
-		summary = append(summary, ReasoningPart{Type: part.Type, Text: part.Text})
-	}
+	// The summary is not kept. It is shown on screen and must not go back to the model next
+	// turn (#277); measured, the backend accepts the item with it emptied and counts the same
+	// input either way. Before #277 nothing asked for one, so it was always empty here.
+	summary := []ReasoningPart{}
 	saved, err := json.Marshal(struct {
 		Type      string          `json:"type"`
 		ID        string          `json:"id"`

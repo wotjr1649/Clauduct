@@ -51,6 +51,8 @@ type delegationScope struct {
 	nativeTurn      *nativeTurnReceipt
 	parentWait      *parentStep
 	teammate        *teammateLink
+	// summary is the native step a reasoning summary is shown in, nil for none (#277).
+	summary *parentStep
 }
 type delegationKey struct{ session, call string }
 type delegatedChoice struct {

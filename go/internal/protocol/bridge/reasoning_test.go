@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
+	"github.com/wotjr1649/Clauduct/go/internal/stream"
 )
 
 // recorded builds the envelope this bridge writes into a transcript.
@@ -191,5 +193,56 @@ func TestAReasoningEntryNeverWritesANullSummary(t *testing.T) {
 	}
 	if !strings.Contains(string(encoded), `"summary":[]`) {
 		t.Fatalf("a nil summary was written as %s", encoded)
+	}
+}
+
+// #277: no display value asks the backend for a summary by itself. The gateway asks only
+// where the summary will be shown; every other request keeps its bytes.
+func TestNoDisplayAsksForASummaryByItself(t *testing.T) {
+	for _, display := range []string{"summarized", "updates", "omitted", "highlights", ""} {
+		thinking := `"thinking":{"type":"adaptive"},`
+		if display != "" {
+			thinking = `"thinking":{"type":"adaptive","display":"` + display + `"},`
+		}
+		request, err := anthropic.DecodeRequest([]byte(`{"model":"gpt-6-astra","max_tokens":64,"stream":true,` + thinking + `"messages":[{"role":"user","content":"x"}]}`))
+		if err != nil {
+			t.Fatalf("%s: decode: %v", display, err)
+		}
+		built, err := BuildRequest(request)
+		if err != nil {
+			t.Fatalf("%s: build: %v", display, err)
+		}
+		encoded, _ := json.Marshal(built)
+		if strings.Contains(string(encoded), `"summary"`) || request.ThinkingDisplay != display {
+			t.Fatalf("display %q (decoded %q): %s", display, request.ThinkingDisplay, encoded)
+		}
+		built.Effort.Summary = "auto"
+		if encoded, _ := json.Marshal(built); !strings.Contains(string(encoded), `"reasoning":{"effort":"medium","summary":"auto"}`) {
+			t.Fatalf("a summary set by the caller is not sent: %s", encoded)
+		}
+	}
+}
+
+// The summary is collected when its reasoning item closes, before the answer's text, and
+// nothing about it reaches the client's frames except the record that already did.
+func TestASummaryIsCollectedBeforeTheAnswerAndNotSent(t *testing.T) {
+	tr := NewTranslatorFor(decodeRequest(t, minimalRequest), "gpt-6-astra")
+	item := reasoningItem("rs_1", "PUBLIC_ENVELOPE", `[{"type":"summary_text","text":"PUBLIC_TITLE_ONE"},{"type":"summary_text","text":"PUBLIC_TITLE_TWO"}]`)
+	var frames []anthropic.Frame
+	for i, ev := range []stream.Event{itemAdded(0, openingOf(item)), itemDone(0, item), textDelta("answer"), textDone("answer"), event(codex.Completed, completedOK)} {
+		out, err := tr.Accept(ev)
+		if err != nil {
+			t.Fatal(err)
+		}
+		frames = append(frames, out...)
+		if i == 1 && len(tr.Summaries()) != 2 {
+			t.Fatalf("summaries after the reasoning item closed = %q, want both parts", tr.Summaries())
+		}
+	}
+	if got := tr.Summaries(); len(got) != 2 || got[0] != "PUBLIC_TITLE_ONE" || got[1] != "PUBLIC_TITLE_TWO" {
+		t.Fatalf("Summaries = %q", got)
+	}
+	if strings.Contains(joined(frames), "PUBLIC_TITLE") {
+		t.Fatalf("the summary reached the client's frames in the clear:\n%s", joined(frames))
 	}
 }

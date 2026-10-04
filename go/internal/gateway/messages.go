@@ -260,6 +260,17 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")
 		return
 	}
+	// The summary asks for output, not input, so the count cache keys on the body without it:
+	// a count_tokens request for the same input never carries one (#277).
+	sent := encoded
+	summary := g.summaryStep(r, request, scope.session)
+	if summary != nil {
+		backendRequest.Effort.Summary = "auto"
+		if sent, err = json.Marshal(backendRequest); err != nil {
+			g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")
+			return
+		}
+	}
 
 	// Requested and effective are handed over separately and deliberately. The user is
 	// billed for the second one, and a record that only keeps it cannot answer whether the
@@ -280,7 +291,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response, err := g.transport.Execute(entry.traceUpstream(ctx), upstream.Call{
-		Body:      encoded,
+		Body:      sent,
 		Requested: request.Model,
 		Model:     backendRequest.Model,
 		Effort:    backendRequest.Effort.Effort,
@@ -308,7 +319,8 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	entry.at(stageDelivery)
 	resultsDelivered = g.relay(ctx, w, control, response, request, backendRequest.Model,
-		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, nativeTurn: entry.nativeTurn, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source}})
+		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, nativeTurn: entry.nativeTurn, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source},
+			summary: summary})
 	g.rememberUsage(encoded, entry)
 	if resultsDelivered {
 		g.auxiliaryAnswered(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
@@ -908,6 +920,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}()
 	check := time.NewTicker(quietCheck)
 	defer check.Stop()
+	summarized := 0
 
 	for {
 		var read chunk
@@ -958,6 +971,12 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 				if err != nil {
 					fail(err)
 					return false
+				}
+				// Before this event's frames, so the plugin finds the summary by the time the
+				// answer's first chunk reaches it.
+				if parts := translator.Summaries(); len(parts) > summarized && len(scopes) > 0 && scopes[0].summary != nil {
+					g.writeSummary(scopes[0].summary, parts)
+					summarized = len(parts)
 				}
 				if translator.Builder().WaitingForChildren() {
 					if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {

@@ -434,6 +434,14 @@ func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error)
 	if present != wire.Present || json.Unmarshal(nameValue, &name) != nil || name == "" {
 		return nil, refuse(CodeToolFields, "name")
 	}
+	// max_uses caps the searches of one request. This bridge runs exactly one search per
+	// side query, so any cap of at least one already holds; a cap that is not a positive
+	// integer is malformed and refused rather than read as no cap (#272).
+	if value, present := wire.Of(fields, "max_uses"); present == wire.Present {
+		if number, err := exactInteger(value); err != nil || number <= 0 || number > maxSafeInteger {
+			return nil, refuse(CodeUnsupportedTools, "max_uses")
+		}
+	}
 	location, err := searchLocation(fields)
 	if err != nil {
 		return nil, err

@@ -14,10 +14,16 @@ import (
 // native did not (#297). Clauduct runs a native nobody measured (owner's decision), and
 // native adds and hides tools by model and environment; a name outside the measured set is
 // reported, never refused. MCP and plugin tools (mcp__*) are the user's own and not compared.
+//
+// A session can also be told the tools its mode should see (#300); those it never saw are
+// reported as missing once any tools were offered at all.
 type toolSurface struct {
 	mu        sync.Mutex
 	reference map[string]bool
 	added     map[string]bool
+	expected  map[string]bool
+	seen      map[string]bool
+	offered   bool
 }
 
 var toolSurfaceName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
@@ -26,7 +32,7 @@ var toolSurfaceName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 const toolSurfaceNames = 16
 
 func newToolSurface(reference []string) *toolSurface {
-	s := &toolSurface{reference: map[string]bool{}, added: map[string]bool{}}
+	s := &toolSurface{reference: map[string]bool{}, added: map[string]bool{}, seen: map[string]bool{}}
 	for _, name := range reference {
 		s.reference[name] = true
 	}
@@ -47,7 +53,11 @@ func (s *toolSurface) observe(tools []anthropic.Tool, body []byte) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.offered = s.offered || len(names) > 0
 	for _, name := range names {
+		if s.expected[name] {
+			s.seen[name] = true // bounded: only expected names are kept
+		}
 		if s.reference[name] || strings.HasPrefix(name, "mcp__") || !toolSurfaceName.MatchString(name) {
 			continue
 		}
@@ -56,6 +66,10 @@ func (s *toolSurface) observe(tools []anthropic.Tool, body []byte) {
 		}
 	}
 }
+
+// deferredNames bounds one body's deferred names. Far above native's own tools, so a long MCP
+// list cannot push a core tool past it and have it reported missing (#300).
+const deferredNames = 4096
 
 var (
 	deferredMarker = []byte("deferred tools are now available via ToolSearch")
@@ -69,7 +83,7 @@ var (
 // past and left to observe's filter.
 func deferredTools(body []byte) []string {
 	var names []string
-	for rest := body; len(names) < 256; {
+	for rest := body; len(names) < deferredNames; {
 		at := bytes.Index(rest, deferredMarker)
 		if at < 0 {
 			break
@@ -80,7 +94,7 @@ func deferredTools(body []byte) []string {
 			continue
 		}
 		list := rest[start+len(deferredStart):]
-		for len(names) < 256 && bytes.HasPrefix(list, escapedLine) {
+		for len(names) < deferredNames && bytes.HasPrefix(list, escapedLine) {
 			line := list[len(escapedLine):]
 			end := 0
 			for end < len(line) && end < 128 && nameByte(line[end]) {
@@ -104,6 +118,33 @@ func (s *toolSurface) report() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return sorted(s.added)
+}
+
+// expect sets the tools this session's mode should see; nil turns the comparison off.
+func (s *toolSurface) expect(names []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expected = map[string]bool{}
+	for _, name := range names {
+		s.expected[name] = true
+	}
+}
+
+// missing names the expected tools no request offered. A session that offered no tools at
+// all (it ended first, or sent only auxiliary requests) has nothing to compare.
+func (s *toolSurface) missing() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.offered {
+		return nil
+	}
+	gone := map[string]bool{}
+	for name := range s.expected {
+		if !s.seen[name] {
+			gone[name] = true
+		}
+	}
+	return sorted(gone)
 }
 
 var referenceTools = upstream.ReferenceTools

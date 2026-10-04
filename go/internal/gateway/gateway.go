@@ -302,6 +302,10 @@ func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 // endpoint other than this gateway. The launcher ends the session on it (#295).
 func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 
+// ExpectTools sets the tools this session's mode should be offered; a name no request
+// offered is reported as missing (#300). Nil, the default, compares nothing.
+func (g *Gateway) ExpectTools(names []string) { g.tools.expect(names) }
+
 // Unrouted reports the subagent requests this build had no route of its own for: one count
 // for a registration that never arrived, one for a role with no route, which runs on the
 // caller's route instead.

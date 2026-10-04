@@ -35,6 +35,11 @@ var ReferenceClaudeVersion = measured.claude
 // reports a name outside them rather than refusing it. Empty when none were recorded.
 var ReferenceTools = measured.tools
 
+// ReferenceCoreTools are, per mode ("print", "tui"), the tools native offered Clauduct's own
+// launch when it was last re-measured: what a session of that mode should see unless it was
+// narrowed (#300). Conditional tools are only in ReferenceTools.
+var ReferenceCoreTools = measured.core
+
 //go:embed measured-clients.json
 var measuredDocument []byte
 
@@ -51,6 +56,7 @@ var measured = func() measuredClients {
 type measuredClients struct {
 	claude, codex string
 	tools         []string
+	core          map[string][]string
 }
 
 var toolName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
@@ -60,25 +66,44 @@ var errMeasured = errors.New("invalid measured clients")
 // parseMeasured reads the re-measure's own versions.json shape, so --accept writes one file.
 func parseMeasured(document []byte) (m measuredClients, err error) {
 	var doc struct {
-		Claude string   `json:"claude"`
-		Codex  string   `json:"codex"`
-		Tools  []string `json:"tools"`
+		Claude string              `json:"claude"`
+		Codex  string              `json:"codex"`
+		Tools  []string            `json:"tools"`
+		Core   map[string][]string `json:"core"`
 	}
 	if json.Unmarshal(document, &doc) != nil {
 		return m, errMeasured
 	}
 	claude, okClaude := strings.CutSuffix(doc.Claude, " (Claude Code)")
 	codex, okCodex := strings.CutPrefix(doc.Codex, "codex-cli ")
-	if !okClaude || !okCodex || !measuredVersion.MatchString(claude) || !measuredVersion.MatchString(codex) {
+	if !okClaude || !okCodex || !measuredVersion.MatchString(claude) || !measuredVersion.MatchString(codex) || !sortedNames(doc.Tools) {
 		return m, errMeasured
 	}
-	for i, name := range doc.Tools {
-		if !toolName.MatchString(name) || i > 0 && doc.Tools[i-1] >= name {
+	known := map[string]bool{}
+	for _, name := range doc.Tools {
+		known[name] = true
+	}
+	for mode, names := range doc.Core {
+		if mode != "print" && mode != "tui" || len(names) == 0 || !sortedNames(names) {
 			return m, errMeasured
 		}
+		for _, name := range names {
+			if !known[name] {
+				return m, errMeasured // a core tool is a measured tool
+			}
+		}
 	}
-	m.claude, m.codex, m.tools = claude, codex, doc.Tools
+	m.claude, m.codex, m.tools, m.core = claude, codex, doc.Tools, doc.Core
 	return m, nil
+}
+
+func sortedNames(names []string) bool {
+	for i, name := range names {
+		if !toolName.MatchString(name) || i > 0 && names[i-1] >= name {
+			return false
+		}
+	}
+	return true
 }
 
 var codexVersionLine = regexp.MustCompile(`^codex-cli (\S+)$`)

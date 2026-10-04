@@ -170,6 +170,12 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 				return "", err
 			}
 			out[key] = merged
+		} else if key == "permissions" {
+			merged, err := mergePermissionSettings(value, user[key])
+			if err != nil {
+				return "", err
+			}
+			out[key] = merged
 		} else if specified, ok := user[key]; ok && !jsonEqual(specified, value) {
 			return "", errSettingsConflict
 		} else {
@@ -207,6 +213,31 @@ func mergeHookSettings(required, user json.RawMessage) (json.RawMessage, error) 
 		}
 		fields[event], _ = json.Marshal(append(extra, bindings...))
 	}
+	return json.Marshal(fields)
+}
+
+// mergePermissionSettings keeps the user's permissions and adds the boundary profile's deny
+// rules to theirs (#301); native joins deny rules across sources the same way.
+func mergePermissionSettings(required, user json.RawMessage) (json.RawMessage, error) {
+	if len(user) == 0 {
+		return required, nil
+	}
+	var ours struct {
+		Deny []string `json:"deny"`
+	}
+	fields, err := wire.Fields(user, nil)
+	if err != nil || json.Unmarshal(required, &ours) != nil {
+		return nil, errUserSettings
+	}
+	var deny []json.RawMessage
+	if raw, ok := fields["deny"]; ok && (json.Unmarshal(raw, &deny) != nil || deny == nil) {
+		return nil, errUserSettings
+	}
+	for _, rule := range ours.Deny {
+		encoded, _ := json.Marshal(rule)
+		deny = append(deny, encoded)
+	}
+	fields["deny"], _ = json.Marshal(deny)
 	return json.Marshal(fields)
 }
 

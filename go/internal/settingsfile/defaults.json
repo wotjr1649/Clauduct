@@ -26,5 +26,6 @@
   "classifier_model": {
     "model": "gpt-5.6-terra",
     "effort": "low"
-  }
+  },
+  "boundary_profile": "default"
 }

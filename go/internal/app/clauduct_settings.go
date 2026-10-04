@@ -92,6 +92,8 @@ const clauductSettingsBytes = 1 << 20
 
 var errClauductSettings = errors.New("CLAUDUCT_SETTINGS_INVALID")
 
+var errBoundarySettings = fmt.Errorf(`%w: boundary_profile must be "default" or "strict". Edit ~/.clauduct/settings.json`, errClauductSettings)
+
 // errClassifierSettings explains the one shape change v0.6.4 made to an existing key. The
 // file is never converted: the user edits it, and nothing runs on a guessed effort.
 var errClassifierSettings = fmt.Errorf(`%w: classifier_model must be an object with both model and effort, for example "classifier_model": {"model": "gpt-5.6-terra", "effort": "low"}; the v0.6.3 string form is no longer accepted. Edit ~/.clauduct/settings.json`, errClauductSettings)
@@ -114,6 +116,9 @@ type ClauductSettings struct {
 	ContextPercentSource    string
 	ClassifierModel         bridge.Pair
 	ClassifierModelSource   string
+	// BoundaryProfile is "default" or "strict": which Anthropic-hosted paths native keeps
+	// (#301, boundary_profile in settings.json).
+	BoundaryProfile string
 	// Deprecated names keys present in the file that this build ignores.
 	Deprecated []string
 }
@@ -156,7 +161,8 @@ func defaultClauductSettings() ClauductSettings {
 		Context: bridge.DefaultContextSettings(), ContextPolicy: bridge.DefaultContextPolicy(),
 		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
 		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
-		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "factory.classifier_model"}
+		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "factory.classifier_model",
+		BoundaryProfile: boundaryDefault}
 }
 
 func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string) (bridge.Pair, string, string, error) {
@@ -258,7 +264,7 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
-	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model"}, deprecatedSettings...))
+	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model", "boundary_profile"}, deprecatedSettings...))
 	if err != nil {
 		return bad()
 	}
@@ -313,6 +319,13 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		}
 		settings.ClassifierModelSource = "settings.classifier_model"
 		delete(fields, "classifier_model")
+	}
+	if value, present := fields["boundary_profile"]; present {
+		if string(value) == "null" || json.Unmarshal(value, &settings.BoundaryProfile) != nil ||
+			settings.BoundaryProfile != boundaryDefault && settings.BoundaryProfile != boundaryStrict {
+			return ClauductSettings{}, errBoundarySettings
+		}
+		delete(fields, "boundary_profile")
 	}
 	settings.ContextPolicy, err = settings.Context.Policy()
 	if err != nil {

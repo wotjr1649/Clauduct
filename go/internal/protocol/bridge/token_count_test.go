@@ -30,7 +30,7 @@ func TestNewRouteDoesNotInheritCountValidation(t *testing.T) {
 func TestLocalTextCounterMatchesRecordedBackendCounts(t *testing.T) {
 	// Expected values are backend response.completed usage, not tokenizer output: recorded
 	// with the fixed instructions, less the 12 tokens their removal took off every one of 16
-	// cells (#144), and re-read without them on luna (verification/v051-dev-20260926/g6).
+	// cells (#144), and re-read without them on luna (maintainer's evidence, 2026-09-26).
 	cases := []struct {
 		name, text, system string
 		want               int64

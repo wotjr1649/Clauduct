@@ -16,10 +16,16 @@
 /go/**/*_test.go
 # Except the public contract tests (v0.6.9, #271): synthetic, credential-free protocol tests
 # the public CI runs. A build-tagged evidence test among them stays private.
-!/go/internal/protocol/*/*_test.go
+!/go/internal/protocol/anthropic/*_test.go
+!/go/internal/protocol/bridge/*_test.go
+!/go/internal/protocol/codex/*_test.go
 !/go/internal/stream/*_test.go
 !/go/internal/wire/*_test.go
-/go/internal/protocol/*/*_evidence_test.go
+/go/internal/protocol/anthropic/*_evidence_test.go
+/go/internal/protocol/bridge/*_evidence_test.go
+/go/internal/protocol/codex/*_evidence_test.go
+/go/internal/stream/*_evidence_test.go
+/go/internal/wire/*_evidence_test.go
 /go/internal/app/testdata/
 /go/internal/upstream/testdata/
 /go/.verification/

@@ -11,7 +11,7 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go 1.27.1, **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
 | 측정된 클라이언트 | Claude Code **2.1.289**, Codex CLI **0.160.0**(`measured-clients.json`의 측정 기준). 2026-10-04 무과금 재측정(#267): 2.1.289 바이너리를 지정해 도움말은 같고, 세션 plugin이 쓰는 hook 타입에서 teammate 관련 차이(`isTeammate`, `teammateId`, `AgentTeammateRecord`)를 보고했으며, 설치본 native로 도는 fixture 시험이 통과했다. 같은 날 요청 형태 전수 수집(비대화형 11경로, TUI 4경로)이 2.1.288과 같았고, 실제 backend 회귀 18개가 통과했다. 이전 기준은 2.1.288(v0.6.8), 2.1.287·0.159.3(v0.6.3). Windows, Go 1.27.1, PowerShell 7.6.6. [v0.6.3 실행 결과](RELEASE-v0.6.3.md), Worktree·media·phase·Bundle C와 식별자별 NOT_RUN은 [v0.6.0 기록](RELEASE-v0.6.0.md)에서 구분한다 |
-| 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 공개 CI는 gofmt·vet·build와 PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
+| 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 예외는 v0.6.9부터 공개하는 합성 protocol contract test다(#271). 공개 CI는 그 테스트와 gofmt·vet·build, PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는
 [DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md),

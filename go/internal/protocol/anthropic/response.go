@@ -204,7 +204,8 @@ func (b *Builder) release(part *textPart, final bool) string {
 
 // DeferTextUntilComplete lets consumers that return only the last assistant block
 // receive reasoning before the answer. It uses the existing bounded text buffer.
-// Workflow results are returned only after completion; ordinary text still streams.
+// Workflow results and subagent text are returned only after completion; root text
+// outside SDK/print still streams.
 func (b *Builder) DeferTextUntilComplete() { b.deferText = true }
 
 // WaitForChildren requires a verified native wait step. Its control response carries no

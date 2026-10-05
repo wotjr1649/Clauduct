@@ -582,6 +582,7 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | native 2.1.288 위험 셋: 이어 쓰기와 replay, 첫 요청 대기, 분류기 압축(v0.6.7) | `FIXED` | v0.6.8에서 판정(3절 v0.6.8) | — |
 | 종료 상태 파일 교체 실패(v0.6.3) | `FIXED` | v0.6.6: 약 1초 재시도. 1초를 넘게 잡히는 경우는 아래 `OUT_OF_SCOPE` 행 | — |
 | `/context` 직후 종료한 계수가 종료 줄의 거부로 보임(v0.6.4·v0.6.5) | `FIXED` | v0.6.7: 종료 줄에서 `counts_cancelled`로 분리. 상태 JSON의 원래 집계(`totals.failures`의 `CANCELLED`, `refusedBy`)는 설계대로 그대로다 | — |
+| 세션을 끝낼 때 native가 쓰던 보조 생성(제목·요약·분류기)이 취소되면 상태 JSON 전체가 출력됨(v0.6.10 이하) | `FIXED` | v0.6.11(#310): native가 보낸 보조 생성(제목·요약·분류기 확인)을 클라이언트가 응답 전에 버리면 계수처럼 따로 센다(`gateway.requests.cancelledAuxiliary`, 종료 줄 `auxiliary_cancelled`). 사용자가 요청한 검색(WebSearch)과 gateway가 스스로 취소한 요청은 제외하고, 응답이 시작된 뒤의 취소와 main·subagent 생성의 취소는 그대로 `cancelled_requests`로 알린다. 실제 backend 회귀 `tui-quick`이 이 경우로 간헐 실패했다 | — |
 | 빠른 종료 때 진행 중이던 생성 요청이 함께 취소되면 상태가 출력됨 | `OUT_OF_SCOPE` | v0.6.7 설계: 생성 취소는 숨기지 않는다. v0.6.8·v0.6.9 출하 검증의 빠른 종료 표본에서 시점에 따라 관측 | 사용자에게 불필요한 출력으로 보고될 때 |
 | 분류기가 판정을 받지 못할 때 native 동작을 재지 않음(v0.6.3) | `FIXED` | v0.6.4에서 측정: native는 그 호출을 실행하지 않고 turn을 마친다 | — |
 | 분류기 판정을 읽을 수 없을 때 native가 같은 바이트로 다시 보낸 요청은 replay 차단(v0.6.5) | `FIXED` | v0.6.10: 분류기 요청은 replay 키를 만들지 않는다(#289). 재요청은 backend에 가고, 판정을 끝내 받지 못한 호출은 전처럼 실행되지 않는다 | — |

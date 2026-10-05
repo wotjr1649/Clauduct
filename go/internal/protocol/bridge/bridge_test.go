@@ -1029,24 +1029,36 @@ func TestTheReturnedRouteIsHeldToTheSentOne(t *testing.T) {
 	}
 }
 
-// #309: the backend stopping at the cap the request carried is the same refusal as running
-// past it, whatever the event; with thinking off no cap was sent, so an incomplete reply keeps
-// the backend's own category, as does any other incomplete reason.
+// #309: the backend stopping at the cap the request carried, having spent it, is the same
+// refusal as running past it. A stop short of the cap, another incomplete reason, and a request
+// that carried no cap (thinking off, or under the backend's minimum) keep the backend's own
+// category. The usage the incomplete reply reports is kept either way.
 func TestTheBackendStoppingAtTheCapIsTheOutputLimit(t *testing.T) {
-	incomplete := func(reason string) stream.Event {
-		return event(codex.Incomplete, `{"type":"response.incomplete","response":{"id":"r","status":"incomplete","incomplete_details":{"reason":"`+reason+`"}}}`)
+	incomplete := func(reason string, output int) stream.Event {
+		return event(codex.Incomplete, fmt.Sprintf(`{"type":"response.incomplete","response":{"id":"r","status":"incomplete","incomplete_details":{"reason":%q},"usage":{"input_tokens":9,"output_tokens":%d,"total_tokens":%d}}}`, reason, output, 9+output))
 	}
+	const capped = `{"model":"sonnet","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`
 	for _, c := range []struct {
 		body, reason string
+		output       int
 		limit        bool
 	}{
-		{`{"model":"sonnet","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`, "max_output_tokens", true},
-		{`{"model":"sonnet","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`, "content_filter", false},
-		{`{"model":"sonnet","max_tokens":64,"thinking":{"type":"disabled"},"stream":true,"messages":[{"role":"user","content":"x"}]}`, "max_output_tokens", false},
+		{capped, "max_output_tokens", 16, true},
+		{capped, "max_output_tokens", 10, false},
+		{capped, "content_filter", 16, false},
+		{`{"model":"sonnet","max_tokens":64,"thinking":{"type":"disabled"},"stream":true,"messages":[{"role":"user","content":"x"}]}`, "max_output_tokens", 64, false},
+		{`{"model":"sonnet","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"x"}]}`, "max_output_tokens", 8, false},
 	} {
-		_, err := NewTranslatorFor(decodeRequest(t, c.body), "").Accept(incomplete(c.reason))
+		translator := NewTranslatorFor(decodeRequest(t, c.body), "")
+		_, err := translator.Accept(incomplete(c.reason, c.output))
 		if errors.Is(err, ErrOutputLimitExceeded) != c.limit || err == nil {
-			t.Fatalf("%s %s: err = %v", c.body, c.reason, err)
+			t.Fatalf("%s %s %d: err = %v", c.body, c.reason, c.output, err)
 		}
+		if usage := translator.ObservedUsage(); !usage.OutputKnown || usage.OutputTokens != int64(c.output) {
+			t.Fatalf("%s: the incomplete reply's usage was not kept: %+v", c.body, usage)
+		}
+	}
+	if OutputCap(decodeRequest(t, `{"model":"sonnet","max_tokens":8,"stream":true,"messages":[{"role":"user","content":"x"}]}`)) != 0 {
+		t.Fatal("a cap under the backend's minimum was sent")
 	}
 }

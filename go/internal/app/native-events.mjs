@@ -286,7 +286,7 @@ export const register = on => {
           turnSequence=Math.max(turnSequence,number);
         }
         if (turnSequence>=Number.MAX_SAFE_INTEGER) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
-        const file=directory+'/'+(++turnSequence)+'-'+turn;
+        const sequence=++turnSequence,file=directory+'/'+sequence+'-'+turn;
         const receipt={session:await session($),agent,turn};
         if (agent) {
           receipt.model=__CLAUDUCT_MODELS__.includes(e.model)?e.model:'unlisted';
@@ -297,6 +297,7 @@ export const register = on => {
         // A reader seeing the newer body without its marker refuses the old turn.
         await $.fs.write(file+'.json',JSON.stringify(receipt));
         await $.fs.write(file+'.ready','');
+        reserved.sequence=sequence;
       })();
       const reserved={turn,publication};
       turns.set(agent,reserved); // Reserve in-flight capacity, not successful completion.
@@ -399,8 +400,24 @@ export const register = on => {
     // still apply, but it gets no turn scope and cannot delegate (#214).
     const mark=toolMark.exec(typeof e.tool_use_id==='string'?e.tool_use_id:'');
     const agent=e.agentId?ident(e.agentId):'',p=mark?progress.get(agent):undefined;
+    const scope=p?{turn:p.turn,index:p.index,sequence:turns.get(agent)?.sequence}:undefined;
     if (state.permissionClosed || mark && (e.agentId && !agent || !p || p.phase==='turn_ended' || cancelledTurns.has(p.turn) || mark[1]!==await stepTag(p))) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
 	if (!state.permissionReady || state.permissionFailed) return {deny:'NATIVE_CONFIRMATION_UNVERIFIED'};
+    const call=typeof e.tool_use_id==='string'?e.tool_use_id:'';
+    if (mark && !call.startsWith('cdt2_')) return {deny:'TOOL_ISSUANCE_UNVERIFIED'};
+    if (mark) {
+      const pointer=JSON.parse(await $.fs.read(root+'/call-store.json'));
+      const generation=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(root))),v=>v.toString(16).padStart(2,'0')).join('');
+      if (pointer.generation!==generation || typeof pointer.root!=='string' || !['','issued-'].includes(pointer.prefix)) return {deny:'TOOL_ISSUANCE_UNVERIFIED'};
+      const sid=await session($),raw=await $.fs.read(pointer.root+'/'+pointer.prefix+sid+'.json');
+      if (raw.length>1048576) return {deny:'TOOL_ISSUANCE_UNVERIFIED'};
+      const profile=JSON.parse(raw),record=Object.hasOwn(profile.calls||{},call)?profile.calls[call]:undefined;
+      if (profile.id!==sid || !record || record.session!==sid || record.generation!==generation || record.agent!==agent || record.turn!==p.turn || record.step!==p.index || record.sequence!==turns.get(agent)?.sequence || record.name!==e.tool) return {deny:'TOOL_ISSUANCE_UNVERIFIED'};
+      const currentSession=await session($);
+      if (state.permissionClosed || state.permissionFailed || progress.get(agent)!==p || p.turn!==scope.turn || p.index!==scope.index || turns.get(agent)?.sequence!==scope.sequence || p.phase==='turn_ended' || cancelledTurns.has(p.turn) || sid!==currentSession) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
+      // Native middleware owns same-scope retries; plan-v1 has its own replay contract.
+    }
+
     if (!mark) return ['Agent','SendMessage','Workflow','Skill'].includes(e.tool)?{deny:'NATIVE_DIRECT_DELEGATION_UNSUPPORTED'}:next(e);
 	if (e.tool==='Workflow' && (e.scriptPath!==undefined || e.script===undefined && e.name!==undefined)) {
 	  const call=ident(e.tool_use_id),sid=await session($);
@@ -436,7 +453,7 @@ export const register = on => {
     // Native can request a long tool's background decision after inference ended.
     // Its auxiliary scope cannot authorize ordinary inference or hosted search.
     const active={session:await session($),agent:p.agent,turn:p.turn,index:p.index,search:e.tool==='WebSearch',auxiliary:e.tool!=='WebSearch'};
-    if (state.permissionClosed || progress.get(p.agent)!==p || p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
+    if (state.permissionClosed || state.permissionFailed || progress.get(p.agent)!==p || p.turn!==scope.turn || p.index!==scope.index || turns.get(agent)?.sequence!==scope.sequence || p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
     p.handback=''; // Any later tool invalidates the preceding hand-back step.
     // Skill: a forked skill runs in the background in the TUI, like an Agent or Workflow.
     if (e.tool==='Agent' || e.tool==='SendMessage' || e.tool==='Workflow' || e.tool==='Skill') p.delegated=true;
@@ -447,6 +464,7 @@ export const register = on => {
     try {
       if (active) beginConfirmation($,state,active);
       await observe($,progress,p,'tool_started');
+      if (state.permissionClosed || state.permissionFailed || progress.get(agent)!==p || p.turn!==scope.turn || p.index!==scope.index || turns.get(agent)?.sequence!==scope.sequence || p.phase==='turn_ended' || cancelledTurns.has(p.turn)) return {deny:'NATIVE_REQUEST_ORIGIN_UNVERIFIED'};
       const out=await next(e), value=out.result;
       // The native classifier has already accepted and delivered this report.
       // Record identity only; an attempted/denied hand-back grants nothing.

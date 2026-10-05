@@ -537,7 +537,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		return result, startupErr
 	}
-	if !ephemeral {
+	if ephemeral {
+		// Restore provenance without enabling persistent writes for this run.
+		gw.ConfigureSessionProfiles(nil, result.Startup, resumed, forkSession, background != nil)
+	} else {
 		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession, background != nil)
 	}
 

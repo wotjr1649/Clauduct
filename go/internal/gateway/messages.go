@@ -247,6 +247,10 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_CONVERSION_FAILED")
 		return
 	}
+	if err := g.resolveToolHistory(r, backendRequest, true, entry.nativeTurn); err != nil {
+		g.refuseCategory(w, 400, err.Error())
+		return
+	}
 	if g.delegations != nil {
 		if err := g.delegations.describe(backendRequest.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
 			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
@@ -714,12 +718,23 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	if len(scopes) > 0 {
 		translator.ExpectRoute(scopes[0].route.Model, scopes[0].route.Effort)
 	}
+	var issuanceProof *nativeConfirmation
+	reserved := map[string]string{}
 	if g.nativeEvents.confirmationsRequired {
-		var proof *nativeConfirmation
 		if entry := recordOf(w); entry != nil {
-			proof = entry.nativeConfirmation
+			issuanceProof = entry.nativeConfirmation
 		}
-		translator.ToolUseID = func(callID string) (string, error) { return nativeToolUseID(proof, callID) }
+		translator.ToolUseID = func(callID string) (string, error) {
+			token, err := newToken()
+			if err != nil {
+				return "", err
+			}
+			id, err := nativeToolUseID(issuanceProof, "cdt2_"+token)
+			if err == nil {
+				reserved[id] = callID
+			}
+			return id, err
+		}
 	}
 	// Which item types the backend actually sends, kept for the session, so refusing an
 	// unknown one is decided on what sessions see (#85).
@@ -980,6 +995,12 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 				if err != nil {
 					fail(err)
 					return false
+				}
+				if g.nativeEvents.confirmationsRequired {
+					if err := g.publishToolIssuance(frames, reserved, issuanceProof, recordOf(w).nativeTurn); err != nil {
+						fail(err)
+						return false
+					}
 				}
 				// Before this event's frames, so the plugin finds the summary by the time the
 				// answer's first chunk reaches it.

@@ -25,12 +25,14 @@ func IsSessionUUID(id string) bool { return sessionUUID.MatchString(id) }
 // SessionProfile is metadata only. Settings remain manual; S selections and the
 // original routing preferences belong to this native session, never to defaults.
 type SessionProfile struct {
-	Version    int              `json:"version"`
-	ID         string           `json:"id"`
-	Selection  bridge.Selection `json:"selection"`
-	Last       bridge.Pair      `json:"last"`
-	Transcript string           `json:"transcript"`
-	Offset     int64            `json:"offset"`
+	Version    int                     `json:"version"`
+	ID         string                  `json:"id"`
+	Selection  bridge.Selection        `json:"selection"`
+	Last       bridge.Pair             `json:"last"`
+	Transcript string                  `json:"transcript"`
+	Offset     int64                   `json:"offset"`
+	Calls      map[string]toolIssuance `json:"calls,omitempty"`
+	Parent     string                  `json:"parent,omitempty"`
 }
 
 // SessionProfiles owns the OS locks for one launcher. A record stays locked
@@ -122,14 +124,42 @@ func (s *SessionProfiles) Load(id string) (SessionProfile, error) {
 
 func parseSessionProfile(raw []byte, id string) (SessionProfile, error) {
 	bad := func() (SessionProfile, error) { return SessionProfile{}, ErrSessionProfile }
-	fields, err := wire.Fields(raw, []string{"version", "id", "selection", "last", "transcript", "offset"})
+	fields, err := wire.Fields(raw, []string{"version", "id", "selection", "last", "transcript", "offset", "calls", "parent"})
 	var profile SessionProfile
-	if err != nil || len(raw) > 1<<20 || len(fields) != 6 || !sessionUUID.MatchString(id) ||
-		json.Unmarshal(fields["version"], &profile.Version) != nil || profile.Version != 1 ||
+	if err != nil || len(raw) > 1<<20 || (len(fields) < 6 || len(fields) > 8) || !sessionUUID.MatchString(id) ||
+		json.Unmarshal(fields["version"], &profile.Version) != nil || (profile.Version != 1 && profile.Version != 2) ||
 		json.Unmarshal(fields["id"], &profile.ID) != nil || profile.ID != id ||
 		json.Unmarshal(fields["transcript"], &profile.Transcript) != nil || string(fields["transcript"]) == "null" ||
 		json.Unmarshal(fields["offset"], &profile.Offset) != nil || string(fields["offset"]) == "null" || profile.Offset < 0 {
 		return bad()
+	}
+	if profile.Version == 1 && len(fields) != 6 {
+		return bad()
+	}
+	if raw, present := fields["parent"]; present {
+		if json.Unmarshal(raw, &profile.Parent) != nil || !sessionUUID.MatchString(profile.Parent) || profile.Parent == id {
+			return bad()
+		}
+	}
+	if raw, present := fields["calls"]; present {
+		if string(raw) == "null" || json.Unmarshal(raw, &profile.Calls) != nil || len(profile.Calls) > 4096 {
+			return bad()
+		}
+		entries, e := wire.Fields(raw, nil)
+		if e != nil {
+			return bad()
+		}
+		for native, record := range profile.Calls {
+			members, e := wire.Fields(entries[native], []string{"session", "source", "backend", "name", "generation", "agent", "turn", "sequence", "step"})
+			for _, value := range members {
+				if string(value) == "null" {
+					return bad()
+				}
+			}
+			if e != nil || len(members) != 9 || !validToolIssuance(native, record, id) {
+				return bad()
+			}
+		}
 	}
 	if profile.Transcript != "" && (!filepath.IsLocal(profile.Transcript) || filepath.Base(profile.Transcript) != id+".jsonl" || len(profile.Transcript) > 4096) || profile.Transcript == "" && profile.Offset != 0 {
 		return bad()
@@ -228,28 +258,45 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 }
 
 type profileState struct {
-	mu         sync.Mutex
-	store      *SessionProfiles
-	startup    bridge.Pair
-	expected   string
-	fork       bool
-	background bool
-	current    string
-	profiles   map[string]*SessionProfile
-	pending    string
-	ready      bool
+	mu          sync.Mutex
+	store       *SessionProfiles
+	startup     bridge.Pair
+	expected    string
+	fork        bool
+	background  bool
+	current     string
+	profiles    map[string]*SessionProfile
+	pending     string
+	ready       bool
+	forkHistory *SessionProfile
 }
 
 // ConfigureSessionProfiles binds immutable routing preferences before native
 // starts. Choosing another saved session requires a fresh native launch with
 // that snapshot; a mismatched process never sends an inference first.
 func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridge.Pair, resumed *SessionProfile, fork, background bool) {
-	if g.contexts == nil || store == nil {
+	if g.contexts == nil {
+		return
+	}
+	if resumed != nil && !fork {
+		g.nativeEvents.resumedSession = resumed.ID
+		g.nativeEvents.resumedHistory = cloneToolIssuances(resumed.Calls)
+		if store == nil {
+			g.nativeEvents.issued = map[string]map[string]toolIssuance{resumed.ID: cloneToolIssuances(resumed.Calls)}
+		}
+	}
+	if store == nil {
 		return
 	}
 	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile)}
+	if resumed != nil && fork {
+		copy := *resumed
+		copy.Calls = cloneToolIssuances(resumed.Calls)
+		p.forkHistory = &copy
+	}
 	if resumed != nil && !fork {
 		copy := *resumed
+		copy.Calls = cloneToolIssuances(resumed.Calls)
 		copy.Last = startup
 		p.expected = copy.ID
 		p.profiles[copy.ID] = &copy
@@ -356,6 +403,21 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 				if _, err := file.ReadAt(last[:], profile.Offset-1); err != nil || last[0] != '\n' {
 					return ErrSessionProfile
 				}
+			}
+		}
+	}
+	if source == "fork" || p.fork && p.current == "" {
+		prior := p.profiles[p.current]
+		if prior == nil {
+			prior = p.forkHistory
+		}
+		if prior != nil {
+			profile.Version = 2
+			profile.Parent = prior.ID
+			profile.Calls = cloneToolIssuances(prior.Calls)
+			for id, record := range profile.Calls {
+				record.Session = session
+				profile.Calls[id] = record
 			}
 		}
 	}

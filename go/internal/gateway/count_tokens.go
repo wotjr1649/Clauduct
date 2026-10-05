@@ -113,6 +113,10 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}
+	if err := g.resolveToolHistory(r, built, false, entry.nativeTurn); err != nil {
+		g.refuseCategory(w, 400, err.Error())
+		return
+	}
 	if g.delegations != nil {
 		if err := g.delegations.describe(built.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
 			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")

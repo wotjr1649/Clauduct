@@ -29,6 +29,9 @@ type nativeEventState struct {
 	invalid               int64
 	cancellations         map[*nativeCancellation]struct{}
 	confirmations         map[string]*pendingConfirmation
+	issued                map[string]map[string]toolIssuance
+	resumedSession        string // immutable explicit startup history, not an execution lease
+	resumedHistory        map[string]toolIssuance
 }
 
 var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")

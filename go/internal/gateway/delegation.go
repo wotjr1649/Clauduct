@@ -793,10 +793,13 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 		delete(d.pending, key)
 		return bridge.Route{}, false, errDelegationUnverified
 	}
+	// Later requests compare against what native reports for this teammate. The receipt keeps
+	// the call's own role: the lead's Agent history is restored by it (selection_records.go).
+	boundRole := role
 	if choice.omitted && link.Role == omittedTeammateRole {
-		role = link.Role // later requests compare against what native reports for this teammate
+		boundRole = link.Role
 	}
-	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: link.Call, role: role, alias: choice.alias, route: choice.route, inherited: choice.inherited, custom: custom, teammate: true}
+	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: link.Call, role: boundRole, alias: choice.alias, route: choice.route, inherited: choice.inherited, custom: custom, teammate: true}
 	chosen.receipt = choice.receipt
 	if chosen.receipt != nil {
 		chosen.receipt.Role = role

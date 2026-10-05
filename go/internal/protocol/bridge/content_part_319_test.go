@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
 	"github.com/wotjr1649/Clauduct/go/internal/stream"
@@ -46,18 +47,21 @@ func TestContentPartReviewCounterexamples319(t *testing.T) {
 	for name, events := range map[string][]stream.Event{
 		"missing-part":       {itemAdded(0, `{"id":"m","type":"message"}`), part(codex.ContentPartAdd, 1), itemDone(0, messageItem("m", ""))},
 		"duplicate-added":    {itemAdded(0, `{"id":"m","type":"message"}`), part(codex.ContentPartAdd, 0), part(codex.ContentPartAdd, 0)},
-		"completed-mismatch": {itemAdded(0, `{"id":"m","type":"message"}`), itemDone(0, messageItem("m", "")), event(codex.Completed, `{"type":"response.completed","response":{"id":"r","output":[{"id":"m","type":"message","content":[{"type":"output_text","text":"lost"}]}]}}`)},
+		"completed-mismatch": {itemAdded(0, `{"id":"m","type":"message"}`), event(codex.TextDelta, `{"type":"response.output_text.delta","item_id":"m","content_index":0,"delta":"kept"}`), event(codex.TextDone, `{"type":"response.output_text.done","item_id":"m","content_index":0,"text":"kept"}`), itemDone(0, messageItem("m", "kept")), event(codex.Completed, `{"type":"response.completed","response":{"id":"r","output":[{"id":"m","type":"message","content":[{"type":"output_text","text":"lost"}]}]}}`)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			tr := NewTranslatorFor(decodeRequest(t, minimalRequest), "")
 			var got error
-			for _, e := range events {
+			for i, e := range events {
 				if _, got = tr.Accept(e); got != nil {
+					if i != len(events)-1 {
+						t.Fatalf("setup event %d failed: %v", i, got)
+					}
 					break
 				}
 			}
-			if got == nil {
-				t.Fatal("contradictory lifecycle accepted")
+			if !errors.Is(got, ErrItemSnapshotMismatch) {
+				t.Fatalf("want snapshot mismatch, got %v", got)
 			}
 		})
 	}

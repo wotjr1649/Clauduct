@@ -131,5 +131,11 @@ func (config ClauductSettings) sessionRequirements() map[string]string {
 	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"} {
 		values[key] = defaults[key]
 	}
+	if config.BoundaryProfile == boundaryStrict {
+		values[nonessentialTraffic] = "1" // #301: a settings file must not turn it back on
+		if config.marketplace != "" {
+			values[marketplaceInstall] = config.marketplace // the user's value, kept (strictReady)
+		}
+	}
 	return values
 }

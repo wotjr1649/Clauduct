@@ -29,6 +29,14 @@ type childSettings struct {
 	ModelPicker  *modelPicker             `json:"modelPicker,omitempty"`
 	Env          map[string]string        `json:"env,omitempty"`
 	APIKeyHelper string                   `json:"apiKeyHelper,omitempty"`
+	// The boundary profile's part (#301, boundary_profile.go).
+	Permissions               *childPermissions `json:"permissions,omitempty"`
+	DisableClaudeAiConnectors bool              `json:"disableClaudeAiConnectors,omitempty"`
+	SkipWebFetchPreflight     bool              `json:"skipWebFetchPreflight,omitempty"`
+}
+
+type childPermissions struct {
+	Deny []string `json:"deny,omitempty"`
 }
 
 type hookMatcher struct {
@@ -61,6 +69,7 @@ type modelPickerRow struct {
 // cannot act on.
 func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 	settings := childSettings{ModelPicker: config.pickerRows()}
+	config.boundarySettings(&settings)
 	if hookPath != "" {
 		entry := []hookMatcher{{
 			Matcher: "*",

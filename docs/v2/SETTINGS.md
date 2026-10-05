@@ -68,6 +68,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `context_window` | 모든 모델에 공통인 context 관리값. 기본 272,000, 정수 100,000–872,000 |
 | `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
 | `classifier_model` | auto 권한 모드 분류기의 `{"model", "effort"}` pair. 공장값은 `gpt-5.6-terra`/low. [분류기 절](#보조-요청과-auto-권한-분류기-v064) |
+| `boundary_profile` | native가 Anthropic 서버로 가는 기능 경로 가운데 무엇을 남길지. `"default"`(공장값) 또는 `"strict"`. 다른 값은 시작할 때 거부한다. [경계 프로필](#경계-프로필-v0611) |
 | `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
 
 v0.6.4의 공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,
@@ -76,6 +77,34 @@ terra medium, luna max), 아래 alias 매핑, `agents`(Explore luna/max, Plan과
 
 시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
 Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
+
+## 경계 프로필 (v0.6.11)
+
+`boundary_profile`은 Clauduct 세션에서 native가 Anthropic 서버로 가는 경로 가운데 무엇을 남길지 정한다(#301).
+값은 세션 `--settings`에 들어가며, 이 설정은 user·project·local settings 파일보다 우선한다. 모델 요청은 프로필과
+상관없이 항상 이 세션의 gateway로 간다([라우팅 불변식](COMPATIBILITY.md#2-제약)).
+
+| | `default` | `strict` |
+|---|---|---|
+| claude.ai connector 자동 연결(`disableClaudeAiConnectors`) | 끔 | 끔 |
+| DesignSync tool(claude.ai/design) | 끔(`permissions.deny`) | 끔 |
+| native 자동 업데이트, 시작 때 MCP registry 목록, release notes | 켬 | 끔(`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`) |
+| WebFetch 사전 domain 점검(`api.anthropic.com`) | 켬 | 끔(`skipWebFetchPreflight`) |
+| Artifact 계열 tool | native 기본(flag가 없으면 나오지 않음) | 끔(`permissions.deny`) |
+| 공식 marketplace 자동 등록 | native 기본 | 사용자가 `CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1`을 직접 설정해야 시작 |
+
+- `default`는 Anthropic 접속이 없는 프로필이 아니다. 무과금 loopback 측정(native 2.1.289)에서 TUI는 `api.anthropic.com`,
+  `downloads.claude.ai`, `github.com`, `api.github.com`, `raw.githubusercontent.com`에 접속하려 했다. `strict`는 같은 측정에서
+  외부 호스트 0개였다.
+- `strict`가 WebFetch 사전 점검을 끄면, native가 WebFetch로 가져올 domain을 Anthropic에 묻지 않는다. 그 대신 Anthropic의
+  차단 목록 검사도 사라진다. 이 보안상 trade-off를 사용자가 감수한다.
+- marketplace 변수는 native가 처음 볼 때 자기 설정에 "정책으로 막힘"을 영구 기록한다. 그래서 그 뒤 Clauduct 없이 쓰는 native에서도
+  공식 marketplace 자동 등록이 꺼진 채로 남는다. Clauduct는 이 상태를 대신 바꾸지 않는다. `strict`는 사용자가 이 변수를 시작 환경에
+  native가 켬으로 읽는 값(`1`·`true`·`yes`·`on`)으로 둔 경우에만 시작하고, 아니면 `BOUNDARY_PROFILE_STRICT`로 거부한다.
+  시작한 뒤에는 사용자의 그 값을 세션 `--settings` env에 다시 넣어, settings 파일 env가 사용자의 선택을 조용히 되돌리지 못하게 한다.
+- 사용자 `--settings`의 `permissions`는 유지되고 프로필의 deny 규칙이 더해진다. 프로필 값을 되돌리는 값
+  (`disableClaudeAiConnectors: false`, `skipWebFetchPreflight: false`, strict에서 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
+  변경)은 `SETTINGS_CONFLICT`로 거부한다.
 
 ## 설정 동기화 (v0.6.4)
 

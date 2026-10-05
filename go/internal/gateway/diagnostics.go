@@ -969,6 +969,9 @@ type RequestCounts struct {
 	// CancelledCounts is the count_tokens part of RefusedBy["CANCELLED"]: counts native
 	// abandoned (typically by exiting right after /context). Already inside Refused.
 	CancelledCounts int64 `json:"cancelledCounts,omitempty"`
+	// CancelledAuxiliary is the part of RefusedBy["CANCELLED"] on native's own auxiliary
+	// generations it abandoned (#310). Already inside Refused.
+	CancelledAuxiliary int64 `json:"cancelledAuxiliary,omitempty"`
 	// Broken is responses that started and then stopped, for the life of the session.
 	Broken     int64 `json:"broken"`
 	Active     int64 `json:"active"`
@@ -1042,12 +1045,13 @@ func (g *Gateway) Snapshot() Diagnostics {
 		UptimeMs:  time.Since(g.ring.epoch).Milliseconds(),
 		Requests: RequestCounts{
 			Received: received, Refused: refused,
-			RefusedBy:       refusedBy,
-			RefusedPaths:    g.RefusedPaths(),
-			RefusedElements: g.RefusedElements(),
-			CancelledCounts: g.CancelledCounts(),
-			Broken:          g.broken.Load(),
-			Active:          active, ModelLists: g.ModelLists(),
+			RefusedBy:          refusedBy,
+			RefusedPaths:       g.RefusedPaths(),
+			RefusedElements:    g.RefusedElements(),
+			CancelledCounts:    g.CancelledCounts(),
+			CancelledAuxiliary: g.CancelledAuxiliary(),
+			Broken:             g.broken.Load(),
+			Active:             active, ModelLists: g.ModelLists(),
 		},
 		Agents: AgentCounts{
 			Registered:          g.agents.Registered(),

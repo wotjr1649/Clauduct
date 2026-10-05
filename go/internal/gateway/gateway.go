@@ -137,6 +137,10 @@ type Gateway struct {
 	// went away before an exact count finished, most often by ending the session within
 	// seconds of /context. Nothing was lost; the account names it apart (v0.6.7).
 	cancelledCounts int64
+	// cancelledAuxiliary is the part answered on native's own auxiliary generations (a title,
+	// a summary, a classifier check) that native abandoned, typically by exiting while one
+	// ran (#310). Like an abandoned count, no part of any task the user asked for.
+	cancelledAuxiliary int64
 	// refusedPaths are the distinct paths refusals were answered on, first ones kept.
 	refusedPaths []string
 	// refusedElements are the distinct unknown request elements, first ones kept.
@@ -336,7 +340,7 @@ func (g *Gateway) Stats() (received, refused, active int64) {
 //
 // Called from the single place every refusal goes through, which is what keeps the reasons
 // and the total the same fact rather than two that agree until they do not.
-func (g *Gateway) countRefusal(category, path string) {
+func (g *Gateway) countRefusal(category, path, class string) {
 	g.refusalMu.Lock()
 	defer g.refusalMu.Unlock()
 	if g.refusals == nil {
@@ -345,6 +349,9 @@ func (g *Gateway) countRefusal(category, path string) {
 	g.refusals[category]++
 	if category == refuseCancelled.category && path == "/v1/messages/count_tokens" {
 		g.cancelledCounts++
+	}
+	if category == refuseCancelled.category && path == "/v1/messages" && class == "auxiliary" {
+		g.cancelledAuxiliary++
 	}
 	g.notePath(path)
 }
@@ -355,6 +362,14 @@ func (g *Gateway) CancelledCounts() int64 {
 	g.refusalMu.Lock()
 	defer g.refusalMu.Unlock()
 	return g.cancelledCounts
+}
+
+// CancelledAuxiliary is how many of native's auxiliary generations it abandoned (#310).
+// Included in the CANCELLED refusals, never subtracted from them.
+func (g *Gateway) CancelledAuxiliary() int64 {
+	g.refusalMu.Lock()
+	defer g.refusalMu.Unlock()
+	return g.cancelledAuxiliary
 }
 
 // notePath records a refused path once, while there is room. Caller holds refusalMu.

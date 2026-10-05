@@ -140,7 +140,10 @@ type CompletionFacts struct {
 	// CancelledCounts is count_tokens native abandoned (v0.6.7). Kept out of
 	// CancelledRequests: a count is no part of any task, and quitting right after /context
 	// abandons a dozen of them.
-	CancelledCounts       int64 `json:"cancelledCounts,omitempty"`
+	CancelledCounts int64 `json:"cancelledCounts,omitempty"`
+	// CancelledAuxiliary is native's own auxiliary generations it abandoned (#310), kept out of
+	// CancelledRequests for the same reason: leaving while a title is written is no failure.
+	CancelledAuxiliary    int64 `json:"cancelledAuxiliary,omitempty"`
 	NativeCancellations   int64 `json:"nativeCancellations"`
 	NativeToolFailures    int64 `json:"nativeToolFailures"`
 	RejectedWorkflowCalls int64 `json:"rejectedWorkflowCalls"`
@@ -159,6 +162,8 @@ func completionFacts(d gateway.Diagnostics) CompletionFacts {
 	}
 	out.CancelledCounts = min(d.Requests.CancelledCounts, out.CancelledRequests)
 	out.CancelledRequests -= out.CancelledCounts
+	out.CancelledAuxiliary = min(d.Requests.CancelledAuxiliary, out.CancelledRequests)
+	out.CancelledRequests -= out.CancelledAuxiliary
 	out.NativeCancellations = d.AgentResults.Totals["cancelled"]
 	out.RejectedWorkflowCalls = d.Totals.RejectedWorkflowCalls
 	for _, n := range d.Totals.Controls {
@@ -228,7 +233,7 @@ func (s Status) noteworthy() bool {
 		(s.Lifecycle != nil && s.Lifecycle.CheckpointFailures > 0) ||
 		s.Gateway.WorkflowPersistence.Failed > 0 ||
 		!s.Session.HookInstalled ||
-		s.Gateway.Requests.Refused > s.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]+s.Completion.ControlTransitions+s.Gateway.Requests.CancelledCounts || s.Gateway.BrokenStreams() > 0 ||
+		s.Gateway.Requests.Refused > s.Gateway.Requests.RefusedBy["COUNT_TOKENS_UNSUPPORTED"]+s.Completion.ControlTransitions+s.Gateway.Requests.CancelledCounts+s.Gateway.Requests.CancelledAuxiliary || s.Gateway.BrokenStreams() > 0 ||
 		s.Completion.NativeToolFailures > 0 || s.Completion.RejectedWorkflowCalls > 0 || s.Completion.UnacquiredResults > 0 || s.Gateway.NativeToolFailures.CapacityExceeded ||
 		s.Gateway.Events.Unsupported > 0 ||
 		s.Gateway.Agents.Unregistered > 0 || s.Gateway.Agents.Unrouted > 0 || s.Gateway.Agents.Evicted > 0 ||
@@ -262,7 +267,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	// after /context otherwise read "refused=18" and dumped its whole account.
 	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
-		account.Gateway.Requests.Received, account.Gateway.Requests.Refused-account.Gateway.Requests.CancelledCounts,
+		account.Gateway.Requests.Received, account.Gateway.Requests.Refused-account.Gateway.Requests.CancelledCounts-account.Gateway.Requests.CancelledAuxiliary,
 		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account)+replacedField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
@@ -392,10 +397,14 @@ func brokenField(account Status) string {
 
 // countsCancelledField names exact counts native abandoned, only when there are any.
 func countsCancelledField(account Status) string {
+	field := ""
 	if n := account.Gateway.Requests.CancelledCounts; n > 0 {
-		return fmt.Sprintf(" counts_cancelled=%d", n)
+		field = fmt.Sprintf(" counts_cancelled=%d", n)
 	}
-	return ""
+	if n := account.Gateway.Requests.CancelledAuxiliary; n > 0 {
+		field += fmt.Sprintf(" auxiliary_cancelled=%d", n)
+	}
+	return field
 }
 
 // unmeasuredField names a client this session ran that is not the version Clauduct was last

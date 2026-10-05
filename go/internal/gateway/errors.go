@@ -102,7 +102,7 @@ func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) 
 	if recordOf(w).dispatched() || strings.HasPrefix(r.category, "MEMORY_") {
 		w.Header().Set("X-Should-Retry", "false")
 	}
-	g.countRefusal(r.category, recordOf(w).path())
+	g.countRefusal(r.category, recordOf(w).path(), recordOf(w).snapshot().RequestClass)
 	recordOf(w).refusedWith(r.status, r.category)
 	control := http.NewResponseController(w)
 	switch r.category {

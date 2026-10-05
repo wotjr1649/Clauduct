@@ -148,6 +148,11 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	entry := recordOf(w)
 	entry.checked("input")
 	entry.requestClass(r.Header.Get("X-Claude-Code-Request-Class"))
+	// Named before any wait below, so a search abandoned there is not taken for native's own
+	// auxiliary generation (#310).
+	if request.HostedSearch != nil {
+		entry.kind("web_search")
+	}
 	entry.at(stageSelection)
 	execution, category := g.claimNativeExecution(r, entry, body, request)
 	if category != "" {
@@ -185,7 +190,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	// Search uses the same selection as generation, including an agent override.
 	if request.HostedSearch != nil {
-		entry.kind("web_search")
 		query, ok := bridge.SideQuery(request)
 		if !ok {
 			g.refuseCategory(w, http.StatusBadRequest, anthropic.CodeHostedToolUnsupp)

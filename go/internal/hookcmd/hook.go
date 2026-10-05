@@ -162,8 +162,30 @@ func routed(connection sessionlink.Connection, in io.Reader, out, errOut io.Writ
 		return 2
 	}
 	env["ANTHROPIC_AUTH_TOKEN"] = connection.Token
-	return runWithOutput(in, out, errOut, env)
+	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+	if err != nil {
+		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
+		return 1
+	}
+	// #299: a stored Claude apps gateway login sends native's requests to that gateway while
+	// the environment still names this one, so the check above cannot see it. Native asks its
+	// endpoint for the model list before the session's first hook; when that never reached
+	// this gateway, the session ends before its first prompt is sent.
+	var event struct {
+		Name string `json:"hook_event_name"`
+	}
+	if json.Unmarshal(raw, &event) == nil && event.Name == "SessionStart" {
+		if _, err := postReply([]byte("{}"), env, RoutingProofPath, false); err != nil {
+			fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. Sign out of it in Claude Code (/logout) or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
+			postReply([]byte("{}"), env, RoutingMismatchPath, false)
+			return 2
+		}
+	}
+	return runWithOutput(bytes.NewReader(raw), out, errOut, env)
 }
+
+// RoutingProofPath is the gateway's answer to whether native's start-up model list reached it.
+const RoutingProofPath = "/clauduct/routing-proof"
 
 // routedElsewhere reads names as Windows does, without case: a settings file may spell one
 // in lower case.

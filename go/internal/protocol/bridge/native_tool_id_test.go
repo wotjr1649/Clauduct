@@ -8,20 +8,11 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 )
 
-// #214: native sees a step-marked id, and the backend gets its own call_id back.
-func TestNativeToolIDRoundTripsToTheBackendCallID(t *testing.T) {
+// #214: native sees a step-marked ID. #319 keeps history opaque instead of guessing an inverse.
+func TestNativeToolIDCarriesStepBinding(t *testing.T) {
 	id, err := NativeToolID("call_abc123", "0123456789ab")
 	if err != nil || id != "call_abc123__cdt0123456789ab" {
 		t.Fatalf("NativeToolID = %q, %v", id, err)
-	}
-	if got := BackendCallID(id); got != "call_abc123" {
-		t.Fatalf("BackendCallID(%q) = %q", id, got)
-	}
-	// Earlier builds' conversations carry unmarked ids; they pass unchanged.
-	for _, unmarked := range []string{"call_abc123", "toolu_plugin_f4786e0d", "x__cdt0123", "x__cdt0123456789AB"} {
-		if got := BackendCallID(unmarked); got != unmarked {
-			t.Fatalf("BackendCallID(%q) = %q", unmarked, got)
-		}
 	}
 	// A call_id that already looks marked could not be restored after marking.
 	if _, err := NativeToolID("call__cdt0123456789ab", "0123456789ab"); !errors.Is(err, anthropic.ErrUnsupportedToolCall) {
@@ -34,7 +25,7 @@ func TestNativeToolIDRoundTripsToTheBackendCallID(t *testing.T) {
 	}
 }
 
-func TestBackendRequestCarriesUnmarkedCallIDs(t *testing.T) {
+func TestBackendRequestPreservesOpaqueCallIDs(t *testing.T) {
 	request := decodeRequest(t, `{"model":"gpt-6-sol","max_tokens":64,"stream":true,
 		"tools":[{"name":"Read","input_schema":{"type":"object"}}],
 		"messages":[{"role":"user","content":"read"},
@@ -48,7 +39,7 @@ func TestBackendRequestCarriesUnmarkedCallIDs(t *testing.T) {
 	for _, entry := range built.Input {
 		if entry.Type == "function_call" || entry.Type == "function_call_output" {
 			calls++
-			if entry.CallID != "call_abc123" {
+			if entry.CallID != "call_abc123__cdt0123456789ab" {
 				t.Fatalf("%s call_id = %q", entry.Type, entry.CallID)
 			}
 		}

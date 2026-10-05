@@ -478,7 +478,7 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 				flush()
 				out.Input = append(out.Input, InputEntry{
 					Type:      "function_call",
-					CallID:    BackendCallID(block.ID),
+					CallID:    block.ID,
 					Name:      block.Name,
 					Arguments: string(block.Input),
 				})
@@ -486,7 +486,7 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 				flush()
 				out.Input = append(out.Input, InputEntry{
 					Type:   "function_call_output",
-					CallID: BackendCallID(block.ToolUseID),
+					CallID: block.ToolUseID,
 					Output: resultParts(block),
 				})
 			default:
@@ -499,8 +499,8 @@ func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (
 }
 
 // A native tool_use id carries the native step it was issued to, so a call that
-// native runs later cannot use another step's scope (#214). The backend never
-// sees the mark: its call_id goes back exactly as it came.
+// native runs later cannot use another step's scope (#214). History conversion
+// does not infer an inverse from its shape: IDs remain opaque in this layer.
 var nativeToolMark = regexp.MustCompile(`^(.+)__cdt[0-9a-f]{12}$`)
 var stepTagShape = regexp.MustCompile(`^[0-9a-f]{12}$`)
 
@@ -511,15 +511,6 @@ func NativeToolID(callID, tag string) (string, error) {
 		return "", anthropic.ErrUnsupportedToolCall
 	}
 	return callID + "__cdt" + tag, nil
-}
-
-// BackendCallID removes NativeToolID's mark. Unmarked ids, including those of
-// conversations from earlier builds, pass unchanged.
-func BackendCallID(id string) string {
-	if match := nativeToolMark.FindStringSubmatch(id); match != nil {
-		return match[1]
-	}
-	return id
 }
 
 // resultParts flattens a tool result for the backend.

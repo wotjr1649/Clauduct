@@ -139,7 +139,7 @@ native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. �
 | proxy·CA 설정 | 신뢰된 사용자 네트워크 구성으로 취급. TLS 검증 완화는 하지 않는다. 다만 `NO_PROXY`에 loopback(`127.0.0.1`·`localhost`·`::1`)을 더해 평문 gateway 요청이 proxy를 거치지 않게 한다(#295) |
 | bridge 내부 run-id·port·token | 자기 프로세스와 child에 필요한 범위만 |
 
-**라우팅 불변식(#295).** native는 settings 파일 `env`를 프로세스 환경 위에 적용하고, 실행 중에도 다시
+**라우팅 불변식(#295, #299).** native는 settings 파일 `env`를 프로세스 환경 위에 적용하고, 실행 중에도 다시
 적용한다. 2.1.289 실측에서 user·project·local settings의 endpoint가 요청을 받았고, provider 변수는 요청을
 cloud로 보냈다. 그래서 다음을 함께 둔다.
 
@@ -149,6 +149,9 @@ cloud로 보냈다. 그래서 다음을 함께 둔다.
   비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다).
 - `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`는 쓰지 않는다. 실측에서 settings 파일의 모델 선택까지 무시하게 했고,
   hook 환경의 token도 지웠다. 상속도 하지 않는다.
+- 저장된 Claude apps gateway 로그인은 환경을 바꾸지 않고 요청을 그 gateway로 보낸다. native는 시작할 때 endpoint에 모델 목록을
+  묻고(매 시작, 첫 hook보다 먼저), 저장된 로그인이 있으면 그 요청도 그 gateway로 간다. 그래서 SessionStart와 매 prompt의 hook이 `routing-proof`로
+  그 요청이 이 gateway에 왔는지 확인한다. SessionStart는 native를 막지 못해 일찍 알리기만 하고, UserPromptSubmit hook이 모델 요청 전에 막는다(#299). 모델 목록 조회 변수는 필수 env다. credential은 읽지 않는다.
 - managed 설정은 Clauduct보다 높다. HKLM·HKCU 레지스트리 정책, `managed-settings.json`과 drop-in(기본 위치와
   `CLAUDE_CODE_MANAGED_SETTINGS_PATH`), `CLAUDE_CODE_REMOTE_SETTINGS_PATH` 파일에 라우팅 env, `apiKeyHelper`, `policyHelper`, gateway 로그인 강제,
   `allowedProviders`가 있으면 시작하지 않는다. 세션 중 생기면 native를 끝내고 `ROUTING_UNVERIFIED`로 보고한다.
@@ -180,6 +183,7 @@ background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경�
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
 | `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |
 | `POST /clauduct/routing-mismatch` | 이 세션 hook이 native의 다른 endpoint 사용을 알림 | 인증 필요, 본문을 읽지 않음, launcher가 세션을 끝냄(#295) |
+| `POST /clauduct/routing-proof` | SessionStart와 UserPromptSubmit hook이 native의 시작 모델 목록 요청이 이 gateway에 왔는지 물음 | 인증 필요, 왔으면 204, 2초 안에 오지 않으면 409. hook은 409에서 세션을 끝낸다(#299) |
 | 기타 | 명확한 unsupported 응답 | 침묵 성공·임의 upstream forwarding 금지 |
 
 기본 실행은 필수 hook을 구성하며 위임이 생기면 이 등록 경로를 사용한다.

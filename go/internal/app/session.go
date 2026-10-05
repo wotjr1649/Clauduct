@@ -128,7 +128,9 @@ func routingSettingsEnv(env map[string]string, base string) map[string]string {
 func (config ClauductSettings) sessionRequirements() map[string]string {
 	values := map[string]string{"CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK": "1"}
 	defaults := config.sessionEnvironment()
-	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"} {
+	// Model discovery is also the session's routing proof (#299): its start-up request is how
+	// the first hook knows native talks to this gateway, so a settings file must not turn it off.
+	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"} {
 		values[key] = defaults[key]
 	}
 	if config.BoundaryProfile == boundaryStrict {

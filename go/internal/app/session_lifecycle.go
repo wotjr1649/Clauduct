@@ -16,7 +16,7 @@ const checkpointInterval = 2 * time.Second
 // before the session is ended for it (#295).
 const policyRetries = 3
 
-const routingMismatchDetail = "a hook of this session found native configured for another endpoint"
+const routingMismatchDetail = "a hook of this session found native configured for another endpoint, or native's start-up model list never reached this gateway (a stored Claude apps gateway login: /logout in Claude Code, or a separate CLAUDE_CONFIG_DIR)"
 
 // SessionDuration parses only the explicit launcher setting. It is never inferred
 // from a model, prompt, or native option. Invalid limits fail before spawning.

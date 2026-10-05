@@ -257,7 +257,7 @@ func TestTextResponseProducesTheClientSequence(t *testing.T) {
 // type matches the event name. A client reads both.
 func TestFramesAreWellFormedSSE(t *testing.T) {
 	frames, err := run(t,
-		textDelta("x"), textDone("x"), event(codex.Completed, completedOK))
+		itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x")), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestFramesAreWellFormedSSE(t *testing.T) {
 // they disagree a delta went missing, and neither version can be trusted.
 func TestSnapshotMustMatchTheDeltas(t *testing.T) {
 	t.Run("matching is accepted", func(t *testing.T) {
-		if _, err := run(t, textDelta("ab"), textDelta("cd"), textDone("abcd")); err != nil {
+		if _, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("ab"), textDelta("cd"), textDone("abcd")); err != nil {
 			t.Fatalf("Accept: %v", err)
 		}
 	})
@@ -300,7 +300,7 @@ func TestSnapshotMustMatchTheDeltas(t *testing.T) {
 		"non-empty snapshot, no deltas":    {textDone("text the client never saw")},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := run(t, events...); !errors.Is(err, anthropic.ErrTextMismatch) {
+			if _, err := run(t, append([]any{itemAdded(0, messageItem(defaultItem))}, events...)...); !errors.Is(err, anthropic.ErrTextMismatch) {
 				t.Fatalf("err = %v, want TEXT_MISMATCH", err)
 			}
 		})
@@ -313,7 +313,7 @@ func TestSnapshotMustMatchTheDeltas(t *testing.T) {
 // It is not a mismatch and it is also not an answer. The empty part is accepted here; the
 // response it belongs to is refused at completion for having produced nothing at all.
 func TestEmptySnapshotWithNoDeltasIsNotAMismatch(t *testing.T) {
-	_, err := run(t, textDone(""), event(codex.Completed, completedOK))
+	_, err := run(t, itemAdded(0, messageItem(defaultItem)), textDone(""), itemDone(0, messageItem(defaultItem)), event(codex.Completed, completedOK))
 	if errors.Is(err, anthropic.ErrTextMismatch) {
 		t.Fatalf("an empty part with no deltas was read as a mismatch: %v", err)
 	}
@@ -327,19 +327,16 @@ func TestEmptySnapshotWithNoDeltasIsNotAMismatch(t *testing.T) {
 func TestReasoningBeforeTextDoesNotDisplaceTheAnswer(t *testing.T) {
 	frames, err := run(t,
 		event(codex.Created, `{"type":"response.created","response":{"id":"r"}}`),
-		event(codex.ReasoningPartAdd, `{"type":"response.reasoning_part.added"}`),
-		event(codex.ReasoningSummaryTxtD, `{"type":"response.reasoning_summary_text.delta","delta":"thinking"}`),
-		event(codex.ReasoningSummaryTxtF, `{"type":"response.reasoning_summary_text.done"}`),
-		event(codex.ReasoningPartDone, `{"type":"response.reasoning_part.done"}`),
-		textDelta("the answer"),
-		textDone("the answer"),
+		summaryStream319("thinking"),
+		itemAdded(1, messageItem(defaultItem)), textDelta("the answer"),
+		textDone("the answer"), itemDone(1, messageItem(defaultItem, "the answer")),
 		event(codex.Completed, completedOK),
 	)
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
 	want := []string{"message_start", "content_block_start", "content_block_delta",
-		"content_block_stop", "message_delta", "message_stop"}
+		"content_block_stop", "content_block_start", "content_block_stop", "message_delta", "message_stop"}
 	if got := frameTypes(frames); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("frames\n got: %v\nwant: %v", got, want)
 	}
@@ -352,8 +349,8 @@ func TestReasoningBeforeTextDoesNotDisplaceTheAnswer(t *testing.T) {
 // Anthropic reasoning would be inventing a feature.
 func TestReasoningContentIsNotEmitted(t *testing.T) {
 	frames, err := run(t,
-		event(codex.ReasoningSummaryTxtD, `{"type":"response.reasoning_summary_text.delta","delta":"SECRET-REASONING"}`),
-		textDelta("answer"), textDone("answer"),
+		summaryStream319("SECRET-REASONING"),
+		itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")),
 		event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -391,7 +388,7 @@ func TestUpstreamFailuresAreTerminalAndNamed(t *testing.T) {
 		codex.Incomplete: codex.ErrResponseIncomplt,
 		codex.ErrorEvent: codex.ErrErrorEvent,
 	} {
-		_, err := run(t, textDelta("partial"), event(kind, `{"type":"`+kind+`","error":{"message":"UPSTREAM-DETAIL"}}`))
+		_, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("partial"), event(kind, `{"type":"`+kind+`","error":{"message":"UPSTREAM-DETAIL"}}`))
 		if !errors.Is(err, want) {
 			t.Errorf("%s: err = %v, want %v", kind, err, want)
 		}
@@ -421,7 +418,7 @@ func TestMalformedPayloadsAreRefused(t *testing.T) {
 // An empty delta is a real delta: the backend said something happened and produced no
 // characters. Absent is a different thing and is refused above.
 func TestEmptyDeltaIsCarried(t *testing.T) {
-	frames, err := run(t, textDelta(""), textDone(""), event(codex.Completed, completedOK))
+	frames, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta(""), textDone(""), itemDone(0, messageItem(defaultItem, "")), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -458,7 +455,7 @@ func TestToolOnlyResponseIsNotEmpty(t *testing.T) {
 // A block left open at completion is closed first, so a client reading sequentially never
 // sees a message end with a block outstanding.
 func TestOpenBlocksAreClosedAtCompletion(t *testing.T) {
-	frames, err := run(t, textDelta("unfinished"), event(codex.Completed, completedOK))
+	frames, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("unfinished"), itemDone(0, messageItem(defaultItem, "unfinished")), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -481,7 +478,7 @@ func TestOpenBlocksAreClosedAtCompletion(t *testing.T) {
 // against the count the backend reports. A completion that reports no count leaves nothing
 // to check it against, and reporting success would be claiming a check that never ran.
 func TestACompletionWithNoUsageIsRefused(t *testing.T) {
-	_, err := run(t, textDelta("x"), textDone("x"), event(codex.Completed, completedNoUsage))
+	_, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x")), event(codex.Completed, completedNoUsage))
 	if !errors.Is(err, ErrUsageUnknown) {
 		t.Fatalf("err = %v, want %v", err, ErrUsageUnknown)
 	}
@@ -494,7 +491,7 @@ func TestACompletionWithNoUsageIsRefused(t *testing.T) {
 func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
 		`{"model":"sonnet","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`), "")
-	for _, e := range []stream.Event{textDelta("x"), textDone("x")} {
+	for _, e := range []stream.Event{itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x"))} {
 		if _, err := translator.Accept(e); err != nil {
 			t.Fatalf("Accept: %v", err)
 		}
@@ -511,7 +508,7 @@ func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 func TestAResponseExactlyAtTheLimitIsAccepted(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
 		`{"model":"sonnet","max_tokens":3,"stream":true,"messages":[{"role":"user","content":"x"}]}`), "")
-	for _, e := range []stream.Event{textDelta("x"), textDone("x")} {
+	for _, e := range []stream.Event{itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x"))} {
 		if _, err := translator.Accept(e); err != nil {
 			t.Fatalf("Accept: %v", err)
 		}
@@ -525,7 +522,7 @@ func TestAResponseExactlyAtTheLimitIsAccepted(t *testing.T) {
 // "it cost nothing", and a budget built on that number would be wrong in the cheap
 // direction. Output is reported here because the limit check needs it; input is not.
 func TestUnknownUsageIsOmittedNotZeroed(t *testing.T) {
-	frames, err := run(t, textDelta("x"), textDone("x"), event(codex.Completed,
+	frames, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x")), event(codex.Completed,
 		`{"type":"response.completed","response":{"id":"resp_1","usage":{"output_tokens":3}}}`))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -552,7 +549,7 @@ func TestUnknownUsageIsOmittedNotZeroed(t *testing.T) {
 // cache_read_input_tokens. Passed on whole, the client saw every cached token as fresh input
 // and no cache reads at all. The total is unchanged.
 func TestCachedInputIsReportedAsCacheReads(t *testing.T) {
-	frames, err := run(t, textDelta("x"), textDone("x"), event(codex.Completed,
+	frames, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x")), event(codex.Completed,
 		`{"type":"response.completed","response":{"id":"resp_1","usage":{"input_tokens":16865,`+
 			`"input_tokens_details":{"cached_tokens":3840},"output_tokens":3}}}`))
 	if err != nil {
@@ -760,6 +757,7 @@ func TestStreamedToolArgumentsAreAccountedForNotRefused(t *testing.T) {
 	// barrier stated as a measurement: before response.completed there is nothing to
 	// deliver, so a stream that failed here could not have handed anything to execute.
 	for _, e := range []stream.Event{
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
 		argsDelta("fc_1", `{"file_`),
 		argsDelta("fc_1", `path":"a.txt"}`),
 		argsDone("fc_1", `{"file_path":"a.txt"}`),
@@ -775,7 +773,7 @@ func TestStreamedToolArgumentsAreAccountedForNotRefused(t *testing.T) {
 
 	// And then the call arrives whole, from the completed output.
 	var frames []anthropic.Frame
-	for _, e := range completedWith(functionCall("call_1", "Read", `{"file_path":"a.txt"}`)) {
+	for _, e := range []stream.Event{itemDone(0, functionItem("fc_1", "call_1", "Read", `{"file_path":"a.txt"}`)), event(codex.Completed, completedOK)} {
 		produced, err := translator.Accept(e)
 		if err != nil {
 			t.Fatalf("Accept(%s): %v", e.Type, err)
@@ -807,7 +805,7 @@ func TestArgumentsThatDisagreeWithTheStreamAreRefused(t *testing.T) {
 		"whitespace differs":   {[]string{`{"file_path": "a.txt"}`}, `{"file_path":"a.txt"}`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			events := []any{}
+			events := []any{itemAdded(0, `{"id":"fc_1","type":"function_call"}`)}
 			for _, delta := range tc.deltas {
 				events = append(events, argsDelta("fc_1", delta))
 			}
@@ -823,12 +821,12 @@ func TestArgumentsThatDisagreeWithTheStreamAreRefused(t *testing.T) {
 // call's arguments from being checked against another's.
 func TestInterleavedArgumentStreamsStayApart(t *testing.T) {
 	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`), itemAdded(1, `{"id":"fc_2","type":"function_call"}`),
 		argsDelta("fc_1", `{"a":`), argsDelta("fc_2", `{"b":`),
 		argsDelta("fc_1", `1}`), argsDelta("fc_2", `2}`),
 		argsDone("fc_1", `{"a":1}`), argsDone("fc_2", `{"b":2}`),
-		completedWith(
-			functionCall("call_1", "Read", `{"a":1}`),
-			functionCall("call_2", "Read", `{"b":2}`)))
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"a":1}`)),
+		itemDone(1, functionItem("fc_2", "call_2", "Read", `{"b":2}`)), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -840,12 +838,11 @@ func TestInformationalEventsAreKnownAndCarryNothing(t *testing.T) {
 	for _, kind := range []string{
 		codex.RateLimitsUpdated, codex.CodexRateLimits,
 		codex.CodexMetadata, codex.WebsocketTiming,
-		codex.ReasoningTextDelta, codex.ReasoningTextDone,
 	} {
 		t.Run(kind, func(t *testing.T) {
 			frames, err := run(t,
 				event(kind, `{"type":"x","anything":1}`),
-				textDelta("ok"), textDone("ok"),
+				itemAdded(0, messageItem(defaultItem)), textDelta("ok"), textDone("ok"), itemDone(0, messageItem(defaultItem, "ok")),
 				event(codex.Completed, completedOK))
 			if err != nil {
 				t.Fatalf("Accept: %v", err)
@@ -1018,7 +1015,7 @@ func TestTheReturnedRouteIsHeldToTheSentOne(t *testing.T) {
 		translator := NewTranslatorFor(decodeRequest(t, minimalRequest), "gpt-6-luna")
 		translator.ExpectRoute("gpt-6-luna", "low")
 		var err error
-		for _, e := range []stream.Event{textDelta("x"), textDone("x"), event(codex.Completed,
+		for _, e := range []stream.Event{itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x")), event(codex.Completed,
 			`{"type":"response.completed","response":{"id":"resp_1",`+returned+usageReported+`}}`)} {
 			if _, err = translator.Accept(e); err != nil {
 				break

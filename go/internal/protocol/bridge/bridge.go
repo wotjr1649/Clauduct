@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
@@ -575,6 +576,8 @@ func systemText(raw json.RawMessage) (string, bool) {
 // It holds the whole mapping in one place so that adding an event type is a decision made
 // here rather than a default that happens somewhere else.
 type Translator struct {
+	// Incomplete items defer refusal to the terminal event so reported usage survives.
+	incomplete bool
 	// ToolUseID names a backend call for native, before any preparation sees it.
 	ToolUseID       func(callID string) (string, error)
 	PrepareToolCall func(id, name string, raw json.RawMessage) (json.RawMessage, error)
@@ -669,10 +672,12 @@ func (t *Translator) Summaries() []string { return t.summaries }
 
 // heldItem is one output item and whether the backend has finished writing it.
 type heldItem struct {
+	argumentsDone bool
 	item          codex.OutputItem
 	done          bool
 	partSnapshots map[int]string
 	partOpened    map[int]bool
+	reasoning     map[reasoningPartKey]*reasoningPart
 }
 
 // maxOutputItems bounds what one response may open before it completes.
@@ -770,7 +775,7 @@ func (t *Translator) PendingCalls() int { return t.pendingCalls }
 // Accept translates one backend event into client frames.
 //
 // An event type outside the known set is an error, not a no-op. Reasoning events are known
-// and produce nothing: the backend's private work is not carried to the client, and
+// and validated without native frames: private work is not carried to the client, and
 // inventing a signature for it would be passing it off as an Anthropic feature.
 func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	if failure := codex.Failure(event.Type, event.Raw); failure != nil {
@@ -809,12 +814,22 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		if err != nil {
 			return nil, err
 		}
+		if _, err := t.streamItem(delta.ItemID, delta.OutputIndex, codex.ItemMessage); err != nil {
+			return nil, err
+		}
+		if delta.ContentIndex < 0 || delta.ContentIndex >= maxOutputItems {
+			return nil, codex.ErrEventShape
+		}
 		return t.builder.AppendText(delta.ItemID, delta.ContentIndex, delta.Delta)
 
 	case codex.OutputItemAdd:
 		event, err := codex.DecodeOutputItem(event.Raw, false)
 		if err != nil {
 			return nil, err
+		}
+		if event.Item.Incomplete {
+			t.incomplete = true
+			return nil, nil
 		}
 		return nil, t.openItem(event)
 
@@ -823,11 +838,18 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		if err != nil {
 			return nil, err
 		}
+		if event.Item.Incomplete {
+			t.incomplete = true
+			return nil, nil
+		}
 		return nil, t.closeItem(event)
 
 	case codex.FuncArgsDelta:
 		delta, err := codex.DecodeArgumentsDelta(event.Raw)
 		if err != nil {
+			return nil, err
+		}
+		if _, err := t.streamItem(delta.ItemID, delta.OutputIndex, codex.ItemFunctionCall); err != nil {
 			return nil, err
 		}
 		if t.streamedArgs == nil {
@@ -838,6 +860,10 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 
 	case codex.FuncArgsDone:
 		done, err := codex.DecodeArgumentsDone(event.Raw)
+		if err != nil {
+			return nil, err
+		}
+		held, err := t.streamItem(done.ItemID, done.OutputIndex, codex.ItemFunctionCall)
 		if err != nil {
 			return nil, err
 		}
@@ -854,12 +880,19 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		if t.streamedArgs[done.ItemID] != done.Arguments {
 			return nil, ErrArgumentsMismatch
 		}
+		held.argumentsDone = true
 		return nil, nil
 
 	case codex.TextDone:
 		done, err := codex.DecodeTextDone(event.Raw)
 		if err != nil {
 			return nil, err
+		}
+		if _, err := t.streamItem(done.ItemID, done.OutputIndex, codex.ItemMessage); err != nil {
+			return nil, err
+		}
+		if done.ContentIndex < 0 || done.ContentIndex >= maxOutputItems {
+			return nil, codex.ErrEventShape
 		}
 		return t.builder.FinishText(done.ItemID, done.ContentIndex, done.Text)
 
@@ -952,14 +985,10 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		// stalled upstream keeps a request alive forever.
 		return nil, nil
 
-	case codex.ReasoningPartAdd, codex.ReasoningPartDone,
-		codex.ReasoningSummaryAdd, codex.ReasoningSummaryDone,
+	case codex.ReasoningSummaryAdd, codex.ReasoningSummaryDone,
 		codex.ReasoningSummaryTxtD, codex.ReasoningSummaryTxtF,
 		codex.ReasoningTextDelta, codex.ReasoningTextDone:
-		// Known, and deliberately invisible. Reasoning arriving before text must not
-		// disturb the order of what the client does see, which is why these produce no
-		// frames rather than being treated as content of an unknown kind.
-		return nil, nil
+		return nil, t.acceptReasoning(event)
 	}
 
 	return nil, unsupportedEvent(event.Type)
@@ -1034,8 +1063,13 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 		// when it does it sends no argument stream and no .done to end one. That is why
 		// this tolerates what the FuncArgsDone branch refuses -- the two events say
 		// different things, and a .done is a statement that a stream happened.
-		if streamed, saw := t.streamedArgs[final.ID]; saw && streamed != string(final.Arguments) {
+		if streamed, saw := t.streamedArgs[final.ID]; (saw || held.argumentsDone) && streamed != string(final.Arguments) {
 			return ErrArgumentsMismatch
+		}
+	}
+	if final.Type == codex.ItemMessage {
+		if err := t.builder.CheckTextItem(final.ID, final.Text); err != nil {
+			return err
 		}
 	}
 	for index := range held.partOpened {
@@ -1047,6 +1081,17 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 		if index >= len(final.Text) || final.Text[index] != text {
 			return ErrItemSnapshotMismatch
 		}
+	}
+	for index, text := range held.item.Text {
+		if index >= len(final.Text) || !strings.HasPrefix(final.Text[index], text) {
+			return ErrItemSnapshotMismatch
+		}
+	}
+	if len(held.item.Arguments) > 0 && !strings.HasPrefix(string(final.Arguments), string(held.item.Arguments)) {
+		return ErrArgumentsMismatch
+	}
+	if err := held.checkReasoning(final); err != nil {
+		return err
 	}
 	held.item = final
 	held.done = true
@@ -1062,6 +1107,9 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 
 // release hands the assembled response to the builder. It runs once, on completion.
 func (t *Translator) release() error {
+	if t.incomplete {
+		return codex.ErrResponseIncomplt
+	}
 	// Validate raw identity before a mapper can replace it or reserve any call.
 	// Distinct output items may still name the same backend call.
 	for _, index := range t.order {
@@ -1195,6 +1243,9 @@ func (t *Translator) crossCheckCompleted(raw []byte) error {
 		return ErrItemSnapshotMismatch
 	}
 	for i, stated := range items {
+		if stated.Incomplete {
+			return codex.ErrResponseIncomplt
+		}
 		held := t.held[t.order[i]].item
 		if stated.Type != held.Type || stated.ID != held.ID || stated.CallID != held.CallID || stated.Name != held.Name || string(stated.Arguments) != string(held.Arguments) || stated.Phase != held.Phase ||
 			!slices.Equal(stated.Text, held.Text) || !slices.Equal(stated.Summary, held.Summary) || !slices.Equal(stated.ReasoningText, held.ReasoningText) || stated.Encrypted != held.Encrypted || stated.HasEncrypted != held.HasEncrypted || stated.HasContent != held.HasContent {
@@ -1249,4 +1300,18 @@ func turnEffort(request *anthropic.Request) string {
 		}
 	}
 	return effort
+}
+
+func (t *Translator) streamItem(id string, index *int, kind string) (*heldItem, error) {
+	// Older captured streams omit output_index; their unique item ID still binds
+	// the event. A supplied index must agree with that same open function item.
+	for position, held := range t.held {
+		if held.item.ID == id && id != "" {
+			if index != nil && *index != position || held.done || kind == codex.ItemFunctionCall && held.argumentsDone || held.item.Type != kind {
+				return nil, codex.ErrEventShape
+			}
+			return held, nil
+		}
+	}
+	return nil, codex.ErrEventShape
 }

@@ -441,6 +441,25 @@ func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error)
 			return nil, refuse(CodeUnsupportedTools, "max_uses")
 		}
 	}
+	// This adapter supports assistant-initiated search with citations only. A new
+	// caller or result contract must not be silently reduced to that behavior.
+	if value, present := wire.Of(fields, "allowed_callers"); present != wire.Absent {
+		var callers []string
+		if present != wire.Present || json.Unmarshal(value, &callers) != nil || len(callers) != 1 || callers[0] != "assistant" {
+			return nil, refuse(CodeUnsupportedTools, "allowed_callers")
+		}
+	}
+	if value, present := wire.Of(fields, "response_inclusion"); present != wire.Absent {
+		var inclusion string
+		if present != wire.Present || json.Unmarshal(value, &inclusion) != nil || inclusion != "citations" {
+			return nil, refuse(CodeUnsupportedTools, "response_inclusion")
+		}
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return nil, err
+		}
+	}
 	location, err := searchLocation(fields)
 	if err != nil {
 		return nil, err

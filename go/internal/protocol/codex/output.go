@@ -20,6 +20,7 @@ const (
 // them would collapse an omitted optional, an explicit null and a chosen value into fewer
 // readings than the model wrote.
 type OutputItem struct {
+	Incomplete bool
 	// ID is the backend's handle for this item. It is what ties the streaming argument
 	// events to the item they belong to, and what makes a repeated item detectable.
 	ID        string
@@ -63,7 +64,7 @@ type OutputItemEvent struct {
 // them in the added snapshot would refuse the ordinary case. A closing item is the
 // backend's finished account and must be complete. The Node baseline draws the same line.
 func DecodeOutputItem(raw []byte, final bool) (OutputItemEvent, error) {
-	fields, err := wire.Fields(raw, nil)
+	fields, err := wire.Fields(raw, []string{"type", "sequence_number", "output_index", "item"})
 	if err != nil {
 		return OutputItemEvent{}, ErrEventShape
 	}
@@ -105,6 +106,18 @@ func DecodeCompletedOutput(raw []byte) (items []OutputItem, present bool, err er
 	if err != nil {
 		return nil, false, ErrEventShape
 	}
+	if _, present := response["status"]; present {
+		var status string
+		if stringField(response, "status", &status) != nil {
+			return nil, false, ErrEventShape
+		}
+		if status == "incomplete" {
+			return nil, false, ErrResponseIncomplt
+		}
+		if status != "completed" {
+			return nil, false, ErrEventShape
+		}
+	}
 	outputValue, presence := wire.Of(response, "output")
 	if presence != wire.Present {
 		return nil, false, nil
@@ -142,6 +155,38 @@ func decodeItem(raw json.RawMessage, final bool) (OutputItem, error) {
 		return OutputItem{}, err
 	}
 
+	allowed := []string{"id", "type", "status"}
+	switch item.Type {
+	case ItemFunctionCall:
+		allowed = append(allowed, "call_id", "name", "arguments")
+	case ItemMessage:
+		allowed = append(allowed, "role", "content", "phase")
+	case ItemReasoning:
+		allowed = append(allowed, "summary", "content", "encrypted_content")
+	default:
+		return item, nil // The translator refuses every unsupported item kind.
+	}
+	if _, err := wire.Fields(raw, allowed); err != nil {
+		return OutputItem{}, ErrEventShape
+	}
+	if _, present := fields["status"]; present {
+		var status string
+		if stringField(fields, "status", &status) != nil {
+			return OutputItem{}, ErrEventShape
+		}
+		if status == "incomplete" {
+			item.Incomplete = true
+		}
+		if status != "completed" && status != "incomplete" && (final || status != "in_progress") {
+			return OutputItem{}, ErrEventShape
+		}
+	}
+	if _, present := fields["role"]; present {
+		var role string
+		if stringField(fields, "role", &role) != nil || role != "assistant" {
+			return OutputItem{}, ErrEventShape
+		}
+	}
 	switch item.Type {
 	case ItemFunctionCall:
 		if err := optionalString(fields, "call_id", &item.CallID, final); err != nil {
@@ -280,7 +325,7 @@ type ContentPartEvent struct {
 
 func DecodeContentPart(raw []byte) (ContentPartEvent, error) {
 	var out ContentPartEvent
-	fields, err := wire.Fields(raw, nil)
+	fields, err := wire.Fields(raw, []string{"type", "sequence_number", "output_index", "item_id", "content_index", "part"})
 	if err != nil {
 		return out, ErrEventShape
 	}

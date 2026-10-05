@@ -84,7 +84,7 @@ func TestNoToolFrameEscapesBeforeCompletion(t *testing.T) {
 // call at all, so nothing was executed on the strength of a response that never finished.
 func TestFailureBeforeCompletionDeliversNoCall(t *testing.T) {
 	frames, err := runFor(t, callable("Read"),
-		textDelta("working"), textDone("working"),
+		itemAdded(0, messageItem(defaultItem)), textDelta("working"), textDone("working"), itemDone(0, messageItem(defaultItem, "working")),
 		event(codex.Failed, `{"type":"response.failed"}`))
 
 	if !errors.Is(err, codex.ErrResponseFailed) {
@@ -101,8 +101,8 @@ func TestFailureBeforeCompletionDeliversNoCall(t *testing.T) {
 // a result comes back addressed to that identifier.
 func TestToolCallIdentityReachesTheClient(t *testing.T) {
 	frames, err := runFor(t, callable("Read"),
-		textDelta("checking"), textDone("checking"),
-		completedWith(functionCall("call_abc123", "Read", `{"file_path":"C:\\a\\b.txt"}`)))
+		itemAdded(0, messageItem(defaultItem)), textDelta("checking"), textDone("checking"), itemDone(0, messageItem(defaultItem, "checking")),
+		itemAdded(1, openingOf(functionCall("call_abc123", "Read", `{"file_path":"C:\\a\\b.txt"}`))), itemDone(1, functionCall("call_abc123", "Read", `{"file_path":"C:\\a\\b.txt"}`)), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestStopReasonSaysWhetherAToolIsPending(t *testing.T) {
 		t.Errorf("stop_reason = %v, want tool_use", got)
 	}
 
-	textOnly, err := run(t, textDelta("done"), textDone("done"), event(codex.Completed, completedOK))
+	textOnly, err := run(t, itemAdded(0, messageItem(defaultItem)), textDelta("done"), textDone("done"), itemDone(0, messageItem(defaultItem, "done")), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -273,8 +273,8 @@ func TestStopReasonSaysWhetherAToolIsPending(t *testing.T) {
 // arrive inside an unfinished answer.
 func TestTextClosesBeforeAnyToolBlockOpens(t *testing.T) {
 	frames, err := runFor(t, callable("Read"),
-		textDelta("looking"), textDone("looking"),
-		completedWith(functionCall("call_1", "Read", `{}`)))
+		itemAdded(0, messageItem(defaultItem)), textDelta("looking"), textDone("looking"), itemDone(0, messageItem(defaultItem, "looking")),
+		itemAdded(1, openingOf(functionCall("call_1", "Read", `{}`))), itemDone(1, functionCall("call_1", "Read", `{}`)), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -298,8 +298,9 @@ func TestTextClosesBeforeAnyToolBlockOpens(t *testing.T) {
 // A disagreement means a delta went missing, and neither version can be handed on.
 func TestCompletedTextIsCheckedAgainstTheStream(t *testing.T) {
 	_, err := runFor(t, callable("Read"),
+		itemAdded(0, messageItem(defaultItem)),
 		textDelta("streamed"), textDone("streamed"),
-		completedWith(`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"something else"}]}`))
+		itemDone(0, messageItem(defaultItem, "something else")), event(codex.Completed, completedOK))
 	if !errors.Is(err, anthropic.ErrTextMismatch) {
 		t.Fatalf("err = %v, want TEXT_MISMATCH", err)
 	}
@@ -307,8 +308,9 @@ func TestCompletedTextIsCheckedAgainstTheStream(t *testing.T) {
 
 func TestCompletedTextAgreeingWithTheStreamIsAccepted(t *testing.T) {
 	_, err := runFor(t, callable("Read"),
+		itemAdded(0, messageItem(defaultItem)),
 		textDelta("strea"), textDelta("med"), textDone("streamed"),
-		completedWith(`{"type":"message","role":"assistant","content":[{"type":"output_text","text":"streamed"}]}`))
+		itemDone(0, messageItem(defaultItem, "streamed")), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}

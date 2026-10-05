@@ -763,3 +763,18 @@ func (b *Builder) CheckTextPart(item string, index int, snapshot string) error {
 	}
 	return nil
 }
+
+// CheckTextItem preserves part boundaries as well as the concatenated answer.
+func (b *Builder) CheckTextItem(item string, snapshots []string) error {
+	for key, part := range b.parts {
+		if key.item == item && (key.index < 0 || key.index >= len(snapshots) || string(part.builder) != snapshots[key.index]) {
+			return ErrTextMismatch
+		}
+	}
+	for index, text := range snapshots {
+		if err := b.CheckTextPart(item, index, text); err != nil {
+			return err
+		}
+	}
+	return nil
+}

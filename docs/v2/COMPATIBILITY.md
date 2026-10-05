@@ -640,15 +640,69 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | native가 effort를 명시한 보조 요청·high·max 세션의 압축은 그 effort로 실행 | `OUT_OF_SCOPE` | v0.6.4 설계(압축 시간 medium 12.2초, max 26.1초 실측) | 비용 문제가 관측될 때 |
 | doctor가 측정 기준보다 새 클라이언트에 `re-measure due`를 표시(v0.6.2) | `OUT_OF_SCOPE` | 설계 안내이며 세션은 그대로 실행된다. v0.6.9 기준은 Claude Code 2.1.289 | native가 새 버전을 낼 때마다 재측정한다 |
 | 미지 SSE 이벤트에서 요청 실패 | `OUT_OF_SCOPE` | 설계(fail-closed). 이름은 계정에 남긴다 | 새 이벤트가 관측될 때 처리를 더한다 |
-| Anthropic 서버 기능(claude.ai 로그인, Remote Control, `/schedule`, cloud 세션, `/ultrareview`, Artifact, advisor 도구와 서버 의존 베타 7종, 서버 분류기, telemetry) | `OUT_OF_SCOPE` | 3절 v0.6.7 표와 미지원 표 | backend 쪽에 대응 서비스가 생길 때 |
+| Anthropic 서버 기능(claude.ai 로그인, Remote Control, `/schedule`, cloud 세션, `/ultrareview`, Artifact, advisor 도구와 서버 의존 베타 7종, 서버 분류기, telemetry) | `OUT_OF_SCOPE` | v0.6.11부터 단계별 분류는 아래 [서버 경계 원장](#서버-경계-원장-v0611)(#305). 이 행은 기능 묶음의 범위만 남긴다 | backend 쪽에 대응 서비스가 생길 때 |
 | settings 파일(user·project·local) env가 모델 요청을 다른 endpoint나 cloud provider로 보낼 수 있었다(v0.6.10 이하, 2.1.289 실측) | `FIXED` | v0.6.11(#295): `--settings` env로 endpoint·provider·unix socket·`NO_PROXY`를 고정. 실제 native 실측 시험(user·project·local settings가 endpoint·Bedrock·Google Cloud·Vertex·unix socket·`NO_PROXY`·token을 바꾸는 경우) | native가 provider 선택 변수를 더하거나 settings 우선순위를 바꿀 때. 실행 중 hook 대조가 알려진 경로를 감지한다 |
-| 저장된 Claude apps gateway 로그인은 native가 `ANTHROPIC_BASE_URL`보다 먼저 쓴다(2.1.289 문자열 근거, 실측 안 함) | `MEASURE` | 이 로그인은 managed `forceLoginMethod`·`forceLoginGatewayUrl`이 있어야 만들 수 있고(공식 문서), Clauduct는 그 정책에서 시작하지 않는다. 정책을 지운 뒤에도 로그인이 남아 있는 기기는 막지 않는다. 막으려면 자격 증명 저장소(credman·평문 파일)를 읽어야 해서 따로 정한다 | 그런 기기가 보고되거나 저장소 검사를 결정할 때 |
+| 저장된 Claude apps gateway 로그인이 있으면 모델 요청(대화 본문과 저장된 gateway 토큰)이 Clauduct gateway 대신 그 gateway로 간다 | `NATIVE_CLIENT_LIMIT` | 실측(v0.6.11, 합성 credential만 둔 격리 설정): Clauduct의 `--settings` 라우팅 고정으로도 막히지 않고 hook 검사에도 보이지 않는다. native는 이 로그인을 `ANTHROPIC_BASE_URL`보다 먼저 복원하고, 복원을 건너뛰는 변수는 다른 동작도 함께 바꾼다. Clauduct 결함 #299로 수정 방식 결정 대기. 사용자 credential을 읽는 사전 검사는 넣지 않는다(소유자 결정) | #299 결정 뒤 |
 | native가 새 provider 선택 변수나 요청 목적지 변수를 더하면 settings 파일로 우회할 수 있다 | `MEASURE` | v0.6.11(#295)은 2.1.289의 provider 목록 7종과 `ANTHROPIC_UNIX_SOCKET`만 막는다. 이름 접두어로 막지 않는 이유는 같은 접두어의 일반 옵션 때문이다 | native 새 버전마다 provider 목록을 재측정과 표면 차등 관문(#294)으로 비교한다 |
 | `HTTP(S)_PROXY`가 있고 `NO_PROXY`에 loopback이 없으면 gateway 요청(token·대화 포함)이 proxy로 갔다(v0.6.10 이하) | `FIXED` | v0.6.11(#295): `NO_PROXY`에 loopback을 더한다. 사용자 항목은 유지 | — |
 | 라우팅을 정하는 기기 정책(managed 출처)에서는 실행하지 않음 | `OUT_OF_SCOPE` | 설계(#295): managed는 Clauduct보다 높아 gateway를 보장할 수 없다. HKCU는 admin 출처가 있으면 native가 무시하지만 Clauduct는 보수적으로 거부한다 | 오거부가 보고되거나 native가 출처 선택을 노출할 때 |
 | user·project settings 파일의 `NO_PROXY` 항목은 Clauduct 세션에서 셸 값(+loopback)으로 대체된다 | `OUT_OF_SCOPE` | v0.6.11(#295): `--settings` env가 파일보다 높다. `--settings`로 준 `NO_PROXY`는 유지되고 loopback만 더해진다 | 필요한 사용 사례가 보고될 때 |
 | loopback을 검사·중계하는 보안 필터(AdGuard 등) | `OUT_OF_SCOPE` | 필터 기능을 끄고 같은 probe로 전후 비교(2절) | 특정 필터 제품의 호환 문제가 보고될 때 |
 | 비Windows | `OUT_OF_SCOPE` | 이식이 아니라 새 설계 | 다른 OS 지원을 설계할 때 |
+
+### 서버 경계 원장 (v0.6.11)
+
+native 기능 가운데 Anthropic 서버에 기대는 것을 단계별로 나눴다(#305). 로컬 단계(native가 이 PC에서 하는 일)와 서버 단계
+(어딘가로 요청을 보내는 일)를 따로 분류한다. 프로필은 [경계 프로필](SETTINGS.md#경계-프로필-v0611)이다. 근거는 셋으로
+나눈다. 실측은 따로 적지 않으면 과금 없는 loopback과 거부 프록시, 새 설정, claude.ai 로그인 없이 native 2.1.289로 쟀다. 정적은
+2.1.289 실행 파일의 문자열이다. 문서는 공식 문서다. 실측 기록은 비공개 검증 폴더(`verification/v0611-dev-20261005/`)에 있다.
+Anthropic 계정은 쓰지 않았으므로, claude.ai 로그인이 저장된 설정에서의 동작은 따로 적은 곳 말고는 재지 않았다.
+
+| 분류 | 뜻 |
+|---|---|
+| `GPT_TRANSLATED` | Clauduct gateway가 GPT backend 요청으로 바꿔 처리한다 |
+| `LOCAL_NATIVE` | native가 이 PC에서 처리하고 Anthropic 서버가 필요 없다 |
+| `NATIVE_DISABLED` | native 설정이나 변수로 꺼져 있고, native가 스스로 거절한다 |
+| `CLAUDUCT_REFUSED` | Clauduct가 명시적 오류로 거부한다 |
+| `INERT` | 켜는 조건(flag·로그인)이 없어 나타나지 않거나 native가 거절한다 |
+| `ALLOWED_EGRESS` | 소유자 결정으로 허용한 외부 접속이다. 모델 요청이 아니다 |
+| `OUT_OF_SCOPE` | 제품 범위 밖이다 |
+| `MEASURE` | 판정에 필요한 실측이 없다 |
+
+"세션 환경"은 Clauduct가 넣는 기본값이다. 사용자가 셸이나 settings 파일에서 같은 이름을 다르게 주면 그 값이 이긴다. 그래서
+그런 행의 `NATIVE_DISABLED`는 사용자가 되돌리지 않았을 때의 분류다. 세션 `--settings`(경계 프로필, 필수 env)로 넣는 값은
+settings 파일이 바꾸지 못한다.
+
+| 기능 | 단계 | default | strict | 근거 |
+|---|---|---|---|---|
+| 모델 요청(대화·subagent·압축·로컬 auto 분류기) | 서버 | `GPT_TRANSLATED` | `GPT_TRANSLATED` | 실측(과금되는 실제 backend 회귀 18개), 라우팅 불변식 #295 |
+| auto 모드 서버 분류기 | 서버 | `NATIVE_DISABLED` | `NATIVE_DISABLED` | 세션 환경 `CLAUDE_CODE_AUTO_MODE_SERVER=0`. 판정은 위의 로컬 분류기가 한다 |
+| advisor 도구 | 서버 | `NATIVE_DISABLED` | `NATIVE_DISABLED` | 세션 환경 `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` |
+| Anthropic 서버 의존 beta 7종(`ccr-byoc`·`ccr-triggers`·`environments`·`mcp-tunnels`·`message-batches`·`message-threads`·`oidc-federation`) | 서버 | `INERT` | `INERT` | gateway가 거부하지 않고 `serverDependent`로 기록한다(`gateway/betas.go`). 이 backend에서는 성립하지 않는다 |
+| Anthropic 서버 실행 tool | 서버 | `CLAUDUCT_REFUSED` | `CLAUDUCT_REFUSED` | side query가 아닌 hosted `web_search`는 `HOSTED_TOOL_UNSUPPORTED`, 그 밖의 hosted 형식(`web_fetch`·`code_execution` 등)은 도구 필드 검사(`TOOL_FIELDS`)로 거부(2절) |
+| WebSearch | 로컬 tool 호출 / 검색 | `LOCAL_NATIVE` / `GPT_TRANSLATED` | 같음 | gateway의 backend 검색(2절 재시도 행) |
+| WebFetch | 가져오기 / 요약 | `LOCAL_NATIVE` / `GPT_TRANSLATED` | 같음 | 실측: 가져오기는 대상 호스트로 직접 간다 |
+| WebFetch 사전 domain 점검 | 서버(`api.anthropic.com/api/web/domain_info`, 가져올 domain을 보냄) | `ALLOWED_EGRESS` | `NATIVE_DISABLED` | 실측(접속 호스트): 설정 없음이면 `api.anthropic.com`만, `skipWebFetchPreflight`이면 대상 호스트만. 정적: 경로와 domain 전송. strict는 Anthropic 차단 목록 검사를 잃는다 |
+| MCP registry 목록 | 서버(`GET api.anthropic.com/mcp-registry/v0/servers`, 인증 없음) | `ALLOWED_EGRESS` | `NATIVE_DISABLED` | 실측(시작 때 1회), 정적 |
+| native 자동 업데이트·release notes | 서버(`downloads.claude.ai`, `raw.githubusercontent.com`의 CHANGELOG) | `ALLOWED_EGRESS` | `NATIVE_DISABLED` | 실측 호스트(TUI), 정적 URL. 소유자 결정(2026-10-05): 자동 업데이트는 기본 허용, 비필수 접속 차단은 strict에만 |
+| 공식 marketplace 자동 등록·plugin 동기화 | 서버(`github.com`, `api.github.com`, `downloads.claude.ai`) | `ALLOWED_EGRESS` | `NATIVE_DISABLED`(사용자가 설정한 변수) | 실측 호스트(TUI, marketplace가 없는 새 설정). 호스트별 기능 귀속은 정적 문자열 기준. 소유자 결정(2026-10-05): 자동 등록 차단은 strict에만. 이미 marketplace가 있는 설정에서 strict가 동기화를 끄는지는 재지 않았다 |
+| claude.ai connector 자동 연결 | 서버(claude.ai) | `NATIVE_DISABLED` | `NATIVE_DISABLED` | 세션 `--settings`의 `disableClaudeAiConnectors`. 문서(native changelog): `ANTHROPIC_AUTH_TOKEN`이 있어도 native가 끈다 |
+| DesignSync(claude.ai/design) | tool / 서버 | `NATIVE_DISABLED` | `NATIVE_DISABLED` | 실측: 세션 `--settings` deny로 모델에 제공되지 않음 |
+| Artifact 계열(Artifact·ArtifactComments·ArtifactData·ArtifactCheck) | tool / 서버 | `INERT` | `NATIVE_DISABLED` | 실측: 모든 실행에서 제공되지 않음(표면 관문). 원인은 문서·정적(feature flag 게이트). strict는 deny |
+| RemoteTrigger·PushNotification·SendUserFile·ShareOnboardingGuide·SendFeedback | tool / 서버 | `INERT` | `INERT` | 실측: 모든 실행에서 제공되지 않음(표면 관문). 문서: claude.ai 로그인, Remote Control 또는 feature flag가 필요 |
+| Remote Control | 서버(claude.ai) | `INERT` | `INERT` | 실측: `/remote-control`은 "isn't available in this environment", 모델 요청 0. 정적: claude.ai 구독 로그인을 요구. 로그인이 저장된 설정은 `MEASURE` |
+| Remote Control TUI 시작 인수(`--remote-control`) | 서버(claude.ai) | `MEASURE` | `MEASURE` | 실측: 모델 요청 0이지만 화면에 판정 문구가 나오지 않았다. 정적으로는 위와 같은 요구 조건 |
+| cloud 세션(`--cloud`)·teleport(`--teleport`) | 서버(claude.ai) | `INERT` | `INERT` | 실측: "cloud sessions require authentication with a Claude.ai account", "Teleport requires a Claude account". `-p`와 `--cloud`는 함께 쓸 수 없다. 모델 요청 0. 로그인이 저장된 설정은 `MEASURE` |
+| `/schedule`, `/ultrareview`, `claude ultrareview` | 서버(claude.ai) | `INERT` | `INERT` | 실측: "isn't available in this environment", "Ultrareview is currently unavailable". 모델 요청 0. 로그인이 저장된 설정은 `MEASURE` |
+| telemetry·오류 보고·feature flag 조회 | 서버 | `NATIVE_DISABLED` | `NATIVE_DISABLED` | 세션 환경 `DISABLE_TELEMETRY`·`DISABLE_ERROR_REPORTING`. 문서: telemetry를 끄면 flag 조회도 꺼진다 |
+| `/usage`·`/cost`의 플랜 사용량 | 서버(claude.ai 계정) | `INERT` | `INERT` | 실측(알려진 제한 원장): native가 custom base URL에는 계정 엔드포인트를 묻지 않는다. 사용량은 `clauduct --usage` |
+| claude.ai 로그인·구독 관리(`/login` 등) | 서버(claude.ai) | `OUT_OF_SCOPE` | `OUT_OF_SCOPE` | Clauduct는 Codex 계정을 쓴다 |
+
+이 표에 넣지 않은 경계 위반: 저장된 Claude apps gateway 로그인이 있으면 모델 요청이 그 gateway로 간다(실측, 합성 credential).
+결함 #299로 열려 있고, 위 알려진 제한 원장의 해당 행이 상태를 소유한다.
+
+표면 관문(`verification/remeasure/surface.mjs`)은 Clauduct의 실행이 접속을 시도한 호스트마다 이 표의 기능 이름을 요구하고,
+그 이름이 이 표에 실제로 있는지 대조한다. 연결되지 않은 새 호스트가 보이면 관문이 실패한다.
 
 ### 파일 대상 code-review 인수 — v0.6.0
 

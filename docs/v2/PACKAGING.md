@@ -124,6 +124,15 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 **발행 뒤에는 실제로 받아 본다.** `clauduct --update`가 릴리스를 읽고, digest를 대조하고, 교체하는
 것까지가 이 절차의 끝이다.
 
+**발행 뒤 문서도 대조한다(v0.6.11, #314).** 발행 뒤 문서 PR이 기본 branch에 들어가면, 읽기 전용 검사가 다음이 서로 맞는지
+본다. latest Release와 그 태그, 원격 태그가 가리키는 commit과 Release target, 내려받은 자산의 digest와 API digest·`SHA256SUMS`,
+기본 branch의 `docs/v2/README.md` 최신 출시 행, `RELEASE-<tag>.md`의 태그 신원과 `SHA256SUMS` digest, COMPATIBILITY 원장 버전이다.
+발행 뒤 문서는 태그보다 늦게 쓰이므로 태그 안의 문서가 아니라 기본 branch를 읽는다.
+
+**출하 때 backend capability를 다시 잰다.** 발행 전에 `clauduct --dev probe limit --send`(과금 3회)로 backend가
+`max_output_tokens`를 받는지 확인한다. 2026-10-05에는 받기 시작했다(#309). temperature·top_p·strict·새 출력 이벤트는
+COMPATIBILITY 원장 행의 다시 볼 조건이 생겼을 때만 잰다.
+
 **구버전→신버전 경로는 v0.2.2에서 실측됐다.** 설치된 0.2.1이 릴리스를 읽고 화면에 digest 3개를
 띄운 뒤 교체했고, 그 세 값은 발행된 `SHA256SUMS`와 같았다. 이어서 네 가지가 순서대로 확인됐다:
 

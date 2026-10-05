@@ -186,7 +186,7 @@ export const register = on => {
       let choice;
       try { choice=JSON.parse(await $.fs.read(file)); }
       catch { throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED'); }
-      if (choice.session!==sid || choice.call!==call || choice.parent!==parent || choice.role!==e.subagentType || !__CLAUDUCT_MODELS__.includes(choice.model)) throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED');
+      if (choice.session!==sid || choice.call!==call || choice.parent!==parent || choice.role!==e.subagentType && !(choice.omitted===true && e.isTeammate===true && e.subagentType==='teammate') || !__CLAUDUCT_MODELS__.includes(choice.model)) throw new Error('CLAUDUCT_NATIVE_SELECTION_UNVERIFIED');
       if (!e.fork) forwarded={...e,model:choice.model}; // native owns fork inheritance
     }
     const answer=await next(forwarded);

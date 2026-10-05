@@ -575,6 +575,7 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 |---|---|---|---|
 | TUI subagent가 응답 도중 실패한 뒤 이어진 보고가 끊긴 지점에서 멈춤(v0.6.8) | `FIXED` | v0.6.9: subagent text를 완료까지 보류(#264). 실제 backend 유효 7회 모두 부분 보고 0, 명시적 실패 | — |
 | native 2.1.289 Agent teams의 teammate 요청을 모두 거부(v0.6.8 이하) | `FIXED` | v0.6.9: teammate 지원(#269). 위 1절 행 | native가 teammate의 요청 식별을 바꿀 때 |
+| `subagent_type` 없이 부른 Agent teams teammate가 시작하지 못함(v0.6.9~v0.6.10) | `FIXED` | v0.6.11(#307): 생략한 역할을 Clauduct는 subagent 기본값 `general-purpose`로, native 2.1.289는 teammate의 `teammate`로 기록해 spawn 검사가 거부했다. 생략한 호출에 한해 native의 `teammate`를 받는다. 명시한 역할은 그대로 일치해야 한다. 과금 없는 TUI loopback(`teams-native2`)에서 teammate 시작, 거부 0 | native가 생략 역할의 이름을 바꿀 때 |
 | hosted web search `max_uses` 값을 검사하지 않음(v0.6.8) | `FIXED` | v0.6.9: 1 이상의 정수만(#272) | — |
 | 재측정이 hook 타입 일부만 비교(2.1.289 teammate 변경을 놓침) | `FIXED` | v0.6.9: 세션 plugin이 쓰는 모든 이벤트의 타입과 참조 타입 비교(#268) | — |
 | 공개 protocol contract test 없음(#256) | `FIXED` | v0.6.9: 합성 테스트를 공개 CI에서 실행(#271) | — |

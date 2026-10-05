@@ -1062,12 +1062,26 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 
 // release hands the assembled response to the builder. It runs once, on completion.
 func (t *Translator) release() error {
+	// Validate raw identity before a mapper can replace it or reserve any call.
+	// Distinct output items may still name the same backend call.
+	for _, index := range t.order {
+		if !t.held[index].done {
+			return ErrOutputItemOrder
+		}
+	}
+	seenCalls := make(map[string]bool)
+	for _, index := range t.order {
+		item := t.held[index].item
+		if item.Type == codex.ItemFunctionCall && !t.builder.StoppedBySequence() {
+			if !anthropic.ValidToolIdentifier(item.CallID) || seenCalls[item.CallID] {
+				return anthropic.ErrUnsupportedToolCall
+			}
+			seenCalls[item.CallID] = true
+		}
+	}
 	calls := 0
 	for _, index := range t.order {
 		held := t.held[index]
-		if !held.done {
-			return ErrOutputItemOrder
-		}
 		if held.item.Type == codex.ItemFunctionCall {
 			calls++
 			if t.PendingToolCall != nil && !t.builder.StoppedBySequence() && t.PendingToolCall(held.item.Name, held.item.Arguments) {

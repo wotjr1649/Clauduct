@@ -867,6 +867,25 @@ type tracked struct {
 	http.ResponseWriter
 	rec  *record
 	body io.Reader // handler lifetime only; never retained in the record or diagnostics
+	// class is the request class header as it arrived, before the body is read (#310).
+	class string
+}
+
+// abandonedAuxiliary reports a refusal of native's own auxiliary generation that the client
+// gave up on (#310): no gateway cancellation named a source, and it is not a web search the
+// user asked for. The header class covers a request cancelled before its body was read.
+// Untracked writers (status, the confirmation helper) are never one.
+func abandonedAuxiliary(w http.ResponseWriter) bool {
+	t, ok := w.(*tracked)
+	if !ok || t.rec == nil {
+		return false
+	}
+	data := t.rec.snapshot()
+	class := data.RequestClass
+	if class == "" {
+		class = t.class
+	}
+	return class == "auxiliary" && data.Kind != "web_search" && data.CancellationSource == ""
 }
 
 // Unwrap is what http.NewResponseController follows to reach the real writer, which is

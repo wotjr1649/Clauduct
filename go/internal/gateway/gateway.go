@@ -348,7 +348,7 @@ func (g *Gateway) Stats() (received, refused, active int64) {
 //
 // Called from the single place every refusal goes through, which is what keeps the reasons
 // and the total the same fact rather than two that agree until they do not.
-func (g *Gateway) countRefusal(category, path, class string) {
+func (g *Gateway) countRefusal(category, path string, auxiliary bool) {
 	g.refusalMu.Lock()
 	defer g.refusalMu.Unlock()
 	if g.refusals == nil {
@@ -358,7 +358,7 @@ func (g *Gateway) countRefusal(category, path, class string) {
 	if category == refuseCancelled.category && path == "/v1/messages/count_tokens" {
 		g.cancelledCounts++
 	}
-	if category == refuseCancelled.category && path == "/v1/messages" && class == "auxiliary" {
+	if category == refuseCancelled.category && path == "/v1/messages" && auxiliary {
 		g.cancelledAuxiliary++
 	}
 	g.notePath(path)
@@ -516,7 +516,7 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != statusPath && !helper {
 		entry := g.ring.open(r.Method, r.URL.Path)
 		defer entry.finish()
-		w = &tracked{ResponseWriter: w, rec: entry, body: r.Body}
+		w = &tracked{ResponseWriter: w, rec: entry, body: r.Body, class: r.Header.Get("X-Claude-Code-Request-Class")}
 	}
 
 	if bad, ok := g.checkBoundary(r); !ok {

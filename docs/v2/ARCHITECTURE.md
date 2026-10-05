@@ -28,7 +28,7 @@ Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하�
 |---|---|---|
 | 실행·도구 | TUI·입력 편집·Read/Edit/Bash·MCP·plugin/skill 로딩·권한 판단 | loopback 연결, 프로세스 수명 관리, Windows PDF 렌더러 연결 |
 | 설정·모델 | 기존 Claude 설정과 picker 화면 | 전용 settings.json과 누락 키 동기화, 세션 시작 때 받아 고정하는 계정 모델 목록, 모델 매핑·시작 pair·agent pair, 세션용 `--settings` 병합과 GPT picker 항목 |
-| 안전 정책 | native 기본 규칙과 사용자·관리 규칙, auto 분류기 판정, 승인 UI | 권한 규칙은 더하지 않는다(v0.6.4). gateway의 native classifier 경로(`classifier_model` pair)와 요청 출처 확인 |
+| 안전 정책 | native 기본 규칙과 사용자·관리 규칙, auto 분류기 판정, 승인 UI | 권한 판단 규칙은 더하지 않는다(v0.6.4). v0.6.11부터 경계 프로필의 deny 규칙(Anthropic 서버 경로의 tool: DesignSync, strict에서 Artifact 계열)만 세션 `--settings`에 더한다(#301). gateway의 native classifier 경로(`classifier_model` pair)와 요청 출처 확인 |
 | 세션 재개 | 대화 저장·목록·native resume | 설정 snapshot과 마지막 선택의 UUID 복원, 검증하지 못한 재개 경로의 명시적 거부·명령 안내 |
 | 위임 | Agent 실행·완료 알림·권한 | 정의/명시 선택의 GPT 변환, 선택 검증, Agent·SendMessage 설명 보완, 검증된 pending 호출의 중복 억제와 native 대기 제어 |
 | Workflow | 원 스크립트의 도구 실행·역할 정의·명시적 재개의 cache/replay | native Read 원문 확인, 결과 journal·종료 근거 검증, 같은 run의 재연결. `resumeFromRunId` 단독 결과 회수와 `clauduct:plan-v1` 미실행 단계 재개는 별도 계약 |

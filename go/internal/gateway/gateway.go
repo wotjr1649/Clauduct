@@ -306,6 +306,14 @@ func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 // endpoint other than this gateway. The launcher ends the session on it (#295).
 func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 
+// RoutingProofPath is where the session's first hook asks whether native's start-up model list
+// request reached this gateway (#299).
+const RoutingProofPath = "/clauduct/routing-proof"
+
+// routingProofWait bounds how long that answer waits for a list request still in flight. The
+// hook's own budget is three seconds.
+const routingProofWait = 2 * time.Second
+
 // ExpectTools sets the tools this session's mode should be offered; a name no request
 // offered is reported as missing (#300). Nil, the default, compares nothing.
 func (g *Gateway) ExpectTools(names []string) { g.tools.expect(names) }
@@ -570,6 +578,28 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		// Only the fact travels; the hook sends no endpoint and nothing is read.
 		g.routingMismatch.Store(true)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if r.URL.Path == RoutingProofPath {
+		if r.Method != http.MethodPost {
+			g.refuse(w, refuseMethod)
+			return
+		}
+		// #299: native asks its endpoint for the model list at start, before the session's
+		// first hook (measured 2.1.289, every start, foreground and background). A stored
+		// Claude apps gateway login sends that request -- and then the conversation -- to the
+		// stored gateway instead, with this session's endpoint left in place for the hooks to
+		// see. So the first hook asks whether the list came here, waiting briefly for a
+		// request still in flight. Nothing is read from any credential store.
+		deadline := time.Now().Add(routingProofWait)
+		for g.modelLists.Load() == 0 && time.Now().Before(deadline) {
+			time.Sleep(20 * time.Millisecond)
+		}
+		if g.modelLists.Load() == 0 {
+			g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}

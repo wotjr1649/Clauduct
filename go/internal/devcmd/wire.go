@@ -226,6 +226,9 @@ func routedTrip(transport upstream.Transport, out io.Writer, label, requestJSON 
 		fmt.Fprintf(out, "%-14s %s\n", label, result)
 		return result
 	}
+	// The shape a session's generation request has, cap included (#309), so accepting a model
+	// also checks that it takes max_output_tokens.
+	backend.MaxOutputTokens = bridge.OutputCap(request)
 	body, err := json.Marshal(backend)
 	if err != nil {
 		result := exchange{category: "ENCODE: " + err.Error()}

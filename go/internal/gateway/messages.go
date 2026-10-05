@@ -263,10 +263,14 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	// The summary asks for output, not input, so the count cache keys on the body without it:
 	// a count_tokens request for the same input never carries one (#277).
+	// The same for the output cap (#309): a count asks about input only.
 	sent := encoded
 	summary := g.summaryStep(r, request, scope.session)
+	backendRequest.MaxOutputTokens = bridge.OutputCap(request)
 	if summary != nil {
 		backendRequest.Effort.Summary = "auto"
+	}
+	if summary != nil || backendRequest.MaxOutputTokens > 0 {
 		if sent, err = json.Marshal(backendRequest); err != nil {
 			g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")
 			return

@@ -108,6 +108,9 @@ type Request struct {
 	Store bool `json:"store"`
 	// Text carries a structured output request, and is absent when the client named none.
 	Text *TextParam `json:"text,omitempty"`
+	// MaxOutputTokens is the client's max_tokens as a cap on generation (#309), set only on the generation
+	// request (OutputCap), never on a count: it bounds output, not input.
+	MaxOutputTokens int64 `json:"max_output_tokens,omitempty"`
 }
 
 // TextParam is where the backend takes the response format constraint.
@@ -131,12 +134,10 @@ type SchemaFormat struct {
 // shown to anyone: nothing downstream hands it to the client.
 var Include = []string{"reasoning.encrypted_content"}
 
-// MaxOutputTokens is deliberately absent from Request.
-//
-// The baseline never sends max_output_tokens, and the PoC recorded the backend rejecting
-// it. The client's max_tokens is enforced instead at completion, against the usage the
-// backend reports — see Translator.outputLimit. That is a check after the fact rather than
-// a cap on generation, and the difference is recorded here rather than papered over.
+// The client's max_tokens is checked at completion against the usage the backend reports
+// (Translator.outputLimit). Until v0.6.10 that was the only enforcement: the PoC recorded the
+// backend rejecting max_output_tokens. It has accepted and honoured it since (measured
+// 2026-10-05, #309), so a generation request carries it as a cap as well (OutputCap), and the check stays.
 
 // InputEntry is one element of the backend's input array. A conversation turn, a recorded
 // call and a recorded result are three different shapes in the same list, so the members
@@ -328,6 +329,24 @@ func (s Selection) ResolveRoute(request *anthropic.Request, override ...Route) (
 }
 
 // BuildRequest converts a decoded Anthropic request into a backend request.
+// OutputCap is the client's max_tokens as the backend's max_output_tokens (#309), or 0 for
+// none. It bounds output, reasoning included -- the same count Translator.outputLimit checks at
+// completion, so a request that would fail that check now stops at the limit instead of
+// spending past it. Not with thinking off: the completion check then leaves reasoning out, and
+// the backend reasons past a small answer budget (native's 64-token classifier), so a cap there
+// would fail requests that pass today.
+func OutputCap(request *anthropic.Request) int64 {
+	// Below the backend's documented minimum of 16 the parameter would be refused; a request
+	// that small fails the completion check anyway, as it did before #309.
+	if request.MaxTokens >= minOutputCap && !request.ThinkingDisabled {
+		return request.MaxTokens
+	}
+	return 0
+}
+
+// minOutputCap is the smallest max_output_tokens the backend accepts.
+const minOutputCap = 16
+
 func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
 	route, err := s.ResolveRoute(request, override...)
 	if err != nil {
@@ -572,9 +591,11 @@ type Translator struct {
 	pendingCalls    int
 	builder         *anthropic.Builder
 	usage           codex.Usage
-	// outputLimit is the caller's max_tokens. Nothing asks the backend to stop at it, so
-	// it is checked here against what the backend says it spent.
+	// outputLimit is the caller's max_tokens. The generation request carries it as a cap
+	// (OutputCap, #309) and it is still checked here against what the backend says it spent.
 	outputLimit int64
+	// capped: the generation request carried outputLimit as its cap (OutputCap, #309).
+	capped bool
 	// answerOnly leaves the backend's reasoning out of that check: the caller turned
 	// thinking off, so its limit bounds the answer, and the reasoning is none of it. Native's
 	// auto mode classifier asks for 64 tokens this way, and the backend reasons past that
@@ -695,7 +716,7 @@ func NewTranslatorFor(request *anthropic.Request, effective string) *Translator 
 	if reported == "" {
 		reported = request.Model
 	}
-	t := &Translator{builder: anthropic.NewBuilder(reported), outputLimit: request.MaxTokens, answerOnly: request.ThinkingDisabled}
+	t := &Translator{builder: anthropic.NewBuilder(reported), outputLimit: request.MaxTokens, answerOnly: request.ThinkingDisabled, capped: OutputCap(request) > 0}
 	callable := request.CallableNames()
 	t.builder.SetCallable(func(name string) bool { return callable[name] })
 	t.builder.SetStopSequences(request.StopSequences)
@@ -704,10 +725,10 @@ func NewTranslatorFor(request *anthropic.Request, effective string) *Translator 
 
 // ErrOutputLimitExceeded means the backend generated more than the caller allowed.
 //
-// The caller's max_tokens never reached the backend — it is not a parameter this wire
-// accepts — so it cannot have been a cap on generation. Enforcing it here means an
-// oversized response is refused after the fact rather than truncated during it, which is
-// the baseline's behaviour and the only one available.
+// Until v0.6.10 the caller's max_tokens never reached the backend, which rejected the
+// parameter, so an oversized response was refused after the fact. Since #309 the backend stops
+// at it (OutputCap) and that stop is reported as this error too; the after-the-fact check stays
+// for a backend that reports more anyway.
 var ErrOutputLimitExceeded = errors.New("OUTPUT_TOKEN_LIMIT_EXCEEDED")
 
 // ErrUsageUnknown means the backend finished without saying what it spent. With no count
@@ -761,6 +782,22 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	if failure := codex.Failure(event.Type, event.Raw); failure != nil {
 		if codex.ContextLimit(event.Raw) {
 			return nil, codex.ErrContextLimit
+		}
+		if event.Type == codex.Incomplete {
+			// An incomplete reply still reports what it spent: keep it for the record and the
+			// count check, as a refused completion's is kept.
+			if usage, err := codex.DecodeUsage(event.Raw); err == nil {
+				t.usage = usage
+			}
+			// The backend stopping at the cap this request carried (OutputCap, #309) is the
+			// outcome the completion check names when a reply runs past max_tokens -- when what
+			// it spent did reach the cap. A stop short of it is the backend's own, and keeps its
+			// own category.
+			var detail *codex.FailureError
+			if t.capped && errors.As(failure, &detail) && detail.Detail.IncompleteReason == "max_output_tokens" &&
+				t.usage.OutputKnown && t.usage.OutputTokens >= t.outputLimit {
+				return nil, ErrOutputLimitExceeded
+			}
 		}
 		return nil, failure
 	}

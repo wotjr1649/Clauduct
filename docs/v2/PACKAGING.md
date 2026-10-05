@@ -130,8 +130,8 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 발행 뒤 문서는 태그보다 늦게 쓰이므로 태그 안의 문서가 아니라 기본 branch를 읽는다.
 
 **출하 때 backend capability를 다시 잰다.** 발행 전에 `clauduct --dev probe limit --send`(과금 3회)로 backend가
-`max_output_tokens`를 받는지 확인한다. 2026-10-05 한 구성의 3회 probe에서는 받았다. 모델 범위와 생성 한도 매핑은 #309에서
-판정하고, 결과는 COMPATIBILITY 원장이 소유한다. temperature·top_p·strict·새 출력 이벤트는 원장 행의 다시 볼 조건이 생겼을 때만 잰다.
+`max_output_tokens`를 받는지 확인한다. 2026-10-05 한 구성의 3회 probe에서는 받았고, v0.6.11은 생성 요청에 보낸다(#309).
+backend가 다시 거부하면 출하를 멈추고 COMPATIBILITY 원장 행을 다시 판정한다. temperature·top_p·strict·새 출력 이벤트는 원장 행의 다시 볼 조건이 생겼을 때만 잰다.
 
 **구버전→신버전 경로는 v0.2.2에서 실측됐다.** 설치된 0.2.1이 릴리스를 읽고 화면에 digest 3개를
 띄운 뒤 교체했고, 그 세 값은 발행된 `SHA256SUMS`와 같았다. 이어서 네 가지가 순서대로 확인됐다:

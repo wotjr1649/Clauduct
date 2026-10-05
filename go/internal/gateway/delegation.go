@@ -61,7 +61,15 @@ type delegatedChoice struct {
 	route               bridge.Route
 	inherited           bool
 	custom              bool
+	// omitted: the call named no subagent_type, so role is the subagent default. Native
+	// 2.1.289 reports such an Agent teams teammate as "teammate" (#307).
+	omitted bool
 }
+
+// omittedTeammateRole is the role native gives an Agent teams teammate whose call named no
+// subagent_type (measured 2.1.289, #307).
+const omittedTeammateRole = "teammate"
+
 type resolvedChoice struct {
 	receipt               *SelectionRecord
 	session, parent, call string
@@ -310,6 +318,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	// Native 2.1.280 makes subagent_type optional and resolves omission to
 	// general-purpose. A supplied null/empty/invalid role is not omission.
 	role := "general-purpose"
+	_, roleNamed := fields["subagent_type"]
 	if value, present := fields["subagent_type"]; present {
 		if json.Unmarshal(value, &role) != nil || role == "" || string(value) == "null" || len(role) > 200 {
 			return nil, delegationFailure("INVALID_ROLE")
@@ -481,7 +490,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		}
 	}
 	if model != nil && d.events != "" {
-		if err := d.writeNativeSelection(scope, id, role, route); err != nil {
+		if err := d.writeNativeSelection(scope, id, role, !roleNamed, route); err != nil {
 			return nil, err
 		}
 	}
@@ -490,7 +499,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 		receipt.turn = scope.nativeTurn.Turn
 		receipt.arguments, _ = agentArguments(raw)
 	}
-	d.pending[key] = delegatedChoice{parent: scope.parent, role: role, alias: nativeAlias, route: route, inherited: inherited, receipt: receipt, custom: custom}
+	d.pending[key] = delegatedChoice{parent: scope.parent, role: role, alias: nativeAlias, route: route, inherited: inherited, receipt: receipt, custom: custom, omitted: !roleNamed}
 	return encoded, nil
 }
 
@@ -769,7 +778,7 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 	case failure != "":
 	case choice.parent != scope.parent:
 		failure = "PARENT_MISMATCH"
-	case !roleMatches(role, link.Role, custom):
+	case !roleMatches(role, link.Role, custom) && !(choice.omitted && link.Role == omittedTeammateRole):
 		failure = "ROLE_MISMATCH"
 	case meta.Model != choice.route.Model && !(choice.route.Source == "native-selection" && meta.Model == ""):
 		failure = "METADATA_MODEL_MISMATCH"
@@ -784,7 +793,13 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 		delete(d.pending, key)
 		return bridge.Route{}, false, errDelegationUnverified
 	}
-	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: link.Call, role: role, alias: choice.alias, route: choice.route, inherited: choice.inherited, custom: custom, teammate: true}
+	// Later requests compare against what native reports for this teammate. The receipt keeps
+	// the call's own role: the lead's Agent history is restored by it (selection_records.go).
+	boundRole := role
+	if choice.omitted && link.Role == omittedTeammateRole {
+		boundRole = link.Role
+	}
+	chosen := resolvedChoice{session: scope.session, parent: scope.parent, call: link.Call, role: boundRole, alias: choice.alias, route: choice.route, inherited: choice.inherited, custom: custom, teammate: true}
 	chosen.receipt = choice.receipt
 	if chosen.receipt != nil {
 		chosen.receipt.Role = role

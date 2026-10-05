@@ -129,7 +129,7 @@ func (g *Gateway) ConfigureNativeEvents(directory string) {
 
 // The native function hook receives this exact call's intended backend ID.
 // O_EXCL prevents replacing an intent already published to native.
-func (d *delegations) writeNativeSelection(scope delegationScope, call, role string, route bridge.Route) error {
+func (d *delegations) writeNativeSelection(scope delegationScope, call, role string, omitted bool, route bridge.Route) error {
 	root, err := os.OpenRoot(d.events)
 	if err != nil {
 		return errDelegationUnverified
@@ -141,7 +141,9 @@ func (d *delegations) writeNativeSelection(scope delegationScope, call, role str
 		Call    string `json:"call"`
 		Role    string `json:"role"`
 		Model   string `json:"model"`
-	}{scope.session, scope.parent, call, role, route.Model})
+		// Omitted: the call named no subagent_type (#307).
+		Omitted bool `json:"omitted,omitempty"`
+	}{scope.session, scope.parent, call, role, route.Model, omitted})
 	if err != nil {
 		return errDelegationUnverified
 	}

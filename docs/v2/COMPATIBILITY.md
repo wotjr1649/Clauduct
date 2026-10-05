@@ -591,20 +591,20 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | `/model`·`/effort` TUI, 다른 세션으로 가는 `SendMessage` 승인, gateway 경유 `WebSearch`·native `WebFetch`를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.3 최종 후보와 출시 바이트에서 실제 backend로 통과. `/model`은 그 뒤 출하마다 TUI 회귀에서 확인. v0.6.4부터 `SendMessage` 승인은 native 규칙이 정한다 | — |
 | 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Luna low·medium. Sol 6.1 low는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
 | hosted web search의 `allowed_callers`·`response_inclusion`·`cache_control` 값을 검사하지 않음(v0.6.8) | `OUT_OF_SCOPE` | 키만 받고 쓰지 않는다. native 2.1.289는 보내지 않는다(`cache_control` 포함) | native가 보내기 시작할 때 |
-| background stop·attach 직후 첫 입력에서 이전 완료 보고 반복(v0.6.2) | `MEASURE` | #234(v0.6.3)에서 v0.6.1과 v0.6.2가 각각 4회 중 2회 재현돼 v0.6.2 회귀가 아니라고 판정. native가 대기 중이던 완료 알림을 입력 앞에 붙이고 backend가 새로 생성한 응답이다 | native가 알림 전달 방식을 바꾸거나 사용자 영향이 보고될 때 |
+| background stop·attach 직후 첫 입력에서 이전 완료 보고 반복(v0.6.2) | `MEASURE` | #234(v0.6.3)에서 v0.6.1과 v0.6.2가 각각 4회 중 2회 재현돼 v0.6.2 회귀가 아니라고 판정. native가 대기 중이던 완료 알림을 입력 앞에 붙이고 backend가 새로 생성한 응답이다. 반복 여부는 모델이 정하므로 무과금으로 재현할 수 없어 v0.6.11에서도 재측정하지 않았다(#312) | native가 알림 전달 방식을 바꾸거나 사용자 영향이 보고될 때 |
 | 원인 미확정 과거 간헐 실패 #206 #211 #212 #213 #215 #220 #229 | `MEASURE` | 고장 주입으로 안전한 처리를 확인했고 진단을 넣었다 | 재발할 때 진단으로 가른다 |
 | effort가 생략된 `/model` 결과가 기존 effort를 유지(v0.6.3) | `MEASURE` | 근거 실측 1건 | native가 문구를 바꿀 때 |
 | 세션 중 계정 전환(v0.6.4) | `MEASURE` | 기존 거부 계약 유지, 재측정 안 함 | 계정·인증 경로를 바꿀 때 |
 | native 명령행 한도 초과(v0.6.5) | `MEASURE` | 합성 목록으로만 확인. 실제 계정 목록으로는 도달하지 않음 | 계정 모델 수가 늘어 실제로 가까워질 때 |
 | 사용자 mod를 원격으로 끄는 플래그(v0.6.7) | `MEASURE` | telemetry를 끈 Clauduct 세션에서의 동작 미확인 | 원격 플래그가 관측될 때 |
-| native가 teammate 모델을 고르는 경로(v0.6.9) | `MEASURE` | 단위 시험만. loopback에서 그 분기가 타지 않았다 | 그 분기가 실제로 관측될 때 |
-| 첫 출력 전 240초 뒤 keepalive 이후의 subagent 실패(v0.6.9) | `MEASURE` | 부분 text는 0. native가 명시적 오류로 끝내는지 실제 backend로 재지 않음 | 오래 걸리는 자식에서 실패가 관측될 때 |
+| native가 teammate 모델을 고르는 경로(v0.6.9) | `MEASURE` | 이 분기(`native-selection`)는 `CLAUDE_CODE_SUBAGENT_MODEL`이 있을 때 model·effort 없이 부른 내장 역할이나 역할 표에 없는 역할에서 생기고, 단위 시험만 있다. v0.6.11 무과금 TUI loopback(#312)에서 역할과 모델을 모두 생략한 teammate는 이 분기를 타지 않고 Agent 호출 경로로 고정됐다. 그 경우 teammate가 시작하지 못하던 결함을 찾아 고쳤다(#307). subagent 모델 변수를 둔 경우(v0.6.9 `teams-native`)에도 Agent 호출 경로였고 그 이유는 확인하지 않았다 | 그 분기가 실제로 관측될 때 |
+| 첫 출력 전 240초 뒤 keepalive 이후의 subagent 실패(v0.6.9) | `FIXED` | v0.6.11 무과금 fixture 1회(#312, `-p`, backend가 `response.failed`로 실패): child가 30초마다 keepalive를 받다가 254초에 실패하자 gateway는 `UPSTREAM_RESPONSE_FAILED`로 기록했고, native는 그 child를 다시 보내지 않고 부모에게 명시적 실패(task-notification `failed`, "Agent terminated early due to an API error")를 알렸다. 부분 text 0, 부모는 다음 요청 뒤 정상 종료. TUI와 실제 backend의 실패 모양은 재지 않았다 | 실제 backend에서 다른 실패 모양이 관측될 때 |
 | 추론 요약은 main turn에서만 보인다(subagent·teammate·workflow agent 제외) | `OUT_OF_SCOPE` | v0.6.10 설계(#286): 자식 요청은 요약을 요청하지 않아 지연이 없다 | 자식 agent의 요약을 보여 달라는 요청이 있을 때 |
-| `--agent`로 띄운 main-thread agent의 추론 요약 | `MEASURE` | main 요청이 agent id 헤더를 보내면 요약을 받지 못한다. 그 요청 형태는 수집하지 않았다. 틀린 표시는 생기지 않는다 | 그 세션의 요청 형태를 수집할 때 |
+| `--agent`로 띄운 main-thread agent의 추론 요약 | `FIXED` | v0.6.11 무과금 TUI loopback(#312)으로 그 요청 형태를 수집했다. `--agent`·`--agents`로 띄운 세션(`showThinkingSummaries` 켬)의 main 요청은 class `main`, agent id 없음, `thinking.display=summarized`, 모드 `native_tui`로 요약 요청 조건(`summaryStep`)을 모두 만족한다. 요약이 실제로 요청·표시되는지는 이 측정에서 보지 않았다 | native가 main-thread agent 요청에 agent id를 싣기 시작할 때 |
 | 요약 표시가 native의 `$.ui.log`와 chunk 순서에 기댐 | `MEASURE` | native 2.1.289에서만 확인. 무과금 재측정이 `$.ui` 선언과 `log` 문서를 비교하고, 요약 TUI 회귀를 native 새 버전 절차와 발행 전 회귀에 넣었다(#286) | 재측정이 `$.ui` 차이를 보이거나 요약 회귀가 실패할 때 |
 | backend 추론 요약 표시 | `FIXED` | v0.6.10: TUI main turn에서 `thinking.display`가 `summarized`인 요청만 요약을 요청해 화면에만 보인다(#277, #286). `updates`(TUI 기본)는 지연 때문에 요청하지 않는다 | — |
-| 빈 응답 제어의 나머지 origin 12종 | `MEASURE` | `composer`·`sdk`·`peer`와 따로 처리하는 `task-notification`만 측정했고, 그 밖의 12종은 단독 입력으로 모드를 정하지 않으며 미측정 | native가 그 origin을 실제로 쓸 때 |
-| forked Skill 자식에는 사용자 중지 차단 규칙(#91)이 적용되지 않음 | `MEASURE` | 사용자의 중지가 `stoppedByUser`로 남지 않는다(3절 forked Skill 행) | native가 fork 자식의 중지를 기록할 때 |
+| 빈 응답 제어의 나머지 origin | `MEASURE` | Clauduct는 `prompt.submit`의 `origin.kind`로 모드를 정하고, 측정한 값은 `composer`·`sdk`·`peer`·`task-notification`이다. v0.6.11(#312): Agent teams TUI 흐름에서도 `origin.kind`는 `composer`뿐이었다. native 2.1.289 실행 파일의 입력 분류(정적)는 `human`·`task-notification`·`coordinator`·`channel`·`peer`·`slack-ping`·`observer`·`observer-activity`·`plugin`·`unclassified` 같은 이름을 쓰지만, 이 이름과 `origin.kind` 값의 대응은 확인하지 않았다. 나머지 값은 이 PC의 무과금 흐름에서 만들지 못했고 단독 입력으로 모드를 정하지 않는다 | native가 그 origin을 실제로 쓸 때 |
+| forked Skill 자식에 사용자 중지 차단 규칙(#91)이 적용되는지 | `FIXED` | v0.6.11 무과금 TUI loopback(#312): 사용자가 agents 목록에서 백그라운드 fork 자식을 고르고 `x to stop`으로 멈추면 native 2.1.289가 자식 metadata에 `stoppedByUser: true`를 남겼다(`Agent "/publicfork" was stopped by user`). 종료 확인 창의 "Exit and stop tasks"로 끝낸 경우와 모델의 TaskStop은 이 표시를 남기지 않았다. #91 차단은 이 표시를 읽으므로 fork 자식에도 적용된다. 차단 자체는 단위 시험(표시를 넣은 fork 자식)으로 확인했고, 멈춘 뒤 그 자식으로 가는 요청은 이 측정에서 만들지 않았다 | native가 중지 기록 방식을 바꿀 때 |
 | 부분 도구 인자 생성 중 취소의 자연 발생 조건 | `MEASURE` | 실제 TUI와 고정 backend로 확인. 구독 backend의 자연 발생 조건 전부는 아님 | 관련 실패가 관측될 때 |
 | Claude in Chrome | `MEASURE` | 확인하지 않음 | 사용 요청이 있을 때 |
 | 새 모델·native 버전·plugin·MCP 조합 | `MEASURE` | 라우팅된다는 것이 실제 동작 검증은 아니다. native 버전마다 무과금 재측정으로 hook 타입·인자·요청 형태를 비교한다(#268). v0.6.11부터 재측정은 표면 관문도 돈다(#297): 같은 native를 기준 실행(gpt 모델 + endpoint·token만)과 Clauduct의 실제 실행으로 띄워 -p·TUI의 tool 이름(지연 도구 목록 포함)과 외부 접속 호스트를 비교하고, 분류되지 않은 차이가 있으면 실패한다. 세션도 측정 기준에 없는 tool 이름을 status(`gateway.client.addedTools`)와 종료 줄(`added_tools=`)에 보인다. 같은 모드(-p·TUI)에서 Clauduct 실행이 받았던 기본 tool을 한 번도 받지 못하면 `missingTools`·`missing_tools=`에 보인다(#300). 모델·flag·환경이 정하는 조건부 tool(DesignSync 포함)은 기본 tool에 넣지 않는다. tool을 줄이는 인수(`--tools`, `--disallowedTools`, `--agent`, `--bare` 등)나 Clauduct가 경계를 모르는 인수가 있는 세션, plan 모드로 시작한 세션, background 세션은 missing을 판정하지 않는다. settings 파일의 deny 규칙으로 가린 tool은 missing에 나온다. 둘 다 보고이고 차단하지 않는다 | 재측정이 차이를 보고하거나 세션이 added·missing tool을 보고할 때 |
@@ -739,7 +739,7 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 모델이 허용 명령을 `eval`로 감싸 native가 거부했고, 명령 안내를 명확히 한 재실행은 세 형식 모두
 통과했다. 이 실패를 브리지 오류나 성공으로 집계하지 않았다. 매크로·암호 문서·복잡한 Office 객체,
 모든 서식·렌더링 보존까지 검증한 것은 아니다. 편집 도구가 필요하며 제품이 자동 설치하지 않는다.
-| 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin 12종은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다. 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
+| 빈 응답 제어의 전체 실행 모드 지원 | `composer`·`sdk`에 더해 v0.4.3은 실측한 `peer`로 모드를 정한다. native `isInteractive`가 TUI·SDK를 구분한다. 별도 처리하는 `task-notification`을 제외한 나머지 origin은 여전히 단독 입력으로 모드를 확정하지 않으며 미측정이다(알려진 제한 원장, v0.6.11 정리). 같은 턴의 명시적 개입, 출처 없는 자식 새 index 0, 새 입력의 빈 응답은 기존 오류 경계를 유지한다. [v0.4.3 검증 상태](#v043--메시지-background-검증-예산) |
 | 부분 도구 인자 생성 중 취소의 이벤트 근거 | S45/S47 실제 TUI + 고정 backend로 부분 인자 delta·미완성 도구 미실행·후속 답변 확인. 구독 backend의 자연 발생 동일 조건 전부를 검증했다는 뜻은 아님 |
 | advisor 도구, Anthropic 서버 의존 베타 7종 | 이 backend에서 성립하지 않는다. advisor는 환경변수로 끈다 |
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
@@ -916,7 +916,7 @@ exec HTTP·WebSocket 요청 구조가 0.157.0과 같았다(버전 문자열과 �
 | 내장 역할과 `CLAUDE_CODE_SUBAGENT_MODEL` | 값이 있으면 model·effort 인자 없이 부른 내장 역할은 native의 선택으로 실행한다. 2.1.283은 general-purpose에 env 모델, Explore에 자기 모델(sol), Plan에 부모 모델을 주고 모두 부모 effort를 쓴다. 값이 없으면 기존 역할 표를 쓴다. model을 명시한 호출의 규칙은 그대로다 |
 | 세션 중 `/add-dir` | 추가 폴더의 역할을 native가 싣고, Clauduct는 native의 선택으로 정의대로 실행한다 |
 | 세션 중 `/cd` | native는 새 폴더의 역할을 싣지 않는다(native 동작). 세션은 위 수정으로 이어진다 |
-| forked Skill 자식 | 모델의 TaskStop 뒤 재개는 Agent 자식과 같이 허용된다. native는 모델이 멈춘 자식에 `stoppedByUser`를 남기지 않는다. 사용자가 UI에서 멈춘 경우는 측정하지 않았다. subagent 안의 fork가 background 자식을 띄우면 Skill 결과가 바로 돌아오고, native는 그 fork를 다시 깨우지 않는다 |
+| forked Skill 자식 | 모델의 TaskStop 뒤 재개는 Agent 자식과 같이 허용된다. native는 모델이 멈춘 자식에 `stoppedByUser`를 남기지 않는다. 사용자가 agents 목록에서 멈추면 `stoppedByUser`가 남고, 종료 확인 창으로 끝내면 남지 않는다(v0.6.11 실측, 알려진 제한 원장). subagent 안의 fork가 background 자식을 띄우면 Skill 결과가 바로 돌아오고, native는 그 fork를 다시 깨우지 않는다 |
 | ZIP·URL plugin | native와 같은 route로 실행한다 |
 | managed 역할(`C:\Program Files\ClaudeCode\.claude\agents`) | native와 같게 가장 높은 우선순위로 읽는다(임시 역할로 확인한 뒤 제거). managed `env`는 그 PC의 모든 세션에 영향을 줘 측정하지 않았다. Clauduct는 `managed-settings.json`에 `CLAUDE_CODE_SUBAGENT_MODEL`이 있으면 거부하고, `managed-settings.d`와 registry 정책은 읽지 않는다 |
 

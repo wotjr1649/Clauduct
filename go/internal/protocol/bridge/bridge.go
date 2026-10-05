@@ -108,6 +108,9 @@ type Request struct {
 	Store bool `json:"store"`
 	// Text carries a structured output request, and is absent when the client named none.
 	Text *TextParam `json:"text,omitempty"`
+	// MaxOutputTokens is the client's max_tokens as a cap on generation (#309), set only on the generation
+	// request (OutputCap), never on a count: it bounds output, not input.
+	MaxOutputTokens int64 `json:"max_output_tokens,omitempty"`
 }
 
 // TextParam is where the backend takes the response format constraint.
@@ -131,12 +134,10 @@ type SchemaFormat struct {
 // shown to anyone: nothing downstream hands it to the client.
 var Include = []string{"reasoning.encrypted_content"}
 
-// MaxOutputTokens is deliberately absent from Request.
-//
-// The baseline never sends max_output_tokens, and the PoC recorded the backend rejecting
-// it. The client's max_tokens is enforced instead at completion, against the usage the
-// backend reports — see Translator.outputLimit. That is a check after the fact rather than
-// a cap on generation, and the difference is recorded here rather than papered over.
+// The client's max_tokens is checked at completion against the usage the backend reports
+// (Translator.outputLimit). Until v0.6.10 that was the only enforcement: the PoC recorded the
+// backend rejecting max_output_tokens. It has accepted and honoured it since (measured
+// 2026-10-05, #309), so a generation request carries it as a cap as well (OutputCap), and the check stays.
 
 // InputEntry is one element of the backend's input array. A conversation turn, a recorded
 // call and a recorded result are three different shapes in the same list, so the members
@@ -328,6 +329,19 @@ func (s Selection) ResolveRoute(request *anthropic.Request, override ...Route) (
 }
 
 // BuildRequest converts a decoded Anthropic request into a backend request.
+// OutputCap is the client's max_tokens as the backend's max_output_tokens (#309), or 0 for
+// none. It bounds output, reasoning included -- the same count Translator.outputLimit checks at
+// completion, so a request that would fail that check now stops at the limit instead of
+// spending past it. Not with thinking off: the completion check then leaves reasoning out, and
+// the backend reasons past a small answer budget (native's 64-token classifier), so a cap there
+// would fail requests that pass today.
+func OutputCap(request *anthropic.Request) int64 {
+	if request.MaxTokens > 0 && !request.ThinkingDisabled {
+		return request.MaxTokens
+	}
+	return 0
+}
+
 func (s Selection) BuildRequest(request *anthropic.Request, override ...Route) (*Request, error) {
 	route, err := s.ResolveRoute(request, override...)
 	if err != nil {
@@ -761,6 +775,13 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	if failure := codex.Failure(event.Type, event.Raw); failure != nil {
 		if codex.ContextLimit(event.Raw) {
 			return nil, codex.ErrContextLimit
+		}
+		// The backend stopping at the cap this request carried (OutputCap, #309) is the same
+		// outcome the completion check names when a reply ran past max_tokens.
+		var detail *codex.FailureError
+		if t.outputLimit > 0 && !t.answerOnly && errors.Is(failure, codex.ErrResponseIncomplt) &&
+			errors.As(failure, &detail) && detail.Detail.IncompleteReason == "max_output_tokens" {
+			return nil, ErrOutputLimitExceeded
 		}
 		return nil, failure
 	}

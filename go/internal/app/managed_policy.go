@@ -12,6 +12,7 @@ import (
 
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 // Managed settings outrank everything this launcher passes, --settings included, and native
@@ -116,9 +117,16 @@ func managedRouting(docs []policyDocument, readErr error) error {
 // routingKey names the first routing key a settings document sets, or "" for none. It
 // reports false for a document it cannot read, which the caller does not take as none.
 func routingKey(document string) (string, bool) {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal([]byte(document), &fields) != nil || fields == nil {
+	fields, err := wire.Fields([]byte(document), nil)
+	if err != nil {
 		return "", false
+	}
+	// These policies disable the mandatory non-managed hook or permission boundary.
+	// Only an explicit false is harmless; malformed restrictive values are not permission.
+	for _, name := range []string{"disableAllHooks", "allowManagedHooksOnly", "allowManagedPermissionRulesOnly"} {
+		if raw, set := fields[name]; set && strings.TrimSpace(string(raw)) != "false" {
+			return name, true
+		}
 	}
 	for _, name := range routingPolicyKeys {
 		if _, set := fields[name]; set {
@@ -129,9 +137,12 @@ func routingKey(document string) (string, bool) {
 	if json.Unmarshal(fields["forceLoginMethod"], &method) == nil && method == "gateway" {
 		return "forceLoginMethod", true
 	}
-	var env map[string]any
-	if raw, set := fields["env"]; set && json.Unmarshal(raw, &env) != nil {
-		return "", false
+	var env map[string]json.RawMessage
+	if raw, set := fields["env"]; set {
+		env, err = wire.Fields(raw, nil)
+		if err != nil {
+			return "", false
+		}
 	}
 	names := make([]string, 0, len(env))
 	for name := range env {
@@ -140,7 +151,8 @@ func routingKey(document string) (string, bool) {
 	sort.Strings(names)
 	for _, name := range names {
 		upper := strings.ToUpper(name)
-		value, _ := env[name].(string)
+		var value string
+		_ = json.Unmarshal(env[name], &value)
 		switch {
 		case slices.Contains(routingPolicyEnv, upper):
 			return "env." + name, true

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
@@ -677,8 +678,10 @@ func (t *Translator) Summaries() []string { return t.summaries }
 
 // heldItem is one output item and whether the backend has finished writing it.
 type heldItem struct {
-	item codex.OutputItem
-	done bool
+	item          codex.OutputItem
+	done          bool
+	partSnapshots map[int]string
+	partOpened    map[int]bool
 }
 
 // maxOutputItems bounds what one response may open before it completes.
@@ -875,7 +878,10 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			return nil, err
 		}
 		t.usage = usage
-		t.returnedModel, t.returnedEffort = codex.DecodeReturnedRoute(event.Raw)
+		t.returnedModel, t.returnedEffort, err = codex.DecodeReturnedRoute(event.Raw)
+		if err != nil {
+			return nil, err
+		}
 		// Before anything held is released: a call from the wrong model is not handed on.
 		if err := t.checkReturnedRoute(); err != nil {
 			return nil, err
@@ -910,8 +916,43 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			CacheReadKnown: usage.CachedInputKnown,
 		})
 
+	case codex.ContentPartAdd, codex.ContentPartDon:
+		part, err := codex.DecodeContentPart(event.Raw)
+		if err != nil {
+			return nil, err
+		}
+		held := t.held[part.OutputIndex]
+		if held == nil || held.done || held.item.ID != part.ItemID || held.item.Type != codex.ItemMessage || part.ContentIndex >= maxOutputItems {
+			return nil, codex.ErrEventShape
+		}
+		if event.Type == codex.ContentPartAdd {
+			if held.partOpened == nil {
+				held.partOpened = make(map[int]bool)
+			}
+			if _, closed := held.partSnapshots[part.ContentIndex]; closed {
+				return nil, ErrItemSnapshotMismatch
+			}
+			if held.partOpened[part.ContentIndex] {
+				return nil, ErrItemSnapshotMismatch
+			}
+			held.partOpened[part.ContentIndex] = true
+			if part.Text != "" {
+				return nil, anthropic.ErrTextMismatch
+			}
+		} else {
+			if held.partSnapshots == nil {
+				held.partSnapshots = make(map[int]string)
+			}
+			if _, duplicate := held.partSnapshots[part.ContentIndex]; duplicate {
+				return nil, ErrItemSnapshotMismatch
+			}
+			if err := t.builder.CheckTextPart(part.ItemID, part.ContentIndex, part.Text); err != nil {
+				return nil, err
+			}
+			held.partSnapshots[part.ContentIndex] = part.Text
+		}
+		return nil, nil
 	case codex.InProgress, codex.Queued,
-		codex.ContentPartAdd, codex.ContentPartDon,
 		codex.Keepalive, codex.Ping,
 		codex.RateLimitsUpdated, codex.CodexRateLimits,
 		codex.CodexMetadata, codex.WebsocketTiming:
@@ -1004,6 +1045,16 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 		// different things, and a .done is a statement that a stream happened.
 		if streamed, saw := t.streamedArgs[final.ID]; saw && streamed != string(final.Arguments) {
 			return ErrArgumentsMismatch
+		}
+	}
+	for index := range held.partOpened {
+		if _, done := held.partSnapshots[index]; !done {
+			return ErrItemSnapshotMismatch
+		}
+	}
+	for index, text := range held.partSnapshots {
+		if index >= len(final.Text) || final.Text[index] != text {
+			return ErrItemSnapshotMismatch
 		}
 	}
 	held.item = final
@@ -1140,9 +1191,8 @@ func (t *Translator) crossCheckCompleted(raw []byte) error {
 	}
 	for i, stated := range items {
 		held := t.held[t.order[i]].item
-		if stated.Type != held.Type || stated.ID != held.ID ||
-			stated.CallID != held.CallID || stated.Name != held.Name ||
-			string(stated.Arguments) != string(held.Arguments) || stated.Phase != held.Phase {
+		if stated.Type != held.Type || stated.ID != held.ID || stated.CallID != held.CallID || stated.Name != held.Name || string(stated.Arguments) != string(held.Arguments) || stated.Phase != held.Phase ||
+			!slices.Equal(stated.Text, held.Text) || !slices.Equal(stated.Summary, held.Summary) || !slices.Equal(stated.ReasoningText, held.ReasoningText) || stated.Encrypted != held.Encrypted || stated.HasEncrypted != held.HasEncrypted || stated.HasContent != held.HasContent {
 			return ErrItemSnapshotMismatch
 		}
 	}

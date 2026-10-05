@@ -277,23 +277,39 @@ func DecodeResponseID(raw []byte) (string, error) {
 	return id, nil
 }
 
-// DecodeReturnedRoute reads the model and reasoning effort a completed response says it ran
-// on. Empty when absent or not a string; nothing here refuses, it only reports (#91).
-func DecodeReturnedRoute(raw []byte) (model, effort string) {
-	var body struct {
-		Response struct {
-			Model     json.RawMessage `json:"model"`
-			Reasoning struct {
-				Effort json.RawMessage `json:"effort"`
-			} `json:"reasoning"`
-		} `json:"response"`
+// DecodeReturnedRoute distinguishes omitted route metadata from malformed metadata.
+// Nullable reasoning/effort metadata makes no route claim; a stated value must be a nonempty string.
+func DecodeReturnedRoute(raw []byte) (model, effort string, err error) {
+	fields, err := wire.Fields(raw, nil)
+	if err != nil {
+		return "", "", ErrEventShape
 	}
-	if json.Unmarshal(raw, &body) != nil {
-		return "", ""
+	value, presence := wire.Of(fields, "response")
+	if presence != wire.Present {
+		return "", "", ErrEventShape
 	}
-	_ = json.Unmarshal(body.Response.Model, &model)
-	_ = json.Unmarshal(body.Response.Reasoning.Effort, &effort)
-	return model, effort
+	response, err := wire.Fields(value, nil)
+	if err != nil {
+		return "", "", ErrEventShape
+	}
+	if _, set := response["model"]; set {
+		if stringField(response, "model", &model) != nil || model == "" {
+			return "", "", ErrEventShape
+		}
+	}
+	value, presence = wire.Of(response, "reasoning")
+	if presence == wire.Present {
+		reasoning, e := wire.Fields(value, nil)
+		if e != nil {
+			return "", "", ErrEventShape
+		}
+		if _, presence := wire.Of(reasoning, "effort"); presence == wire.Present {
+			if stringField(reasoning, "effort", &effort) != nil || effort == "" {
+				return "", "", ErrEventShape
+			}
+		}
+	}
+	return model, effort, nil
 }
 
 // DecodeUsage reads the counts out of a response.completed payload. A payload without
@@ -344,7 +360,7 @@ func readCount(fields map[string]json.RawMessage, name string, into *int64, know
 		return
 	}
 	var count int
-	if intValue(value, &count) == nil {
+	if intValue(value, &count) == nil && count >= 0 {
 		*into, *known = int64(count), true
 	}
 }

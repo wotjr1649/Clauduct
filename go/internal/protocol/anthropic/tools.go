@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"encoding/json"
-	"regexp"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -26,7 +25,7 @@ const (
 // is a different capability with its own request budget and result semantics — not a
 // callable definition. This build does not carry it, and says so rather than dropping it
 // from the tool list and answering as though it had never been asked for.
-var hostedSearchTool = regexp.MustCompile(`^web_search_20\d{6}$`)
+const hostedSearchTool = "web_search_20250305"
 
 // Tool is one callable definition. InputSchema is carried unread: JSON Schema semantics
 // belong to the backend, and a second, weaker validator here would only disagree with the
@@ -74,7 +73,7 @@ func decodeTools(fields map[string]json.RawMessage, request *Request) error {
 		}
 		if kindValue, present := wire.Of(loose, "type"); present == wire.Present {
 			var kind string
-			if json.Unmarshal(kindValue, &kind) == nil && hostedSearchTool.MatchString(kind) {
+			if json.Unmarshal(kindValue, &kind) == nil && kind == hostedSearchTool {
 				hosted, err := decodeHostedSearch(entry, kind)
 				if err != nil {
 					return err

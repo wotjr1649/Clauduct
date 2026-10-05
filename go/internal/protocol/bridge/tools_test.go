@@ -571,7 +571,9 @@ func TestStreamingItemEventsProduceNoToolFrames(t *testing.T) {
 	for _, e := range []stream.Event{
 		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
 		itemDone(0, functionItem("fc_1", "call_1", "Read", `{}`)),
-		event(codex.ContentPartDon, `{"type":"response.content_part.done"}`),
+		itemAdded(1, `{"id":"msg_empty","type":"message"}`),
+		event(codex.ContentPartDon, `{"type":"response.content_part.done","item_id":"msg_empty","output_index":1,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}`),
+		itemDone(1, messageItem("msg_empty", "")),
 	} {
 		frames, err := translator.Accept(e)
 		if err != nil {

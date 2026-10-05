@@ -31,12 +31,13 @@ type OutputItem struct {
 	Phase     string
 
 	// reasoning. Encrypted is what makes a chain of thought replayable on the next turn;
-	// Summary is the visible part that travels beside it. Content is read only to tell a
-	// reasoning item that carried nothing from one whose record cannot be kept.
-	Encrypted    string
-	Summary      []SummaryPart
-	HasContent   bool
-	HasEncrypted bool
+	// Summary is the visible part that travels beside it. Plain content is retained only
+	// for snapshot consistency checks, never emitted as native reasoning.
+	Encrypted     string
+	Summary       []SummaryPart
+	HasContent    bool
+	HasEncrypted  bool
+	ReasoningText []string
 }
 
 // SummaryPart is one piece of a reasoning summary.
@@ -178,26 +179,24 @@ func decodeItem(raw json.RawMessage, final bool) (OutputItem, error) {
 				return OutputItem{}, ErrEventShape
 			}
 			for _, part := range parts {
-				partFields, err := wire.Fields(part, nil)
+				text, err := decodeTextPart(part, "summary_text")
 				if err != nil {
-					return OutputItem{}, ErrEventShape
-				}
-				var summary SummaryPart
-				if err := stringField(partFields, "type", &summary.Type); err != nil {
 					return OutputItem{}, err
 				}
-				if value, presence := wire.Of(partFields, "text"); presence == wire.Present {
-					if json.Unmarshal(value, &summary.Text) != nil {
-						return OutputItem{}, ErrEventShape
-					}
-				}
-				item.Summary = append(item.Summary, summary)
+				item.Summary = append(item.Summary, SummaryPart{Type: "summary_text", Text: text})
 			}
 		}
 		if value, presence := wire.Of(fields, "content"); presence == wire.Present {
 			var parts []json.RawMessage
 			if json.Unmarshal(value, &parts) != nil {
 				return OutputItem{}, ErrEventShape
+			}
+			for _, part := range parts {
+				text, err := decodeTextPart(part, "reasoning_text")
+				if err != nil {
+					return OutputItem{}, err
+				}
+				item.ReasoningText = append(item.ReasoningText, text)
 			}
 			item.HasContent = len(parts) > 0
 		}
@@ -221,12 +220,8 @@ func decodeItem(raw json.RawMessage, final bool) (OutputItem, error) {
 			return OutputItem{}, ErrEventShape
 		}
 		for _, part := range parts {
-			partFields, err := wire.Fields(part, nil)
+			text, err := decodeTextPart(part, "output_text")
 			if err != nil {
-				return OutputItem{}, ErrEventShape
-			}
-			var text string
-			if err := stringField(partFields, "text", &text); err != nil {
 				return OutputItem{}, err
 			}
 			item.Text = append(item.Text, text)
@@ -246,4 +241,52 @@ func optionalString(fields map[string]json.RawMessage, name string, into *string
 		return nil
 	}
 	return stringField(fields, name, into)
+}
+
+// Known text content is not a license to drop a different nested semantic.
+func decodeTextPart(raw json.RawMessage, kind string) (string, error) {
+	allowed := []string{"type", "text"}
+	if kind == "output_text" {
+		allowed = append(allowed, "annotations", "logprobs")
+	}
+	fields, err := wire.Fields(raw, allowed)
+	if err != nil {
+		return "", ErrEventShape
+	}
+	var actual, text string
+	if stringField(fields, "type", &actual) != nil || actual != kind || stringField(fields, "text", &text) != nil {
+		return "", ErrEventShape
+	}
+	for _, key := range []string{"annotations", "logprobs"} {
+		if raw, present := fields[key]; present {
+			if key == "logprobs" && string(raw) == "null" {
+				continue
+			}
+			var entries []json.RawMessage
+			if string(raw) == "null" || json.Unmarshal(raw, &entries) != nil || len(entries) != 0 {
+				return "", ErrEventShape
+			}
+		}
+	}
+	return text, nil
+}
+
+// ContentPartEvent is redundant answer content, so it is validated and cross-checked.
+type ContentPartEvent struct {
+	ItemID                    string
+	OutputIndex, ContentIndex int
+	Text                      string
+}
+
+func DecodeContentPart(raw []byte) (ContentPartEvent, error) {
+	var out ContentPartEvent
+	fields, err := wire.Fields(raw, nil)
+	if err != nil {
+		return out, ErrEventShape
+	}
+	if stringField(fields, "item_id", &out.ItemID) != nil || out.ItemID == "" || intField(fields, "output_index", &out.OutputIndex) != nil || out.OutputIndex < 0 || intField(fields, "content_index", &out.ContentIndex) != nil || out.ContentIndex < 0 {
+		return out, ErrEventShape
+	}
+	out.Text, err = decodeTextPart(fields["part"], "output_text")
+	return out, err
 }

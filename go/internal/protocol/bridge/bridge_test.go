@@ -219,10 +219,11 @@ func TestTextResponseProducesTheClientSequence(t *testing.T) {
 		event(codex.Created, `{"type":"response.created","response":{"id":"resp_abc"}}`),
 		event(codex.InProgress, `{"type":"response.in_progress"}`),
 		itemAdded(0, `{"id":"msg_1","type":"message"}`),
-		event(codex.ContentPartAdd, `{"type":"response.content_part.added"}`),
+		event(codex.ContentPartAdd, `{"type":"response.content_part.added","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}`),
 		textDelta("Hel"),
 		textDelta("lo"),
 		textDone("Hello"),
+		event(codex.ContentPartDon, `{"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"Hello","annotations":[]}}`),
 		// The item closes before the response does, and its finished text is checked
 		// against what streamed. Against the real backend this check had never run: it
 		// only fired for a message item in the completed output, and none ever arrives.

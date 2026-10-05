@@ -748,3 +748,18 @@ func (b *Builder) String() string {
 		" started:" + strconv.FormatBool(b.started) +
 		" completed:" + strconv.FormatBool(b.completed) + "}"
 }
+
+// CheckTextPart compares redundant snapshots without closing the text stream twice.
+func (b *Builder) CheckTextPart(item string, index int, snapshot string) error {
+	part, ok := b.parts[partKey{item: item, index: index}]
+	if !ok {
+		if snapshot == "" {
+			return nil
+		}
+		return ErrTextMismatch
+	}
+	if string(part.builder) != snapshot {
+		return ErrTextMismatch
+	}
+	return nil
+}

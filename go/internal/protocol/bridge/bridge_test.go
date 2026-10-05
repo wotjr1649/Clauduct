@@ -486,9 +486,10 @@ func TestACompletionWithNoUsageIsRefused(t *testing.T) {
 	}
 }
 
-// A response larger than the caller allowed is refused rather than trimmed. Nothing asked
-// the backend to stop, so by the time this is known the tokens are already spent — but
-// handing the client more than it asked for would be answering a different request.
+// A response larger than the caller allowed is refused rather than trimmed. Since #309 the
+// generation request also carries the cap, so the backend normally stops first; this is the
+// check for a backend that reports more anyway -- handing the client more than it asked for
+// would be answering a different request.
 func TestAResponseOverTheCallerLimitIsRefused(t *testing.T) {
 	translator := NewTranslatorFor(decodeRequest(t,
 		`{"model":"sonnet","max_tokens":2,"stream":true,"messages":[{"role":"user","content":"x"}]}`), "")
@@ -636,20 +637,42 @@ func TestBuildRequestCarriesTheConversation(t *testing.T) {
 	}
 }
 
-// The client's max_tokens never reaches the backend. Sending it was measured to be
-// rejected, and the baseline has never sent it.
-func TestTheOutputLimitIsNotSentUpstream(t *testing.T) {
+// #309: the client's max_tokens becomes the generation request's max_output_tokens, which the
+// backend honours since 2026-10-05 -- but not when the client turned thinking off, where the
+// completion check leaves reasoning out and a cap would cut the backend's reasoning short of
+// any answer. The built request itself, which a count shares, never carries it.
+func TestTheOutputCapFollowsMaxTokensUnlessThinkingIsOff(t *testing.T) {
+	for _, c := range []struct {
+		body string
+		want int64
+	}{
+		{`{"model":"sonnet","max_tokens":2048,"stream":true,"messages":[{"role":"user","content":"x"}]}`, 2048},
+		{`{"model":"sonnet","max_tokens":64,"thinking":{"type":"disabled"},"stream":true,"messages":[{"role":"user","content":"x"}]}`, 0},
+	} {
+		request := decodeRequest(t, c.body)
+		if got := OutputCap(request); got != c.want {
+			t.Fatalf("OutputCap = %d, want %d", got, c.want)
+		}
+		out, err := BuildRequest(request)
+		if err != nil {
+			t.Fatalf("BuildRequest: %v", err)
+		}
+		encoded, _ := json.Marshal(out)
+		if strings.Contains(string(encoded), "max_output_tokens") || strings.Contains(string(encoded), `"max_tokens"`) {
+			t.Fatalf("the shared request carries an output limit: %s", encoded)
+		}
+		out.MaxOutputTokens = OutputCap(request)
+		encoded, _ = json.Marshal(out)
+		if c.want != 0 && !strings.Contains(string(encoded), `"max_output_tokens":2048`) {
+			t.Fatalf("the cap did not encode: %s", encoded)
+		}
+	}
 	out, err := BuildRequest(decodeRequest(t,
 		`{"model":"sonnet","max_tokens":2048,"stream":true,"messages":[{"role":"user","content":"x"}]}`))
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
 	encoded, _ := json.Marshal(out)
-	for _, forbidden := range []string{"max_output_tokens", "max_tokens", "2048"} {
-		if strings.Contains(string(encoded), forbidden) {
-			t.Fatalf("the backend request carries %q: %s", forbidden, encoded)
-		}
-	}
 	// And the two settings that are always sent, are.
 	for _, want := range []string{`"include":["reasoning.encrypted_content"]`, `"store":false`} {
 		if !strings.Contains(string(encoded), want) {
@@ -1002,6 +1025,28 @@ func TestTheReturnedRouteIsHeldToTheSentOne(t *testing.T) {
 		}
 		if !errors.Is(err, want) || (want == nil) != (err == nil) {
 			t.Errorf("%s: err = %v, want %v", returned, err, want)
+		}
+	}
+}
+
+// #309: the backend stopping at the cap the request carried is the same refusal as running
+// past it, whatever the event; with thinking off no cap was sent, so an incomplete reply keeps
+// the backend's own category, as does any other incomplete reason.
+func TestTheBackendStoppingAtTheCapIsTheOutputLimit(t *testing.T) {
+	incomplete := func(reason string) stream.Event {
+		return event(codex.Incomplete, `{"type":"response.incomplete","response":{"id":"r","status":"incomplete","incomplete_details":{"reason":"`+reason+`"}}}`)
+	}
+	for _, c := range []struct {
+		body, reason string
+		limit        bool
+	}{
+		{`{"model":"sonnet","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`, "max_output_tokens", true},
+		{`{"model":"sonnet","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`, "content_filter", false},
+		{`{"model":"sonnet","max_tokens":64,"thinking":{"type":"disabled"},"stream":true,"messages":[{"role":"user","content":"x"}]}`, "max_output_tokens", false},
+	} {
+		_, err := NewTranslatorFor(decodeRequest(t, c.body), "").Accept(incomplete(c.reason))
+		if errors.Is(err, ErrOutputLimitExceeded) != c.limit || err == nil {
+			t.Fatalf("%s %s: err = %v", c.body, c.reason, err)
 		}
 	}
 }

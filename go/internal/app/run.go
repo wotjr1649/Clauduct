@@ -224,7 +224,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if len(config.Deprecated) > 0 {
 			fmt.Fprintf(o.Stderr, "clauduct: settings: %s no longer applied since v0.6.4; the keys stay in the file and may be removed\n", strings.Join(config.Deprecated, ", "))
 		}
-		if err := config.strictReady(o.Env); err != nil {
+		if config, err = config.strictReady(o.Env); err != nil {
 			return Result{}, err
 		}
 	}

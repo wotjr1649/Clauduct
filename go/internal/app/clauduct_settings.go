@@ -119,6 +119,8 @@ type ClauductSettings struct {
 	// BoundaryProfile is "default" or "strict": which Anthropic-hosted paths native keeps
 	// (#301, boundary_profile in settings.json).
 	BoundaryProfile string
+	// marketplace is the user's own marketplace setting a strict session keeps (strictReady).
+	marketplace string
 	// Deprecated names keys present in the file that this build ignores.
 	Deprecated []string
 }

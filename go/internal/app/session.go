@@ -133,6 +133,9 @@ func (config ClauductSettings) sessionRequirements() map[string]string {
 	}
 	if config.BoundaryProfile == boundaryStrict {
 		values[nonessentialTraffic] = "1" // #301: a settings file must not turn it back on
+		if config.marketplace != "" {
+			values[marketplaceInstall] = config.marketplace // the user's value, kept (strictReady)
+		}
 	}
 	return values
 }

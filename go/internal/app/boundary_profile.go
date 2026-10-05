@@ -35,7 +35,7 @@ var (
 )
 
 var errStrictMarketplace = errors.New("BOUNDARY_PROFILE_STRICT: boundary_profile is strict but " + marketplaceInstall +
-	" is not set. Native records it in its own config the first time it sees it, so the official marketplace stays off for later sessions too; " +
+	" is not set to a value native reads as on (1, true, yes, on). Native records it in its own config the first time it sees it, so the official marketplace stays off for later sessions too; " +
 	"Clauduct does not make that change for you. Set " + marketplaceInstall + "=1 in the environment you start clauduct from, or use boundary_profile \"default\"")
 
 // boundarySettings fills the profile's part of the child's settings.
@@ -49,16 +49,29 @@ func (config ClauductSettings) boundarySettings(s *childSettings) {
 	s.Permissions = &childPermissions{Deny: denied}
 }
 
-// strictReady refuses strict before anything starts when the marketplace variable is not the
-// user's own setting.
-func (config ClauductSettings) strictReady(env map[string]string) error {
+// strictReady refuses strict before anything starts unless the user set the marketplace
+// variable to a value native reads as on, and returns the settings with that value kept: the
+// session's requirements re-assert it so a settings file's env, which outranks the process
+// environment, cannot quietly undo the user's choice. Clauduct never chooses the value.
+func (config ClauductSettings) strictReady(env map[string]string) (ClauductSettings, error) {
 	if config.BoundaryProfile != boundaryStrict {
-		return nil
+		return config, nil
 	}
 	for name, value := range env {
-		if strings.EqualFold(name, marketplaceInstall) && value != "" && value != "0" && !strings.EqualFold(value, "false") {
-			return nil
+		if strings.EqualFold(name, marketplaceInstall) && nativeTruthy(value) {
+			config.marketplace = value
+			return config, nil
 		}
 	}
-	return errStrictMarketplace
+	return config, errStrictMarketplace
+}
+
+// nativeTruthy is native 2.1.289's reading of a boolean environment variable (its env schema's
+// bool: trimmed, lower-cased, one of 1/true/yes/on).
+func nativeTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }

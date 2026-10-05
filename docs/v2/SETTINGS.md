@@ -100,7 +100,8 @@ Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바�
   차단 목록 검사도 사라진다. 이 보안상 trade-off를 사용자가 감수한다.
 - marketplace 변수는 native가 처음 볼 때 자기 설정에 "정책으로 막힘"을 영구 기록한다. 그래서 그 뒤 Clauduct 없이 쓰는 native에서도
   공식 marketplace 자동 등록이 꺼진 채로 남는다. Clauduct는 이 상태를 대신 바꾸지 않는다. `strict`는 사용자가 이 변수를 시작 환경에
-  둔 경우에만 시작하고, 없으면 `BOUNDARY_PROFILE_STRICT`로 거부한다.
+  native가 켬으로 읽는 값(`1`·`true`·`yes`·`on`)으로 둔 경우에만 시작하고, 아니면 `BOUNDARY_PROFILE_STRICT`로 거부한다.
+  시작한 뒤에는 사용자의 그 값을 세션 `--settings` env에 다시 넣어, settings 파일 env가 사용자의 선택을 조용히 되돌리지 못하게 한다.
 - 사용자 `--settings`의 `permissions`는 유지되고 프로필의 deny 규칙이 더해진다. 프로필 값을 되돌리는 값
   (`disableClaudeAiConnectors: false`, `skipWebFetchPreflight: false`, strict에서 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
   변경)은 `SETTINGS_CONFLICT`로 거부한다.

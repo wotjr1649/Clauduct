@@ -170,11 +170,13 @@ func routed(connection sessionlink.Connection, in io.Reader, out, errOut io.Writ
 	// #299: a stored Claude apps gateway login sends native's requests to that gateway while
 	// the environment still names this one, so the check above cannot see it. Native asks its
 	// endpoint for the model list before the session's first hook; when that never reached
-	// this gateway, the session ends before its first prompt is sent.
+	// this gateway, the session is ended. SessionStart reports it as early as possible but
+	// cannot block native; UserPromptSubmit can, so every prompt asks again and is refused
+	// before its model request leaves (once the list came, the answer is immediate).
 	var event struct {
 		Name string `json:"hook_event_name"`
 	}
-	if json.Unmarshal(raw, &event) == nil && event.Name == "SessionStart" {
+	if json.Unmarshal(raw, &event) == nil && (event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
 		if _, err := postReply([]byte("{}"), env, RoutingProofPath, false); err != nil {
 			fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. Sign out of it in Claude Code (/logout) or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
 			postReply([]byte("{}"), env, RoutingMismatchPath, false)

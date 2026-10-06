@@ -21,6 +21,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -121,14 +122,24 @@ type scanPattern struct {
 }
 
 func newScanner(canaries []Canary) *scanner {
-	s := &scanner{canaries: canaries, found: map[string]bool{}}
+	s := &scanner{found: map[string]bool{}}
+	s.add(canaries)
+	return s
+}
+
+// add extends the search to canaries not yet searched for, keeping the window: a socket opened
+// in turn 1 must still be searched for turn 2's canary.
+func (s *scanner) add(canaries []Canary) {
 	for _, c := range canaries {
+		if slices.ContainsFunc(s.canaries, func(have Canary) bool { return have.ID == c.ID }) {
+			continue
+		}
+		s.canaries = append(s.canaries, c)
 		for _, p := range c.patterns() {
 			s.patterns = append(s.patterns, scanPattern{c.ID, p})
 			s.longest = max(s.longest, len(p))
 		}
 	}
-	return s
 }
 
 func (s *scanner) feed(b []byte) {
@@ -153,23 +164,26 @@ func (s *scanner) ids() []string {
 	return ids
 }
 
-// scan reads at most maxScannedBody bytes of r and returns the IDs of canaries found.
+// scan reads at most maxScannedBody bytes of r and returns the IDs of canaries found. A body
+// longer than that was not searched in full, which is undecodable rather than clean.
 func scan(r io.Reader, canaries []Canary) ([]string, error) {
 	s := newScanner(canaries)
 	buf := make([]byte, 64<<10)
 	var read int64
-	for read < maxScannedBody {
+	for {
 		n, err := r.Read(buf)
 		read += int64(n)
 		s.feed(buf[:n])
 		if errors.Is(err, io.EOF) {
-			break
+			return s.ids(), nil
 		}
 		if err != nil {
 			return s.ids(), err
 		}
+		if read > maxScannedBody {
+			return s.ids(), errUndecodable
+		}
 	}
-	return s.ids(), nil
 }
 
 // decoded undoes the request's Content-Encoding for gzip and deflate. Any other coding, br and
@@ -213,6 +227,9 @@ type Seen struct {
 	WebSocket   bool      `json:"webSocket"`
 	Undecodable bool      `json:"undecodable"`
 	Canaries    []string  `json:"canaries,omitempty"`
+	// Authority is a proxied tunnel's host:port. Kept out of evidence: it can name a loopback
+	// port, and the probe only needs it in memory to attribute a tunnel to its own receivers.
+	Authority string `json:"-"`
 }
 
 // maxSeen bounds one receiver's record; requests past it are still counted.
@@ -229,6 +246,23 @@ type Observer struct {
 	seen    []Seen
 	total   int
 	dropped int
+	// stop ends WebSocket reads, which outlive the HTTP server's Close once hijacked.
+	stop     chan struct{}
+	stopOnce sync.Once
+}
+
+func (o *Observer) stopped() chan struct{} {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.stop == nil {
+		o.stop = make(chan struct{})
+	}
+	return o.stop
+}
+
+func (o *Observer) shutdown() {
+	ch := o.stopped()
+	o.stopOnce.Do(func() { close(ch) })
 }
 
 // Seen returns a snapshot of the requests observed and how many were not kept.
@@ -252,8 +286,7 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
-		o.webSocket(w, r, &seen)
-		o.record(seen)
+		o.webSocket(w, r, o.record(seen))
 		return
 	}
 	if body, err := decoded(r.Header, r.Body); err != nil {
@@ -272,37 +305,62 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 	w.WriteHeader(http.StatusNotFound)
 }
 
-// webSocket accepts the upgrade and scans every message until the peer closes or a bounded
-// time passes. The library unmasks frames and undoes permessage-deflate.
-func (o *Observer) webSocket(w http.ResponseWriter, r *http.Request, seen *Seen) {
+// webSocket accepts the upgrade and scans every message for as long as the connection or the
+// receiver lives. The record at index is updated as canaries appear, so a snapshot taken while
+// the socket is still open already sees them. The library unmasks frames and undoes
+// permessage-deflate; any end other than a normal close is undecodable.
+func (o *Observer) webSocket(w http.ResponseWriter, r *http.Request, index int) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
-		seen.Undecodable = true
+		o.update(index, func(s *Seen) { s.Undecodable = true })
 		return
 	}
 	defer conn.CloseNow()
 	conn.SetReadLimit(maxScannedBody)
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	go func() {
+		select {
+		case <-o.stopped():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	stream := newScanner(o.canaries())
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			break
+			if status := websocket.CloseStatus(err); status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway {
+				o.update(index, func(s *Seen) { s.Undecodable = true })
+			}
+			return
 		}
+		stream.add(o.canaries())
 		stream.feed(data)
+		ids := stream.ids()
+		o.update(index, func(s *Seen) { s.Canaries = ids })
 	}
-	seen.Canaries = stream.ids()
 }
 
-func (o *Observer) record(seen Seen) {
+// record keeps seen and returns its index, or -1 once the record is full. Requests past the
+// bound are still counted in total and dropped, which the verdict reads as a receiver fault.
+func (o *Observer) record(seen Seen) int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.total++
 	if len(o.seen) < maxSeen {
 		o.seen = append(o.seen, seen)
-	} else {
-		o.dropped++
+		return len(o.seen) - 1
+	}
+	o.dropped++
+	return -1
+}
+
+func (o *Observer) update(index int, fn func(*Seen)) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if index >= 0 && index < len(o.seen) {
+		fn(&o.seen[index])
 	}
 }
 
@@ -323,6 +381,9 @@ func (r *Receiver) Close() error {
 	if r == nil || r.server == nil {
 		return nil
 	}
+	if r.Observer != nil {
+		r.Observer.shutdown()
+	}
 	err := r.server.Close()
 	if serveErr := <-r.done; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
 		err = errors.Join(err, serveErr)
@@ -332,6 +393,19 @@ func (r *Receiver) Close() error {
 
 // Listen starts a plain HTTP receiver on 127.0.0.1.
 func Listen(o *Observer) (*Receiver, error) { return listen(o, nil, nil, o) }
+
+// ListenUnix starts a plain HTTP receiver on an AF_UNIX socket at path, the destination a
+// settings ANTHROPIC_UNIX_SOCKET would name. URL is the socket path.
+func ListenUnix(o *Observer, path string) (*Receiver, error) {
+	raw, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	counter := &Counter{}
+	r := &Receiver{URL: path, Counter: counter, Observer: o, server: &http.Server{Handler: o, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
+	go func() { r.done <- r.server.Serve(countingListener{raw, counter}) }()
+	return r, nil
+}
 
 // ListenTLS starts an HTTPS receiver on 127.0.0.1 with a fresh self-signed certificate.
 func ListenTLS(o *Observer) (*Receiver, error) {
@@ -485,6 +559,9 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	if buffered != nil && buffered.Reader.Buffered() > 0 {
 		inner = &prefixedConn{Conn: conn, prefix: buffered.Reader}
 	}
+	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
+	// the probe cannot see into must not vanish from the record.
+	tunnel := o.record(Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect"})
 	tlsConn := tls.Server(inner, &tls.Config{NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12,
 		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			name := hello.ServerName
@@ -493,6 +570,15 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 			}
 			return c.leaf(name)
 		}})
+	handshake, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = tlsConn.HandshakeContext(handshake)
+	cancel()
+	if err != nil {
+		// A client that sent bytes the probe could not decrypt: refused pin, h2-only, distrust.
+		o.update(tunnel, func(s *Seen) { s.Undecodable = true })
+		tlsConn.Close()
+		return
+	}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { o.observe(w, r, authority) }), ReadHeaderTimeout: 10 * time.Second}
 	_ = server.Serve(newOneConn(tlsConn))
 }
@@ -591,3 +677,8 @@ func (c *prefixedConn) Read(b []byte) (int, error) {
 	}
 	return c.Conn.Read(b)
 }
+
+// Scan returns the IDs of the canaries in r, in any of the searched forms, reading at most
+// maxScannedBody bytes. It is for bodies the probe reads itself, such as INTENDED's backend
+// calls.
+func Scan(r io.Reader, canaries []Canary) ([]string, error) { return scan(r, canaries) }

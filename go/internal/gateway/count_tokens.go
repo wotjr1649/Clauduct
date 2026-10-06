@@ -59,7 +59,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}
-	g.observeIngress(r.URL.Path, body)
+	g.observeIngress(w, r, body)
 	// Count requests omit generation-only fields. Decode through the same strict
 	// message parser after adding local structural defaults; nothing is generated.
 	fields, err := wire.Fields(body, []string{"model", "messages", "system", "tools", "thinking", "metadata", "output_config", "context_management"})

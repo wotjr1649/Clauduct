@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -574,7 +575,20 @@ func (r *record) finish() {
 	}
 	if r.owner != nil {
 		r.owner.count(r.data)
+		if fn := r.owner.finished.Load(); fn != nil && *fn != nil {
+			(*fn)(r.data)
+		}
 	}
+}
+
+// seqNumber is the record's request number, or -1 for a request nothing recorded.
+func (r *record) seqNumber() int64 {
+	if r == nil {
+		return -1
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.data.Seq
 }
 
 // began is when the request arrived, which is when the client started waiting. Now for a
@@ -606,6 +620,8 @@ func (r *record) snapshot() RequestRecord {
 
 // ring keeps the most recent records.
 type ring struct {
+	// finished, when set, sees each record as it closes (Gateway.ObserveOutcome).
+	finished     atomic.Pointer[func(RequestRecord)]
 	mu           sync.Mutex
 	epoch        time.Time
 	seq          int64

@@ -111,7 +111,7 @@ type Gateway struct {
 	received   atomic.Int64
 	modelLists atomic.Int64
 	// ingress, when set, sees each authenticated inference body once it is read in full.
-	ingress atomic.Pointer[func(path string, body []byte)]
+	ingress atomic.Pointer[func(Ingress)]
 	// routingMismatch is set when this session's own hook saw native use another endpoint (#295).
 	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
@@ -304,16 +304,30 @@ func (g *Gateway) ClientVersion() string {
 // arrives.
 func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 
+// Ingress is one authenticated inference request as read in full. Seq is the request's record
+// number, which its outcome carries too.
+type Ingress struct {
+	Seq          int64
+	Path         string
+	RequestClass string
+	Body         []byte
+}
+
 // ObserveIngress registers fn to see each authenticated inference request body as soon as it
 // has been read in full, before any later admission check can refuse it. Provider
 // certification (P3, #320) needs to know what native sent to this gateway even when this
 // gateway then declines it; nothing else uses it and an unset gateway behaves as before. fn
 // runs on the request goroutine and must not keep the body. Set it before native starts.
-func (g *Gateway) ObserveIngress(fn func(path string, body []byte)) { g.ingress.Store(&fn) }
+func (g *Gateway) ObserveIngress(fn func(Ingress)) { g.ingress.Store(&fn) }
 
-func (g *Gateway) observeIngress(path string, body []byte) {
+// ObserveOutcome registers fn to see each request's final record when it closes: its outcome,
+// the refusal category if any, and the same Seq its ingress carried. No body is in it. fn runs
+// on the request goroutine before the request is released, so it must return promptly.
+func (g *Gateway) ObserveOutcome(fn func(RequestRecord)) { g.ring.finished.Store(&fn) }
+
+func (g *Gateway) observeIngress(w http.ResponseWriter, r *http.Request, body []byte) {
 	if fn := g.ingress.Load(); fn != nil && *fn != nil {
-		(*fn)(path, body)
+		(*fn)(Ingress{Seq: recordOf(w).seqNumber(), Path: r.URL.Path, RequestClass: r.Header.Get("X-Claude-Code-Request-Class"), Body: body})
 	}
 }
 

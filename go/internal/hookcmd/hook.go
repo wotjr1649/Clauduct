@@ -47,6 +47,11 @@ func Named(argv0, name string) bool {
 // Arg is the whole argument list the session settings give the hook command.
 const Arg = "--clauduct-hook"
 
+// ProviderControlledArg follows the gateway URL on a foreground hook's command line when the
+// launcher started native under a provider-control strategy (P3, #320). Only the launcher
+// writes a hook's command line, so a settings file cannot claim the strategy.
+const ProviderControlledArg = "--clauduct-provider-controlled"
+
 // Dispatch runs the role argv asks for, if it asks for one of these, and reports whether
 // it did. It has to come before anything else the launcher does: the renderer runs with an
 // empty environment and the hook inside the client's timeout, and neither is a launch.
@@ -65,10 +70,10 @@ func Dispatch(argv []string) (int, bool) {
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
 	}
-	if len(args) == 2 && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
+	if (len(args) == 2 || len(args) == 3 && args[2] == ProviderControlledArg) && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
 		// Foreground: the gateway is on the command line and the token in the environment.
 		env := platform.Environment(os.Environ())
-		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, os.Stdin, os.Stdout, os.Stderr, env), true
+		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, len(args) == 3, os.Stdin, os.Stdout, os.Stderr, env), true
 	}
 	if len(args) == 2 && (args[0] == Arg || args[0] == "--clauduct-background-key") {
 		connection, err := sessionlink.Read(args[1])
@@ -87,7 +92,7 @@ func Dispatch(argv []string) (int, bool) {
 			}
 			return 0, true
 		}
-		return routed(connection, os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
+		return routed(connection, false, os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
@@ -155,7 +160,7 @@ const RoutingMismatchPath = "/clauduct/routing-mismatch"
 // Clauduct: say so, tell the gateway so the launcher ends the session, and fail the event,
 // which blocks a prompt. Nothing is posted to the other destination and its value is not
 // printed.
-func routed(connection sessionlink.Connection, in io.Reader, out, errOut io.Writer, env map[string]string) int {
+func routed(connection sessionlink.Connection, controlled bool, in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	if routedElsewhere(env, connection.BaseURL) {
 		fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native is not sending model requests to this session's Clauduct gateway; the session is being ended.")
 		postReply([]byte("{}"), map[string]string{"ANTHROPIC_BASE_URL": connection.BaseURL, "ANTHROPIC_AUTH_TOKEN": connection.Token}, RoutingMismatchPath, false)
@@ -173,14 +178,24 @@ func routed(connection sessionlink.Connection, in io.Reader, out, errOut io.Writ
 	// this gateway, the session is ended. SessionStart reports it as early as possible but
 	// cannot block native; UserPromptSubmit can, so every prompt asks again and is refused
 	// before its model request leaves (once the list came, the answer is immediate).
+	//
+	// Under a provider-control strategy (P3, #320) the routing guarantee is the strategy's
+	// certification, not this hook, and native may skip the model list altogether; the proof
+	// is then a diagnostic only. That takes both the launcher's ProviderControlledArg and the
+	// strategy flag still "1" in native's environment: the argument cannot come from a settings
+	// file, and a settings file that clears the flag gets the block back.
 	var event struct {
 		Name string `json:"hook_event_name"`
 	}
 	if json.Unmarshal(raw, &event) == nil && (event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
 		if _, err := postReply([]byte("{}"), env, RoutingProofPath, false); err != nil {
-			fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. Sign out of it in Claude Code (/logout) or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
-			postReply([]byte("{}"), env, RoutingMismatchPath, false)
-			return 2
+			if controlled && hostManaged(env) {
+				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_PROOF_MISSING: native did not ask this session's Clauduct gateway for its model list; recorded as a diagnostic, since provider control routes this session.")
+			} else {
+				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. End Clauduct, then sign out of that gateway in standalone Claude Code, or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
+				postReply([]byte("{}"), env, RoutingMismatchPath, false)
+				return 2
+			}
 		}
 	}
 	return runWithOutput(bytes.NewReader(raw), out, errOut, env)
@@ -188,6 +203,23 @@ func routed(connection sessionlink.Connection, in io.Reader, out, errOut io.Writ
 
 // RoutingProofPath is the gateway's answer to whether native's start-up model list reached it.
 const RoutingProofPath = "/clauduct/routing-proof"
+
+// hostManaged reports whether native's environment still carries the HostManaged strategy
+// flag. Every spelling of the name has to say "1": Windows reads names without case, and which
+// of two spellings native applied last is not known. GatewayEnvCompat (Phase 3) is not here:
+// the #295 check above still treats its flag as a provider switch.
+func hostManaged(env map[string]string) bool {
+	seen := false
+	for name, value := range env {
+		if strings.EqualFold(name, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") {
+			if value != "1" {
+				return false
+			}
+			seen = true
+		}
+	}
+	return seen
+}
 
 // routedElsewhere reads names as Windows does, without case: a settings file may spell one
 // in lower case.

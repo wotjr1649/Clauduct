@@ -518,8 +518,9 @@ func ListenCatchAll(o *Observer) (*CatchAll, error) {
 	if err != nil {
 		return nil, err
 	}
-	template := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: "clauduct provider probe CA"},
-		NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(2 * time.Hour), IsCA: true, BasicConstraintsValid: true,
+	caSerial := serial()
+	template := &x509.Certificate{SerialNumber: caSerial, Subject: pkix.Name{CommonName: "clauduct provider probe CA " + caSerial.Text(16)},
+		NotBefore: time.Now().Add(-24 * time.Hour), NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true,
 		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, MaxPathLenZero: true}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
@@ -614,8 +615,13 @@ func issue(names []string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey
 	if err != nil {
 		return tls.Certificate{}, nil, err
 	}
-	template := &x509.Certificate{SerialNumber: serial(), Subject: pkix.Name{CommonName: names[0]},
-		NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(2 * time.Hour),
+	// Each certificate gets a subject no other trusted probe certificate has. The probe child
+	// trusts every stored gateway receiver's self-signed certificate at once; measured on native
+	// 2.1.292, two of them sharing a subject made the TLS client pick the wrong one as issuer
+	// and drop the connection after the handshake about half the time. Names go only in SANs.
+	id := serial()
+	template := &x509.Certificate{SerialNumber: id, Subject: pkix.Name{Organization: []string{"Clauduct provider probe"}, CommonName: "clauduct-probe-" + id.Text(16)},
+		NotBefore: time.Now().Add(-24 * time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	for _, name := range names {
 		if ip := net.ParseIP(name); ip != nil {

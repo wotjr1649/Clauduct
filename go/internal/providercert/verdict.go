@@ -7,16 +7,18 @@ import (
 )
 
 // Revisions of the frozen routing contract and probe schema this build implements. Raising
-// either invalidates every cached certification.
+// either invalidates every cached certification. Revision 2 splits P5 into routing liveness
+// (P5-R) and native preservation (P5-F); revision 1 results stay judged under revision 1.
 const (
-	RoutingContractRevision = 1
-	ProbeSchemaRevision     = 1
+	RoutingContractRevision = 2
+	ProbeSchemaRevision     = 2
 )
 
 // Case outcomes.
 const (
 	Pass           = "PASS"
 	FailRouting    = "FAIL_ROUTING"
+	FailFunction   = "FAIL_FUNCTION"
 	Inconclusive   = "INCONCLUSIVE"
 	NotExercisable = "NOT_EXERCISABLE"
 )
@@ -27,6 +29,17 @@ const (
 	Incompatible = "INCOMPATIBLE"
 )
 
+// What a turn's native preservation check (P5-F) expects.
+const (
+	ExpectSuccess    = "SUCCESS"
+	ExpectFailClosed = "EXPECTED_FAIL_CLOSED"
+	ExpectStimulus   = "STIMULUS"
+)
+
+// ExpectedRefusals are the product security policy refusals a degraded-hook turn is expected
+// to end with, after INTENDED received and read its request.
+var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONFIRMATION_UNVERIFIED"}
+
 // Reasons.
 const (
 	ReasonStoredGatewayContact  = "STORED_GATEWAY_CONTACT"
@@ -34,6 +47,7 @@ const (
 	ReasonCatchAllInference     = "CATCH_ALL_INFERENCE"
 	ReasonCatchAllCanary        = "CATCH_ALL_CANARY"
 	ReasonForeignMarker         = "FOREIGN_REPLY_MARKER"
+	ReasonForeignCanary         = "FOREIGN_RECEIVER_CANARY"
 	ReasonServedWithoutCanary   = "INTENDED_SERVED_WITHOUT_CANARY"
 	ReasonSpawnFailed           = "SPAWN_FAILED"
 	ReasonTimeout               = "TIMEOUT"
@@ -50,9 +64,12 @@ const (
 	ReasonControlUnproven       = "CONTROL_PREREQUISITE_UNPROVEN"
 	ReasonNativeChanged         = "NATIVE_CHANGED_DURING_CERTIFICATION"
 	ReasonIntendedMissing       = "INTENDED_CANARY_MISSING"
-	ReasonIntendedMarkerMissing = "INTENDED_MARKER_MISSING"
+	ReasonAuxiliaryOnly         = "AUXILIARY_ONLY"
 	ReasonMatrixMismatch        = "MATRIX_RESULTS_MISMATCH"
 	ReasonUnattributedContact   = "UNATTRIBUTED_CONTACT"
+	ReasonPreservationFailed    = "NATIVE_PRESERVATION_FAILED"
+	ReasonFailClosedNotObserved = "FAIL_CLOSED_NOT_OBSERVED"
+	ReasonUnknownExpectation    = "UNKNOWN_EXPECTATION"
 )
 
 // Wrong is what one wrong loopback destination saw.
@@ -62,15 +79,25 @@ type Wrong struct {
 
 // Turn is one prompt of a case, as the runner observed it.
 type Turn struct {
-	// IntendedCanary counts requests at INTENDED, authenticated with the session token, whose
-	// body carried this turn's canary.
+	// Expect is what P5-F requires of this turn: ExpectSuccess, ExpectFailClosed or
+	// ExpectStimulus.
+	Expect string
+	// IntendedCanary counts requests at INTENDED's ingress, authenticated with the session token,
+	// whose body carried this turn's canary (P4).
 	IntendedCanary int
+	// IntendedMainCanary is the part of IntendedCanary whose request class was not auxiliary:
+	// the turn itself rather than a title or classifier that quoted it (P5-R).
+	IntendedMainCanary int
+	// Refusals are the gateway's categories for this turn's canary-bearing ingress requests,
+	// matched to them by the gateway's record number; "" for one that was not refused.
+	Refusals []string
 	// IntendedInference counts inference-class requests at INTENDED in this turn's window.
 	IntendedInference int
 	// ControlInference is what the wrong provider received in the same turn of the paired
 	// control. P8 compares against it.
 	ControlInference int
-	// IntendedServed is whether INTENDED answered a request of this turn.
+	// IntendedServed is whether INTENDED's backend answered a conversation-bearing request of
+	// this turn.
 	IntendedServed bool
 	// Markers are the receiver IDs whose reply markers appear in native's output for this turn.
 	Markers []string
@@ -107,6 +134,9 @@ type Observation struct {
 	// case's canary, is a violation, and contact without it cannot be attributed.
 	CanaryAttribution   bool
 	StoredGatewayCanary int
+	// ForeignCanary counts requests carrying this case's canary at any probe receiver other
+	// than INTENDED, including one no byte rule covers (STANDALONE_STORED_GATEWAY_C).
+	ForeignCanary       int
 	CatchAllInference   int
 	CatchAllCanary      int
 	CatchAllUndecodable int
@@ -130,7 +160,8 @@ const IntendedID = "INTENDED"
 
 // Judge applies the contract's caseVerdict. A routing violation is decided first and is never
 // softened by a missing control or a harness failure: bytes that reached a wrong destination
-// are evidence on their own.
+// are evidence on their own. Native preservation (P5-F) is judged last, and only for a case
+// whose routing evidence is complete.
 func Judge(o Observation) Result {
 	r := Result{CaseID: o.CaseID, IdentityChanged: o.IdentityChanged}
 	add := func(reason string) { r.Reasons = append(r.Reasons, reason) }
@@ -151,6 +182,9 @@ func Judge(o Observation) Result {
 			add(ReasonSettingsTargetContact)
 			break
 		}
+	}
+	if o.ForeignCanary != 0 {
+		add(ReasonForeignCanary)
 	}
 	if o.CatchAllInference != 0 {
 		add(ReasonCatchAllInference)
@@ -196,10 +230,8 @@ func Judge(o Observation) Result {
 		r.Verdict = Inconclusive
 		return r
 	}
-	// What the treatment itself failed to show, apart from the comparison with its control.
-	if h.NativeErrorBeforeInference {
-		add(ReasonNativeError)
-	}
+
+	// What the treatment itself failed to show for routing (P3 undecodable, P4, P5-R).
 	if o.CatchAllUndecodable != 0 {
 		add(ReasonUndecodable)
 	}
@@ -207,33 +239,44 @@ func Judge(o Observation) Result {
 		add(ReasonResultMissing)
 	}
 	for _, t := range o.Turns {
-		if t.IntendedCanary == 0 {
+		switch {
+		case t.IntendedCanary == 0:
 			add(ReasonIntendedMissing)
-			break
+		case t.IntendedMainCanary == 0:
+			add(ReasonAuxiliaryOnly)
+		default:
+			continue
 		}
+		break
 	}
 	for _, t := range o.Turns {
-		if !slices.Contains(t.Markers, IntendedID) {
-			add(ReasonIntendedMarkerMissing)
-			break
-		}
-	}
-	for _, t := range o.Turns {
-		if t.UnmarkedReply && !t.IntendedServed {
+		if t.UnmarkedReply && t.IntendedCanary == 0 && !t.IntendedServed {
 			add(ReasonUnobservedReply)
 			break
 		}
 	}
+	for _, t := range o.Turns {
+		if !slices.Contains([]string{ExpectSuccess, ExpectFailClosed, ExpectStimulus}, t.Expect) {
+			add(ReasonUnknownExpectation)
+			break
+		}
+	}
+	if len(r.Reasons) > 0 && h.NativeErrorBeforeInference {
+		r.Reasons = append([]string{ReasonNativeError}, r.Reasons...)
+	}
+	function := preservation(o.Turns)
 	if !o.Control.Established {
-		// NOT_EXERCISABLE only for a treatment that is clean on its own (P1-P7); P8 needs the
-		// control and is not read. An anchor without a control proves nothing.
-		if o.Optional && len(r.Reasons) == 0 {
+		// NOT_EXERCISABLE only for a treatment that is clean on its own, routing and native
+		// preservation both; P8 needs the control and is not read. An anchor without a control
+		// proves nothing.
+		if o.Optional && len(r.Reasons) == 0 && len(function) == 0 {
 			r.Verdict = NotExercisable
 			return r
 		}
 		if !o.Optional {
 			r.Reasons = append([]string{ReasonControlUnproven}, r.Reasons...)
 		}
+		r.Reasons = append(r.Reasons, function...)
 		r.Verdict = Inconclusive
 		return r
 	}
@@ -247,8 +290,39 @@ func Judge(o Observation) Result {
 		r.Verdict = Inconclusive
 		return r
 	}
+	if len(function) > 0 {
+		r.Verdict, r.Reasons = FailFunction, function
+		return r
+	}
 	r.Verdict = Pass
 	return r
+}
+
+// preservation applies P5-F to each turn and returns the reasons it fails, if any.
+func preservation(turns []Turn) []string {
+	var reasons []string
+	note := func(reason string) {
+		if !slices.Contains(reasons, reason) {
+			reasons = append(reasons, reason)
+		}
+	}
+	for _, t := range turns {
+		switch t.Expect {
+		case ExpectSuccess:
+			if !slices.Contains(t.Markers, IntendedID) {
+				note(ReasonPreservationFailed)
+			}
+		case ExpectFailClosed:
+			refused := len(t.Refusals) > 0
+			for _, category := range t.Refusals {
+				refused = refused && slices.Contains(ExpectedRefusals, category)
+			}
+			if !refused || t.IntendedServed || slices.Contains(t.Markers, IntendedID) {
+				note(ReasonFailClosedNotObserved)
+			}
+		}
+	}
+	return reasons
 }
 
 // Strategy is one strategy's certification verdict.
@@ -258,6 +332,9 @@ type Strategy struct {
 	Cases   []Result `json:"cases"`
 	// NotExercisable lists the optional cases whose control did not move an unprotected native.
 	NotExercisable []string `json:"notExercisable"`
+	// PreservationFailures lists the cases that routed correctly but failed P5-F, which is a
+	// product or surface defect to report.
+	PreservationFailures []string `json:"preservationFailures,omitempty"`
 }
 
 // Decide applies the contract's strategyVerdict to the results of one certification run.
@@ -294,12 +371,18 @@ func Decide(matrix, optional []string, results []Result) Strategy {
 				continue
 			}
 			s.NotExercisable = append(s.NotExercisable, r.CaseID)
+		case FailFunction:
+			s.PreservationFailures = append(s.PreservationFailures, r.CaseID)
 		default:
 			s.Verdict = Inconclusive
 			s.Reasons = append(s.Reasons, r.CaseID+":"+r.Verdict)
 		}
 	}
 	if s.Verdict == Inconclusive {
+		return s
+	}
+	if len(s.PreservationFailures) > 0 {
+		s.Verdict, s.Reasons = Inconclusive, []string{ReasonPreservationFailed}
 		return s
 	}
 	s.Verdict = Certified

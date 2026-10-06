@@ -370,8 +370,10 @@ type Receiver struct {
 	Counter  *Counter
 	Observer *Observer
 	// CertSHA256 is the hex SHA-256 of a TLS receiver's certificate DER: the pin a synthetic
-	// stored gateway credential carries.
+	// stored gateway credential carries. CertPEM is that certificate, for the probe child's
+	// trust store only.
 	CertSHA256 string
+	CertPEM    []byte
 	server     *http.Server
 	done       chan error
 }
@@ -429,6 +431,7 @@ func listen(handler http.Handler, cert *tls.Certificate, der []byte, o *Observer
 		scheme = "https"
 		sum := sha256.Sum256(der)
 		r.CertSHA256 = hex.EncodeToString(sum[:])
+		r.CertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 		l = tls.NewListener(l, &tls.Config{Certificates: []tls.Certificate{*cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12})
 	}
 	r.URL = scheme + "://" + raw.Addr().String()
@@ -624,6 +627,11 @@ func issue(names []string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey
 	signer, signerKey := template, key
 	if parent != nil {
 		signer, signerKey = parent, parentKey
+	} else {
+		// A self-signed server certificate is its own trust anchor. BoringSSL, which native's
+		// runtime uses, accepts an extra trusted certificate only when it is a CA.
+		template.IsCA, template.BasicConstraintsValid = true, true
+		template.KeyUsage |= x509.KeyUsageCertSign
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, signer, &key.PublicKey, signerKey)
 	if err != nil {

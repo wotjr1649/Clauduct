@@ -37,6 +37,7 @@ var processKernel = syscall.NewLazyDLL("kernel32.dll")
 var createJob = processKernel.NewProc("CreateJobObjectW")
 var setJob = processKernel.NewProc("SetInformationJobObject")
 var terminateJob = processKernel.NewProc("TerminateJobObject")
+var isProcessInJob = processKernel.NewProc("IsProcessInJob")
 var initializeAttributes = processKernel.NewProc("InitializeProcThreadAttributeList")
 var updateAttribute = processKernel.NewProc("UpdateProcThreadAttribute")
 var deleteAttributes = processKernel.NewProc("DeleteProcThreadAttributeList")
@@ -61,6 +62,86 @@ type Process struct {
 	outputs sync.WaitGroup
 	copyErr error
 	pipes   []*os.File
+}
+
+// ProcessIdentity is a read-only observation of the process owned by Process.
+// InOwnedJob refers only to this Process object's exact job handle; it never
+// means AnyJob membership.
+type ProcessIdentity struct {
+	PID        int
+	Creation   uint64
+	InOwnedJob bool
+}
+
+// ProcessIdentityError keeps the operation and underlying native error
+// available to callers without exposing command or payload text in Error().
+type ProcessIdentityError struct {
+	Operation string
+	Err       error
+}
+
+func (e *ProcessIdentityError) Error() string {
+	return "PROCESS_IDENTITY_" + e.Operation
+}
+
+func (e *ProcessIdentityError) Unwrap() error { return e.Err }
+
+var errProcessIdentityNotLive = errors.New("process identity target is not live")
+
+// Identity observes the live process handle, creation time, and membership in
+// the exact Job created by Start. The mutex covers the whole observation so a
+// concurrent Wait cannot close p.job between IsProcessInJob and the return.
+// A successful false membership result is distinct from an API failure.
+func (p *Process) Identity() (ProcessIdentity, error) {
+	if p == nil {
+		return ProcessIdentity{}, &ProcessIdentityError{Operation: "UNAVAILABLE", Err: errors.New("owned process is unavailable")}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil || p.cmd.Process == nil || p.job == 0 {
+		return ProcessIdentity{}, &ProcessIdentityError{Operation: "UNAVAILABLE", Err: errors.New("owned process is unavailable")}
+	}
+	identity := ProcessIdentity{PID: p.cmd.Process.Pid}
+	var callbackErr error
+	handleErr := p.cmd.Process.WithHandle(func(raw uintptr) {
+		handle := syscall.Handle(raw)
+		state, err := syscall.WaitForSingleObject(handle, 0)
+		if err != nil {
+			callbackErr = &ProcessIdentityError{Operation: "WAIT", Err: err}
+			return
+		}
+		if state != syscall.WAIT_TIMEOUT {
+			callbackErr = &ProcessIdentityError{Operation: "NOT_LIVE", Err: errProcessIdentityNotLive}
+			return
+		}
+		var created, exited, kernel, user syscall.Filetime
+		if err := syscall.GetProcessTimes(handle, &created, &exited, &kernel, &user); err != nil {
+			callbackErr = &ProcessIdentityError{Operation: "PROCESS_TIMES", Err: err}
+			return
+		}
+		identity.Creation = uint64(created.HighDateTime)<<32 | uint64(created.LowDateTime)
+		var associated int32
+		if ok, _, err := isProcessInJob.Call(raw, uintptr(p.job), uintptr(unsafe.Pointer(&associated))); ok == 0 {
+			callbackErr = &ProcessIdentityError{Operation: "IS_PROCESS_IN_JOB", Err: err}
+			return
+		}
+		identity.InOwnedJob = associated != 0
+		state, err = syscall.WaitForSingleObject(handle, 0)
+		if err != nil {
+			callbackErr = &ProcessIdentityError{Operation: "WAIT_AFTER", Err: err}
+			return
+		}
+		if state != syscall.WAIT_TIMEOUT {
+			callbackErr = &ProcessIdentityError{Operation: "NOT_LIVE_AFTER", Err: errProcessIdentityNotLive}
+		}
+	})
+	if handleErr != nil {
+		return ProcessIdentity{}, &ProcessIdentityError{Operation: "PROCESS_HANDLE", Err: handleErr}
+	}
+	if callbackErr != nil {
+		return ProcessIdentity{}, callbackErr
+	}
+	return identity, nil
 }
 
 func (p *Process) Stop() error {

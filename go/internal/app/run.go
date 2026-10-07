@@ -109,6 +109,9 @@ type Options struct {
 	// ProviderStrategy is how native is held to this session's gateway (#320); empty is the
 	// launch without one. An unknown name is refused.
 	ProviderStrategy string
+	// AdmittedNativeSHA256 is the native the admission gate admitted (admission r2 cache.use):
+	// the session starts only that file, held against change until it is running.
+	AdmittedNativeSHA256 string
 	// backgroundUnderStrategy lets a probe run the unverified background path under a strategy.
 	backgroundUnderStrategy bool
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
@@ -632,7 +635,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		defer func() { supervisor.Stop(); supervisor.Wait() }()
 	}
-	process, startErr := o.StartProcess(spec, o.Stdin, stdout, stderr)
+	process, startErr := startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, stdout, stderr)
 	if startErr != nil {
 		// The child never ran, so the port it was going to use must not outlive the
 		// attempt. Cleanup failure here is reported alongside the start failure rather

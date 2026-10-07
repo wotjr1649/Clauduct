@@ -130,18 +130,8 @@ var p3LastJobState string
 // whether native keeps one per config dir or one per user is not established, and a daemon the
 // user runs must not be stopped. A job is stopped through its own resident only.
 func p3BackgroundFamily() []p3Case {
-	// A background dispatch needs the workspace already trusted (it cannot ask): the synthetic
-	// profile is written as the release TUI harness writes it, with the stored gateway login.
-	storedA := func(w *p3World) error {
-		state, _ := json.Marshal(map[string]any{"hasCompletedOnboarding": true, "theme": "dark",
-			"projects": map[string]any{filepath.ToSlash(w.cwd): map[string]any{"hasTrustDialogAccepted": true}}})
-		if err := os.WriteFile(filepath.Join(w.configDir, ".claude.json"), state, 0o600); err != nil {
-			return err
-		}
-		return w.storeGateway(w.sgA)
-	}
 	return []p3Case{
-		{ID: "R08", Entry: p3Background, Hooks: p3HooksNormal, Setup: storedA, Expect: providercert.ExpectSuccess, Established: gotCanary("WRONG_STORED_GATEWAY_A", 0)},
+		{ID: "R08", Entry: p3Background, Hooks: p3HooksNormal, Setup: p3TrustedStoredA, Expect: providercert.ExpectSuccess, Established: gotCanary("WRONG_STORED_GATEWAY_A", 0)},
 	}
 }
 
@@ -244,4 +234,15 @@ func p3SubagentSidecars(configDir string, turns []p3Turn) map[string]string {
 		return nil
 	})
 	return out
+}
+
+// p3TrustedStoredA is the stored gateway A login in a profile whose workspace is already
+// trusted: a background dispatch cannot ask, so it needs the trust the release TUI harness writes.
+func p3TrustedStoredA(w *p3World) error {
+	state, _ := json.Marshal(map[string]any{"hasCompletedOnboarding": true, "theme": "dark",
+		"projects": map[string]any{filepath.ToSlash(w.cwd): map[string]any{"hasTrustDialogAccepted": true}}})
+	if err := os.WriteFile(filepath.Join(w.configDir, ".claude.json"), state, 0o600); err != nil {
+		return err
+	}
+	return w.storeGateway(w.sgA)
 }

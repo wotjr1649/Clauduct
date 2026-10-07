@@ -7,12 +7,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
 	"github.com/wotjr1649/Clauduct/go/internal/app"
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
+	"strings"
+	"sync"
 )
 
 // ScopeOptions is one probe run: one scope's short case set (admission contract r2).
@@ -28,16 +30,25 @@ type ScopeOptions struct {
 	Home string
 	// Required are the states of the scope's requiresScope entries, read by the caller.
 	Required map[string]string
+	// Only, when set, runs just these of the scope's cases as a diagnostic: no entry is written.
+	Only []string
 }
 
 // p3Function judges a case's function after its routing verdict passed: it returns a verdict
-// that replaces PASS (FAIL_FUNCTION, FIXTURE_NOT_APPLIED, ...) or "" to keep it.
+// that replaces PASS (FAIL_FUNCTION, FIXTURE_NOT_APPLIED, ...) or "" to keep it, and a reason
+// that is kept either way as the case's evidence.
 type p3Function func(control, treatment *p3Observed) (verdict, reason string)
 
 // scopeCase is a registry entry: the case to run and what the contract adds to its judgment.
 type scopeCase struct {
 	c        p3Case
 	function p3Function
+	// judge, when set, replaces Judge for a case the contract judges by its own rule.
+	judge func(control, treatment *p3Observed) CaseResult
+	// variants are further cases that must all pass with this one (BE17's two policies).
+	variants []string
+	// noControl is a case the contract runs without a paired control (BE09, BE10, BE17).
+	noControl bool
 }
 
 // caseRegistry is every case this runner implements, by contract ID.
@@ -50,6 +61,17 @@ func caseRegistry() map[string]func() scopeCase {
 	for id, f := range permissionCases() {
 		reg[id] = f
 	}
+	for id, f := range backgroundEntryCases() {
+		reg[id] = f
+	}
+	for id, f := range tuiBoundaryCases() {
+		reg[id] = f
+	}
+	for id, f := range tuiCases() {
+		reg[id] = f
+	}
+	be17 := reg["BE17"]
+	reg["BE17"] = func() scopeCase { sc := be17(); sc.variants = []string{"BE17-setting"}; return sc }
 	return reg
 }
 
@@ -62,18 +84,40 @@ func permissionCases() map[string]func() scopeCase {
 			if err := storedA(w); err != nil {
 				return err
 			}
-			return w.userSettings(map[string]any{"permissions": map[string]any{kind: []string{"Bash"}}})
+			return w.mergeUserSettings("permissions", map[string]any{kind: []string{"Bash"}})
 		}
 	}
-	make := func(id string, setup func(*p3World) error, wantMarker bool, managedMark bool) func() scopeCase {
+	// want judges the treatment's run: whether the marker was written, whether Bash was
+	// offered, and what native returned for the call.
+	type want func(written, offered bool, results []string) string
+	denied := func(written, offered bool, results []string) string {
+		switch {
+		case written:
+			return "the marker was written"
+		case offered && !slices.ContainsFunc(results, p3PermissionDenied):
+			return fmt.Sprintf("Bash was offered and its result is not a permission denial: %q", results)
+		}
+		return ""
+	}
+	asked := func(written, _ bool, results []string) string {
+		if written || !slices.ContainsFunc(results, p3ApprovalRequired) {
+			return fmt.Sprintf("marker written=%t; the result is not an approval-required denial: %q", written, results)
+		}
+		return ""
+	}
+	allowed := func(written, _ bool, _ []string) string {
+		if !written {
+			return "the marker was not written"
+		}
+		return ""
+	}
+	make := func(id string, setup func(*p3World) error, judge want, managedMark bool) func() scopeCase {
 		return func() scopeCase {
-			var mu sync.Mutex
-			var results []string
-			marker := ""
+			bash := &p3BashOnce{}
 			c := p3Case{ID: id, Entry: p3Print, Hooks: p3HooksNormal, Expect: providercert.ExpectSuccess, Args: []string{"--allowedTools", "Bash"},
-				Established: gotCanary("WRONG_STORED_GATEWAY_A", 0)}
+				Established: gotCanary("WRONG_STORED_GATEWAY_A", 0), Script: bash.script}
 			c.Setup = func(w *p3World) error {
-				marker = filepath.Join(w.cwd, "p3-pm-marker.txt")
+				bash.reset(filepath.Join(w.cwd, "p3-pm-marker.txt"))
 				if err := setup(w); err != nil {
 					return err
 				}
@@ -85,29 +129,45 @@ func permissionCases() map[string]func() scopeCase {
 				}
 				return nil
 			}
-			c.Script = p3BashOnce(&marker, &results, &mu)
 			function := func(control, treatment *p3Observed) (string, string) {
-				_, statErr := os.Stat(marker)
-				written := statErr == nil
 				if managedMark && !p3SawCanary(control, "pm-managed-file") && !p3SawCanary(treatment, "pm-managed-file") {
 					return VerdictFixtureNotApplied, "managed file marker reached no receiver in control or treatment"
 				}
 				if managedMark && p3SawCanary(control, "pm-managed-file") && !p3SawCanary(treatment, "pm-managed-file") {
-					return "FAIL_FUNCTION", "the treatment did not read the managed file the control read"
+					return providercert.FailFunction, "the treatment did not read the managed file the control read"
 				}
-				if written != wantMarker {
-					return "FAIL_FUNCTION", fmt.Sprintf("marker written=%t, want %t", written, wantMarker)
+				bash.mu.Lock()
+				defer bash.mu.Unlock()
+				_, statErr := os.Stat(bash.marker)
+				observed := fmt.Sprintf("marker written=%t, Bash offered=%t, results %q", statErr == nil, bash.offered, bash.results)
+				if reason := judge(statErr == nil, bash.offered, bash.results); reason != "" {
+					return providercert.FailFunction, reason + "; " + observed
 				}
-				return "", ""
+				return "", observed
 			}
 			return scopeCase{c: c, function: function}
 		}
 	}
 	return map[string]func() scopeCase{
-		"PM00": make("PM00", storedA, true, false),
-		"PM01": make("PM01", userRule("deny"), false, false),
-		"PM02": make("PM02", userRule("ask"), false, false),
-		"PM03": make("PM03", storedA, false, true),
+		"PM00": make("PM00", storedA, allowed, false),
+		"PM01": make("PM01", userRule("deny"), denied, false),
+		"PM02": make("PM02", userRule("ask"), asked, false),
+		"PM03": make("PM03", storedA, denied, true),
+	}
+}
+
+// p3PMControlUnproven applies admission r2's PM00 rule to a run's results: when PM00's marker
+// was not written, PM01–PM03 prove nothing and are INCONCLUSIVE (CONTROL_FUNCTION_UNPROVEN).
+func p3PMControlUnproven(results map[string]CaseResult) {
+	pm00, ran := results["PM00"]
+	if !ran || pm00.Verdict == providercert.Pass {
+		return
+	}
+	for _, id := range []string{"PM01", "PM02", "PM03"} {
+		if r, ok := results[id]; ok && r.Verdict == providercert.Pass {
+			r.Verdict, r.Reasons = providercert.Inconclusive, append(r.Reasons, "CONTROL_FUNCTION_UNPROVEN")
+			results[id] = r
+		}
 	}
 }
 
@@ -143,7 +203,7 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	if err != nil {
 		return app.AdmissionEntry{}, err
 	}
-	managed, err := app.ManagedSourceFingerprint(map[string]string{})
+	managed, err := app.ManagedSourceFingerprint(platform.Environment(os.Environ()))
 	if err != nil {
 		return app.AdmissionEntry{}, err
 	}
@@ -153,37 +213,126 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	if len(ids) == 0 {
 		return app.AdmissionEntry{}, fmt.Errorf("unknown scope %q", o.Scope)
 	}
-	write("plan", map[string]any{"scope": o.Scope, "cases": ids, "key": key, "native": start, "admissionContractSHA256": admissioncontract.AdmissionSHA256(), "retries": 0})
+	// One run per scope at a time (r4 cache.write). A run that waited finds the entry the other
+	// wrote and keeps it rather than measuring again.
+	waitFrom := time.Now()
+	if o.Only == nil {
+		release, err := app.LockAdmission(o.Home, o.Scope, lockWait)
+		if err != nil {
+			return app.AdmissionEntry{}, err
+		}
+		defer release()
+		if entry, err := app.LookupAdmission(o.Home, key); err == nil && entry.CreatedAt.After(waitFrom) {
+			return entry, nil
+		}
+	}
+	began := time.Now()
+	write("plan", map[string]any{"scope": o.Scope, "cases": ids, "key": key, "native": start, "admissionContractSHA256": admissioncontract.AdmissionSHA256(),
+		"retries": 0, "deadline": began.Add(certificationTotal), "workers": caseWorkers})
 	runner := newP3Runner(exe, pinnedStarter, 60*time.Second)
 	runner.identity = func() (providercert.Identity, error) { return providercert.Observe(exe) }
 	registry := caseRegistry()
 	optional := admissioncontract.Scopes()[o.Scope].Optional
-	results := map[string]CaseResult{}
-	gates := map[string]bool{}
-	for _, id := range ids {
+	// Every deadline comes from one absolute time fixed at the start (r4 deadlines); a case that
+	// cannot start or does not finish before it is INCONCLUSIVE (TIMEOUT).
+	deadline := began.Add(certificationTotal)
+	runCase := func(id string) (r CaseResult) {
+		defer func() {
+			if v := recover(); v != nil {
+				r = CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{fmt.Sprintf("PROBE_CASE_FAILED: %v", v)}}
+			}
+			if time.Now().After(deadline) && r.Verdict != VerdictBackgroundEntryReached && r.Verdict != providercert.FailRouting {
+				r = CaseResult{Verdict: providercert.Inconclusive, Reasons: append([]string{providercert.ReasonTimeout}, r.Reasons...)}
+			}
+		}()
+		if time.Now().After(deadline) {
+			return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{providercert.ReasonTimeout}}
+		}
 		build, ok := registry[id]
 		if !ok {
-			results[id] = CaseResult{Verdict: VerdictCaseNotImplemented}
-			continue
+			return CaseResult{Verdict: VerdictCaseNotImplemented}
 		}
 		sc := build()
 		sc.c.Optional = slices.Contains(optional, id)
-		control := runner.run(t, sc.c, p3Unprotected)
+		control := &p3Observed{}
+		if !sc.noControl {
+			control = runner.run(t, sc.c, p3Unprotected)
+		}
 		treatment := runner.run(t, sc.c, p3HostManaged)
+		if sc.judge != nil {
+			r := sc.judge(control, treatment)
+			for _, v := range sc.variants {
+				vc := registry[v]()
+				vcontrol := &p3Observed{}
+				if !vc.noControl {
+					vcontrol = runner.run(t, vc.c, p3Unprotected)
+				}
+				vtreatment := runner.run(t, vc.c, p3HostManaged)
+				if vr := p3OverlayChecked(vc.judge(vcontrol, vtreatment), vtreatment); p3Severity(vr.Verdict) > p3Severity(r.Verdict) {
+					r = vr
+					r.Reasons = append(r.Reasons, v)
+				}
+			}
+			r = p3OverlayChecked(r, treatment)
+			if !sc.noControl {
+				write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
+			}
+			write(id+"-treatment", p3EvidenceOf(sc.c, p3HostManaged, treatment, providercert.Result{CaseID: id, Verdict: r.Verdict, Reasons: r.Reasons}))
+			return r
+		}
 		observation := p3Observation(sc.c, treatment, control)
 		result := providercert.Judge(observation)
+		if result.Verdict == providercert.Inconclusive && slices.Contains(result.Reasons, providercert.ReasonVariantNotExercised) {
+			// The case's own condition did not happen (R04L's late hook): its disposition reads
+			// this verdict, never PASS (admission r2 caseFixtureDisposition).
+			result.Verdict = VerdictVariantNotExercised
+		}
 		if result.Verdict == providercert.Pass && sc.function != nil {
-			if verdict, reason := sc.function(control, treatment); verdict != "" {
-				result.Verdict, result.Reasons = verdict, append(result.Reasons, reason)
+			verdict, reason := sc.function(control, treatment)
+			if verdict != "" {
+				result.Verdict = verdict
+			}
+			if reason != "" {
+				result.Reasons = append(result.Reasons, reason)
 			}
 		}
+		r = p3OverlayChecked(CaseResult{Verdict: result.Verdict, Reasons: result.Reasons, Purpose: sc.c.Purpose}, treatment)
+		result.Verdict, result.Reasons = r.Verdict, r.Reasons
 		write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
 		evidence := p3EvidenceOf(sc.c, p3HostManaged, treatment, result)
 		evidence.Observation = &observation
 		write(id+"-treatment", evidence)
-		results[id] = CaseResult{Verdict: result.Verdict, Reasons: result.Reasons, Purpose: sc.c.Purpose}
-		t.Logf("%s %s %v", id, result.Verdict, result.Reasons)
+		return r
 	}
+	results := map[string]CaseResult{}
+	gates := map[string]bool{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	work := make(chan string)
+	for range caseWorkers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range work {
+				r := runCase(id)
+				mu.Lock()
+				results[id] = r
+				mu.Unlock()
+				t.Logf("%s %s %v", id, r.Verdict, r.Reasons)
+			}
+		}()
+	}
+	for _, id := range ids {
+		if o.Only == nil || slices.Contains(o.Only, id) {
+			work <- id
+		}
+	}
+	close(work)
+	wg.Wait()
+	p3PMControlUnproven(results)
+	// BE15's disposition holds only when its equivalent gate, the product's managed agent-view
+	// check, refused both of BE17's policies in this same run.
+	gates["BE15"] = results["BE17"].Verdict == providercert.Pass
 	end, _ := providercert.Observe(exe)
 	outcome := Admit(AdmissionInput{Scope: o.Scope, Results: results, IdentityChanged: end != start, NativeSHA256: start.SHA256,
 		Platform: runtime.GOOS, GatesPassed: gates, Required: o.Required})
@@ -200,6 +349,9 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	summary, _ := json.Marshal(entry)
 	entry.EvidenceDigest = digest(summary)
 	write("summary", entry)
+	if o.Only != nil {
+		return entry, nil
+	}
 	if err := app.WriteAdmission(o.Home, entry); err != nil {
 		return entry, fmt.Errorf("CACHE_WRITE_FAILED: %w", err)
 	}
@@ -234,17 +386,49 @@ func RequiredStates(home, product, probeSHA, scope string) (map[string]string, e
 	if err != nil {
 		return nil, err
 	}
-	managed, err := app.ManagedSourceFingerprint(map[string]string{})
+	managed, err := app.ManagedSourceFingerprint(platform.Environment(os.Environ()))
 	if err != nil {
 		return nil, err
 	}
+	key := func(scope string) app.AdmissionKey {
+		return app.AdmissionKeyFor(scope, native, digest(productRaw), probeSHA, managed, providercert.ProbeSchemaRevision)
+	}
 	for _, s := range requires {
-		entry, err := app.LookupAdmission(home, app.AdmissionKeyFor(s, native, digest(productRaw), probeSHA, managed, providercert.ProbeSchemaRevision))
-		if err != nil {
-			states[s] = ""
-			continue
-		}
-		states[s] = entry.State
+		states[s] = app.ScopeState(home, key, s)
 	}
 	return states, nil
+}
+
+const (
+	// certificationTotal is r4 deadlines.certificationTotalSeconds for one scope's short run.
+	certificationTotal = 900 * time.Second
+	// caseWorkers runs this many cases at once, each in its own world (config dir, receivers,
+	// workspace), so a scope's run fits the deadline.
+	caseWorkers = 4
+	// lockWait bounds the wait for another run of the same scope.
+	lockWait = 20 * time.Minute
+)
+
+// p3OverlayChecked keeps a passing verdict only when the product passed every strategy value
+// itself (RC11): a value the harness had to fill in means the measured configuration is not
+// the one a launch runs.
+func p3OverlayChecked(r CaseResult, treatment *p3Observed) CaseResult {
+	if len(treatment.OverlayGaps) > 0 && p3Severity(r.Verdict) <= p3Severity(providercert.Inconclusive) {
+		r.Verdict, r.Reasons = providercert.Inconclusive, append(r.Reasons, "RC11_OVERLAY_GAP:"+strings.Join(treatment.OverlayGaps, ","))
+	}
+	return r
+}
+
+// p3Severity orders verdicts for combining a case's variants: a failure outranks an unknown,
+// which outranks a pass.
+func p3Severity(verdict string) int {
+	switch verdict {
+	case VerdictBackgroundEntryReached, providercert.FailRouting:
+		return 4
+	case providercert.FailFunction, "FAIL_SAFETY":
+		return 3
+	case providercert.Pass, VerdictPathAbsent:
+		return 0
+	}
+	return 2
 }

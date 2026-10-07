@@ -173,23 +173,33 @@ func reparsePath(path string) bool {
 // AdmissionScopes are the scopes in admission contract r1's order.
 var AdmissionScopes = []string{ScopePrintSingle, ScopeResumeExplicit, ScopeContinuePrint, ScopeMultiTurn, ScopeTUI}
 
-// AdmissionStatus is what doctor shows for one scope: the stored state and whether its
-// verification identity is the native found now. It never runs a probe.
+// AdmissionStatus is what doctor shows for one scope: the stored state and, under the key
+// computed for what is installed now, why the gate would not use it. It never runs a probe.
 type AdmissionStatus struct {
 	Scope          string
 	State          string // ADMITTED, NOT_ADMITTED, INCONCLUSIVE, or NONE when nothing is stored
 	Reasons        []string
-	NativeMatches  bool
 	CreatedAt      time.Time
 	NotExercisable []string
 	Gaps           []string
+	// Labels are the cases judged under a label other than PASS, as "ID:LABEL".
+	Labels []string
+	// Stale is the stale reason under the current key ("" when the gate would use the entry).
+	Stale string
 }
 
-// AdmissionStatuses reads each scope's stored entry under home. nativeSHA256 is the native
-// found now ("" when unknown).
-func AdmissionStatuses(home, nativeSHA256 string) []AdmissionStatus {
+// AdmissionStatuses reads each scope's stored entry (and RP01 entry) under home and checks it
+// against key, the current key builder; a nil key marks every stored entry KEY_UNAVAILABLE.
+func AdmissionStatuses(home string, key func(string) AdmissionKey) []AdmissionStatus {
 	out := []AdmissionStatus{}
+	scopes := []string{}
 	for _, scope := range AdmissionScopes {
+		scopes = append(scopes, scope)
+		if admissioncontract.NeedsRP01(scope) {
+			scopes = append(scopes, RP01Scope(scope))
+		}
+	}
+	for _, scope := range scopes {
 		status := AdmissionStatus{Scope: scope, State: "NONE"}
 		path := filepath.Join(admissionDir(home), scope+".json")
 		if !reparsePath(path) {
@@ -197,8 +207,19 @@ func AdmissionStatuses(home, nativeSHA256 string) []AdmissionStatus {
 				var entry AdmissionEntry
 				if json.Unmarshal(raw, &entry) == nil && entry.Schema == AdmissionSchema {
 					status.State, status.Reasons, status.CreatedAt = entry.State, entry.Reasons, entry.CreatedAt
-					status.NativeMatches = nativeSHA256 != "" && entry.Key.NativeSHA256 == nativeSHA256
 					status.NotExercisable, status.Gaps = entry.NotExercisable, entry.Gaps
+					for _, c := range entry.Cases {
+						if c.Label != "" && c.Label != "PASS" {
+							status.Labels = append(status.Labels, c.ID+":"+c.Label)
+						}
+					}
+					status.Stale = "KEY_UNAVAILABLE"
+					if key != nil {
+						status.Stale = ""
+						if _, err := LookupAdmission(home, key(scope)); err != nil {
+							status.Stale = strings.TrimPrefix(err.Error(), "ADMISSION_MISS: ")
+						}
+					}
 				}
 			}
 		}

@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
@@ -23,29 +22,12 @@ import (
 // cmd/ptydrive, which types the turn's prompt and waits for a probe reply on the screen.
 const p3TUI = "tui"
 
-var (
-	ptydriveOnce sync.Once
-	ptydrivePath string
-	ptydriveErr  error
-)
+// p3PtyDriveArg starts this binary as the ConPTY driver (internal/ptydrive): the probe drives
+// the TUI with its own code, with no toolchain or separate driver binary on the machine.
+const p3PtyDriveArg = "--p3-ptydrive"
 
-// ptydrive builds the repository's ConPTY driver once per test process.
-func ptydrive() (string, error) {
-	ptydriveOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "clauduct-ptydrive-")
-		if err != nil {
-			ptydriveErr = err
-			return
-		}
-		ptydrivePath = filepath.Join(dir, "ptydrive.exe")
-		build := exec.Command("go", "build", "-o", ptydrivePath, "github.com/wotjr1649/Clauduct/go/cmd/ptydrive")
-		build.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := build.CombinedOutput(); err != nil {
-			ptydriveErr = fmt.Errorf("build ptydrive: %v %s", err, out)
-		}
-	})
-	return ptydrivePath, ptydriveErr
-}
+// ptydrive is this executable, started with p3PtyDriveArg first.
+func ptydrive() (string, error) { return os.Executable() }
 
 // p3TUISteps answers native's first-run screens, types the prompt, waits for any probe reply on
 // the screen and leaves with /exit. Waits match the screen text with whitespace removed.
@@ -67,7 +49,7 @@ func p3TUISteps(prompt string, afterReply []map[string]any) []map[string]any {
 		{"wait": "trustthisfolder", "send": []string{"\x1b[B", "\r"}, "optional": true, "timeout_s": 10, "after_ms": 300},
 		// The main prompt's footer: "? for shortcuts", or 2.1.292's "auto mode on (shift+tab to cycle)".
 		{"wait": `forshortcuts|shift\+tabtocycle`, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500},
-		{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000},
+		{"wait": p3TUIEnded, "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000},
 	}
 }
 
@@ -89,7 +71,7 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int) func
 				return nil, err
 			}
 			defer pin.Close()
-			args := append([]string{"-dir", spec.Dir, "-script", steps, "-text", screen, "-log", raw, "-marks", marks, "-timeout", strconv.Itoa(timeoutSeconds), "--", spec.File}, spec.Args...)
+			args := append([]string{p3PtyDriveArg, "-dir", spec.Dir, "-script", steps, "-text", screen, "-log", raw, "-marks", marks, "-timeout", strconv.Itoa(timeoutSeconds), "--", spec.File}, spec.Args...)
 			cmd := exec.Command(driver, args...)
 			cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = spec.Dir, spec.Env, stdout, stderr
 			process, err := childprocess.Start(cmd)
@@ -177,20 +159,8 @@ func rawScreen(path string) string {
 // p3TUIPromptStep is the index of the step in p3TUISteps that types the turn's prompt.
 const p3TUIPromptStep = 4
 
-// promptSent is when ptydrive began typing the prompt step, from its marks file.
-// p3TUISteps2 is two prompts in one TUI session: the first reply, a wait, the second prompt,
-// its reply, /exit.
-func p3TUISteps2(prompt1, prompt2 string, wait time.Duration) []map[string]any {
-	base := p3TUISteps(prompt1, nil)
-	steps := base[:len(base)-1]
-	return append(steps,
-		// The first reply, the wait, then the second prompt typed at once: the prompt box is
-		// already on screen, so a wait for its footer would find no new text.
-		map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{prompt2, "\r"}, "timeout_s": 60, "after_ms": wait.Milliseconds()},
-		map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000})
-}
-
-// p3TUIPrompt2Step is the index of p3TUISteps2's second prompt.
+// p3TUIPrompt2Step is the index of the first step after the first prompt's reply: the second
+// prompt, or a stimulus.
 var p3TUIPrompt2Step = len(p3TUISteps("", nil)) - 1
 
 // markAt is the time the driver began step index's input.
@@ -210,6 +180,7 @@ func markAt(marks string, index int) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// promptSent is when ptydrive began typing the prompt step, from its marks file.
 func promptSent(marks string) (time.Time, bool) {
 	raw, err := os.ReadFile(marks)
 	if err != nil {
@@ -225,3 +196,61 @@ func promptSent(marks string) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
+
+// p3TUIStimulusSteps types prompt1, waits for its reply, types each stimulus (the first right
+// after the reply, the rest 3 seconds apart), then prompt2 8 seconds after the last one, and
+// leaves once prompt2's own reply is on screen. It returns the steps and prompt2's step index;
+// the first stimulus is always at p3TUIPrompt2Step.
+func p3TUIStimulusSteps(prompt1, prompt2 string, stimulus [][]string) ([]map[string]any, int) {
+	base := p3TUISteps(prompt1, nil)
+	steps := append(base[:len(base)-1:len(base)-1],
+		map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": stimulus[0], "timeout_s": 60, "after_ms": 1000})
+	for _, s := range stimulus[1:] {
+		steps = append(steps, map[string]any{"send": s, "after_ms": 3000})
+	}
+	confirm := len(steps)
+	return append(steps,
+		map[string]any{"send": []string{prompt2, "\r"}, "after_ms": 8000},
+		map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-[A-Z_]+-turn2", "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000}), confirm
+}
+
+// p3TUIStepsN types prompts in one session. Before prompt k+1 the driver waits for a reply on
+// screen and, when ready[k-1] is set, for that file (a state change the probe made); otherwise it
+// waits settle. approval, when set, answers the permission dialog the first prompt raises.
+func p3TUIStepsN(prompts []string, ready []string, settle time.Duration, approval []string) []map[string]any {
+	base := p3TUISteps(prompts[0], nil)
+	steps := base[: len(base)-1 : len(base)-1]
+	if approval != nil {
+		// Optional: the control's unscripted receivers ask for no tool, so no dialog appears
+		// there. The treatment's verdict reads the marker and the tool result, not this step.
+		steps = append(steps, map[string]any{"wait": "Doyouwanttoproceed", "send": approval, "optional": true, "timeout_s": 30, "after_ms": 500})
+	}
+	for k := 1; k < len(prompts); k++ {
+		step := map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{prompts[k], "\r"}, "timeout_s": 60, "after_ms": settle.Milliseconds()}
+		if approval != nil && k == 1 {
+			// A refused tool ends the turn without a reply: the next prompt goes in once the
+			// refusal has settled, and carries the tool result to the backend.
+			delete(step, "wait")
+			step["after_ms"] = 3000
+		}
+		if ready[k-1] != "" {
+			step["wait_file"], step["after_ms"] = ready[k-1], 500
+			step["timeout_s"] = int((settle + 2*time.Minute).Seconds())
+		}
+		steps = append(steps, step)
+	}
+	return append(steps, map[string]any{"wait": p3TUIEnded, "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000})
+}
+
+// p3TUIPromptNStep is the driver step index that types prompt n (n >= 2) in p3TUIStepsN.
+func p3TUIPromptNStep(n int, approval bool) int {
+	i := p3TUIPrompt2Step + n - 2
+	if approval {
+		i++
+	}
+	return i
+}
+
+// p3TUIEnded is the screen a turn ends on: a probe reply, or the API error a fail-closed turn
+// shows. It only tells the driver when to leave; the verdict reads the receivers.
+const p3TUIEnded = "CLAUDUCT-PROBE-REPLY-|APIError:"

@@ -13,10 +13,12 @@ import (
 	"syscall"
 	"unsafe"
 
+	"context"
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 // TB is the part of a test the runner uses: *testing.T satisfies it, and the probe binary
@@ -164,4 +166,24 @@ func (t processTable) descends(pid, root uint32) bool {
 func digest(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// p3Catalogue is the probe's synthetic account model list (the private test harness's list).
+var p3Catalogue = func() *bridge.Catalogue {
+	all := []string{"low", "medium", "high", "xhigh", "max"}
+	c, _, err := bridge.NewCatalogue([]bridge.AccountModel{
+		{ID: "gpt-6-astra", Efforts: all, Default: "medium", Visible: true},
+		{ID: "gpt-6.1-sol", Efforts: all, Default: "xhigh", Visible: true},
+		{ID: "gpt-6-sol", Efforts: all, Default: "xhigh", Visible: true},
+		{ID: "gpt-5.6-terra", Efforts: all, Default: "high", Visible: true},
+		{ID: "gpt-6-luna", Efforts: all, Default: "max", Visible: true},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}()
+
+func p3ModelList(context.Context, string) (*bridge.Catalogue, app.ModelListFacts, error) {
+	return p3Catalogue, app.ModelListFacts{Source: "account", Models: len(p3Catalogue.Models())}, nil
 }

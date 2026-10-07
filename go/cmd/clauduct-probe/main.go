@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
@@ -37,6 +38,8 @@ func run() int {
 	product := flag.String("product", filepath.Join(filepath.Dir(self), "clauduct.exe"), "the clauduct.exe to certify")
 	clauductHome := flag.String("home", home, "Clauduct home: where the entry is written")
 	out := flag.String("out", "", "evidence directory (default: under the admission directory)")
+	long := flag.Bool("long", false, "run the scope's RP01 check (about 75 minutes) instead of its short cases")
+	only := flag.String("only", "", "comma-separated cases to run as a diagnostic; writes no entry")
 	flag.Parse()
 
 	raw, err := os.ReadFile(self)
@@ -48,17 +51,27 @@ func run() int {
 	probeSHA := hex.EncodeToString(sum[:])
 	stamp := time.Now().UTC().Format("20060102T150405Z")
 	if *out == "" {
-		*out = filepath.Join(*clauductHome, ".clauduct", "provider-admission", "runs", *scope+"-"+stamp)
+		*out = filepath.Join(*clauductHome, ".clauduct", "provider-admission", "runs", fmt.Sprintf("%s-%s-%d", *scope, stamp, os.Getpid()))
 	}
 	if err := os.MkdirAll(*out, 0o700); err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct-probe:", err)
 		return 2
 	}
-	r, err := providerprobe.NewRun(filepath.Join(os.TempDir(), "clauduct-probe-"+stamp), os.Stderr)
+	root := filepath.Join(os.TempDir(), fmt.Sprintf("clauduct-probe-%s-%d", stamp, os.Getpid()))
+	r, err := providerprobe.NewRun(root, os.Stderr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct-probe:", err)
 		return 2
 	}
+	// Every session this run starts gets a profile of its own, never the user's: native reads
+	// user memory and other per-user files from it (as the private test harness does).
+	profile := filepath.Join(root, "profile")
+	if err := os.MkdirAll(profile, 0o700); err != nil {
+		fmt.Fprintln(os.Stderr, "clauduct-probe:", err)
+		return 2
+	}
+	os.Setenv("USERPROFILE", profile)
+	defer os.RemoveAll(root)
 	required := map[string]string{}
 	var entry app.AdmissionEntry
 	err = r.Do(func() error {
@@ -67,8 +80,13 @@ func run() int {
 		if err != nil {
 			return err
 		}
-		entry, err = providerprobe.RunScope(r, providerprobe.ScopeOptions{Product: *product, ProbeSHA256: probeSHA, Scope: *scope,
-			EvidenceDir: *out, Home: *clauductHome, Required: required})
+		options := providerprobe.ScopeOptions{Product: *product, ProbeSHA256: probeSHA, Scope: *scope,
+			EvidenceDir: *out, Home: *clauductHome, Required: required, Only: onlyCases(*only)}
+		if *long {
+			entry, err = providerprobe.RunRP01(r, options)
+			return err
+		}
+		entry, err = providerprobe.RunScope(r, options)
 		return err
 	})
 	if err != nil {
@@ -77,4 +95,11 @@ func run() int {
 	}
 	fmt.Printf("scope %s %s %v (admission contract %s, evidence %s)\n", *scope, entry.State, entry.Reasons, admissioncontract.AdmissionSHA256()[:12], *out)
 	return 0
+}
+
+func onlyCases(list string) []string {
+	if list == "" {
+		return nil
+	}
+	return strings.Split(list, ",")
 }

@@ -71,6 +71,18 @@ type p3Case struct {
 	Steps []func(*p3World) error
 	// Stimulus401 makes INTENDED refuse turn 2's first canary attempt with a 401.
 	Stimulus401 bool
+	// TUIStimulus are inputs typed after the TUI's first reply, each its own driver step, then
+	// a confirmation prompt (turn2) 8 seconds later (admission r2 TUI background-entry checks).
+	TUIStimulus [][]string
+	// TUIApproval answers a permission dialog after the first prompt (PM02T): these keys are
+	// sent once the dialog is on screen.
+	TUIApproval []string
+	// WatchBoundary observes native's background boundary for a -p case (BE10).
+	WatchBoundary bool
+	// CLIPrior runs a -p turn with session p3PriorSession before a CLI case's own launch.
+	CLIPrior bool
+	// ProductEnv is added to the environment the product itself reads (not native's).
+	ProductEnv func(*p3World) map[string]string
 	// Script answers INTENDED's calls for this case (scripted tool calls); nil is the default.
 	Script func(body string, canaries []string) string
 	// Expect is P5-F's expectation for every turn; ExpectTurns overrides it per turn index.
@@ -464,6 +476,18 @@ func (w *p3World) mergeUserSettingsEnv(env map[string]string) error {
 	return w.userSettings(current)
 }
 
+// mergeUserSettings sets one key of the user settings the run already wrote.
+func (w *p3World) mergeUserSettings(key string, value any) error {
+	current := map[string]any{}
+	if raw, err := os.ReadFile(filepath.Join(w.configDir, "settings.json")); err == nil {
+		if err := json.Unmarshal(raw, &current); err != nil {
+			return err
+		}
+	}
+	current[key] = value
+	return w.userSettings(current)
+}
+
 func (w *p3World) userSettings(v map[string]any) error {
 	b, _ := json.Marshal(v)
 	return os.WriteFile(filepath.Join(w.configDir, "settings.json"), b, 0o600)
@@ -790,6 +814,16 @@ type p3Observed struct {
 	Surface []p3Surface
 	// ModelLists is the gateway's GET /v1/models count when the runner records the surface.
 	ModelLists int
+	// Stimulus is a CLI case's stimulus launch: its exit, whether native wrote to stderr, and
+	// how long it ran.
+	Stimulus p3StimulusLaunch
+	// StimulusSent is the driver's mark that it typed the case's first TUI stimulus.
+	StimulusSent bool
+	// NativeStarts counts the native session processes the product started (not control commands).
+	NativeStarts int
+	// SupervisorLock and JobDirs are the background boundary seen in the probe config dir.
+	SupervisorLock bool
+	JobDirs        int
 	// Sidecars are the subagent metadata files native wrote in the probe config dir, and each
 	// child transcript's first entry, canaries redacted (BE06 diagnosis).
 	Sidecars map[string]string
@@ -938,13 +972,18 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		// A single turn that runs this long by itself (a scripted tool loop).
 		runFor = p.timeout + c.Settle
 	}
-	if c.Entry == p3Multi || c.Entry == p3TUI && c.Turns >= 2 {
+	total := max(len(c.Steps)+1, c.Turns)
+	if c.Entry == p3Multi || c.Entry == p3TUI && total >= 2 {
 		// One native process carries every turn and the waits between them.
 		waits := len(c.Steps)
 		if c.Entry == p3TUI {
-			waits = c.Turns - 1 // the driver waits between prompts
+			waits = total - 1 // the driver waits between prompts
 		}
-		runFor = time.Duration(max(len(c.Steps)+1, c.Turns))*p.timeout + time.Duration(waits)*max(p.settle, c.Settle)
+		runFor = time.Duration(total)*p.timeout + time.Duration(waits)*max(p.settle, c.Settle)
+	}
+	if c.TUIStimulus != nil {
+		// The reply, the stimuli, 8 seconds, then the confirmation prompt and its reply.
+		runFor = 3 * p.timeout
 	}
 	once := func(args []string, stdin io.Reader, stdout io.Writer) {
 		observe()
@@ -956,6 +995,11 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		defer cancel()
 		var stderr strings.Builder
 		env := probeEnv()
+		if c.ProductEnv != nil {
+			for k, v := range c.ProductEnv(w) {
+				env[k] = v
+			}
+		}
 		strategy := ""
 		if configuration == p3HostManaged || configuration == p3GatewayEnv {
 			strategy = configuration
@@ -966,6 +1010,9 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 			Args:             append(slices.Clone(args), "--strict-mcp-config"), Env: env, Cwd: w.cwd, Stdin: stdin, Stdout: stdout, Stderr: &stderr,
 			ClauductHome:  w.home,
 			ResolveClaude: func() (string, bool, error) { return p.exe, true, nil },
+			// The account list is synthetic too: no probe session reads a credential or
+			// reaches the network for it.
+			ModelList: p3ModelList,
 			StartGateway: func() (*gateway.Gateway, error) {
 				// The product's own gateway start (run.go), so the admission boundaries are the
 				// product's; only the transport is synthetic.
@@ -994,6 +1041,9 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				process, err := start(spec, in, out, errOut)
 				if err != nil {
 					return nil, err
+				}
+				if !p3ControlCommand(spec.Args) {
+					obs.NativeStarts++
 				}
 				return &p3Watched{Process: process, failed: &obs.CleanupFailed}, nil
 			},
@@ -1037,9 +1087,36 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 	}
 	end := func(i int) { obs.Turns[i].End = time.Now() }
 	switch c.Entry {
+	case p3CLI:
+		i := turn("turn1")
+		var out strings.Builder
+		if c.CLIPrior {
+			once([]string{"-p", prompt(obs.Turns[i].Canary), "--session-id", p3PriorSession}, nil, &out)
+		}
+		// Delivery evidence is the stimulus launch's own native starts and exit, not the prior
+		// turn's.
+		obs.NativeStarts = 0
+		finish := p.boundaryWatch(w, obs)
+		exits, outputs, began := len(obs.ExitCodes), len(obs.Outputs), time.Now()
+		once(p3FillArgs(c.Args, prompt(obs.Turns[i].Canary)), nil, &out)
+		obs.Stimulus = p3StimulusLaunch{Exit: app.ExitCodeUnknown, Took: time.Since(began), Stderr: strings.TrimSpace(obs.Outputs[outputs:]) != ""}
+		if len(obs.ExitCodes) > exits {
+			obs.Stimulus.Exit = obs.ExitCodes[len(obs.ExitCodes)-1]
+		}
+		end(i)
+		time.Sleep(8 * time.Second) // admission r2 boundary window: 8s after the stimulus
+		finish()
+		p3CheckNoNatives(p.exe, w, obs)
+		t.Logf("%s %s output: %.600q stderr: %.600q", c.ID, configuration, out.String(), obs.Outputs)
+		obs.Turns[i].Output = out.String()
+		obs.Outputs = out.String() + obs.Outputs
 	case p3Print:
 		i := turn("turn1")
 		var out strings.Builder
+		if c.WatchBoundary {
+			defer p3CheckNoNatives(p.exe, w, obs)
+			defer p.boundaryWatch(w, obs)()
+		}
 		once(append([]string{"-p", prompt(obs.Turns[i].Canary)}, c.Args...), nil, &out)
 		end(i)
 		obs.Turns[i].Output = out.String()
@@ -1106,62 +1183,72 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 			t.Fatal(err)
 		}
 		timeoutSeconds := 50
-		i2 := -1
-		if c.Turns >= 2 {
+		i2, prompt2Step := -1, p3TUIPrompt2Step
+		var extra []int // turns after the first, when the case has several prompts
+		if c.TUIStimulus != nil {
 			i2 = turn("turn2")
-			wait := max(p.settle, c.Settle)
-			raw, _ := json.Marshal(p3TUISteps2(prompt(obs.Turns[i].Canary), prompt(obs.Turns[i2].Canary), wait))
+			var stimulusSteps []map[string]any
+			stimulusSteps, prompt2Step = p3TUIStimulusSteps(prompt(obs.Turns[i].Canary), prompt(obs.Turns[i2].Canary), c.TUIStimulus)
+			raw, _ := json.Marshal(stimulusSteps)
 			if err := os.WriteFile(steps, raw, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			timeoutSeconds = int((wait + 3*time.Minute).Seconds())
-		}
-		if c.TUIAfterReply != nil {
-			since, stop := time.Now(), make(chan struct{})
-			natives := make(chan []p3NativeProcess, 1)
-			go func() {
-				seen := map[int]bool{}
-				var all []p3NativeProcess
-				for {
-					for _, n := range probeNatives(p.exe, w.configDir, since.Add(-time.Second), w.envRoles()) {
-						if !seen[n.PID] {
-							seen[n.PID] = true
-							all = append(all, n)
+			timeoutSeconds = 180
+			defer p3CheckNoNatives(p.exe, w, obs)
+			defer p.boundaryWatch(w, obs)()
+		} else if total := max(len(c.Steps)+1, c.Turns); total >= 2 {
+			// Same process, several prompts. A state change between prompts k and k+1 runs
+			// once prompt k's request reached any receiver and its reply had time to show; the
+			// driver types the next prompt only after the probe writes that step's ready file.
+			wait := max(p.settle, c.Settle)
+			prompts := []string{prompt(obs.Turns[i].Canary)}
+			ready := make([]string, total-1)
+			for k := 1; k < total; k++ {
+				extra = append(extra, turn(fmt.Sprintf("turn%d", k+1)))
+				prompts = append(prompts, prompt(obs.Turns[extra[k-1]].Canary))
+				if k-1 < len(c.Steps) {
+					ready[k-1] = filepath.Join(filepath.Dir(steps), fmt.Sprintf("ready-%d", k))
+				}
+			}
+			raw, _ := json.Marshal(p3TUIStepsN(prompts, ready, wait, c.TUIApproval))
+			if err := os.WriteFile(steps, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			timeoutSeconds = int((time.Duration(total-1)*wait + time.Duration(total)*time.Minute + 2*time.Minute).Seconds())
+			if len(c.Steps) > 0 {
+				stepsDone := make(chan struct{})
+				go func() {
+					defer close(stepsDone)
+					for k, step := range c.Steps {
+						turnID := fmt.Sprintf("turn%d", k+1)
+						for deadline := time.Now().Add(p.timeout + time.Minute); !p3CanarySeenAnywhere(w, turnID); time.Sleep(300 * time.Millisecond) {
+							if time.Now().After(deadline) {
+								return
+							}
+						}
+						time.Sleep(3 * time.Second) // the reply reaches the screen
+						if err := step(w); err != nil {
+							obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("step %d: %v", k+1, err))
+							return
+						}
+						obs.Steps = append(obs.Steps, w.stateAfterStep(k))
+						time.Sleep(wait)
+						if err := os.WriteFile(ready[k], []byte("ready\n"), 0o600); err != nil {
+							obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("step %d ready: %v", k+1, err))
+							return
 						}
 					}
-					select {
-					case <-stop:
-						natives <- all
-						return
-					case <-time.After(300 * time.Millisecond):
-					}
-				}
-			}()
-			defer func() {
-				close(stop)
-				obs.Natives = <-natives
-				if _, err := os.Stat(filepath.Join(w.configDir, "daemon.lock")); err == nil {
-					obs.RunErrors = append(obs.RunErrors, "a native supervisor lock appeared in the probe config dir")
-					// PL13: that supervisor and its sessions run outside the probe's Job. The
-					// supervisor is per config dir (measured: the user's lock never changed), so
-					// stopping the one of this dir reaches nothing else.
-					if err := p3StopOwnSupervisor(p.exe, w.configDir); err != nil {
-						obs.CleanupFailed = true
-						obs.RunErrors = append(obs.RunErrors, "own supervisor stop: "+err.Error())
-					}
-				}
-				obs.Sidecars = p3SubagentSidecars(w.configDir, obs.Turns)
-				w.mu.Lock()
-				for _, r := range w.outcomes {
-					if r.Category != "" {
-						obs.RefusalBranches = append(obs.RefusalBranches, r.Category+"|"+r.SelectionRefusal)
-					}
-				}
-				w.mu.Unlock()
-				if jobs, _ := os.ReadDir(filepath.Join(w.configDir, "jobs")); len(jobs) > 0 {
-					obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("%d background job directories appeared in the probe config dir", len(jobs)))
-				}
-			}()
+				}()
+				defer func() { <-stepsDone }()
+			}
+		} else if c.TUIApproval != nil {
+			raw, _ := json.Marshal(p3TUIStepsN([]string{prompt(obs.Turns[i].Canary)}, nil, 0, c.TUIApproval))
+			if err := os.WriteFile(steps, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if c.TUIAfterReply != nil {
+			defer p.boundaryWatch(w, obs)()
 		}
 		raw := filepath.Join(filepath.Dir(steps), "raw.log")
 		marks := filepath.Join(filepath.Dir(steps), "marks.txt")
@@ -1178,11 +1265,22 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		}
 		if i2 >= 0 {
 			end(i2)
-			if sent, ok := markAt(marks, p3TUIPrompt2Step); ok {
+			if sent, ok := markAt(marks, prompt2Step); ok {
 				obs.Turns[i2].Start = sent
 			} else {
 				obs.RunErrors = append(obs.RunErrors, "the second TUI prompt was never typed")
 			}
+		}
+		for k, x := range extra {
+			end(x)
+			if sent, ok := markAt(marks, p3TUIPromptNStep(k+2, c.TUIApproval != nil)); ok {
+				obs.Turns[x].Start = sent
+			} else {
+				obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("TUI prompt %d was never typed", k+2))
+			}
+		}
+		if c.TUIStimulus != nil {
+			_, obs.StimulusSent = markAt(marks, p3TUIPrompt2Step)
 		}
 		text, _ := os.ReadFile(screen)
 		obs.Turns[i].Output = string(text)
@@ -1930,4 +2028,78 @@ func (p p3Runner) runMatrix(t TB, cases []p3Case, strategy string, write func(st
 		}
 	}
 	return providercert.Decide(ids, optional, safety, results, refusals...)
+}
+
+// boundaryWatch counts the probe config dir's native processes from now until the returned
+// function runs, then records the background boundary (admission r2 backgroundEntryChecks):
+// a supervisor lock, job directories, the processes seen. A supervisor that appeared is stopped
+// through native for that config dir only (PL13).
+func (p p3Runner) boundaryWatch(w *p3World, obs *p3Observed) func() {
+	since, stop := time.Now(), make(chan struct{})
+	natives := make(chan []p3NativeProcess, 1)
+	go func() {
+		seen := map[int]bool{}
+		var all []p3NativeProcess
+		for {
+			for _, n := range probeNatives(p.exe, w.configDir, since.Add(-time.Second), w.envRoles()) {
+				if !seen[n.PID] {
+					seen[n.PID] = true
+					all = append(all, n)
+				}
+			}
+			select {
+			case <-stop:
+				natives <- all
+				return
+			case <-time.After(300 * time.Millisecond):
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		obs.Natives = <-natives
+		if _, err := os.Stat(filepath.Join(w.configDir, "daemon.lock")); err == nil {
+			obs.SupervisorLock = true
+			if err := p3StopOwnSupervisor(p.exe, w.configDir); err != nil {
+				obs.CleanupFailed = true
+				obs.RunErrors = append(obs.RunErrors, "own supervisor stop: "+err.Error())
+			}
+		}
+		if jobs, _ := os.ReadDir(filepath.Join(w.configDir, "jobs")); len(jobs) > 0 {
+			obs.JobDirs = len(jobs)
+		}
+		obs.Sidecars = p3SubagentSidecars(w.configDir, obs.Turns)
+		w.mu.Lock()
+		for _, r := range w.outcomes {
+			if r.Category != "" {
+				obs.RefusalBranches = append(obs.RefusalBranches, r.Category+"|"+r.SelectionRefusal)
+			}
+		}
+		w.mu.Unlock()
+	}
+}
+
+// p3CheckNoNatives is admission r2's cleanup check: once a case ends, no pinned native points
+// at the probe config dir. Natives still exiting get 15 seconds.
+func p3CheckNoNatives(exe string, w *p3World, obs *p3Observed) {
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		left := probeNatives(exe, w.configDir, time.Time{}, w.envRoles())
+		if len(left) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			obs.CleanupFailed = true
+			obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("%d natives of the probe config dir remain after the case", len(left)))
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// p3StimulusLaunch is what a CLI background-entry case's own launch did.
+type p3StimulusLaunch struct {
+	Exit   int
+	Stderr bool
+	Took   time.Duration
 }

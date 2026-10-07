@@ -7,24 +7,37 @@ import (
 	"sync"
 )
 
-// p3BashOnce answers the turn's first main request (one that offers the Bash tool) with a
-// Bash call that writes marker, and lets every later call get the default reply. results
-// collects the text native returned for that call.
-func p3BashOnce(marker *string, results *[]string, mu *sync.Mutex) func(body string, canaries []string) string {
-	return func(body string, canaries []string) string {
-		if !strings.Contains(body, `"name":"Bash"`) {
-			return "" // auxiliary request: no tools
-		}
-		if strings.Contains(body, "p3-pm-marker") {
-			// The call is already in this request's history: its result is what native returned.
-			mu.Lock()
-			*results = append(*results, p3ToolOutput(body))
-			mu.Unlock()
-			return ""
-		}
-		args, _ := json.Marshal(map[string]any{"command": "echo p3 > '" + filepath.ToSlash(*marker) + "'", "description": "p3 permission marker"})
-		return toolStream("call_p3pm", "Bash", string(args))
+// p3BashOnce answers the turn's first main request that offers the Bash tool with a Bash call
+// that writes the marker file, and records, per run, whether Bash was offered at all and the
+// text native returned for that call (admission r2 foregroundConditions PM00–PM03).
+type p3BashOnce struct {
+	mu      sync.Mutex
+	marker  string
+	offered bool
+	results []string
+}
+
+// reset starts a run: the marker is in that run's workspace.
+func (b *p3BashOnce) reset(marker string) {
+	b.mu.Lock()
+	b.marker, b.offered, b.results = marker, false, nil
+	b.mu.Unlock()
+}
+
+func (b *p3BashOnce) script(body string, _ []string) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !strings.Contains(body, `"name":"Bash"`) {
+		return "" // auxiliary request: no tools
 	}
+	b.offered = true
+	if strings.Contains(body, "p3-pm-marker") {
+		// The call is already in this request's history: its result is what native returned.
+		b.results = append(b.results, p3ToolOutput(body))
+		return ""
+	}
+	args, _ := json.Marshal(map[string]any{"command": "echo p3 > '" + filepath.ToSlash(b.marker) + "'", "description": "p3 permission marker"})
+	return toolStream("call_p3pm", "Bash", string(args))
 }
 
 // p3ToolOutput is the output native returned for call_p3pm, from the backend request body.
@@ -61,4 +74,15 @@ func p3WrongBytes(obs *p3Observed) int64 {
 		n += w.Bytes
 	}
 	return n
+}
+
+// p3PermissionDenied is a tool result native returns for a call its permission rules deny.
+func p3PermissionDenied(result string) bool {
+	return strings.Contains(strings.ToLower(result), "denied") || strings.Contains(strings.ToLower(result), "permission")
+}
+
+// p3ApprovalRequired is a tool result native returns in -p for a call that needs approval.
+func p3ApprovalRequired(result string) bool {
+	lower := strings.ToLower(result)
+	return strings.Contains(lower, "requested permission") || strings.Contains(lower, "haven't granted") || strings.Contains(lower, "approval")
 }

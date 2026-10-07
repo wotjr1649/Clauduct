@@ -26,6 +26,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	conpty "github.com/wotjr1649/Clauduct/go/internal/ptydrive"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
 
@@ -62,6 +63,11 @@ const (
 
 // p3Role runs one of the test binary's probe roles when argv names it.
 func p3Role(argv []string) (int, bool) {
+	if len(argv) > 1 && argv[1] == p3PtyDriveArg {
+		os.Args = append([]string{argv[0]}, argv[2:]...)
+		conpty.Main() // exits
+		return 0, true
+	}
 	if len(argv) > 1 && argv[1] == p3HookWrapperArg {
 		return p3HookWrapper(argv[2:]), true
 	}

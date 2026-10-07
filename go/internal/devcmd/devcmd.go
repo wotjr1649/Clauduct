@@ -20,13 +20,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/buildinfo"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
-	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
@@ -156,28 +156,31 @@ func doctor(out io.Writer) int {
 	catalogue(out, codex, codexErr)
 	credential, err := (&auth.Provider{}).Credential()
 	credentialReport(out, credential, err)
-	admissionReport(out, path, found)
+	admissionReport(out)
 	return status
 }
 
 // admissionReport shows provider-control admission (#320) per scope, without running a probe.
 // A scope's state is never shown as the native's certification, and the routing contract's
 // overall verdict and the release state are shown beside it.
-func admissionReport(out io.Writer, claude string, found bool) {
-	sha := ""
-	if found {
-		if id, err := providercert.Observe(claude); err == nil {
-			sha = id.SHA256
-		}
-	}
+func admissionReport(out io.Writer) {
 	home, _ := os.UserHomeDir()
-	fmt.Fprintln(out, "admission    configuration HOST_MANAGED_RESTRICTED (restrictions: BACKGROUND_ENTRY_REFUSED, AGENT_VIEW_OFF, SINGLE_TOKEN_POSITIONAL_REFUSED)")
-	for _, s := range app.AdmissionStatuses(home, sha) {
+	key, keyErr := app.CurrentAdmissionKey(platform.Environment(os.Environ()))
+	if keyErr != nil {
+		fmt.Fprintf(out, "admission    current key unavailable: %v\n", keyErr)
+	}
+	fmt.Fprintf(out, "admission    configuration %s (restrictions: %s)\n", admissioncontract.ConfigurationID, strings.Join(admissioncontract.Restrictions(), ", "))
+	probe := app.ExpectedProbeSHA256
+	if probe == "" {
+		probe = "none: every gated launch is refused"
+	}
+	fmt.Fprintf(out, "admission    contract %.12s, expected probe %s\n", admissioncontract.AdmissionSHA256(), probe)
+	for _, s := range app.AdmissionStatuses(home, key) {
 		line := fmt.Sprintf("admission    %-24s %s", s.Scope, s.State)
 		if s.State != "NONE" {
-			match := "native differs: stale"
-			if s.NativeMatches {
-				match = "native matches"
+			match := "current"
+			if s.Stale != "" {
+				match = "stale: " + s.Stale
 			}
 			line += fmt.Sprintf(" (%s, %s)", match, s.CreatedAt.Format(time.RFC3339))
 		}
@@ -187,6 +190,9 @@ func admissionReport(out io.Writer, claude string, found bool) {
 		fmt.Fprintln(out, line)
 		if len(s.NotExercisable) > 0 {
 			fmt.Fprintf(out, "admission    %-24s not exercisable: %s\n", "", strings.Join(s.NotExercisable, ","))
+		}
+		if len(s.Labels) > 0 {
+			fmt.Fprintf(out, "admission    %-24s labels: %s\n", "", strings.Join(s.Labels, ","))
 		}
 		if len(s.Gaps) > 0 {
 			fmt.Fprintf(out, "admission    %-24s open gaps: %d\n", "", len(s.Gaps))

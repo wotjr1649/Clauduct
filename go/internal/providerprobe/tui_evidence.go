@@ -21,10 +21,11 @@ import (
 const p3TUISubmitWindow = 10 * time.Second
 
 // p3TUIResendEnter is whether the driver sends Enter once more when the window passes with no
-// request. On since the 2026-10-08 stand-alone measurement of X06 (control): the prompt sat in
-// the input box, no request followed. A resend is a driver mark and is shown in the case's
-// evidence and errors (ENTER_RESENT), never silent.
-const p3TUIResendEnter = true
+// request. Measured 2026-10-08 (native 2.1.293): the prompt sometimes sits in the input box with
+// no request (3 of 24 prompts in 6 runs); a resend 10 seconds later recovered none of the 3, so it
+// is off: it only delayed the same failure. A resend, if turned on, is a driver mark and is shown
+// in the case's evidence and errors (ENTER_RESENT), never silent.
+const p3TUIResendEnter = false
 
 // p3SubmitStep names a driver step that types a prompt and the turn whose canary its request
 // carries.
@@ -156,6 +157,9 @@ type p3TUIEvidence struct {
 	Resent int
 	// SubmitUnconfirmed lists the prompts the driver typed that no receiver saw (SUBMIT_UNCONFIRMED).
 	SubmitUnconfirmed []string `json:",omitempty"`
+	// SessionBefore and SessionAfter are the product's session record when the stimulus began and
+	// at the end (profile snapshot digests by session ID, transcript IDs).
+	SessionBefore, SessionAfter *p3SessionFacts `json:",omitempty"`
 	// EnterResent lists the prompts whose submission needed the one Enter resend.
 	EnterResent []string `json:",omitempty"`
 }
@@ -212,7 +216,7 @@ func (w *p3World) allReceivers() []*providercert.Receiver {
 func p3TUIEvidenceOf(w *p3World, obs *p3Observed, marks, raw, stdout, stderr string, submits []p3SubmitStep, spawnedAt time.Time, deadlineS int) *p3TUIEvidence {
 	redact := func(text string) string { return p3RedactCanaries(text, obs.Turns) }
 	lines := tuiMarkLines(marks)
-	e := &p3TUIEvidence{DriverStdout: redact(stdout), DriverStderr: redact(stderr), Marks: redact(strings.Join(lines, "\n")),
+	e := &p3TUIEvidence{SessionBefore: obs.SessionBefore, SessionAfter: obs.SessionAfter, DriverStdout: redact(stdout), DriverStderr: redact(stderr), Marks: redact(strings.Join(lines, "\n")),
 		RawTail: redact(rawScreen(raw)), StepsDeadlineS: deadlineS, Resent: tuiResends(lines)}
 	if !spawnedAt.IsZero() {
 		e.SpawnedAt = spawnedAt.Format(time.RFC3339Nano)
@@ -289,8 +293,7 @@ func (w *p3World) sessionFacts() *p3SessionFacts {
 				continue
 			}
 			if raw, err := os.ReadFile(filepath.Join(w.home, ".clauduct", "sessions", e.Name())); err == nil {
-				sum := sha256.Sum256(raw)
-				f.Profiles[id] = hex.EncodeToString(sum[:])
+				f.Profiles[id] = p3ProfileDigest(raw)
 			}
 		}
 	}
@@ -342,4 +345,24 @@ func (s p3ModelSelections) within(of p3ModelSelections) bool {
 		}
 	}
 	return true
+}
+
+// p3ProfileDigest is the digest of a session record's profile: its ID, the model selection, the
+// last pair and the parent. The record's transcript offset and tool-call table advance with every
+// turn and are not the profile.
+func p3ProfileDigest(raw []byte) string {
+	var record map[string]json.RawMessage
+	if json.Unmarshal(raw, &record) != nil {
+		sum := sha256.Sum256(raw)
+		return "unparsed:" + hex.EncodeToString(sum[:])
+	}
+	profile := map[string]json.RawMessage{}
+	for _, key := range []string{"id", "selection", "last", "parent"} {
+		if v, ok := record[key]; ok {
+			profile[key] = v
+		}
+	}
+	canonical, _ := json.Marshal(profile)
+	sum := sha256.Sum256(canonical)
+	return hex.EncodeToString(sum[:])
 }

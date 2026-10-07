@@ -55,7 +55,7 @@ func p3TUISteps(prompt string, afterReply []map[string]any) []map[string]any {
 		{"wait": "Choosethetextstyle", "send": []string{"\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": "Entertocontinue|trustthisfolder|" + p3TUIReady},
 		{"wait": "Entertocontinue", "send": []string{"\r"}, "optional": true, "timeout_s": 5, "after_ms": 300, "until": "trustthisfolder|" + p3TUIReady},
 		{"wait": "trustthisfolder", "send": []string{"\x1b[B", "\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": p3TUIReady},
-		{"wait": p3TUIReady, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500},
+		{"wait": p3TUIReady, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500, "quiet_ms": 1000},
 		{"wait": p3TUIEnded, "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000},
 	}
 }

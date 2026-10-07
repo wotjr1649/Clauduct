@@ -49,3 +49,24 @@ func awaitSubmit(c submitCheck, seen func() string, resend func(), now func() ti
 		sleep(interval)
 	}
 }
+
+// awaitQuiet returns once size has not changed for quiet, or after max, and reports whether it
+// went quiet. It is for typing into a TUI that is still drawing: input sent while it renders can
+// be dropped.
+func awaitQuiet(size func() int, quiet, max time.Duration, now func() time.Time, sleep func(time.Duration)) bool {
+	const interval = 100 * time.Millisecond
+	began := now()
+	last, lastChange := size(), began
+	for {
+		if n := size(); n != last {
+			last, lastChange = n, now()
+		}
+		if now().Sub(lastChange) >= quiet {
+			return true
+		}
+		if now().Sub(began) >= max {
+			return false
+		}
+		sleep(interval)
+	}
+}

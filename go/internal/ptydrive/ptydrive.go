@@ -77,6 +77,10 @@ type step struct {
 	ConfirmScreen string `json:"confirm_screen"`
 	ConfirmMS     int    `json:"confirm_ms"`
 	ConfirmResend bool   `json:"confirm_resend"`
+	// QuietMS, when set, holds the input until the screen has not changed for that long (at
+	// most 5 seconds, and never past the step's own end): a TUI that is still drawing can
+	// drop what it is sent.
+	QuietMS       int `json:"quiet_ms"`
 	pattern       *regexp.Regexp
 	until         *regexp.Regexp
 	confirmScreen *regexp.Regexp
@@ -294,6 +298,10 @@ func Main() {
 				continue
 			}
 			time.Sleep(time.Duration(s.After) * time.Millisecond)
+			if s.QuietMS > 0 {
+				quiet := awaitQuiet(func() int { return len(compact()) }, time.Duration(s.QuietMS)*time.Millisecond, 5*time.Second, time.Now, time.Sleep)
+				fmt.Printf("%squiet=%d settled=%v\n", phase, i, quiet)
+			}
 			mark(fmt.Sprintf("%s%d", phase, i), "")
 			// Replies can arrive while later parts of the same input are still being sent.
 			from = len(compact())

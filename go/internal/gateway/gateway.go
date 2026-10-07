@@ -312,6 +312,8 @@ type Ingress struct {
 	Path         string
 	RequestClass string
 	Body         []byte
+	// Header is the request's headers without its credentials (Authorization, X-Api-Key).
+	Header http.Header
 }
 
 // ObserveIngress registers fn to see each authenticated inference request body as soon as it
@@ -328,7 +330,10 @@ func (g *Gateway) ObserveOutcome(fn func(RequestRecord)) { g.ring.finished.Store
 
 func (g *Gateway) observeIngress(w http.ResponseWriter, r *http.Request, body []byte) {
 	if fn := g.ingress.Load(); fn != nil && *fn != nil {
-		(*fn)(Ingress{Seq: recordOf(w).seqNumber(), Path: r.URL.Path, RequestClass: r.Header.Get("X-Claude-Code-Request-Class"), Body: body})
+		header := r.Header.Clone()
+		header.Del("Authorization")
+		header.Del("X-Api-Key")
+		(*fn)(Ingress{Seq: recordOf(w).seqNumber(), Path: r.URL.Path, RequestClass: r.Header.Get("X-Claude-Code-Request-Class"), Body: body, Header: header})
 	}
 }
 

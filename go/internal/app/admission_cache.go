@@ -19,9 +19,9 @@ const (
 	AdmissionInconclusive = "INCONCLUSIVE"
 )
 
-// admissionKey is the cache key of one scope's admission (admission contract r1 cache.key).
+// AdmissionKey is the cache key of one scope's admission (admission contract r1 cache.key).
 // Every field must match exactly; any difference is a MISS with its stale reason.
-type admissionKey struct {
+type AdmissionKey struct {
 	NativeSHA256             string `json:"nativeSHA256"`
 	ConfigurationID          string `json:"configurationId"`
 	RoutingContractSHA256    string `json:"routingContractSHA256"`
@@ -31,22 +31,26 @@ type admissionKey struct {
 	ManagedSourceFingerprint string `json:"managedSourceFingerprint"`
 	Scope                    string `json:"scope"`
 	RestrictionsDigest       string `json:"restrictionsDigest"`
+	// ProbeExecutableSHA256 is the clauduct-probe.exe that wrote the entry (admission r2).
+	ProbeExecutableSHA256 string `json:"probeExecutableSHA256"`
 }
 
-// admissionCase is one case's result in an entry.
-type admissionCase struct {
+// AdmissionCase is one case's result in an entry.
+type AdmissionCase struct {
 	ID      string   `json:"id"`
 	Verdict string   `json:"verdict"`
 	Reasons []string `json:"reasons,omitempty"`
+	// Label is the admission r2 label the case was judged under (PASS, SAFETY_PASS, ...).
+	Label string `json:"label,omitempty"`
 }
 
-// admissionEntry is one scope's cached admission.
-type admissionEntry struct {
+// AdmissionEntry is one scope's cached admission.
+type AdmissionEntry struct {
 	Schema         string          `json:"schema"`
-	Key            admissionKey    `json:"key"`
+	Key            AdmissionKey    `json:"key"`
 	State          string          `json:"state"`
 	Reasons        []string        `json:"reasons,omitempty"`
-	Cases          []admissionCase `json:"cases"`
+	Cases          []AdmissionCase `json:"cases"`
 	NotExercisable []string        `json:"notExercisable,omitempty"`
 	Gaps           []string        `json:"gaps,omitempty"`
 	EvidenceDigest string          `json:"evidenceDigest"`
@@ -54,66 +58,71 @@ type admissionEntry struct {
 	Probe          string          `json:"probeImplementation"`
 }
 
-const admissionSchema = "clauduct.provider-admission/1"
+const AdmissionSchema = "clauduct.provider-admission/1"
 
-// restrictionsDigest is the SHA-256 of the restriction names, sorted and joined by newlines.
-func restrictionsDigest(names []string) string {
+// RestrictionsDigest is the SHA-256 of the restriction names, sorted and joined by newlines.
+func RestrictionsDigest(names []string) string {
 	sorted := append([]string(nil), names...)
 	sort.Strings(sorted)
 	sum := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
 	return hex.EncodeToString(sum[:])
 }
 
+// RP01Scope names a scope's separate RP01 entry (admission r2 caseVerdict.entries).
+func RP01Scope(scope string) string { return scope + "#RP01" }
+
 // admissionDir is where entries live. A reparse point anywhere on it is not used.
 func admissionDir(home string) string { return filepath.Join(home, ".clauduct", "provider-admission") }
 
-// errAdmissionMiss is a lookup that found no usable entry; its text is the stale reason.
-type errAdmissionMiss struct{ reason string }
+// AdmissionMiss is a lookup that found no usable entry; its text is the stale reason.
+type AdmissionMiss struct{ reason string }
 
-func (e errAdmissionMiss) Error() string { return "ADMISSION_MISS: " + e.reason }
+func (e AdmissionMiss) Error() string { return "ADMISSION_MISS: " + e.reason }
 
-// lookupAdmission returns the entry for key's scope when its key matches exactly. Anything
+// LookupAdmission returns the entry for key's scope when its key matches exactly. Anything
 // else is a MISS: no file, an unreadable or unknown file, a reparse point, or a key that
 // differs (the first differing field names the stale reason).
-func lookupAdmission(home string, key admissionKey) (admissionEntry, error) {
+func LookupAdmission(home string, key AdmissionKey) (AdmissionEntry, error) {
 	path := filepath.Join(admissionDir(home), key.Scope+".json")
 	if reparsePath(path) {
-		return admissionEntry{}, errAdmissionMiss{"REPARSE_POINT"}
+		return AdmissionEntry{}, AdmissionMiss{"REPARSE_POINT"}
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return admissionEntry{}, errAdmissionMiss{"ABSENT"}
+		return AdmissionEntry{}, AdmissionMiss{"ABSENT"}
 	}
-	var entry admissionEntry
-	if json.Unmarshal(raw, &entry) != nil || entry.Schema != admissionSchema {
-		return admissionEntry{}, errAdmissionMiss{"UNREADABLE"}
+	var entry AdmissionEntry
+	if json.Unmarshal(raw, &entry) != nil || entry.Schema != AdmissionSchema {
+		return AdmissionEntry{}, AdmissionMiss{"UNREADABLE"}
 	}
 	switch got := entry.Key; {
 	case got.NativeSHA256 != key.NativeSHA256:
-		return entry, errAdmissionMiss{"NATIVE_CHANGED"}
+		return entry, AdmissionMiss{"NATIVE_CHANGED"}
 	case got.ConfigurationID != key.ConfigurationID:
-		return entry, errAdmissionMiss{"CONFIGURATION_CHANGED"}
+		return entry, AdmissionMiss{"CONFIGURATION_CHANGED"}
 	case got.RoutingContractSHA256 != key.RoutingContractSHA256:
-		return entry, errAdmissionMiss{"ROUTING_CONTRACT_CHANGED"}
+		return entry, AdmissionMiss{"ROUTING_CONTRACT_CHANGED"}
 	case got.AdmissionContractSHA256 != key.AdmissionContractSHA256:
-		return entry, errAdmissionMiss{"ADMISSION_CONTRACT_CHANGED"}
+		return entry, AdmissionMiss{"ADMISSION_CONTRACT_CHANGED"}
 	case got.ProbeSchemaRevision != key.ProbeSchemaRevision:
-		return entry, errAdmissionMiss{"PROBE_SCHEMA_CHANGED"}
+		return entry, AdmissionMiss{"PROBE_SCHEMA_CHANGED"}
 	case got.ClauductBinarySHA256 != key.ClauductBinarySHA256:
-		return entry, errAdmissionMiss{"CLAUDUCT_BINARY_CHANGED"}
+		return entry, AdmissionMiss{"CLAUDUCT_BINARY_CHANGED"}
 	case got.ManagedSourceFingerprint != key.ManagedSourceFingerprint:
-		return entry, errAdmissionMiss{"MANAGED_SOURCES_CHANGED"}
+		return entry, AdmissionMiss{"MANAGED_SOURCES_CHANGED"}
 	case got.RestrictionsDigest != key.RestrictionsDigest:
-		return entry, errAdmissionMiss{"RESTRICTIONS_CHANGED"}
+		return entry, AdmissionMiss{"RESTRICTIONS_CHANGED"}
+	case got.ProbeExecutableSHA256 != key.ProbeExecutableSHA256:
+		return entry, AdmissionMiss{"PROBE_EXECUTABLE_CHANGED"}
 	case got.Scope != key.Scope:
-		return entry, errAdmissionMiss{"UNREADABLE"}
+		return entry, AdmissionMiss{"UNREADABLE"}
 	}
 	return entry, nil
 }
 
-// writeAdmission stores entry for its scope: a temporary file in the same directory, then a
+// WriteAdmission stores entry for its scope: a temporary file in the same directory, then a
 // rename, so a reader sees the old entry or the new one and never a part.
-func writeAdmission(home string, entry admissionEntry) error {
+func WriteAdmission(home string, entry AdmissionEntry) error {
 	dir := admissionDir(home)
 	if reparsePath(dir) {
 		return errors.New("CACHE_WRITE_FAILED: the admission directory is a reparse point")
@@ -121,7 +130,7 @@ func writeAdmission(home string, entry admissionEntry) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	entry.Schema = admissionSchema
+	entry.Schema = AdmissionSchema
 	raw, err := json.MarshalIndent(entry, "", "  ")
 	if err != nil {
 		return err
@@ -183,8 +192,8 @@ func AdmissionStatuses(home, nativeSHA256 string) []AdmissionStatus {
 		path := filepath.Join(admissionDir(home), scope+".json")
 		if !reparsePath(path) {
 			if raw, err := os.ReadFile(path); err == nil {
-				var entry admissionEntry
-				if json.Unmarshal(raw, &entry) == nil && entry.Schema == admissionSchema {
+				var entry AdmissionEntry
+				if json.Unmarshal(raw, &entry) == nil && entry.Schema == AdmissionSchema {
 					status.State, status.Reasons, status.CreatedAt = entry.State, entry.Reasons, entry.CreatedAt
 					status.NativeMatches = nativeSHA256 != "" && entry.Key.NativeSHA256 == nativeSHA256
 					status.NotExercisable, status.Gaps = entry.NotExercisable, entry.Gaps

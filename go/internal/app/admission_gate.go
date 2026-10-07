@@ -185,12 +185,22 @@ func RunProbe(ctx context.Context, call ProbeCall) error {
 	if call.Long {
 		args = append(args, "-long")
 	}
-	cmd := exec.CommandContext(ctx, path, args...)
+	cmd := exec.Command(path, args...)
 	cmd.Stdout, cmd.Stderr = call.Stderr, call.Stderr
 	process, err := childprocess.Start(cmd)
 	if err != nil {
 		return err
 	}
+	// The probe and everything it started end with ctx: childprocess owns them in a Job.
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			process.Stop()
+		case <-done:
+		}
+	}()
 	return process.Wait()
 }
 

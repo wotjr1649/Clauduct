@@ -1042,6 +1042,9 @@ type delegationMetadata struct {
 	Model         string `json:"model"`
 	SpawnDepth    int    `json:"spawnDepth"`
 	StoppedByUser bool   `json:"stoppedByUser"`
+	// IsFork marks a child native forked from the conversation itself (/fork with agent view
+	// off, 2.1.292), recorded with agentType fork and no tool call.
+	IsFork bool `json:"isFork"`
 	// An Agent teams teammate records these instead of a tool call and parent (native 2.1.289).
 	TaskKind string `json:"taskKind"`
 	Name     string `json:"name"`
@@ -1139,6 +1142,9 @@ func (d *delegations) subagentFile(binding agentBinding, suffix string, limit in
 // verifies the child again from the same evidence.
 func (d *delegations) nativeFork(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (resolvedChoice, bool) {
 	var none resolvedChoice
+	if binding.ID == id && binding.SessionID == scope.session && bridge.IsFork(binding.Role) {
+		return d.conversationFork(scope, id, binding, contexts...)
+	}
 	if binding.ID != id || binding.SessionID != scope.session || bridge.CanonicalRole(binding.Role) != "general-purpose" {
 		return none, false
 	}
@@ -1216,6 +1222,86 @@ func (d *delegations) forkEvidence(binding agentBinding) (delegationMetadata, []
 		return meta, nil, errMetadataPending
 	}
 	return meta, first, nil
+}
+
+// conversationFork verifies a child native forked from the conversation itself: /fork when
+// agent view is off (measured on 2.1.292). Native starts it without an Agent call; its
+// metadata is agentType fork with isFork, spawnDepth 1 and no toolUseId or parent agent, and its
+// transcript opens with a fork-context-ref naming this session and the parent's last message.
+// It is accepted only on all of that, a live SubagentStart registration (the binding), that
+// last message being in this session's own transcript, and native's receipt for the child's
+// turn, whose route it takes: the fork runs on the conversation's model (inherit). A fork
+// below a subagent has not been measured and is refused.
+func (d *delegations) conversationFork(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (resolvedChoice, bool) {
+	var none resolvedChoice
+	if scope.parent != "" {
+		return none, false
+	}
+	meta, first, err := d.forkEvidence(binding)
+	if errors.Is(err, errMetadataPending) && len(contexts) > 0 {
+		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
+		defer cancel()
+		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
+			select {
+			case <-ctx.Done():
+				return none, false
+			case <-time.After(delay):
+				meta, first, err = d.forkEvidence(binding)
+			}
+		}
+	}
+	if err != nil || meta.ToolUseID != "" || meta.ParentAgentID != "" || meta.SpawnDepth != 1 || meta.StoppedByUser || !meta.IsFork || !bridge.IsFork(meta.AgentType) {
+		return none, false
+	}
+	var ref struct {
+		Type            string `json:"type"`
+		AgentID         string `json:"agentId"`
+		ParentSessionID string `json:"parentSessionId"`
+		ParentLastUUID  string `json:"parentLastUuid"`
+	}
+	if json.Unmarshal(first, &ref) != nil || ref.Type != "fork-context-ref" || ref.AgentID != id || ref.ParentSessionID != scope.session || ref.ParentLastUUID == "" {
+		return none, false
+	}
+	if !d.transcriptHasMessage(binding, ref.ParentLastUUID) {
+		return none, false
+	}
+	active := scope.nativeTurn
+	if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
+		return none, false
+	}
+	route, err := d.selection.SelectRoute(active.Model, active.Effort)
+	if err != nil {
+		return none, false
+	}
+	route.Source = "native-fork"
+	choice := resolvedChoice{session: scope.session, parent: scope.parent, role: "fork", route: route}
+	if model, ok := d.selection.ModelByID(route.Model); ok {
+		choice.alias = model.AgentAlias
+	}
+	return choice, true
+}
+
+// transcriptHasMessage reports whether this session's own transcript has an entry whose uuid
+// is uuid, read through the launcher-owned projects root within a bound.
+func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bool {
+	if filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
+		return false
+	}
+	rel, err := filepath.Rel(d.projects, filepath.Dir(binding.TranscriptPath))
+	if err != nil {
+		return false
+	}
+	root, err := d.openProjects(rel)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	raw, err := workflowRead(root, filepath.Join(rel, binding.SessionID+".jsonl"), 64<<20)
+	if err != nil {
+		return false
+	}
+	needle, _ := json.Marshal(uuid)
+	return bytes.Contains(raw, append([]byte(`"uuid":`), needle...))
 }
 
 // cacheFork records a verified fork child. A parallel first request may have done so first.

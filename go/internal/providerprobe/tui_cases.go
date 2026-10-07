@@ -47,7 +47,13 @@ func tuiCases() map[string]func() scopeCase {
 	reg["BE05"] = transition("BE05", []string{"/background reply with exactly the word plum", "\r"})
 	reg["BE06"] = forkCase
 	reg["BE07"] = transition("BE07", []string{"\x1b[D", "\x1b[D"})
-	reg["BE14"] = transition("BE14", []string{"/resume", "\r"}, []string{"\x1b"})
+	reg["BE14"] = func() scopeCase {
+		sc := transition("BE14", []string{"/resume", "\r"}, []string{"\x1b"})()
+		// The picker's own screens, whitespace removed: it opened, then the Esc cancelled it.
+		sc.c.TUIScreenOrder = []string{"Resumesession", "Resumecancelled"}
+		sc.judge = judgeBE14
+		return sc
+	}
 	reg["BE08"] = func() scopeCase {
 		c := p3Case{ID: "BE08", Entry: p3CLI, Hooks: p3HooksNormal, Setup: p3TrustedStoredA, Expect: providercert.ExpectSuccess, Args: []string{"agents"},
 			Established: func(*p3Observed) bool { return true }}

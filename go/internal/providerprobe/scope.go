@@ -317,7 +317,9 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 				result.Verdict = providercert.Inconclusive
 			}
 			if late != nil && late.Reason != "" {
-				result.Reasons = append(slices.DeleteFunc(slices.Clone(result.Reasons), func(r string) bool { return r == providercert.ReasonVariantNotExercised && late.Outcome == p3LateInconclusive }), late.Reason)
+				result.Reasons = append(slices.DeleteFunc(slices.Clone(result.Reasons), func(r string) bool {
+					return r == providercert.ReasonVariantNotExercised && late.Outcome == p3LateInconclusive
+				}), late.Reason)
 			}
 		}
 		if result.Verdict == providercert.Pass && sc.function != nil {
@@ -374,6 +376,10 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	// BE15's disposition holds only when its equivalent gate, the product's managed agent-view
 	// check, refused both of BE17's policies in this same run.
 	gates["BE15"] = results["BE17"].Verdict == providercert.Pass
+	// R04L's disposition holds only when its equivalent gate, R04S's prevention check on stale
+	// late events, passed in this same run.
+	gates["R04L"] = results["R04S"].Verdict == providercert.Pass
+	gates["R04L-TUI"] = results["R04S"].Verdict == providercert.Pass
 	end, _ := providercert.Observe(exe)
 	outcome := Admit(AdmissionInput{Scope: o.Scope, Results: results, IdentityChanged: end != start, NativeSHA256: start.SHA256,
 		Platform: runtime.GOOS, GatesPassed: gates, Required: o.Required})
@@ -494,7 +500,7 @@ func p3RoutingChecked(c p3Case, control, treatment *p3Observed, r CaseResult) Ca
 func staleEvents(t TB) (CaseResult, any) {
 	began := time.Now()
 	report := p3Stale(t, productStaleMaker)
-	return CaseResult{Verdict: report.Verdict, Reasons: report.Reasons, Purpose: providercert.PurposeSafety},
+	return CaseResult{Verdict: report.Verdict, Reasons: report.Reasons, Purpose: ""},
 		struct {
 			CaseID     string
 			Report     p3StaleReport

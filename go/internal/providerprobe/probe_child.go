@@ -55,15 +55,18 @@ const (
 	p3LateInconclusive = "INCONCLUSIVE"
 
 	// Reasons the judge gives.
-	ReasonChildNotReady       = "CHILD_NOT_READY_BEFORE_TIMEOUT"
-	ReasonChildTerminated     = "CHILD_TERMINATED_BY_NATIVE"
-	reasonNoHookInvocation    = "NO_HOOK_INVOCATION"
-	reasonChildFateAmbiguous  = "CHILD_FATE_AMBIGUOUS"
-	reasonChildFateMixed      = "CHILD_FATE_MIXED"
-	reasonChildSurvivedNoLate = "CHILD_SURVIVED_NO_LATE_EVENT"
-	p3FateSurvived            = "SURVIVED"
-	p3FateTerminated          = "TERMINATED"
-	p3FateAmbiguous           = "AMBIGUOUS"
+	ReasonChildNotReady   = "CHILD_NOT_READY_BEFORE_TIMEOUT"
+	ReasonChildTerminated = "CHILD_TERMINATED_BY_NATIVE"
+	// ReasonChildTerminatedUnrecorded is a terminated child whose native timeout handling is not
+	// in native's own transcript for every proof.
+	ReasonChildTerminatedUnrecorded = "CHILD_TERMINATED_TIMEOUT_UNRECORDED"
+	reasonNoHookInvocation          = "NO_HOOK_INVOCATION"
+	reasonChildFateAmbiguous        = "CHILD_FATE_AMBIGUOUS"
+	reasonChildFateMixed            = "CHILD_FATE_MIXED"
+	reasonChildSurvivedNoLate       = "CHILD_SURVIVED_NO_LATE_EVENT"
+	p3FateSurvived                  = "SURVIVED"
+	p3FateTerminated                = "TERMINATED"
+	p3FateAmbiguous                 = "AMBIGUOUS"
 )
 
 const (
@@ -291,8 +294,12 @@ func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookF
 		out.Outcome, out.Reason = p3LateInconclusive, reasonChildFateAmbiguous
 	case fates[p3FateSurvived] && fates[p3FateTerminated]:
 		out.Outcome, out.Reason = p3LateInconclusive, reasonChildFateMixed
-	case fates[p3FateTerminated]:
+	case fates[p3FateTerminated] && !slices.ContainsFunc(ready, func(p *p3ChildProof) bool { return p.Fate == p3FateTerminated && !p.NativeTimeoutRecorded }):
 		out.Outcome, out.Reason = p3LateNotExercised, ReasonChildTerminated
+	case fates[p3FateTerminated]:
+		// The child ended, but native's own handling of the hook timeout was not observed for
+		// every terminated proof: the end is not shown to be native's.
+		out.Outcome, out.Reason = p3LateInconclusive, ReasonChildTerminatedUnrecorded
 	case late:
 		out.Outcome = p3LateExercised
 	default:

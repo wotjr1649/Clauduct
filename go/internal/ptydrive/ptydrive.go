@@ -65,7 +65,21 @@ type step struct {
 	Optional bool     `json:"optional"`  // a missing screen is skipped, not a failure
 	Timeout  int      `json:"timeout_s"`
 	After    int      `json:"after_ms"` // pause between the match and the first write
-	pattern  *regexp.Regexp
+	// Until, on an optional step, is a screen that means the step's own screen will not come
+	// (the main prompt is already up): the step is skipped once it has shown for a short
+	// grace in which the step's own screen can still win. It replaces a fixed wait.
+	Until string `json:"until"`
+	// ConfirmFile, ConfirmScreen and ConfirmMS check that the input the step typed was
+	// submitted: the caller writes ConfirmFile ("ready\n") when it sees the effect, or
+	// ConfirmScreen shows after the typed input. The outcome is printed and marked, never
+	// silently assumed. ConfirmResend sends Enter once more after an unconfirmed window.
+	ConfirmFile   string `json:"confirm_file"`
+	ConfirmScreen string `json:"confirm_screen"`
+	ConfirmMS     int    `json:"confirm_ms"`
+	ConfirmResend bool   `json:"confirm_resend"`
+	pattern       *regexp.Regexp
+	until         *regexp.Regexp
+	confirmScreen *regexp.Regexp
 }
 
 type envList []string
@@ -83,6 +97,7 @@ func Main() {
 	rawLog := flag.String("log", "", "raw output file")
 	textLog := flag.String("text", "", "screen text file")
 	total := flag.Int("timeout", 600, "seconds before the child is abandoned")
+	deadline := flag.Int("deadline", 0, "seconds from start by which the driver must have written its evidence and ended; steps stop earlier so a caller's own limit never cuts the driver off (0: none)")
 	marks := flag.String("marks", "", "file that gets one line per matched step: its index and the time its input began, RFC 3339")
 	var env envList
 	flag.Var(&env, "env", "KEY=VALUE added to the inherited environment")
@@ -190,19 +205,64 @@ func Main() {
 	}
 
 	started := time.Now()
+	// The steps end before the caller's limit so the driver can write its screen, and the wait
+	// for the child's exit ends before it too.
+	var stepsEnd, exitEnd time.Time
+	if *deadline > 0 {
+		stepsEnd = started.Add(time.Duration(*deadline)*time.Second - driverReserve)
+		if earliest := started.Add(time.Second); stepsEnd.Before(earliest) {
+			stepsEnd = earliest
+		}
+		exitEnd = started.Add(time.Duration(*deadline)*time.Second - 2*time.Second)
+	}
+	writeText := func() {
+		if *textLog != "" {
+			os.WriteFile(*textLog, []byte(text()), 0600)
+		}
+	}
+	// mark appends "<label> <time> [detail]" to the marks file; a bare index label is a step's
+	// input start, any other label is a driver event (submission check, Enter resend).
+	mark := func(label, detail string) {
+		if *marks == "" {
+			return
+		}
+		if f, err := os.OpenFile(*marks, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+			if detail != "" {
+				fmt.Fprintf(f, "%s %s %s\n", label, time.Now().Format(time.RFC3339Nano), detail)
+			} else {
+				fmt.Fprintf(f, "%s %s\n", label, time.Now().Format(time.RFC3339Nano))
+			}
+			f.Close()
+		}
+	}
 	runSteps := func(steps []step, phase string, from int) string {
 		for i, s := range steps {
 			limit := time.Duration(max(s.Timeout, 1)) * time.Second
-			deadline := time.Now().Add(limit)
+			limitAt := time.Now().Add(limit)
+			capped := false
+			if !stepsEnd.IsZero() && stepsEnd.Before(limitAt) {
+				limitAt, capped = stepsEnd, true
+			}
 			matched := false
 			screenMatched := false
+			skipped := false
+			var untilAt time.Time
 			var signalErr error
-			for time.Now().Before(deadline) {
+			// The step is checked once even when its time is already gone.
+			for first := true; first || time.Now().Before(limitAt); first = false {
 				current := compact()
 				if !screenMatched {
 					if loc := s.pattern.FindStringIndex(current[min(from, len(current)):]); loc != nil {
 						from += loc[1]
 						screenMatched = true
+					} else if s.until != nil && s.Optional && s.until.MatchString(current[min(from, len(current)):]) {
+						if untilAt.IsZero() {
+							untilAt = time.Now()
+						}
+						if time.Since(untilAt) >= untilGrace {
+							skipped = true
+							break
+						}
 					}
 				}
 				if screenMatched {
@@ -216,7 +276,7 @@ func Main() {
 				}
 				time.Sleep(200 * time.Millisecond)
 			}
-			fmt.Printf("%sstep=%d t=%.1fs wait=%q matched=%v\n", phase, i, time.Since(started).Seconds(), s.Wait, matched)
+			fmt.Printf("%sstep=%d t=%.1fs wait=%q matched=%v skipped=%v capped=%v\n", phase, i, time.Since(started).Seconds(), s.Wait, matched, skipped, capped && !matched && !skipped)
 			if signalErr != nil {
 				fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
 				return "wait_file"
@@ -227,18 +287,14 @@ func Main() {
 					failed = "wait_file"
 				}
 				fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
+				writeText()
 				return failed
 			}
 			if !matched {
 				continue
 			}
 			time.Sleep(time.Duration(s.After) * time.Millisecond)
-			if *marks != "" {
-				if f, err := os.OpenFile(*marks, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
-					fmt.Fprintf(f, "%s%d %s\n", phase, i, time.Now().Format(time.RFC3339Nano))
-					f.Close()
-				}
-			}
+			mark(fmt.Sprintf("%s%d", phase, i), "")
 			// Replies can arrive while later parts of the same input are still being sent.
 			from = len(compact())
 			for j, part := range s.Send {
@@ -249,6 +305,29 @@ func Main() {
 					fmt.Fprintf(os.Stderr, "write: %v\n", err)
 					return "write"
 				}
+			}
+			if s.ConfirmFile != "" || s.confirmScreen != nil {
+				submitFrom := from
+				out := awaitSubmit(submitCheck{Window: time.Duration(s.ConfirmMS) * time.Millisecond, Resend: s.ConfirmResend},
+					func() string {
+						if s.ConfirmFile != "" {
+							if ok, _ := readyFile(s.ConfirmFile); ok {
+								return "file"
+							}
+						}
+						if s.confirmScreen != nil {
+							if cur := compact(); s.confirmScreen.MatchString(cur[min(submitFrom, len(cur)):]) {
+								return "screen"
+							}
+						}
+						return ""
+					},
+					func() {
+						write("\r")
+						mark(fmt.Sprintf("resend%s%d", phase, i), "")
+					}, time.Now, time.Sleep)
+				fmt.Printf("%ssubmit=%d confirmed=%v by=%q after_ms=%d resent=%v resent_at_ms=%d\n", phase, i, out.Confirmed, out.By, out.Elapsed.Milliseconds(), out.Resent, out.ResentAt.Milliseconds())
+				mark(fmt.Sprintf("submit%s%d", phase, i), fmt.Sprintf("confirmed=%v by=%s after_ms=%d resent=%v", out.Confirmed, out.By, out.Elapsed.Milliseconds(), out.Resent))
 			}
 		}
 		return ""
@@ -264,8 +343,13 @@ func Main() {
 		fmt.Printf("cleanup_error=%q\n", cleanupFailed)
 	}
 	wait := uint32(*total * 1000)
+	if !exitEnd.IsZero() {
+		if left := time.Until(exitEnd); left < time.Duration(wait)*time.Millisecond {
+			wait = uint32(max(left, 0) / time.Millisecond)
+		}
+	}
 	if failed != "" {
-		wait = 5000
+		wait = min(wait, 5000)
 	}
 	event, _ := syscall.WaitForSingleObject(pi.Process, wait)
 	var code uint32 = 1<<32 - 1
@@ -277,9 +361,7 @@ func Main() {
 	time.Sleep(time.Second)
 	closePseudoConsole.Call(console)
 	syscall.CloseHandle(inWrite)
-	if *textLog != "" {
-		os.WriteFile(*textLog, []byte(text()), 0600)
-	}
+	writeText()
 	fmt.Printf("child_exit=%d failed_wait=%q elapsed=%.1fs\n", int32(code), failed, time.Since(started).Seconds())
 	if failed != "" || code != 0 {
 		os.Exit(1)
@@ -287,6 +369,14 @@ func Main() {
 }
 
 const screenTail = 4000
+
+// driverReserve is how long before -deadline the steps stop: the failure path waits up to 5
+// seconds for the child, then closes the console (1 second) and writes the screen.
+const driverReserve = 8 * time.Second
+
+// untilGrace is how long a step's Until screen must show before the step is skipped, so a
+// dialog drawn just after the main prompt's text is not missed.
+const untilGrace = 600 * time.Millisecond
 
 func loadSteps(name string, previous []step) ([]step, error) {
 	raw, err := os.ReadFile(name)
@@ -311,6 +401,22 @@ func loadSteps(name string, previous []step) ([]step, error) {
 		s.pattern, err = regexp.Compile(s.Wait)
 		if err != nil {
 			return nil, err
+		}
+		if s.Until != "" {
+			if s.until, err = regexp.Compile(s.Until); err != nil {
+				return nil, err
+			}
+		}
+		if s.ConfirmScreen != "" {
+			if s.confirmScreen, err = regexp.Compile(s.ConfirmScreen); err != nil {
+				return nil, err
+			}
+		}
+		if (s.ConfirmFile != "" || s.ConfirmScreen != "") && s.ConfirmMS <= 0 {
+			return nil, fmt.Errorf("a submission check needs a positive confirm_ms")
+		}
+		if s.ConfirmFile != "" && !filepath.IsAbs(s.ConfirmFile) {
+			return nil, fmt.Errorf("confirm_file must be absolute")
 		}
 		if s.WaitFile == "" {
 			continue

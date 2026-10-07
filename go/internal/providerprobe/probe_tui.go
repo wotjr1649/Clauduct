@@ -29,6 +29,10 @@ const p3PtyDriveArg = "--p3-ptydrive"
 // ptydrive is this executable, started with p3PtyDriveArg first.
 func ptydrive() (string, error) { return os.Executable() }
 
+// p3TUIReady is the main prompt's footer: "? for shortcuts", or 2.1.292's "auto mode on
+// (shift+tab to cycle)". Whitespace removed, like every wait.
+const p3TUIReady = `forshortcuts|shift\+tabtocycle`
+
 // p3TUISteps answers native's first-run screens, types the prompt, waits for any probe reply on
 // the screen and leaves with /exit. Waits match the screen text with whitespace removed.
 func p3TUISteps(prompt string, afterReply []map[string]any) []map[string]any {
@@ -43,21 +47,35 @@ func p3TUISteps(prompt string, afterReply []map[string]any) []map[string]any {
 		// The synthetic stored gateway's managed settings, shown first at start: the threat a user
 		// who once trusted that gateway carries (control). A treatment that ignores the stored
 		// gateway never sees it.
-		{"wait": "Managedsettingsrequireapproval", "send": []string{"\r"}, "optional": true, "timeout_s": 10, "after_ms": 300},
-		{"wait": "Choosethetextstyle", "send": []string{"\r"}, "optional": true, "timeout_s": 10, "after_ms": 300},
-		{"wait": "Entertocontinue", "send": []string{"\r"}, "optional": true, "timeout_s": 5, "after_ms": 300},
-		{"wait": "trustthisfolder", "send": []string{"\x1b[B", "\r"}, "optional": true, "timeout_s": 10, "after_ms": 300},
-		// The main prompt's footer: "? for shortcuts", or 2.1.292's "auto mode on (shift+tab to cycle)".
-		{"wait": `forshortcuts|shift\+tabtocycle`, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500},
+		// Each optional screen ends as soon as its own dialog shows or the main prompt is up
+		// (until), whichever comes first: a screen that never appears costs no fixed wait.
+		// A screen's until also names the screens that follow it: a start that shows the text
+		// style dialog first never shows the approval dialog.
+		{"wait": "Managedsettingsrequireapproval", "send": []string{"\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": "Choosethetextstyle|Entertocontinue|trustthisfolder|" + p3TUIReady},
+		{"wait": "Choosethetextstyle", "send": []string{"\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": "Entertocontinue|trustthisfolder|" + p3TUIReady},
+		{"wait": "Entertocontinue", "send": []string{"\r"}, "optional": true, "timeout_s": 5, "after_ms": 300, "until": "trustthisfolder|" + p3TUIReady},
+		{"wait": "trustthisfolder", "send": []string{"\x1b[B", "\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": p3TUIReady},
+		{"wait": p3TUIReady, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500},
 		{"wait": p3TUIEnded, "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000},
 	}
+}
+
+// p3TUIDriverReserve is how long before the case's own limit the driver must be done: it ends
+// its steps earlier still (ptydrive driverReserve), writes its screen and exits, so the case's
+// context never cuts it off and its diagnostics survive. The rest covers the driver's start and
+// the spawn pin check, which happen after the limit is set.
+const p3TUIDriverReserve = 6 * time.Second
+
+// tuiDriverDeadline is the seconds the driver may run, from now, before limit minus the reserve.
+func tuiDriverDeadline(limit time.Time) int {
+	return max(int((time.Until(limit)-p3TUIDriverReserve)/time.Second), 3)
 }
 
 // tuiPinnedStarter starts native inside ptydrive under the contract's spawn pin: the executable
 // is held against write, delete and rename until the claude.exe process ptydrive started is
 // confirmed to run the pinned file. A run whose native image cannot be confirmed is ended and
 // reported, never accepted.
-func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int) func(spawnReport) starter {
+func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, deadlineSeconds func() int) func(spawnReport) starter {
 	return func(report spawnReport) starter {
 		return func(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (app.Process, error) {
 			driver, err := ptydrive()
@@ -71,7 +89,7 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int) func
 				return nil, err
 			}
 			defer pin.Close()
-			args := append([]string{p3PtyDriveArg, "-dir", spec.Dir, "-script", steps, "-text", screen, "-log", raw, "-marks", marks, "-timeout", strconv.Itoa(timeoutSeconds), "--", spec.File}, spec.Args...)
+			args := append([]string{p3PtyDriveArg, "-dir", spec.Dir, "-script", steps, "-text", screen, "-log", raw, "-marks", marks, "-timeout", strconv.Itoa(timeoutSeconds), "-deadline", strconv.Itoa(deadlineSeconds()), "--", spec.File}, spec.Args...)
 			cmd := exec.Command(driver, args...)
 			cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = spec.Dir, spec.Env, stdout, stderr
 			process, err := childprocess.Start(cmd)

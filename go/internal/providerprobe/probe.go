@@ -74,6 +74,9 @@ type p3Case struct {
 	// TUIStimulus are inputs typed after the TUI's first reply, each its own driver step, then
 	// a confirmation prompt (turn2) 8 seconds later (admission r2 TUI background-entry checks).
 	TUIStimulus [][]string
+	// TUIScreenOrder are screen texts (whitespace removed) the run's whole screen must show in
+	// this order; obs.ScreenOrdered records whether it did (BE14's picker open and cancel).
+	TUIScreenOrder []string
 	// TUIRefreshApproval approves the managed-settings dialog a mid-session policy refresh
 	// raises before the second prompt (RP01-TUI).
 	TUIRefreshApproval bool
@@ -344,6 +347,27 @@ func (w *p3World) addCanary(id string) providercert.Canary {
 // marker is the only reply text a probe receiver sends.
 func marker(receiver, nonce string) string { return "CLAUDUCT-PROBE-REPLY-" + receiver + "-" + nonce }
 
+// turnCanaryID is a prompt turn's canary ID; the others (a managed file's, a policy generation's)
+// belong to a fixture, not to a turn.
+var turnCanaryID = regexp.MustCompile(`^turn[0-9]+$`)
+
+// p3CurrentNonce is the marker nonce for a request that carried the canaries ids, which a scan
+// lists in the order the canaries were made: the current turn's canary is the latest turn
+// canary, because the history of earlier turns is in the body too. An answer with the first
+// canary would reply to turn 1 again and never show a later turn's marker. A request with no
+// turn canary gets the last canary found, or "aux".
+func p3CurrentNonce(ids []string) string {
+	for i := len(ids) - 1; i >= 0; i-- {
+		if turnCanaryID.MatchString(ids[i]) {
+			return ids[i]
+		}
+	}
+	if len(ids) > 0 {
+		return ids[len(ids)-1]
+	}
+	return "aux"
+}
+
 var markerPattern = regexp.MustCompile(`CLAUDUCT-PROBE-REPLY-([A-Z_]+)-(turn[0-9]+|aux)`)
 
 // anthropicReply is an Anthropic SSE stream whose text is one marker.
@@ -371,10 +395,7 @@ func (w *p3World) wrongResponder(id string) func(http.ResponseWriter, *http.Requ
 			rw.Write([]byte(`{"data":[{"type":"model","id":"gpt-6-luna","display_name":"gpt-6-luna"}],"has_more":false}`))
 		case seen.Inference && w.wrongScript != nil && p3ScriptedReply(w, rw, r):
 		case seen.Inference:
-			nonce := "aux"
-			if len(seen.Canaries) > 0 {
-				nonce = seen.Canaries[0]
-			}
+			nonce := p3CurrentNonce(seen.Canaries)
 			rw.Header().Set("Content-Type", "text/event-stream")
 			rw.Write([]byte(anthropicReply(marker(id, nonce))))
 		default:
@@ -543,10 +564,7 @@ func (p *p3Transport) Execute(ctx context.Context, call upstream.Call) (*upstrea
 			return &upstream.Response{Body: io.NopCloser(strings.NewReader(stream))}, nil
 		}
 	}
-	nonce := "aux"
-	if len(ids) > 0 {
-		nonce = ids[len(ids)-1]
-	}
+	nonce := p3CurrentNonce(ids)
 	return &upstream.Response{Body: io.NopCloser(strings.NewReader(measuredStream(marker(providercert.IntendedID, nonce))))}, nil
 }
 
@@ -824,8 +842,15 @@ type p3Observed struct {
 	// Stimulus is a CLI case's stimulus launch: its exit, whether native wrote to stderr, and
 	// how long it ran.
 	Stimulus p3StimulusLaunch
-	// StimulusSent is the driver's mark that it typed the case's first TUI stimulus.
-	StimulusSent bool
+	// StimulusSent is the driver's mark that it typed the case's first TUI stimulus;
+	// StimulusMarks counts the stimulus inputs the driver began (a mark each).
+	StimulusSent  bool
+	StimulusMarks int
+	// ScreenOrdered is the whole screen showed the case's TUIScreenOrder texts in order.
+	ScreenOrdered bool
+	// SessionBefore is the product's session record when the driver began the stimulus,
+	// SessionAfter at the end of the run.
+	SessionBefore, SessionAfter *p3SessionFacts
 	// NativeStarts counts the native session processes the product started (not control commands).
 	NativeStarts int
 	// SupervisorLock and JobDirs are the background boundary seen in the probe config dir.
@@ -842,6 +867,8 @@ type p3Observed struct {
 	RefusalSideEffect bool
 	// Screen is the end of a TUI run's screen text, canary values replaced by their IDs.
 	Screen string
+	// TUI is the driver's evidence and timeline of a TUI run.
+	TUI *p3TUIEvidence
 	// SnapshotBefore is the session's profile snapshot existing just before the --continue;
 	// TranscriptAppended is how many bytes its conversation gained across that turn.
 	SnapshotBefore     bool
@@ -966,15 +993,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		// starts native as from an ordinary shell: a Claude Code session the test itself runs
 		// under (an agent's) leaves its own markers, messaging socket and options in the
 		// environment, which a user's shell does not have.
-		for name := range env {
-			upper := strings.ToUpper(name)
-			switch {
-			case upper == "NO_PROXY", upper == "HTTPS_PROXY", upper == "HTTP_PROXY", upper == "ALL_PROXY":
-				delete(env, name)
-			case p3AgentSessionEnv(upper):
-				delete(env, name)
-			}
-		}
+		p3ScrubProbeEnv(env)
 		env["CLAUDE_CONFIG_DIR"] = w.configDir
 		return env
 	}
@@ -1000,6 +1019,8 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		// The reply, the stimuli, 8 seconds, then the confirmation prompt and its reply.
 		runFor = 3 * p.timeout
 	}
+	// onceLimit is the end of the current native run's context: a TUI driver ends before it.
+	var onceLimit time.Time
 	once := func(args []string, stdin io.Reader, stdout io.Writer) {
 		observe()
 		parent := context.Background()
@@ -1010,6 +1031,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		if !p.deadline.IsZero() && p.deadline.Before(limit) {
 			limit = p.deadline
 		}
+		onceLimit = limit
 		ctx, cancel := context.WithDeadline(parent, limit)
 		defer cancel()
 		var stderr strings.Builder
@@ -1023,24 +1045,21 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		if configuration == p3HostManaged || configuration == p3GatewayEnv {
 			strategy = configuration
 		}
-		result, err := app.Run(ctx, app.Options{
+		startGateway := func() (*gateway.Gateway, error) {
+			// The product's own gateway start (run.go), so the admission boundaries are the
+			// product's; only the transport is synthetic.
+			g, err := app.StartProductGateway(transport)
+			if err == nil {
+				w.observe(g)
+			}
+			return g, err
+		}
+		base := app.Options{
 			ProviderStrategy: strategy,
 			BackgroundReady:  bgReady,
 			Args:             append(slices.Clone(args), "--strict-mcp-config"), Env: env, Cwd: w.cwd, Stdin: stdin, Stdout: stdout, Stderr: &stderr,
 			ClauductHome:  w.home,
 			ResolveClaude: func() (string, bool, error) { return p.exe, true, nil },
-			// The account list is synthetic too: no probe session reads a credential or
-			// reaches the network for it.
-			ModelList: p3ModelList,
-			StartGateway: func() (*gateway.Gateway, error) {
-				// The product's own gateway start (run.go), so the admission boundaries are the
-				// product's; only the transport is synthetic.
-				g, err := app.StartProductGateway(transport)
-				if err == nil {
-					w.observe(g)
-				}
-				return g, err
-			},
 			StartProcess: func(spec launch.Spec, in io.Reader, out, errOut io.Writer) (app.Process, error) {
 				var err error
 				if p3ControlCommand(spec.Args) {
@@ -1066,7 +1085,18 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				}
 				return &p3Watched{Process: process, failed: &obs.CleanupFailed}, nil
 			},
-		})
+		}
+		// The probe's upstream is synthetic: ProbeOptions refuses a session without it, and Run is
+		// never given an Options the probe assembled itself. The account list is synthetic too, so
+		// no probe session reads a credential or reaches the network for it.
+		options, optErr := app.ProbeOptions(base, startGateway, p3ModelList)
+		var result app.Result
+		var err error
+		if optErr != nil {
+			err = optErr
+		} else {
+			result, err = app.Run(ctx, options)
+		}
 		obs.ExitCodes = append(obs.ExitCodes, result.NativeExitCode)
 		obs.Refusals = append(obs.Refusals, result.Diagnostics.Requests.RefusedBy)
 		if err != nil {
@@ -1274,9 +1304,57 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		}
 		raw := filepath.Join(filepath.Dir(steps), "raw.log")
 		marks := filepath.Join(filepath.Dir(steps), "marks.txt")
-		start = tuiPinnedStarter(steps, screen, raw, marks, timeoutSeconds)(report)
+		// Each typed prompt is checked for submission against the receivers: the driver waits a
+		// bounded window for the turn's canary to be seen and records the outcome.
+		submits := []p3SubmitStep{{p3TUIPromptStep, obs.Turns[i].Canary.ID}}
+		if i2 >= 0 {
+			submits = append(submits, p3SubmitStep{prompt2Step, obs.Turns[i2].Canary.ID})
+		}
+		for k, x := range extra {
+			submits = append(submits, p3SubmitStep{p3TUIPromptNStep(k+2, c.TUIApproval != nil, c.TUIRefreshApproval), obs.Turns[x].Canary.ID})
+		}
+		dir := filepath.Dir(steps)
+		if err := addSubmitChecks(steps, submits, func(turn string) string { return p3SubmitFile(dir, turn) }, p3TUISubmitWindow, p3TUIResendEnter); err != nil {
+			t.Fatal(err)
+		}
+		var submitTurns []string
+		for _, sub := range submits {
+			submitTurns = append(submitTurns, sub.Turn)
+		}
+		stopWatch := make(chan struct{})
+		watched := make(chan struct{})
+		go func() { defer close(watched); watchSubmits(w, dir, submitTurns, stopWatch) }()
+		driverDeadline := 0
+		snapshotted := make(chan struct{})
+		if c.TUIStimulus != nil {
+			go func() {
+				defer close(snapshotted)
+				before := w.sessionFacts()
+				for !stopped(stopWatch) {
+					if _, ok := markAt(marks, p3TUIPrompt2Step); ok {
+						break
+					}
+					before = w.sessionFacts()
+					time.Sleep(50 * time.Millisecond)
+				}
+				obs.SessionBefore = before
+			}()
+		} else {
+			close(snapshotted)
+		}
+		driverStart := tuiPinnedStarter(steps, screen, raw, marks, timeoutSeconds, func() int { driverDeadline = tuiDriverDeadline(onceLimit); return driverDeadline })(report)
+		var spawnedAt time.Time
+		start = func(spec launch.Spec, in io.Reader, out, errOut io.Writer) (app.Process, error) {
+			process, err := driverStart(spec, in, out, errOut)
+			if err == nil {
+				spawnedAt = time.Now()
+			}
+			return process, err
+		}
 		var out strings.Builder
 		once(c.Args, nil, &out)
+		close(stopWatch)
+		<-watched
 		end(i)
 		// The turn is the prompt: it starts when the driver began typing it, not when native
 		// started. Requests native sent while it was still starting belong to no turn.
@@ -1301,16 +1379,27 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("TUI prompt %d was never typed", k+2))
 			}
 		}
-		if c.TUIStimulus != nil {
-			_, obs.StimulusSent = markAt(marks, p3TUIPrompt2Step)
-		}
 		text, _ := os.ReadFile(screen)
 		obs.Turns[i].Output = string(text)
 		if len(text) == 0 {
 			// The driver was ended before it wrote its screen; its raw log was written as it went.
 			text = []byte(rawScreen(raw))
 		}
+		if c.TUIStimulus != nil {
+			_, obs.StimulusSent = markAt(marks, p3TUIPrompt2Step)
+			for j := range c.TUIStimulus {
+				if _, ok := markAt(marks, p3TUIPrompt2Step+j); ok {
+					obs.StimulusMarks++
+				}
+			}
+			obs.ScreenOrdered = p3ScreenOrdered(string(text), c.TUIScreenOrder)
+			<-snapshotted
+			obs.SessionAfter = w.sessionFacts()
+		}
 		obs.Screen = p3RedactCanaries(string(text), obs.Turns)
+		obs.TUI = p3TUIEvidenceOf(w, obs, marks, raw, out.String(), obs.Outputs, submits, spawnedAt, driverDeadline)
+		obs.RunErrors = append(obs.RunErrors, obs.TUI.SubmitUnconfirmed...)
+		obs.RunErrors = append(obs.RunErrors, obs.TUI.EnterResent...)
 		obs.Outputs = string(text) + out.String() + obs.Outputs
 	case p3Background:
 		// One background cycle per turn: dispatch, worker, reply, stop. Turn k > 1 runs after
@@ -1992,6 +2081,7 @@ type p3Evidence struct {
 	Natives               []p3NativeProcess                   `json:",omitempty"`
 	ProbePID              int                                 `json:",omitempty"`
 	Screen                string                              `json:",omitempty"`
+	TUI                   *p3TUIEvidence                      `json:",omitempty"`
 	TranscriptAppended    int                                 `json:",omitempty"`
 	// Observation is the verdict's input: counts, receiver IDs and refusal categories only.
 	Observation *providercert.Observation `json:",omitempty"`
@@ -2005,7 +2095,7 @@ func p3EvidenceOf(c p3Case, configuration string, obs *p3Observed, result provid
 	if e.LateHook = p3LateHookOf(c.HookFaults, obs); e.LateHook != nil {
 		e.HookProcs = &obs.HookProcs
 	}
-	e.SnapshotBefore, e.TranscriptAppended, e.Screen = obs.SnapshotBefore, obs.TranscriptAppended, obs.Screen
+	e.SnapshotBefore, e.TranscriptAppended, e.Screen, e.TUI = obs.SnapshotBefore, obs.TranscriptAppended, obs.Screen, obs.TUI
 	e.Owners, e.WorkerPID, e.ProbePID, e.Daemon, e.OverlayGaps, e.Natives = obs.Owners, obs.WorkerPID, os.Getpid(), obs.Daemon, obs.OverlayGaps, obs.Natives
 	for _, err := range obs.RunErrors {
 		e.Errors = append(e.Errors, redactURLs(err))
@@ -2144,4 +2234,31 @@ type p3StimulusLaunch struct {
 	Exit   int
 	Stderr bool
 	Took   time.Duration
+}
+
+// p3CredentialEnv names the credentials a probe's native must never inherit from the machine
+// it runs on: the probe is synthetic end to end.
+func p3CredentialEnv(upper string) bool {
+	switch upper {
+	case "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_HOME", "OPENAI_API_KEY":
+		return true
+	}
+	return false
+}
+
+// p3ScrubProbeEnv deletes from env, which holds the inherited environment, everything the probe
+// owns: proxy settings (an inherited NO_PROXY entry such as * or a domain would let native's
+// egress skip CATCH_ALL and leave the machine uncounted), a Claude Code session's own markers,
+// messaging socket and options (a user's shell does not have them), and real credentials.
+// Values the case's configuration sets afterwards still apply.
+func p3ScrubProbeEnv(env map[string]string) {
+	for name := range env {
+		upper := strings.ToUpper(name)
+		switch {
+		case upper == "NO_PROXY", upper == "HTTPS_PROXY", upper == "HTTP_PROXY", upper == "ALL_PROXY":
+			delete(env, name)
+		case p3AgentSessionEnv(upper), p3CredentialEnv(upper):
+			delete(env, name)
+		}
+	}
 }

@@ -282,3 +282,92 @@ func backgroundSubagentCase() scopeCase {
 	}
 	return scopeCase{c: c, judge: judge, noControl: true}
 }
+
+// VerdictPathAbsentTUIObserved is BE14's disposition (owner decision 15): the TUI /resume picker
+// was opened and cancelled in this run, the control never reached native's background, and the
+// treatment stayed fully inside the product. It is never PASS and covers only this stimulus.
+const VerdictPathAbsentTUIObserved = "PATH_ABSENT_TUI_OBSERVED"
+
+// p3WrongTraffic is the bytes and connections the wrong receivers saw.
+func p3WrongTraffic(obs *p3Observed) int64 {
+	n := int64(0)
+	for _, w := range obs.Wrong {
+		n += w.Bytes + w.Conns
+	}
+	return n
+}
+
+// be14Guards switch BE14's condition checks; production has them all on. A test turns one off to
+// show that the check is what decides the verdict.
+type be14Guards struct {
+	ControlPicker, ControlBoundary, TreatmentSafe, Confirmed, Unchanged bool
+}
+
+var be14AllGuards = be14Guards{true, true, true, true, true}
+
+// judgeBE14 is BE14's verdict: the TRANSITION judgment when the control reached native's
+// background, and otherwise PATH_ABSENT_TUI_OBSERVED only when every condition of owner decision 15
+// holds in this run, with each condition's evidence in the reasons. Any other shortfall is
+// INCONCLUSIVE naming the failing condition.
+func judgeBE14(control, treatment *p3Observed) CaseResult {
+	return judgeBE14With(control, treatment, be14AllGuards)
+}
+
+func judgeBE14With(control, treatment *p3Observed, g be14Guards) CaseResult {
+	transition := judgeTUIBoundary(nil)
+	if p3BoundaryReached(control) && g.ControlBoundary {
+		return transition(control, treatment)
+	}
+	inconclusive := func(reason string) CaseResult {
+		return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{"BE14 " + reason}}
+	}
+	// Anything the treatment did outside the product is a failure, whatever else holds.
+	if p3BoundaryReached(treatment) || p3WrongBytes(treatment) != 0 || p3WrongTraffic(treatment) != 0 {
+		return CaseResult{Verdict: VerdictBackgroundEntryReached, Reasons: []string{"the treatment reached native's background or a wrong destination"}}
+	}
+	if treatment.CleanupFailed || control.CleanupFailed {
+		return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{providercert.ReasonCleanupFailed}}
+	}
+	var evidence []string
+	// 1. The control opened the picker and cancelled it: input marks and the screen.
+	if g.ControlPicker {
+		if control.StimulusMarks < 2 || !control.StimulusSent {
+			return inconclusive(fmt.Sprintf("condition 1: the control's driver began %d of the 2 stimulus inputs (/resume Enter, Esc)", control.StimulusMarks))
+		}
+		if !control.ScreenOrdered {
+			return inconclusive("condition 1: the control's screen did not show 'Resume session' and then 'Resume cancelled'")
+		}
+	}
+	evidence = append(evidence, fmt.Sprintf("1 control: driver began %d stimulus inputs (/resume Enter, Esc); screen showed 'Resume session' then 'Resume cancelled'", control.StimulusMarks))
+	// 2. The control reached no background.
+	if g.ControlBoundary && p3BoundaryReached(control) {
+		return inconclusive("condition 2: the control reached native's background")
+	}
+	evidence = append(evidence, "2 control boundary 0: no daemon lock, job directory, daemon or --bg-pty-host native")
+	// 3. The treatment reached no background and no wrong destination.
+	if g.TreatmentSafe && (p3BoundaryReached(treatment) || p3WrongTraffic(treatment) != 0) {
+		return inconclusive("condition 3: the treatment reached a background or a wrong destination")
+	}
+	if !treatment.StimulusSent || treatment.StimulusMarks < 2 {
+		return inconclusive(fmt.Sprintf("condition 3: the treatment's driver began %d of the 2 stimulus inputs", treatment.StimulusMarks))
+	}
+	evidence = append(evidence, "3 treatment boundary 0, wrong-destination bytes and connections 0")
+	// 4. The treatment's confirmation prompt after the cancel completed through the gateway.
+	if g.Confirmed && (!p3Served(treatment, "turn2") || !strings.Contains(treatment.Outputs, marker(providercert.IntendedID, "turn2"))) {
+		return inconclusive("condition 4: the treatment's confirmation prompt after the cancel was not served and answered through the gateway")
+	}
+	evidence = append(evidence, "4 treatment confirmation prompt (turn2) served and answered through the gateway")
+	// 5. Session, profile snapshot and the confirmation turn's model selection are unchanged.
+	if g.Unchanged {
+		if treatment.SessionBefore == nil || len(treatment.SessionBefore.Profiles) == 0 || !treatment.SessionBefore.same(treatment.SessionAfter) {
+			return inconclusive("condition 5: the treatment's session id or profile snapshot is not shown unchanged across the stimulus")
+		}
+		inBefore, beBefore := p3SelectionsOf(treatment, "turn1", "turn2")
+		inAfter, beAfter := p3SelectionsOf(treatment, "turn2", "")
+		if !inAfter.within(inBefore) || !beAfter.within(beBefore) {
+			return inconclusive(fmt.Sprintf("condition 5: the confirmation turn's model selection (%v, %v) is not within the first turn's (%v, %v)", inAfter, beAfter, inBefore, beBefore))
+		}
+	}
+	evidence = append(evidence, "5 treatment session id, profile snapshot and the confirmation turn's model selection unchanged")
+	return CaseResult{Verdict: VerdictPathAbsentTUIObserved, Reasons: evidence}
+}

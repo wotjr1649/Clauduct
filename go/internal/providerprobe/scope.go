@@ -373,13 +373,9 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	close(work)
 	wg.Wait()
 	p3PMControlUnproven(results)
-	// BE15's disposition holds only when its equivalent gate, the product's managed agent-view
-	// check, refused both of BE17's policies in this same run.
-	gates["BE15"] = results["BE17"].Verdict == providercert.Pass
-	// R04L's disposition holds only when its equivalent gate, R04S's prevention check on stale
-	// late events, passed in this same run.
-	gates["R04L"] = results["R04S"].Verdict == providercert.Pass
-	gates["R04L-TUI"] = results["R04S"].Verdict == providercert.Pass
+	for id, passed := range scopeGates(results) {
+		gates[id] = passed
+	}
 	end, _ := providercert.Observe(exe)
 	outcome := Admit(AdmissionInput{Scope: o.Scope, Results: results, IdentityChanged: end != start, NativeSHA256: start.SHA256,
 		Platform: runtime.GOOS, GatesPassed: gates, Required: o.Required})
@@ -506,4 +502,17 @@ func staleEvents(t TB) (CaseResult, any) {
 			Report     p3StaleReport
 			DurationMs int64
 		}{"R04S", report, time.Since(began).Milliseconds()}
+}
+
+// scopeGates are the equivalent gates a run showed working, by the case whose disposition needs
+// them (admission r3 dispositions): BE15's holds only when the product's managed agent-view
+// check refused both of BE17's policies in this same run, and R04L's (and R04L-TUI's) only when
+// R04S's prevention check on stale late events passed in this same run.
+func scopeGates(results map[string]CaseResult) map[string]bool {
+	r04s := results["R04S"].Verdict == providercert.Pass
+	return map[string]bool{
+		"BE15":     results["BE17"].Verdict == providercert.Pass,
+		"R04L":     r04s,
+		"R04L-TUI": r04s,
+	}
 }

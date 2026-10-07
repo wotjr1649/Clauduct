@@ -49,6 +49,9 @@ type scopeCase struct {
 	variants []string
 	// noControl is a case the contract runs without a paired control (BE09, BE10, BE17).
 	noControl bool
+	// synthetic is a case that runs no native at all (R04S): it returns its result and the
+	// evidence to write.
+	synthetic func(t TB) (CaseResult, any)
 }
 
 // caseRegistry is every case this runner implements, by contract ID.
@@ -70,6 +73,16 @@ func caseRegistry() map[string]func() scopeCase {
 	for id, f := range tuiCases() {
 		reg[id] = f
 	}
+	for _, c := range p3PrintFamily() {
+		if c.ID == "R04L" {
+			// The control for R04L's child: the same case with a child that breaks away from
+			// the hook's job. A diagnostic; no contract scope lists it.
+			c := c
+			c.ID, c.HookFaults = "R04L-ESC", map[string]string{"UserPromptSubmit": p3HookChildEscape}
+			reg[c.ID] = func() scopeCase { return scopeCase{c: c} }
+		}
+	}
+	reg["R04S"] = func() scopeCase { return scopeCase{c: p3Case{ID: "R04S"}, synthetic: staleEvents} }
 	be17 := reg["BE17"]
 	reg["BE17"] = func() scopeCase { sc := be17(); sc.variants = []string{"BE17-setting"}; return sc }
 	return reg
@@ -260,6 +273,11 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		}
 		sc := build()
 		sc.c.Optional = slices.Contains(optional, id)
+		if sc.synthetic != nil {
+			r, evidence := sc.synthetic(t)
+			write(id+"-treatment", evidence)
+			return r
+		}
 		control := &p3Observed{}
 		if !sc.noControl {
 			control = runner.run(t, sc.c, p3Unprotected)
@@ -288,10 +306,19 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		}
 		observation := p3Observation(sc.c, treatment, control)
 		result := providercert.Judge(observation)
+		late := p3LateHookOf(sc.c.HookFaults, treatment)
 		if result.Verdict == providercert.Inconclusive && slices.Contains(result.Reasons, providercert.ReasonVariantNotExercised) {
 			// The case's own condition did not happen (R04L's late hook): its disposition reads
 			// this verdict, never PASS (admission r2 caseFixtureDisposition).
 			result.Verdict = VerdictVariantNotExercised
+			if late != nil && late.Outcome == p3LateInconclusive {
+				// The child's fate or the late event is unproven, which is not the same as the
+				// condition not having happened.
+				result.Verdict = providercert.Inconclusive
+			}
+			if late != nil && late.Reason != "" {
+				result.Reasons = append(slices.DeleteFunc(slices.Clone(result.Reasons), func(r string) bool { return r == providercert.ReasonVariantNotExercised && late.Outcome == p3LateInconclusive }), late.Reason)
+			}
 		}
 		if result.Verdict == providercert.Pass && sc.function != nil {
 			verdict, reason := sc.function(control, treatment)
@@ -330,6 +357,14 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	}
 	for _, id := range ids {
 		if o.Only == nil || slices.Contains(o.Only, id) {
+			work <- id
+		}
+	}
+	// A diagnostic run may name a case this runner implements and the contract does not list
+	// yet (R04S before the contract names it); it is judged and written like the others, and
+	// belongs to no entry.
+	for _, id := range o.Only {
+		if _, known := registry[id]; known && !slices.Contains(ids, id) {
 			work <- id
 		}
 	}
@@ -453,4 +488,16 @@ func p3RoutingChecked(c p3Case, control, treatment *p3Observed, r CaseResult) Ca
 		return CaseResult{Verdict: providercert.FailRouting, Reasons: routing.Reasons, CLIBackgroundEntry: r.CLIBackgroundEntry}
 	}
 	return r
+}
+
+// staleEvents is R04S: a late hook event or confirmation, produced against the product gateway.
+func staleEvents(t TB) (CaseResult, any) {
+	began := time.Now()
+	report := p3Stale(t, productStaleMaker)
+	return CaseResult{Verdict: report.Verdict, Reasons: report.Reasons, Purpose: providercert.PurposeSafety},
+		struct {
+			CaseID     string
+			Report     p3StaleReport
+			DurationMs int64
+		}{"R04S", report, time.Since(began).Milliseconds()}
 }

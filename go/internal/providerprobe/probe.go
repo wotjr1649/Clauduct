@@ -656,6 +656,8 @@ func (w *p3World) applyConfiguration(spec launch.Spec, configuration, hooks stri
 							h["command"], h["timeout"] = "ping -n 6 127.0.0.1", 1
 						case p3HookDelayed:
 							h["command"], h["timeout"] = wrap("delay", command), 1
+						case p3HookChild, p3HookChildEscape:
+							h["command"], h["timeout"] = wrap(fault, command), int(p3HookTimeout/time.Second)
 						default:
 							if w.observeHooks {
 								command = wrap("observe", command)
@@ -791,8 +793,10 @@ type p3Observed struct {
 	Steps []p3StepState
 	// HookFailures are native's transcript records of failed command hooks.
 	HookFailures []p3HookFailure
-	// Wrapped are the hook wrappers' records (observation and delay modes).
+	// Wrapped are the hook wrappers' records (observation, delay and child modes).
 	Wrapped []p3WrapperRecord
+	// HookProcs is the post-case census of the child mode's wrapper and child processes.
+	HookProcs p3HookProcs
 	// SentinelChanged is another live session's state changed during the run.
 	SentinelChanged bool
 	// PluginApplied is the case's plugin variant reached the spawned native.
@@ -1503,6 +1507,13 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 	obs.Outputs += transcripts(w.configDir)
 	obs.HookFailures = hookFailures(w.configDir)
 	obs.PluginApplied = w.pluginApplied
+	// The child mode's wrapper and child are found by the pid and creation time they recorded;
+	// a child still running past its own cap is ended, and counted as a cleanup failure.
+	obs.HookProcs = p3ReapHookProcesses(w.sidecar, 10*time.Second)
+	if obs.HookProcs.Killed > 0 {
+		obs.CleanupFailed = true
+		obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("%d hook wrapper processes outlived the case and were ended", obs.HookProcs.Killed))
+	}
 	obs.Wrapped = readWrapped(w.sidecar)
 	if w.sentinel != nil {
 		w.mu.Lock()
@@ -1782,6 +1793,10 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 	switch {
 	case c.HookFaults["UserPromptSubmit"] == p3HookDelayed && !p3LateEvent(treatment):
 		o.VariantUnexercised = true
+	case p3ChildFault(c.HookFaults["UserPromptSubmit"]) && p3LateHookOf(c.HookFaults, treatment).Outcome != p3LateExercised:
+		// The child was not ready, native ended it, or its fate or lateness is unproven: the
+		// case's own condition did not happen (scope.go reads the reason).
+		o.VariantUnexercised = true
 	case c.Plugin == p3PluginForeign && treatment.SentinelConfirmations == 0:
 		o.VariantUnexercised = true
 	}
@@ -1881,7 +1896,7 @@ func p3PrintFamily() []p3Case {
 		{ID: "R03px", Entry: p3Print, Hooks: p3HooksNormal, HookFaults: promptFails(p3HooksMissing), Plugin: p3PluginForged, Setup: storedA, Expect: closed, FailClosedAs: confirmation, Established: anchorA},
 		// A timed-out hook that still posts later changes neither the next turn nor another
 		// live session.
-		{ID: "R04L", Entry: p3Multi, Turns: 3, Hooks: p3HooksNormal, HookFaults: promptFails(p3HookDelayed), DiagnosticEvent: "UserPromptSubmit", Sentinel: true, Setup: storedA, Expect: okDiag, Established: anchorA},
+		{ID: "R04L", Entry: p3Multi, Turns: 3, Hooks: p3HooksNormal, HookFaults: promptFails(p3HookChild), DiagnosticEvent: "UserPromptSubmit", Sentinel: true, Setup: storedA, Expect: okDiag, Established: anchorA},
 		{ID: "R06", Entry: p3Resume, Hooks: p3HooksNormal, Setup: storedA, Expect: ok, Established: anchorA},
 		// --continue of a session with a stored profile is refused with the exact --resume to run
 		// (a kept contract, not --continue working); that --resume restores it; a session with no
@@ -1965,6 +1980,8 @@ type p3Evidence struct {
 	Steps                 []p3StepState                       `json:",omitempty"`
 	PluginApplied         bool                                `json:",omitempty"`
 	Wrapped               []p3WrapperRecord                   `json:",omitempty"`
+	LateHook              *p3LateHook                         `json:",omitempty"`
+	HookProcs             *p3HookProcs                        `json:",omitempty"`
 	SentinelConfirmations int                                 `json:",omitempty"`
 	SentinelChanged       bool                                `json:",omitempty"`
 	SnapshotBefore        bool                                `json:",omitempty"`
@@ -1985,6 +2002,9 @@ func p3EvidenceOf(c p3Case, configuration string, obs *p3Observed, result provid
 		IntendedCalls: len(obs.Calls), IntendedIngress: len(obs.Ingress), ExitCodes: obs.ExitCodes, Identity: obs.Identity}
 	e.ProductCleanup, e.Refusals, e.Labels, e.Steps, e.PluginApplied = obs.ProductCleanup, obs.Refusals, obs.Labels, obs.Steps, obs.PluginApplied
 	e.Wrapped, e.SentinelConfirmations, e.SentinelChanged = obs.Wrapped, obs.SentinelConfirmations, obs.SentinelChanged
+	if e.LateHook = p3LateHookOf(c.HookFaults, obs); e.LateHook != nil {
+		e.HookProcs = &obs.HookProcs
+	}
 	e.SnapshotBefore, e.TranscriptAppended, e.Screen = obs.SnapshotBefore, obs.TranscriptAppended, obs.Screen
 	e.Owners, e.WorkerPID, e.ProbePID, e.Daemon, e.OverlayGaps, e.Natives = obs.Owners, obs.WorkerPID, os.Getpid(), obs.Daemon, obs.OverlayGaps, obs.Natives
 	for _, err := range obs.RunErrors {

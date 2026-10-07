@@ -71,6 +71,9 @@ func p3Role(argv []string) (int, bool) {
 	if len(argv) > 1 && argv[1] == p3HookWrapperArg {
 		return p3HookWrapper(argv[2:]), true
 	}
+	if len(argv) > 1 && argv[1] == p3HookChildArg {
+		return p3HookChildMain(argv[2:]), true
+	}
 	if len(argv) > 1 && argv[1] == p3ForgedHelperArg {
 		// A helper that announces the connection without making one: the gateway never sees
 		// the confirmation, so the request it covers must be refused.
@@ -98,6 +101,17 @@ type p3WrapperRecord struct {
 	// ProofMissing and Mismatch are what the real hook reported (#299 and #295).
 	ProofMissing, Mismatch bool
 	Exit                   int
+	// The child mode's identity records: PID and Created name the process the record is about
+	// (the wrapper on "start", the child on "spawned", "ready", "heartbeat" and "finish";
+	// "spawned" has it from the parent's handle, "ready" from the child itself), PPID is the
+	// child's parent, ChildPID the process the wrapper created, TimeoutMs the hook's timeout.
+	PID, PPID, ChildPID int       `json:",omitempty"`
+	Created             time.Time `json:",omitempty"`
+	TimeoutMs           int       `json:",omitempty"`
+	// Escape is a child created to break away from the hook's job; Failure is why one could
+	// not be created.
+	Escape  bool   `json:",omitempty"`
+	Failure string `json:",omitempty"`
 }
 
 func appendWrapped(sidecar string, r p3WrapperRecord) {
@@ -126,7 +140,8 @@ func readWrapped(sidecar string) []p3WrapperRecord {
 }
 
 // p3HookWrapper is the probe's command-hook wrapper: args are the mode, the sidecar path and
-// the real hook's argv. "delay" starts the real hook only after p3HookDelay. "observe" records
+// the real hook's argv. "delay" starts the real hook only after p3HookDelay. "child" creates a
+// probe-owned child that is ready before the timeout and runs the real hook late (probe_child.go). "observe" records
 // whether native's environment still names the session's gateway, then runs the real hook
 // with Clauduct's routing blocks (#295 and #299) turned into observations: the environment the
 // real hook sees names the session's gateway and the hook runs as provider-controlled. Origin,
@@ -157,6 +172,11 @@ func p3HookWrapper(args []string) int {
 	case "delay":
 		appendWrapped(sidecar, record)
 		time.Sleep(p3HookDelay)
+	case p3HookChild, p3HookChildEscape:
+		if len(real) < 1 {
+			return 2
+		}
+		return p3ChildWrapper(record, sidecar, event, real)
 	case "observe":
 		if len(real) < 3 || real[1] != hookcmd.Arg {
 			return 2
@@ -237,13 +257,13 @@ func p3Applied(obs *p3Observed, turn int) bool {
 func p3LateEvent(obs *p3Observed) bool {
 	started := map[string]time.Time{}
 	for _, r := range obs.Wrapped {
-		if r.Mode == "delay" && r.Phase == "start" {
+		if (r.Mode == "delay" || r.Mode == "child") && r.Phase == "start" {
 			started[r.ID] = r.At
 		}
 	}
 	for _, r := range obs.Wrapped {
 		begin, ok := started[r.ID]
-		if r.Mode != "delay" || r.Phase != "finish" || !ok {
+		if (r.Mode != "delay" && r.Mode != "child") || r.Phase != "finish" || !ok {
 			continue
 		}
 		for k := 1; k < len(obs.Turns); k++ {

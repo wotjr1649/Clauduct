@@ -312,6 +312,13 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	// A registration for a session this process has already left, other than a resume, is a
+	// late event bound to an earlier state (a slow hook of that session). It is refused and
+	// leaves the current session exactly as it was, readiness included. A resume of a left
+	// session still goes to the restart rule below.
+	if known := p.profiles[session]; known != nil && p.current != "" && p.current != session && source != "resume" {
+		return ErrSessionProfile
+	}
 	defer func() { p.ready = err == nil }()
 	if !sessionUUID.MatchString(session) {
 		return ErrSessionProfile

@@ -7,11 +7,13 @@ import (
 )
 
 // Revisions of the frozen routing contract and probe schema this build implements. Raising
-// either invalidates every cached certification. Revision 2 splits P5 into routing liveness
-// (P5-R) and native preservation (P5-F); revision 1 results stay judged under revision 1.
+// either invalidates every cached certification. Revision 2 split P5 into routing liveness
+// (P5-R) and native preservation (P5-F). Revision 3 gives each case its own expected refusals,
+// adds the hook-diagnostic expectation, the SAFETY purpose for same-process state changes and
+// the observed state application. Earlier results stay judged under their own revision.
 const (
-	RoutingContractRevision = 2
-	ProbeSchemaRevision     = 2
+	RoutingContractRevision = 3
+	ProbeSchemaRevision     = 3
 )
 
 // Case outcomes.
@@ -19,8 +21,21 @@ const (
 	Pass           = "PASS"
 	FailRouting    = "FAIL_ROUTING"
 	FailFunction   = "FAIL_FUNCTION"
+	FailSafety     = "FAIL_SAFETY"
 	Inconclusive   = "INCONCLUSIVE"
 	NotExercisable = "NOT_EXERCISABLE"
+	// SafetyPass is a SAFETY-purpose case that met its requirements. It shows the state change
+	// was applied and the session stayed correct, not that the strategy suppressed a threat.
+	SafetyPass = "SAFETY_PASS"
+)
+
+// Case purposes.
+const (
+	// PurposeSuppression compares a treatment with a control that reproduced the threat.
+	PurposeSuppression = ""
+	// PurposeSafety checks that a state change is applied and the session stays correct; it
+	// claims nothing about suppression, so its control is documentation only.
+	PurposeSafety = "SAFETY"
 )
 
 // Strategy outcomes.
@@ -31,13 +46,16 @@ const (
 
 // What a turn's native preservation check (P5-F) expects.
 const (
-	ExpectSuccess    = "SUCCESS"
-	ExpectFailClosed = "EXPECTED_FAIL_CLOSED"
-	ExpectStimulus   = "STIMULUS"
+	ExpectSuccess = "SUCCESS"
+	// ExpectSuccessHookDiagnostic is a turn that completes although a command hook failed, and
+	// native recorded that hook's failure.
+	ExpectSuccessHookDiagnostic = "SUCCESS_WITH_HOOK_DIAGNOSTIC"
+	ExpectFailClosed            = "EXPECTED_FAIL_CLOSED"
+	ExpectStimulus              = "STIMULUS"
 )
 
-// ExpectedRefusals are the product security policy refusals a degraded-hook turn is expected
-// to end with, after INTENDED received and read its request.
+// ExpectedRefusals are the refusals a fail-closed turn is held to when its case names none
+// (revision 2's degraded-hook expectation).
 var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONFIRMATION_UNVERIFIED"}
 
 // Reasons.
@@ -70,6 +88,11 @@ const (
 	ReasonPreservationFailed    = "NATIVE_PRESERVATION_FAILED"
 	ReasonFailClosedNotObserved = "FAIL_CLOSED_NOT_OBSERVED"
 	ReasonUnknownExpectation    = "UNKNOWN_EXPECTATION"
+	ReasonHookDiagnosticMissing = "HOOK_DIAGNOSTIC_MISSING"
+	ReasonStateNotApplied       = "STATE_NOT_APPLIED"
+	ReasonApplicationUnobserved = "STATE_APPLICATION_UNOBSERVED"
+	ReasonForeignSessionChanged = "FOREIGN_SESSION_STATE_CHANGED"
+	ReasonVariantNotExercised   = "VARIANT_NOT_EXERCISED"
 )
 
 // Wrong is what one wrong loopback destination saw.
@@ -79,9 +102,14 @@ type Wrong struct {
 
 // Turn is one prompt of a case, as the runner observed it.
 type Turn struct {
-	// Expect is what P5-F requires of this turn: ExpectSuccess, ExpectFailClosed or
-	// ExpectStimulus.
+	// Expect is what P5-F requires of this turn: ExpectSuccess, ExpectSuccessHookDiagnostic,
+	// ExpectFailClosed or ExpectStimulus.
 	Expect string
+	// FailClosedAs are the refusal categories an ExpectFailClosed turn must end with; empty
+	// means ExpectedRefusals.
+	FailClosedAs []string
+	// HookDiagnostic is native's record of the failed command hook in this turn.
+	HookDiagnostic bool
 	// IntendedCanary counts requests at INTENDED's ingress, authenticated with the session token,
 	// whose body carried this turn's canary (P4).
 	IntendedCanary int
@@ -134,6 +162,17 @@ type Observation struct {
 	// case's canary, is a violation, and contact without it cannot be attributed.
 	CanaryAttribution   bool
 	StoredGatewayCanary int
+	// Purpose is PurposeSuppression or PurposeSafety.
+	Purpose string
+	// StateNotApplied is a stateful case whose synthetic state did not read back as intended
+	// after a step; ApplicationUnobserved one whose native was not seen to apply it before the
+	// next turn although the case requires that observation.
+	StateNotApplied, ApplicationUnobserved bool
+	// ForeignSessionChanged is another live session's gateway state changed during the case.
+	ForeignSessionChanged bool
+	// VariantUnexercised is a case whose own condition did not happen (a late hook event that
+	// never arrived, a foreign link never used), so its result shows nothing about it.
+	VariantUnexercised bool
 	// ForeignCanary counts requests carrying this case's canary at any probe receiver other
 	// than INTENDED, including one no byte rule covers (STANDALONE_STORED_GATEWAY_C).
 	ForeignCanary       int
@@ -208,6 +247,10 @@ func Judge(o Observation) Result {
 		r.Verdict = FailRouting
 		return r
 	}
+	if o.ForeignSessionChanged {
+		r.Verdict, r.Reasons = FailSafety, []string{ReasonForeignSessionChanged}
+		return r
+	}
 
 	h := o.Harness
 	for _, f := range []struct {
@@ -220,8 +263,17 @@ func Judge(o Observation) Result {
 			add(f.reason)
 		}
 	}
-	if o.Control.Fault {
+	if o.Control.Fault && o.Purpose != PurposeSafety {
 		add(ReasonControlUnproven)
+	}
+	if o.StateNotApplied {
+		add(ReasonStateNotApplied)
+	}
+	if o.ApplicationUnobserved {
+		add(ReasonApplicationUnobserved)
+	}
+	if o.VariantUnexercised {
+		add(ReasonVariantNotExercised)
 	}
 	if o.CanaryAttribution && storedContact {
 		add(ReasonUnattributedContact)
@@ -256,7 +308,7 @@ func Judge(o Observation) Result {
 		}
 	}
 	for _, t := range o.Turns {
-		if !slices.Contains([]string{ExpectSuccess, ExpectFailClosed, ExpectStimulus}, t.Expect) {
+		if !slices.Contains([]string{ExpectSuccess, ExpectSuccessHookDiagnostic, ExpectFailClosed, ExpectStimulus}, t.Expect) {
 			add(ReasonUnknownExpectation)
 			break
 		}
@@ -265,6 +317,21 @@ func Judge(o Observation) Result {
 		r.Reasons = append([]string{ReasonNativeError}, r.Reasons...)
 	}
 	function := preservation(o.Turns)
+	if o.Purpose == PurposeSafety {
+		// The control documents whether the threat appeared; a safety case is not judged on it,
+		// and P8 compares against it, so neither is read.
+		if len(r.Reasons) > 0 {
+			r.Reasons = append(r.Reasons, function...)
+			r.Verdict = Inconclusive
+			return r
+		}
+		if len(function) > 0 {
+			r.Verdict, r.Reasons = FailFunction, function
+			return r
+		}
+		r.Verdict = SafetyPass
+		return r
+	}
 	if !o.Control.Established {
 		// NOT_EXERCISABLE only for a treatment that is clean on its own, routing and native
 		// preservation both; P8 needs the control and is not read. An anchor without a control
@@ -308,14 +375,21 @@ func preservation(turns []Turn) []string {
 	}
 	for _, t := range turns {
 		switch t.Expect {
-		case ExpectSuccess:
+		case ExpectSuccess, ExpectSuccessHookDiagnostic:
 			if !slices.Contains(t.Markers, IntendedID) {
 				note(ReasonPreservationFailed)
 			}
+			if t.Expect == ExpectSuccessHookDiagnostic && !t.HookDiagnostic {
+				note(ReasonHookDiagnosticMissing)
+			}
 		case ExpectFailClosed:
+			allowed := t.FailClosedAs
+			if len(allowed) == 0 {
+				allowed = ExpectedRefusals
+			}
 			refused := len(t.Refusals) > 0
 			for _, category := range t.Refusals {
-				refused = refused && slices.Contains(ExpectedRefusals, category)
+				refused = refused && slices.Contains(allowed, category)
 			}
 			if !refused || t.IntendedServed || slices.Contains(t.Markers, IntendedID) {
 				note(ReasonFailClosedNotObserved)
@@ -335,12 +409,18 @@ type Strategy struct {
 	// PreservationFailures lists the cases that routed correctly but failed P5-F, which is a
 	// product or surface defect to report.
 	PreservationFailures []string `json:"preservationFailures,omitempty"`
+	// SafetyCases lists the SAFETY-purpose cases that passed: evidence about state changes,
+	// not about suppression.
+	SafetyCases []string `json:"safetyCases,omitempty"`
+	// SafetyFailures lists the cases that changed another live session's state.
+	SafetyFailures []string `json:"safetyFailures,omitempty"`
 }
 
 // Decide applies the contract's strategyVerdict to the results of one certification run.
-// matrix is the exact list of case IDs the run had to produce and optional the subset that may
-// be NOT_EXERCISABLE (every case that is not an anchor).
-func Decide(matrix, optional []string, results []Result) Strategy {
+// matrix is the exact list of case IDs the run had to produce, optional the subset that may
+// be NOT_EXERCISABLE (every case that is not an anchor) and safety the SAFETY-purpose subset,
+// whose only passing verdict is SAFETY_PASS.
+func Decide(matrix, optional, safety []string, results []Result) Strategy {
 	s := Strategy{Cases: results}
 	for _, r := range results {
 		if r.IdentityChanged {
@@ -362,8 +442,22 @@ func Decide(matrix, optional []string, results []Result) Strategy {
 		return s
 	}
 	for _, r := range results {
+		isSafety := slices.Contains(safety, r.CaseID)
 		switch r.Verdict {
 		case Pass:
+			if isSafety {
+				s.Verdict = Inconclusive
+				s.Reasons = append(s.Reasons, r.CaseID+":"+r.Verdict)
+			}
+		case SafetyPass:
+			if !isSafety {
+				s.Verdict = Inconclusive
+				s.Reasons = append(s.Reasons, r.CaseID+":"+r.Verdict)
+				continue
+			}
+			s.SafetyCases = append(s.SafetyCases, r.CaseID)
+		case FailSafety:
+			s.SafetyFailures = append(s.SafetyFailures, r.CaseID)
 		case NotExercisable:
 			if !slices.Contains(optional, r.CaseID) {
 				s.Verdict = Inconclusive
@@ -379,6 +473,10 @@ func Decide(matrix, optional []string, results []Result) Strategy {
 		}
 	}
 	if s.Verdict == Inconclusive {
+		return s
+	}
+	if len(s.SafetyFailures) > 0 {
+		s.Verdict, s.Reasons = Inconclusive, []string{ReasonForeignSessionChanged}
 		return s
 	}
 	if len(s.PreservationFailures) > 0 {

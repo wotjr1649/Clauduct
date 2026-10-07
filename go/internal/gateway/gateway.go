@@ -11,6 +11,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -331,6 +332,29 @@ func (g *Gateway) observeIngress(w http.ResponseWriter, r *http.Request, body []
 	}
 }
 
+// observeIngressEarly gives an ingress observer an authenticated model request's body before
+// any check that may refuse it unread (a session boundary, for one), so a refusal can still be
+// matched to the request it refused. The handler then reads the same bytes followed by the
+// rest of the stream, under its own limit. Without an observer nothing is read here.
+func (g *Gateway) observeIngressEarly(w http.ResponseWriter, r *http.Request) *http.Request {
+	fn := g.ingress.Load()
+	if fn == nil || *fn == nil || r.Method != http.MethodPost || (r.URL.Path != "/v1/messages" && r.URL.Path != "/v1/messages/count_tokens") {
+		return r
+	}
+	// A read that fails here fails again for the handler, after the same bytes: the body's
+	// error is returned to every later read.
+	head, _ := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes+1))
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(head), r.Body), r.Body}
+	if t, ok := w.(*tracked); ok {
+		t.body = r.Body
+	}
+	g.observeIngress(w, r, head)
+	return r
+}
+
 // RoutingMismatch reports whether a hook of this session found native configured for an
 // endpoint other than this gateway. The launcher ends the session on it (#295).
 func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
@@ -574,6 +598,7 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	// After the credential: the version is taken once and printed on every exit line, so
 	// only the child this session started may name it.
 	g.noteClient(r.Header.Get("User-Agent"))
+	r = g.observeIngressEarly(w, r)
 
 	if r.URL.Path == "/v1/messages" {
 		g.handleMessages(w, r)

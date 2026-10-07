@@ -122,7 +122,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	g.observeIngress(w, r, body)
 
 	request, err := anthropic.DecodeRequest(body, anthropic.Options{
 		ToolChanges: negotiated(r, betaToolChanges),

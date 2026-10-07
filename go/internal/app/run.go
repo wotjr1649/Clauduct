@@ -19,6 +19,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
@@ -105,6 +106,11 @@ type Options struct {
 	ManagedPolicy func() ([]policyDocument, error)
 	// BackgroundReady transfers an explicit --bg session to its resident owner.
 	BackgroundReady func(BackgroundSession) error
+	// ProviderStrategy is how native is held to this session's gateway (#320); empty is the
+	// launch without one. An unknown name is refused.
+	ProviderStrategy string
+	// backgroundUnderStrategy lets a probe run the unverified background path under a strategy.
+	backgroundUnderStrategy bool
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
 	interrupts chan os.Signal
 }
@@ -185,6 +191,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err := nativeDesktop(o.Args); err != nil {
 		return Result{}, err
 	}
+	providerFlag, err := strategyFlag(o.ProviderStrategy)
+	if err != nil {
+		return Result{}, err
+	}
+	if providerFlag != "" && BackgroundRequested(o.Args) && !o.backgroundUnderStrategy {
+		return Result{}, ErrBackgroundUnverified
+	}
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome
 	information := nativeInformation(o.Args)
@@ -231,6 +244,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	forward, userSettings, settingsSlots, err := config.takeUserSettings(o.Args, o.Cwd)
 	if err != nil {
 		return Result{}, err
+	}
+	if providerFlag != "" {
+		// The strategy's background restriction is this launch's, as its routing is: a
+		// settings env that turns agent view back on would reopen native's supervisor path.
+		if err := userKeepsAgentViewOff(userSettings); err != nil {
+			return Result{}, err
+		}
 	}
 	forward, resumeID := prepareSessionArgs(forward)
 	o.Args = forward
@@ -391,6 +411,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			for name, value := range config.sessionRequirements() {
 				env[name] = value
 			}
+			if providerFlag != "" {
+				env[providerFlag] = "1"
+				env[agentViewOff] = "1"
+			}
 			// The hooks and the confirmation helper read this session's connection from its
 			// link, held until native and its hooks are done: the deferred close runs after
 			// the native process tree has ended.
@@ -400,7 +424,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 					err = errors.New("SESSION_LINK_UNAVAILABLE: the session's hook connection could not be prepared")
 				} else {
 					defer foreground.Close()
-					settings, err = foregroundSettings(settings, foreground.ID, env)
+					link := foreground.ID
+					if o.ProviderStrategy == StrategyHostManaged {
+						// The hook may then rely on native's provider control (hookcmd).
+						link += " " + hookcmd.ProviderControlledArg
+					}
+					settings, err = foregroundSettings(settings, link, env)
 				}
 			} else {
 				settings, err = foregroundSettings(settings, "", env)
@@ -418,7 +447,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			background, err = sessionlink.Start(context.Background(), sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()})
 			if err == nil {
 				defer background.Close()
-				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env)
+				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env, providerFlag)
 			}
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
@@ -571,10 +600,26 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return result, ErrInterrupted
 	default:
 	}
+	spec.Env = withProcessFlag(spec.Env, providerFlag)
+	if providerFlag != "" && background == nil {
+		spec.Env = withProcessFlag(spec.Env, agentViewOff)
+	}
 	var dispatchOutput backgroundOutput
 	stdout, stderr := o.Stdout, o.Stderr
 	if background != nil {
 		stdout, stderr = &dispatchOutput, &dispatchOutput
+	}
+	if background != nil && providerFlag != "" {
+		// Under a strategy the supervisor is this launch's own, started with its provider
+		// environment before the dispatch looks for one.
+		supervisor, err := startSupervisor(o.StartProcess, exe, o.Cwd, configDir, spec.Env, 15*time.Second)
+		if err != nil {
+			result.NativeExitCode = ExitCodeUnknown
+			result.Category = CategoryStartFailed
+			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+			return result, err
+		}
+		defer func() { supervisor.Stop(); supervisor.Wait() }()
 	}
 	process, startErr := o.StartProcess(spec, o.Stdin, stdout, stderr)
 	if startErr != nil {
@@ -601,8 +646,15 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if background != nil {
 		backgroundCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		process = &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
+		bp := &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
 			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr}
+		if providerFlag != "" {
+			// Native's control commands read the provider settings too: without them a stored
+			// login decides where they connect (#320 R08). They get the launch's own process
+			// environment and start where every native process of this launch starts.
+			bp.env, bp.start = spec.Env, o.StartProcess
+		}
+		process = bp
 	}
 
 	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))

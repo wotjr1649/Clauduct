@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
 
@@ -34,7 +35,7 @@ func BackgroundRequested(args []string) bool {
 	return slices.Contains(args, "--bg") || slices.Contains(args, "--background")
 }
 
-func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string) (string, error) {
+func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string, strategyFlag string) (string, error) {
 	var s childSettings
 	if json.Unmarshal([]byte(settings), &s) != nil || hook == "" {
 		return "", errSettingsConflict
@@ -67,6 +68,9 @@ func (config ClauductSettings) backgroundSettings(settings, hook, id, base strin
 	env["ANTHROPIC_BASE_URL"] = base
 	env["ANTHROPIC_AUTH_TOKEN"], env["ANTHROPIC_API_KEY"], env["ANTHROPIC_CUSTOM_HEADERS"], env["CLAUDE_CODE_OAUTH_TOKEN"] = "", "", "", ""
 	env["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = "1"
+	if strategyFlag != "" {
+		env[strategyFlag] = "1"
+	}
 	s.Env = env
 	s.APIKeyHelper = `"` + filepath.ToSlash(hook) + `" --clauduct-background-key ` + id
 	b, err := json.Marshal(s)
@@ -104,6 +108,8 @@ type backgroundProcess struct {
 	ready            func(BackgroundSession) error
 	stdout           io.Writer
 	stderr           io.Writer
+	// start, when set, starts native's control commands as the launch starts native.
+	start func(launch.Spec, io.Reader, io.Writer, io.Writer) (Process, error)
 }
 
 func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
@@ -122,6 +128,25 @@ func (p *backgroundProcess) Wait() error {
 	stopNative := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
+		if p.start != nil {
+			process, err := p.start(launch.Spec{File: p.exe, Args: []string{"stop", id}, Dir: p.cwd, Env: p.env}, nil, nil, nil)
+			if err != nil {
+				return errors.New("BACKGROUND_NATIVE_STOP_FAILED")
+			}
+			done := make(chan error, 1)
+			go func() { done <- process.Wait() }()
+			select {
+			case err = <-done:
+			case <-ctx.Done():
+				process.Stop()
+				<-done
+				err = ctx.Err()
+			}
+			if err != nil {
+				return errors.New("BACKGROUND_NATIVE_STOP_FAILED")
+			}
+			return nil
+		}
 		cmd := exec.Command(p.exe, "stop", id)
 		cmd.Dir, cmd.Env = p.cwd, p.env
 		if childprocess.Run(ctx, cmd) != nil {

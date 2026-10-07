@@ -126,6 +126,22 @@ func (c Canary) patterns() [][]byte {
 // maxScannedBody bounds how much of one request body is read looking for a canary.
 const maxScannedBody = 64 << 20
 
+// maxKeptBody bounds the part of a body kept for a receiver's responder.
+const maxKeptBody = 4 << 20
+
+// limitedWriter keeps at most n bytes and reports every write as complete.
+type limitedWriter struct {
+	b *bytes.Buffer
+	n int
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if room := w.n - w.b.Len(); room > 0 {
+		w.b.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
 // errUndecodable marks a body whose encoding the probe cannot undo.
 var errUndecodable = errors.New("UNDECODABLE_EGRESS")
 
@@ -318,14 +334,17 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 		o.webSocket(w, r, o.record(seen))
 		return
 	}
+	// The decoded body's first part is kept for the responder, which reads r.Body after the scan.
+	var kept bytes.Buffer
 	if body, err := decoded(r.Header, r.Body); err != nil {
 		seen.Undecodable = true
 		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxScannedBody))
-	} else if ids, err := scan(body, o.canaries()); err != nil {
+	} else if ids, err := scan(io.TeeReader(body, &limitedWriter{&kept, maxKeptBody}), o.canaries()); err != nil {
 		seen.Undecodable = true
 	} else {
 		seen.Canaries = ids
 	}
+	r.Body = io.NopCloser(bytes.NewReader(kept.Bytes()))
 	o.record(seen)
 	if o.Respond != nil {
 		o.Respond(w, r, seen)

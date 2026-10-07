@@ -18,10 +18,11 @@ import (
 )
 
 // Native 2.1.276 invokes exactly -v, or -jpeg -r 100 [-f N] [-l N]
-// file output-prefix. This is a bounded compatibility subset, not Poppler.
+// file output-prefix; 2.1.292 may name the input "-" and write the document to
+// stdin instead. This is a bounded compatibility subset, not Poppler.
 // Native Read still owns file permission checks. Output is exclusive and must
 // remain inside its temporary directory; no shell or arbitrary options execute.
-func nativePDF(args []string, out, errOut io.Writer) int {
+func nativePDF(args []string, in io.Reader, out, errOut io.Writer) int {
 	if len(args) == 1 && args[0] == "-v" {
 		fmt.Fprintln(out, "Clauduct Windows PDF renderer 1")
 		return 0
@@ -55,7 +56,8 @@ func nativePDF(args []string, out, errOut io.Writer) int {
 		}
 		values = values[2:]
 	}
-	if len(values) != 2 || !filepath.IsAbs(values[0]) || !filepath.IsAbs(values[1]) || dpi < 36 || dpi > 300 {
+	fromStdin := len(values) == 2 && values[0] == "-"
+	if len(values) != 2 || !fromStdin && !filepath.IsAbs(values[0]) || !filepath.IsAbs(values[1]) || dpi < 36 || dpi > 300 {
 		fmt.Fprintln(errOut, "Command Line Error: invalid renderer request")
 		return 2
 	}
@@ -85,18 +87,22 @@ func nativePDF(args []string, out, errOut io.Writer) int {
 		return 1
 	}
 	defer root.Close()
-	input, err := os.Open(values[0])
-	if err != nil {
-		fmt.Fprintln(errOut, "PDF_INPUT_UNAVAILABLE")
-		return 1
+	source := in
+	if !fromStdin {
+		input, err := os.Open(values[0])
+		if err != nil {
+			fmt.Fprintln(errOut, "PDF_INPUT_UNAVAILABLE")
+			return 1
+		}
+		defer input.Close()
+		stat, err := input.Stat()
+		if err != nil || !stat.Mode().IsRegular() || stat.Size() > pdf.MaxBytes {
+			fmt.Fprintln(errOut, "PDF_INPUT_LIMIT")
+			return 1
+		}
+		source = input
 	}
-	defer input.Close()
-	stat, err := input.Stat()
-	if err != nil || !stat.Mode().IsRegular() || stat.Size() > pdf.MaxBytes {
-		fmt.Fprintln(errOut, "PDF_INPUT_LIMIT")
-		return 1
-	}
-	data, err := io.ReadAll(io.LimitReader(input, pdf.MaxBytes+1))
+	data, err := io.ReadAll(io.LimitReader(source, pdf.MaxBytes+1))
 	if err != nil || len(data) > pdf.MaxBytes {
 		fmt.Fprintln(errOut, "PDF_INPUT_LIMIT")
 		return 1

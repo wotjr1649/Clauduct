@@ -102,7 +102,7 @@ func Dispatch(argv []string) (int, bool) {
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
-		return nativePDF(args, os.Stdout, os.Stderr), true
+		return nativePDF(args, os.Stdin, os.Stdout, os.Stderr), true
 	case Named(argv[0], "clauduct-hook"):
 		// The copy a 0.3.x updater installs, which a session started before the update still
 		// names, with that version's renderer argument.

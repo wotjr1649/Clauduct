@@ -158,3 +158,9 @@ func parentOf(pid uint32) uint32 {
 	}
 	return 0
 }
+
+// CommandWord is the first-argument class of a running process (see ConnOwner.Command).
+func CommandWord(pid uint32) string {
+	_, _, word := processFacts(pid)
+	return word
+}

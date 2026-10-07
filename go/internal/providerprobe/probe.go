@@ -74,6 +74,9 @@ type p3Case struct {
 	// TUIStimulus are inputs typed after the TUI's first reply, each its own driver step, then
 	// a confirmation prompt (turn2) 8 seconds later (admission r2 TUI background-entry checks).
 	TUIStimulus [][]string
+	// TUIRefreshApproval approves the managed-settings dialog a mid-session policy refresh
+	// raises before the second prompt (RP01-TUI).
+	TUIRefreshApproval bool
 	// TUIApproval answers a permission dialog after the first prompt (PM02T): these keys are
 	// sent once the dialog is on screen.
 	TUIApproval []string
@@ -1225,7 +1228,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 					ready[k-1] = filepath.Join(filepath.Dir(steps), fmt.Sprintf("ready-%d", k))
 				}
 			}
-			raw, _ := json.Marshal(p3TUIStepsN(prompts, ready, wait, c.TUIApproval))
+			raw, _ := json.Marshal(p3TUIStepsN(prompts, ready, wait, c.TUIApproval, c.TUIRefreshApproval))
 			if err := os.WriteFile(steps, raw, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -1257,7 +1260,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				defer func() { <-stepsDone }()
 			}
 		} else if c.TUIApproval != nil {
-			raw, _ := json.Marshal(p3TUIStepsN([]string{prompt(obs.Turns[i].Canary)}, nil, 0, c.TUIApproval))
+			raw, _ := json.Marshal(p3TUIStepsN([]string{prompt(obs.Turns[i].Canary)}, nil, 0, c.TUIApproval, false))
 			if err := os.WriteFile(steps, raw, 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -1288,7 +1291,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		}
 		for k, x := range extra {
 			end(x)
-			if sent, ok := markAt(marks, p3TUIPromptNStep(k+2, c.TUIApproval != nil)); ok {
+			if sent, ok := markAt(marks, p3TUIPromptNStep(k+2, c.TUIApproval != nil, c.TUIRefreshApproval)); ok {
 				obs.Turns[x].Start = sent
 			} else {
 				obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("TUI prompt %d was never typed", k+2))

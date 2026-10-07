@@ -58,7 +58,7 @@ func p3RP01Case(scope string) (p3Case, *p3RemotePolicy) {
 	}
 	switch scope {
 	case app.ScopeTUI:
-		c.Entry, c.Turns, c.Steps = p3TUI, 2, nil
+		c.Entry, c.Turns, c.Steps, c.TUIRefreshApproval = p3TUI, 2, nil, true
 		c.Setup = whenTurn1Seen(c.Setup)
 	case app.ScopePrintSingle:
 		// One -p turn that outlasts the wait: a scripted Bash sleep loop, served by INTENDED

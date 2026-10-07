@@ -460,7 +460,7 @@ func intValue(value json.RawMessage, into *int) error {
 
 // Content events validate every field even when execution waits for completion.
 func contentEventFields(raw []byte, kind, payload string) (map[string]json.RawMessage, error) {
-	allowed := []string{"type", "item_id", "output_index", "sequence_number", payload}
+	allowed := []string{"type", "item_id", "output_index", "sequence_number", payload, "safety_buffering"}
 	if kind == FuncArgsDelta || kind == TextDelta {
 		allowed = append(allowed, "obfuscation")
 	}
@@ -489,6 +489,9 @@ func contentEventFields(raw []byte, kind, payload string) (map[string]json.RawMe
 			return nil, ErrEventShape
 		}
 	}
+	if !safetyBufferingOff(fields) {
+		return nil, ErrEventShape
+	}
 	for _, key := range []string{"logprobs", "annotations"} {
 		if value, present := fields[key]; present {
 			if key == "logprobs" && string(value) == "null" {
@@ -501,4 +504,15 @@ func contentEventFields(raw []byte, kind, payload string) (map[string]json.RawMe
 		}
 	}
 	return fields, nil
+}
+
+// safetyBufferingOff accepts an event's safety_buffering flag only when it is absent or false.
+// The backend began sending it on some content events (measured 2026-10-08 on gpt-6.1-sol: false
+// on every output_text.delta of an affected stream, and on response.created); it is not in the
+// published Responses API reference. With false the event is the ordinary one this decoder
+// reads. Any other value means content held back under a rule this build has no measurement
+// of, so the event is refused rather than read as complete.
+func safetyBufferingOff(fields map[string]json.RawMessage) bool {
+	value, present := fields["safety_buffering"]
+	return !present || string(value) == "false"
 }

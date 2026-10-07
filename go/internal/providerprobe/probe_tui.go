@@ -217,7 +217,7 @@ func p3TUIStimulusSteps(prompt1, prompt2 string, stimulus [][]string) ([]map[str
 // p3TUIStepsN types prompts in one session. Before prompt k+1 the driver waits for a reply on
 // screen and, when ready[k-1] is set, for that file (a state change the probe made); otherwise it
 // waits settle. approval, when set, answers the permission dialog the first prompt raises.
-func p3TUIStepsN(prompts []string, ready []string, settle time.Duration, approval []string) []map[string]any {
+func p3TUIStepsN(prompts []string, ready []string, settle time.Duration, approval []string, refresh bool) []map[string]any {
 	base := p3TUISteps(prompts[0], nil)
 	steps := base[: len(base)-1 : len(base)-1]
 	if approval != nil {
@@ -237,19 +237,36 @@ func p3TUIStepsN(prompts []string, ready []string, settle time.Duration, approva
 			step["wait_file"], step["after_ms"] = ready[k-1], 500
 			step["timeout_s"] = int((settle + 2*time.Minute).Seconds())
 		}
+		if refresh && k == 1 {
+			// RP01: a refreshed policy with security-sensitive env asks for approval in the TUI
+			// (measured 2026-10-08). The driver approves it, as the user it models would; the
+			// next prompt then carries the refreshed settings. A treatment that never fetches
+			// sees no dialog, and the optional wait ends 3 minutes before the planned wait.
+			steps = append(steps,
+				map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{}, "timeout_s": 60},
+				map[string]any{"wait": p3TUIPolicyApproval, "send": []string{"\r"}, "optional": true, "timeout_s": int((settle - 3*time.Minute).Seconds()), "after_ms": 500})
+			delete(step, "wait")
+			step["after_ms"] = (3 * time.Minute).Milliseconds()
+		}
 		steps = append(steps, step)
 	}
 	return append(steps, map[string]any{"wait": p3TUIEnded, "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000})
 }
 
 // p3TUIPromptNStep is the driver step index that types prompt n (n >= 2) in p3TUIStepsN.
-func p3TUIPromptNStep(n int, approval bool) int {
+func p3TUIPromptNStep(n int, approval, refresh bool) int {
 	i := p3TUIPrompt2Step + n - 2
 	if approval {
 		i++
 	}
+	if refresh {
+		i += 2
+	}
 	return i
 }
+
+// p3TUIPolicyApproval is the managed-settings approval dialog's first choice, whitespace removed.
+const p3TUIPolicyApproval = "Yes,Itrustthesesettings"
 
 // p3TUIEnded is the screen a turn ends on: a probe reply, or the API error a fail-closed turn
 // shows. It only tells the driver when to leave; the verdict reads the receivers.

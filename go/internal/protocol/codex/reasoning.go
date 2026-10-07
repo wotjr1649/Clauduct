@@ -28,7 +28,7 @@ func DecodeReasoningEvent(kind string, raw []byte) (ReasoningEvent, error) {
 	default:
 		return out, ErrUnsupportedEvent
 	}
-	allowed := []string{"type", "item_id", "output_index", index, content, "sequence_number"}
+	allowed := []string{"type", "item_id", "output_index", index, content, "sequence_number", "safety_buffering"}
 	if content == "delta" {
 		allowed = append(allowed, "obfuscation")
 	}
@@ -56,6 +56,9 @@ func DecodeReasoningEvent(kind string, raw []byte) (ReasoningEvent, error) {
 		if stringField(fields, "obfuscation", &padding) != nil {
 			return out, ErrEventShape
 		}
+	}
+	if !safetyBufferingOff(fields) {
+		return out, ErrEventShape
 	}
 	if _, present := fields["status"]; present {
 		var status string

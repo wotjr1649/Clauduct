@@ -28,8 +28,11 @@ const ProbeName = "clauduct-probe.exe"
 // Gate refusals. Each ends the launch before native starts; nothing falls back to a launch
 // without the strategy.
 var (
-	ErrProbeUnknown          = errors.New("ROUTING_PROVIDER_UNVERIFIED: PROBE_EXPECTED_UNKNOWN: this build carries no expected clauduct-probe.exe digest")
-	ErrProbeMismatch         = errors.New("ROUTING_PROVIDER_UNVERIFIED: PROBE_EXECUTABLE_MISMATCH: clauduct-probe.exe next to clauduct.exe is not the one this build expects")
+	ErrProbeUnknown  = errors.New("ROUTING_PROVIDER_UNVERIFIED: PROBE_EXPECTED_UNKNOWN: this build carries no expected clauduct-probe.exe digest")
+	ErrProbeMismatch = errors.New("ROUTING_PROVIDER_UNVERIFIED: PROBE_EXECUTABLE_MISMATCH: clauduct-probe.exe next to clauduct.exe is not the one this build expects")
+	// An updater from a release without the probe installs clauduct.exe alone; running the
+	// new clauduct.exe's own update installs the pair.
+	ErrProbeMissing          = errors.New("ROUTING_PROVIDER_UNVERIFIED: PROBE_EXECUTABLE_MISSING: clauduct-probe.exe is not next to clauduct.exe; run clauduct --update (or install.ps1) once to install it. Nothing was started")
 	errAdmissionInconclusive = "ROUTING_PROVIDER_UNVERIFIED: scope %s is %s (%v); nothing was started"
 )
 
@@ -174,6 +177,9 @@ func RunProbe(ctx context.Context, call ProbeCall) error {
 	}
 	path := filepath.Join(filepath.Dir(self), ProbeName)
 	pin, err := providercert.PinFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrProbeMissing
+	}
 	if err != nil {
 		return fmt.Errorf("%w (%v)", ErrProbeMismatch, err)
 	}

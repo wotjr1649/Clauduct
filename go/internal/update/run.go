@@ -107,7 +107,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 		fmt.Fprintln(out, "clauduct: cannot read", SumsAsset+":", err)
 		return 1
 	}
-	for _, name := range Binaries {
+	for _, name := range Wanted(sums) {
 		fmt.Fprintln(out, "  ", name, sums[name])
 	}
 
@@ -128,13 +128,16 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	}
 
 	// The retired copies go too (Apply), so they are named before the question: consent to an
-	// unnamed set is not consent.
+	// unnamed set is not consent. So is a probe of an earlier release that this one does not carry.
+	if _, listed := sums[Probe]; !listed && isFile(filepath.Join(dir, Probe)) {
+		fmt.Fprintln(out, "   remove", Probe, "(this release does not carry one)")
+	}
 	for _, name := range Retired {
 		if isFile(filepath.Join(dir, name)) {
 			fmt.Fprintln(out, "   remove", name, "(a copy from 0.3.x; a session started before this update loses its hook)")
 		}
 	}
-	if !consented && !confirmed(in, out) {
+	if !consented && !confirmed(in, out, Wanted(sums)) {
 		fmt.Fprintln(out, "clauduct: nothing was changed")
 		return 0
 	}
@@ -299,8 +302,8 @@ func digests(ctx context.Context, client *http.Client, release Release) (map[str
 
 // confirmed asks once. Anything that is not a yes is a no, including end of input: an
 // update that proceeds because nobody was there to object is not one anybody approved.
-func confirmed(in io.Reader, out io.Writer) bool {
-	fmt.Fprint(out, "replace "+strings.Join(Binaries, ", ")+"? [y/N] ")
+func confirmed(in io.Reader, out io.Writer, names []string) bool {
+	fmt.Fprint(out, "replace "+strings.Join(names, ", ")+"? [y/N] ")
 	return yes(in, out)
 }
 
@@ -321,7 +324,7 @@ func yes(in io.Reader, out io.Writer) bool {
 // A file that cannot be read is not current: the answer to "is this already what the
 // release says" is no when there is nothing there to compare.
 func current(dir string, sums map[string]string) bool {
-	for _, name := range Binaries {
+	for _, name := range Wanted(sums) {
 		want, ok := sums[name]
 		if !ok {
 			return false

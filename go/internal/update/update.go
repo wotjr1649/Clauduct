@@ -152,12 +152,29 @@ func Sums(raw []byte) map[string]string {
 	return out
 }
 
-// Download fetches every binary and checks it, returning nothing unless all of them pass.
+// Probe is the admission runner clauduct.exe starts from its own directory before every
+// inference launch (#319, #320). It is not in Binaries, because releases before the one that
+// introduced it do not carry it; a release carries it exactly when its SHA256SUMS lists it,
+// and then it is fetched, verified and replaced together with clauduct.exe.
+const Probe = "clauduct-probe.exe"
+
+// Wanted lists the files a release's digests make part of the installation: the Binaries,
+// and the Probe when the release lists one.
+func Wanted(sums map[string]string) []string {
+	names := append([]string{}, Binaries...)
+	if _, ok := sums[Probe]; ok {
+		names = append(names, Probe)
+	}
+	return names
+}
+
+// Download fetches every wanted file and checks it, returning nothing unless all of them pass.
 func Download(ctx context.Context, client *http.Client, release Release,
 	sums map[string]string) (map[string][]byte, error) {
 
-	files := make(map[string][]byte, len(Binaries))
-	for _, name := range Binaries {
+	names := Wanted(sums)
+	files := make(map[string][]byte, len(names))
+	for _, name := range names {
 		asset, ok := release.Asset(name)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrMissingFile, name)
@@ -192,44 +209,76 @@ func Digest(body []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Apply replaces the binary in dir, and puts the old one back if the new one cannot be
-// written.
+// Apply replaces clauduct.exe in dir, together with the Probe when files carries one, and
+// puts everything back if any of it cannot be written.
 //
 // A running executable cannot be overwritten on Windows but it can be renamed, which is
-// what makes this possible at all: the old file is moved aside, the new one is written in
+// what makes this possible at all: each old file is moved aside, the new one is written in
 // its place, and the process doing this keeps running from the file it renamed.
 //
-// One binary since v0.4.0 (#112). A second would need the multi-file restore this carried
-// until then: replacing one and failing on the next must not leave a mixed installation.
+// The two are a pair: a clauduct.exe whose admission runner is the previous release's is
+// refused at every launch, so a failure on either restores both, and a file that did not
+// exist before is removed again. Without a Probe in files, one left by an earlier release is
+// removed once clauduct.exe is replaced, as the retired copies are.
 func Apply(dir string, files map[string][]byte) (leftovers []string, err error) {
-	name := Binaries[0]
-	body, ok := files[name]
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrMissingFile, name)
+	if _, ok := files[Binaries[0]]; !ok {
+		return nil, fmt.Errorf("%w: %s", ErrMissingFile, Binaries[0])
 	}
-	path := filepath.Join(dir, name)
-	backup := path + ".old"
-	os.Remove(backup)
-	if err := os.Rename(path, backup); err != nil {
-		return nil, err
+	type swap struct {
+		path, backup string
+		had          bool
 	}
-	if err := os.WriteFile(path, body, 0o755); err != nil {
-		os.Rename(backup, path)
-		return nil, err
+	var swapped []swap
+	rollback := func() {
+		for i := len(swapped) - 1; i >= 0; i-- {
+			s := swapped[i]
+			os.Remove(s.path)
+			if s.had {
+				os.Rename(s.backup, s.path)
+			}
+		}
+	}
+	names := []string{Binaries[0]}
+	if _, ok := files[Probe]; ok {
+		names = append(names, Probe)
+	}
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		backup := path + ".old"
+		os.Remove(backup)
+		had := true
+		if err := os.Rename(path, backup); err != nil {
+			if name == Binaries[0] || !errors.Is(err, os.ErrNotExist) {
+				rollback()
+				return nil, err
+			}
+			had = false
+		}
+		swapped = append(swapped, swap{path, backup, had})
+		if err := os.WriteFile(path, files[name], 0o755); err != nil {
+			rollback()
+			return nil, err
+		}
 	}
 
 	// The binary running this is the file just replaced, so its predecessor is still open
 	// and cannot be removed until this process exits. Reported rather than retried: a
 	// leftover is a file the user can delete, and a retry loop here would be waiting for
 	// itself.
-	if os.Remove(backup) != nil {
-		leftovers = append(leftovers, backup)
+	for _, s := range swapped {
+		if s.had && os.Remove(s.backup) != nil {
+			leftovers = append(leftovers, s.backup)
+		}
 	}
 
 	// Only after clauduct.exe is the new one, so a failure above leaves a 0.3.x installation
 	// whole. A copy a session started before the update is running as its hook right now
 	// cannot go, and is reported the same way.
-	for _, name := range Retired {
+	gone := Retired
+	if _, ok := files[Probe]; !ok {
+		gone = append(append([]string{}, Retired...), Probe)
+	}
+	for _, name := range gone {
 		path := filepath.Join(dir, name)
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			leftovers = append(leftovers, path)

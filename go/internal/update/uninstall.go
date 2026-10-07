@@ -112,7 +112,7 @@ func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Read
 // copies a 0.3.x updater left under the retired names, and the predecessors an earlier
 // --update could not delete while it was running them.
 func survey(dir string) (present, leftovers []string) {
-	for _, name := range append(append([]string{}, Binaries...), Retired...) {
+	for _, name := range append(append([]string{Probe}, Binaries...), Retired...) {
 		if isFile(filepath.Join(dir, name)) {
 			present = append(present, name)
 		}

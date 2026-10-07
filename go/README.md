@@ -189,6 +189,7 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 ```
 
 `probe.sha256`이 비어 있는 빌드는 inference launch를 모두 `PROBE_EXPECTED_UNKNOWN`으로 거부한다.
+릴리스는 `clauduct-probe.exe`를 `clauduct.exe`와 같은 자산으로 올리고(v0.6.11부터), 출하 빌드 검사는 위 명령으로 빌드한 probe의 digest가 그 트리의 `probe.sha256`과 같은지 확인한다.
 
 ## 지켜야 할 계약
 

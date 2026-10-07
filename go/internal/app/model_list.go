@@ -96,3 +96,10 @@ func failureCategory(err error) string {
 	}
 	return "MODEL_LIST_FETCH_FAILED"
 }
+
+// AccountModelList is the product's ModelList: the account's list fetched through direct, the
+// same transport that serves the session's requests, with that account's last good list as
+// the fallback. The product entry point (cmd/clauduct) passes it; Run never assembles it.
+func AccountModelList(ctx context.Context, direct *upstream.Direct, home string) (*bridge.Catalogue, ModelListFacts, error) {
+	return accountModelList(ctx, direct, home)
+}

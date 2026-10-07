@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
@@ -30,6 +29,10 @@ import (
 // ErrClaudeNotFound means the native executable was not located. Nothing was bound and
 // nothing was started, so there is nothing to clean up.
 var ErrClaudeNotFound = errors.New("CLAUDE_NOT_FOUND")
+
+// ErrNoUpstream means Run was given no StartGateway or no ModelList. It is raised before
+// anything is read, resolved or bound.
+var ErrNoUpstream = errors.New("NO_UPSTREAM: Options.StartGateway and Options.ModelList are required")
 
 // ErrInterrupted means Ctrl+C arrived before the child was started, so nothing was.
 var ErrInterrupted = errors.New(CategoryCancelled)
@@ -69,13 +72,13 @@ type Options struct {
 
 	// ResolveClaude returns the native executable and whether it was found.
 	ResolveClaude func() (string, bool, error)
-	// StartGateway brings up the loopback listener. Zero uses the real one, with the real
-	// transport behind it; a test substitutes a fixture, or a failing one to prove the
-	// child is never started without a gateway.
+	// StartGateway brings up the loopback listener with the transport behind it. Required:
+	// Run builds no transport of its own, so zero is ErrNoUpstream. The product passes the
+	// real one (cmd/clauduct); the probe and tests pass synthetic ones.
 	StartGateway func() (*gateway.Gateway, error)
-	// ModelList fixes the session's account model list before native starts. Zero uses the
-	// account's list through the same transport and credential provider as StartGateway's
-	// default, falling back to the same account's last good list.
+	// ModelList fixes the session's account model list before native starts. Required for the
+	// same reason; the product's reads the account through the transport StartGateway
+	// serves and falls back to that account's last good list (AccountModelList).
 	ModelList func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error)
 	// Session is what this session tells the native child about itself, beyond the endpoint
 	// and the credential. Empty leaves the child on its own defaults.
@@ -184,6 +187,12 @@ const stopGrace = 5 * time.Second
 //	wait     — the child owns the console for as long as it lives
 //	release  — owned listener and connections, and only those (LIFE03)
 func Run(ctx context.Context, o Options) (result Result, err error) {
+	// First of all: a session without an upstream it was given has none. Run never builds a
+	// credential provider or a Direct transport itself (#319), so what a caller forgot to
+	// pass cannot become the user's real account.
+	if o.StartGateway == nil || o.ModelList == nil {
+		return Result{}, ErrNoUpstream
+	}
 	o = o.withDefaults()
 
 	// First, before anything is resolved or bound. A refused session must not cost an
@@ -796,34 +805,6 @@ func (o Options) withDefaults() Options {
 	if o.ManagedPolicy == nil {
 		env := o.Env
 		o.ManagedPolicy = func() ([]policyDocument, error) { return readManagedPolicy(env) }
-	}
-	if o.StartGateway == nil {
-		// G7: the real transport. Every inference in a session started by this binary now
-		// reaches the user's Codex subscription.
-		//
-		// Nothing is read or spawned here. The credential provider opens auth.json on the
-		// first request, and the client version runs codex --version on the first request,
-		// so `clauduct --version` still costs neither -- which is ARG07 and would break
-		// if either were resolved eagerly.
-		//
-		// The budget is unrestricted, and deliberately: a route is what the client asked
-		// for, and a count cap would stop a long session partway through. The verification
-		// budget is a separate thing and lives in clauduct --dev --probe.
-		ledger := o.Ledger
-		direct := upstream.NewDirect(&auth.Provider{}, ledger, upstream.InstalledVersion())
-		o.StartGateway = func() (*gateway.Gateway, error) { return startProductGateway(direct) }
-		if o.ModelList == nil {
-			// The same Direct: the list and every request bind the same account.
-			o.ModelList = func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error) {
-				return accountModelList(ctx, direct, home)
-			}
-		}
-	}
-	if o.ModelList == nil {
-		direct := upstream.NewDirect(&auth.Provider{}, o.Ledger, upstream.InstalledVersion())
-		o.ModelList = func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error) {
-			return accountModelList(ctx, direct, home)
-		}
 	}
 	if o.StartProcess == nil {
 		o.StartProcess = startOSProcess

@@ -1,8 +1,12 @@
 package app
 
 import (
+	"context"
+	"errors"
+
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
@@ -42,3 +46,21 @@ func ResolvedNativeSHA256() (string, error) {
 // NativeEventsModule is the native-events plugin's hook module relative to the plugin
 // directory Run puts first on native's command line (the probe breaks its proof there).
 func NativeEventsModule() string { return nativeEventsModule }
+
+// ErrProbeUpstream means ProbeOptions was given no synthetic gateway or no synthetic model
+// list. The probe has no real upstream to fall back to, so it has no default either.
+var ErrProbeUpstream = errors.New("PROBE_UPSTREAM_REQUIRED: the probe must pass its synthetic gateway and model list")
+
+// ProbeOptions completes base with the probe's synthetic upstream: the gateway start and the
+// account list it measures against. Both are required, so a probe session cannot be built
+// without them and cannot reach a credential provider through an omission; Run itself
+// refuses an Options that lacks either (ErrNoUpstream). base's own StartGateway and
+// ModelList are replaced.
+func ProbeOptions(base Options, startGateway func() (*gateway.Gateway, error), modelList func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error)) (Options, error) {
+	if startGateway == nil || modelList == nil {
+		return Options{}, ErrProbeUpstream
+	}
+	base.StartGateway = startGateway
+	base.ModelList = modelList
+	return base, nil
+}

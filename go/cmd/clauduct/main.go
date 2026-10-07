@@ -159,7 +159,11 @@ func run() int {
 			return nil
 		}
 	}
+	ledger, startGateway, modelList := productUpstream()
 	result, err := app.Run(ctx, app.Options{
+		Ledger:          ledger,
+		StartGateway:    startGateway,
+		ModelList:       modelList,
 		Args:            args,
 		Env:             env,
 		Cwd:             cwd,

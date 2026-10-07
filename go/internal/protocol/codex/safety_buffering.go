@@ -3,6 +3,7 @@ package codex
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"unicode/utf8"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
@@ -26,8 +27,6 @@ const (
 	MetadataEvent = "response.metadata"
 
 	safetyBufferingKey = "safety_buffering"
-	// maxSafetyBufferingEntries bounds each list so a hostile stream cannot grow a record.
-	maxSafetyBufferingEntries = 16
 )
 
 // DecodeSafetyBuffering reads the member's value. false means no buffering and returns
@@ -69,52 +68,82 @@ func decodeBufferingObject(value json.RawMessage, metadata bool) (*SafetyBufferi
 	return &out, nil
 }
 
-// stringList reads a required array of strings.
+// stringList reads a required array of strings. A null element is not a string (json.Unmarshal
+// into a string would let it through as empty), and a null array is not an array.
+//
+// There is no entry-count cap here: codex's Vec<String> has none, and the event is already
+// bounded by the stream's own size limit. Recording is bounded separately by the translator.
 func stringList(fields map[string]json.RawMessage, name string, into *[]string) error {
 	raw, present := fields[name]
 	if !present || string(raw) == "null" {
 		return ErrEventShape
 	}
-	var list []string
-	if json.Unmarshal(raw, &list) != nil || len(list) > maxSafetyBufferingEntries {
+	var list []*string
+	if json.Unmarshal(raw, &list) != nil {
 		return ErrEventShape
 	}
-	*into = list
+	out := make([]string, len(list))
+	for i, entry := range list {
+		if entry == nil {
+			return ErrEventShape
+		}
+		out[i] = *entry
+	}
+	*into = out
 	return nil
 }
 
-// SafetyBufferingOf reads the notice an event carries, in either place codex looks: the
-// top-level safety_buffering member of any event, or, for a response.metadata event, its
-// metadata member when that is typed "safety_buffering". Nil with a nil error means none.
-// Content events call it through their strict decoders; the translator calls it for every
-// event to record what it saw. An event whose raw bytes are not an object is left to the
-// decoder that owns it.
+// SafetyBufferingOf reads the notice an event carries.
+//
+// For every event type it is the top-level safety_buffering member. A response.metadata event
+// is a notice only through its metadata member, which must itself be typed "safety_buffering"
+// and of the codex shape; otherwise the result is nil with a nil error and the translator
+// leaves the event unsupported, as before. Such an event may also carry a top-level
+// safety_buffering that is false or a valid notice. Codex lets a present top-level member win
+// outright (false hides the nested notice); this build accepts the event and still records the
+// nested notice, so a signal is never hidden. Both valid: the top-level one is returned, as
+// in codex.
+//
+// Content events call this through their strict decoders; the translator calls it for every
+// event to record what it saw. Bytes that are not an object are left to the decoder that owns
+// the event; an object that cannot be parsed (a duplicate key, trailing data) is ErrEventShape.
 func SafetyBufferingOf(eventType string, raw []byte) (*SafetyBuffering, error) {
 	fields, err := wire.Fields(raw, nil)
 	if err != nil {
-		return nil, nil
+		if errors.Is(err, wire.ErrNotObject) {
+			return nil, nil
+		}
+		return nil, ErrEventShape
 	}
-	if eventType == MetadataEvent {
-		for name := range fields {
-			switch name {
-			case "type", "metadata", "sequence_number", safetyBufferingKey:
-			default:
-				return nil, nil
-			}
+	var top *SafetyBuffering
+	if value, present := fields[safetyBufferingKey]; present {
+		top, err = DecodeSafetyBuffering(value)
+		if err != nil && eventType != MetadataEvent {
+			return nil, err
 		}
 	}
-	if value, present := fields[safetyBufferingKey]; present {
-		return DecodeSafetyBuffering(value)
-	}
 	if eventType != MetadataEvent {
+		return top, nil
+	}
+	nested, nestedErr := metadataBuffering(fields)
+	if nested == nil && nestedErr == nil {
 		return nil, nil
 	}
-	return metadataBuffering(fields)
+	if nestedErr != nil {
+		return nil, nestedErr
+	}
+	if err != nil {
+		return nil, err
+	}
+	if top != nil {
+		return top, nil
+	}
+	return nested, nil
 }
 
 // metadataBuffering reads the response.metadata form. Only a metadata member typed
-// "safety_buffering" is a notice; any other metadata is nil here and refused by the translator
-// as before. The event itself may carry no member besides type, metadata and sequence_number.
+// "safety_buffering" is a notice; any other metadata is nil here. The event itself may carry no
+// member besides type, metadata, sequence_number and safety_buffering.
 func metadataBuffering(fields map[string]json.RawMessage) (*SafetyBuffering, error) {
 	raw, present := fields["metadata"]
 	if !present {
@@ -122,14 +151,19 @@ func metadataBuffering(fields map[string]json.RawMessage) (*SafetyBuffering, err
 	}
 	nested, err := wire.Fields(raw, nil)
 	if err != nil {
-		return nil, nil
+		if errors.Is(err, wire.ErrNotObject) {
+			return nil, nil
+		}
+		return nil, ErrEventShape
 	}
 	var kind string
 	if json.Unmarshal(nested["type"], &kind) != nil || kind != safetyBufferingKey {
 		return nil, nil
 	}
 	for name := range fields {
-		if name != "type" && name != "metadata" && name != "sequence_number" {
+		switch name {
+		case "type", "metadata", "sequence_number", safetyBufferingKey:
+		default:
 			return nil, ErrEventShape
 		}
 	}

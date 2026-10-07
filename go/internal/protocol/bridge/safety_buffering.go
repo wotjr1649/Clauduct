@@ -59,3 +59,18 @@ func (t *Translator) countSafety(key string) {
 // that carried one, and "use_case:<name>" and "reason:<name>" count the values they named.
 // Names are shaped and bounded; no content is recorded.
 func (t *Translator) SafetyBuffering() map[string]int { return t.safety }
+
+// acceptsEventType lists the event types Accept dispatches (response.metadata, as a notice,
+// whose invalid form is a shape error). It exists so that a bad safety_buffering value
+// on a type this build does not know ends as that type's UnsupportedEvent, which the gateway
+// ledger names, rather than as a shape error that hides the type. Keep it in step with the
+// switch in Accept; TestUnknownEventTypeWithBadBufferingStaysUnsupported walks it.
+var acceptsEventType = map[string]bool{
+	codex.Created: true, codex.TextDelta: true, codex.OutputItemAdd: true, codex.OutputItemDone: true,
+	codex.FuncArgsDelta: true, codex.FuncArgsDone: true, codex.TextDone: true, codex.Completed: true,
+	codex.ContentPartAdd: true, codex.ContentPartDon: true, codex.InProgress: true, codex.Queued: true,
+	codex.Keepalive: true, codex.Ping: true, codex.RateLimitsUpdated: true, codex.CodexRateLimits: true,
+	codex.CodexMetadata: true, codex.WebsocketTiming: true, codex.MetadataEvent: true,
+	codex.ReasoningSummaryAdd: true, codex.ReasoningSummaryDone: true, codex.ReasoningSummaryTxtD: true,
+	codex.ReasoningSummaryTxtF: true, codex.ReasoningTextDelta: true, codex.ReasoningTextDone: true,
+}

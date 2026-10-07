@@ -805,6 +805,9 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	}
 
 	if err := t.noteSafetyBuffering(event); err != nil {
+		if !acceptsEventType[event.Type] {
+			return nil, unsupportedEvent(event.Type)
+		}
 		return nil, err
 	}
 	if event.Type == codex.MetadataEvent && t.metadataNotice {

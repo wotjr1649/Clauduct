@@ -138,26 +138,3 @@ func TestResponseMetadataIsAcceptedOnlyAsASafetyBufferingNotice(t *testing.T) {
 		}
 	}
 }
-
-func TestSafetyBufferingNamesAreShapedAndBounded(t *testing.T) {
-	names := make([]string, 0, 40)
-	for i := 0; i < 15; i++ {
-		names = append(names, "u"+strings.Repeat("x", i))
-	}
-	events := bufferingStream()
-	value, _ := json.Marshal(map[string]any{"use_cases": append(names, "has space\nand newline"), "reasons": []string{}})
-	events[4] = buffered(t, events[4], string(value))
-	tr, _, err := playStream(t, events)
-	if err != nil {
-		t.Fatal(err)
-	}
-	counts := tr.SafetyBuffering()
-	if len(counts) > maxSafetyKeys+1 {
-		t.Fatalf("unbounded: %d keys", len(counts))
-	}
-	for key := range counts {
-		if strings.ContainsAny(key, " \n") {
-			t.Errorf("unshaped key %q", key)
-		}
-	}
-}

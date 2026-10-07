@@ -167,7 +167,7 @@ const RoutingMismatchPath = "/clauduct/routing-mismatch"
 // which blocks a prompt. Nothing is posted to the other destination and its value is not
 // printed.
 func routed(connection sessionlink.Connection, controlled bool, in io.Reader, out, errOut io.Writer, env map[string]string) int {
-	if routedElsewhere(env, connection.BaseURL) {
+	if routedElsewhere(env, connection.BaseURL, controlled) {
 		// A foreground link answers for the Clauduct process this hook runs under. One that does
 		// not is another session's link; ending that session would be wrong, so this hook only
 		// refuses its own event.
@@ -202,7 +202,7 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 	}
 	if json.Unmarshal(raw, &event) == nil && (event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
 		if _, err := postReply([]byte("{}"), env, RoutingProofPath, false); err != nil {
-			if controlled && hostManaged(env) {
+			if controlled && (hostManaged(env) || strategyFlagOn(env, gatewayCompatFlag)) {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_PROOF_MISSING: native did not ask this session's Clauduct gateway for its model list; recorded as a diagnostic, since provider control routes this session.")
 			} else {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. End Clauduct, then sign out of that gateway in standalone Claude Code, or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
@@ -248,13 +248,22 @@ func ancestor(pid int) bool {
 const RoutingProofPath = "/clauduct/routing-proof"
 
 // hostManaged reports whether native's environment still carries the HostManaged strategy
-// flag. Every spelling of the name has to say "1": Windows reads names without case, and which
-// of two spellings native applied last is not known. GatewayEnvCompat (Phase 3) is not here:
-// the #295 check above still treats its flag as a provider switch.
+// flag.
 func hostManaged(env map[string]string) bool {
+	return strategyFlagOn(env, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST")
+}
+
+// gatewayCompatFlag is the GatewayEnvCompat strategy's flag: a provider switch to #295's check
+// unless the launcher named the strategy on the hook's command line.
+const gatewayCompatFlag = "CLAUDE_CODE_USE_GATEWAY"
+
+// strategyFlagOn reports whether every spelling of flag in native's environment says "1":
+// Windows reads names without case, and which of two spellings native applied last is not
+// known.
+func strategyFlagOn(env map[string]string, flag string) bool {
 	seen := false
 	for name, value := range env {
-		if strings.EqualFold(name, "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST") {
+		if strings.EqualFold(name, flag) {
 			if value != "1" {
 				return false
 			}
@@ -265,8 +274,10 @@ func hostManaged(env map[string]string) bool {
 }
 
 // routedElsewhere reads names as Windows does, without case: a settings file may spell one
-// in lower case.
-func routedElsewhere(env map[string]string, gateway string) bool {
+// in lower case. Under a provider-control strategy the launcher named (controlled), the
+// GatewayEnvCompat flag at "1" sends native to ANTHROPIC_BASE_URL, which must still be this
+// gateway; every other switch still counts.
+func routedElsewhere(env map[string]string, gateway string, controlled bool) bool {
 	upper := make(map[string]string, len(env))
 	for name, value := range env {
 		upper[strings.ToUpper(name)] = value
@@ -275,6 +286,9 @@ func routedElsewhere(env map[string]string, gateway string) bool {
 		return true
 	}
 	for _, name := range launch.ProviderSwitches {
+		if controlled && name == gatewayCompatFlag && strategyFlagOn(env, gatewayCompatFlag) {
+			continue
+		}
 		if value := strings.ToLower(upper[name]); value != "" && value != "0" && value != "false" {
 			return true
 		}

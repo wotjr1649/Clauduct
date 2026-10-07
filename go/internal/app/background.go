@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
@@ -44,6 +45,9 @@ func (config ClauductSettings) backgroundSettings(settings, hook, id, base strin
 		for i := range matchers {
 			for j := range matchers[i].Hooks {
 				matchers[i].Hooks[j].Command += " " + id
+				if strategyFlag != "" {
+					matchers[i].Hooks[j].Command += " " + hookcmd.ProviderControlledArg
+				}
 			}
 		}
 	}

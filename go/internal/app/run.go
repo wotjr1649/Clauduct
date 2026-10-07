@@ -425,7 +425,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				} else {
 					defer foreground.Close()
 					link := foreground.ID
-					if o.ProviderStrategy == StrategyHostManaged {
+					if providerFlag != "" {
 						// The hook may then rely on native's provider control (hookcmd).
 						link += " " + hookcmd.ProviderControlledArg
 					}

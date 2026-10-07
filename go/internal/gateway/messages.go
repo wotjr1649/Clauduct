@@ -740,6 +740,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	// unknown one is decided on what sessions see (#85).
 	defer func() {
 		g.events.observeItems(translator.ItemTypes())
+		g.events.observeSafety(translator.SafetyBuffering())
 		recordOf(w).returned(translator.Returned())
 		recordOf(w).output(translator.ItemTypes(), len(translator.Answer()))
 	}()

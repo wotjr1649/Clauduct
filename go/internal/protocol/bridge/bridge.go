@@ -612,6 +612,9 @@ type Translator struct {
 	ids   map[string]bool
 	// itemTypes counts the items the backend opened, by type (#85).
 	itemTypes map[string]int
+	// safety records the backend's safety_buffering notices (see SafetyBuffering).
+	safety         map[string]int
+	metadataNotice bool
 	// returnedModel and returnedEffort are what the completion says it ran on, and
 	// expectModel and expectEffort the route it was sent on (#91).
 	returnedModel, returnedEffort string
@@ -799,6 +802,14 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 			}
 		}
 		return nil, failure
+	}
+
+	if err := t.noteSafetyBuffering(event); err != nil {
+		return nil, err
+	}
+	if event.Type == codex.MetadataEvent && t.metadataNotice {
+		t.metadataNotice = false
+		return nil, nil
 	}
 
 	switch event.Type {

@@ -57,7 +57,7 @@ func DecodeReasoningEvent(kind string, raw []byte) (ReasoningEvent, error) {
 			return out, ErrEventShape
 		}
 	}
-	if !safetyBufferingOff(fields) {
+	if !safetyBufferingOK(fields) {
 		return out, ErrEventShape
 	}
 	if _, present := fields["status"]; present {

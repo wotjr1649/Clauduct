@@ -64,8 +64,11 @@ type OutputItemEvent struct {
 // them in the added snapshot would refuse the ordinary case. A closing item is the
 // backend's finished account and must be complete. The Node baseline draws the same line.
 func DecodeOutputItem(raw []byte, final bool) (OutputItemEvent, error) {
-	fields, err := wire.Fields(raw, []string{"type", "sequence_number", "output_index", "item"})
+	fields, err := wire.Fields(raw, []string{"type", "sequence_number", "output_index", "item", "safety_buffering"})
 	if err != nil {
+		return OutputItemEvent{}, ErrEventShape
+	}
+	if !safetyBufferingOK(fields) {
 		return OutputItemEvent{}, ErrEventShape
 	}
 	var event OutputItemEvent
@@ -325,8 +328,11 @@ type ContentPartEvent struct {
 
 func DecodeContentPart(raw []byte) (ContentPartEvent, error) {
 	var out ContentPartEvent
-	fields, err := wire.Fields(raw, []string{"type", "sequence_number", "output_index", "item_id", "content_index", "part"})
+	fields, err := wire.Fields(raw, []string{"type", "sequence_number", "output_index", "item_id", "content_index", "part", "safety_buffering"})
 	if err != nil {
+		return out, ErrEventShape
+	}
+	if !safetyBufferingOK(fields) {
 		return out, ErrEventShape
 	}
 	if stringField(fields, "item_id", &out.ItemID) != nil || out.ItemID == "" || intField(fields, "output_index", &out.OutputIndex) != nil || out.OutputIndex < 0 || intField(fields, "content_index", &out.ContentIndex) != nil || out.ContentIndex < 0 {

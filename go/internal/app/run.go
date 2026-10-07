@@ -745,13 +745,7 @@ func (o Options) withDefaults() Options {
 		// budget is a separate thing and lives in clauduct --dev --probe.
 		ledger := o.Ledger
 		direct := upstream.NewDirect(&auth.Provider{}, ledger, upstream.InstalledVersion())
-		o.StartGateway = func() (*gateway.Gateway, error) {
-			g, err := gateway.Start(direct)
-			if err == nil {
-				g.EnableContextPolicy()
-			}
-			return g, err
-		}
+		o.StartGateway = func() (*gateway.Gateway, error) { return startProductGateway(direct) }
 		if o.ModelList == nil {
 			// The same Direct: the list and every request bind the same account.
 			o.ModelList = func(ctx context.Context, home string) (*bridge.Catalogue, ModelListFacts, error) {
@@ -786,4 +780,15 @@ func nativeReplaced(exe string, before os.FileInfo) bool {
 	}
 	after, err := os.Stat(exe)
 	return err != nil || after.Size() != before.Size() || !after.ModTime().Equal(before.ModTime())
+}
+
+// startProductGateway starts the gateway every session runs: the transport given, under the
+// product's admission policy. The provider-control probe starts its gateway here too, with its
+// synthetic transport, so the boundaries it measures are the product's own.
+func startProductGateway(transport upstream.Transport) (*gateway.Gateway, error) {
+	g, err := gateway.Start(transport)
+	if err == nil {
+		g.EnableContextPolicy()
+	}
+	return g, err
 }

@@ -47,7 +47,7 @@ type AdmissionOutcome struct {
 	Labels  map[string]string
 }
 
-// Admit applies admission contract r2's caseVerdict.order to one scope's short run.
+// Admit applies the admission contract's caseVerdict.order to one scope's short run.
 func Admit(in AdmissionInput) AdmissionOutcome {
 	out := AdmissionOutcome{Labels: map[string]string{}}
 	inconclusive := func(reason string) AdmissionOutcome {
@@ -76,14 +76,23 @@ func Admit(in AdmissionInput) AdmissionOutcome {
 		}
 	}
 	optional := admissioncontract.Scopes()[in.Scope].Optional
-	// Dispositions apply only when the run's own verdict is the one they were decided for and
-	// they are valid for this native and platform.
+	// Dispositions apply only when the run's own verdict (and, when the disposition names one,
+	// its reason) is the one they were decided for, on this platform, and for this native: a
+	// RUN_OBSERVED disposition holds for whatever native this run pinned, because the entry it
+	// lands in is keyed by that native (admission r3 caseFixtureDisposition.runObserved).
 	disposed := map[string]admissioncontract.Disposition{}
 	for _, d := range admissioncontract.Dispositions() {
 		r, ok := in.Results[d.Case]
-		if ok && r.Verdict == d.AppliesWhen && d.ValidFor["nativeSHA256"] == in.NativeSHA256 && d.ValidFor["platform"] == in.Platform {
-			disposed[d.Case] = d
+		if !ok || r.Verdict != d.AppliesWhen || d.ValidFor["platform"] != in.Platform {
+			continue
 		}
+		if d.AppliesWhenReason != "" && !slices.Contains(r.Reasons, d.AppliesWhenReason) {
+			continue
+		}
+		if native := d.ValidFor["nativeSHA256"]; native != admissioncontract.RunObserved && native != in.NativeSHA256 {
+			continue
+		}
+		disposed[d.Case] = d
 	}
 	// 4, 5, 6 and 6b all leave the scope INCONCLUSIVE; each names its case.
 	var reasons []string
@@ -129,15 +138,15 @@ func Admit(in AdmissionInput) AdmissionOutcome {
 	}
 	// 7
 	for id, label := range out.Labels {
-		switch label {
-		case "BLOCKING":
+		if label == "BLOCKING" {
 			out.Reasons = append(out.Reasons, id+":BLOCKING")
-		case "NOT_APPLICABLE_CURRENT_NATIVE":
-			if !in.GatesPassed[id] {
-				out.Reasons = append(out.Reasons, id+":EQUIVALENT_GATE_NOT_SHOWN")
-			}
+		}
+		// A disposition with an equivalent gate holds only when that gate passed in this run.
+		if d, ok := disposed[id]; ok && d.EquivalentGate != "" && !in.GatesPassed[id] {
+			out.Reasons = append(out.Reasons, id+":EQUIVALENT_GATE_NOT_SHOWN")
 		}
 	}
+	slices.Sort(out.Reasons)
 	if len(out.Reasons) > 0 {
 		out.State = app.AdmissionInconclusive
 		return out

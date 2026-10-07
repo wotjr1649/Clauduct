@@ -61,7 +61,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 
 | 항목 | 적용 범위 |
 |---|---|
-| `startup` | 인자 없이 시작하는 새 실행의 모델·effort. 공장값은 `gpt-6.1-sol`/high |
+| `startup` | 인자 없이 시작하는 새 실행의 모델·effort. 공장값은 `gpt-6.1-sol`/high. native settings의 최상위 `model`은 쓰지 않는다: Clauduct가 시작 모델을 `ANTHROPIC_MODEL`로 넘기고 native에서는 이 값이 settings `model`보다 앞선다(2026-10-07 측정). `--model`과 native settings `env`의 `ANTHROPIC_MODEL`은 반영된다 |
 | `modelDefaults` | 모델만 선택하고 effort를 명시하지 않은 경로의 기본 effort. 적지 않은 모델은 계정의 기본 수준을 쓴다 |
 | `modelMapping` | Claude alias 및 해당 버전형 이름이 가리키는 GPT 모델 |
 | `agents` | 해당 agent의 모델·effort 기본 pair |

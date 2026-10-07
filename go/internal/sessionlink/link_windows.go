@@ -1,6 +1,6 @@
-// Package sessionlink keeps a background session credential in memory. The named
-// pipe's DACL admits only this Windows logon; neither its name nor the CLI carries
-// a credential. There is no network listener, credential file or recovery replay.
+// Package sessionlink keeps a session's gateway credential in memory for its hooks and
+// helpers. The named pipe's DACL admits only this Windows logon; neither its name nor the CLI
+// carries a credential. There is no network listener, credential file or recovery replay.
 package sessionlink
 
 import (
@@ -81,7 +81,21 @@ func pipeName(id string) (*uint16, error) {
 	return syscall.UTF16PtrFromString(`\\.\pipe\clauduct-` + id)
 }
 
+// Start serves a background session's connection. A client may also ask it to stop, which
+// is how a background session is ended.
 func Start(parent context.Context, connection Connection) (*Server, error) {
+	return start(parent, connection, true)
+}
+
+// StartForeground serves a foreground session's connection to its hooks and confirmation
+// helper, which cannot rely on native's environment: under a host-managed provider native
+// does not pass ANTHROPIC_AUTH_TOKEN to them (measured 2.1.292). There is no stop command; the
+// session ends with its native and closes the link itself.
+func StartForeground(parent context.Context, connection Connection) (*Server, error) {
+	return start(parent, connection, false)
+}
+
+func start(parent context.Context, connection Connection, stoppable bool) (*Server, error) {
 	sid, err := ownLogon()
 	if err != nil {
 		return nil, err
@@ -117,7 +131,7 @@ func Start(parent context.Context, connection Connection) (*Server, error) {
 			call, stop := context.WithTimeout(ctx, 3*time.Second)
 			var command [1]byte
 			n, err := operation(call, syscall.Handle(h), command[:], 'r')
-			if err == nil && n == 1 && (command[0] == 'k' || command[0] == 's') {
+			if err == nil && n == 1 && (command[0] == 'k' || command[0] == 's' && stoppable) {
 				reply := body
 				if command[0] == 's' {
 					reply = []byte(`{}`)

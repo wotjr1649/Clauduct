@@ -12,8 +12,8 @@ import (
 // adds the hook-diagnostic expectation, the SAFETY purpose for same-process state changes and
 // the observed state application. Earlier results stay judged under their own revision.
 const (
-	RoutingContractRevision = 3
-	ProbeSchemaRevision     = 3
+	RoutingContractRevision = 4
+	ProbeSchemaRevision     = 4
 )
 
 // Case outcomes.
@@ -27,6 +27,9 @@ const (
 	// SafetyPass is a SAFETY-purpose case that met its requirements. It shows the state change
 	// was applied and the session stayed correct, not that the strategy suppressed a threat.
 	SafetyPass = "SAFETY_PASS"
+	// SafeRefusalPass is a SAFE_REFUSAL-purpose case: the product refused as its contract says,
+	// with no backend generation and no side effect. It is not the refused feature working.
+	SafeRefusalPass = "SAFE_REFUSAL_PASS"
 )
 
 // Case purposes.
@@ -36,6 +39,9 @@ const (
 	// PurposeSafety checks that a state change is applied and the session stays correct; it
 	// claims nothing about suppression, so its control is documentation only.
 	PurposeSafety = "SAFETY"
+	// PurposeSafeRefusal checks an intended refusal (a contract the product keeps), not a
+	// working feature and not suppression.
+	PurposeSafeRefusal = "SAFE_REFUSAL"
 )
 
 // Strategy outcomes.
@@ -52,6 +58,10 @@ const (
 	ExpectSuccessHookDiagnostic = "SUCCESS_WITH_HOOK_DIAGNOSTIC"
 	ExpectFailClosed            = "EXPECTED_FAIL_CLOSED"
 	ExpectStimulus              = "STIMULUS"
+	// ExpectSafeRefusal is a turn the product refuses before any model request (a session that
+	// must be resumed explicitly): no request is expected at INTENDED, so P4, P5-R and P8 are
+	// not read for it; the refusal, zero backend generation and no side effect are.
+	ExpectSafeRefusal = "EXPECTED_SAFE_REFUSAL"
 )
 
 // ExpectedRefusals are the refusals a fail-closed turn is held to when its case names none
@@ -93,6 +103,8 @@ const (
 	ReasonApplicationUnobserved = "STATE_APPLICATION_UNOBSERVED"
 	ReasonForeignSessionChanged = "FOREIGN_SESSION_STATE_CHANGED"
 	ReasonVariantNotExercised   = "VARIANT_NOT_EXERCISED"
+	ReasonSafeRefusalMissing    = "SAFE_REFUSAL_NOT_OBSERVED"
+	ReasonRestoreMissing        = "RESTORE_NOT_OBSERVED"
 )
 
 // Wrong is what one wrong loopback destination saw.
@@ -110,6 +122,15 @@ type Turn struct {
 	FailClosedAs []string
 	// HookDiagnostic is native's record of the failed command hook in this turn.
 	HookDiagnostic bool
+	// For an ExpectSafeRefusal turn: the product's refusal text with its exact recovery
+	// command was observed, how many backend generations carried this turn's canary, and
+	// whether stored state (profile snapshot, earlier conversation) changed.
+	SafeRefusal  bool
+	BackendCalls int
+	SideEffect   bool
+	// RequireRestore is a turn that must continue an earlier conversation; Restored is its model
+	// request carrying the earlier turn's canary and the same model.
+	RequireRestore, Restored bool
 	// IntendedCanary counts requests at INTENDED's ingress, authenticated with the session token,
 	// whose body carried this turn's canary (P4).
 	IntendedCanary int
@@ -263,7 +284,7 @@ func Judge(o Observation) Result {
 			add(f.reason)
 		}
 	}
-	if o.Control.Fault && o.Purpose != PurposeSafety {
+	if o.Control.Fault && o.Purpose != PurposeSafety && o.Purpose != PurposeSafeRefusal {
 		add(ReasonControlUnproven)
 	}
 	if o.StateNotApplied {
@@ -292,6 +313,8 @@ func Judge(o Observation) Result {
 	}
 	for _, t := range o.Turns {
 		switch {
+		case t.Expect == ExpectSafeRefusal:
+			continue
 		case t.IntendedCanary == 0:
 			add(ReasonIntendedMissing)
 		case t.IntendedMainCanary == 0:
@@ -302,13 +325,13 @@ func Judge(o Observation) Result {
 		break
 	}
 	for _, t := range o.Turns {
-		if t.UnmarkedReply && t.IntendedCanary == 0 && !t.IntendedServed {
+		if t.Expect != ExpectSafeRefusal && t.UnmarkedReply && t.IntendedCanary == 0 && !t.IntendedServed {
 			add(ReasonUnobservedReply)
 			break
 		}
 	}
 	for _, t := range o.Turns {
-		if !slices.Contains([]string{ExpectSuccess, ExpectSuccessHookDiagnostic, ExpectFailClosed, ExpectStimulus}, t.Expect) {
+		if !slices.Contains([]string{ExpectSuccess, ExpectSuccessHookDiagnostic, ExpectFailClosed, ExpectStimulus, ExpectSafeRefusal}, t.Expect) {
 			add(ReasonUnknownExpectation)
 			break
 		}
@@ -317,7 +340,10 @@ func Judge(o Observation) Result {
 		r.Reasons = append([]string{ReasonNativeError}, r.Reasons...)
 	}
 	function := preservation(o.Turns)
-	if o.Purpose == PurposeSafety {
+	if o.Purpose == PurposeSafeRefusal && !slices.ContainsFunc(o.Turns, func(t Turn) bool { return t.Expect == ExpectSafeRefusal }) {
+		function = append(function, ReasonSafeRefusalMissing)
+	}
+	if o.Purpose == PurposeSafety || o.Purpose == PurposeSafeRefusal {
 		// The control documents whether the threat appeared; a safety case is not judged on it,
 		// and P8 compares against it, so neither is read.
 		if len(r.Reasons) > 0 {
@@ -330,6 +356,9 @@ func Judge(o Observation) Result {
 			return r
 		}
 		r.Verdict = SafetyPass
+		if o.Purpose == PurposeSafeRefusal {
+			r.Verdict = SafeRefusalPass
+		}
 		return r
 	}
 	if !o.Control.Established {
@@ -348,7 +377,7 @@ func Judge(o Observation) Result {
 		return r
 	}
 	for _, t := range o.Turns {
-		if t.IntendedInference < t.ControlInference {
+		if t.Expect != ExpectSafeRefusal && t.IntendedInference < t.ControlInference {
 			add(ReasonTrafficNotCovered)
 			break
 		}
@@ -382,6 +411,13 @@ func preservation(turns []Turn) []string {
 			if t.Expect == ExpectSuccessHookDiagnostic && !t.HookDiagnostic {
 				note(ReasonHookDiagnosticMissing)
 			}
+			if t.RequireRestore && !t.Restored {
+				note(ReasonRestoreMissing)
+			}
+		case ExpectSafeRefusal:
+			if !t.SafeRefusal || t.BackendCalls != 0 || t.SideEffect || t.IntendedServed || len(t.Markers) != 0 {
+				note(ReasonSafeRefusalMissing)
+			}
 		case ExpectFailClosed:
 			allowed := t.FailClosedAs
 			if len(allowed) == 0 {
@@ -414,13 +450,15 @@ type Strategy struct {
 	SafetyCases []string `json:"safetyCases,omitempty"`
 	// SafetyFailures lists the cases that changed another live session's state.
 	SafetyFailures []string `json:"safetyFailures,omitempty"`
+	// SafeRefusals lists the SAFE_REFUSAL cases that passed: refusals kept, not features working.
+	SafeRefusals []string `json:"safeRefusals,omitempty"`
 }
 
 // Decide applies the contract's strategyVerdict to the results of one certification run.
 // matrix is the exact list of case IDs the run had to produce, optional the subset that may
 // be NOT_EXERCISABLE (every case that is not an anchor) and safety the SAFETY-purpose subset,
 // whose only passing verdict is SAFETY_PASS.
-func Decide(matrix, optional, safety []string, results []Result) Strategy {
+func Decide(matrix, optional, safety []string, results []Result, refusals ...string) Strategy {
 	s := Strategy{Cases: results}
 	for _, r := range results {
 		if r.IdentityChanged {
@@ -445,10 +483,17 @@ func Decide(matrix, optional, safety []string, results []Result) Strategy {
 		isSafety := slices.Contains(safety, r.CaseID)
 		switch r.Verdict {
 		case Pass:
-			if isSafety {
+			if isSafety || slices.Contains(refusals, r.CaseID) {
 				s.Verdict = Inconclusive
 				s.Reasons = append(s.Reasons, r.CaseID+":"+r.Verdict)
 			}
+		case SafeRefusalPass:
+			if !slices.Contains(refusals, r.CaseID) {
+				s.Verdict = Inconclusive
+				s.Reasons = append(s.Reasons, r.CaseID+":"+r.Verdict)
+				continue
+			}
+			s.SafeRefusals = append(s.SafeRefusals, r.CaseID)
 		case SafetyPass:
 			if !isSafety {
 				s.Verdict = Inconclusive

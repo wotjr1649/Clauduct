@@ -34,7 +34,7 @@ func prepareNativeEvents(link string, catalogue *bridge.Catalogue) (directory st
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name":"clauduct-native-events","version":"1.0.0","description":"Per-session native child identity and terminal receipts for Clauduct status","author":{"name":"Clauduct"}}`,
 		"hooks/hooks.json":           `{"modules":["./events.mjs"]}`,
-		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts"), link, catalogue),
+		nativeEventsModule:           nativeEventSource(filepath.Join(directory, "receipts"), link, catalogue),
 	}
 	for name, body := range files {
 		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
@@ -95,3 +95,7 @@ func prepareNativePDF(directory, hook string) (string, error) {
 	}
 	return bin, nil
 }
+
+// nativeEventsModule is the plugin's hook module, relative to the plugin directory: a module
+// native's own runtime loads, not a Node program.
+const nativeEventsModule = "hooks/events.mjs"

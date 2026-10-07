@@ -20,6 +20,10 @@ import (
 const (
 	rp01Wait = 70 * time.Minute
 	rp01Run  = 120 * time.Minute
+	// rp01TreatmentDelay places the treatment's end after the control's refresh plus 15 minutes:
+	// the control refreshes about 60 minutes after its start, and a MULTI_TURN or TUI treatment
+	// ends a little over 70 minutes after its own.
+	rp01TreatmentDelay = 10 * time.Minute
 )
 
 // p3RP01Case is RP01 for one scope, with its own synthetic policy source: generation 1 at
@@ -141,6 +145,11 @@ func judgeRP01(control, treatment *p3Observed, controlFetches, treatmentFetches 
 	switch {
 	case treatment.CleanupFailed || control.CleanupFailed:
 		out.Verdict, out.Reasons = providercert.Inconclusive, []string{providercert.ReasonCleanupFailed}
+	case treatment.TimedOut || treatment.SpawnFailed || treatment.IdentityError || treatment.Dropped != 0:
+		// The treatment did not run to its own end as planned: its requests are not a
+		// completed session (caseVerdict.entries.rp01: TIMEOUT and the like are INCONCLUSIVE).
+		out.Verdict = providercert.Inconclusive
+		out.Reasons = []string{fmt.Sprintf("the treatment run is not complete (timed out %t, spawn failed %t, identity error %t, dropped %d)", treatment.TimedOut, treatment.SpawnFailed, treatment.IdentityError, treatment.Dropped)}
 	case treatmentEnded.Before(v2.Add(15 * time.Minute)):
 		out.Verdict, out.Reasons = providercert.Inconclusive, []string{"the treatment's observation ended before the control's refresh plus 15 minutes"}
 	case !slices.ContainsFunc(treatment.Calls, func(c p3Call) bool { return c.at.After(v2) }):
@@ -215,6 +224,12 @@ func RunRP01(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 				// The control shows the refresh path itself: with Clauduct's hooks the #299 check
 				// ends a session whose stored login is there from the start.
 				c.Hooks = p3HooksMissing
+			}
+			if configuration == p3HostManaged {
+				// The treatment starts later than the control, so its observation still runs 15
+				// minutes past the control's hourly refresh (SOURCE_INACTIVE) with the planned
+				// 70-minute wait.
+				time.Sleep(rp01TreatmentDelay)
 			}
 			began := time.Now()
 			s.obs = runner.run(t, c, configuration)

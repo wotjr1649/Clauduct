@@ -27,6 +27,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
@@ -175,6 +176,17 @@ func admissionReport(out io.Writer) {
 		probe = "none: every gated launch is refused"
 	}
 	fmt.Fprintf(out, "admission    contract %.12s, expected probe %s\n", admissioncontract.AdmissionSHA256(), probe)
+	if native, err := app.ResolvedNativeSHA256(); err == nil {
+		fmt.Fprintf(out, "admission    native %s\n", native)
+	}
+	if self, err := os.Executable(); err == nil {
+		path := filepath.Join(filepath.Dir(self), app.ProbeName)
+		if id, err := providercert.Observe(path); err == nil {
+			fmt.Fprintf(out, "admission    probe file %s %s\n", path, id.SHA256)
+		} else {
+			fmt.Fprintf(out, "admission    probe file %s absent or unreadable\n", path)
+		}
+	}
 	for _, s := range app.AdmissionStatuses(home, key) {
 		line := fmt.Sprintf("admission    %-24s %s", s.Scope, s.State)
 		if s.State != "NONE" {
@@ -182,7 +194,8 @@ func admissionReport(out io.Writer) {
 			if s.Stale != "" {
 				match = "stale: " + s.Stale
 			}
-			line += fmt.Sprintf(" (%s, %s)", match, s.CreatedAt.Format(time.RFC3339))
+			line += fmt.Sprintf(" (%s, %s; native %.12s, clauduct %.12s, probe %.12s)", match, s.CreatedAt.Format(time.RFC3339),
+				s.Key.NativeSHA256, s.Key.ClauductBinarySHA256, s.Key.ProbeExecutableSHA256)
 		}
 		if len(s.Reasons) > 0 {
 			line += " reasons " + strings.Join(s.Reasons, ",")
@@ -195,7 +208,7 @@ func admissionReport(out io.Writer) {
 			fmt.Fprintf(out, "admission    %-24s labels: %s\n", "", strings.Join(s.Labels, ","))
 		}
 		if len(s.Gaps) > 0 {
-			fmt.Fprintf(out, "admission    %-24s open gaps: %d\n", "", len(s.Gaps))
+			fmt.Fprintf(out, "admission    %-24s open gaps: %s\n", "", strings.Join(s.Gaps, ","))
 		}
 	}
 	fmt.Fprintln(out, "routing r4   HOST_MANAGED INCOMPATIBLE (R08 background FAIL_ROUTING); a scope admission is not a certification")

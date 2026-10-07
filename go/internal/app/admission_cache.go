@@ -186,6 +186,8 @@ type AdmissionStatus struct {
 	Labels []string
 	// Stale is the stale reason under the current key ("" when the gate would use the entry).
 	Stale string
+	// Key is the identity the entry was verified under.
+	Key AdmissionKey
 }
 
 // AdmissionStatuses reads each scope's stored entry (and RP01 entry) under home and checks it
@@ -206,7 +208,7 @@ func AdmissionStatuses(home string, key func(string) AdmissionKey) []AdmissionSt
 			if raw, err := os.ReadFile(path); err == nil {
 				var entry AdmissionEntry
 				if json.Unmarshal(raw, &entry) == nil && entry.Schema == AdmissionSchema {
-					status.State, status.Reasons, status.CreatedAt = entry.State, entry.Reasons, entry.CreatedAt
+					status.State, status.Reasons, status.CreatedAt, status.Key = entry.State, entry.Reasons, entry.CreatedAt, entry.Key
 					status.NotExercisable, status.Gaps = entry.NotExercisable, entry.Gaps
 					for _, c := range entry.Cases {
 						if c.Label != "" && c.Label != "PASS" {

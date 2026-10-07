@@ -870,6 +870,12 @@ type p3Runner struct {
 	// prior holds every wrong receiver earlier runs created. They stay open, so a native that
 	// reaches one of them during this run is counted against this run.
 	prior *[]*providercert.Receiver
+	// priorMu guards prior: a scope's cases run in parallel. A concurrent case's receivers join
+	// prior when that case ends; a native reaching one earlier is counted by that receiver's own
+	// run, which then fails, so the overlap can only refuse, never admit.
+	priorMu *sync.Mutex
+	// deadline, when set, bounds every native run (the scope run's absolute deadline).
+	deadline time.Time
 	// settle waits after each stateful step before the next turn. Zero in every certification
 	// run; only the stateful diagnosis sets it, and its evidence records it.
 	settle time.Duration
@@ -878,7 +884,7 @@ type p3Runner struct {
 }
 
 func newP3Runner(exe string, newStart func(spawnReport) starter, timeout time.Duration) p3Runner {
-	return p3Runner{exe: exe, newStart: newStart, timeout: timeout, prior: new([]*providercert.Receiver)}
+	return p3Runner{exe: exe, newStart: newStart, timeout: timeout, prior: new([]*providercert.Receiver), priorMu: new(sync.Mutex)}
 }
 
 // run drives one case under one configuration and returns what was observed.
@@ -914,9 +920,11 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		extra[k] = v(w)
 	}
 	before := map[*providercert.Receiver]int64{}
+	p.priorMu.Lock()
 	for _, r := range *p.prior {
 		before[r] = r.Counter.Bytes.Load() + r.Counter.Conns.Load()
 	}
+	p.priorMu.Unlock()
 	observe := func() {
 		if p.identity == nil {
 			return
@@ -991,7 +999,11 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		if bgParent != nil {
 			parent = bgParent
 		}
-		ctx, cancel := context.WithTimeout(parent, runFor)
+		limit := time.Now().Add(runFor)
+		if !p.deadline.IsZero() && p.deadline.Before(limit) {
+			limit = p.deadline
+		}
+		ctx, cancel := context.WithDeadline(parent, limit)
 		defer cancel()
 		var stderr strings.Builder
 		env := probeEnv()
@@ -1119,6 +1131,9 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		}
 		once(append([]string{"-p", prompt(obs.Turns[i].Canary)}, c.Args...), nil, &out)
 		end(i)
+		if c.WatchBoundary {
+			time.Sleep(8 * time.Second) // admission r2 boundary window: 8s after the stimulus
+		}
 		obs.Turns[i].Output = out.String()
 		obs.Outputs = out.String() + obs.Outputs
 	case p3Resume, p3Continue:
@@ -1464,11 +1479,13 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				obs.Wrong[r.Observer.ID] = contact
 			}
 		}
+		p.priorMu.Lock()
 		for _, r := range *p.prior {
 			if address := strings.TrimPrefix(strings.TrimPrefix(r.URL, "https://"), "http://"); s.Authority == address {
 				prior.Conns++
 			}
 		}
+		p.priorMu.Unlock()
 	}
 	// Contact with an earlier run's receiver during this run counts against this run.
 	for r, count := range before {
@@ -1477,7 +1494,9 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		}
 	}
 	obs.Wrong["PRIOR_RUN_RECEIVERS"] = prior
+	p.priorMu.Lock()
 	*p.prior = append(*p.prior, own...)
+	p.priorMu.Unlock()
 	obs.Outputs += transcripts(w.configDir)
 	obs.HookFailures = hookFailures(w.configDir)
 	obs.PluginApplied = w.pluginApplied

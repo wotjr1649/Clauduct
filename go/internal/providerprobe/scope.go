@@ -252,6 +252,12 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		if !ok {
 			return CaseResult{Verdict: VerdictCaseNotImplemented}
 		}
+		// Every native run of the case ends by the case's own limit or the run's, the earlier.
+		runner := runner
+		runner.deadline = deadline
+		if limit := time.Now().Add(perCase); limit.Before(deadline) {
+			runner.deadline = limit
+		}
 		sc := build()
 		sc.c.Optional = slices.Contains(optional, id)
 		control := &p3Observed{}
@@ -268,12 +274,12 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 					vcontrol = runner.run(t, vc.c, p3Unprotected)
 				}
 				vtreatment := runner.run(t, vc.c, p3HostManaged)
-				if vr := p3OverlayChecked(vc.judge(vcontrol, vtreatment), vtreatment); p3Severity(vr.Verdict) > p3Severity(r.Verdict) {
+				if vr := p3OverlayChecked(p3RoutingChecked(vc.c, vcontrol, vtreatment, vc.judge(vcontrol, vtreatment)), vtreatment); p3Severity(vr.Verdict) > p3Severity(r.Verdict) {
 					r = vr
 					r.Reasons = append(r.Reasons, v)
 				}
 			}
-			r = p3OverlayChecked(r, treatment)
+			r = p3OverlayChecked(p3RoutingChecked(sc.c, control, treatment, r), treatment)
 			if !sc.noControl {
 				write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
 			}
@@ -400,13 +406,16 @@ func RequiredStates(home, product, probeSHA, scope string) (map[string]string, e
 }
 
 const (
-	// certificationTotal is r4 deadlines.certificationTotalSeconds for one scope's short run.
+	// certificationTotal and perCase are r4 deadlines.certificationTotalSeconds and
+	// perCaseSeconds for one scope's short run.
 	certificationTotal = 900 * time.Second
+	perCase            = 180 * time.Second
 	// caseWorkers runs this many cases at once, each in its own world (config dir, receivers,
 	// workspace), so a scope's run fits the deadline.
 	caseWorkers = 4
-	// lockWait bounds the wait for another run of the same scope.
-	lockWait = 20 * time.Minute
+	// lockWait bounds the wait for another run of the same scope: longer than a whole run
+	// (the deadline plus the last case's limit).
+	lockWait = 25 * time.Minute
 )
 
 // p3OverlayChecked keeps a passing verdict only when the product passed every strategy value
@@ -431,4 +440,17 @@ func p3Severity(verdict string) int {
 		return 0
 	}
 	return 2
+}
+
+// p3RoutingChecked applies r4's routing rules (P1) to a case the contract judges by its own
+// rule: any contact with a stored gateway, the settings target or another receiver, inference
+// or a canary through CATCH_ALL, or a foreign reply marker is FAIL_ROUTING, whatever the
+// case's own verdict (admission r2 backgroundEntryChecks.boundary: wrong-destination bytes and
+// connections).
+func p3RoutingChecked(c p3Case, control, treatment *p3Observed, r CaseResult) CaseResult {
+	routing := providercert.Judge(p3Observation(c, treatment, control))
+	if routing.Verdict == providercert.FailRouting && p3Severity(r.Verdict) < p3Severity(providercert.FailRouting) {
+		return CaseResult{Verdict: providercert.FailRouting, Reasons: routing.Reasons, CLIBackgroundEntry: r.CLIBackgroundEntry}
+	}
+	return r
 }

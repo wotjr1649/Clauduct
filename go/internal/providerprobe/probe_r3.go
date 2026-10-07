@@ -360,7 +360,7 @@ func (w *p3World) applyPlugin(spec launch.Spec) (launch.Spec, error) {
 		w.pluginApplied = true
 		return spec, nil
 	}
-	module := filepath.Join(dir, "hooks", "events.mjs")
+	module := filepath.Join(dir, filepath.FromSlash(app.NativeEventsModule()))
 	raw, err := os.ReadFile(module)
 	if err != nil {
 		return spec, err

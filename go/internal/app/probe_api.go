@@ -38,3 +38,7 @@ func ResolvedNativeSHA256() (string, error) {
 	}
 	return id.SHA256, nil
 }
+
+// NativeEventsModule is the native-events plugin's hook module relative to the plugin
+// directory Run puts first on native's command line (the probe breaks its proof there).
+func NativeEventsModule() string { return nativeEventsModule }

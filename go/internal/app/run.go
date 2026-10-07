@@ -208,8 +208,15 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// Before anything is fetched or bound: a machine policy that can move model requests off
 	// the gateway is one this launcher cannot outrank (#295). Help and version send none.
 	if !information {
-		if err := managedRouting(o.ManagedPolicy()); err != nil {
+		docs, readErr := o.ManagedPolicy()
+		if err := managedRouting(docs, readErr); err != nil {
 			return Result{}, err
+		}
+		if providerFlag != "" {
+			// The strategy's background restriction holds against machine policy too.
+			if err := managedAgentViewOverride(docs); err != nil {
+				return Result{}, err
+			}
 		}
 	}
 	if clauductHome == "" && !information {

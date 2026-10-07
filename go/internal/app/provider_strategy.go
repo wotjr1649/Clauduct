@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -179,3 +180,31 @@ func startSupervisor(start func(launch.Spec, io.Reader, io.Writer, io.Writer) (P
 	process.Wait()
 	return nil, errors.New("BACKGROUND_SUPERVISOR_UNAVAILABLE: native's background supervisor did not start")
 }
+
+// managedAgentViewOverride refuses a strategy launch whose machine policy turns agent view back
+// on: managed settings outrank the launch's --settings, so the restriction would not hold and
+// /background could reach native's supervisor (#320, admission contract r2 BE15's equivalent
+// gate). Only "1" for the env variable and true for the settings key leave it off.
+func managedAgentViewOverride(docs []policyDocument) error {
+	for _, doc := range docs {
+		var fields struct {
+			DisableAgentView *bool          `json:"disableAgentView"`
+			Env              map[string]any `json:"env"`
+		}
+		if json.Unmarshal([]byte(doc.JSON), &fields) != nil {
+			return fmt.Errorf("%w: %s is not a settings object", errPolicyUnreadable, doc.Source)
+		}
+		if fields.DisableAgentView != nil && !*fields.DisableAgentView {
+			return fmt.Errorf("%w: %s sets disableAgentView false", ErrAgentViewManagedOverride, doc.Source)
+		}
+		for name, value := range fields.Env {
+			if strings.EqualFold(name, agentViewOff) && value != "1" {
+				return fmt.Errorf("%w: %s sets %s", ErrAgentViewManagedOverride, doc.Source, agentViewOff)
+			}
+		}
+	}
+	return nil
+}
+
+// ErrAgentViewManagedOverride refuses a strategy launch whose machine policy turns agent view on.
+var ErrAgentViewManagedOverride = errors.New("AGENT_VIEW_MANAGED_OVERRIDE_REFUSED: machine managed settings turn agent view back on, which this launch's provider control cannot hold; nothing was started")

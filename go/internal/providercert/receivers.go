@@ -35,6 +35,19 @@ import (
 type Counter struct {
 	Bytes atomic.Int64
 	Conns atomic.Int64
+	// owners are the local processes that opened the first connections, for attribution.
+	mu     sync.Mutex
+	owners []ConnOwner
+}
+
+// maxOwners bounds the attribution kept per receiver; the counts above stay exact.
+const maxOwners = 256
+
+// Owners returns the processes that opened the receiver's connections, as far as recorded.
+func (c *Counter) Owners() []ConnOwner {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.owners)
 }
 
 type countingConn struct {
@@ -59,6 +72,17 @@ func (l countingListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 	l.counter.Conns.Add(1)
+	l.counter.mu.Lock()
+	full := len(l.counter.owners) >= maxOwners
+	l.counter.mu.Unlock()
+	if !full {
+		owner := ownerOf(conn.RemoteAddr(), conn.LocalAddr())
+		l.counter.mu.Lock()
+		if len(l.counter.owners) < maxOwners {
+			l.counter.owners = append(l.counter.owners, owner)
+		}
+		l.counter.mu.Unlock()
+	}
 	return countingConn{conn, l.counter}, nil
 }
 

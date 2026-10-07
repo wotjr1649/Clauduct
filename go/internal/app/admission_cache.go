@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
 // Admission states (admission contract r1 states).
@@ -35,6 +37,8 @@ type AdmissionKey struct {
 	RestrictionsDigest       string `json:"restrictionsDigest"`
 	// ProbeExecutableSHA256 is the clauduct-probe.exe that wrote the entry (admission r2).
 	ProbeExecutableSHA256 string `json:"probeExecutableSHA256"`
+	// Platform is the OS the entry was verified on (admission r3 cache.platform).
+	Platform string `json:"platform"`
 }
 
 // AdmissionCase is one case's result in an entry.
@@ -116,6 +120,8 @@ func LookupAdmission(home string, key AdmissionKey) (AdmissionEntry, error) {
 		return entry, AdmissionMiss{"RESTRICTIONS_CHANGED"}
 	case got.ProbeExecutableSHA256 != key.ProbeExecutableSHA256:
 		return entry, AdmissionMiss{"PROBE_EXECUTABLE_CHANGED"}
+	case got.Platform != key.Platform:
+		return entry, AdmissionMiss{"PLATFORM_CHANGED"}
 	case got.Scope != key.Scope:
 		return entry, AdmissionMiss{"UNREADABLE"}
 	}
@@ -231,7 +237,7 @@ func AdmissionStatuses(home string, key func(string) AdmissionKey) []AdmissionSt
 }
 
 // AdmissionKeyFor is the cache key the gate and the probe both compute for one scope
-// (admission contract r2 cache.key): the frozen contracts and restrictions come from the
+// (admission contract r3 cache.key): the frozen contracts and restrictions come from the
 // embedded contract, the rest from what is installed and running now.
 func AdmissionKeyFor(scope, nativeSHA256, clauductSHA256, probeSHA256, managedFingerprint string, probeSchema int) AdmissionKey {
 	return AdmissionKey{
@@ -245,8 +251,19 @@ func AdmissionKeyFor(scope, nativeSHA256, clauductSHA256, probeSHA256, managedFi
 		Scope:                    scope,
 		RestrictionsDigest:       RestrictionsDigest(admissioncontract.Restrictions()),
 		ProbeExecutableSHA256:    probeSHA256,
+		Platform:                 platformID(),
 	}
 }
+
+// platformID is the OS the key is computed on; a test replaces it. An ID the OS cannot report
+// is a fixed text, so it never matches an entry verified with a real one.
+var platformID = sync.OnceValue(func() string {
+	id, err := platform.ID()
+	if err != nil {
+		return "UNKNOWN_PLATFORM: " + err.Error()
+	}
+	return id
+})
 
 // ManagedSourceFingerprint digests the machine policy documents the product reads (source
 // and content of each, sorted), so a policy change makes every entry stale.

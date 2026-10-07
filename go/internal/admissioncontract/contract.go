@@ -13,7 +13,7 @@ import (
 	"sort"
 )
 
-//go:embed admission-r2.json
+//go:embed admission-r3.json
 var admission []byte
 
 //go:embed routing-r4.json
@@ -32,13 +32,22 @@ type Scope struct {
 
 // Disposition is one owner decision recorded in the contract.
 type Disposition struct {
-	Case        string            `json:"case"`
-	Label       string            `json:"label"`
-	Reason      string            `json:"reason"`
-	AppliesWhen string            `json:"appliesWhen"`
-	ValidFor    map[string]string `json:"validFor"`
-	Authority   string            `json:"authority"`
+	Case        string `json:"case"`
+	Label       string `json:"label"`
+	Reason      string `json:"reason"`
+	AppliesWhen string `json:"appliesWhen"`
+	// AppliesWhenReason, when set, must also be among the case's reasons in the run.
+	AppliesWhenReason string            `json:"appliesWhenReason"`
+	ValidFor          map[string]string `json:"validFor"`
+	// EquivalentGate, when set, must pass in the same run for the disposition to hold.
+	EquivalentGate string `json:"equivalentGate"`
+	Authority      string `json:"authority"`
 }
+
+// RunObserved is a disposition's validFor.nativeSHA256 that names no SHA: it holds for the
+// native the run itself pinned, and the entry keyed by that SHA carries it (admission r3
+// caseFixtureDisposition.runObserved).
+const RunObserved = "RUN_OBSERVED"
 
 type document struct {
 	Revision       int              `json:"admissionContractRevision"`

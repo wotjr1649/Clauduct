@@ -226,7 +226,12 @@ type Seen struct {
 	Account     bool      `json:"account"`
 	WebSocket   bool      `json:"webSocket"`
 	Undecodable bool      `json:"undecodable"`
-	Canaries    []string  `json:"canaries,omitempty"`
+	// TLSRejected is a tunnel whose client sent a TLS ClientHello and then did not complete the
+	// handshake (it refused the probe's certificate, or left). TLS carries no application data
+	// before the handshake completes and this server accepts no early data, so such a tunnel
+	// carried no request; it is recorded apart from an undecodable one.
+	TLSRejected bool     `json:"tlsRejected,omitempty"`
+	Canaries    []string `json:"canaries,omitempty"`
 	// Authority is a proxied tunnel's host:port. Kept out of evidence: it can name a loopback
 	// port, and the probe only needs it in memory to attribute a tunnel to its own receivers.
 	Authority string `json:"-"`
@@ -476,15 +481,22 @@ func PathClass(path string) string {
 var accountHosts = []string{"claude.ai", "claude.com", "console.anthropic.com", "platform.claude.com"}
 var accountPathParts = []string{"/oauth/", "/v1/oauth", "/api/oauth", "/api/auth/", "/login"}
 
+// distributionHosts serve native's own release and plugin files under an account domain. A
+// request to one is not a login or account request unless its path says so.
+var distributionHosts = []string{"downloads.claude.ai"}
+
 // IsAccount reports whether a request is an Anthropic login or account request.
 func IsAccount(host, path string) bool {
 	h := strings.ToLower(hostOnly(host))
+	p := strings.ToLower(path)
+	if slices.Contains(distributionHosts, h) {
+		return slices.ContainsFunc(accountPathParts, func(part string) bool { return strings.Contains(p, part) })
+	}
 	for _, account := range accountHosts {
 		if h == account || strings.HasSuffix(h, "."+account) {
 			return true
 		}
 	}
-	p := strings.ToLower(path)
 	for _, part := range accountPathParts {
 		if strings.Contains(p, part) {
 			return true
@@ -566,9 +578,11 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
 	// the probe cannot see into must not vanish from the record.
 	tunnel := o.record(Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect"})
+	var hello atomic.Bool
 	tlsConn := tls.Server(inner, &tls.Config{NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12,
-		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			name := hello.ServerName
+		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			hello.Store(true)
+			name := info.ServerName
 			if name == "" {
 				name = hostOnly(authority)
 			}
@@ -578,8 +592,14 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	err = tlsConn.HandshakeContext(handshake)
 	cancel()
 	if err != nil {
-		// A client that sent bytes the probe could not decrypt: refused pin, h2-only, distrust.
-		o.update(tunnel, func(s *Seen) { s.Undecodable = true })
+		if hello.Load() {
+			// A ClientHello, then no handshake: a refused pin or certificate, h2-only, a client
+			// that left. No application data could have crossed.
+			o.update(tunnel, func(s *Seen) { s.TLSRejected = true })
+		} else {
+			// Bytes that were not a TLS ClientHello the probe could read.
+			o.update(tunnel, func(s *Seen) { s.Undecodable = true })
+		}
 		tlsConn.Close()
 		return
 	}

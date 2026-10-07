@@ -79,6 +79,7 @@ func main() {
 	rawLog := flag.String("log", "", "raw output file")
 	textLog := flag.String("text", "", "screen text file")
 	total := flag.Int("timeout", 600, "seconds before the child is abandoned")
+	marks := flag.String("marks", "", "file that gets one line per matched step: its index and the time its input began, RFC 3339")
 	var env envList
 	flag.Var(&env, "env", "KEY=VALUE added to the inherited environment")
 	flag.Parse()
@@ -228,6 +229,12 @@ func main() {
 				continue
 			}
 			time.Sleep(time.Duration(s.After) * time.Millisecond)
+			if *marks != "" {
+				if f, err := os.OpenFile(*marks, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+					fmt.Fprintf(f, "%s%d %s\n", phase, i, time.Now().Format(time.RFC3339Nano))
+					f.Close()
+				}
+			}
 			// Replies can arrive while later parts of the same input are still being sent.
 			from = len(compact())
 			for j, part := range s.Send {

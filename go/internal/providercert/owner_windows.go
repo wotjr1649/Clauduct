@@ -2,6 +2,7 @@ package providercert
 
 import (
 	"net"
+	"regexp"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,34 @@ type ConnOwner struct {
 	// Created is the process's creation time, so a later record cannot confuse it with another
 	// process that reused the number.
 	Created time.Time `json:"created"`
+	// Command is the first argument after the executable when it is a plain word or flag (a
+	// subcommand such as stop or daemon, or --bg); anything else is "other". No other part of
+	// the command line is read into evidence.
+	Command string `json:"command,omitempty"`
+}
+
+var commandWord = regexp.MustCompile(`^-{0,2}[a-z][a-z-]{0,23}$`)
+
+// firstArgument classifies a command line's first argument after the executable.
+func firstArgument(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return ""
+	}
+	// The executable may be quoted and contain spaces.
+	rest := fields[1:]
+	if strings.HasPrefix(line, `"`) {
+		if end := strings.Index(line[1:], `"`); end >= 0 {
+			rest = strings.Fields(line[end+2:])
+		}
+	}
+	if len(rest) == 0 {
+		return ""
+	}
+	if commandWord.MatchString(rest[0]) {
+		return rest[0]
+	}
+	return "other"
 }
 
 var (
@@ -26,7 +55,29 @@ var (
 	kernelOwner        = syscall.NewLazyDLL("kernel32.dll")
 	queryImageNameW    = kernelOwner.NewProc("QueryFullProcessImageNameW")
 	getProcessTimesOwn = kernelOwner.NewProc("GetProcessTimes")
+	queryInformation   = syscall.NewLazyDLL("ntdll.dll").NewProc("NtQueryInformationProcess")
 )
+
+// commandLine reads a process's command line (ProcessCommandLineInformation, Windows 8.1+).
+func commandLine(h syscall.Handle) string {
+	buf := make([]byte, 64<<10)
+	var size uint32
+	if r, _, _ := queryInformation.Call(uintptr(h), 60, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)), uintptr(unsafe.Pointer(&size))); r != 0 {
+		return ""
+	}
+	// UNICODE_STRING { Length, MaximumLength uint16; Buffer *uint16 } at the start of buf.
+	length := *(*uint16)(unsafe.Pointer(&buf[0]))
+	text := *(**uint16)(unsafe.Pointer(&buf[unsafe.Offsetof(unicodeString{}.Buffer)]))
+	if text == nil {
+		return ""
+	}
+	return syscall.UTF16ToString(unsafe.Slice(text, length/2))
+}
+
+type unicodeString struct {
+	Length, MaximumLength uint16
+	Buffer                *uint16
+}
 
 // mibTCPRowOwnerPID is MIB_TCPROW_OWNER_PID; ports are in network order in the low 16 bits.
 type mibTCPRowOwnerPID struct {
@@ -65,15 +116,15 @@ func ownerOf(client, server net.Addr) ConnOwner {
 	if owner.PID == 0 {
 		return owner
 	}
-	owner.Image, owner.Created = processFacts(owner.PID)
+	owner.Image, owner.Created, owner.Command = processFacts(owner.PID)
 	owner.ParentPID = parentOf(owner.PID)
 	return owner
 }
 
-func processFacts(pid uint32) (string, time.Time) {
+func processFacts(pid uint32) (string, time.Time, string) {
 	h, err := syscall.OpenProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
 	if err != nil {
-		return "", time.Time{}
+		return "", time.Time{}, ""
 	}
 	defer syscall.CloseHandle(h)
 	name := make([]uint16, 1024)
@@ -90,7 +141,7 @@ func processFacts(pid uint32) (string, time.Time) {
 	if r, _, _ := getProcessTimesOwn.Call(uintptr(h), uintptr(unsafe.Pointer(&created)), uintptr(unsafe.Pointer(&exited)), uintptr(unsafe.Pointer(&kernel)), uintptr(unsafe.Pointer(&user))); r != 0 {
 		when = time.Unix(0, created.Nanoseconds())
 	}
-	return image, when
+	return image, when, firstArgument(commandLine(h))
 }
 
 func parentOf(pid uint32) uint32 {

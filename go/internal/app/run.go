@@ -195,8 +195,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if providerFlag != "" && BackgroundRequested(o.Args) && !o.backgroundUnderStrategy {
-		return Result{}, ErrBackgroundUnverified
+	if providerFlag != "" && !o.backgroundUnderStrategy {
+		// Under a strategy only the verified launch forms start (admission scopes, #320);
+		// background entry is one of the refusals.
+		if _, err := admissionScope(o.Args); err != nil {
+			return Result{}, err
+		}
 	}
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome

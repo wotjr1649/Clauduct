@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
 )
 
 // Admission states (admission contract r1 states).
@@ -203,4 +205,38 @@ func AdmissionStatuses(home, nativeSHA256 string) []AdmissionStatus {
 		out = append(out, status)
 	}
 	return out
+}
+
+// AdmissionKeyFor is the cache key the gate and the probe both compute for one scope
+// (admission contract r2 cache.key): the frozen contracts and restrictions come from the
+// embedded contract, the rest from what is installed and running now.
+func AdmissionKeyFor(scope, nativeSHA256, clauductSHA256, probeSHA256, managedFingerprint string, probeSchema int) AdmissionKey {
+	return AdmissionKey{
+		NativeSHA256:             nativeSHA256,
+		ConfigurationID:          admissioncontract.ConfigurationID,
+		RoutingContractSHA256:    admissioncontract.RoutingSHA256(),
+		AdmissionContractSHA256:  admissioncontract.AdmissionSHA256(),
+		ProbeSchemaRevision:      probeSchema,
+		ClauductBinarySHA256:     clauductSHA256,
+		ManagedSourceFingerprint: managedFingerprint,
+		Scope:                    scope,
+		RestrictionsDigest:       RestrictionsDigest(admissioncontract.Restrictions()),
+		ProbeExecutableSHA256:    probeSHA256,
+	}
+}
+
+// ManagedSourceFingerprint digests the machine policy documents the product reads (source
+// and content of each, sorted), so a policy change makes every entry stale.
+func ManagedSourceFingerprint(env map[string]string) (string, error) {
+	docs, err := readManagedPolicy(env)
+	if err != nil {
+		return "", err
+	}
+	parts := []string{}
+	for _, d := range docs {
+		parts = append(parts, d.Source+"\x00"+d.JSON)
+	}
+	sort.Strings(parts)
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x01")))
+	return hex.EncodeToString(sum[:]), nil
 }

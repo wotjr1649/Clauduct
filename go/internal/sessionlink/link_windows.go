@@ -33,7 +33,10 @@ var validID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 type Connection struct {
 	BaseURL string `json:"baseURL"`
 	Token   string `json:"token"`
-	PID     int    `json:"-"` // verified by GetNamedPipeServerProcessId, never trusted from JSON
+	// Foreground is set by StartForeground: the link's server is an ancestor of every hook
+	// and helper that may read it, which a background link's server is not.
+	Foreground bool `json:"foreground,omitempty"`
+	PID        int  `json:"-"` // verified by GetNamedPipeServerProcessId, never trusted from JSON
 }
 
 type Server struct {
@@ -92,6 +95,7 @@ func Start(parent context.Context, connection Connection) (*Server, error) {
 // does not pass ANTHROPIC_AUTH_TOKEN to them (measured 2.1.292). There is no stop command; the
 // session ends with its native and closes the link itself.
 func StartForeground(parent context.Context, connection Connection) (*Server, error) {
+	connection.Foreground = true
 	return start(parent, connection, false)
 }
 

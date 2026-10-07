@@ -99,11 +99,12 @@ func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 }
 
 // foregroundSettings binds a foreground session's settings to its routing (#295). Every hook
-// command names this session's gateway, so the hook can compare it with where native's
-// requests actually go. The settings env carries the values a settings file must not replace
-// (routingSettingsEnv and the requirements): --settings outranks user, project and local
-// settings (measured 2.1.289). The token never goes on a command line.
-func foregroundSettings(settings, gateway string, env map[string]string) (string, error) {
+// command names this session's link, from which the hook reads the gateway and its token, so
+// it can compare the gateway with where native's requests actually go without relying on the
+// environment native gives it. The settings env carries the values a settings file must not
+// replace (routingSettingsEnv and the requirements): --settings outranks user, project and
+// local settings (measured 2.1.289). The token never goes on a command line.
+func foregroundSettings(settings, link string, env map[string]string) (string, error) {
 	var s childSettings
 	if json.Unmarshal([]byte(settings), &s) != nil {
 		return "", errSettingsConflict
@@ -111,7 +112,7 @@ func foregroundSettings(settings, gateway string, env map[string]string) (string
 	for _, matchers := range s.Hooks {
 		for i := range matchers {
 			for j := range matchers[i].Hooks {
-				matchers[i].Hooks[j].Command += " " + gateway
+				matchers[i].Hooks[j].Command += " " + link
 			}
 		}
 	}

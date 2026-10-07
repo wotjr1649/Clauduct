@@ -344,7 +344,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// nothing to a binary that is not the native client, and would arrive as an argument it
 	// does not understand.
 	settings, agents, effort := "", "", ""
-	var background *sessionlink.Server
+	var background, foreground *sessionlink.Server
 	nativePlugin := ""
 	nativeCleanupReady := true // No child owns the directory until spawn succeeds.
 	defer func() {
@@ -391,7 +391,21 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			for name, value := range config.sessionRequirements() {
 				env[name] = value
 			}
-			if settings, err = foregroundSettings(settings, gw.BaseURL(), env); err != nil {
+			// The hooks and the confirmation helper read this session's connection from its
+			// link, held until native and its hooks are done: the deferred close runs after
+			// the native process tree has ended.
+			if hook != "" {
+				foreground, err = sessionlink.StartForeground(context.Background(), sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()})
+				if err != nil {
+					err = errors.New("SESSION_LINK_UNAVAILABLE: the session's hook connection could not be prepared")
+				} else {
+					defer foreground.Close()
+					settings, err = foregroundSettings(settings, foreground.ID, env)
+				}
+			} else {
+				settings, err = foregroundSettings(settings, "", env)
+			}
+			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, err
 			}
@@ -433,6 +447,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			link := ""
 			if background != nil {
 				link = background.ID
+			} else if foreground != nil {
+				link = foreground.ID
 			}
 			nativePlugin, err = prepareNativeEvents(link, config.Selection.Catalogue())
 			if err != nil {

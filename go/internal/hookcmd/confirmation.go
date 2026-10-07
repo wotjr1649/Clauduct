@@ -20,9 +20,9 @@ const ConfirmationArg = "--clauduct-confirmation"
 // for its nonce: the request ended first. The module closes it without failing.
 const ConfirmationStale = 3
 
-// linkedConfirmation is a background worker's helper. The worker's environment
-// carries no gateway token, so the connection comes from the session link, as
-// it does for the background hooks.
+// linkedConfirmation is the helper of a session with a link, foreground or background.
+// Native's environment may carry no gateway token (a background worker, or a host-managed
+// provider), so the connection comes from the session link, as it does for the hooks.
 func linkedConfirmation(link string, in io.Reader, out io.Writer, env map[string]string) int {
 	connection, err := sessionlink.Read(link)
 	if err != nil {

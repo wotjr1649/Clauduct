@@ -35,7 +35,9 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
+	"unsafe"
 )
 
 // Named reports whether argv0 is the program called name, in any case and with or without
@@ -47,7 +49,7 @@ func Named(argv0, name string) bool {
 // Arg is the whole argument list the session settings give the hook command.
 const Arg = "--clauduct-hook"
 
-// ProviderControlledArg follows the gateway URL on a foreground hook's command line when the
+// ProviderControlledArg follows the session link on a foreground hook's command line when the
 // launcher started native under a provider-control strategy (P3, #320). Only the launcher
 // writes a hook's command line, so a settings file cannot claim the strategy.
 const ProviderControlledArg = "--clauduct-provider-controlled"
@@ -70,15 +72,19 @@ func Dispatch(argv []string) (int, bool) {
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
 	}
-	if (len(args) == 2 || len(args) == 3 && args[2] == ProviderControlledArg) && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
-		// Foreground: the gateway is on the command line and the token in the environment.
+	controlled := len(args) == 3 && args[0] == Arg && args[2] == ProviderControlledArg
+	if len(args) == 2 && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
+		// A session started before the session link: the gateway is on the command line and
+		// the token in the environment.
 		env := platform.Environment(os.Environ())
-		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, len(args) == 3, os.Stdin, os.Stdout, os.Stderr, env), true
+		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, false, os.Stdin, os.Stdout, os.Stderr, env), true
 	}
-	if len(args) == 2 && (args[0] == Arg || args[0] == "--clauduct-background-key") {
+	if (len(args) == 2 || controlled) && (args[0] == Arg || args[0] == "--clauduct-background-key") {
+		// The session link, foreground or background: the connection never comes from the
+		// environment, so there is nothing to fall back to when the link is gone.
 		connection, err := sessionlink.Read(args[1])
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "BACKGROUND_CONNECTION_UNAVAILABLE: restart this session with Clauduct")
+			fmt.Fprintln(os.Stderr, "CLAUDUCT_CONNECTION_UNAVAILABLE: this session's Clauduct link is gone; restart the session with Clauduct")
 			return 2, true
 		}
 		if args[0] == "--clauduct-background-key" {
@@ -92,7 +98,7 @@ func Dispatch(argv []string) (int, bool) {
 			}
 			return 0, true
 		}
-		return routed(connection, false, os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
+		return routed(connection, controlled, os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
@@ -162,6 +168,13 @@ const RoutingMismatchPath = "/clauduct/routing-mismatch"
 // printed.
 func routed(connection sessionlink.Connection, controlled bool, in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	if routedElsewhere(env, connection.BaseURL) {
+		// A foreground link answers for the Clauduct process this hook runs under. One that does
+		// not is another session's link; ending that session would be wrong, so this hook only
+		// refuses its own event.
+		if connection.Foreground && !ancestor(connection.PID) {
+			fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: this hook names another Clauduct session's link; the event is refused.")
+			return 2
+		}
 		fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native is not sending model requests to this session's Clauduct gateway; the session is being ended.")
 		postReply([]byte("{}"), map[string]string{"ANTHROPIC_BASE_URL": connection.BaseURL, "ANTHROPIC_AUTH_TOKEN": connection.Token}, RoutingMismatchPath, false)
 		return 2
@@ -199,6 +212,36 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 		}
 	}
 	return runWithOutput(bytes.NewReader(raw), out, errOut, env)
+}
+
+// ancestor reports whether pid is one of this process's ancestors, within a bounded walk of
+// the current process snapshot. Any failure answers no.
+func ancestor(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	snapshot, err := syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return false
+	}
+	defer syscall.CloseHandle(snapshot)
+	parents := map[uint32]uint32{}
+	entry := syscall.ProcessEntry32{Size: uint32(unsafe.Sizeof(syscall.ProcessEntry32{}))}
+	for err = syscall.Process32First(snapshot, &entry); err == nil; err = syscall.Process32Next(snapshot, &entry) {
+		parents[entry.ProcessID] = entry.ParentProcessID
+	}
+	current := uint32(os.Getpid())
+	for range 32 {
+		parent, ok := parents[current]
+		if !ok || parent == 0 || parent == current {
+			return false
+		}
+		if parent == uint32(pid) {
+			return true
+		}
+		current = parent
+	}
+	return false
 }
 
 // RoutingProofPath is the gateway's answer to whether native's start-up model list reached it.

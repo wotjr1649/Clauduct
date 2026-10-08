@@ -67,6 +67,11 @@ func AdmitLaunch(ctx context.Context, in GateInput) (Admission, error) {
 	if err != nil {
 		return Admission{}, err
 	}
+	if _, known := admissioncontract.Scopes()[scope]; !known {
+		// A scope the build selects but the admission contract does not define has no cases to
+		// verify: it is refused here, not left to a probe that would have nothing to run.
+		return Admission{}, ErrNoAdmissionScope
+	}
 	if ExpectedProbeSHA256 == "" {
 		return Admission{}, ErrProbeUnknown
 	}

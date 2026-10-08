@@ -14,6 +14,9 @@ const (
 	ScopeContinuePrint  = "CONTINUE_PRINT"
 	ScopeMultiTurn      = "MULTI_TURN_SAME_PROCESS"
 	ScopeTUI            = "TUI"
+	// ScopeResumeTUI is a TUI launched with --resume <UUID> and no -p: the session's conversation
+	// and stored profile are restored before the first prompt (#319 owner decision 16).
+	ScopeResumeTUI = "RESUME_TUI"
 )
 
 // ErrNoAdmissionScope refuses a launch form no admission scope covers. Nothing is started.
@@ -94,6 +97,14 @@ func admissionScope(args []string) (string, error) {
 		return ScopePrintSingle, nil
 	case !resume && !continued:
 		return ScopeTUI, nil
+	case resume && !continued:
+		// A TUI --resume restores a named session. A value that is not a session UUID (an empty
+		// one, a search term) opens native's picker or searches, which resumes in-process; --continue
+		// without -p stays unscoped.
+		if !sessionUUID.MatchString(options["--resume"]) {
+			return "", ErrNoAdmissionScope
+		}
+		return ScopeResumeTUI, nil
 	}
 	return "", ErrNoAdmissionScope
 }

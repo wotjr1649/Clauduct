@@ -91,6 +91,13 @@ type p3Case struct {
 	ProductEnv func(*p3World) map[string]string
 	// Script answers INTENDED's calls for this case (scripted tool calls); nil is the default.
 	Script func(body string, canaries []string) string
+	// TUIResume turns a TUI case into a resume of a session made in the same world: a -p turn with
+	// this canary ID starts the session (--session-id), then the TUI is launched with --resume of
+	// it and its prompts follow. The seed is the case's first turn.
+	TUIResume string
+	// SeedPair starts the seed turn on a non-default model and effort (p3RestoreModel and
+	// p3RestoreEffort), so a restored snapshot is told apart from a default pair.
+	SeedPair bool
 	// ReplyDelay holds the reply to each turn's request (R04L: its child's fate window and late post
 	// need native running well past a hook's timeout, and the synthetic reply is otherwise instant).
 	ReplyDelay time.Duration
@@ -903,6 +910,9 @@ type p3Observed struct {
 type p3Turn struct {
 	Canary     providercert.Canary
 	Start, End time.Time
+	// Closed is a turn whose window ends at End: a request with no canary after it belongs to no
+	// turn (the seed of a resumed TUI, whose next native start is not this turn's).
+	Closed bool
 	// Output is what native printed for this turn: -p stdout or the stream-json result.
 	Output string
 }
@@ -1279,6 +1289,28 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 			obs.Outputs = outs[x].String() + obs.Outputs
 		}
 	case p3TUI:
+		launchArgs := c.Args
+		if c.TUIResume != "" {
+			session := fmt.Sprintf("%08x-0000-4000-8000-%012x", time.Now().UnixNano()&0xffffffff, time.Now().UnixNano()&0xffffffffffff)
+			obs.Session = session
+			seed := []string{"-p", "", "--session-id", session}
+			if c.SeedPair {
+				if bridge.DefaultStartup() == (bridge.Pair{Model: p3RestoreModel, Effort: p3RestoreEffort}) {
+					t.Fatal("the restore pair is the default pair; pick another")
+				}
+				seed = append(seed, "--model", p3RestoreModel, "--effort", p3RestoreEffort)
+			}
+			s := turn(c.TUIResume)
+			seed[1] = prompt(obs.Turns[s].Canary)
+			var seedOut strings.Builder
+			once(seed, nil, &seedOut)
+			end(s)
+			obs.Turns[s].Closed = true
+			obs.Turns[s].Output = seedOut.String()
+			obs.Outputs = seedOut.String() + obs.Outputs
+			obs.SnapshotBefore = w.sessionState(session).profile != ""
+			launchArgs = append([]string{"--resume", session}, c.Args...)
+		}
 		i := turn("turn1")
 		steps, screen, err := writeTUISteps(t.TempDir(), prompt(obs.Turns[i].Canary), c.TUIAfterReply)
 		if err != nil {
@@ -1402,7 +1434,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 			return process, err
 		}
 		var out strings.Builder
-		once(c.Args, nil, &out)
+		once(launchArgs, nil, &out)
 		close(stopWatch)
 		<-watched
 		end(i)
@@ -1814,6 +1846,9 @@ func turnOf(turns []p3Turn, canaries []string, at time.Time) int {
 	}
 	for i := len(turns) - 1; i >= 0; i-- {
 		if !at.Before(turns[i].Start) {
+			if turns[i].Closed && at.After(turns[i].End) {
+				return -1
+			}
 			return i
 		}
 	}
@@ -1885,7 +1920,7 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 				}
 			}
 			turn.Restored = pair != nil && now != nil && pair.backendModel != "" && pair.backendEffort != "" && now.backendModel == pair.backendModel && now.backendEffort == pair.backendEffort
-			if c.Entry == p3ContinueRecover && pair != nil && (pair.backendModel != p3RestoreModel || pair.backendEffort != p3RestoreEffort) {
+			if (c.Entry == p3ContinueRecover || c.SeedPair) && pair != nil && (pair.backendModel != p3RestoreModel || pair.backendEffort != p3RestoreEffort) {
 				// Turn 1 did not run the non-default pair it was started with, so an equal pair at
 				// the resume would not show a restored snapshot.
 				turn.Restored = false

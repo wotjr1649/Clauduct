@@ -55,7 +55,7 @@ type scopeCase struct {
 }
 
 // caseRegistry is every case this runner implements, by contract ID.
-func caseRegistry() map[string]func() scopeCase {
+func caseRegistry(scope string) map[string]func() scopeCase {
 	reg := map[string]func() scopeCase{}
 	for _, c := range p3PrintFamily() {
 		c := c
@@ -85,6 +85,12 @@ func caseRegistry() map[string]func() scopeCase {
 	reg["R04S"] = func() scopeCase { return scopeCase{c: p3Case{ID: "R04S"}, synthetic: staleEvents} }
 	be17 := reg["BE17"]
 	reg["BE17"] = func() scopeCase { sc := be17(); sc.variants = []string{"BE17-setting"}; return sc }
+	for id, f := range tuiResumeCases() {
+		reg[id] = f
+	}
+	if scope == app.ScopeResumeTUI {
+		resumeTUIScope(reg)
+	}
 	return reg
 }
 
@@ -223,7 +229,8 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	key := app.AdmissionKeyFor(o.Scope, start.SHA256, digest(productRaw), o.ProbeSHA256, managed, providercert.ProbeSchemaRevision)
 	write := func(name string, v any) { writeJSON(t, filepath.Join(o.EvidenceDir, name+".json"), v) }
 	ids := admissioncontract.ShortCases(o.Scope)
-	if len(ids) == 0 {
+	// RESUME_TUI may be diagnosed (-only) before the contract lists it.
+	if len(ids) == 0 && (o.Only == nil || o.Scope != app.ScopeResumeTUI) {
 		return app.AdmissionEntry{}, fmt.Errorf("unknown scope %q", o.Scope)
 	}
 	// One run per scope at a time (r4 cache.write). A run that waited finds the entry the other
@@ -244,7 +251,7 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		"retries": 0, "deadline": began.Add(certificationTotal), "workers": caseWorkers})
 	runner := newP3Runner(exe, pinnedStarter, 60*time.Second)
 	runner.identity = func() (providercert.Identity, error) { return providercert.Observe(exe) }
-	registry := caseRegistry()
+	registry := caseRegistry(o.Scope)
 	optional := admissioncontract.Scopes()[o.Scope].Optional
 	// Every deadline comes from one absolute time fixed at the start (r4 deadlines); a case that
 	// cannot start or does not finish before it is INCONCLUSIVE (TIMEOUT).

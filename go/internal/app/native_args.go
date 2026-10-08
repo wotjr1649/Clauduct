@@ -44,10 +44,10 @@ func accountCommand(args []string) error {
 	var positionals []string
 	for i := 0; i < len(args) && args[i] != "--" && len(positionals) < 2; {
 		arg := args[i]
-		if len(positionals) == 0 && printMode(args[i:i+1]) {
+		end, known := nativeArgEnd(args, i)
+		if known && end <= len(args) && len(positionals) == 0 && printMode(args[i:end]) {
 			return nil
 		}
-		end, known := nativeArgEnd(args, i)
 		if !known {
 			if _, _, attached := strings.Cut(arg, "="); attached && strings.HasPrefix(arg, "--") {
 				i++

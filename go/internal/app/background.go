@@ -36,6 +36,36 @@ func BackgroundRequested(args []string) bool {
 	return slices.Contains(args, "--bg") || slices.Contains(args, "--background")
 }
 
+// backgroundResume makes a background resume an explicit fork. Native starts a copy of a
+// background session it is asked to resume with flags, and this launcher always passes flags
+// (--settings, --plugin-dir), so the copy's SessionStart is a fork that the resumed profile
+// does not accept (#319 decision 17, product17-bg L4: SESSION_PROFILE_UNVERIFIED). Declared
+// a fork, the resume of a background session and of a regular one both start from the
+// resumed profile (L4f, L5f). A target that is not a session UUID (a job id) is refused: its
+// copy ran no hook and never reached the gateway (L4j). --continue is refused too: native
+// copies the directory's latest session, which this launcher cannot name, so the copy's fork
+// has no profile to start from (L7: SESSION_PROFILE_UNVERIFIED). resumeID is prepareSessionArgs'.
+func backgroundResume(args []string, resumeID string) ([]string, error) {
+	_, continued := optionValue(args, "--continue")
+	if _, short := optionValue(args, "-c"); short || continued {
+		return nil, ErrBackgroundContinue
+	}
+	_, resume := optionValue(args, "--resume")
+	if _, short := optionValue(args, "-r"); short {
+		resume = true
+	}
+	if !resume {
+		return args, nil
+	}
+	if resumeID == "" {
+		return nil, ErrBackgroundResumeTarget
+	}
+	if _, fork := optionValue(args, "--fork-session"); fork {
+		return args, nil
+	}
+	return append([]string{"--fork-session"}, args...), nil
+}
+
 func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string, strategyFlag string) (string, error) {
 	var s childSettings
 	if json.Unmarshal([]byte(settings), &s) != nil || hook == "" {

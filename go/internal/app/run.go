@@ -41,6 +41,12 @@ var ErrInterrupted = errors.New(CategoryCancelled)
 var ErrDesktopUnsupported = errors.New("DESKTOP_UNSUPPORTED: --desktop opens a separate app outside this bridge; use a native terminal session")
 var ErrDesktopBoundary = errors.New("DESKTOP_OPTION_UNVERIFIED: unknown native option hides whether --desktop is an option or a value; use unambiguous terminal arguments")
 
+// ErrBackgroundResumeTarget refuses a background resume whose target is not a session UUID.
+var ErrBackgroundResumeTarget = errors.New("BACKGROUND_RESUME_TARGET_UNVERIFIED: --resume with --bg needs the session's full id (as claude agents --json prints it); native copies the conversation for any other value and that copy never reaches this session's gateway. Nothing was started")
+
+// ErrBackgroundContinue refuses --continue with --bg.
+var ErrBackgroundContinue = errors.New("BACKGROUND_CONTINUE_UNVERIFIED: --continue with --bg starts a copy of a session this launcher cannot name, which its gateway refuses; use --resume <session id> --bg. Nothing was started")
+
 // ErrAccountCommand refuses a native Claude account subcommand before anything starts.
 var ErrAccountCommand = errors.New("ACCOUNT_COMMAND_REFUSED: auth login, auth logout and setup-token manage a Claude account, which Clauduct does not sign in to or out of; run them in standalone Claude Code. Nothing was started")
 
@@ -282,6 +288,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	forward, resumeID := prepareSessionArgs(forward)
+	if BackgroundRequested(forward) {
+		if forward, err = backgroundResume(forward, resumeID); err != nil {
+			return Result{}, err
+		}
+	}
 	o.Args = forward
 	// One account list per session, fixed before native starts and shared by display,
 	// routing, Agent schemas and native hooks. Help and version never fetch one.

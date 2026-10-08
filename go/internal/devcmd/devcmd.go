@@ -171,7 +171,7 @@ func admissionReport(out io.Writer) {
 	if keyErr != nil {
 		fmt.Fprintf(out, "admission    current key unavailable: %v\n", keyErr)
 	}
-	fmt.Fprintf(out, "admission    configuration %s (restrictions: %s)\n", admissioncontract.ConfigurationID, strings.Join(admissioncontract.Restrictions(), ", "))
+	fmt.Fprintf(out, "admission    contract configuration %s (contract restrictions, not the launch's: %s)\n", admissioncontract.ConfigurationID, strings.Join(admissioncontract.Restrictions(), ", "))
 	probe := app.ExpectedProbeSHA256
 	if probe == "" {
 		probe = "none: this build runs no provider-control probe"

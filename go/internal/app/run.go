@@ -131,6 +131,11 @@ type Options struct {
 	backgroundUnderStrategy bool
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
 	interrupts chan os.Signal
+	// afterNative, set only by a test, runs once native has ended and before the gateway closes;
+	// the session link is still open. Decision 18 experiments (X2, X3) hold a foreground session's
+	// gateway here to see what native's background path does while it lives. The product never
+	// sets it.
+	afterNative func()
 }
 
 // Result separates what the native process did from what cleanup did.
@@ -723,6 +728,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.NativeExitCode = ExitCodeUnknown
 	}
 
+	if o.afterNative != nil {
+		o.afterNative()
+	}
 	// Reap native first, then drain the gateway before taking its final account.
 	// Otherwise a cancellation could still be in flight when status claimed completion.
 	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)

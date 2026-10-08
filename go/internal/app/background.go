@@ -175,6 +175,9 @@ type backgroundProcess struct {
 	forkedFrom string
 	// start, when set, starts native's control commands as the launch starts native.
 	start func(launch.Spec, io.Reader, io.Writer, io.Writer) (Process, error)
+	// crash, set only by a test, ends the wait without stopping the native job, as the
+	// resident process dying would (decision 18c X7).
+	crash <-chan struct{}
 }
 
 func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
@@ -235,6 +238,8 @@ func (p *backgroundProcess) Wait() error {
 	missing := 0
 	for {
 		select {
+		case <-p.crash:
+			return errors.New("BACKGROUND_TEST_CRASH")
 		case <-p.ctx.Done():
 			return stopNative()
 		case <-p.link.Stopped:

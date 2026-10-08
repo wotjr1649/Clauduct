@@ -136,6 +136,9 @@ type Options struct {
 	// gateway here to see what native's background path does while it lives. The product never
 	// sets it.
 	afterNative func()
+	// backgroundCrash, set only by a test, makes a background resident end as if its process
+	// died: the native job is not stopped (decision 18c X7).
+	backgroundCrash <-chan struct{}
 }
 
 // Result separates what the native process did from what cleanup did.
@@ -696,7 +699,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		backgroundCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		bp := &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
-			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr, forkedFrom: forkedFrom}
+			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr, forkedFrom: forkedFrom, crash: o.backgroundCrash}
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored
 			// login decides where they connect (#320 R08). They get the launch's own process

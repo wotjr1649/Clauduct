@@ -1,6 +1,9 @@
 package ptydrive
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // submitCheck is a step's check that the input it typed was submitted. The driver cannot see
 // the receiver, so the caller names a file it writes once the typed turn's request arrived
@@ -69,4 +72,52 @@ func awaitQuiet(size func() int, quiet, max time.Duration, now func() time.Time,
 		}
 		sleep(interval)
 	}
+}
+
+// echoOutcome is what the echo gate saw before the next write.
+type echoOutcome struct {
+	// Seen: the typed text was on the screen. Quiet: and the screen then stood still for the
+	// quiet period. A gate that is not both timed out.
+	Seen, Quiet bool
+	Elapsed     time.Duration
+}
+
+// echoed reports whether the screen text (whitespace removed) shows the typed text more often
+// than it did before the text was written (before). Counting, not slicing from an earlier
+// length: the stripped text's length shifts when an escape sequence split across two reads is
+// completed, which moves such an offset past the start of the echo.
+func echoed(screen, want string, before int) bool {
+	return want != "" && strings.Count(screen, want) > before
+}
+
+// awaitEcho returns once seen has held and size has not changed for quiet, or after max. A TUI
+// takes typed text and the Enter that follows in separate input reads only when the Enter comes
+// after the text was drawn; the gate sends Enter on that evidence, not on a fixed delay.
+func awaitEcho(seen func() bool, size func() int, quiet, max time.Duration, now func() time.Time, sleep func(time.Duration)) echoOutcome {
+	const interval = 25 * time.Millisecond
+	began := now()
+	last, lastChange := size(), began
+	var out echoOutcome
+	for {
+		if n := size(); n != last {
+			last, lastChange = n, now()
+		}
+		out.Seen = seen()
+		out.Elapsed = now().Sub(began)
+		if out.Seen && now().Sub(lastChange) >= quiet {
+			out.Quiet = true
+			return out
+		}
+		if out.Elapsed >= max {
+			return out
+		}
+		sleep(interval)
+	}
+}
+
+func orDefault(v, def int) time.Duration {
+	if v <= 0 {
+		v = def
+	}
+	return time.Duration(v) * time.Millisecond
 }

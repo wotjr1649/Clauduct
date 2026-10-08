@@ -29,6 +29,10 @@ const p3PtyDriveArg = "--p3-ptydrive"
 // ptydrive is this executable, started with p3PtyDriveArg first.
 func ptydrive() (string, error) { return os.Executable() }
 
+// p3TUIEchoGate makes the driver send Enter alone, once the typed text shows on the screen and the
+// screen has gone quiet, instead of 300ms after the text.
+const p3TUIEchoGate = true
+
 // p3TUIReady is the main prompt's footer: "? for shortcuts", or 2.1.292's "auto mode on
 // (shift+tab to cycle)". Whitespace removed, like every wait.
 const p3TUIReady = `forshortcuts|shift\+tabtocycle`
@@ -55,7 +59,7 @@ func p3TUISteps(prompt string, afterReply []map[string]any) []map[string]any {
 		{"wait": "Choosethetextstyle", "send": []string{"\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": "Entertocontinue|trustthisfolder|" + p3TUIReady},
 		{"wait": "Entertocontinue", "send": []string{"\r"}, "optional": true, "timeout_s": 5, "after_ms": 300, "until": "trustthisfolder|" + p3TUIReady},
 		{"wait": "trustthisfolder", "send": []string{"\x1b[B", "\r"}, "optional": true, "timeout_s": 10, "after_ms": 300, "until": p3TUIReady},
-		{"wait": p3TUIReady, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500, "quiet_ms": 1000},
+		{"wait": p3TUIReady, "send": []string{prompt, "\r"}, "timeout_s": 30, "after_ms": 500, "quiet_ms": 1000, "echo_gate": p3TUIEchoGate, "echo_max_ms": 10000},
 		{"wait": p3TUIEnded, "send": []string{"/exit", "\r"}, "timeout_s": 60, "after_ms": 1000},
 	}
 }
@@ -244,7 +248,7 @@ func p3TUIStepsN(prompts []string, ready []string, settle time.Duration, approva
 		steps = append(steps, map[string]any{"wait": "Doyouwanttoproceed", "send": approval, "optional": true, "timeout_s": 30, "after_ms": 500})
 	}
 	for k := 1; k < len(prompts); k++ {
-		step := map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{prompts[k], "\r"}, "timeout_s": 60, "after_ms": settle.Milliseconds()}
+		step := map[string]any{"wait": "CLAUDUCT-PROBE-REPLY-", "send": []string{prompts[k], "\r"}, "timeout_s": 60, "after_ms": settle.Milliseconds(), "echo_gate": p3TUIEchoGate, "echo_max_ms": 10000}
 		if approval != nil && k == 1 {
 			// A refused tool ends the turn without a reply: the next prompt goes in once the
 			// refusal has settled, and carries the tool result to the backend.

@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -146,6 +147,14 @@ type p3TUIEvidence struct {
 	DriverStderr string `json:",omitempty"`
 	Marks        string `json:",omitempty"`
 	RawTail      string `json:",omitempty"`
+	// RawLog is the driver's raw ConPTY log with its control sequences kept (JSON-escaped), canary
+	// values replaced by their IDs, so a lost Enter can be analysed after the run. Over
+	// p3RawLogLimit bytes only its start and end are kept; RawLogBytes is the full size.
+	RawLog      string `json:",omitempty"`
+	RawLogBytes int
+	// RawModes lists every terminal mode switch in the raw log (bracketed paste, focus events,
+	// win32-input, kitty keyboard protocol, alternate screen...) as "<offset> <sequence>".
+	RawModes []string `json:",omitempty"`
 	// StepsDeadlineS is the driver's -deadline: its steps ended before the case's limit.
 	StepsDeadlineS int
 	SpawnedAt      string `json:",omitempty"`
@@ -153,6 +162,9 @@ type p3TUIEvidence struct {
 	// SpawnToFirstRequestMs is native's start (pinned image confirmed) to the first request.
 	SpawnToFirstRequestMs int64
 	Prompts               []p3TUIPromptTiming
+	// EchoTimedOut counts the prompts whose Enter went out because the echo gate timed out (the
+	// typed text was not seen on the screen, or the screen never went quiet), not on the echo.
+	EchoTimedOut int
 	// Resent is the number of Enter resends the driver made; each is also a mark.
 	Resent int
 	// SubmitUnconfirmed lists the prompts the driver typed that no receiver saw (SUBMIT_UNCONFIRMED).
@@ -162,6 +174,40 @@ type p3TUIEvidence struct {
 	SessionBefore, SessionAfter *p3SessionFacts `json:",omitempty"`
 	// EnterResent lists the prompts whose submission needed the one Enter resend.
 	EnterResent []string `json:",omitempty"`
+}
+
+// p3RawLogLimit bounds the raw log a case keeps; beyond it the start and the end are kept.
+const p3RawLogLimit = 384 << 10
+
+// rawModeSwitch matches the terminal mode changes a key-input defect could hang on: DEC private
+// modes (bracketed paste 2004, win32-input 9001, focus 1004, mouse 1000-1006, alternate screen
+// 1049, synchronized output 2026), and the kitty keyboard protocol (CSI > n u,
+// CSI = n u, CSI < n u, CSI ? u).
+var rawModeSwitch = regexp.MustCompile(`\x1b\[\?(?:2004|9001|1004|1049|100[0-6]|2026|2027)[hl]|\x1b\[[>=<][0-9;]*u|\x1b\[\?u`)
+
+// rawModes lists the mode switches of a raw log with their byte offsets (at most 200).
+func rawModes(raw string) []string {
+	var out []string
+	for _, loc := range rawModeSwitch.FindAllStringIndex(raw, 200) {
+		out = append(out, fmt.Sprintf("%d %s", loc[0], strings.ReplaceAll(raw[loc[0]:loc[1]], "\x1b", "ESC")))
+	}
+	return out
+}
+
+// rawLogOf reads a raw log for evidence: at most p3RawLogLimit bytes (start and end), its size
+// and its mode switches.
+func rawLogOf(path string) (kept string, size int, modes []string) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", 0, nil
+	}
+	text := string(raw)
+	size, modes = len(text), rawModes(text)
+	if len(text) > p3RawLogLimit {
+		head, tail := p3RawLogLimit/4, p3RawLogLimit-p3RawLogLimit/4
+		text = text[:head] + "\n[... raw log cut: " + strconv.Itoa(len(text)-head-tail) + " bytes ...]\n" + text[len(text)-tail:]
+	}
+	return strings.ToValidUTF8(text, "�"), size, modes
 }
 
 // tuiMarkLines reads the marks file as lines.
@@ -182,6 +228,17 @@ func tuiSubmitLine(lines []string, index int) (detail string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+// tuiEchoTimeouts counts the driver's echo-gate marks that did not see the text and a quiet screen.
+func tuiEchoTimeouts(lines []string) int {
+	n := 0
+	for _, line := range lines {
+		if strings.HasPrefix(line, "echo") && !strings.Contains(line, "seen=true quiet=true") {
+			n++
+		}
+	}
+	return n
 }
 
 // tuiResends counts the driver's Enter resend marks.
@@ -217,7 +274,14 @@ func p3TUIEvidenceOf(w *p3World, obs *p3Observed, marks, raw, stdout, stderr str
 	redact := func(text string) string { return p3RedactCanaries(text, obs.Turns) }
 	lines := tuiMarkLines(marks)
 	e := &p3TUIEvidence{SessionBefore: obs.SessionBefore, SessionAfter: obs.SessionAfter, DriverStdout: redact(stdout), DriverStderr: redact(stderr), Marks: redact(strings.Join(lines, "\n")),
-		RawTail: redact(rawScreen(raw)), StepsDeadlineS: deadlineS, Resent: tuiResends(lines)}
+		RawTail: redact(rawScreen(raw)), StepsDeadlineS: deadlineS, Resent: tuiResends(lines), EchoTimedOut: tuiEchoTimeouts(lines)}
+	e.RawLog, e.RawLogBytes, e.RawModes = rawLogOf(raw)
+	for _, tr := range obs.Turns {
+		if len(tr.Canary.Value) == 0 {
+			continue
+		}
+		e.RawLog = strings.ReplaceAll(e.RawLog, string(tr.Canary.Value), "<canary:"+tr.Canary.ID+">")
+	}
 	if !spawnedAt.IsZero() {
 		e.SpawnedAt = spawnedAt.Format(time.RFC3339Nano)
 	}

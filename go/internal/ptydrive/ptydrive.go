@@ -80,7 +80,14 @@ type step struct {
 	// QuietMS, when set, holds the input until the screen has not changed for that long (at
 	// most 5 seconds, and never past the step's own end): a TUI that is still drawing can
 	// drop what it is sent.
-	QuietMS       int `json:"quiet_ms"`
+	QuietMS int `json:"quiet_ms"`
+	// EchoGate holds each write that follows a text write until the screen shows that text and
+	// has been quiet for EchoQuietMS (default 300), at most EchoMaxMS (default 3000): Enter is
+	// then sent alone, once the TUI has taken the typed text. A gate that times out still sends,
+	// and the outcome is marked, never assumed.
+	EchoGate      bool `json:"echo_gate"`
+	EchoQuietMS   int  `json:"echo_quiet_ms"`
+	EchoMaxMS     int  `json:"echo_max_ms"`
 	pattern       *regexp.Regexp
 	until         *regexp.Regexp
 	confirmScreen *regexp.Regexp
@@ -305,8 +312,19 @@ func Main() {
 			mark(fmt.Sprintf("%s%d", phase, i), "")
 			// Replies can arrive while later parts of the same input are still being sent.
 			from = len(compact())
+			shown := make([]int, len(s.Send)) // times each part's text was on the screen before any write
 			for j, part := range s.Send {
-				if j > 0 {
+				if want := echoText(part); want != "" {
+					shown[j] = strings.Count(compact(), want)
+				}
+			}
+			for j, part := range s.Send {
+				if want := echoText(s.Send[max(j-1, 0)]); j > 0 && s.EchoGate && want != "" {
+					out := awaitEcho(func() bool { return echoed(compact(), want, shown[j-1]) },
+						func() int { return len(compact()) }, orDefault(s.EchoQuietMS, 300), orDefault(s.EchoMaxMS, 3000), time.Now, time.Sleep)
+					fmt.Printf("%secho=%d seen=%v quiet=%v after_ms=%d\n", phase, i, out.Seen, out.Quiet, out.Elapsed.Milliseconds())
+					mark(fmt.Sprintf("echo%s%d", phase, i), fmt.Sprintf("seen=%v quiet=%v after_ms=%d", out.Seen, out.Quiet, out.Elapsed.Milliseconds()))
+				} else if j > 0 {
 					time.Sleep(300 * time.Millisecond)
 				}
 				if err := write(part); err != nil {
@@ -374,6 +392,12 @@ func Main() {
 	if failed != "" || code != 0 {
 		os.Exit(1)
 	}
+}
+
+// echoText is a write's text as the screen shows it: the control sequences and all whitespace
+// removed (the TUI places words with cursor moves). Empty for a key such as Enter.
+func echoText(write string) string {
+	return strings.Join(strings.Fields(control.ReplaceAllString(write, "")), "")
 }
 
 const screenTail = 4000

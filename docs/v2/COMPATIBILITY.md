@@ -1274,12 +1274,13 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 | 지원 환경 | Codex 인증으로 추론하는 로컬 Claude Code. native config에 저장된 Claude apps gateway provider 상태가 없어야 한다. 같은 config의 일반 Claude 구독(claude.ai OAuth) login과 standalone Claude Code 병행은 지원 대상이다 |
 | 제외 환경 | 같은 config에 Claude apps gateway login이 저장된 환경, Clauduct의 backend 선택과 충돌하는 조직 강제 routing 정책. Clauduct는 이 상태를 없애려고 credential을 읽거나 계정·전역 정책을 바꾸지 않는다 |
 | 연결 구성 | 모든 실행 경로(print, `-p --resume`, `-p --continue`, stream-json, TUI, TUI `--resume`, `--bg`)가 provider strategy 없이 실행된다. launch env의 endpoint와 세션 token, `--settings` env의 routing 고정과 provider 전환 변수 비우기, loopback `NO_PROXY`, session link를 읽는 hook을 쓴다. 다른 구성으로 몰래 넘어가지 않는다 |
-| 시작 handshake | native의 시작 model list가 이 세션 gateway에 오지 않으면 SessionStart가 보고하고, UserPromptSubmit이 대화 요청 전에 세션을 끝낸다(#299, #317). 초기 요청 경로의 이상 감지일 뿐이다. 저장 login이 없다는 증명이나 세션 전체가 안전하다는 증명이 아니다 |
-| 잔여 위험 | credential을 읽지 않으므로 제외 환경을 항상 판별하지는 못한다. 제외 환경에서 hook이 꺼졌거나 실패하거나 실행되지 않으면 대화가 저장 gateway로 갈 수 있다(합성 재현 약 47 KB). "모든 환경에서 유출 0"이나 "미지원 환경도 항상 대화 전에 차단"이라고 보장하지 않는다 |
+| 시작 handshake | native의 시작 model list가 이 세션 gateway에 오지 않으면 SessionStart가 보고하고, UserPromptSubmit이 대화 요청 전에 세션을 끝낸다(#299, #317). 초기 요청 경로의 이상 감지일 뿐이다. 저장 login이 없다는 증명이나 세션 전체가 안전하다는 증명이 아니다. 합성 측정(2.1.294)에서는 hook이 살아 있을 때 print·TUI 모두 `ROUTING_UNVERIFIED`로 끝났다. 다만 TUI는 SessionStart 전에 대화가 아닌 시작 요청 1건을 저장 gateway로 보냈다 |
+| 잔여 위험 | credential을 읽지 않으므로 제외 환경을 항상 판별하지는 못한다. 제외 환경에서 hook이 꺼졌거나 실패하거나 실행되지 않으면 대화가 저장 gateway로 간다. 저장 gateway가 원격 managed 정책으로 `disableAllHooks`를 내려 보내도 같다. 합성 재현에서 print는 57.6 KB, TUI는 68.9 KB가 갔고 prompt가 실린 추론 요청이 포함됐다. 시작 전 managed 정책 검사는 launch 시점의 파일만 보므로 이 원격 정책을 막지 못한다. "모든 환경에서 유출 0"이나 "미지원 환경도 항상 대화 전에 차단"이라고 보장하지 않는다 |
 | 계정 명령 | `auth login`·`auth logout`·`setup-token`은 시작 전에 거부한다. `/login`·`/logout`·`/upgrade`·`/usage-credits`·`/install-github-app`은 숨긴다. 문서에 끄는 방법이 없는 `/passes`·`/privacy-settings`·`/design-login`은 숨기지 못한다. standalone Claude Code의 login과 자동 업데이트는 건드리지 않는다 |
 | native 업데이트 | 새 native SHA라는 이유로 launch를 막지 않는다. 버전과 SHA는 진단에 기록한다 |
 | provider-control 진단 | `clauduct --dev --probe provider-control`과 doctor의 admission 줄은 진단 전용이다. `clauduct-probe.exe`가 없어도 launch는 동작한다. HOST_MANAGED 인증(routing r4: INCOMPATIBLE)과 저장 gateway 공존은 별도 강화 트랙이며 해결된 것이 아니다 |
-| background | `--bg` 수명(시작·attach·respawn·resume·stop·정리)과 TUI `/background`는 이 구성에서 다시 검증하는 중이다. 검증 전에는 지원한다고 쓰지 않는다 |
+| Agent View | foreground 세션은 Agent View를 끈다(`CLAUDE_CODE_DISABLE_AGENT_VIEW=1`, 사용자·managed 설정이 다시 켜면 시작 전에 거부). 그래서 TUI의 `/background`·`/bg`는 쓸 수 없다. 끄지 않으면 다음이 측정됐다(2.1.294 합성): `/background` job은 세션이 끝나 닫힌 gateway를 가리킨 채 끝나지 않았고, native supervisor가 이 세션의 env로 남아 같은 config의 이후 background까지 붙잡았다. 다른 곳에서 먼저 시작한 supervisor 아래에서는 worker가 gateway 인증을 받지 못했다. 데이터가 밖으로 나간 관측은 없다. background는 `clauduct --bg`로 만든다 |
+| background | `--bg` 수명(시작·attach·respawn·resume·stop·정리)은 이 구성에서 다시 검증하는 중이다. 검증 전에는 지원한다고 쓰지 않는다 |
 | safety_buffering | backend가 일부 stream event에 싣는 `safety_buffering`은 `false`이거나 codex 형태 객체(`use_cases`·`reasons`·`retry_model`)일 때만 받는다. 객체는 status의 event 진단에 이름만 센다. client 출력은 바뀌지 않는다. 그 밖의 값은 거부한다 |
 
 ## 4. 제3자 구현이라는 사실

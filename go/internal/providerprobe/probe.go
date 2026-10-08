@@ -91,6 +91,9 @@ type p3Case struct {
 	ProductEnv func(*p3World) map[string]string
 	// Script answers INTENDED's calls for this case (scripted tool calls); nil is the default.
 	Script func(body string, canaries []string) string
+	// ReplyDelay holds the reply to each turn's request (R04L: its child's fate window and late post
+	// need native running well past a hook's timeout, and the synthetic reply is otherwise instant).
+	ReplyDelay time.Duration
 	// Expect is P5-F's expectation for every turn; ExpectTurns overrides it per turn index.
 	Expect      string
 	ExpectTurns map[int]string
@@ -542,6 +545,9 @@ type p3Transport struct {
 	// script, when set, may answer a call with its own stream (a scripted tool call); "" keeps
 	// the default reply.
 	script func(body string, canaries []string) string
+	// delay holds every reply to a call that carries a turn's canary, so a turn lasts long enough
+	// for a late hook event and the fate window of its child to fall inside native's run.
+	delay time.Duration
 }
 
 func (p *p3Transport) Execute(ctx context.Context, call upstream.Call) (*upstream.Response, error) {
@@ -558,6 +564,13 @@ func (p *p3Transport) Execute(ctx context.Context, call upstream.Call) (*upstrea
 	p.mu.Unlock()
 	if refuse {
 		return nil, upstream.ClassifyStatus(http.StatusUnauthorized, nil, time.Now())
+	}
+	if p.delay > 0 && len(ids) > 0 {
+		select {
+		case <-time.After(p.delay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	if p.script != nil {
 		if stream := p.script(string(call.Body), ids); stream != "" {
@@ -939,7 +952,7 @@ func newP3Runner(exe string, newStart func(spawnReport) starter, timeout time.Du
 // run drives one case under one configuration and returns what was observed.
 func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 	t.Helper()
-	transport := &p3Transport{script: c.Script}
+	transport := &p3Transport{script: c.Script, delay: c.ReplyDelay}
 	w := newP3World(t, transport)
 	if p.surface {
 		w.surface = []p3Surface{}
@@ -2050,7 +2063,7 @@ func p3PrintFamily() []p3Case {
 		{ID: "R03px", Entry: p3Print, Hooks: p3HooksNormal, HookFaults: promptFails(p3HooksMissing), Plugin: p3PluginForged, Setup: storedA, Expect: closed, FailClosedAs: confirmation, Established: anchorA},
 		// A timed-out hook that still posts later changes neither the next turn nor another
 		// live session.
-		{ID: "R04L", Entry: p3Multi, Turns: 3, Hooks: p3HooksNormal, HookFaults: promptFails(p3HookChild), DiagnosticEvent: "UserPromptSubmit", Sentinel: true, Setup: storedA, Expect: okDiag, Established: anchorA},
+		{ID: "R04L", Entry: p3Multi, Turns: 3, Hooks: p3HooksNormal, HookFaults: promptFails(p3HookChild), DiagnosticEvent: "UserPromptSubmit", Sentinel: true, ReplyDelay: p3ReplyDelay, Setup: storedA, Expect: okDiag, Established: anchorA},
 		{ID: "R06", Entry: p3Resume, Hooks: p3HooksNormal, Setup: storedA, Expect: ok, Established: anchorA},
 		// --continue of a session with a stored profile is refused with the exact --resume to run
 		// (a kept contract, not --continue working); that --resume restores it; a session with no

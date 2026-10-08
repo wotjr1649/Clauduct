@@ -43,11 +43,24 @@ const (
 	// p3ChildCap ends a child that nothing else ended: the longest it may run from the start.
 	p3ChildCap = 8 * time.Second
 
-	// p3SurviveAfter is how long past the timeout a heartbeat must continue for SURVIVED, and
-	// p3TerminateBefore how long before it the last one may be for TERMINATED (a heartbeat is
-	// 100ms apart, so a child alive at the timeout has beaten within this).
-	p3SurviveAfter    = 300 * time.Millisecond
+	// p3ChildLate is when the child posts the real hook's event, from the wrapper's start: well
+	// past the timeout and past any termination latency native has shown (-38..+418ms after the
+	// timeout; native ends the hook's tree on its own schedule), so how fast native ends the child
+	// cannot decide whether the late post happens. The child beats until then.
+	p3ChildLate = p3HookTimeout + 3*time.Second
+
+	// p3ReplyDelay is how long the synthetic backend holds each turn's reply in the late-hook
+	// cases: a turn then lasts about this plus the model call, so the next turn begins before a
+	// child's late post and native is shown running past every child's fate window.
+	p3ReplyDelay = 1500 * time.Millisecond
+
+	// The fate window around the timeout T: a child whose last sign of life is in
+	// [T-p3TerminateBefore, T+p3TerminateUntil) and that never posted was ended by native. A child
+	// alive at or past T+p3TerminateUntil was not (the late post at T+3s is strictly after the
+	// window, a heartbeat is 100ms apart, so a child alive at the timeout has beaten within
+	// p3TerminateBefore).
 	p3TerminateBefore = 400 * time.Millisecond
+	p3TerminateUntil  = 2 * time.Second
 
 	// Judge outcomes.
 	p3LateExercised    = "EXERCISED"
@@ -171,7 +184,7 @@ func p3HookChildMain(args []string) int {
 		appendWrapped(sidecar, record)
 	}
 	emit("ready")
-	for time.Now().Before(start.Add(p3HookDelay)) && time.Now().Before(start.Add(p3ChildCap)) {
+	for time.Now().Before(start.Add(p3ChildLate)) && time.Now().Before(start.Add(p3ChildCap)) {
 		time.Sleep(p3ChildHeartbeat)
 		emit("heartbeat")
 	}
@@ -401,10 +414,10 @@ func childProof(id string, records []p3WrapperRecord, order []string, byID map[s
 		}
 	}
 	switch {
-	case !alive.Before(p.TimeoutAt.Add(p3SurviveAfter)):
+	case !alive.Before(p.TimeoutAt.Add(p3TerminateUntil)):
 		p.Fate = p3FateSurvived
 	case p.FinishAt.IsZero() && !alive.Before(p.TimeoutAt.Add(-p3TerminateBefore)):
-		if horizon.Before(p.TimeoutAt.Add(p3SurviveAfter)) {
+		if horizon.Before(p.TimeoutAt.Add(p3TerminateUntil)) {
 			p.FateBecause = "native was not shown running past the fate window"
 		} else if p.Heartbeats == 0 {
 			p.FateBecause = "no heartbeat before the timeout"

@@ -15,10 +15,11 @@ $ErrorActionPreference = 'Stop'
 # (#112). The names a 0.3.x installation also had are removed once it is in place; releases
 # through v0.4.x still publish them as copies, for the 0.3.x updater that requires all three.
 #
-# Releases that list clauduct-probe.exe in SHA256SUMS ship it as the admission runner clauduct.exe
-# starts from its own directory before every inference launch (#319, #320). It is installed
-# beside clauduct.exe as a pair (Select-Names adds it); a release that does not list it removes
-# a leftover one, because the previous release's probe belongs to the previous clauduct.exe.
+# Releases that list clauduct-probe.exe in SHA256SUMS ship it as the provider-control diagnostic
+# `clauduct --dev --probe provider-control` runs from clauduct.exe's directory (#319, #320); no
+# launch needs it. It is installed beside clauduct.exe as a pair (Select-Names adds it); a release
+# that does not list it removes a leftover one, because the previous release's probe belongs to
+# the previous clauduct.exe.
 $Names    = @('clauduct.exe')
 $Retired  = @('clauduct-hook.exe', 'clauduct-dev.exe')
 $ProbeName = 'clauduct-probe.exe'

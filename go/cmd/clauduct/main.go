@@ -35,7 +35,8 @@ import (
 )
 
 // probeSHA256 is the SHA-256 of the clauduct-probe.exe built from this source with
-// -trimpath -buildvcs=false (go/README.md): the only probe this build runs or trusts.
+// -trimpath -buildvcs=false (go/README.md): the only probe this build's diagnostics run or
+// trust. A launch never needs it.
 //
 //go:embed probe.sha256
 var probeSHA256 string
@@ -123,18 +124,9 @@ func run() int {
 		return 1
 	}
 	resolve := platform.Resolver{}.Claude
-	// Every launch that can infer runs under the provider control, and only for a launch form
-	// verified with this build and native (#320, admission r2 gate). A refusal starts
-	// nothing; there is no launch without the control to fall back to.
-	var admission app.Admission
-	if !app.InformationOnly(args) {
-		home, _ := os.UserHomeDir()
-		admission, err = app.AdmitLaunch(context.Background(), app.GateInput{Args: args, Env: env, Home: home, Stderr: os.Stderr})
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "clauduct:", err)
-			return 1
-		}
-	}
+	// No provider strategy and no admission gate (#319 decision 17): every launch path runs on
+	// the launch's own endpoint, the settings routing pin and the hooks' start-up handshake.
+	// The provider-control probe stays a diagnostic (clauduct --dev --probe provider-control).
 	if !resident && app.BackgroundRequested(args) {
 		if err := app.StartBackground(context.Background(), args, cwd, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "clauduct:", err)
@@ -171,9 +163,6 @@ func run() int {
 		SessionTimeout:  sessionDuration,
 		Checkpoint:      app.WriteCheckpoint,
 		BackgroundReady: backgroundReady,
-
-		ProviderStrategy:     admission.Strategy,
-		AdmittedNativeSHA256: admission.NativeSHA256,
 	})
 
 	// What the session did, said once, at the end. The native client owns the terminal

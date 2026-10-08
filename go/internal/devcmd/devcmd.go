@@ -162,10 +162,11 @@ func doctor(out io.Writer) int {
 }
 
 // admissionReport shows provider-control admission (#320) per scope, without running a probe.
-// A scope's state is never shown as the native's certification, and the routing contract's
-// overall verdict and the release state are shown beside it.
+// It is a diagnostic: the launch reads none of it (#319 decision 17), and a scope's state is
+// never shown as the native's certification.
 func admissionReport(out io.Writer) {
 	home, _ := os.UserHomeDir()
+	fmt.Fprintln(out, "admission    diagnostic only: launches use no provider strategy and read no entry")
 	key, keyErr := app.CurrentAdmissionKey(platform.Environment(os.Environ()))
 	if keyErr != nil {
 		fmt.Fprintf(out, "admission    current key unavailable: %v\n", keyErr)
@@ -173,7 +174,7 @@ func admissionReport(out io.Writer) {
 	fmt.Fprintf(out, "admission    configuration %s (restrictions: %s)\n", admissioncontract.ConfigurationID, strings.Join(admissioncontract.Restrictions(), ", "))
 	probe := app.ExpectedProbeSHA256
 	if probe == "" {
-		probe = "none: every gated launch is refused"
+		probe = "none: this build runs no provider-control probe"
 	}
 	fmt.Fprintf(out, "admission    contract %.12s, expected probe %s\n", admissioncontract.AdmissionSHA256(), probe)
 	if native, err := app.ResolvedNativeSHA256(); err == nil {
@@ -215,5 +216,4 @@ func admissionReport(out io.Writer) {
 		fmt.Fprintf(out, "admission    contract gap: %s\n", gap)
 	}
 	fmt.Fprintln(out, "routing r4   HOST_MANAGED INCOMPATIBLE (R08 background FAIL_ROUTING); a scope admission is not a certification")
-	fmt.Fprintln(out, "release      PRE_RELEASE_VERIFICATION BLOCKED")
 }

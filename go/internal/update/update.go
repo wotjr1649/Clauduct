@@ -152,10 +152,11 @@ func Sums(raw []byte) map[string]string {
 	return out
 }
 
-// Probe is the admission runner clauduct.exe starts from its own directory before every
-// inference launch (#319, #320). It is not in Binaries, because releases before the one that
-// introduced it do not carry it; a release carries it exactly when its SHA256SUMS lists it,
-// and then it is fetched, verified and replaced together with clauduct.exe.
+// Probe is the provider-control diagnostic `clauduct --dev --probe provider-control` runs from
+// clauduct.exe's directory (#319, #320); no launch needs it. It is not in Binaries, because
+// releases before the one that introduced it do not carry it; a release carries it exactly
+// when its SHA256SUMS lists it, and then it is fetched, verified and replaced together with
+// clauduct.exe.
 const Probe = "clauduct-probe.exe"
 
 // Wanted lists the files a release's digests make part of the installation: the Binaries,
@@ -216,9 +217,8 @@ func Digest(body []byte) string {
 // what makes this possible at all: each old file is moved aside, the new one is written in
 // its place, and the process doing this keeps running from the file it renamed.
 //
-// The two are a pair: a clauduct.exe whose admission runner is the previous release's is
-// refused at every launch, so a failure on either restores both, and a file that did not
-// exist before is removed again. Without a Probe in files, one left by an earlier release is
+// The two are a pair: clauduct.exe runs only the probe whose digest it carries, so a failure
+// on either restores both, and a file that did not exist before is removed again. Without a Probe in files, one left by an earlier release is
 // removed once clauduct.exe is replaced, as the retired copies are.
 func Apply(dir string, files map[string][]byte) (leftovers []string, err error) {
 	if _, ok := files[Binaries[0]]; !ok {

@@ -19,7 +19,7 @@ import (
 
 // ExpectedProbeSHA256 is the SHA-256 of the clauduct-probe.exe built from the same source as
 // this binary (admission r2 runner.invocation). cmd/clauduct sets it from the file embedded at
-// build; empty means this build knows no probe and every gated launch is refused.
+// build; empty means this build knows no probe and runs none.
 var ExpectedProbeSHA256 string
 
 // ProbeName is the probe's file name; it is only ever run from this executable's directory.
@@ -62,6 +62,9 @@ type Admission struct {
 // sure the scope and the scopes it requires have entries for what is installed now (running
 // the probe when one is missing or stale), and admits only an ADMITTED scope whose RP01 entry,
 // when the scope requires one, passed.
+//
+// The product launch does not call it (#319 decision 17): it runs without a provider strategy.
+// The gate stays for the provider-control hardening track, which launches under HOST_MANAGED.
 func AdmitLaunch(ctx context.Context, in GateInput) (Admission, error) {
 	scope, err := admissionScope(in.Args)
 	if err != nil {

@@ -84,6 +84,11 @@ func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Read
 	}
 
 	parked, err := remove(dir, self, parkDir, present, leftovers)
+	if errors.Is(err, errUninstallIncomplete) {
+		// Everything was moved aside, so the installation is gone; only staged copies remain.
+		fmt.Fprintf(out, "clauduct: UNINSTALL_INCOMPLETE %v\n", err)
+		return 1
+	}
 	if err != nil {
 		fmt.Fprintf(out, "clauduct: UNINSTALL_FAILED %v\n", err)
 		fmt.Fprintln(out, "nothing was removed")
@@ -171,11 +176,15 @@ func remove(dir, self, parkDir string, present, leftovers []string) (parked stri
 	}
 	for _, s := range done {
 		if err := os.Remove(s.aside); err != nil {
-			return "", fmt.Errorf("%s was removed but its staged copy %s could not be deleted: %w", s.path, s.aside, err)
+			return "", fmt.Errorf("%w: %s was removed but its staged copy %s could not be deleted: %v", errUninstallIncomplete, s.path, s.aside, err)
 		}
 	}
 	return moved, nil
 }
+
+// errUninstallIncomplete is a failure after every file was moved aside: the installation no
+// longer runs, and the staged copies the message names are what is left to delete.
+var errUninstallIncomplete = errors.New("the installation was removed, but staged copies remain")
 
 // errCannotMoveSelf means the running executable could not be moved out of the way, which is
 // the one failure that stops an uninstall before it touches anything else.

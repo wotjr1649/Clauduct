@@ -535,7 +535,7 @@
       "appliesWhen": "FIXTURE_NOT_APPLIED",
       "conditions": [
         "1 요청 본문 표지(CLAUDE_CODE_EXTRA_BODY)가 control과 treatment 모두의 receiver 요청에 없다",
-        "2 그에 더해 Bash가 control과 treatment 모두에서 실제로 실행됐다(표지 파일이 두 run에서 만들어졌다). 즉 managed deny가 적용되지 않았음이 관측됐다. 아니면 사례 판정은 INCONCLUSIVE이며 이유를 적는다(표지 부재만으로 FIXTURE_NOT_APPLIED가 되지 않는다)"
+        "2 그에 더해 그 사례가 control·treatment 두 run을 모두 돌았고, treatment에서 Bash가 실제로 실행됐다(표지 파일이 만들어졌다). 즉 HOST_MANAGED native에서 managed deny가 적용되지 않았음이 관측됐다. UNPROTECTED control은 저장 gateway 응답기가 답하고 그 응답기는 Bash 호출을 내지 않으므로, control은 이 조건의 근거가 되지 않는다. 아니면 사례 판정은 INCONCLUSIVE이며 이유를 적는다(표지 부재만으로 FIXTURE_NOT_APPLIED가 되지 않는다)"
       ],
       "validFor": {
         "nativeSHA256": "RUN_OBSERVED",

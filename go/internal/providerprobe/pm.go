@@ -29,30 +29,29 @@ func (b *p3BashOnce) reset(marker string) {
 	b.mu.Unlock()
 }
 
-// executedInEveryRun reports whether the Bash call actually ran (its marker file exists) in
-// each of the n runs this case made, control and treatment both.
-func (b *p3BashOnce) executedInEveryRun(n int) bool {
+// executedInTreatment reports whether this case made exactly its two runs (control, then
+// treatment) and the treatment's Bash call actually ran: its marker file exists. The control is
+// UNPROTECTED and is answered by the stored gateway's responder, which offers no Bash call, so
+// the control cannot show it either way.
+func (b *p3BashOnce) executedInTreatment() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if len(b.markers) != n {
+	if len(b.markers) != 2 {
 		return false
 	}
-	for _, marker := range b.markers {
-		if _, err := os.Stat(marker); err != nil {
-			return false
-		}
-	}
-	return true
+	_, err := os.Stat(b.markers[1])
+	return err == nil
 }
 
 // p3ManagedFixtureVerdict judges PM03 when its managed-file marker reached no receiver in
-// control or treatment (admission r3 dispositions PM03): FIXTURE_NOT_APPLIED only when Bash also
-// executed in both runs, which shows the managed deny did not apply; otherwise INCONCLUSIVE.
+// control or treatment: that absence alone is not the fixture going unconsumed. The treatment's
+// Bash call must also have run, showing the managed deny observably did not apply (admission r3
+// PM03 conditions).
 func p3ManagedFixtureVerdict(bash *p3BashOnce) (verdict, reason string) {
-	if !bash.executedInEveryRun(2) {
-		return providercert.Inconclusive, "managed file marker reached no receiver, but Bash did not execute (no marker file) in both control and treatment, so the managed deny is not shown unapplied"
+	if !bash.executedInTreatment() {
+		return providercert.Inconclusive, "managed file marker reached no receiver, but Bash did not execute in the treatment (no marker file), so the managed deny is not shown unapplied"
 	}
-	return VerdictFixtureNotApplied, "managed file marker reached no receiver in control or treatment, and Bash executed in both"
+	return VerdictFixtureNotApplied, "managed file marker reached no receiver in control or treatment, and the treatment's Bash executed"
 }
 
 func (b *p3BashOnce) script(body string, _ []string) string {

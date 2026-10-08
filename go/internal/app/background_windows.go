@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"io"
 	"os"
 	"os/exec"
@@ -23,6 +24,11 @@ type BackgroundReply struct {
 // job. CREATE_NO_WINDOW detaches it from the dispatching console; no global
 // service, startup entry or process execution policy is installed.
 func StartBackground(ctx context.Context, args []string, cwd string, out, errOut io.Writer) error {
+	// A refused background resume is said here, before a resident starts and reports only that
+	// it failed.
+	if _, err := backgroundResume(prepareSessionArgs(args)); err != nil {
+		return err
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -66,11 +72,12 @@ func StartBackground(ctx context.Context, args []string, cwd string, out, errOut
 			}
 			return errors.New("BACKGROUND_START_FAILED: see native startup diagnostic")
 		}
-		if d.reply.Session.PID != cmd.Process.Pid || !regexp.MustCompile(`^[a-f0-9]{8}$`).MatchString(d.reply.Session.JobID) || !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(d.reply.Session.ConnectionID) {
+		if d.reply.Session.PID != cmd.Process.Pid || !regexp.MustCompile(`^[a-f0-9]{8}$`).MatchString(d.reply.Session.JobID) || !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(d.reply.Session.ConnectionID) ||
+			d.reply.Session.ForkedFrom != "" && !gateway.IsSessionUUID(d.reply.Session.ForkedFrom) {
 			_ = cmd.Process.Kill()
 			return errors.New("BACKGROUND_START_UNVERIFIED")
 		}
-		fmtBackground(out, d.reply.Session.JobID, d.reply.Session.ConnectionID)
+		fmtBackground(out, *d.reply.Session)
 		return nil
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()

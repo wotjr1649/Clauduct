@@ -44,6 +44,9 @@ var ErrDesktopBoundary = errors.New("DESKTOP_OPTION_UNVERIFIED: unknown native o
 // ErrBackgroundResumeTarget refuses a background resume whose target is not a session UUID.
 var ErrBackgroundResumeTarget = errors.New("BACKGROUND_RESUME_TARGET_UNVERIFIED: --resume with --bg needs the session's full id (as claude agents --json prints it); native copies the conversation for any other value and that copy never reaches this session's gateway. Nothing was started")
 
+// ErrBackgroundResumeNeedsFork refuses --resume <id> --bg without --fork-session.
+var ErrBackgroundResumeNeedsFork = errors.New("BACKGROUND_RESUME_IS_A_COPY: a background resume through Clauduct starts a copy of the session, not the session itself (native copies whenever flags are passed, and Clauduct passes them); add --fork-session to start that copy as a new session, leaving the original unchanged. Nothing was started")
+
 // ErrBackgroundContinue refuses --continue with --bg.
 var ErrBackgroundContinue = errors.New("BACKGROUND_CONTINUE_UNVERIFIED: --continue with --bg starts a copy of a session this launcher cannot name, which its gateway refuses; use --resume <session id> --bg. Nothing was started")
 
@@ -288,8 +291,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	forward, resumeID := prepareSessionArgs(forward)
+	forkedFrom := ""
 	if BackgroundRequested(forward) {
-		if forward, err = backgroundResume(forward, resumeID); err != nil {
+		if forkedFrom, err = backgroundResume(forward, resumeID); err != nil {
 			return Result{}, err
 		}
 	}
@@ -687,7 +691,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		backgroundCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		bp := &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
-			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr}
+			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr, forkedFrom: forkedFrom}
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored
 			// login decides where they connect (#320 R08). They get the launch's own process

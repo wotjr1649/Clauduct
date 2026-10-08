@@ -27,6 +27,8 @@ type BackgroundSession struct {
 	JobID        string `json:"jobId"`
 	ConnectionID string `json:"connectionId"`
 	PID          int    `json:"pid"`
+	// ForkedFrom is the session a --resume <id> --fork-session --bg job copied, unchanged by it.
+	ForkedFrom string `json:"forkedFrom,omitempty"`
 }
 
 func BackgroundRequested(args []string) bool {
@@ -36,26 +38,22 @@ func BackgroundRequested(args []string) bool {
 	return slices.Contains(args, "--bg") || slices.Contains(args, "--background")
 }
 
-// backgroundResume makes a background resume an explicit fork. Native starts a copy of a
-// background session it is asked to resume with flags, and this launcher always passes flags
-// (--settings, --plugin-dir), so the copy's SessionStart is a fork that the resumed profile
-// does not accept (#319 decision 17, product17-bg L4: SESSION_PROFILE_UNVERIFIED). Declared
-// a fork, the resume of a background session and of a regular one both start from the
-// resumed profile (L4f, L5f). A target that is not a session UUID (a job id) is refused: its
-// copy ran no hook and never reached the gateway (L4j). --continue is refused too: native
-// copies the directory's latest session, which this launcher cannot name, so the copy's fork
-// has no profile to start from (L7: SESSION_PROFILE_UNVERIFIED). resumeID is prepareSessionArgs'.
-// The flag goes where "--" is, or last, so the --settings positions run.go recorded stay valid.
-// Options are read as prepareSessionArgs reads them, combined and attached short forms included;
-// past an option of unknown arity nothing is known, and the gateway refuses what native starts.
-func backgroundResume(args []string, resumeID string) ([]string, error) {
+// backgroundResume checks a background resume. Native starts a copy of a background session
+// it is asked to resume with flags, and this launcher always passes flags (--settings,
+// --plugin-dir), so the copy's SessionStart is a fork that a resumed profile does not accept
+// (#319 decision 17, product17-bg L4: SESSION_PROFILE_UNVERIFIED). The copy is therefore the
+// user's explicit choice, native's own --fork-session: without it the launch is refused rather
+// than turned into a fork the user did not ask for. With it the job continues a new session
+// whose conversation starts from the original, which stays unchanged (L4f, L5f); forkedFrom
+// names the original for the launcher's report. A target that is not a session UUID (a job
+// id) is refused: its copy ran no hook and never reached the gateway (L4j). --continue is
+// refused too: native copies the directory's latest session, which this launcher cannot name
+// (L7). resumeID is prepareSessionArgs'. Options are read as prepareSessionArgs reads them,
+// combined and attached short forms included; past an option of unknown arity nothing is
+// known, and the gateway refuses what native starts.
+func backgroundResume(args []string, resumeID string) (forkedFrom string, err error) {
 	resume, continued, fork := false, false, false
-	terminator := len(args)
-	for i := 0; i < len(args); {
-		if args[i] == "--" {
-			terminator = i
-			break
-		}
+	for i := 0; i < len(args) && args[i] != "--"; {
 		end, known := nativeArgEnd(args, i)
 		if !known || end > len(args) {
 			break
@@ -86,15 +84,15 @@ func backgroundResume(args []string, resumeID string) ([]string, error) {
 	}
 	switch {
 	case continued:
-		return nil, ErrBackgroundContinue
+		return "", ErrBackgroundContinue
 	case !resume:
-		return args, nil
+		return "", nil
 	case resumeID == "":
-		return nil, ErrBackgroundResumeTarget
-	case fork:
-		return args, nil
+		return "", ErrBackgroundResumeTarget
+	case !fork:
+		return "", ErrBackgroundResumeNeedsFork
 	}
-	return slices.Insert(slices.Clone(args), terminator, "--fork-session"), nil
+	return resumeID, nil
 }
 
 func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string, strategyFlag string) (string, error) {
@@ -173,6 +171,8 @@ type backgroundProcess struct {
 	ready            func(BackgroundSession) error
 	stdout           io.Writer
 	stderr           io.Writer
+	// forkedFrom is the session a background --fork-session resume copied (backgroundResume).
+	forkedFrom string
 	// start, when set, starts native's control commands as the launch starts native.
 	start func(launch.Spec, io.Reader, io.Writer, io.Writer) (Process, error)
 }
@@ -224,11 +224,11 @@ func (p *backgroundProcess) Wait() error {
 		return stopNative()
 	}
 	if p.ready != nil {
-		if err := p.ready(BackgroundSession{JobID: id, ConnectionID: p.link.ID, PID: os.Getpid()}); err != nil {
+		if err := p.ready(BackgroundSession{JobID: id, ConnectionID: p.link.ID, PID: os.Getpid(), ForkedFrom: p.forkedFrom}); err != nil {
 			return errors.Join(err, stopNative())
 		}
 	} else {
-		fmtBackground(p.stdout, id, p.link.ID)
+		fmtBackground(p.stdout, BackgroundSession{JobID: id, ConnectionID: p.link.ID, ForkedFrom: p.forkedFrom})
 	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
@@ -258,9 +258,13 @@ func (p *backgroundProcess) Wait() error {
 	}
 }
 
-func fmtBackground(out io.Writer, id, connection string) {
-	io.WriteString(out, "Backgrounded as "+id+"\nClauduct connection: "+connection+"\n")
-	io.WriteString(out, "Manage with claude agents; end this connection with clauduct --background-stop "+connection+"\n")
+func fmtBackground(out io.Writer, s BackgroundSession) {
+	io.WriteString(out, "Backgrounded as "+s.JobID+"\n")
+	if s.ForkedFrom != "" {
+		io.WriteString(out, "Forked from session "+s.ForkedFrom+": the job continues a new session that starts from its conversation; "+s.ForkedFrom+" itself is unchanged\n")
+	}
+	io.WriteString(out, "Clauduct connection: "+s.ConnectionID+"\n")
+	io.WriteString(out, "Manage with claude agents; end this connection with clauduct --background-stop "+s.ConnectionID+"\n")
 }
 
 func backgroundControlEnv(env []string) []string {

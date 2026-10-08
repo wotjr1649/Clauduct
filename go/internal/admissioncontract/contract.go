@@ -53,6 +53,7 @@ type document struct {
 	Revision       int              `json:"admissionContractRevision"`
 	Scopes         map[string]Scope `json:"scopes"`
 	Dispositions   []Disposition    `json:"dispositions"`
+	Gaps           []string         `json:"gaps"`
 	Configurations struct {
 		Restricted struct {
 			Plus map[string]string `json:"plus"`
@@ -95,6 +96,10 @@ func Restrictions() []string {
 
 // Dispositions are the owner decisions the contract records.
 func Dispositions() []Disposition { return parsed.Dispositions }
+
+// Gaps are the contract's open gaps: what the frozen measurements and dispositions leave
+// uncovered. Doctor lists them with the release blockers.
+func Gaps() []string { return slices.Clone(parsed.Gaps) }
 
 // ShortCases is a scope's short entry case set: required, optional and background-entry
 // checks without RP01 (admission r2 caseVerdict.entries.short).

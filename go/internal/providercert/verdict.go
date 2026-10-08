@@ -222,7 +222,29 @@ const IntendedID = "INTENDED"
 // softened by a missing control or a harness failure: bytes that reached a wrong destination
 // are evidence on their own. Native preservation (P5-F) is judged last, and only for a case
 // whose routing evidence is complete.
+//
+// A case whose own condition did not happen (VariantUnexercised) is VARIANT_NOT_EXERCISED only
+// when that is the sole unmet condition: every other rule is judged as if the variant had
+// happened, and a case that fails any of them keeps its real verdict and reasons, so the
+// disposition that reads the variant reason cannot apply to it (admission r3 dispositions).
 func Judge(o Observation) Result {
+	if !o.VariantUnexercised {
+		return judge(o)
+	}
+	rest := o
+	rest.VariantUnexercised = false
+	r := judge(rest)
+	switch r.Verdict {
+	case Pass, SafetyPass, SafeRefusalPass:
+		r.Verdict, r.Reasons = Inconclusive, []string{ReasonVariantNotExercised}
+	case NotExercisable:
+		// An optional case that is inconclusive for its variant is not exercisable-and-clean.
+		r.Verdict, r.Reasons = Inconclusive, []string{ReasonControlUnproven}
+	}
+	return r
+}
+
+func judge(o Observation) Result {
 	r := Result{CaseID: o.CaseID, IdentityChanged: o.IdentityChanged}
 	add := func(reason string) { r.Reasons = append(r.Reasons, reason) }
 
@@ -292,9 +314,6 @@ func Judge(o Observation) Result {
 	}
 	if o.ApplicationUnobserved {
 		add(ReasonApplicationUnobserved)
-	}
-	if o.VariantUnexercised {
-		add(ReasonVariantNotExercised)
 	}
 	if o.CanaryAttribution && storedContact {
 		add(ReasonUnattributedContact)

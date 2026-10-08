@@ -186,7 +186,8 @@
       "FAIL_FUNCTION": "boundary는 0이지만 요구 foreground 동작이 정상 완료되지 않았다",
       "INCONCLUSIVE": "자극 전달 근거가 없거나, 사례 뒤 정리에 실패했다(CLEANUP_FAILED)",
       "PATH_ABSENT": "CLI TRANSITION 사례에서 control native의 조합 거부가 관측됐다. 보고 전용이며 scope를 막지 않는다. treatment boundary는 여전히 0이어야 한다(아니면 BACKGROUND_ENTRY_REACHED)",
-      "FIXTURE_NOT_APPLIED": "fixture가 native에 적용됐다는 표지가 없다. caseFixtureDisposition 규칙을 따른다"
+      "FIXTURE_NOT_APPLIED": "fixture가 native에 적용됐다는 표지가 없다. caseFixtureDisposition 규칙을 따른다",
+      "PATH_ABSENT_TUI_OBSERVED": "BE14 전용 판정(결정 15). 그 run의 control에서 TUI /resume picker 열기·취소가 driver 입력 mark와 화면으로 관측되고, control boundary 0, treatment boundary·잘못된 목적지 byte·연결 0, 취소 뒤 확인 prompt가 gateway를 거쳐 완료, 세션 id·profile snapshot·model 선택이 자극 전과 같고, 양쪽 run에 TIMEOUT·SPAWN_FAILED·identity 오류가 없을 때만 나온다. PASS가 아니며 처분 없이는 INCONCLUSIVE다. dispositions의 BE14가 있을 때 PATH_ABSENT_CURRENT_NATIVE_RUN label을 받는다"
     },
     "deliveryEvidence": "CLI 사례는 제품의 native 시작 횟수 0과 거부 오류다. TUI 사례는 driver의 입력 mark다. 그리고 자극 뒤에 넣은 확인 prompt가 gateway를 거쳐 완료돼, 자극이 입력을 막거나 세션을 바꾸지 않았음을 보인다. 화면 문구는 보조 기록이며 판정 근거가 아니다",
     "cases": {
@@ -224,7 +225,7 @@
           "BE13",
           "BE14"
         ],
-        "control": "짝 control(UNPROTECTED_AGENT_VIEW)에서 같은 자극을 주고, control boundary가 0이 아니어야 treatment PASS의 전제가 된다. CLI 사례의 control 전달 근거는 control native의 시작 기록과 종료 상태다. PATH_ABSENT는 CLI 사례에서 control native가 그 조합을 오류로 거부했을 때(시작 직후 non-zero 종료와 오류 문구, boundary 0)만 인정한다. TUI 사례와, 이전 진단에서 전환 경로가 확인된 사례(BE04–BE08)는 PATH_ABSENT가 될 수 없다. control boundary가 0이면 INCONCLUSIVE다"
+        "control": "짝 control(UNPROTECTED_AGENT_VIEW)에서 같은 자극을 주고, control boundary가 0이 아니어야 treatment PASS의 전제가 된다. CLI 사례의 control 전달 근거는 control native의 시작 기록과 종료 상태다. PATH_ABSENT는 CLI 사례에서 control native가 그 조합을 오류로 거부했을 때(시작 직후 non-zero 종료와 오류 문구, boundary 0)만 인정한다. TUI 사례는 PATH_ABSENT가 될 수 없다. 예외는 BE14 하나이며, 결정 15의 처분(dispositions BE14)에 따라서만 PATH_ABSENT_TUI_OBSERVED를 거쳐 PATH_ABSENT_CURRENT_NATIVE_RUN label을 받는다. 이전 진단에서 전환 경로가 확인된 사례(BE04–BE08)는 어느 경우에도 PATH_ABSENT가 될 수 없다. control boundary가 0이면 INCONCLUSIVE다"
       },
       "RESTRICTION_INTEGRITY": {
         "cases": [
@@ -264,7 +265,7 @@
       "1 어느 checkpoint라도 identity가 바뀌었으면 INCONCLUSIVE(NATIVE_CHANGED_DURING_CERTIFICATION)",
       "2 어느 treatment 사례라도 FAIL_ROUTING이거나 BE 사례가 BACKGROUND_ENTRY_REACHED면 NOT_ADMITTED",
       "3 scope의 사례 목록(required·optional·BE)이 정확하지 않으면 INCONCLUSIVE(MATRIX_RESULTS_MISMATCH)",
-      "4 어느 사례라도 INCONCLUSIVE, SAFETY 사례의 PASS, SAFETY가 아닌 사례의 SAFETY_PASS, required의 NOT_EXERCISABLE, 또는 처분이 없는 FIXTURE_NOT_APPLIED·VARIANT_NOT_EXERCISED이면 INCONCLUSIVE",
+      "4 어느 사례라도 INCONCLUSIVE, SAFETY 사례의 PASS, SAFETY가 아닌 사례의 SAFETY_PASS, required의 NOT_EXERCISABLE, 또는 처분이 없는 FIXTURE_NOT_APPLIED·VARIANT_NOT_EXERCISED·PATH_ABSENT_TUI_OBSERVED(처분 가능한 판정은 이 셋이다)이면 INCONCLUSIVE",
       "5 FAIL_SAFETY면 INCONCLUSIVE(FOREIGN_SESSION_STATE_CHANGED)",
       "6 FAIL_FUNCTION이면 INCONCLUSIVE(NATIVE_PRESERVATION_FAILED)",
       "6b SAFE_REFUSAL_PASS는 SAFE_REFUSAL 사례에만 허용한다. 그 사례의 일반 PASS는 INCONCLUSIVE다",
@@ -331,7 +332,8 @@
       "제품 release 상태(BLOCKED)",
       "RP01 source 상태와 관측 창, FIXTURE_NOT_APPLIED 사례와 처분",
       "probe executable 경로·SHA",
-      "사례별 label: PASS, SAFETY_PASS, SAFE_REFUSAL, NOT_EXERCISABLE, PATH_ABSENT, SOURCE_INACTIVE, NOT_APPLICABLE_TO_THIS_NATIVE_FIXTURE, NATIVE_PREVENTED, REPORTED_GAP, BLOCKING/INCONCLUSIVE. 서로 합치지 않고 처분 근거와 함께 따로 표시한다"
+      "사례별 label: PASS, SAFETY_PASS, SAFE_REFUSAL, NOT_EXERCISABLE, PATH_ABSENT, SOURCE_INACTIVE, NOT_APPLICABLE_TO_THIS_NATIVE_FIXTURE, PATH_ABSENT_CURRENT_NATIVE_RUN, NATIVE_PREVENTED, REPORTED_GAP, BLOCKING/INCONCLUSIVE. 처분된 label은 처분 reason과 함께 ID:LABEL(REASON)으로 보이고, 서로 합치지 않고 처분 근거와 함께 따로 표시한다",
+      "계약의 gaps 전체(machine·admin managed permissions 공백 포함)와, 모든 처분 label을 가진 사례(열린 gaps)"
     ],
     "never": "probe를 돌리지 않는다. scope 상태를 native 전체의 CERTIFIED로 표시하지 않는다"
   },
@@ -341,6 +343,9 @@
     "subagent·workflow·compaction·worktree 역할 hook만 부분 실패한 사례 미포함(r4 gaps)",
     "R12p 제품 통합 settings reload 미측정(r4 gaps)",
     "machine·admin managed permissions(PM03의 원래 위협)를 검사하는 제품 runtime gate 없음. PM03 fixture 미소비 처분은 이 공백을 닫지 않는다",
+    "BE15 equivalentGate(BE17)는 CLAUDE_CODE_MANAGED_SETTINGS_PATH 출처만 실행한다. HKLM·HKCU·Program Files 출처는 같은 reader 코드를 쓰지만 그 run에서 실행되지 않는다",
+    "제품의 AGENT_VIEW_MANAGED_OVERRIDE_REFUSED 검사는 launch 시점뿐이다. 세션 중에 바뀐 machine managed 정책은 거부되지 않는다(session_lifecycle.go는 managedRouting만 다시 본다)",
+    "Anthropic server-managed settings(/api/claude_code/settings)는 제품이 읽지 않고 RP01도 다루지 않는다",
     "RP01을 짧은 시험으로 대체할 근거 없음: 2.1.293에서 주기 갱신은 시작 시 eligibility 판정에 묶인 것으로 정적으로 보이나, 그 판정은 native telemetry로만 나와 run마다 관측할 수 없다. SHA마다 장시간 RP01을 유지한다"
   ],
   "configurations": {
@@ -515,7 +520,7 @@
   },
   "caseFixtureDisposition": {
     "scope": "requiredCases, backgroundEntryChecks, foregroundConditions의 사례",
-    "schema": "각 처분: case, label(NOT_APPLICABLE_CURRENT_NATIVE·NATIVE_PREVENTED·REPORTED_GAP·BLOCKING), reason, appliesWhen(그 run의 판정값), validFor(nativeSHA256·platform·fixture), equivalentGate(필요한 label만), authority(소유자 결정 파일), appliesWhenReason(선택: 판정값의 reason까지 같아야 한다)",
+    "schema": "각 처분: case, label(NOT_APPLICABLE_TO_THIS_NATIVE_FIXTURE·NATIVE_PREVENTED·PATH_ABSENT_CURRENT_NATIVE_RUN·REPORTED_GAP·BLOCKING. 이전 revision의 NOT_APPLICABLE_CURRENT_NATIVE는 r2 entry에만 남는다), reason, appliesWhen(그 run의 판정값), validFor(nativeSHA256·platform·fixture), equivalentGate(필요한 label만), authority(소유자 결정 파일), appliesWhenReason(선택: 판정값의 reason까지 같아야 한다), conditions(선택: 처분이 적용되려면 모두 충족돼야 하는 증거 목록)",
     "apply": "처분은 그 run에서 그 사례의 판정값이 appliesWhen과 같을 때만 적용한다. 예: appliesWhen FIXTURE_NOT_APPLIED인 처분은 그 run의 control과 treatment 모두에 적용 표지가 없을 때만 적용한다. 사례가 PASS 등 다른 판정을 받으면 처분은 적용하지 않고 그 판정을 쓴다. 그래서 fixture나 변형이 고쳐지면 처분 없이 판정된다",
     "stale": "처분은 validFor의 native SHA·platform·fixture나 probe schema revision이 바뀌면 효력을 잃는다. build(clauduct·probe binary)가 바뀌면 새 run이 그 사례를 다시 측정하고, 그 run의 판정값이 appliesWhen과 같을 때만 다시 적용한다. 이 재관측이 재평가다",
     "trust": "처분은 동결된 계약 본문의 dispositions에만 있다. 계약 SHA가 cache key에 있으므로 처분을 바꾸면 기존 entry는 MISS다",
@@ -528,6 +533,10 @@
       "label": "NOT_APPLICABLE_TO_THIS_NATIVE_FIXTURE",
       "reason": "FIXTURE_NOT_CONSUMED",
       "appliesWhen": "FIXTURE_NOT_APPLIED",
+      "conditions": [
+        "1 요청 본문 표지(CLAUDE_CODE_EXTRA_BODY)가 control과 treatment 모두의 receiver 요청에 없다",
+        "2 그에 더해 Bash가 control과 treatment 모두에서 실제로 실행됐다(표지 파일이 두 run에서 만들어졌다). 즉 managed deny가 적용되지 않았음이 관측됐다. 아니면 사례 판정은 INCONCLUSIVE이며 이유를 적는다(표지 부재만으로 FIXTURE_NOT_APPLIED가 되지 않는다)"
+      ],
       "validFor": {
         "nativeSHA256": "RUN_OBSERVED",
         "platform": "windows",
@@ -546,7 +555,7 @@
         "platform": "windows",
         "fixture": "CLAUDE_CODE_MANAGED_SETTINGS_PATH local managed 파일"
       },
-      "equivalentGate": "BE17이 같은 run에서 PASS여야 한다: 제품 launch 검사 AGENT_VIEW_MANAGED_OVERRIDE_REFUSED가 machine managed 정책(제품 managed reader가 읽는 출처: HKLM·HKCU 정책, C:\\Program Files\\ClaudeCode와 그 managed-settings.d)의 agent view 재개방을 native 시작 전에 거부한다. 원격(저장 gateway) managed settings는 RP01이 맡는다",
+      "equivalentGate": "BE17이 같은 run에서 PASS여야 한다. BE17은 CLAUDE_CODE_MANAGED_SETTINGS_PATH 출처 하나만 실행한다. HKLM·HKCU 정책과 C:\\Program Files\\ClaudeCode(managed-settings.d 포함) 출처는 같은 제품 reader 코드(managed_policy.go readManagedPolicy)를 쓰지만 그 run에서 실행되지 않는다. 이 검사는 launch 시점 한 번뿐이다(run.go launch 검사. session_lifecycle.go는 세션 중 managedRouting만 다시 본다): 세션 중에 바뀐 machine 정책은 거부되지 않는다. Anthropic server-managed settings(/api/claude_code/settings)는 제품이 읽지 않으며 RP01도 다루지 않는다. 저장 gateway가 주는 원격 managed settings만 RP01이 맡는다",
       "authority": "inputs/owner-decision-14.md"
     },
     {
@@ -561,7 +570,13 @@
         "fixture": "child 모드 wrapper(1초 timeout, child ready 뒤 timeout, start+1.5초 늦은 post)"
       },
       "equivalentGate": "R04S가 같은 run에서 PASS여야 한다",
-      "note": "child 생성·준비·native timeout·child 종료가 그 run에서 모두 관측됐을 때만 적용한다. 다른 이유의 VARIANT_NOT_EXERCISED에는 적용하지 않는다",
+      "conditions": [
+        "1 child 생성·준비·native timeout·child 종료가 그 run에서 모두 관측된다(VARIANT_NOT_EXERCISED의 reason이 CHILD_TERMINATED_BY_NATIVE)",
+        "2 변형이 일어나지 않았다는 것이 그 사례의 유일한 미충족 조건이다: 그 밖의 r4 규칙이 모두 통과한다. 모든 turn의 intended routing(P3·P4·P5-R), SUCCESS_WITH_HOOK_DIAGNOSTIC, sentinel 불변, control 성립, 보존(P5-F)",
+        "3 harness 결함이 없다: TIMEOUT, SPAWN_FAILED, CLEANUP_FAILED, HELD_PROCESS, CONTROL_UNPROVEN, identity 변경이 없다",
+        "4 R04S가 같은 run에서 PASS다(equivalentGate)"
+      ],
+      "note": "변형 미발생이 유일한 미충족 조건일 때만 사례의 판정이 VARIANT_NOT_EXERCISED(late-hook reason 포함)가 되고 이 처분이 적용된다. 다른 규칙이 하나라도 미충족이면 사례는 자신의 실제 판정(INCONCLUSIVE·FAIL_*)과 그 reasons를 받고 처분은 적용되지 않는다. 다른 이유의 VARIANT_NOT_EXERCISED에도 적용하지 않는다",
       "authority": "inputs/owner-decision-14.md"
     },
     {
@@ -576,7 +591,13 @@
         "fixture": "child 모드 wrapper(1초 timeout, child ready 뒤 timeout, start+1.5초 늦은 post)"
       },
       "equivalentGate": "R04S가 같은 run에서 PASS여야 한다",
-      "note": "child 생성·준비·native timeout·child 종료가 그 run에서 모두 관측됐을 때만 적용한다. 다른 이유의 VARIANT_NOT_EXERCISED에는 적용하지 않는다",
+      "conditions": [
+        "1 child 생성·준비·native timeout·child 종료가 그 run에서 모두 관측된다(VARIANT_NOT_EXERCISED의 reason이 CHILD_TERMINATED_BY_NATIVE)",
+        "2 변형이 일어나지 않았다는 것이 그 사례의 유일한 미충족 조건이다: 그 밖의 r4 규칙이 모두 통과한다. 모든 turn의 intended routing(P3·P4·P5-R), SUCCESS_WITH_HOOK_DIAGNOSTIC, sentinel 불변, control 성립, 보존(P5-F)",
+        "3 harness 결함이 없다: TIMEOUT, SPAWN_FAILED, CLEANUP_FAILED, HELD_PROCESS, CONTROL_UNPROVEN, identity 변경이 없다",
+        "4 R04S가 같은 run에서 PASS다(equivalentGate)"
+      ],
+      "note": "변형 미발생이 유일한 미충족 조건일 때만 사례의 판정이 VARIANT_NOT_EXERCISED(late-hook reason 포함)가 되고 이 처분이 적용된다. 다른 규칙이 하나라도 미충족이면 사례는 자신의 실제 판정(INCONCLUSIVE·FAIL_*)과 그 reasons를 받고 처분은 적용되지 않는다. 다른 이유의 VARIANT_NOT_EXERCISED에도 적용하지 않는다",
       "authority": "inputs/owner-decision-14.md"
     },
     {
@@ -604,7 +625,7 @@
   "supersedes": {
     "admission-contract-r1.json": "ffeb60ba23c2e88a00e741d823644ab7b2b5c7dee77e0a61d21f02a17f926521",
     "admission-r2.json": "c916a9f54123702ebf43534c22bf8442e70b6c5b013be6e39cd509d5c0789177",
-    "rule": "r1·r2는 보존한다. 이전 revision의 측정 결과는 소급 수정하지 않는다. r3는 처분의 유효 범위(run 관측), PM03·BE15 label, R04L child fixture·R04S, cache key의 platform을 바꾼다"
+    "rule": "r1·r2는 보존한다. 이전 revision의 측정 결과는 소급 수정하지 않는다. r3는 처분의 유효 범위(run 관측), PM03·BE15 label, R04L child fixture·R04S, cache key의 platform을 바꾼다. r2 gaps 중 r3 gaps에 없는 항목은 해소됐다: BE06 /fork foreground 동작 실패 후보(AGENT_SELECTION_UNVERIFIED)는 gateway conversationFork(commit 6224acfe)로 고쳐졌고 BE06이 2.1.293에서 PASS했다(run .work/tui full1/d2). R04L VARIANT_NOT_EXERCISED 항목과 R04L child fixture 부재 항목은 r3의 lateHookCases·dispositions·R04S로 대체됐고, canonical runner 항목은 runner가 go/internal/providerprobe에 있어 해소됐다"
   },
   "runner": {
     "artifact": "공개 source의 별도 companion binary clauduct-probe.exe(go/cmd/clauduct-probe). canonical provider certification runner와 admission에 필수인 합성 fixture는 모두 공개 source에 있어 공개 저장소에서 재현할 수 있다. 실제 credential·사용자 정보·secret은 fixture에 넣지 않는다",
@@ -625,7 +646,7 @@
     "PASS": "사례 판정이 PASS",
     "SAFE_REFUSAL": "SAFE_REFUSAL 사례의 SAFE_REFUSAL_PASS",
     "NOT_APPLICABLE_CURRENT_NATIVE": "fixture가 이 native에서 control·treatment 모두 소비되지 않았고, 소유자 처분이 있다. routing PASS로 세지 않는다. 그 사례가 지키려던 실제 invariant는 다른 required gate가 계속 검사해야 한다(equivalentGate)",
-    "NATIVE_PREVENTED": "그 run에서 native 자신이 그 변형의 발생을 막았다는 positive proof(R04L은 child 생성·준비·timeout·종료 관측)가 있고, 대응하는 합성 수신 시험(R04S)이 같은 run에서 PASS이며, 소유자 처분이 있다",
+    "NATIVE_PREVENTED": "그 run에서 native 자신이 그 변형의 발생을 막았다는 positive proof(R04L은 child 생성·준비·timeout·종료 관측)가 있고, 대응하는 합성 수신 시험(R04S)이 같은 run에서 PASS이며, 소유자 처분이 있다. 변형 미발생이 그 사례의 유일한 미충족 조건일 때만 적용한다: 다른 r4 규칙(모든 turn의 intended routing, SUCCESS_WITH_HOOK_DIAGNOSTIC, sentinel 불변, control 성립)이나 harness 규칙(TIMEOUT, SPAWN_FAILED, CLEANUP_FAILED, HELD_PROCESS, CONTROL_UNPROVEN, identity)이 하나라도 미충족이면 처분은 적용되지 않고 사례는 자신의 실제 판정을 받는다",
     "REPORTED_GAP": "소유자가 공백으로 처분했다. ADMITTED를 막지 않지만 entry와 doctor에 근거와 함께 남는다",
     "BLOCKING": "소유자가 막도록 처분했거나, 처분 조건을 충족하지 못했다. scope는 INCONCLUSIVE다",
     "INCONCLUSIVE": "판정하지 못했다",
@@ -646,7 +667,7 @@
         "CHILD_SURVIVED": "start+timeout 뒤 300ms 이상 heartbeat가 이어진다. finish가 뒤 turn 창 안에 있으면 변형이 실행된 것이고 r4 사례 규칙(SUCCESS_WITH_HOOK_DIAGNOSTIC, sentinel 불변, intended routing)으로 판정한다. finish가 없으면 INCONCLUSIVE",
         "AMBIGUOUS": "그 밖은 INCONCLUSIVE"
       },
-      "tui": "R04L-TUI는 같은 fixture와 판정을 TUI entry로 돈다. 판정은 turn 창이 아니라 기록(ready·heartbeat·finish 시각)으로 한다"
+      "tui": "R04L-TUI는 같은 fixture와 판정을 TUI entry로 돈다. 판정은 기록(ready·heartbeat·finish 시각)과 turn 창을 함께 읽는다: 기록의 시각을 turn 창(Judged·horizon·NativeTimeoutRecorded)에 대고 finish가 뒤 turn 창 안인지, native가 timeout을 처리했는지를 본다"
     },
     "R04S": {
       "what": "native 없는 합성 producer가 probe가 쓰는 같은 제품 gateway에 늦은 이벤트를 보낸다",

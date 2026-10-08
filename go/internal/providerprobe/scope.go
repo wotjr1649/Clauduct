@@ -144,7 +144,7 @@ func permissionCases() map[string]func() scopeCase {
 			}
 			function := func(control, treatment *p3Observed) (string, string) {
 				if managedMark && !p3SawCanary(control, "pm-managed-file") && !p3SawCanary(treatment, "pm-managed-file") {
-					return VerdictFixtureNotApplied, "managed file marker reached no receiver in control or treatment"
+					return p3ManagedFixtureVerdict(bash)
 				}
 				if managedMark && p3SawCanary(control, "pm-managed-file") && !p3SawCanary(treatment, "pm-managed-file") {
 					return providercert.FailFunction, "the treatment did not read the managed file the control read"
@@ -307,21 +307,7 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		observation := p3Observation(sc.c, treatment, control)
 		result := providercert.Judge(observation)
 		late := p3LateHookOf(sc.c.HookFaults, treatment)
-		if result.Verdict == providercert.Inconclusive && slices.Contains(result.Reasons, providercert.ReasonVariantNotExercised) {
-			// The case's own condition did not happen (R04L's late hook): its disposition reads
-			// this verdict, never PASS (admission r2 caseFixtureDisposition).
-			result.Verdict = VerdictVariantNotExercised
-			if late != nil && late.Outcome == p3LateInconclusive {
-				// The child's fate or the late event is unproven, which is not the same as the
-				// condition not having happened.
-				result.Verdict = providercert.Inconclusive
-			}
-			if late != nil && late.Reason != "" {
-				result.Reasons = append(slices.DeleteFunc(slices.Clone(result.Reasons), func(r string) bool {
-					return r == providercert.ReasonVariantNotExercised && late.Outcome == p3LateInconclusive
-				}), late.Reason)
-			}
-		}
+		result = p3VariantVerdict(result, late)
 		if result.Verdict == providercert.Pass && sc.function != nil {
 			verdict, reason := sc.function(control, treatment)
 			if verdict != "" {
@@ -401,11 +387,39 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	return entry, nil
 }
 
-// admissionGaps lists the reported gaps a run's labels carry.
+// p3VariantVerdict turns a judged case whose only unmet condition was its own variant (the judge
+// returns ReasonVariantNotExercised alone, never next to another unmet rule) into the
+// VARIANT_NOT_EXERCISED verdict a disposition reads, never PASS (admission r3 dispositions). Any
+// other result, with its real verdict and reasons, passes through and no disposition can apply.
+func p3VariantVerdict(result providercert.Result, late *p3LateHook) providercert.Result {
+	if result.Verdict != providercert.Inconclusive || !slices.Contains(result.Reasons, providercert.ReasonVariantNotExercised) {
+		return result
+	}
+	result.Verdict = VerdictVariantNotExercised
+	if late != nil && late.Outcome == p3LateInconclusive {
+		// The child's fate or the late event is unproven, which is not the same as the
+		// condition not having happened.
+		result.Verdict = providercert.Inconclusive
+	}
+	if late != nil && late.Reason != "" {
+		result.Reasons = append(slices.DeleteFunc(slices.Clone(result.Reasons), func(r string) bool {
+			return r == providercert.ReasonVariantNotExercised && late.Outcome == p3LateInconclusive
+		}), late.Reason)
+	}
+	return result
+}
+
+// admissionGaps lists every case a run judged under a disposition label (each label of the
+// contract's dispositions, plus the reported-gap labels), as "ID:LABEL", so none vanishes from
+// the entry's gaps and doctor's open gaps.
 func admissionGaps(out AdmissionOutcome) []string {
+	labels := []string{"REPORTED_GAP", "NOT_APPLICABLE_CURRENT_NATIVE"}
+	for _, d := range admissioncontract.Dispositions() {
+		labels = append(labels, d.Label)
+	}
 	var gaps []string
 	for id, label := range out.Labels {
-		if label == "REPORTED_GAP" || label == "NOT_APPLICABLE_CURRENT_NATIVE" {
+		if slices.Contains(labels, label) {
 			gaps = append(gaps, id+":"+label)
 		}
 	}

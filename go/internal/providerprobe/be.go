@@ -328,6 +328,21 @@ func judgeBE14With(control, treatment *p3Observed, g be14Guards) CaseResult {
 	if treatment.CleanupFailed || control.CleanupFailed {
 		return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{providercert.ReasonCleanupFailed}}
 	}
+	// A run that timed out, did not start or could not take its identity checkpoints is a
+	// harness defect: its record shows nothing about the picker.
+	for _, run := range []struct {
+		name string
+		obs  *p3Observed
+	}{{"control", control}, {"treatment", treatment}} {
+		for _, defect := range []struct {
+			on     bool
+			reason string
+		}{{run.obs.TimedOut, providercert.ReasonTimeout}, {run.obs.SpawnFailed, providercert.ReasonSpawnFailed}, {run.obs.IdentityError, providercert.ReasonHarness}} {
+			if defect.on {
+				return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{defect.reason, "BE14 harness defect in the " + run.name + " run"}}
+			}
+		}
+	}
 	var evidence []string
 	// 1. The control opened the picker and cancelled it: input marks and the screen.
 	if g.ControlPicker {

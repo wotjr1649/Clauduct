@@ -211,6 +211,9 @@ func admissionReport(out io.Writer) {
 			fmt.Fprintf(out, "admission    %-24s open gaps: %s\n", "", strings.Join(s.Gaps, ","))
 		}
 	}
+	for _, gap := range admissioncontract.Gaps() {
+		fmt.Fprintf(out, "admission    contract gap: %s\n", gap)
+	}
 	fmt.Fprintln(out, "routing r4   HOST_MANAGED INCOMPATIBLE (R08 background FAIL_ROUTING); a scope admission is not a certification")
 	fmt.Fprintln(out, "release      PRE_RELEASE_VERIFICATION BLOCKED")
 }

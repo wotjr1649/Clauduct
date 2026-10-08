@@ -218,7 +218,7 @@ func AdmissionStatuses(home string, key func(string) AdmissionKey) []AdmissionSt
 					status.NotExercisable, status.Gaps = entry.NotExercisable, entry.Gaps
 					for _, c := range entry.Cases {
 						if c.Label != "" && c.Label != "PASS" {
-							status.Labels = append(status.Labels, c.ID+":"+c.Label)
+							status.Labels = append(status.Labels, admissionLabelText(c))
 						}
 					}
 					status.Stale = "KEY_UNAVAILABLE"
@@ -234,6 +234,22 @@ func AdmissionStatuses(home string, key func(string) AdmissionKey) []AdmissionSt
 		out = append(out, status)
 	}
 	return out
+}
+
+// admissionLabelText is a case's label as doctor shows it: "ID:LABEL(REASON)". REASON is the
+// owner decision's reason when the contract has a disposition for this case and label, else the
+// reasons the entry stored for the case (none for the pass-like labels).
+func admissionLabelText(c AdmissionCase) string {
+	text := c.ID + ":" + c.Label
+	for _, d := range admissioncontract.Dispositions() {
+		if d.Case == c.ID && d.Label == c.Label && d.Reason != "" {
+			return text + "(" + d.Reason + ")"
+		}
+	}
+	if c.Label != "SAFETY_PASS" && c.Label != "SAFE_REFUSAL" && len(c.Reasons) > 0 {
+		return text + "(" + strings.Join(c.Reasons, "+") + ")"
+	}
+	return text
 }
 
 // AdmissionKeyFor is the cache key the gate and the probe both compute for one scope

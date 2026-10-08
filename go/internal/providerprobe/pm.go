@@ -2,9 +2,12 @@ package providerprobe
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 )
 
 // p3BashOnce answers the turn's first main request that offers the Bash tool with a Bash call
@@ -13,6 +16,7 @@ import (
 type p3BashOnce struct {
 	mu      sync.Mutex
 	marker  string
+	markers []string // every run's marker, in run order (control, then treatment)
 	offered bool
 	results []string
 }
@@ -21,7 +25,34 @@ type p3BashOnce struct {
 func (b *p3BashOnce) reset(marker string) {
 	b.mu.Lock()
 	b.marker, b.offered, b.results = marker, false, nil
+	b.markers = append(b.markers, marker)
 	b.mu.Unlock()
+}
+
+// executedInEveryRun reports whether the Bash call actually ran (its marker file exists) in
+// each of the n runs this case made, control and treatment both.
+func (b *p3BashOnce) executedInEveryRun(n int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.markers) != n {
+		return false
+	}
+	for _, marker := range b.markers {
+		if _, err := os.Stat(marker); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
+// p3ManagedFixtureVerdict judges PM03 when its managed-file marker reached no receiver in
+// control or treatment (admission r3 dispositions PM03): FIXTURE_NOT_APPLIED only when Bash also
+// executed in both runs, which shows the managed deny did not apply; otherwise INCONCLUSIVE.
+func p3ManagedFixtureVerdict(bash *p3BashOnce) (verdict, reason string) {
+	if !bash.executedInEveryRun(2) {
+		return providercert.Inconclusive, "managed file marker reached no receiver, but Bash did not execute (no marker file) in both control and treatment, so the managed deny is not shown unapplied"
+	}
+	return VerdictFixtureNotApplied, "managed file marker reached no receiver in control or treatment, and Bash executed in both"
 }
 
 func (b *p3BashOnce) script(body string, _ []string) string {

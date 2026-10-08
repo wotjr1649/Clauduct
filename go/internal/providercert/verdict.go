@@ -240,6 +240,12 @@ func Judge(o Observation) Result {
 	case NotExercisable:
 		// An optional case that is inconclusive for its variant is not exercisable-and-clean.
 		r.Verdict, r.Reasons = Inconclusive, []string{ReasonControlUnproven}
+	case FailFunction:
+		// The routing contract keeps an unexercised variant INCONCLUSIVE (r4
+		// caseVerdict.variantExercised): a preservation failure seen without the variant is
+		// reported with its reasons, never as a product defect, and without the variant reason
+		// no disposition can read it.
+		r.Verdict = Inconclusive
 	}
 	return r
 }

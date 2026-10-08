@@ -230,8 +230,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if err := managedRouting(docs, readErr); err != nil {
 			return Result{}, err
 		}
-		if providerFlag != "" {
-			// The strategy's background restriction holds against machine policy too.
+		if providerFlag != "" || !BackgroundRequested(o.Args) {
+			// The foreground's agent-view restriction holds against machine policy too.
 			if err := managedAgentViewOverride(docs); err != nil {
 				return Result{}, err
 			}
@@ -274,8 +274,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if providerFlag != "" {
-		// The strategy's background restriction is this launch's, as its routing is: a
+	if providerFlag != "" || !BackgroundRequested(o.Args) {
+		// The foreground's agent-view restriction is this launch's, as its routing is: a
 		// settings env that turns agent view back on would reopen native's supervisor path.
 		if err := userKeepsAgentViewOff(userSettings); err != nil {
 			return Result{}, err
@@ -442,8 +442,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			if providerFlag != "" {
 				env[providerFlag] = "1"
-				env[agentViewOff] = "1"
 			}
+			env[agentViewOff] = "1"
 			// The hooks and the confirmation helper read this session's connection from its
 			// link, held until native and its hooks are done: the deferred close runs after
 			// the native process tree has ended.
@@ -630,7 +630,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	default:
 	}
 	spec.Env = withProcessFlag(spec.Env, providerFlag)
-	if providerFlag != "" && background == nil {
+	if background == nil {
 		spec.Env = withProcessFlag(spec.Env, agentViewOff)
 	}
 	var dispatchOutput backgroundOutput

@@ -40,9 +40,13 @@ var ErrSupervisorUnverified = errors.New("ROUTING_PROVIDER_UNVERIFIED: a native 
 // (#320 R08). Refused before anything starts; not a permanent removal of background sessions.
 var ErrBackgroundUnverified = errors.New("ROUTING_PROVIDER_UNVERIFIED: background sessions are not verified under this launch's provider control on this Claude Code version, so --bg is refused for now. Nothing was started; run the session in the foreground")
 
-// agentViewOff turns off native's agent view under a strategy, so /background, /bg and /fork stay
-// in the foreground process instead of reaching native's supervisor, and claude agents is
-// unavailable (code.claude.com/docs/en/agent-view).
+// agentViewOff turns off native's agent view in every foreground session, so /background, /bg
+// and /fork stay in the foreground process instead of reaching native's supervisor, and claude
+// agents is unavailable (code.claude.com/docs/en/agent-view). Without it (#319 decision 17,
+// product17-fg, 2.1.294) a /background job outlived the session on a gateway that had closed,
+// never finished, and left native's supervisor running with this session's environment for
+// every later background job of the configuration directory; under a supervisor started
+// elsewhere the worker had no credential for the gateway. Explicit --bg is the background path.
 const agentViewOff = "CLAUDE_CODE_DISABLE_AGENT_VIEW"
 
 // userKeepsAgentViewOff refuses user --settings whose env sets agentViewOff to anything but "1".

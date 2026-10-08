@@ -45,25 +45,56 @@ func BackgroundRequested(args []string) bool {
 // copy ran no hook and never reached the gateway (L4j). --continue is refused too: native
 // copies the directory's latest session, which this launcher cannot name, so the copy's fork
 // has no profile to start from (L7: SESSION_PROFILE_UNVERIFIED). resumeID is prepareSessionArgs'.
+// The flag goes where "--" is, or last, so the --settings positions run.go recorded stay valid.
+// Options are read as prepareSessionArgs reads them, combined and attached short forms included;
+// past an option of unknown arity nothing is known, and the gateway refuses what native starts.
 func backgroundResume(args []string, resumeID string) ([]string, error) {
-	_, continued := optionValue(args, "--continue")
-	if _, short := optionValue(args, "-c"); short || continued {
+	resume, continued, fork := false, false, false
+	terminator := len(args)
+	for i := 0; i < len(args); {
+		if args[i] == "--" {
+			terminator = i
+			break
+		}
+		end, known := nativeArgEnd(args, i)
+		if !known || end > len(args) {
+			break
+		}
+		name, _, _ := strings.Cut(args[i], "=")
+		switch {
+		case name == "--resume":
+			resume = true
+		case name == "--continue":
+			continued = true
+		case name == "--fork-session":
+			fork = true
+		case len(name) > 1 && name[0] == '-' && name[1] != '-':
+			for _, c := range name[1:] {
+				if c == 'r' {
+					resume = true
+					break
+				}
+				if c == 'c' {
+					continued = true
+				}
+				if !strings.ContainsRune("cpvh", c) {
+					break
+				}
+			}
+		}
+		i = end
+	}
+	switch {
+	case continued:
 		return nil, ErrBackgroundContinue
-	}
-	_, resume := optionValue(args, "--resume")
-	if _, short := optionValue(args, "-r"); short {
-		resume = true
-	}
-	if !resume {
+	case !resume:
 		return args, nil
-	}
-	if resumeID == "" {
+	case resumeID == "":
 		return nil, ErrBackgroundResumeTarget
-	}
-	if _, fork := optionValue(args, "--fork-session"); fork {
+	case fork:
 		return args, nil
 	}
-	return append([]string{"--fork-session"}, args...), nil
+	return slices.Insert(slices.Clone(args), terminator, "--fork-session"), nil
 }
 
 func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string, strategyFlag string) (string, error) {

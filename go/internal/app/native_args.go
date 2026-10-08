@@ -36,13 +36,15 @@ func nativeDesktop(args []string) error {
 // setup-token): Clauduct does not sign in to or out of Claude (#319 decision 17, routing r4
 // LN). Native dispatches a subcommand that follows options of any kind, except after -p,
 // which makes it the prompt (measured 2.1.294: `--model x mcp list` lists, `-p mcp list`
-// asks the model). An unknown option without an attached value hides where the subcommand
-// begins, so the scan stops there, as it does at "--".
+// asks the model); -p is read as printMode reads it, so a value attached to a short option
+// is not mistaken for it. An unknown option without an attached value hides where the
+// subcommand begins: an account command anywhere after it is refused, as nativeDesktop refuses
+// --desktop there.
 func accountCommand(args []string) error {
 	var positionals []string
 	for i := 0; i < len(args) && args[i] != "--" && len(positionals) < 2; {
 		arg := args[i]
-		if arg == "--print" || len(arg) > 1 && arg[0] == '-' && arg[1] != '-' && strings.ContainsRune(arg, 'p') && len(positionals) == 0 {
+		if len(positionals) == 0 && printMode(args[i:i+1]) {
 			return nil
 		}
 		end, known := nativeArgEnd(args, i)
@@ -50,6 +52,11 @@ func accountCommand(args []string) error {
 			if _, _, attached := strings.Cut(arg, "="); attached && strings.HasPrefix(arg, "--") {
 				i++
 				continue
+			}
+			for j := i + 1; j < len(args) && args[j] != "--"; j++ {
+				if args[j] == "setup-token" || args[j] == "auth" && j+1 < len(args) && (args[j+1] == "login" || args[j+1] == "logout") {
+					return ErrAccountCommand
+				}
 			}
 			break
 		}

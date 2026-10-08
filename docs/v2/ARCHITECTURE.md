@@ -120,7 +120,8 @@ Claude Code 2.1.286의 공개 옵션 형태(2.1.283의 필수값 옵션 `--clien
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
 
 native의 Claude 계정 subcommand(`auth login`·`auth logout`·`setup-token`)는 위 검사와 같은 단계에서 거부한다. 옵션 뒤에
-와도 native가 subcommand로 실행하므로 옵션을 건너뛰어 찾고, `-p` 뒤에서는 prompt이므로 넘긴다(2.1.294 측정).
+와도 native가 subcommand로 실행하므로 옵션을 건너뛰어 찾고, `-p` 뒤에서는 prompt이므로 넘긴다(2.1.294 측정). 값의 경계를
+모르는 옵션 뒤에서는 그 뒤 어디에든 이 명령이 있으면 거부한다(`--desktop`과 같은 원칙).
 `/login`·`/logout`·`/upgrade`·`/usage-credits`·`/install-github-app`은 세션 요구값의 `DISABLE_*_COMMAND`로 숨긴다.
 
 개발 후보(v0.6.11 전)의 launch는 provider-control admission gate를 거치지 않는다(#319 결정 17).

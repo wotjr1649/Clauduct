@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/app"
@@ -168,6 +170,21 @@ type staleRun struct {
 	t      TB
 	checks []p3StaleCheck
 	client *http.Client
+	// ctx is the run's deadline: every request of the run is made under it, so a gateway that
+	// holds a reply cannot hold the launch.
+	ctx      context.Context
+	timedOut atomic.Bool
+}
+
+// p3StaleTimeout bounds one whole R04S run (both phases). A run that reaches it is
+// INCONCLUSIVE (TIMEOUT), never PASS.
+var p3StaleTimeout = 90 * time.Second
+
+// noteTimeout records that a request ended on the run's deadline or the client's backstop.
+func (r *staleRun) noteTimeout(err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		r.timedOut.Store(true)
+	}
 }
 
 func (r *staleRun) check(kind, name string, ok bool, format string, args ...any) bool {
@@ -192,6 +209,7 @@ func (r *staleRun) send(ctx context.Context, base, token, path string, headers m
 	}
 	response, err := r.client.Do(request)
 	if err != nil {
+		r.noteTimeout(err)
 		return 0, err.Error()
 	}
 	defer response.Body.Close()
@@ -208,9 +226,14 @@ func staleHeaders(session string) map[string]string {
 // p3Stale runs R04S against the gateways maker builds.
 func p3Stale(t TB, maker p3StaleMaker) p3StaleReport {
 	t.Helper()
-	r := &staleRun{t: t, client: &http.Client{Timeout: 10 * time.Second}}
+	ctx, cancel := context.WithTimeout(context.Background(), p3StaleTimeout)
+	defer cancel()
+	r := &staleRun{t: t, ctx: ctx, client: &http.Client{Timeout: 10 * time.Second}}
 	r.profilePhase(maker.Gateway(t, false))
 	r.confirmationPhase(maker.Gateway(t, true), maker.Sentinel(t))
+	if r.timedOut.Load() || ctx.Err() != nil {
+		return p3StaleReport{Checks: r.checks, Verdict: providercert.Inconclusive, Reasons: []string{providercert.ReasonTimeout}}
+	}
 	report := p3StaleReport{Checks: r.checks, Verdict: providercert.Pass}
 	for _, c := range r.checks {
 		switch {
@@ -238,11 +261,11 @@ func (r *staleRun) profilePhase(g *p3StaleGateway) {
 			fields["source"] = source
 		}
 		body, _ := json.Marshal(fields)
-		status, _ := r.send(context.Background(), g.URL, g.Token, "/clauduct/context", nil, string(body))
+		status, _ := r.send(r.ctx, g.URL, g.Token, "/clauduct/context", nil, string(body))
 		return status
 	}
 	ask := func(session string) int {
-		status, _ := r.send(context.Background(), g.URL, g.Token, "/v1/messages?beta=true", staleHeaders(session), staleRequest)
+		status, _ := r.send(r.ctx, g.URL, g.Token, "/v1/messages?beta=true", staleHeaders(session), staleRequest)
 		return status
 	}
 	r.check("control", "register the earlier session", register(earlier, "startup") == http.StatusNoContent, "")
@@ -291,7 +314,7 @@ func (c staleChallenge) reply(edit func(map[string]any)) string {
 func (r *staleRun) confirmationPhase(g *p3StaleGateway, sentinel *p3StaleSentinel) {
 	session := "30000000-0000-0000-0000-0000000000b1"
 	body, _ := json.Marshal(map[string]string{"event": "SessionStart", "sessionId": session, "source": "startup", "transcriptPath": filepath.Join(g.Projects, session+".jsonl")})
-	status, text := r.send(context.Background(), g.URL, g.Token, "/clauduct/context", nil, string(body))
+	status, text := r.send(r.ctx, g.URL, g.Token, "/clauduct/context", nil, string(body))
 	if !r.check("control", "register the confirmation session", status == http.StatusNoContent, "status=%d %.80s", status, text) {
 		return
 	}
@@ -314,7 +337,7 @@ func (r *staleRun) confirmationPhase(g *p3StaleGateway, sentinel *p3StaleSentine
 		text   string
 	}
 	askAsync := func() (<-chan answer, context.CancelFunc) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(r.ctx)
 		out := make(chan answer, 1)
 		go func() {
 			s, text := r.send(ctx, g.URL, g.Token, "/v1/messages?beta=true", staleHeaders(session), staleRequest)
@@ -333,7 +356,7 @@ func (r *staleRun) confirmationPhase(g *p3StaleGateway, sentinel *p3StaleSentine
 		return nil, false
 	}
 	helper := func(base, token string, c staleChallenge, edit func(map[string]any)) (int, string) {
-		return r.send(context.Background(), base, token, "/clauduct/confirmation", nil, c.reply(edit))
+		return r.send(r.ctx, base, token, "/clauduct/confirmation", nil, c.reply(edit))
 	}
 
 	// Turn A: the current nonce's helper is the positive control.
@@ -348,11 +371,12 @@ func (r *staleRun) confirmationPhase(g *p3StaleGateway, sentinel *p3StaleSentine
 	helperDone := make(chan struct{})
 	go func() {
 		defer close(helperDone)
-		request, _ := http.NewRequest(http.MethodPost, g.URL+"/clauduct/confirmation", strings.NewReader(first.reply(nil)))
+		request, _ := http.NewRequestWithContext(r.ctx, http.MethodPost, g.URL+"/clauduct/confirmation", strings.NewReader(first.reply(nil)))
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Authorization", "Bearer "+g.Token)
 		response, err := (&http.Client{}).Do(request) // held open until the request ends, as the real helper's is
 		if err != nil {
+			r.noteTimeout(err)
 			connected <- "error: " + err.Error()
 			return
 		}

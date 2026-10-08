@@ -163,8 +163,18 @@ func p3RedactCanaries(text string, turns []p3Turn) string {
 // p3AgentSessionEnv names the environment a Claude Code session leaves for the processes it
 // starts. The probe's natives must not inherit it from a test that runs under one.
 func p3AgentSessionEnv(upper string) bool {
+	if p3NativeEnvAllowed[upper] {
+		return false
+	}
 	return upper == "CLAUDECODE" || upper == "AI_AGENT" || strings.HasPrefix(upper, "CLAUDE_")
 }
+
+// p3NativeEnvAllowed are CLAUDE_* names the probe's natives still inherit: what native needs to
+// run at all and the product launch passes through, so dropping them would make the probe
+// permanently INCONCLUSIVE where the product works. CLAUDE_CODE_GIT_BASH_PATH is the shell
+// native runs Bash with. Ceiling: this list grows only with names shown not to affect routing,
+// credentials or configuration; every other CLAUDE_* name stays dropped.
+var p3NativeEnvAllowed = map[string]bool{"CLAUDE_CODE_GIT_BASH_PATH": true}
 
 // ansiSequence matches terminal control sequences in a raw ConPTY log.
 var ansiSequence = regexp.MustCompile("\x1b\\[[0-9;?]*[ -/]*[@-~]|\x1b\\][^\x07\x1b]*(\x07|\x1b\\\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]")

@@ -5,11 +5,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
@@ -156,11 +158,29 @@ func WriteAdmission(home string, entry AdmissionEntry) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	if err := os.Rename(tmp.Name(), filepath.Join(dir, entry.Key.Scope+".json")); err != nil {
+	if err := renameEntry(tmp.Name(), filepath.Join(dir, entry.Key.Scope+".json")); err != nil {
 		os.Remove(tmp.Name())
 		return err
 	}
 	return nil
+}
+
+// renameWait bounds how long a rename onto an entry another process has open is retried.
+var renameWait = 2 * time.Second
+
+// renameEntry renames tmp onto path. Go opens files without FILE_SHARE_DELETE, so while
+// another process is reading the entry the rename is refused with a sharing violation or
+// access denied; the read is short, so the rename is retried with a short backoff for at most
+// renameWait. Any other error, or the bound passing, returns the last error.
+func renameEntry(tmp, path string) error {
+	deadline := time.Now().Add(renameWait)
+	for delay := 5 * time.Millisecond; ; delay = min(delay*2, 100*time.Millisecond) {
+		err := os.Rename(tmp, path)
+		if err == nil || !errors.Is(err, fs.ErrPermission) && !errors.Is(err, syscall.Errno(32)) || !time.Now().Add(delay).Before(deadline) {
+			return err
+		}
+		time.Sleep(delay)
+	}
 }
 
 // reparsePath reports whether path or any existing parent is a reparse point (a junction or

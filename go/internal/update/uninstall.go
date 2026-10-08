@@ -136,29 +136,42 @@ func remove(dir, self, parkDir string, present, leftovers []string) (parked stri
 			return "", errCannotMoveSelf
 		}
 	}
+	// Every other file is renamed aside before any is deleted. A file something holds open
+	// cannot be renamed, so a failure shows up while the installation can still be put back
+	// exactly as it was -- the probe included. Only after every rename has succeeded are the
+	// staged copies deleted, and by then nothing is left that could refuse.
+	type staged struct{ path, aside string }
+	var done []staged
 	restore := func() {
+		for i := len(done) - 1; i >= 0; i-- {
+			_ = os.Rename(done[i].aside, done[i].path)
+		}
 		if moved != "" {
 			_ = os.Rename(moved, self)
 		}
 	}
-	for _, name := range present {
+	stage := func(name string) error {
 		path := filepath.Join(dir, name)
-		if path == self {
-			continue
+		if path == self || path == moved {
+			return nil
 		}
-		if err := os.Remove(path); err != nil {
+		aside := path + ".uninstalling"
+		_ = os.Remove(aside)
+		if err := os.Rename(path, aside); err != nil {
+			return err
+		}
+		done = append(done, staged{path, aside})
+		return nil
+	}
+	for _, name := range append(append([]string{}, present...), leftovers...) {
+		if err := stage(name); err != nil {
 			restore()
 			return "", err
 		}
 	}
-	for _, name := range leftovers {
-		path := filepath.Join(dir, name)
-		if path == moved {
-			continue
-		}
-		if err := os.Remove(path); err != nil {
-			restore()
-			return "", err
+	for _, s := range done {
+		if err := os.Remove(s.aside); err != nil {
+			return "", fmt.Errorf("%s was removed but its staged copy %s could not be deleted: %w", s.path, s.aside, err)
 		}
 	}
 	return moved, nil

@@ -789,9 +789,15 @@ func (w *p3Watched) Wait() error {
 // p3Observed is one run of a case: everything the verdict and the evidence read.
 type p3Observed struct {
 	Configuration string
-	Wrong         map[string]providercert.Wrong
-	WrongSeen     map[string][]providercert.Seen
-	CatchAll      []providercert.Seen
+	// Run is the case and configuration, for attributing cleanup processes and prior contact.
+	Run string
+	// PriorContacts are the earlier runs' receivers reached during this run; PriorCrossTalk is
+	// whether every one is proven another case's cleanup (p3PriorCrossTalk).
+	PriorContacts  []p3PriorContact
+	PriorCrossTalk bool
+	Wrong          map[string]providercert.Wrong
+	WrongSeen      map[string][]providercert.Seen
+	CatchAll       []providercert.Seen
 	// Calls are what INTENDED answered (its backend); Ingress is what native sent it.
 	Calls         []p3Call
 	Ingress       []p3Call
@@ -903,7 +909,10 @@ type p3Runner struct {
 	identity func() (providercert.Identity, error)
 	// prior holds every wrong receiver earlier runs created. They stay open, so a native that
 	// reaches one of them during this run is counted against this run.
-	prior *[]*providercert.Receiver
+	prior *[]p3PriorReceiver
+	// cleanups are the natives the harness started to end cases' supervisors: the proof that a
+	// contact with an earlier run's receiver was another case's cleanup.
+	cleanups *p3CleanupLog
 	// priorMu guards prior: a scope's cases run in parallel. A concurrent case's receivers join
 	// prior when that case ends; a native reaching one earlier is counted by that receiver's own
 	// run, which then fails, so the overlap can only refuse, never admit.
@@ -917,8 +926,14 @@ type p3Runner struct {
 	surface bool
 }
 
+// p3PriorReceiver is a receiver an earlier run left open and the run that created it.
+type p3PriorReceiver struct {
+	R      *providercert.Receiver
+	Source string
+}
+
 func newP3Runner(exe string, newStart func(spawnReport) starter, timeout time.Duration) p3Runner {
-	return p3Runner{exe: exe, newStart: newStart, timeout: timeout, prior: new([]*providercert.Receiver), priorMu: new(sync.Mutex)}
+	return p3Runner{exe: exe, newStart: newStart, timeout: timeout, prior: new([]p3PriorReceiver), priorMu: new(sync.Mutex), cleanups: new(p3CleanupLog)}
 }
 
 // run drives one case under one configuration and returns what was observed.
@@ -953,12 +968,34 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 	for k, v := range c.ProcessEnv {
 		extra[k] = v(w)
 	}
-	before := map[*providercert.Receiver]int64{}
+	// before is each earlier receiver's counts and recorded owners as this run began.
+	type priorStart struct {
+		p3PriorReceiver
+		bytes, conns int64
+		owners       int
+	}
+	var before []priorStart
 	p.priorMu.Lock()
 	for _, r := range *p.prior {
-		before[r] = r.Counter.Bytes.Load() + r.Counter.Conns.Load()
+		before = append(before, priorStart{r, r.R.Counter.Bytes.Load(), r.R.Counter.Conns.Load(), len(r.R.Counter.Owners())})
 	}
 	p.priorMu.Unlock()
+	obs.Run = c.ID + "/" + configuration
+	// Everything the harness does to end this case (the boundary watch's supervisor stop, the
+	// no-natives check, the step goroutine's join) runs through cleanup and finishes before the
+	// routing snapshot below, so native traffic it causes lands in this run's own counts and not in
+	// a later reading of a receiver that is already "prior". A deferred call would run after it.
+	// Last registered runs first, as with defer; a failure path still runs them through the defer.
+	var cleanups []func()
+	cleanup := func(f func()) { cleanups = append(cleanups, f) }
+	finishCleanups := func() {
+		for len(cleanups) > 0 {
+			f := cleanups[len(cleanups)-1]
+			cleanups = cleanups[:len(cleanups)-1]
+			f()
+		}
+	}
+	defer finishCleanups()
 	observe := func() {
 		if p.identity == nil {
 			return
@@ -1163,8 +1200,8 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 		i := turn("turn1")
 		var out strings.Builder
 		if c.WatchBoundary {
-			defer p3CheckNoNatives(p.exe, w, obs)
-			defer p.boundaryWatch(w, obs)()
+			cleanup(func() { p3CheckNoNatives(p.exe, w, obs) })
+			cleanup(p.boundaryWatch(w, obs))
 		}
 		once(append([]string{"-p", prompt(obs.Turns[i].Canary)}, c.Args...), nil, &out)
 		end(i)
@@ -1246,8 +1283,8 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				t.Fatal(err)
 			}
 			timeoutSeconds = 180
-			defer p3CheckNoNatives(p.exe, w, obs)
-			defer p.boundaryWatch(w, obs)()
+			cleanup(func() { p3CheckNoNatives(p.exe, w, obs) })
+			cleanup(p.boundaryWatch(w, obs))
 		} else if total := max(len(c.Steps)+1, c.Turns); total >= 2 {
 			// Same process, several prompts. A state change between prompts k and k+1 runs
 			// once prompt k's request reached any receiver and its reply had time to show; the
@@ -1291,7 +1328,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 						}
 					}
 				}()
-				defer func() { <-stepsDone }()
+				cleanup(func() { <-stepsDone })
 			}
 		} else if c.TUIApproval != nil {
 			raw, _ := json.Marshal(p3TUIStepsN([]string{prompt(obs.Turns[i].Canary)}, nil, 0, c.TUIApproval, false))
@@ -1300,7 +1337,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 			}
 		}
 		if c.TUIAfterReply != nil {
-			defer p.boundaryWatch(w, obs)()
+			cleanup(p.boundaryWatch(w, obs))
 		}
 		raw := filepath.Join(filepath.Dir(steps), "raw.log")
 		marks := filepath.Join(filepath.Dir(steps), "marks.txt")
@@ -1537,6 +1574,15 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 	case p3Multi:
 		p.multi(t, w, c, obs, once, prompt, turn, end)
 	}
+	// The harness's own cleanup is over before anything is counted. The child mode's wrapper and
+	// child are found by the pid and creation time they recorded; a child still running past its
+	// own cap is ended, and counted as a cleanup failure.
+	finishCleanups()
+	obs.HookProcs = p3ReapHookProcesses(w.sidecar, 10*time.Second)
+	if obs.HookProcs.Killed > 0 {
+		obs.CleanupFailed = true
+		obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("%d hook wrapper processes outlived the case and were ended", obs.HookProcs.Killed))
+	}
 	// Bytes that were already in flight when native exited are still counted.
 	time.Sleep(2 * time.Second)
 	obs.Calls = transport.snapshot()
@@ -1563,7 +1609,15 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 	obs.Dropped += dropped
 	// A tunnel through CATCH_ALL to a probe receiver is contact with it, even though the
 	// receiver itself saw nothing; one to an earlier run's receiver counts as prior contact.
+	// Prior contact is read per earlier receiver from the Counter's deltas since this run began,
+	// bytes and connections apart, with the owners recorded since then and the CONNECTs that
+	// tunnelled through CATCH_ALL to its address. A reason for each is recorded (see
+	// providercert.Observation.PriorReceivers); the sum stays in obs.Wrong for the evidence.
 	var prior providercert.Wrong
+	tunnels := map[*providercert.Receiver]int64{}
+	p.priorMu.Lock()
+	known := slices.Clone(*p.prior)
+	p.priorMu.Unlock()
 	for _, s := range obs.CatchAll {
 		if s.Method != http.MethodConnect {
 			continue
@@ -1575,34 +1629,44 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 				obs.Wrong[r.Observer.ID] = contact
 			}
 		}
-		p.priorMu.Lock()
-		for _, r := range *p.prior {
-			if address := strings.TrimPrefix(strings.TrimPrefix(r.URL, "https://"), "http://"); s.Authority == address {
-				prior.Conns++
+		for _, r := range known {
+			if address := strings.TrimPrefix(strings.TrimPrefix(r.R.URL, "https://"), "http://"); s.Authority == address {
+				tunnels[r.R]++
 			}
 		}
-		p.priorMu.Unlock()
 	}
-	// Contact with an earlier run's receiver during this run counts against this run.
-	for r, count := range before {
-		if now := r.Counter.Bytes.Load() + r.Counter.Conns.Load(); now != count {
-			prior.Conns += now - count
+	started := map[*providercert.Receiver]bool{}
+	for _, b := range before {
+		started[b.R] = true
+		c := p3PriorContact{Receiver: b.R.Observer.ID, URL: b.R.URL, Source: b.Source,
+			Bytes: b.R.Counter.Bytes.Load() - b.bytes, Conns: b.R.Counter.Conns.Load() - b.conns, Tunnel: tunnels[b.R]}
+		if owners := b.R.Counter.Owners(); len(owners) > b.owners {
+			c.Owners = owners[b.owners:]
+		}
+		if c.Bytes != 0 || c.Conns != 0 || c.Tunnel != 0 {
+			obs.PriorContacts = append(obs.PriorContacts, c)
+			prior.Bytes += c.Bytes
+			prior.Conns += c.Conns + c.Tunnel
+		}
+	}
+	for _, r := range known {
+		// A receiver that joined while this run was going has no starting counts; only a tunnel
+		// to it is attributable here (its own run reads what its native did).
+		if n := tunnels[r.R]; n != 0 && !started[r.R] {
+			obs.PriorContacts = append(obs.PriorContacts, p3PriorContact{Receiver: r.R.Observer.ID, URL: r.R.URL, Source: r.Source, Tunnel: n})
+			prior.Conns += n
 		}
 	}
 	obs.Wrong["PRIOR_RUN_RECEIVERS"] = prior
+	obs.PriorCrossTalk = p3PriorCrossTalk(obs.PriorContacts, p.cleanups.all(), obs.Run)
 	p.priorMu.Lock()
-	*p.prior = append(*p.prior, own...)
+	for _, r := range own {
+		*p.prior = append(*p.prior, p3PriorReceiver{R: r, Source: obs.Run})
+	}
 	p.priorMu.Unlock()
 	obs.Outputs += transcripts(w.configDir)
 	obs.HookFailures = hookFailures(w.configDir)
 	obs.PluginApplied = w.pluginApplied
-	// The child mode's wrapper and child are found by the pid and creation time they recorded;
-	// a child still running past its own cap is ended, and counted as a cleanup failure.
-	obs.HookProcs = p3ReapHookProcesses(w.sidecar, 10*time.Second)
-	if obs.HookProcs.Killed > 0 {
-		obs.CleanupFailed = true
-		obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("%d hook wrapper processes outlived the case and were ended", obs.HookProcs.Killed))
-	}
 	obs.Wrapped = readWrapped(w.sidecar)
 	if w.sentinel != nil {
 		w.mu.Lock()
@@ -1754,8 +1818,9 @@ func inWindow(turns []p3Turn, i int, at time.Time) bool {
 // observation turns a treatment run and its control into the verdict's input.
 func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observation {
 	o := providercert.Observation{CaseID: c.ID, Optional: c.Optional, Purpose: c.Purpose, ForeignSessionChanged: treatment.SentinelChanged,
-		StoredGateway: []providercert.Wrong{treatment.Wrong["WRONG_STORED_GATEWAY_A"], treatment.Wrong["WRONG_STORED_GATEWAY_B"]},
-		Settings:      []providercert.Wrong{treatment.Wrong["WRONG_SETTINGS"], treatment.Wrong["WRONG_SOCKET"], treatment.Wrong["PRIOR_RUN_RECEIVERS"]}}
+		StoredGateway:  []providercert.Wrong{treatment.Wrong["WRONG_STORED_GATEWAY_A"], treatment.Wrong["WRONG_STORED_GATEWAY_B"]},
+		Settings:       []providercert.Wrong{treatment.Wrong["WRONG_SETTINGS"], treatment.Wrong["WRONG_SOCKET"]},
+		PriorReceivers: treatment.Wrong["PRIOR_RUN_RECEIVERS"], PriorCrossTalk: treatment.PriorCrossTalk}
 	for _, s := range treatment.CatchAll {
 		if s.Inference {
 			o.CatchAllInference++
@@ -2075,6 +2140,8 @@ type p3Evidence struct {
 	SentinelChanged       bool                                `json:",omitempty"`
 	SnapshotBefore        bool                                `json:",omitempty"`
 	Owners                map[string][]providercert.ConnOwner `json:",omitempty"`
+	PriorContacts         []p3PriorContact                    `json:",omitempty"`
+	PriorCrossTalk        bool                                `json:",omitempty"`
 	WorkerPID             int                                 `json:",omitempty"`
 	Daemon                *p3DaemonFacts                      `json:",omitempty"`
 	OverlayGaps           []string                            `json:",omitempty"`
@@ -2097,6 +2164,7 @@ func p3EvidenceOf(c p3Case, configuration string, obs *p3Observed, result provid
 	}
 	e.SnapshotBefore, e.TranscriptAppended, e.Screen, e.TUI = obs.SnapshotBefore, obs.TranscriptAppended, obs.Screen, obs.TUI
 	e.Owners, e.WorkerPID, e.ProbePID, e.Daemon, e.OverlayGaps, e.Natives = obs.Owners, obs.WorkerPID, os.Getpid(), obs.Daemon, obs.OverlayGaps, obs.Natives
+	e.PriorContacts, e.PriorCrossTalk = obs.PriorContacts, obs.PriorCrossTalk
 	for _, err := range obs.RunErrors {
 		e.Errors = append(e.Errors, redactURLs(err))
 	}
@@ -2192,7 +2260,7 @@ func (p p3Runner) boundaryWatch(w *p3World, obs *p3Observed) func() {
 		obs.Natives = <-natives
 		if _, err := os.Stat(filepath.Join(w.configDir, "daemon.lock")); err == nil {
 			obs.SupervisorLock = true
-			if err := p3StopOwnSupervisor(p.exe, w.configDir); err != nil {
+			if err := p3StopOwnSupervisor(p.exe, w.configDir, p.cleanups, obs.Run); err != nil {
 				obs.CleanupFailed = true
 				obs.RunErrors = append(obs.RunErrors, "own supervisor stop: "+err.Error())
 			}

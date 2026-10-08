@@ -72,6 +72,12 @@ var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONF
 const (
 	ReasonStoredGatewayContact  = "STORED_GATEWAY_CONTACT"
 	ReasonSettingsTargetContact = "SETTINGS_TARGET_CONTACT"
+	// ReasonPriorRunReceiverContact is a connection to a receiver an earlier run left open that
+	// this case's own native, or a process nobody can account for, made.
+	ReasonPriorRunReceiverContact = "PRIOR_RUN_RECEIVER_CONTACT"
+	// ReasonHarnessCrossTalk is the same contact when its recorded owner is provably another
+	// case's cleanup process: the case is not judged by it and cannot be admitted by it.
+	ReasonHarnessCrossTalk      = "HARNESS_CROSS_TALK"
 	ReasonCatchAllInference     = "CATCH_ALL_INFERENCE"
 	ReasonCatchAllCanary        = "CATCH_ALL_CANARY"
 	ReasonForeignMarker         = "FOREIGN_REPLY_MARKER"
@@ -178,6 +184,14 @@ type Observation struct {
 	// StoredGateway is WRONG_STORED_GATEWAY_A and _B; Settings is WRONG_SETTINGS and
 	// WRONG_SOCKET.
 	StoredGateway, Settings []Wrong
+	// PriorReceivers is what this case's window added at receivers earlier runs left open, bytes
+	// and connections apart. Contact is FAIL_ROUTING (PRIOR_RUN_RECEIVER_CONTACT) unless
+	// PriorCrossTalk: every connection of it has a recorded owner that is another case's
+	// cleanup process, and then the case is INCONCLUSIVE (HARNESS_CROSS_TALK). PriorCrossTalk
+	// without contact does nothing, and a contact with no owner, an owner this case's own
+	// native may be, or a tunnel is never cross-talk. The probe decides PriorCrossTalk.
+	PriorReceivers Wrong
+	PriorCrossTalk bool
 	// CanaryAttribution is set for a case where another process may legitimately reach the
 	// stored gateway (R08b). Then only StoredGatewayCanary, the requests that carried this
 	// case's canary, is a violation, and contact without it cannot be attributed.
@@ -271,6 +285,10 @@ func judge(o Observation) Result {
 			break
 		}
 	}
+	priorContact := o.PriorReceivers.Bytes != 0 || o.PriorReceivers.Conns != 0
+	if priorContact && !o.PriorCrossTalk {
+		add(ReasonPriorRunReceiverContact)
+	}
 	if o.ForeignCanary != 0 {
 		add(ReasonForeignCanary)
 	}
@@ -307,7 +325,7 @@ func judge(o Observation) Result {
 		reason string
 	}{{o.IdentityChanged, ReasonNativeChanged}, {h.SpawnFailed, ReasonSpawnFailed}, {h.TimedOut, ReasonTimeout},
 		{h.ResultMissing, ReasonResultMissing}, {h.BindFailed, ReasonBindFailed}, {h.ReceiverFault, ReasonReceiverFault},
-		{h.HeldProcess, ReasonHeldProcess}, {h.CleanupFailed, ReasonCleanupFailed}, {h.Integrity, ReasonHarness}} {
+		{priorContact && o.PriorCrossTalk, ReasonHarnessCrossTalk}, {h.HeldProcess, ReasonHeldProcess}, {h.CleanupFailed, ReasonCleanupFailed}, {h.Integrity, ReasonHarness}} {
 		if f.on {
 			add(f.reason)
 		}

@@ -119,9 +119,13 @@ Claude Code 2.1.286의 공개 옵션 형태(2.1.283의 필수값 옵션 `--clien
 
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
 
-개발 후보(v0.6.11 전)에서는 위 검사 다음에 provider-control admission gate가 scope를 정하고, ADMITTED entry가 없으면
-native를 시작하지 않는다([COMPATIBILITY.md](COMPATIBILITY.md#개발-후보v0611-전--provider-control-admission-319-320)).
-그 gate는 `--bg`·`--background`를 native 시작 전에 거부하므로 아래 연결 유지 경로에 닿지 않는다.
+native의 Claude 계정 subcommand(`auth login`·`auth logout`·`setup-token`)는 위 검사와 같은 단계에서 거부한다. 옵션 뒤에
+와도 native가 subcommand로 실행하므로 옵션을 건너뛰어 찾고, `-p` 뒤에서는 prompt이므로 넘긴다(2.1.294 측정).
+`/login`·`/logout`·`/upgrade`·`/usage-credits`·`/install-github-app`은 세션 요구값의 `DISABLE_*_COMMAND`로 숨긴다.
+
+개발 후보(v0.6.11 전)의 launch는 provider-control admission gate를 거치지 않는다(#319 결정 17).
+provider strategy 없이 아래의 endpoint·settings 고정·hook 시작 handshake로 연결한다
+([COMPATIBILITY.md](COMPATIBILITY.md#개발-후보v0611-전--지원-환경과-보장-한계-319)).
 
 명시적 `--bg`·`--background` 생성은 세션별 연결 유지 프로세스가 맡는다. 최초 실행기는 native의
 생성 판정과 같이 정확한 두 토큰을 일반 옵션 경계보다 먼저 찾는다. native 2.1.282는 도움말·버전 옵션이나

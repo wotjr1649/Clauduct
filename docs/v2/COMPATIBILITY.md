@@ -1264,19 +1264,22 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 | 분류기 replay(#288, #289) | 위 v0.6.4 절의 "로컬에서 측정한 것" 단락과 원장의 분류기 replay 행 세 개. 분류기 요청은 replay 키를 만들지 않는다 |
 | 알려진 제한 | 3절 "알려진 제한 원장" |
 
-### 개발 후보(v0.6.11 전) — provider-control admission (#319, #320)
+### 개발 후보(v0.6.11 전) — 지원 환경과 보장 한계 (#319)
 
-미출하 개발 브랜치의 동작이다. 출시 판정은 BLOCKED이며 이 절은 출하를 뜻하지 않는다.
+미출하 개발 브랜치의 동작이다. 2026-10-08 결정 17로 provider-control admission(#320)을 일반 launch의 필수 조건에서 뺐다.
+이 결정은 지원 범위를 다시 정한 것이고, 아래 잔여 위험을 해결한 것이 아니다.
 
 | 항목 | 동작 |
 |---|---|
-| gate | `--help`·`--version` 단독을 뺀 모든 inference launch는 scope를 정하고(PRINT_SINGLE, RESUME_EXPLICIT, CONTINUE_PRINT, MULTI_TURN_SAME_PROCESS, TUI), 그 scope와 선행 scope의 entry가 지금 설치된 native·build·probe·계약·OS에서 ADMITTED일 때만 HOST_MANAGED로 native를 시작한다. 아니면 `ROUTING_PROVIDER_UNVERIFIED`로 끝내고 아무것도 시작하지 않는다. strategy 없는 실행으로 넘어가지 않는다 |
-| scope 밖 | `--bg`·`--background`, 한 단어나 둘 이상의 위치 인자, `--resume`과 `--continue` 동시, `-p` 없는 `--resume`·`--continue`(TUI 재개), `--remote-control`·`--teleport`·`--cloud`·`--from-pr`·`--fork-session`은 native 시작 전에 거부한다. 한 단어 prompt는 `-p`와 stdin으로 준다 |
-| entry 작성 | 같은 디렉터리의 `clauduct-probe.exe`만 쓴다(합성 receiver·fixture, 실제 credential·backend 미사용). entry가 없거나 stale이면 gate가 짧은 probe를 자동으로 돌린다(수 분). 정책 갱신 사례(RP01)는 native SHA마다 `clauduct --dev --probe provider-control --long`으로 한 번 잰다(약 75분, 과금 없음). 거부 문구가 이 명령을 안내한다 |
-| native 업데이트 | native가 바뀌면 entry는 `NATIVE_CHANGED`로 stale이 된다. 다음 launch가 짧은 probe를 다시 돌리고, RP01은 새 SHA에서 다시 재야 한다. 같은 SHA에서는 다시 재지 않는다 |
-| doctor | `clauduct --dev --doctor`가 scope별 상태·stale 이유·처분 label과 이유·계약 gap을 읽기만 한다 |
-| 처분 | fixture가 이 native에서 소비되지 않은 사례(PM03·BE15), native가 막은 변형(R04L·R04L-TUI), 전환 경로가 없는 TUI 자극(BE14)은 그 run의 관측이 조건을 채울 때만 처분이 적용되고 doctor에 따로 표시된다. PASS로 세지 않는다 |
-| 알려진 공백 | background는 지원하지 않는다(HostManaged worker가 host endpoint를 받지 못함). machine·admin managed permissions를 검사하는 gate가 없고, managed agent-view 검사는 launch 시점뿐이며, server-managed settings는 덮지 않는다 |
+| 지원 환경 | Codex 인증으로 추론하는 로컬 Claude Code. native config에 저장된 Claude apps gateway provider 상태가 없어야 한다. 같은 config의 일반 Claude 구독(claude.ai OAuth) login과 standalone Claude Code 병행은 지원 대상이다 |
+| 제외 환경 | 같은 config에 Claude apps gateway login이 저장된 환경, Clauduct의 backend 선택과 충돌하는 조직 강제 routing 정책. Clauduct는 이 상태를 없애려고 credential을 읽거나 계정·전역 정책을 바꾸지 않는다 |
+| 연결 구성 | 모든 실행 경로(print, `-p --resume`, `-p --continue`, stream-json, TUI, TUI `--resume`, `--bg`)가 provider strategy 없이 실행된다. launch env의 endpoint와 세션 token, `--settings` env의 routing 고정과 provider 전환 변수 비우기, loopback `NO_PROXY`, session link를 읽는 hook을 쓴다. 다른 구성으로 몰래 넘어가지 않는다 |
+| 시작 handshake | native의 시작 model list가 이 세션 gateway에 오지 않으면 SessionStart가 보고하고, UserPromptSubmit이 대화 요청 전에 세션을 끝낸다(#299, #317). 초기 요청 경로의 이상 감지일 뿐이다. 저장 login이 없다는 증명이나 세션 전체가 안전하다는 증명이 아니다 |
+| 잔여 위험 | credential을 읽지 않으므로 제외 환경을 항상 판별하지는 못한다. 제외 환경에서 hook이 꺼졌거나 실패하거나 실행되지 않으면 대화가 저장 gateway로 갈 수 있다(합성 재현 약 47 KB). "모든 환경에서 유출 0"이나 "미지원 환경도 항상 대화 전에 차단"이라고 보장하지 않는다 |
+| 계정 명령 | `auth login`·`auth logout`·`setup-token`은 시작 전에 거부한다. `/login`·`/logout`·`/upgrade`·`/usage-credits`·`/install-github-app`은 숨긴다. 문서에 끄는 방법이 없는 `/passes`·`/privacy-settings`·`/design-login`은 숨기지 못한다. standalone Claude Code의 login과 자동 업데이트는 건드리지 않는다 |
+| native 업데이트 | 새 native SHA라는 이유로 launch를 막지 않는다. 버전과 SHA는 진단에 기록한다 |
+| provider-control 진단 | `clauduct --dev --probe provider-control`과 doctor의 admission 줄은 진단 전용이다. `clauduct-probe.exe`가 없어도 launch는 동작한다. HOST_MANAGED 인증(routing r4: INCOMPATIBLE)과 저장 gateway 공존은 별도 강화 트랙이며 해결된 것이 아니다 |
+| background | `--bg` 수명(시작·attach·respawn·resume·stop·정리)과 TUI `/background`는 이 구성에서 다시 검증하는 중이다. 검증 전에는 지원한다고 쓰지 않는다 |
 | safety_buffering | backend가 일부 stream event에 싣는 `safety_buffering`은 `false`이거나 codex 형태 객체(`use_cases`·`reasons`·`retry_model`)일 때만 받는다. 객체는 status의 event 진단에 이름만 센다. client 출력은 바뀌지 않는다. 그 밖의 값은 거부한다 |
 
 ## 4. 제3자 구현이라는 사실

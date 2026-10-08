@@ -1280,7 +1280,7 @@ native 2.1.288 변경점 중 v0.6.7이 남겨 둔 위험의 판정이다.
 | native 업데이트 | 새 native SHA라는 이유로 launch를 막지 않는다. 버전과 SHA는 진단에 기록한다 |
 | provider-control 진단 | `clauduct --dev --probe provider-control`과 doctor의 admission 줄은 진단 전용이다. `clauduct-probe.exe`가 없어도 launch는 동작한다. HOST_MANAGED 인증(routing r4: INCOMPATIBLE)과 저장 gateway 공존은 별도 강화 트랙이며 해결된 것이 아니다 |
 | Agent View | foreground 세션은 Agent View를 끈다(`CLAUDE_CODE_DISABLE_AGENT_VIEW=1`, 사용자·managed 설정이 다시 켜면 시작 전에 거부). 그래서 TUI의 `/background`·`/bg`는 쓸 수 없다. 끄지 않으면 다음이 측정됐다(2.1.294 합성): `/background` job은 세션이 끝나 닫힌 gateway를 가리킨 채 끝나지 않았고, native supervisor가 이 세션의 env로 남아 같은 config의 이후 background까지 붙잡았다. 다른 곳에서 먼저 시작한 supervisor 아래에서는 worker가 gateway 인증을 받지 못했다. 데이터가 밖으로 나간 관측은 없다. background는 `clauduct --bg`로 만든다 |
-| background | `--bg` 수명(시작·attach·respawn·resume·stop·정리)은 이 구성에서 다시 검증하는 중이다. 검증 전에는 지원한다고 쓰지 않는다 |
+| background | 합성 측정(2.1.294, 저장 login 없음·Claude OAuth·standalone supervisor 선행)에서 `clauduct --bg` 시작, `logs`, `attach` 뒤 다음 turn, respawn 뒤 다음 turn, native stop 뒤 attach, `--background-stop` 정리가 모두 gateway로만 갔다. `--resume <session id> --bg`는 Clauduct가 `--fork-session`을 붙여 원래 세션을 이어 쓰지 않고 copy로 시작한다. native도 flag가 붙은 background 재개는 copy로 시작하고, Clauduct는 늘 flag를 넘긴다. session id가 아닌 값(job id)의 `--resume`과 `--continue`는 `--bg`와 함께 쓰면 시작 전에 거부한다. 연결 유지 프로세스가 끝난 job은 다시 attach해도 이어지지 않는다(v0.4.3부터의 제한). 실제 backend 확인은 별도로 기록한다 |
 | safety_buffering | backend가 일부 stream event에 싣는 `safety_buffering`은 `false`이거나 codex 형태 객체(`use_cases`·`reasons`·`retry_model`)일 때만 받는다. 객체는 status의 event 진단에 이름만 센다. client 출력은 바뀌지 않는다. 그 밖의 값은 거부한다 |
 
 ## 4. 제3자 구현이라는 사실

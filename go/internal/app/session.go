@@ -133,6 +133,12 @@ func (config ClauductSettings) sessionRequirements() map[string]string {
 	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"} {
 		values[key] = defaults[key]
 	}
+	// Clauduct does not sign in to or out of Claude or manage its plan (#319 decision 17,
+	// routing r4 LN): native's documented switches hide those commands. /passes,
+	// /privacy-settings and /design-login have no documented switch and stay visible.
+	for _, key := range []string{"DISABLE_LOGIN_COMMAND", "DISABLE_LOGOUT_COMMAND", "DISABLE_UPGRADE_COMMAND", "DISABLE_EXTRA_USAGE_COMMAND", "DISABLE_INSTALL_GITHUB_APP_COMMAND"} {
+		values[key] = "1"
+	}
 	if config.BoundaryProfile == boundaryStrict {
 		values[nonessentialTraffic] = "1" // #301: a settings file must not turn it back on
 		if config.marketplace != "" {

@@ -41,6 +41,9 @@ var ErrInterrupted = errors.New(CategoryCancelled)
 var ErrDesktopUnsupported = errors.New("DESKTOP_UNSUPPORTED: --desktop opens a separate app outside this bridge; use a native terminal session")
 var ErrDesktopBoundary = errors.New("DESKTOP_OPTION_UNVERIFIED: unknown native option hides whether --desktop is an option or a value; use unambiguous terminal arguments")
 
+// ErrAccountCommand refuses a native Claude account subcommand before anything starts.
+var ErrAccountCommand = errors.New("ACCOUNT_COMMAND_REFUSED: auth login, auth logout and setup-token manage a Claude account, which Clauduct does not sign in to or out of; run them in standalone Claude Code. Nothing was started")
+
 // RefusedOptionError names a native option this launcher will not forward. Only the
 // permission-bypass options qualify; see internal/launch for why the list is two entries
 // and not the baseline's thirty.
@@ -201,6 +204,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return Result{}, &RefusedOptionError{Option: option}
 	}
 	if err := nativeDesktop(o.Args); err != nil {
+		return Result{}, err
+	}
+	if err := accountCommand(o.Args); err != nil {
 		return Result{}, err
 	}
 	providerFlag, err := strategyFlag(o.ProviderStrategy)

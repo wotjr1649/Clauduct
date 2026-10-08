@@ -625,7 +625,7 @@
   "supersedes": {
     "admission-contract-r1.json": "ffeb60ba23c2e88a00e741d823644ab7b2b5c7dee77e0a61d21f02a17f926521",
     "admission-r2.json": "c916a9f54123702ebf43534c22bf8442e70b6c5b013be6e39cd509d5c0789177",
-    "rule": "r1·r2는 보존한다. 이전 revision의 측정 결과는 소급 수정하지 않는다. r3는 처분의 유효 범위(run 관측), PM03·BE15 label, R04L child fixture·R04S, cache key의 platform을 바꾼다. r2 gaps 중 r3 gaps에 없는 항목은 해소됐다: BE06 /fork foreground 동작 실패 후보(AGENT_SELECTION_UNVERIFIED)는 gateway conversationFork(commit 6224acfe)로 고쳐졌고 BE06이 2.1.293에서 PASS했다(run .work/tui full1/d2). R04L VARIANT_NOT_EXERCISED 항목과 R04L child fixture 부재 항목은 r3의 lateHookCases·dispositions·R04S로 대체됐고, canonical runner 항목은 runner가 go/internal/providerprobe에 있어 해소됐다"
+    "rule": "r1·r2는 보존한다. 이전 revision의 측정 결과는 소급 수정하지 않는다. r3는 처분의 유효 범위(run 관측), PM03·BE15 label, R04L child fixture·R04S, cache key의 platform을 바꾼다. r2 gaps 중 r3 gaps에 없는 항목은 해소됐다: BE06 /fork foreground 동작 실패 후보(AGENT_SELECTION_UNVERIFIED)는 gateway conversationFork(commit 6224acfe)로 고쳐졌고 BE06이 2.1.293에서 PASS했다(results/p3-admr3-tui-native293/full1·d2). R04L VARIANT_NOT_EXERCISED 항목과 R04L child fixture 부재 항목은 r3의 lateHookCases·dispositions·R04S로 대체됐고, canonical runner 항목은 runner가 go/internal/providerprobe에 있어 해소됐다"
   },
   "runner": {
     "artifact": "공개 source의 별도 companion binary clauduct-probe.exe(go/cmd/clauduct-probe). canonical provider certification runner와 admission에 필수인 합성 fixture는 모두 공개 source에 있어 공개 저장소에서 재현할 수 있다. 실제 credential·사용자 정보·secret은 fixture에 넣지 않는다",

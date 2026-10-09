@@ -49,8 +49,18 @@ func main() {
 func run() int {
 	// The roles this file plays for a running session come first: they are not launches,
 	// and a hook has the client's timeout to answer in.
+	if len(os.Args) == 3 && os.Args[1] == "--clauduct-background-key" {
+		// A background job whose resident died asks for its key first when it wakes: a dead
+		// resident's record lets this start one again on the same port and link (#319 decision 18c).
+		if _, err := sessionlink.Read(os.Args[2]); err != nil {
+			app.RegenerateResident(os.Args[2], 30*time.Second)
+		}
+	}
 	if code, ok := hookcmd.Dispatch(os.Args); ok {
 		return code
+	}
+	if len(os.Args) == 3 && os.Args[1] == app.ResidentRestoreRole {
+		return regenerate(os.Args[2])
 	}
 	if args, ok := devArgs(os.Args); ok {
 		return devcmd.Run(args, os.Stdout, os.Stderr)
@@ -151,7 +161,7 @@ func run() int {
 			return nil
 		}
 	}
-	ledger, startGateway, modelList := productUpstream()
+	ledger, startGateway, modelList := productUpstream(0)
 	result, err := app.Run(ctx, app.Options{
 		Ledger:          ledger,
 		StartGateway:    startGateway,
@@ -236,4 +246,40 @@ func devArgs(argv []string) ([]string, bool) {
 // starting a session.
 func asked(args []string, option string) bool {
 	return len(args) == 1 && strings.EqualFold(args[0], option)
+}
+
+// regenerate is the resident a background key helper starts when its link is gone (#319
+// decision 18c). The dead resident's record names the job, port, link and options; the
+// gateway is new, so is its token, which native's key helper reads from the link.
+func regenerate(link string) int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 1
+	}
+	record, err := app.LoadResident(home, link)
+	if err != nil {
+		return 1
+	}
+	env := platform.Environment(os.Environ())
+	sessionDuration, err := app.SessionDuration(env)
+	if err != nil {
+		return 1
+	}
+	ledger, startGateway, modelList := productUpstream(record.Port)
+	result, err := app.Run(context.Background(), app.Options{
+		Ledger:         ledger,
+		StartGateway:   startGateway,
+		ModelList:      modelList,
+		Args:           record.Args,
+		Env:            env,
+		Cwd:            record.Cwd,
+		ResolveClaude:  platform.Resolver{}.Claude,
+		SessionTimeout: sessionDuration,
+		Checkpoint:     app.WriteCheckpoint,
+		Regenerate:     &record,
+	})
+	if err != nil || result.CleanupErr != nil {
+		return 1
+	}
+	return 0
 }

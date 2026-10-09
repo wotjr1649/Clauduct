@@ -3,6 +3,7 @@ package app
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,12 +23,33 @@ var nativeEventModule string
 // as its hooks do.
 // catalogue is the session's account list, the same snapshot the gateway routes with.
 func prepareNativeEvents(link string, catalogue *bridge.Catalogue) (directory string, err error) {
-	directory, err = os.MkdirTemp("", "clauduct-native-events-")
-	if err != nil {
-		return "", err
+	return prepareNativeEventsAt("", link, catalogue)
+}
+
+// nativeEventsPrefix names every events directory; a regenerated resident accepts no other.
+const nativeEventsPrefix = "clauduct-native-events-"
+
+// prepareNativeEventsAt writes the plugin into directory, or into a new one when it is empty.
+// A regenerated background resident passes the directory its native job was dispatched with
+// (#319 decision 18c): the job names it and cannot be told another. Only a direct child of the
+// temporary directory with the events prefix is accepted.
+func prepareNativeEventsAt(directory, link string, catalogue *bridge.Catalogue) (string, error) {
+	var err error
+	fresh := directory == ""
+	if fresh {
+		if directory, err = os.MkdirTemp("", nativeEventsPrefix); err != nil {
+			return "", err
+		}
+	} else {
+		if filepath.Dir(directory) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(directory), nativeEventsPrefix) {
+			return "", errors.New("NATIVE_EVENTS_DIRECTORY_INVALID")
+		}
+		if err = os.Mkdir(directory, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", err
+		}
 	}
 	for _, name := range []string{".claude-plugin", "hooks", "receipts"} {
-		if err = os.Mkdir(filepath.Join(directory, name), 0700); err != nil {
+		if err = os.Mkdir(filepath.Join(directory, name), 0700); err != nil && (fresh || !errors.Is(err, os.ErrExist)) {
 			return directory, err
 		}
 	}

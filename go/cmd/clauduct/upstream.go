@@ -21,10 +21,12 @@ import (
 // The budget is unrestricted, and deliberately: a route is what the client asked for, and a
 // count cap would stop a long session partway through. The verification budget is a separate
 // thing and lives in clauduct --dev --probe.
-func productUpstream() (*upstream.Ledger, func() (*gateway.Gateway, error), func(context.Context, string) (*bridge.Catalogue, app.ModelListFacts, error)) {
+//
+// port is 0 for any; a regenerated background resident passes its recorded one.
+func productUpstream(port int) (*upstream.Ledger, func() (*gateway.Gateway, error), func(context.Context, string) (*bridge.Catalogue, app.ModelListFacts, error)) {
 	ledger := upstream.NewLedger(upstream.Unlimited())
 	direct := upstream.NewDirect(&auth.Provider{}, ledger, upstream.InstalledVersion())
-	start := func() (*gateway.Gateway, error) { return app.StartProductGateway(direct) }
+	start := func() (*gateway.Gateway, error) { return app.StartProductGatewayAt(direct, port) }
 	// The same Direct: the list and every request bind the same account.
 	list := func(ctx context.Context, home string) (*bridge.Catalogue, app.ModelListFacts, error) {
 		return app.AccountModelList(ctx, direct, home)

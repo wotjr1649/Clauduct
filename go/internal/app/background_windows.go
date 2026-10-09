@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
 	"os"
 	"os/exec"
@@ -85,5 +86,48 @@ func StartBackground(ctx context.Context, args []string, cwd string, out, errOut
 	case <-deadline.C:
 		_ = cmd.Process.Kill()
 		return errors.New("BACKGROUND_START_UNVERIFIED")
+	}
+}
+
+// RegenerateResident starts the resident for link again when a dead one left its record, and
+// waits up to wait for the link to answer (#319 decision 18c). The background key helper calls
+// it when the link is gone; on any failure the helper still answers CONNECTION_UNAVAILABLE.
+// Like StartBackground it is a detached process of this user: no service, no startup entry.
+func RegenerateResident(link string, wait time.Duration) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	record, err := LoadResident(home, link)
+	if err != nil {
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(self, ResidentRestoreRole, link)
+	cmd.Dir = record.Cwd
+	// Out of native's job when it allows that, so the resident outlives this helper.
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000 | 0x01000000}
+	if cmd.Start() != nil {
+		cmd = exec.Command(self, ResidentRestoreRole, link)
+		cmd.Dir = record.Cwd
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+		if cmd.Start() != nil {
+			return
+		}
+	}
+	exited := make(chan struct{})
+	go func() { cmd.Wait(); close(exited) }() // a resident that failed to start ends the wait
+	for deadline := time.Now().Add(wait); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+		if _, err := sessionlink.Read(link); err == nil {
+			return
+		}
+		select {
+		case <-exited:
+			return
+		default:
+		}
 	}
 }

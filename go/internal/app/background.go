@@ -178,21 +178,41 @@ type backgroundProcess struct {
 	// crash, set only by a test, ends the wait without stopping the native job, as the
 	// resident process dying would (decision 18c X7).
 	crash <-chan struct{}
+	// job is set when this resident was regenerated for a job another resident dispatched:
+	// there is no dispatch to wait for (#319 decision 18c).
+	job string
+	// record, when set, is written to home once the job exists and removed on every ending
+	// this resident controls, so a later key helper can regenerate it.
+	record *ResidentRecord
+	home   string
+	// session reports the gateway's current native session, kept in the record.
+	session func() string
+	crashed bool // the test crash ended the wait: the record stays, as after a real death
 }
+
+// noDispatch stands in for the dispatch process of a regenerated resident.
+type noDispatch struct{}
+
+func (noDispatch) Wait() error   { return nil }
+func (noDispatch) ExitCode() int { return 0 }
+func (noDispatch) Stop() error   { return nil }
 
 func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
 func (p *backgroundProcess) Wait() error {
-	err := p.Process.Wait()
-	if err != nil {
-		io.WriteString(p.stderr, p.output.text())
-		return err
+	id := p.job
+	if id == "" {
+		err := p.Process.Wait()
+		if err != nil {
+			io.WriteString(p.stderr, p.output.text())
+			return err
+		}
+		matches := backgroundID.FindAllStringSubmatch(p.output.text(), -1)
+		if len(matches) != 1 {
+			io.WriteString(p.stderr, p.output.text())
+			return errors.New("BACKGROUND_DISPATCH_UNVERIFIED")
+		}
+		id = matches[0][1]
 	}
-	matches := backgroundID.FindAllStringSubmatch(p.output.text(), -1)
-	if len(matches) != 1 {
-		io.WriteString(p.stderr, p.output.text())
-		return errors.New("BACKGROUND_DISPATCH_UNVERIFIED")
-	}
-	id := matches[0][1]
 	stopNative := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -226,6 +246,18 @@ func (p *backgroundProcess) Wait() error {
 	if p.ctx.Err() != nil {
 		return stopNative()
 	}
+	if p.record != nil {
+		// Best effort: without the record this session still runs, but a resident that dies
+		// cannot be regenerated for it.
+		p.record.Job = id
+		if writeResident(p.home, *p.record) == nil {
+			defer func() {
+				if !p.crashed {
+					removeResident(p.home, p.record.Link)
+				}
+			}()
+		}
+	}
 	if p.ready != nil {
 		if err := p.ready(BackgroundSession{JobID: id, ConnectionID: p.link.ID, PID: os.Getpid(), ForkedFrom: p.forkedFrom}); err != nil {
 			return errors.Join(err, stopNative())
@@ -239,6 +271,7 @@ func (p *backgroundProcess) Wait() error {
 	for {
 		select {
 		case <-p.crash:
+			p.crashed = true
 			return errors.New("BACKGROUND_TEST_CRASH")
 		case <-p.ctx.Done():
 			return stopNative()
@@ -247,6 +280,12 @@ func (p *backgroundProcess) Wait() error {
 		case <-p.link.Done:
 			return errors.Join(sessionlink.ErrUnavailable, stopNative())
 		case <-tick.C:
+			if p.record != nil && p.session != nil {
+				if session := p.session(); session != "" && session != p.record.Session {
+					p.record.Session = session
+					writeResident(p.home, *p.record)
+				}
+			}
 			// Observe existence only. Native owns this state schema and all writes.
 			_, err := os.Stat(filepath.Join(p.config, "jobs", id, "state.json"))
 			if errors.Is(err, os.ErrNotExist) {

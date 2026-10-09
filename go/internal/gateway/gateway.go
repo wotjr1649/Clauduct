@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -171,11 +172,22 @@ type Gateway struct {
 // keeping the listener has no such window. The caller passes the resulting address to the
 // child, so there is never a guess about which port is live.
 func Start(transport upstream.Transport) (*Gateway, error) {
+	return StartAt(transport, 0)
+}
+
+// StartAt is Start on a given 127.0.0.1 port; 0 lets the system choose. A regenerated
+// background resident binds the port its native job was dispatched with (#319 decision 18c):
+// that job's settings name it and cannot be changed. A port another process holds is an error,
+// never a different port.
+func StartAt(transport upstream.Transport, port int) (*Gateway, error) {
+	if port < 0 || port > 65535 {
+		return nil, errors.New("GATEWAY_PORT_INVALID")
+	}
 	physical, _, err := systemMemory()
 	if err != nil {
 		return nil, err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}

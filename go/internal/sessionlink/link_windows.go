@@ -87,7 +87,17 @@ func pipeName(id string) (*uint16, error) {
 // Start serves a background session's connection. A client may also ask it to stop, which
 // is how a background session is ended.
 func Start(parent context.Context, connection Connection) (*Server, error) {
-	return start(parent, connection, true)
+	return start(parent, connection, true, "")
+}
+
+// Restart serves a background connection again under the id a native job was dispatched
+// with: its hooks and key helper name that id and cannot be told another (#319 decision 18c).
+// The pipe is created first-instance, so a live server under the id makes this fail.
+func Restart(parent context.Context, id string, connection Connection) (*Server, error) {
+	if !validID.MatchString(id) {
+		return nil, ErrUnavailable
+	}
+	return start(parent, connection, true, id)
 }
 
 // StartForeground serves a foreground session's connection to its hooks and confirmation
@@ -96,19 +106,21 @@ func Start(parent context.Context, connection Connection) (*Server, error) {
 // session ends with its native and closes the link itself.
 func StartForeground(parent context.Context, connection Connection) (*Server, error) {
 	connection.Foreground = true
-	return start(parent, connection, false)
+	return start(parent, connection, false, "")
 }
 
-func start(parent context.Context, connection Connection, stoppable bool) (*Server, error) {
+func start(parent context.Context, connection Connection, stoppable bool, id string) (*Server, error) {
 	sid, err := ownLogon()
 	if err != nil {
 		return nil, err
 	}
-	var nonce [16]byte
-	if _, err = rand.Read(nonce[:]); err != nil {
-		return nil, err
+	if id == "" {
+		var nonce [16]byte
+		if _, err = rand.Read(nonce[:]); err != nil {
+			return nil, err
+		}
+		id = hex.EncodeToString(nonce[:])
 	}
-	id := hex.EncodeToString(nonce[:])
 	name, _ := pipeName(id)
 	sddl, _ := syscall.UTF16PtrFromString("D:P(A;;GA;;;" + sid + ")")
 	var descriptor uintptr

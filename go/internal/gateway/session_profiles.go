@@ -483,3 +483,16 @@ func (g *Gateway) refuseSessionProfile(w http.ResponseWriter, session string, er
 	}
 	g.refuseDetail(w, refusal{category: category, status: http.StatusBadRequest}, detail)
 }
+
+// CurrentSession is the native session this gateway's profiles last registered, or "". A
+// background resident records it so a regenerated one can take the session back as a resume
+// (#319 decision 18c).
+func (g *Gateway) CurrentSession() string {
+	p := g.profiles
+	if p == nil {
+		return ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.current
+}

@@ -121,6 +121,9 @@ type Options struct {
 	ManagedPolicy func() ([]policyDocument, error)
 	// BackgroundReady transfers an explicit --bg session to its resident owner.
 	BackgroundReady func(BackgroundSession) error
+	// Regenerate serves an existing background job again (#319 decision 18c): no native
+	// process starts, and StartGateway must bind the record's port.
+	Regenerate *ResidentRecord
 	// ProviderStrategy is how native is held to this session's gateway (#320); empty is the
 	// launch without one. An unknown name is refused.
 	ProviderStrategy string
@@ -214,6 +217,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return Result{}, ErrNoUpstream
 	}
 	o = o.withDefaults()
+	launchArgs := o.Args // as given: a background resident records them for its regeneration
 
 	// First, before anything is resolved or bound. A refused session must not cost an
 	// executable lookup or a port, and must not leave either to be cleaned up.
@@ -300,7 +304,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	forward, resumeID := prepareSessionArgs(forward)
 	forkedFrom := ""
-	if BackgroundRequested(forward) {
+	if o.Regenerate != nil {
+		// The job's own session comes back as a resume, never a fork of it.
+		if resumeID, err = regenerateCheck(o, clauductHome); err != nil {
+			return Result{}, err
+		}
+	} else if BackgroundRequested(forward) {
 		if forkedFrom, err = backgroundResume(forward, resumeID); err != nil {
 			return Result{}, err
 		}
@@ -344,6 +353,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	var profiles *gateway.SessionProfiles
 	var resumed *gateway.SessionProfile
 	_, forkSession := optionValue(o.Args, "--fork-session")
+	forkSession = forkSession && o.Regenerate == nil
 	_, ephemeral := optionValue(o.Args, "--no-session-persistence")
 	if clauductHome != "" && !nativeInformation(o.Args) && o.Settings == nil && (!ephemeral || resumeID != "") {
 		profiles, err = gateway.OpenSessionProfiles(filepath.Join(clauductHome, ".clauduct", "sessions"))
@@ -387,6 +397,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// point it at the user's real Anthropic endpoint or at nothing at all, so the
 		// session ends here and the child is never spawned.
 		return Result{}, err
+	}
+	if o.Regenerate != nil && residentPort(gw.Addr()) != o.Regenerate.Port {
+		// The job's settings name the recorded port; any other serves nobody.
+		return Result{}, errors.Join(errors.New("RESIDENT_PORT_MISMATCH"), closeGateway(gw, o.ShutdownTimeout))
 	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureClassifierModel(config.ClassifierModel)
@@ -496,7 +510,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			result.MenuEntries = len(config.agentDefinitions())
 		}
 		if BackgroundRequested(o.Args) {
-			background, err = sessionlink.Start(context.Background(), sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()})
+			connection := sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()}
+			if o.Regenerate != nil {
+				background, err = sessionlink.Restart(context.Background(), o.Regenerate.Link, connection)
+			} else {
+				background, err = sessionlink.Start(context.Background(), connection)
+			}
 			if err == nil {
 				defer background.Close()
 				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env, providerFlag)
@@ -531,13 +550,18 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			} else if foreground != nil {
 				link = foreground.ID
 			}
-			nativePlugin, err = prepareNativeEvents(link, config.Selection.Catalogue())
+			at := ""
+			if o.Regenerate != nil {
+				at = o.Regenerate.PluginDir
+			}
+			nativePlugin, err = prepareNativeEventsAt(at, link, config.Selection.Catalogue())
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")
 			}
 			gw.ConfigureNativeEvents(filepath.Join(nativePlugin, "receipts"))
-			if _, foundErr := exec.LookPath("pdftoppm.exe"); foundErr != nil {
+			// The alias goes on a new native's PATH; the job a regenerated resident serves has its own.
+			if _, foundErr := exec.LookPath("pdftoppm.exe"); foundErr != nil && o.Regenerate == nil {
 				nativePDF, err = prepareNativePDF(nativePlugin, hook)
 				if err != nil {
 					result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
@@ -673,7 +697,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		defer func() { supervisor.Stop(); supervisor.Wait() }()
 	}
-	process, startErr := startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, stdout, stderr)
+	// A regenerated resident starts no native process: the job it serves already runs.
+	var process Process = noDispatch{}
+	var startErr error
+	if o.Regenerate == nil {
+		process, startErr = startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, stdout, stderr)
+	}
 	if startErr != nil {
 		// The child never ran, so the port it was going to use must not outlive the
 		// attempt. Cleanup failure here is reported alongside the start failure rather
@@ -700,6 +729,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		defer cancel()
 		bp := &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
 			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr, forkedFrom: forkedFrom, crash: o.backgroundCrash}
+		if o.Regenerate != nil {
+			record := *o.Regenerate
+			bp.job, bp.record = record.Job, &record
+		} else if clauductHome != "" && o.Settings == nil {
+			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
+		}
+		bp.home, bp.session = clauductHome, gw.CurrentSession
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored
 			// login decides where they connect (#320 R08). They get the launch's own process
@@ -865,7 +901,13 @@ func nativeReplaced(exe string, before os.FileInfo) bool {
 // product's admission policy. The provider-control probe starts its gateway here too, with its
 // synthetic transport, so the boundaries it measures are the product's own.
 func startProductGateway(transport upstream.Transport) (*gateway.Gateway, error) {
-	g, err := gateway.Start(transport)
+	return StartProductGatewayAt(transport, 0)
+}
+
+// StartProductGatewayAt is the product gateway on a given loopback port, 0 for any: a
+// regenerated background resident binds the port its job was dispatched with (#319 decision 18c).
+func StartProductGatewayAt(transport upstream.Transport, port int) (*gateway.Gateway, error) {
+	g, err := gateway.StartAt(transport, port)
 	if err == nil {
 		g.EnableContextPolicy()
 	}

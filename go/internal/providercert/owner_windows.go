@@ -167,3 +167,22 @@ func CommandWord(pid uint32) string {
 	_, _, word := processFacts(pid)
 	return word
 }
+
+// Running reports whether pid is still the process created at created (UnixNano, as
+// NativeOwner reports it) and has not exited. A reused pid has another creation time.
+func Running(pid uint32, created int64) bool {
+	h, err := syscall.OpenProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
+	if err != nil {
+		return false
+	}
+	defer syscall.CloseHandle(h)
+	var code uint32
+	if syscall.GetExitCodeProcess(h, &code) != nil || code != 259 { // STILL_ACTIVE
+		return false
+	}
+	var c, e, k, u syscall.Filetime
+	if r, _, _ := getProcessTimesOwn.Call(uintptr(h), uintptr(unsafe.Pointer(&c)), uintptr(unsafe.Pointer(&e)), uintptr(unsafe.Pointer(&k)), uintptr(unsafe.Pointer(&u))); r == 0 {
+		return false
+	}
+	return c.Nanoseconds() == created
+}

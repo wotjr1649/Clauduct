@@ -128,6 +128,17 @@ func run() int {
 		return 1
 	}
 
+	handover := app.HandoverFromEnv()
+	if handover == nil && !resident && app.HandoverLaunch(args) {
+		return app.LaunchHandover(args)
+	}
+	var handoverTo func(int) bool
+	if handover != nil {
+		handoverTo = func(nativeExit int) bool {
+			fmt.Fprintln(os.Stderr, "clauduct: agent view jobs are still running; this session's gateway stays with them in the background")
+			return handover(nativeExit)
+		}
+	}
 	env := platform.Environment(os.Environ())
 	sessionDuration, err := app.SessionDuration(env)
 	if err != nil {
@@ -174,6 +185,7 @@ func run() int {
 		SessionTimeout:  sessionDuration,
 		Checkpoint:      app.WriteCheckpoint,
 		BackgroundReady: backgroundReady,
+		Handover:        handoverTo,
 	})
 
 	// What the session did, said once, at the end. The native client owns the terminal

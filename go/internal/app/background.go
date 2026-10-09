@@ -187,7 +187,9 @@ type backgroundProcess struct {
 	home   string
 	// session reports the gateway's current native session, kept in the record.
 	session func() string
-	crashed bool // the test crash ended the wait: the record stays, as after a real death
+	// sessions reports every session registered on the gateway; their jobs join this one.
+	sessions func() []string
+	crashed  bool // the test crash ended the wait: the record stays, as after a real death
 }
 
 // noDispatch stands in for the dispatch process of a regenerated resident.
@@ -213,7 +215,15 @@ func (p *backgroundProcess) Wait() error {
 		}
 		id = matches[0][1]
 	}
-	stopNative := func() error {
+	// Every job on this link: a job started from the agent view of one runs
+	// on the same settings, so on this gateway too (#319 decision 18h).
+	jobs := map[string]int{id: 0}
+	if p.record != nil {
+		for _, job := range p.record.Jobs {
+			jobs[job] = 0
+		}
+	}
+	stopOne := func(id string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		if p.start != nil {
@@ -242,6 +252,13 @@ func (p *backgroundProcess) Wait() error {
 		}
 		return nil
 	}
+	stopNative := func() error {
+		var err error
+		for job := range jobs {
+			err = errors.Join(err, stopOne(job))
+		}
+		return err
+	}
 	defer p.cancel()
 	if p.ctx.Err() != nil {
 		return stopNative()
@@ -252,7 +269,9 @@ func (p *backgroundProcess) Wait() error {
 		p.record.Job = id
 		if writeResident(p.home, *p.record) == nil {
 			defer func() {
-				if !p.crashed {
+				// A stopped job is still listed and can be opened again: its record stays for
+				// the resident that opening regenerates (#319 decision 18h).
+				if !p.crashed && !jobListed(p.config, p.record.Job, p.record.Jobs) {
 					removeResident(p.home, p.record.Link)
 				}
 			}()
@@ -267,7 +286,6 @@ func (p *backgroundProcess) Wait() error {
 	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
-	missing := 0
 	for {
 		select {
 		case <-p.crash:
@@ -286,20 +304,87 @@ func (p *backgroundProcess) Wait() error {
 					writeResident(p.home, *p.record)
 				}
 			}
-			// Observe existence only. Native owns this state schema and all writes.
-			_, err := os.Stat(filepath.Join(p.config, "jobs", id, "state.json"))
-			if errors.Is(err, os.ErrNotExist) {
-				missing++
-			} else if err != nil {
-				return errors.Join(errors.New("BACKGROUND_STATE_UNREADABLE"), stopNative())
-			} else {
-				missing = 0
+			if p.sessions != nil {
+				added := false
+				for _, job := range nativeJobs(p.config, p.sessions()) {
+					if _, known := jobs[job]; !known {
+						jobs[job], added = 0, true
+					}
+				}
+				if added && p.record != nil {
+					p.record.Jobs = p.record.Jobs[:0]
+					for job := range jobs {
+						if job != id {
+							p.record.Jobs = append(p.record.Jobs, job)
+						}
+					}
+					slices.Sort(p.record.Jobs)
+					writeResident(p.home, *p.record)
+				}
 			}
-			if missing >= 3 {
+			for job, missing := range jobs {
+				running, err := jobRunning(p.config, job)
+				if err != nil {
+					return errors.Join(errors.New("BACKGROUND_STATE_UNREADABLE"), stopNative())
+				}
+				if missing++; running {
+					missing = 0
+				}
+				if jobs[job] = missing; missing >= 3 {
+					delete(jobs, job)
+				}
+			}
+			if len(jobs) == 0 {
 				return nil
 			}
 		}
 	}
+}
+
+// jobRunning reports whether a job may still use its gateway: native lists it and has not
+// stopped it. Native owns this schema and all writes; only its state is read. A stopped job's
+// worker has exited (measured 2.1.295); any other state, or a file being rewritten, counts as
+// running.
+func jobRunning(config, job string) (bool, error) {
+	raw, err := os.ReadFile(filepath.Join(config, "jobs", job, "state.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	var state struct {
+		State string `json:"state"`
+	}
+	if json.Unmarshal(raw, &state) != nil {
+		return true, nil
+	}
+	return state.State != "stopped", nil
+}
+
+// jobListed reports whether native still lists any of these jobs, stopped ones included.
+func jobListed(config, job string, jobs []string) bool {
+	for _, id := range append([]string{job}, jobs...) {
+		if _, err := os.Stat(filepath.Join(config, "jobs", id, "state.json")); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// nativeJobs names the jobs of these sessions that native lists now. A job is named by the
+// first eight digits of the session it was started with (observed on 2.1.295 for dispatched,
+// forked and agent view jobs); a session with no such job, as after /clear, adds nothing.
+func nativeJobs(config string, sessions []string) []string {
+	var out []string
+	for _, session := range sessions {
+		if len(session) < 8 || !residentJob.MatchString(session[:8]) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(config, "jobs", session[:8], "state.json")); err == nil {
+			out = append(out, session[:8])
+		}
+	}
+	return out
 }
 
 func fmtBackground(out io.Writer, s BackgroundSession) {

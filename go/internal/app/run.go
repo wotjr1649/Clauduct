@@ -124,6 +124,10 @@ type Options struct {
 	// Regenerate serves an existing background job again (#319 decision 18c): no native
 	// process starts, and StartGateway must bind the record's port.
 	Regenerate *ResidentRecord
+	// Handover is offered the native exit code when an agent view session ends with jobs still
+	// on its link (#319 decision 18h). True means the terminal has been given back: this process
+	// then keeps the same gateway and link for those jobs, as a resident does, until they end.
+	Handover func(nativeExit int) bool
 	// ProviderStrategy is how native is held to this session's gateway (#320); empty is the
 	// launch without one. An unknown name is refused.
 	ProviderStrategy string
@@ -189,6 +193,8 @@ type Result struct {
 	// NativeReplaced is whether claude.exe changed on disk while this session ran:
 	// an updater ran meanwhile, from this native or another process (#229).
 	NativeReplaced bool
+	// HandedOver names the jobs an agent view session's gateway stayed for after native ended.
+	HandedOver []string
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -754,7 +760,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		} else if clauductHome != "" && o.Settings == nil {
 			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
-		bp.home, bp.session = clauductHome, gw.CurrentSession
+		bp.home, bp.session, bp.sessions = clauductHome, gw.CurrentSession, gw.Sessions
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored
 			// login decides where they connect (#320 R08). They get the launch's own process
@@ -788,6 +794,28 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 
 	if o.afterNative != nil {
 		o.afterNative()
+	}
+	if reaped && foreground != nil && o.agentView() && o.Handover != nil && clauductHome != "" && nativePlugin != "" {
+		// Native keeps an agent view session and the jobs dispatched from it running after its
+		// terminal closes; they all use this gateway. Its state stays: the same token, routing
+		// proofs and session bindings, so nothing they have proved has to be proved again.
+		jobs := nativeJobs(configDir, gw.Sessions())
+		for i := 0; len(jobs) == 0 && i < 3; i++ {
+			time.Sleep(time.Second) // native lists the closed session as a job as it exits
+			jobs = nativeJobs(configDir, gw.Sessions())
+		}
+		if len(jobs) > 0 && o.Handover(result.NativeExitCode) {
+			handoverCtx, cancel := context.WithCancel(context.Background())
+			record := ResidentRecord{Link: foreground.ID, Job: jobs[0], Jobs: jobs[1:], Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}
+			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
+				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
+				job: jobs[0], record: &record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions}
+			if providerFlag != "" {
+				bp.env, bp.start = spec.Env, o.StartProcess
+			}
+			result.HandedOver = jobs
+			bp.Wait()
+		}
 	}
 	// Reap native first, then drain the gateway before taking its final account.
 	// Otherwise a cancellation could still be in flight when status claimed completion.

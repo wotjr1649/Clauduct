@@ -552,3 +552,18 @@ func (g *Gateway) CurrentSession() string {
 	defer p.mu.Unlock()
 	return p.last
 }
+
+// Sessions reports every session a native process has registered here.
+func (g *Gateway) Sessions() []string {
+	p := g.profiles
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.owner))
+	for session := range p.owner {
+		out = append(out, session)
+	}
+	return out
+}

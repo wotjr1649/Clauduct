@@ -29,6 +29,9 @@ type ResidentRecord struct {
 	PluginDir string   `json:"pluginDir,omitempty"`
 	Cwd       string   `json:"cwd"`
 	Args      []string `json:"args"`
+	// Jobs are the other native jobs on this link: dispatched from its agent view, they share
+	// its settings and so its gateway, which lives until the last of them ends.
+	Jobs []string `json:"jobs,omitempty"`
 }
 
 // ResidentRestoreRole is the resident a key helper starts when its link is gone.
@@ -44,6 +47,11 @@ func (r ResidentRecord) check() error {
 	if !residentLink.MatchString(r.Link) || !residentJob.MatchString(r.Job) || r.Session != "" && !gateway.IsSessionUUID(r.Session) || r.Port < 1 || r.Port > 65535 || !filepath.IsAbs(r.Cwd) ||
 		r.PluginDir != "" && (filepath.Dir(r.PluginDir) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(r.PluginDir), nativeEventsPrefix)) {
 		return errors.New("RESIDENT_RECORD_INVALID")
+	}
+	for _, job := range r.Jobs {
+		if !residentJob.MatchString(job) {
+			return errors.New("RESIDENT_RECORD_INVALID")
+		}
 	}
 	return nil
 }

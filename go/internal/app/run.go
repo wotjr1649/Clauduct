@@ -142,6 +142,11 @@ type Options struct {
 	// nativeIdentityOff, set only by a test that relays native's requests through its own
 	// recorder, leaves native identity unrequired: the relay, not native, opens the connections.
 	nativeIdentityOff bool
+	// foregroundAgentView, set only by a test (#319 decision 18f), leaves native's agent view on
+	// in a foreground session: its settings are the background ones (worker defaults, the key
+	// helper on this session's link, no stored credential), so a worker native starts for
+	// /background, /fork or a dispatch gets this gateway. The product keeps agent view off.
+	foregroundAgentView bool
 	// backgroundCrash, set only by a test, makes a background resident end as if its process
 	// died: the native job is not stopped (decision 18c X7).
 	backgroundCrash <-chan struct{}
@@ -254,7 +259,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if err := managedRouting(docs, readErr); err != nil {
 			return Result{}, err
 		}
-		if providerFlag != "" || !BackgroundRequested(o.Args) {
+		if providerFlag != "" || !BackgroundRequested(o.Args) && !o.foregroundAgentView {
 			// The foreground's agent-view restriction holds against machine policy too.
 			if err := managedAgentViewOverride(docs); err != nil {
 				return Result{}, err
@@ -298,7 +303,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if providerFlag != "" || !BackgroundRequested(o.Args) {
+	if providerFlag != "" || !BackgroundRequested(o.Args) && !o.foregroundAgentView {
 		// The foreground's agent-view restriction is this launch's, as its routing is: a
 		// settings env that turns agent view back on would reopen native's supervisor path.
 		if err := userKeepsAgentViewOff(userSettings); err != nil {
@@ -498,7 +503,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 						// The hook may then rely on native's provider control (hookcmd).
 						link += " " + hookcmd.ProviderControlledArg
 					}
-					settings, err = foregroundSettings(settings, link, env)
+					if o.foregroundAgentView {
+						settings, err = config.backgroundSettings(settings, hook, foreground.ID, gw.BaseURL(), o.Env, providerFlag)
+					} else {
+						settings, err = foregroundSettings(settings, link, env)
+					}
 				}
 			} else {
 				settings, err = foregroundSettings(settings, "", env)
@@ -687,7 +696,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	default:
 	}
 	spec.Env = withProcessFlag(spec.Env, providerFlag)
-	if background == nil {
+	if background == nil && !o.foregroundAgentView {
 		spec.Env = withProcessFlag(spec.Env, agentViewOff)
 	}
 	var dispatchOutput backgroundOutput

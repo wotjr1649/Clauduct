@@ -214,6 +214,38 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 	return runWithOutput(bytes.NewReader(raw), out, errOut, env)
 }
 
+// nativePIDHeader is gateway.NativePIDHeader: the native process a registration comes from.
+const nativePIDHeader = "X-Clauduct-Native-Pid"
+
+// nativeAncestor is the nearest ancestor running claude.exe: the native process whose hook
+// this is, between them only the shell native runs hooks with (#319 decision 18c). 0 when
+// there is none or the snapshot fails. Attribution for the gateway's per-process sessions.
+func nativeAncestor() int {
+	snapshot, err := syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return 0
+	}
+	defer syscall.CloseHandle(snapshot)
+	parents, names := map[uint32]uint32{}, map[uint32]string{}
+	entry := syscall.ProcessEntry32{Size: uint32(unsafe.Sizeof(syscall.ProcessEntry32{}))}
+	for err = syscall.Process32First(snapshot, &entry); err == nil; err = syscall.Process32Next(snapshot, &entry) {
+		parents[entry.ProcessID] = entry.ParentProcessID
+		names[entry.ProcessID] = syscall.UTF16ToString(entry.ExeFile[:])
+	}
+	current := uint32(os.Getpid())
+	for range 32 {
+		parent, ok := parents[current]
+		if !ok || parent == 0 || parent == current {
+			return 0
+		}
+		if strings.EqualFold(names[parent], "claude.exe") {
+			return int(parent)
+		}
+		current = parent
+	}
+	return 0
+}
+
 // ancestor reports whether pid is one of this process's ancestors, within a bounded walk of
 // the current process snapshot. Any failure answers no.
 func ancestor(pid int) bool {
@@ -576,6 +608,10 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidGateway },
 	}
 	defer client.CloseIdleConnections()
+	native := 0
+	if path == "/clauduct/context" {
+		native = nativeAncestor()
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, base+path, bytes.NewReader(body))
 		if err != nil {
@@ -584,6 +620,9 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 		request.Header.Set("Authorization", "Bearer "+token)
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Content-Length", strconv.Itoa(len(body)))
+		if native > 0 {
+			request.Header.Set(nativePIDHeader, strconv.Itoa(native))
+		}
 		response, err := client.Do(request)
 		if err != nil {
 			return nil, err

@@ -257,6 +257,10 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 	return nil
 }
 
+// profileState is per native process, not per gateway (#319 decision 18c): one launch can
+// run several native processes at once (a /fork copy, a dispatched job, a respawned worker),
+// each with its own current session. A hook names its native process; one that does not
+// (an older hook) is process 0, which is the single-session behaviour this replaced.
 type profileState struct {
 	mu          sync.Mutex
 	store       *SessionProfiles
@@ -264,11 +268,20 @@ type profileState struct {
 	expected    string
 	fork        bool
 	background  bool
-	current     string
 	profiles    map[string]*SessionProfile
-	pending     string
-	ready       bool
+	slots       map[int]string  // native process -> its current session
+	owner       map[string]int  // session -> the native process that last registered it
+	pending     map[int]string  // native process -> the session it must restart into
+	ready       map[string]bool // session -> its last registration succeeded
+	last        string          // the most recent registration
 	forkHistory *SessionProfile
+}
+
+// serving reports whether session is the current session of its native process and ready.
+// Caller holds p.mu.
+func (p *profileState) serving(session string) bool {
+	owner, known := p.owner[session]
+	return known && p.ready[session] && p.slots[owner] == session
 }
 
 // ConfigureSessionProfiles binds immutable routing preferences before native
@@ -288,7 +301,8 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 	if store == nil {
 		return
 	}
-	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile)}
+	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile),
+		slots: make(map[int]string), owner: make(map[string]int), pending: make(map[int]string), ready: make(map[string]bool)}
 	if resumed != nil && fork {
 		copy := *resumed
 		copy.Calls = cloneToolIssuances(resumed.Calls)
@@ -305,67 +319,79 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 }
 
 // Caller holds contexts.mu; no profile operation takes contexts.mu in return.
-func (g *Gateway) registerSessionProfile(session, source string) (err error) {
+// process is the native process the registering hook runs under, 0 when the hook does not say.
+func (g *Gateway) registerSessionProfile(session, source string, process int) (err error) {
 	p := g.profiles
 	if p == nil {
 		return nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// A registration for a session this process has already left, other than a resume, is a
-	// late event bound to an earlier state (a slow hook of that session). It is refused and
-	// leaves the current session exactly as it was, readiness included. A resume of a left
-	// session still goes to the restart rule below.
-	if known := p.profiles[session]; known != nil && p.current != "" && p.current != session && source != "resume" {
+	// The session this native process is on now, "" before its first registration.
+	held := p.slots[process]
+	// A registration for a session its native process has already left, other than a resume,
+	// is a late event bound to an earlier state (a slow hook of that session). It is refused
+	// and leaves every current session exactly as it was, readiness included. A resume of a
+	// left session still goes to the restart rule below. A session another native process is
+	// on (a /fork copy's original) has not been left.
+	if known := p.profiles[session]; known != nil && held != session && !p.serving(session) && held != "" && source != "resume" {
 		return ErrSessionProfile
 	}
-	defer func() { p.ready = err == nil }()
+	defer func() { p.ready[session] = err == nil }()
 	if !sessionUUID.MatchString(session) {
 		return ErrSessionProfile
 	}
-	if p.pending != "" {
+	if p.pending[process] != "" {
 		return errSessionRestart
 	}
-	if source == "resume" && p.current != "" {
+	// The launch's own first registration (its --resume session) is not a transition.
+	if source == "resume" && (held != "" || p.profiles[session] != nil && len(p.slots) != 0) {
 		// Even a previously visited session can have a different last S effort.
 		// Native's in-process resume did not restore it in the measured client.
-		// A background worker respawns with its original flags. It can reconnect
-		// only to that same session, while those flags still match its last S.
-		current := p.profiles[session]
-		if p.background && p.current == session && current != nil {
-			if err := p.store.Refresh(current, g.delegations.projects, true, g.selection); err != nil {
+		// A background worker respawns with its original flags, as a new native process. It
+		// can reconnect only to that same session, while those flags still match its last S.
+		// A native process that had no session yet resuming a known one is a worker woken or
+		// respawned with its original flags, not an in-process resume: under a foreground launch
+		// too (a /background job), once the hook names its process.
+		known := p.profiles[session]
+		reconnect := known != nil && (held == "" || p.background && held == session)
+		if reconnect {
+			if err := p.store.Refresh(known, g.delegations.projects, true, g.selection); err != nil {
 				return err
 			}
 		}
-		if !p.background || p.current != session || current == nil || current.Last != p.startup {
-			p.pending = session
+		if !reconnect || known.Last != p.startup {
+			p.pending[process] = session
 			return errSessionRestart
 		}
 	}
-	if current := p.profiles[session]; current != nil {
-		next := *current
+	if known := p.profiles[session]; known != nil {
+		next := *known
 		next.Transcript = g.contexts.sessions[session]
 		if err := p.store.Refresh(&next, g.delegations.projects, false, g.selection); err != nil {
 			return err
 		}
-		if p.current == "" || current.Transcript != next.Transcript {
+		if held == "" || known.Transcript != next.Transcript {
 			if err := p.store.Save(next); err != nil {
 				return err
 			}
 		}
-		*current = next
-		p.current = session
+		*known = next
+		p.take(process, session)
 		return nil
 	}
 	_, loadErr := p.store.Load(session)
 	if source == "resume" && loadErr == nil {
-		p.pending = session
+		p.pending[process] = session
 		return errSessionRestart
 	}
 	if source != "startup" && source != "clear" && source != "fork" && source != "resume" {
 		return ErrSessionProfile
 	}
-	if source == "startup" && p.expected != "" {
+	// The launch was for the expected session: a different one cannot be its first. A later
+	// native process of the same launch (a dispatched job) may start its own.
+	first := len(p.slots) == 0
+	if source == "startup" && p.expected != "" && first {
 		return ErrSessionProfile
 	}
 	if !errors.Is(loadErr, os.ErrNotExist) {
@@ -374,9 +400,17 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 		}
 		return ErrSessionProfile // Never replace an existing session from startup/clear.
 	}
+	// A clear continues this process's session. A fork copies the session it was taken from:
+	// this process's own, or, for a copy native started as a new process, the most recent
+	// registration (native does not say which; ponytail: the latest session, a fork's
+	// transcript names its parent if two sessions fork at once).
+	parent := held
+	if parent == "" && source == "fork" {
+		parent = p.last
+	}
 	pair := p.startup
-	if source == "clear" || source == "fork" && (!p.fork || p.current != "") {
-		prior := p.profiles[p.current]
+	if source == "clear" || source == "fork" && (!p.fork || !first) {
+		prior := p.profiles[parent]
 		if prior == nil {
 			return ErrSessionProfile
 		}
@@ -386,7 +420,7 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 		pair = prior.Last
 	}
 	profile := &SessionProfile{Version: 1, ID: session, Selection: g.selection.Clone(), Last: pair, Transcript: g.contexts.sessions[session]}
-	if source == "resume" || p.fork && p.current == "" {
+	if source == "resume" || p.fork && first {
 		// An old session (or copied fork) starts on the pair supplied to this
 		// launch. Earlier S rows must not replace that new baseline.
 		root, err := g.delegations.openProjects(profile.Transcript)
@@ -413,8 +447,8 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 			}
 		}
 	}
-	if source == "fork" || p.fork && p.current == "" {
-		prior := p.profiles[p.current]
+	if source == "fork" || p.fork && first {
+		prior := p.profiles[parent]
 		if prior == nil {
 			prior = p.forkHistory
 		}
@@ -431,8 +465,18 @@ func (g *Gateway) registerSessionProfile(session, source string) (err error) {
 	if err := p.store.Save(*profile); err != nil {
 		return err
 	}
-	p.profiles[session], p.current = profile, session
+	p.profiles[session] = profile
+	p.take(process, session)
 	return nil
+}
+
+// take makes session the current one of native process, which leaves the one it was on; a
+// session that moved to this process leaves its earlier one. Caller holds p.mu.
+func (p *profileState) take(process int, session string) {
+	if earlier, moved := p.owner[session]; moved && earlier != process && p.slots[earlier] == session {
+		delete(p.slots, earlier)
+	}
+	p.slots[process], p.owner[session], p.last = session, process, session
 }
 
 // CheckpointSessionProfiles also runs after the owned native process is reaped,
@@ -449,7 +493,9 @@ func (g *Gateway) CheckpointSessionProfiles(final bool) error {
 		result = errors.Join(result, p.store.Refresh(profile, g.delegations.projects, final, g.selection))
 	}
 	if result != nil {
-		p.ready = false
+		for session := range p.ready {
+			p.ready[session] = false
+		}
 	}
 	return result
 }
@@ -461,10 +507,17 @@ func (g *Gateway) sessionProfileError(session string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.pending != "" {
+	// A native process that must restart sends nothing more, for any of its sessions, and
+	// neither does the session it must restart into; other native processes are unaffected.
+	if owner, known := p.owner[session]; known && p.pending[owner] != "" {
 		return errSessionRestart
 	}
-	if !p.ready || p.profiles[session] == nil || p.current != session {
+	for _, waiting := range p.pending {
+		if waiting == session {
+			return errSessionRestart
+		}
+	}
+	if p.profiles[session] == nil || !p.serving(session) {
 		return ErrSessionProfile
 	}
 	return nil
@@ -494,5 +547,5 @@ func (g *Gateway) CurrentSession() string {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.current
+	return p.last
 }

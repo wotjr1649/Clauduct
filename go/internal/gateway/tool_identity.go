@@ -136,8 +136,8 @@ func (g *Gateway) resolveToolHistory(r *http.Request, built *bridge.Request, con
 		// Preserve its old generation: the native tool guard still rejects it.
 		p := g.profiles
 		restored := g.nativeEvents.resumedSession == session && g.nativeEvents.resumedHistory[e.CallID] == record
-		if p != nil {
-			restored = restored && !p.fork && p.ready && p.expected == session && p.current == session
+		if p != nil { // p.mu is held from the top of this function
+			restored = restored && !p.fork && p.expected == session && p.serving(session)
 		}
 		if !restored && (record.Generation != g.callGeneration() || record.Turn != owner.Turn || record.Sequence != owner.sequence) {
 			return errToolHistory
@@ -234,7 +234,7 @@ func (g *Gateway) publishToolIssuance(frames []anthropic.Frame, reserved map[str
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		current := p.profiles[proof.Session]
-		if current == nil || !p.ready {
+		if current == nil || !p.ready[proof.Session] {
 			return errToolHistory
 		}
 		next := *current

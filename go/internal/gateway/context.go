@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -165,7 +166,8 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(fields) < 2 || json.Unmarshal(raw, &event) != nil ||
 		!correlationShape.MatchString(event.Session) || (event.Agent != "" && !correlationShape.MatchString(event.Agent)) ||
 		(event.Trigger != "" && event.Trigger != "manual" && event.Trigger != "auto") ||
-		(event.Event != "PreCompact" && event.Event != "PostCompact" && event.Event != "SessionStart") {
+		(event.Event != "PreCompact" && event.Event != "PostCompact" && event.Event != "SessionStart") ||
+		(r.Header.Get(NativePIDHeader) != "" && !nativePID.MatchString(r.Header.Get(NativePIDHeader))) {
 		g.refuseCategory(w, 400, "INVALID_CONTEXT_EVENT")
 		return
 	}
@@ -187,7 +189,7 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 			g.refuseCategory(w, 400, "CONTEXT_JOURNAL_UNVERIFIED")
 			return
 		}
-		if err := g.registerSessionProfile(event.Session, event.Source); err != nil {
+		if err := g.registerSessionProfile(event.Session, event.Source, nativeProcess(r.Header.Get(NativePIDHeader))); err != nil {
 			g.refuseSessionProfile(w, event.Session, err)
 			return
 		}
@@ -540,4 +542,20 @@ func (g *Gateway) recoverContextOverflow(w http.ResponseWriter, session, agent, 
 	entry.control("BACKEND_CONTEXT_COMPACTION_REQUIRED")
 	g.refuseCategory(w, 400, "prompt is too long")
 	return true
+}
+
+// NativePIDHeader names the native process whose hook sent a registration (#319 decision 18c):
+// it keys that process's current session. Attribution only; the token is what authorizes. A
+// header, so a gateway older than the hook ignores it rather than refusing the registration.
+const NativePIDHeader = "X-Clauduct-Native-Pid"
+
+var nativePID = regexp.MustCompile(`^[1-9][0-9]{0,9}$`)
+
+// nativeProcess is the hook's native process id, or 0 for a hook that names none.
+func nativeProcess(text string) int {
+	n, err := strconv.Atoi(text)
+	if err != nil || n < 1 {
+		return 0
+	}
+	return n
 }

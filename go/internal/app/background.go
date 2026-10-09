@@ -270,7 +270,9 @@ func (p *backgroundProcess) Wait() error {
 		if writeResident(p.home, *p.record) == nil {
 			defer func() {
 				// A stopped job is still listed and can be opened again: its record stays for
-				// the resident that opening regenerates (#319 decision 18h).
+				// the resident that opening regenerates (#319 decision 18h), and so does the
+				// events directory its respawn flags name. A worker started without that
+				// directory never loads the events module (decision 18k A/B).
 				if !p.crashed && !jobListed(p.config, p.record.Job, p.record.Jobs) {
 					removeResident(p.home, p.record.Link)
 				}
@@ -385,6 +387,16 @@ func nativeJobs(config string, sessions []string) []string {
 		}
 	}
 	return out
+}
+
+// recordStays reports whether this resident's record is on disk: it then names the events
+// directory for the job's next worker and resident, whichever way this resident ended.
+func (p *backgroundProcess) recordStays() bool {
+	if p.record == nil || p.home == "" {
+		return false
+	}
+	_, err := os.Stat(residentPath(p.home, p.record.Link))
+	return err == nil
 }
 
 func fmtBackground(out io.Writer, s BackgroundSession) {

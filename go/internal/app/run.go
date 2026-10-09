@@ -447,6 +447,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	var background, foreground *sessionlink.Server
 	nativePlugin := ""
 	nativeCleanupReady := true // No child owns the directory until spawn succeeds.
+	var resident *backgroundProcess
 	defer func() {
 		if nativePlugin == "" {
 			return
@@ -456,6 +457,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if !nativeCleanupReady || result.CleanupErr != nil {
 			result.CleanupErr = errors.Join(result.CleanupErr, errors.New("NATIVE_EVENT_CLEANUP_UNVERIFIED"))
 			return
+		}
+		if resident != nil && resident.recordStays() {
+			return // the resident that removes the record removes the directory
 		}
 		if removeErr := os.RemoveAll(nativePlugin); removeErr != nil {
 			result.CleanupErr = errors.New("NATIVE_EVENT_CLEANUP_FAILED")
@@ -767,7 +771,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			// environment and start where every native process of this launch starts.
 			bp.env, bp.start = spec.Env, o.StartProcess
 		}
-		process = bp
+		process, resident = bp, bp
 	}
 
 	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
@@ -814,6 +818,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				bp.env, bp.start = spec.Env, o.StartProcess
 			}
 			result.HandedOver = jobs
+			resident = bp
 			bp.Wait()
 		}
 	}

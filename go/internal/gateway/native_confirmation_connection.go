@@ -16,6 +16,8 @@ type pendingConfirmation struct {
 	lease     context.Context
 	close     context.CancelFunc
 	connected bool // nativeEvents.mu; a nonce is consumed once
+	// native is the process that sent the model request; only its own helper may answer.
+	native processKey
 }
 
 // Authenticated by handle; never an upstream request or an execution approval.
@@ -46,6 +48,15 @@ func (g *Gateway) handleNativeConfirmation(w http.ResponseWriter, r *http.Reques
 		// The request this nonce served has already ended or been refused. The helper
 		// is late, not wrong: say so, so the module does not latch policy failure.
 		n.mu.Unlock()
+		http.Error(w, "CLAUDUCT_CONFIRMATION_STALE", http.StatusGone)
+		return
+	}
+	// Every native's module reads the one challenge file and answers what it sees, its own
+	// sessions or not (#319 decision 18e, measured x4-dispatch): another native's answer is
+	// not this request's proof. It is told the request is gone, which does not latch it.
+	if id, required := g.identityOf(r); required && id.native != p.native {
+		n.mu.Unlock()
+		n.foreignAnswers.Add(1)
 		http.Error(w, "CLAUDUCT_CONFIRMATION_STALE", http.StatusGone)
 		return
 	}

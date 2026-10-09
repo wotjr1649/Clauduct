@@ -69,3 +69,14 @@ func (g *Gateway) refuseIdentity(w http.ResponseWriter) {
 
 // identifyFunc is providercert.NativeOwner's shape, replaceable by tests.
 type identifyFunc func(client, server net.Addr, image string) (owner, native uint32, created time.Time)
+
+// RequestNative is what the gateway concluded about r's connection at accept: its native
+// process (PID and creation time), whether the native itself opened it, and whether identity
+// is required at all. For diagnostics and tests; nothing else reads it.
+func (g *Gateway) RequestNative(r *http.Request) (pid uint32, created time.Time, direct, required bool) {
+	id, required := g.identityOf(r)
+	if id.native == (processKey{}) {
+		return 0, time.Time{}, false, required
+	}
+	return id.native.pid, time.Unix(0, id.native.created), id.direct, required
+}

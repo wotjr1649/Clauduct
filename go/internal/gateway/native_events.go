@@ -22,7 +22,9 @@ import (
 type nativeEventState struct {
 	confirmationsRequired bool // immutable launcher requirement
 	confirmationGate      chan struct{}
-	confirmationFailed    atomic.Bool // latched confirmation or cancellation verification failure
+	confirmationFailed    atomic.Bool         // latched shared failure: the control directory or storage (all natives)
+	failedNatives         map[processKey]bool // mu; natives whose own confirmation or cancellation proof failed
+	foreignAnswers        atomic.Int64        // answers to another native's challenge, told the request is gone
 	mu                    sync.Mutex
 	directory             string
 	verified              bool
@@ -109,6 +111,9 @@ type NativeEventReport struct {
 	ReplayStateFailed bool `json:"replayStateFailed"`
 	// RetiredTurns is how many finished child turns gave their keys back.
 	RetiredTurns int64 `json:"retiredTurns"`
+	// ForeignAnswers counts confirmation answers from a native other than the one that sent the
+	// request; each was told the request is gone and decided nothing (#319 decision 18e).
+	ForeignAnswers int64 `json:"foreignAnswers"`
 }
 type nativeTurnReceipt struct {
 	Session string `json:"session"`
@@ -351,7 +356,7 @@ func (g *Gateway) nativeEventReport() NativeEventReport {
 	n := &g.nativeEvents
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired}
+	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired, ForeignAnswers: n.foreignAnswers.Load()}
 }
 
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
@@ -621,4 +626,35 @@ func (g *Gateway) FinalizeNativeResults() {
 	}
 	r.mu.Unlock()
 	g.delegations.saveWorkflowCheckpoints()
+}
+
+// confirmationBlocked: the launch's shared latch, or this native process's own (#319
+// decision 18e). The zero key is a launch without native identity: only the shared latch.
+func (n *nativeEventState) confirmationBlocked(native processKey) bool {
+	if n.confirmationFailed.Load() {
+		return true
+	}
+	if native == (processKey{}) {
+		return false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.failedNatives[native]
+}
+
+// latchConfirmation stops confirmations for the native process whose own handshake or
+// cancellation receipt failed; other natives go on. Without native identity it stops the
+// launch, as before. Shared trust state (the control directory, a storage error) is latched
+// by its caller for everyone.
+func (n *nativeEventState) latchConfirmation(native processKey) {
+	if native == (processKey{}) {
+		n.confirmationFailed.Store(true)
+		return
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.failedNatives == nil {
+		n.failedNatives = map[processKey]bool{}
+	}
+	n.failedNatives[native] = true
 }

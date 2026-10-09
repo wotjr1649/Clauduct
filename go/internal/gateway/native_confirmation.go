@@ -69,9 +69,18 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	case <-g.closing.Done():
 		return nil
 	}
-	if n.confirmationFailed.Load() || ctx.Err() != nil || g.closing.Err() != nil {
+	// The native process that sent this request: its own failures stop only it (#319 decision
+	// 18e). The zero key is a launch without native identity.
+	var native processKey
+	if id, required := g.identityOf(r); required {
+		native = id.native
+	}
+	if n.confirmationBlocked(native) || ctx.Err() != nil || g.closing.Err() != nil {
 		return nil
 	}
+	// shared marks a failure of state every native relies on (the control directory, a
+	// storage error): that latches the launch, not one native.
+	shared := false
 	cancelled := func() (*nativeConfirmation, error) {
 		if err := r.Context().Err(); err != nil {
 			return &nativeConfirmation{cancellation: err}, nil
@@ -98,7 +107,11 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	}
 	defer func() {
 		if proof == nil && r.Context().Err() == nil && g.closing.Err() == nil {
-			n.confirmationFailed.Store(true)
+			if shared {
+				n.confirmationFailed.Store(true)
+			} else {
+				n.latchConfirmation(native)
+			}
 		}
 	}()
 	if n.directory == "" {
@@ -132,6 +145,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		return &nativeConfirmation{Unmatched: true}
 	}
 	if err != nil {
+		shared = !errors.Is(err, wire.ErrMalformed)
 		return nil
 	}
 	if !found || turn == nil || step.Turn != turn.Turn {
@@ -143,7 +157,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		return nil
 	}
 	lease, closeLease := context.WithCancel(r.Context())
-	pending := &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease}
+	pending := &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease, native: native}
 	n.mu.Lock()
 	if n.confirmations == nil {
 		n.confirmations = map[string]*pendingConfirmation{}
@@ -160,6 +174,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	}()
 	body, _ := json.Marshal(want)
 	if err = g.writeNativeControl("confirmation-request.json", body); err != nil {
+		shared = true
 		return nil
 	}
 	for {
@@ -193,6 +208,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 				return &nativeConfirmation{Unmatched: true}
 			}
 			if err != nil || ctx.Err() != nil || g.closing.Err() != nil {
+				shared = err != nil && !errors.Is(err, wire.ErrMalformed)
 				return nil
 			}
 			if !found || step.Turn != reply.Turn || step.Index != reply.Index {

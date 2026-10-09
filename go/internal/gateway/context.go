@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -166,8 +165,7 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(fields) < 2 || json.Unmarshal(raw, &event) != nil ||
 		!correlationShape.MatchString(event.Session) || (event.Agent != "" && !correlationShape.MatchString(event.Agent)) ||
 		(event.Trigger != "" && event.Trigger != "manual" && event.Trigger != "auto") ||
-		(event.Event != "PreCompact" && event.Event != "PostCompact" && event.Event != "SessionStart") ||
-		(r.Header.Get(NativePIDHeader) != "" && !nativePID.MatchString(r.Header.Get(NativePIDHeader))) {
+		(event.Event != "PreCompact" && event.Event != "PostCompact" && event.Event != "SessionStart") {
 		g.refuseCategory(w, 400, "INVALID_CONTEXT_EVENT")
 		return
 	}
@@ -185,9 +183,9 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if event.Event == "SessionStart" {
-		// The registering hook's native: the OS's answer when identity is required (#319 decision
-		// 18d), the hook's own word only when it is not.
-		process := processKey{pid: uint32(nativeProcess(r.Header.Get(NativePIDHeader)))}
+		// The registering hook's native as the OS names it (#319 decision 18d); without native
+		// identity every registration is the one zero process, the single-launch behaviour.
+		var process processKey
 		if id, required := g.identityOf(r); required {
 			if id.native == (processKey{}) {
 				g.refuseIdentity(w)
@@ -552,20 +550,4 @@ func (g *Gateway) recoverContextOverflow(w http.ResponseWriter, session, agent, 
 	entry.control("BACKEND_CONTEXT_COMPACTION_REQUIRED")
 	g.refuseCategory(w, 400, "prompt is too long")
 	return true
-}
-
-// NativePIDHeader names the native process whose hook sent a registration (#319 decision 18c):
-// it keys that process's current session. Attribution only; the token is what authorizes. A
-// header, so a gateway older than the hook ignores it rather than refusing the registration.
-const NativePIDHeader = "X-Clauduct-Native-Pid"
-
-var nativePID = regexp.MustCompile(`^[1-9][0-9]{0,9}$`)
-
-// nativeProcess is the hook's native process id, or 0 for a hook that names none.
-func nativeProcess(text string) int {
-	n, err := strconv.Atoi(text)
-	if err != nil || n < 1 {
-		return 0
-	}
-	return n
 }

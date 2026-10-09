@@ -259,7 +259,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if err := managedRouting(docs, readErr); err != nil {
 			return Result{}, err
 		}
-		if providerFlag != "" || !BackgroundRequested(o.Args) && !o.foregroundAgentView {
+		if providerFlag != "" || !BackgroundRequested(o.Args) && !o.agentView() {
 			// The foreground's agent-view restriction holds against machine policy too.
 			if err := managedAgentViewOverride(docs); err != nil {
 				return Result{}, err
@@ -303,7 +303,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if providerFlag != "" || !BackgroundRequested(o.Args) && !o.foregroundAgentView {
+	if providerFlag != "" || !BackgroundRequested(o.Args) && !o.agentView() {
 		// The foreground's agent-view restriction is this launch's, as its routing is: a
 		// settings env that turns agent view back on would reopen native's supervisor path.
 		if err := userKeepsAgentViewOff(userSettings); err != nil {
@@ -503,7 +503,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 						// The hook may then rely on native's provider control (hookcmd).
 						link += " " + hookcmd.ProviderControlledArg
 					}
-					if o.foregroundAgentView {
+					if o.agentView() {
 						settings, err = config.backgroundSettings(settings, hook, foreground.ID, gw.BaseURL(), o.Env, providerFlag)
 					} else {
 						settings, err = foregroundSettings(settings, link, env)
@@ -696,7 +696,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	default:
 	}
 	spec.Env = withProcessFlag(spec.Env, providerFlag)
-	if background == nil && !o.foregroundAgentView {
+	if background == nil && !o.agentView() {
 		spec.Env = withProcessFlag(spec.Env, agentViewOff)
 	}
 	var dispatchOutput backgroundOutput
@@ -932,3 +932,7 @@ func StartProductGatewayAt(transport upstream.Transport, port int) (*gateway.Gat
 	}
 	return g, err
 }
+
+// agentView reports whether this launch leaves native's agent view on in the foreground: a test
+// that asked for it, or a development build (agentViewDevBuild). Never an ordinary build.
+func (o Options) agentView() bool { return o.foregroundAgentView || agentViewDevBuild }

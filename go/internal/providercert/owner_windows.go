@@ -84,6 +84,9 @@ type mibTCPRowOwnerPID struct {
 	State, LocalAddr, LocalPort, RemoteAddr, RemotePort, OwningPID uint32
 }
 
+// OwnerOf is ownerOf for the gateway request identity experiments (#319 decision 18).
+func OwnerOf(client, server net.Addr) ConnOwner { return ownerOf(client, server) }
+
 // ownerOf finds the process on this machine whose IPv4 TCP connection has client as its local
 // end and server as its remote end. Any failure returns a zero owner.
 func ownerOf(client, server net.Addr) ConnOwner {

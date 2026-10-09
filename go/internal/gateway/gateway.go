@@ -114,6 +114,8 @@ type Gateway struct {
 	modelLists atomic.Int64
 	// ingress, when set, sees each authenticated inference body once it is read in full.
 	ingress atomic.Pointer[func(Ingress)]
+	// requestObserver, set only by tests, sees every request that passed the boundary check.
+	requestObserver atomic.Pointer[func(*http.Request)]
 	// routingMismatch is set when this session's own hook saw native use another endpoint (#295).
 	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
@@ -334,6 +336,11 @@ type Ingress struct {
 // gateway then declines it; nothing else uses it and an unset gateway behaves as before. fn
 // runs on the request goroutine and must not keep the body. Set it before native starts.
 func (g *Gateway) ObserveIngress(fn func(Ingress)) { g.ingress.Store(&fn) }
+
+// ObserveRequests registers fn to see every request that passed the boundary check, before
+// any route handles it (#319 decision 18 request identity experiments). fn runs on the
+// request goroutine and must not read the body. The product never sets it.
+func (g *Gateway) ObserveRequests(fn func(*http.Request)) { g.requestObserver.Store(&fn) }
 
 // ObserveOutcome registers fn to see each request's final record when it closes: its outcome,
 // the refusal category if any, and the same Seq its ingress carried. No body is in it. fn runs
@@ -592,6 +599,9 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if bad, ok := g.checkBoundary(r); !ok {
 		g.refuse(w, bad)
 		return
+	}
+	if observe := g.requestObserver.Load(); observe != nil {
+		(*observe)(r)
 	}
 
 	// Readiness answers without a credential because that is what the client sends: the

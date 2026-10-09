@@ -116,6 +116,11 @@ type Gateway struct {
 	ingress atomic.Pointer[func(Ingress)]
 	// requestObserver, set only by tests, sees every request that passed the boundary check.
 	requestObserver atomic.Pointer[func(*http.Request)]
+	// nativeImage, once set, makes every connection's native process an OS fact (native_identity.go).
+	nativeImage atomic.Pointer[string]
+	identify    identifyFunc // nil is the OS lookup; tests replace it
+	// discovered holds each native process that asked this gateway for its model list.
+	discovered sync.Map // processKey -> struct{}
 	// routingMismatch is set when this session's own hook saw native use another endpoint (#295).
 	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
@@ -228,6 +233,7 @@ func StartAt(transport upstream.Transport, port int) (*Gateway, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return context.Background() },
 	}
+	g.server.ConnContext = g.connContext
 	go func() {
 		err := httpguard.Serve(g.server, listener, g.closing, maxRequestBytes)
 		if errors.Is(err, http.ErrServerClosed) {
@@ -632,6 +638,11 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/v1/messages/count_tokens" {
+		// Counting reaches the backend too: only the native process itself may ask.
+		if id, required := g.identityOf(r); required && (id.native == (processKey{}) || !id.direct) {
+			g.refuseIdentity(w)
+			return
+		}
 		g.handleCountTokens(w, r)
 		return
 	}
@@ -673,11 +684,21 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		// stored gateway instead, with this session's endpoint left in place for the hooks to
 		// see. So the first hook asks whether the list came here, waiting briefly for a
 		// request still in flight. Nothing is read from any credential store.
+		// With native identity required, the list must have come from this hook's own native
+		// process: another worker's list proves nothing about this one (#319 decision 18d).
+		proved := func() bool { return g.modelLists.Load() != 0 }
+		if id, required := g.identityOf(r); required {
+			if id.native == (processKey{}) {
+				g.refuseIdentity(w)
+				return
+			}
+			proved = func() bool { _, seen := g.discovered.Load(id.native); return seen }
+		}
 		deadline := time.Now().Add(routingProofWait)
-		for g.modelLists.Load() == 0 && time.Now().Before(deadline) {
+		for !proved() && time.Now().Before(deadline) {
 			time.Sleep(20 * time.Millisecond)
 		}
-		if g.modelLists.Load() == 0 {
+		if !proved() {
 			g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
 			return
 		}
@@ -696,6 +717,10 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 		g.modelLists.Add(1)
+		// Discovery and routing observation for the native that asked, never an inference grant.
+		if id, required := g.identityOf(r); required && id.direct {
+			g.discovered.Store(id.native, struct{}{})
+		}
 		g.handleModels(w)
 		return
 	}

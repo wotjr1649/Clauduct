@@ -185,11 +185,21 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if event.Event == "SessionStart" {
+		// The registering hook's native: the OS's answer when identity is required (#319 decision
+		// 18d), the hook's own word only when it is not.
+		process := processKey{pid: uint32(nativeProcess(r.Header.Get(NativePIDHeader)))}
+		if id, required := g.identityOf(r); required {
+			if id.native == (processKey{}) {
+				g.refuseIdentity(w)
+				return
+			}
+			process = id.native
+		}
 		if err := g.contextSession(event.Session, event.Transcript); err != nil {
 			g.refuseCategory(w, 400, "CONTEXT_JOURNAL_UNVERIFIED")
 			return
 		}
-		if err := g.registerSessionProfile(event.Session, event.Source, nativeProcess(r.Header.Get(NativePIDHeader))); err != nil {
+		if err := g.registerSessionProfile(event.Session, event.Source, process); err != nil {
 			g.refuseSessionProfile(w, event.Session, err)
 			return
 		}

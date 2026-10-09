@@ -269,11 +269,11 @@ type profileState struct {
 	fork        bool
 	background  bool
 	profiles    map[string]*SessionProfile
-	slots       map[int]string  // native process -> its current session
-	owner       map[string]int  // session -> the native process that last registered it
-	pending     map[int]string  // native process -> the session it must restart into
-	ready       map[string]bool // session -> its last registration succeeded
-	last        string          // the most recent registration
+	slots       map[processKey]string // native process -> its current session
+	owner       map[string]processKey // session -> the native process that last registered it
+	pending     map[processKey]string // native process -> the session it must restart into
+	ready       map[string]bool       // session -> its last registration succeeded
+	last        string                // the most recent registration
 	forkHistory *SessionProfile
 }
 
@@ -302,7 +302,7 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 		return
 	}
 	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile),
-		slots: make(map[int]string), owner: make(map[string]int), pending: make(map[int]string), ready: make(map[string]bool)}
+		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool)}
 	if resumed != nil && fork {
 		copy := *resumed
 		copy.Calls = cloneToolIssuances(resumed.Calls)
@@ -319,8 +319,9 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 }
 
 // Caller holds contexts.mu; no profile operation takes contexts.mu in return.
-// process is the native process the registering hook runs under, 0 when the hook does not say.
-func (g *Gateway) registerSessionProfile(session, source string, process int) (err error) {
+// process is the native process the registering hook runs under: an OS fact when native
+// identity is required, otherwise what the hook said, the zero key when it said nothing.
+func (g *Gateway) registerSessionProfile(session, source string, process processKey) (err error) {
 	p := g.profiles
 	if p == nil {
 		return nil
@@ -472,7 +473,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process int) (e
 
 // take makes session the current one of native process, which leaves the one it was on; a
 // session that moved to this process leaves its earlier one. Caller holds p.mu.
-func (p *profileState) take(process int, session string) {
+func (p *profileState) take(process processKey, session string) {
 	if earlier, moved := p.owner[session]; moved && earlier != process && p.slots[earlier] == session {
 		delete(p.slots, earlier)
 	}
@@ -500,7 +501,9 @@ func (g *Gateway) CheckpointSessionProfiles(final bool) error {
 	return result
 }
 
-func (g *Gateway) sessionProfileError(session string) error {
+// from, when native identity is required, is the native process that sent the request: the
+// session must be bound to it, whatever another process registered.
+func (g *Gateway) sessionProfileError(session string, from *processKey) error {
 	p := g.profiles
 	if p == nil {
 		return nil
@@ -517,7 +520,7 @@ func (g *Gateway) sessionProfileError(session string) error {
 			return errSessionRestart
 		}
 	}
-	if p.profiles[session] == nil || !p.serving(session) {
+	if p.profiles[session] == nil || !p.serving(session) || from != nil && p.owner[session] != *from {
 		return ErrSessionProfile
 	}
 	return nil

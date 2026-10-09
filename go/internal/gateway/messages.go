@@ -75,7 +75,16 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Header.Get("X-Claude-Code-Session-Id")
-	if err := g.sessionProfileError(session); err != nil {
+	var from *processKey
+	if id, required := g.identityOf(r); required {
+		// Inference comes from the native process itself, never a hook or tool under it.
+		if id.native == (processKey{}) || !id.direct {
+			g.refuseIdentity(w)
+			return
+		}
+		from = &id.native
+	}
+	if err := g.sessionProfileError(session, from); err != nil {
 		g.refuseSessionProfile(w, session, err)
 		return
 	}

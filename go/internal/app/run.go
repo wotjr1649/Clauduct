@@ -139,6 +139,9 @@ type Options struct {
 	// gateway here to see what native's background path does while it lives. The product never
 	// sets it.
 	afterNative func()
+	// nativeIdentityOff, set only by a test that relays native's requests through its own
+	// recorder, leaves native identity unrequired: the relay, not native, opens the connections.
+	nativeIdentityOff bool
 	// backgroundCrash, set only by a test, makes a background resident end as if its process
 	// died: the native job is not stopped (decision 18c X7).
 	backgroundCrash <-chan struct{}
@@ -542,6 +545,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	if o.Settings == nil {
 		gw.RequireNativeConfirmations()
+		// Every request's native process is an OS fact, so a session is bound to the process
+		// that registered it and one worker's evidence proves nothing for another (#319
+		// decision 18d). Only for the native client itself: a stand-in under another name has
+		// no claude.exe to find.
+		if image := filepath.Base(exe); strings.EqualFold(image, "claude.exe") && !o.nativeIdentityOff {
+			gw.RequireNativeIdentity(image)
+		}
 		gw.ConfigurePDFRenderer(hook)
 		if hook != "" {
 			link := ""

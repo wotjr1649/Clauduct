@@ -84,6 +84,9 @@ func Dispatch(argv []string) (int, bool) {
 		// environment, so there is nothing to fall back to when the link is gone.
 		connection, err := sessionlink.Read(args[1])
 		if err != nil {
+			if args[0] == Arg {
+				return linkGone(args[1], os.Stdin, os.Stderr), true
+			}
 			fmt.Fprintln(os.Stderr, "CLAUDUCT_CONNECTION_UNAVAILABLE: this session's Clauduct link is gone; restart the session with Clauduct")
 			return 2, true
 		}
@@ -212,6 +215,35 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 		}
 	}
 	return runWithOutput(bytes.NewReader(raw), out, errOut, env)
+}
+
+// Regenerable, set by the launcher, names the job a dead background resident left a record
+// for under link, which native's key helper starts again on the job's next model request
+// (#319 decision 18c). Nil, or false, means the link is simply gone.
+var Regenerable func(link string) (job string, ok bool)
+
+// linkGone answers a hook whose link is gone. For a link that will be regenerated, a
+// SessionStart (which cannot block, and runs in a respawned worker before its first model
+// request reopens the link) passes quietly: the prompt's own registration follows once the
+// link is back. Any other event is refused, naming the respawn that reopens the link.
+func linkGone(link string, in io.Reader, errOut io.Writer) int {
+	job, regenerable := "", false
+	if Regenerable != nil {
+		job, regenerable = Regenerable(link)
+	}
+	if !regenerable {
+		fmt.Fprintln(errOut, "CLAUDUCT_CONNECTION_UNAVAILABLE: this session's Clauduct link is gone; restart the session with Clauduct")
+		return 2
+	}
+	var event struct {
+		Name string `json:"hook_event_name"`
+	}
+	raw, _ := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+	if json.Unmarshal(raw, &event) == nil && event.Name == "SessionStart" {
+		return 0
+	}
+	fmt.Fprintf(errOut, "CLAUDUCT_CONNECTION_UNAVAILABLE: this background job's Clauduct connection ended; run claude respawn %s to reopen it, then submit again\n", job)
+	return 2
 }
 
 // nativePIDHeader is gateway.NativePIDHeader: the native process a registration comes from.

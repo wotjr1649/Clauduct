@@ -56,6 +56,7 @@ func run() int {
 			app.RegenerateResident(os.Args[2], 30*time.Second)
 		}
 	}
+	hookcmd.Regenerable = app.RegenerableJob
 	if code, ok := hookcmd.Dispatch(os.Args); ok {
 		return code
 	}

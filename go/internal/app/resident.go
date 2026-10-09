@@ -135,3 +135,14 @@ func LoadResident(home, link string) (ResidentRecord, error) {
 	}
 	return r, r.check()
 }
+
+// RegenerableJob names the job a background resident that is gone left a record for under
+// link: one native's key helper regenerates on the job's next model request.
+func RegenerableJob(link string) (string, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", false
+	}
+	r, err := LoadResident(home, link)
+	return r.Job, err == nil
+}

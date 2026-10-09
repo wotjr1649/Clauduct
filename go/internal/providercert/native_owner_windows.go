@@ -54,15 +54,24 @@ func exactOwner(client, server net.Addr) uint32 {
 	if !ok1 || !ok2 || c.IP.To4() == nil || s.IP.To4() == nil {
 		return 0
 	}
+	// The table can grow between sizing and reading it (ERROR_INSUFFICIENT_BUFFER): read it
+	// again at the new size, a few times, before answering nothing.
+	var buf []byte
 	var size uint32
 	getExtendedTCP.Call(0, uintptr(unsafe.Pointer(&size)), 0, 2, 4, 0) // AF_INET, TCP_TABLE_OWNER_PID_CONNECTIONS
-	if size == 0 {
-		return 0
-	}
-	buf := make([]byte, size+4096)
-	size = uint32(len(buf))
-	if r, _, _ := getExtendedTCP.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)), 0, 2, 4, 0); r != 0 {
-		return 0
+	for attempt := 0; ; attempt++ {
+		if size == 0 || attempt == 4 {
+			return 0
+		}
+		buf = make([]byte, size+4096)
+		size = uint32(len(buf))
+		r, _, _ := getExtendedTCP.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)), 0, 2, 4, 0)
+		if r == 0 {
+			break
+		}
+		if r != 122 { // anything but a table that outgrew the buffer
+			return 0
+		}
 	}
 	// Addresses are in network order in memory; ports in network order in the low 16 bits.
 	addr := func(ip net.IP) uint32 { return binary.LittleEndian.Uint32(ip.To4()) }

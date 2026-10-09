@@ -18,6 +18,8 @@ type pendingConfirmation struct {
 	connected bool // nativeEvents.mu; a nonce is consumed once
 	// native is the process that sent the model request; only its own helper may answer.
 	native processKey
+	// unidentified: a helper the OS could not name answered this nonce (nativeEvents.mu).
+	unidentified bool
 }
 
 // Authenticated by handle; never an upstream request or an execution approval.
@@ -45,6 +47,7 @@ func (g *Gateway) handleNativeConfirmation(w http.ResponseWriter, r *http.Reques
 	n.mu.Lock()
 	p := n.confirmations[reply.Nonce]
 	if p == nil || p.lease.Err() != nil {
+		n.staleAnswers.Add(1)
 		// The request this nonce served has already ended or been refused. The helper
 		// is late, not wrong: say so, so the module does not latch policy failure.
 		n.mu.Unlock()
@@ -54,15 +57,28 @@ func (g *Gateway) handleNativeConfirmation(w http.ResponseWriter, r *http.Reques
 	// Every native's module reads the one challenge file and answers what it sees, its own
 	// sessions or not (#319 decision 18e, measured x4-dispatch): another native's answer is
 	// not this request's proof. It is told the request is gone, which does not latch it.
-	if id, required := g.identityOf(r); required && id.native != p.native {
+	// Unnamed on either side is never a match, even of two unnamed keys.
+	if id, required := g.identityOf(r); required && (id.native == (processKey{}) || p.native == (processKey{})) {
+		p.unidentified = true
+		n.mu.Unlock()
+		n.unidentifiedAnswers.Add(1)
+		http.Error(w, "CLAUDUCT_CONFIRMATION_STALE", http.StatusGone)
+		return
+	} else if required && id.native != p.native {
 		n.mu.Unlock()
 		n.foreignAnswers.Add(1)
 		http.Error(w, "CLAUDUCT_CONFIRMATION_STALE", http.StatusGone)
 		return
 	}
-	if p.connected || r.Context().Err() != nil || reply.Session != p.want.Session || reply.Search != p.want.Search || reply.Auxiliary != p.want.Auxiliary ||
+	// The requesting native's own helper claiming another scope is a protocol violation: it is
+	// recorded against the session, which no native process change clears (#319 decision 18f).
+	violation := reply.Session != p.want.Session || reply.Search != p.want.Search || reply.Auxiliary != p.want.Auxiliary ||
 		(reply.Unmatched && (reply.Confirmations || reply.Agent != "" || reply.Turn != "" || reply.Index != -1)) ||
-		(!reply.Unmatched && (!reply.Confirmations || reply.Agent != p.want.Agent || reply.Turn != p.want.Turn || reply.Index != p.want.Index)) {
+		(!reply.Unmatched && (!reply.Confirmations || reply.Agent != p.want.Agent || reply.Turn != p.want.Turn || reply.Index != p.want.Index))
+	if p.connected || r.Context().Err() != nil || violation {
+		if _, required := g.identityOf(r); violation && required {
+			n.taintSession(p.want.Session)
+		}
 		n.mu.Unlock()
 		g.refuse(w, refuseHeader)
 		return

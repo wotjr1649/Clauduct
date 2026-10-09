@@ -149,7 +149,7 @@ async function observe($, progress, p, signal) {
       if (prior) await prior;
       receipt.session=await session($);receipt.at=await $.clock.now();
       if (progress.get(p.agent)!==p) return; // a late prior turn cannot replace current progress
-      const name=p.agent?'progress-child-'+p.agent:'progress-root';
+      const name=p.agent?'progress-child-'+p.agent:'progress-root-'+receipt.session; // one root per session: natives share this directory
       await $.fs.write(root+'/'+name+'.json',JSON.stringify(receipt));
     })();
     await p.write;
@@ -269,7 +269,7 @@ export const register = on => {
     let current=turns.get(agent);
     if (current?.turn!==turn) {
       if (turns.size>=4096 && !current) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
-      const name=agent?'child-'+agent:'root';
+      const name=agent?'child-'+agent:'root-'+await session($);
       const directory=root+'/active/'+name, prior=current?.publication;
       const publication=(async () => {
         // Reload/respawn loses module state, but not the journal. Include unfinished
@@ -306,7 +306,7 @@ export const register = on => {
     }
     await current.publication;
     await observe($,progress,p,'request_started');
-    const name=agent?'child-'+agent:'root';
+    const name=agent?'child-'+agent:'root-'+await session($);
     // index 0 of an explicit new input is never withheld. Child wakeups without
     // ingress provenance remain outside this control until a later tool step.
     const handback=agent && e.index>0 && !p.intervened ? p.handback || '' : '';

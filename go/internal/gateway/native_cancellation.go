@@ -191,10 +191,10 @@ func (g *Gateway) ReconcileNativeCancellations() {
 		if err != nil {
 			// A receipt that never became readable, or one for another scope, is this native's
 			// failure; a storage error is everyone's.
-			if errors.Is(err, errNativeConfirmations) {
-				n.latchConfirmation(p.native)
-			} else {
+			if storageFailure(err) {
 				n.confirmationFailed.Store(true)
+			} else {
+				n.latchConfirmation(p.native)
 			}
 			source = "native_cancellation_unverified"
 		}

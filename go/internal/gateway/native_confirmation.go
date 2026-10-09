@@ -105,8 +105,17 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	if anonymousNativeFork(r) {
 		return &nativeConfirmation{Unmatched: true}
 	}
+	// pending is this request's challenge once published. A timeout after its only answer came
+	// from a helper the OS could not name is an identity lookup failure, not this native's.
+	var pending *pendingConfirmation
 	defer func() {
-		if proof == nil && r.Context().Err() == nil && g.closing.Err() == nil {
+		excused := false
+		if pending != nil {
+			n.mu.Lock()
+			excused = pending.unidentified
+			n.mu.Unlock()
+		}
+		if proof == nil && r.Context().Err() == nil && g.closing.Err() == nil && !excused {
 			if shared {
 				n.confirmationFailed.Store(true)
 			} else {
@@ -120,6 +129,11 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	want := nativeConfirmation{Session: r.Header.Get("X-Claude-Code-Session-Id"), Agent: r.Header.Get("X-Claude-Code-Agent-Id"), Index: -1, Search: search, Auxiliary: !search && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary"}
 	if !correlationShape.MatchString(want.Session) {
 		return nil
+	}
+	// A session whose own native broke the protocol is refused here and nowhere latched: the
+	// record is the session's, and this native's other sessions go on.
+	if n.sessionTainted(want.Session) {
+		return &nativeConfirmation{Unmatched: true}
 	}
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
@@ -145,7 +159,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		return &nativeConfirmation{Unmatched: true}
 	}
 	if err != nil {
-		shared = !errors.Is(err, wire.ErrMalformed)
+		shared = storageFailure(err)
 		return nil
 	}
 	if !found || turn == nil || step.Turn != turn.Turn {
@@ -157,7 +171,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		return nil
 	}
 	lease, closeLease := context.WithCancel(r.Context())
-	pending := &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease, native: native}
+	pending = &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease, native: native}
 	n.mu.Lock()
 	if n.confirmations == nil {
 		n.confirmations = map[string]*pendingConfirmation{}
@@ -208,7 +222,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 				return &nativeConfirmation{Unmatched: true}
 			}
 			if err != nil || ctx.Err() != nil || g.closing.Err() != nil {
-				shared = err != nil && !errors.Is(err, wire.ErrMalformed)
+				shared = storageFailure(err)
 				return nil
 			}
 			if !found || step.Turn != reply.Turn || step.Index != reply.Index {

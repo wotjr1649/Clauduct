@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
 	"os"
@@ -108,11 +109,13 @@ func RegenerateResident(link string, wait time.Duration) {
 	}
 	cmd := exec.Command(self, ResidentRestoreRole, link)
 	cmd.Dir = record.Cwd
+	cmd.Stderr = residentDiagnostics()
 	// Out of native's job when it allows that, so the resident outlives this helper.
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000 | 0x01000000}
 	if cmd.Start() != nil {
 		cmd = exec.Command(self, ResidentRestoreRole, link)
 		cmd.Dir = record.Cwd
+		cmd.Stderr = residentDiagnostics()
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
 		if cmd.Start() != nil {
 			return
@@ -130,4 +133,20 @@ func RegenerateResident(link string, wait time.Duration) {
 		default:
 		}
 	}
+}
+
+// Relay diagnostics so the resident cannot keep native's key-helper pipe open.
+func residentDiagnostics() io.Writer { return io.MultiWriter(os.Stderr) }
+
+// ReconnectResident fits the startup hook's five-second deadline and checks native's job identity.
+func ReconnectResident(link, session string) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	record, err := LoadResident(home, link)
+	if err != nil || !record.ownsSession(nativeConfigDirectory(platform.Environment(os.Environ()), record.Cwd), session) {
+		return
+	}
+	RegenerateResident(link, 2*time.Second)
 }

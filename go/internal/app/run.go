@@ -21,6 +21,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -753,6 +754,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	result.NativeStarted = true
 	nativeCleanupReady = false
+	nativeStatus := func() (registered, notExited int, active int64) {
+		natives := gw.NativeProcesses()
+		for _, native := range natives {
+			if providercert.ProcessStatus(native.PID, native.Created) != providercert.ProcessExited {
+				notExited++
+			}
+		}
+		_, _, active = gw.Stats()
+		return len(natives), notExited, active
+	}
 	if background != nil {
 		backgroundCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -765,6 +776,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
 		bp.home, bp.session, bp.sessions = clauductHome, gw.CurrentSession, gw.Sessions
+		bp.nativeStatus = nativeStatus
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored
 			// login decides where they connect (#320 R08). They get the launch's own process
@@ -813,7 +825,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			record := ResidentRecord{Link: foreground.ID, Job: jobs[0], Jobs: jobs[1:], Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
-				job: jobs[0], record: &record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions}
+				job: jobs[0], record: &record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, nativeStatus: nativeStatus}
 			if providerFlag != "" {
 				bp.env, bp.start = spec.Env, o.StartProcess
 			}

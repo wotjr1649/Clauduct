@@ -189,7 +189,9 @@ type backgroundProcess struct {
 	session func() string
 	// sessions reports every session registered on the gateway; their jobs join this one.
 	sessions func() []string
-	crashed  bool // the test crash ended the wait: the record stays, as after a real death
+	// nativeStatus counts registered natives, those not known to have exited, and active requests.
+	nativeStatus func() (registered, notExited int, active int64)
+	crashed      bool // the test crash ended the wait: the record stays, as after a real death
 }
 
 // noDispatch stands in for the dispatch process of a regenerated resident.
@@ -288,6 +290,7 @@ func (p *backgroundProcess) Wait() error {
 	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	nativeIdle := 0
 	for {
 		select {
 		case <-p.crash:
@@ -338,6 +341,17 @@ func (p *backgroundProcess) Wait() error {
 			}
 			if len(jobs) == 0 {
 				return nil
+			}
+			if p.nativeStatus != nil {
+				registered, notExited, active := p.nativeStatus()
+				if registered > 0 && notExited == 0 && active == 0 {
+					nativeIdle++
+				} else {
+					nativeIdle = 0
+				}
+				if nativeIdle >= 30 { // Allow a respawned worker time to register on this gateway.
+					return nil
+				}
 			}
 		}
 	}

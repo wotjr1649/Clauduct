@@ -16,6 +16,36 @@ type processKey struct {
 	created int64
 }
 
+// NativeProcess identifies a native by PID and creation time in Unix nanoseconds.
+type NativeProcess struct {
+	PID     uint32
+	Created int64
+}
+
+// NativeProcesses reports natives registered here or observed by routing discovery.
+func (g *Gateway) NativeProcesses() []NativeProcess {
+	known := make(map[processKey]struct{})
+	if p := g.profiles; p != nil {
+		p.mu.Lock()
+		for key := range p.slots {
+			known[key] = struct{}{}
+		}
+		p.mu.Unlock()
+	}
+	g.discovered.Range(func(key, _ any) bool {
+		known[key.(processKey)] = struct{}{}
+		return true
+	})
+	out := make([]NativeProcess, 0, len(known))
+	for key := range known {
+		if key == (processKey{}) {
+			continue // Legacy single-session registration identifies no native process.
+		}
+		out = append(out, NativeProcess{PID: key.pid, Created: key.created})
+	}
+	return out
+}
+
 // connIdentity is what the OS says about one connection (#319 decision 18d).
 type connIdentity struct {
 	native processKey

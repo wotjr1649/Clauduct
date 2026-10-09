@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -57,6 +58,7 @@ func run() int {
 		}
 	}
 	hookcmd.Regenerable = app.RegenerableJob
+	hookcmd.Reconnect = app.ReconnectResident
 	if code, ok := hookcmd.Dispatch(os.Args); ok {
 		return code
 	}
@@ -267,10 +269,12 @@ func asked(args []string, option string) bool {
 func regenerate(link string) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RECORD_UNAVAILABLE")
 		return 1
 	}
 	record, err := app.LoadResident(home, link)
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RECORD_UNAVAILABLE")
 		return 1
 	}
 	env := platform.Environment(os.Environ())
@@ -290,8 +294,16 @@ func regenerate(link string) int {
 		SessionTimeout: sessionDuration,
 		Checkpoint:     app.WriteCheckpoint,
 		Regenerate:     &record,
+		Stderr:         io.Discard,
 	})
 	if err != nil || result.CleanupErr != nil {
+		category := "RESIDENT_START_FAILED"
+		if err != nil {
+			if known := hookcmd.DiagnosticCategory(err.Error()); known != "" {
+				category = known
+			}
+		}
+		fmt.Fprintln(os.Stderr, "CLAUDUCT_RESIDENT_RESTORE_FAILED: "+category)
 		return 1
 	}
 	return 0

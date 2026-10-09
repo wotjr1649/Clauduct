@@ -154,3 +154,19 @@ func RegenerableJob(link string) (string, bool) {
 	r, err := LoadResident(home, link)
 	return r.Job, err == nil
 }
+
+func (r ResidentRecord) ownsSession(config, session string) bool {
+	if !gateway.IsSessionUUID(session) {
+		return false
+	}
+	for _, job := range append([]string{r.Job}, r.Jobs...) {
+		raw, err := os.ReadFile(filepath.Join(config, "jobs", job, "state.json"))
+		var state struct {
+			Session string `json:"sessionId"`
+		}
+		if err == nil && json.Unmarshal(raw, &state) == nil && state.Session == session {
+			return true
+		}
+	}
+	return false
+}

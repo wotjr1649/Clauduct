@@ -83,9 +83,19 @@ func Dispatch(argv []string) (int, bool) {
 		// The session link, foreground or background: the connection never comes from the
 		// environment, so there is nothing to fall back to when the link is gone.
 		connection, err := sessionlink.Read(args[1])
+		in := io.Reader(os.Stdin)
+		if err != nil && args[0] == Arg {
+			raw, readErr := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+			if readErr != nil || len(raw) > maxEventBytes {
+				return 2, true
+			}
+			in = bytes.NewReader(raw)
+			reconnect(args[1], raw)
+			connection, err = sessionlink.Read(args[1])
+		}
 		if err != nil {
 			if args[0] == Arg {
-				return linkGone(args[1], os.Stdin, os.Stderr), true
+				return linkGone(args[1], in, os.Stderr), true
 			}
 			fmt.Fprintln(os.Stderr, "CLAUDUCT_CONNECTION_UNAVAILABLE: this session's Clauduct link is gone; restart the session with Clauduct")
 			return 2, true
@@ -101,7 +111,7 @@ func Dispatch(argv []string) (int, bool) {
 			}
 			return 0, true
 		}
-		return routed(connection, controlled, os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
+		return routed(connection, controlled, in, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
@@ -221,6 +231,23 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 // for under link, which native's key helper starts again on the job's next model request
 // (#319 decision 18c). Nil, or false, means the link is simply gone.
 var Regenerable func(link string) (job string, ok bool)
+
+// Reconnect restores a recorded background job before a startup hook needs its gateway.
+var Reconnect func(link, session string)
+
+func reconnect(link string, raw []byte) {
+	if Reconnect == nil || len(raw) > maxEventBytes {
+		return
+	}
+	var event struct {
+		Name    string `json:"hook_event_name"`
+		Session string `json:"session_id"`
+	}
+	if json.Unmarshal(raw, &event) == nil && identifier.MatchString(event.Session) &&
+		(event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
+		Reconnect(link, event.Session)
+	}
+}
 
 // linkGone answers a hook whose link is gone. For a link that will be regenerated, a
 // SessionStart (which cannot block, and runs in a respawned worker before its first model
@@ -447,7 +474,12 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 				return 2
 			}
 			if compact.Event == "UserPromptSubmit" {
-				fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_SESSION_UNVERIFIED: session registration failed; restore the Clauduct hook connection and submit the prompt again.")
+				var refusal *registrationFailure
+				cause := ""
+				if errors.As(err, &refusal) && refusal.category != "" {
+					cause = " (" + refusal.category + ")"
+				}
+				fmt.Fprintf(errOut, "CLAUDUCT_CONTEXT_SESSION_UNVERIFIED: session registration failed%s; restore the Clauduct hook connection and submit the prompt again.\n", cause)
 				return 2
 			}
 			fmt.Fprintln(errOut, "CLAUDUCT_CONTEXT_EVENT_FAILED")
@@ -632,16 +664,21 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 			continue
 		}
 		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
-			if path == "/clauduct/context" && response.StatusCode == http.StatusBadRequest {
+			if path == "/clauduct/context" {
 				var envelope struct {
 					Type  string `json:"type"`
 					Error struct {
 						Message string `json:"message"`
 					} `json:"error"`
 				}
-				if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" &&
-					(envelope.Error.Message == errSessionRestart.Error() || strings.HasPrefix(envelope.Error.Message, errSessionRestart.Error()+";")) {
-					return nil, errSessionRestart // Never print arbitrary gateway response text.
+				if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" {
+					if response.StatusCode == http.StatusBadRequest &&
+						(envelope.Error.Message == errSessionRestart.Error() || strings.HasPrefix(envelope.Error.Message, errSessionRestart.Error()+";")) {
+						return nil, errSessionRestart
+					}
+					if category := DiagnosticCategory(envelope.Error.Message); category != "" {
+						return nil, &registrationFailure{response.StatusCode, category}
+					}
 				}
 			}
 			return nil, fmt.Errorf("REGISTRATION_FAILED %d", response.StatusCode)
@@ -653,3 +690,23 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")
 var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
+
+type registrationFailure struct {
+	status   int
+	category string
+}
+
+func (e *registrationFailure) Error() string {
+	return fmt.Sprintf("REGISTRATION_FAILED %d %s", e.status, e.category)
+}
+
+// DiagnosticCategory admits only fixed failure names, never gateway or OS error text.
+func DiagnosticCategory(value string) string {
+	switch value {
+	case "MEMORY_ADMISSION_TIMEOUT", "MEMORY_BUDGET_EXCEEDED", "MEMORY_QUEUE_FULL", "MEMORY_STATUS_UNAVAILABLE",
+		"SESSION_SELECTION_UNVERIFIED", "SESSION_PROFILE_UNVERIFIED", "SESSION_ALREADY_IN_USE", "CONTEXT_JOURNAL_UNVERIFIED",
+		"RESIDENT_RECORD_INVALID", "RESIDENT_PORT_MISMATCH":
+		return value
+	}
+	return ""
+}

@@ -168,21 +168,46 @@ func CommandWord(pid uint32) string {
 	return word
 }
 
-// Running reports whether pid is still the process created at created (UnixNano, as
-// NativeOwner reports it) and has not exited. A reused pid has another creation time.
-func Running(pid uint32, created int64) bool {
-	h, err := syscall.OpenProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
+// ProcessState keeps an unverified process separate from one known to have exited.
+type ProcessState uint8
+
+const (
+	ProcessUnknown ProcessState = iota
+	ProcessAlive
+	ProcessExited
+)
+
+// ProcessStatus checks pid and its creation time (UnixNano, as NativeOwner reports it).
+func ProcessStatus(pid uint32, created int64) ProcessState {
+	h, err := syscall.OpenProcess(0x1000|syscall.SYNCHRONIZE, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE
+	return processStatus(h, err, created)
+}
+
+func processStatus(h syscall.Handle, err error, created int64) ProcessState {
 	if err != nil {
-		return false
+		if err == syscall.Errno(87) { // ERROR_INVALID_PARAMETER: no such PID
+			return ProcessExited
+		}
+		return ProcessUnknown
 	}
 	defer syscall.CloseHandle(h)
-	var code uint32
-	if syscall.GetExitCodeProcess(h, &code) != nil || code != 259 { // STILL_ACTIVE
-		return false
+	wait, err := syscall.WaitForSingleObject(h, 0)
+	if err != nil {
+		return ProcessUnknown
+	}
+	switch wait {
+	case syscall.WAIT_OBJECT_0:
+		return ProcessExited
+	case syscall.WAIT_TIMEOUT:
+	default:
+		return ProcessUnknown
 	}
 	var c, e, k, u syscall.Filetime
 	if r, _, _ := getProcessTimesOwn.Call(uintptr(h), uintptr(unsafe.Pointer(&c)), uintptr(unsafe.Pointer(&e)), uintptr(unsafe.Pointer(&k)), uintptr(unsafe.Pointer(&u))); r == 0 {
-		return false
+		return ProcessUnknown
 	}
-	return c.Nanoseconds() == created
+	if c.Nanoseconds() != created {
+		return ProcessExited
+	}
+	return ProcessAlive
 }

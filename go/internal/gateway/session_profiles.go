@@ -247,14 +247,8 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 		afterProfileStat(file)
 	}
 	pair, offset, _, err := readSessionChoice(file, profile.ID, profile.Offset, profile.Last, selection)
-	if err != nil {
+	if err != nil || final && offset < info.Size() {
 		return errSessionSelection
-	}
-	if final {
-		end, err := file.Seek(0, io.SeekCurrent)
-		if err != nil || offset != end || end < info.Size() {
-			return errSessionSelection
-		}
 	}
 	if pair == profile.Last && offset == profile.Offset {
 		return nil

@@ -58,16 +58,20 @@ const ProviderControlledArg = "--clauduct-provider-controlled"
 // it did. It has to come before anything else the launcher does: the renderer runs with an
 // empty environment and the hook inside the client's timeout, and neither is a launch.
 func Dispatch(argv []string) (int, bool) {
+	return dispatch(argv, os.Stdin, os.Stdout, os.Stderr)
+}
+
+func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 	if len(argv) == 0 {
 		return 0, false
 	}
 	args := argv[1:]
 	alone := func(arg string) bool { return len(args) == 1 && args[0] == arg }
 	if alone(ConfirmationArg) {
-		return confirmation(os.Stdin, os.Stdout, platform.Environment(os.Environ())), true
+		return confirmation(in, out, platform.Environment(os.Environ())), true
 	}
 	if len(args) == 2 && args[0] == ConfirmationArg {
-		return linkedConfirmation(args[1], os.Stdin, os.Stdout, platform.Environment(os.Environ())), true
+		return linkedConfirmation(args[1], in, out, platform.Environment(os.Environ())), true
 	}
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
@@ -77,17 +81,16 @@ func Dispatch(argv []string) (int, bool) {
 		// A session started before the session link: the gateway is on the command line and
 		// the token in the environment.
 		env := platform.Environment(os.Environ())
-		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, false, os.Stdin, os.Stdout, os.Stderr, env), true
+		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, false, in, out, errOut, env), true
 	}
 	if (len(args) == 2 || controlled) && (args[0] == Arg || args[0] == "--clauduct-background-key") {
 		// The session link, foreground or background: the connection never comes from the
 		// environment, so there is nothing to fall back to when the link is gone.
 		connection, err := sessionlink.Read(args[1])
-		in := io.Reader(os.Stdin)
 		if err != nil && args[0] == Arg {
 			raw, readErr := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
 			if readErr != nil || len(raw) > maxEventBytes {
-				return 2, true
+				return linkGone(args[1], bytes.NewReader(raw), errOut), true
 			}
 			in = bytes.NewReader(raw)
 			reconnect(args[1], raw)
@@ -95,9 +98,9 @@ func Dispatch(argv []string) (int, bool) {
 		}
 		if err != nil {
 			if args[0] == Arg {
-				return linkGone(args[1], in, os.Stderr), true
+				return linkGone(args[1], in, errOut), true
 			}
-			fmt.Fprintln(os.Stderr, "CLAUDUCT_CONNECTION_UNAVAILABLE: this session's Clauduct link is gone; restart the session with Clauduct")
+			fmt.Fprintln(errOut, "CLAUDUCT_CONNECTION_UNAVAILABLE: this session's Clauduct link is gone; restart the session with Clauduct")
 			return 2, true
 		}
 		if args[0] == "--clauduct-background-key" {
@@ -106,27 +109,27 @@ func Dispatch(argv []string) (int, bool) {
 			if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
 				return 2, true
 			}
-			if _, err = fmt.Fprintln(os.Stdout, connection.Token); err != nil {
+			if _, err = fmt.Fprintln(out, connection.Token); err != nil {
 				return 2, true
 			}
 			return 0, true
 		}
-		return routed(connection, controlled, in, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
+		return routed(connection, controlled, in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
-		return nativePDF(args, os.Stdin, os.Stdout, os.Stderr), true
+		return nativePDF(args, in, out, errOut), true
 	case Named(argv[0], "clauduct-hook"):
 		// The copy a 0.3.x updater installs, which a session started before the update still
 		// names, with that version's renderer argument.
 		if alone("--render-pdf") {
 			return renderPDF(), true
 		}
-		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
+		return runWithOutput(in, out, errOut, platform.Environment(os.Environ())), true
 	case alone(pdf.RenderArg):
 		return renderPDF(), true
 	case alone(Arg):
-		return runWithOutput(os.Stdin, os.Stdout, os.Stderr, platform.Environment(os.Environ())), true
+		return runWithOutput(in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	return 0, false
 }

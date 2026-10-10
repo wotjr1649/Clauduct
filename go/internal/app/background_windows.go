@@ -138,15 +138,28 @@ func RegenerateResident(link string, wait time.Duration) {
 // Relay diagnostics so the resident cannot keep native's key-helper pipe open.
 func residentDiagnostics() io.Writer { return io.MultiWriter(os.Stderr) }
 
-// ReconnectResident fits the startup hook's five-second deadline and checks native's job identity.
+var reconnectRegenerateResident = RegenerateResident
+
+// ReconnectResident waits at most two seconds and checks native's job identity.
 func ReconnectResident(link, session string) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		record, err := LoadResident(home, link)
+		if err != nil || !record.ownsSession(nativeConfigDirectory(platform.Environment(os.Environ()), record.Cwd), session) {
+			return
+		}
+		reconnectRegenerateResident(link, 2*time.Second)
+	}()
+	// The caller's deadline does not cancel the resident or its restoration.
+	select {
+	case <-done:
+	case <-deadline.C:
 	}
-	record, err := LoadResident(home, link)
-	if err != nil || !record.ownsSession(nativeConfigDirectory(platform.Environment(os.Environ()), record.Cwd), session) {
-		return
-	}
-	RegenerateResident(link, 2*time.Second)
 }

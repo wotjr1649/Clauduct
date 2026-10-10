@@ -320,17 +320,19 @@ func (r *staleRun) confirmationPhase(g *p3StaleGateway, sentinel *p3StaleSentine
 	}
 	kept := g.Snapshot(session)
 
-	// publish is what native's plugin writes before a model request: the turn's receipt and step.
+	// publish is what native's plugin writes before a model request: the turn's receipt and step,
+	// under the root scope's per-session name (native-events.mjs, #319 decision 18f).
 	publish := func(sequence int, turn string) {
-		active := filepath.Join(g.Events, "active", "root")
+		scope := "root-" + session
+		active := filepath.Join(g.Events, "active", scope)
 		os.MkdirAll(active, 0o700)
 		receipt, _ := json.Marshal(map[string]any{"session": session, "agent": "", "turn": turn})
 		stem := fmt.Sprintf("%d-%s", sequence, turn)
 		os.WriteFile(filepath.Join(active, stem+".json"), receipt, 0o600)
 		os.WriteFile(filepath.Join(active, stem+".ready"), nil, 0o600)
 		step, _ := json.Marshal(map[string]any{"session": session, "agent": "", "turn": turn, "index": 0, "eligible": false, "mode": "native_tui"})
-		os.WriteFile(filepath.Join(g.Events, "step-root.json.tmp"), step, 0o600)
-		os.Rename(filepath.Join(g.Events, "step-root.json.tmp"), filepath.Join(g.Events, "step-root.json"))
+		os.WriteFile(filepath.Join(g.Events, "step-"+scope+".json.tmp"), step, 0o600)
+		os.Rename(filepath.Join(g.Events, "step-"+scope+".json.tmp"), filepath.Join(g.Events, "step-"+scope+".json"))
 	}
 	type answer struct {
 		status int
@@ -364,7 +366,17 @@ func (r *staleRun) confirmationPhase(g *p3StaleGateway, sentinel *p3StaleSentine
 	waitingA, cancelA := askAsync()
 	defer cancelA()
 	first, ok := challengeAfter("")
-	if !r.check("control", "a model request publishes a confirmation challenge", ok, "") {
+	// Without a challenge, name where the request stopped: its answer, or that it still waits.
+	stopped := ""
+	if !ok {
+		select {
+		case a := <-waitingA:
+			stopped = fmt.Sprintf("request status=%d %.120s", a.status, a.text)
+		case <-time.After(time.Second):
+			stopped = "request still waiting"
+		}
+	}
+	if !r.check("control", "a model request publishes a confirmation challenge", ok, "%s", stopped) {
 		return
 	}
 	connected := make(chan string, 1)

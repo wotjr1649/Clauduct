@@ -209,6 +209,8 @@ func (s *SessionProfiles) Save(profile SessionProfile) error {
 	return nil
 }
 
+var afterProfileStat func(*os.File) // Test barrier; nil in the product.
+
 // Refresh reads only the recorded native path below its projects root. A partial
 // append is retryable while native runs; a final/resume read must reach EOF.
 func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, final bool, selection bridge.Selection) error {
@@ -241,9 +243,18 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 			return ErrSessionProfile
 		}
 	}
+	if afterProfileStat != nil {
+		afterProfileStat(file)
+	}
 	pair, offset, _, err := readSessionChoice(file, profile.ID, profile.Offset, profile.Last, selection)
-	if err != nil || final && offset != info.Size() {
+	if err != nil {
 		return errSessionSelection
+	}
+	if final {
+		end, err := file.Seek(0, io.SeekCurrent)
+		if err != nil || offset != end || end < info.Size() {
+			return errSessionSelection
+		}
 	}
 	if pair == profile.Last && offset == profile.Offset {
 		return nil

@@ -296,6 +296,17 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 // The uninstall path names this location without owning it.
 func StatusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
 
+// WriteFinal writes the final account as Report does, without the line: for a process whose
+// stderr is not a terminal of its own (a regenerated resident's reaches native's key helper).
+func WriteFinal(result Result) error {
+	encoded, err := json.Marshal(Account(result))
+	if err != nil {
+		return err
+	}
+	_, err = writeStatus(encoded, 40)
+	return err
+}
+
 // WriteCheckpoint uses the same bounded metadata schema and atomic file as the
 // final report. It never writes to the terminal while native owns the TUI.
 func WriteCheckpoint(account Status) error {

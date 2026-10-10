@@ -296,6 +296,11 @@ func regenerate(link string) int {
 		Regenerate:     &record,
 		Stderr:         io.Discard,
 	})
+	// The status file says how this resident ended, as run() writes it; without this the last
+	// checkpoint (RUNNING) stayed. The summary line is dropped: this stderr reaches native's key helper.
+	if result.NativeStarted || result.Category != "" {
+		app.Report(result, io.Discard, env)
+	}
 	if err != nil || result.CleanupErr != nil {
 		category := "RESIDENT_START_FAILED"
 		if err != nil {

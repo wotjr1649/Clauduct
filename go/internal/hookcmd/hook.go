@@ -238,11 +238,13 @@ func routedContext(ctx context.Context, connection sessionlink.Connection, contr
 		Name string `json:"hook_event_name"`
 	}
 	if json.Unmarshal(raw, &event) == nil && (event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
-		if _, err := postReply(ctx, []byte("{}"), env, RoutingProofPath, false); err != nil {
+		providerControlled := controlled && (hostManaged(env) || strategyFlagOn(env, gatewayCompatFlag))
+		proof := []byte(fmt.Sprintf(`{"controlled":%t}`, providerControlled))
+		if _, err := postReply(ctx, proof, env, RoutingProofPath, false); err != nil {
 			if errors.Is(err, errHookDeadline) {
 				return hookDeadline(errOut)
 			}
-			if controlled && (hostManaged(env) || strategyFlagOn(env, gatewayCompatFlag)) {
+			if providerControlled {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_PROOF_MISSING: native did not ask this session's Clauduct gateway for its model list; recorded as a diagnostic, since provider control routes this session.")
 			} else {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. End Clauduct, then sign out of that gateway in standalone Claude Code, or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
@@ -525,7 +527,7 @@ func runWithOutputContext(ctx context.Context, in io.Reader, out, errOut io.Writ
 				cause := ""
 				if errors.As(err, &refusal) && refusal.category != "" {
 					if refusal.category == "SESSION_START_UNREGISTERED" {
-						fmt.Fprintf(errOut, "SESSION_START_UNREGISTERED: Clauduct has no start registration it can use for this session, so a prompt cannot register it; save any draft, finish native, then run clauduct --resume %s with any native options you need. Model and effort will use that launch's starting selection.\n", compact.Session)
+						fmt.Fprintf(errOut, "SESSION_START_UNREGISTERED: Clauduct has no start registration it can use for this session, so a prompt cannot register it; save any draft, finish native, then run clauduct --resume %s to continue in the foreground, or clauduct --resume %s --fork-session --bg to start a background copy, leaving the original unchanged. Model and effort will use that launch's starting selection.\n", compact.Session, compact.Session)
 						return 2
 					}
 					cause = " (" + refusal.category + ")"
@@ -709,7 +711,7 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 		reply, err := io.ReadAll(io.LimitReader(response.Body, 4097))
 		response.Body.Close()
 		if err != nil || len(reply) > 4096 {
-			if err != nil && errors.Is(parent.Err(), context.DeadlineExceeded) {
+			if err != nil && (response.StatusCode == http.StatusOK || response.StatusCode == http.StatusNoContent) && errors.Is(parent.Err(), context.DeadlineExceeded) {
 				return nil, errHookDeadline
 			}
 			return nil, errInvalidGateway

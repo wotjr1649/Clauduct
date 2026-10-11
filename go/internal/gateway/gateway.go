@@ -121,7 +121,7 @@ type Gateway struct {
 	identify    identifyFunc // nil is the OS lookup; tests replace it
 	// discovered holds each native process that asked this gateway for its model list.
 	discovered sync.Map // processKey -> struct{}
-	// routingMismatch is set when this session's own hook saw native use another endpoint (#295).
+	// routingMismatch is set by this session's hook or its failed uncontrolled proof.
 	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
 	// role has no route, runs on what the client asked for -- and these are how often that
@@ -385,7 +385,7 @@ func (g *Gateway) observeIngressEarly(w http.ResponseWriter, r *http.Request) *h
 	return r
 }
 
-// RoutingMismatch reports whether a hook of this session found native configured for an
+// RoutingMismatch reports whether this session's hook or routing proof found native configured for an
 // endpoint other than this gateway. The launcher ends the session on it (#295).
 func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 
@@ -699,6 +699,14 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 			time.Sleep(20 * time.Millisecond)
 		}
 		if !proved() {
+			// Decide here even if the hook has already exhausted its deadline.
+			// A saturated read cannot prove EOF, so it fails closed without reading further.
+			raw, readErr := io.ReadAll(io.LimitReader(r.Body, 256))
+			fields, parseErr := wire.Fields(raw, []string{"controlled"})
+			controlled := readErr == nil && len(raw) < 256 && parseErr == nil && bytes.Equal(fields["controlled"], []byte("true"))
+			if !controlled {
+				g.routingMismatch.Store(true)
+			}
 			g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
 			return
 		}

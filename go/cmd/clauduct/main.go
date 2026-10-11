@@ -299,7 +299,9 @@ func regenerate(link string) int {
 	// The status file says how this resident ended, as run() writes it; without this the last
 	// checkpoint (RUNNING) stayed. No summary line: this stderr reaches native's key helper.
 	if result.NativeStarted || result.Category != "" {
-		app.WriteFinal(result)
+		if err := app.WriteFinal(result); err != nil {
+			fmt.Fprintln(os.Stderr, "clauduct: CLAUDUCT_REQUEST_STATUS_UNAVAILABLE")
+		}
 	}
 	if err != nil || result.CleanupErr != nil {
 		category := "RESIDENT_START_FAILED"

@@ -341,8 +341,10 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		source = failed.source
 	}
 	defer func() {
-		if source != "" && err != nil && !errors.Is(err, errSessionRestart) {
-			p.failedStart[process] = struct{ session, source string }{session, source}
+		if source != "" && err != nil && !errors.Is(err, errSessionRestart) && p.profiles[session] == nil {
+			if _, exists := p.failedStart[process]; exists || len(p.failedStart) < maxAgents {
+				p.failedStart[process] = struct{ session, source string }{session, source}
+			}
 		}
 	}()
 	// The session this native process is on now, "" before its first registration.

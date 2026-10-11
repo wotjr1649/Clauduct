@@ -216,15 +216,18 @@ func operation(ctx context.Context, h syscall.Handle, buf []byte, kind byte) (ui
 	return n, nil
 }
 
-func request(id string, command byte, wait bool) (Connection, error) {
+func request(parent context.Context, id string, command byte, wait bool) (Connection, error) {
 	name, err := pipeName(id)
 	if err != nil {
 		return Connection{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
 	defer cancel()
 	var h syscall.Handle
 	for {
+		if ctx.Err() != nil {
+			return Connection{}, ErrUnavailable
+		}
 		// Identification only: a hostile server cannot impersonate this client.
 		h, err = syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0x40000000|0x100000|0x10000, 0)
 		if err != syscall.Errno(231) {
@@ -286,6 +289,15 @@ func request(id string, command byte, wait bool) (Connection, error) {
 	return reply, nil
 }
 
-func Read(id string) (Connection, error) { return request(id, 'k', false) }
-func Stop(id string) error               { _, err := request(id, 's', false); return err }
-func StopAndWait(id string) error        { _, err := request(id, 's', true); return err }
+func Read(id string) (Connection, error) { return ReadContext(context.Background(), id) }
+
+// ReadContext keeps the three-second bound, shortened by the caller's deadline.
+func ReadContext(ctx context.Context, id string) (Connection, error) {
+	return request(ctx, id, 'k', false)
+}
+
+func Stop(id string) error { _, err := request(context.Background(), id, 's', false); return err }
+func StopAndWait(id string) error {
+	_, err := request(context.Background(), id, 's', true)
+	return err
+}

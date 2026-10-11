@@ -142,8 +142,16 @@ var reconnectRegenerateResident = RegenerateResident
 
 // ReconnectResident waits at most two seconds and checks native's job identity.
 func ReconnectResident(link, session string) {
-	deadline := time.NewTimer(2 * time.Second)
-	defer deadline.Stop()
+	ReconnectResidentContext(context.Background(), link, session)
+}
+
+// ReconnectResidentContext shortens the wait without canceling restoration.
+func ReconnectResidentContext(parent context.Context, link, session string) {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+	if ctx.Err() != nil {
+		return
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -160,6 +168,6 @@ func ReconnectResident(link, session string) {
 	// The caller's deadline does not cancel the resident or its restoration.
 	select {
 	case <-done:
-	case <-deadline.C:
+	case <-ctx.Done():
 	}
 }

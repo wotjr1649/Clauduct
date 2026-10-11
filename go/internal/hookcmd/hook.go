@@ -76,25 +76,37 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
+	defer cancel()
 	controlled := len(args) == 3 && args[0] == Arg && args[2] == ProviderControlledArg
 	if len(args) == 2 && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
 		// A session started before the session link: the gateway is on the command line and
 		// the token in the environment.
 		env := platform.Environment(os.Environ())
-		return routed(sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, false, in, out, errOut, env), true
+		return routedContext(ctx, sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, false, in, out, errOut, env), true
 	}
 	if (len(args) == 2 || controlled) && (args[0] == Arg || args[0] == "--clauduct-background-key") {
 		// The session link, foreground or background: the connection never comes from the
 		// environment, so there is nothing to fall back to when the link is gone.
-		connection, err := sessionlink.Read(args[1])
+		read := sessionlink.Read
+		if args[0] == Arg {
+			read = func(link string) (sessionlink.Connection, error) { return sessionlink.ReadContext(ctx, link) }
+		}
+		connection, err := read(args[1])
+		if err != nil && ctx.Err() != nil && args[0] == Arg {
+			return hookDeadline(errOut), true
+		}
 		if err != nil && args[0] == Arg {
 			raw, readErr := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
 			if readErr != nil || len(raw) > maxEventBytes {
 				return linkGone(args[1], bytes.NewReader(raw), errOut), true
 			}
 			in = bytes.NewReader(raw)
-			reconnect(args[1], raw)
-			connection, err = sessionlink.Read(args[1])
+			reconnectContext(ctx, args[1], raw)
+			connection, err = read(args[1])
+			if err != nil && ctx.Err() != nil {
+				return hookDeadline(errOut), true
+			}
 		}
 		if err != nil {
 			if args[0] == Arg {
@@ -114,7 +126,7 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 			}
 			return 0, true
 		}
-		return routed(connection, controlled, in, out, errOut, platform.Environment(os.Environ())), true
+		return routedContext(ctx, connection, controlled, in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	switch {
 	case Named(argv[0], "pdftoppm"):
@@ -125,11 +137,11 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 		if alone("--render-pdf") {
 			return renderPDF(), true
 		}
-		return runWithOutput(in, out, errOut, platform.Environment(os.Environ())), true
+		return runWithOutputContext(ctx, in, out, errOut, platform.Environment(os.Environ())), true
 	case alone(pdf.RenderArg):
 		return renderPDF(), true
 	case alone(Arg):
-		return runWithOutput(in, out, errOut, platform.Environment(os.Environ())), true
+		return runWithOutputContext(ctx, in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	return 0, false
 }
@@ -157,6 +169,9 @@ func renderPDF() int {
 
 // The bounds. A hook event is a small object; anything past these is not one.
 const (
+	NativeHookTimeout = 5 * time.Second
+	// Leave one second for process startup, diagnostic output and native handling.
+	hookTimeout     = NativeHookTimeout - time.Second
 	maxEventBytes   = (256<<10)*6 + 16384
 	maxBindingBytes = (256<<10)*6 + 8192
 	requestTimeout  = 3 * time.Second
@@ -183,6 +198,12 @@ const RoutingMismatchPath = "/clauduct/routing-mismatch"
 // which blocks a prompt. Nothing is posted to the other destination and its value is not
 // printed.
 func routed(connection sessionlink.Connection, controlled bool, in io.Reader, out, errOut io.Writer, env map[string]string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
+	defer cancel()
+	return routedContext(ctx, connection, controlled, in, out, errOut, env)
+}
+
+func routedContext(ctx context.Context, connection sessionlink.Connection, controlled bool, in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	if routedElsewhere(env, connection.BaseURL, controlled) {
 		// A foreground link answers for the Clauduct process this hook runs under. One that does
 		// not is another session's link; ending that session would be wrong, so this hook only
@@ -192,7 +213,7 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 			return 2
 		}
 		fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native is not sending model requests to this session's Clauduct gateway; the session is being ended.")
-		postReply([]byte("{}"), map[string]string{"ANTHROPIC_BASE_URL": connection.BaseURL, "ANTHROPIC_AUTH_TOKEN": connection.Token}, RoutingMismatchPath, false)
+		postReply(ctx, []byte("{}"), map[string]string{"ANTHROPIC_BASE_URL": connection.BaseURL, "ANTHROPIC_AUTH_TOKEN": connection.Token}, RoutingMismatchPath, false)
 		return 2
 	}
 	env["ANTHROPIC_AUTH_TOKEN"] = connection.Token
@@ -217,17 +238,20 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 		Name string `json:"hook_event_name"`
 	}
 	if json.Unmarshal(raw, &event) == nil && (event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
-		if _, err := postReply([]byte("{}"), env, RoutingProofPath, false); err != nil {
+		if _, err := postReply(ctx, []byte("{}"), env, RoutingProofPath, false); err != nil {
+			if errors.Is(err, errHookDeadline) {
+				return hookDeadline(errOut)
+			}
 			if controlled && (hostManaged(env) || strategyFlagOn(env, gatewayCompatFlag)) {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_PROOF_MISSING: native did not ask this session's Clauduct gateway for its model list; recorded as a diagnostic, since provider control routes this session.")
 			} else {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_MISMATCH: native did not ask this session's Clauduct gateway for its model list at start, so its requests go elsewhere -- most likely a stored Claude apps gateway login. End Clauduct, then sign out of that gateway in standalone Claude Code, or start Clauduct with its own CLAUDE_CONFIG_DIR. The session is being ended.")
-				postReply([]byte("{}"), env, RoutingMismatchPath, false)
+				postReply(ctx, []byte("{}"), env, RoutingMismatchPath, false)
 				return 2
 			}
 		}
 	}
-	return runWithOutput(bytes.NewReader(raw), out, errOut, env)
+	return runWithOutputContext(ctx, bytes.NewReader(raw), out, errOut, env)
 }
 
 // Regenerable, set by the launcher, names the job a dead background resident left a record
@@ -238,8 +262,15 @@ var Regenerable func(link string) (job string, ok bool)
 // Reconnect restores a recorded background job before a startup hook needs its gateway.
 var Reconnect func(link, session string)
 
+// ReconnectContext bounds only the caller's wait, never the resident restoration.
+var ReconnectContext func(context.Context, string, string)
+
 func reconnect(link string, raw []byte) {
-	if Reconnect == nil || len(raw) > maxEventBytes {
+	reconnectContext(context.Background(), link, raw)
+}
+
+func reconnectContext(ctx context.Context, link string, raw []byte) {
+	if Reconnect == nil && ReconnectContext == nil || len(raw) > maxEventBytes || ctx.Err() != nil {
 		return
 	}
 	var event struct {
@@ -248,7 +279,11 @@ func reconnect(link string, raw []byte) {
 	}
 	if json.Unmarshal(raw, &event) == nil && identifier.MatchString(event.Session) &&
 		(event.Name == "SessionStart" || event.Name == "UserPromptSubmit") {
-		Reconnect(link, event.Session)
+		if ReconnectContext != nil {
+			ReconnectContext(ctx, link, event.Session)
+		} else {
+			Reconnect(link, event.Session)
+		}
 	}
 }
 
@@ -359,6 +394,12 @@ func routedElsewhere(env map[string]string, gateway string, controlled bool) boo
 }
 
 func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) int {
+	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
+	defer cancel()
+	return runWithOutputContext(ctx, in, out, errOut, env)
+}
+
+func runWithOutputContext(ctx context.Context, in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
 	if err != nil || len(raw) > maxEventBytes {
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
@@ -400,7 +441,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			tool = "MCP"
 		}
 		body, _ := json.Marshal(map[string]any{"session": failure.Session, "agent": failure.Agent, "call": failure.Call, "tool": tool, "interrupted": failure.Interrupted})
-		if _, err := postReply(body, env, "/clauduct/tool-failures", false); err != nil {
+		if _, err := postReply(ctx, body, env, "/clauduct/tool-failures", false); err != nil {
 			fmt.Fprintln(errOut, "CLAUDUCT_TOOL_EVENT_FAILED")
 			return 1
 		}
@@ -421,7 +462,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			return 1
 		}
 		body, _ := json.Marshal(map[string]string{"sessionId": workflow.Session, "parent": workflow.Parent, "toolUseId": workflow.Call, "transcriptPath": workflow.Transcript, "runId": workflow.Result.RunID, "workflowName": workflow.Result.WorkflowName, "transcriptDir": workflow.Result.TranscriptDir, "scriptPath": workflow.Result.ScriptPath})
-		if _, err := postReply(body, env, "/clauduct/workflows", false); err != nil {
+		if _, err := postReply(ctx, body, env, "/clauduct/workflows", false); err != nil {
 			fmt.Fprintln(errOut, "CLAUDUCT_WORKFLOW_UNVERIFIED")
 			return 1
 		}
@@ -470,8 +511,11 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 			fields["transcriptPath"] = compact.Transcript
 		}
 		body, _ := json.Marshal(fields)
-		reply, err := postReply(body, env, "/clauduct/context", compact.Event == "SessionStart")
+		reply, err := postReply(ctx, body, env, "/clauduct/context", compact.Event == "SessionStart")
 		if err != nil {
+			if errors.Is(err, errHookDeadline) {
+				return hookDeadline(errOut)
+			}
 			if errors.Is(err, errSessionRestart) {
 				fmt.Fprintf(errOut, "SESSION_RESTART_REQUIRED: save any draft, finish native, then run clauduct --resume %s with any native options you need.\n", compact.Session)
 				return 2
@@ -480,6 +524,10 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 				var refusal *registrationFailure
 				cause := ""
 				if errors.As(err, &refusal) && refusal.category != "" {
+					if refusal.category == "SESSION_START_UNREGISTERED" {
+						fmt.Fprintf(errOut, "SESSION_START_UNREGISTERED: Clauduct has no start registration it can use for this session, so a prompt cannot register it; save any draft, finish native, then run clauduct --resume %s with any native options you need. Model and effort will use that launch's starting selection.\n", compact.Session)
+						return 2
+					}
 					cause = " (" + refusal.category + ")"
 				}
 				fmt.Fprintf(errOut, "CLAUDUCT_CONTEXT_SESSION_UNVERIFIED: session registration failed%s; restore the Clauduct hook connection and submit the prompt again.\n", cause)
@@ -513,7 +561,7 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
 		return 1
 	}
-	if err := post(body, env); err != nil {
+	if err := post(ctx, body, env); err != nil {
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED", err)
 		return 1
 	}
@@ -598,12 +646,12 @@ func positiveInt(value string) (int64, bool) {
 }
 
 // post sends the binding to this session's gateway and nowhere else.
-func post(body []byte, env map[string]string) error {
-	_, err := postReply(body, env, "/clauduct/agents", false)
+func post(ctx context.Context, body []byte, env map[string]string) error {
+	_, err := postReply(ctx, body, env, "/clauduct/agents", false)
 	return err
 }
 
-func postReply(body []byte, env map[string]string, path string, retryRegistration bool) ([]byte, error) {
+func postReply(parent context.Context, body []byte, env map[string]string, path string, retryRegistration bool) ([]byte, error) {
 	base := env["ANTHROPIC_BASE_URL"]
 	token := env["ANTHROPIC_AUTH_TOKEN"]
 	if !loopback.MatchString(base) || token == "" {
@@ -618,7 +666,7 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 		return nil, errInvalidGateway
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(parent, requestTimeout)
 	defer cancel()
 	var dialed atomic.Bool
 	client := &http.Client{
@@ -653,11 +701,17 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 		request.Header.Set("Content-Length", strconv.Itoa(len(body)))
 		response, err := client.Do(request)
 		if err != nil {
+			if errors.Is(parent.Err(), context.DeadlineExceeded) {
+				return nil, errHookDeadline
+			}
 			return nil, err
 		}
 		reply, err := io.ReadAll(io.LimitReader(response.Body, 4097))
 		response.Body.Close()
 		if err != nil || len(reply) > 4096 {
+			if err != nil && errors.Is(parent.Err(), context.DeadlineExceeded) {
+				return nil, errHookDeadline
+			}
 			return nil, errInvalidGateway
 		}
 		// Only the original SessionStart can carry the first profile's source.
@@ -693,6 +747,12 @@ func postReply(body []byte, env map[string]string, path string, retryRegistratio
 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")
 var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
+var errHookDeadline = errors.New("CLAUDUCT_HOOK_DEADLINE")
+
+func hookDeadline(errOut io.Writer) int {
+	fmt.Fprintln(errOut, "CLAUDUCT_HOOK_DEADLINE: the Clauduct hook did not finish before its deadline; restore the Clauduct hook connection and submit the prompt again.")
+	return 2
+}
 
 type registrationFailure struct {
 	status   int
@@ -707,7 +767,7 @@ func (e *registrationFailure) Error() string {
 func DiagnosticCategory(value string) string {
 	switch value {
 	case "MEMORY_ADMISSION_TIMEOUT", "MEMORY_BUDGET_EXCEEDED", "MEMORY_QUEUE_FULL", "MEMORY_STATUS_UNAVAILABLE",
-		"SESSION_SELECTION_UNVERIFIED", "SESSION_PROFILE_UNVERIFIED", "SESSION_ALREADY_IN_USE", "CONTEXT_JOURNAL_UNVERIFIED",
+		"SESSION_SELECTION_UNVERIFIED", "SESSION_PROFILE_UNVERIFIED", "SESSION_START_UNREGISTERED", "SESSION_ALREADY_IN_USE", "CONTEXT_JOURNAL_UNVERIFIED",
 		"RESIDENT_RECORD_INVALID", "RESIDENT_PORT_MISMATCH":
 		return value
 	}

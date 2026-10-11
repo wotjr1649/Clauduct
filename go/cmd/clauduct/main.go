@@ -58,7 +58,7 @@ func run() int {
 		}
 	}
 	hookcmd.Regenerable = app.RegenerableJob
-	hookcmd.Reconnect = app.ReconnectResident
+	hookcmd.ReconnectContext = app.ReconnectResidentContext
 	if code, ok := hookcmd.Dispatch(os.Args); ok {
 		return code
 	}

@@ -16,6 +16,7 @@ import (
 )
 
 var ErrSessionProfile = errors.New("SESSION_PROFILE_UNVERIFIED")
+var errSessionStartUnregistered = errors.New("SESSION_START_UNREGISTERED")
 var ErrSessionInUse = errors.New("SESSION_ALREADY_IN_USE")
 var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
 var sessionUUID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
@@ -406,6 +407,9 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		return errSessionRestart
 	}
 	if source != "startup" && source != "clear" && source != "fork" && source != "resume" {
+		if source == "" {
+			return errSessionStartUnregistered
+		}
 		return ErrSessionProfile
 	}
 	// The launch was for the expected session: a different one cannot be its first. A later
@@ -556,6 +560,8 @@ func (g *Gateway) refuseSessionProfile(w http.ResponseWriter, session string, er
 		}
 	} else if errors.Is(err, ErrSessionInUse) {
 		category = ErrSessionInUse.Error()
+	} else if errors.Is(err, errSessionStartUnregistered) {
+		category = errSessionStartUnregistered.Error()
 	}
 	g.refuseDetail(w, refusal{category: category, status: http.StatusBadRequest}, detail)
 }

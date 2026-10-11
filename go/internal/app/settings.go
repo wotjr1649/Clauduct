@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 )
@@ -20,9 +21,8 @@ import (
 // replace it and the hooks would never install. user_settings.go now combines user
 // settings with these required bindings at each actual settings option's position.
 
-// hookTimeout is how long the client waits for it. The baseline's five seconds; the hook
-// itself gives up on the gateway after three.
-const hookTimeout = 5
+// hookTimeout and the shorter command deadline are owned by hookcmd.
+const hookTimeout = int(hookcmd.NativeHookTimeout / time.Second)
 
 type childSettings struct {
 	Hooks        map[string][]hookMatcher `json:"hooks,omitempty"`

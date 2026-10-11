@@ -280,6 +280,9 @@ type profileState struct {
 	ready       map[string]bool       // session -> its last registration succeeded
 	last        string                // the most recent registration
 	forkHistory *SessionProfile
+	// failedStart is the last start registration a native process failed. The hook repeats it
+	// without its source before each prompt; that repeat retries it as the original event.
+	failedStart map[processKey]struct{ session, source string }
 }
 
 // serving reports whether session is the current session of its native process and ready.
@@ -307,7 +310,8 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 		return
 	}
 	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile),
-		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool)}
+		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool),
+		failedStart: make(map[processKey]struct{ session, source string })}
 	if resumed != nil && fork {
 		copy := *resumed
 		copy.Calls = cloneToolIssuances(resumed.Calls)
@@ -333,6 +337,14 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if failed := p.failedStart[process]; source == "" && p.profiles[session] == nil && failed.session == session {
+		source = failed.source
+	}
+	defer func() {
+		if source != "" && err != nil && !errors.Is(err, errSessionRestart) {
+			p.failedStart[process] = struct{ session, source string }{session, source}
+		}
+	}()
 	// The session this native process is on now, "" before its first registration.
 	held := p.slots[process]
 	// A registration for a session its native process has already left, other than a resume,
@@ -479,6 +491,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 // take makes session the current one of native process, which leaves the one it was on; a
 // session that moved to this process leaves its earlier one. Caller holds p.mu.
 func (p *profileState) take(process processKey, session string) {
+	delete(p.failedStart, process)
 	if earlier, moved := p.owner[session]; moved && earlier != process && p.slots[earlier] == session {
 		delete(p.slots, earlier)
 	}

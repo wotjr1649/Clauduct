@@ -271,6 +271,9 @@ func (b *Builder) SetCallable(callable func(name string) bool) {
 	}
 }
 
+// Callable reports whether a new call may use this name, before its ID is issued.
+func (b *Builder) Callable(name string) bool { return b.callable(name) }
+
 // AddToolCall validates a call and holds it.
 //
 // It returns no frames on purpose. A tool call is the one thing in a response that causes
@@ -298,7 +301,7 @@ func (b *Builder) AddToolCall(id, name string, arguments []byte) error {
 		// to either of them.
 		return ErrUnsupportedToolCall
 	}
-	if !b.callable(name) {
+	if !b.Callable(name) {
 		return ErrUnsupportedToolCall
 	}
 	if !isJSONObject(arguments) {

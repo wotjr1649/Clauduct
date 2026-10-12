@@ -269,6 +269,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if entry.snapshot().Kind == "compaction" {
 		addCompactGuidance(backendRequest)
 	}
+	if entry.auxiliaryToolsBlocked {
+		backendRequest.ToolChoice = "none" // Preserve definitions for history and cache; grant no calls.
+	}
 	if err := g.prepareDocuments(ctx, backendRequest); err != nil {
 		g.refuseCategory(w, 400, err.Error())
 		return
@@ -387,6 +390,14 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			return nil, releaseAgent, proof.cancellation
 		}
 		if proof != nil && proof.Unmatched {
+			// Only a validated negative from this request's native helper grants no-call inference.
+			if proof.helper != nil && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" && r.Header.Get("X-Claude-Code-Agent-Id") == "" && r.Header.Get("X-Claude-Code-Parent-Agent-Id") == "" && len(request.Tools) > 0 && request.HostedSearch == nil {
+				entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
+				entry.auxiliaryToolsBlocked = true
+				entry.checked("auxiliary_tools_blocked")
+				route, err := g.auxiliarySelection(request, false)
+				return route, releaseAgent, err
+			}
 			return nil, releaseAgent, errNativeOriginUnverified
 		}
 		if proof == nil || !proof.Confirmations {
@@ -755,7 +766,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}()
 	if entry := recordOf(w); entry != nil {
 		record := entry.snapshot()
-		if record.Kind == "compaction" {
+		if record.Kind == "compaction" || entry.auxiliaryToolsBlocked {
 			translator.Builder().SetCallable(func(string) bool { return false })
 		}
 		if len(scopes) > 0 && scopes[0].parentWait != nil {

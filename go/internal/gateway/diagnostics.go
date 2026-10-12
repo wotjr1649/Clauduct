@@ -224,6 +224,8 @@ type record struct {
 	epoch              time.Time
 	data               RequestRecord
 	owner              *ring
+
+	auxiliaryToolsBlocked bool // handler-owned capability; independent auxiliary cannot call tools
 }
 
 func (r *record) rejectedWorkflow() {

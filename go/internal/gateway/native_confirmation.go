@@ -209,6 +209,15 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 				if reply.Confirmations || reply.Agent != "" || reply.Turn != "" || reply.Index != -1 {
 					return nil
 				}
+				if ctx.Err() != nil || g.closing.Err() != nil {
+					return nil
+				}
+				if proof, err := cancelled(); proof != nil || err != nil {
+					return proof
+				}
+				if reply.helper.Err() != nil || reply.lease.Err() != nil {
+					return &nativeConfirmation{Unmatched: true}
+				}
 				return reply
 			}
 			if !reply.Confirmations {

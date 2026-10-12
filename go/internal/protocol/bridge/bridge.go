@@ -1135,7 +1135,7 @@ func (t *Translator) release() error {
 	for _, index := range t.order {
 		item := t.held[index].item
 		if item.Type == codex.ItemFunctionCall && !t.builder.StoppedBySequence() {
-			if !anthropic.ValidToolIdentifier(item.CallID) || seenCalls[item.CallID] {
+			if !anthropic.ValidToolIdentifier(item.CallID) || seenCalls[item.CallID] || !t.builder.Callable(item.Name) {
 				return anthropic.ErrUnsupportedToolCall
 			}
 			seenCalls[item.CallID] = true

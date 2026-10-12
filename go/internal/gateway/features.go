@@ -33,6 +33,7 @@ var featureRequirements = []FeatureEvidence{
 	{Name: "count_tokens", Required: []string{"input", "route", "count_completed"}},
 	{Name: "web_search", Required: []string{"input", "route", "search_available"}},
 	{Name: "compaction", Required: []string{"input", "route", "compaction_authorized", "context_policy"}},
+	{Name: "auxiliary_tools_blocked", Required: []string{"input", "route", "auxiliary_tools_blocked"}},
 	{Name: "workflow_result_reuse", Required: []string{"input", "route", "context_policy", "workflow_recovery_request", "workflow_recovery"}},
 	{Name: "parent_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_wait_control"}},
 	{Name: "empty_reply_wait", Required: []string{"input", "route", "context_policy", "parent_input_snapshot", "native_wait_step", "native_wait_control"}},
@@ -91,6 +92,8 @@ func (g *ring) countFeatures(r RequestRecord) {
 
 func featureApplies(name string, r RequestRecord) bool {
 	switch name {
+	case "auxiliary_tools_blocked":
+		return slices.Contains(r.VerifiedChecks, "auxiliary_tools_blocked")
 	case "generation":
 		return r.Kind == "generation"
 	case "native_agent":

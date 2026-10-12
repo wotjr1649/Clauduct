@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -59,7 +60,18 @@ func prepareNativeEventsAt(directory, link string, catalogue *bridge.Catalogue) 
 		nativeEventsModule:           nativeEventSource(filepath.Join(directory, "receipts"), link, catalogue),
 	}
 	for name, body := range files {
-		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
+		path, data := filepath.Join(directory, name), []byte(body)
+		if !fresh {
+			current, readErr := os.ReadFile(path)
+			if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+				return directory, readErr
+			}
+			// Native reloads hooks on writes, losing the progress of an active turn.
+			if readErr == nil && bytes.Equal(current, data) {
+				continue
+			}
+		}
+		if err = os.WriteFile(path, data, 0600); err != nil {
 			return directory, err
 		}
 	}

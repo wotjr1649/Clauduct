@@ -71,9 +71,11 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `boundary_profile` | native가 Anthropic 서버로 가는 기능 경로 가운데 무엇을 남길지. `"default"`(공장값) 또는 `"strict"`. 다른 값은 시작할 때 거부한다. [경계 프로필](#경계-프로필-v0611) |
 | `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
 
-v0.6.4의 공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,
-terra medium, luna max), 아래 alias 매핑, `agents`(Explore luna/max, Plan과 general-purpose 6.1-sol/high)를 담는다.
+공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,
+terra medium, luna xhigh), 아래 alias 매핑, `agents`(Explore luna/max, Plan과 general-purpose 6.1-sol/high)를 담는다.
 `gpt-6-sol`의 `modelDefaults` 항목은 없다. 기존 파일의 값은 이 공장값으로 바뀌지 않는다.
+v0.6.4–v0.6.10의 공장값은 luna max였다. native settings는 `max`를 담지 못하므로, 그 값이 남은 파일에서는 luna의
+기본 effort가 세션 settings에 들어가지 않는다(아래 시작 effort 설명). 이 파일의 luna 항목은 직접 `xhigh`로 고친다.
 
 시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
 Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
@@ -175,7 +177,7 @@ v0.6.3부터 `sol` 키·`opus` 별칭·공장 시작 모델은 `gpt-6.1-sol`이�
 | `fable` | `gpt-6-astra` | medium |
 | `opus` | `gpt-6.1-sol` | high |
 | `sonnet` | `gpt-5.6-terra` | medium |
-| `haiku` | `gpt-6-luna` | max |
+| `haiku` | `gpt-6-luna` | xhigh |
 
 내장 제품 자료(`go/internal/protocol/bridge/models.json`)는 v0.6.4부터 기존 이름만 담는다.
 키(`sol`·`sol6`·`astra`·`terra`·`luna`), 별칭(`fable`·`opus`·`sonnet`·`haiku`)과 버전형 이름, Agent 단계,
@@ -306,6 +308,14 @@ Clauduct가 더하던 확인은 더 이상 적용되지 않는다. 확인이 필
 background 작업은 native 모드에 따라 대기하거나 거부될 수 있다. native 2.1.284의 로컬 검증에서
 `default`는 지정된 `PermissionRequest` hook으로 승인했고, `dontAsk`는 같은 hook을 호출하지 않고
 거부했다. [native hook 규약](https://code.claude.com/docs/en/hooks#permissionrequest).
+
+native의 Always 선택은 Ask 종류에 따라 남기는 것이 다르다. 명령 Ask의 "don't ask again for: <명령>"은
+local 설정의 `permissions.allow`에 그 명령 규칙을 더하고, 재시작 뒤에도 같은 명령을 묻지 않는다.
+디렉터리 접근 Ask의 "always allow access"는 명령 승인이 아니므로 같은 명령을 다시 물을 수 있다.
+native 2.1.296의 default 모드에서 `echo >>`·`tee -a`처럼 파일을 만드는 쓰기는 작업 디렉터리 안이어도
+디렉터리 접근 Ask를 냈고, 승인 뒤에도 같은 명령을 다시 물었다. Clauduct 없이 native만 실행해도 같았다.
+Clauduct는 디렉터리 승인을 명령 허용으로 바꾸지 않는다. 반복 확인을 없애려면 명령 Ask에서 Always를
+고르거나 native 설정에 `allow` 규칙을 둔다.
 
 요청마다 출처를 확인하는 장치는 유지한다. 아래가 그 범위다. v0.6.4에서 `NATIVE_CONFIRMATION_UNVERIFIED`는
 이 출처 증명이 실패한 상태(확인 교환의 I/O 오류·시간 초과)만 뜻하며, ask 규칙의 부재를 뜻하지 않는다.

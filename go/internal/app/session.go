@@ -38,11 +38,9 @@ const effortEnv = "CLAUDE_CODE_EFFORT_LEVEL"
 // tier defaults agree with the gateway's configured mapping.
 func (config ClauductSettings) sessionEnvironment() map[string]string {
 	session := map[string]string{
-		"CLAUDE_CODE_RETRY_WATCHDOG": "0",
 		// Anthropic's reporting has nowhere to go from here.
-		"DISABLE_TELEMETRY":                   "1",
-		"DISABLE_ERROR_REPORTING":             "1",
-		"CLAUDE_CODE_RESUME_INTERRUPTED_TURN": "0",
+		"DISABLE_TELEMETRY":       "1",
+		"DISABLE_ERROR_REPORTING": "1",
 
 		// The startup model. Measured: ANTHROPIC_MODEL decides which model the client asks
 		// for and a --model on the command line beats it, so the user keeps the choice this

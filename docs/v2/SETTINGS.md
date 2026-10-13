@@ -78,6 +78,28 @@ terra medium, luna max), 아래 alias 매핑, `agents`(Explore luna/max, Plan과
 시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
 Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
 
+시작 effort는 Clauduct의 `startup.effort`다. native user settings의 `effortLevel`·`modelSettings`는
+Clauduct 세션의 시작 effort로 쓰지 않는다. Clauduct가 세션 `--settings`에 시작 effort와 모델별 기본
+effort를 넣고, 시작 모델의 항목은 시작 effort로 정한다. 다른 모델의 항목에는 `modelDefaults`를
+쓰며, 생략한 모델은 계정 기본값을 쓴다. native settings에 저장할 수 있는 값은
+`low`·`medium`·`high`·`xhigh`다. 저장할 수 없는 모델 기본값은 생략한다.
+
+사용자가 직접 준 `--settings`의 `effortLevel`·`modelSettings.<model>.effortLevel`은 자동으로 넣은
+effort보다 우선한다. 사용자 모델별 effort가 있으면 그 값이 사용자 최상위 effort보다 우선하며,
+같은 모델 항목의 다른 키와 `maxEffortLevel`은 기존 병합 규칙을 따른다. 명시한 `--effort`와 세션 중
+`/effort` 선택은 유지된다. foreground 시작 모델은 Clauduct가 넘기는 `--effort`(시작 effort나 사용자가
+명시한 값)가 settings보다 우선하므로, settings의 effort는 다른 모델과 dispatch에 적용된다.
+사용자 effort가 해당 모델에서 지원되지 않거나 native settings가 담을 수 없는 값(`max`)이면 native를
+시작하기 전에 `UNSUPPORTED_MODEL_OR_EFFORT`로 거부한다.
+
+공개 빌드에서는 foreground Agent View가 꺼져 있다. Agent View를 허용한 개발 빌드의 무입력
+dispatch는 시작 모델·시작 effort를 쓴다. startup effort가 `max`면 이 dispatch에는 해당 모델의
+저장 가능한 기본 effort를 넣고, foreground는 `--effort max`로 시작한다. 모델 기본값도 저장할 수
+없으면 해당 effort 키를 넣지 않는다. dispatch 입력창에서 다른 모델만 선택하면 그 모델의 저장된
+기본 effort를 쓰며, 시작 모델을 다시 선택하면 시작 effort가 적용된다. native는 `max`를 세션 한정
+값으로 다뤄 기본값으로 받지 않으므로, 기본 effort가 `max`인 모델을 고른 dispatch는 시작 effort로
+실행된다. 그 dispatch에 `max`가 필요하면 dispatch 뒤 `/effort max`를 쓴다.
+
 ## 경계 프로필 (v0.6.11)
 
 `boundary_profile`은 Clauduct 세션에서 native가 Anthropic 서버로 가는 경로 가운데 무엇을 남길지 정한다(#301).

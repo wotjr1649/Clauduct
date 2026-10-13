@@ -448,9 +448,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	var background, foreground *sessionlink.Server
 	nativePlugin := ""
 	nativeCleanupReady := true // No child owns the directory until spawn succeeds.
+	// A regeneration serves a running job's directory: until it is serving, no exit removes it.
+	retainPlugin := o.Regenerate != nil
 	var resident *backgroundProcess
 	defer func() {
-		if nativePlugin == "" {
+		if nativePlugin == "" || retainPlugin {
 			return
 		}
 		// Every exit above/below drains the gateway first. Retain the directory
@@ -688,6 +690,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		return result, startupErr
 	}
+	if !information && userSettings != nil {
+		if err := config.validateUserEffortSettings(userSettings, startup.Model); err != nil {
+			result.NativeExitCode = ExitCodeUnknown
+			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+			return result, err
+		}
+	}
 	if ephemeral {
 		// Restore provenance without enabling persistent writes for this run.
 		gw.ConfigureSessionProfiles(nil, result.Startup, resumed, forkSession, background != nil)
@@ -784,6 +793,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			bp.env, bp.start = spec.Env, o.StartProcess
 		}
 		process, resident = bp, bp
+		retainPlugin = false // serving: the record decides, as for any resident
 	}
 
 	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))

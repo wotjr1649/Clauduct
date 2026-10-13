@@ -11,8 +11,8 @@ import (
 
 // What goes in the child's --settings, and why anything does at all.
 //
-// Model/context defaults travel by environment. Hooks and the model picker travel through
-// settings. Permissions are native's: v0.6.4 adds no ask or hard_deny rule of its own, and
+// Model/context defaults travel by environment. Hooks, the model picker and dispatch effort
+// travel through settings. Permissions are native's: v0.6.4 adds no ask or hard_deny rule of its own, and
 // native applies its defaults, user and managed policy and in-session mode changes.
 // App resolves actual option boundaries.
 //
@@ -25,10 +25,12 @@ import (
 const hookTimeout = int(hookcmd.NativeHookTimeout / time.Second)
 
 type childSettings struct {
-	Hooks        map[string][]hookMatcher `json:"hooks,omitempty"`
-	ModelPicker  *modelPicker             `json:"modelPicker,omitempty"`
-	Env          map[string]string        `json:"env,omitempty"`
-	APIKeyHelper string                   `json:"apiKeyHelper,omitempty"`
+	Hooks         map[string][]hookMatcher     `json:"hooks,omitempty"`
+	ModelPicker   *modelPicker                 `json:"modelPicker,omitempty"`
+	EffortLevel   string                       `json:"effortLevel,omitempty"`
+	ModelSettings map[string]map[string]string `json:"modelSettings,omitempty"`
+	Env           map[string]string            `json:"env,omitempty"`
+	APIKeyHelper  string                       `json:"apiKeyHelper,omitempty"`
 	// The boundary profile's part (#301, boundary_profile.go).
 	Permissions               *childPermissions `json:"permissions,omitempty"`
 	DisableClaudeAiConnectors bool              `json:"disableClaudeAiConnectors,omitempty"`
@@ -69,6 +71,23 @@ type modelPickerRow struct {
 // cannot act on.
 func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 	settings := childSettings{ModelPicker: config.pickerRows()}
+	settings.ModelSettings = make(map[string]map[string]string)
+	for _, model := range config.Selection.Catalogue().Models() {
+		if effort, ok := config.Selection.DefaultFor(model.ID); ok && storedEffort(effort) {
+			settings.ModelSettings[model.ID] = map[string]string{"effortLevel": effort}
+		}
+	}
+	effort := config.Startup.Effort
+	if !storedEffort(effort) {
+		if fallback, ok := config.Selection.DefaultFor(config.Startup.Model); ok {
+			effort = fallback
+		}
+	}
+	if storedEffort(effort) {
+		settings.EffortLevel = effort
+		// Native's per-model flag setting wins over the top-level flag setting.
+		settings.ModelSettings[config.Startup.Model] = map[string]string{"effortLevel": effort}
+	}
 	config.boundarySettings(&settings)
 	if hookPath != "" {
 		entry := []hookMatcher{{
@@ -96,6 +115,11 @@ func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 		return "", false
 	}
 	return string(encoded), true
+}
+
+// max is session-only in native settings; its foreground argv remains unchanged.
+func storedEffort(effort string) bool {
+	return effort == "low" || effort == "medium" || effort == "high" || effort == "xhigh"
 }
 
 // foregroundSettings binds a foreground session's settings to its routing (#295). Every hook

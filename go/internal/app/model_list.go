@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
@@ -58,11 +59,15 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 		facts.Source, facts.FetchFailure = "last-good", failureCategory(err)
 		key, keyErr := direct.AccountKey()
 		if keyErr != nil || home == "" {
-			return nil, facts, fmt.Errorf("%w: %s; the account could not be confirmed for a saved list", ErrModelList, facts.FetchFailure)
+			category := facts.FetchFailure
+			if keyCategory := auth.CategoryOf(keyErr); keyCategory != "" {
+				category = keyCategory
+			}
+			return nil, facts, modelListFailure(category, "the account could not be confirmed for a saved list")
 		}
 		list, err = upstream.LoadAccountModels(home, key)
 		if err != nil {
-			return nil, facts, fmt.Errorf("%w: %s; no saved list for this account", ErrModelList, facts.FetchFailure)
+			return nil, facts, modelListFailure(facts.FetchFailure, "no saved list for this account")
 		}
 	}
 	facts.FetchedAt = list.FetchedAt.UTC().Format(time.RFC3339)
@@ -79,9 +84,19 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	return catalogue, facts, nil
 }
 
+func modelListFailure(category, reason string) error {
+	if hint := auth.LoginHint(category); hint != "" {
+		reason += "; " + hint
+	}
+	return fmt.Errorf("%w: %s; %s", ErrModelList, category, reason)
+}
+
 // failureCategory names a fetch failure without its text, which may carry details the
 // exit status must not repeat.
 func failureCategory(err error) string {
+	if category := auth.CategoryOf(err); category != "" {
+		return category
+	}
 	var failure upstream.Failure
 	switch {
 	case errors.As(err, &failure):

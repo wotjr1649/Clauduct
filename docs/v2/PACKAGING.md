@@ -25,9 +25,11 @@
 
 | 필요한 것 | 왜 | 없으면 |
 |---|---|---|
-| `claude.exe` | 띄울 대상이다. `~/.local/bin` 우선, 그다음 PATH | `CLAUDE_NOT_FOUND`, 찾아본 경로를 함께 출력 |
+| `claude.exe` | 띄울 대상이다. `~/.local/bin` 우선, 그다음 PATH. 설치만 필요하고 Claude 계정 로그인·구독은 필요 없다 | `CLAUDE_NOT_FOUND`, 찾아본 경로를 함께 출력 |
 | `codex.exe` | **버전이 모든 요청의 header에 들어간다.** 없으면 보낼 것을 만들 수 없다 | 요청이 `CODEX_NOT_FOUND`로 거부된다. 세션은 시작되고 `--version`·`--help`는 정상 |
-| `~/.codex/auth.json` | ChatGPT 구독 credential. 읽기 전용으로만 접근한다 | 요청이 `CREDENTIAL_UNAVAILABLE_OR_EXPIRED`(503). `codex login`으로 회복 |
+| `~/.codex/auth.json` | ChatGPT 구독 credential. 읽기 전용으로만 접근한다 | 시작할 때 계정 모델 목록을 확인하지 못해 native를 띄우기 전에 끝난다: `ACCOUNT_MODEL_LIST_UNAVAILABLE: CREDENTIAL_UNAVAILABLE_OR_EXPIRED; …; run "codex login" (install the Codex CLI first if the codex command is not found), then start clauduct again`. 세션 중에 만료되면 요청이 503으로 거부되고 같은 안내가 붙는다. `codex login`으로 회복 |
+
+**Claude Code를 처음 실행하는 사람(2.1.296 실측).** native만 실행하면 테마 선택 다음에 로그인 방법 선택(Claude 구독·Console·3rd-party)이 나온다. Clauduct로 시작하면 이 단계가 없다. 테마 선택 → 보안 안내 → 폴더 신뢰를 거쳐 입력창으로 간다. native가 Clauduct gateway의 인증 설정을 받아 로그인 단계를 건너뛰기 때문이다. 입력창 머리글의 `API Usage Billing`은 native가 이 인증 방식에 붙이는 이름이다. 요청은 Codex 구독으로 가고 Anthropic에 과금되지 않는다.
 
 **`codex.exe` 의존은 G7이 추가한 것이다.** 이 문서가 그것을 적는 이유는 REL03이 "Node adapter·.NET probe에 의존하지 않음"만 묻기 때문이다 — 그 둘은 실제로 없지만, **런타임 의존이 0이라는 뜻은 아니다.** 정직한 목록은 위의 셋이다.
 

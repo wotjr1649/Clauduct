@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
@@ -90,6 +91,9 @@ func (g *Gateway) refuseHeaders(w http.ResponseWriter, r *http.Request, bad refu
 // refuseDetail refuses with a detail after the category. The detail is empty or built from
 // fixed vocabularies, like the category itself.
 func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) {
+	if hint := auth.LoginHint(r.category); hint != "" {
+		detail += "; " + hint
+	}
 	// After dispatch the replay ledger refuses any repeat of this request, so a status that
 	// invites a retry only trades this category for NATIVE_REQUEST_REPLAY_BLOCKED in front of
 	// the user (#84). The client checks x-should-retry before the status class (claude

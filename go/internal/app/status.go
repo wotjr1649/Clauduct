@@ -45,6 +45,9 @@ const (
 	CategoryRouting = "ROUTING_UNVERIFIED"
 )
 
+// CategoryFinalUnverified means the last checkpoint cannot prove the final outcome.
+const CategoryFinalUnverified = "FINAL_STATUS_UNVERIFIED"
+
 // SessionFacts describe launcher defaults and installed integration components.
 //
 // Context defaults are not a reading of the native client's effective configuration.

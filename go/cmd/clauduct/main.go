@@ -296,21 +296,25 @@ func regenerate(link string) int {
 		Regenerate:     &record,
 		Stderr:         io.Discard,
 	})
+	return finishRegeneration(result, err, os.Stderr)
+}
+
+func finishRegeneration(result app.Result, runErr error, errOut io.Writer) int {
 	// The status file says how this resident ended, as run() writes it; without this the last
 	// checkpoint (RUNNING) stayed. No summary line: this stderr reaches native's key helper.
 	if result.NativeStarted || result.Category != "" {
 		if err := app.WriteFinal(result); err != nil {
-			fmt.Fprintln(os.Stderr, "clauduct: CLAUDUCT_REQUEST_STATUS_UNAVAILABLE")
+			fmt.Fprintln(errOut, "clauduct: CLAUDUCT_REQUEST_STATUS_UNAVAILABLE")
 		}
 	}
-	if err != nil || result.CleanupErr != nil {
+	if runErr != nil || result.CleanupErr != nil {
 		category := "RESIDENT_START_FAILED"
-		if err != nil {
-			if known := hookcmd.DiagnosticCategory(err.Error()); known != "" {
+		if runErr != nil {
+			if known := hookcmd.DiagnosticCategory(runErr.Error()); known != "" {
 				category = known
 			}
 		}
-		fmt.Fprintln(os.Stderr, "CLAUDUCT_RESIDENT_RESTORE_FAILED: "+category)
+		fmt.Fprintln(errOut, "CLAUDUCT_RESIDENT_RESTORE_FAILED: "+category)
 		return 1
 	}
 	return 0

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
@@ -34,9 +35,12 @@ func SessionDuration(env map[string]string) (time.Duration, error) {
 
 // LifecycleFacts records the last observed state, not proof
 // that the process is still alive. Final is set only after native was waited on.
+// ProcessPID and ProcessCreatedAt identify its Clauduct owner (OS creation time, UnixNano).
 type LifecycleFacts struct {
 	State               string    `json:"state"`
 	Final               bool      `json:"final"`
+	ProcessPID          uint32    `json:"processPid,omitempty"`
+	ProcessCreatedAt    int64     `json:"processCreatedAt,omitempty"`
 	Reason              string    `json:"reason,omitempty"`
 	StartedAt           time.Time `json:"startedAt"`
 	ObservedAt          time.Time `json:"observedAt"`
@@ -80,7 +84,13 @@ func drainReady(d gateway.Diagnostics) bool {
 
 func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o Options, initial Result,
 	interrupts <-chan os.Signal, print bool) (bool, LifecycleFacts, error) {
-	life := LifecycleFacts{State: "running", StartedAt: time.Now().UTC()}
+	life := LifecycleFacts{State: "running", ProcessPID: uint32(os.Getpid()), StartedAt: time.Now().UTC()}
+	if h, err := syscall.GetCurrentProcess(); err == nil {
+		var created, exited, kernel, user syscall.Filetime
+		if syscall.GetProcessTimes(h, &created, &exited, &kernel, &user) == nil {
+			life.ProcessCreatedAt = created.Nanoseconds()
+		}
+	}
 	// Keep caller cancellation immediate. A harness deadline gets a separate,
 	// bounded drain so it cannot destroy the gateway in the middle of compaction.
 	waitCtx, cancel := context.WithCancel(context.Background())

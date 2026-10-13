@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
@@ -57,17 +56,18 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 		}
 	} else {
 		facts.Source, facts.FetchFailure = "last-good", failureCategory(err)
+		_, hint := upstream.CredentialRefusal(err)
 		key, keyErr := direct.AccountKey()
 		if keyErr != nil || home == "" {
 			category := facts.FetchFailure
-			if keyCategory := auth.CategoryOf(keyErr); keyCategory != "" {
-				category = keyCategory
+			if keyCategory, keyHint := upstream.CredentialRefusal(keyErr); keyCategory != "" {
+				category, hint = keyCategory, keyHint
 			}
-			return nil, facts, modelListFailure(category, "the account could not be confirmed for a saved list")
+			return nil, facts, modelListFailure(category, hint, "the account could not be confirmed for a saved list")
 		}
 		list, err = upstream.LoadAccountModels(home, key)
 		if err != nil {
-			return nil, facts, modelListFailure(facts.FetchFailure, "no saved list for this account")
+			return nil, facts, modelListFailure(facts.FetchFailure, hint, "no saved list for this account")
 		}
 	}
 	facts.FetchedAt = list.FetchedAt.UTC().Format(time.RFC3339)
@@ -84,8 +84,8 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	return catalogue, facts, nil
 }
 
-func modelListFailure(category, reason string) error {
-	if hint := auth.LoginHint(category); hint != "" {
+func modelListFailure(category, hint, reason string) error {
+	if hint != "" {
 		reason += "; " + hint
 	}
 	return fmt.Errorf("%w: %s; %s", ErrModelList, category, reason)
@@ -94,7 +94,7 @@ func modelListFailure(category, reason string) error {
 // failureCategory names a fetch failure without its text, which may carry details the
 // exit status must not repeat.
 func failureCategory(err error) string {
-	if category := auth.CategoryOf(err); category != "" {
+	if category, _ := upstream.CredentialRefusal(err); category != "" {
 		return category
 	}
 	var failure upstream.Failure

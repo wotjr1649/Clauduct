@@ -366,6 +366,11 @@ func writeStatus(encoded []byte, renames int) (string, error) {
 // Ordered by which answer is most use to a reader. A cancelled session usually also shows a
 // non-zero exit, and "you stopped it" is the better of the two answers; an exhausted budget
 // usually also shows a failed client, and the budget is the cause of that.
+// sessionRefusals are the gateway's answers that stop a session's prompt or requests outright,
+// in the order a reader is best served by: the start registration first.
+var sessionRefusals = []string{"SESSION_START_UNREGISTERED", "SESSION_RESTART_REQUIRED", "SESSION_ALREADY_IN_USE",
+	"SESSION_PROFILE_UNVERIFIED", "SESSION_SELECTION_UNVERIFIED", "CONTEXT_JOURNAL_UNVERIFIED"}
+
 func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledger) string {
 	if ctx != nil && ctx.Err() != nil {
 		return CategoryCancelled
@@ -373,6 +378,13 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 	if ledger != nil {
 		if _, _, refused := ledger.Spent(); refused > 0 {
 			return CategoryBudget
+		}
+	}
+	// A prompt the gateway would not register or serve never ran, whatever native's exit says:
+	// native -p exits 0 after a hook blocks its prompt (#319 decision 18m R10).
+	for _, category := range sessionRefusals {
+		if result.Diagnostics.Requests.RefusedBy[category] > 0 {
+			return category
 		}
 	}
 	if result.NativeExitCode != 0 {

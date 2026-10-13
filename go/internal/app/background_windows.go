@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"syscall"
 	"time"
@@ -137,6 +139,60 @@ func RegenerateResident(link string, wait time.Duration) {
 
 // Relay diagnostics so the resident cannot keep native's key-helper pipe open.
 func residentDiagnostics() io.Writer { return io.MultiWriter(os.Stderr) }
+
+var errResidentBusy = errors.New("RESIDENT_RECORD_BUSY")
+
+func lockResident(home, link string, wait time.Duration) (func(), error) {
+	if home == "" || !residentLink.MatchString(link) {
+		return nil, errors.New("RESIDENT_RECORD_INVALID")
+	}
+	dir := filepath.Dir(residentPath(home, link))
+	for _, path := range []string{filepath.Dir(dir), dir} {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil, errors.New("RESIDENT_RECORD_INVALID")
+		}
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, link+".lock")
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return nil, errors.New("RESIDENT_RECORD_INVALID")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.Errno(5)) && !errors.Is(err, errSharingViolation) {
+		return nil, err
+	}
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		h, err := syscall.CreateFile(name, syscall.GENERIC_WRITE|0x00010000, 0, nil, syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL|0x04000000, 0)
+		if err == nil {
+			f := os.NewFile(uintptr(h), link+".lock")
+			if err := f.Truncate(0); err != nil {
+				f.Close()
+				return nil, err
+			}
+			if _, err := fmt.Fprintf(f, "pid %d since %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339)); err != nil {
+				f.Close()
+				return nil, err
+			}
+			return func() { f.Close() }, nil
+		}
+		if !errors.Is(err, errSharingViolation) && !errors.Is(err, syscall.Errno(5)) {
+			return nil, err
+		}
+		if wait == 0 || !time.Now().Before(deadline) {
+			return nil, errResidentBusy
+		}
+		time.Sleep(min(100*time.Millisecond, time.Until(deadline)))
+	}
+}
 
 var reconnectRegenerateResident = RegenerateResident
 

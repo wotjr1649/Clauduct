@@ -505,9 +505,34 @@ child `Wait`만으로 모든 손자가 종료됐다고 단정하지 않는다. n
 명시적 background 생성은 연결을 소유하는 별도 `clauduct.exe` 하나를 콘솔 창 없이 시작한다. native를
 호출하는 생성 프로세스의 Job 계약은 유지하고, 그 뒤의 worker는 native supervisor가 소유한다. 연결 유지
 프로세스는 gateway·검증 예산·필수 plugin 수명을 맡아 worker stop·재기동 사이에도 이를 보존한다.
-native `stop`은 나중에 깨울 수 있도록 연결을 남기며, 세션 삭제나 `--background-stop`은 연결도 끝낸다.
+native `stop`은 나중에 깨울 수 있도록 나열된 job의 resident record와 events 디렉터리를 남긴다.
+모든 job이 stopped가 되면 연결 유지 프로세스는 끝나고, 다시 attach할 때 record로 재생성한다.
+`clauduct --background-stop`은 연결을 끝내며 job 삭제는 native `rm <id>`로 한다.
 worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업 상태 파일의
 부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다.
+
+`clauduct rm <id>`·`clauduct stop <id>`·`clauduct logs <id>`는 세션을 열지 않는 관리 경로다.
+argv의 첫 원소가 정확히 `rm`·`stop`·`logs`인 형태만 지원하고, 그 뒤 인자는 그대로 native에 전달한다.
+하위 명령 앞에 옵션이 있는 형태는 관리 경로로 판정하지 않고 기존 세션 경로로 처리한다.
+gateway를 시작하거나 모델 목록을 조회하지 않고, 세션 settings·plugin·effort·agents 옵션도 주입하지 않는다.
+기존 제어 명령용 env 정리로 `ANTHROPIC_*`·OAuth token을 제거하며 Agent View 끄기 변수도 넘기지 않는다.
+`DISABLE_TELEMETRY`·`DISABLE_ERROR_REPORTING`은 세션과 같은 기본값을 사용하며 사용자 env 값이 우선한다.
+native의 종료 코드를 그대로 반환한다. `clauduct attach`는 기존 세션 경로로 처리하며 공개 빌드의
+Agent View 끄기를 유지한다. `clauduct respawn`도 예외에서 제외한다. native가 supervisor를 새로 띄울 수 있고,
+supervisor는 최초 실행의 OS env를 보존하므로 이 실행의 gateway 수명을 넘길 위험이 있기 때문이다.
+
+`clauduct rm <id>`가 성공하면 같은 실행 끝에 해당 job이 사라진 resident 자원을 회수한다.
+실패한 `rm`은 회수하지 않는다. `claude rm <id>`나
+agents 화면에서 삭제했다면 다음 일반 Clauduct 실행이 끝날 때 회수한다. 회수는 해당 home의
+record 단위이며, link 잠금을 얻고 모든 job의 부재를 재확인한 뒤 TEMP 직하위 events 디렉터리를
+먼저 지우고 record를 지운다. 디렉터리와 하위 항목의 reparse point는 거부하고 TEMP 밖으로 삭제하지 않는다.
+잠금은 `.clauduct`·`residents`의 reparse point를 거부하며 home이나 그 상위 경로의 junction은 허용한다.
+나열된 job, 활성 잠금, 목록 조회 불확실, config 경로가 없는 이전 record, 다른 record와 공유하는
+디렉터리는 보존한다. 삭제 실패나 경로 거부도 record를 남겨 다음 실행에서 다시 시도하며,
+foreground는 resident 회수 실패를 경로 없이 `RESIDENT_CLEANUP_INCOMPLETE`로 실행당 최대 한 줄 알린다.
+record 없는 foreground 자기 events 디렉터리의 삭제 실패는 `NATIVE_EVENT_CLEANUP_FAILED`로만 보고하며
+다음 실행의 자동 회수 대상이 아니다. orphan 회수 실패는
+세션의 종료 코드를 바꾸지 않는다. 자동 만료나 저장 용량 상한은 두지 않는다.
 
 Windows named pipe는 동일 로그인 SID의 접근만 허용하고 원격 접속을 거부한다. helper도 서버의 로그인
 SID를 확인하며 요청 대기에는 3초 상한을 둔다. helper의 토큰 출력은 pipe로만 허용한다. 새 전역 서비스나

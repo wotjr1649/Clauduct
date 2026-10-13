@@ -17,8 +17,7 @@ import (
 // resident that died dispatched (#319 decision 18c). The job's settings fix its endpoint port,
 // session link and events directory, so those are kept; no credential is: the regenerated
 // gateway issues a new token, which native takes from its key helper after one 401/403.
-// The resident writes it once the job exists and removes it on every ending it controls, so a
-// record outlives only a resident that did not end itself.
+// The resident writes it once the job exists; stopped jobs keep it until native removes them.
 type ResidentRecord struct {
 	Link string `json:"link"`
 	Job  string `json:"job"`
@@ -28,7 +27,10 @@ type ResidentRecord struct {
 	Port      int      `json:"port"`
 	PluginDir string   `json:"pluginDir,omitempty"`
 	Cwd       string   `json:"cwd"`
+	Config    string   `json:"config,omitempty"`
 	Args      []string `json:"args"`
+	// AbsentObserved is used only if M1 requires absence across separate executions.
+	AbsentObserved bool `json:"absentObserved,omitempty"`
 	// Jobs are the other native jobs on this link: dispatched from its agent view, they share
 	// its settings and so its gateway, which lives until the last of them ends.
 	Jobs []string `json:"jobs,omitempty"`
@@ -45,7 +47,7 @@ func residentPath(home, link string) string {
 
 func (r ResidentRecord) check() error {
 	if !residentLink.MatchString(r.Link) || !residentJob.MatchString(r.Job) || r.Session != "" && !gateway.IsSessionUUID(r.Session) || r.Port < 1 || r.Port > 65535 || !filepath.IsAbs(r.Cwd) ||
-		r.PluginDir != "" && (filepath.Dir(r.PluginDir) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(r.PluginDir), nativeEventsPrefix)) {
+		r.Config != "" && !filepath.IsAbs(r.Config) || r.PluginDir != "" && !eventsDirValid(r.PluginDir) {
 		return errors.New("RESIDENT_RECORD_INVALID")
 	}
 	for _, job := range r.Jobs {
@@ -122,10 +124,18 @@ func writeResident(home string, r ResidentRecord) error {
 	return os.Rename(temp, path)
 }
 
-func removeResident(home, link string) {
-	if residentLink.MatchString(link) {
-		os.Remove(residentPath(home, link))
+func removeResident(home, link string) error {
+	if !residentLink.MatchString(link) {
+		return errors.New("RESIDENT_RECORD_INVALID")
 	}
+	path := residentPath(home, link)
+	// Keep the identity when its temporary companion cannot be removed.
+	for _, name := range []string{path + ".tmp", path} {
+		if err := os.Remove(name); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // LoadResident reads the record for link from home.

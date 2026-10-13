@@ -42,7 +42,7 @@ func prepareNativeEventsAt(directory, link string, catalogue *bridge.Catalogue) 
 			return "", err
 		}
 	} else {
-		if filepath.Dir(directory) != filepath.Clean(os.TempDir()) || !strings.HasPrefix(filepath.Base(directory), nativeEventsPrefix) {
+		if !eventsDirValid(directory) {
 			return "", errors.New("NATIVE_EVENTS_DIRECTORY_INVALID")
 		}
 		if err = os.Mkdir(directory, 0700); err != nil && !errors.Is(err, os.ErrExist) {
@@ -133,3 +133,53 @@ func prepareNativePDF(directory, hook string) (string, error) {
 // nativeEventsModule is the plugin's hook module, relative to the plugin directory: a module
 // native's own runtime loads, not a Node program.
 const nativeEventsModule = "hooks/events.mjs"
+
+func eventsDirValid(dir string) bool {
+	base := filepath.Base(dir)
+	return filepath.Dir(dir) == filepath.Clean(os.TempDir()) && strings.HasPrefix(base, nativeEventsPrefix) && len(base) > len(nativeEventsPrefix)
+}
+
+var errEventsPathRefused = errors.New("NATIVE_EVENTS_PATH_REFUSED")
+
+func removeEventsDir(dir string) error {
+	if !eventsDirValid(dir) {
+		return errEventsPathRefused
+	}
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return errEventsPathRefused
+	}
+	if err := filepath.WalkDir(dir, func(path string, _ os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return errEventsPathRefused
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(filepath.Dir(dir))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.RemoveAll(filepath.Base(dir)); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("NATIVE_EVENTS_DELETE_INCOMPLETE")
+	}
+	return nil
+}

@@ -256,6 +256,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			return Result{}, err
 		}
 	}
+	if command := nativeControl(o.Args); command != "" && o.Regenerate == nil {
+		return runNativeControl(ctx, o, command)
+	}
 	config := defaultClauductSettings()
 	clauductHome := o.ClauductHome
 	information := nativeInformation(o.Args)
@@ -319,11 +322,33 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	forward, resumeID := prepareSessionArgs(forward)
 	forkedFrom := ""
+	releaseResident := func() {}
+	residentLocked := false
+	defer func() { releaseResident() }()
+	if clauductHome != "" && o.Settings == nil && !information {
+		defer func() {
+			outcomes := collectResidents(clauductHome)
+			if !BackgroundRequested(launchArgs) && len(result.HandedOver) == 0 {
+				reportResidentCleanup(o.Stderr, outcomes)
+			}
+		}()
+	}
 	if o.Regenerate != nil {
 		// The job's own session comes back as a resume, never a fork of it.
 		if resumeID, err = regenerateCheck(o, clauductHome); err != nil {
 			return Result{}, err
 		}
+		if releaseResident, err = lockResident(clauductHome, o.Regenerate.Link, 2*time.Second); err != nil {
+			releaseResident = func() {}
+			return Result{}, err
+		}
+		residentLocked = true
+		current, readErr := LoadResident(clauductHome, o.Regenerate.Link)
+		if readErr != nil || current.Job != o.Regenerate.Job || current.PluginDir != o.Regenerate.PluginDir {
+			return Result{}, errors.New("RESIDENT_RECORD_INVALID")
+		}
+		o.Regenerate = &current
+		resumeID = current.Session
 	} else if BackgroundRequested(forward) {
 		if forkedFrom, err = backgroundResume(forward, resumeID); err != nil {
 			return Result{}, err
@@ -452,7 +477,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	retainPlugin := o.Regenerate != nil
 	var resident *backgroundProcess
 	defer func() {
-		if nativePlugin == "" || retainPlugin {
+		if retainPlugin || nativePlugin == "" && (resident == nil || resident.record == nil) {
 			return
 		}
 		// Every exit above/below drains the gateway first. Retain the directory
@@ -461,11 +486,22 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			result.CleanupErr = errors.Join(result.CleanupErr, errors.New("NATIVE_EVENT_CLEANUP_UNVERIFIED"))
 			return
 		}
-		if resident != nil && resident.recordStays() {
-			return // the resident that removes the record removes the directory
+		if resident != nil && resident.recordStays() && !resident.unlisted {
+			return
 		}
-		if removeErr := os.RemoveAll(nativePlugin); removeErr != nil {
-			result.CleanupErr = errors.New("NATIVE_EVENT_CLEANUP_FAILED")
+		if nativePlugin != "" {
+			if removeErr := removeEventsDir(nativePlugin); removeErr != nil {
+				result.CleanupErr = errors.New("NATIVE_EVENT_CLEANUP_FAILED")
+				return
+			}
+		}
+		if resident != nil && resident.unlisted && resident.record != nil {
+			if reclaimInterrupt != nil {
+				reclaimInterrupt()
+			}
+			if removeResident(resident.home, resident.record.Link) != nil {
+				result.CleanupErr = errors.New("NATIVE_EVENT_CLEANUP_FAILED")
+			}
 		}
 	}()
 	nativePDF := ""
@@ -543,6 +579,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			if err == nil {
 				defer background.Close()
+				if !residentLocked && clauductHome != "" {
+					if release, lockErr := lockResident(clauductHome, background.ID, 0); lockErr == nil {
+						releaseResident, residentLocked = release, true
+					}
+				}
 				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env, providerFlag)
 			}
 			if err != nil {
@@ -781,8 +822,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if o.Regenerate != nil {
 			record := *o.Regenerate
 			bp.job, bp.record = record.Job, &record
-		} else if clauductHome != "" && o.Settings == nil {
-			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
+		} else if clauductHome != "" && o.Settings == nil && residentLocked {
+			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
 		bp.home, bp.session, bp.sessions = clauductHome, gw.CurrentSession, gw.Sessions
 		bp.nativeStatus = nativeStatus
@@ -832,10 +873,15 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		if len(jobs) > 0 && o.Handover(result.NativeExitCode) {
 			handoverCtx, cancel := context.WithCancel(context.Background())
-			record := ResidentRecord{Link: foreground.ID, Job: jobs[0], Jobs: jobs[1:], Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}
+			record := ResidentRecord{Link: foreground.ID, Job: jobs[0], Jobs: jobs[1:], Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
 				job: jobs[0], record: &record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, nativeStatus: nativeStatus}
+			if release, lockErr := lockResident(clauductHome, foreground.ID, 0); lockErr == nil {
+				releaseResident, residentLocked = release, true
+			} else {
+				bp.record = nil
+			}
 			if providerFlag != "" {
 				bp.env, bp.start = spec.Env, o.StartProcess
 			}

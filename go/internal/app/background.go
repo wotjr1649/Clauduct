@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -192,6 +193,7 @@ type backgroundProcess struct {
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
 	nativeStatus func() (registered, notExited int, active int64)
 	crashed      bool // the test crash ended the wait: the record stays, as after a real death
+	unlisted     bool // The Run cleanup removes the directory before the record.
 }
 
 // noDispatch stands in for the dispatch process of a regenerated resident.
@@ -275,8 +277,8 @@ func (p *backgroundProcess) Wait() error {
 				// the resident that opening regenerates (#319 decision 18h), and so does the
 				// events directory its respawn flags name. A worker started without that
 				// directory never loads the events module (decision 18k A/B).
-				if !p.crashed && !jobListed(p.config, p.record.Job, p.record.Jobs) {
-					removeResident(p.home, p.record.Link)
+				if listed, known := jobListing(p.config, append([]string{p.record.Job}, p.record.Jobs...)); !p.crashed && known && !listed {
+					p.unlisted = true
 				}
 			}()
 		}
@@ -377,14 +379,34 @@ func jobRunning(config, job string) (bool, error) {
 	return state.State != "stopped", nil
 }
 
-// jobListed reports whether native still lists any of these jobs, stopped ones included.
-func jobListed(config, job string, jobs []string) bool {
-	for _, id := range append([]string{job}, jobs...) {
-		if _, err := os.Stat(filepath.Join(config, "jobs", id, "state.json")); err == nil {
-			return true
+var jobStat = os.Lstat
+
+// Only a known absence permits cleanup; failed lookups preserve stopped-job resumes.
+func jobListing(config string, jobs []string) (listed, known bool) {
+	root := filepath.Join(config, "jobs")
+	info, err := jobStat(root)
+	if config == "" || err != nil || !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return false, false
+	}
+	known = true
+	for _, id := range jobs {
+		if !residentJob.MatchString(id) {
+			known = false
+			continue
+		}
+		dir := filepath.Join(root, id)
+		if _, err := jobStat(filepath.Join(dir, "state.json")); err == nil {
+			return true, true
+		} else if !errors.Is(err, os.ErrNotExist) {
+			known = false
+			continue
+		}
+		info, err := jobStat(dir)
+		if err != nil && !errors.Is(err, os.ErrNotExist) || err == nil && (!info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0) {
+			known = false
 		}
 	}
-	return false
+	return false, known
 }
 
 // nativeJobs names the jobs of these sessions that native lists now. A job is named by the
@@ -410,7 +432,7 @@ func (p *backgroundProcess) recordStays() bool {
 		return false
 	}
 	_, err := os.Stat(residentPath(p.home, p.record.Link))
-	return err == nil
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 func fmtBackground(out io.Writer, s BackgroundSession) {
@@ -419,7 +441,66 @@ func fmtBackground(out io.Writer, s BackgroundSession) {
 		io.WriteString(out, "Forked from session "+s.ForkedFrom+": the job continues a new session that starts from its conversation; "+s.ForkedFrom+" itself is unchanged\n")
 	}
 	io.WriteString(out, "Clauduct connection: "+s.ConnectionID+"\n")
-	io.WriteString(out, "Manage with claude agents; end this connection with clauduct --background-stop "+s.ConnectionID+"\n")
+	io.WriteString(out, "Manage with claude agents; remove with clauduct rm "+s.JobID+"; end this connection with clauduct --background-stop "+s.ConnectionID+"\n")
+}
+
+// Control commands get neither a session gateway nor its options or credential.
+func runNativeControl(ctx context.Context, o Options, command string) (Result, error) {
+	exe, found, err := o.ResolveClaude()
+	if err != nil {
+		return Result{}, err
+	}
+	if !found {
+		return Result{}, ErrClaudeNotFound
+	}
+	defaults := defaultClauductSettings().sessionEnvironment()
+	session := map[string]string{}
+	for _, key := range []string{"DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING"} {
+		session[key] = defaults[key]
+	}
+	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{Session: session})
+	env := backgroundControlEnv(spec.Env)
+	spec.Env = nil
+	for _, entry := range env {
+		if key, _, _ := strings.Cut(entry, "="); !strings.EqualFold(key, agentViewOff) {
+			spec.Env = append(spec.Env, entry)
+		}
+	}
+	interrupts := o.interrupts
+	if interrupts == nil {
+		interrupts = make(chan os.Signal, 1)
+		signal.Notify(interrupts, os.Interrupt)
+		defer signal.Stop(interrupts)
+	}
+	select {
+	case <-interrupts:
+		return Result{NativeExitCode: ExitCodeUnknown, Category: CategoryCancelled}, ErrInterrupted
+	default:
+	}
+	result := Result{NativeExitCode: ExitCodeUnknown}
+	process, err := startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, o.Stdout, o.Stderr)
+	if err != nil {
+		result.Category = CategoryStartFailed
+		return result, err
+	}
+	result.NativeStarted = true
+	waitErr, reaped := waitFor(ctx, process)
+	if reaped {
+		result.NativeExitCode = process.ExitCode()
+	}
+	result.Category = endedAs(ctx, result, o.Ledger)
+	var exitErr *exec.ExitError
+	if waitErr != nil && !errors.As(waitErr, &exitErr) {
+		return result, waitErr
+	}
+	if command == "rm" && result.NativeExitCode == 0 {
+		home := o.ClauductHome
+		if home == "" {
+			home, _ = os.UserHomeDir()
+		}
+		reportResidentCleanup(o.Stderr, collectResidents(home))
+	}
+	return result, nil
 }
 
 func backgroundControlEnv(env []string) []string {

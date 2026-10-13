@@ -76,6 +76,18 @@ func accountCommand(args []string) error {
 	return nil
 }
 
+// Options before a subcommand may consume it as a variadic value and open a session.
+func nativeControl(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	switch args[0] {
+	case "rm", "stop", "logs":
+		return args[0]
+	}
+	return ""
+}
+
 // Native handles background dispatch before its ordinary help/version flags.
 func nativeInformation(args []string) bool {
 	if BackgroundRequested(args) {

@@ -50,11 +50,15 @@ func main() {
 func run() int {
 	// The roles this file plays for a running session come first: they are not launches,
 	// and a hook has the client's timeout to answer in.
+	if code, ok := residentRelay(os.Args, os.Stderr); ok {
+		return code
+	}
 	if len(os.Args) == 3 && os.Args[1] == "--clauduct-background-key" {
 		// A background job whose resident died asks for its key first when it wakes: a dead
 		// resident's record lets this start one again on the same port and link (#319 decision 18c).
 		if _, err := sessionlink.Read(os.Args[2]); err != nil {
 			app.RegenerateResident(os.Args[2], 30*time.Second)
+			app.ReportResidentRestoreFailure(os.Args[2], os.Stderr)
 		}
 	}
 	hookcmd.Regenerable = app.RegenerableJob
@@ -237,6 +241,17 @@ const usageOption = "--usage"
 // devOption is where Clauduct's own commands start: clauduct --dev --version.
 const devOption = "--dev"
 
+func residentRelay(argv []string, errOut io.Writer) (int, bool) {
+	if len(argv) < 2 || argv[1] != app.ResidentRelayRole {
+		return 0, false
+	}
+	if len(argv) != 3 || app.RelayResident(argv[2]) != nil {
+		fmt.Fprintln(errOut, "CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RELAY_FAILED")
+		return 1, true
+	}
+	return 0, true
+}
+
 // devArgs is the command for devcmd when argv asks for one: --dev first, the way --update
 // is recognised, or the name clauduct-dev.exe that a copy from a 0.3.x updater carries.
 //
@@ -269,18 +284,16 @@ func asked(args []string, option string) bool {
 func regenerate(link string) int {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RECORD_UNAVAILABLE")
-		return 1
+		return regenerationFailure(link, "RESIDENT_RECORD_UNAVAILABLE", os.Stderr)
 	}
 	record, err := app.LoadResident(home, link)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RECORD_UNAVAILABLE")
-		return 1
+		return regenerationFailure(link, "RESIDENT_RECORD_UNAVAILABLE", os.Stderr)
 	}
 	env := platform.Environment(os.Environ())
 	sessionDuration, err := app.SessionDuration(env)
 	if err != nil {
-		return 1
+		return regenerationFailure(link, "INVALID_SESSION_TIMEOUT", os.Stderr)
 	}
 	ledger, startGateway, modelList := productUpstream(record.Port)
 	result, err := app.Run(context.Background(), app.Options{
@@ -296,12 +309,20 @@ func regenerate(link string) int {
 		Regenerate:     &record,
 		Stderr:         io.Discard,
 	})
-	return finishRegeneration(result, err, os.Stderr)
+	return finishRegeneration(link, result, err, os.Stderr)
 }
 
-func finishRegeneration(result app.Result, runErr error, errOut io.Writer) int {
+func regenerationFailure(link, category string, errOut io.Writer) int {
+	if app.WriteResidentRestoreFailure(link, category) != nil {
+		fmt.Fprintln(errOut, "clauduct: RESIDENT_DIAGNOSTIC_UNAVAILABLE")
+	}
+	fmt.Fprintln(errOut, "CLAUDUCT_RESIDENT_RESTORE_FAILED: "+category)
+	return 1
+}
+
+func finishRegeneration(link string, result app.Result, runErr error, errOut io.Writer) int {
 	// The status file says how this resident ended, as run() writes it; without this the last
-	// checkpoint (RUNNING) stayed. No summary line: this stderr reaches native's key helper.
+	// checkpoint (RUNNING) stayed. Relay-spawned residents have NUL standard streams.
 	if result.NativeStarted || result.Category != "" {
 		if err := app.WriteFinal(result); err != nil {
 			fmt.Fprintln(errOut, "clauduct: CLAUDUCT_REQUEST_STATUS_UNAVAILABLE")
@@ -314,8 +335,7 @@ func finishRegeneration(result app.Result, runErr error, errOut io.Writer) int {
 				category = known
 			}
 		}
-		fmt.Fprintln(errOut, "CLAUDUCT_RESIDENT_RESTORE_FAILED: "+category)
-		return 1
+		return regenerationFailure(link, category, errOut)
 	}
 	return 0
 }

@@ -507,6 +507,20 @@ child `Wait`만으로 모든 손자가 종료됐다고 단정하지 않는다. n
 프로세스는 gateway·검증 예산·필수 plugin 수명을 맡아 worker stop·재기동 사이에도 이를 보존한다.
 native `stop`은 나중에 깨울 수 있도록 나열된 job의 resident record와 events 디렉터리를 남긴다.
 모든 job이 stopped가 되면 연결 유지 프로세스는 끝나고, 다시 attach할 때 record로 재생성한다.
+hook의 복원 요청은 숨은 relay 프로세스를 창 없이 시작하고 종료를 기다린 뒤, link 대기를 같은
+마감의 남은 예산 안에서 계속한다(hook reconnect 2초, key helper 30초). 별도 relay 200 ms 상한은 없다.
+relay는 기존 플래그로 resident를 띄우고 즉시 끝나며, resident의 stdin·stdout·stderr는 NUL이다.
+시작 실패는 native 전 실패도 포함해 status 임시 디렉터리의 `resident-restore/<link>.txt`에 허용된
+고정 category 하나만 원자적으로 남긴다. 경로·오류 원문·credential은 기록하지 않는다. link를 얻지
+못한 key helper와 소유 native session을 확인한 hook reconnect는 파일을 소비하고 자기 stderr에
+`CLAUDUCT_RESIDENT_RESTORE_FAILED: <category>`를 쓴다. 소비 뒤, link 성공 관측 때, 다음 복원 시도 전에
+그 link의 파일 하나만 지운다. 소비되지 않은 파일은 그때까지 임시 영역에 남으며 이름·mtime sweep은 없다.
+파일 접근 실패나 허용목록 밖 내용은 경로 없는 `RESIDENT_DIAGNOSTIC_UNAVAILABLE`로만 알린다.
+relay는 받은 환경을 그대로 전달하고 credential을 만들거나 읽지 않는다. relay가 이미 끝났으면
+native의 hook timeout `taskkill /T`가 그 부모 체인을 따라 resident까지 도달하지 않는다.
+relay 실패·마감 초과는 복원 실패이며 직접 spawn으로 대체하지 않는다. relay가 resident를 띄우고
+끝나기 전의 짧은 경합에서는 둘 다 kill될 수 있다. 콜드 스타트·AV 지연과 native job 종료의 영향은
+별도 실측이 필요하다.
 `clauduct --background-stop`은 연결을 끝내며 job 삭제는 native `rm <id>`로 한다.
 worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업 상태 파일의
 부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다.

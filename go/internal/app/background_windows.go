@@ -97,6 +97,7 @@ func StartBackground(ctx context.Context, args []string, cwd string, out, errOut
 // it when the link is gone; on any failure the helper still answers CONNECTION_UNAVAILABLE.
 // Like StartBackground it is a detached process of this user: no service, no startup entry.
 func RegenerateResident(link string, wait time.Duration) {
+	deadline := time.Now().Add(wait)
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return
@@ -109,36 +110,79 @@ func RegenerateResident(link string, wait time.Duration) {
 	if err != nil {
 		return
 	}
-	cmd := exec.Command(self, ResidentRestoreRole, link)
-	cmd.Dir = record.Cwd
-	cmd.Stderr = residentDiagnostics()
-	// Out of native's job when it allows that, so the resident outlives this helper.
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000 | 0x01000000}
-	if cmd.Start() != nil {
-		cmd = exec.Command(self, ResidentRestoreRole, link)
-		cmd.Dir = record.Cwd
-		cmd.Stderr = residentDiagnostics()
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-		if cmd.Start() != nil {
-			return
-		}
+	if clearResidentRestoreFailure(link) != nil {
+		fmt.Fprintln(os.Stderr, "clauduct: RESIDENT_DIAGNOSTIC_UNAVAILABLE")
+		return
 	}
-	exited := make(chan struct{})
-	go func() { cmd.Wait(); close(exited) }() // a resident that failed to start ends the wait
-	for deadline := time.Now().Add(wait); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
-		if _, err := sessionlink.Read(link); err == nil {
+	if runResidentRelay(self, link, record.Cwd, time.Until(deadline)) != nil {
+		return
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	for time.Now().Before(deadline) {
+		if _, err := sessionlink.ReadContext(ctx, link); err == nil {
+			if clearResidentRestoreFailure(link) != nil {
+				fmt.Fprintln(os.Stderr, "clauduct: RESIDENT_DIAGNOSTIC_UNAVAILABLE")
+			}
 			return
 		}
-		select {
-		case <-exited:
-			return
-		default:
-		}
+		time.Sleep(min(200*time.Millisecond, time.Until(deadline)))
 	}
 }
 
-// Relay diagnostics so the resident cannot keep native's key-helper pipe open.
-func residentDiagnostics() io.Writer { return io.MultiWriter(os.Stderr) }
+var errResidentRelay = errors.New("CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RELAY_FAILED")
+
+func runResidentRelay(self, link, cwd string, wait time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, self, ResidentRelayRole, link)
+	cmd.Dir, cmd.Stderr = cwd, os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	if cmd.Run() != nil {
+		return errResidentRelay
+	}
+	return nil
+}
+
+// RelayResident validates the link before spawning, inherits the environment, and never waits
+// for the resident. A dead relay breaks native's taskkill /T parent chain.
+func RelayResident(link string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return errResidentRelay
+	}
+	record, err := LoadResident(home, link)
+	if err != nil {
+		return errResidentRelay
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return errResidentRelay
+	}
+	return startRestoredResident(self, link, record.Cwd)
+}
+
+func startRestoredResident(self, link, cwd string) error {
+	// shortcut: a kill before relay exit can still end restoration; revisit if R10 reproduces it.
+	start := func(flags uint32) (*exec.Cmd, error) {
+		cmd := exec.Command(self, ResidentRestoreRole, link)
+		cmd.Dir = cwd
+		// Nil standard streams are NUL; no native hook pipe survives in the resident.
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: flags}
+		return cmd, cmd.Start()
+	}
+	cmd, err := start(0x08000000 | 0x01000000)
+	if err != nil {
+		cmd, err = start(0x08000000)
+	}
+	if err != nil {
+		return errResidentRelay
+	}
+	if cmd.Process.Release() != nil {
+		return errResidentRelay
+	}
+	return nil
+}
 
 var errResidentBusy = errors.New("RESIDENT_RECORD_BUSY")
 
@@ -209,6 +253,7 @@ func ReconnectResidentContext(parent context.Context, link, session string) {
 		return
 	}
 	done := make(chan struct{})
+	attempted := make(chan struct{})
 	go func() {
 		defer close(done)
 		home, err := os.UserHomeDir()
@@ -219,11 +264,17 @@ func ReconnectResidentContext(parent context.Context, link, session string) {
 		if err != nil || !record.ownsSession(nativeConfigDirectory(platform.Environment(os.Environ()), record.Cwd), session) {
 			return
 		}
+		close(attempted)
 		reconnectRegenerateResident(link, 2*time.Second)
 	}()
 	// The caller's deadline does not cancel the resident or its restoration.
 	select {
 	case <-done:
 	case <-ctx.Done():
+	}
+	select {
+	case <-attempted:
+		ReportResidentRestoreFailure(link, os.Stderr)
+	default:
 	}
 }

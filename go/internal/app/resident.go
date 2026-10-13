@@ -39,6 +39,9 @@ type ResidentRecord struct {
 // ResidentRestoreRole is the resident a key helper starts when its link is gone.
 const ResidentRestoreRole = "--clauduct-background-restore"
 
+// ResidentRelayRole starts a restore resident and exits before native can kill the hook tree.
+const ResidentRelayRole = "--clauduct-background-relay"
+
 var residentLink, residentJob = regexp.MustCompile(`^[a-f0-9]{32}$`), regexp.MustCompile(`^[a-f0-9]{8}$`)
 
 func residentPath(home, link string) string {

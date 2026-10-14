@@ -424,17 +424,35 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		}
 		return ErrSessionProfile // Never replace an existing session from startup/clear.
 	}
-	// A clear continues this process's session. A fork copies the session it was taken from:
-	// this process's own, or, for a copy native started as a new process, the most recent
-	// registration (native does not say which; ponytail: the latest session, a fork's
-	// transcript names its parent if two sessions fork at once).
 	parent := held
-	if parent == "" && source == "fork" {
-		parent = p.last
+	var forkParent *SessionProfile
+	if source == "fork" || p.fork && first {
+		// Parent proof is the launch's resume target, this native's registered session, or its sole live candidate.
+		if p.fork && first && p.forkHistory != nil {
+			forkParent = p.forkHistory
+		} else if parent != "" && p.serving(parent) {
+			forkParent = p.profiles[parent]
+		} else if parent == "" {
+			for id, candidate := range p.profiles {
+				if !p.serving(id) || p.pending[p.owner[id]] != "" {
+					continue
+				}
+				if forkParent != nil {
+					return ErrSessionProfile
+				}
+				forkParent = candidate
+			}
+		}
+		if forkParent == nil && !(p.fork && first) {
+			return ErrSessionProfile
+		}
 	}
 	pair := p.startup
 	if source == "clear" || source == "fork" && (!p.fork || !first) {
 		prior := p.profiles[parent]
+		if source == "fork" {
+			prior = forkParent
+		}
 		if prior == nil {
 			return ErrSessionProfile
 		}
@@ -472,11 +490,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		}
 	}
 	if source == "fork" || p.fork && first {
-		prior := p.profiles[parent]
-		if prior == nil {
-			prior = p.forkHistory
-		}
-		if prior != nil {
+		if prior := forkParent; prior != nil {
 			profile.Version = 2
 			profile.Parent = prior.ID
 			profile.Calls = cloneToolIssuances(prior.Calls)

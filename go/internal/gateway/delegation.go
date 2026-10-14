@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -1229,7 +1230,7 @@ func (d *delegations) forkEvidence(binding agentBinding) (delegationMetadata, []
 // metadata is agentType fork with isFork, spawnDepth 1 and no toolUseId or parent agent, and its
 // transcript opens with a fork-context-ref naming this session and the parent's last message.
 // It is accepted only on all of that, a live SubagentStart registration (the binding), that
-// last message being in this session's own transcript, and native's receipt for the child's
+// last message being on this session's active ancestry, and native's receipt for the child's
 // turn, whose route it takes: the fork runs on the conversation's model (inherit). A fork
 // below a subagent has not been measured and is refused.
 func (d *delegations) conversationFork(scope delegationScope, id string, binding agentBinding, contexts ...context.Context) (resolvedChoice, bool) {
@@ -1281,8 +1282,7 @@ func (d *delegations) conversationFork(scope delegationScope, id string, binding
 	return choice, true
 }
 
-// transcriptHasMessage reports whether this session's own transcript has an entry whose uuid
-// is uuid, read through the launcher-owned projects root within a bound.
+// transcriptHasMessage proves a top-level message on this session's active leaf's ancestry.
 func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bool {
 	if filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
 		return false
@@ -1300,8 +1300,58 @@ func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bo
 	if err != nil {
 		return false
 	}
-	needle, _ := json.Marshal(uuid)
-	return bytes.Contains(raw, append([]byte(`"uuid":`), needle...))
+	if len(raw) == 0 || raw[len(raw)-1] != '\n' {
+		return false
+	}
+	scanner := bufio.NewScanner(bytes.NewReader(raw))
+	scanner.Buffer(make([]byte, 4096), 2<<20)
+	parents := make(map[string]string)
+	leaf := ""
+	for scanner.Scan() {
+		fields, err := wire.Fields(scanner.Bytes(), nil)
+		var kind, id, session, parent string
+		var sidechain bool
+		if err != nil || json.Unmarshal(fields["type"], &kind) != nil {
+			return false
+		}
+		if kind != "user" && kind != "assistant" && kind != "system" {
+			continue
+		}
+		if json.Unmarshal(fields["uuid"], &id) != nil || !correlationShape.MatchString(id) ||
+			json.Unmarshal(fields["sessionId"], &session) != nil || session != binding.SessionID {
+			return false
+		}
+		if value, presence := wire.Of(fields, "isSidechain"); presence != wire.Absent {
+			if presence == wire.Null || json.Unmarshal(value, &sidechain) != nil {
+				return false
+			}
+		}
+		if sidechain {
+			continue
+		}
+		if value, presence := wire.Of(fields, "parentUuid"); presence == wire.Present {
+			if json.Unmarshal(value, &parent) != nil || !correlationShape.MatchString(parent) {
+				return false
+			}
+		}
+		if _, duplicate := parents[id]; duplicate {
+			return false
+		}
+		parents[id], leaf = parent, id
+	}
+	if scanner.Err() != nil {
+		return false
+	}
+	found := false
+	for remaining := len(parents); leaf != ""; remaining-- {
+		parent, exists := parents[leaf]
+		if !exists || remaining == 0 {
+			return false
+		}
+		found = found || leaf == uuid
+		leaf = parent
+	}
+	return found
 }
 
 // cacheFork records a verified fork child. A parallel first request may have done so first.

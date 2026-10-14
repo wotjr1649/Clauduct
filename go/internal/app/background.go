@@ -293,6 +293,7 @@ func (p *backgroundProcess) Wait() error {
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	nativeIdle := 0
+	completedIdle := 0
 	for {
 		select {
 		case <-p.crash:
@@ -329,11 +330,13 @@ func (p *backgroundProcess) Wait() error {
 					writeResident(p.home, *p.record)
 				}
 			}
+			allCompleted := true
 			for job, missing := range jobs {
-				running, err := jobRunning(p.config, job)
+				running, completed, err := jobRunning(p.config, job)
 				if err != nil {
 					return errors.Join(errors.New("BACKGROUND_STATE_UNREADABLE"), stopNative())
 				}
+				allCompleted = allCompleted && completed
 				if missing++; running {
 					missing = 0
 				}
@@ -348,10 +351,17 @@ func (p *backgroundProcess) Wait() error {
 				registered, notExited, active := p.nativeStatus()
 				if registered > 0 && notExited == 0 && active == 0 {
 					nativeIdle++
+					if allCompleted {
+						completedIdle++
+					} else {
+						completedIdle = 0
+					}
 				} else {
 					nativeIdle = 0
+					completedIdle = 0
 				}
-				if nativeIdle >= 30 { // Allow a respawned worker time to register on this gateway.
+				// Completed jobs can respawn through key-helper regeneration (RP2/RP6, decision 18m R13).
+				if completedIdle >= 3 || nativeIdle >= 30 {
 					return nil
 				}
 			}
@@ -362,21 +372,21 @@ func (p *backgroundProcess) Wait() error {
 // jobRunning reports whether a job may still use its gateway: native lists it and has not
 // stopped it. Native owns this schema and all writes; only its state is read. A stopped job's
 // worker has exited (measured 2.1.295); any other state, or a file being rewritten, counts as
-// running.
-func jobRunning(config, job string) (bool, error) {
+// running. completed separately marks done/stopped for a wait with proven native exit.
+func jobRunning(config, job string) (running, completed bool, err error) {
 	raw, err := os.ReadFile(filepath.Join(config, "jobs", job, "state.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+		return false, false, nil
 	} else if err != nil {
-		return false, err
+		return false, false, err
 	}
 	var state struct {
 		State string `json:"state"`
 	}
 	if json.Unmarshal(raw, &state) != nil {
-		return true, nil
+		return true, false, nil
 	}
-	return state.State != "stopped", nil
+	return state.State != "stopped", state.State == "done" || state.State == "stopped", nil
 }
 
 var jobStat = os.Lstat

@@ -256,12 +256,18 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			return Result{}, err
 		}
 	}
+	clauductHome := o.ClauductHome
+	information := nativeInformation(o.Args)
+	if clauductHome == "" && !information {
+		clauductHome, _ = os.UserHomeDir()
+	}
+	if clauductHome != "" && o.Settings == nil && !information {
+		defer func() { reportForegroundEventsCleanup(o.Stderr, collectForegroundEvents(clauductHome)) }()
+	}
 	if command := nativeControl(o.Args); command != "" && o.Regenerate == nil {
 		return runNativeControl(ctx, o, command)
 	}
 	config := defaultClauductSettings()
-	clauductHome := o.ClauductHome
-	information := nativeInformation(o.Args)
 	// Before anything is fetched or bound: a machine policy that can move model requests off
 	// the gateway is one this launcher cannot outrank (#295). Help and version send none.
 	if !information {
@@ -275,9 +281,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				return Result{}, err
 			}
 		}
-	}
-	if clauductHome == "" && !information {
-		clauductHome, _ = os.UserHomeDir()
 	}
 	if o.Settings == nil && !information {
 		if clauductHome == "" {
@@ -481,7 +484,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			return
 		}
 		// Every exit above/below drains the gateway first. Retain the directory
-		// if either owner may still be using it; never sweep older session dirs.
+		// if either owner may still be using it; older directories have a separate owner check.
 		if !nativeCleanupReady || result.CleanupErr != nil {
 			result.CleanupErr = errors.Join(result.CleanupErr, errors.New("NATIVE_EVENT_CLEANUP_UNVERIFIED"))
 			return
@@ -628,6 +631,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				at = o.Regenerate.PluginDir
 			}
 			nativePlugin, err = prepareNativeEventsAt(at, link, config.Selection.Catalogue())
+			if err == nil && o.Regenerate == nil && !BackgroundRequested(launchArgs) {
+				err = writeEventsOwner(nativePlugin)
+			}
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")

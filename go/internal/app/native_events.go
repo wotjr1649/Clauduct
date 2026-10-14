@@ -142,10 +142,14 @@ func eventsDirValid(dir string) bool {
 var errEventsPathRefused = errors.New("NATIVE_EVENTS_PATH_REFUSED")
 
 func removeEventsDir(dir string) error {
+	return removeEventsDirChecked(dir, nil)
+}
+
+func removeEventsDirChecked(dir string, recheck func() error) error {
 	if !eventsDirValid(dir) {
 		return errEventsPathRefused
 	}
-	info, err := os.Lstat(dir)
+	info, err := eventsPathInfo(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -159,7 +163,7 @@ func removeEventsDir(dir string) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		info, err := os.Lstat(path)
+		info, err := eventsPathInfo(path)
 		if err != nil {
 			return err
 		}
@@ -175,7 +179,33 @@ func removeEventsDir(dir string) error {
 		return err
 	}
 	defer root.Close()
-	if err := root.RemoveAll(filepath.Base(dir)); err != nil {
+	base := filepath.Base(dir)
+	f, err := root.Open(base)
+	if err != nil {
+		return err
+	}
+	entries, readErr := f.ReadDir(-1)
+	closeErr := f.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return err
+	}
+	if recheck != nil {
+		if err := recheck(); err != nil {
+			return err
+		}
+	}
+	// Keep the owner until every payload entry is gone, so a failed sweep can retry.
+	for _, entry := range entries {
+		if entry.Name() != eventsOwnerFile {
+			if err := root.RemoveAll(filepath.Join(base, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	if err := root.Remove(filepath.Join(base, eventsOwnerFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := root.Remove(base); err != nil {
 		return err
 	}
 	if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {

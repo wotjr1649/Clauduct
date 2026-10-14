@@ -445,6 +445,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// The job's settings name the recorded port; any other serves nobody.
 		return Result{}, errors.Join(errors.New("RESIDENT_PORT_MISMATCH"), closeGateway(gw, o.ShutdownTimeout))
 	}
+	if o.Settings == nil {
+		if image := filepath.Base(exe); strings.EqualFold(image, "claude.exe") && !o.nativeIdentityOff {
+			gw.RequireNativeIdentity(image)
+		}
+	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureClassifierModel(config.ClassifierModel)
 	gw.ExpectTools(expectedTools(o.Args, upstream.ReferenceCoreTools))
@@ -576,7 +581,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if BackgroundRequested(o.Args) {
 			connection := sessionlink.Connection{BaseURL: gw.BaseURL(), Token: gw.Token()}
 			if o.Regenerate != nil {
-				background, err = sessionlink.Restart(context.Background(), o.Regenerate.Link, connection)
+				err = restoreResidentProof(gw, o.Regenerate.Link, *o.Regenerate)
+				if err == nil {
+					background, err = sessionlink.Restart(context.Background(), o.Regenerate.Link, connection)
+				}
 			} else {
 				background, err = sessionlink.Start(context.Background(), connection)
 			}
@@ -611,13 +619,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	if o.Settings == nil {
 		gw.RequireNativeConfirmations()
-		// Every request's native process is an OS fact, so a session is bound to the process
-		// that registered it and one worker's evidence proves nothing for another (#319
-		// decision 18d). Only for the native client itself: a stand-in under another name has
-		// no claude.exe to find.
-		if image := filepath.Base(exe); strings.EqualFold(image, "claude.exe") && !o.nativeIdentityOff {
-			gw.RequireNativeIdentity(image)
-		}
 		gw.ConfigurePDFRenderer(hook)
 		if hook != "" {
 			link := ""
@@ -832,6 +833,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
 		bp.home, bp.session, bp.sessions = clauductHome, gw.CurrentSession, gw.Sessions
+		bp.proved = gw.ProvedNativeProcesses
 		bp.nativeStatus = nativeStatus
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored

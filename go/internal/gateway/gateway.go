@@ -34,6 +34,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -121,6 +122,10 @@ type Gateway struct {
 	identify    identifyFunc // nil is the OS lookup; tests replace it
 	// discovered holds each native process that asked this gateway for its model list.
 	discovered sync.Map // processKey -> struct{}
+	startedAt  int64
+	restoredAt atomic.Int64
+	// processStatus is the OS liveness and creation-time check; tests replace it.
+	processStatus func(uint32, int64) providercert.ProcessState
 	// routingMismatch is set by this session's hook or its failed uncontrolled proof.
 	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
@@ -208,6 +213,7 @@ func StartAt(transport upstream.Transport, port int) (*Gateway, error) {
 	}
 	closing, stopClose := context.WithCancel(context.Background())
 	g := &Gateway{
+		startedAt:    time.Now().UnixNano(),
 		closing:      closing,
 		stopClose:    stopClose,
 		listener:     listener,
@@ -687,18 +693,24 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		// With native identity required, the list must have come from this hook's own native
 		// process: another worker's list proves nothing about this one (#319 decision 18d).
 		proved := func() bool { return g.modelLists.Load() != 0 }
+		priorGeneration := false
 		if id, required := g.identityOf(r); required {
 			if id.native == (processKey{}) {
 				g.refuseIdentity(w)
 				return
 			}
 			proved = func() bool { _, seen := g.discovered.Load(id.native); return seen }
+			priorGeneration = g.restoredAt.Load() > id.native.created
 		}
 		deadline := time.Now().Add(routingProofWait)
 		for !proved() && time.Now().Before(deadline) {
 			time.Sleep(20 * time.Millisecond)
 		}
 		if !proved() {
+			if priorGeneration {
+				g.refuseCategory(w, http.StatusConflict, "ROUTING_PROOF_PRIOR_GENERATION")
+				return
+			}
 			// Decide here even if the hook has already exhausted its deadline.
 			// A saturated read cannot prove EOF, so it fails closed without reading further.
 			raw, readErr := io.ReadAll(io.LimitReader(r.Body, 256))

@@ -126,6 +126,7 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 			}
 			return 0, true
 		}
+		ctx = context.WithValue(ctx, routingLinkContext{}, args[1])
 		return routedContext(ctx, connection, controlled, in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	switch {
@@ -203,6 +204,10 @@ func routed(connection sessionlink.Connection, controlled bool, in io.Reader, ou
 	return routedContext(ctx, connection, controlled, in, out, errOut, env)
 }
 
+type routingLinkContext struct{}
+
+var routingJob = regexp.MustCompile(`^[a-f0-9]{8}$`)
+
 func routedContext(ctx context.Context, connection sessionlink.Connection, controlled bool, in io.Reader, out, errOut io.Writer, env map[string]string) int {
 	if routedElsewhere(env, connection.BaseURL, controlled) {
 		// A foreground link answers for the Clauduct process this hook runs under. One that does
@@ -243,6 +248,16 @@ func routedContext(ctx context.Context, connection sessionlink.Connection, contr
 		if _, err := postReply(ctx, proof, env, RoutingProofPath, false); err != nil {
 			if errors.Is(err, errHookDeadline) {
 				return hookDeadline(errOut)
+			}
+			if errors.Is(err, errRoutingProofPriorGeneration) {
+				job := "<job>"
+				if link, ok := ctx.Value(routingLinkContext{}).(string); ok && Regenerable != nil {
+					if id, known := Regenerable(link); known && routingJob.MatchString(id) {
+						job = id
+					}
+				}
+				fmt.Fprintf(errOut, "ROUTING_PROOF_PRIOR_GENERATION: this native's routing proof did not survive the resident restart; run claude respawn %s to reopen it, then submit again\n", job)
+				return 2
 			}
 			if providerControlled {
 				fmt.Fprintln(errOut, "CLAUDUCT_ROUTING_PROOF_MISSING: native did not ask this session's Clauduct gateway for its model list; recorded as a diagnostic, since provider control routes this session.")
@@ -723,6 +738,17 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 			continue
 		}
 		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
+			if path == RoutingProofPath && response.StatusCode == http.StatusConflict {
+				var envelope struct {
+					Type  string `json:"type"`
+					Error struct {
+						Message string `json:"message"`
+					} `json:"error"`
+				}
+				if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" && envelope.Error.Message == "ROUTING_PROOF_PRIOR_GENERATION" {
+					return nil, errRoutingProofPriorGeneration
+				}
+			}
 			if path == "/clauduct/context" {
 				var envelope struct {
 					Type  string `json:"type"`
@@ -750,6 +776,7 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")
 var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
 var errHookDeadline = errors.New("CLAUDUCT_HOOK_DEADLINE")
+var errRoutingProofPriorGeneration = errors.New("ROUTING_PROOF_PRIOR_GENERATION")
 
 func hookDeadline(errOut io.Writer) int {
 	fmt.Fprintln(errOut, "CLAUDUCT_HOOK_DEADLINE: the Clauduct hook did not finish before its deadline; restore the Clauduct hook connection and submit the prompt again.")

@@ -34,6 +34,8 @@ type ResidentRecord struct {
 	// Jobs are the other native jobs on this link: dispatched from its agent view, they share
 	// its settings and so its gateway, which lives until the last of them ends.
 	Jobs []string `json:"jobs,omitempty"`
+	// Proved contains only native identities that directly requested this gateway's models.
+	Proved []gateway.NativeProcess `json:"proved,omitempty"`
 }
 
 // ResidentRestoreRole is the resident a key helper starts when its link is gone.
@@ -50,7 +52,7 @@ func residentPath(home, link string) string {
 
 func (r ResidentRecord) check() error {
 	if !residentLink.MatchString(r.Link) || !residentJob.MatchString(r.Job) || r.Session != "" && !gateway.IsSessionUUID(r.Session) || r.Port < 1 || r.Port > 65535 || !filepath.IsAbs(r.Cwd) ||
-		r.Config != "" && !filepath.IsAbs(r.Config) || r.PluginDir != "" && !eventsDirValid(r.PluginDir) {
+		r.Config != "" && !filepath.IsAbs(r.Config) || r.PluginDir != "" && !eventsDirValid(r.PluginDir) || len(r.Proved) > gateway.MaxRoutingProofs {
 		return errors.New("RESIDENT_RECORD_INVALID")
 	}
 	for _, job := range r.Jobs {
@@ -58,6 +60,19 @@ func (r ResidentRecord) check() error {
 			return errors.New("RESIDENT_RECORD_INVALID")
 		}
 	}
+	for _, p := range r.Proved {
+		if p.PID == 0 || p.Created <= 0 {
+			return errors.New("RESIDENT_RECORD_INVALID")
+		}
+	}
+	return nil
+}
+
+func restoreResidentProof(gw *gateway.Gateway, link string, r ResidentRecord) error {
+	if r.Link != link || residentPort(gw.Addr()) != r.Port {
+		return errors.New("RESIDENT_ROUTING_PROOF_MISMATCH")
+	}
+	gw.RestoreRoutingProof(r.Proved)
 	return nil
 }
 

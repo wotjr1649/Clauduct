@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
@@ -20,6 +21,52 @@ type processKey struct {
 type NativeProcess struct {
 	PID     uint32
 	Created int64
+}
+
+// MaxRoutingProofs bounds the resident's persisted process identities.
+const MaxRoutingProofs = 256
+
+// ProvedNativeProcesses reports only natives whose own model list reached this gateway.
+func (g *Gateway) ProvedNativeProcesses() []NativeProcess {
+	var out []NativeProcess
+	g.discovered.Range(func(key, _ any) bool {
+		p := key.(processKey)
+		if p.pid > 0 && p.created > 0 {
+			out = append(out, NativeProcess{PID: p.pid, Created: p.created})
+		}
+		return true
+	})
+	slices.SortFunc(out, func(a, b NativeProcess) int {
+		if a.PID < b.PID || a.PID == b.PID && a.Created < b.Created {
+			return -1
+		}
+		if a == b {
+			return 0
+		}
+		return 1
+	})
+	if len(out) > MaxRoutingProofs {
+		out = out[:MaxRoutingProofs]
+	}
+	return out
+}
+
+// RestoreRoutingProof continues a same-link, same-port resident's proof before its link is
+// published. The caller checks that boundary; only the OS can confirm a recorded identity.
+func (g *Gateway) RestoreRoutingProof(proved []NativeProcess) {
+	g.restoredAt.Store(g.startedAt)
+	if g.nativeImage.Load() == nil || len(proved) > MaxRoutingProofs {
+		return
+	}
+	status := g.processStatus
+	if status == nil {
+		status = providercert.ProcessStatus
+	}
+	for _, p := range proved {
+		if p.PID > 0 && p.Created > 0 && status(p.PID, p.Created) == providercert.ProcessAlive {
+			g.discovered.Store(processKey{p.PID, p.Created}, struct{}{})
+		}
+	}
 }
 
 // NativeProcesses reports natives registered here or observed by routing discovery.

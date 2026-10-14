@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
+	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
@@ -190,6 +191,7 @@ type backgroundProcess struct {
 	session func() string
 	// sessions reports every session registered on the gateway; their jobs join this one.
 	sessions func() []string
+	proved   func() []gateway.NativeProcess
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
 	nativeStatus func() (registered, notExited int, active int64)
 	crashed      bool // the test crash ended the wait: the record stays, as after a real death
@@ -306,6 +308,12 @@ func (p *backgroundProcess) Wait() error {
 		case <-p.link.Done:
 			return errors.Join(sessionlink.ErrUnavailable, stopNative())
 		case <-tick.C:
+			if p.record != nil && p.proved != nil {
+				if proved := p.proved(); !slices.Equal(proved, p.record.Proved) {
+					p.record.Proved = proved
+					writeResident(p.home, *p.record)
+				}
+			}
 			if p.record != nil && p.session != nil {
 				if session := p.session(); session != "" && session != p.record.Session {
 					p.record.Session = session

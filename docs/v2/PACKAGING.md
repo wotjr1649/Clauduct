@@ -31,6 +31,14 @@
 
 **Claude Code를 처음 실행하는 사람(2.1.296 실측).** native만 실행하면 테마 선택 다음에 로그인 방법 선택(Claude 구독·Console·3rd-party)이 나온다. Clauduct로 시작하면 이 단계가 없다. 테마 선택 → 보안 안내 → 폴더 신뢰를 거쳐 입력창으로 간다. native가 Clauduct gateway의 인증 설정을 받아 로그인 단계를 건너뛰기 때문이다. 입력창 머리글의 `API Usage Billing`은 native가 이 인증 방식에 붙이는 이름이다. 요청은 Codex 구독으로 가고 Anthropic에 과금되지 않는다.
 
+**Claude에도 로그인한 사람.** `--bg` job을 관리하려고 native `claude agents`나 `claude attach`를 직접 열면, 그 native는 Clauduct가 띄운 것이 아니므로 사용자의 Claude 로그인을 쓴다. 2.1.296 실측으로 확인한 것은 다음과 같다.
+- `claude agents`가 미리 띄우는 세션이 1토큰 확인 요청을 Anthropic에 1건 보낸다. 작업 폴더, `CLAUDE.md`, job 내용은 들어 있지 않다.
+- `claude attach`와 그 daemon은 시작 때 비추론 요청을 보낸다.
+- job의 모델 요청과 저장된 Reply는 Clauduct gateway로만 간다.
+- agents 화면에서 새 작업을 시작하면 그 작업은 Clauduct 밖 native 세션이다.
+
+자세한 분류는 [COMPATIBILITY](COMPATIBILITY.md)의 서비스 분류 표에 있다.
+
 **`codex.exe` 의존은 G7이 추가한 것이다.** 이 문서가 그것을 적는 이유는 REL03이 "Node adapter·.NET probe에 의존하지 않음"만 묻기 때문이다 — 그 둘은 실제로 없지만, **런타임 의존이 0이라는 뜻은 아니다.** 정직한 목록은 위의 셋이다.
 
 Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mjs` 경로·`node.exe`·`npm.cmd`·.NET probe 이름이 들어가지 못하게 막는다.

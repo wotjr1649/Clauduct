@@ -699,6 +699,7 @@ settings 파일이 바꾸지 못한다.
 | telemetry·오류 보고·feature flag 조회 | 서버 | `NATIVE_DISABLED` | `NATIVE_DISABLED` | 세션 환경 `DISABLE_TELEMETRY`·`DISABLE_ERROR_REPORTING`. 문서: telemetry를 끄면 flag 조회도 꺼진다 |
 | `/usage`·`/cost`의 플랜 사용량 | 서버(claude.ai 계정) | `INERT` | `INERT` | 실측(알려진 제한 원장): native가 custom base URL에는 계정 엔드포인트를 묻지 않는다. 사용량은 `clauduct --usage` |
 | claude.ai 로그인·구독 관리(`/login` 등) | 서버(claude.ai) | `OUT_OF_SCOPE` | `OUT_OF_SCOPE` | Clauduct는 Codex 계정을 쓴다 |
+| 사용자가 직접 연 native `claude agents`·`claude attach`(`--bg` job 관리) | 서버(`api.anthropic.com`, 사용자의 Claude 로그인) | `OUT_OF_SCOPE` | `OUT_OF_SCOPE` | Clauduct가 띄운 프로세스가 아니라 사용자의 native다. 실측(2.1.296, 오프라인 재현, 가짜 토큰): Claude 로그인이 있으면 `claude agents`가 새 작업용으로 미리 띄우는 세션이 그 로그인으로 1토큰 확인 요청(`max_tokens` 1, 작업 폴더·`CLAUDE.md`·job 내용 없음)을 1건 보낸다. `claude attach`와 그 daemon은 시작 때 비추론 요청을 보낸다. Clauduct job의 모델 요청과 저장된 Reply는 그 job의 Clauduct gateway로만 간다. Claude 로그인이 없는 Codex 단독 사용자는 이 요청이 없다. agents 화면에서 새 작업을 직접 시작하면 그 작업은 native 세션으로 Claude 로그인을 쓴다 |
 
 저장된 Claude apps gateway 로그인: 시작 때 그 gateway로 `GET /managed/settings`와 `GET /v1/models`가 가고, 대화 요청은 prompt hook이 막은 뒤
 세션이 끝난다(v0.6.11, #299). 상태는 위 알려진 제한 원장의 해당 행이 소유한다.

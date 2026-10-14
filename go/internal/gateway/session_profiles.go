@@ -427,12 +427,23 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	parent := held
 	var forkParent *SessionProfile
 	if source == "fork" || p.fork && first {
-		// Parent proof is the launch's resume target, this native's registered session, or its sole live candidate.
-		if p.fork && first && p.forkHistory != nil {
+		// A new native's explicit resume target proves its parent even with several live sessions.
+		if source == "fork" && held == "" {
+			if id := g.commandLineForkSession(process); id != "" {
+				forkParent = p.profiles[id]
+				if forkParent == nil {
+					if saved, err := p.store.Load(id); err == nil {
+						forkParent = &saved
+					}
+				}
+			}
+		}
+		// Without argv proof, keep the launch target, this native's session, or sole live candidate.
+		if forkParent == nil && p.fork && first && p.forkHistory != nil {
 			forkParent = p.forkHistory
-		} else if parent != "" && p.serving(parent) {
+		} else if forkParent == nil && parent != "" && p.serving(parent) {
 			forkParent = p.profiles[parent]
-		} else if parent == "" {
+		} else if forkParent == nil && parent == "" {
 			for id, candidate := range p.profiles {
 				if !p.serving(id) || p.pending[p.owner[id]] != "" {
 					continue

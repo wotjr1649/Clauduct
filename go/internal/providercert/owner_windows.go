@@ -74,6 +74,24 @@ func commandLine(h syscall.Handle) string {
 	return syscall.UTF16ToString(unsafe.Slice(text, length/2))
 }
 
+// ProcessCommandLine reads only the process identified at accept, using one handle for
+// its creation time and command line. The caller must never record the returned text.
+func ProcessCommandLine(pid uint32, created int64) string {
+	if pid == 0 || created <= 0 {
+		return ""
+	}
+	h, err := syscall.OpenProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
+	if err != nil {
+		return ""
+	}
+	defer syscall.CloseHandle(h)
+	var c, e, k, u syscall.Filetime
+	if syscall.GetProcessTimes(h, &c, &e, &k, &u) != nil || c.Nanoseconds() != created {
+		return ""
+	}
+	return commandLine(h)
+}
+
 type unicodeString struct {
 	Length, MaximumLength uint16
 	Buffer                *uint16

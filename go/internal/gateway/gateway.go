@@ -120,6 +120,8 @@ type Gateway struct {
 	// nativeImage, once set, makes every connection's native process an OS fact (native_identity.go).
 	nativeImage atomic.Pointer[string]
 	identify    identifyFunc // nil is the OS lookup; tests replace it
+	// commandLine reads the same OS process at its accepted creation time; tests replace it.
+	commandLine func(uint32, int64) string
 	// discovered holds each native process that asked this gateway for its model list.
 	discovered sync.Map // processKey -> struct{}
 	startedAt  int64

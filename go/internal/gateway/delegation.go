@@ -1307,17 +1307,19 @@ func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bo
 	scanner.Buffer(make([]byte, 4096), 2<<20)
 	parents := make(map[string]string)
 	leaf := ""
+	targetMessage := false
 	for scanner.Scan() {
 		fields, err := wire.Fields(scanner.Bytes(), nil)
 		var kind, id, session, parent string
 		var sidechain bool
-		if err != nil || json.Unmarshal(fields["type"], &kind) != nil {
+		if err != nil {
 			return false
 		}
-		if kind != "user" && kind != "assistant" && kind != "system" {
+		if _, present := fields["uuid"]; !present {
 			continue
 		}
-		if json.Unmarshal(fields["uuid"], &id) != nil || !correlationShape.MatchString(id) ||
+		if json.Unmarshal(fields["type"], &kind) != nil ||
+			json.Unmarshal(fields["uuid"], &id) != nil || !correlationShape.MatchString(id) ||
 			json.Unmarshal(fields["sessionId"], &session) != nil || session != binding.SessionID {
 			return false
 		}
@@ -1337,6 +1339,10 @@ func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bo
 		if _, duplicate := parents[id]; duplicate {
 			return false
 		}
+		if id == uuid {
+			targetMessage = kind == "user" || kind == "assistant" || kind == "system"
+		}
+		// Attachments and other UUID rows connect messages but do not prove a message themselves.
 		parents[id], leaf = parent, id
 	}
 	if scanner.Err() != nil {
@@ -1351,7 +1357,7 @@ func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bo
 		found = found || leaf == uuid
 		leaf = parent
 	}
-	return found
+	return found && targetMessage
 }
 
 // cacheFork records a verified fork child. A parallel first request may have done so first.

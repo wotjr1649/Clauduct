@@ -72,7 +72,7 @@ go build -trimpath -o clauduct.exe      ./cmd/clauduct
 clauduct --dev --version
 # clauduct     <태그. 태그 없는 commit은 pseudo-version, 수정된 worktree는 끝에 +dirty>
 # commit       <40자 hash>
-# go           go1.27.1 windows/amd64
+# go           go1.27.2 windows/amd64
 ```
 
 worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다. **그런 빌드는 릴리스 후보가 아니다.**

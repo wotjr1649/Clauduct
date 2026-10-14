@@ -280,8 +280,9 @@ func collectForegroundEvents(home string) []reclaimOutcome {
 func reportForegroundEventsCleanup(out io.Writer, outcomes []reclaimOutcome) {
 	counts := map[string]int{}
 	for _, outcome := range outcomes {
+		// R3 D2 leaves legacy ownerless resources to manual cleanup; reporting them on every exit is noise.
 		switch outcome.Category {
-		case "KEPT_PATH_REFUSED", "KEPT_DELETE_FAILED", "KEPT_OWNER_INVALID", "KEPT_OWNER_UNKNOWN", "SWEEP_SKIPPED":
+		case "KEPT_PATH_REFUSED", "KEPT_DELETE_FAILED", "KEPT_OWNER_UNKNOWN", "SWEEP_SKIPPED":
 			counts[outcome.Category]++
 		}
 	}

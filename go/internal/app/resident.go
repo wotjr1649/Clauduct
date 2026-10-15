@@ -145,7 +145,7 @@ func writeResident(home string, r ResidentRecord) error {
 
 // Keep the old job identities until native's listing proves they can be reclaimed.
 func (p *backgroundProcess) checkpointForeground() error {
-	jobs := nativeJobsWithLink(p.config, p.sessions(), p.record.Link)
+	jobs := nativeJobsWithLink(p.config, p.record.Link)
 	if len(jobs) == 0 && p.record.Job == "" {
 		return nil
 	}

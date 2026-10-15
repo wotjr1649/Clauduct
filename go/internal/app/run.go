@@ -843,7 +843,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		} else if clauductHome != "" && o.Settings == nil && residentLocked {
 			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
-		bp.home, bp.session, bp.sessions = clauductHome, gw.CurrentSession, gw.Sessions
+		bp.home, bp.session = clauductHome, gw.CurrentSession
 		bp.proved = gw.ProvedNativeProcesses
 		bp.nativeStatus = nativeStatus
 		if providerFlag != "" {
@@ -860,7 +860,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if foreground == nil || !o.agentView() || clauductHome == "" || nativePlugin == "" {
 			return nil
 		}
-		if (resident == nil || resident.record.Job == "") && len(nativeJobsWithLink(configDir, gw.Sessions(), foreground.ID)) == 0 {
+		if (resident == nil || resident.record.Job == "") && len(nativeJobsWithLink(configDir, foreground.ID)) == 0 {
 			retainPlugin = false
 			return nil
 		}
@@ -873,7 +873,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			releaseResident, residentLocked = release, true
 		}
 		if resident == nil {
-			resident = &backgroundProcess{config: configDir, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, proved: gw.ProvedNativeProcesses,
+			resident = &backgroundProcess{config: configDir, home: clauductHome, session: gw.CurrentSession, proved: gw.ProvedNativeProcesses,
 				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
 		}
 		err := resident.checkpointForeground()
@@ -925,10 +925,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// Native keeps an agent view session and the jobs dispatched from it running after its
 		// terminal closes; they all use this gateway. Its state stays: the same token, routing
 		// proofs and session bindings, so nothing they have proved has to be proved again.
-		jobs := nativeJobsWithLink(configDir, gw.Sessions(), foreground.ID)
+		jobs := nativeJobsWithLink(configDir, foreground.ID)
 		for i := 0; len(jobs) == 0 && i < 30; i++ {
 			time.Sleep(100 * time.Millisecond) // native lists the closed session as a job as it exits
-			jobs = nativeJobsWithLink(configDir, gw.Sessions(), foreground.ID)
+			jobs = nativeJobsWithLink(configDir, foreground.ID)
 		}
 		if len(jobs) > 0 {
 			foregroundRecordErr = checkpointForeground()
@@ -941,7 +941,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
-				job: jobs[0], record: record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus}
+				job: jobs[0], record: record, home: clauductHome, session: gw.CurrentSession, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus}
 			if record != nil {
 				bp.job = record.Job
 			}

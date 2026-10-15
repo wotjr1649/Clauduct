@@ -172,9 +172,7 @@ type backgroundProcess struct {
 	home   string
 	// session reports the gateway's current native session, kept in the record.
 	session func() string
-	// sessions reports every session registered on the gateway; their jobs join this one.
-	sessions func() []string
-	proved   func() []gateway.NativeProcess
+	proved  func() []gateway.NativeProcess
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
 	nativeStatus func() (registered, notExited int, active int64)
 	crashed      bool // the test crash ended the wait: the record stays, as after a real death
@@ -303,23 +301,21 @@ func (p *backgroundProcess) Wait() error {
 					writeResident(p.home, *p.record)
 				}
 			}
-			if p.sessions != nil {
-				added := false
-				for _, job := range nativeJobsWithLink(p.config, p.sessions(), p.link.ID) {
-					if _, known := jobs[job]; !known {
-						jobs[job], added = 0, true
+			added := false
+			for _, job := range nativeJobsWithLink(p.config, p.link.ID) {
+				if _, known := jobs[job]; !known {
+					jobs[job], added = 0, true
+				}
+			}
+			if added && p.record != nil {
+				p.record.Jobs = p.record.Jobs[:0]
+				for job := range jobs {
+					if job != id {
+						p.record.Jobs = append(p.record.Jobs, job)
 					}
 				}
-				if added && p.record != nil {
-					p.record.Jobs = p.record.Jobs[:0]
-					for job := range jobs {
-						if job != id {
-							p.record.Jobs = append(p.record.Jobs, job)
-						}
-					}
-					slices.Sort(p.record.Jobs)
-					writeResident(p.home, *p.record)
-				}
+				slices.Sort(p.record.Jobs)
+				writeResident(p.home, *p.record)
 			}
 			allCompleted := true
 			for job, missing := range jobs {
@@ -408,22 +404,6 @@ func jobListing(config string, jobs []string) (listed, known bool) {
 		}
 	}
 	return false, known
-}
-
-// nativeJobs names the jobs of these sessions that native lists now. A job is named by the
-// first eight digits of the session it was started with (observed on 2.1.295 for dispatched,
-// forked and agent view jobs); a session with no such job, as after /clear, adds nothing.
-func nativeJobs(config string, sessions []string) []string {
-	var out []string
-	for _, session := range sessions {
-		if len(session) < 8 || !residentJob.MatchString(session[:8]) {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(config, "jobs", session[:8], "state.json")); err == nil {
-			out = append(out, session[:8])
-		}
-	}
-	return out
 }
 
 // recordStays reports whether this resident's record is on disk: it then names the events

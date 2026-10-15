@@ -11,9 +11,9 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
-// A job's helper names its link before its worker can register a gateway session.
-func nativeJobsWithLink(config string, sessions []string, link string) []string {
-	jobs := nativeJobs(config, sessions)
+// Only the job's current helper identifies the gateway its next worker can reach.
+func nativeJobsWithLink(config, link string) []string {
+	var jobs []string
 	if config == "" || !residentLink.MatchString(link) {
 		return jobs
 	}
@@ -34,7 +34,7 @@ func nativeJobsWithLink(config string, sessions []string, link string) []string 
 	slices.SortFunc(entries, func(a, b os.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	for _, entry := range entries {
 		job := entry.Name()
-		if !entry.IsDir() || !residentJob.MatchString(job) || slices.Contains(jobs, job) {
+		if !entry.IsDir() || !residentJob.MatchString(job) {
 			continue
 		}
 		file, err := root.Open(filepath.Join(job, "state.json"))

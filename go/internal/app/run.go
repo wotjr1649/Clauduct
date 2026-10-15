@@ -126,8 +126,8 @@ type Options struct {
 	// process starts, and StartGateway must bind the record's port.
 	Regenerate *ResidentRecord
 	// Handover is offered the native exit code when an agent view session ends with jobs still
-	// on its link (#319 decision 18h). True means the terminal has been given back: this process
-	// then keeps the same gateway and link for those jobs, as a resident does, until they end.
+	// on its link (#319 decision 18h). True means the terminal has been given back; even if the
+	// launcher is gone, this process keeps the gateway and link until those jobs end.
 	Handover func(nativeExit int) bool
 	// ProviderStrategy is how native is held to this session's gateway (#320); empty is the
 	// launch without one. An unknown name is refused.
@@ -137,6 +137,8 @@ type Options struct {
 	AdmittedNativeSHA256 string
 	// backgroundUnderStrategy lets a probe run the unverified background path under a strategy.
 	backgroundUnderStrategy bool
+	// foregroundCheckpoint persists newly dispatched jobs before their first gateway request.
+	foregroundCheckpoint func() error
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
 	interrupts chan os.Signal
 	// afterNative, set only by a test, runs once native has ended and before the gateway closes;
@@ -858,7 +860,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if foreground == nil || !o.agentView() || clauductHome == "" || nativePlugin == "" {
 			return nil
 		}
-		if len(nativeJobs(configDir, gw.Sessions())) == 0 && (resident == nil || resident.record.Job == "") {
+		if (resident == nil || resident.record.Job == "") && len(nativeJobsWithLink(configDir, gw.Sessions(), foreground.ID)) == 0 {
 			retainPlugin = false
 			return nil
 		}
@@ -879,10 +881,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return err
 	}
 	if foreground != nil && o.agentView() {
+		o.foregroundCheckpoint = func() error {
+			foregroundRecordErr = checkpointForeground()
+			return foregroundRecordErr
+		}
 		checkpoint := o.Checkpoint
 		o.Checkpoint = func(account Status) error {
-			err := checkpointForeground()
-			foregroundRecordErr = err
+			err := o.foregroundCheckpoint()
 			if checkpoint != nil {
 				err = errors.Join(err, checkpoint(account))
 			}
@@ -920,14 +925,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// Native keeps an agent view session and the jobs dispatched from it running after its
 		// terminal closes; they all use this gateway. Its state stays: the same token, routing
 		// proofs and session bindings, so nothing they have proved has to be proved again.
-		jobs := nativeJobs(configDir, gw.Sessions())
-		for i := 0; len(jobs) == 0 && i < 3; i++ {
-			time.Sleep(time.Second) // native lists the closed session as a job as it exits
-			jobs = nativeJobs(configDir, gw.Sessions())
+		jobs := nativeJobsWithLink(configDir, gw.Sessions(), foreground.ID)
+		for i := 0; len(jobs) == 0 && i < 30; i++ {
+			time.Sleep(100 * time.Millisecond) // native lists the closed session as a job as it exits
+			jobs = nativeJobsWithLink(configDir, gw.Sessions(), foreground.ID)
 		}
-		if len(jobs) > 0 && o.Handover(result.NativeExitCode) {
-			handoverCtx, cancel := context.WithCancel(context.Background())
+		if len(jobs) > 0 {
 			foregroundRecordErr = checkpointForeground()
+			// Persist before releasing the launcher; a failed pipe write still leaves jobs to serve.
+			o.Handover(result.NativeExitCode)
+			handoverCtx, cancel := context.WithCancel(context.Background())
 			var record *ResidentRecord
 			if resident != nil && resident.record.Job != "" {
 				record = resident.record

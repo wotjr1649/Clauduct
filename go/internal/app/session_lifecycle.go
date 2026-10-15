@@ -110,6 +110,12 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 	}
 	tick := time.NewTicker(checkpointInterval)
 	defer tick.Stop()
+	var foregroundTick <-chan time.Time
+	if o.foregroundCheckpoint != nil {
+		timer := time.NewTicker(100 * time.Millisecond)
+		defer timer.Stop()
+		foregroundTick = timer.C
+	}
 	caller := ctx.Done()
 	var lastReceived, lastActive int64 = -1, -1
 	var lastDrainReceived int64 = -1
@@ -156,6 +162,10 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 				return w.reaped, life, ctx.Err()
 			}
 			return w.reaped, life, w.err
+		case <-foregroundTick:
+			if err := o.foregroundCheckpoint(); err != nil {
+				life.CheckpointFailures++
+			}
 		case <-caller:
 			caller = nil
 			deadline, grace = nil, nil

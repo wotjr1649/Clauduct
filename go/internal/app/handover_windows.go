@@ -20,7 +20,7 @@ import (
 
 const handoverEnv = "CLAUDUCT_AGENT_VIEW_HANDOVER"
 
-var freeConsole = syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole")
+var freeConsole = syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole").Call
 
 // HandoverLaunch reports whether an interactive session goes through the launcher.
 func HandoverLaunch(args []string) bool {
@@ -93,10 +93,7 @@ func HandoverFromEnv() func(nativeExit int) bool {
 	return func(nativeExit int) bool {
 		_, err := fmt.Fprintf(f, "%d\n", nativeExit)
 		f.Close()
-		if err != nil {
-			return false
-		}
-		freeConsole.Call()
-		return true
+		freeConsole()
+		return err == nil
 	}
 }

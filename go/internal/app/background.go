@@ -305,7 +305,7 @@ func (p *backgroundProcess) Wait() error {
 			}
 			if p.sessions != nil {
 				added := false
-				for _, job := range nativeJobs(p.config, p.sessions()) {
+				for _, job := range nativeJobsWithLink(p.config, p.sessions(), p.link.ID) {
 					if _, known := jobs[job]; !known {
 						jobs[job], added = 0, true
 					}

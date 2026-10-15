@@ -79,9 +79,9 @@ type Overlay struct {
 // The list is this short by decision, not by omission. The invariant that matters is
 // ENV02: the user's real Anthropic credential must never reach the loopback gateway or the
 // upstream backend. Two mechanisms enforce it and neither is a name heuristic — every
-// ANTHROPIC_* name is dropped and then overwritten with a session value, and the OAuth
-// token is blanked. A broad "contains TOKEN or SECRET" rule buys nothing extra for that
-// invariant while costing real compatibility: measured against the Node baseline's rule on
+// ANTHROPIC_* name and the OAuth token are dropped. Legacy/provider overlays replace their
+// routing names; settings-only launches keep them absent. A broad "contains TOKEN or SECRET"
+// rule buys nothing extra for that invariant while costing real compatibility: measured against the Node baseline's rule on
 // a developer machine, three of its five hits were CLAUDE_CODE_MAX_OUTPUT_TOKENS,
 // CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS and MAX_MCP_OUTPUT_TOKENS — size limits, caught
 // because "TOKENS" contains "TOKEN" — and any real MCP server credential such as a Slack
@@ -211,24 +211,23 @@ func buildEnv(source map[string]string, overlay Overlay) []string {
 		folded[key] = name
 		kept[key] = value
 	}
-	// Under the name already present, so Windows' case-insensitive lookup sees one entry.
-	if _, present := folded["NO_PROXY"]; !present {
-		folded["NO_PROXY"] = "NO_PROXY"
-	}
-	kept["NO_PROXY"] = WithLoopbackNoProxy(kept["NO_PROXY"])
-
-	// The session values. The three blanks are the second half of ENV02: a name that is
-	// merely absent lets the client fall back to a stored credential, so each one is set
-	// to the empty string to settle it rather than left to a fallback we do not control.
-	for key, value := range map[string]string{
-		"ANTHROPIC_BASE_URL":       overlay.BaseURL,
-		"ANTHROPIC_AUTH_TOKEN":     overlay.AuthToken,
-		"ANTHROPIC_API_KEY":        "",
-		"ANTHROPIC_CUSTOM_HEADERS": "",
-		"CLAUDE_CODE_OAUTH_TOKEN":  "",
-	} {
-		folded[key] = key
-		kept[key] = value
+	// Settings-only launches leave the supervisor's pre-settings snapshot untouched.
+	if overlay.BaseURL != "" {
+		if _, present := folded["NO_PROXY"]; !present {
+			folded["NO_PROXY"] = "NO_PROXY"
+		}
+		kept["NO_PROXY"] = WithLoopbackNoProxy(kept["NO_PROXY"])
+		// Legacy/provider launches still authenticate through their process environment.
+		for key, value := range map[string]string{
+			"ANTHROPIC_BASE_URL":       overlay.BaseURL,
+			"ANTHROPIC_AUTH_TOKEN":     overlay.AuthToken,
+			"ANTHROPIC_API_KEY":        "",
+			"ANTHROPIC_CUSTOM_HEADERS": "",
+			"CLAUDE_CODE_OAUTH_TOKEN":  "",
+		} {
+			folded[key] = key
+			kept[key] = value
+		}
 	}
 
 	out := make([]string, 0, len(kept))

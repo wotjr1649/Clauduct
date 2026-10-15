@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
@@ -142,6 +143,46 @@ func foregroundSettings(settings, link string, env map[string]string) (string, e
 	}
 	s.Env = env
 	encoded, err := json.Marshal(s)
+	return string(encoded), err
+}
+
+// Apply aliases after the user merge, so a user PATH cannot hide the PDF renderer.
+func (config ClauductSettings) nativeEventSettings(settings, pdf, configDir string, o Options, base string) (string, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(settings), &fields) != nil || fields == nil {
+		return "", errSettingsConflict
+	}
+	env := map[string]string{}
+	if raw, ok := fields["env"]; ok && json.Unmarshal(raw, &env) != nil || env == nil {
+		return "", errSettingsConflict
+	}
+	names, _ := nativeSettingsEnvNames(o) // Name discovery never adds a startup gate.
+	config.pinNativeSettingsEnv(env, names, o.Env, base)
+	if pdf != "" {
+		path := ""
+		spelling := ""
+		for name, value := range o.Env {
+			if strings.EqualFold(name, "PATH") && name > spelling {
+				spelling = name
+				path = value
+			}
+		}
+		for name, value := range env {
+			if strings.EqualFold(name, "PATH") {
+				path = value
+				delete(env, name)
+			}
+		}
+		env["PATH"] = pdf
+		if path != "" {
+			env["PATH"] += string(os.PathListSeparator) + path
+		}
+		if configDir != "" {
+			env["CLAUDUCT_PDF_PROJECTS_ROOT"] = filepath.Join(configDir, "projects")
+		}
+	}
+	fields["env"], _ = json.Marshal(env)
+	encoded, err := json.Marshal(fields)
 	return string(encoded), err
 }
 

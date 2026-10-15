@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -140,6 +141,34 @@ func writeResident(home string, r ResidentRecord) error {
 		return err
 	}
 	return os.Rename(temp, path)
+}
+
+// Keep the old job identities until native's listing proves they can be reclaimed.
+func (p *backgroundProcess) checkpointForeground() error {
+	jobs := nativeJobs(p.config, p.sessions())
+	if len(jobs) == 0 && p.record.Job == "" {
+		return nil
+	}
+	record := *p.record
+	record.Jobs = slices.Clone(record.Jobs)
+	if record.Job == "" {
+		record.Job = jobs[0]
+	}
+	for _, job := range jobs {
+		if job != record.Job && !slices.Contains(record.Jobs, job) {
+			record.Jobs = append(record.Jobs, job)
+		}
+	}
+	slices.Sort(record.Jobs)
+	record.Session, record.Proved = p.session(), p.proved()
+	if record.Job == p.record.Job && record.Session == p.record.Session && slices.Equal(record.Jobs, p.record.Jobs) && slices.Equal(record.Proved, p.record.Proved) {
+		return nil
+	}
+	if err := writeResident(p.home, record); err != nil {
+		return errors.New("FOREGROUND_RESIDENT_WRITE_FAILED")
+	}
+	*p.record, p.job = record, record.Job
+	return nil
 }
 
 func removeResident(home, link string) error {

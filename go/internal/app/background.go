@@ -97,7 +97,7 @@ func backgroundResume(args []string, resumeID string) (forkedFrom string, err er
 	return resumeID, nil
 }
 
-func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, inherited map[string]string, strategyFlag string) (string, error) {
+func (config ClauductSettings) backgroundSettings(settings, hook, id, base string, o Options, strategyFlag string) (string, error) {
 	var s childSettings
 	if json.Unmarshal([]byte(settings), &s) != nil || hook == "" {
 		return "", errSettingsConflict
@@ -112,27 +112,10 @@ func (config ClauductSettings) backgroundSettings(settings, hook, id, base strin
 			}
 		}
 	}
-	env := config.sessionEnvironment()
-	// Only bounded scalar preferences may be persisted from the launch shell.
-	// Never serialize arbitrary environment entries into native's respawn flags.
-	for name, value := range inherited {
-		key := strings.ToUpper(name)
-		if _, known := env[key]; known && !strings.HasPrefix(key, "ANTHROPIC_") {
-			if !backgroundScalar.MatchString(value) {
-				return "", errSettingsConflict
-			}
-			env[key] = value
-		}
+	env, err := config.nativeSettingsEnv(o, base)
+	if err != nil {
+		return "", err
 	}
-	for k, v := range config.sessionRequirements() {
-		env[k] = v
-	}
-	for k, v := range routingSettingsEnv(inherited, base) {
-		env[k] = v
-	}
-	env["ANTHROPIC_BASE_URL"] = base
-	env["ANTHROPIC_AUTH_TOKEN"], env["ANTHROPIC_API_KEY"], env["ANTHROPIC_CUSTOM_HEADERS"], env["CLAUDE_CODE_OAUTH_TOKEN"] = "", "", "", ""
-	env["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = "1"
 	if strategyFlag != "" {
 		env[strategyFlag] = "1"
 	}
@@ -477,13 +460,7 @@ func runNativeControl(ctx context.Context, o Options, command string) (Result, e
 		session[key] = defaults[key]
 	}
 	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{Session: session})
-	env := backgroundControlEnv(spec.Env)
-	spec.Env = nil
-	for _, entry := range env {
-		if key, _, _ := strings.Cut(entry, "="); !strings.EqualFold(key, agentViewOff) {
-			spec.Env = append(spec.Env, entry)
-		}
-	}
+	spec.Env = backgroundControlEnv(spec.Env)
 	interrupts := o.interrupts
 	if interrupts == nil {
 		interrupts = make(chan os.Signal, 1)

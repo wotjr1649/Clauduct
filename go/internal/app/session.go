@@ -1,6 +1,9 @@
 package app
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -8,17 +11,112 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
-// The child is told about this session through its environment and through nothing else.
-//
-// The Node baseline gets the same result by passing --model, --effort and a --settings JSON
-// blob on the command line. Measured 2026-09-16 against the installed client, every value
-// that matters here is reachable by environment instead, and --model on the command line
-// still overrides ANTHROPIC_MODEL. That difference is the whole reason for choosing this
-// route: injecting --model would put a second one on a command line that may already carry
-// the user's, and telling those apart means knowing which native options consume a
-// following value -- the tracking the baseline's own blocklist needed and still got wrong
-// on `--name --model`. Nothing here parses an argument, so nothing here can mistake a value
-// for one.
+// Inspect names only: file env stays native-owned, including its folder trust boundary.
+func nativeSettingsEnvNames(o Options) ([]string, error) {
+	cli := cliRoles{}
+	if err := cli.scope(o.Args, o.Cwd); err != nil {
+		return nil, err
+	}
+	var names []string
+	var scanErr error
+	for _, file := range []struct{ source, path string }{
+		{"user", filepath.Join(nativeConfigDirectory(o.Env, o.Cwd), "settings.json")},
+		{"project", filepath.Join(o.Cwd, ".claude", "settings.json")},
+		{"local", filepath.Join(o.Cwd, ".claude", "settings.local.json")},
+		{"managed", filepath.Join(managedRoot(), "managed-settings.json")},
+	} {
+		if file.source != "managed" && !cli.source(file.source) {
+			continue
+		}
+		raw, err := boundedRoleFile(file.path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		var settings struct {
+			Env map[string]json.RawMessage `json:"env"`
+		}
+		if err != nil || json.Unmarshal(raw, &settings) != nil {
+			scanErr = errRoleDefaults
+			continue
+		}
+		for name := range settings.Env {
+			names = append(names, name)
+		}
+	}
+	return names, scanErr
+}
+
+func (config ClauductSettings) nativeSettingsEnv(o Options, base string) (map[string]string, error) {
+	env := config.sessionEnvironment()
+	var names []string
+	if o.agentView() {
+		var err error
+		names, err = nativeSettingsEnvNames(o)
+		// A partial scan keeps defaults; effectiveStartup still owns startup validation.
+		if err == nil {
+			for _, name := range names {
+				delete(env, strings.ToUpper(name))
+			}
+		}
+	}
+	// Match launch's sorted, case-insensitive last-wins shell lookup.
+	spellings := map[string]string{}
+	for name := range o.Env {
+		key := strings.ToUpper(name)
+		if name > spellings[key] {
+			spellings[key] = name
+		}
+	}
+	for key, name := range spellings {
+		if strings.HasPrefix(key, "ANTHROPIC_") {
+			continue // Shell Anthropic values are dropped, including from settings.
+		}
+		if _, known := env[key]; !known {
+			continue
+		}
+		value := o.Env[name]
+		if !backgroundScalar.MatchString(value) {
+			if BackgroundRequested(o.Args) {
+				return nil, errSettingsConflict
+			}
+			delete(env, key) // Native keeps the user's own OS value in foreground/print.
+			continue
+		}
+		env[key] = value
+	}
+	config.pinNativeSettingsEnv(env, names, o.Env, base)
+	return env, nil
+}
+
+// Reapply after the user merge too: it can remove a file's pinned spelling.
+func (config ClauductSettings) pinNativeSettingsEnv(env map[string]string, names []string, inherited map[string]string, base string) {
+	pinned := config.sessionRequirements()
+	for key, value := range routingSettingsEnv(inherited, base) {
+		pinned[key] = value
+	}
+	if value, set := env["NO_PROXY"]; set {
+		pinned["NO_PROXY"] = launch.WithLoopbackNoProxy(value)
+	}
+	for _, key := range []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_OAUTH_TOKEN"} {
+		pinned[key] = ""
+	}
+	pinned["CLAUDE_CODE_ENABLE_FUNCTION_HOOKS"] = "1"
+	for name := range env {
+		names = append(names, name)
+	}
+	for key, value := range pinned {
+		env[key] = value
+	}
+	// Native merges JSON keys case-sensitively before applying Windows env names.
+	for _, name := range names {
+		if value, required := pinned[strings.ToUpper(name)]; required {
+			env[name] = value
+		}
+	}
+}
+
+// Strategy-free sessions carry these values in --settings env, keeping native's supervisor
+// OS snapshot free of Clauduct values (AV2/M1). An explicit --model still wins.
 
 // startupModel is what a session runs on when the user names nothing.
 //

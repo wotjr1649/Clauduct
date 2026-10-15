@@ -28,7 +28,7 @@ func linkedConfirmation(link string, in io.Reader, out io.Writer, env map[string
 	if err != nil {
 		return 2
 	}
-	env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
+	pinGatewayEnv(env, connection)
 	return confirmation(in, out, env)
 }
 
@@ -42,7 +42,7 @@ func confirmation(in io.Reader, out io.Writer, env map[string]string) int {
 	if _, err = wire.Fields(raw, []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"}); err != nil {
 		return 2
 	}
-	base, token := env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"]
+	base, token := envValue(env, "ANTHROPIC_BASE_URL"), envValue(env, "ANTHROPIC_AUTH_TOKEN")
 	if !loopback.MatchString(base) || token == "" {
 		return 2
 	}

@@ -99,12 +99,17 @@ func (config ClauductSettings) takeUserSettings(args []string, cwd string) ([]st
 		if err != nil {
 			return nil, nil, nil, errUserSettings
 		}
+		seen := map[string]bool{}
 		for key, raw := range env {
 			var value string
 			if json.Unmarshal(raw, &value) != nil {
 				return nil, nil, nil, errUserSettings
 			}
 			upper := strings.ToUpper(key)
+			if seen[upper] {
+				return nil, nil, nil, errUserSettings
+			}
+			seen[upper] = true
 			if required, ok := config.sessionRequirements()[upper]; ok && value != required {
 				return nil, nil, nil, errSettingsConflict
 			}
@@ -200,6 +205,15 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 					return "", errUserSettings
 				}
 				for name, value := range extra {
+					for previous := range merged {
+						if strings.EqualFold(previous, name) {
+							if strings.EqualFold(name, "NO_PROXY") {
+								merged[previous] = value
+							} else {
+								delete(merged, previous)
+							}
+						}
+					}
 					merged[name] = value
 				}
 			}

@@ -453,19 +453,23 @@ func (c *cliRoles) scope(args []string, cwd string) error {
 				return nil
 			}
 		}
-		c.flagEnv = map[string]string{}
-		for _, key := range []string{"ANTHROPIC_MODEL", effortEnv, subagentModelKey} {
-			value, found, err := settingsEnvironment(raw, key)
-			if err != nil {
-				c.flagErr = err
-				break
-			}
-			if found {
-				c.flagEnv[key] = value
-			}
-		}
+		c.readFlagEnv(raw)
 	}
 	return nil
+}
+
+func (c *cliRoles) readFlagEnv(raw []byte) {
+	c.flagEnv, c.flagErr = map[string]string{}, nil
+	for _, key := range []string{"ANTHROPIC_MODEL", effortEnv, subagentModelKey} {
+		value, found, err := settingsEnvironment(raw, key)
+		if err != nil {
+			c.flagErr = err
+			break
+		}
+		if found {
+			c.flagEnv[key] = value
+		}
+	}
 }
 
 func settingsEnvironment(raw []byte, key string) (string, bool, error) {

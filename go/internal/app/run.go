@@ -147,11 +147,6 @@ type Options struct {
 	// nativeIdentityOff, set only by a test that relays native's requests through its own
 	// recorder, leaves native identity unrequired: the relay, not native, opens the connections.
 	nativeIdentityOff bool
-	// foregroundAgentView, set only by a test (#319 decision 18f), leaves native's agent view on
-	// in a foreground session: its settings are the background ones (worker defaults, the key
-	// helper on this session's link, no stored credential), so a worker native starts for
-	// /background, /fork or a dispatch gets this gateway. The product keeps agent view off.
-	foregroundAgentView bool
 	// backgroundCrash, set only by a test, makes a background resident end as if its process
 	// died: the native job is not stopped (decision 18c X7).
 	backgroundCrash <-chan struct{}
@@ -561,13 +556,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 						link += " " + hookcmd.ProviderControlledArg
 					}
 					if o.agentView() {
-						settings, err = config.backgroundSettings(settings, hook, foreground.ID, gw.BaseURL(), o.Env, providerFlag)
+						settings, err = config.backgroundSettings(settings, hook, foreground.ID, gw.BaseURL(), o, providerFlag)
 					} else {
 						settings, err = foregroundSettings(settings, link, env)
 					}
 				}
 			} else {
-				settings, err = foregroundSettings(settings, "", env)
+				if o.agentView() {
+					err = errors.New("SESSION_LINK_UNAVAILABLE: the session's key helper could not be prepared")
+				} else {
+					settings, err = foregroundSettings(settings, "", env)
+				}
 			}
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
@@ -595,27 +594,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 						releaseResident, residentLocked = release, true
 					}
 				}
-				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o.Env, providerFlag)
+				settings, err = config.backgroundSettings(settings, hook, background.ID, gw.BaseURL(), o, providerFlag)
 			}
 			if err != nil {
 				result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 				return result, err
 			}
 		}
-	}
-	if userSettings != nil {
-		if settings == "" {
-			settings = "{}"
-		}
-		settings, err = mergeUserSettings(settings, userSettings)
-		if err != nil {
-			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
-			return result, err
-		}
-		for _, slot := range settingsSlots {
-			o.Args[slot] = "--settings=" + settings
-		}
-		settings = "" // Already present at the user's original option boundaries.
 	}
 	if o.Settings == nil {
 		gw.RequireNativeConfirmations()
@@ -650,7 +635,33 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 		}
 	}
-	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, launch.Overlay{
+	configDir := nativeConfigDirectory(o.Env, o.Cwd)
+	if userSettings != nil {
+		if settings == "" {
+			settings = "{}"
+		}
+		settings, err = mergeUserSettings(settings, userSettings)
+		if err != nil {
+			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+			return result, err
+		}
+	}
+	if o.agentView() && nativePlugin != "" {
+		settings, err = config.nativeEventSettings(settings, nativePDF, configDir, o, gw.BaseURL())
+		if err != nil {
+			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+			return result, err
+		}
+	}
+	finalSettings := settings
+	roleArgs := append([]string(nil), o.Args...)
+	if userSettings != nil {
+		for _, slot := range settingsSlots {
+			o.Args[slot] = "--settings=" + settings
+		}
+		settings = "" // Already present at the user's original option boundaries.
+	}
+	overlay := launch.Overlay{
 		BaseURL:   gw.BaseURL(),
 		AuthToken: gw.Token(),
 		Session:   session,
@@ -658,9 +669,16 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		Enforced:  config.sessionRequirements(),
 		Settings:  settings,
 		Agents:    agents,
-	})
+	}
+	if o.agentView() {
+		overlay.BaseURL, overlay.AuthToken = "", ""
+		overlay.Session, overlay.Enforced = nil, nil
+	}
+	spec := launch.Build(exe, o.Args, o.Env, o.Cwd, overlay)
 	if nativePlugin != "" {
 		spec.Args = append([]string{"--plugin-dir", nativePlugin}, spec.Args...)
+	}
+	if nativePlugin != "" && !o.agentView() {
 		filtered := spec.Env[:0]
 		pathAdded := false
 		for _, value := range spec.Env {
@@ -680,22 +698,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		spec.Env = append(filtered, "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1")
 	}
-	configDir := ""
-	for _, entry := range spec.Env {
-		key, value, _ := strings.Cut(entry, "=")
-		if strings.EqualFold(key, "CLAUDE_CONFIG_DIR") {
-			configDir = value
-		}
-	}
-	if configDir == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			configDir = filepath.Join(home, ".claude")
-		}
-	}
 	if configDir != "" {
-		if !filepath.IsAbs(configDir) {
-			configDir = filepath.Join(o.Cwd, configDir)
-		}
 		gw.ConfigureDelegations(filepath.Join(configDir, "projects"))
 		var workflowDirs []string
 		for dir := o.Cwd; dir != "" && len(workflowDirs) < 63; dir = filepath.Dir(dir) {
@@ -705,7 +708,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 		}
 		gw.ConfigureWorkflowSources(append(workflowDirs, filepath.Join(configDir, "workflows")))
-		if nativePDF != "" {
+		if nativePDF != "" && !o.agentView() {
 			filtered := spec.Env[:0]
 			for _, entry := range spec.Env {
 				key, _, _ := strings.Cut(entry, "=")
@@ -715,7 +718,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			spec.Env = append(filtered, "CLAUDUCT_PDF_PROJECTS_ROOT="+filepath.Join(configDir, "projects"))
 		}
-		cli := sessionCLIRoles(o.Args, agents, o.Cwd)
+		cli := sessionCLIRoles(roleArgs, agents, o.Cwd)
+		if o.agentView() {
+			cli.readFlagEnv([]byte(finalSettings))
+		}
 		cli.subagent = sync.OnceValues(func() (string, error) { return subagentModel(configDir, o.Cwd, managedRoot(), cli, o.Env) })
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
 			sources := sessionRoleSources(configDir, o.Cwd, cli, o.Env, role)
@@ -730,7 +736,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		})
 	}
 	gw.ConfigureSelection(config.Selection)
-	startup, modelSource, effortSource, startupErr := config.effectiveStartup(spec, o.Args)
+	startup, modelSource, effortSource, startupErr := config.effectiveStartup(spec, roleArgs, finalSettings)
 	result.Startup = startup
 	result.StartupModelSource, result.StartupEffortSource = modelSource, effortSource
 	if profiles != nil && startupErr != nil {
@@ -804,8 +810,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		var long *childprocess.CommandLineTooLong
 		if errors.As(startErr, &long) {
-			// The account list is what grows it (#238 A): name that, and that nothing was cut.
-			startErr = fmt.Errorf("%w. The delegation menu (%d entries) and the /model list are passed as launch arguments, one entry per model the account lists in its picker. Nothing was started and no model was left out", startErr, result.MenuEntries)
+			if nativePDF != "" && o.agentView() {
+				startErr = fmt.Errorf("%w. PDF alias lookup carries PATH in --settings alongside the delegation menu (%d entries) and the /model list; their combined launch arguments exceed the Windows limit. Nothing was started and no model was left out", startErr, result.MenuEntries)
+			} else {
+				startErr = fmt.Errorf("%w. The delegation menu (%d entries) and the /model list are passed as launch arguments, one entry per model the account lists in its picker. Nothing was started and no model was left out", startErr, result.MenuEntries)
+			}
 		}
 		return result, startErr
 	}
@@ -844,6 +853,42 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		process, resident = bp, bp
 		retainPlugin = false // serving: the record decides, as for any resident
 	}
+	var foregroundRecordErr error
+	checkpointForeground := func() error {
+		if foreground == nil || !o.agentView() || clauductHome == "" || nativePlugin == "" {
+			return nil
+		}
+		if len(nativeJobs(configDir, gw.Sessions())) == 0 && (resident == nil || resident.record.Job == "") {
+			retainPlugin = false
+			return nil
+		}
+		if !residentLocked {
+			release, lockErr := lockResident(clauductHome, foreground.ID, 0)
+			if lockErr != nil {
+				retainPlugin = true
+				return errors.New("FOREGROUND_RESIDENT_LOCK_FAILED")
+			}
+			releaseResident, residentLocked = release, true
+		}
+		if resident == nil {
+			resident = &backgroundProcess{config: configDir, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, proved: gw.ProvedNativeProcesses,
+				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
+		}
+		err := resident.checkpointForeground()
+		retainPlugin = err != nil
+		return err
+	}
+	if foreground != nil && o.agentView() {
+		checkpoint := o.Checkpoint
+		o.Checkpoint = func(account Status) error {
+			err := checkpointForeground()
+			foregroundRecordErr = err
+			if checkpoint != nil {
+				err = errors.Join(err, checkpoint(account))
+			}
+			return err
+		}
+	}
 
 	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
 	// A hook that blocked the prompt may have ended a short session before the next checkpoint
@@ -870,6 +915,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if o.afterNative != nil {
 		o.afterNative()
 	}
+	foregroundRecordErr = checkpointForeground()
 	if reaped && foreground != nil && o.agentView() && o.Handover != nil && clauductHome != "" && nativePlugin != "" {
 		// Native keeps an agent view session and the jobs dispatched from it running after its
 		// terminal closes; they all use this gateway. Its state stays: the same token, routing
@@ -881,26 +927,32 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		if len(jobs) > 0 && o.Handover(result.NativeExitCode) {
 			handoverCtx, cancel := context.WithCancel(context.Background())
-			record := ResidentRecord{Link: foreground.ID, Job: jobs[0], Jobs: jobs[1:], Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}
+			foregroundRecordErr = checkpointForeground()
+			var record *ResidentRecord
+			if resident != nil && resident.record.Job != "" {
+				record = resident.record
+			}
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
-				job: jobs[0], record: &record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, nativeStatus: nativeStatus}
-			if release, lockErr := lockResident(clauductHome, foreground.ID, 0); lockErr == nil {
-				releaseResident, residentLocked = release, true
-			} else {
-				bp.record = nil
+				job: jobs[0], record: record, home: clauductHome, session: gw.CurrentSession, sessions: gw.Sessions, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus}
+			if record != nil {
+				bp.job = record.Job
 			}
 			if providerFlag != "" {
 				bp.env, bp.start = spec.Env, o.StartProcess
 			}
 			result.HandedOver = jobs
 			resident = bp
-			bp.Wait()
+			foregroundRecordErr = errors.Join(foregroundRecordErr, bp.Wait())
 		}
+	}
+	if foreground != nil && resident != nil && resident.record != nil && resident.record.Job != "" {
+		listed, known := jobListing(configDir, append([]string{resident.record.Job}, resident.record.Jobs...))
+		resident.unlisted = known && !listed
 	}
 	// Reap native first, then drain the gateway before taking its final account.
 	// Otherwise a cancellation could still be in flight when status claimed completion.
-	result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
+	result.CleanupErr = errors.Join(closeGateway(gw, o.ShutdownTimeout), foregroundRecordErr)
 	if reaped {
 		gw.FinalizeNativeResults()
 		result.CleanupErr = errors.Join(result.CleanupErr, gw.CheckpointSessionProfiles(true))
@@ -1042,6 +1094,5 @@ func StartProductGatewayAt(transport upstream.Transport, port int) (*gateway.Gat
 	return g, err
 }
 
-// agentView reports whether this launch leaves native's agent view on in the foreground: a test
-// that asked for it, or a development build (agentViewDevBuild). Never an ordinary build.
-func (o Options) agentView() bool { return o.foregroundAgentView || agentViewDevBuild }
+// Provider strategies retain their separate supervisor boundary.
+func (o Options) agentView() bool { return o.ProviderStrategy == "" }

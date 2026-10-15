@@ -13,7 +13,7 @@ import (
 
 // The agent view handover (#319 decision 18h). Native keeps an agent view session and the
 // jobs dispatched from it running after its terminal closes, and they all use this launch's
-// gateway. The terminal waits for the process it started, so in the agent view build that
+// gateway. The terminal waits for the process it started, so for an interactive launch that
 // process is a launcher: the launch runs in a child on the same console, and the launcher
 // exits with native's code once the child has either ended or handed its gateway over
 // (Options.Handover) and left the console.
@@ -22,10 +22,9 @@ const handoverEnv = "CLAUDUCT_AGENT_VIEW_HANDOVER"
 
 var freeConsole = syscall.NewLazyDLL("kernel32.dll").NewProc("FreeConsole")
 
-// HandoverLaunch reports whether a launch goes through the launcher: only in the agent view
-// development build, only for an interactive foreground session.
+// HandoverLaunch reports whether an interactive session goes through the launcher.
 func HandoverLaunch(args []string) bool {
-	return agentViewDevBuild && !BackgroundRequested(args) && !printMode(args)
+	return !BackgroundRequested(args) && !printMode(args) && nativeControl(args) == "" && !nativeInformation(args)
 }
 
 // LaunchHandover runs this executable again with args on this console and returns the exit
@@ -83,7 +82,7 @@ func LaunchHandover(args []string) int {
 func HandoverFromEnv() func(nativeExit int) bool {
 	value := os.Getenv(handoverEnv)
 	os.Unsetenv(handoverEnv)
-	if !agentViewDevBuild || value == "" {
+	if value == "" {
 		return nil
 	}
 	h, err := strconv.ParseUint(value, 10, 64)

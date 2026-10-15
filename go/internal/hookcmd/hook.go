@@ -83,7 +83,7 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 		// A session started before the session link: the gateway is on the command line and
 		// the token in the environment.
 		env := platform.Environment(os.Environ())
-		return routedContext(ctx, sessionlink.Connection{BaseURL: args[1], Token: env["ANTHROPIC_AUTH_TOKEN"]}, false, in, out, errOut, env), true
+		return routedContext(ctx, sessionlink.Connection{BaseURL: args[1], Token: envValue(env, "ANTHROPIC_AUTH_TOKEN")}, false, in, out, errOut, env), true
 	}
 	if (len(args) == 2 || controlled) && (args[0] == Arg || args[0] == "--clauduct-background-key") {
 		// The session link, foreground or background: the connection never comes from the
@@ -221,7 +221,7 @@ func routedContext(ctx context.Context, connection sessionlink.Connection, contr
 		postReply(ctx, []byte("{}"), map[string]string{"ANTHROPIC_BASE_URL": connection.BaseURL, "ANTHROPIC_AUTH_TOKEN": connection.Token}, RoutingMismatchPath, false)
 		return 2
 	}
-	env["ANTHROPIC_AUTH_TOKEN"] = connection.Token
+	pinGatewayEnv(env, connection)
 	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
 	if err != nil {
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
@@ -392,22 +392,59 @@ func strategyFlagOn(env map[string]string, flag string) bool {
 // GatewayEnvCompat flag at "1" sends native to ANTHROPIC_BASE_URL, which must still be this
 // gateway; every other switch still counts.
 func routedElsewhere(env map[string]string, gateway string, controlled bool) bool {
-	upper := make(map[string]string, len(env))
+	baseSeen := false
 	for name, value := range env {
-		upper[strings.ToUpper(name)] = value
+		switch strings.ToUpper(name) {
+		case "ANTHROPIC_BASE_URL":
+			baseSeen = true
+			if value != gateway {
+				return true
+			}
+		case "ANTHROPIC_UNIX_SOCKET":
+			if value != "" {
+				return true
+			}
+		}
 	}
-	if upper["ANTHROPIC_BASE_URL"] != gateway || upper["ANTHROPIC_UNIX_SOCKET"] != "" {
+	if !baseSeen {
 		return true
 	}
 	for _, name := range launch.ProviderSwitches {
 		if controlled && name == gatewayCompatFlag && strategyFlagOn(env, gatewayCompatFlag) {
 			continue
 		}
-		if value := strings.ToLower(upper[name]); value != "" && value != "0" && value != "false" {
-			return true
+		for spelling, value := range env {
+			if strings.EqualFold(spelling, name) && value != "" && value != "0" && strings.ToLower(value) != "false" {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// Native's last spelling is unknown; absent or conflicting values are unusable.
+func envValue(env map[string]string, name string) string {
+	key := strings.ToUpper(name)
+	value, seen := "", false
+	for spelling, candidate := range env {
+		if strings.ToUpper(spelling) == key {
+			if seen && candidate != value {
+				return ""
+			}
+			value, seen = candidate, true
+		}
+	}
+	return value
+}
+
+// A native spelling variant must not override the session link's connection.
+func pinGatewayEnv(env map[string]string, connection sessionlink.Connection) {
+	for name := range env {
+		if strings.EqualFold(name, "ANTHROPIC_BASE_URL") || strings.EqualFold(name, "ANTHROPIC_AUTH_TOKEN") {
+			delete(env, name)
+		}
+	}
+	env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
 }
 
 func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) int {
@@ -648,9 +685,9 @@ func bindingFrom(raw []byte, env map[string]string) (binding, bool) {
 // All three or none. Two of the three describe a window with a piece missing, and a
 // registration carrying half a policy is worse than one carrying none: it looks answered.
 func contextFrom(env map[string]string) *contextPolicy {
-	window, windowOK := positiveInt(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
-	auto, autoOK := positiveInt(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
-	percent, percentErr := strconv.ParseFloat(env["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], 64)
+	window, windowOK := positiveInt(envValue(env, "CLAUDE_CODE_MAX_CONTEXT_TOKENS"))
+	auto, autoOK := positiveInt(envValue(env, "CLAUDE_CODE_AUTO_COMPACT_WINDOW"))
+	percent, percentErr := strconv.ParseFloat(envValue(env, "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"), 64)
 	if !windowOK || !autoOK || percentErr != nil || percent <= 0 || percent > 100 {
 		return nil
 	}
@@ -669,8 +706,8 @@ func post(ctx context.Context, body []byte, env map[string]string) error {
 }
 
 func postReply(parent context.Context, body []byte, env map[string]string, path string, retryRegistration bool) ([]byte, error) {
-	base := env["ANTHROPIC_BASE_URL"]
-	token := env["ANTHROPIC_AUTH_TOKEN"]
+	base := envValue(env, "ANTHROPIC_BASE_URL")
+	token := envValue(env, "ANTHROPIC_AUTH_TOKEN")
 	if !loopback.MatchString(base) || token == "" {
 		return nil, errInvalidGateway
 	}

@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -25,7 +26,9 @@ const classifierContextPrefix = "The following is the user's CLAUDE.md configura
 // zero pair keeps native's own request under the session's model mapping.
 func (g *Gateway) ConfigureClassifierModel(pair bridge.Pair) { g.classifierModel = pair }
 
-func (g *Gateway) auxiliarySelection(request *anthropic.Request, count bool) ([]bridge.Route, error) {
+func (g *Gateway) auxiliarySelection(request *anthropic.Request, count bool, entry *record) ([]bridge.Route, error) {
+	stage, _ := autoModeClassifierStage(request, count)
+	entry.classifier(stage)
 	routes, err := g.classifierSelection(request, count)
 	if err != nil {
 		return nil, err
@@ -72,6 +75,11 @@ func (g *Gateway) classifierSelection(request *anthropic.Request, count bool) ([
 // measured envelope alone, whatever model it would route to. A request carrying part of the
 // envelope but not all of it is a contract error, not an ordinary request.
 func autoModeClassifier(request *anthropic.Request, count bool) (bool, error) {
+	stage, err := autoModeClassifierStage(request, count)
+	return stage != "", err
+}
+
+func autoModeClassifierStage(request *anthropic.Request, count bool) (string, error) {
 	// A changed policy heading must not quietly send the known block envelope back
 	// to Sonnet. These independent markers also catch that form of native drift.
 	envelope := slices.Contains(request.StopSequences, "</block>")
@@ -87,9 +95,9 @@ func autoModeClassifier(request *anthropic.Request, count bool) (bool, error) {
 	if json.Unmarshal(request.System, &system) != nil {
 		var text string
 		if envelope || json.Unmarshal(request.System, &text) == nil && strings.HasPrefix(text, classifierPolicyPrefix) {
-			return false, errClassifierContract
+			return "", errClassifierContract
 		}
-		return false, nil
+		return "", nil
 	}
 	found := false
 	for _, block := range system {
@@ -97,34 +105,34 @@ func autoModeClassifier(request *anthropic.Request, count bool) (bool, error) {
 	}
 	if !found {
 		if envelope {
-			return false, errClassifierContract
+			return "", errClassifierContract
 		}
-		return false, nil
+		return "", nil
 	}
 	if len(system) < 2 || !strings.HasPrefix(system[0].Text, "x-anthropic-billing-header: ") ||
 		!strings.HasPrefix(system[1].Text, classifierPolicyPrefix) || len(request.Messages) < 1 || len(request.Messages) > 2 ||
 		request.OutputFormat != nil || len(request.Fields["thinking"]) != 0 {
-		return false, errClassifierContract
+		return "", errClassifierContract
 	}
 	if len(request.Messages) == 2 {
 		context := request.Messages[0]
 		if context.Role != "user" || len(context.Blocks) != 1 || context.Blocks[0].Type != "text" ||
 			!strings.HasPrefix(context.Blocks[0].Text, classifierContextPrefix) ||
 			!strings.HasSuffix(context.Blocks[0].Text, "\n</user_claude_md>") {
-			return false, errClassifierContract
+			return "", errClassifierContract
 		}
 	}
 	message := request.Messages[len(request.Messages)-1]
 	if message.Role != "user" {
-		return false, errClassifierContract
+		return "", errClassifierContract
 	}
 	blocks := message.Blocks
 	if len(blocks) < 4 || blocks[0].Text != "<transcript>\n" || blocks[len(blocks)-2].Text != "</transcript>\n" {
-		return false, errClassifierContract
+		return "", errClassifierContract
 	}
 	for _, block := range blocks {
 		if block.Type != "text" {
-			return false, errClassifierContract
+			return "", errClassifierContract
 		}
 	}
 	// Transcript cache chunks and native meta lines vary; only the protocol envelope
@@ -135,7 +143,52 @@ func autoModeClassifier(request *anthropic.Request, count bool) (bool, error) {
 	if !first && !second || !count && (!request.NonStreaming ||
 		first && (request.MaxTokens != 2112 || len(request.StopSequences) != 1 || request.StopSequences[0] != "</block>") ||
 		second && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
-		return false, errClassifierContract
+		return "", errClassifierContract
 	}
-	return true, nil
+	if first {
+		return "1", nil
+	}
+	return "2", nil
+}
+
+func (r *record) classifier(stage string) {
+	if r == nil || stage == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.ClassifierStage, r.data.ClassifierVerdict = stage, "none"
+}
+
+func (r *record) classifierAnswer(text string, delivered bool) {
+	if r == nil || !delivered || text == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.data.ClassifierStage != "" {
+		r.data.ClassifierVerdict = classifierVerdict(text)
+	}
+}
+
+var (
+	classifierBlockYes = regexp.MustCompile(`<[bB][lL][oO][cC][kK]>[yY][eE][sS]\b`)
+	classifierBlockNo  = regexp.MustCompile(`<[bB][lL][oO][cC][kK]>[nN][oO]\b`)
+	classifierThinking = regexp.MustCompile(`(?s)<thinking>.*?(?:</thinking>|$)`)
+)
+
+// Native 2.1.300 rejects contradictory blocks even inside thinking; a closing block tag is optional.
+func classifierVerdict(text string) string {
+	if classifierBlockYes.MatchString(text) && classifierBlockNo.MatchString(text) {
+		return "unparsed"
+	}
+	text = classifierThinking.ReplaceAllString(text, "")
+	switch {
+	case classifierBlockYes.MatchString(text):
+		return "block"
+	case classifierBlockNo.MatchString(text):
+		return "allow"
+	default:
+		return "unparsed"
+	}
 }

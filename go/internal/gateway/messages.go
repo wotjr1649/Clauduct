@@ -370,7 +370,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
 		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
-		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens")
+		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens", entry)
 		return route, releaseAgent, err
 	}
 	active, ok := g.pinNativeTurn(r, entry)
@@ -395,7 +395,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
 				entry.auxiliaryToolsBlocked = true
 				entry.checked("auxiliary_tools_blocked")
-				route, err := g.auxiliarySelection(request, false)
+				route, err := g.auxiliarySelection(request, false, entry)
 				return route, releaseAgent, err
 			}
 			return nil, releaseAgent, errNativeOriginUnverified
@@ -758,11 +758,14 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	}
 	// Which item types the backend actually sends, kept for the session, so refusing an
 	// unknown one is decided on what sessions see (#85).
+	relayCompleted := false
 	defer func() {
+		answer := translator.Answer()
 		g.events.observeItems(translator.ItemTypes())
 		g.events.observeSafety(translator.SafetyBuffering())
 		recordOf(w).returned(translator.Returned())
-		recordOf(w).output(translator.ItemTypes(), len(translator.Answer()))
+		recordOf(w).output(translator.ItemTypes(), len(answer))
+		recordOf(w).classifierAnswer(answer, relayCompleted)
 	}()
 	if entry := recordOf(w); entry != nil {
 		record := entry.snapshot()
@@ -790,7 +793,6 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		}
 	}
 	var prepared []string
-	relayCompleted := false
 	if g.delegations != nil && len(scopes) > 0 && scopes[0].parent != "" {
 		class := recordOf(w).snapshot().RequestClass
 		// A verified hand-back already owns the report. Native's optional closing

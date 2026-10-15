@@ -25,7 +25,7 @@ import (
 // tells a reader that something was refused and nothing about what.
 //
 // Everything here is a count, a fixed label or a timing. No request body, no header value,
-// no prompt and no model output is recorded, and nothing derived from them is either. A
+// no prompt or model output is recorded; classifier verdicts keep only fixed labels. A
 // diagnostic that has to be redacted before it can be read is one nobody reads.
 
 // Stages a request passes through, in order. Named for where it actually got to, so a
@@ -81,6 +81,8 @@ type RequestRecord struct {
 	CancellationSource string `json:"cancellationSource,omitempty"`
 	ToolPolicy         string `json:"toolPolicy,omitempty"`
 	Control            string `json:"control,omitempty"`
+	ClassifierStage    string `json:"classifierStage,omitempty"`
+	ClassifierVerdict  string `json:"classifierVerdict,omitempty"`
 	Status             int    `json:"status,omitempty"`
 
 	// CAP03: what was asked for and what ran, kept apart. A record that keeps only the

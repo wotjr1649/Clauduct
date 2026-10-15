@@ -84,10 +84,12 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		}
 		from = &id.native
 	}
-	if err := g.sessionProfileError(session, from); err != nil {
+	finishProfile, err := g.useSessionProfile(session, from, false)
+	if err != nil {
 		g.refuseSessionProfile(w, session, err)
 		return
 	}
+	defer finishProfile()
 	g.ReconcileNativeCancellations()
 
 	// Admission happens before the body is read, so a request that cannot be served does

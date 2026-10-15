@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
 
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -182,6 +184,11 @@ func parseSessionProfile(raw []byte, id string) (SessionProfile, error) {
 func (s *SessionProfiles) Save(profile SessionProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.save(profile)
+}
+
+// save requires s.mu, including when the final save and unlock share that lock.
+func (s *SessionProfiles) save(profile SessionProfile) error {
 	raw, err := json.Marshal(profile)
 	if err != nil {
 		return ErrSessionProfile
@@ -207,6 +214,19 @@ func (s *SessionProfiles) Save(profile SessionProfile) error {
 	if writeErr != nil || syncErr != nil || closeErr != nil || s.root.Rename(temp, profile.ID+".json") != nil {
 		return ErrSessionProfile
 	}
+	return nil
+}
+
+func (s *SessionProfiles) saveAndRelease(profile SessionProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.save(profile); err != nil {
+		return err
+	}
+	if err := s.locks[profile.ID].Close(); err != nil {
+		return ErrSessionProfile
+	}
+	delete(s.locks, profile.ID)
 	return nil
 }
 
@@ -284,6 +304,9 @@ type profileState struct {
 	// failedStart is the last start registration a native process failed. The hook repeats it
 	// without its source before each prompt; that repeat retries it as the original event.
 	failedStart map[processKey]struct{ session, source string }
+	users       map[string]int
+	registrants map[string]map[processKey]struct{}
+	ended       map[string]bool
 }
 
 // serving reports whether session is the current session of its native process and ready.
@@ -312,7 +335,8 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 	}
 	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile),
 		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool),
-		failedStart: make(map[processKey]struct{ session, source string })}
+		failedStart: make(map[processKey]struct{ session, source string }),
+		users:       make(map[string]int), registrants: make(map[string]map[processKey]struct{}), ended: make(map[string]bool)}
 	if resumed != nil && fork {
 		copy := *resumed
 		copy.Calls = cloneToolIssuances(resumed.Calls)
@@ -338,6 +362,22 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.ended[session] {
+		return errSessionRestart
+	}
+	if !sessionUUID.MatchString(session) {
+		return ErrSessionProfile
+	}
+	if p.registrants[session] == nil {
+		if len(p.registrants) >= maxAgents {
+			return ErrSessionProfile
+		}
+		p.registrants[session] = make(map[processKey]struct{})
+	}
+	if _, known := p.registrants[session][process]; !known && len(p.registrants[session]) >= maxAgents {
+		return ErrSessionProfile
+	}
+	p.registrants[session][process] = struct{}{}
 	if failed := p.failedStart[process]; source == "" && p.profiles[session] == nil && failed.session == session {
 		source = failed.source
 	}
@@ -359,9 +399,6 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		return ErrSessionProfile
 	}
 	defer func() { p.ready[session] = err == nil }()
-	if !sessionUUID.MatchString(session) {
-		return ErrSessionProfile
-	}
 	if p.pending[process] != "" {
 		return errSessionRestart
 	}
@@ -430,6 +467,9 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		// A new native's explicit resume target proves its parent even with several live sessions.
 		if source == "fork" && held == "" {
 			if id := g.commandLineForkSession(process); id != "" {
+				if p.ended[id] {
+					return errSessionRestart
+				}
 				forkParent = p.profiles[id]
 				if forkParent == nil {
 					if saved, err := p.store.Load(id); err == nil {
@@ -550,15 +590,12 @@ func (g *Gateway) CheckpointSessionProfiles(final bool) error {
 	return result
 }
 
-// from, when native identity is required, is the native process that sent the request: the
-// session must be bound to it, whatever another process registered.
-func (g *Gateway) sessionProfileError(session string, from *processKey) error {
-	p := g.profiles
-	if p == nil {
-		return nil
+// Caller holds p.mu so admission and retirement cannot pass each other.
+// from, when required, is the OS identity of the native sending this request.
+func (p *profileState) sessionError(session string, from *processKey) error {
+	if p.ended[session] {
+		return errSessionRestart
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	// A native process that must restart sends nothing more, for any of its sessions, and
 	// neither does the session it must restart into; other native processes are unaffected.
 	if owner, known := p.owner[session]; known && p.pending[owner] != "" {
@@ -573,6 +610,125 @@ func (g *Gateway) sessionProfileError(session string, from *processKey) error {
 		return ErrSessionProfile
 	}
 	return nil
+}
+
+// A hook may create its profile; requests must already have a serving profile.
+// The caller defers finish until every profile write, including tool issuance, is done.
+func (g *Gateway) useSessionProfile(session string, from *processKey, hook bool) (finish func(), err error) {
+	p := g.profiles
+	if p == nil {
+		return func() {}, nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ended[session] {
+		return nil, errSessionRestart
+	}
+	if !hook {
+		if err := p.sessionError(session, from); err != nil {
+			return nil, err
+		}
+	} else if !sessionUUID.MatchString(session) {
+		return nil, ErrSessionProfile
+	}
+	return p.use(session), nil
+}
+
+// P2d: counting keeps its pre-registration behaviour; only retired sessions are refused.
+func (g *Gateway) useCountSessionProfile(session string, r *http.Request) (func(), error) {
+	p := g.profiles
+	if p == nil {
+		return func() {}, nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.ended[session] {
+		return nil, errSessionRestart
+	}
+	if p.profiles[session] == nil || !p.serving(session) {
+		return func() {}, nil
+	}
+	if id, required := g.identityOf(r); required && p.owner[session] != id.native {
+		return func() {}, nil // Another owner's count remains allowed, without retaining this profile.
+	}
+	return p.use(session), nil
+}
+
+// Caller holds p.mu until use registration is complete.
+func (p *profileState) use(session string) func() {
+	p.users[session]++
+	return func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.users[session]--
+		if p.users[session] == 0 {
+			delete(p.users, session)
+		}
+	}
+}
+
+// ReleaseIdleSessionProfiles retires only sessions outside the resident's job set,
+// after all their registrants have exited and all admitted uses have finished.
+func (g *Gateway) ReleaseIdleSessionProfiles(keep []string) error {
+	p := g.profiles
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	status := g.processStatus
+	if status == nil {
+		status = providercert.ProcessStatus
+	}
+	var result error
+	for session, profile := range p.profiles {
+		if slices.Contains(keep, session) || p.users[session] != 0 || len(p.registrants[session]) == 0 {
+			continue
+		}
+		exited := true
+		for process := range p.registrants[session] {
+			if process.pid == 0 || process.created <= 0 || status(process.pid, process.created) != providercert.ProcessExited {
+				exited = false
+				break
+			}
+		}
+		if !exited {
+			continue
+		}
+		if err := p.store.Refresh(profile, g.delegations.projects, true, g.selection); err != nil {
+			result = errors.Join(result, err)
+			continue
+		}
+		if err := p.store.saveAndRelease(*profile); err != nil {
+			result = errors.Join(result, err)
+			continue
+		}
+		p.ended[session] = true
+		delete(p.profiles, session)
+		delete(p.owner, session)
+		delete(p.ready, session)
+		delete(p.registrants, session)
+		delete(p.users, session)
+		for process, current := range p.slots {
+			if current == session {
+				delete(p.slots, process)
+			}
+		}
+		for process, pending := range p.pending {
+			if pending == session {
+				delete(p.pending, process)
+			}
+		}
+		for process, failed := range p.failedStart {
+			if failed.session == session {
+				delete(p.failedStart, process)
+			}
+		}
+		if p.last == session {
+			p.last = ""
+		}
+	}
+	return result
 }
 
 func (g *Gateway) refuseSessionProfile(w http.ResponseWriter, session string, err error) {

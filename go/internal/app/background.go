@@ -170,13 +170,12 @@ type backgroundProcess struct {
 	// this resident controls, so a later key helper can regenerate it.
 	record *ResidentRecord
 	home   string
-	// session reports the gateway's current native session, kept in the record.
-	session func() string
-	proved  func() []gateway.NativeProcess
+	proved func() []gateway.NativeProcess
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
-	nativeStatus func() (registered, notExited int, active int64)
-	crashed      bool // the test crash ended the wait: the record stays, as after a real death
-	unlisted     bool // The Run cleanup removes the directory before the record.
+	nativeStatus    func() (registered, notExited int, active int64)
+	releaseProfiles func([]string) error
+	crashed         bool // the test crash ended the wait: the record stays, as after a real death
+	unlisted        bool // The Run cleanup removes the directory before the record.
 }
 
 // noDispatch stands in for the dispatch process of a regenerated resident.
@@ -187,7 +186,15 @@ func (noDispatch) ExitCode() int { return 0 }
 func (noDispatch) Stop() error   { return nil }
 
 func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
-func (p *backgroundProcess) Wait() error {
+func (p *backgroundProcess) Wait() (result error) {
+	var profileErr error
+	defer func() { result = errors.Join(result, profileErr) }()
+	releaseProfiles := func() {
+		// Keep serving jobs on a failed final save; report the failure when the resident ends.
+		if err := p.releaseUnownedProfiles(); profileErr == nil {
+			profileErr = err
+		}
+	}
 	id := p.job
 	if id == "" {
 		err := p.Process.Wait()
@@ -254,6 +261,7 @@ func (p *backgroundProcess) Wait() error {
 		// Best effort: without the record this session still runs, but a resident that dies
 		// cannot be regenerated for it.
 		p.record.Job = id
+		p.record.Session = nativeJobSession(p.config, id)
 		if writeResident(p.home, *p.record) == nil {
 			defer func() {
 				// A stopped job is still listed and can be opened again: its record stays for
@@ -266,6 +274,7 @@ func (p *backgroundProcess) Wait() error {
 			}()
 		}
 	}
+	releaseProfiles()
 	if p.ready != nil {
 		if err := p.ready(BackgroundSession{JobID: id, ConnectionID: p.link.ID, PID: os.Getpid(), ForkedFrom: p.forkedFrom}); err != nil {
 			return errors.Join(err, stopNative())
@@ -295,8 +304,8 @@ func (p *backgroundProcess) Wait() error {
 					writeResident(p.home, *p.record)
 				}
 			}
-			if p.record != nil && p.session != nil {
-				if session := p.session(); session != "" && session != p.record.Session {
+			if p.record != nil {
+				if session := nativeJobSession(p.config, p.record.Job); session != p.record.Session {
 					p.record.Session = session
 					writeResident(p.home, *p.record)
 				}
@@ -317,6 +326,7 @@ func (p *backgroundProcess) Wait() error {
 				slices.Sort(p.record.Jobs)
 				writeResident(p.home, *p.record)
 			}
+			releaseProfiles()
 			allCompleted := true
 			for job, missing := range jobs {
 				running, completed, err := jobRunning(p.config, job)

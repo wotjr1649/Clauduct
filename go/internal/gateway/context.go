@@ -179,6 +179,12 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	finishProfile, err := g.useSessionProfile(event.Session, nil, true)
+	if err != nil {
+		g.refuseSessionProfile(w, event.Session, err)
+		return
+	}
+	defer finishProfile()
 	c := g.contexts
 	c.mu.Lock()
 	defer c.mu.Unlock()

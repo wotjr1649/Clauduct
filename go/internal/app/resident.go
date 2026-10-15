@@ -22,8 +22,8 @@ import (
 type ResidentRecord struct {
 	Link string `json:"link"`
 	Job  string `json:"job"`
-	// Session is the native session the gateway last registered; the regenerated resident
-	// takes it back as a resume. Empty until the job's first hook has run.
+	// Session is Job's native session from its state; the regenerated resident resumes it.
+	// Empty while the job state has no valid session ID.
 	Session   string   `json:"session,omitempty"`
 	Port      int      `json:"port"`
 	PluginDir string   `json:"pluginDir,omitempty"`
@@ -103,7 +103,7 @@ func residentArgs(args []string) []string {
 
 // regenerateCheck admits a regeneration before anything is fetched or bound: a valid record,
 // a way to bind its port, and a background launch. It returns the session the regenerated
-// gateway takes back, as a resume and never a fork; empty when no hook had registered one.
+// gateway takes back, as a resume and never a fork; empty when the job had no valid session.
 func regenerateCheck(o Options, home string) (string, error) {
 	if err := o.Regenerate.check(); err != nil {
 		return "", err
@@ -160,7 +160,7 @@ func (p *backgroundProcess) checkpointForeground() error {
 		}
 	}
 	slices.Sort(record.Jobs)
-	record.Session, record.Proved = p.session(), p.proved()
+	record.Session, record.Proved = nativeJobSession(p.config, record.Job), p.proved()
 	if record.Job == p.record.Job && record.Session == p.record.Session && slices.Equal(record.Jobs, p.record.Jobs) && slices.Equal(record.Proved, p.record.Proved) {
 		return nil
 	}
@@ -217,13 +217,38 @@ func (r ResidentRecord) ownsSession(config, session string) bool {
 		return false
 	}
 	for _, job := range append([]string{r.Job}, r.Jobs...) {
-		raw, err := os.ReadFile(filepath.Join(config, "jobs", job, "state.json"))
-		var state struct {
-			Session string `json:"sessionId"`
-		}
-		if err == nil && json.Unmarshal(raw, &state) == nil && state.Session == session {
+		if nativeJobSession(config, job) == session {
 			return true
 		}
 	}
 	return false
+}
+
+func nativeJobSession(config, job string) string {
+	if config == "" || !residentJob.MatchString(job) {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(config, "jobs", job, "state.json"))
+	var state struct {
+		Session string `json:"sessionId"`
+	}
+	if err != nil || json.Unmarshal(raw, &state) != nil || !gateway.IsSessionUUID(state.Session) {
+		return ""
+	}
+	return state.Session
+}
+
+func (p *backgroundProcess) releaseUnownedProfiles() error {
+	if p.record == nil || p.releaseProfiles == nil {
+		return nil
+	}
+	var keep []string
+	for _, job := range append([]string{p.record.Job}, p.record.Jobs...) {
+		session := nativeJobSession(p.config, job)
+		if session == "" {
+			return nil // A missing or partial job state proves no session safe to release.
+		}
+		keep = append(keep, session)
+	}
+	return p.releaseProfiles(keep)
 }

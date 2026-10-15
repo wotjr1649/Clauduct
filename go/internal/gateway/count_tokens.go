@@ -33,6 +33,13 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseHeaders(w, r, bad)
 		return
 	}
+	session := r.Header.Get("X-Claude-Code-Session-Id")
+	finishProfile, err := g.useCountSessionProfile(session, r)
+	if err != nil {
+		g.refuseSessionProfile(w, session, err)
+		return
+	}
+	defer finishProfile()
 	ctx, release, admitted := g.admitRequest(w, r, maxRequestBytes, modelAdmission)
 	if !admitted {
 		return

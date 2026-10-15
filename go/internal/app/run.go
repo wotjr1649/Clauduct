@@ -843,9 +843,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		} else if clauductHome != "" && o.Settings == nil && residentLocked {
 			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
-		bp.home, bp.session = clauductHome, gw.CurrentSession
+		bp.home = clauductHome
 		bp.proved = gw.ProvedNativeProcesses
 		bp.nativeStatus = nativeStatus
+		bp.releaseProfiles = gw.ReleaseIdleSessionProfiles
 		if providerFlag != "" {
 			// Native's control commands read the provider settings too: without them a stored
 			// login decides where they connect (#320 R08). They get the launch's own process
@@ -873,7 +874,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			releaseResident, residentLocked = release, true
 		}
 		if resident == nil {
-			resident = &backgroundProcess{config: configDir, home: clauductHome, session: gw.CurrentSession, proved: gw.ProvedNativeProcesses,
+			resident = &backgroundProcess{config: configDir, home: clauductHome, proved: gw.ProvedNativeProcesses,
 				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
 		}
 		err := resident.checkpointForeground()
@@ -941,7 +942,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
-				job: jobs[0], record: record, home: clauductHome, session: gw.CurrentSession, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus}
+				job: jobs[0], record: record, home: clauductHome, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus, releaseProfiles: gw.ReleaseIdleSessionProfiles}
 			if record != nil {
 				bp.job = record.Job
 			}

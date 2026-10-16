@@ -157,6 +157,10 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 			life.ObservedAt = time.Now().UTC()
 			if life.Reason == "" {
 				life.Reason = "native_exit"
+				// The child can finish before the console delivers our copy of Ctrl+C.
+				if print && w.reaped && process.ExitCode() == 0xc000013a { // STATUS_CONTROL_C_EXIT
+					life.Reason = "user_interrupt"
+				}
 			}
 			if life.Reason == "caller_cancelled" && w.err == context.Canceled {
 				return w.reaped, life, ctx.Err()

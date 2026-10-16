@@ -65,6 +65,11 @@ type step struct {
 	Optional bool     `json:"optional"`  // a missing screen is skipped, not a failure
 	Timeout  int      `json:"timeout_s"`
 	After    int      `json:"after_ms"` // pause between the match and the first write
+
+	// Keep the console until this signal after the direct child exits. Its interrupted
+	// step and exit status still fail; this isolates launcher loss from console close.
+	HoldConsoleAfterExit bool `json:"hold_console_after_exit"`
+
 	// Until, on an optional step, is a screen that means the step's own screen will not come
 	// (the main prompt is already up): the step is skipped once it has shown for a short
 	// grace in which the step's own screen can still win. It replaces a fixed wait.
@@ -123,6 +128,20 @@ func Main() {
 	if *cleanupScript != "" {
 		cleanup, err = loadSteps(*cleanupScript, steps)
 		check(err, "cleanup-script")
+	}
+	holdSignal := ""
+	for _, s := range steps {
+		if s.HoldConsoleAfterExit {
+			holdSignal = s.WaitFile
+		}
+	}
+	for _, s := range cleanup {
+		if s.HoldConsoleAfterExit {
+			check(fmt.Errorf("console hold belongs to the primary script"), "cleanup-script")
+		}
+	}
+	if holdSignal != "" && (*total <= 0 || int64(*total) > (1<<63-1)/int64(time.Second)) {
+		check(fmt.Errorf("console hold needs a bounded positive timeout"), "timeout")
 	}
 
 	var inRead, inWrite, outRead, outWrite syscall.Handle
@@ -205,6 +224,9 @@ func Main() {
 	// match against the text with all whitespace removed and are written without spaces.
 	compact := func() string { return strings.Join(strings.Fields(text()), "") }
 	write := func(s string) error {
+		if holdSignal != "" && exited(pi.Process) {
+			return fmt.Errorf("direct child exited")
+		}
 		var n uint32
 		if err := syscall.WriteFile(inWrite, []byte(s), &n, nil); err != nil {
 			return err
@@ -225,6 +247,13 @@ func Main() {
 			stepsEnd = earliest
 		}
 		exitEnd = started.Add(time.Duration(*deadline)*time.Second - 2*time.Second)
+	}
+	var holdEnd time.Time
+	if holdSignal != "" {
+		holdEnd = started.Add(time.Duration(*total) * time.Second)
+		if !exitEnd.IsZero() && exitEnd.Before(holdEnd) {
+			holdEnd = exitEnd
+		}
 	}
 	writeText := func() {
 		if *textLog != "" {
@@ -253,6 +282,9 @@ func Main() {
 			capped := false
 			if !stepsEnd.IsZero() && stepsEnd.Before(limitAt) {
 				limitAt, capped = stepsEnd, true
+			}
+			if s.HoldConsoleAfterExit && limitAt.Before(holdEnd) {
+				holdEnd = limitAt
 			}
 			matched := false
 			screenMatched := false
@@ -384,12 +416,38 @@ func Main() {
 	} else {
 		syscall.TerminateProcess(pi.Process, 1)
 	}
+	holdError := ""
+	if holdSignal != "" {
+		released := false
+		if event == syscall.WAIT_OBJECT_0 {
+			for time.Now().Before(holdEnd) {
+				ready, err := readyFile(holdSignal)
+				if err != nil {
+					holdError = "signal"
+					break
+				}
+				if ready {
+					released = true
+					break
+				}
+				time.Sleep(min(50*time.Millisecond, time.Until(holdEnd)))
+			}
+			if !released && holdError == "" {
+				holdError = "deadline"
+			}
+		} else {
+			holdError = "child_unconfirmed"
+		}
+		fmt.Printf("hold_console_released=%t hold_error=%q\n", released, holdError)
+	}
 	time.Sleep(time.Second)
+	mark("console-close-begin", "")
 	closePseudoConsole.Call(console)
+	mark("console-close-end", "")
 	syscall.CloseHandle(inWrite)
 	writeText()
 	fmt.Printf("child_exit=%d failed_wait=%q elapsed=%.1fs\n", int32(code), failed, time.Since(started).Seconds())
-	if failed != "" || code != 0 {
+	if failed != "" || code != 0 || holdError != "" {
 		os.Exit(1)
 	}
 }
@@ -425,8 +483,15 @@ func loadSteps(name string, previous []step) ([]step, error) {
 			previousSignals[strings.ToLower(filepath.Clean(s.WaitFile))] = true
 		}
 	}
+	holdCount := 0
 	for i := range steps {
 		s := &steps[i]
+		if s.HoldConsoleAfterExit {
+			holdCount++
+			if s.WaitFile == "" || s.Optional || holdCount != 1 || i != len(steps)-1 {
+				return nil, fmt.Errorf("one final required wait_file may hold the console")
+			}
+		}
 		if s.Timeout < 0 || int64(s.Timeout) > (1<<63-1)/int64(time.Second) || s.After < 0 || int64(s.After) > (1<<63-1)/int64(time.Millisecond) {
 			return nil, fmt.Errorf("step duration out of range")
 		}

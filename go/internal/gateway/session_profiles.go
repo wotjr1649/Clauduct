@@ -676,6 +676,11 @@ func (g *Gateway) ReleaseIdleSessionProfiles(keep []string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	for _, session := range keep {
+		if p.profiles[session] == nil {
+			return nil // A new job may still need its parent to finish forking.
+		}
+	}
 	status := g.processStatus
 	if status == nil {
 		status = providercert.ProcessStatus

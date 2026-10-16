@@ -613,8 +613,9 @@ type Translator struct {
 	// itemTypes counts the items the backend opened, by type (#85).
 	itemTypes map[string]int
 	// safety records the backend's safety_buffering notices (see SafetyBuffering).
-	safety         map[string]int
-	metadataNotice bool
+	safety            map[string]int
+	metadataNotice    bool
+	moderationNotices int
 	// returnedModel and returnedEffort are what the completion says it ran on, and
 	// expectModel and expectEffort the route it was sent on (#91).
 	returnedModel, returnedEffort string
@@ -624,6 +625,9 @@ type Translator struct {
 
 // Returned is the model and effort the completed response names, empty when it names none.
 func (t *Translator) Returned() (model, effort string) { return t.returnedModel, t.returnedEffort }
+
+// ModerationMetadata counts presentation notices without keeping their opaque payloads.
+func (t *Translator) ModerationMetadata() int { return t.moderationNotices }
 
 // ExpectRoute states the route the request was sent on, so the completion can be held to it.
 func (t *Translator) ExpectRoute(model, effort string) { t.expectModel, t.expectEffort = model, effort }
@@ -813,6 +817,16 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 	if event.Type == codex.MetadataEvent && t.metadataNotice {
 		t.metadataNotice = false
 		return nil, nil
+	}
+	if event.Type == codex.MetadataEvent {
+		moderation, err := codex.ModerationMetadata(event.Raw)
+		if err != nil {
+			return nil, err
+		}
+		if moderation {
+			t.moderationNotices++
+			return nil, nil
+		}
 	}
 
 	switch event.Type {

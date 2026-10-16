@@ -35,6 +35,8 @@ type EventReport struct {
 	// SafetyBuffering counts the backend's safety_buffering notices (output held for extra
 	// checks): "notices" events, and "use_case:<name>" and "reason:<name>" values. No content.
 	SafetyBuffering map[string]int64 `json:"safetyBuffering,omitempty"`
+	// ModerationMetadata counts first-party presentation notices; their values are not kept.
+	ModerationMetadata int64 `json:"moderationMetadata,omitempty"`
 }
 
 type eventLedger struct {
@@ -44,6 +46,7 @@ type eventLedger struct {
 	formats     map[string]int64
 	items       map[string]int64
 	safety      map[string]int64
+	moderation  int64
 }
 
 func newEventLedger() *eventLedger {
@@ -82,6 +85,15 @@ func (e *eventLedger) observeSafety(counts map[string]int) {
 	}
 }
 
+func (e *eventLedger) observeModeration(count int) {
+	if count == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.moderation += int64(count)
+}
+
 // itemTypes bounds how many distinct output item types are kept.
 const itemTypes = 16
 
@@ -103,7 +115,7 @@ func (e *eventLedger) observeItems(types map[string]int) {
 func (e *eventLedger) report() EventReport {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	report := EventReport{Unsupported: e.unsupported, Names: sorted(e.names)}
+	report := EventReport{Unsupported: e.unsupported, Names: sorted(e.names), ModerationMetadata: e.moderation}
 	if len(e.items) > 0 {
 		report.OutputItems = make(map[string]int64, len(e.items))
 		for kind, n := range e.items {

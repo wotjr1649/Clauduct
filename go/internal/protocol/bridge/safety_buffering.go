@@ -18,7 +18,8 @@ const maxSafetyKeys = 16
 // would be without the notice: the backend only says it is holding output for extra checks,
 // and a blocked result arrives through the ordinary terminal events. A response.metadata event
 // is accepted only when it is such a notice (t.metadataNotice tells Accept so); any other
-// response.metadata stays unsupported.
+// response.metadata stays unsupported by this path; separately validated moderation
+// presentation metadata is handled by Accept.
 func (t *Translator) noteSafetyBuffering(event stream.Event) error {
 	notice, err := codex.SafetyBufferingOf(event.Type, event.Raw)
 	if err != nil {

@@ -765,6 +765,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		answer := translator.Answer()
 		g.events.observeItems(translator.ItemTypes())
 		g.events.observeSafety(translator.SafetyBuffering())
+		g.events.observeModeration(translator.ModerationMetadata())
 		recordOf(w).returned(translator.Returned())
 		recordOf(w).output(translator.ItemTypes(), len(answer))
 		recordOf(w).classifierAnswer(answer, relayCompleted)

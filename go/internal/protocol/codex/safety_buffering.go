@@ -98,7 +98,7 @@ func stringList(fields map[string]json.RawMessage, name string, into *[]string) 
 // For every event type it is the top-level safety_buffering member. A response.metadata event
 // is a notice only through its metadata member, which must itself be typed "safety_buffering"
 // and of the codex shape; otherwise the result is nil with a nil error and the translator
-// leaves the event unsupported, as before. Such an event may also carry a top-level
+// leaves it to the translator's other metadata recognisers. Such an event may also carry a top-level
 // safety_buffering that is false or a valid notice. Codex lets a present top-level member win
 // outright (false hides the nested notice); this build accepts the event and still records the
 // nested notice, so a signal is never hidden. Both valid: the top-level one is returned, as

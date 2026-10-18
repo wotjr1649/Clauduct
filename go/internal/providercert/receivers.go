@@ -258,6 +258,7 @@ func decoded(header http.Header, body io.Reader) (io.Reader, error) {
 
 // Seen is one request a receiver observed: never its body or header values.
 type Seen struct {
+	Sequence    int       `json:"sequence,omitempty"`
 	At          time.Time `json:"at"`
 	Host        string    `json:"host"`
 	Method      string    `json:"method"`
@@ -286,6 +287,8 @@ type Observer struct {
 	ID       string
 	Canaries func() []Canary
 	Respond  func(w http.ResponseWriter, r *http.Request, seen Seen)
+	// Observed receives metadata for every recorded request, including CONNECT and upgrades.
+	Observed func(metadata ObservationMetadata, seen Seen)
 
 	mu      sync.Mutex
 	seen    []Seen
@@ -294,6 +297,27 @@ type Observer struct {
 	// stop ends WebSocket reads, which outlive the HTTP server's Close once hijacked.
 	stop     chan struct{}
 	stopOnce sync.Once
+}
+
+type ObservationMetadata struct {
+	RemoteAddr  string
+	AuthHeaders []string
+}
+
+func (o *Observer) observed(r *http.Request, seen Seen) {
+	if o.Observed == nil {
+		return
+	}
+	metadata := ObservationMetadata{RemoteAddr: r.RemoteAddr}
+	for name := range r.Header {
+		lower := strings.ToLower(name)
+		if strings.Contains(lower, "auth") || strings.Contains(lower, "token") || strings.Contains(lower, "key") || strings.Contains(lower, "cookie") {
+			metadata.AuthHeaders = append(metadata.AuthHeaders, name)
+		}
+	}
+	slices.Sort(metadata.AuthHeaders)
+	seen.Canaries = slices.Clone(seen.Canaries)
+	o.Observed(metadata, seen)
 }
 
 func (o *Observer) stopped() chan struct{} {
@@ -331,7 +355,9 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
-		o.webSocket(w, r, o.record(seen))
+		index := o.record(&seen)
+		o.observed(r, seen)
+		o.webSocket(w, r, index)
 		return
 	}
 	// The decoded body's first part is kept for the responder, which reads r.Body after the scan.
@@ -345,7 +371,8 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 		seen.Canaries = ids
 	}
 	r.Body = io.NopCloser(bytes.NewReader(kept.Bytes()))
-	o.record(seen)
+	o.record(&seen)
+	o.observed(r, seen)
 	if o.Respond != nil {
 		o.Respond(w, r, seen)
 		return
@@ -392,12 +419,13 @@ func (o *Observer) webSocket(w http.ResponseWriter, r *http.Request, index int) 
 
 // record keeps seen and returns its index, or -1 once the record is full. Requests past the
 // bound are still counted in total and dropped, which the verdict reads as a receiver fault.
-func (o *Observer) record(seen Seen) int {
+func (o *Observer) record(seen *Seen) int {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.total++
+	seen.Sequence = o.total
 	if len(o.seen) < maxSeen {
-		o.seen = append(o.seen, seen)
+		o.seen = append(o.seen, *seen)
 		return len(o.seen) - 1
 	}
 	o.dropped++
@@ -620,7 +648,9 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	}
 	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
 	// the probe cannot see into must not vanish from the record.
-	tunnel := o.record(Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect"})
+	seen := Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect"}
+	tunnel := o.record(&seen)
+	o.observed(r, seen)
 	var hello atomic.Bool
 	tlsConn := tls.Server(inner, &tls.Config{NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12,
 		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {

@@ -171,8 +171,8 @@ func renderPDF() int {
 // The bounds. A hook event is a small object; anything past these is not one.
 const (
 	NativeHookTimeout = 5 * time.Second
-	// Leave one second for process startup, diagnostic output and native handling.
-	hookTimeout     = NativeHookTimeout - time.Second
+	// Reserve startup and diagnostic time inside native's creation-inclusive deadline.
+	hookTimeout     = NativeHookTimeout - 1500*time.Millisecond
 	maxEventBytes   = (256<<10)*6 + 16384
 	maxBindingBytes = (256<<10)*6 + 8192
 	requestTimeout  = 3 * time.Second

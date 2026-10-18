@@ -154,7 +154,8 @@ func noProxyEntries(value string) []string {
 // The product CLI contract is owned by docs/v2/ARCHITECTURE.md section 4.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
 	args := make([]string, 0, len(forward)+6)
-	if overlay.Effort != "" {
+	agentView := len(forward) > 0 && forward[0] == "agents"
+	if overlay.Effort != "" && !agentView {
 		args = append(args, "--effort", overlay.Effort)
 	}
 	if overlay.Settings != "" {
@@ -162,6 +163,11 @@ func Build(exe string, forward []string, source map[string]string, cwd string, o
 	}
 	if overlay.Agents != "" {
 		args = append(args, "--agents", overlay.Agents)
+	}
+	// Agent View owns a separate effort default; its subcommand option must precede user overrides.
+	if agentView && overlay.Effort != "" {
+		args = append(args, "agents", "--effort", overlay.Effort)
+		forward = forward[1:]
 	}
 	args = append(args, forward...)
 

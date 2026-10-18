@@ -69,6 +69,7 @@ type step struct {
 	// Keep the console until this signal after the direct child exits. Its interrupted
 	// step and exit status still fail; this isolates launcher loss from console close.
 	HoldConsoleAfterExit bool `json:"hold_console_after_exit"`
+	CloseConsole         bool `json:"close_console"`
 
 	// Until, on an optional step, is a screen that means the step's own screen will not come
 	// (the main prompt is already up): the step is skipped once it has shown for a short
@@ -275,6 +276,24 @@ func Main() {
 			f.Close()
 		}
 	}
+	consoleClosed := false
+	closeConsole := func() bool {
+		if consoleClosed {
+			return true
+		}
+		consoleClosed = true
+		mark("console-close-begin", "")
+		done := make(chan struct{})
+		go func() { closePseudoConsole.Call(console); close(done) }()
+		select {
+		case <-done:
+			mark("console-close-end", "")
+			return true
+		case <-time.After(10 * time.Second):
+			mark("console-close-timeout", "")
+			return false
+		}
+	}
 	runSteps := func(steps []step, phase string, from int) string {
 		for i, s := range steps {
 			limit := time.Duration(max(s.Timeout, 1)) * time.Second
@@ -314,7 +333,7 @@ func Main() {
 						break
 					}
 				}
-				if exited(pi.Process) {
+				if exited(pi.Process) && !s.CloseConsole {
 					break
 				}
 				time.Sleep(200 * time.Millisecond)
@@ -342,6 +361,12 @@ func Main() {
 				fmt.Printf("%squiet=%d settled=%v\n", phase, i, quiet)
 			}
 			mark(fmt.Sprintf("%s%d", phase, i), "")
+			if s.CloseConsole {
+				if !closeConsole() {
+					return "close_console"
+				}
+				return ""
+			}
 			// Replies can arrive while later parts of the same input are still being sent.
 			from = len(compact())
 			shown := make([]int, len(s.Send)) // times each part's text was on the screen before any write
@@ -441,9 +466,10 @@ func Main() {
 		fmt.Printf("hold_console_released=%t hold_error=%q\n", released, holdError)
 	}
 	time.Sleep(time.Second)
-	mark("console-close-begin", "")
-	closePseudoConsole.Call(console)
-	mark("console-close-end", "")
+	if !closeConsole() {
+		fmt.Fprintln(os.Stderr, "ClosePseudoConsole deadline")
+		os.Exit(1)
+	}
 	syscall.CloseHandle(inWrite)
 	writeText()
 	fmt.Printf("child_exit=%d failed_wait=%q elapsed=%.1fs\n", int32(code), failed, time.Since(started).Seconds())
@@ -486,6 +512,9 @@ func loadSteps(name string, previous []step) ([]step, error) {
 	holdCount := 0
 	for i := range steps {
 		s := &steps[i]
+		if s.CloseConsole && (i != len(steps)-1 || s.Optional || s.HoldConsoleAfterExit || len(s.Send) > 0 || s.Wait == "" && s.WaitFile == "" || s.Timeout <= 0 || s.ConfirmFile != "" || s.ConfirmScreen != "" || s.Until != "") {
+			return nil, fmt.Errorf("close_console requires one final required observed step without input or console hold")
+		}
 		if s.HoldConsoleAfterExit {
 			holdCount++
 			if s.WaitFile == "" || s.Optional || holdCount != 1 || i != len(steps)-1 {

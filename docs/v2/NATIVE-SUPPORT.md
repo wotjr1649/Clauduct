@@ -44,7 +44,11 @@
 
 native의 도구 목록에 있는 기능도 대응 backend 의미가 없으면 같은 결과를 보장할 수 없다. temperature/top_p, thinking budget, metadata, cache breakpoint, pause_turn, 도구 결과 이미지/PDF의 명시적 warmup 계수는 현행 backend와 일대일 대응하지 않는 제약이 있다. stop_sequences는 로컬 절단이며 backend 비용·지연을 줄인다는 보장이 아니다. refusal·annotation·citation의 모든 형태를 보존하는 adapter가 없을 때는 조용한 손실 대신 명시적 실패로 처리한다. 실패 차단을 해당 기능 지원으로 부르지 않는다.
 
-저장된 Claude apps gateway와 충돌하는 관리 정책은 별도 미해결 provider-control 범위다. credential을 읽지 않으므로 이런 상태를 항상 판별하지 못하며, 제외 환경에서 hook이 비활성·실패하면 다른 gateway로 대화가 갈 수 있다. 기본 제품의 native 동등성 판정은 모든 사용자 환경에서의 송신0 또는 강한 provider certification을 뜻하지 않는다. HOST_MANAGED/GATEWAY_ENV_COMPAT 전략의 background 제한을 일반 기본 경로의 미지원으로 옮겨 쓰지 않는다.
+기본 신규 세션은 같은 native의 `auth status --json`으로 저장 provider 상태를 먼저 확인한다. native가 저장된 Claude apps gateway를 보고하면 `NATIVE_STORED_GATEWAY`, 상태를 확인하지 못하면 `NATIVE_PROVIDER_STATUS_UNVERIFIED`로 모델 세션 시작 전에 거절한다. 사용자는 Clauduct를 끝낸 뒤 standalone Claude Code에서 gateway 로그인을 해제하고 다시 실행할 수 있다. Clauduct가 credential 파일을 직접 읽거나 자동 로그아웃하지 않는다. 일반 first-party OAuth 상태는 거절 대상이 아니다. 충돌하는 관리 routing 정책과 사용자가 전달한 parent routing 정책도 시작 전에 거절한다.
+
+이 시작 검사는 실행 중 공유 credential 변경이나 기존 supervisor가 보유한 provider 상태까지 인증하지 않는다. 기존 resident 복원은 새 모델 프로세스를 시작하지 않고 기존 routing proof와 reconnect 기한을 사용한다. 따라서 모든 사용자 환경에서 잘못된 목적지 송신0 또는 강한 provider certification을 보장하지 않으며, 검사를 지난 뒤 provider가 바뀌는 경로에는 잔여 위험이 있다. 자동 certification·cache·pre-warm은 제공하지 않는다. HOST_MANAGED/GATEWAY_ENV_COMPAT 전략의 background 제한을 일반 기본 경로의 미지원으로 옮겨 쓰지 않는다.
+
+native의 parent provider 제한을 자동 주입하면 기존 HKCU 권한 정책이 선택되지 않을 수 있고, host-managed flag는 사용자 model 설정도 무시하므로 사용하지 않는다. 기존 관리자·사용자 정책을 덮어쓰지 않고 충돌을 거절하는 방향을 적용한다. provider 제어와 관리 정책의 우선순위는 [native managed settings](https://code.claude.com/docs/en/managed-settings), 상태 조회 계약은 [native CLI reference](https://code.claude.com/docs/en/cli-reference)를 따른다.
 
 HKLM provider pin·TxR·고정 broker를 사용하는 enterprise hardening은 현재 제품에서 제공하지 않는다. PC 전체 standalone native의 정책과 endpoint에도 영향을 주므로 기본 로컬 bridge와 별도 설계가 필요하다. 준비 시험의 미실행은 이 기능이 검증됐다는 뜻이 아니다.
 

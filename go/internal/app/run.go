@@ -313,6 +313,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if !information {
+		if err := checkParentRouting(forward); err != nil {
+			return Result{}, err
+		}
+	}
 	if providerFlag != "" || !BackgroundRequested(o.Args) && !o.agentView() {
 		// The foreground's agent-view restriction is this launch's, as its routing is: a
 		// settings env that turns agent view back on would reopen native's supervisor path.
@@ -390,6 +395,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	nativeBefore, _ := os.Stat(exe)
 	defer func() { result.NativeReplaced = nativeReplaced(exe, nativeBefore) }()
+	if !information && o.Settings == nil && o.Regenerate == nil && providerFlag == "" && nativeBefore != nil && strings.EqualFold(filepath.Base(exe), "claude.exe") {
+		if err := checkNativeProvider(ctx, exe, o); err != nil {
+			return Result{Category: CategoryRouting, NativeExitCode: ExitCodeUnknown}, err
+		}
+	}
 	var profiles *gateway.SessionProfiles
 	var resumed *gateway.SessionProfile
 	_, forkSession := optionValue(o.Args, "--fork-session")

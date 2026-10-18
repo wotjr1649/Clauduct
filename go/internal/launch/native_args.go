@@ -38,7 +38,7 @@ func NativeArgEnd(args []string, i int) (end int, known bool) {
 		"--append-subagent-system-prompt", "--append-subagent-system-prompt-file", "--allowedTools", "--allowed-tools",
 		"--autocompact", "--betas", "--claude-md-file", "--client-data-url", "--debug-file", "--disallowedTools", "--disallowed-tools",
 		"--effort", "--environment", "--fallback-model", "--file", "--input-format", "--json-schema",
-		"--max-budget-usd", "--max-turns", "--mcp-config", "--model", "--name", "-n", "--output-format",
+		"--max-budget-usd", "--max-turns", "--managed-settings", "--mcp-config", "--model", "--name", "-n", "--output-format",
 		"--permission-mode", "--permission-prompt-tool", "--permission-prompts", "--plugin-dir", "--plugin-dir-no-mcp", "--proactivity",
 		"--plugin-url", "--remote-control-session-name-prefix", "--session-id", "--settings", "--setting-sources",
 		"--system-prompt", "--system-prompt-file", "--system-prompt-snapshot", "--tools":

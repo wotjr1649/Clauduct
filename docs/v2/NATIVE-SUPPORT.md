@@ -1,0 +1,55 @@
+# Claude Code native 지원 범위
+
+이 문서는 Windows의 Clauduct 기본 경로와 Claude Code native2.1.302에서 확인한 범위를 설명한다. 제품은 설치된 native를 실행하며 사용자 설정·승인·도구 실행과 UI는 native가 담당하고, 모델 요청의 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다. 새 native와 모든 plugin/MCP 조합의 성공은 자동 승계하지 않는다. 현재 검증 결과와 남은 제약은 [호환성 문서](COMPATIBILITY.md)에 있다.
+
+## 지원 경로
+
+- 로컬 Windows native의 foreground 대화, print, resume·fork, Agent View와 background dispatch·attach·stop·rm을 사용한다. 저장된 Claude apps gateway provider 상태가 없고, 조직의 강제 routing 정책이 Clauduct와 충돌하지 않아야 한다. 일반 Claude 구독 OAuth와 standalone native 병행은 지원 범위다.
+- native가 제공한 ordinary callable 이름·schema·인자·결과를 데이터로 보존한다. 새 도구 이름을 이유로 기존 이름으로 바꾸거나 자동 대체하지 않는다. native 도구 목록, 사용자 deny·ask 규칙, native tool hook과 각 MCP 서버 권한이 계속 적용된다.
+- Clauduct가 생성하는 worker 역할은 부모의 native 도구 집합을 상속한다. 고정 whitelist로 WebFetch 검색이 막히던 결함을 수정했으며, 사용자 `--agents`의 명시적 제한·빈 배열·메뉴 대체는 유지한다. 도구 노출은 실행 승인과 별개이며 deny·ask가 계속 적용된다.
+- model과 effort는 실제 계정 목록과 허용 경로로 검증한다. 모르는 이름·지원하지 않는 effort·은퇴 모델은 이유를 표시하고 거부한다. 후속 모델 안내는 자동 대체 실행이 아니다.
+- 명시적으로 같은 Reply를 다시 보내면 새 제출이다. 같은 제출의 복원·재시도와 빈 wake가 중복 효과를 만들지는 않아야 한다.
+- routing 증명이 깨지면 그 gateway 도메인이 종료된다. 서로 독립적으로 살아 있어야 하는 작업에는 독립 gateway 자격을 사용한다.
+- 사용자 config·MCP·Skills·기록을 공유한다. 같은 native config의 Agent View 목록도 공유하며, Clauduct와 standalone의 목록을 서로 숨기는 profile 분리는 제공하지 않는다.
+
+## 도구·UI별 조건과 대체 경로
+
+| 기능 | 현재 지원 상태와 원인 | 사용할 경로 |
+|---|---|---|
+| Read·파일·shell 도구, Agent, Skill, ToolSearch 및 ordinary MCP 도구 | native가 해당 세션에 실제로 제공한 경우 bridge가 일반 callable로 전달한다. 개별 외부 도구의 서비스·권한·모든 버전을 검증했다는 뜻은 아니다 | native의 도구 목록과 deny·ask·hooks를 사용한다 |
+| TaskCreate·TaskGet·TaskList·TaskUpdate | GPT 모델 이름에 대한 native 기본 도구 선택과 background 여부에 따라 제공이 달라진다. bridge가 제거하는 도구가 아니다 | 필요하면 사용자가 CLAUDE_CODE_ENABLE_TODO_TOOLS=1 또는 native의 allowedTools/tools 설정을 선택한다. Clauduct가 강제로 켜지는 않는다 |
+| PowerShell | native의 OS·계정·flag·Bash deny 규칙에 따라 제공이 달라진다 | native가 지원하는 CLAUDE_CODE_USE_POWERSHELL_TOOL=1과 PowerShell 권한 규칙을 사용한다. Bash만 검사하는 사용자 hook은 PowerShell에도 맞게 설정한다 |
+| Monitor | native의 버전·기능 노출 조건을 따른다. 현재 모든 flag/계정 조합의 실행을 검증하지 않았다 | 세션의 실제 제공 여부를 확인한다. 미검증을 지원 완료로 표시하지 않는다 |
+| TaskOutput·옛 Task 이름 | 현행 native가 제거하거나 이름을 바꾼 옛 표면은 강제로 복원하지 않는다 | 현행 native의 Read·Agent 등 해당 기능을 사용한다 |
+| Agent View 입력창의 dispatch별 /effort | 고정 native302에 없는 입력창 동작이다. GPT backend는 native의 명령 parser나 UI를 바꾸지 않는다 | clauduct agents --model … --effort …, clauduct --bg --effort … 또는 지원되는 settings를 사용한다. 같은 native에서 네 기본값 조합을 검증한다 |
+| Windows warm spare | 고정 native302가 Windows에서 warm pool 생성 전에 반환한다. 실행된 warm 성공으로 보고하지 않는다 | 지원되는 cold dispatch와 복원을 사용한다. 다른 native에서 warm이 생기면 별도 검증한다 |
+| teammate split pane·resume·print | native의 터미널·세션 수명 제약이 있다. Windows Terminal split pane과 teammate 복원을 bridge가 새로 구현하지 않는다 | 지원되는 in-process/일반 대화 경로를 사용한다. /resume은 native가 teammate를 복원하는 보장이 아니다 |
+| Artifact·RemoteTrigger·SendUserFile·PushNotification·ShareOnboardingGuide의 Anthropic-hosted 부분 | Claude 계정·원격 서비스·요금제의 기능이다. Codex 모델 추론 자격으로 해당 서비스 권한이 생기지 않는다 | 로컬 파일 출력, 사용자가 승인한 별도 외부 연동을 사용한다. Anthropic cloud 기능의 동등 구현은 제공하지 않는다 |
+| /usage·/cost·Claude 계정 관리 | Claude 구독 통계와 Codex backend 계수는 서로 다른 서비스다. Clauduct 안의 login/logout 등 계정 변경은 거부한다 | Clauduct의 사용량·진단과 standalone native의 계정 관리를 사용한다 |
+| Chrome·Desktop·Remote Control·Office 등 외부 앱/서비스 조합 | Chrome과 임의 외부 조합은 미검증이며 Desktop 실행은 명시적으로 거부한다. GPT 모델 지원과 외부 앱의 backend·인증 지원은 별도다 | 지원을 확인한 로컬 CLI와 개별 연동을 사용한다. 미검증을 불가능으로 단정하지 않는다 |
+| Workflow | 검증된 inline·scriptPath·named source와 제한된 계획 adapter를 지원한다. 임의 JavaScript나 출처 없는 재개는 허용하지 않는다 | 실제 Read 결과와 native 권한을 통과한 source만 사용한다 |
+
+역할의 tools 생략과 권한 상속은 [native subagent 문서](https://code.claude.com/docs/en/sub-agents)를 따른다. Task·PowerShell·cloud 도구 조건은 [native 도구 문서](https://code.claude.com/docs/en/tools-reference), dispatch 설정은 [Agent View 문서](https://code.claude.com/docs/en/agent-view), split pane과 복원 제약은 [agent teams 문서](https://code.claude.com/docs/en/agent-teams)를 따른다. 이들은 도구의 노출·서비스 조건 근거이며 해당 기능의 Clauduct 실제 실행 PASS를 대신하지 않는다.
+
+## GPT 모델을 사용해도 남는 native 경계
+
+| 결정을 내리는 층 | 남는 제약의 원인 | Clauduct가 적용하는 처리 |
+|---|---|---|
+| native의 UI·명령 parser·OS 분기 | 입력창 문법과 Windows warm pool은 모델 요청 이전에 native가 결정한다 | 지원되는 CLI/settings와 cold dispatch를 검증한다. native 자체를 패치하거나 존재하지 않는 UI 동작을 성공으로 표시하지 않는다 |
+| native의 tool 노출·사용자 권한 | 모델 이름·세션 종류·계정 flag·deny/ask에 따라 도구가 제공되거나 거부된다 | 제공된 ordinary 도구를 보존하고, 필요한 native opt-in과 권한 조건을 문서화한다. 사용자 deny를 풀지 않는다 |
+| 외부 서비스의 인증·실행 | Codex 추론 권한은 Anthropic-hosted 서비스의 인증이나 실행 자격이 아니다 | 지원되는 로컬 파일·CLI 경로를 제공한다. 다른 서비스의 기능을 모델 응답만으로 구현됐다고 하지 않는다 |
+| backend protocol과 bridge | 두 API의 의미가 다르거나 아직 보존 adapter가 없는 필드가 있다 | 의미를 검증한 변환만 적용한다. 명시적 실패와 미지원 설명을 남기며 조용히 값을 버리지 않는다 |
+
+## protocol과 보안 경계
+
+native의 도구 목록에 있는 기능도 대응 backend 의미가 없으면 같은 결과를 보장할 수 없다. temperature/top_p, thinking budget, metadata, cache breakpoint, pause_turn, 도구 결과 이미지/PDF의 명시적 warmup 계수는 현행 backend와 일대일 대응하지 않는 제약이 있다. stop_sequences는 로컬 절단이며 backend 비용·지연을 줄인다는 보장이 아니다. refusal·annotation·citation의 모든 형태를 보존하는 adapter가 없을 때는 조용한 손실 대신 명시적 실패로 처리한다. 실패 차단을 해당 기능 지원으로 부르지 않는다.
+
+저장된 Claude apps gateway와 충돌하는 관리 정책은 별도 미해결 provider-control 범위다. credential을 읽지 않으므로 이런 상태를 항상 판별하지 못하며, 제외 환경에서 hook이 비활성·실패하면 다른 gateway로 대화가 갈 수 있다. 기본 제품의 native 동등성 판정은 모든 사용자 환경에서의 송신0 또는 강한 provider certification을 뜻하지 않는다. HOST_MANAGED/GATEWAY_ENV_COMPAT 전략의 background 제한을 일반 기본 경로의 미지원으로 옮겨 쓰지 않는다.
+
+HKLM provider pin·TxR·고정 broker를 사용하는 enterprise hardening은 현재 제품에서 제공하지 않는다. PC 전체 standalone native의 정책과 endpoint에도 영향을 주므로 기본 로컬 bridge와 별도 설계가 필요하다. 준비 시험의 미실행은 이 기능이 검증됐다는 뜻이 아니다.
+
+## 검증과 시간 예산
+
+hook은 native5초 안에 시작·진단 시간을 남기도록 내부 전체3.5초를 공유한다. HTTP 개별 상한3초와 reconnect 상한2초도 그대로 적용된다. 3.5초 이상 걸리는 작업은 이전4초 계약보다 일찍 실패할 수 있다. 고정 여유는 임의의 OS 시작 지연을 보장하지 않는다.
+
+개발 중에는 변경 영향 시험과 유효한 기존 근거를 사용한다. 전체 관문은 push/출하 전에 새 후보에서 실행하고, 전체 exit0과 요구별 근거 충족을 각각 확인한다. 선택형 시험·지원하지 않는 native 기능·과거 실패는 원래 상태와 이유를 남긴다. 미해결 결함을 SKIP으로 바꾸지 않는다. 최종 태그 자산·설치·업데이트·제거 확인은 출하 요청 시 별도 절차로 수행한다.

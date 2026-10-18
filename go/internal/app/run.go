@@ -193,6 +193,8 @@ type Result struct {
 	NativeReplaced bool
 	// HandedOver names the jobs an agent view session's gateway stayed for after native ended.
 	HandedOver []string
+	// Diagnostic identity of the native auth query; never an inference identity.
+	nativeProviderQuery childprocess.ProcessIdentity
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -396,7 +398,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	nativeBefore, _ := os.Stat(exe)
 	defer func() { result.NativeReplaced = nativeReplaced(exe, nativeBefore) }()
 	if !information && o.Settings == nil && o.Regenerate == nil && providerFlag == "" && nativeBefore != nil && strings.EqualFold(filepath.Base(exe), "claude.exe") {
-		if err := checkNativeProvider(ctx, exe, o); err != nil {
+		var query childprocess.ProcessIdentity
+		defer func() { result.nativeProviderQuery = query }()
+		if err := checkNativeProvider(ctx, exe, o, &query); err != nil {
 			return Result{Category: CategoryRouting, NativeExitCode: ExitCodeUnknown}, err
 		}
 	}

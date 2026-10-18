@@ -50,6 +50,8 @@ native의 도구 목록에 있는 기능도 대응 backend 의미가 없으면 �
 
 native의 parent provider 제한을 자동 주입하면 기존 HKCU 권한 정책이 선택되지 않을 수 있고, host-managed flag는 사용자 model 설정도 무시하므로 사용하지 않는다. 기존 관리자·사용자 정책을 덮어쓰지 않고 충돌을 거절하는 방향을 적용한다. provider 제어와 관리 정책의 우선순위는 [native managed settings](https://code.claude.com/docs/en/managed-settings), 상태 조회 계약은 [native CLI reference](https://code.claude.com/docs/en/cli-reference)를 따른다.
 
+`auth status`는 offline 검사가 아니다. 저장 gateway가 있는 합성 환경에서 native 초기화의 TLS 연결 시도가 관측됐다. 그 실행에서 HTTP handler 요청과 추론은 0이었지만, 이를 모든 송신·credential refresh·상태 갱신이 없다는 보장으로 확대하지 않는다. query의 native 프로세스 세대와 모델 세션의 세대는 별도로 기록한다.
+
 HKLM provider pin·TxR·고정 broker를 사용하는 enterprise hardening은 현재 제품에서 제공하지 않는다. PC 전체 standalone native의 정책과 endpoint에도 영향을 주므로 기본 로컬 bridge와 별도 설계가 필요하다. 준비 시험의 미실행은 이 기능이 검증됐다는 뜻이 아니다.
 
 ## 검증과 시간 예산

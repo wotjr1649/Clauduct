@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -18,7 +19,7 @@ var errNativeStoredGateway = errors.New("NATIVE_STORED_GATEWAY: native reports a
 
 // Query native's opaque credential store without loading user/project settings.
 // shortcut: this launch-time query does not certify later shared-state changes; stronger isolation needs a separate contract.
-func checkNativeProvider(ctx context.Context, exe string, o Options) error {
+func checkNativeProvider(ctx context.Context, exe string, o Options, identity *childprocess.ProcessIdentity) error {
 	settings, err := json.Marshal(map[string]any{"env": routingSettingsEnv(nil, "http://127.0.0.1:1")})
 	if err != nil {
 		return errNativeProviderStatus
@@ -33,6 +34,11 @@ func checkNativeProvider(ctx context.Context, exe string, o Options) error {
 	process, err := startAdmitted(startOSProcess, o.AdmittedNativeSHA256, spec, nil, &output, io.Discard)
 	if err != nil {
 		return errNativeProviderStatus
+	}
+	if query, ok := process.(interface {
+		Identity() (childprocess.ProcessIdentity, error)
+	}); ok {
+		*identity, _ = query.Identity()
 	}
 	waitErr, reaped := waitFor(ctx, process)
 	var exitErr *exec.ExitError

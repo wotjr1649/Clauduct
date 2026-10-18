@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
@@ -247,7 +248,7 @@ func ReconnectResident(link, session string) {
 
 // ReconnectResidentContext shortens the wait without canceling restoration.
 func ReconnectResidentContext(parent context.Context, link, session string) {
-	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	ctx, cancel := context.WithTimeout(parent, hookcmd.ReconnectTimeout)
 	defer cancel()
 	if ctx.Err() != nil {
 		return
@@ -265,7 +266,7 @@ func ReconnectResidentContext(parent context.Context, link, session string) {
 			return
 		}
 		close(attempted)
-		reconnectRegenerateResident(link, 2*time.Second)
+		reconnectRegenerateResident(link, hookcmd.ReconnectTimeout)
 	}()
 	// The caller's deadline does not cancel the resident or its restoration.
 	select {

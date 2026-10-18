@@ -56,6 +56,10 @@ HKLM provider pin·TxR·고정 broker를 사용하는 enterprise hardening은 �
 
 ## 검증과 시간 예산
 
-hook은 native5초 안에 시작·진단 시간을 남기도록 내부 전체3.5초를 공유한다. HTTP 개별 상한3초와 reconnect 상한2초도 그대로 적용된다. 3.5초 이상 걸리는 작업은 이전4초 계약보다 일찍 실패할 수 있다. 고정 여유는 임의의 OS 시작 지연을 보장하지 않는다.
+사용자·plugin hook의 timeout과 생략된 설정은 보존하고 native가 집행한다. Clauduct가 생성한 bridge hook에만 외부30초를 명시한다. 이는 native UserPromptSubmit 기본값을 참고한 제품 설정이며, 모든 native event의 기본값이30초라는 뜻은 아니다.
+
+제품 hook의 공유 작업 예산14초는 확인된 순차 I/O 상한의 합이다: link 조회3초 + reconnect 대기2초 + link 재조회3초 + routing proof3초 + 등록3초. proof 실패 뒤의 mismatch 보고는 등록을 대신하며, 등록의503 재시도는 같은 HTTP3초를 공유한다. stdin 대기·해석·단계 전환도 전체 예산을 소비하므로 각 단계는 공유 기한과 자기 기한 중 먼저 오는 시각에 끝난다. reconnect2초는 호출자의 대기 제한이며 복원 프로세스 전체 수명을 뜻하지 않는다.
+
+끝나지 않는 stdin도 공유 기한에 종료하며, 취소 뒤 입력이 도착해도 후속 hook 작업을 시작하지 않는다. 입력 reader의 회수는 일회성 hook 프로세스의 종료에 의존한다. 외부30초와 내부14초의 차이는 임의의 OS 시작·종료 지연을 보장하지 않는다. 기존 event별 거절과 native 실패 정책은 유지하며, 사용자·plugin hook에 제품 제한이나 onFailure 정책을 일괄 적용하지 않는다. 설정 형식과 event별 기본값은 [native hooks 문서](https://code.claude.com/docs/en/hooks#common-fields)를 따른다.
 
 개발 중에는 변경 영향 시험과 유효한 기존 근거를 사용한다. 전체 관문은 push/출하 전에 새 후보에서 실행하고, 전체 exit0과 요구별 근거 충족을 각각 확인한다. 선택형 시험·지원하지 않는 native 기능·과거 실패는 원래 상태와 이유를 남긴다. 미해결 결함을 SKIP으로 바꾸지 않는다. 최종 태그 자산·설치·업데이트·제거 확인은 출하 요청 시 별도 절차로 수행한다.

@@ -62,6 +62,12 @@ func Dispatch(argv []string) (int, bool) {
 }
 
 func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
+	defer cancel()
+	return dispatchContext(ctx, argv, in, out, errOut)
+}
+
+func dispatchContext(ctx context.Context, argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 	if len(argv) == 0 {
 		return 0, false
 	}
@@ -76,8 +82,6 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 	if len(args) > 0 && args[0] == ConfirmationArg {
 		return 2, true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), hookTimeout)
-	defer cancel()
 	controlled := len(args) == 3 && args[0] == Arg && args[2] == ProviderControlledArg
 	if len(args) == 2 && args[0] == Arg && strings.HasPrefix(args[1], "http://") {
 		// A session started before the session link: the gateway is on the command line and
@@ -97,7 +101,10 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 			return hookDeadline(errOut), true
 		}
 		if err != nil && args[0] == Arg {
-			raw, readErr := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+			raw, readErr := readEvent(ctx, in)
+			if errors.Is(readErr, errHookDeadline) {
+				return hookDeadline(errOut), true
+			}
 			if readErr != nil || len(raw) > maxEventBytes {
 				return linkGone(args[1], bytes.NewReader(raw), errOut), true
 			}
@@ -170,9 +177,12 @@ func renderPDF() int {
 
 // The bounds. A hook event is a small object; anything past these is not one.
 const (
-	NativeHookTimeout = 5 * time.Second
-	// Reserve startup and diagnostic time inside native's creation-inclusive deadline.
-	hookTimeout     = NativeHookTimeout - 1500*time.Millisecond
+	// Only Clauduct-owned entries use this envelope, matching native's prompt default.
+	NativeHookTimeout = 30 * time.Second
+	// ReconnectTimeout bounds the hook caller's wait, not restoration's lifetime.
+	ReconnectTimeout = 2 * time.Second
+	// Two pipe exchanges, one reconnect, proof and registration (or mismatch report).
+	hookTimeout     = 2*sessionlink.RequestTimeout + ReconnectTimeout + 2*requestTimeout
 	maxEventBytes   = (256<<10)*6 + 16384
 	maxBindingBytes = (256<<10)*6 + 8192
 	requestTimeout  = 3 * time.Second
@@ -222,7 +232,10 @@ func routedContext(ctx context.Context, connection sessionlink.Connection, contr
 		return 2
 	}
 	pinGatewayEnv(env, connection)
-	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+	raw, err := readEvent(ctx, in)
+	if errors.Is(err, errHookDeadline) {
+		return hookDeadline(errOut)
+	}
 	if err != nil {
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
 		return 1
@@ -454,7 +467,10 @@ func runWithOutput(in io.Reader, out, errOut io.Writer, env map[string]string) i
 }
 
 func runWithOutputContext(ctx context.Context, in io.Reader, out, errOut io.Writer, env map[string]string) int {
-	raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+	raw, err := readEvent(ctx, in)
+	if errors.Is(err, errHookDeadline) {
+		return hookDeadline(errOut)
+	}
 	if err != nil || len(raw) > maxEventBytes {
 		fmt.Fprintln(errOut, "CLAUDUCT_AGENT_ROUTE_FAILED")
 		return 1
@@ -813,6 +829,32 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 var errInvalidGateway = fmt.Errorf("INVALID_GATEWAY")
 var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
 var errHookDeadline = errors.New("CLAUDUCT_HOOK_DEADLINE")
+
+// The one-shot hook process exits on timeout; a blocked reader cannot delay its exit.
+func readEvent(ctx context.Context, in io.Reader) ([]byte, error) {
+	if ctx.Err() != nil {
+		return nil, errHookDeadline
+	}
+	type result struct {
+		raw []byte
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		raw, err := io.ReadAll(io.LimitReader(in, maxEventBytes+1))
+		done <- result{raw, err}
+	}()
+	select {
+	case value := <-done:
+		if ctx.Err() != nil {
+			return nil, errHookDeadline
+		}
+		return value.raw, value.err
+	case <-ctx.Done():
+		return nil, errHookDeadline
+	}
+}
+
 var errRoutingProofPriorGeneration = errors.New("ROUTING_PROOF_PRIOR_GENERATION")
 
 func hookDeadline(errOut io.Writer) int {

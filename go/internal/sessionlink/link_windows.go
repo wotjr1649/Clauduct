@@ -19,6 +19,9 @@ import (
 
 var ErrUnavailable = errors.New("BACKGROUND_CONNECTION_UNAVAILABLE")
 
+// RequestTimeout bounds a single authenticated pipe exchange.
+const RequestTimeout = 3 * time.Second
+
 var kernel = syscall.NewLazyDLL("kernel32.dll")
 var createPipe = kernel.NewProc("CreateNamedPipeW")
 var connectPipe = kernel.NewProc("ConnectNamedPipe")
@@ -221,7 +224,7 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 	if err != nil {
 		return Connection{}, err
 	}
-	ctx, cancel := context.WithTimeout(parent, 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, RequestTimeout)
 	defer cancel()
 	var h syscall.Handle
 	for {

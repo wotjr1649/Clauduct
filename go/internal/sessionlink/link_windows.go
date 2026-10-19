@@ -285,7 +285,7 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 	}
 	reply.PID = int(pid)
 	if _, err = operation(ctx, h, []byte{'a'}, 'w'); err != nil {
-		return Connection{}, err
+		return Connection{}, busy(ctx, err)
 	}
 	if wait {
 		state, err := syscall.WaitForSingleObject(p, 10000)

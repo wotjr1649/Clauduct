@@ -1,5 +1,5 @@
 {
-  "claude": "2.1.302 (Claude Code)",
+  "claude": "2.1.303 (Claude Code)",
   "codex": "codex-cli 0.163.0",
   "tools": [
     "Agent",

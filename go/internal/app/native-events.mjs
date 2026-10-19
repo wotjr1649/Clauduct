@@ -51,12 +51,16 @@ async function answerConfirmations($, state) {
     if (state.permissionLeases.size>=64) throw new Error('CLAUDUCT_NATIVE_EVENT_LIMIT');
     const stream=$.process.spawn({argv:[confirmationHelper,...confirmationArgs],input:JSON.stringify(reply)});
     const lease={stream,active:step,stopped:false};state.permissionLeases.add(lease);job.lease=lease;
-    let marker='';
+    let marker='',unstarted=0;
     do {
       let chunk;
       try {chunk=await stream.next();}
       catch {await closeConfirmation(state,lease);return;}
       if (chunk.done && chunk.value?.code===3) {await closeConfirmation(state,lease);return;} // stale: the request already ended
+      // Native 2.1.303 (Windows) reports a helper it could not start as stderr then exit 1, not a
+      // rejected pull. The helper itself ends 0, 2 or 3 only: before any stdout, another end sent nothing.
+      if (!marker && chunk.done && chunk.value?.code!==0 && chunk.value?.code!==2) {await closeConfirmation(state,lease);return;}
+      if (!marker && !chunk.done && chunk.value.stream==='stderr' && (unstarted+=chunk.value.text.length)<=4096) continue;
       if (chunk.done || chunk.value.stream!=='stdout') throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');
       marker+=chunk.value.text;
       if (marker.length>64 || state.permissionClosed || lease.stopped) throw new Error('NATIVE_CONFIRMATION_UNVERIFIED');

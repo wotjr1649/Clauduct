@@ -23,6 +23,9 @@ type ConnOwner struct {
 	// subcommand such as stop or daemon, or --bg); anything else is "other". No other part of
 	// the command line is read into evidence.
 	Command string `json:"command,omitempty"`
+	// ImagePath is the full image path, read on the same handle as PID and Created, so it still
+	// names the process after it exits. It holds the user's profile path: never serialized.
+	ImagePath string `json:"-"`
 }
 
 var commandWord = regexp.MustCompile(`^-{0,2}[a-z][a-z-]{0,23}$`)
@@ -137,7 +140,11 @@ func ownerOf(client, server net.Addr) ConnOwner {
 	if owner.PID == 0 {
 		return owner
 	}
-	owner.Image, owner.Created, owner.Command = processFacts(owner.PID)
+	owner.ImagePath, owner.Created, owner.Command = processFacts(owner.PID)
+	owner.Image = owner.ImagePath
+	if i := strings.LastIndexAny(owner.Image, `\/`); i >= 0 {
+		owner.Image = owner.Image[i+1:]
+	}
 	owner.ParentPID = parentOf(owner.PID)
 	return owner
 }
@@ -153,9 +160,6 @@ func processFacts(pid uint32) (string, time.Time, string) {
 	image := ""
 	if r, _, _ := queryImageNameW.Call(uintptr(h), 0, uintptr(unsafe.Pointer(&name[0])), uintptr(unsafe.Pointer(&size))); r != 0 {
 		image = syscall.UTF16ToString(name[:size])
-		if i := strings.LastIndexAny(image, `\/`); i >= 0 {
-			image = image[i+1:]
-		}
 	}
 	var created, exited, kernel, user syscall.Filetime
 	var when time.Time

@@ -20,6 +20,25 @@ type pendingConfirmation struct {
 	native processKey
 	// unidentified: a helper the OS could not name answered this nonce (nativeEvents.mu).
 	unidentified bool
+	// answered: the requesting native's own helper reached this nonce (nativeEvents.mu). A
+	// timeout without it is a slow machine, not a broken native.
+	answered bool
+}
+
+// answeredBy marks nonce answered when r comes from the native that requested it, so the
+// request's timeout is that native's failure rather than a slow machine.
+func (g *Gateway) answeredBy(r *http.Request, nonce string) {
+	n := &g.nativeEvents
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	p := n.confirmations[nonce]
+	if p == nil {
+		return
+	}
+	if id, required := g.identityOf(r); required && (id.native == (processKey{}) || id.native != p.native) {
+		return
+	}
+	p.answered = true
 }
 
 // Authenticated by handle; never an upstream request or an execution approval.
@@ -39,7 +58,15 @@ func (g *Gateway) handleNativeConfirmation(w http.ResponseWriter, r *http.Reques
 		g.refuse(w, refuseHeader)
 		return
 	}
-	if _, err = wire.Fields(raw, []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"}); err != nil || json.Unmarshal(raw, &reply) != nil {
+	_, fieldsErr := wire.Fields(raw, []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"})
+	if parseErr := json.Unmarshal(raw, &reply); fieldsErr != nil || parseErr != nil {
+		// Malformed, but naming a live nonce from the requesting native: it still answered.
+		var named struct {
+			Nonce string `json:"nonce"`
+		}
+		if json.Unmarshal(raw, &named) == nil {
+			g.answeredBy(r, named.Nonce)
+		}
 		g.refuse(w, refuseHeader)
 		return
 	}
@@ -70,6 +97,7 @@ func (g *Gateway) handleNativeConfirmation(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "CLAUDUCT_CONFIRMATION_STALE", http.StatusGone)
 		return
 	}
+	p.answered = true
 	// The requesting native's own helper claiming another scope is a protocol violation: it is
 	// recorded against the session, which no native process change clears (#319 decision 18f).
 	violation := reply.Session != p.want.Session || reply.Search != p.want.Search || reply.Auxiliary != p.want.Auxiliary ||

@@ -25,7 +25,7 @@ type nativeConfirmation struct {
 	Auxiliary     bool            `json:"auxiliary,omitempty"`
 	Confirmations bool            `json:"confirmations,omitempty"`
 	Unmatched     bool            `json:"unmatched,omitempty"`
-	cancellation  error           // request cancelled before a proof was admitted; never input data
+	cancellation  error           // request cancelled, or unanswered in time, before a proof was admitted; never input data
 	helper        context.Context // actual helper owner; never native input data
 	lease         context.Context
 	close         context.CancelFunc
@@ -81,13 +81,17 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	// shared marks a failure of state every native relies on (the control directory, a
 	// storage error): that latches the launch, not one native.
 	shared := false
+	// unreadable: the turn's cancellation receipt was last seen mid-write. Still so at the
+	// deadline, it is damage, not a slow answer.
+	unreadable := false
 	cancelled := func() (*nativeConfirmation, error) {
 		if err := r.Context().Err(); err != nil {
 			return &nativeConfirmation{cancellation: err}, nil
 		}
 		if turn != nil {
 			source, err := g.nativeCancellationSource(nativeTurnReceipt{Session: r.Header.Get("X-Claude-Code-Session-Id"), Agent: r.Header.Get("X-Claude-Code-Agent-Id"), Turn: turn.Turn})
-			if errors.Is(err, errCancellationPending) {
+			unreadable = errors.Is(err, errCancellationPending)
+			if unreadable {
 				return nil, nil // Checked again on the next tick; the module also refuses cancelled turns.
 			}
 			if err != nil {
@@ -252,8 +256,21 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 			}
 			return &nativeConfirmation{Unmatched: true}
 		case <-ctx.Done():
-			proof, _ := cancelled()
-			return proof
+			proof, err := cancelled()
+			if proof != nil || err != nil {
+				return proof
+			}
+			// Nothing from this native's own helper in time: refuse this request only. The
+			// next one still needs its own fresh proof; an answer that broke the protocol, or
+			// one the OS could not name, keeps its handling below.
+			n.mu.Lock()
+			silent := !pending.answered && !pending.unidentified && !unreadable
+			n.mu.Unlock()
+			if silent {
+				n.unanswered.Add(1)
+				return &nativeConfirmation{cancellation: errNativeConfirmationTimeout}
+			}
+			return nil
 		case <-tick.C:
 			if proof, err := cancelled(); proof != nil || err != nil {
 				return proof

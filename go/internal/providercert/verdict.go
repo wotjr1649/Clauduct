@@ -66,7 +66,7 @@ const (
 
 // ExpectedRefusals are the refusals a fail-closed turn is held to when its case names none
 // (revision 2's degraded-hook expectation).
-var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONFIRMATION_UNVERIFIED"}
+var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONFIRMATION_UNVERIFIED", "NATIVE_CONFIRMATION_TIMEOUT"}
 
 // Reasons.
 const (

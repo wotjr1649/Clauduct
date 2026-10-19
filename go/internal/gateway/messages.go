@@ -188,7 +188,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer releaseAgent()
 	if err != nil {
 		entry.selectionRefused(err)
-		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
+		// Nothing was dispatched. Give the key back before answering: native may retry at once.
+		execution.release()
+		g.refuseCategory(w, selectionStatus(err), selectionCategory(err))
 		return
 	}
 	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)

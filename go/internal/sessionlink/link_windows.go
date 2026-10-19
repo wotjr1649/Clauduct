@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"runtime"
 	"sync"
@@ -18,6 +19,10 @@ import (
 )
 
 var ErrUnavailable = errors.New("BACKGROUND_CONNECTION_UNAVAILABLE")
+
+// ErrBusy is ErrUnavailable because the live link did not answer within its bound (another
+// client held it, or the machine was slow), as opposed to there being no link at all.
+var ErrBusy = fmt.Errorf("%w: busy", ErrUnavailable)
 
 // RequestTimeout bounds a single authenticated pipe exchange.
 const RequestTimeout = 3 * time.Second
@@ -229,7 +234,7 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 	var h syscall.Handle
 	for {
 		if ctx.Err() != nil {
-			return Connection{}, ErrUnavailable
+			return Connection{}, ErrBusy
 		}
 		// Identification only: a hostile server cannot impersonate this client.
 		h, err = syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0x40000000|0x100000|0x10000, 0)
@@ -238,7 +243,7 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 		} // ERROR_PIPE_BUSY
 		select {
 		case <-ctx.Done():
-			return Connection{}, ErrUnavailable
+			return Connection{}, ErrBusy
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
@@ -267,12 +272,12 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 		return Connection{}, ErrUnavailable
 	}
 	if _, err = operation(ctx, h, []byte{command}, 'w'); err != nil {
-		return Connection{}, err
+		return Connection{}, busy(ctx, err)
 	}
 	buf := make([]byte, 4096)
 	n, err := operation(ctx, h, buf, 'r')
 	if err != nil {
-		return Connection{}, err
+		return Connection{}, busy(ctx, err)
 	}
 	var reply Connection
 	if json.Unmarshal(buf[:n], &reply) != nil {
@@ -290,6 +295,14 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 		}
 	}
 	return reply, nil
+}
+
+// busy reports an exchange that ran out of its bound as ErrBusy.
+func busy(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ErrBusy
+	}
+	return err
 }
 
 func Read(id string) (Connection, error) { return ReadContext(context.Background(), id) }

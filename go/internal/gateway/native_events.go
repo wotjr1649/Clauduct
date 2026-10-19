@@ -32,6 +32,7 @@ type nativeEventState struct {
 	staleAnswers        atomic.Int64 // an answer for a request that already ended
 	unidentifiedAnswers atomic.Int64 // the OS named no native for the answering helper, or none for the request
 	ownerFailures       atomic.Int64 // the requesting native's own handshake or cancellation receipt failed
+	unanswered          atomic.Int64 // no answer from the requesting native in time; that request alone was refused
 	mu                  sync.Mutex
 	directory           string
 	verified            bool
@@ -44,6 +45,7 @@ type nativeEventState struct {
 }
 
 var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")
+var errNativeConfirmationTimeout = errors.New("NATIVE_CONFIRMATION_TIMEOUT")
 var errNativeOriginUnverified = errors.New("NATIVE_REQUEST_ORIGIN_UNVERIFIED")
 
 // teammateAddress is an Agent teams teammate's address, <name>@<team>. Native 2.1.289
@@ -123,10 +125,12 @@ type NativeEventReport struct {
 	ForeignAnswers int64 `json:"foreignAnswers"`
 	// StaleAnswers answered a request that had already ended; UnidentifiedAnswers came from a
 	// helper (or for a request) whose native the OS did not name -- neither decided anything.
-	// OwnerFailures is how often a native's own proof failed and stopped that native.
+	// OwnerFailures is how often a native's own proof failed and stopped that native;
+	// Unanswered how often a native's helper did not answer in time, stopping nothing.
 	StaleAnswers        int64 `json:"staleAnswers"`
 	UnidentifiedAnswers int64 `json:"unidentifiedAnswers"`
 	OwnerFailures       int64 `json:"ownerFailures"`
+	Unanswered          int64 `json:"unanswered"`
 }
 type nativeTurnReceipt struct {
 	Session string `json:"session"`
@@ -384,7 +388,7 @@ func (g *Gateway) nativeEventReport() NativeEventReport {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired, ForeignAnswers: n.foreignAnswers.Load(),
-		StaleAnswers: n.staleAnswers.Load(), UnidentifiedAnswers: n.unidentifiedAnswers.Load(), OwnerFailures: n.ownerFailures.Load()}
+		StaleAnswers: n.staleAnswers.Load(), UnidentifiedAnswers: n.unidentifiedAnswers.Load(), OwnerFailures: n.ownerFailures.Load(), Unanswered: n.unanswered.Load()}
 }
 
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {

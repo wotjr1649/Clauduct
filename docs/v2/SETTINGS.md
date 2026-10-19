@@ -349,8 +349,12 @@ native가 helper stream을 반환할 때까지 유지한다. 연결 종료만으
 임의 명령·외부 runtime·전역 설정 변경은 사용하지 않는다. 내부 정책 확인 통신은 왕복당2초이며,
 대기열 전체에는 최대64건×2초 상한을 적용한다. 더 짧은 요청 deadline·사용자 취소·launcher 종료는
 대기 중에도 적용한다. 대기 중인 요청의 취소·시간 초과만으로 이후 정상 요청을 막지는 않는다.
-승인 화면은 native의 기존 규칙을 따른다. 확인 저장소 I/O 오류나 실제 확인 왕복 시간 초과가 발생하면 gateway는
-실패 표시 파일을 쓰지 못해도 이후 도구 요청을 거부한다. 이 상태는 `/clear`나 plugin reload로
+승인 화면은 native의 기존 규칙을 따른다. v0.6.11부터 확인 왕복 2초 안에 그 native의 helper가 아무 답도
+보내지 못하면(느린 기계, session link 점유) 그 요청만 `NATIVE_CONFIRMATION_TIMEOUT`(HTTP 503)으로 거부한다.
+backend로 보내지 않은 요청이므로 native가 같은 step에서 스스로 재시도하고(native 2.1.302 측정: 약 0.5초 뒤),
+재시도도 새 확인값을 받아야 한다. native module이 계속 응답하지 않으면 native의 재시도(지수 backoff, 2분 이상)가
+끝난 뒤 오류가 표시된다. 확인 저장소 I/O 오류, 형식이 틀리거나 다른 scope를 주장한 답, helper의 비정상 종료가
+발생하면 gateway는 실패 표시 파일을 쓰지 못해도 이후 도구 요청을 거부한다. 이 상태는 `/clear`나 plugin reload로
 해제하지 않으며 launcher를 다시 실행해야 한다. native 모듈도 확인 오류 후 대기 중인 도구를
 거부하고, 검증되지 않은 step이 기본 실행으로 이어지지 않도록 명시적 refusal을 반환한다.
 사용자에게는 `NATIVE_CONFIRMATION_UNVERIFIED`를 표시한다.

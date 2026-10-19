@@ -3,6 +3,7 @@ package hookcmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -25,6 +26,11 @@ const ConfirmationStale = 3
 // provider), so the connection comes from the session link, as it does for the hooks.
 func linkedConfirmation(link string, in io.Reader, out io.Writer, env map[string]string) int {
 	connection, err := sessionlink.Read(link)
+	if errors.Is(err, sessionlink.ErrBusy) {
+		// A held or slow link sent nothing: the gateway refuses that request alone when it
+		// times out, so the module must not latch either (#319 decision 19b).
+		return ConfirmationStale
+	}
 	if err != nil {
 		return 2
 	}

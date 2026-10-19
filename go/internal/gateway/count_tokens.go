@@ -98,7 +98,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	defer releaseAgent()
 	if err != nil {
 		entry.selectionRefused(err)
-		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
+		g.refuseCategory(w, selectionStatus(err), selectionCategory(err))
 		return
 	}
 	if r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" || entry.nativeConfirmation != nil {

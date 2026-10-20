@@ -62,6 +62,30 @@ func nativeAncestor(owner uint32, image string, parents map[uint32]uint32, names
 	return 0, time.Time{}
 }
 
+// IsAncestor reports whether target is an ancestor of start through parents (PID -> parent PID),
+// within 32 hops. A parent PID outlives its process, so a reused one would lead the walk into an
+// unrelated ancestry: every edge, the one into target included, must name a parent created
+// strictly before its child, and a creation time createdOf cannot read (the zero time) proves
+// nothing. nativeAncestor applies the same rule while searching for an image.
+func IsAncestor(start, target uint32, parents map[uint32]uint32, createdOf func(uint32) time.Time) bool {
+	child := createdOf(start)
+	for current, hops := start, 0; hops < 32; hops++ {
+		parent, ok := parents[current]
+		if !ok || parent == 0 || parent == current || child.IsZero() {
+			return false
+		}
+		created := createdOf(parent)
+		if created.IsZero() || !created.Before(child) {
+			return false
+		}
+		if parent == target {
+			return true
+		}
+		current, child = parent, created
+	}
+	return false
+}
+
 // exactOwner is the PID whose IPv4 TCP connection has exactly client as its local end and
 // server as its remote end: addresses and ports. Anything but IPv4 (the gateway listens on
 // 127.0.0.1 only) or a failed lookup is 0. ownerOf, which P3 diagnostics use, compares ports

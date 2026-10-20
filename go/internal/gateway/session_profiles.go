@@ -233,35 +233,55 @@ func (s *SessionProfiles) saveAndRelease(profile SessionProfile) error {
 var afterProfileStat func(*os.File) // Test barrier; nil in the product.
 
 // Refresh reads only the recorded native path below its projects root. A partial
-// append is retryable while native runs; a final/resume read must reach EOF.
+// append is retryable while native runs; a final/resume read must reach EOF. It is a
+// Candidate read followed by the save; a caller that must judge the result before anything is
+// persisted calls Candidate and saves itself.
 func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, final bool, selection bridge.Selection) error {
-	if profile.Transcript == "" {
+	next, err := s.Candidate(*profile, projects, final, selection)
+	if err != nil {
+		return err
+	}
+	if next.Last == profile.Last && next.Offset == profile.Offset {
 		return nil
+	}
+	if err := s.Save(next); err != nil {
+		return err
+	}
+	*profile = next
+	return nil
+}
+
+// Candidate is what profile becomes when its transcript is read to the end of the data native
+// has written, without saving or changing anything: the profile itself is returned unchanged
+// when nothing moved. final requires the read to reach EOF.
+func (s *SessionProfiles) Candidate(profile SessionProfile, projects string, final bool, selection bridge.Selection) (SessionProfile, error) {
+	if profile.Transcript == "" {
+		return profile, nil
 	}
 	root, err := os.OpenRoot(projects)
 	if errors.Is(err, os.ErrNotExist) && profile.Offset == 0 {
-		return nil
+		return profile, nil
 	}
 	if err != nil {
-		return ErrSessionProfile
+		return profile, ErrSessionProfile
 	}
 	defer root.Close()
 	file, err := root.Open(profile.Transcript)
 	if errors.Is(err, os.ErrNotExist) && profile.Offset == 0 {
-		return nil // Native creates a new transcript lazily.
+		return profile, nil // Native creates a new transcript lazily.
 	}
 	if err != nil {
-		return ErrSessionProfile
+		return profile, ErrSessionProfile
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() < profile.Offset {
-		return ErrSessionProfile
+		return profile, ErrSessionProfile
 	}
 	if profile.Offset > 0 {
 		var boundary [1]byte
 		if _, err := file.ReadAt(boundary[:], profile.Offset-1); err != nil || boundary[0] != '\n' {
-			return ErrSessionProfile
+			return profile, ErrSessionProfile
 		}
 	}
 	if afterProfileStat != nil {
@@ -269,18 +289,11 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 	}
 	pair, offset, _, err := readSessionChoice(file, profile.ID, profile.Offset, profile.Last, selection)
 	if err != nil || final && offset < info.Size() {
-		return errSessionSelection
+		return profile, errSessionSelection
 	}
-	if pair == profile.Last && offset == profile.Offset {
-		return nil
-	}
-	next := *profile
+	next := profile
 	next.Last, next.Offset = pair, offset
-	if err := s.Save(next); err != nil {
-		return err
-	}
-	*profile = next
-	return nil
+	return next, nil
 }
 
 // profileState is per native process, not per gateway (#319 decision 18c): one launch can
@@ -302,10 +315,15 @@ type profileState struct {
 	// refreshFailed marks a session a checkpoint made unready: only its own next successful
 	// refresh makes it ready again, and a new registration decides readiness afresh.
 	refreshFailed map[string]bool
-	// restored are sessions added by RestoreSessionProfiles: known before any registration, yet
-	// not the launch's own first session, so their resume meets the same start-pair check
-	// whatever order registrations arrive in.
-	restored    map[string]bool
+	// resumeIntent is the pair a known session's resume attempt must find on the transcript it
+	// registers. It outlives a failed attempt, so the source-less registration a prompt hook
+	// repeats gets the same check, and only a successful registration clears it.
+	resumeIntent map[string]bridge.Pair
+	// restored are sessions added by RestoreSessionProfiles with the pair each was saved on:
+	// known before any registration, yet not the launch's own first session. Their resume
+	// meets the start-pair check whatever order registrations arrive in, against the session's
+	// own saved pair (a sibling's /model choice is its own), not the primary's.
+	restored    map[string]bridge.Pair
 	last        string // the most recent registration
 	forkHistory *SessionProfile
 	// failedStart is the last start registration a native process failed. The hook repeats it
@@ -378,9 +396,9 @@ func (g *Gateway) RestoreSessionProfiles(saved []SessionProfile) {
 		copy.Calls = cloneToolIssuances(profile.Calls)
 		p.profiles[copy.ID] = &copy
 		if p.restored == nil {
-			p.restored = make(map[string]bool)
+			p.restored = make(map[string]bridge.Pair)
 		}
-		p.restored[copy.ID] = true
+		p.restored[copy.ID] = copy.Last
 	}
 }
 
@@ -435,7 +453,11 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		return errSessionRestart
 	}
 	// The launch's own first registration (its --resume session) is not a transition.
-	if source == "resume" && (held != "" || p.profiles[session] != nil && (len(p.slots) != 0 || p.restored[session])) {
+	savedPair, isRestored := p.restored[session]
+	// resumePair, once the resume check below has applied, is the pair the registered
+	// transcript must still show: the check on the saved transcript alone is not enough.
+	var resumePair *bridge.Pair
+	if source == "resume" && (held != "" || p.profiles[session] != nil && (len(p.slots) != 0 || isRestored)) {
 		// Even a previously visited session can have a different last S effort.
 		// Native's in-process resume did not restore it in the measured client.
 		// A background worker respawns with its original flags, as a new native process. It
@@ -445,28 +467,58 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		// too (a /background job), once the hook names its process.
 		known := p.profiles[session]
 		reconnect := known != nil && (held == "" || p.background && held == session)
+		// The pair its original flags carry: the launch's for the primary, the one a restored
+		// session was saved on for a sibling. A transcript that moved on since breaks it.
+		want := p.startup
+		if isRestored {
+			want = savedPair
+		}
+		if known != nil {
+			// Kept until a registration of this session succeeds: a failed attempt must not
+			// turn the repeat the prompt hook sends (no source) into an unchecked one.
+			if p.resumeIntent == nil {
+				p.resumeIntent = make(map[string]bridge.Pair)
+			}
+			p.resumeIntent[session] = want
+		}
 		if reconnect {
-			if err := p.store.Refresh(known, g.delegations.projects, true, g.selection); err != nil {
+			current, err := p.store.Candidate(*known, g.delegations.projects, true, g.selection)
+			if err != nil {
 				return err
 			}
-		}
-		if !reconnect || known.Last != p.startup {
+			if current.Last != want {
+				p.pending[process] = session
+				return errSessionRestart
+			}
+		} else {
 			p.pending[process] = session
 			return errSessionRestart
 		}
+		resumePair = &want
+	}
+	if intent, kept := p.resumeIntent[session]; resumePair == nil && kept && p.profiles[session] != nil {
+		resumePair = &intent // an earlier resume attempt of this session has not succeeded yet
 	}
 	if known := p.profiles[session]; known != nil {
 		next := *known
 		next.Transcript = g.contexts.sessions[session]
-		if err := p.store.Refresh(&next, g.delegations.projects, false, g.selection); err != nil {
+		// Read the transcript this registration will use; nothing is saved until the result
+		// has been judged. A resume must have read it to the end.
+		next, err := p.store.Candidate(next, g.delegations.projects, resumePair != nil, g.selection)
+		if err != nil {
 			return err
 		}
-		if held == "" || known.Transcript != next.Transcript {
+		if resumePair != nil && next.Last != *resumePair {
+			p.pending[process] = session
+			return errSessionRestart
+		}
+		if next.Last != known.Last || next.Offset != known.Offset || held == "" || known.Transcript != next.Transcript {
 			if err := p.store.Save(next); err != nil {
 				return err
 			}
 		}
 		*known = next
+		delete(p.resumeIntent, session)
 		p.take(process, session)
 		return nil
 	}
@@ -757,6 +809,7 @@ func (g *Gateway) ReleaseIdleSessionProfiles(keep []string) error {
 		delete(p.profiles, session)
 		delete(p.owner, session)
 		delete(p.ready, session)
+		delete(p.resumeIntent, session)
 		delete(p.registrants, session)
 		delete(p.users, session)
 		for process, current := range p.slots {

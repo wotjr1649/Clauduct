@@ -288,11 +288,21 @@ func (p *backgroundProcess) releaseUnownedProfilesAlso(observed []string) error 
 			continue
 		}
 		seen = append(seen, job)
+		// The primary is never pruned from the record. One native has positively removed (no
+		// state, no directory, from a listing that could be read) holds no session to keep;
+		// leaving it in would keep every other session's profile and lock for as long as a
+		// sibling serves. Anything partial or unreadable still proves nothing.
+		if job == p.record.Job && jobGone(p.config, job) {
+			continue
+		}
 		session := nativeJobSession(p.config, job)
 		if session == "" {
 			return nil // A missing or partial job state proves no session safe to release.
 		}
 		keep = append(keep, session)
+	}
+	if len(keep) == 0 {
+		return nil // Nothing left on the link to keep proves nothing about what to release.
 	}
 	return p.releaseProfiles(keep)
 }

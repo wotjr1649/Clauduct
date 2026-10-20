@@ -24,6 +24,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
 	"net"
@@ -357,18 +358,16 @@ func ancestor(pid int) bool {
 	for err = syscall.Process32First(snapshot, &entry); err == nil; err = syscall.Process32Next(snapshot, &entry) {
 		parents[entry.ProcessID] = entry.ParentProcessID
 	}
-	current := uint32(os.Getpid())
-	for range 32 {
-		parent, ok := parents[current]
-		if !ok || parent == 0 || parent == current {
-			return false
-		}
-		if parent == uint32(pid) {
-			return true
-		}
-		current = parent
+	return providercert.IsAncestor(uint32(os.Getpid()), uint32(pid), parents, processCreatedAt)
+}
+
+// processCreatedAt is when pid was created, or the zero time when the OS will not say.
+func processCreatedAt(pid uint32) time.Time {
+	created, err := providercert.ProcessCreated(pid)
+	if err != nil || created <= 0 {
+		return time.Time{}
 	}
-	return false
+	return time.Unix(0, created)
 }
 
 // RoutingProofPath is the gateway's answer to whether native's start-up model list reached it.

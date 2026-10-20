@@ -94,7 +94,7 @@
 
 ## native
 
-측정 기준(`measured-clients.json`)은 Claude Code 2.1.303, Codex CLI 0.163.0이다. 아래는 그 전의 경과다. 처음 측정 기준은
+측정 기준(`measured-clients.json`)은 Claude Code 2.1.304, Codex CLI 0.163.0이다(2026-10-20 무과금 재측정). native는 고정하지 않는다. 아래는 그 전의 경과다. 처음 측정 기준은
 Claude Code 2.1.299, Codex CLI 0.162.1이었다(2026-10-14 무과금 재측정). 설치본 native는
 2026-10-15에 2.1.300으로, 2026-10-16 합성 관문 도중 2.1.301로 자동 갱신됐다. 실행 중 바이너리가 바뀐 관문은 무효로 남겼다.
 2.1.301의 6경로 무과금 도구 표면 재측정은 통과했다. 도움말과 선택 UI API 선언의 차이를 확인했고, Agent View를 켠 구성에서는
@@ -196,5 +196,5 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   측정에서는 연결 유지 프로세스가 약 3초 안에 회수했다(합성 측정 2.6초). 같은 resident를 공유하는 다른 job이 남으면 보존한다.
 - fork 부모를 증명하지 못하면 그 fork는 `SESSION_PROFILE_UNVERIFIED`로 거부된다.
 - 2.1.301의 `-p --continue` 합성 행은 `SESSION_RESTART_REQUIRED`로 거부됐고 두 번째 추론 요청이 없었다. 같은 구성의 명시적 `--resume <UUID>`는 다음 요청을 처리했다. `--continue`의 연속 요청 성공은 확인되지 않았다.
-- 측정 기준과 마감 검증 native는 2.1.303이다. 설치본 native가 자동 갱신되면 doctor는 `re-measure due`를 보일 수 있다.
+- 측정 기준은 2.1.304, #319 마감 관문의 native는 2.1.303이다. 설치본 native가 자동 갱신되면 doctor는 `re-measure due`를 보일 수 있다.
 - 그 밖의 남은 제한은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절에 있다.

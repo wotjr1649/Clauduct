@@ -174,18 +174,24 @@ func agentViewIndex(forward []string) int {
 		if printsPrompt(arg) {
 			return -1
 		}
-		if name, _, attached := strings.Cut(arg, "="); !attached && slices.Contains(variadicOptions, name) {
-			// Native takes values for these up to the next option, so a subcommand-shaped token
-			// among them is a value. NativeArgEnd keeps its one-value contract for its callers.
-			// NativeArgEnd already took the required first value, option-shaped or not; only the
-			// values after it end at the next option.
-			for end < len(forward) && (!strings.HasPrefix(forward[end], "-") || forward[end] == "-") {
-				end++
-			}
-		}
+		end = VariadicValuesEnd(forward, i, end)
 		i = end
 	}
 	return -1
+}
+
+// VariadicValuesEnd extends end, the boundary NativeArgEnd gave for args[i], over the values a
+// variadic native option takes after its required first one: everything up to the next option.
+// Native takes values for these up to the next option, so a subcommand-shaped or prompt-shaped
+// token among them is a value. NativeArgEnd keeps its one-value contract for its other callers.
+// An attached value (--add-dir=a) takes one; end is returned unchanged for any other option.
+func VariadicValuesEnd(args []string, i, end int) int {
+	if name, _, attached := strings.Cut(args[i], "="); !attached && slices.Contains(variadicOptions, name) {
+		for end < len(args) && (!strings.HasPrefix(args[end], "-") || args[end] == "-") {
+			end++
+		}
+	}
+	return end
 }
 
 // variadicOptions are the native options that take every following value up to the next option.

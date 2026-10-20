@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 )
 
 // ResidentRecord is what a regenerated background resident needs to serve the native job a
@@ -90,6 +91,7 @@ func residentArgs(args []string) []string {
 		if !known {
 			return append([]string(nil), args...)
 		}
+		end = launch.VariadicValuesEnd(args, i, end)
 		if end > len(args) {
 			end = len(args)
 		}
@@ -238,12 +240,20 @@ func nativeJobSession(config, job string) string {
 	return state.Session
 }
 
-func (p *backgroundProcess) releaseUnownedProfiles() error {
+func (p *backgroundProcess) releaseUnownedProfiles() error { return p.releaseUnownedProfilesAlso(nil) }
+
+// releaseUnownedProfilesAlso keeps the sessions of the record's jobs and of observed too: jobs
+// the resident has seen at runtime whose record is not saved yet are still its to serve.
+func (p *backgroundProcess) releaseUnownedProfilesAlso(observed []string) error {
 	if p.record == nil || p.releaseProfiles == nil {
 		return nil
 	}
-	var keep []string
-	for _, job := range append([]string{p.record.Job}, p.record.Jobs...) {
+	var keep, seen []string
+	for _, job := range append(append([]string{p.record.Job}, p.record.Jobs...), observed...) {
+		if slices.Contains(seen, job) {
+			continue
+		}
+		seen = append(seen, job)
 		session := nativeJobSession(p.config, job)
 		if session == "" {
 			return nil // A missing or partial job state proves no session safe to release.

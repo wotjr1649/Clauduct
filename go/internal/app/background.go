@@ -191,9 +191,15 @@ func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
 func (p *backgroundProcess) Wait() (result error) {
 	var profileErr error
 	defer func() { result = errors.Join(result, profileErr) }()
+	var observed map[string]int // the jobs this wait serves, saved in the record or not
 	releaseProfiles := func() {
 		// Keep serving jobs on a failed final save; report the failure when the resident ends.
-		if err := p.releaseUnownedProfiles(); profileErr == nil {
+		var serving []string
+		for job := range observed {
+			serving = append(serving, job)
+		}
+		slices.Sort(serving)
+		if err := p.releaseUnownedProfilesAlso(serving); profileErr == nil {
 			profileErr = err
 		}
 	}
@@ -214,14 +220,37 @@ func (p *backgroundProcess) Wait() (result error) {
 	// Every job on this link: a job started from the agent view of one runs
 	// on the same settings, so on this gateway too (#319 decision 18h).
 	jobs := map[string]int{id: 0}
+	observed = jobs
+	// everSeen is the runtime truth about which jobs belong to this link: every consumer (the
+	// record, profile release, exit cleanup) reads it, and only the write to disk lags. A job
+	// leaves `jobs` when it stops running; it does not leave the link, native still lists it.
+	everSeen := map[string]struct{}{id: {}}
 	for _, job := range p.stopJobs {
 		jobs[job] = 0
+		everSeen[job] = struct{}{}
 	}
+	var persisted []string // the Jobs of the last record known to be on disk
 	if p.record != nil {
+		persisted = slices.Clone(p.record.Jobs)
 		for _, job := range p.record.Jobs {
 			jobs[job] = 0
+			everSeen[job] = struct{}{}
 		}
 	}
+	syncJobs := func() {
+		if p.record == nil {
+			return
+		}
+		var all []string
+		for job := range everSeen {
+			if job != id {
+				all = append(all, job)
+			}
+		}
+		slices.Sort(all)
+		p.record.Jobs = all
+	}
+	syncJobs() // seeded jobs reach the startup write too
 	stopOne := func(id string) error {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
@@ -262,22 +291,31 @@ func (p *backgroundProcess) Wait() (result error) {
 	if p.ctx.Err() != nil {
 		return stopNative()
 	}
+	// recorded: the record is on disk, so the cleanup below applies. Until then the startup
+	// write is retried on every tick, even if nothing about the job changed.
+	recorded, unsaved := false, false
 	if p.record != nil {
 		// Best effort: without the record this session still runs, but a resident that dies
 		// cannot be regenerated for it.
 		p.record.Job = id
 		p.record.Session = nativeJobSession(p.config, id)
-		if writeResident(p.home, *p.record) == nil {
-			defer func() {
-				// A stopped job is still listed and can be opened again: its record stays for
-				// the resident that opening regenerates (#319 decision 18h), and so does the
-				// events directory its respawn flags name. A worker started without that
-				// directory never loads the events module (decision 18k A/B).
-				if listed, known := jobListing(p.config, append([]string{p.record.Job}, p.record.Jobs...)); !p.crashed && known && !listed {
-					p.unlisted = true
-				}
-			}()
+		recorded = writeResident(p.home, *p.record) == nil
+		unsaved = !recorded
+		if recorded {
+			persisted = slices.Clone(p.record.Jobs)
 		}
+		defer func() {
+			// A stopped job is still listed and can be opened again: its record stays for
+			// the resident that opening regenerates (#319 decision 18h), and so does the
+			// events directory its respawn flags name. A worker started without that
+			// directory never loads the events module (decision 18k A/B).
+			if !recorded {
+				return
+			}
+			if listed, known := jobListing(p.config, append([]string{p.record.Job}, p.record.Jobs...)); !p.crashed && known && !listed {
+				p.unlisted = true
+			}
+		}()
 	}
 	releaseProfiles()
 	if p.ready != nil {
@@ -303,33 +341,53 @@ func (p *backgroundProcess) Wait() (result error) {
 		case <-p.link.Done:
 			return errors.Join(sessionlink.ErrUnavailable, stopNative())
 		case <-tick.C:
+			// The in-memory record changes only once its write is confirmed, so a write that
+			// failed is seen as a difference again on the next tick and retried.
+			save := func(change func(*ResidentRecord)) bool {
+				next := *p.record
+				next.Jobs = slices.Clone(next.Jobs)
+				change(&next)
+				if writeResident(p.home, next) != nil {
+					return false
+				}
+				*p.record = next
+				recorded, unsaved = true, false
+				persisted = slices.Clone(next.Jobs)
+				return true
+			}
+			if p.record != nil && unsaved {
+				save(func(*ResidentRecord) {})
+			}
 			if p.record != nil && p.proved != nil {
 				if proved := p.proved(); !slices.Equal(proved, p.record.Proved) {
-					p.record.Proved = proved
-					writeResident(p.home, *p.record)
+					save(func(r *ResidentRecord) { r.Proved = proved })
 				}
 			}
 			if p.record != nil {
 				if session := nativeJobSession(p.config, p.record.Job); session != p.record.Session {
-					p.record.Session = session
-					writeResident(p.home, *p.record)
+					save(func(r *ResidentRecord) { r.Session = session })
 				}
 			}
-			added := false
 			for _, job := range nativeJobsWithLink(p.config, p.link.ID) {
 				if _, known := jobs[job]; !known {
-					jobs[job], added = 0, true
+					jobs[job] = 0
+				}
+				everSeen[job] = struct{}{}
+			}
+			// A job leaves the link only when native's listing no longer holds it at all: neither
+			// its state nor its directory. A job that merely stopped running is still listed, and an
+			// unreadable or partial listing proves nothing.
+			for job := range everSeen {
+				if job != id && jobGone(p.config, job) {
+					delete(everSeen, job)
+					delete(jobs, job)
 				}
 			}
-			if added && p.record != nil {
-				p.record.Jobs = p.record.Jobs[:0]
-				for job := range jobs {
-					if job != id {
-						p.record.Jobs = append(p.record.Jobs, job)
-					}
-				}
-				slices.Sort(p.record.Jobs)
-				writeResident(p.home, *p.record)
+			syncJobs()
+			// The record lists what the runtime knows; until a write succeeds the difference
+			// stays, so every tick retries it.
+			if p.record != nil && !slices.Equal(p.record.Jobs, persisted) {
+				save(func(*ResidentRecord) {})
 			}
 			releaseProfiles()
 			allCompleted := true
@@ -419,6 +477,25 @@ func jobListing(config string, jobs []string) (listed, known bool) {
 		}
 	}
 	return false, known
+}
+
+// jobGone reports whether native's job listing positively lacks job: the jobs directory is
+// readable and holds neither the job's state nor its directory. Anything uncertain is false.
+func jobGone(config, job string) bool {
+	if config == "" || !residentJob.MatchString(job) {
+		return false
+	}
+	root := filepath.Join(config, "jobs")
+	info, err := jobStat(root)
+	if err != nil || !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return false
+	}
+	dir := filepath.Join(root, job)
+	if _, err := jobStat(filepath.Join(dir, "state.json")); !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	_, err = jobStat(dir)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // recordStays reports whether this resident's record is on disk: it then names the events

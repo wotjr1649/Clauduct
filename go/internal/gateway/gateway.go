@@ -381,7 +381,23 @@ func (g *Gateway) observeIngressEarly(w http.ResponseWriter, r *http.Request) *h
 	}
 	// A read that fails here fails again for the handler, after the same bytes: the body's
 	// error is returned to every later read.
-	head, _ := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes+1))
+	//
+	// Bounded as the handlers' own read is: a read deadline that is also the cancellation
+	// mechanism, ended by the request, the native turn's cancellation or the gateway closing.
+	head := func() []byte {
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		stopClosing := context.AfterFunc(g.closing, cancel)
+		defer stopClosing()
+		readCtx, finish := g.bindNativeCancellation(ctx, r, recordOf(w), true)
+		defer finish()
+		control := http.NewResponseController(w)
+		_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
+		stop := httpguard.WatchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
+		defer stop()
+		head, _ := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes+1))
+		return head
+	}()
 	r.Body = struct {
 		io.Reader
 		io.Closer

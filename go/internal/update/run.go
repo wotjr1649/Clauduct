@@ -319,11 +319,17 @@ func yes(in io.Reader, out io.Writer) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// current reports whether every installed binary already has the digest the release states.
+// current reports whether every installed binary already has the digest the release states,
+// and no probe the release omits is installed.
 //
 // A file that cannot be read is not current: the answer to "is this already what the
 // release says" is no when there is nothing there to compare.
 func current(dir string, sums map[string]string) bool {
+	// A probe an earlier release installed and this one does not carry is still a change: the
+	// update removes it.
+	if _, listed := sums[Probe]; !listed && isFile(filepath.Join(dir, Probe)) {
+		return false
+	}
 	for _, name := range Wanted(sums) {
 		want, ok := sums[name]
 		if !ok {

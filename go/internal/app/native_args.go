@@ -49,6 +49,11 @@ func accountCommand(args []string) error {
 	for i := 0; i < len(args) && args[i] != "--" && len(positionals) < 2; {
 		arg := args[i]
 		end, known := nativeArgEnd(args, i)
+		if known {
+			// A variadic option takes every following value up to the next option, a
+			// subcommand-shaped token among them included.
+			end = launch.VariadicValuesEnd(args, i, end)
+		}
 		if known && end <= len(args) && len(positionals) == 0 && printMode(args[i:end]) {
 			return nil
 		}

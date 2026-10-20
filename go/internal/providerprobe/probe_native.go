@@ -3,6 +3,7 @@ package providerprobe
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"io"
@@ -36,18 +37,29 @@ func imagePath(pid int) (string, error) {
 	return syscall.UTF16ToString(buf[:size]), nil
 }
 
-// pinnedStarter starts the real native under the contract's spawn pin: the executable is held
-// against write, delete and rename from the last hash until the new process's image is
-// confirmed to be the pinned file. The pinned identity is reported as a checkpoint; a child
-// whose image cannot be confirmed is ended and reported, never accepted.
+// pinnedStarter starts the real native and links the new process to the exact image it runs. Nothing
+// is held against native's updater: the image is observed with full sharing before the spawn and
+// the live process is linked to its mapped image afterwards (providercert.LinkProcess). The
+// identity observed before the spawn is reported as the checkpoint only when the process runs
+// exactly that file; a child that cannot be linked, or runs another image, is ended and
+// reported, never accepted.
 func pinnedStarter(report spawnReport) starter {
 	return func(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (app.Process, error) {
-		pin, err := providercert.PinFile(spec.File)
+		catalog, err := providercert.CatalogOf(spec.File)
 		if err != nil {
-			report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN pin: %w", err))
+			report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN catalog: %w", err))
 			return nil, err
 		}
-		defer pin.Close()
+		before, err := providercert.Observe(spec.File)
+		if err != nil {
+			report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN observe: %w", err))
+			return nil, err
+		}
+		if _, ok := catalog.Version(before.SHA256); !ok {
+			err := fmt.Errorf("%w: native bytes are not one catalogued version", providercert.ErrInconclusiveNativeIdentity)
+			report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN catalog: %w", err))
+			return nil, err
+		}
 		process, err := startOSProcess(spec, stdin, stdout, stderr)
 		if err != nil {
 			return nil, err
@@ -58,19 +70,21 @@ func pinnedStarter(report spawnReport) starter {
 			report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: unexpected process type"))
 			return nil, fmt.Errorf("POST_SPAWN unverified")
 		}
-		image, err := imagePath(owned.PID())
-		if err == nil {
-			var same bool
-			if same, err = pin.SameFile(image); err == nil && !same {
-				err = fmt.Errorf("image is not the pinned executable")
-			}
-		}
-		if err != nil {
+		// The file was hashed before the spawn; the process is bound to that file object by its
+		// mapped image, with no hash after the spawn, so a child that finishes quickly is not lost.
+		switch _, err := providercert.LinkSpawned(uint32(owned.PID()), 0, before); {
+		case err == nil:
+			report(before, nil)
+		case errors.Is(err, providercert.ErrNativeChanged):
 			process.Stop()
 			report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
 			return nil, fmt.Errorf("POST_SPAWN unverified")
+		default:
+			// Not linkable (it was gone before its image could be read): the diagnostic still
+			// runs, but the checkpoint is missing, so the run is INCONCLUSIVE_NATIVE_IDENTITY and
+			// cannot show P6. It is never reported as a verified image.
+			report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
 		}
-		report(pin.Identity, nil)
 		return process, nil
 	}
 }

@@ -2,6 +2,7 @@ package providerprobe
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"io"
@@ -75,10 +76,13 @@ func tuiDriverDeadline(limit time.Time) int {
 	return max(int((time.Until(limit)-p3TUIDriverReserve)/time.Second), 3)
 }
 
-// tuiPinnedStarter starts native inside ptydrive under the contract's spawn pin: the executable
-// is held against write, delete and rename until the claude.exe process ptydrive started is
-// confirmed to run the pinned file. A run whose native image cannot be confirmed is ended and
-// reported, never accepted.
+// tuiDiscover finds the native under the driver; a variable so a test can make it end before discovery.
+var tuiDiscover = descendantPID
+
+// tuiPinnedStarter starts native inside ptydrive and links the claude.exe process ptydrive started
+// to the exact image it runs (providercert.LinkProcess) instead of holding the file: native's
+// updater is never blocked. A run whose native image cannot be linked to the file observed
+// before the spawn is ended and reported, never accepted.
 func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, deadlineSeconds func() int) func(spawnReport) starter {
 	return func(report spawnReport) starter {
 		return func(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (app.Process, error) {
@@ -87,12 +91,21 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 				report(providercert.Identity{}, err)
 				return nil, err
 			}
-			pin, err := providercert.PinFile(spec.File)
+			catalog, err := providercert.CatalogOf(spec.File)
 			if err != nil {
-				report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN pin: %w", err))
+				report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN catalog: %w", err))
 				return nil, err
 			}
-			defer pin.Close()
+			before, err := providercert.Observe(spec.File)
+			if err != nil {
+				report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN observe: %w", err))
+				return nil, err
+			}
+			if _, ok := catalog.Version(before.SHA256); !ok {
+				err := fmt.Errorf("%w: native bytes are not one catalogued version", providercert.ErrInconclusiveNativeIdentity)
+				report(providercert.Identity{}, fmt.Errorf("PRE_SPAWN catalog: %w", err))
+				return nil, err
+			}
 			args := append([]string{p3PtyDriveArg, "-dir", spec.Dir, "-script", steps, "-text", screen, "-log", raw, "-marks", marks, "-timeout", strconv.Itoa(timeoutSeconds), "-deadline", strconv.Itoa(deadlineSeconds()), "--", spec.File}, spec.Args...)
 			cmd := exec.Command(driver, args...)
 			cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = spec.Dir, spec.Env, stdout, stderr
@@ -100,37 +113,44 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 			if err != nil {
 				return nil, err
 			}
-			native, err := descendantImage(uint32(process.PID()), "claude.exe", 15*time.Second)
-			if err == nil {
-				var same bool
-				if same, err = pin.SameFile(native); err == nil && !same {
-					err = fmt.Errorf("image is not the pinned executable")
-				}
-			}
+			native, err := tuiDiscover(uint32(process.PID()), "claude.exe", 15*time.Second)
 			if err != nil {
+				// The native was never seen under the driver (it ended before the first look, or never
+				// started). The driver still holds the screen and exit information the diagnostic is
+				// for, so the process is kept; the run has no image checkpoint and is
+				// INCONCLUSIVE_NATIVE_IDENTITY, never a verified image.
+				report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w: no native found under the driver: %v", providercert.ErrInconclusiveNativeIdentity, err))
+				return process, nil
+			}
+			// Bound to the file hashed before the spawn by its mapped image, with no hash afterwards.
+			switch _, err := providercert.LinkSpawned(native, 0, before); {
+			case err == nil:
+				report(before, nil)
+			case errors.Is(err, providercert.ErrNativeChanged):
 				process.Stop()
 				report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
 				return nil, fmt.Errorf("POST_SPAWN unverified")
+			default:
+				report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
 			}
-			report(pin.Identity, nil)
 			return process, nil
 		}
 	}
 }
 
-// descendantImage waits for a process named image under root and returns its image path.
-func descendantImage(root uint32, image string, wait time.Duration) (string, error) {
+// descendantPID waits for a process named image under root and returns its PID.
+func descendantPID(root uint32, image string, wait time.Duration) (uint32, error) {
 	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
 		table := snapshotProcesses()
 		for pid, p := range table {
 			if p.image == image && table.descends(pid, root) {
-				return imagePath(int(pid))
+				return pid, nil
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return "", fmt.Errorf("no %s under the driver within %s", image, wait)
+	return 0, fmt.Errorf("no %s under the driver within %s", image, wait)
 }
 
 // writeTUISteps writes the steps for one turn and returns the script and screen paths.

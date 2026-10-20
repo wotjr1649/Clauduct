@@ -1,6 +1,6 @@
 # Claude Code native 지원 범위
 
-이 문서는 Windows의 Clauduct 기본 경로와 Claude Code native2.1.302에서 확인한 범위를 설명한다. 제품은 설치된 native를 실행하며 사용자 설정·승인·도구 실행과 UI는 native가 담당하고, 모델 요청의 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다. 새 native와 모든 plugin/MCP 조합의 성공은 자동 승계하지 않는다. 현재 검증 결과와 남은 제약은 [호환성 문서](COMPATIBILITY.md)에 있다.
+이 문서는 Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위를 설명한다. Clauduct는 native 버전을 고정하지 않고 자동 갱신되는 native를 그대로 실행한다. 새 native마다 무과금 재측정과 표면 관문으로 차이를 확인하며, 최근 확인한 버전은 2.1.304다. 행에 적힌 버전은 그 내용을 확인한 native다. 제품은 설치된 native를 실행하며 사용자 설정·승인·도구 실행과 UI는 native가 담당하고, 모델 요청의 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다. 새 native와 모든 plugin/MCP 조합의 성공은 자동 승계하지 않는다. 현재 검증 결과와 남은 제약은 [호환성 문서](COMPATIBILITY.md)에 있다.
 
 ## 지원 경로
 

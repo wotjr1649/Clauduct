@@ -13,6 +13,7 @@ import (
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 // ResidentRecord is what a regenerated background resident needs to serve the native job a
@@ -79,8 +80,11 @@ func restoreResidentProof(gw *gateway.Gateway, link string, r ResidentRecord) er
 }
 
 // residentArgs drops the prompt: the regenerated resident starts no native process, and the
-// options alone decide its configuration. With an option this build does not know, where the
-// prompt begins is unknown and the arguments are kept as given.
+// options alone decide its configuration. The record is written to disk, so it keeps only
+// arguments whose boundaries are proven. An option this build does not know hides where a
+// prompt begins, so it and everything after it are dropped, never copied; the background marker
+// is kept when the launch had one, because regeneration is refused without it. The launch
+// itself still forwards every argument to native.
 func residentArgs(args []string) []string {
 	kept := []string{}
 	for i := 0; i < len(args); {
@@ -89,7 +93,10 @@ func residentArgs(args []string) []string {
 		}
 		end, known := nativeArgEnd(args, i)
 		if !known {
-			return append([]string(nil), args...)
+			if BackgroundRequested(args) && !BackgroundRequested(kept) {
+				kept = append(kept, "--bg")
+			}
+			return kept
 		}
 		end = launch.VariadicValuesEnd(args, i, end)
 		if end > len(args) {
@@ -224,6 +231,33 @@ func (r ResidentRecord) ownsSession(config, session string) bool {
 		}
 	}
 	return false
+}
+
+// residentSiblingProfiles loads the saved profile of every other job the record names, each
+// job's session read from native's own state. Profiles are persisted per session at their
+// registration, so the record needs to carry only job ids. A job without a readable session or a
+// saved profile (never registered, in use elsewhere, unrefreshable) is left out and behaves as
+// before; skip is the session already restored as the primary.
+func residentSiblingProfiles(store *gateway.SessionProfiles, config string, record ResidentRecord, skip string, catalogue *bridge.Catalogue) []gateway.SessionProfile {
+	var out []gateway.SessionProfile
+	seen := map[string]bool{skip: true}
+	for _, job := range append([]string{record.Job}, record.Jobs...) {
+		session := nativeJobSession(config, job)
+		if session == "" || seen[session] {
+			continue
+		}
+		seen[session] = true
+		saved, err := store.Load(session)
+		if err != nil {
+			continue
+		}
+		saved.Selection = saved.Selection.WithCatalogue(catalogue)
+		if store.Refresh(&saved, filepath.Join(config, "projects"), true, saved.Selection) != nil {
+			continue
+		}
+		out = append(out, saved)
+	}
+	return out
 }
 
 func nativeJobSession(config, job string) string {

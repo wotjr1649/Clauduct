@@ -406,6 +406,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	var profiles *gateway.SessionProfiles
 	var resumed *gateway.SessionProfile
+	var siblings []gateway.SessionProfile
 	_, forkSession := optionValue(o.Args, "--fork-session")
 	forkSession = forkSession && o.Regenerate == nil
 	_, ephemeral := optionValue(o.Args, "--no-session-persistence")
@@ -430,6 +431,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				config.Selection, config.Startup, resumed = saved.Selection, saved.Last, &saved
 				config.StartupSource, config.SelectionSource = "session-snapshot.last", "session-snapshot"
 			}
+		}
+		if o.Regenerate != nil {
+			// Every other job on the link comes back with its own profile, not only the primary.
+			siblings = residentSiblingProfiles(profiles, nativeConfigDirectory(o.Env, o.Cwd), *o.Regenerate, resumeID, catalogue)
 		}
 	}
 
@@ -772,6 +777,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		gw.ConfigureSessionProfiles(nil, result.Startup, resumed, forkSession, background != nil)
 	} else {
 		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession, background != nil)
+		gw.RestoreSessionProfiles(siblings)
 	}
 
 	// Pressed before there was a child to receive it: the launch is what was cancelled, and

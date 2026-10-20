@@ -288,18 +288,25 @@ func (s *SessionProfiles) Refresh(profile *SessionProfile, projects string, fina
 // each with its own current session. A hook names its native process; one that does not
 // (an older hook) is process 0, which is the single-session behaviour this replaced.
 type profileState struct {
-	mu          sync.Mutex
-	store       *SessionProfiles
-	startup     bridge.Pair
-	expected    string
-	fork        bool
-	background  bool
-	profiles    map[string]*SessionProfile
-	slots       map[processKey]string // native process -> its current session
-	owner       map[string]processKey // session -> the native process that last registered it
-	pending     map[processKey]string // native process -> the session it must restart into
-	ready       map[string]bool       // session -> its last registration succeeded
-	last        string                // the most recent registration
+	mu         sync.Mutex
+	store      *SessionProfiles
+	startup    bridge.Pair
+	expected   string
+	fork       bool
+	background bool
+	profiles   map[string]*SessionProfile
+	slots      map[processKey]string // native process -> its current session
+	owner      map[string]processKey // session -> the native process that last registered it
+	pending    map[processKey]string // native process -> the session it must restart into
+	ready      map[string]bool       // session -> its last registration succeeded
+	// refreshFailed marks a session a checkpoint made unready: only its own next successful
+	// refresh makes it ready again, and a new registration decides readiness afresh.
+	refreshFailed map[string]bool
+	// restored are sessions added by RestoreSessionProfiles: known before any registration, yet
+	// not the launch's own first session, so their resume meets the same start-pair check
+	// whatever order registrations arrive in.
+	restored    map[string]bool
+	last        string // the most recent registration
 	forkHistory *SessionProfile
 	// failedStart is the last start registration a native process failed. The hook repeats it
 	// without its source before each prompt; that repeat retries it as the original event.
@@ -334,7 +341,7 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 		return
 	}
 	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile),
-		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool),
+		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool), refreshFailed: make(map[string]bool),
 		failedStart: make(map[processKey]struct{ session, source string }),
 		users:       make(map[string]int), registrants: make(map[string]map[processKey]struct{}), ended: make(map[string]bool)}
 	if resumed != nil && fork {
@@ -350,6 +357,31 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 		p.profiles[copy.ID] = &copy
 	}
 	g.profiles = p
+}
+
+// RestoreSessionProfiles adds the saved profiles of the other jobs a regenerated resident
+// serves, so a sibling's replayed registration reconnects to its own profile instead of being
+// refused as unregistered or restart-required. Each keeps its own last pair; a session already
+// held is left as it is. Call after ConfigureSessionProfiles, before native sends anything.
+func (g *Gateway) RestoreSessionProfiles(saved []SessionProfile) {
+	p := g.profiles
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, profile := range saved {
+		if p.profiles[profile.ID] != nil {
+			continue
+		}
+		copy := profile
+		copy.Calls = cloneToolIssuances(profile.Calls)
+		p.profiles[copy.ID] = &copy
+		if p.restored == nil {
+			p.restored = make(map[string]bool)
+		}
+		p.restored[copy.ID] = true
+	}
 }
 
 // Caller holds contexts.mu; no profile operation takes contexts.mu in return.
@@ -398,12 +430,12 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	if known := p.profiles[session]; known != nil && held != session && !p.serving(session) && held != "" && source != "resume" {
 		return ErrSessionProfile
 	}
-	defer func() { p.ready[session] = err == nil }()
+	defer func() { p.ready[session] = err == nil; delete(p.refreshFailed, session) }()
 	if p.pending[process] != "" {
 		return errSessionRestart
 	}
 	// The launch's own first registration (its --resume session) is not a transition.
-	if source == "resume" && (held != "" || p.profiles[session] != nil && len(p.slots) != 0) {
+	if source == "resume" && (held != "" || p.profiles[session] != nil && (len(p.slots) != 0 || p.restored[session])) {
 		// Even a previously visited session can have a different last S effort.
 		// Native's in-process resume did not restore it in the measured client.
 		// A background worker respawns with its original flags, as a new native process. It
@@ -579,12 +611,25 @@ func (g *Gateway) CheckpointSessionProfiles(final bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var result error
-	for _, profile := range p.profiles {
-		result = errors.Join(result, p.store.Refresh(profile, g.delegations.projects, final, g.selection))
-	}
-	if result != nil {
-		for session := range p.ready {
+	for session, profile := range p.profiles {
+		err := p.store.Refresh(profile, g.delegations.projects, final, g.selection)
+		result = errors.Join(result, err)
+		switch {
+		case err != nil:
+			// Only this session's storage failed: its siblings keep serving.
+			// Only a session this checkpoint takes from ready is its to give back; one a failed
+			// registration left unready, or an earlier checkpoint failure already marked, keeps
+			// its reason.
+			if p.refreshFailed == nil {
+				p.refreshFailed = make(map[string]bool)
+			}
+			if p.ready[session] {
+				p.refreshFailed[session] = true
+			}
 			p.ready[session] = false
+		case p.refreshFailed[session]:
+			p.ready[session] = true
+			delete(p.refreshFailed, session)
 		}
 	}
 	return result

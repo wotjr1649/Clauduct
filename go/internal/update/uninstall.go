@@ -175,13 +175,15 @@ func remove(dir, self, parkDir string, present, leftovers []string) (parked stri
 	}
 	// restore puts everything back and returns what it could not.
 	restore := func() (stuck []string) {
+		// The executable first: when it was parked as clauduct.exe.old, that name is the one the
+		// displaced earlier .old goes back to.
+		if moved != "" && os.Rename(moved, self) != nil {
+			stuck = append(stuck, moved)
+		}
 		for i := len(done) - 1; i >= 0; i-- {
 			if os.Rename(done[i].aside, done[i].path) != nil {
 				stuck = append(stuck, done[i].aside)
 			}
-		}
-		if moved != "" && os.Rename(moved, self) != nil {
-			stuck = append(stuck, moved)
 		}
 		return stuck
 	}

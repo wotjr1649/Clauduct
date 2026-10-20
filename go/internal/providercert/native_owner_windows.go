@@ -29,19 +29,37 @@ func NativeOwner(client, server net.Addr, image string) (owner, native uint32, c
 		parents[entry.ProcessID] = entry.ParentProcessID
 		names[entry.ProcessID] = syscall.UTF16ToString(entry.ExeFile[:])
 	}
-	_, ownerCreated, _ := processFacts(owner)
+	native, created = nativeAncestor(owner, image, parents, names, func(pid uint32) time.Time {
+		_, when, _ := processFacts(pid)
+		return when
+	})
+	return owner, native, created
+}
+
+// nativeAncestor walks owner's parents (PID -> parent PID) up to 32 hops for the nearest
+// process whose image is image. A parent PID outlives its process, so one reused by a later
+// process is not this owner's ancestor: every edge must be a parent created before its child,
+// and a creation time that cannot be read proves nothing. A walk that breaks that finds no
+// native, wherever the reused process sits along it.
+func nativeAncestor(owner uint32, image string, parents map[uint32]uint32, names map[uint32]string, createdOf func(uint32) time.Time) (native uint32, created time.Time) {
+	child := createdOf(owner)
 	for current, hops := owner, 0; current != 0 && hops < 32; current, hops = parents[current], hops+1 {
-		if strings.EqualFold(names[current], image) {
-			_, created, _ = processFacts(current)
-			// A parent PID outlives its process: one reused by a later process is not this
-			// owner's ancestor.
-			if created.IsZero() || current != owner && !created.Before(ownerCreated) {
-				return owner, 0, time.Time{}
-			}
-			return owner, current, created
+		created = child
+		if current != owner {
+			created = createdOf(current)
 		}
+		if created.IsZero() && (current != owner || strings.EqualFold(names[current], image)) {
+			return 0, time.Time{}
+		}
+		if current != owner && !created.Before(child) {
+			return 0, time.Time{}
+		}
+		if strings.EqualFold(names[current], image) {
+			return current, created
+		}
+		child = created
 	}
-	return owner, 0, time.Time{}
+	return 0, time.Time{}
 }
 
 // exactOwner is the PID whose IPv4 TCP connection has exactly client as its local end and

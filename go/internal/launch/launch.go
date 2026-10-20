@@ -147,6 +147,70 @@ func noProxyEntries(value string) []string {
 	return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })
 }
 
+// agentViewIndex returns where the agents subcommand sits in forward, or -1. Native dispatches a
+// subcommand that follows options, so it is the first positional under the shared native
+// argument boundaries. An unknown option without an attached value hides where the positionals
+// begin, and -p/--print makes the positional the prompt: neither is Agent View.
+func agentViewIndex(forward []string) int {
+	for i := 0; i < len(forward) && forward[i] != "--"; {
+		end, known := NativeArgEnd(forward, i)
+		arg := forward[i]
+		if !known {
+			if _, _, attached := strings.Cut(arg, "="); attached && strings.HasPrefix(arg, "--") {
+				i++
+				continue
+			}
+			return -1
+		}
+		if end > len(forward) {
+			return -1
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			if arg == "agents" {
+				return i
+			}
+			return -1
+		}
+		if printsPrompt(arg) {
+			return -1
+		}
+		if name, _, attached := strings.Cut(arg, "="); !attached && slices.Contains(variadicOptions, name) {
+			// Native takes values for these up to the next option, so a subcommand-shaped token
+			// among them is a value. NativeArgEnd keeps its one-value contract for its callers.
+			// NativeArgEnd already took the required first value, option-shaped or not; only the
+			// values after it end at the next option.
+			for end < len(forward) && (!strings.HasPrefix(forward[end], "-") || forward[end] == "-") {
+				end++
+			}
+		}
+		i = end
+	}
+	return -1
+}
+
+// variadicOptions are the native options that take every following value up to the next option.
+var variadicOptions = []string{"--add-dir", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools",
+	"--mcp-config", "--betas", "--file", "--tools"}
+
+// printsPrompt reports whether one known option token is -p/--print, alone or among combined
+// boolean shorts as NativeArgEnd reads them.
+func printsPrompt(arg string) bool {
+	if arg == "--print" {
+		return true
+	}
+	if len(arg) > 1 && arg[0] == '-' && arg[1] != '-' {
+		for _, c := range arg[1:] {
+			if c == 'p' {
+				return true
+			}
+			if !strings.ContainsRune("cvh", c) {
+				break
+			}
+		}
+	}
+	return false
+}
+
 // Build produces the launch spec.
 //
 // forward is copied verbatim after the overlay prefix. App applies Refused and
@@ -154,7 +218,8 @@ func noProxyEntries(value string) []string {
 // The product CLI contract is owned by docs/v2/ARCHITECTURE.md section 4.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
 	args := make([]string, 0, len(forward)+6)
-	agentView := len(forward) > 0 && forward[0] == "agents"
+	agentAt := agentViewIndex(forward)
+	agentView := agentAt >= 0
 	if overlay.Effort != "" && !agentView {
 		args = append(args, "--effort", overlay.Effort)
 	}
@@ -166,8 +231,9 @@ func Build(exe string, forward []string, source map[string]string, cwd string, o
 	}
 	// Agent View owns a separate effort default; its subcommand option must precede user overrides.
 	if agentView && overlay.Effort != "" {
+		args = append(args, forward[:agentAt]...)
 		args = append(args, "agents", "--effort", overlay.Effort)
-		forward = forward[1:]
+		forward = forward[agentAt+1:]
 	}
 	args = append(args, forward...)
 

@@ -36,7 +36,7 @@ func (g *Gateway) ProvedNativeProcesses() []NativeProcess {
 		}
 		return true
 	})
-	slices.SortFunc(out, func(a, b NativeProcess) int {
+	byIdentity := func(a, b NativeProcess) int {
 		if a.PID < b.PID || a.PID == b.PID && a.Created < b.Created {
 			return -1
 		}
@@ -44,9 +44,30 @@ func (g *Gateway) ProvedNativeProcesses() []NativeProcess {
 			return 0
 		}
 		return 1
-	})
+	}
+	slices.SortFunc(out, byIdentity)
 	if len(out) > MaxRoutingProofs {
+		// Discovery keeps every native it ever saw, exited ones included. Keep the ones the OS
+		// still confirms first, then those it cannot confirm, then the exited; within each
+		// group the lower identity wins, so the snapshot is stable.
+		status := g.processStatus
+		if status == nil {
+			status = providercert.ProcessStatus
+		}
+		rank := make(map[NativeProcess]int, len(out))
+		for _, p := range out {
+			switch status(p.PID, p.Created) {
+			case providercert.ProcessAlive:
+				rank[p] = 0
+			case providercert.ProcessUnknown:
+				rank[p] = 1
+			default:
+				rank[p] = 2
+			}
+		}
+		slices.SortStableFunc(out, func(a, b NativeProcess) int { return rank[a] - rank[b] })
 		out = out[:MaxRoutingProofs]
+		slices.SortFunc(out, byIdentity)
 	}
 	return out
 }

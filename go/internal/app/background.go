@@ -169,8 +169,10 @@ type backgroundProcess struct {
 	// record, when set, is written to home once the job exists and removed on every ending
 	// this resident controls, so a later key helper can regenerate it.
 	record *ResidentRecord
-	home   string
-	proved func() []gateway.NativeProcess
+	// stopJobs are jobs a stop must reach from the start, before any poll lists them.
+	stopJobs []string
+	home     string
+	proved   func() []gateway.NativeProcess
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
 	nativeStatus    func() (registered, notExited int, active int64)
 	releaseProfiles func([]string) error
@@ -212,6 +214,9 @@ func (p *backgroundProcess) Wait() (result error) {
 	// Every job on this link: a job started from the agent view of one runs
 	// on the same settings, so on this gateway too (#319 decision 18h).
 	jobs := map[string]int{id: 0}
+	for _, job := range p.stopJobs {
+		jobs[job] = 0
+	}
 	if p.record != nil {
 		for _, job := range p.record.Jobs {
 			jobs[job] = 0

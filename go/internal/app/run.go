@@ -948,8 +948,26 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if len(jobs) > 0 {
 			foregroundRecordErr = checkpointForeground()
 			// Persist before releasing the launcher; a failed pipe write still leaves jobs to serve.
-			o.Handover(result.NativeExitCode)
-			handoverCtx, cancel := context.WithCancel(context.Background())
+			// Without the record a resident that dies cannot be regenerated for its jobs, so the
+			// launcher stays attached and the failure is reported when the session ends.
+			handoverParent := context.Background()
+			if foregroundRecordErr == nil {
+				o.Handover(result.NativeExitCode)
+			} else {
+				// Still the foreground's wait: native is reaped, so the caller's cancellation and
+				// Ctrl+C stop the remaining jobs through the ordinary stop path instead.
+				handoverParent = ctx
+			}
+			handoverCtx, cancel := context.WithCancel(handoverParent)
+			if foregroundRecordErr != nil {
+				go func() {
+					select {
+					case <-interrupts:
+						cancel()
+					case <-handoverCtx.Done():
+					}
+				}()
+			}
 			var record *ResidentRecord
 			if resident != nil && resident.record.Job != "" {
 				record = resident.record
@@ -959,6 +977,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				job: jobs[0], record: record, home: clauductHome, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus, releaseProfiles: gw.ReleaseIdleSessionProfiles}
 			if record != nil {
 				bp.job = record.Job
+			}
+			if foregroundRecordErr != nil {
+				// Nothing is saved for these jobs, and no record may be written without the resident
+				// lock. The wait's stop set starts from every same-link job already listed, so a
+				// cancellation before its first poll stops them all.
+				bp.stopJobs = jobs
 			}
 			if providerFlag != "" {
 				bp.env, bp.start = spec.Env, o.StartProcess

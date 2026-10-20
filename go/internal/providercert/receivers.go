@@ -258,15 +258,18 @@ func decoded(header http.Header, body io.Reader) (io.Reader, error) {
 
 // Seen is one request a receiver observed: never its body or header values.
 type Seen struct {
-	Sequence    int       `json:"sequence,omitempty"`
-	At          time.Time `json:"at"`
-	Host        string    `json:"host"`
-	Method      string    `json:"method"`
-	PathClass   string    `json:"pathClass"`
-	Inference   bool      `json:"inference"`
-	Account     bool      `json:"account"`
-	WebSocket   bool      `json:"webSocket"`
-	Undecodable bool      `json:"undecodable"`
+	Sequence  int       `json:"sequence,omitempty"`
+	At        time.Time `json:"at"`
+	Host      string    `json:"host"`
+	Method    string    `json:"method"`
+	PathClass string    `json:"pathClass"`
+	// PathTemplate is method + host + the path with variable parts normalized (see PathTemplate):
+	// no query, token, e-mail, file path or other secret-bearing value.
+	PathTemplate string `json:"pathTemplate"`
+	Inference    bool   `json:"inference"`
+	Account      bool   `json:"account"`
+	WebSocket    bool   `json:"webSocket"`
+	Undecodable  bool   `json:"undecodable"`
 	// TLSRejected is a tunnel whose client sent a TLS ClientHello and then did not complete the
 	// handshake (it refused the probe's certificate, or left). TLS carries no application data
 	// before the handshake completes and this server accepts no early data, so such a tunnel
@@ -351,7 +354,7 @@ func (o *Observer) canaries() []Canary {
 }
 
 func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority string) {
-	seen := Seen{At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path),
+	seen := Seen{At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, r.URL.Path),
 		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
@@ -648,7 +651,7 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	}
 	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
 	// the probe cannot see into must not vanish from the record.
-	seen := Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect"}
+	seen := Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect", PathTemplate: PathTemplate(http.MethodConnect, authority, "")}
 	tunnel := o.record(&seen)
 	o.observed(r, seen)
 	var hello atomic.Bool

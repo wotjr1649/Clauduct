@@ -94,8 +94,8 @@ effort보다 우선한다. 사용자 모델별 effort가 있으면 그 값이 �
 사용자 effort가 해당 모델에서 지원되지 않거나 native settings가 담을 수 없는 값(`max`)이면 native를
 시작하기 전에 `UNSUPPORTED_MODEL_OR_EFFORT`로 거부한다.
 
-공개 빌드에서는 foreground Agent View가 꺼져 있다. Agent View를 허용한 개발 빌드의 무입력
-dispatch는 시작 모델·시작 effort를 쓴다. startup effort가 `max`면 이 dispatch에는 해당 모델의
+foreground Agent View(v0.6.11 개발 브랜치부터 공개 빌드에서도 켜짐)의 무입력 dispatch는
+Clauduct 세션 `--settings`를 이어받아 시작 모델·시작 effort를 쓴다. startup effort가 `max`면 이 dispatch에는 해당 모델의
 저장 가능한 기본 effort를 넣고, foreground는 `--effort max`로 시작한다. 모델 기본값도 저장할 수
 없으면 해당 effort 키를 넣지 않는다. dispatch 입력창에서 다른 모델만 선택하면 그 모델의 저장된
 기본 effort를 쓰며, 시작 모델을 다시 선택하면 시작 effort가 적용된다. native는 `max`를 세션 한정

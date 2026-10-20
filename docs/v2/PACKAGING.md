@@ -31,11 +31,11 @@
 
 **Claude Code를 처음 실행하는 사람(2.1.296 실측).** native만 실행하면 테마 선택 다음에 로그인 방법 선택(Claude 구독·Console·3rd-party)이 나온다. Clauduct로 시작하면 이 단계가 없다. 테마 선택 → 보안 안내 → 폴더 신뢰를 거쳐 입력창으로 간다. native가 Clauduct gateway의 인증 설정을 받아 로그인 단계를 건너뛰기 때문이다. 입력창 머리글의 `API Usage Billing`은 native가 이 인증 방식에 붙이는 이름이다. 요청은 Codex 구독으로 가고 Anthropic에 과금되지 않는다.
 
-**Claude에도 로그인한 사람.** `--bg` job을 관리하려고 native `claude agents`나 `claude attach`를 직접 열면, 그 native는 Clauduct가 띄운 것이 아니므로 사용자의 Claude 로그인을 쓴다. 2.1.296 실측으로 확인한 것은 다음과 같다.
+**Claude에도 로그인한 사람.** Agent View를 어디서 열었는지에 따라 다르다. Clauduct 세션 안의 Agent View(TUI의 `/background`·`/bg` 포함, v0.6.11 개발 브랜치)는 Clauduct가 띄운 native다. 거기서 새로 시작한 작업과 미리 띄우는 세션은 Clauduct의 `--settings`를 이어받아 Clauduct gateway를 쓴다. 2.1.300 합성 측정에서 미리 띄운 세션은 요청을 보내지 않았다. 반면 `--bg` job을 관리하려고 터미널에서 native `claude agents`나 `claude attach`를 직접 열면, 그 native는 Clauduct가 띄운 것이 아니므로 사용자의 Claude 로그인을 쓴다. 2.1.296 실측으로 확인한 것은 다음과 같다.
 - `claude agents`가 미리 띄우는 세션이 1토큰 확인 요청을 Anthropic에 1건 보낸다. 작업 폴더, `CLAUDE.md`, job 내용은 들어 있지 않다.
 - `claude attach`와 그 daemon은 시작 때 비추론 요청을 보낸다.
 - job의 모델 요청과 저장된 Reply는 Clauduct gateway로만 간다.
-- agents 화면에서 새 작업을 시작하면 그 작업은 Clauduct 밖 native 세션이다.
+- 직접 연 agents 화면에서 새 작업을 시작하면 그 작업은 Clauduct 밖 native 세션이다.
 
 자세한 분류는 [COMPATIBILITY](COMPATIBILITY.md)의 서비스 분류 표에 있다.
 

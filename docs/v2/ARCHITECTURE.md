@@ -155,7 +155,7 @@ cloud로 보냈다. 그래서 다음을 함께 둔다.
 - foreground·background 모두 `--settings` env에 gateway 주소, 빈 provider 선택 변수(native 목록 7종), 빈
   `ANTHROPIC_UNIX_SOCKET`·`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, loopback을 더한 `NO_PROXY`, 필수 환경을 넣는다.
   native는 `--settings`를 user·project·local settings보다 높게 두고, 파일이 실행 중 바뀌어도 그렇다. token은
-  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다).
+  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다). v0.6.11 개발 브랜치부터 세션 기본값도 `--settings` env로 넣고, token은 session link를 읽는 key helper(`apiKeyHelper`)가 준다. native의 OS 환경에는 Clauduct 값을 넣지 않고 `ANTHROPIC_*`·OAuth token·provider 선택 변수를 지운다. native supervisor가 자기를 띄운 native의 OS 환경을 이후 standalone worker에 넘기기 때문이다.
 - `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`는 쓰지 않는다. 실측에서 settings 파일의 모델 선택까지 무시하게 했고,
   hook 환경의 token도 지웠다. 상속도 하지 않는다.
 - 저장된 Claude apps gateway 로그인은 환경을 바꾸지 않고 요청을 그 gateway로 보낸다. native는 시작할 때 endpoint에 모델 목록을
@@ -166,7 +166,7 @@ cloud로 보냈다. 그래서 다음을 함께 둔다.
   `allowedProviders`가 있으면 시작하지 않는다. 세션 중 생기면 native를 끝내고 `ROUTING_UNVERIFIED`로 보고한다.
   잠깐 읽지 못한 출처는 연속 세 번 확인한 뒤에만 세션을 끝낸다.
 - hook은 명령 인수(foreground)나 세션 연결(background)로 gateway를 안다. native가 적용한 환경의 endpoint,
-  provider 선택, unix socket을 이것과 대조해, 다르면 prompt를 막고 gateway에 알려 세션을 끝낸다.
+  provider 선택, unix socket을 이것과 대조해, 다르면 prompt를 막고 gateway에 알려 세션을 끝낸다. v0.6.11 개발 브랜치부터 foreground hook도 세션 연결을 읽는다. 환경 이름은 Windows처럼 대소문자 없이 모든 철자를 대조하고, 값이 다른 중복 철자는 거부한다. 대조를 통과하면 routing 증명과 이후 호출은 세션 연결의 주소·token으로 보낸다.
 
 기존의 광범위 secret 제거를 축소하면 MCP 호환은 개선되지만 **child에 보이는 secret 범위가 넓어진다.** 이를 보안상 동일한 동작으로 표현하지 않는다.
 
@@ -310,6 +310,12 @@ text는 검증된 event 범위에서 streaming할 수 있다. **부작용을 유
 SSE parser는 byte 경계가 UTF-8 문자·JSON token·CRLF·빈 줄 가운데에서 끊겨도 동작해야 한다. 64 KiB를 넘는 합법 event를 기본 scanner limit 때문에 자르지 않되 무제한 buffer도 허용하지 않는다. frame·event count·총 bytes·최대 depth·idle·총 요청 budget은 명시적 configuration schema로 관리하고 단위를 구분하며 overflow를 검사한다.
 
 terminal 이벤트·`[DONE]`·중복 완료·완료 이후 trailing data·비정상 EOF의 의미를 backend 계약으로 고정한다. terminal을 봤다는 이유로 뒤의 프로토콜 위반을 정상 처리하지 않는다.
+
+v0.6.11 개발 브랜치는 `response.metadata` 중 OpenAI의 표시 정보인
+`metadata.openai_chatgpt_moderation_metadata` 객체만 별도로 인식한다. 바깥 필드는 `type`·`metadata`와
+선택적인 `sequence_number`·`response_id`만 허용한다. 내용은 client에 전달하거나 진단에 저장하지 않고
+`moderationMetadata` 횟수만 센다. 이 알림은 routing 증명·terminal·답변을 대신하지 않는다.
+모르는 metadata, 다른 필드가 섞인 알림과 잘못된 형태는 거부하며, `safety_buffering` 검증은 별도로 유지한다.
 
 `StreamEnd`는 모든 relay 반환 경로에서 마지막 read 오류, client context, terminal 관측,
 event 수와 읽은 byte 수를 기록한다. `DoneObserved`는 `[DONE]` 관측 여부이며 `TrailingEvent`는
@@ -523,17 +529,22 @@ relay 실패·마감 초과는 복원 실패이며 직접 spawn으로 대체하�
 별도 실측이 필요하다.
 `clauduct --background-stop`은 연결을 끝내며 job 삭제는 native `rm <id>`로 한다.
 worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업 상태 파일의
-부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다.
+부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다. v0.6.11 개발 브랜치부터 공개 빌드의 foreground에서도 native Agent View가 켜져 있다. interactive 실행은 같은 콘솔의 launcher 아래 자식 `clauduct.exe`로 돈다. native가 실행 중일 때 foreground는 native job 상태의 `respawnFlags`에 든 `--settings` key helper가 자기 세션 link를 정확히 가리키는 job만 자기 것으로 보고, 처음 본 때 resident record를 쓴다. native가 끝났을 때 그런 job이 있으면 record를 쓴 뒤 launcher에 native 종료 코드를 넘겨 터미널을 돌려주고, 콘솔에서 떨어져 같은 gateway·token·link로 그 job들이 끝날 때까지 연결 유지 프로세스로 남는다. launcher가 이미 없어도 그렇다.
+
+resident record의 `session`은 primary job의 native 상태 파일에서 읽는다. foreground가 등록한 마지막 세션으로 대신하지 않는다.
+연결 유지 프로세스는 job이 소유하지 않는 세션의 등록 native가 모두 종료됐고 사용 중인 요청도 없을 때, 프로필을 저장하고
+잠금을 해제한다. 따라서 다른 job을 계속 서비스하면서 원래 foreground 세션을 다시 열 수 있다. job 상태를 읽지 못하거나
+native 종료를 확인하지 못하거나 유지할 job의 세션 프로필이 아직 등록되지 않았으면 잠금을 유지하며, 저장 실패도 잠금을 유지하고 연결 유지 프로세스가 끝날 때 보고한다. 새 job이 부모 세션의 프로필을 복사하기 전에 부모 잠금을 해제하지 않기 위해서다.
 
 `clauduct rm <id>`·`clauduct stop <id>`·`clauduct logs <id>`는 세션을 열지 않는 관리 경로다.
 argv의 첫 원소가 정확히 `rm`·`stop`·`logs`인 형태만 지원하고, 그 뒤 인자는 그대로 native에 전달한다.
 하위 명령 앞에 옵션이 있는 형태는 관리 경로로 판정하지 않고 기존 세션 경로로 처리한다.
 gateway를 시작하거나 모델 목록을 조회하지 않고, 세션 settings·plugin·effort·agents 옵션도 주입하지 않는다.
-기존 제어 명령용 env 정리로 `ANTHROPIC_*`·OAuth token을 제거하며 Agent View 끄기 변수도 넘기지 않는다.
+기존 제어 명령용 env 정리로 `ANTHROPIC_*`·OAuth token을 제거한다.
 `DISABLE_TELEMETRY`·`DISABLE_ERROR_REPORTING`은 세션과 같은 기본값을 사용하며 사용자 env 값이 우선한다.
-native의 종료 코드를 그대로 반환한다. `clauduct attach`는 기존 세션 경로로 처리하며 공개 빌드의
-Agent View 끄기를 유지한다. `clauduct respawn`도 예외에서 제외한다. native가 supervisor를 새로 띄울 수 있고,
-supervisor는 최초 실행의 OS env를 보존하므로 이 실행의 gateway 수명을 넘길 위험이 있기 때문이다.
+native의 종료 코드를 그대로 반환한다. `clauduct attach`와 `clauduct respawn`은 이 예외에 넣지 않고 기존 세션
+경로로 처리한다. native가 이때 supervisor를 새로 띄울 수 있고, supervisor는 최초 실행의 OS env를 보존한다.
+그래서 세션 경로는 Clauduct 값을 OS env가 아니라 `--settings`와 key helper로만 넘긴다(위 라우팅 불변식).
 
 `clauduct rm <id>`가 성공하면 같은 실행 끝에 해당 job이 사라진 resident 자원을 회수한다.
 실패한 `rm`은 회수하지 않는다. `claude rm <id>`나

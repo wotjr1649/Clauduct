@@ -656,7 +656,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if settings == "" {
 			settings = "{}"
 		}
-		settings, err = mergeUserSettings(settings, userSettings)
+		settings, err = config.mergeUserSettings(settings, userSettings)
 		if err != nil {
 			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 			return result, err

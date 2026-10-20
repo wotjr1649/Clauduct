@@ -144,7 +144,7 @@ func descendantPID(root uint32, image string, wait time.Duration) (uint32, error
 	for time.Now().Before(deadline) {
 		table := snapshotProcesses()
 		for pid, p := range table {
-			if p.image == image && table.descends(pid, root) {
+			if p.image == image && table.descends(pid, root, processCreatedAt) {
 				return pid, nil
 			}
 		}

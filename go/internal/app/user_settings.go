@@ -170,6 +170,20 @@ func (config ClauductSettings) validateUserEffortSettings(user map[string]json.R
 // Native remains responsible for other setting schemas and hook permissions.
 // Keep user hook entries intact and append the required bindings to each event.
 func mergeUserSettings(required string, user map[string]json.RawMessage) (string, error) {
+	return mergeUserSettingsFor(required, user, nil)
+}
+
+// mergeUserSettings propagates the user's top-level effort only to the generated models whose
+// route supports it.
+func (config ClauductSettings) mergeUserSettings(required string, user map[string]json.RawMessage) (string, error) {
+	return mergeUserSettingsFor(required, user, func(model, effort string) bool {
+		_, err := config.Selection.SelectRoute(model, effort)
+		return err == nil
+	})
+}
+
+// supports, when set, says whether a model can take an effort; nil takes every pair.
+func mergeUserSettingsFor(required string, user map[string]json.RawMessage, supports func(model, effort string) bool) (string, error) {
 	if user == nil {
 		return required, nil
 	}
@@ -187,7 +201,7 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 				out[key] = value
 			}
 		} else if key == "modelSettings" {
-			merged, err := mergeModelSettings(value, user[key], user["effortLevel"])
+			merged, err := mergeModelSettings(value, user[key], user["effortLevel"], supports)
 			if err != nil {
 				return "", err
 			}
@@ -250,7 +264,7 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 	return string(raw), nil
 }
 
-func mergeModelSettings(required, user, effort json.RawMessage) (json.RawMessage, error) {
+func mergeModelSettings(required, user, effort json.RawMessage, supports func(model, effort string) bool) (json.RawMessage, error) {
 	base, err := wire.Fields(required, nil)
 	if err != nil {
 		return nil, errUserSettings
@@ -279,8 +293,9 @@ func mergeModelSettings(required, user, effort json.RawMessage) (json.RawMessage
 				if key != "effortLevel" && !jsonEqual(specified, value) {
 					return nil, errSettingsConflict
 				}
-			} else if key == "effortLevel" && len(effort) != 0 {
-				// A generated model default must not mask the user's top-level effort.
+			} else if key == "effortLevel" && len(effort) != 0 && supportsEffort(supports, model, effort) {
+				// A generated model default must not mask the user's top-level effort, but only a
+				// model that can take it receives it; another keeps its own valid default.
 				entry[key] = effort
 			} else {
 				entry[key] = value
@@ -289,6 +304,11 @@ func mergeModelSettings(required, user, effort json.RawMessage) (json.RawMessage
 		fields[model], _ = json.Marshal(entry)
 	}
 	return json.Marshal(fields)
+}
+
+func supportsEffort(supports func(model, effort string) bool, model string, effort json.RawMessage) bool {
+	var name string
+	return supports == nil || json.Unmarshal(effort, &name) == nil && supports(model, name)
 }
 
 func mergeHookSettings(required, user json.RawMessage) (json.RawMessage, error) {

@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"context"
@@ -19,6 +20,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 )
 
 // TB is the part of a test the runner uses: *testing.T satisfies it, and the probe binary
@@ -148,19 +150,37 @@ func snapshotProcesses() processTable {
 	return table
 }
 
-// descends reports whether pid descends from root in the table.
-func (t processTable) descends(pid, root uint32) bool {
+// descends reports whether pid descends from root in the table. A parent PID outlives its
+// process, so the recorded parent of an unrelated process can be a PID a later process reuses:
+// every edge, the one into root included, must name a parent created strictly before its
+// child, and a creation time that cannot be read (createdOf returns the zero time) proves
+// nothing. This is the per-edge rule providercert applies to a native's ancestry.
+func (t processTable) descends(pid, root uint32, createdOf func(uint32) time.Time) bool {
+	child := createdOf(pid)
 	for range 64 {
 		p, ok := t[pid]
-		if !ok || p.parent == 0 || p.parent == pid {
+		if !ok || p.parent == 0 || p.parent == pid || child.IsZero() {
+			return false
+		}
+		parent := createdOf(p.parent)
+		if parent.IsZero() || !parent.Before(child) {
 			return false
 		}
 		if p.parent == root {
 			return true
 		}
-		pid = p.parent
+		pid, child = p.parent, parent
 	}
 	return false
+}
+
+// processCreatedAt is when pid was created, or the zero time when the OS will not say.
+func processCreatedAt(pid uint32) time.Time {
+	created, err := providercert.ProcessCreated(pid)
+	if err != nil || created <= 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, created)
 }
 
 func digest(b []byte) string {

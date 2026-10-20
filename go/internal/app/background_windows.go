@@ -163,8 +163,15 @@ func RelayResident(link string) error {
 	return startRestoredResident(self, link, record.Cwd)
 }
 
+// startRestoredResident starts the restore resident outside the caller's job when it can.
+//
+// Clauduct starts native inside its own job (KILL_ON_JOB_CLOSE, no breakaway allowed), so every
+// hook under a Clauduct-launched native runs in a job that refuses CREATE_BREAKAWAY_FROM_JOB.
+// Refusing there would make hook-driven restoration impossible, so the start falls back to
+// staying in that job. Remaining limit: a resident that did not break away ends with its job,
+// and native tearing the hook tree down before the relay exits can still kill it; restoration
+// then waits for the next hook. A launch that escapes the job is a follow-up.
 func startRestoredResident(self, link, cwd string) error {
-	// shortcut: a kill before relay exit can still end restoration; revisit if R10 reproduces it.
 	start := func(flags uint32) (*exec.Cmd, error) {
 		cmd := exec.Command(self, ResidentRestoreRole, link)
 		cmd.Dir = cwd
@@ -172,6 +179,7 @@ func startRestoredResident(self, link, cwd string) error {
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: flags}
 		return cmd, cmd.Start()
 	}
+	// CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB, then CREATE_NO_WINDOW alone.
 	cmd, err := start(0x08000000 | 0x01000000)
 	if err != nil {
 		cmd, err = start(0x08000000)

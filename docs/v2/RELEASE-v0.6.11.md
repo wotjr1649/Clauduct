@@ -128,11 +128,19 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   - NOT_APPLICABLE 2행은 Windows warm spare다. native 코드 가드라 실행된 성공으로 보지 않는다.
   - PARTIAL의 주된 원인은 OS 송신자 귀속 공백, 대조군 미재현, 일부 표면의 미완료 증명이다. 해당 행은 F123, R30x, A06, Q01 등이다.
   - 기존 엄격 판정기는 전체 관문 실패와 미해결 행 때문에 FAIL을 낸다.
-- **실제 backend:**
-  - native 2.1.303과 최종 제품 소스(`5e6de560`)로 확인한 것은 Deny와 hook 재연결이다.
-  - 나머지 묶음(foreground, 권한, 분류기, dispatch, 저장 Reply, 정지 복원, resume·fork·recap·close·branch, background)은
-    2.1.302와 그 전 소스의 기록이다.
-  - 2.1.303으로 다시 실행하기 전에는 이 묶음을 현재 후보의 실제 PASS로 보지 않는다.
+- **실제 backend:** native 2.1.303과 `5e6de560`의 clean 후보를 저장소 밖 작업 폴더·격리 프로필·일반 권한에서 실행했다. 18개
+  묶음이 모두 통과했다. 묶음은 foreground, 권한 묻기·Always·Deny, background 차단 attach, auto 분류기의 허용·실제 block·
+  fail-closed, dispatch 선택, 저장 Reply, 정지 job 복원과 background, recap, resume, fork, 콘솔 닫기, branch, hook 재연결이다.
+  - 그대로 둔 원래 판정이 셋 있다. background 묶음의 원래 판정은 재개 뒤 worker 교체를 확인하지 못해 FAIL이었고, 같은 job의
+    정지 복원을 합친 판정이 PASS다. branch는 생성 단계와 재개를 합친 판정이 PASS다. dispatch는 원래 판정이 기본값 추가로 FAIL이었고,
+    네 조합의 실제 model·effort와 설정 변경 없음을 확인한 정규화 판정이 PASS다.
+  - 저장 Reply의 첫 시도는 새 작업 폴더가 신뢰되지 않아 요청 없이 실패했다. background 묶음과 같은 신뢰 수락 단계를 더한 실행이
+    통과했다.
+  - TUI `/model` 선택은 선택한 model이 다음 요청에 그대로 쓰인 것을 확인했다. 앞선 두 시도는 하네스 문제로 실패했고 기록으로
+    남겼다(선택 목록 순서, 격리 프로필 설정을 건너뛴 실행 옵션).
+  - teammate에게 두 번째 메시지가 전달됐는지와, 저장 뒤 재개한 요청에 이전 reasoning이 다시 실렸는지는 현재 진단이 기록하지
+    않아 실측으로 확인하지 못했다. 후속 과제다.
+  - 실제 backend가 모두 통과해도 합성 행의 PARTIAL과 전체 관문 실패는 그대로다.
 - **문서 인용 검사**: 공개 문서 40개와 비공개 문서를 포함한 인용·링크 검사가 종료 0, 실패 0이었다.
 
 ### 이전 기록 (2026-10-17)

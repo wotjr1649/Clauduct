@@ -210,6 +210,22 @@ func Digest(body []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// NotRestoredError is a failed update whose rollback also failed for some files: the
+// installation is not as it was, and Paths are where it was left.
+type NotRestoredError struct {
+	Cause error
+	Paths []string
+}
+
+func (e *NotRestoredError) Error() string {
+	return fmt.Sprintf("%v; the previous files could not all be put back: %s", e.Cause, strings.Join(e.Paths, ", "))
+}
+
+func (e *NotRestoredError) Unwrap() error { return e.Cause }
+
+// removeFile and renameFile are the rollback's file operations; a test replaces them.
+var removeFile, renameFile = os.Remove, os.Rename
+
 // Apply replaces clauduct.exe in dir, together with the Probe when files carries one, and
 // puts everything back if any of it cannot be written.
 //
@@ -229,14 +245,26 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 		had          bool
 	}
 	var swapped []swap
-	rollback := func() {
+	// rollback puts every swap back and returns the paths it could not: a new image it could not
+	// remove, a backup it could not rename back. Those are where the installation is not as it was.
+	rollback := func() (stuck []string) {
 		for i := len(swapped) - 1; i >= 0; i-- {
 			s := swapped[i]
-			os.Remove(s.path)
-			if s.had {
-				os.Rename(s.backup, s.path)
+			if err := removeFile(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				stuck = append(stuck, s.path)
+				continue // the new image is still in the way of its backup
+			}
+			if s.had && renameFile(s.backup, s.path) != nil {
+				stuck = append(stuck, s.backup)
 			}
 		}
+		return stuck
+	}
+	fail := func(err error) error {
+		if stuck := rollback(); len(stuck) > 0 {
+			return &NotRestoredError{Cause: err, Paths: stuck}
+		}
+		return err
 	}
 	names := []string{Binaries[0]}
 	if _, ok := files[Probe]; ok {
@@ -249,15 +277,13 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 		had := true
 		if err := os.Rename(path, backup); err != nil {
 			if name == Binaries[0] || !errors.Is(err, os.ErrNotExist) {
-				rollback()
-				return nil, err
+				return nil, fail(err)
 			}
 			had = false
 		}
 		swapped = append(swapped, swap{path, backup, had})
 		if err := os.WriteFile(path, files[name], 0o755); err != nil {
-			rollback()
-			return nil, err
+			return nil, fail(err)
 		}
 	}
 

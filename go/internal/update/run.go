@@ -163,6 +163,14 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	leftovers, err := Apply(dir, files)
 	if err != nil {
 		fmt.Fprintln(out, "clauduct: update failed:", err)
+		var stuck *NotRestoredError
+		if errors.As(err, &stuck) {
+			fmt.Fprintln(out, "          the previous binaries could not all be put back; the installation may mix old and new files")
+			for _, path := range stuck.Paths {
+				fmt.Fprintln(out, "          not restored:", path)
+			}
+			return 1
+		}
 		fmt.Fprintln(out, "          the previous binaries were put back")
 		return 1
 	}

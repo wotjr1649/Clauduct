@@ -1304,7 +1304,9 @@ func (d *delegations) transcriptHasMessage(binding agentBinding, uuid string) bo
 		return false
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	scanner.Buffer(make([]byte, 4096), 2<<20)
+	// A row may be as large as the transcript read above (an embedded image or PDF, a big tool
+	// result); the file bound is the only limit, so no row is cut short and taken for absence.
+	scanner.Buffer(make([]byte, 4096), len(raw)+1)
 	parents := make(map[string]string)
 	leaf := ""
 	targetMessage := false

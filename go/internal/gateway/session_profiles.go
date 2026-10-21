@@ -409,6 +409,21 @@ func (g *Gateway) RestoreSessionProfiles(saved []SessionProfile) {
 	}
 }
 
+// pruneExitedRegistrants drops the registrants of session whose process has exited. Caller
+// holds p.mu. A process the OS cannot vouch for either way (unknown) stays counted, and so does
+// the zero key of a hook that named no process.
+func (g *Gateway) pruneExitedRegistrants(session string) {
+	status := g.processStatus
+	if status == nil {
+		status = providercert.ProcessStatus
+	}
+	for process := range g.profiles.registrants[session] {
+		if process != (processKey{}) && status(process.pid, process.created) == providercert.ProcessExited {
+			delete(g.profiles.registrants[session], process)
+		}
+	}
+}
+
 // Caller holds contexts.mu; no profile operation takes contexts.mu in return.
 // process is the native process the registering hook runs under: an OS fact when native
 // identity is required, otherwise what the hook said, the zero key when it said nothing.
@@ -432,7 +447,13 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		p.registrants[session] = make(map[processKey]struct{})
 	}
 	if _, known := p.registrants[session][process]; !known && len(p.registrants[session]) >= maxAgents {
-		return ErrSessionProfile
+		// The cap bounds the processes alive on this session, not every worker it ever had: a
+		// respawned worker leaves its old identity behind. Only a process the OS says has exited
+		// (by PID and creation time, which a reused PID does not match) is dropped.
+		g.pruneExitedRegistrants(session)
+		if len(p.registrants[session]) >= maxAgents {
+			return ErrSessionProfile
+		}
 	}
 	p.registrants[session][process] = struct{}{}
 	if failed := p.failedStart[process]; source == "" && p.profiles[session] == nil && failed.session == session {

@@ -233,6 +233,30 @@ func (g *Gateway) readNativeJSON(name string, fields []string, out any) (found b
 	return err == nil, err
 }
 
+// journalAbsent reports whether err says path is not there and it really is not: the nearest
+// component that exists is a real directory. Windows also reports ErrNotExist for a path below a
+// regular file (a journal directory or a parent replaced by a file), which is damage, not an
+// empty journal; anything unverifiable counts as not absent. openProjects classifies the same way.
+func journalAbsent(path string, err error) bool {
+	if !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	for current := filepath.Clean(path); ; {
+		info, statErr := os.Lstat(current)
+		if statErr == nil {
+			return current != filepath.Clean(path) && info.IsDir()
+		}
+		parent := filepath.Dir(current)
+		if !errors.Is(statErr, os.ErrNotExist) || parent == current {
+			return false
+		}
+		current = parent
+	}
+}
+
+// listActiveJournal lists the active journal; a test replaces it to make the listing fail.
+var listActiveJournal = os.ReadDir
+
 // Each attempt has a unique filename. A zero-byte ready marker is published only
 // after the body write completes. Seeing an unfinished newer attempt refuses the
 // old turn; callers pin the returned receipt for the whole request.
@@ -246,7 +270,12 @@ func (g *Gateway) readCurrentNativeTurn(session, id string) (receipt nativeTurnR
 	if id == "" && !correlationShape.MatchString(session) {
 		// A request naming no session cannot be matched to any conversation's root: with no
 		// root journal at all (native --bare) there is nothing to match; with any, it is refused.
-		entries, _ := os.ReadDir(filepath.Join(g.nativeEvents.directory, "active"))
+		active := filepath.Join(g.nativeEvents.directory, "active")
+		entries, listErr := listActiveJournal(active)
+		if listErr != nil && !journalAbsent(active, listErr) {
+			// Only an absent journal says there is no root; one that cannot be listed says nothing.
+			return receipt, false, errDelegationUnverified
+		}
 		for _, entry := range entries {
 			if strings.HasPrefix(entry.Name(), "root-") {
 				return receipt, false, errDelegationUnverified
@@ -262,7 +291,7 @@ func (g *Gateway) readCurrentNativeTurn(session, id string) (receipt nativeTurnR
 	defer root.Close()
 	directory := "active/" + name
 	dir, err := root.Open(directory)
-	if errors.Is(err, os.ErrNotExist) {
+	if err != nil && journalAbsent(filepath.Join(g.nativeEvents.directory, filepath.FromSlash(directory)), err) {
 		return receipt, false, nil
 	}
 	if err != nil {

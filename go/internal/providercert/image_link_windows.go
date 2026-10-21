@@ -111,6 +111,16 @@ type MappedImage struct {
 	bindStart int64
 }
 
+// acquiredPathIfMoved is the acquisition-time path when the verified mapped name differs from it
+// (the updater renamed the running image while it was hashed), otherwise empty.
+func (m MappedImage) acquiredPathIfMoved(hashed Identity) string {
+	abs, err := filepath.Abs(m.Path)
+	if err != nil || strings.EqualFold(abs, hashed.Path) {
+		return ""
+	}
+	return abs
+}
+
 // heldMS is how long the image section has been held, in milliseconds (recorded on the result).
 func (m MappedImage) heldMS() int64 {
 	if m.hold == nil || m.hold.sectionAt.IsZero() {
@@ -269,16 +279,16 @@ var resultSeam func()
 // A process that already exited cannot be compared any more: the result is
 // PostCheckExitedBeforeCheck, a candidate link that only a final judge holding a drained, quiet
 // namespace record for the step may accept. A wait or name read that fails for another reason is INCONCLUSIVE.
-func (f *fileHold) confirmStillMapped() (string, error) {
+func (f *fileHold) confirmStillMapped() (postCheck, mapped string, err error) {
 	if postHashSeam != nil {
 		postHashSeam()
 	}
 	if err := namespaceCheck(); err != nil {
-		return "", err
+		return "", "", err
 	}
-	postCheck := PostCheckAliveVerified
+	postCheck = PostCheckAliveVerified
 	var result error
-	err := f.use(func(h syscall.Handle) error {
+	useErr := f.use(func(h syscall.Handle) error {
 		if f.proc == 0 {
 			postCheck = PostCheckExitedBeforeCheck
 			return nil
@@ -303,13 +313,15 @@ func (f *fileHold) confirmStillMapped() (string, error) {
 		}
 		if why := heldHandleProblem(h, now); why != "" {
 			result = inconclusiveKind(ErrModuleNotReady, "%s", why)
+		} else {
+			mapped = now
 		}
 		return nil
 	})
-	if err != nil {
-		return "", inconclusive("%v", err)
+	if useErr != nil {
+		return "", "", inconclusive("%v", useErr)
 	}
-	return postCheck, result
+	return postCheck, mapped, result
 }
 
 // acquireConsistencyAttempts bounds the retries of an acquisition whose name moved under it.
@@ -347,9 +359,9 @@ func (m MappedImage) Verify(want Identity) (NativeImage, error) {
 		return NativeImage{}, err
 	}
 	if !SameImage(hashed, want) {
-		return NativeImage{PID: m.PID, Created: m.Created, Identity: hashed, SectionHeldMS: m.heldMS(), PostCheck: postCheck, Acquirer: currentAcquirer(), BindStart: m.bindStart, BindEnd: bindEnd}, fmt.Errorf("%w: process %d runs %s, not the expected bytes", ErrNativeChanged, m.PID, filepath.Base(m.Path))
+		return NativeImage{PID: m.PID, Created: m.Created, Identity: hashed, SectionHeldMS: m.heldMS(), PostCheck: postCheck, Acquirer: currentAcquirer(), BindStart: m.bindStart, BindEnd: bindEnd, AcquiredPath: m.acquiredPathIfMoved(hashed)}, fmt.Errorf("%w: process %d runs %s, not the expected bytes", ErrNativeChanged, m.PID, filepath.Base(m.Path))
 	}
-	return NativeImage{PID: m.PID, Created: m.Created, Identity: hashed, SectionHeldMS: m.heldMS(), PostCheck: postCheck, Acquirer: currentAcquirer(), BindStart: m.bindStart, BindEnd: bindEnd}, nil
+	return NativeImage{PID: m.PID, Created: m.Created, Identity: hashed, SectionHeldMS: m.heldMS(), PostCheck: postCheck, Acquirer: currentAcquirer(), BindStart: m.bindStart, BindEnd: bindEnd, AcquiredPath: m.acquiredPathIfMoved(hashed)}, nil
 }
 
 // Hashed hashes the mapped image and closes it, without naming a version. It is the step to take
@@ -360,7 +372,7 @@ func (m MappedImage) Hashed() (NativeImage, error) {
 	if err != nil {
 		return NativeImage{}, err
 	}
-	return NativeImage{PID: m.PID, Created: m.Created, Identity: hashed, SectionHeldMS: m.heldMS(), PostCheck: postCheck, Acquirer: currentAcquirer(), BindStart: m.bindStart, BindEnd: bindEnd}, nil
+	return NativeImage{PID: m.PID, Created: m.Created, Identity: hashed, SectionHeldMS: m.heldMS(), PostCheck: postCheck, Acquirer: currentAcquirer(), BindStart: m.bindStart, BindEnd: bindEnd, AcquiredPath: m.acquiredPathIfMoved(hashed)}, nil
 }
 
 // NameVersion names the version of a hashed image through the catalog (unknown bytes are INCONCLUSIVE).

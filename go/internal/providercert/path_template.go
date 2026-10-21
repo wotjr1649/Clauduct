@@ -102,8 +102,12 @@ func parseRoutes(table []templateRoute) []parsedRoute {
 
 var templateMethods = toSet([]string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "CONNECT"})
 
-// PathTemplate builds the template for one request. host is the request authority (a port is
-// accepted and dropped when it is valid).
+// PathTemplate builds the template for one request. path is the RAW request path as sent (for an
+// http.Request, url.RawPath when set, else url.EscapedPath(); the observer uses rawRequestPath): each
+// segment is percent-decoded exactly once here, after the split on "/", so a doubly escaped segment
+// (%256d) stays a literal "%6d" and an escaped slash (%2F) stays inside its segment. Never pass the
+// decoded url.Path, and never EscapedPath() of a RawPath that is not a valid encoding (it re-escapes
+// the decoded path). host is the request authority (a port is accepted and dropped when it is valid).
 func PathTemplate(method, host, path string) string {
 	m := strings.ToUpper(method)
 	if !templateMethods[m] {

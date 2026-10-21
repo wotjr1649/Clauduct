@@ -9,10 +9,13 @@ package providercert
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -24,6 +27,47 @@ type Identity struct {
 	FileIndex    uint64 `json:"fileIndex"`
 	Size         int64  `json:"size"`
 	SHA256       string `json:"sha256"`
+}
+
+// identityWire is Identity as written: fileIndex is a decimal STRING because an NTFS file index can
+// exceed 2^53, which a JS number cannot hold (distinct indexes would become indistinguishable). The
+// other numbers fit: volumeSerial is 32 bits and size is far below 2^53.
+type identityWire struct {
+	Path         string `json:"path"`
+	VolumeSerial uint32 `json:"volumeSerial"`
+	FileIndex    string `json:"fileIndex"`
+	Size         int64  `json:"size"`
+	SHA256       string `json:"sha256"`
+}
+
+func (i Identity) MarshalJSON() ([]byte, error) {
+	return json.Marshal(identityWire{i.Path, i.VolumeSerial, strconv.FormatUint(i.FileIndex, 10), i.Size, i.SHA256})
+}
+
+// UnmarshalJSON accepts fileIndex as a decimal string (the written form) or a bare number (older
+// records); anything else is an error.
+func (i *Identity) UnmarshalJSON(b []byte) error {
+	var w struct {
+		Path         string          `json:"path"`
+		VolumeSerial uint32          `json:"volumeSerial"`
+		FileIndex    json.RawMessage `json:"fileIndex"`
+		Size         int64           `json:"size"`
+		SHA256       string          `json:"sha256"`
+	}
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	text := strings.Trim(strings.TrimSpace(string(w.FileIndex)), `"`)
+	var index uint64
+	if len(w.FileIndex) != 0 && string(w.FileIndex) != "null" {
+		v, err := strconv.ParseUint(text, 10, 64)
+		if err != nil {
+			return fmt.Errorf("fileIndex %q is not a decimal integer: %w", text, err)
+		}
+		index = v
+	}
+	*i = Identity{w.Path, w.VolumeSerial, index, w.Size, w.SHA256}
+	return nil
 }
 
 // Observe reads the identity through a single handle opened with full sharing, so a probe

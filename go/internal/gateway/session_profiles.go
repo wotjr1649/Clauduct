@@ -296,6 +296,13 @@ func (s *SessionProfiles) Candidate(profile SessionProfile, projects string, fin
 	return next, nil
 }
 
+// resumeKey names one native process's resume attempt of one session: another process that
+// owns the session registers on its own terms and does not inherit a failed attempt's check.
+type resumeKey struct {
+	process processKey
+	session string
+}
+
 // profileState is per native process, not per gateway (#319 decision 18c): one launch can
 // run several native processes at once (a /fork copy, a dispatched job, a respawned worker),
 // each with its own current session. A hook names its native process; one that does not
@@ -318,7 +325,7 @@ type profileState struct {
 	// resumeIntent is the pair a known session's resume attempt must find on the transcript it
 	// registers. It outlives a failed attempt, so the source-less registration a prompt hook
 	// repeats gets the same check, and only a successful registration clears it.
-	resumeIntent map[string]bridge.Pair
+	resumeIntent map[resumeKey]bridge.Pair
 	// restored are sessions added by RestoreSessionProfiles with the pair each was saved on:
 	// known before any registration, yet not the launch's own first session. Their resume
 	// meets the start-pair check whatever order registrations arrive in, against the session's
@@ -477,9 +484,9 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			// Kept until a registration of this session succeeds: a failed attempt must not
 			// turn the repeat the prompt hook sends (no source) into an unchecked one.
 			if p.resumeIntent == nil {
-				p.resumeIntent = make(map[string]bridge.Pair)
+				p.resumeIntent = make(map[resumeKey]bridge.Pair)
 			}
-			p.resumeIntent[session] = want
+			p.resumeIntent[resumeKey{process, session}] = want
 		}
 		if reconnect {
 			current, err := p.store.Candidate(*known, g.delegations.projects, true, g.selection)
@@ -496,7 +503,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		}
 		resumePair = &want
 	}
-	if intent, kept := p.resumeIntent[session]; resumePair == nil && kept && p.profiles[session] != nil {
+	if intent, kept := p.resumeIntent[resumeKey{process, session}]; resumePair == nil && kept && p.profiles[session] != nil {
 		resumePair = &intent // an earlier resume attempt of this session has not succeeded yet
 	}
 	if known := p.profiles[session]; known != nil {
@@ -518,7 +525,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			}
 		}
 		*known = next
-		delete(p.resumeIntent, session)
+		delete(p.resumeIntent, resumeKey{process, session})
 		p.take(process, session)
 		return nil
 	}
@@ -809,7 +816,11 @@ func (g *Gateway) ReleaseIdleSessionProfiles(keep []string) error {
 		delete(p.profiles, session)
 		delete(p.owner, session)
 		delete(p.ready, session)
-		delete(p.resumeIntent, session)
+		for key := range p.resumeIntent {
+			if key.session == session {
+				delete(p.resumeIntent, key)
+			}
+		}
 		delete(p.registrants, session)
 		delete(p.users, session)
 		for process, current := range p.slots {

@@ -163,8 +163,10 @@ func VersionOfImage(dir string, img NativeImage) (NativeImage, error) {
 
 // NativeImage is the exact image a process runs.
 type NativeImage struct {
-	PID     uint32 `json:"pid"`
-	Created int64  `json:"created"` // UnixNano, as ProcessStatus takes it
+	PID uint32 `json:"pid"`
+	// Created is UnixNano, as ProcessStatus takes it. A JSON STRING: it exceeds 2^53, which a JS number
+	// cannot hold. Readers accept a string; the Go app reader also accepts a number.
+	Created int64 `json:"created,string"`
 	// Identity.Path is the image's current name, which differs from the path the process was
 	// started from after native's updater renamed it.
 	Identity Identity `json:"identity"`
@@ -177,6 +179,9 @@ type NativeImage struct {
 	// process ended first; only the acquisition checks stand, and a final judge may accept the link
 	// only together with a drained, quiet namespace record covering the step). Every link has one.
 	PostCheck string `json:"postCheck,omitempty"`
+	// AcquiredPath is the path the image was acquired under, when the verified mapped name that is
+	// Identity.Path differs from it (the running image was renamed while it was hashed).
+	AcquiredPath string `json:"acquiredPath,omitempty"`
 	// Acquirer is the process that made this link (the one that ran AcquireMappedImage and hashed):
 	// the Go test or product process for an in-process link, the identity helper for the helper's result.
 	Acquirer *Acquirer `json:"acquirer,omitempty"`

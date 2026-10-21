@@ -20,11 +20,14 @@
 //	  "pid": <uint32>,                      echo of the argument
 //	  "createdUnixNano": "<decimal>",       echo of the argument, as a string
 //	  "etwKey": "<string>",                 echo of the optional 5th argument, "" when absent
-//	  "result": { "pid": <uint32>, "created": <int64 UnixNano>, "version": "<catalog version>",
-//	              "identity": { "path", "volumeSerial", "fileIndex" (uint64), "size", "sha256" },
+//	  "result": { "pid": <uint32>, "created": "<decimal UnixNano>", "version": "<catalog version>",
+//	              "identity": { "path", "volumeSerial": <uint32>, "fileIndex": "<decimal uint64>", "size": <int64>, "sha256" },
+//	              "acquiredPath": "<path>",   // optional: only when the verified mapped name differs from the acquisition path
+//	              "postCheck", "acquirer", "bindStartUnixNano", "bindEndUnixNano", "sectionHeldMs",
 //	              "createdUnixNano": "<decimal>", "etwKey": "<string>" },     // present when ok
+//	                                         // created and fileIndex are decimal STRINGS (they exceed 2^53)
 //	  "error": "<message>",                 // present when not ok
-//	  "errorKind": "process-exited" | "module-not-ready" | "changed" | "other"   // present when not ok
+//	  "errorKind": "process-exited" | "module-not-ready" | "hold-expired" | "changed" | "other"   // present when not ok
 //	}
 //
 // "process-exited" and "module-not-ready" are failures to ACQUIRE the image (INCONCLUSIVE, exit 3):

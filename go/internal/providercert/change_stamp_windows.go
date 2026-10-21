@@ -457,6 +457,9 @@ func holdFile(path string, located Identity) (*fileHold, ChangeStamp, error) {
 // converts as (ticks - 621355968000000000) * 100; a FILETIME converts as (ft - 116444736000000000) * 100.
 func wallNow() int64 { return time.Now().UnixNano() }
 
+// afterSignalSeam, set only by tests, runs after the last change-signal read, before the final expiry check.
+var afterSignalSeam func()
+
 // hashHeld hashes the whole file through the held handle (the handle that was opened while the
 // process was alive, so a rename of the NAME afterwards is irrelevant), within maxSectionHold, and
 // cross-checks the stamp: a difference is ErrNativeChanged (a diagnostic; the section already made
@@ -484,7 +487,7 @@ func hashHeld(f *fileHold, before ChangeStamp, path string) (Identity, string, i
 	// process maps NOW must reach the held file object, which must still be a file. Concurrent
 	// activations of the updater can move names between the acquisition checks and the end of the
 	// hash; a mismatch is never linked.
-	postCheck, err := f.confirmStillMapped()
+	postCheck, mapped, err := f.confirmStillMapped()
 	if err != nil {
 		return Identity{}, "", 0, err
 	}
@@ -497,6 +500,19 @@ func hashHeld(f *fileHold, before ChangeStamp, path string) (Identity, string, i
 	}
 	if err := namespaceCheck(); err != nil {
 		return Identity{}, "", 0, err
+	}
+	if afterSignalSeam != nil {
+		afterSignalSeam()
+	}
+	// The hold may have expired while the signal was read: nothing is accepted after either deadline.
+	// use() records the process exit and checks both deadlines under the hold's lock.
+	if err := f.use(func(syscall.Handle) error { return nil }); err != nil || f.expiredNow() {
+		return Identity{}, "", 0, inconclusiveKind(ErrHoldExpired, "the image hold expired while the change signal was read")
+	}
+	// The name the process maps NOW (verified by the post-hash check) is the identity's path; the
+	// acquisition-time name is kept on the NativeImage (AcquiredPath) when it differs.
+	if mapped != "" {
+		path = mapped
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {

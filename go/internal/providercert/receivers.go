@@ -21,6 +21,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -354,7 +355,7 @@ func (o *Observer) canaries() []Canary {
 }
 
 func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority string) {
-	seen := Seen{At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, r.URL.Path),
+	seen := Seen{At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
 		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
@@ -792,3 +793,14 @@ func (c *prefixedConn) Read(b []byte) (int, error) {
 // maxScannedBody bytes. It is for bodies the probe reads itself, such as INTENDED's backend
 // calls.
 func Scan(r io.Reader, canaries []Canary) ([]string, error) { return scan(r, canaries) }
+
+// rawRequestPath is the request path exactly as it was sent: url.RawPath when the parser kept it,
+// otherwise the escaped form of the decoded path. EscapedPath alone is not enough: it returns
+// RawPath only when that is a valid encoding, and otherwise re-escapes the DECODED path, which turns
+// an escaped slash (%2F) into a real segment separator.
+func rawRequestPath(u *url.URL) string {
+	if u.RawPath != "" {
+		return u.RawPath
+	}
+	return u.EscapedPath()
+}

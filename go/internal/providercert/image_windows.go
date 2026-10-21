@@ -28,10 +28,35 @@ var (
 	ErrInconclusiveNativeIdentity = errors.New("INCONCLUSIVE_NATIVE_IDENTITY")
 	// ErrNativeChanged means the image, its name or its file changed while it was observed.
 	ErrNativeChanged = errors.New("INVALID_NATIVE_CHANGED")
+	// ErrProcessExited marks an acquisition that failed because the process was already gone (or
+	// went before its main module could be read). It is a failure to ACQUIRE evidence, not
+	// evidence of another image, and it wraps ErrInconclusiveNativeIdentity.
+	ErrProcessExited = errors.New("process exited")
+	// ErrModuleNotReady marks a process that stayed alive but whose main module was not readable
+	// within the bounded retry (still starting). Also an acquisition failure only.
+	ErrModuleNotReady = errors.New("main module not ready")
+	// ErrHoldExpired marks an acquisition whose image hold ran out (the hash did not finish within the
+	// section's lifetime, or after the process's exit deadline, or the hold was released). It says
+	// NOTHING about which image ran: it is an acquisition failure like ErrProcessExited, transient,
+	// resolvable by a later proof of the same generation, never evidence and never "other".
+	ErrHoldExpired = errors.New("image hold expired")
 )
 
+// inconclusiveKind is an INCONCLUSIVE_NATIVE_IDENTITY that also carries its acquisition kind.
+func inconclusiveKind(kind error, format string, args ...any) error {
+	return fmt.Errorf("%w: %w: %s", ErrInconclusiveNativeIdentity, kind, fmt.Sprintf(format, args...))
+}
+
+// inconclusive is an INCONCLUSIVE_NATIVE_IDENTITY. An error argument that is (or wraps) ErrHoldExpired
+// gives the result that kind, so an expiry stays transient however many layers wrapped it with %v.
 func inconclusive(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrInconclusiveNativeIdentity, fmt.Sprintf(format, args...))
+	msg := fmt.Sprintf(format, args...)
+	for _, a := range args {
+		if e, ok := a.(error); ok && errors.Is(e, ErrHoldExpired) {
+			return fmt.Errorf("%w: %w: %s", ErrInconclusiveNativeIdentity, ErrHoldExpired, msg)
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrInconclusiveNativeIdentity, msg)
 }
 
 var (
@@ -99,6 +124,43 @@ func BuildCatalog(dir string) (*Catalog, []VersionFile, error) {
 	return c, files, nil
 }
 
+// VersionOfImage names the version of a hashed image from the versions directory without hashing
+// every version: a file of another size cannot have the image's bytes, so only the files whose size
+// equals the image's are hashed. The answer is the same as BuildCatalog's for this hash: exactly one
+// file with these bytes names the version; none, or several, are INCONCLUSIVE. The directory must be
+// readable and a candidate that cannot be observed fails (as it fails the catalog).
+func VersionOfImage(dir string, img NativeImage) (NativeImage, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return NativeImage{}, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			return NativeImage{}, fmt.Errorf("stat version %s: %w", e.Name(), err)
+		}
+		if info.Size() != img.Identity.Size {
+			continue
+		}
+		id, err := Observe(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return NativeImage{}, fmt.Errorf("observe version %s: %w", e.Name(), err)
+		}
+		if id.SHA256 == img.Identity.SHA256 {
+			names = append(names, e.Name())
+		}
+	}
+	if len(names) != 1 {
+		return NativeImage{}, inconclusive("image %s is not in the version catalog", filepath.Base(img.Identity.Path))
+	}
+	img.Version = names[0]
+	return img, nil
+}
+
 // NativeImage is the exact image a process runs.
 type NativeImage struct {
 	PID     uint32 `json:"pid"`
@@ -107,6 +169,25 @@ type NativeImage struct {
 	// started from after native's updater renamed it.
 	Identity Identity `json:"identity"`
 	Version  string   `json:"version"`
+	// SectionHeldMS is how long the image section protecting the file was held until the hash
+	// finished (zero when no section was used). It is bounded by maxSectionHold.
+	SectionHeldMS int64 `json:"sectionHeldMs,omitempty"`
+	// PostCheck is what the check after the hash found: PostCheckAliveVerified (the process was alive
+	// and the name it maps then reached the held file object) or PostCheckExitedBeforeCheck (the
+	// process ended first; only the acquisition checks stand, and a final judge may accept the link
+	// only together with a drained, quiet namespace record covering the step). Every link has one.
+	PostCheck string `json:"postCheck,omitempty"`
+	// Acquirer is the process that made this link (the one that ran AcquireMappedImage and hashed):
+	// the Go test or product process for an in-process link, the identity helper for the helper's result.
+	Acquirer *Acquirer `json:"acquirer,omitempty"`
+	// BindStart and BindEnd bound the binding interval of this link, in Unix nanoseconds of the system
+	// wall clock (UTC, 100 ns resolution; see wallNow): BindStart is read immediately before the first
+	// mapped-name read (kept across retries), BindEnd immediately before success is returned, after the
+	// last change-signal check. A judge accepting the link needs a drained, quiet namespace record that
+	// covers [BindStart, BindEnd] entirely, for alive-verified and exited-before-check links alike.
+	// Both are encoded as JSON STRINGS: a Unix nanosecond count exceeds 2^53, which a JS number cannot hold.
+	BindStart int64 `json:"bindStartUnixNano,string,omitempty"`
+	BindEnd   int64 `json:"bindEndUnixNano,string,omitempty"`
 }
 
 const (
@@ -190,23 +271,43 @@ func processStill(h syscall.Handle, created int64) error {
 func mappedImagePath(h syscall.Handle) (string, error) {
 	var modules [1]uintptr
 	var needed uint32
-	// A process still starting has no module list yet (ERROR_PARTIAL_COPY): wait for it briefly.
+	buf := make([]uint16, 32768)
+	// A process still starting has no module list yet (ERROR_PARTIAL_COPY), and in the first
+	// milliseconds the first module can still be ntdll.dll, not the executable: both are "not ready
+	// yet", never evidence about which image runs. Wait for the executable briefly.
+	var lastErr error
 	for attempt := 0; ; attempt++ {
 		r, _, err := enumProcessModulesEx.Call(uintptr(h), uintptr(unsafe.Pointer(&modules[0])), unsafe.Sizeof(modules), uintptr(unsafe.Pointer(&needed)), listModulesAll)
+		lastErr = err
 		if r != 0 && needed != 0 && modules[0] != 0 {
-			break
+			n, _, nameErr := getMappedFileNameW.Call(uintptr(h), modules[0], uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
+			if n != 0 && int(n) < len(buf) {
+				device := syscall.UTF16ToString(buf[:n])
+				if isMainModuleName(device) {
+					return deviceToDOS(device)
+				}
+				lastErr = fmt.Errorf("the first module is %s, not the executable yet", filepath.Base(device))
+			} else {
+				lastErr = nameErr
+			}
+		}
+		// A process that has already exited will never get a module list: stop at once instead of
+		// retrying, and say so (a distinct kind from a process that is alive but not ready yet).
+		if wait, werr := syscall.WaitForSingleObject(h, 0); werr == nil && wait == syscall.WAIT_OBJECT_0 {
+			return "", inconclusiveKind(ErrProcessExited, "the process exited before its main module was readable")
 		}
 		if attempt == 100 {
-			return "", inconclusive("main module unavailable: %v", err)
+			return "", inconclusiveKind(ErrModuleNotReady, "main module unavailable while the process is alive: %v", lastErr)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	buf := make([]uint16, 32768)
-	n, _, err := getMappedFileNameW.Call(uintptr(h), modules[0], uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-	if n == 0 || int(n) >= len(buf) {
-		return "", inconclusive("mapped file name unavailable: %v", err)
-	}
-	return deviceToDOS(syscall.UTF16ToString(buf[:n]))
+}
+
+// isMainModuleName is false for a module that cannot be the executable: a DLL (in a starting
+// process the module list may begin with ntdll.dll). The executable is the one module whose name
+// does not end in .dll; after native's updater renamed it, it is claude.exe.old.<ts>.<n>.
+func isMainModuleName(device string) bool {
+	return !strings.HasSuffix(strings.ToLower(device), ".dll")
 }
 
 // deviceToDOS turns \Device\HarddiskVolumeN\... into a drive-letter path. A device without a

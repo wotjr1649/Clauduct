@@ -49,7 +49,7 @@ Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는
 ## 3. 패키지 구조
 
 ```text
-go.mod                        module github.com/wotjr1649/Clauduct, go 1.27.0 — 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
+go.mod                        module github.com/wotjr1649/Clauduct, go 1.27.2 — 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
 go/                           패키지 경로는 그대로 github.com/wotjr1649/Clauduct/go/...
 ├── cmd/clauduct/             제품 launcher. 첫 인자·실행 파일 이름으로 hook·렌더러·--dev도 맡는다
 ├── internal/{hookcmd,devcmd} hook / --dev(version·doctor·usage·probe). v0.3.x까지 별도 바이너리

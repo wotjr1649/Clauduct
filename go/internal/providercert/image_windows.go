@@ -179,6 +179,16 @@ type NativeImage struct {
 	// process ended first; only the acquisition checks stand, and a final judge may accept the link
 	// only together with a drained, quiet namespace record covering the step). Every link has one.
 	PostCheck string `json:"postCheck,omitempty"`
+	// HashSource is "step-manifest" for a fast link whose bytes were not hashed for this generation:
+	// it names the file object (FileObject) and the judge inherits the version and SHA256 of the hashed
+	// manifest entry for that file object; Identity.SHA256 is empty then. Empty for a hashed link.
+	HashSource string `json:"hashSource,omitempty"`
+	// FileObject, MappedName, ImagePath and CaptureMS describe a fast link: the file object the process
+	// maps, the NT mapped name and the DOS image path it was read from, and the capture time in ms.
+	FileObject *FileObject `json:"fileObject,omitempty"`
+	MappedName string      `json:"mappedName,omitempty"`
+	ImagePath  string      `json:"imagePath,omitempty"`
+	CaptureMS  int64       `json:"captureMs,omitempty"`
 	// AcquiredPath is the path the image was acquired under, when the verified mapped name that is
 	// Identity.Path differs from it (the running image was renamed while it was hashed).
 	AcquiredPath string `json:"acquiredPath,omitempty"`
@@ -274,6 +284,12 @@ func processStill(h syscall.Handle, created int64) error {
 
 // mappedImagePath is the DOS path of the file the process's main module is mapped from.
 func mappedImagePath(h syscall.Handle) (string, error) {
+	_, path, err := mappedImageNames(h)
+	return path, err
+}
+
+// mappedImageNames preserves the NT mapped name and converts that same query's result to DOS.
+func mappedImageNames(h syscall.Handle) (string, string, error) {
 	var modules [1]uintptr
 	var needed uint32
 	buf := make([]uint16, 32768)
@@ -289,7 +305,8 @@ func mappedImagePath(h syscall.Handle) (string, error) {
 			if n != 0 && int(n) < len(buf) {
 				device := syscall.UTF16ToString(buf[:n])
 				if isMainModuleName(device) {
-					return deviceToDOS(device)
+					path, err := deviceToDOS(device)
+					return device, path, err
 				}
 				lastErr = fmt.Errorf("the first module is %s, not the executable yet", filepath.Base(device))
 			} else {
@@ -299,10 +316,10 @@ func mappedImagePath(h syscall.Handle) (string, error) {
 		// A process that has already exited will never get a module list: stop at once instead of
 		// retrying, and say so (a distinct kind from a process that is alive but not ready yet).
 		if wait, werr := syscall.WaitForSingleObject(h, 0); werr == nil && wait == syscall.WAIT_OBJECT_0 {
-			return "", inconclusiveKind(ErrProcessExited, "the process exited before its main module was readable")
+			return "", "", inconclusiveKind(ErrProcessExited, "the process exited before its main module was readable")
 		}
 		if attempt == 100 {
-			return "", inconclusiveKind(ErrModuleNotReady, "main module unavailable while the process is alive: %v", lastErr)
+			return "", "", inconclusiveKind(ErrModuleNotReady, "main module unavailable while the process is alive: %v", lastErr)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

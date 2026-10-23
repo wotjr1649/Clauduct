@@ -157,7 +157,9 @@ func AcquireMappedImage(pid uint32, created int64) (MappedImage, error) {
 	if created != 0 && c.Nanoseconds() != created {
 		return MappedImage{}, inconclusive("creation time differs: the process number was reused")
 	}
-	if wait, werr := syscall.WaitForSingleObject(h, 0); werr != nil || wait != syscall.WAIT_TIMEOUT {
+	if alive, err := captureAlive(h); err != nil {
+		return MappedImage{}, err
+	} else if !alive {
 		return MappedImage{}, inconclusiveKind(ErrProcessExited, "process exited before its image could be read")
 	}
 	// The name is read, the file located and opened by that name, the file's image section is created,
@@ -199,7 +201,10 @@ func AcquireMappedImage(pid uint32, created int64) (MappedImage, error) {
 			if acquireSeamAfterHold != nil {
 				acquireSeamAfterHold(attempt) // test seam: between the hold and the second name read
 			}
-			if wait, werr := syscall.WaitForSingleObject(h, 0); werr != nil || wait != syscall.WAIT_TIMEOUT {
+			if alive, err := captureAlive(h); err != nil {
+				hold.close()
+				return MappedImage{}, err
+			} else if !alive {
 				hold.close()
 				return MappedImage{}, inconclusiveKind(ErrProcessExited, "process exited before its image file was held")
 			}
@@ -226,7 +231,9 @@ func AcquireMappedImage(pid uint32, created int64) (MappedImage, error) {
 				}
 			}
 		}
-		if wait, werr := syscall.WaitForSingleObject(h, 0); werr != nil || wait != syscall.WAIT_TIMEOUT {
+		if alive, err := captureAlive(h); err != nil {
+			return MappedImage{}, err
+		} else if !alive {
 			return MappedImage{}, inconclusiveKind(ErrProcessExited, "process exited while its image was acquired")
 		}
 	}
@@ -293,12 +300,12 @@ func (f *fileHold) confirmStillMapped() (postCheck, mapped string, err error) {
 			postCheck = PostCheckExitedBeforeCheck
 			return nil
 		}
-		wait, werr := syscall.WaitForSingleObject(f.proc, 0)
+		alive, werr := captureAlive(f.proc)
 		if werr != nil {
-			result = inconclusive("the process cannot be waited on after the hash: %v", werr)
+			result = werr
 			return nil
 		}
-		if wait != syscall.WAIT_TIMEOUT {
+		if !alive {
 			postCheck = PostCheckExitedBeforeCheck
 			return nil
 		}

@@ -1,8 +1,10 @@
 package app
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -22,22 +24,54 @@ var nativeEventModule string
 // as its hooks do.
 // catalogue is the session's account list, the same snapshot the gateway routes with.
 func prepareNativeEvents(link string, catalogue *bridge.Catalogue) (directory string, err error) {
-	directory, err = os.MkdirTemp("", "clauduct-native-events-")
-	if err != nil {
-		return "", err
+	return prepareNativeEventsAt("", link, catalogue)
+}
+
+// nativeEventsPrefix names every events directory; a regenerated resident accepts no other.
+const nativeEventsPrefix = "clauduct-native-events-"
+
+// prepareNativeEventsAt writes the plugin into directory, or into a new one when it is empty.
+// A regenerated background resident passes the directory its native job was dispatched with
+// (#319 decision 18c): the job names it and cannot be told another. Only a direct child of the
+// temporary directory with the events prefix is accepted.
+func prepareNativeEventsAt(directory, link string, catalogue *bridge.Catalogue) (string, error) {
+	var err error
+	fresh := directory == ""
+	if fresh {
+		if directory, err = os.MkdirTemp("", nativeEventsPrefix); err != nil {
+			return "", err
+		}
+	} else {
+		if !eventsDirValid(directory) {
+			return "", errors.New("NATIVE_EVENTS_DIRECTORY_INVALID")
+		}
+		if err = os.Mkdir(directory, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return "", err
+		}
 	}
 	for _, name := range []string{".claude-plugin", "hooks", "receipts"} {
-		if err = os.Mkdir(filepath.Join(directory, name), 0700); err != nil {
+		if err = os.Mkdir(filepath.Join(directory, name), 0700); err != nil && (fresh || !errors.Is(err, os.ErrExist)) {
 			return directory, err
 		}
 	}
 	files := map[string]string{
 		".claude-plugin/plugin.json": `{"name":"clauduct-native-events","version":"1.0.0","description":"Per-session native child identity and terminal receipts for Clauduct status","author":{"name":"Clauduct"}}`,
 		"hooks/hooks.json":           `{"modules":["./events.mjs"]}`,
-		"hooks/events.mjs":           nativeEventSource(filepath.Join(directory, "receipts"), link, catalogue),
+		nativeEventsModule:           nativeEventSource(filepath.Join(directory, "receipts"), link, catalogue),
 	}
 	for name, body := range files {
-		if err = os.WriteFile(filepath.Join(directory, name), []byte(body), 0600); err != nil {
+		path, data := filepath.Join(directory, name), []byte(body)
+		if !fresh {
+			current, readErr := os.ReadFile(path)
+			if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+				return directory, readErr
+			}
+			// Native reloads hooks on writes, losing the progress of an active turn.
+			if readErr == nil && bytes.Equal(current, data) {
+				continue
+			}
+		}
+		if err = os.WriteFile(path, data, 0600); err != nil {
 			return directory, err
 		}
 	}
@@ -94,4 +128,88 @@ func prepareNativePDF(directory, hook string) (string, error) {
 		return "", closeErr
 	}
 	return bin, nil
+}
+
+// nativeEventsModule is the plugin's hook module, relative to the plugin directory: a module
+// native's own runtime loads, not a Node program.
+const nativeEventsModule = "hooks/events.mjs"
+
+func eventsDirValid(dir string) bool {
+	base := filepath.Base(dir)
+	return filepath.Dir(dir) == filepath.Clean(os.TempDir()) && strings.HasPrefix(base, nativeEventsPrefix) && len(base) > len(nativeEventsPrefix)
+}
+
+var errEventsPathRefused = errors.New("NATIVE_EVENTS_PATH_REFUSED")
+
+func removeEventsDir(dir string) error {
+	return removeEventsDirChecked(dir, nil)
+}
+
+func removeEventsDirChecked(dir string, recheck func() error) error {
+	if !eventsDirValid(dir) {
+		return errEventsPathRefused
+	}
+	info, err := eventsPathInfo(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return errEventsPathRefused
+	}
+	if err := filepath.WalkDir(dir, func(path string, _ os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := eventsPathInfo(path)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return errEventsPathRefused
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	root, err := os.OpenRoot(filepath.Dir(dir))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	base := filepath.Base(dir)
+	f, err := root.Open(base)
+	if err != nil {
+		return err
+	}
+	entries, readErr := f.ReadDir(-1)
+	closeErr := f.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return err
+	}
+	if recheck != nil {
+		if err := recheck(); err != nil {
+			return err
+		}
+	}
+	// Keep the owner until every payload entry is gone, so a failed sweep can retry.
+	for _, entry := range entries {
+		if entry.Name() != eventsOwnerFile {
+			if err := root.RemoveAll(filepath.Join(base, entry.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	if err := root.Remove(filepath.Join(base, eventsOwnerFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := root.Remove(base); err != nil {
+		return err
+	}
+	if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("NATIVE_EVENTS_DELETE_INCOMPLETE")
+	}
+	return nil
 }

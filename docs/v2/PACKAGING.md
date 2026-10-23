@@ -9,9 +9,10 @@
 | 파일 | 하는 일 |
 |---|---|
 | `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·PDF 렌더러·`--dev` 명령이다 |
+| `clauduct-probe.exe` | **v0.6.11부터.** provider-control 진단 도구다(#319, #320). `clauduct --dev --probe provider-control`이 `clauduct.exe`와 같은 디렉터리에서 실행한다. launch는 이 파일을 쓰지 않으므로 없어도 실행된다(결정 17). `clauduct.exe`는 SHA-256을 `go/cmd/clauduct/probe.sha256`에서 내장하고 그 digest의 probe만 실행한다. 그래서 `clauduct.exe`와 한 쌍으로 내려받아 검증하고 설치한다 |
 | `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라간 `clauduct.exe`의 바이트 동일 사본. v0.5.0부터 올리지 않는다(#136). 새 설치·업데이트는 받지 않는다(아래) |
 
-하나뿐이다(v0.4.0부터, #112). 별도로 설치하는 설정 파일·스크립트·데이터 디렉터리는 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`). 첫 인자의 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`·`--background-stop`)과 내부 `--clauduct-*` 역할은 제품이 처리한다. `--bg`·`--background`는 native에 전달하면서 연결 유지 프로세스를 시작한다. 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 전체 CLI 계약은 [ARCHITECTURE.md](ARCHITECTURE.md#4-cli-계약)를 따른다.
+제품 바이너리는 `clauduct.exe` 하나다(v0.4.0부터, #112). v0.6.11부터 그 옆에 진단 도구 `clauduct-probe.exe`가 한 쌍으로 선다. 별도로 설치하는 설정 파일·스크립트·데이터 디렉터리는 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`). 첫 인자의 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`·`--background-stop`)과 내부 `--clauduct-*` 역할은 제품이 처리한다. `--bg`·`--background`는 native에 전달하면서 연결 유지 프로세스를 시작한다. 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 전체 CLI 계약은 [ARCHITECTURE.md](ARCHITECTURE.md#4-cli-계약)를 따른다.
 
 **사본을 올렸던 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. v0.4.x의 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. **v0.5.0부터는 사본을 올리지 않는다.** 남은 0.3.x 설치의 `--update`는 `clauduct: release v0.5.0 does not carry clauduct-hook.exe, clauduct-dev.exe`로 멈추고 아무것도 바꾸지 않는다. 그 설치는 [README](../../README.md)의 설치 스크립트로 다시 설치한다. 설치 스크립트가 0.3.x의 세 파일을 `clauduct.exe` 하나로 바꾼다. 과거 릴리스의 자산은 그대로 둔다.
 
@@ -24,9 +25,19 @@
 
 | 필요한 것 | 왜 | 없으면 |
 |---|---|---|
-| `claude.exe` | 띄울 대상이다. `~/.local/bin` 우선, 그다음 PATH | `CLAUDE_NOT_FOUND`, 찾아본 경로를 함께 출력 |
+| `claude.exe` | 띄울 대상이다. `~/.local/bin` 우선, 그다음 PATH. 설치만 필요하고 Claude 계정 로그인·구독은 필요 없다 | `CLAUDE_NOT_FOUND`, 찾아본 경로를 함께 출력 |
 | `codex.exe` | **버전이 모든 요청의 header에 들어간다.** 없으면 보낼 것을 만들 수 없다 | 요청이 `CODEX_NOT_FOUND`로 거부된다. 세션은 시작되고 `--version`·`--help`는 정상 |
-| `~/.codex/auth.json` | ChatGPT 구독 credential. 읽기 전용으로만 접근한다 | 요청이 `CREDENTIAL_UNAVAILABLE_OR_EXPIRED`(503). `codex login`으로 회복 |
+| `~/.codex/auth.json` | ChatGPT 구독 credential. 읽기 전용으로만 접근한다 | 시작할 때 계정 모델 목록을 확인하지 못해 native를 띄우기 전에 끝난다: `ACCOUNT_MODEL_LIST_UNAVAILABLE: CREDENTIAL_UNAVAILABLE_OR_EXPIRED; …; run "codex login" (install the Codex CLI first if the codex command is not found), then start clauduct again`. 세션 중에 만료되면 요청이 503으로 거부되고 같은 안내가 붙는다. `codex login`으로 회복 |
+
+**Claude Code를 처음 실행하는 사람(2.1.296 실측).** native만 실행하면 테마 선택 다음에 로그인 방법 선택(Claude 구독·Console·3rd-party)이 나온다. Clauduct로 시작하면 이 단계가 없다. 테마 선택 → 보안 안내 → 폴더 신뢰를 거쳐 입력창으로 간다. native가 Clauduct gateway의 인증 설정을 받아 로그인 단계를 건너뛰기 때문이다. 입력창 머리글의 `API Usage Billing`은 native가 이 인증 방식에 붙이는 이름이다. 요청은 Codex 구독으로 가고 Anthropic에 과금되지 않는다.
+
+**Claude에도 로그인한 사람.** Agent View를 어디서 열었는지에 따라 다르다. Clauduct 세션 안의 Agent View(TUI의 `/background`·`/bg` 포함, v0.6.11 개발 브랜치)는 Clauduct가 띄운 native다. 거기서 새로 시작한 작업과 미리 띄우는 세션은 Clauduct의 `--settings`를 이어받아 Clauduct gateway를 쓴다. 2.1.300 합성 측정에서 미리 띄운 세션은 요청을 보내지 않았다. 반면 `--bg` job을 관리하려고 터미널에서 native `claude agents`나 `claude attach`를 직접 열면, 그 native는 Clauduct가 띄운 것이 아니므로 사용자의 Claude 로그인을 쓴다. 2.1.296 실측으로 확인한 것은 다음과 같다.
+- `claude agents`가 미리 띄우는 세션이 1토큰 확인 요청을 Anthropic에 1건 보낸다. 작업 폴더, `CLAUDE.md`, job 내용은 들어 있지 않다.
+- `claude attach`와 그 daemon은 시작 때 비추론 요청을 보낸다.
+- job의 모델 요청과 저장된 Reply는 Clauduct gateway로만 간다.
+- 직접 연 agents 화면에서 새 작업을 시작하면 그 작업은 Clauduct 밖 native 세션이다.
+
+자세한 분류는 [COMPATIBILITY](COMPATIBILITY.md)의 서비스 분류 표에 있다.
 
 **`codex.exe` 의존은 G7이 추가한 것이다.** 이 문서가 그것을 적는 이유는 REL03이 "Node adapter·.NET probe에 의존하지 않음"만 묻기 때문이다 — 그 둘은 실제로 없지만, **런타임 의존이 0이라는 뜻은 아니다.** 정직한 목록은 위의 셋이다.
 
@@ -61,7 +72,7 @@ go build -trimpath -o clauduct.exe      ./cmd/clauduct
 clauduct --dev --version
 # clauduct     <태그. 태그 없는 commit은 pseudo-version, 수정된 worktree는 끝에 +dirty>
 # commit       <40자 hash>
-# go           go1.27.1 windows/amd64
+# go           go1.27.2 windows/amd64
 ```
 
 worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다. **그런 빌드는 릴리스 후보가 아니다.**
@@ -92,7 +103,11 @@ $env:CGO_ENABLED = '0'
 # 겪었다.
 go build -trimpath -o ../../release-assets/clauduct.exe      ./cmd/clauduct
 # v0.4.x만(1장): 0.3.x의 --update가 받을 수 있도록 같은 바이트를 옛 이름으로도 뒀다.
-# v0.5.0부터 사본은 없다(#136). 자산은 clauduct.exe·install.ps1·uninstall.ps1·SHA256SUMS 넷이다.
+# v0.5.0부터 사본은 없다(#136). v0.6.11부터 같은 트리에서 진단 도구 probe도 빌드한다. VCS 스탬프 없이
+# 빌드하고(go/README.md), 그 SHA-256이 이 트리의 go/cmd/clauduct/probe.sha256과 같아야 한다.
+# 다르면 그 clauduct.exe의 provider-control 진단이 probe를 거부하므로 빌드 검사(build-release.mjs)가 PROBE_PAIR_MISMATCH로 멈춘다.
+go build -trimpath -buildvcs=false -o ../../release-assets/clauduct-probe.exe ./cmd/clauduct-probe
+# 자산은 clauduct.exe·clauduct-probe.exe·install.ps1·uninstall.ps1·SHA256SUMS 다섯이다(v0.6.10까지는 probe 없는 넷).
 
 # 버전이 태그와 같고 스탬프에 +dirty가 없는지 확인한다. 어긋나면 그 빌드는 릴리스 후보가 아니다.
 $version = & ../../release-assets/clauduct.exe --dev --version
@@ -105,13 +120,14 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 #    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
 # 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
 #    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
-# 4. gh release create $tag clauduct.exe install.ps1 uninstall.ps1 SHA256SUMS
-#    v0.4.x는 사본 둘을 더한 여섯 개였다(1장). 태그별 자산 집합은 출하 검사가 태그로 정한다.
+# 4. gh release create $tag clauduct.exe clauduct-probe.exe install.ps1 uninstall.ps1 SHA256SUMS
+#    v0.6.10까지는 probe 없이 넷, v0.4.x는 사본 둘을 더한 여섯 개였다(1장). 태그별 자산 집합은 출하 검사가 태그로 정한다.
 ```
 
 | 자산 이름 | 왜 이 이름이어야 하나 |
 |---|---|
 | `clauduct.exe` | `update.Binaries`가 이 이름으로 찾는다. 없으면 이름으로 말하고 멈춘다. **v0.4.x는 `clauduct-hook.exe`·`clauduct-dev.exe`도 같은 바이트로 올리고 `SHA256SUMS`에 셋을 적었다** — 0.3.x의 `update.Binaries`가 세 이름을 모두 요구한다. v0.5.0부터는 이 이름 하나다 |
+| `clauduct-probe.exe` | v0.6.11부터. `SHA256SUMS`에 적는다. `install.ps1`과 `--update`는 이 파일이 `SHA256SUMS`에 있을 때만 받고, 있으면 `clauduct.exe`와 둘 다 검증한 뒤에야 한 쌍으로 교체한다. 없는 릴리스(`-Tag`로 되돌린 v0.6.10 이전)로 설치하면 남아 있던 probe를 지운다 |
 | `install.ps1` · `uninstall.ps1` | `releases/latest/download/install.ps1`이 동작하게 하는 것이 이 자산이다. `--update`는 이 둘을 건드리지 않는다 — 설치된 집합이 아니다 |
 | `SHA256SUMS` | 유일한 무결성 근거다. 서명이 없으므로 여기에 적힌 digest와 릴리스 API가 말하는 digest **둘 다** 대조한다. **스크립트 둘도 여기 적는다** — 받아서 실행하라고 안내하는 파일이므로 대조할 수단이 있어야 한다. `update.Sums`는 이름으로 찾으므로 추가 항목은 무시된다 |
 
@@ -152,7 +168,7 @@ backend가 다시 거부하면 출하를 멈추고 COMPATIBILITY 원장 행을 �
 
 ## 5. 설치
 
-PATH에 있는 디렉터리에 **`clauduct.exe` 하나**를 복사한다. 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`는
+PATH에 있는 디렉터리에 **`clauduct.exe`**(v0.6.11부터는 `clauduct-probe.exe`와 한 쌍)를 복사한다. 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`는
 교체가 끝난 뒤 지운다(1장). hook은 실행 중인 `clauduct.exe` 자신이라 옆에 둘 것이 없다.
 
 **그 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 안 된다.** MSYS/Git Bash의 PATH 탐색은 같은
@@ -203,7 +219,7 @@ pwsh -NoProfile -File scripts\install.ps1 -Tag v0.5.5       # 태그 고정
 pwsh -NoProfile -File scripts\install.ps1 -FromPath .\dist  # 로컬 빌드 설치 (clauduct.exe + SHA256SUMS 필요)
 pwsh -NoProfile -File scripts\install.ps1 -NoPathUpdate     # PATH를 건드리지 않는다
 
-pwsh -NoProfile -File scripts\uninstall.ps1              # clauduct.exe, 0.3.x의 두 이름, --update가 남긴 *.old
+pwsh -NoProfile -File scripts\uninstall.ps1              # clauduct.exe, clauduct-probe.exe, 0.3.x의 두 이름, --update가 남긴 *.old
 pwsh -NoProfile -File scripts\uninstall.ps1 -Purge       # %TEMP%\clauduct 진단 파일까지
 pwsh -NoProfile -File scripts\uninstall.ps1 -RemovePath  # 그 디렉터리에 다른 실행 파일이 없을 때만
 ```
@@ -290,7 +306,7 @@ clauduct --update --yes  # 무인
 digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말하고 끝난다. 릴리스 API가 자기 digest를
 싣고 있으면 그것과도 대조한다 — 둘이 일치하는 것은 값이 적지만, **둘이 다르면 멈출 이유**다.
 
-교체 대상은 `clauduct.exe` 하나다(v0.4.0). 실행 중인 exe는 덮어쓸 수
+교체 대상은 `clauduct.exe`이고, 릴리스의 `SHA256SUMS`가 `clauduct-probe.exe`를 적었으면 그것도 같이다(v0.6.11부터). 둘 다 내려받아 digest를 확인한 뒤에야 교체를 시작하고, 어느 쪽이든 실패하면 둘 다 원래대로 되돌리며 새로 놓은 probe는 지운다. 적지 않은 릴리스면 남아 있던 probe를 지우고 확인 질문 전에 그렇게 말한다. 이미 최신인지는 probe의 digest도 본다. **probe가 없는 릴리스의 `--update`는 probe를 모르므로** v0.6.10 이하에서 처음 업데이트하면 `clauduct.exe`만 바뀐다. launch는 probe 없이 동작하고, 진단 도구가 필요하면 그 `clauduct.exe`의 `clauduct --update`를 한 번 더 실행해 probe를 놓는다(`install.ps1`은 한 번에 둘 다 놓는다). 실행 중인 exe는 덮어쓸 수
 없지만 이름은 바꿀 수 있으므로 `*.old`로 옮기고 새 파일을 쓴다. 중간에 실패하면 옮긴 것을 전부
 되돌린다. 성공 후 `clauduct.exe.old`는 **이 프로세스가 끝나야** 지울 수 있고, 그래서 지우라고
 출력한다. 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여준다 — 업데이트 전에 시작한 세션은 그 뒤 hook을 잃으므로 다시 시작한다. **v0.6.4부터** 교체가 끝나면 새로 설치한 바이너리의 `--dev --sync-settings`를 최소 환경·10초 상한으로 실행하고, 이 명령이 없는 대상 버전은 `--dev --init-settings`로 대신한다. 동기화가 실패하면 바이너리는 설치됐고 설정 동기화만 실패했다고 알리며 바이너리를 되돌리지 않는다. `scripts/install.ps1`도 settings.json이 이미 있으면 설치한 바이너리로 같은 동기화를 실행한다.

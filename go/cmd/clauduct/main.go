@@ -17,9 +17,11 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -33,15 +35,39 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/update"
 )
 
+// probeSHA256 is the SHA-256 of the clauduct-probe.exe built from this source with
+// -trimpath -buildvcs=false (go/README.md): the only probe this build's diagnostics run or
+// trust. A launch never needs it.
+//
+//go:embed probe.sha256
+var probeSHA256 string
+
 func main() {
+	app.ExpectedProbeSHA256 = strings.TrimSpace(probeSHA256)
 	os.Exit(run())
 }
 
 func run() int {
 	// The roles this file plays for a running session come first: they are not launches,
 	// and a hook has the client's timeout to answer in.
+	if code, ok := residentRelay(os.Args, os.Stderr); ok {
+		return code
+	}
+	if len(os.Args) == 3 && os.Args[1] == "--clauduct-background-key" {
+		// A background job whose resident died asks for its key first when it wakes: a dead
+		// resident's record lets this start one again on the same port and link (#319 decision 18c).
+		if _, err := sessionlink.Read(os.Args[2]); err != nil {
+			app.RegenerateResident(os.Args[2], 30*time.Second)
+			app.ReportResidentRestoreFailure(os.Args[2], os.Stderr)
+		}
+	}
+	hookcmd.Regenerable = app.RegenerableJob
+	hookcmd.ReconnectContext = app.ReconnectResidentContext
 	if code, ok := hookcmd.Dispatch(os.Args); ok {
 		return code
+	}
+	if len(os.Args) == 3 && os.Args[1] == app.ResidentRestoreRole {
+		return regenerate(os.Args[2])
 	}
 	if args, ok := devArgs(os.Args); ok {
 		return devcmd.Run(args, os.Stdout, os.Stderr)
@@ -108,6 +134,17 @@ func run() int {
 		return 1
 	}
 
+	handover := app.HandoverFromEnv()
+	if handover == nil && !resident && app.HandoverLaunch(args) {
+		return app.LaunchHandover(args)
+	}
+	var handoverTo func(int) bool
+	if handover != nil {
+		handoverTo = func(nativeExit int) bool {
+			fmt.Fprintln(os.Stderr, "clauduct: agent view jobs are still running; this session's gateway stays with them in the background")
+			return handover(nativeExit)
+		}
+	}
 	env := platform.Environment(os.Environ())
 	sessionDuration, err := app.SessionDuration(env)
 	if err != nil {
@@ -115,6 +152,9 @@ func run() int {
 		return 1
 	}
 	resolve := platform.Resolver{}.Claude
+	// No provider strategy and no admission gate (#319 decision 17): every launch path runs on
+	// the launch's own endpoint, the settings routing pin and the hooks' start-up handshake.
+	// The provider-control probe stays a diagnostic (clauduct --dev --probe provider-control).
 	if !resident && app.BackgroundRequested(args) {
 		if err := app.StartBackground(context.Background(), args, cwd, os.Stdout, os.Stderr); err != nil {
 			fmt.Fprintln(os.Stderr, "clauduct:", err)
@@ -139,7 +179,11 @@ func run() int {
 			return nil
 		}
 	}
+	ledger, startGateway, modelList := productUpstream(0)
 	result, err := app.Run(ctx, app.Options{
+		Ledger:          ledger,
+		StartGateway:    startGateway,
+		ModelList:       modelList,
 		Args:            args,
 		Env:             env,
 		Cwd:             cwd,
@@ -147,6 +191,7 @@ func run() int {
 		SessionTimeout:  sessionDuration,
 		Checkpoint:      app.WriteCheckpoint,
 		BackgroundReady: backgroundReady,
+		Handover:        handoverTo,
 	})
 
 	// What the session did, said once, at the end. The native client owns the terminal
@@ -196,6 +241,17 @@ const usageOption = "--usage"
 // devOption is where Clauduct's own commands start: clauduct --dev --version.
 const devOption = "--dev"
 
+func residentRelay(argv []string, errOut io.Writer) (int, bool) {
+	if len(argv) < 2 || argv[1] != app.ResidentRelayRole {
+		return 0, false
+	}
+	if len(argv) != 3 || app.RelayResident(argv[2]) != nil {
+		fmt.Fprintln(errOut, "CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RELAY_FAILED")
+		return 1, true
+	}
+	return 0, true
+}
+
 // devArgs is the command for devcmd when argv asks for one: --dev first, the way --update
 // is recognised, or the name clauduct-dev.exe that a copy from a 0.3.x updater carries.
 //
@@ -220,4 +276,66 @@ func devArgs(argv []string) ([]string, bool) {
 // starting a session.
 func asked(args []string, option string) bool {
 	return len(args) == 1 && strings.EqualFold(args[0], option)
+}
+
+// regenerate is the resident a background key helper starts when its link is gone (#319
+// decision 18c). The dead resident's record names the job, port, link and options; the
+// gateway is new, so is its token, which native's key helper reads from the link.
+func regenerate(link string) int {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return regenerationFailure(link, "RESIDENT_RECORD_UNAVAILABLE", os.Stderr)
+	}
+	record, err := app.LoadResident(home, link)
+	if err != nil {
+		return regenerationFailure(link, "RESIDENT_RECORD_UNAVAILABLE", os.Stderr)
+	}
+	env := platform.Environment(os.Environ())
+	sessionDuration, err := app.SessionDuration(env)
+	if err != nil {
+		return regenerationFailure(link, "INVALID_SESSION_TIMEOUT", os.Stderr)
+	}
+	ledger, startGateway, modelList := productUpstream(record.Port)
+	result, err := app.Run(context.Background(), app.Options{
+		Ledger:         ledger,
+		StartGateway:   startGateway,
+		ModelList:      modelList,
+		Args:           record.Args,
+		Env:            env,
+		Cwd:            record.Cwd,
+		ResolveClaude:  platform.Resolver{}.Claude,
+		SessionTimeout: sessionDuration,
+		Checkpoint:     app.WriteCheckpoint,
+		Regenerate:     &record,
+		Stderr:         io.Discard,
+	})
+	return finishRegeneration(link, result, err, os.Stderr)
+}
+
+func regenerationFailure(link, category string, errOut io.Writer) int {
+	if app.WriteResidentRestoreFailure(link, category) != nil {
+		fmt.Fprintln(errOut, "clauduct: RESIDENT_DIAGNOSTIC_UNAVAILABLE")
+	}
+	fmt.Fprintln(errOut, "CLAUDUCT_RESIDENT_RESTORE_FAILED: "+category)
+	return 1
+}
+
+func finishRegeneration(link string, result app.Result, runErr error, errOut io.Writer) int {
+	// The status file says how this resident ended, as run() writes it; without this the last
+	// checkpoint (RUNNING) stayed. Relay-spawned residents have NUL standard streams.
+	if result.NativeStarted || result.Category != "" {
+		if err := app.WriteFinal(result); err != nil {
+			fmt.Fprintln(errOut, "clauduct: CLAUDUCT_REQUEST_STATUS_UNAVAILABLE")
+		}
+	}
+	if runErr != nil || result.CleanupErr != nil {
+		category := "RESIDENT_START_FAILED"
+		if runErr != nil {
+			if known := hookcmd.DiagnosticCategory(runErr.Error()); known != "" {
+				category = known
+			}
+		}
+		return regenerationFailure(link, category, errOut)
+	}
+	return 0
 }

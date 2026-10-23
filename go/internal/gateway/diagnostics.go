@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -24,7 +25,7 @@ import (
 // tells a reader that something was refused and nothing about what.
 //
 // Everything here is a count, a fixed label or a timing. No request body, no header value,
-// no prompt and no model output is recorded, and nothing derived from them is either. A
+// no prompt or model output is recorded; classifier verdicts keep only fixed labels. A
 // diagnostic that has to be redacted before it can be read is one nobody reads.
 
 // Stages a request passes through, in order. Named for where it actually got to, so a
@@ -80,6 +81,8 @@ type RequestRecord struct {
 	CancellationSource string `json:"cancellationSource,omitempty"`
 	ToolPolicy         string `json:"toolPolicy,omitempty"`
 	Control            string `json:"control,omitempty"`
+	ClassifierStage    string `json:"classifierStage,omitempty"`
+	ClassifierVerdict  string `json:"classifierVerdict,omitempty"`
 	Status             int    `json:"status,omitempty"`
 
 	// CAP03: what was asked for and what ran, kept apart. A record that keeps only the
@@ -223,6 +226,8 @@ type record struct {
 	epoch              time.Time
 	data               RequestRecord
 	owner              *ring
+
+	auxiliaryToolsBlocked bool // handler-owned capability; independent auxiliary cannot call tools
 }
 
 func (r *record) rejectedWorkflow() {
@@ -574,7 +579,20 @@ func (r *record) finish() {
 	}
 	if r.owner != nil {
 		r.owner.count(r.data)
+		if fn := r.owner.finished.Load(); fn != nil && *fn != nil {
+			(*fn)(r.data)
+		}
 	}
+}
+
+// seqNumber is the record's request number, or -1 for a request nothing recorded.
+func (r *record) seqNumber() int64 {
+	if r == nil {
+		return -1
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.data.Seq
 }
 
 // began is when the request arrived, which is when the client started waiting. Now for a
@@ -606,6 +624,8 @@ func (r *record) snapshot() RequestRecord {
 
 // ring keeps the most recent records.
 type ring struct {
+	// finished, when set, sees each record as it closes (Gateway.ObserveOutcome).
+	finished     atomic.Pointer[func(RequestRecord)]
 	mu           sync.Mutex
 	epoch        time.Time
 	seq          int64

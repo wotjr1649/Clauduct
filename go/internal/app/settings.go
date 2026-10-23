@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 )
 
 // What goes in the child's --settings, and why anything does at all.
 //
-// Model/context defaults travel by environment. Hooks and the model picker travel through
-// settings. Permissions are native's: v0.6.4 adds no ask or hard_deny rule of its own, and
+// Model/context defaults travel by environment. Hooks, the model picker and dispatch effort
+// travel through settings. Permissions are native's: v0.6.4 adds no ask or hard_deny rule of its own, and
 // native applies its defaults, user and managed policy and in-session mode changes.
 // App resolves actual option boundaries.
 //
@@ -20,15 +22,16 @@ import (
 // replace it and the hooks would never install. user_settings.go now combines user
 // settings with these required bindings at each actual settings option's position.
 
-// hookTimeout is how long the client waits for it. The baseline's five seconds; the hook
-// itself gives up on the gateway after three.
-const hookTimeout = 5
+// hookTimeout and the shorter command deadline are owned by hookcmd.
+const hookTimeout = int(hookcmd.NativeHookTimeout / time.Second)
 
 type childSettings struct {
-	Hooks        map[string][]hookMatcher `json:"hooks,omitempty"`
-	ModelPicker  *modelPicker             `json:"modelPicker,omitempty"`
-	Env          map[string]string        `json:"env,omitempty"`
-	APIKeyHelper string                   `json:"apiKeyHelper,omitempty"`
+	Hooks         map[string][]hookMatcher     `json:"hooks,omitempty"`
+	ModelPicker   *modelPicker                 `json:"modelPicker,omitempty"`
+	EffortLevel   string                       `json:"effortLevel,omitempty"`
+	ModelSettings map[string]map[string]string `json:"modelSettings,omitempty"`
+	Env           map[string]string            `json:"env,omitempty"`
+	APIKeyHelper  string                       `json:"apiKeyHelper,omitempty"`
 	// The boundary profile's part (#301, boundary_profile.go).
 	Permissions               *childPermissions `json:"permissions,omitempty"`
 	DisableClaudeAiConnectors bool              `json:"disableClaudeAiConnectors,omitempty"`
@@ -69,6 +72,23 @@ type modelPickerRow struct {
 // cannot act on.
 func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 	settings := childSettings{ModelPicker: config.pickerRows()}
+	settings.ModelSettings = make(map[string]map[string]string)
+	for _, model := range config.Selection.Catalogue().Models() {
+		if effort, ok := config.Selection.DefaultFor(model.ID); ok && storedEffort(effort) {
+			settings.ModelSettings[model.ID] = map[string]string{"effortLevel": effort}
+		}
+	}
+	effort := config.Startup.Effort
+	if !storedEffort(effort) {
+		if fallback, ok := config.Selection.DefaultFor(config.Startup.Model); ok {
+			effort = fallback
+		}
+	}
+	if storedEffort(effort) {
+		settings.EffortLevel = effort
+		// Native's per-model flag setting wins over the top-level flag setting.
+		settings.ModelSettings[config.Startup.Model] = map[string]string{"effortLevel": effort}
+	}
 	config.boundarySettings(&settings)
 	if hookPath != "" {
 		entry := []hookMatcher{{
@@ -98,12 +118,18 @@ func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
 	return string(encoded), true
 }
 
+// max is session-only in native settings; its foreground argv remains unchanged.
+func storedEffort(effort string) bool {
+	return effort == "low" || effort == "medium" || effort == "high" || effort == "xhigh"
+}
+
 // foregroundSettings binds a foreground session's settings to its routing (#295). Every hook
-// command names this session's gateway, so the hook can compare it with where native's
-// requests actually go. The settings env carries the values a settings file must not replace
-// (routingSettingsEnv and the requirements): --settings outranks user, project and local
-// settings (measured 2.1.289). The token never goes on a command line.
-func foregroundSettings(settings, gateway string, env map[string]string) (string, error) {
+// command names this session's link, from which the hook reads the gateway and its token, so
+// it can compare the gateway with where native's requests actually go without relying on the
+// environment native gives it. The settings env carries the values a settings file must not
+// replace (routingSettingsEnv and the requirements): --settings outranks user, project and
+// local settings (measured 2.1.289). The token never goes on a command line.
+func foregroundSettings(settings, link string, env map[string]string) (string, error) {
 	var s childSettings
 	if json.Unmarshal([]byte(settings), &s) != nil {
 		return "", errSettingsConflict
@@ -111,12 +137,52 @@ func foregroundSettings(settings, gateway string, env map[string]string) (string
 	for _, matchers := range s.Hooks {
 		for i := range matchers {
 			for j := range matchers[i].Hooks {
-				matchers[i].Hooks[j].Command += " " + gateway
+				matchers[i].Hooks[j].Command += " " + link
 			}
 		}
 	}
 	s.Env = env
 	encoded, err := json.Marshal(s)
+	return string(encoded), err
+}
+
+// Apply aliases after the user merge, so a user PATH cannot hide the PDF renderer.
+func (config ClauductSettings) nativeEventSettings(settings, pdf, configDir string, o Options, base string) (string, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal([]byte(settings), &fields) != nil || fields == nil {
+		return "", errSettingsConflict
+	}
+	env := map[string]string{}
+	if raw, ok := fields["env"]; ok && json.Unmarshal(raw, &env) != nil || env == nil {
+		return "", errSettingsConflict
+	}
+	names, _ := nativeSettingsEnvNames(o) // Name discovery never adds a startup gate.
+	config.pinNativeSettingsEnv(env, names, o.Env, base)
+	if pdf != "" {
+		path := ""
+		spelling := ""
+		for name, value := range o.Env {
+			if strings.EqualFold(name, "PATH") && name > spelling {
+				spelling = name
+				path = value
+			}
+		}
+		for name, value := range env {
+			if strings.EqualFold(name, "PATH") {
+				path = value
+				delete(env, name)
+			}
+		}
+		env["PATH"] = pdf
+		if path != "" {
+			env["PATH"] += string(os.PathListSeparator) + path
+		}
+		if configDir != "" {
+			env["CLAUDUCT_PDF_PROJECTS_ROOT"] = filepath.Join(configDir, "projects")
+		}
+	}
+	fields["env"], _ = json.Marshal(env)
+	encoded, err := json.Marshal(fields)
 	return string(encoded), err
 }
 

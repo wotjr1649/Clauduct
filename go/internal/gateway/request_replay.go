@@ -190,6 +190,9 @@ type nativeExecution struct {
 	// unkeyed is an execution the ledger does not hold (the auto mode classifier, #289). It
 	// still records dispatch, which is what tells a failed reply not to be retried (#84).
 	unkeyed bool
+	// released: the key went back once. A later release must not drop the claim a retry has
+	// since made under the same key.
+	released bool
 }
 
 // Reserve before selection/result mutation. A retry can arrive while its first
@@ -219,7 +222,7 @@ func (g *Gateway) claimNativeExecution(r *http.Request, entry *record, body []by
 		// spent only within the root turn it arrived in: the same bytes in a later turn
 		// are a new request. Without a readable root receipt it stays spent for the
 		// session, like --bare.
-		if root, found, err := g.readCurrentNativeTurn(""); err == nil && found && validActiveReceipt(g.selection, root, key.session, "") {
+		if root, found, err := g.readCurrentNativeTurn(key.session, ""); err == nil && found && validActiveReceipt(g.selection, root, key.session, "") {
 			turn = &root
 		}
 	} else {
@@ -379,7 +382,8 @@ func deferredLocally(err error) bool {
 }
 
 func (e *nativeExecution) release() {
-	if e != nil && !e.dispatched && !e.unkeyed {
+	if e != nil && !e.dispatched && !e.unkeyed && !e.released {
+		e.released = true
 		l := &e.owner.executions
 		l.Lock()
 		defer l.Unlock()

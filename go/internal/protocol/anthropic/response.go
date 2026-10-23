@@ -271,6 +271,9 @@ func (b *Builder) SetCallable(callable func(name string) bool) {
 	}
 }
 
+// Callable reports whether a new call may use this name, before its ID is issued.
+func (b *Builder) Callable(name string) bool { return b.callable(name) }
+
 // AddToolCall validates a call and holds it.
 //
 // It returns no frames on purpose. A tool call is the one thing in a response that causes
@@ -298,7 +301,7 @@ func (b *Builder) AddToolCall(id, name string, arguments []byte) error {
 		// to either of them.
 		return ErrUnsupportedToolCall
 	}
-	if !b.callable(name) {
+	if !b.Callable(name) {
 		return ErrUnsupportedToolCall
 	}
 	if !isJSONObject(arguments) {
@@ -747,4 +750,34 @@ func (b *Builder) String() string {
 	return "anthropic.Builder{parts:" + strconv.Itoa(len(b.parts)) +
 		" started:" + strconv.FormatBool(b.started) +
 		" completed:" + strconv.FormatBool(b.completed) + "}"
+}
+
+// CheckTextPart compares redundant snapshots without closing the text stream twice.
+func (b *Builder) CheckTextPart(item string, index int, snapshot string) error {
+	part, ok := b.parts[partKey{item: item, index: index}]
+	if !ok {
+		if snapshot == "" {
+			return nil
+		}
+		return ErrTextMismatch
+	}
+	if string(part.builder) != snapshot {
+		return ErrTextMismatch
+	}
+	return nil
+}
+
+// CheckTextItem preserves part boundaries as well as the concatenated answer.
+func (b *Builder) CheckTextItem(item string, snapshots []string) error {
+	for key, part := range b.parts {
+		if key.item == item && (key.index < 0 || key.index >= len(snapshots) || string(part.builder) != snapshots[key.index]) {
+			return ErrTextMismatch
+		}
+	}
+	for index, text := range snapshots {
+		if err := b.CheckTextPart(item, index, text); err != nil {
+			return err
+		}
+	}
+	return nil
 }

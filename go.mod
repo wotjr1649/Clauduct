@@ -1,6 +1,6 @@
 module github.com/wotjr1649/Clauduct
 
-go 1.27.0
+go 1.27.2
 
 require (
 	github.com/coder/websocket v1.8.15

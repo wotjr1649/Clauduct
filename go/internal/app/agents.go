@@ -29,13 +29,11 @@ type agentDefinition struct {
 	Description string `json:"description"`
 	// Prompt stays empty: the menu adds no instructions of its own, only where an entry
 	// runs (#144). Native accepts an empty prompt and runs the child.
-	Prompt string   `json:"prompt"`
-	Tools  []string `json:"tools"`
-	Model  string   `json:"model"`
+	Prompt string `json:"prompt"`
+	Model  string `json:"model"`
 }
 
-// agentTools is what a delegated worker gets. Enough to read, change and check.
-var agentTools = []string{"ToolSearch", "Read", "Grep", "Glob", "Bash", "Edit", "Write", "Agent", "TaskOutput", "SendMessage"}
+// Omit tools so native inherits the parent's tools and applies its permission rules.
 
 // agentDefinitions builds the menu from the session's account list: one agent per listed
 // model that has a collision-free menu name. A model the account hides from its picker gets
@@ -59,7 +57,6 @@ func (config ClauductSettings) agentDefinitions() map[string]agentDefinition {
 		}
 		menu[bridge.MenuPrefix+model.Menu] = agentDefinition{
 			Description: "Development worker on " + route.Model + "." + runs,
-			Tools:       agentTools,
 			Model:       route.Model,
 		}
 	}
@@ -71,7 +68,6 @@ func (config ClauductSettings) agentDefinitions() map[string]agentDefinition {
 		Description: "General development worker that keeps the model and effort this " +
 			"session is already running on. Do not pass a model argument with this agent " +
 			"type unless the user requested a separate model selection.",
-		Tools: agentTools,
 		Model: "inherit",
 	}
 	return menu

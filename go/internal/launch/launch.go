@@ -79,9 +79,9 @@ type Overlay struct {
 // The list is this short by decision, not by omission. The invariant that matters is
 // ENV02: the user's real Anthropic credential must never reach the loopback gateway or the
 // upstream backend. Two mechanisms enforce it and neither is a name heuristic — every
-// ANTHROPIC_* name is dropped and then overwritten with a session value, and the OAuth
-// token is blanked. A broad "contains TOKEN or SECRET" rule buys nothing extra for that
-// invariant while costing real compatibility: measured against the Node baseline's rule on
+// ANTHROPIC_* name and the OAuth token are dropped. Legacy/provider overlays replace their
+// routing names; settings-only launches keep them absent. A broad "contains TOKEN or SECRET"
+// rule buys nothing extra for that invariant while costing real compatibility: measured against the Node baseline's rule on
 // a developer machine, three of its five hits were CLAUDE_CODE_MAX_OUTPUT_TOKENS,
 // CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS and MAX_MCP_OUTPUT_TOKENS — size limits, caught
 // because "TOKENS" contains "TOKEN" — and any real MCP server credential such as a Slack
@@ -147,6 +147,76 @@ func noProxyEntries(value string) []string {
 	return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })
 }
 
+// agentViewIndex returns where the agents subcommand sits in forward, or -1. Native dispatches a
+// subcommand that follows options, so it is the first positional under the shared native
+// argument boundaries. An unknown option without an attached value hides where the positionals
+// begin, and -p/--print makes the positional the prompt: neither is Agent View.
+func agentViewIndex(forward []string) int {
+	for i := 0; i < len(forward) && forward[i] != "--"; {
+		end, known := NativeArgEnd(forward, i)
+		arg := forward[i]
+		if !known {
+			if _, _, attached := strings.Cut(arg, "="); attached && strings.HasPrefix(arg, "--") {
+				i++
+				continue
+			}
+			return -1
+		}
+		if end > len(forward) {
+			return -1
+		}
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			if arg == "agents" {
+				return i
+			}
+			return -1
+		}
+		if printsPrompt(arg) {
+			return -1
+		}
+		end = VariadicValuesEnd(forward, i, end)
+		i = end
+	}
+	return -1
+}
+
+// VariadicValuesEnd extends end, the boundary NativeArgEnd gave for args[i], over the values a
+// variadic native option takes after its required first one: everything up to the next option.
+// Native takes values for these up to the next option, so a subcommand-shaped or prompt-shaped
+// token among them is a value. NativeArgEnd keeps its one-value contract for its other callers.
+// An attached value (--add-dir=a) takes one; end is returned unchanged for any other option.
+func VariadicValuesEnd(args []string, i, end int) int {
+	if name, _, attached := strings.Cut(args[i], "="); !attached && slices.Contains(variadicOptions, name) {
+		for end < len(args) && (!strings.HasPrefix(args[end], "-") || args[end] == "-") {
+			end++
+		}
+	}
+	return end
+}
+
+// variadicOptions are the native options that take every following value up to the next option.
+var variadicOptions = []string{"--add-dir", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools",
+	"--mcp-config", "--betas", "--file", "--tools"}
+
+// printsPrompt reports whether one known option token is -p/--print, alone or among combined
+// boolean shorts as NativeArgEnd reads them.
+func printsPrompt(arg string) bool {
+	if arg == "--print" {
+		return true
+	}
+	if len(arg) > 1 && arg[0] == '-' && arg[1] != '-' {
+		for _, c := range arg[1:] {
+			if c == 'p' {
+				return true
+			}
+			if !strings.ContainsRune("cvh", c) {
+				break
+			}
+		}
+	}
+	return false
+}
+
 // Build produces the launch spec.
 //
 // forward is copied verbatim after the overlay prefix. App applies Refused and
@@ -154,7 +224,9 @@ func noProxyEntries(value string) []string {
 // The product CLI contract is owned by docs/v2/ARCHITECTURE.md section 4.
 func Build(exe string, forward []string, source map[string]string, cwd string, overlay Overlay) Spec {
 	args := make([]string, 0, len(forward)+6)
-	if overlay.Effort != "" {
+	agentAt := agentViewIndex(forward)
+	agentView := agentAt >= 0
+	if overlay.Effort != "" && !agentView {
 		args = append(args, "--effort", overlay.Effort)
 	}
 	if overlay.Settings != "" {
@@ -162,6 +234,12 @@ func Build(exe string, forward []string, source map[string]string, cwd string, o
 	}
 	if overlay.Agents != "" {
 		args = append(args, "--agents", overlay.Agents)
+	}
+	// Agent View owns a separate effort default; its subcommand option must precede user overrides.
+	if agentView && overlay.Effort != "" {
+		args = append(args, forward[:agentAt]...)
+		args = append(args, "agents", "--effort", overlay.Effort)
+		forward = forward[agentAt+1:]
 	}
 	args = append(args, forward...)
 
@@ -211,24 +289,23 @@ func buildEnv(source map[string]string, overlay Overlay) []string {
 		folded[key] = name
 		kept[key] = value
 	}
-	// Under the name already present, so Windows' case-insensitive lookup sees one entry.
-	if _, present := folded["NO_PROXY"]; !present {
-		folded["NO_PROXY"] = "NO_PROXY"
-	}
-	kept["NO_PROXY"] = WithLoopbackNoProxy(kept["NO_PROXY"])
-
-	// The session values. The three blanks are the second half of ENV02: a name that is
-	// merely absent lets the client fall back to a stored credential, so each one is set
-	// to the empty string to settle it rather than left to a fallback we do not control.
-	for key, value := range map[string]string{
-		"ANTHROPIC_BASE_URL":       overlay.BaseURL,
-		"ANTHROPIC_AUTH_TOKEN":     overlay.AuthToken,
-		"ANTHROPIC_API_KEY":        "",
-		"ANTHROPIC_CUSTOM_HEADERS": "",
-		"CLAUDE_CODE_OAUTH_TOKEN":  "",
-	} {
-		folded[key] = key
-		kept[key] = value
+	// Settings-only launches leave the supervisor's pre-settings snapshot untouched.
+	if overlay.BaseURL != "" {
+		if _, present := folded["NO_PROXY"]; !present {
+			folded["NO_PROXY"] = "NO_PROXY"
+		}
+		kept["NO_PROXY"] = WithLoopbackNoProxy(kept["NO_PROXY"])
+		// Legacy/provider launches still authenticate through their process environment.
+		for key, value := range map[string]string{
+			"ANTHROPIC_BASE_URL":       overlay.BaseURL,
+			"ANTHROPIC_AUTH_TOKEN":     overlay.AuthToken,
+			"ANTHROPIC_API_KEY":        "",
+			"ANTHROPIC_CUSTOM_HEADERS": "",
+			"CLAUDE_CODE_OAUTH_TOKEN":  "",
+		} {
+			folded[key] = key
+			kept[key] = value
+		}
 	}
 
 	out := make([]string, 0, len(kept))

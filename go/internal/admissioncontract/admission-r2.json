@@ -1,0 +1,593 @@
+{
+  "schema": "clauduct.p3.admission/1",
+  "admissionContractRevision": 2,
+  "authority": "소유자 결정 10·11·12 (inputs/owner-decision-10.md, -11.md, -12.md). 결정 08·09의 금지·보존 조건을 그대로 따른다.",
+  "relation": {
+    "routingContract": "provider-control-contract-r4.json (SHA c428371e04e57d6e54ac1e4030852bf998a9add4e8ff831a6cc84fbde676b6e8, 변경 없음)",
+    "preserved": [
+      "r4 전체 strategyVerdict: HOST_MANAGED = INCOMPATIBLE (R08 FAIL_ROUTING)",
+      "R08·R08b는 background 정상 동작 요구로 계속 미충족이며 required에서 빠지지 않는다",
+      "제품 전체 release 판정: PRE_RELEASE_VERIFICATION=BLOCKED"
+    ],
+    "rule": "admission은 실행 경로(scope)별 허가다. 어느 scope의 ADMITTED도 r4 전체 판정, CERTIFIED, FULL PASS, release 상태를 바꾸지 않는다. BE 사례의 PASS는 R08 기능 PASS로 합산하지 않는다.",
+    "precedence": "개발 후보의 launch 결정은 이 계약의 gate가 정한다. r4 strategySelection의 다음 strategy 이동은 쓰지 않는다. 활성 configuration은 HOST_MANAGED_RESTRICTED 하나다. GATEWAY_ENV_COMPAT은 활성 목록에 없다. r4 전체 판정은 doctor에 그대로 표시한다"
+  },
+  "scopes": {
+    "PRINT_SINGLE": {
+      "requiredCases": [
+        "R01",
+        "R02",
+        "R03",
+        "R04",
+        "R03p",
+        "R04p",
+        "R03pa",
+        "R03ps",
+        "R03pf",
+        "R03px",
+        "R15",
+        "PM00",
+        "PM01",
+        "PM02",
+        "PM03",
+        "RP01"
+      ],
+      "optionalCases": [
+        "R13a",
+        "R13b",
+        "R13c",
+        "R13d",
+        "R14n"
+      ],
+      "backgroundEntryChecks": [
+        "BE01",
+        "BE02",
+        "BE03",
+        "BE09",
+        "BE10",
+        "BE11",
+        "BE12",
+        "BE13",
+        "BE15",
+        "BE16",
+        "BE17"
+      ]
+    },
+    "RESUME_EXPLICIT": {
+      "requiredCases": [
+        "R06"
+      ],
+      "optionalCases": [],
+      "backgroundEntryChecks": [
+        "BE01",
+        "BE02",
+        "BE03",
+        "BE09",
+        "BE10",
+        "BE11",
+        "BE12",
+        "BE13",
+        "BE15",
+        "BE16",
+        "BE17"
+      ],
+      "requiresScope": [
+        "PRINT_SINGLE"
+      ]
+    },
+    "CONTINUE_PRINT": {
+      "requiredCases": [
+        "R07r",
+        "R07m",
+        "R07n"
+      ],
+      "optionalCases": [],
+      "backgroundEntryChecks": [
+        "BE01",
+        "BE02",
+        "BE03",
+        "BE09",
+        "BE10",
+        "BE11",
+        "BE12",
+        "BE13",
+        "BE15",
+        "BE16",
+        "BE17"
+      ],
+      "requiresScope": [
+        "PRINT_SINGLE",
+        "RESUME_EXPLICIT"
+      ],
+      "note": "snapshot --continue는 R07r 안전 거부, snapshot 없는 legacy --continue는 R07n 정상 이어감"
+    },
+    "MULTI_TURN_SAME_PROCESS": {
+      "requiredCases": [
+        "R04L",
+        "R12o",
+        "RP01"
+      ],
+      "optionalCases": [
+        "R09",
+        "R09s",
+        "R10",
+        "R11",
+        "R14"
+      ],
+      "backgroundEntryChecks": [
+        "BE01",
+        "BE02",
+        "BE03",
+        "BE09",
+        "BE10",
+        "BE11",
+        "BE12",
+        "BE13",
+        "BE15",
+        "BE16",
+        "BE17"
+      ],
+      "requiresScope": [
+        "PRINT_SINGLE"
+      ]
+    },
+    "TUI": {
+      "requiredCases": [
+        "R05",
+        "X06",
+        "X07",
+        "R04L-TUI",
+        "R12o-TUI",
+        "PM02T",
+        "RP01"
+      ],
+      "optionalCases": [
+        "R09-TUI",
+        "R10-TUI"
+      ],
+      "backgroundEntryChecks": [
+        "BE01",
+        "BE02",
+        "BE03",
+        "BE04",
+        "BE05",
+        "BE06",
+        "BE07",
+        "BE08",
+        "BE09",
+        "BE10",
+        "BE11",
+        "BE12",
+        "BE13",
+        "BE14",
+        "BE15",
+        "BE16",
+        "BE17"
+      ],
+      "requiresScope": [
+        "PRINT_SINGLE",
+        "MULTI_TURN_SAME_PROCESS"
+      ],
+      "note": "TUI는 같은 프로세스의 multi-turn이다. R04L·R12o·R09·R10의 TUI 변형은 r4 정의를 TUI entry로 돌린 것이며, 각 사례의 판정 규칙은 원 사례와 같다. X06·X07은 r4 releaseMatrix의 TUI hook 실패 사례(fail-closed)다"
+    }
+  },
+  "backgroundEntryChecks": {
+    "state": "모든 BE 사례는 저장 gateway A 로그인 상태의 합성 config에서 돈다",
+    "boundary": "관측 창은 자극 뒤 8초와 세션 종료까지다. probe config dir에서 다음을 센다: daemon.lock 생성, jobs 아래 새 디렉터리, 첫 인자가 daemon 또는 --bg-pty-host인 pinned native 프로세스, 잘못된 목적지 byte·연결",
+    "verdict": {
+      "PASS": "treatment의 boundary가 모두 0이고, 자극 전달 근거가 있고, 사례 종류의 control 조건을 만족하고, 요구 foreground 동작이 정상이며, 사례가 끝난 뒤 probe config dir의 native가 0이다",
+      "BACKGROUND_ENTRY_REACHED": "treatment에서 boundary 중 하나라도 0이 아니다. scope는 NOT_ADMITTED",
+      "FAIL_FUNCTION": "boundary는 0이지만 요구 foreground 동작이 정상 완료되지 않았다",
+      "INCONCLUSIVE": "자극 전달 근거가 없거나, 사례 뒤 정리에 실패했다(CLEANUP_FAILED)",
+      "PATH_ABSENT": "CLI TRANSITION 사례에서 control native의 조합 거부가 관측됐다. 보고 전용이며 scope를 막지 않는다. treatment boundary는 여전히 0이어야 한다(아니면 BACKGROUND_ENTRY_REACHED)",
+      "FIXTURE_NOT_APPLIED": "fixture가 native에 적용됐다는 표지가 없다. caseFixtureDisposition 규칙을 따른다"
+    },
+    "deliveryEvidence": "CLI 사례는 제품의 native 시작 횟수 0과 거부 오류다. TUI 사례는 driver의 입력 mark다. 그리고 자극 뒤에 넣은 확인 prompt가 gateway를 거쳐 완료돼, 자극이 입력을 막거나 세션을 바꾸지 않았음을 보인다. 화면 문구는 보조 기록이며 판정 근거가 아니다",
+    "cases": {
+      "BE01": "CLI --bg <prompt>",
+      "BE02": "CLI --background <prompt>",
+      "BE03": "CLI --resume <id> --bg <prompt>",
+      "BE04": "TUI 응답 뒤 /bg",
+      "BE05": "TUI 응답 뒤 /background <task>",
+      "BE06": "TUI 응답 뒤 /fork <task>. 요구 foreground 동작: fork된 작업이 같은 프로세스에서 gateway를 거쳐 완료",
+      "BE07": "TUI 빈 prompt에서 ← 두 번",
+      "BE08": "clauduct agents: native 시작 전 거부(시작 횟수 0)",
+      "BE09": "사용자 --settings env CLAUDE_CODE_DISABLE_AGENT_VIEW=0: launch 거부, native 시작 0",
+      "BE10": "Agent 도구의 run_in_background subagent. 요구 foreground 동작: subagent가 같은 프로세스에서 gateway를 거쳐 완료",
+      "BE11": "CLI --continue --bg",
+      "BE12": "CLI --fork-session --bg",
+      "BE13": "CLI -p <prompt> --bg",
+      "BE14": "TUI /resume 선택 화면을 열고 닫음",
+      "BE15": "local managed settings 파일 env CLAUDE_CODE_DISABLE_AGENT_VIEW=0을 둔 TUI. 자극: /background <task>, ← 두 번. 같은 파일에 요청 본문 표지(CLAUDE_CODE_EXTRA_BODY)를 둔다. 적용 표지가 control과 treatment 모두의 gateway·receiver 요청에 없으면 FIXTURE_NOT_APPLIED다. control에는 있고 treatment에는 없으면 그 configuration이 출처를 읽지 않은 것이므로 FAIL_FUNCTION이다",
+      "BE16": "사용자 settings 키 disableAgentView: false를 둔 TUI. 자극: BE15와 같다",
+      "BE17": "local managed settings 파일(CLAUDE_CODE_MANAGED_SETTINGS_PATH, 제품 managed reader가 읽는 출처)에 env CLAUDE_CODE_DISABLE_AGENT_VIEW=0을 둔 launch, 그리고 같은 위치에 disableAgentView: false만 둔 launch. 두 변형 모두 제품이 AGENT_VIEW_MANAGED_OVERRIDE_REFUSED로 거부하고 native 시작이 0이어야 PASS다. BE15 처분의 equivalentGate를 반증하는 사례다"
+    },
+    "notR08": "BE PASS는 background 기능 PASS가 아니다. R08·R08b 판정과 합산하지 않는다",
+    "kinds": {
+      "TRANSITION": {
+        "cases": [
+          "BE01",
+          "BE02",
+          "BE03",
+          "BE04",
+          "BE05",
+          "BE06",
+          "BE07",
+          "BE11",
+          "BE12",
+          "BE13",
+          "BE14"
+        ],
+        "control": "짝 control(UNPROTECTED_AGENT_VIEW)에서 같은 자극을 주고, control boundary가 0이 아니어야 treatment PASS의 전제가 된다. CLI 사례의 control 전달 근거는 control native의 시작 기록과 종료 상태다. PATH_ABSENT는 CLI 사례에서 control native가 그 조합을 오류로 거부했을 때(시작 직후 non-zero 종료와 오류 문구, boundary 0)만 인정한다. TUI 사례와, 이전 진단에서 전환 경로가 확인된 사례(BE04–BE08)는 PATH_ABSENT가 될 수 없다. control boundary가 0이면 INCONCLUSIVE다"
+      },
+      "RESTRICTION_INTEGRITY": {
+        "cases": [
+          "BE08",
+          "BE09",
+          "BE15",
+          "BE16",
+          "BE17"
+        ],
+        "control": "BE08: clauduct agents는 scopeSelection에서 native 시작 전에 거부되어야 한다(시작 횟수 0). BE09: launch 거부. BE15·BE16: 제한을 풀려는 설정을 둔 채 TUI에서 /background <task>와 ← 두 번을 준다. 같은 설정을 둔 UNPROTECTED_AGENT_VIEW control에서 그 자극이 boundary를 0이 아니게 만들어야 하고, treatment의 boundary는 0이어야 한다 BE17: BE09와 같은 launch 거부 사례다. 짝 control이 없고, 전달 근거는 CLI 규칙(제품의 native 시작 0과 거부 오류 AGENT_VIEW_MANAGED_OVERRIDE_REFUSED)이다. 두 변형이 모두 PASS여야 BE17이 PASS다"
+      },
+      "IN_PROCESS": {
+        "cases": [
+          "BE10"
+        ],
+        "control": "짝 control이 없다. 전달 근거: gateway가 받은 다음 main 요청에 Agent tool_use가 있고 그 입력의 run_in_background가 true다. 그리고 subagent 요청이 같은 프로세스에서 gateway에 도착해 완료되고 boundary가 0이다"
+      }
+    },
+    "cleanup": "treatment와 control 모두 사례가 끝나면 probe config dir의 supervisor를 native로 멈추고(PL13), pinned native 중 그 dir를 가리키는 프로세스가 0인지 센다. 0이 아니면 CLEANUP_FAILED다. 정리 대상은 그 dir를 가리키는 프로세스뿐이다",
+    "requiredBehavior": {
+      "BE04": "세션이 foreground에 남고 확인 prompt가 완료된다",
+      "BE05": "세션이 foreground에 남고 확인 prompt가 완료된다. native가 /background를 거부하는지 같은 프로세스에서 실행하는지는 기록하며, 어느 쪽이든 boundary 0과 확인 prompt 완료가 요구 동작이다",
+      "BE06": "fork된 작업이 같은 프로세스에서 gateway를 거쳐 완료된다",
+      "BE07": "세션이 foreground에 남고 확인 prompt가 완료된다",
+      "BE10": "subagent가 같은 프로세스에서 gateway를 거쳐 완료된다",
+      "BE14": "선택 화면을 닫은 뒤 세션이 남고 확인 prompt가 완료된다"
+    }
+  },
+  "functionPreservation": {
+    "rule": "제한이 foreground 기능을 불필요하게 막지 않는지 기록한다. AGENT_VIEW_OFF로 달라지는 foreground 동작은 backgroundEntryChecks.requiredBehavior로 판정한다. 일반 Agent·subagent·도구가 막히면 FAIL_FUNCTION이다",
+    "surface": "r4 surfaceComparison 항목을 HOST_MANAGED_RESTRICTED와 BASELINE으로 비교해 SAME·DIFFERENT·NOT_OBSERVED로 기록한다. DIFFERENT의 허용 여부는 소유자가 정한다",
+    "knownCandidate": "BE06 진단(r4b build)에서 /fork의 forked agent가 Clauduct gateway의 AGENT_SELECTION_UNVERIFIED로 실패했다. 재측정에서도 같으면 FAIL_FUNCTION이다"
+  },
+  "caseVerdict": {
+    "rule": "r4 caseVerdict를 사례마다 그대로 쓰고, r4 strategyVerdict.order를 scope 단위로 그대로 쓴다. 대응: strategy는 scope, CERTIFIED는 ADMITTED, INCOMPATIBLE은 NOT_ADMITTED. 순서·6b·earlyStop·noRetry를 포함한다",
+    "order": [
+      "1 어느 checkpoint라도 identity가 바뀌었으면 INCONCLUSIVE(NATIVE_CHANGED_DURING_CERTIFICATION)",
+      "2 어느 treatment 사례라도 FAIL_ROUTING이거나 BE 사례가 BACKGROUND_ENTRY_REACHED면 NOT_ADMITTED",
+      "3 scope의 사례 목록(required·optional·BE)이 정확하지 않으면 INCONCLUSIVE(MATRIX_RESULTS_MISMATCH)",
+      "4 어느 사례라도 INCONCLUSIVE, SAFETY 사례의 PASS, SAFETY가 아닌 사례의 SAFETY_PASS, required의 NOT_EXERCISABLE, 또는 처분이 없는 FIXTURE_NOT_APPLIED·VARIANT_NOT_EXERCISED이면 INCONCLUSIVE",
+      "5 FAIL_SAFETY면 INCONCLUSIVE(FOREIGN_SESSION_STATE_CHANGED)",
+      "6 FAIL_FUNCTION이면 INCONCLUSIVE(NATIVE_PRESERVATION_FAILED)",
+      "6b SAFE_REFUSAL_PASS는 SAFE_REFUSAL 사례에만 허용한다. 그 사례의 일반 PASS는 INCONCLUSIVE다",
+      "7 그 밖에 모든 사례의 label이 PASS, SAFETY_PASS(SAFETY 사례), SAFE_REFUSAL, NOT_APPLICABLE_CURRENT_NATIVE, NATIVE_PREVENTED, REPORTED_GAP, NOT_EXERCISABLE(optional), PATH_ABSENT(CLI BE), SOURCE_INACTIVE(RP01) 중 하나이고, BLOCKING이 없고, requiresScope가 모두 ADMITTED이며, NOT_APPLICABLE_CURRENT_NATIVE로 처분된 사례의 equivalentGate가 그 launch에서 통과하면 ADMITTED"
+    ],
+    "gapsRule": "열린 gaps가 있으면 ADMITTED와 함께 그 목록을 표시한다. ADMITTED는 로컬 개발 후보의 실행 허가일 뿐이며 FULL PASS나 CERTIFIED로 올리지 않는다",
+    "entries": {
+      "short": "short entry의 정확한 사례 집합은 그 scope의 requiredCases·optionalCases·backgroundEntryChecks에서 RP01을 뺀 것이다. order 3의 사례 목록 검사는 이 집합으로 한다",
+      "rp01": "RP01 entry는 RP01 한 사례의 run이다. treatment가 저장 gateway에 연결하면 r4 P1에 따라 FAIL_ROUTING이므로, RP01을 충족하는 것은 판정 PASS·label SOURCE_INACTIVE뿐이다. FAIL_ROUTING이면 그 scope는 NOT_ADMITTED, 그 밖(control 미갱신, TIMEOUT 등)은 INCONCLUSIVE다",
+      "scope": "RP01을 required로 가진 scope는 short entry가 ADMITTED이고 같은 key의 RP01 entry가 RP01을 충족할 때만 ADMITTED다"
+    }
+  },
+  "states": {
+    "ADMITTED": "이 key에서 이 scope의 launch를 허가한다",
+    "NOT_ADMITTED": "이 key에서 확정 거부한다. 활성 configuration은 HOST_MANAGED_RESTRICTED 하나이므로 다른 configuration으로 넘어가지 않는다. launch는 ROUTING_PROVIDER_UNVERIFIED",
+    "INCONCLUSIVE": "허가하지 않는다. launch는 ROUTING_PROVIDER_UNVERIFIED다. 자동 경로는 INCONCLUSIVE entry가 600초보다 오래됐으면 같은 runner를 다시 호출한다(r4 triggers). 그보다 새로우면 다시 호출하지 않는다. RP01 entry에는 자동 재호출을 적용하지 않는다(RP01은 --long으로만 돈다)",
+    "requiresScope": "requiresScope 중 하나라도 NOT_ADMITTED면 이 scope도 NOT_ADMITTED(REQUIRED_SCOPE_NOT_ADMITTED), 하나라도 INCONCLUSIVE나 미측정이면 INCONCLUSIVE(REQUIRED_SCOPE_NOT_ADMITTED)다"
+  },
+  "cache": {
+    "key": [
+      "nativeSHA256",
+      "configurationId",
+      "routingContractSHA256",
+      "admissionContractSHA256",
+      "probeSchemaRevision",
+      "clauductBinarySHA256",
+      "managedSourceFingerprint",
+      "scope",
+      "restrictionsDigest",
+      "probeExecutableSHA256"
+    ],
+    "location": "ClauductHome 아래 provider-admission 디렉터리. reparse point는 MISS",
+    "use": "ADMITTED는 key가 정확히 같고, launch의 PRE_SPAWN identity가 nativeSHA256과 같을 때만 쓴다(r4 identity.spawnPin·changeRule)",
+    "staleReasons": [
+      "NATIVE_CHANGED",
+      "CONFIGURATION_CHANGED",
+      "ROUTING_CONTRACT_CHANGED",
+      "ADMISSION_CONTRACT_CHANGED",
+      "PROBE_SCHEMA_CHANGED",
+      "CLAUDUCT_BINARY_CHANGED",
+      "MANAGED_SOURCES_CHANGED",
+      "RESTRICTIONS_CHANGED",
+      "PROBE_EXECUTABLE_CHANGED"
+    ],
+    "rules": "r4 cache.miss·write·writeFailure를 그대로 쓴다. scope마다 별도 entry이고, entry에는 사례별 결과·NOT_EXERCISABLE 사례·열린 gaps를 담는다",
+    "rp01Key": "RP01 entry의 key는 short key와 같다(결정 12: probe SHA와 Clauduct build를 identity에 결합). build가 바뀌면 RP01을 다시 측정한다"
+  },
+  "gate": {
+    "trigger": "모든 inference 가능 launch. help·version·usage·doctor는 제외",
+    "decision": "scopeSelection으로 scope를 정한다. 그 scope와 requiresScope의 short entry가 현재 key에서 ADMITTED이고, 그 scope가 RP01을 required로 가지면 RP01 entry도 RP01 key에서 PASS여야 한다. short entry가 MISS·stale이면 runner를 자동 호출한 뒤 다시 판정한다. 그래도 허가되지 않으면 ROUTING_PROVIDER_UNVERIFIED로 끝낸다. strategy 없는 경로로 fallback하지 않는다",
+    "sameRunner": "위 writer 절을 따른다. 한 short entry는 한 scope의 짧은 사례 전체를 한 run(한 runId·nonce)으로 돌린 결과다. RP01 entry는 따로 한 run이다. 서로 다른 run의 결과를 한 entry로 합치지 않는다"
+  },
+  "doctor": {
+    "shows": [
+      "native identity(경로·SHA-256)",
+      "configuration과 강제 제한",
+      "scope별 상태·사유·검증 identity·생성 시각·stale reason",
+      "scope별 NOT_EXERCISABLE 사례와 열린 gaps",
+      "r4 전체 판정(HOST_MANAGED INCOMPATIBLE, R08 FAIL_ROUTING)",
+      "제품 release 상태(BLOCKED)",
+      "RP01 source 상태와 관측 창, FIXTURE_NOT_APPLIED 사례와 처분",
+      "probe executable 경로·SHA",
+      "사례별 label: PASS, SAFETY_PASS, SAFE_REFUSAL, NOT_EXERCISABLE, PATH_ABSENT, SOURCE_INACTIVE, NOT_APPLICABLE_CURRENT_NATIVE, NATIVE_PREVENTED, REPORTED_GAP, BLOCKING/INCONCLUSIVE. 서로 합치지 않고 처분 근거와 함께 따로 표시한다"
+    ],
+    "never": "probe를 돌리지 않는다. scope 상태를 native 전체의 CERTIFIED로 표시하지 않는다"
+  },
+  "299": {
+    "control": "무보호(strategy 없음) control의 위협 재현은 그대로 유지한다(routing_prevention_319_test의 기대 실패와 live control r2)",
+    "prevention": "gate가 통합된 일반 제품 경로에서 같은 상태로 저장 gateway 0 byte를 따로 검증한다"
+  },
+  "gaps": [
+    "R04L VARIANT_NOT_EXERCISED(r4b). MULTI_TURN_SAME_PROCESS·TUI는 해소 전까지 INCONCLUSIVE",
+    "R14n 미확정(optional NOT_EXERCISABLE로 보고)",
+    "R13c 처분은 native eb95bb65·Windows·user settings 경로에 한정",
+    "subagent·workflow·compaction·worktree 역할 hook만 부분 실패한 사례 미포함(r4 gaps)",
+    "R12p 제품 통합 settings reload 미측정(r4 gaps)",
+    "BE06 /fork foreground 동작 실패 후보(AGENT_SELECTION_UNVERIFIED)",
+    "canonical runner의 공개 source 이전(go/cmd/clauduct-probe) 전까지 entry를 만들 수 없다",
+    "R04L child 변형 fixture가 없어 MULTI_TURN_SAME_PROCESS·TUI는 BLOCKING이다"
+  ],
+  "configurations": {
+    "rule": "r4 configurations.rule을 따른다. 아래 정의 밖의 차이는 다른 configuration이다. r4b 등 이전 측정은 AGENT_VIEW_OFF 없이 돌았으므로 admission 판정에 재사용하지 않고, 모든 admission 사례를 아래 configuration으로 다시 측정한다",
+    "HOST_MANAGED_RESTRICTED": {
+      "base": "r4 configurations.HOST_MANAGED와 같다. RC11 overlay gap이 0이어야 한다",
+      "plus": {
+        "AGENT_VIEW_OFF": "foreground native의 process env와 --settings env에 CLAUDE_CODE_DISABLE_AGENT_VIEW=1. 사용자 --settings env가 다른 값을 주면 launch를 거부한다",
+        "BACKGROUND_ENTRY_REFUSED": "argv에 --bg 또는 --background가 있으면 조합과 무관하게 native 시작 전에 ROUTING_PROVIDER_UNVERIFIED로 거부한다",
+        "SINGLE_TOKEN_POSITIONAL_REFUSED": "공백 없는 한 단어 위치 인자나 둘 이상의 위치 인자가 있는 launch는 native 시작 전에 거부한다(개발 후보의 명시적 기능 제한). 한 단어 prompt는 -p와 stdin으로 줄 수 있다",
+        "AGENT_VIEW_MANAGED_OVERRIDE_REFUSED": "machine managed 정책이 env CLAUDE_CODE_DISABLE_AGENT_VIEW를 \"1\"이 아니게 두거나 disableAgentView를 false로 두면 native 시작 전에 거부한다(AGENT_VIEW_MANAGED_OVERRIDE_REFUSED)"
+      },
+      "restrictionsDigest": "plus의 키 이름을 정렬해 줄바꿈으로 이은 UTF-8의 SHA-256"
+    },
+    "controls": {
+      "UNPROTECTED": "r4 정의 그대로. R·X 사례의 짝 control",
+      "UNPROTECTED_AGENT_VIEW": "UNPROTECTED와 같고 agent view가 켜져 있다. BE 사례의 짝 control이며, 같은 자극이 supervisor를 시작함을 보여야 한다"
+    }
+  },
+  "scopeSelection": {
+    "normalization": "제품의 native 인자 해석(native_args.go)으로 option을 읽는다. -p와 --print, -r와 --resume, -c와 --continue는 같고, --opt=value와 --opt value는 같다. 해석할 수 없는 option, 결합 short flag(-pc 등), 아래 어느 규칙에도 맞지 않는 argv는 scope 없음이다",
+    "noScope": "scope 없음은 ROUTING_PROVIDER_UNVERIFIED로 끝낸다. strategy 없는 경로로 시작하지 않는다",
+    "rules": [
+      "1 --bg 또는 --background가 있으면 BACKGROUND_ENTRY_REFUSED",
+      "2 위치 인자가 subcommands.rule을 어기면 scope 없음",
+      "3 --remote-control·--teleport·--cloud·--from-pr·--fork-session이 있으면 scope 없음",
+      "4 --resume과 --continue가 함께 있으면 scope 없음",
+      "5 -p, stream-json 입력: --resume·--continue가 없으면 MULTI_TURN_SAME_PROCESS, 있으면 scope 없음",
+      "6 -p, --resume <UUID>: RESUME_EXPLICIT. UUID가 아니면 scope 없음",
+      "7 -p, --continue: CONTINUE_PRINT",
+      "8 -p: PRINT_SINGLE (--session-id 허용)",
+      "9 -p 없음, --resume·--continue 없음: TUI",
+      "10 그 밖: scope 없음"
+    ],
+    "subcommands": {
+      "rule": "허용 목록 방식이다. option 값이 아닌 위치 인자는 많아야 하나이고, 그 하나는 공백을 포함한 prompt여야 한다. 위치 인자가 둘 이상이거나 공백 없는 한 단어이면 native가 subcommand로 해석할 수 있으므로 scope 없음이다",
+      "reason": "--help 목록과 binary의 command 등록 문자열로는 숨은 subcommand(예: daemon)를 다 셀 수 없다",
+      "knownNames": {
+        "help": [
+          "agents",
+          "attach",
+          "auth",
+          "auto-mode",
+          "doctor",
+          "gateway",
+          "import",
+          "install",
+          "logs",
+          "mcp",
+          "plugin",
+          "plugins",
+          "purge",
+          "respawn",
+          "rm",
+          "setup-token",
+          "stop",
+          "kill",
+          "ultrareview",
+          "update",
+          "upgrade"
+        ],
+        "notInHelp": [
+          "daemon"
+        ],
+        "use": "진단과 거부 문구에만 쓴다. 판정은 rule이 정한다"
+      }
+    },
+    "matching": "규칙은 위에서부터 차례로 보고 처음 맞는 하나만 쓴다(first match). 한 argv는 하나의 결과만 가진다"
+  },
+  "freezeRule": "동결 시 이 파일의 SHA-256을 freeze 기록에 남긴다. 동결 뒤에는 사례 삭제, PASS 조건 완화, 관측 창 축소, required의 optional 전환을 하지 않는다. 바꿀 수 있는 것은 사례 추가와 조건 강화뿐이며, 그때 admissionContractRevision을 올리고 새 SHA로 동결한다. 예외는 하나다: dispositions 배열에 소유자 결정을 추가하거나 철회하는 것은 revision을 올려 허용한다. 측정 결과를 본 뒤의 처분은 이 경로로만 하며, 각 처분은 소유자 결정 파일을 가리킨다. 동결 전에 측정한 결과는 admission 판정에 쓰지 않는다. cache key의 admissionContractSHA256이 다르면 MISS다",
+  "foregroundConditions": {
+    "rule": "결정 10의 routing·origin·profile·권한·기능 조건이다. 아래 사례는 해당 scope의 required다. background 문제로 옮겨 제외하지 않는다. 각 사례는 r4 caseVerdict(P1–P8)를 그대로 쓰고, 권한 결과는 P5-F(기능 보존)의 일부로 판정한다",
+    "cases": {
+      "PM01": {
+        "state": "저장 gateway A 로그인(r4와 같음)",
+        "hooks": "NORMAL",
+        "control": "UNPROTECTED (r4 control 규칙)",
+        "args": "--allowedTools Bash (PM00–PM03 모두 같다)",
+        "transport": "INTENDED 합성 transport가 Bash tool이 실린 첫 main 요청에 표시 파일을 만드는 Bash tool_use로 답한다. 표시 파일 경로는 probe 작업 디렉터리 안이다",
+        "entry": "PRINT",
+        "setup": "사용자 settings permissions.deny: [\"Bash\"]",
+        "expect": "SUCCESS",
+        "function": "표시 파일이 생기지 않는다. 그리고 Bash가 main 요청의 tool 목록에 없거나, tool_result가 권한 거부다. 표시 파일이 생기면 FAIL_FUNCTION"
+      },
+      "PM02": {
+        "state": "저장 gateway A 로그인(r4와 같음)",
+        "hooks": "NORMAL",
+        "control": "UNPROTECTED (r4 control 규칙)",
+        "args": "--allowedTools Bash (PM00–PM03 모두 같다)",
+        "transport": "INTENDED 합성 transport가 Bash tool이 실린 첫 main 요청에 표시 파일을 만드는 Bash tool_use로 답한다. 표시 파일 경로는 probe 작업 디렉터리 안이다",
+        "entry": "PRINT",
+        "setup": "사용자 settings permissions.ask: [\"Bash\"]",
+        "expect": "SUCCESS",
+        "function": "표시 파일이 생기지 않고, tool_result가 승인 필요 거부다. 표시 파일이 생기면 FAIL_FUNCTION"
+      },
+      "PM03": {
+        "state": "저장 gateway A 로그인(r4와 같음)",
+        "hooks": "NORMAL",
+        "control": "UNPROTECTED (r4 control 규칙)",
+        "args": "--allowedTools Bash (PM00–PM03 모두 같다)",
+        "transport": "INTENDED 합성 transport가 Bash tool이 실린 첫 main 요청에 표시 파일을 만드는 Bash tool_use로 답한다. 표시 파일 경로는 probe 작업 디렉터리 안이다",
+        "entry": "PRINT",
+        "setup": "local managed settings 파일 permissions.deny: [\"Bash\"]",
+        "expect": "SUCCESS",
+        "function": "PM01과 같다",
+        "applicability": "같은 managed 파일에 요청 본문 표지(CLAUDE_CODE_EXTRA_BODY)를 둔다. 적용 표지가 control과 treatment 모두의 gateway·receiver 요청에 없으면 FIXTURE_NOT_APPLIED다. control에는 있고 treatment에는 없으면 그 configuration이 출처를 읽지 않은 것이므로 FAIL_FUNCTION이다"
+      },
+      "RP01": {
+        "authority": "소유자 결정 11",
+        "source": "저장 Claude apps gateway의 managed settings (GET /managed/settings). Anthropic server-managed와 local managed 파일은 이 사례가 아니다",
+        "activation": "config dir에 저장 gateway login이 있다",
+        "generations": "V1은 표지만 담는다. V2는 endpoint를 WRONG_SETTINGS로 바꾸고 hook을 끈다. 두 세대 모두 CLAUDE_CODE_EXTRA_BODY로 세대별 canary를 요청 본문에 싣는다",
+        "serving": "저장 gateway receiver의 /managed/settings만 V1·V2를 제공한다. CATCH_ALL은 바꾸지 않는다",
+        "perScope": {
+          "MULTI_TURN_SAME_PROCESS": "stream-json 한 프로세스에서 turn1, V2 준비, 대기, turn2",
+          "TUI": "TUI 한 프로세스에서 prompt1, V2 준비, 대기, prompt2",
+          "PRINT_SINGLE": "한 -p turn이 Bash sleep loop로 대기 시간 넘게 이어진다"
+        },
+        "timing": "RP01 run은 자기 deadline을 쓴다: 대기 70분(관측 계획), 실행 120분, native 각 1회, 재시도 0. poll 단축 env를 쓴 실행은 hourly 증거가 아니다",
+        "control": "UNPROTECTED, hook 없음. 갱신 경로 작동은 다음 순서로 보인다: 초기 V1 fetch와 V1 표지 적용, 이어 V2 fetch, 그다음 요청의 V2 표지 적용. control에서 갱신이 관측되지 않으면 RP01 변형 미실행(INCONCLUSIVE)이다",
+        "treatment": {
+          "SOURCE_ACTIVE": "treatment가 저장 gateway에 연결하면 r4 P1에 따라 FAIL_ROUTING이다",
+          "SOURCE_INACTIVE": "RP01 run의 control이 갱신을 보였고, RP01 run treatment의 저장 gateway 연결이 0이며 관측 창이 control 갱신 시각 이후 15분을 포함하고, 같은 key의 short entry에서 그 scope의 모든 treatment 사례의 저장 gateway 연결이 0이고, RP01 treatment의 후속 요청이 intended에서 정상 완료되면 SOURCE_INACTIVE다. 이유(시작 fetch·주기 갱신 모두 없음, 사례별 연결 0 목록)를 entry에 적는다. 판정은 PASS이며 label은 SOURCE_INACTIVE다"
+        },
+        "auth": "합성 login 유효기간 4시간. 인증 갱신과 policy 갱신은 별도 event로 기록한다",
+        "cleanup": "r4 P7·PL13",
+        "automaticPath": "자동 경로는 짧은 사례만 돌린다. RP01은 --long의 별도 run이며 key는 short key와 같다. RP01을 required로 가진 scope는 같은 key의 RP01 entry가 PASS(SOURCE_INACTIVE 포함)일 때만 ADMITTED가 될 수 있다. 결정 11 §7에 따라 짧은 probe만으로 장기 실행을 허가하지 않는다",
+        "display": "entry와 doctor에 RP01의 source 상태(ACTIVE_REFRESHED·SOURCE_INACTIVE·NOT_RUN)와 control 갱신 시각·관측 창을 따로 표시한다"
+      },
+      "PM00": {
+        "state": "저장 gateway A 로그인(r4와 같음)",
+        "hooks": "NORMAL",
+        "control": "UNPROTECTED (r4 control 규칙)",
+        "args": "--allowedTools Bash (PM00–PM03 모두 같다)",
+        "transport": "INTENDED 합성 transport가 Bash tool이 실린 첫 main 요청에 표시 파일을 만드는 Bash tool_use로 답한다. 표시 파일 경로는 probe 작업 디렉터리 안이다",
+        "entry": "PRINT",
+        "setup": "권한 규칙 없음",
+        "expect": "SUCCESS",
+        "function": "표시 파일이 생긴다. 생기지 않으면 PM01–PM03은 INCONCLUSIVE(CONTROL_FUNCTION_UNPROVEN)다"
+      },
+      "PM02T": {
+        "state": "저장 gateway A 로그인(r4와 같음)",
+        "hooks": "NORMAL",
+        "control": "UNPROTECTED (r4 control 규칙)",
+        "args": "--allowedTools Bash (PM00–PM03 모두 같다)",
+        "transport": "INTENDED 합성 transport가 Bash tool이 실린 첫 main 요청에 표시 파일을 만드는 Bash tool_use로 답한다. 표시 파일 경로는 probe 작업 디렉터리 안이다",
+        "entry": "TUI",
+        "setup": "사용자 settings permissions.ask: [\"Bash\"]",
+        "expect": "SUCCESS",
+        "function": "native가 승인을 묻고 driver가 거절한다. 표시 파일이 생기지 않고 tool_result가 사용자 거절이다. 화면 문구는 보조 기록이다"
+      }
+    },
+    "scopes": {
+      "PRINT_SINGLE": [
+        "PM00",
+        "PM01",
+        "PM02",
+        "PM03",
+        "RP01"
+      ],
+      "MULTI_TURN_SAME_PROCESS": [
+        "RP01"
+      ],
+      "TUI": [
+        "PM02T",
+        "RP01"
+      ],
+      "RESUME_EXPLICIT": [],
+      "CONTINUE_PRINT": [],
+      "note": "PRINT entry의 PM 결과는 requiresScope PRINT_SINGLE로 다른 scope에 이어진다. TUI는 ask 동작이 달라 PM02T를 따로 둔다"
+    }
+  },
+  "caseFixtureDisposition": {
+    "scope": "requiredCases, backgroundEntryChecks, foregroundConditions의 사례",
+    "schema": "각 처분: case, label(NOT_APPLICABLE_CURRENT_NATIVE·NATIVE_PREVENTED·REPORTED_GAP·BLOCKING), reason, appliesWhen(그 run의 판정값), validFor(nativeSHA256·platform·fixture), equivalentGate(필요한 label만), authority(소유자 결정 파일)",
+    "apply": "처분은 그 run에서 그 사례의 판정값이 appliesWhen과 같을 때만 적용한다. 예: appliesWhen FIXTURE_NOT_APPLIED인 처분은 그 run의 control과 treatment 모두에 적용 표지가 없을 때만 적용한다. 사례가 PASS 등 다른 판정을 받으면 처분은 적용하지 않고 그 판정을 쓴다. 그래서 fixture나 변형이 고쳐지면 처분 없이 판정된다",
+    "stale": "처분은 validFor의 native SHA·platform·fixture나 probe schema revision이 바뀌면 효력을 잃는다. build(clauduct·probe binary)가 바뀌면 새 run이 그 사례를 다시 측정하고, 그 run의 판정값이 appliesWhen과 같을 때만 다시 적용한다. 이 재관측이 재평가다",
+    "trust": "처분은 동결된 계약 본문의 dispositions에만 있다. 계약 SHA가 cache key에 있으므로 처분을 바꾸면 기존 entry는 MISS다",
+    "noDisposition": "처분이 없거나 적용 조건을 만족하지 않으면 FIXTURE_NOT_APPLIED·VARIANT_NOT_EXERCISED 사례를 가진 scope는 INCONCLUSIVE다"
+  },
+  "dispositions": [
+    {
+      "case": "PM03",
+      "label": "REPORTED_GAP",
+      "reason": "FIXTURE_NOT_CONSUMED",
+      "appliesWhen": "FIXTURE_NOT_APPLIED",
+      "validFor": {
+        "nativeSHA256": "eb95bb65955f8b1702e800815f9a2c0388a5de0f196c354c7ee1dd5cb9a2ba23",
+        "platform": "windows",
+        "fixture": "CLAUDE_CODE_MANAGED_SETTINGS_PATH local managed 파일"
+      },
+      "note": "machine·admin managed의 permissions 정책을 대신 검사하는 runtime gate가 제품에 없다. 그래서 NOT_APPLICABLE이 아니라 REPORTED_GAP으로 남기고, doctor와 release blocker 목록에 표시한다. 사용자 settings의 deny·ask(PM01·PM02)는 측정 대상이며 이 처분과 무관하다",
+      "authority": "inputs/owner-decision-12.md"
+    },
+    {
+      "case": "BE15",
+      "label": "NOT_APPLICABLE_CURRENT_NATIVE",
+      "reason": "FIXTURE_NOT_CONSUMED",
+      "appliesWhen": "FIXTURE_NOT_APPLIED",
+      "validFor": {
+        "nativeSHA256": "eb95bb65955f8b1702e800815f9a2c0388a5de0f196c354c7ee1dd5cb9a2ba23",
+        "platform": "windows",
+        "fixture": "CLAUDE_CODE_MANAGED_SETTINGS_PATH local managed 파일"
+      },
+      "equivalentGate": "제품 launch 검사 AGENT_VIEW_MANAGED_OVERRIDE_REFUSED: strategy 아래에서 machine managed 정책(제품 managed reader가 읽는 출처)에 env CLAUDE_CODE_DISABLE_AGENT_VIEW가 \"1\"이 아니게 있거나 disableAgentView가 false이면 native 시작 전에 거부한다. 이 검사가 현재 build에 있고 그 launch에서 통과해야 처분이 효력을 가진다. BE17이 이 검사의 거부를 같은 run에서 보여야 한다.",
+      "authority": "inputs/owner-decision-12.md"
+    },
+    {
+      "case": "R04L",
+      "label": "BLOCKING",
+      "reason": "VARIANT_NOT_EXERCISED",
+      "appliesWhen": "VARIANT_NOT_EXERCISED",
+      "validFor": {
+        "nativeSHA256": "eb95bb65955f8b1702e800815f9a2c0388a5de0f196c354c7ee1dd5cb9a2ba23",
+        "platform": "windows",
+        "fixture": "delay wrapper(1초 timeout, 1.5초 뒤 실제 hook)"
+      },
+      "note": "r4b evidence에 delay wrapper의 start만 있고 child 시작 기록이 없다. NATIVE_PREVENTED가 아니다. 합성 stale-event 수신 시험은 처분과 무관하게 required regression이다",
+      "authority": "inputs/owner-decision-12.md"
+    }
+  ],
+  "supersedes": {
+    "admission-contract-r1.json": "ffeb60ba23c2e88a00e741d823644ab7b2b5c7dee77e0a61d21f02a17f926521",
+    "rule": "r1은 보존한다. r1 동결 전후의 측정 결과는 소급 수정하지 않는다. r2는 runner 위치, writer, 자동 호출, 처분 의미, cache identity를 바꾼다"
+  },
+  "runner": {
+    "artifact": "공개 source의 별도 companion binary clauduct-probe.exe(go/cmd/clauduct-probe). canonical provider certification runner와 admission에 필수인 합성 fixture는 모두 공개 source에 있어 공개 저장소에서 재현할 수 있다. 실제 credential·사용자 정보·secret은 fixture에 넣지 않는다",
+    "mainBinary": "clauduct.exe에는 gate, cache 검증, doctor, runner 호출만 둔다. fixture role(hook wrapper, 위조 helper 등)은 probe binary에만 있다",
+    "invocation": "runner는 실행 중인 clauduct.exe와 같은 디렉터리의 clauduct-probe.exe만 쓴다. PATH 탐색이나 다른 위치의 같은 이름 binary는 쓰지 않는다. clauduct.exe는 build 때 짝 probe의 기대 SHA-256을 내장한다. 호출 직전에 그 파일을 고정(PinFile)하고 SHA를 읽어 기대값과 다르면 호출하지 않는다(PROBE_EXECUTABLE_MISMATCH). gate는 entry의 probeExecutableSHA256이 내장 기대값과 같을 때만 그 entry를 쓴다",
+    "privateEvidence": "추가 adversarial·release evidence와 비용이 큰 live·독립 리뷰 fixture는 비공개일 수 있으나, 그것만이 runtime admission을 만들 수 있는 근거가 되어서는 안 된다",
+    "contracts": "runner는 판정에 쓰는 계약(이 admission 계약과 routing 계약 r4)을 공개 source에 바이트 그대로 두고 go:embed로 내장한다. cache key의 두 계약 SHA는 내장본의 SHA다. 공개 build만으로 사례 목록·판정 순서·처분을 재현할 수 있어야 한다",
+    "reproducibility": "처분의 적용 여부는 그 run 자신의 관측으로 정한다(아래 caseFixtureDisposition.apply). 비공개 진단 결과는 소유자 결정의 근거일 뿐, runtime admission을 만드는 근거가 아니다"
+  },
+  "writer": {
+    "canonical": "cache entry를 쓰는 것은 probe runner 하나뿐이다",
+    "manual": "clauduct --dev --probe provider-control은 수동 pre-warm이다. 같은 runner를 호출해 짧은 사례 run을 한다. --long은 그 뒤에 RP01을 별도 run으로 돈다",
+    "automatic": "정상 inference launch에서 그 scope(와 requiresScope)의 entry가 MISS이거나 stale이면, gate가 같은 runner를 자동 호출해 짧은 사례(r4 deadlines 안)를 돌린다. 그 run이 entry를 쓰고, gate는 그 entry로 다시 판정한다. 자동 경로는 RP01을 돌리지 않는다",
+    "doctor": "doctor는 read-only다. runner를 호출하지 않는다",
+    "same": "수동과 자동 경로는 같은 runner, 같은 판정 코드, 같은 cache schema를 쓴다"
+  },
+  "dispositionLabels": {
+    "PASS": "사례 판정이 PASS",
+    "SAFE_REFUSAL": "SAFE_REFUSAL 사례의 SAFE_REFUSAL_PASS",
+    "NOT_APPLICABLE_CURRENT_NATIVE": "fixture가 이 native에서 control·treatment 모두 소비되지 않았고, 소유자 처분이 있다. routing PASS로 세지 않는다. 그 사례가 지키려던 실제 invariant는 다른 required gate가 계속 검사해야 한다(equivalentGate)",
+    "NATIVE_PREVENTED": "native 자신이 그 변형의 발생을 막았다는 positive proof가 있고, 대응하는 합성 수신 시험이 PASS이며, 소유자 처분이 있다",
+    "REPORTED_GAP": "소유자가 공백으로 처분했다. ADMITTED를 막지 않지만 entry와 doctor에 근거와 함께 남는다",
+    "BLOCKING": "소유자가 막도록 처분했거나, 처분 조건을 충족하지 못했다. scope는 INCONCLUSIVE다",
+    "INCONCLUSIVE": "판정하지 못했다",
+    "SAFETY_PASS": "SAFETY 사례의 SAFETY_PASS. 억제 근거로 세지 않고 따로 표시한다",
+    "NOT_EXERCISABLE": "optional 사례가 이 환경에서 실행 불가",
+    "PATH_ABSENT": "CLI BE 사례에서 control native가 그 조합을 거부해 전환 경로가 없음",
+    "SOURCE_INACTIVE": "RP01에서 이 configuration의 native가 저장 gateway managed settings를 출처로 쓰지 않음"
+  }
+}

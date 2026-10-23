@@ -75,10 +75,21 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	session := r.Header.Get("X-Claude-Code-Session-Id")
-	if err := g.sessionProfileError(session); err != nil {
+	var from *processKey
+	if id, required := g.identityOf(r); required {
+		// Inference comes from the native process itself, never a hook or tool under it.
+		if id.native == (processKey{}) || !id.direct {
+			g.refuseIdentity(w)
+			return
+		}
+		from = &id.native
+	}
+	finishProfile, err := g.useSessionProfile(session, from, false)
+	if err != nil {
 		g.refuseSessionProfile(w, session, err)
 		return
 	}
+	defer finishProfile()
 	g.ReconcileNativeCancellations()
 
 	// Admission happens before the body is read, so a request that cannot be served does
@@ -177,7 +188,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	defer releaseAgent()
 	if err != nil {
 		entry.selectionRefused(err)
-		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
+		// Nothing was dispatched. Give the key back before answering: native may retry at once.
+		execution.release()
+		g.refuseCategory(w, selectionStatus(err), selectionCategory(err))
 		return
 	}
 	ctx, finishCancellation := g.bindNativeCancellation(ctx, r, entry, false)
@@ -247,6 +260,10 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_CONVERSION_FAILED")
 		return
 	}
+	if err := g.resolveToolHistory(r, backendRequest, true, entry.nativeTurn); err != nil {
+		g.refuseCategory(w, 400, err.Error())
+		return
+	}
 	if g.delegations != nil {
 		if err := g.delegations.describe(backendRequest.Tools, r.Header.Get("X-Claude-Code-Agent-Id")); err != nil {
 			g.refuseCategory(w, http.StatusBadRequest, "AGENT_SELECTION_UNVERIFIED")
@@ -255,6 +272,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if entry.snapshot().Kind == "compaction" {
 		addCompactGuidance(backendRequest)
+	}
+	if entry.auxiliaryToolsBlocked {
+		backendRequest.ToolChoice = "none" // Preserve definitions for history and cache; grant no calls.
 	}
 	if err := g.prepareDocuments(ctx, backendRequest); err != nil {
 		g.refuseCategory(w, 400, err.Error())
@@ -354,7 +374,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// receipt. Child, tool and conversation requests still require the same proof.
 	if independentAuxiliary(r, request) {
 		entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
-		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens")
+		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens", entry)
 		return route, releaseAgent, err
 	}
 	active, ok := g.pinNativeTurn(r, entry)
@@ -374,6 +394,14 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 			return nil, releaseAgent, proof.cancellation
 		}
 		if proof != nil && proof.Unmatched {
+			// Only a validated negative from this request's native helper grants no-call inference.
+			if proof.helper != nil && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" && r.Header.Get("X-Claude-Code-Agent-Id") == "" && r.Header.Get("X-Claude-Code-Parent-Agent-Id") == "" && len(request.Tools) > 0 && request.HostedSearch == nil {
+				entry.nativeTurn, entry.nativeResult, entry.nativeResultTurn = nil, nil, ""
+				entry.auxiliaryToolsBlocked = true
+				entry.checked("auxiliary_tools_blocked")
+				route, err := g.auxiliarySelection(request, false, entry)
+				return route, releaseAgent, err
+			}
 			return nil, releaseAgent, errNativeOriginUnverified
 		}
 		if proof == nil || !proof.Confirmations {
@@ -714,23 +742,39 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	if len(scopes) > 0 {
 		translator.ExpectRoute(scopes[0].route.Model, scopes[0].route.Effort)
 	}
+	var issuanceProof *nativeConfirmation
+	reserved := map[string]string{}
 	if g.nativeEvents.confirmationsRequired {
-		var proof *nativeConfirmation
 		if entry := recordOf(w); entry != nil {
-			proof = entry.nativeConfirmation
+			issuanceProof = entry.nativeConfirmation
 		}
-		translator.ToolUseID = func(callID string) (string, error) { return nativeToolUseID(proof, callID) }
+		translator.ToolUseID = func(callID string) (string, error) {
+			token, err := newToken()
+			if err != nil {
+				return "", err
+			}
+			id, err := nativeToolUseID(issuanceProof, "cdt2_"+token)
+			if err == nil {
+				reserved[id] = callID
+			}
+			return id, err
+		}
 	}
 	// Which item types the backend actually sends, kept for the session, so refusing an
 	// unknown one is decided on what sessions see (#85).
+	relayCompleted := false
 	defer func() {
+		answer := translator.Answer()
 		g.events.observeItems(translator.ItemTypes())
+		g.events.observeSafety(translator.SafetyBuffering())
+		g.events.observeModeration(translator.ModerationMetadata())
 		recordOf(w).returned(translator.Returned())
-		recordOf(w).output(translator.ItemTypes(), len(translator.Answer()))
+		recordOf(w).output(translator.ItemTypes(), len(answer))
+		recordOf(w).classifierAnswer(answer, relayCompleted)
 	}()
 	if entry := recordOf(w); entry != nil {
 		record := entry.snapshot()
-		if record.Kind == "compaction" {
+		if record.Kind == "compaction" || entry.auxiliaryToolsBlocked {
 			translator.Builder().SetCallable(func(string) bool { return false })
 		}
 		if len(scopes) > 0 && scopes[0].parentWait != nil {
@@ -754,7 +798,6 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		}
 	}
 	var prepared []string
-	relayCompleted := false
 	if g.delegations != nil && len(scopes) > 0 && scopes[0].parent != "" {
 		class := recordOf(w).snapshot().RequestClass
 		// A verified hand-back already owns the report. Native's optional closing
@@ -980,6 +1023,12 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 				if err != nil {
 					fail(err)
 					return false
+				}
+				if g.nativeEvents.confirmationsRequired {
+					if err := g.publishToolIssuance(frames, reserved, issuanceProof, recordOf(w).nativeTurn); err != nil {
+						fail(err)
+						return false
+					}
 				}
 				// Before this event's frames, so the plugin finds the summary by the time the
 				// answer's first chunk reaches it.

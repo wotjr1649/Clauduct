@@ -229,7 +229,7 @@ func TestASummaryIsCollectedBeforeTheAnswerAndNotSent(t *testing.T) {
 	tr := NewTranslatorFor(decodeRequest(t, minimalRequest), "gpt-6-astra")
 	item := reasoningItem("rs_1", "PUBLIC_ENVELOPE", `[{"type":"summary_text","text":"PUBLIC_TITLE_ONE"},{"type":"summary_text","text":"PUBLIC_TITLE_TWO"}]`)
 	var frames []anthropic.Frame
-	for i, ev := range []stream.Event{itemAdded(0, openingOf(item)), itemDone(0, item), textDelta("answer"), textDone("answer"), event(codex.Completed, completedOK)} {
+	for i, ev := range []stream.Event{itemAdded(0, openingOf(item)), itemDone(0, item), itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")), event(codex.Completed, completedOK)} {
 		out, err := tr.Accept(ev)
 		if err != nil {
 			t.Fatal(err)

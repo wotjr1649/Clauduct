@@ -179,15 +179,31 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	finishProfile, err := g.useSessionProfile(event.Session, nil, true)
+	if err != nil {
+		g.refuseSessionProfile(w, event.Session, err)
+		return
+	}
+	defer finishProfile()
 	c := g.contexts
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if event.Event == "SessionStart" {
+		// The registering hook's native as the OS names it (#319 decision 18d); without native
+		// identity every registration is the one zero process, the single-launch behaviour.
+		var process processKey
+		if id, required := g.identityOf(r); required {
+			if id.native == (processKey{}) {
+				g.refuseIdentity(w)
+				return
+			}
+			process = id.native
+		}
 		if err := g.contextSession(event.Session, event.Transcript); err != nil {
 			g.refuseCategory(w, 400, "CONTEXT_JOURNAL_UNVERIFIED")
 			return
 		}
-		if err := g.registerSessionProfile(event.Session, event.Source); err != nil {
+		if err := g.registerSessionProfile(event.Session, event.Source, process); err != nil {
 			g.refuseSessionProfile(w, event.Session, err)
 			return
 		}

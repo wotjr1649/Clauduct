@@ -32,6 +32,11 @@ type EventReport struct {
 	// OutputItems counts the output items the backend opened, by type, named by the same
 	// rule (#85). At most itemTypes of them; the rest are counted under "<more>".
 	OutputItems map[string]int64 `json:"outputItems,omitempty"`
+	// SafetyBuffering counts the backend's safety_buffering notices (output held for extra
+	// checks): "notices" events, and "use_case:<name>" and "reason:<name>" values. No content.
+	SafetyBuffering map[string]int64 `json:"safetyBuffering,omitempty"`
+	// ModerationMetadata counts first-party presentation notices; their values are not kept.
+	ModerationMetadata int64 `json:"moderationMetadata,omitempty"`
 }
 
 type eventLedger struct {
@@ -40,10 +45,12 @@ type eventLedger struct {
 	names       map[string]bool
 	formats     map[string]int64
 	items       map[string]int64
+	safety      map[string]int64
+	moderation  int64
 }
 
 func newEventLedger() *eventLedger {
-	return &eventLedger{names: map[string]bool{}, formats: map[string]int64{}, items: map[string]int64{}}
+	return &eventLedger{names: map[string]bool{}, formats: map[string]int64{}, items: map[string]int64{}, safety: map[string]int64{}}
 }
 
 // observe records one refusal.
@@ -60,6 +67,31 @@ func (e *eventLedger) observe(refusal *bridge.UnsupportedEvent) {
 	if len(e.formats) < diagnosticNames || e.formats[refusal.Format] > 0 {
 		e.formats[refusal.Format]++
 	}
+}
+
+// observeSafety adds one response's safety_buffering counts (keys are shaped and bounded by the
+// translator; this bounds the ledger across responses the same way as items).
+func (e *eventLedger) observeSafety(counts map[string]int) {
+	if len(counts) == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for key, n := range counts {
+		if _, kept := e.safety[key]; !kept && len(e.safety) >= itemTypes {
+			key = "<more>"
+		}
+		e.safety[key] += int64(n)
+	}
+}
+
+func (e *eventLedger) observeModeration(count int) {
+	if count == 0 {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.moderation += int64(count)
 }
 
 // itemTypes bounds how many distinct output item types are kept.
@@ -83,11 +115,17 @@ func (e *eventLedger) observeItems(types map[string]int) {
 func (e *eventLedger) report() EventReport {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	report := EventReport{Unsupported: e.unsupported, Names: sorted(e.names)}
+	report := EventReport{Unsupported: e.unsupported, Names: sorted(e.names), ModerationMetadata: e.moderation}
 	if len(e.items) > 0 {
 		report.OutputItems = make(map[string]int64, len(e.items))
 		for kind, n := range e.items {
 			report.OutputItems[kind] = n
+		}
+	}
+	if len(e.safety) > 0 {
+		report.SafetyBuffering = make(map[string]int64, len(e.safety))
+		for key, n := range e.safety {
+			report.SafetyBuffering[key] = n
 		}
 	}
 	if len(e.formats) > 0 {

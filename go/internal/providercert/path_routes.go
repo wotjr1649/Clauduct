@@ -373,6 +373,7 @@ var templateRoutes = []templateRoute{
 	{"*", "/worker/heartbeat"},
 	{"*", "/worker/internal-events"},
 	{"*", "/worker/record-created-pr"},
+	{"*", "/worker/sender_addr"},
 	{"*", "/worker/skill-manifest"},
 	{"*", "/worker/synced_file"},
 	{"*", "/worker/wakes"},

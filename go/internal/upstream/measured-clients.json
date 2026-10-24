@@ -1,6 +1,6 @@
 {
-  "claude": "2.1.305 (Claude Code)",
-  "codex": "codex-cli 0.163.0",
+  "claude": "2.1.309 (Claude Code)",
+  "codex": "codex-cli 0.164.0",
   "tools": [
     "Agent",
     "Artifact",

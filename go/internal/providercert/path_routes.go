@@ -366,6 +366,7 @@ var templateRoutes = []templateRoute{
 	{"*", "/v2/ccr-sessions/{seg}/hearthbot/mcp"},
 	{"*", "/v2/ccr-sessions/{seg}/mcp"},
 	{"*", "/v2/ccr-sessions/{seg}/teleport/conversations/{seg}/completion"},
+	{"*", "/worker/agent-metadata-events/batch-get"},
 	{"*", "/worker/events"},
 	{"*", "/worker/events/delivery"},
 	{"*", "/worker/events/stream"},

@@ -110,46 +110,28 @@ func OwnerOf(client, server net.Addr) ConnOwner { return ownerOf(client, server)
 
 // ownerOf finds the process on this machine whose IPv4 TCP connection has client as its local
 // end and server as its remote end. Any failure returns a zero owner.
-func ownerOf(client, server net.Addr) ConnOwner {
+func ownerOf(client, server net.Addr) ConnOwner { return ownerAtAccept(client, server, true) }
+
+func ownerAtAccept(client, server net.Addr, details bool) ConnOwner {
 	owner := ConnOwner{At: time.Now()}
-	c, ok1 := client.(*net.TCPAddr)
-	s, ok2 := server.(*net.TCPAddr)
-	if !ok1 || !ok2 {
-		return owner
-	}
-	var size uint32
-	// AF_INET = 2, TCP_TABLE_OWNER_PID_CONNECTIONS = 4.
-	getExtendedTCP.Call(0, uintptr(unsafe.Pointer(&size)), 0, 2, 4, 0)
-	if size == 0 {
-		return owner
-	}
-	buf := make([]byte, size+4096)
-	size = uint32(len(buf))
-	if r, _, _ := getExtendedTCP.Call(uintptr(unsafe.Pointer(&buf[0])), uintptr(unsafe.Pointer(&size)), 0, 2, 4, 0); r != 0 {
-		return owner
-	}
-	count := *(*uint32)(unsafe.Pointer(&buf[0]))
-	rows := unsafe.Slice((*mibTCPRowOwnerPID)(unsafe.Pointer(&buf[4])), count)
-	port := func(p uint32) int { return int(p&0xff)<<8 | int(p>>8&0xff) }
-	for _, row := range rows {
-		if port(row.LocalPort) == c.Port && port(row.RemotePort) == s.Port {
-			owner.PID = row.OwningPID
-			break
-		}
-	}
+	owner.PID = exactOwner(client, server)
 	if owner.PID == 0 {
 		return owner
 	}
-	owner.ImagePath, owner.Created, owner.Command = processFacts(owner.PID)
+	owner.ImagePath, owner.Created, owner.Command = processFactsAtAccept(owner.PID, details)
 	owner.Image = owner.ImagePath
 	if i := strings.LastIndexAny(owner.Image, `\/`); i >= 0 {
 		owner.Image = owner.Image[i+1:]
 	}
-	owner.ParentPID = parentOf(owner.PID)
+	if details {
+		owner.ParentPID = parentOf(owner.PID)
+	}
 	return owner
 }
 
-func processFacts(pid uint32) (string, time.Time, string) {
+func processFacts(pid uint32) (string, time.Time, string) { return processFactsAtAccept(pid, true) }
+
+func processFactsAtAccept(pid uint32, details bool) (string, time.Time, string) {
 	h, err := syscall.OpenProcess(0x1000, false, pid) // PROCESS_QUERY_LIMITED_INFORMATION
 	if err != nil {
 		return "", time.Time{}, ""
@@ -166,7 +148,11 @@ func processFacts(pid uint32) (string, time.Time, string) {
 	if r, _, _ := getProcessTimesOwn.Call(uintptr(h), uintptr(unsafe.Pointer(&created)), uintptr(unsafe.Pointer(&exited)), uintptr(unsafe.Pointer(&kernel)), uintptr(unsafe.Pointer(&user))); r != 0 {
 		when = time.Unix(0, created.Nanoseconds())
 	}
-	return image, when, firstArgument(commandLine(h))
+	command := ""
+	if details {
+		command = firstArgument(commandLine(h))
+	}
+	return image, when, command
 }
 
 func parentOf(pid uint32) uint32 {

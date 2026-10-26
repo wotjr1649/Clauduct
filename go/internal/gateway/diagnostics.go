@@ -130,6 +130,13 @@ type RequestRecord struct {
 	// same_step, same_body; the earliest claim when several match). Diagnostic only (#288).
 	ReplayOf *ReplayOf `json:"replayOf,omitempty"`
 
+	// Remote is the request's loopback client address (ip:port), kept only while an outcome
+	// observer is registered (Gateway.ObserveOutcome). That observer runs before the request is
+	// released, so it can name the process holding the client end of this very connection --
+	// including a request refused before its credential was accepted, which no ingress observer
+	// sees. Never serialised: not part of the status or the account (#319 decision 18).
+	Remote string `json:"-"`
+
 	UpstreamEnd *UpstreamEndRecord `json:"upstreamEnd,omitempty"`
 
 	// What a backend failure event said about itself, in fixed vocabularies (#84).
@@ -583,6 +590,16 @@ func (r *record) finish() {
 			(*fn)(r.data)
 		}
 	}
+}
+
+// client keeps the request's loopback client address for an outcome observer (Remote).
+func (r *record) client(addr string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.Remote = addr
 }
 
 // seqNumber is the record's request number, or -1 for a request nothing recorded.

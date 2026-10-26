@@ -210,7 +210,18 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 // job before the first instruction, closing even the suspended-then-assign race.
 // The non-inheritable, unnamed job handle never enters the child's handle list.
 // stdio files and console group are preserved for the native TUI and Ctrl+C.
-func Start(cmd *exec.Cmd) (_ *Process, err error) {
+func Start(cmd *exec.Cmd) (*Process, error) { return start(cmd, nil) }
+
+// StartObserved captures the owned generation before its first instruction. A failed
+// observation terminates the still-suspended job; ordinary Start has no extra suspension.
+func StartObserved(cmd *exec.Cmd, observe func(*Process) error) (*Process, error) {
+	if observe == nil {
+		return nil, errors.New("PROCESS_OBSERVER_REQUIRED")
+	}
+	return start(cmd, observe)
+}
+
+func start(cmd *exec.Cmd, observe func(*Process) error) (_ *Process, err error) {
 	stdin, stdout, stderr := cmd.Stdin, cmd.Stdout, cmd.Stderr
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -221,6 +232,9 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 		return nil, errors.New("UNSUPPORTED_OWNED_PROCESS_ATTRIBUTES")
 	}
 	cmd.SysProcAttr.CreationFlags = syscall.CREATE_UNICODE_ENVIRONMENT | 0x80000
+	if observe != nil {
+		cmd.SysProcAttr.CreationFlags |= 0x4
+	} // CREATE_SUSPENDED
 	if cmd.Err != nil {
 		return nil, cmd.Err
 	}
@@ -404,6 +418,17 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 	cmd.Process, err = os.FindProcess(int(pi.ProcessId))
 	if err != nil {
 		return nil, err
+	}
+	if observe != nil {
+		if err = observe(p); err != nil {
+			_ = cmd.Process.Release()
+			return nil, err
+		}
+		resumed, _, resumeErr := processKernel.NewProc("ResumeThread").Call(uintptr(pi.Thread))
+		if resumed != 1 {
+			_ = cmd.Process.Release()
+			return nil, &ProcessIdentityError{Operation: "RESUME", Err: resumeErr}
+		}
 	}
 	for _, copy := range copies {
 		go copy()

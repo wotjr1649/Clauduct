@@ -1031,7 +1031,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 
 	if lifecycle.Reason == "routing_mismatch" || lifecycle.Reason == "managed_routing_policy" {
 		result.Category = CategoryRouting
-		return result, fmt.Errorf("ROUTING_UNVERIFIED: %s; the session was ended so no further model request could leave this session's gateway", lifecycle.Detail)
+		return result, fmt.Errorf("%w: %s; the session was ended so no further model request could leave this session's gateway", ErrRoutingUnverified, lifecycle.Detail)
 	}
 
 	// A non-zero native exit is the native process's answer, not this bridge's error. Only

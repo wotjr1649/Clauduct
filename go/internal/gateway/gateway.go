@@ -359,6 +359,11 @@ func (g *Gateway) ObserveRequests(fn func(*http.Request)) { g.requestObserver.St
 // ObserveOutcome registers fn to see each request's final record when it closes: its outcome,
 // the refusal category if any, and the same Seq its ingress carried. No body is in it. fn runs
 // on the request goroutine before the request is released, so it must return promptly.
+//
+// Every recorded request reaches fn, including one refused before its credential was accepted.
+// While fn is set a record also carries Remote, the request's loopback client address, so fn can
+// name the process on the other end of that connection while it is still open (#319 decision
+// 18). Remote is never serialised. Set it before native starts.
 func (g *Gateway) ObserveOutcome(fn func(RequestRecord)) { g.ring.finished.Store(&fn) }
 
 func (g *Gateway) observeIngress(w http.ResponseWriter, r *http.Request, body []byte) {
@@ -623,6 +628,12 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != statusPath && !helper {
 		entry := g.ring.open(r.Method, r.URL.Path)
 		defer entry.finish()
+		// Only for an outcome observer, and only a loopback client: nothing else reads it.
+		if fn := g.ring.finished.Load(); fn != nil && *fn != nil {
+			if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && isLoopback(host) {
+				entry.client(r.RemoteAddr)
+			}
+		}
 		w = &tracked{ResponseWriter: w, rec: entry, body: r.Body, class: r.Header.Get("X-Claude-Code-Request-Class")}
 	}
 

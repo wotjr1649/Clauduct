@@ -88,8 +88,8 @@ func IsAncestor(start, target uint32, parents map[uint32]uint32, createdOf func(
 
 // exactOwner is the PID whose IPv4 TCP connection has exactly client as its local end and
 // server as its remote end: addresses and ports. Anything but IPv4 (the gateway listens on
-// 127.0.0.1 only) or a failed lookup is 0. ownerOf, which P3 diagnostics use, compares ports
-// alone; an identity cannot rest on that.
+// 127.0.0.1 only) or a failed lookup is 0. NativeOwner and receiver attribution share
+// this exact tuple check; a port-only match cannot establish identity.
 func exactOwner(client, server net.Addr) uint32 {
 	c, ok1 := client.(*net.TCPAddr)
 	s, ok2 := server.(*net.TCPAddr)

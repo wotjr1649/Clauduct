@@ -15,6 +15,10 @@ import (
 // legacy identities, not another account's list, not a cache whose account is unknown.
 var ErrModelList = errors.New("ACCOUNT_MODEL_LIST_UNAVAILABLE")
 
+// ErrRoutingUnverified is the refusal a session ends with when a model request left by a route this
+// session's gateway did not verify; the message keeps its "ROUTING_UNVERIFIED: <detail>" form.
+var ErrRoutingUnverified = errors.New(CategoryRouting)
+
 // ModelListFacts is the provenance of the session's account list, for the exit status.
 type ModelListFacts struct {
 	// Source is "account" for a list fetched at start, "last-good" for the same account's

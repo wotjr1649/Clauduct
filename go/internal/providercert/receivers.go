@@ -53,7 +53,51 @@ func (c *Counter) Owners() []ConnOwner {
 
 type countingConn struct {
 	net.Conn
-	counter *Counter
+	counter    *Counter
+	accepted   *ReceiverConnection
+	observer   *Observer
+	closed     *sync.Once
+	drainOwner receiverOwner
+}
+
+func (c countingConn) Close() error {
+	err := c.Conn.Close()
+	if c.closed != nil {
+		c.closed.Do(func() {
+			c.observer.mu.Lock()
+			defer c.observer.mu.Unlock()
+			c.observer.trackActivity(c.drainOwner, -1, 0)
+		})
+	}
+	return err
+}
+
+// ReceiverConnection is captured once before HTTP/TLS consumes the connection.
+// It holds the loopback tuple for in-process joins only: evidence never carries an address, so
+// the tuple is not serialized; the ID and the OS identity of the owner are.
+type ReceiverConnection struct {
+	ID       int64     `json:"id"`
+	Accepted time.Time `json:"accepted"`
+	Client   string    `json:"-"`
+	Server   string    `json:"-"`
+	Owner    ConnOwner `json:"owner"`
+}
+
+type receiverConnectionKey struct{}
+
+func receiverConnContext(ctx context.Context, c net.Conn) context.Context {
+	if secured, ok := c.(*tls.Conn); ok {
+		c = secured.NetConn()
+	}
+	if counted, ok := c.(countingConn); ok {
+		return context.WithValue(ctx, receiverConnectionKey{}, counted.accepted)
+	}
+	return ctx
+}
+
+func receiverConnection(r *http.Request) *ReceiverConnection {
+	connection, _ := r.Context().Value(receiverConnectionKey{}).(*ReceiverConnection)
+	return connection
 }
 
 func (c countingConn) Read(b []byte) (int, error) {
@@ -64,7 +108,8 @@ func (c countingConn) Read(b []byte) (int, error) {
 
 type countingListener struct {
 	net.Listener
-	counter *Counter
+	counter  *Counter
+	observer *Observer
 }
 
 func (l countingListener) Accept() (net.Conn, error) {
@@ -72,19 +117,40 @@ func (l countingListener) Accept() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.counter.Conns.Add(1)
+	var closed *sync.Once
+	if l.observer != nil {
+		l.observer.mu.Lock()
+		l.observer.trackActivity(receiverOwner{}, 1, 0)
+		l.observer.mu.Unlock()
+		closed = &sync.Once{}
+	}
+	id := l.counter.Conns.Add(1)
+	accepted := time.Now()
+	owner := ownerAtAccept(conn.RemoteAddr(), conn.LocalAddr(), id <= maxOwners)
+	drainOwner := receiverOwnerOf(owner)
+	if l.observer != nil {
+		l.observer.mu.Lock()
+		l.observer.trackActivity(receiverOwner{}, -1, 0)
+		l.observer.trackActivity(drainOwner, 1, 0)
+		l.observer.mu.Unlock()
+	}
+	var connection *ReceiverConnection
+	_, clientTCP := conn.RemoteAddr().(*net.TCPAddr)
+	_, serverTCP := conn.LocalAddr().(*net.TCPAddr)
+	if clientTCP && serverTCP {
+		connection = &ReceiverConnection{ID: id, Accepted: accepted, Client: conn.RemoteAddr().String(), Server: conn.LocalAddr().String(), Owner: owner}
+	}
 	l.counter.mu.Lock()
 	full := len(l.counter.owners) >= maxOwners
 	l.counter.mu.Unlock()
 	if !full {
-		owner := ownerOf(conn.RemoteAddr(), conn.LocalAddr())
 		l.counter.mu.Lock()
 		if len(l.counter.owners) < maxOwners {
 			l.counter.owners = append(l.counter.owners, owner)
 		}
 		l.counter.mu.Unlock()
 	}
-	return countingConn{conn, l.counter}, nil
+	return countingConn{Conn: conn, counter: l.counter, accepted: connection, observer: l.observer, closed: closed, drainOwner: drainOwner}, nil
 }
 
 // Canary is one turn's marker in the prompt. Only its digest goes into evidence.
@@ -259,11 +325,12 @@ func decoded(header http.Header, body io.Reader) (io.Reader, error) {
 
 // Seen is one request a receiver observed: never its body or header values.
 type Seen struct {
-	Sequence  int       `json:"sequence,omitempty"`
-	At        time.Time `json:"at"`
-	Host      string    `json:"host"`
-	Method    string    `json:"method"`
-	PathClass string    `json:"pathClass"`
+	Connection *ReceiverConnection `json:"connection,omitempty"`
+	Sequence   int                 `json:"sequence,omitempty"`
+	At         time.Time           `json:"at"`
+	Host       string              `json:"host"`
+	Method     string              `json:"method"`
+	PathClass  string              `json:"pathClass"`
 	// PathTemplate is method + host + the path with variable parts normalized (see PathTemplate):
 	// no query, token, e-mail, file path or other secret-bearing value.
 	PathTemplate string `json:"pathTemplate"`
@@ -285,6 +352,22 @@ type Seen struct {
 // maxSeen bounds one receiver's record; requests past it are still counted.
 const maxSeen = 512
 
+type receiverOwner struct {
+	pid     uint32
+	created int64
+}
+
+func receiverOwnerOf(owner ConnOwner) receiverOwner {
+	if owner.PID == 0 || owner.Created.IsZero() {
+		return receiverOwner{}
+	}
+	return receiverOwner{pid: owner.PID, created: owner.Created.UnixNano()}
+}
+
+type receiverActivity struct {
+	connections, requests int
+}
+
 // Observer is the handler behind every probe receiver. It classifies and scans each request,
 // then lets Respond answer it. Respond never sees the body: it has been consumed.
 type Observer struct {
@@ -294,10 +377,13 @@ type Observer struct {
 	// Observed receives metadata for every recorded request, including CONNECT and upgrades.
 	Observed func(metadata ObservationMetadata, seen Seen)
 
-	mu      sync.Mutex
-	seen    []Seen
-	total   int
-	dropped int
+	mu          sync.Mutex
+	seen        []Seen
+	total       int
+	dropped     int
+	active      int
+	connections atomic.Int64
+	activity    map[receiverOwner]receiverActivity
 	// stop ends WebSocket reads, which outlive the HTTP server's Close once hijacked.
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -321,6 +407,10 @@ func (o *Observer) observed(r *http.Request, seen Seen) {
 	}
 	slices.Sort(metadata.AuthHeaders)
 	seen.Canaries = slices.Clone(seen.Canaries)
+	if seen.Connection != nil {
+		copy := *seen.Connection
+		seen.Connection = &copy
+	}
 	o.Observed(metadata, seen)
 }
 
@@ -355,7 +445,15 @@ func (o *Observer) canaries() []Canary {
 }
 
 func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority string) {
-	seen := Seen{At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
+	var owner receiverOwner
+	if connection := receiverConnection(r); connection != nil {
+		owner = receiverOwnerOf(connection.Owner)
+	}
+	o.mu.Lock()
+	o.trackActivity(owner, 0, 1)
+	o.mu.Unlock()
+	defer func() { o.mu.Lock(); o.trackActivity(owner, 0, -1); o.mu.Unlock() }()
+	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
 		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
@@ -382,6 +480,42 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 		return
 	}
 	w.WriteHeader(http.StatusNotFound)
+}
+
+// Drained includes accepted connections before HTTP/TLS starts a handler. Call only after the sender exits.
+func (o *Observer) Drained() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.active == 0 && o.connections.Load() == 0
+}
+
+// trackActivity requires mu. Empty entries are removed so only live activity is retained.
+func (o *Observer) trackActivity(owner receiverOwner, connections, requests int) {
+	if o.activity == nil {
+		o.activity = map[receiverOwner]receiverActivity{}
+	}
+	activity := o.activity[owner]
+	activity.connections += connections
+	activity.requests += requests
+	if activity == (receiverActivity{}) {
+		delete(o.activity, owner)
+	} else {
+		o.activity[owner] = activity
+	}
+	o.connections.Add(int64(connections))
+	o.active += requests
+}
+
+// DrainedFor ignores other proved owners; unknown ownership keeps the proof incomplete.
+// Call after the exact sender generation exits, including its accepted but unread connections.
+func (o *Observer) DrainedFor(pid uint32, created time.Time) bool {
+	owner := receiverOwnerOf(ConnOwner{PID: pid, Created: created})
+	if owner == (receiverOwner{}) {
+		return false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.activity[owner] == (receiverActivity{}) && o.activity[receiverOwner{}] == (receiverActivity{})
 }
 
 // webSocket accepts the upgrade and scans every message for as long as the connection or the
@@ -484,8 +618,8 @@ func ListenUnix(o *Observer, path string) (*Receiver, error) {
 		return nil, err
 	}
 	counter := &Counter{}
-	r := &Receiver{URL: path, Counter: counter, Observer: o, server: &http.Server{Handler: o, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
-	go func() { r.done <- r.server.Serve(countingListener{raw, counter}) }()
+	r := &Receiver{URL: path, Counter: counter, Observer: o, server: &http.Server{Handler: o, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
+	go func() { r.done <- r.server.Serve(countingListener{Listener: raw, counter: counter, observer: o}) }()
 	return r, nil
 }
 
@@ -504,8 +638,8 @@ func listen(handler http.Handler, cert *tls.Certificate, der []byte, o *Observer
 		return nil, err
 	}
 	counter := &Counter{}
-	var l net.Listener = countingListener{raw, counter}
-	r := &Receiver{Counter: counter, Observer: o, server: &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
+	var l net.Listener = countingListener{Listener: raw, counter: counter, observer: o}
+	r := &Receiver{Counter: counter, Observer: o, server: &http.Server{Handler: handler, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
 	scheme := "http"
 	if cert != nil {
 		scheme = "https"
@@ -652,7 +786,7 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	}
 	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
 	// the probe cannot see into must not vanish from the record.
-	seen := Seen{At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect", PathTemplate: PathTemplate(http.MethodConnect, authority, "")}
+	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect", PathTemplate: PathTemplate(http.MethodConnect, authority, "")}
 	tunnel := o.record(&seen)
 	o.observed(r, seen)
 	var hello atomic.Bool
@@ -680,7 +814,13 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 		tlsConn.Close()
 		return
 	}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { o.observe(w, r, authority) }), ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { o.observe(w, r, authority) }), BaseContext: func(net.Listener) context.Context {
+		ctx := context.Background()
+		if connection := receiverConnection(r); connection != nil {
+			ctx = context.WithValue(ctx, receiverConnectionKey{}, connection)
+		}
+		return ctx
+	}, ReadHeaderTimeout: 10 * time.Second}
 	_ = server.Serve(newOneConn(tlsConn))
 }
 

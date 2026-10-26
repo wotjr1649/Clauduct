@@ -113,7 +113,7 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 			if err != nil {
 				return nil, err
 			}
-			native, err := tuiDiscover(uint32(process.PID()), "claude.exe", 15*time.Second)
+			native, created, err := tuiDiscover(uint32(process.PID()), "claude.exe", 15*time.Second)
 			if err != nil {
 				// The native was never seen under the driver (it ended before the first look, or never
 				// started). The driver still holds the screen and exit information the diagnostic is
@@ -122,8 +122,9 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 				report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w: no native found under the driver: %v", providercert.ErrInconclusiveNativeIdentity, err))
 				return process, nil
 			}
-			// Bound to the file hashed before the spawn by its mapped image, with no hash afterwards.
-			switch _, err := providercert.LinkSpawned(native, 0, before); {
+			// Bound to the file hashed before the spawn by its mapped image, with no hash afterwards, for
+			// exactly the generation discovered: a PID reused since then is refused, not linked.
+			switch _, err := providercert.LinkSpawned(native, created.UnixNano(), before); {
 			case err == nil:
 				report(before, nil)
 			case errors.Is(err, providercert.ErrNativeChanged):
@@ -138,19 +139,28 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 	}
 }
 
-// descendantPID waits for a process named image under root and returns its PID.
-func descendantPID(root uint32, image string, wait time.Duration) (uint32, error) {
+// descendantPID waits for a process named image under root and returns its PID and the creation
+// time the lineage was proved with.
+func descendantPID(root uint32, image string, wait time.Duration) (uint32, time.Time, error) {
 	deadline := time.Now().Add(wait)
 	for time.Now().Before(deadline) {
+		taken := time.Now()
 		table := snapshotProcesses()
 		for pid, p := range table {
-			if p.image == image && table.descends(pid, root, processCreatedAt) {
-				return pid, nil
+			if p.image != image {
+				continue
+			}
+			// The generation the snapshot saw was created before it was taken; a PID reused since then
+			// is younger. The lineage is proved between two reads of that creation time, and every
+			// edge needs a parent older than its child, so a reused ancestor fails too.
+			created := processCreatedAt(pid)
+			if !created.IsZero() && created.Before(taken) && table.descends(pid, root, processCreatedAt) && processCreatedAt(pid).Equal(created) {
+				return pid, created, nil
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return 0, fmt.Errorf("no %s under the driver within %s", image, wait)
+	return 0, time.Time{}, fmt.Errorf("no %s under the driver within %s", image, wait)
 }
 
 // writeTUISteps writes the steps for one turn and returns the script and screen paths.

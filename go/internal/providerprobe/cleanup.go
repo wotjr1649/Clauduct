@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
@@ -18,6 +19,10 @@ type p3CleanupNative struct {
 	PID     uint32    `json:"pid"`
 	Created time.Time `json:"created"`
 	Run     string    `json:"run"`
+	// Exited is the process's exact exit time, read from the retained process handle once it was
+	// waited for. Zero while it may still run or when the handle could not say: a child is then
+	// not proven to have had this generation as its parent. Never serialized.
+	Exited time.Time `json:"-"`
 }
 
 // p3CleanupLog is every such process of a scope's runs, shared by its parallel cases. It is the
@@ -28,13 +33,27 @@ type p3CleanupLog struct {
 	natives []p3CleanupNative
 }
 
-func (l *p3CleanupLog) add(n p3CleanupNative) {
+// add records n and returns its index for exited.
+func (l *p3CleanupLog) add(n p3CleanupNative) int {
 	if l == nil {
+		return -1
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.natives = append(l.natives, n)
+	return len(l.natives) - 1
+}
+
+// exited records the exact exit time of the process add returned i for.
+func (l *p3CleanupLog) exited(i int, at time.Time) {
+	if l == nil || i < 0 {
 		return
 	}
 	l.mu.Lock()
-	l.natives = append(l.natives, n)
-	l.mu.Unlock()
+	defer l.mu.Unlock()
+	if i < len(l.natives) {
+		l.natives[i].Exited = at
+	}
 }
 
 func (l *p3CleanupLog) all() []p3CleanupNative {
@@ -84,10 +103,15 @@ func p3RunRecorded(ctx context.Context, cmd *exec.Cmd, log *p3CleanupLog, run st
 	if id, err := p.Identity(); err == nil {
 		n.Created = time.Unix(0, int64(id.Creation-116444736000000000)*100)
 	}
-	log.add(n)
+	index := log.add(n)
 	stop := context.AfterFunc(ctx, func() { _ = p.Stop() })
 	defer stop()
 	err = p.Wait()
+	if !n.Created.IsZero() && cmd.ProcessState != nil {
+		if usage, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok && usage != nil {
+			log.exited(index, time.Unix(0, usage.ExitTime.Nanoseconds()))
+		}
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -112,7 +136,9 @@ type p3PriorContact struct {
 // by another case's cleanup native. Cross-talk is proven only when, for each contact, there is
 // no tunnel, there is at least one connection, every connection has a recorded owner (the
 // Counter keeps a bounded number), and every owner is a cleanup native another run started:
-// the same pid and creation time, or a child of one created at or after it. Anything else, no
+// the same pid and creation time, or a child whose parent pid is one and that was created within
+// that process's exact lifetime (creation through the exit time its handle reported); a child of
+// a pid whose generation exit is unknown is not proven. Anything else, no
 // owner, an owner that is this run's own cleanup or a native nobody recorded, is not cross-talk
 // and the contact fails routing. A contact of this case's own native is never cross-talk.
 func p3PriorCrossTalk(contacts []p3PriorContact, cleanups []p3CleanupNative, self string) bool {
@@ -132,7 +158,8 @@ func p3PriorCrossTalk(contacts []p3PriorContact, cleanups []p3CleanupNative, sel
 				if n.PID == 0 || n.Created.IsZero() {
 					continue
 				}
-				if (o.PID == n.PID && o.Created.Equal(n.Created)) || (o.ParentPID == n.PID && !o.Created.Before(n.Created)) {
+				child := o.ParentPID == n.PID && !n.Exited.IsZero() && !o.Created.Before(n.Created) && !o.Created.After(n.Exited)
+				if (o.PID == n.PID && o.Created.Equal(n.Created)) || child {
 					if n.Run == self {
 						return false
 					}

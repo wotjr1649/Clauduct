@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -67,7 +66,11 @@ func (g *Gateway) nativeProgressReport() NativeProgressReport {
 	type target struct{ session, agent, turn string }
 	targets := []target{}
 	// Each conversation root has its own journal (one per native session of the launch).
-	entries, _ := os.ReadDir(filepath.Join(g.nativeEvents.directory, "active"))
+	active := filepath.Join(g.nativeEvents.directory, "active")
+	entries, err := listActiveJournal(active)
+	if err != nil && !journalAbsent(active, err) {
+		out.Unreadable++
+	}
 	for _, entry := range entries {
 		session, isRoot := strings.CutPrefix(entry.Name(), "root-")
 		if !isRoot || !entry.IsDir() {

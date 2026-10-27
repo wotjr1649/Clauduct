@@ -69,8 +69,9 @@
   - hook은 환경 이름을 대소문자 없이 읽어 모든 철자를 대조하고, 값이 다른 중복 철자는 거부한다. native는 settings 파일이 쓴
     마지막 철자를 hook에 넘기므로, 파일에 소문자 `anthropic_base_url`만 있어도 routing 증명은 session link의 주소로 간다.
   - native가 실행 중일 때 foreground는 key helper가 자기 session link를 정확히 가리키는 job을 100 ms마다 찾아, 처음 본 때
-    resident record를 쓴다. native가 끝나면 record를 쓴 뒤 터미널을 돌려주고, launcher의 pipe가 없어도 콘솔에서 떨어져 job을
-    계속 서비스한다.
+    resident record를 쓴다. native가 정상 종료하면 record를 쓴 뒤 터미널을 돌려주고, launcher의 pipe가 없어도 콘솔에서 떨어져 job을
+    계속 서비스한다. 마감·취소·`-p` 인터럽트·라우팅 중지에서는 인계하지 않고 같은 link의 job을 끝낸다. 3초 job 검색은 인계가
+    가능한 실행에서만 한다.
   - foreground는 현재 key helper가 자기 link를 가리키는 job만 record·handover 대상으로 삼는다. 같은 session을 foreground로
     resume한 실행이 그 session의 `--bg` job을 가져가 native `agents`의 wake가 `SESSION_ALREADY_IN_USE`로 실패하던 개발 중 결함을
     고쳤다.

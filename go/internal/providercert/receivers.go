@@ -467,10 +467,11 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 	if body, err := decoded(r.Header, r.Body); err != nil {
 		seen.Undecodable = true
 		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxScannedBody))
-	} else if ids, err := scan(io.TeeReader(body, &limitedWriter{&kept, maxKeptBody}), o.canaries()); err != nil {
-		seen.Undecodable = true
 	} else {
+		// A canary found before the body failed to decode is still proof of the contact.
+		ids, err := scan(io.TeeReader(body, &limitedWriter{&kept, maxKeptBody}), o.canaries())
 		seen.Canaries = ids
+		seen.Undecodable = err != nil
 	}
 	r.Body = io.NopCloser(bytes.NewReader(kept.Bytes()))
 	o.record(&seen)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -156,9 +157,12 @@ func (config ClauductSettings) nativeEventSettings(settings, pdf, configDir stri
 	if raw, ok := fields["env"]; ok && json.Unmarshal(raw, &env) != nil || env == nil {
 		return "", errSettingsConflict
 	}
-	names, _ := nativeSettingsEnvNames(o) // Name discovery never adds a startup gate.
+	names, scanErr := nativeSettingsEnvNames(o) // Name discovery never adds a startup gate.
 	config.pinNativeSettingsEnv(env, names, o.Env, base)
-	if pdf != "" {
+	// A PATH in native's own settings files stays visible: a --settings PATH would outrank it.
+	// The PDF alias is omitted for a file PATH or an unprovable scan (follow-up: file PATH alias support).
+	filePath := slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, "PATH") })
+	if pdf != "" && scanErr == nil && !filePath {
 		path := ""
 		spelling := ""
 		for name, value := range o.Env {

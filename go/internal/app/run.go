@@ -916,7 +916,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 
-	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args))
+	routing := &routingMonitor{}
+	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args), routing)
 	// A hook that blocked the prompt may have ended a short session before the next checkpoint
 	// saw its report; the report still decides how the session ended (#295).
 	if gw.RoutingMismatch() && lifecycle.Reason != "managed_routing_policy" {
@@ -928,6 +929,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		cleanupWaitErr = joined.Unwrap()[0]
 	}
 	_, nativeExit := cleanupWaitErr.(*exec.ExitError)
+	// childprocess Wait joins the exit status with reap-side errors (job handle, output copy). A
+	// reaped native with a real exit status is still a normal exit for the handover decision.
+	var joinedExit *exec.ExitError
+	normalExit := nativeExit || errors.As(waitErr, &joinedExit) ||
+		(reaped && waitErr != ctx.Err() && !errors.Is(waitErr, context.Canceled) && process.ExitCode() >= 0)
 	nativeCleanupReady = reaped && (waitErr == nil || nativeExit || waitErr == ctx.Err() || waitErr == context.Canceled)
 	if reaped {
 		result.NativeExitCode = process.ExitCode()
@@ -942,22 +948,33 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		o.afterNative()
 	}
 	foregroundRecordErr = checkpointForeground()
-	if reaped && foreground != nil && o.agentView() && o.Handover != nil && clauductHome != "" && nativePlugin != "" {
+	canHandOver := o.Handover != nil && clauductHome != "" && nativePlugin != ""
+	if foreground != nil && o.agentView() && (!reaped || lifecycle.Reason != "native_exit" || ctx.Err() != nil ||
+		(waitErr != nil && !normalExit) || canHandOver) {
 		// Native keeps an agent view session and the jobs dispatched from it running after its
 		// terminal closes; they all use this gateway. Its state stays: the same token, routing
 		// proofs and session bindings, so nothing they have proved has to be proved again.
 		jobs := nativeJobsWithLink(configDir, foreground.ID)
-		for i := 0; len(jobs) == 0 && i < 30; i++ {
+		for i := 0; canHandOver && len(jobs) == 0 && i < 30; i++ {
 			time.Sleep(100 * time.Millisecond) // native lists the closed session as a job as it exits
 			jobs = nativeJobsWithLink(configDir, foreground.ID)
 		}
 		if len(jobs) > 0 {
 			foregroundRecordErr = checkpointForeground()
+			if ctx.Err() != nil && lifecycle.Reason == "native_exit" {
+				lifecycle.Reason = "caller_cancelled"
+				if waitErr == nil || normalExit {
+					waitErr = ctx.Err()
+				}
+			}
+		}
+		stopping := !reaped || lifecycle.Reason != "native_exit" || ctx.Err() != nil || (waitErr != nil && !normalExit)
+		if len(jobs) > 0 {
 			// Persist before releasing the launcher; a failed pipe write still leaves jobs to serve.
 			// Without the record a resident that dies cannot be regenerated for its jobs, so the
 			// launcher stays attached and the failure is reported when the session ends.
 			handoverParent := context.Background()
-			if foregroundRecordErr == nil {
+			if foregroundRecordErr == nil && !stopping {
 				o.Handover(result.NativeExitCode)
 			} else {
 				// Still the foreground's wait: native is reaped, so the caller's cancellation and
@@ -965,7 +982,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				handoverParent = ctx
 			}
 			handoverCtx, cancel := context.WithCancel(handoverParent)
-			if foregroundRecordErr != nil {
+			if stopping {
+				cancel()
+			}
+			if foregroundRecordErr != nil && !stopping {
 				go func() {
 					select {
 					case <-interrupts:
@@ -984,16 +1004,24 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if record != nil {
 				bp.job = record.Job
 			}
-			if foregroundRecordErr != nil {
-				// Nothing is saved for these jobs, and no record may be written without the resident
-				// lock. The wait's stop set starts from every same-link job already listed, so a
-				// cancellation before its first poll stops them all.
-				bp.stopJobs = jobs
+			// A stop before the first poll must include every job already proved on this link.
+			bp.stopJobs = jobs
+			bp.linkScopedStops = true
+			if !stopping {
+				bp.routingCheck = func() bool {
+					if reason, detail := routing.check(gw, o.ManagedPolicy); reason != "" {
+						lifecycle.Reason, lifecycle.Detail = reason, detail
+						return true
+					}
+					return false
+				}
 			}
 			if providerFlag != "" {
 				bp.env, bp.start = spec.Env, o.StartProcess
 			}
-			result.HandedOver = jobs
+			if !stopping {
+				result.HandedOver = jobs
+			}
 			resident = bp
 			foregroundRecordErr = errors.Join(foregroundRecordErr, bp.Wait())
 		}

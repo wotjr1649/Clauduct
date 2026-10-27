@@ -528,8 +528,8 @@ relay 실패·마감 초과는 복원 실패이며 직접 spawn으로 대체하�
 끝나기 전의 짧은 경합에서는 둘 다 kill될 수 있다. 콜드 스타트·AV 지연과 native job 종료의 영향은
 별도 실측이 필요하다.
 `clauduct --background-stop`은 연결을 끝내며 job 삭제는 native `rm <id>`로 한다.
-worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업 상태 파일의
-부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다. v0.6.11 개발 브랜치부터 공개 빌드의 foreground에서도 native Agent View가 켜져 있다. interactive 실행은 같은 콘솔의 launcher 아래 자식 `clauduct.exe`로 돈다. native가 실행 중일 때 foreground는 native job 상태의 `respawnFlags`에 든 `--settings` key helper가 자기 세션 link를 정확히 가리키는 job만 자기 것으로 보고, 처음 본 때 resident record를 쓴다. native가 끝났을 때 그런 job이 있으면 record를 쓴 뒤 launcher에 native 종료 코드를 넘겨 터미널을 돌려주고, 콘솔에서 떨어져 같은 gateway·token·link로 그 job들이 끝날 때까지 연결 유지 프로세스로 남는다. launcher가 이미 없어도 그렇다.
+worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업의 상태 파일과
+그 디렉터리가 모두 없을 때만 하며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다. v0.6.11 개발 브랜치부터 공개 빌드의 foreground에서도 native Agent View가 켜져 있다. interactive 실행은 같은 콘솔의 launcher 아래 자식 `clauduct.exe`로 돈다. native가 실행 중일 때 foreground는 native job 상태의 `respawnFlags`에 든 `--settings` key helper가 자기 세션 link를 정확히 가리키는 job만 자기 것으로 보고, 처음 본 때 resident record를 쓴다. native가 끝났을 때 그런 job이 있으면 record를 쓴 뒤 launcher에 native 종료 코드를 넘겨 터미널을 돌려주고, 콘솔에서 떨어져 같은 gateway·token·link로 그 job들이 끝날 때까지 연결 유지 프로세스로 남는다. launcher가 이미 없어도 그렇다. 이 인계는 native가 정상 종료했고 호출자 context가 취소되지 않았을 때만 일어난다. 마감·취소·`-p` 인터럽트·라우팅 또는 managed policy 중지에서는 인계하지 않고, 같은 link로 확인된 Agent View job을 native `stop`으로 끝내며 원래 종료 원인을 그대로 돌려준다. 이때 현재 설정이 다른 link를 증명하는 job은 건드리지 않고, 목록에서 잠시 보이지 않는 job은 짧게 다시 확인한다. 끝내 소유를 증명하지 못한 job은 중지하지 않고 `BACKGROUND_STOP_LINK_UNVERIFIED`로 보고한다. 이 보고는 인계 전의 라우팅 중지에서는 stderr의 `CLEANUP_FAILED`로, 인계 뒤에는 status 파일의 정리 실패 표시로 남는다. 인계 뒤에도 연결 유지 프로세스는 foreground와 같은 주기와 연속 unreadable 기준으로 라우팅 불일치와 managed policy를 감시하고, 위반하면 같은 link의 job을 끝낸다. record를 쓰지 못해 launcher가 붙어 있는 경로에도 같은 감시와 같은 link 한정 중지가 구현되어 있다. 이 중지는 native 상태가 이미 stopped·done인 job은 다시 중지하지 않고, 상태를 읽지 못한 job을 끝난 것으로 보지 않는다.
 
 resident record의 `session`은 primary job의 native 상태 파일에서 읽는다. foreground가 등록한 마지막 세션으로 대신하지 않는다.
 연결 유지 프로세스는 job이 소유하지 않는 세션의 등록 native가 모두 종료됐고 사용 중인 요청도 없을 때, 프로필을 저장하고

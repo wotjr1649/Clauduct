@@ -220,6 +220,11 @@ func run() int {
 			return 1
 		}
 		fmt.Fprintf(os.Stderr, "clauduct: %v\n", err)
+		if result.CleanupErr != nil {
+			// A routing stop returns here; its cleanup trouble (for example an unverified
+			// job stop) must not be lost.
+			fmt.Fprintf(os.Stderr, "clauduct: CLEANUP_FAILED %v\n", result.CleanupErr)
+		}
 		return 1
 	}
 

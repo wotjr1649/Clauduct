@@ -176,6 +176,8 @@ type backgroundProcess struct {
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
 	nativeStatus    func() (registered, notExited int, active int64)
 	releaseProfiles func([]string) error
+	routingCheck    func() bool
+	linkScopedStops bool
 	crashed         bool // the test crash ended the wait: the record stays, as after a real death
 	unlisted        bool // The Run cleanup removes the directory before the record.
 }
@@ -282,6 +284,47 @@ func (p *backgroundProcess) Wait() (result error) {
 	}
 	stopNative := func() error {
 		var err error
+		if p.linkScopedStops {
+			// A retained record may name jobs that have since moved to another link.
+			// Every job this wait serves (the record's, everSeen) must be stopped, proved on
+			// another link, or gone; a listing that briefly lacks one is re-read a few times.
+			stopped := map[string]struct{}{}
+			unverified := false
+			// A job whose native state is already stopped or done needs no stop; an unreadable
+			// state is never taken as done.
+			finished := func(job string) bool {
+				_, completed, stateErr := jobRunning(p.config, job)
+				return stateErr == nil && completed
+			}
+			for attempt := 0; attempt < 10; attempt++ {
+				current := nativeJobsWithLink(p.config, p.link.ID)
+				for _, job := range current {
+					if _, done := stopped[job]; !done {
+						stopped[job] = struct{}{}
+						if !finished(job) {
+							err = errors.Join(err, stopOne(job))
+						}
+					}
+				}
+				unverified = false
+				for job := range everSeen {
+					if _, done := stopped[job]; !done && !slices.Contains(current, job) && !jobGone(p.config, job) && !jobLinkedElsewhere(p.config, job, p.link.ID) && !finished(job) {
+						unverified = true
+						break
+					}
+				}
+				if !unverified {
+					break
+				}
+				if attempt < 9 {
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
+			if unverified {
+				err = errors.Join(err, errors.New("BACKGROUND_STOP_LINK_UNVERIFIED"))
+			}
+			return err
+		}
 		for job := range jobs {
 			err = errors.Join(err, stopOne(job))
 		}
@@ -327,6 +370,12 @@ func (p *backgroundProcess) Wait() (result error) {
 	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
+	var routingTick <-chan time.Time
+	if p.routingCheck != nil {
+		monitor := time.NewTicker(checkpointInterval)
+		defer monitor.Stop()
+		routingTick = monitor.C
+	}
 	nativeIdle := 0
 	completedIdle := 0
 	for {
@@ -340,6 +389,10 @@ func (p *backgroundProcess) Wait() (result error) {
 			return stopNative()
 		case <-p.link.Done:
 			return errors.Join(sessionlink.ErrUnavailable, stopNative())
+		case <-routingTick:
+			if p.routingCheck() {
+				return stopNative()
+			}
 		case <-tick.C:
 			// The in-memory record changes only once its write is confirmed, so a write that
 			// failed is seen as a difference again on the next tick and retried.
@@ -369,6 +422,9 @@ func (p *backgroundProcess) Wait() (result error) {
 				}
 			}
 			for _, job := range nativeJobsWithLink(p.config, p.link.ID) {
+				if p.linkScopedStops && !slices.Contains(p.stopJobs, job) {
+					p.stopJobs = append(p.stopJobs, job)
+				}
 				if _, known := jobs[job]; !known {
 					jobs[job] = 0
 				}
@@ -465,18 +521,77 @@ func jobListing(config string, jobs []string) (listed, known bool) {
 			continue
 		}
 		dir := filepath.Join(root, id)
-		if _, err := jobStat(filepath.Join(dir, "state.json")); err == nil {
+		info, err := jobStat(dir)
+		if err == nil {
+			if !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+				known = false
+				continue
+			}
+			state, err := jobStat(filepath.Join(dir, "state.json"))
+			if err == nil && state.Mode().IsRegular() {
+				return true, true
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				known = false
+				continue
+			}
 			return true, true
-		} else if !errors.Is(err, os.ErrNotExist) {
+		}
+		if !errors.Is(err, os.ErrNotExist) {
 			known = false
 			continue
 		}
-		info, err := jobStat(dir)
-		if err != nil && !errors.Is(err, os.ErrNotExist) || err == nil && (!info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0) {
+		if _, err := jobStat(filepath.Join(dir, "state.json")); !errors.Is(err, os.ErrNotExist) {
 			known = false
 		}
 	}
 	return false, known
+}
+
+// jobLinkedElsewhere excludes a job only when its current settings prove a different link.
+func jobLinkedElsewhere(config, job, link string) bool {
+	root, err := os.OpenRoot(filepath.Join(config, "jobs"))
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	dir, err := root.Lstat(job)
+	if err != nil || !dir.IsDir() || dir.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+		return false
+	}
+	name := filepath.Join(job, "state.json")
+	info, err := root.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > settingsBytes {
+		return false
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return false
+	}
+	info, statErr := file.Stat()
+	if statErr != nil || !info.Mode().IsRegular() || info.Size() > settingsBytes {
+		file.Close()
+		return false
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(file, settingsBytes+1))
+	if errors.Join(readErr, file.Close()) != nil || len(raw) > settingsBytes {
+		return false
+	}
+	var state struct {
+		RespawnFlags []string `json:"respawnFlags"`
+	}
+	if json.Unmarshal(raw, &state) != nil {
+		return false
+	}
+	value, ok := optionValue(state.RespawnFlags, "--settings")
+	var settings struct {
+		APIKeyHelper string `json:"apiKeyHelper"`
+	}
+	if !ok || json.Unmarshal([]byte(value), &settings) != nil {
+		return false
+	}
+	_, other, ok := strings.Cut(settings.APIKeyHelper, " --clauduct-background-key ")
+	return ok && other != link && jobHasLink(raw, other)
 }
 
 // jobGone reports whether native's job listing positively lacks job: the jobs directory is

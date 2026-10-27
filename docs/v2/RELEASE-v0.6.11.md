@@ -18,9 +18,9 @@
     env 고정으로 막는다. `NO_PROXY`에 loopback을 더한다.
   - 라우팅을 정하는 기기 정책(managed 출처)이 있으면 시작하지 않는다(`MANAGED_ROUTING_POLICY`). 실행 중에는 hook이 native 환경을
     대조한다.
-- **저장된 Claude apps gateway 로그인 감지**([#299](https://github.com/wotjr1649/Clauduct/issues/299), PR #317): 시작 때의 모델 목록
-  요청이 이 gateway에 왔는지 SessionStart와 매 prompt의 hook이 확인하고, 오지 않았으면 prompt hook이 모델 요청 전에 막는다
-  (`ROUTING_UNVERIFIED`). 남는 시작 요청과 감지가 없는 경우는 COMPATIBILITY 원장의 해당 행에 있다.
+- **저장된 Claude apps gateway 로그인 감지**([#299](https://github.com/wotjr1649/Clauduct/issues/299), PR #317): native 시작 모델 목록의 순서는 첫 hook보다 앞선다고 보장되지 않는다.
+  SessionStart와 매 `UserPromptSubmit` hook이 proof를 보내고 같은 native PID·생성 시각의 직접 `/v1/models` 요청을 최대 5초 기다린다. 이전 generation native도 즉시 거부하지 않으며, 같은 PID·생성 시각의 목록이 기한 안에 없을 때 `ROUTING_PROOF_PRIOR_GENERATION`으로 분류한다. 다른 native의 목록은 proof가 아니다. 같은 native 목록이 오면 204를 돌려보내고, 기한까지 오지 않으면 409다. 무제어 경로는 `ROUTING_UNVERIFIED` fail-closed mismatch로 세션을 끝내고, 인증된 provider-control 경로는 prompt마다 최대 5초 기다린 뒤 일반 proof 누락을 진단으로만 기록한다. 단, resident gateway 시작 전부터 실행된 native의 같은 PID·생성 시각 목록이 끝내 없으면 controlled 여부와 무관하게 409 `ROUTING_PROOF_PRIOR_GENERATION`으로 거부하고 hook이 event를 막는다. UserPromptSubmit hook은 해당 user prompt의 모델 요청을 통과시키기 전에 proof 결과를 확인한다.
+  증명 요청의 HTTP 예산은 7초이며, 다른 hook HTTP 요청은 3초다. 추가 대기로 저장된 로그인 판정과 무제어 경로의 차단이 이전보다 최대 3초 늦어질 수 있다. 그동안 모델 목록 외에도 어떤 종류든 prompt 전 native 요청이 저장된 gateway에 도달해 처리될 수 있다. hook이 실행되지 않는 환경과 늦은 모델 목록은 COMPATIBILITY 원장의 해당 행에 있는 제한이다.
 - **Anthropic 경계 프로필**([#301](https://github.com/wotjr1649/Clauduct/issues/301), PR #306)과 **서버 경계 원장**
   ([#305](https://github.com/wotjr1649/Clauduct/issues/305), PR #308): `boundary_profile`의 `default`·`strict`.
   [SETTINGS](SETTINGS.md#경계-프로필-v0611)와 COMPATIBILITY 3절 "서버 경계 원장"에 있다.
@@ -95,7 +95,7 @@
   저장된 Claude apps gateway면 `NATIVE_STORED_GATEWAY`, 확인하지 못하면 `NATIVE_PROVIDER_STATUS_UNVERIFIED`로 모델 세션 전에
   거부한다. 실행 중 바뀌는 credential은 인증하지 않는다([NATIVE-SUPPORT](NATIVE-SUPPORT.md)).
 - **hook 시간 예산**(#319): 사용자·plugin hook의 timeout과 생략된 설정은 그대로 두고 native가 집행한다. Clauduct가 만든 bridge
-  hook에만 외부 30초를 명시하고, 내부 작업은 공유 예산 14초 안에서 끝낸다([NATIVE-SUPPORT](NATIVE-SUPPORT.md)).
+  hook에만 외부 30초를 명시한다. 제품 hook은 공유 18초 안에서 끝나며, proof 요청은 최대 7초를 쓴다([NATIVE-SUPPORT](NATIVE-SUPPORT.md)).
 - **생성 worker 역할의 도구**(#319): Clauduct가 생성하는 worker 역할이 부모의 native 도구 집합을 상속한다. 고정 목록 때문에
   WebFetch가 막히던 것을 고쳤다. 사용자 `--agents`의 명시적 제한은 유지한다.
 - native가 unset으로 읽는 `CLAUDE_CODE_RETRY_WATCHDOG=0`·`CLAUDE_CODE_RESUME_INTERRUPTED_TURN=0`을 넣지 않는다. Go는 1.27.2다.

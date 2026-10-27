@@ -158,9 +158,7 @@ cloud로 보냈다. 그래서 다음을 함께 둔다.
   비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다). v0.6.11 개발 브랜치부터 세션 기본값도 `--settings` env로 넣고, token은 session link를 읽는 key helper(`apiKeyHelper`)가 준다. native의 OS 환경에는 Clauduct 값을 넣지 않고 `ANTHROPIC_*`·OAuth token·provider 선택 변수를 지운다. native supervisor가 자기를 띄운 native의 OS 환경을 이후 standalone worker에 넘기기 때문이다.
 - `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`는 쓰지 않는다. 실측에서 settings 파일의 모델 선택까지 무시하게 했고,
   hook 환경의 token도 지웠다. 상속도 하지 않는다.
-- 저장된 Claude apps gateway 로그인은 환경을 바꾸지 않고 요청을 그 gateway로 보낸다. native는 시작할 때 endpoint에 모델 목록을
-  묻고(매 시작, 첫 hook보다 먼저), 저장된 로그인이 있으면 그 요청도 그 gateway로 간다. 그래서 SessionStart와 매 prompt의 hook이 `routing-proof`로
-  그 요청이 이 gateway에 왔는지 확인한다. SessionStart는 native를 막지 못해 일찍 알리기만 하고, UserPromptSubmit hook이 모델 요청 전에 막는다(#299). 모델 목록 조회 변수는 필수 env다. credential은 읽지 않는다.
+- 저장된 Claude apps gateway 로그인이 있으면 native의 시작 모델 목록 조회도 그 gateway로 갈 수 있다. 모델 목록 요청은 항상 첫 hook보다 먼저 온다는 전제가 성립하지 않는다. SessionStart와 매 `UserPromptSubmit` hook은 `/clauduct/routing-proof`로 같은 native의 목록 요청이 이 gateway에 왔는지 묻는다. gateway는 proof를 보낸 native와 PID·생성 시각이 같은 native의 직접 `GET /v1/models`만 인정하고, 그 요청을 기다리는 시간은 최대 5초다. 다른 native의 목록은 proof가 아니므로 이를 대신하지 않는다. 같은 native의 목록이 기한 안에 오면 204를 반환하고, 오지 않으면 409를 반환한다. 요청 native가 resident gateway 시작 전부터 실행됐고 같은 PID·생성 시각의 목록이 끝내 확인되지 않은 경우에는 `ROUTING_PROOF_PRIOR_GENERATION`으로 분류한다. 무제어 경로는 기한까지 증명이 없으면 fail-closed 거절과 routing mismatch 처리를 유지한다. 인증된 provider-control 경로에서는 각 prompt마다 최대 5초 기다린 뒤에도 일반 proof가 없으면 누락을 진단으로만 기록하며 mismatch를 확정하지 않는다. 단, resident gateway 시작 전부터 실행된 native는 같은 PID·생성 시각의 목록이 끝내 없으면 controlled 여부와 무관하게 gateway가 409 `ROUTING_PROOF_PRIOR_GENERATION`을 반환하고 hook이 해당 event를 거부한다(#299). 목록 조회 변수는 필수 환경이며, credential을 읽지 않는다.
 - managed 설정은 Clauduct보다 높다. HKLM·HKCU 레지스트리 정책, `managed-settings.json`과 drop-in(기본 위치와
   `CLAUDE_CODE_MANAGED_SETTINGS_PATH`), `CLAUDE_CODE_REMOTE_SETTINGS_PATH` 파일에 라우팅 env, `apiKeyHelper`, `policyHelper`, gateway 로그인 강제,
   `allowedProviders`가 있으면 시작하지 않는다. 세션 중 생기면 native를 끝내고 `ROUTING_UNVERIFIED`로 보고한다.
@@ -192,7 +190,7 @@ background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경�
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
 | `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |
 | `POST /clauduct/routing-mismatch` | 이 세션 hook이 native의 다른 endpoint 사용을 알림 | 인증 필요, 본문을 읽지 않음, launcher가 세션을 끝냄(#295) |
-| `POST /clauduct/routing-proof` | SessionStart와 UserPromptSubmit hook이 native의 시작 모델 목록 요청이 이 gateway에 왔는지 물음 | 인증 필요, 왔으면 204, 2초 안에 오지 않으면 409. hook은 409에서 세션을 끝낸다(#299) |
+| `POST /clauduct/routing-proof` | SessionStart와 `UserPromptSubmit` hook은 proof를 보낸 native와 PID·생성 시각이 같은 native의 직접 모델 목록 요청을 확인한다 | 인증 필요. 같은 native의 `GET /v1/models`를 최대 5초 기다려 확인되면 204, 기한까지 확인되지 않으면 409다. 이전 generation native도 기다림 없이 거부하지 않으며, 같은 PID·생성 시각의 목록이 끝내 없을 때 `ROUTING_PROOF_PRIOR_GENERATION`으로 분류한다. 무제어 경로에서 기한까지 증명이 없으면 mismatch로 세션을 끝낸다. 인증된 provider-control 경로에서는 prompt마다 최대 5초 기다린 뒤 일반 proof 누락을 진단으로만 처리하고 mismatch로 세션을 끝내지 않는다. 단, resident gateway 시작 전부터 실행된 native의 같은 PID·생성 시각 목록이 끝내 없으면 controlled 여부와 무관하게 409 `ROUTING_PROOF_PRIOR_GENERATION`을 반환하고 hook이 event를 거부한다. gateway가 닫히는 중이면 `GATEWAY_CLOSED` error envelope의 503을 반환하며, 닫히는 중의 `/clauduct/routing-mismatch` 보고도 거부한다. proof 요청 예산은 7초다. 다른 hook HTTP 요청 예산은 3초다(#299) |
 | 기타 | 명확한 unsupported 응답 | 침묵 성공·임의 upstream forwarding 금지 |
 
 기본 실행은 필수 hook을 구성하며 위임이 생기면 이 등록 경로를 사용한다.

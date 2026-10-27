@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
@@ -181,9 +182,10 @@ const (
 	// Only Clauduct-owned entries use this envelope, matching native's prompt default.
 	NativeHookTimeout = 30 * time.Second
 	// ReconnectTimeout bounds the hook caller's wait, not restoration's lifetime.
-	ReconnectTimeout = 2 * time.Second
+	ReconnectTimeout    = 2 * time.Second
+	proofRequestTimeout = gateway.RoutingProofWait + 2*time.Second
 	// Two pipe exchanges, one reconnect, proof and registration (or mismatch report).
-	hookTimeout     = 2*sessionlink.RequestTimeout + ReconnectTimeout + 2*requestTimeout
+	hookTimeout     = 2*sessionlink.RequestTimeout + ReconnectTimeout + proofRequestTimeout + requestTimeout
 	maxEventBytes   = (256<<10)*6 + 16384
 	maxBindingBytes = (256<<10)*6 + 8192
 	requestTimeout  = 3 * time.Second
@@ -242,11 +244,10 @@ func routedContext(ctx context.Context, connection sessionlink.Connection, contr
 		return 1
 	}
 	// #299: a stored Claude apps gateway login sends native's requests to that gateway while
-	// the environment still names this one, so the check above cannot see it. Native asks its
-	// endpoint for the model list before the session's first hook; when that never reached
-	// this gateway, the session is ended. SessionStart reports it as early as possible but
-	// cannot block native; UserPromptSubmit can, so every prompt asks again and is refused
-	// before its model request leaves (once the list came, the answer is immediate).
+	// the environment still names this one, so the check above cannot see it. The native's
+	// model-list request may still be in flight when a hook arrives; wait briefly for that
+	// same native's request to reach this gateway. SessionStart checks as early as possible,
+	// and UserPromptSubmit repeats the check before a prompt can leave for another gateway.
 	//
 	// Under a provider-control strategy (P3, #320) the routing guarantee is the strategy's
 	// certification, not this hook, and native may skip the model list altogether; the proof
@@ -262,6 +263,10 @@ func routedContext(ctx context.Context, connection sessionlink.Connection, contr
 		if _, err := postReply(ctx, proof, env, RoutingProofPath, false); err != nil {
 			if errors.Is(err, errHookDeadline) {
 				return hookDeadline(errOut)
+			}
+			if errors.Is(err, errRoutingProofGatewayClosed) {
+				fmt.Fprintln(errOut, "GATEWAY_CLOSED: the Clauduct gateway is shutting down; restart the session with Clauduct before submitting a prompt.")
+				return 2
 			}
 			if errors.Is(err, errRoutingProofPriorGeneration) {
 				job := "<job>"
@@ -735,11 +740,15 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 		return nil, errInvalidGateway
 	}
 
-	ctx, cancel := context.WithTimeout(parent, requestTimeout)
+	requestBudget := requestTimeout
+	if path == RoutingProofPath {
+		requestBudget = proofRequestTimeout
+	}
+	ctx, cancel := context.WithTimeout(parent, requestBudget)
 	defer cancel()
 	var dialed atomic.Bool
 	client := &http.Client{
-		Timeout: requestTimeout,
+		Timeout: requestBudget,
 		// A connection to anywhere but the loopback address is refused at the dial, so a
 		// name that resolves elsewhere cannot carry the token out even if the address
 		// check above were somehow satisfied.
@@ -754,7 +763,7 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 				if retryRegistration && dialed.Swap(true) {
 					return nil, errInvalidGateway
 				}
-				return (&net.Dialer{Timeout: requestTimeout}).DialContext(ctx, network, address)
+				return (&net.Dialer{Timeout: requestBudget}).DialContext(ctx, network, address)
 			},
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidGateway },
@@ -790,15 +799,20 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 			continue
 		}
 		if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusNoContent {
-			if path == RoutingProofPath && response.StatusCode == http.StatusConflict {
+			if path == RoutingProofPath && (response.StatusCode == http.StatusConflict || response.StatusCode == http.StatusServiceUnavailable) {
 				var envelope struct {
 					Type  string `json:"type"`
 					Error struct {
 						Message string `json:"message"`
 					} `json:"error"`
 				}
-				if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" && envelope.Error.Message == "ROUTING_PROOF_PRIOR_GENERATION" {
-					return nil, errRoutingProofPriorGeneration
+				if json.Unmarshal(reply, &envelope) == nil && envelope.Type == "error" {
+					if response.StatusCode == http.StatusConflict && envelope.Error.Message == "ROUTING_PROOF_PRIOR_GENERATION" {
+						return nil, errRoutingProofPriorGeneration
+					}
+					if response.StatusCode == http.StatusServiceUnavailable && envelope.Error.Message == "GATEWAY_CLOSED" {
+						return nil, errRoutingProofGatewayClosed
+					}
 				}
 			}
 			if path == "/clauduct/context" {
@@ -855,6 +869,7 @@ func readEvent(ctx context.Context, in io.Reader) ([]byte, error) {
 }
 
 var errRoutingProofPriorGeneration = errors.New("ROUTING_PROOF_PRIOR_GENERATION")
+var errRoutingProofGatewayClosed = errors.New("GATEWAY_CLOSED")
 
 func hookDeadline(errOut io.Writer) int {
 	fmt.Fprintln(errOut, "CLAUDUCT_HOOK_DEADLINE: the Clauduct hook did not finish before its deadline; restore the Clauduct hook connection and submit the prompt again.")

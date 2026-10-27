@@ -9,7 +9,7 @@
 - Clauduct가 생성하는 worker 역할은 부모의 native 도구 집합을 상속한다. 고정 whitelist로 WebFetch 검색이 막히던 결함을 수정했으며, 사용자 `--agents`의 명시적 제한·빈 배열·메뉴 대체는 유지한다. 도구 노출은 실행 승인과 별개이며 deny·ask가 계속 적용된다.
 - model과 effort는 실제 계정 목록과 허용 경로로 검증한다. 모르는 이름·지원하지 않는 effort·은퇴 모델은 이유를 표시하고 거부한다. 후속 모델 안내는 자동 대체 실행이 아니다.
 - 명시적으로 같은 Reply를 다시 보내면 새 제출이다. 같은 제출의 복원·재시도와 빈 wake가 중복 효과를 만들지는 않아야 한다.
-- routing 증명이 깨지면 그 gateway 도메인이 종료된다. 서로 독립적으로 살아 있어야 하는 작업에는 독립 gateway 자격을 사용한다.
+- routing 증명은 같은 native의 PID와 생성 시각에 묶인다. 모델 목록 요청을 최대 5초 기다리며, resident gateway 시작 전부터 실행 중이던 native도 기다림 없이 거부하지 않는다. 같은 PID와 생성 시각의 목록이 끝내 없으면 `ROUTING_PROOF_PRIOR_GENERATION`으로 거부한다. 다른 native의 목록은 이 proof를 대신하지 않는다. 무제어 경로는 일반 proof 누락 시 fail-closed routing mismatch로 세션을 종료한다. 인증된 provider-control 경로는 일반 proof 누락을 진단으로만 기록하며 mismatch를 확정하지 않는다. 다만 이전 generation native의 미증명 요청은 provider-control 여부와 관계없이 5초 대기 뒤 `ROUTING_PROOF_PRIOR_GENERATION`으로 거부해 hook event를 막는다. 서로 독립적으로 살아 있어야 하는 작업에는 독립 gateway 자격을 사용한다.
 - 사용자 config·MCP·Skills·기록을 공유한다. 같은 native config의 Agent View 목록도 공유하며, Clauduct와 standalone의 목록을 서로 숨기는 profile 분리는 제공하지 않는다.
 
 ## 도구·UI별 조건과 대체 경로
@@ -56,10 +56,10 @@ HKLM provider pin·TxR·고정 broker를 사용하는 enterprise hardening은 �
 
 ## 검증과 시간 예산
 
-사용자·plugin hook의 timeout과 생략된 설정은 보존하고 native가 집행한다. Clauduct가 생성한 bridge hook에만 외부30초를 명시한다. 이는 native UserPromptSubmit 기본값을 참고한 제품 설정이며, 모든 native event의 기본값이30초라는 뜻은 아니다.
+사용자·plugin hook의 timeout과 생략된 설정은 보존하고 native가 집행한다. Clauduct가 생성한 bridge hook에만 외부 30초를 명시한다. 이는 제품이 구성한 예산이며, 모든 native event의 기본값이 30초라는 뜻은 아니다.
 
-제품 hook의 공유 작업 예산14초는 확인된 순차 I/O 상한의 합이다: link 조회3초 + reconnect 대기2초 + link 재조회3초 + routing proof3초 + 등록3초. proof 실패 뒤의 mismatch 보고는 등록을 대신하며, 등록의503 재시도는 같은 HTTP3초를 공유한다. stdin 대기·해석·단계 전환도 전체 예산을 소비하므로 각 단계는 공유 기한과 자기 기한 중 먼저 오는 시각에 끝난다. reconnect2초는 호출자의 대기 제한이며 복원 프로세스 전체 수명을 뜻하지 않는다.
+제품 hook의 공유 작업 예산은 18초다: link 조회 3초 + reconnect 대기 2초 + link 재조회 3초 + routing proof 요청 7초 + 다른 요청 3초. proof 실패 뒤의 mismatch 보고는 등록을 대신하며, 등록의 503 재시도는 같은 HTTP 3초를 공유한다. routing proof 요청 예산은 gateway의 5초 대기에 2초 여유를 더한 값이며, proof가 아닌 hook HTTP 요청은 3초다. stdin 대기·해석·단계 전환도 전체 예산을 소비하므로 각 단계는 공유 기한과 자기 기한 중 먼저 오는 시각에 끝난다. reconnect 2초는 호출자의 대기 제한이며 복원 프로세스 전체 수명을 뜻하지 않는다.
 
-끝나지 않는 stdin도 공유 기한에 종료하며, 취소 뒤 입력이 도착해도 후속 hook 작업을 시작하지 않는다. 입력 reader의 회수는 일회성 hook 프로세스의 종료에 의존한다. 외부30초와 내부14초의 차이는 임의의 OS 시작·종료 지연을 보장하지 않는다. 기존 event별 거절과 native 실패 정책은 유지하며, 사용자·plugin hook에 제품 제한이나 onFailure 정책을 일괄 적용하지 않는다. 설정 형식과 event별 기본값은 [native hooks 문서](https://code.claude.com/docs/en/hooks#common-fields)를 따른다.
+끝나지 않는 stdin도 공유 18초 기한에 종료하며, 취소 뒤 입력이 도착해도 후속 hook 작업을 시작하지 않는다. 입력 reader의 회수는 일회성 hook 프로세스의 종료에 의존한다. 외부 30초와 내부 18초의 차이는 임의의 OS 시작·종료 지연을 보장하지 않는다. 기존 event별 거절과 native 실패 정책은 유지하며, 사용자·plugin hook에 제품 제한이나 onFailure 정책을 일괄 적용하지 않는다. 설정 형식과 event별 기본값은 [native hooks 문서](https://code.claude.com/docs/en/hooks#common-fields)를 따른다.
 
 개발 중에는 변경 영향 시험과 유효한 기존 근거를 사용한다. 전체 관문은 push/출하 전에 새 후보에서 실행하고, 전체 exit0과 요구별 근거 충족을 각각 확인한다. 선택형 시험·지원하지 않는 native 기능·과거 실패는 원래 상태와 이유를 남긴다. 미해결 결함을 SKIP으로 바꾸지 않는다. 최종 태그 자산·설치·업데이트·제거 확인은 출하 요청 시 별도 절차로 수행한다.

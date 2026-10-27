@@ -142,6 +142,9 @@ type RequestRecord struct {
 	// What a backend failure event said about itself, in fixed vocabularies (#84).
 	UpstreamFailure *codex.FailureDetail `json:"upstreamFailure,omitempty"`
 
+	// RoutingProofWaitMs is the time this request spent waiting for its native's model list.
+	RoutingProofWaitMs *int64 `json:"routingProofWaitMs,omitempty"`
+
 	// Milliseconds from when this gateway started. Relative rather than wall clock: a
 	// diagnostic that travels should not carry when the machine was running, and the
 	// question a reader has is how long things took, not what time it was.
@@ -637,6 +640,15 @@ func (r *record) snapshot() RequestRecord {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.data
+}
+
+func (r *record) routingProofWait(ms int64) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.RoutingProofWaitMs = &ms
 }
 
 // ring keeps the most recent records.

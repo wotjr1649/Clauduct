@@ -422,9 +422,10 @@ func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 // request reached this gateway (#299).
 const RoutingProofPath = "/clauduct/routing-proof"
 
-// routingProofWait bounds how long that answer waits for a list request still in flight. The
-// hook's own budget is three seconds.
-const routingProofWait = 2 * time.Second
+// RoutingProofWait bounds how long a proof waits for a list request still in flight.
+const RoutingProofWait = 5 * time.Second
+
+var routingProofWait = RoutingProofWait
 
 // ExpectTools sets the tools this session's mode should be offered; a name no request
 // offered is reported as missing (#300). Nil, the default, compares nothing.
@@ -703,6 +704,10 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 			g.refuse(w, refuseMethod)
 			return
 		}
+		if g.closing != nil && g.closing.Err() != nil {
+			g.refuse(w, refuseClosed)
+			return
+		}
 		// Only the fact travels; the hook sends no endpoint and nothing is read.
 		g.routingMismatch.Store(true)
 		w.WriteHeader(http.StatusNoContent)
@@ -713,12 +718,11 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 			g.refuse(w, refuseMethod)
 			return
 		}
-		// #299: native asks its endpoint for the model list at start, before the session's
-		// first hook (measured 2.1.289, every start, foreground and background). A stored
-		// Claude apps gateway login sends that request -- and then the conversation -- to the
-		// stored gateway instead, with this session's endpoint left in place for the hooks to
-		// see. So the first hook asks whether the list came here, waiting briefly for a
-		// request still in flight. Nothing is read from any credential store.
+		// #299: native asks its endpoint for the model list at start, possibly after a hook
+		// starts. A stored Claude apps gateway login sends that request -- and then the
+		// conversation -- to the stored gateway instead, while hooks still see this session's
+		// endpoint. The hook asks whether the list came here, waiting briefly for a request
+		// still in flight. Nothing is read from any credential store.
 		// With native identity required, the list must have come from this hook's own native
 		// process: another worker's list proves nothing about this one (#319 decision 18d).
 		proved := func() bool { return g.modelLists.Load() != 0 }
@@ -731,27 +735,69 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 			proved = func() bool { _, seen := g.discovered.Load(id.native); return seen }
 			priorGeneration = g.restoredAt.Load() > id.native.created
 		}
-		deadline := time.Now().Add(routingProofWait)
-		for !proved() && time.Now().Before(deadline) {
-			time.Sleep(20 * time.Millisecond)
+		waitStarted := time.Now()
+		closing := (<-chan struct{})(nil)
+		if g.closing != nil {
+			closing = g.closing.Done()
 		}
+		closingStarted, waitExpired := false, false
 		if !proved() {
-			if priorGeneration {
-				g.refuseCategory(w, http.StatusConflict, "ROUTING_PROOF_PRIOR_GENERATION")
-				return
+			timer := time.NewTimer(routingProofWait)
+			ticker := time.NewTicker(20 * time.Millisecond)
+			for !proved() {
+				select {
+				case <-closing:
+					closingStarted = true
+				case <-timer.C:
+					waitExpired = true
+				case <-ticker.C:
+				}
+				if closingStarted || waitExpired {
+					break
+				}
 			}
-			// Decide here even if the hook has already exhausted its deadline.
-			// A saturated read cannot prove EOF, so it fails closed without reading further.
-			raw, readErr := io.ReadAll(io.LimitReader(r.Body, 256))
-			fields, parseErr := wire.Fields(raw, []string{"controlled"})
-			controlled := readErr == nil && len(raw) < 256 && parseErr == nil && bytes.Equal(fields["controlled"], []byte("true"))
-			if !controlled {
-				g.routingMismatch.Store(true)
-			}
-			g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
+			timer.Stop()
+			ticker.Stop()
+		}
+		if g.closing != nil && g.closing.Err() != nil {
+			closingStarted = true
+		}
+		recordOf(w).routingProofWait(time.Since(waitStarted).Milliseconds())
+		if closingStarted {
+			g.refuse(w, refuseClosed)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		if proved() {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if priorGeneration {
+			g.refuseCategory(w, http.StatusConflict, "ROUTING_PROOF_PRIOR_GENERATION")
+			return
+		}
+		// Decide here even if the hook has already exhausted its deadline.
+		// A saturated read cannot prove EOF, so it fails closed without reading further.
+		control := http.NewResponseController(w)
+		stopClosing := func() bool { return true }
+		if g.closing != nil {
+			stopClosing = context.AfterFunc(g.closing, func() { _ = control.SetReadDeadline(time.Now()) })
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(r.Body, 256))
+		stopClosing()
+		if g.closing != nil && g.closing.Err() != nil {
+			g.refuse(w, refuseClosed)
+			return
+		}
+		fields, parseErr := wire.Fields(raw, []string{"controlled"})
+		controlled := readErr == nil && len(raw) < 256 && parseErr == nil && bytes.Equal(fields["controlled"], []byte("true"))
+		if !controlled {
+			if g.closing != nil && g.closing.Err() != nil {
+				g.refuse(w, refuseClosed)
+				return
+			}
+			g.routingMismatch.Store(true)
+		}
+		g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
 		return
 	}
 	if r.URL.Path == "/clauduct/confirmation" {

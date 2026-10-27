@@ -110,13 +110,11 @@ func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) 
 	recordOf(w).refusedWith(r.status, r.category)
 	control := http.NewResponseController(w)
 	switch r.category {
-	case refuseCancelled.category, refuseTooLarge.category,
+	case refuseCancelled.category, refuseTooLarge.category, refuseClosed.category,
 		errMemoryBudget.Error(), errMemoryQueue.Error(), errMemoryTimeout.Error(), errMemoryStatus.Error():
 		// These close without reading more. A cancelled read must not be pooled with the
-		// next turn, even when a filter still delivers this refusal; an oversized body is
-		// already past its limit and the closing socket is drained by httpguard; a busy
-		// gateway must not wait on a slow upload. The expired read deadline also stops
-		// net/http's background reader.
+		// next turn, an oversized upload is already past its limit, and shutdown must not
+		// wait on a slow body. The expired read deadline also stops net/http's background reader.
 		_ = control.SetReadDeadline(time.Now())
 		w.Header().Set("Connection", "close")
 	default:

@@ -139,6 +139,7 @@ var templateRoutes = []templateRoute{
 	{"*", "/api/organizations/{uuid}/claude_code/onboarding"},
 	{"*", "/api/organizations/{uuid}/claude_code/onboarding/{seg}"},
 	{"*", "/api/organizations/{uuid}/cowork/remote_devices"},
+	{"*", "/api/organizations/{uuid}/dust/generate_title_and_branch"},
 	{"*", "/api/organizations/{uuid}/marketplace/plugin-assets/{seg}"},
 	{"*", "/api/organizations/{uuid}/model_selector/{seg}"},
 	{"*", "/api/organizations/{uuid}/model_selector_state/{seg}"},

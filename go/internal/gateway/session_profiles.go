@@ -476,7 +476,14 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	if known := p.profiles[session]; known != nil && held != session && !p.serving(session) && held != "" && source != "resume" {
 		return ErrSessionProfile
 	}
-	defer func() { p.ready[session] = err == nil; delete(p.refreshFailed, session) }()
+	defer func() {
+		// A restart this process needs says nothing about a session another process owns (B10).
+		if owner, known := p.owner[session]; known && owner != process && errors.Is(err, errSessionRestart) {
+			return
+		}
+		p.ready[session] = err == nil
+		delete(p.refreshFailed, session)
+	}()
 	if p.pending[process] != "" {
 		return errSessionRestart
 	}
@@ -722,12 +729,14 @@ func (p *profileState) sessionError(session string, from *processKey) error {
 		return errSessionRestart
 	}
 	// A native process that must restart sends nothing more, for any of its sessions, and
-	// neither does the session it must restart into; other native processes are unaffected.
+	// neither does the session it must restart into; other native processes are unaffected, so
+	// another process's failed resume does not stop the owner (B10). A request without native
+	// identity cannot be told apart, so any pending restart into the session refuses it.
 	if owner, known := p.owner[session]; known && p.pending[owner] != "" {
 		return errSessionRestart
 	}
-	for _, waiting := range p.pending {
-		if waiting == session {
+	for process, waiting := range p.pending {
+		if waiting == session && (from == nil || process == *from) {
 			return errSessionRestart
 		}
 	}

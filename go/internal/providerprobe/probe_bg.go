@@ -27,36 +27,9 @@ type p3Worker struct {
 	handle   syscall.Handle
 }
 
-// findWorker reads the job's worker from the job's own state in the probe's config dir (native's
-// control commands are not used: with a stored login they contact that gateway themselves), opens
-// it and confirms it runs the pinned native executable and started after the dispatch.
-func findWorker(configDir, job string, pinned providercert.Identity, since time.Time, wait time.Duration) (*p3Worker, []string, error) {
-	deadline := time.Now().Add(wait)
-	var keys []string
-	for time.Now().Before(deadline) {
-		raw, err := os.ReadFile(filepath.Join(configDir, "jobs", job, "state.json"))
-		var state map[string]any
-		if err == nil && json.Unmarshal(raw, &state) == nil {
-			keys = keys[:0]
-			pid := 0
-			for key, value := range state {
-				keys = append(keys, key)
-				if n, ok := value.(float64); ok && strings.EqualFold(key, "workerPid") && n > 0 {
-					pid = int(n)
-				}
-			}
-			slices.Sort(keys)
-			if pid > 0 {
-				w, err := openWorker(pid, pinned, since)
-				return w, keys, err
-			}
-		}
-		time.Sleep(250 * time.Millisecond)
-	}
-	return nil, keys, fmt.Errorf("job %s names no worker in its state", job)
-}
-
-func openWorker(pid int, pinned providercert.Identity, since time.Time) (*p3Worker, error) {
+// openWorker opens the census worker seen at pid with creation time seen; a process that took
+// the number since is not it.
+func openWorker(pid int, seen time.Time, pinned providercert.Identity, since time.Time) (*p3Worker, error) {
 	// PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE | PROCESS_TERMINATE.
 	h, err := syscall.OpenProcess(0x1000|syscall.SYNCHRONIZE|syscall.PROCESS_TERMINATE, false, uint32(pid))
 	if err != nil {
@@ -64,6 +37,9 @@ func openWorker(pid int, pinned providercert.Identity, since time.Time) (*p3Work
 	}
 	var created, exited, kernel, user syscall.Filetime
 	err = syscall.GetProcessTimes(h, &created, &exited, &kernel, &user)
+	if err == nil && !time.Unix(0, created.Nanoseconds()).Equal(seen) {
+		err = fmt.Errorf("worker %d is not the process the census saw", pid)
+	}
 	if err == nil && time.Unix(0, created.Nanoseconds()).Before(since) {
 		err = fmt.Errorf("worker %d started before this run", pid)
 	}
@@ -143,7 +119,7 @@ func findWorkerByCensus(exe, configDir string, roles map[string]string, pinned p
 	for time.Now().Before(deadline) {
 		for _, n := range probeNatives(exe, configDir, since, roles) {
 			if n.Command == "--session-id" {
-				return openWorker(n.PID, pinned, since)
+				return openWorker(n.PID, n.Created, pinned, since)
 			}
 		}
 		time.Sleep(200 * time.Millisecond)

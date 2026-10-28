@@ -1524,15 +1524,10 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) *p3Observed {
 			// the job is done with.
 			natives := make(chan []p3NativeProcess, 1)
 			go func() {
-				seen := map[int]bool{}
+				seen := map[p3NativeKey]bool{}
 				var all []p3NativeProcess
 				for {
-					for _, n := range probeNatives(p.exe, w.configDir, dispatched.Add(-time.Second), w.envRoles()) {
-						if !seen[n.PID] {
-							seen[n.PID] = true
-							all = append(all, n)
-						}
-					}
+					all = addNewNatives(seen, all, probeNatives(p.exe, w.configDir, dispatched.Add(-time.Second), w.envRoles()))
 					select {
 					case <-daemonStop:
 						natives <- all
@@ -2286,15 +2281,10 @@ func (p p3Runner) boundaryWatch(w *p3World, obs *p3Observed) func() {
 	since, stop := time.Now(), make(chan struct{})
 	natives := make(chan []p3NativeProcess, 1)
 	go func() {
-		seen := map[int]bool{}
+		seen := map[p3NativeKey]bool{}
 		var all []p3NativeProcess
 		for {
-			for _, n := range probeNatives(p.exe, w.configDir, since.Add(-time.Second), w.envRoles()) {
-				if !seen[n.PID] {
-					seen[n.PID] = true
-					all = append(all, n)
-				}
-			}
+			all = addNewNatives(seen, all, probeNatives(p.exe, w.configDir, since.Add(-time.Second), w.envRoles()))
 			select {
 			case <-stop:
 				natives <- all

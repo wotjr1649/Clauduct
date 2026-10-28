@@ -64,6 +64,35 @@ type p3NativeProcess struct {
 	Env       map[string]string `json:"env"`
 }
 
+// p3NativeKey identifies one native process: a PID alone can be reused by a later process.
+type p3NativeKey struct {
+	pid     int
+	created int64
+}
+
+// addNewNatives appends the processes of found not seen before, by PID and creation time.
+func addNewNatives(seen map[p3NativeKey]bool, all, found []p3NativeProcess) []p3NativeProcess {
+	for _, n := range found {
+		key := p3NativeKey{n.PID, n.Created.UnixNano()}
+		if !seen[key] {
+			seen[key] = true
+			all = append(all, n)
+		}
+	}
+	return all
+}
+
+// inConfigDir reports whether env names configDir as CLAUDE_CONFIG_DIR.
+func inConfigDir(env map[string]string, configDir string) bool {
+	dir := ""
+	for name, v := range env {
+		if strings.EqualFold(name, "CLAUDE_CONFIG_DIR") {
+			dir = v
+		}
+	}
+	return strings.EqualFold(filepath.Clean(dir), filepath.Clean(configDir))
+}
+
 // probeNatives lists the processes running the pinned native image, started at or after since,
 // whose environment names the probe's config dir: the probe's own natives and no one else's.
 // Observation only.
@@ -95,13 +124,7 @@ func probeNatives(pinnedImage, configDir string, since time.Time, roles map[stri
 		if envErr != nil || when.Before(since) {
 			continue
 		}
-		dir := ""
-		for name, v := range env {
-			if strings.EqualFold(name, "CLAUDE_CONFIG_DIR") {
-				dir = v
-			}
-		}
-		if !strings.EqualFold(filepath.Clean(dir), filepath.Clean(configDir)) {
+		if !inConfigDir(env, configDir) {
 			continue
 		}
 		classes := map[string]string{}
@@ -156,6 +179,18 @@ func ownDaemon(configDir string, pinned providercert.Identity, since time.Time, 
 	env, err := processEnvironment(h)
 	if err != nil {
 		f.Error = "environment: " + err.Error()
+		return f
+	}
+	if !inConfigDir(env, configDir) {
+		// The lock's PID may have been reused by another native after the daemon ended.
+		f.Pinned = false
+		f.Error = "the lock's process is not of the probe config dir"
+		return f
+	}
+	if providercert.CommandWord(uint32(pid)) != "daemon" {
+		// A worker or pty host of the same config dir may have taken the PID.
+		f.Pinned = false
+		f.Error = "the lock's process is not a daemon"
 		return f
 	}
 	f.Env = map[string]string{}

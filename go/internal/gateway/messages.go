@@ -1053,7 +1053,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 					entry.mu.Unlock()
 				}
 				if err := emit(frames); err != nil {
-					if request.NonStreaming {
+					if readErr != nil && !errors.Is(readErr, io.EOF) && read.contextErr == nil && (!request.NonStreaming || errors.Is(err, ctx.Err())) {
+						fail(parser.Finish(false))
+					} else if request.NonStreaming {
 						fail(err)
 					} else {
 						g.deliveryFailed(ctx, w)

@@ -20,6 +20,7 @@ package ptydrive
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -37,14 +38,26 @@ import (
 )
 
 var (
-	kernel32            = syscall.NewLazyDLL("kernel32.dll")
-	createPseudoConsole = kernel32.NewProc("CreatePseudoConsole")
-	closePseudoConsole  = kernel32.NewProc("ClosePseudoConsole")
-	initAttributeList   = kernel32.NewProc("InitializeProcThreadAttributeList")
-	updateAttribute     = kernel32.NewProc("UpdateProcThreadAttribute")
-	deleteAttributeList = kernel32.NewProc("DeleteProcThreadAttributeList")
-	createProcess       = kernel32.NewProc("CreateProcessW")
-	setCtrlHandler      = kernel32.NewProc("SetConsoleCtrlHandler")
+	kernel32                  = syscall.NewLazyDLL("kernel32.dll")
+	createPseudoConsole       = kernel32.NewProc("CreatePseudoConsole")
+	closePseudoConsole        = kernel32.NewProc("ClosePseudoConsole")
+	initAttributeList         = kernel32.NewProc("InitializeProcThreadAttributeList")
+	updateAttribute           = kernel32.NewProc("UpdateProcThreadAttribute")
+	deleteAttributeList       = kernel32.NewProc("DeleteProcThreadAttributeList")
+	createProcess             = kernel32.NewProc("CreateProcessW")
+	setCtrlHandler            = kernel32.NewProc("SetConsoleCtrlHandler")
+	queryPerformanceCounter   = kernel32.NewProc("QueryPerformanceCounter")
+	queryPerformanceFrequency = kernel32.NewProc("QueryPerformanceFrequency")
+	ptyWriteInput             = func(handle syscall.Handle, data []byte) error {
+		var n uint32
+		if err := syscall.WriteFile(handle, data, &n, nil); err != nil {
+			return err
+		}
+		if int(n) != len(data) {
+			return io.ErrShortWrite
+		}
+		return nil
+	}
 )
 
 const (
@@ -62,9 +75,10 @@ type step struct {
 	Wait     string   `json:"wait"`      // regexp on the screen text written after the previous step
 	WaitFile string   `json:"wait_file"` // optional fresh file containing exactly "ready\n"
 	Send     []string `json:"send"`      // written in order, 300ms apart
-	Optional bool     `json:"optional"`  // a missing screen is skipped, not a failure
-	Timeout  int      `json:"timeout_s"`
-	After    int      `json:"after_ms"` // pause between the match and the first write
+
+	Optional bool `json:"optional"` // a missing screen is skipped, not a failure
+	Timeout  int  `json:"timeout_s"`
+	After    int  `json:"after_ms"` // pause between the match and the first write
 
 	// Keep the console until this signal after the direct child exits. Its interrupted
 	// step and exit status still fail; this isolates launcher loss from console close.
@@ -104,31 +118,148 @@ type envList []string
 func (e *envList) String() string     { return strings.Join(*e, ",") }
 func (e *envList) Set(s string) error { *e = append(*e, s); return nil }
 
+func hasArgument(args []string, name string) bool {
+	for _, arg := range args {
+		if arg == "--" || arg == "" || arg[0] != '-' {
+			return false
+		}
+		if arg == name || arg == name+"=true" {
+			return true
+		}
+	}
+	return false
+}
+
 var control = regexp.MustCompile(`\x1b\[[0-9;?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-Za-z]|\x1b[@-Z\\-_=>]|[\x00-\x08\x0b-\x1f\x7f]`)
 
-// Main runs the driver on os.Args; it does not return.
-func Main() {
-	dir := flag.String("dir", "", "working directory")
-	script := flag.String("script", "", "JSON steps")
-	cleanupScript := flag.String("cleanup-script", "", "JSON steps run only after a failed step; the run still fails")
-	rawLog := flag.String("log", "", "raw output file")
-	textLog := flag.String("text", "", "screen text file")
-	total := flag.Int("timeout", 600, "seconds before the child is abandoned")
-	deadline := flag.Int("deadline", 0, "seconds from start by which the driver must have written its evidence and ended; steps stop earlier so a caller's own limit never cuts the driver off (0: none)")
-	marks := flag.String("marks", "", "file that gets one line per matched step: its index and the time its input began, RFC 3339")
-	var env envList
-	flag.Var(&env, "env", "KEY=VALUE added to the inherited environment")
-	flag.Parse()
-	if flag.NArg() == 0 || *script == "" {
-		fmt.Fprintln(os.Stderr, "usage: ptydrive -script steps.json [-dir d] [-env K=V]... -- exe args...")
-		os.Exit(2)
+type StepEventKind string
+
+const (
+	StepDriverInitialized StepEventKind = "driver_initialized"
+	StepWaitCompleted     StepEventKind = "step_wait"
+	StepWriteBefore       StepEventKind = "write_before"
+	StepWriteAfter        StepEventKind = "write_after"
+	StepDriverCompleted   StepEventKind = "driver_complete"
+	StepDriverFailed      StepEventKind = "driver_error"
+)
+
+// StepEvent contains only fixed driver state; it never includes input, wait patterns, or screen text.
+type StepEvent struct {
+	Ordinal       uint64
+	Phase         string
+	Step          int
+	SendPart      int
+	Kind          StepEventKind
+	At            time.Duration
+	AtUTC         time.Time
+	QPC           int64
+	QPCFrequency  int64
+	Success       bool
+	Matched       bool
+	ScreenMatched bool
+	SignalReady   bool
+	Skipped       bool
+	Capped        bool
+	ChildExited   bool
+	ReaderDone    bool
+	ExitCode      int64
+}
+
+type StepObserver func(StepEvent) error
+
+// Main runs the public driver without an observer.
+func Main() { os.Exit(Run(os.Args[1:], nil)) }
+
+// Run executes the generic scripted driver and optionally reports content-free step events.
+func Run(args []string, observer StepObserver) int {
+	return run(args, observer, nil, false)
+}
+
+// RunWithScriptBytes executes the generic driver from step bytes already read and removed by its caller.
+func RunWithScriptBytes(args []string, observer StepObserver, scriptBytes []byte) int {
+	return run(args, observer, scriptBytes, true)
+}
+
+func writeConsoleInput(handle syscall.Handle, input string) error {
+	return ptyWriteInput(handle, []byte(input))
+}
+
+func writeStepStatus(output io.Writer, phase string, stepIndex int, elapsed time.Duration, wait string, matched, skipped, capped bool) {
+	fmt.Fprintf(output, "%sstep=%d t=%.1fs wait=%q matched=%v skipped=%v capped=%v\n", phase, stepIndex, elapsed.Seconds(), wait, matched, skipped, capped)
+}
+
+func writeChildExitStatus(output io.Writer, code int32, failedWait string, elapsed time.Duration) {
+	fmt.Fprintf(output, "child_exit=%d failed_wait=%q elapsed=%.1fs\n", code, failedWait, elapsed.Seconds())
+}
+
+func run(args []string, observer StepObserver, scriptBytes []byte, scriptBytesProvided bool) int {
+	contentFreeRequested := observer != nil && (hasArgument(args, "-content-free") || hasArgument(args, "--content-free"))
+	output := io.Writer(os.Stderr)
+	if contentFreeRequested {
+		output = io.Discard
 	}
-	steps, err := loadSteps(*script, nil)
-	check(err, "script")
+	flags := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	flags.SetOutput(output)
+	dir := flags.String("dir", "", "working directory")
+	script := flags.String("script", "", "JSON steps")
+	deleteScript := false
+	contentFreeValue := false
+	contentFree := &contentFreeValue
+	if observer != nil {
+		flags.BoolVar(&deleteScript, "delete-script-after-read", false, "remove a script under the system temp directory after loading it")
+		flags.BoolVar(contentFree, "content-free", false, "do not write or print screen text")
+	}
+	cleanupScript := flags.String("cleanup-script", "", "JSON steps run only after a failed step; the run still fails")
+	rawLog := flags.String("log", "", "raw output file")
+	textLog := flags.String("text", "", "screen text file")
+	total := flags.Int("timeout", 600, "seconds before the child is abandoned")
+	deadline := flags.Int("deadline", 0, "seconds from start by which the driver must have written its evidence and ended; steps stop earlier so a caller's own limit never cuts the driver off (0: none)")
+	marks := flags.String("marks", "", "file that gets one line per matched step: its index and the time its input began, RFC 3339")
+	var env envList
+	flags.Var(&env, "env", "KEY=VALUE added to the inherited environment")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
+	}
+	if flags.NArg() == 0 || *script == "" {
+		fmt.Fprintln(output, "usage: ptydrive -script steps.json [-dir d] [-env K=V]... -- exe args...")
+		return 2
+	}
+	var steps []step
+	var err error
+	if scriptBytesProvided {
+		steps, err = loadStepsBytes(scriptBytes, nil)
+	} else {
+		scriptBytes, err = os.ReadFile(*script)
+		if deleteScript {
+			if removeErr := removePrivateScript(*script); err == nil {
+				err = removeErr
+			}
+		}
+		if err == nil {
+			steps, err = loadStepsBytes(scriptBytes, nil)
+		}
+	}
+	if !check(err, "script", *contentFree) {
+		return 2
+	}
 	var cleanup []step
 	if *cleanupScript != "" {
-		cleanup, err = loadSteps(*cleanupScript, steps)
-		check(err, "cleanup-script")
+		var cleanupBytes []byte
+		cleanupBytes, err = os.ReadFile(*cleanupScript)
+		if deleteScript {
+			if removeErr := removePrivateScript(*cleanupScript); err == nil {
+				err = removeErr
+			}
+		}
+		if err == nil {
+			cleanup, err = loadStepsBytes(cleanupBytes, steps)
+		}
+		if !check(err, "cleanup-script", *contentFree) {
+			return 2
+		}
 	}
 	holdSignal := ""
 	for _, s := range steps {
@@ -138,29 +269,38 @@ func Main() {
 	}
 	for _, s := range cleanup {
 		if s.HoldConsoleAfterExit {
-			check(fmt.Errorf("console hold belongs to the primary script"), "cleanup-script")
+			check(fmt.Errorf("console hold belongs to the primary script"), "cleanup-script", *contentFree)
+			return 2
 		}
 	}
 	if holdSignal != "" && (*total <= 0 || int64(*total) > (1<<63-1)/int64(time.Second)) {
-		check(fmt.Errorf("console hold needs a bounded positive timeout"), "timeout")
+		check(fmt.Errorf("console hold needs a bounded positive timeout"), "timeout", *contentFree)
+		return 2
 	}
 
 	var inRead, inWrite, outRead, outWrite syscall.Handle
-	check(syscall.CreatePipe(&inRead, &inWrite, nil, 0), "input pipe")
-	check(syscall.CreatePipe(&outRead, &outWrite, nil, 0), "output pipe")
+	if !check(syscall.CreatePipe(&inRead, &inWrite, nil, 0), "input pipe", *contentFree) {
+		return 2
+	}
+	if !check(syscall.CreatePipe(&outRead, &outWrite, nil, 0), "output pipe", *contentFree) {
+		return 2
+	}
 	var console uintptr
 	size := uintptr(uint32(50)<<16 | uint32(160)) // COORD{X:160, Y:50} passed by value
 	if r, _, e := createPseudoConsole.Call(size, uintptr(inRead), uintptr(outWrite), 0, uintptr(unsafe.Pointer(&console))); r != 0 {
-		check(e, "CreatePseudoConsole")
+		check(e, "CreatePseudoConsole", *contentFree)
+		return 2
 	}
 	var listSize uintptr
 	initAttributeList.Call(0, 1, 0, uintptr(unsafe.Pointer(&listSize)))
 	list := make([]byte, listSize)
 	if r, _, e := initAttributeList.Call(uintptr(unsafe.Pointer(&list[0])), 1, 0, uintptr(unsafe.Pointer(&listSize))); r == 0 {
-		check(e, "InitializeProcThreadAttributeList")
+		check(e, "InitializeProcThreadAttributeList", *contentFree)
+		return 2
 	}
 	if r, _, e := updateAttribute.Call(uintptr(unsafe.Pointer(&list[0])), 0, attributePseudoConsole, console, unsafe.Sizeof(console), 0, 0); r == 0 {
-		check(e, "UpdateProcThreadAttribute")
+		check(e, "UpdateProcThreadAttribute", *contentFree)
+		return 2
 	}
 	si := startupInfoEx{attributes: uintptr(unsafe.Pointer(&list[0]))}
 	si.Cb = uint32(unsafe.Sizeof(si))
@@ -168,9 +308,9 @@ func Main() {
 	// and never sees the pseudo console: native then refuses to start without --print input.
 	si.Flags = syscall.STARTF_USESTDHANDLES
 	si.StdInput, si.StdOutput, si.StdErr = syscall.InvalidHandle, syscall.InvalidHandle, syscall.InvalidHandle
-	args := flag.Args()
-	quoted := make([]string, len(args))
-	for i, a := range args {
+	childArgs := flags.Args()
+	quoted := make([]string, len(childArgs))
+	for i, a := range childArgs {
 		quoted[i] = syscall.EscapeArg(a)
 	}
 	cmdline, _ := syscall.UTF16PtrFromString(strings.Join(quoted, " "))
@@ -187,8 +327,12 @@ func Main() {
 	if r, _, e := createProcess.Call(0, uintptr(unsafe.Pointer(cmdline)), 0, 0, 0,
 		extendedStartupInfoPresent|createUnicodeEnvironment, uintptr(unsafe.Pointer(&block[0])),
 		uintptr(unsafe.Pointer(cwd)), uintptr(unsafe.Pointer(&si)), uintptr(unsafe.Pointer(&pi))); r == 0 {
-		check(e, "CreateProcess")
+		check(e, "CreateProcess", *contentFree)
+		return 2
 	}
+	defer syscall.CloseHandle(pi.Process)
+	defer syscall.CloseHandle(pi.Thread)
+	defer syscall.CloseHandle(outRead)
 	deleteAttributeList.Call(uintptr(unsafe.Pointer(&list[0])))
 	// The pseudo console holds its own copies of the child-side ends.
 	syscall.CloseHandle(inRead)
@@ -197,11 +341,20 @@ func Main() {
 	var mu sync.Mutex
 	var screen []byte
 	var logFile *os.File
-	if *rawLog != "" {
+	if *rawLog != "" && !*contentFree {
 		logFile, err = os.Create(*rawLog)
-		check(err, "log")
+		if !check(err, "log", *contentFree) {
+			_ = syscall.TerminateProcess(pi.Process, 1)
+			_, _ = syscall.WaitForSingleObject(pi.Process, 5000)
+			closePseudoConsole.Call(console)
+			_ = syscall.CloseHandle(inWrite)
+			return 2
+		}
+		defer logFile.Close()
 	}
+	readDone := make(chan struct{})
 	go func() {
+		defer close(readDone)
 		buf := make([]byte, 64<<10)
 		for {
 			var n uint32
@@ -216,29 +369,52 @@ func Main() {
 			}
 		}
 	}()
-	text := func() string {
+	screenSnapshot := func() []byte {
 		mu.Lock()
 		defer mu.Unlock()
-		return control.ReplaceAllString(string(screen), "")
+		return append([]byte(nil), screen...)
+	}
+	text := func() string {
+		return control.ReplaceAllString(string(screenSnapshot()), "")
 	}
 	// The TUI places words with cursor moves, so stripped text loses its spaces; steps
 	// match against the text with all whitespace removed and are written without spaces.
-	compact := func() string { return strings.Join(strings.Fields(text()), "") }
+	compact := func() string { return compactScreen(screenSnapshot()) }
 	write := func(s string) error {
 		if holdSignal != "" && exited(pi.Process) {
 			return fmt.Errorf("direct child exited")
 		}
-		var n uint32
-		if err := syscall.WriteFile(inWrite, []byte(s), &n, nil); err != nil {
-			return err
-		}
-		if int(n) != len(s) {
-			return io.ErrShortWrite
-		}
-		return nil
+		return writeConsoleInput(inWrite, s)
 	}
 
 	started := time.Now()
+	var eventOrdinal uint64
+	var qpcFrequency int64
+	observerFailed := false
+	notify := func(event StepEvent) error {
+		if observer == nil {
+			return nil
+		}
+		now := time.Now()
+		eventOrdinal++
+		event.Ordinal, event.At, event.AtUTC = eventOrdinal, now.Sub(started), now.UTC()
+		if qpcFrequency == 0 {
+			if r, _, _ := queryPerformanceFrequency.Call(uintptr(unsafe.Pointer(&qpcFrequency))); r == 0 || qpcFrequency <= 0 {
+				observerFailed = true
+				return errors.New("performance counter unavailable")
+			}
+		}
+		if r, _, _ := queryPerformanceCounter.Call(uintptr(unsafe.Pointer(&event.QPC))); r == 0 || event.QPC <= 0 {
+			observerFailed = true
+			return errors.New("performance counter unavailable")
+		}
+		event.QPCFrequency = qpcFrequency
+		if err := observer(event); err != nil {
+			observerFailed = true
+			return err
+		}
+		return nil
+	}
 	// The steps end before the caller's limit so the driver can write its screen, and the wait
 	// for the child's exit ends before it too.
 	var stepsEnd, exitEnd time.Time
@@ -256,10 +432,11 @@ func Main() {
 			holdEnd = exitEnd
 		}
 	}
-	writeText := func() {
-		if *textLog != "" {
-			os.WriteFile(*textLog, []byte(text()), 0600)
+	writeText := func() error {
+		if !*contentFree && *textLog != "" {
+			return os.WriteFile(*textLog, []byte(text()), 0600)
 		}
+		return nil
 	}
 	// mark appends "<label> <time> [detail]" to the marks file; a bare index label is a step's
 	// input start, any other label is a driver event (submission check, Enter resend).
@@ -294,7 +471,14 @@ func Main() {
 			return false
 		}
 	}
+	if notify(StepEvent{Step: -1, SendPart: -1, Kind: StepDriverInitialized, Success: true}) != nil {
+		fmt.Fprintln(os.Stderr, "observer failed")
+		observerFailed = true
+	}
 	runSteps := func(steps []step, phase string, from int) string {
+		if observerFailed {
+			return "observer_error"
+		}
 		for i, s := range steps {
 			limit := time.Duration(max(s.Timeout, 1)) * time.Second
 			limitAt := time.Now().Add(limit)
@@ -312,10 +496,12 @@ func Main() {
 			var signalErr error
 			// The step is checked once even when its time is already gone.
 			for first := true; first || time.Now().Before(limitAt); first = false {
-				current := compact()
+				rawSnapshot := screenSnapshot()
+				current := compactScreen(rawSnapshot)
 				if !screenMatched {
-					if loc := s.pattern.FindStringIndex(current[min(from, len(current)):]); loc != nil {
-						from += loc[1]
+					base := min(from, len(current))
+					if loc := s.pattern.FindStringIndex(current[base:]); loc != nil {
+						from = base + loc[1]
 						screenMatched = true
 					} else if s.until != nil && s.Optional && s.until.MatchString(current[min(from, len(current)):]) {
 						if untilAt.IsZero() {
@@ -338,9 +524,21 @@ func Main() {
 				}
 				time.Sleep(200 * time.Millisecond)
 			}
-			fmt.Printf("%sstep=%d t=%.1fs wait=%q matched=%v skipped=%v capped=%v\n", phase, i, time.Since(started).Seconds(), s.Wait, matched, skipped, capped && !matched && !skipped)
+			waitLabel := s.Wait
+			if *contentFree && waitLabel != "" {
+				waitLabel = "<withheld>"
+			}
+			stepCapped := capped && !matched && !skipped
+			if notify(StepEvent{Phase: phase, Step: i, Kind: StepWaitCompleted, Success: matched, Matched: matched, ScreenMatched: screenMatched, SignalReady: matched, Skipped: skipped, Capped: stepCapped}) != nil {
+				return "observer_error"
+			}
+			writeStepStatus(os.Stdout, phase, i, time.Since(started), waitLabel, matched, skipped, stepCapped)
 			if signalErr != nil {
-				fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
+				if *contentFree {
+					fmt.Fprintln(os.Stderr, "wait_file failed")
+				} else {
+					fmt.Fprintf(os.Stderr, "wait_file: %v\n", signalErr)
+				}
 				return "wait_file"
 			}
 			if !matched && (!s.Optional || screenMatched && s.WaitFile != "") {
@@ -348,8 +546,12 @@ func Main() {
 				if screenMatched && s.WaitFile != "" {
 					failed = "wait_file"
 				}
-				fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
-				writeText()
+				if *contentFree {
+					fmt.Fprintln(os.Stderr, "screen withheld")
+				} else {
+					fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
+					_ = writeText()
+				}
 				return failed
 			}
 			if !matched {
@@ -384,8 +586,19 @@ func Main() {
 				} else if j > 0 {
 					time.Sleep(300 * time.Millisecond)
 				}
-				if err := write(part); err != nil {
-					fmt.Fprintf(os.Stderr, "write: %v\n", err)
+				if notify(StepEvent{Phase: phase, Step: i, SendPart: j, Kind: StepWriteBefore, Success: true}) != nil {
+					return "observer_error"
+				}
+				writeErr := write(part)
+				if notify(StepEvent{Phase: phase, Step: i, SendPart: j, Kind: StepWriteAfter, Success: writeErr == nil}) != nil {
+					return "observer_error"
+				}
+				if writeErr != nil {
+					if *contentFree {
+						fmt.Fprintln(os.Stderr, "write failed")
+					} else {
+						fmt.Fprintf(os.Stderr, "write: %v\n", writeErr)
+					}
 					return "write"
 				}
 			}
@@ -419,11 +632,17 @@ func Main() {
 	if failed != "" && len(cleanup) > 0 && !exited(pi.Process) {
 		cleanupFailed := "wait_file"
 		if err := signalsAbsent(cleanup); err != nil {
-			fmt.Fprintf(os.Stderr, "cleanup signal: %v\n", err)
+			if !*contentFree {
+				fmt.Fprintf(os.Stderr, "cleanup signal: %v\n", err)
+			}
 		} else {
 			cleanupFailed = runSteps(cleanup, "cleanup_", len(compact()))
 		}
-		fmt.Printf("cleanup_error=%q\n", cleanupFailed)
+		cleanupResult := cleanupFailed
+		if *contentFree {
+			cleanupResult = safeFailureKind(cleanupFailed)
+		}
+		fmt.Printf("cleanup_error=%q\n", cleanupResult)
 	}
 	wait := uint32(*total * 1000)
 	if !exitEnd.IsZero() {
@@ -436,10 +655,15 @@ func Main() {
 	}
 	event, _ := syscall.WaitForSingleObject(pi.Process, wait)
 	var code uint32 = 1<<32 - 1
+	childExited := event == syscall.WAIT_OBJECT_0
 	if event == syscall.WAIT_OBJECT_0 {
 		syscall.GetExitCodeProcess(pi.Process, &code)
 	} else {
 		syscall.TerminateProcess(pi.Process, 1)
+		if observer != nil {
+			terminated, _ := syscall.WaitForSingleObject(pi.Process, 5000)
+			childExited = terminated == syscall.WAIT_OBJECT_0
+		}
 	}
 	holdError := ""
 	if holdSignal != "" {
@@ -467,21 +691,51 @@ func Main() {
 	}
 	time.Sleep(time.Second)
 	if !closeConsole() {
-		fmt.Fprintln(os.Stderr, "ClosePseudoConsole deadline")
-		os.Exit(1)
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		_, _ = syscall.WaitForSingleObject(pi.Process, 5000)
+		_ = syscall.CloseHandle(inWrite)
+		if *contentFree {
+			fmt.Fprintln(os.Stderr, "console close failed")
+		} else {
+			fmt.Fprintln(os.Stderr, "ClosePseudoConsole deadline")
+		}
+		_ = notify(StepEvent{Step: -1, SendPart: -1, Kind: StepDriverFailed})
+		return 1
 	}
 	syscall.CloseHandle(inWrite)
-	writeText()
-	fmt.Printf("child_exit=%d failed_wait=%q elapsed=%.1fs\n", int32(code), failed, time.Since(started).Seconds())
-	if failed != "" || code != 0 || holdError != "" {
-		os.Exit(1)
+	readerDone := false
+	if observer != nil {
+		select {
+		case <-readDone:
+			readerDone = true
+		case <-time.After(2 * time.Second):
+		}
 	}
+	_ = writeText()
+	failedOutput := failed
+	if *contentFree && failed != "" {
+		failedOutput = safeFailureKind(failed)
+	}
+	writeChildExitStatus(os.Stdout, int32(code), failedOutput, time.Since(started))
+	if failed != "" || code != 0 || holdError != "" {
+		_ = notify(StepEvent{Step: -1, SendPart: -1, Kind: StepDriverFailed, ChildExited: childExited, ReaderDone: readerDone, ExitCode: int64(int32(code))})
+		return 1
+	}
+	if notify(StepEvent{Step: -1, SendPart: -1, Kind: StepDriverCompleted, Success: childExited && code == 0, ChildExited: childExited, ReaderDone: readerDone, ExitCode: int64(int32(code))}) != nil {
+		fmt.Fprintln(os.Stderr, "observer failed")
+		return 1
+	}
+	return 0
 }
 
 // echoText is a write's text as the screen shows it: the control sequences and all whitespace
 // removed (the TUI places words with cursor moves). Empty for a key such as Enter.
 func echoText(write string) string {
 	return strings.Join(strings.Fields(control.ReplaceAllString(write, "")), "")
+}
+
+func compactScreen(raw []byte) string {
+	return strings.Join(strings.Fields(control.ReplaceAllString(string(raw), "")), "")
 }
 
 const screenTail = 4000
@@ -499,7 +753,12 @@ func loadSteps(name string, previous []step) ([]step, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadStepsBytes(raw, previous)
+}
+
+func loadStepsBytes(raw []byte, previous []step) ([]step, error) {
 	var steps []step
+	var err error
 	if err := json.Unmarshal(raw, &steps); err != nil {
 		return nil, err
 	}
@@ -573,6 +832,33 @@ func loadSteps(name string, previous []step) ([]step, error) {
 		return nil, err
 	}
 	return steps, nil
+}
+
+func removePrivateScript(name string) error {
+	path, err := filepath.Abs(name)
+	if err != nil {
+		return fmt.Errorf("script path unavailable")
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("script is not a regular file")
+	}
+	root := os.Getenv("PTYDRIVE_SCRIPT_DIR")
+	if root == "" {
+		root = os.TempDir()
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("script directory unavailable")
+	}
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil || !strings.EqualFold(filepath.Clean(dir), filepath.Clean(filepath.Dir(path))) || !strings.EqualFold(dir, root) {
+		return fmt.Errorf("script directory is not private")
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("script removal failed")
+	}
+	return nil
 }
 
 func signalsAbsent(steps []step) error {
@@ -658,9 +944,25 @@ func environment(overrides []string) []uint16 {
 	return append(block, 0)
 }
 
-func check(err error, what string) {
-	if err != nil {
+func check(err error, what string, contentFree bool) bool {
+	if err == nil {
+		return true
+	}
+	if contentFree {
+		fmt.Fprintf(os.Stderr, "%s: failed\n", what)
+	} else {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", what, err)
-		os.Exit(2)
+	}
+	return false
+}
+
+func safeFailureKind(failure string) string {
+	switch failure {
+	case "wait_file", "write", "close_console", "child_exit", "wait_timeout", "driver_error", "reader_incomplete", "observer_error":
+		return failure
+	case "":
+		return "none"
+	default:
+		return "wait_timeout"
 	}
 }

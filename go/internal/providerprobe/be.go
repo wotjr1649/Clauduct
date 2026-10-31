@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
@@ -110,7 +109,7 @@ func backgroundEntryCases() map[string]func() scopeCase {
 		return func() scopeCase {
 			c := p3Case{ID: id, Entry: p3CLI, Hooks: p3HooksNormal, Setup: storedA, Expect: providercert.ExpectSuccess, Args: args, CLIPrior: prior,
 				Established: func(*p3Observed) bool { return true }}
-			return scopeCase{c: c, judge: judgeTransition}
+			return scopeCase{c: c, judge: judgeTransition, cliBackground: true}
 		}
 	}
 	managedOverride := func(doc map[string]any) func() scopeCase {
@@ -229,56 +228,12 @@ func tuiBoundaryCases() map[string]func() scopeCase {
 	}
 }
 
-// p3AgentBackgroundOnce answers the first main request that offers the Agent tool with one
-// Agent call whose run_in_background is true (BE10), and records what followed: whether a
-// later main request carried the call's output back, and whether the subagent's own request
-// (the task's marker, no Agent tool) reached the backend through the gateway.
-type p3AgentBackgroundOnce struct {
-	mu                         sync.Mutex
-	issued, returned, subagent bool
-}
-
-const p3BE10Task = "p3-be10-task: reply with exactly the word plum"
-
-func (a *p3AgentBackgroundOnce) script(body string, _ []string) string {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	// The subagent's requests carry the turn's canary too (measured): what tells them apart is
-	// that only the main thread is offered the Agent tool.
-	main := strings.Contains(body, `"name":"Agent"`)
-	switch {
-	case !main && strings.Contains(body, "p3-be10-task"):
-		a.subagent = true
-		return ""
-	case main && a.issued && strings.Contains(body, "function_call_output"):
-		a.returned = true
-		return ""
-	case main && !a.issued:
-		a.issued = true
-		args, _ := json.Marshal(map[string]any{"description": "p3 background subagent", "prompt": p3BE10Task, "subagent_type": "general-purpose", "run_in_background": true})
-		return toolStream("call_p3be10", "Agent", string(args))
-	}
-	return ""
-}
-
 func backgroundSubagentCase() scopeCase {
 	agent := &p3AgentBackgroundOnce{}
 	c := p3Case{ID: "BE10", Entry: p3Print, Hooks: p3HooksNormal, Setup: p3TrustedStoredA, Expect: providercert.ExpectSuccess,
-		Args: []string{"--allowedTools", "Agent"}, Script: agent.script, WatchBoundary: true, Established: func(*p3Observed) bool { return true }}
+		Args: []string{"--allowedTools", "Agent"}, Agent: agent, WatchBoundary: true, Established: func(*p3Observed) bool { return true }}
 	judge := func(_, treatment *p3Observed) CaseResult {
-		agent.mu.Lock()
-		defer agent.mu.Unlock()
-		switch {
-		case p3BoundaryReached(treatment) || p3WrongBytes(treatment) != 0:
-			return CaseResult{Verdict: VerdictBackgroundEntryReached}
-		case treatment.CleanupFailed:
-			return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{providercert.ReasonCleanupFailed}}
-		case !agent.issued || !agent.returned:
-			return CaseResult{Verdict: providercert.Inconclusive, Reasons: []string{fmt.Sprintf("the background Agent call did not reach native (issued=%t returned=%t)", agent.issued, agent.returned)}}
-		case !agent.subagent:
-			return CaseResult{Verdict: providercert.FailFunction, Reasons: []string{"the background subagent's request did not reach the backend through the gateway"}}
-		}
-		return CaseResult{Verdict: providercert.Pass}
+		return agent.judge(treatment)
 	}
 	return scopeCase{c: c, judge: judge, noControl: true}
 }

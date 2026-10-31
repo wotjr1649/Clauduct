@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -71,6 +73,7 @@ const refusedElementLimit = 8
 
 // RequestRecord is one request's account of itself.
 type RequestRecord struct {
+	ResponseDelivered  bool   `json:"responseDelivered,omitempty"`
 	Seq                int64  `json:"seq"`
 	Method             string `json:"method"`
 	Path               string `json:"path"`
@@ -83,6 +86,8 @@ type RequestRecord struct {
 	Control            string `json:"control,omitempty"`
 	ClassifierStage    string `json:"classifierStage,omitempty"`
 	ClassifierVerdict  string `json:"classifierVerdict,omitempty"`
+	NativeRouteScope   string `json:"nativeRouteScope,omitempty"`
+	ConfirmationSHA256 string `json:"confirmationSHA256,omitempty"`
 	Status             int    `json:"status,omitempty"`
 
 	// CAP03: what was asked for and what ran, kept apart. A record that keeps only the
@@ -211,6 +216,15 @@ func streamErrorLabel(err error) string {
 	default:
 		return "transport_error"
 	}
+}
+
+func (r *record) responseDelivered(delivered bool) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.data.ResponseDelivered = delivered
+	r.mu.Unlock()
 }
 
 func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, bytes int, done bool, trailing string) {
@@ -445,6 +459,25 @@ func (r *record) route(requested, model, effort, source string) {
 	defer r.mu.Unlock()
 	r.data.Requested, r.data.Model = requested, model
 	r.data.Effort, r.data.Source = effort, source
+}
+
+func (r *record) nativeRoute(scope string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.NativeRouteScope = scope
+}
+
+func (r *record) confirmation(nonce string) {
+	if r == nil {
+		return
+	}
+	sum := sha256.Sum256([]byte(nonce))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.ConfirmationSHA256 = hex.EncodeToString(sum[:])
 }
 
 // refusedWith records the category a refusal was answered with.

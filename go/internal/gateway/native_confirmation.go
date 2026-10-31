@@ -51,7 +51,7 @@ func anonymousNativeFork(r *http.Request) bool {
 // One fresh live helper connection per HTTP request. Stale files cannot grant a proof.
 // ponytail: serialize the short local handshake (64 admitted model requests),
 // not inference. One fixed challenge file bounds storage over a long session.
-func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt, search bool) (proof *nativeConfirmation) {
+func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt, search bool, records ...*record) (proof *nativeConfirmation) {
 	n := &g.nativeEvents
 	// A queued request does not own the mailbox yet. Bound the whole queue by
 	// the admitted request count, while cancellation and shutdown remain immediate.
@@ -173,6 +173,9 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	want.Nonce, err = newToken()
 	if err != nil {
 		return nil
+	}
+	if len(records) > 0 {
+		records[0].confirmation(want.Nonce)
 	}
 	lease, closeLease := context.WithCancel(r.Context())
 	pending = &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease, native: native}

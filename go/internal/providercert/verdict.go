@@ -11,9 +11,12 @@ import (
 // (P5-R) and native preservation (P5-F). Revision 3 gives each case its own expected refusals,
 // adds the hook-diagnostic expectation, the SAFETY purpose for same-process state changes and
 // the observed state application. Earlier results stay judged under their own revision.
+// Revision 5 correlates broken-helper refusals and requires zero conversation backend calls.
+// It also permits the five optional controls' proved local 503 block to yield NOT_EXERCISABLE
+// only with an independently clean treatment; NATIVE_CONFIRMATION_TIMEOUT is case-specific.
 const (
-	RoutingContractRevision = 4
-	ProbeSchemaRevision     = 4
+	RoutingContractRevision = 5
+	ProbeSchemaRevision     = 5
 )
 
 // Case outcomes.
@@ -65,8 +68,9 @@ const (
 )
 
 // ExpectedRefusals are the refusals a fail-closed turn is held to when its case names none
-// (revision 2's degraded-hook expectation).
-var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONFIRMATION_UNVERIFIED", "NATIVE_CONFIRMATION_TIMEOUT"}
+// (revision 2's degraded-hook expectation). Revision 5 removes NATIVE_CONFIRMATION_TIMEOUT
+// from these defaults; only R03ps/pf/px explicitly expect that category.
+var ExpectedRefusals = []string{"NATIVE_REQUEST_ORIGIN_UNVERIFIED", "NATIVE_CONFIRMATION_UNVERIFIED"}
 
 // Reasons.
 const (
@@ -470,7 +474,7 @@ func preservation(turns []Turn) []string {
 			for _, category := range t.Refusals {
 				refused = refused && slices.Contains(allowed, category)
 			}
-			if !refused || t.IntendedServed || slices.Contains(t.Markers, IntendedID) {
+			if !refused || t.BackendCalls != 0 || t.IntendedServed || slices.Contains(t.Markers, IntendedID) {
 				note(ReasonFailClosedNotObserved)
 			}
 		}

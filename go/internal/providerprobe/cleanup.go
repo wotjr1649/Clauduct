@@ -3,6 +3,7 @@ package providerprobe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"sync"
@@ -80,12 +81,13 @@ func p3StopOwnSupervisor(exe, configDir string, log *p3CleanupLog, run string) e
 	}
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(probeNatives(exe, configDir, time.Time{}, nil)) == 0 {
+		// An incomplete census cannot show the dir empty.
+		if left, complete := probeNativeCensus(exe, configDir, time.Time{}, nil); complete && len(left) == 0 {
 			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	return errors.New("natives of the probe config dir still running after the supervisor stopped")
+	return errors.New("natives of the probe config dir still running, or not all readable, after the supervisor stopped")
 }
 
 // p3RunRecorded is childprocess.Run that records the process's pid and creation time right
@@ -99,6 +101,7 @@ func p3RunRecorded(ctx context.Context, cmd *exec.Cmd, log *p3CleanupLog, run st
 	if err != nil {
 		return err
 	}
+	p.RecordReap()
 	n := p3CleanupNative{PID: uint32(p.PID()), Run: run}
 	if id, err := p.Identity(); err == nil {
 		n.Created = time.Unix(0, int64(id.Creation-116444736000000000)*100)
@@ -107,13 +110,18 @@ func p3RunRecorded(ctx context.Context, cmd *exec.Cmd, log *p3CleanupLog, run st
 	stop := context.AfterFunc(ctx, func() { _ = p.Stop() })
 	defer stop()
 	err = p.Wait()
+	// The stop native's own Job reports to the run through the error: a held member or a Job not
+	// confirmed empty is a cleanup failure.
+	if held, _, reapErr := p.JobEmpty(); held > 0 || reapErr != nil {
+		err = errors.Join(err, fmt.Errorf("HELD_PROCESS or JOB_UNCONFIRMED: %d held, %v", held, reapErr))
+	}
 	if !n.Created.IsZero() && cmd.ProcessState != nil {
 		if usage, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok && usage != nil {
 			log.exited(index, time.Unix(0, usage.ExitTime.Nanoseconds()))
 		}
 	}
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return errors.Join(ctx.Err(), err)
 	}
 	return err
 }
@@ -129,6 +137,7 @@ type p3PriorContact struct {
 	Bytes    int64                    `json:"bytes"`
 	Conns    int64                    `json:"conns"`
 	Tunnel   int64                    `json:"tunnel,omitempty"`
+	Total    int                      `json:"total,omitempty"`
 	Owners   []providercert.ConnOwner `json:"owners,omitempty"`
 }
 

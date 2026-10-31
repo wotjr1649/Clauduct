@@ -71,7 +71,14 @@ func writeJSON(t TB, path string, v any) {
 func startOSProcess(spec launch.Spec, stdin io.Reader, stdout, stderr io.Writer) (app.Process, error) {
 	cmd := exec.Command(spec.File, spec.Args...)
 	cmd.Dir, cmd.Env, cmd.Stdin, cmd.Stdout, cmd.Stderr = spec.Dir, spec.Env, stdin, stdout, stderr
-	return childprocess.Start(cmd)
+	p, err := childprocess.Start(cmd)
+	if err != nil {
+		// Start cannot say whether the process existed before it failed: its Job is unconfirmed.
+		return nil, errors.Join(err, errP3PartialStart)
+	}
+	// The probe's own starts prove their Job empty (childprocess.RecordReap); the product's do not.
+	p.RecordReap()
+	return p, nil
 }
 
 // productExecutable is the clauduct.exe this run certifies; the probe binary sets it.

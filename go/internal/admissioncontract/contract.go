@@ -16,7 +16,7 @@ import (
 //go:embed admission-r3.json
 var admission []byte
 
-//go:embed routing-r4.json
+//go:embed routing-r5.json
 var routing []byte
 
 // ConfigurationID is the measured configuration (admission r2 configurations).

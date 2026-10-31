@@ -350,6 +350,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	resultsDelivered = g.relay(ctx, w, control, response, request, backendRequest.Model,
 		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, nativeTurn: entry.nativeTurn, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source},
 			summary: summary})
+	entry.responseDelivered(resultsDelivered)
 	g.rememberUsage(encoded, entry)
 	if resultsDelivered {
 		g.auxiliaryAnswered(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
@@ -377,6 +378,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 		route, err := g.auxiliarySelection(request, r.URL.Path == "/v1/messages/count_tokens", entry)
 		return route, releaseAgent, err
 	}
+	entry.nativeRoute("conversation")
 	active, ok := g.pinNativeTurn(r, entry)
 	if !ok {
 		return nil, releaseAgent, errDelegationUnverified
@@ -389,7 +391,7 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 	// counts inside a turn and child counts keep the step proof.
 	counting := r.URL.Path == "/v1/messages/count_tokens" && r.Header.Get("X-Claude-Code-Agent-Id") == "" && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary"
 	if g.nativeEvents.confirmationsRequired && !compacting && !counting {
-		proof := g.nativeConfirmationFor(r, active, request.HostedSearch != nil)
+		proof := g.nativeConfirmationFor(r, active, request.HostedSearch != nil, entry)
 		if proof != nil && proof.cancellation != nil {
 			return nil, releaseAgent, proof.cancellation
 		}

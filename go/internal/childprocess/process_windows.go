@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -38,6 +39,7 @@ var createJob = processKernel.NewProc("CreateJobObjectW")
 var setJob = processKernel.NewProc("SetInformationJobObject")
 var terminateJob = processKernel.NewProc("TerminateJobObject")
 var isProcessInJob = processKernel.NewProc("IsProcessInJob")
+var queryJob = processKernel.NewProc("QueryInformationJobObject")
 var initializeAttributes = processKernel.NewProc("InitializeProcThreadAttributeList")
 var updateAttribute = processKernel.NewProc("UpdateProcThreadAttribute")
 var deleteAttributes = processKernel.NewProc("DeleteProcThreadAttributeList")
@@ -62,6 +64,126 @@ type Process struct {
 	outputs sync.WaitGroup
 	copyErr error
 	pipes   []*os.File
+	// reap is set by RecordReap only; nil keeps Wait and Stop exactly as before.
+	reap *jobReap
+}
+
+// jobReap is RecordReap's state: survivors are the Job's other members still alive when the
+// process had exited and nothing had ended them yet; stopped is a Stop while the process ran.
+type jobReap struct {
+	noted, done, stopped bool
+	survivors            uint32
+	err                  error
+}
+
+// reapGrace bounds the wait for the terminated Job to report no active process.
+const reapGrace = 5 * time.Second
+
+// ErrReapNotRecorded is JobEmpty on a Process without RecordReap, or before Wait returned.
+var ErrReapNotRecorded = errors.New("JOB_REAP_NOT_RECORDED")
+
+// RecordReap makes Wait prove the Job empty: before anything ends the tree it counts the Job's
+// members other than the exited process (a held process), then terminates the Job and waits up
+// to reapGrace for JOBOBJECT_BASIC_ACCOUNTING_INFORMATION.ActiveProcesses to reach zero. Only
+// the provider probe's starters call it; a launch without it keeps Wait's kill-on-close path.
+func (p *Process) RecordReap() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reap = &jobReap{}
+}
+
+// JobEmpty is Wait's reap result under RecordReap: the held members it counted, and nil only
+// when the Job was confirmed empty. stopped is true when Stop ended the tree while the process
+// still ran, so no member was counted as held.
+func (p *Process) JobEmpty() (survivors uint32, stopped bool, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.reap == nil || !p.reap.done {
+		return 0, false, ErrReapNotRecorded
+	}
+	return p.reap.survivors, p.reap.stopped, p.reap.err
+}
+
+// noteSurvivorsLocked records, once, the Job's members other than the process that are alive
+// before anything ends them. A Stop while the process still runs is its caller ending the whole
+// tree, not a held process.
+func (p *Process) noteSurvivorsLocked(exited bool) {
+	r := p.reap
+	if r == nil || r.noted || p.job == 0 {
+		return
+	}
+	r.noted = true
+	if !exited {
+		r.stopped = true
+		return
+	}
+	// JOBOBJECT_BASIC_PROCESS_ID_LIST with room for 64 ids; ERROR_MORE_DATA still fills the count.
+	var list struct {
+		Assigned, Listed uint32
+		IDs              [64]uintptr
+	}
+	if ok, _, e := queryJob.Call(uintptr(p.job), 3, uintptr(unsafe.Pointer(&list)), unsafe.Sizeof(list), 0); ok == 0 && e != syscall.ERROR_MORE_DATA {
+		r.err = fmt.Errorf("JOB_MEMBERS_UNREAD: %w", e)
+		return
+	}
+	self := uintptr(p.cmd.Process.Pid)
+	r.survivors = list.Assigned
+	for _, id := range list.IDs[:min(list.Listed, uint32(len(list.IDs)))] {
+		if id == self {
+			r.survivors--
+		}
+	}
+}
+
+// activeProcesses is JOBOBJECT_BASIC_ACCOUNTING_INFORMATION.ActiveProcesses.
+func activeProcesses(job syscall.Handle) (uint32, error) {
+	var info struct {
+		TotalUser, TotalKernel, PeriodUser, PeriodKernel                 int64
+		PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses uint32
+	}
+	if ok, _, e := queryJob.Call(uintptr(job), 1, uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info), 0); ok == 0 {
+		return 0, e
+	}
+	return info.ActiveProcesses, nil
+}
+
+// proveEmpty is Wait's reap under RecordReap: count held members, terminate the Job, and wait
+// for it to report no active process.
+func (p *Process) proveEmpty() {
+	p.mu.Lock()
+	r := p.reap
+	if r == nil {
+		p.mu.Unlock()
+		return
+	}
+	p.noteSurvivorsLocked(true)
+	job := p.job
+	p.mu.Unlock()
+	err := errors.New("JOB_UNAVAILABLE")
+	if job != 0 {
+		if ok, _, e := terminateJob.Call(uintptr(job), 1); ok == 0 {
+			err = fmt.Errorf("JOB_TERMINATE: %w", e)
+		} else {
+			err = errors.New("JOB_NOT_EMPTY")
+			for deadline := time.Now().Add(reapGrace); ; time.Sleep(50 * time.Millisecond) {
+				n, e := activeProcesses(job)
+				if e != nil {
+					err = fmt.Errorf("JOB_ACCOUNTING_UNREAD: %w", e)
+					break
+				}
+				if n == 0 {
+					err = nil
+					break
+				}
+				if time.Now().After(deadline) {
+					break
+				}
+			}
+		}
+	}
+	p.mu.Lock()
+	r.err, r.done = errors.Join(r.err, err), true
+	p.mu.Unlock()
 }
 
 // ProcessIdentity is a read-only observation of the process owned by Process.
@@ -150,6 +272,15 @@ func (p *Process) Stop() error {
 	if p.job == 0 {
 		return nil
 	}
+	if p.reap != nil {
+		// A process already waited for has released its handle: it had exited.
+		running := false
+		p.cmd.Process.WithHandle(func(raw uintptr) {
+			state, err := syscall.WaitForSingleObject(syscall.Handle(raw), 0)
+			running = err == nil && state == syscall.WAIT_TIMEOUT
+		})
+		p.noteSurvivorsLocked(!running)
+	}
 	if ok, _, err := terminateJob.Call(uintptr(p.job), 1); ok == 0 {
 		return err
 	}
@@ -174,6 +305,7 @@ func (p *Process) Wait() error {
 	p.cmd.ProcessState = state
 	// Reap native, then terminate descendants before waiting for their inherited
 	// output pipes. Otherwise a surviving child could keep EOF away forever.
+	p.proveEmpty()
 	jobErr := p.closeJob()
 	p.outputs.Wait()
 	for _, f := range p.pipes {

@@ -43,7 +43,7 @@ const (
 
 	// The test binary's own roles, which the probe's hook commands and plugin may name.
 	p3HookWrapperArg  = "--p3-hook-wrapper"
-	p3ForgedHelperArg = "--p3-forged-helper"
+	p3PluginHelperArg = "--p3-plugin-helper"
 
 	// p3HookDelay is past the hook's 1-second timeout and shorter than the wait native gives
 	// the next turn's own delayed hook, so a late post lands inside a later turn.
@@ -74,13 +74,12 @@ func p3Role(argv []string) (int, bool) {
 	if len(argv) > 1 && argv[1] == p3HookChildArg {
 		return p3HookChildMain(argv[2:]), true
 	}
-	if len(argv) > 1 && argv[1] == p3ForgedHelperArg {
-		// A helper that announces the connection without making one: the gateway never sees
-		// the confirmation, so the request it covers must be refused.
-		io.Copy(io.Discard, io.LimitReader(os.Stdin, 8192))
-		os.Stdout.WriteString("CLAUDUCT_CONFIRMATION_CONNECTED\n")
-		time.Sleep(15 * time.Second) // well inside a run's deadline; native ends it sooner
-		return 0, true
+	if len(argv) > 1 && argv[1] == p3PluginHelperArg {
+		code := p3PluginHelper(argv[2:], os.Stdin, os.Stdout)
+		if code == 0 && len(argv) > 2 && argv[2] == p3PluginForged {
+			time.Sleep(15 * time.Second) // keep the false connection claim alive until native ends it
+		}
+		return code, true
 	}
 	return 0, false
 }
@@ -386,33 +385,43 @@ func (w *p3World) applyPlugin(spec launch.Spec) (launch.Spec, error) {
 		return spec, err
 	}
 	helper := pluginHelper.FindString(string(raw))
-	var args []string
+	linkID := ""
 	switch w.plugin {
 	case p3PluginStale:
 		stale, err := sessionlink.StartForeground(context.Background(), sessionlink.Connection{BaseURL: "http://127.0.0.1:9", Token: "p3-stale"})
 		if err != nil {
 			return spec, err
 		}
+		linkID = stale.ID
 		stale.Close()
-		args = []string{hookcmd.ConfirmationArg, stale.ID}
 	case p3PluginForeign:
-		args = []string{hookcmd.ConfirmationArg, w.sentinelLink.ID}
-	case p3PluginForged:
-		self, err := os.Executable()
-		if err != nil {
-			return spec, err
+		if w.sentinelLink == nil {
+			return spec, errors.New("foreign plugin has no sentinel link")
 		}
-		quoted, _ := json.Marshal(filepath.ToSlash(self))
-		helper = "const confirmationHelper = " + string(quoted) + ";"
-		args = []string{p3ForgedHelperArg}
+		linkID = w.sentinelLink.ID
+	case p3PluginForged:
 	default:
 		return spec, errors.New("unknown plugin variant " + w.plugin)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return spec, err
+	}
+	receiptPath := p3VariantReceiptPath(w.sidecar)
+	quoted, _ := json.Marshal(filepath.ToSlash(self))
+	helper = "const confirmationHelper = " + string(quoted) + ";"
+	args := []string{p3PluginHelperArg, w.plugin, receiptPath}
+	if linkID != "" {
+		args = append(args, linkID)
 	}
 	encoded, _ := json.Marshal(args)
 	text := pluginHelper.ReplaceAllLiteralString(string(raw), helper)
 	text = pluginArgs.ReplaceAllLiteralString(text, "const confirmationArgs = "+string(encoded)+";")
 	if text == string(raw) {
 		return spec, errors.New("native-events plugin did not change; its helper constants moved")
+	}
+	if err := p3CreateVariantReceiptPath(receiptPath); err != nil {
+		return spec, err
 	}
 	w.pluginApplied = true
 	return spec, os.WriteFile(module, []byte(text), 0o600)

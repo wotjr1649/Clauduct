@@ -14,7 +14,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"strings"
-	"sync"
+	"sync/atomic"
 )
 
 // ScopeOptions is one probe run: one scope's short case set (admission contract r2).
@@ -49,6 +49,10 @@ type scopeCase struct {
 	variants []string
 	// noControl is a case the contract runs without a paired control (BE09, BE10, BE17).
 	noControl bool
+	// cliBackground is a CLI background-entry transition check (judgeTransition): the only kind
+	// whose PATH_ABSENT admits. A CLI launch-refusal check (BE09, BE17) is not one. The run that
+	// writes an entry and the RP01 short check both read it here.
+	cliBackground bool
 	// synthetic is a case that runs no native at all (R04S): it returns its result and the
 	// evidence to write.
 	synthetic func(t TB) (CaseResult, any)
@@ -247,15 +251,17 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		}
 	}
 	began := time.Now()
+	certificationTotal := p3CertificationTotal(o.Scope)
 	write("plan", map[string]any{"scope": o.Scope, "cases": ids, "key": key, "native": start, "admissionContractSHA256": admissioncontract.AdmissionSHA256(),
 		"retries": 0, "deadline": began.Add(certificationTotal), "workers": caseWorkers})
-	runner := newP3Runner(exe, pinnedStarter, 60*time.Second)
+	runner := newP3Runner(exe, pinnedStarter, p3ScopeTimeout)
 	runner.identity = func() (providercert.Identity, error) { return providercert.Observe(exe) }
 	registry := caseRegistry(o.Scope)
 	optional := admissioncontract.Scopes()[o.Scope].Optional
 	// Every deadline comes from one absolute time fixed at the start (r4 deadlines); a case that
 	// cannot start or does not finish before it is INCONCLUSIVE (TIMEOUT).
 	deadline := began.Add(certificationTotal)
+	pin := p3ScopePin(start, &runner)
 	runCase := func(id string) (r CaseResult) {
 		defer func() {
 			if v := recover(); v != nil {
@@ -273,86 +279,24 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 			return CaseResult{Verdict: VerdictCaseNotImplemented}
 		}
 		// Every native run of the case ends by the case's own limit or the run's, the earlier.
+		sc := build()
 		runner := runner
 		runner.deadline = deadline
-		if limit := time.Now().Add(perCase); limit.Before(deadline) {
+		if limit := time.Now().Add(p3CaseBudget(sc, registry)); limit.Before(deadline) {
 			runner.deadline = limit
 		}
-		sc := build()
 		sc.c.Optional = slices.Contains(optional, id)
 		if sc.synthetic != nil {
 			r, evidence := sc.synthetic(t)
 			write(id+"-treatment", evidence)
 			return r
 		}
-		control := &p3Observed{}
-		if !sc.noControl {
-			control = runner.run(t, sc.c, p3Unprotected)
-		}
-		treatment := runner.run(t, sc.c, p3HostManaged)
-		if sc.judge != nil {
-			r := sc.judge(control, treatment)
-			for _, v := range sc.variants {
-				vc := registry[v]()
-				vcontrol := &p3Observed{}
-				if !vc.noControl {
-					vcontrol = runner.run(t, vc.c, p3Unprotected)
-				}
-				vtreatment := runner.run(t, vc.c, p3HostManaged)
-				if vr := p3OverlayChecked(p3RoutingChecked(vc.c, vcontrol, vtreatment, vc.judge(vcontrol, vtreatment)), vtreatment); p3Severity(vr.Verdict) > p3Severity(r.Verdict) {
-					r = vr
-					r.Reasons = append(r.Reasons, v)
-				}
-			}
-			r = p3OverlayChecked(p3RoutingChecked(sc.c, control, treatment, r), treatment)
-			if !sc.noControl {
-				write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
-			}
-			write(id+"-treatment", p3EvidenceOf(sc.c, p3HostManaged, treatment, providercert.Result{CaseID: id, Verdict: r.Verdict, Reasons: r.Reasons}))
-			return r
-		}
-		observation := p3Observation(sc.c, treatment, control)
-		result := providercert.Judge(observation)
-		late := p3LateHookOf(sc.c.HookFaults, treatment)
-		result = p3VariantVerdict(result, late)
-		if result.Verdict == providercert.Pass && sc.function != nil {
-			verdict, reason := sc.function(control, treatment)
-			if verdict != "" {
-				result.Verdict = verdict
-			}
-			if reason != "" {
-				result.Reasons = append(result.Reasons, reason)
-			}
-		}
-		r = p3OverlayChecked(CaseResult{Verdict: result.Verdict, Reasons: result.Reasons, Purpose: sc.c.Purpose}, treatment)
-		result.Verdict, result.Reasons = r.Verdict, r.Reasons
-		write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
-		evidence := p3EvidenceOf(sc.c, p3HostManaged, treatment, result)
-		evidence.Observation = &observation
-		write(id+"-treatment", evidence)
-		return r
+		return p3ScopeCase(pin, id, sc, registry, func(c p3Case, configuration string) *p3Observed { return runner.run(t, c, configuration) }, write)
 	}
-	results := map[string]CaseResult{}
-	gates := map[string]bool{}
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	work := make(chan string)
-	for range caseWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for id := range work {
-				r := runCase(id)
-				mu.Lock()
-				results[id] = r
-				mu.Unlock()
-				t.Logf("%s %s %v", id, r.Verdict, r.Reasons)
-			}
-		}()
-	}
+	var order []string
 	for _, id := range ids {
 		if o.Only == nil || slices.Contains(o.Only, id) {
-			work <- id
+			order = append(order, id)
 		}
 	}
 	// A diagnostic run may name a case this runner implements and the contract does not list
@@ -360,18 +304,22 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 	// belongs to no entry.
 	for _, id := range o.Only {
 		if _, known := registry[id]; known && !slices.Contains(ids, id) {
-			work <- id
+			order = append(order, id)
 		}
 	}
-	close(work)
-	wg.Wait()
+	results, aborted := p3Dispatch(t, order, runner.ledger, runCase)
 	p3PMControlUnproven(results)
+	gates := map[string]bool{}
 	for id, passed := range scopeGates(results) {
 		gates[id] = passed
 	}
+	faults := runner.ledger.conserve()
+	if aborted {
+		faults = append([]string{"PROBE_CASE_ABORTED"}, faults...)
+	}
+	write("ledger", map[string]any{"faults": faults})
 	end, _ := providercert.Observe(exe)
-	outcome := Admit(AdmissionInput{Scope: o.Scope, Results: results, IdentityChanged: end != start, NativeSHA256: start.SHA256,
-		Platform: runtime.GOOS, GatesPassed: gates, Required: o.Required})
+	outcome := p3ScopeAdmit(o, results, gates, pin, end, faults)
 	entry := app.AdmissionEntry{Key: key, State: outcome.State, Reasons: outcome.Reasons, CreatedAt: time.Now().UTC(),
 		Probe: "clauduct-probe " + o.ProbeSHA256}
 	for _, id := range ids {
@@ -392,6 +340,38 @@ func RunScope(t TB, o ScopeOptions) (app.AdmissionEntry, error) {
 		return entry, fmt.Errorf("CACHE_WRITE_FAILED: %w", err)
 	}
 	return entry, nil
+}
+
+// p3Dispatch runs the cases one at a time (caseWorkers = 1), each in a goroutine of its own whose
+// done is closed on every exit, runtime.Goexit included, so the dispatcher never waits forever. A
+// case that returned no result, or whose run aborted, stops the dispatch: no later case starts,
+// and the scope is PROBE_CASE_ABORTED (DESIGN-SEQ §4.3).
+func p3Dispatch(t TB, order []string, ledger *p3Ledger, runCase func(string) CaseResult) (map[string]CaseResult, bool) {
+	results := map[string]CaseResult{}
+	for _, id := range order {
+		done := make(chan struct{})
+		var r CaseResult
+		returned := false
+		go func() {
+			defer close(done)
+			r = runCase(id)
+			returned = true
+		}()
+		<-done
+		if !returned {
+			t.Logf("%s aborted", id)
+			return results, true
+		}
+		results[id] = r
+		t.Logf("%s %s %v", id, r.Verdict, r.Reasons)
+		ledger.mu.Lock()
+		aborted := ledger.aborted
+		ledger.mu.Unlock()
+		if aborted {
+			return results, true
+		}
+	}
+	return results, false
 }
 
 // p3VariantVerdict turns a judged case whose only unmet condition was its own variant (the judge
@@ -464,17 +444,244 @@ func RequiredStates(home, product, probeSHA, scope string) (map[string]string, e
 }
 
 const (
-	// certificationTotal and perCase are r4 deadlines.certificationTotalSeconds and
-	// perCaseSeconds for one scope's short run.
-	certificationTotal = 900 * time.Second
-	perCase            = 180 * time.Second
-	// caseWorkers runs this many cases at once, each in its own world (config dir, receivers,
-	// workspace), so a scope's run fits the deadline.
-	caseWorkers = 4
-	// lockWait bounds the wait for another run of the same scope: longer than a whole run
-	// (the deadline plus the last case's limit).
-	lockWait = 25 * time.Minute
+	// caseWorkers is r5 deadlines.caseWorkers: one case at a time, so every receiver change in a
+	// run's interval is that run's (scopeLedger).
+	caseWorkers = 1
+	// p3ScopeTimeout is the runner's per-turn native timeout in a certification run.
+	p3ScopeTimeout = 60 * time.Second
+	// p3StartTeardown is what one native start may take past its own limit: the product's stop
+	// grace and the Job reap (childprocess reapGrace), with a margin.
+	p3StartTeardown = 15 * time.Second
+	// p3RunTeardown is the run's cleanup after its natives before any hook kill: the boundary
+	// watch's supervisor stop (20 s) and its census (15 s), the no-natives check (15 s), the hook
+	// reap (10 s) and the interval's settle (2.5 s). Each hook target adds p3HookKillWait.
+	p3RunTeardown  = 62500 * time.Millisecond
+	p3HookKillWait = 5 * time.Second
+	// p3BackgroundCycle bounds one background turn: the resident's 3 minutes and its stop and
+	// worker exit waits.
+	p3BackgroundCycle = 4 * time.Minute
+	// p3SyntheticBudget bounds R04S, which starts no native.
+	p3SyntheticBudget = 5 * time.Minute
+	// lockWait bounds the wait for another run of the same scope or its RP01: longer than the
+	// longest holder (r5 deadlines.lockWaitSeconds, contract test).
+	lockWait = 200 * time.Minute
 )
+
+// p3RunFor is one native start's limit for a case (the turns and waits its one process carries).
+func p3RunFor(c p3Case, timeout, settle time.Duration) time.Duration {
+	runFor := timeout
+	if c.Entry == p3Print && c.Settle > 0 {
+		// A single turn that runs this long by itself (a scripted tool loop).
+		runFor = timeout + c.Settle
+	}
+	total := max(len(c.Steps)+1, c.Turns)
+	if c.Entry == p3Multi || c.Entry == p3TUI && total >= 2 {
+		// One native process carries every turn and the waits between them.
+		waits := len(c.Steps)
+		if c.Entry == p3TUI {
+			waits = total - 1 // the driver waits between prompts
+		}
+		runFor = time.Duration(total)*timeout + time.Duration(waits)*max(settle, c.Settle)
+	}
+	if c.TUIStimulus != nil {
+		// The reply, the stimuli, 8 seconds, then the confirmation prompt and its reply.
+		runFor = 3 * timeout
+	}
+	return runFor
+}
+
+// p3RunNative is the run's native deadline from its start: every native start inside the run
+// (seeds, resume and continue turns, background cycles) ends by it, and each start's own
+// teardown and the boundary windows fit in it. The run's whole deadline adds p3RunTeardown;
+// a run that misses it is unreaped (DESIGN-SEQ §4.2, Terra 4).
+func p3RunNative(c p3Case, timeout, settle time.Duration) time.Duration {
+	runFor := p3RunFor(c, timeout, settle)
+	start := runFor + p3StartTeardown
+	switch c.Entry {
+	case p3CLI:
+		n := time.Duration(1)
+		if c.CLIPrior {
+			n = 2
+		}
+		return n*start + 8*time.Second
+	case p3Resume, p3Continue, p3ContinueRefusal, p3ContinueLegacy:
+		return 2 * start
+	case p3ContinueRecover:
+		return 3 * start
+	case p3TUI:
+		if c.TUIResume != "" {
+			return 2 * start
+		}
+		return start
+	case p3Background:
+		return time.Duration(1+len(c.Steps)) * (p3BackgroundCycle + p3StartTeardown)
+	case p3Print:
+		if c.WatchBoundary {
+			return start + 8*time.Second
+		}
+	}
+	return start
+}
+
+// p3HookTargets bounds the processes the hook reap may have to end: a child-mode hook leaves a
+// wrapper and a child per turn; any other run allows two.
+func p3HookTargets(c p3Case) int {
+	for _, fault := range c.HookFaults {
+		if p3ChildFault(fault) {
+			return max(2, 2*max(len(c.Steps)+1, c.Turns))
+		}
+	}
+	return 2
+}
+
+// p3RunTeardownFor is the run's cleanup deadline after its natives; the reap and the settle run
+// inside it, and a run still cleaning up after it is unreaped.
+func p3RunTeardownFor(c p3Case) time.Duration {
+	return p3RunTeardown + time.Duration(p3HookTargets(c))*p3HookKillWait
+}
+
+// p3RunBudget is one run's whole enforced deadline.
+func p3RunBudget(c p3Case) time.Duration {
+	return p3RunNative(c, p3ScopeTimeout, 0) + p3RunTeardownFor(c)
+}
+
+// p3CaseBudget is the sum of the case's runs: its control unless noControl, its treatment, and
+// each variant's.
+func p3CaseBudget(sc scopeCase, registry map[string]func() scopeCase) time.Duration {
+	if sc.synthetic != nil {
+		return p3SyntheticBudget
+	}
+	runs := func(sc scopeCase) time.Duration {
+		n := time.Duration(2)
+		if sc.noControl {
+			n = 1
+		}
+		return n * p3RunBudget(sc.c)
+	}
+	total := runs(sc)
+	for _, v := range sc.variants {
+		total += runs(registry[v]())
+	}
+	return total
+}
+
+// p3CertificationTotal is a scope's short run deadline: the sum of its cases' budgets (r5
+// deadlines.certificationTotalSeconds, contract test).
+func p3CertificationTotal(scope string) time.Duration {
+	registry := caseRegistry(scope)
+	var total time.Duration
+	for _, id := range admissioncontract.ShortCases(scope) {
+		if build, ok := registry[id]; ok {
+			total += p3CaseBudget(build(), registry)
+		}
+	}
+	return total
+}
+
+// p3ScopeCase runs and judges one native case of a scope: its control, treatment and variants.
+// Each run's checkpoints are noted against the scope's start pin; the case verdict keeps what the
+// case observed and the scope's identity state carries any change to Admit.
+func p3ScopeCase(pin *p3ScopeIdentity, id string, sc scopeCase, registry map[string]func() scopeCase,
+	run func(c p3Case, configuration string) *p3Observed, write func(name string, v any)) CaseResult {
+	// Each run is noted as soon as it returns, before the next starts: a later run's failure
+	// cannot drop it. The runner's checkpoint covers a run that itself fails.
+	runOnce := run
+	run = func(c p3Case, configuration string) *p3Observed {
+		o := runOnce(c, configuration)
+		pin.note(o)
+		return o
+	}
+	control := &p3Observed{}
+	if !sc.noControl {
+		control = run(sc.c, p3Unprotected)
+	}
+	treatment := run(sc.c, p3HostManaged)
+	if sc.judge != nil {
+		r := sc.judge(control, treatment)
+		r.CLIBackgroundEntry = sc.cliBackground
+		for _, v := range sc.variants {
+			vc := registry[v]()
+			vcontrol := &p3Observed{}
+			if !vc.noControl {
+				vcontrol = run(vc.c, p3Unprotected)
+			}
+			vtreatment := run(vc.c, p3HostManaged)
+			vj := vc.judge(vcontrol, vtreatment)
+			vj.CLIBackgroundEntry = vc.cliBackground
+			if vr := p3OverlayChecked(p3RoutingChecked(vc.c, vcontrol, vtreatment, p3ScopePinnedIdentityChecked(pin.start, vcontrol, vtreatment, vj)), vtreatment); p3Severity(vr.Verdict) > p3Severity(r.Verdict) {
+				r = vr
+				r.Reasons = append(r.Reasons, v)
+			}
+		}
+		r = p3OverlayChecked(p3RoutingChecked(sc.c, control, treatment, p3ScopePinnedIdentityChecked(pin.start, control, treatment, r)), treatment)
+		if !sc.noControl {
+			write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
+		}
+		write(id+"-treatment", p3EvidenceOf(sc.c, p3HostManaged, treatment, providercert.Result{CaseID: id, Verdict: r.Verdict, Reasons: r.Reasons}))
+		return r
+	}
+	observation := p3Observation(sc.c, treatment, control)
+	observation.IdentityChanged = observation.IdentityChanged || !p3MatchesScopePin(pin.start, control, treatment)
+	result := providercert.Judge(observation)
+	late := p3LateHookOf(sc.c.HookFaults, treatment)
+	result = p3VariantVerdict(result, late)
+	if result.Verdict == providercert.Pass && sc.function != nil {
+		verdict, reason := sc.function(control, treatment)
+		if verdict != "" {
+			result.Verdict = verdict
+		}
+		if reason != "" {
+			result.Reasons = append(result.Reasons, reason)
+		}
+	}
+	r := p3OverlayChecked(CaseResult{Verdict: result.Verdict, Reasons: result.Reasons, Purpose: sc.c.Purpose}, treatment)
+	result.Verdict, result.Reasons = r.Verdict, r.Reasons
+	write(id+"-control", p3EvidenceOf(sc.c, p3Unprotected, control, providercert.Result{CaseID: id, Verdict: "CONTROL"}))
+	evidence := p3EvidenceOf(sc.c, p3HostManaged, treatment, result)
+	evidence.Observation = &observation
+	write(id+"-treatment", evidence)
+	return r
+}
+
+// p3ScopeIdentity is a scope's native identity state: any checkpoint of any control, treatment or
+// variant that saw a native other than the start pin makes the whole scope
+// NATIVE_CHANGED_DURING_CERTIFICATION (admission r3 caseVerdict 1), ahead of every case verdict.
+type p3ScopeIdentity struct {
+	start   providercert.Identity
+	changed atomic.Bool
+}
+
+func (s *p3ScopeIdentity) note(runs ...*p3Observed) {
+	if p3ScopePinMismatched(s.start, runs...) {
+		s.changed.Store(true)
+	}
+}
+
+// p3ScopePin starts a scope's identity state at its start pin and hooks the runner's checkpoints to it.
+func p3ScopePin(start providercert.Identity, runner *p3Runner) *p3ScopeIdentity {
+	pin := &p3ScopeIdentity{start: start}
+	runner.checkpoint = pin.see
+	return pin
+}
+
+// p3ScopeAdmit judges a scope's short run: the identity state at the scope's end is Admit's first
+// rule, and the ledger's faults (an abort, an unreaped run, a stream not conserved) keep it
+// INCONCLUSIVE after any confirmed routing or background failure.
+func p3ScopeAdmit(o ScopeOptions, results map[string]CaseResult, gates map[string]bool, pin *p3ScopeIdentity, end providercert.Identity, faults []string) AdmissionOutcome {
+	return Admit(AdmissionInput{Scope: o.Scope, Results: results, IdentityChanged: pin.changedAt(end), NativeSHA256: pin.start.SHA256,
+		Platform: runtime.GOOS, GatesPassed: gates, Required: o.Required, ScopeFaults: faults})
+}
+
+// see takes one observed checkpoint (p3Runner.checkpoint).
+func (s *p3ScopeIdentity) see(id providercert.Identity) {
+	if id != s.start {
+		s.changed.Store(true)
+	}
+}
+
+func (s *p3ScopeIdentity) changedAt(end providercert.Identity) bool {
+	return end != s.start || s.changed.Load()
+}
 
 // p3OverlayChecked keeps a passing verdict only when the product passed every strategy value
 // itself (RC11): a value the harness had to fill in means the measured configuration is not
@@ -510,7 +717,56 @@ func p3RoutingChecked(c p3Case, control, treatment *p3Observed, r CaseResult) Ca
 	if routing.Verdict == providercert.FailRouting && p3Severity(r.Verdict) < p3Severity(providercert.FailRouting) {
 		return CaseResult{Verdict: providercert.FailRouting, Reasons: routing.Reasons, CLIBackgroundEntry: r.CLIBackgroundEntry}
 	}
+	// An incomplete receiver snapshot cannot support a PASS, PATH_ABSENT or disposition verdict;
+	// a confirmed routing or background failure, or a function failure, stands.
+	if (control.ReceiverFault || treatment.ReceiverFault) && p3Severity(r.Verdict) < p3Severity(providercert.FailFunction) {
+		r.Verdict, r.Reasons = providercert.Inconclusive, append([]string{providercert.ReasonReceiverFault}, r.Reasons...)
+	}
 	return r
+}
+
+// A catalogued replacement B must not certify the start pin A, even if A is restored before scope end.
+func p3MatchesScopePin(pin providercert.Identity, runs ...*p3Observed) bool {
+	if pin.Path == "" || pin.SHA256 == "" {
+		return false
+	}
+	for _, o := range runs {
+		if o == nil {
+			continue
+		}
+		if o.IdentityError || o.NativeStarts > 0 && len(o.Identity) < 2+o.NativeStarts {
+			return false
+		}
+		for _, id := range o.Identity {
+			if id != pin {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// p3ScopePinnedIdentityChecked keeps an observed FAIL_ROUTING or BACKGROUND_ENTRY_REACHED as evidence;
+// the scope's identity state, not the case verdict, gives the identity change its priority in Admit.
+func p3ScopePinnedIdentityChecked(pin providercert.Identity, control, treatment *p3Observed, r CaseResult) CaseResult {
+	if !p3MatchesScopePin(pin, control, treatment) {
+		if r.Verdict != providercert.FailRouting && r.Verdict != VerdictBackgroundEntryReached {
+			r.Verdict = providercert.Inconclusive
+		}
+		r.Reasons = append([]string{providercert.ReasonNativeChanged}, r.Reasons...)
+	}
+	return r
+}
+
+// p3ScopePinMismatched reports a checkpoint that observed a native other than the start pin. A
+// missing checkpoint is not a confirmed change; it keeps its case INCONCLUSIVE only.
+func p3ScopePinMismatched(pin providercert.Identity, runs ...*p3Observed) bool {
+	for _, o := range runs {
+		if o != nil && slices.ContainsFunc(o.Identity, func(id providercert.Identity) bool { return id != pin }) {
+			return true
+		}
+	}
+	return false
 }
 
 // staleEvents is R04S: a late hook event or confirmation, produced against the product gateway.

@@ -111,8 +111,10 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 			cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = spec.Dir, spec.Env, stdout, stderr
 			process, err := childprocess.Start(cmd)
 			if err != nil {
-				return nil, err
+				return nil, errors.Join(err, errP3PartialStart)
 			}
+			// The driver's Job holds the Claude process too: the probe proves it empty.
+			process.RecordReap()
 			native, created, err := tuiDiscover(uint32(process.PID()), "claude.exe", 15*time.Second)
 			if err != nil {
 				// The native was never seen under the driver (it ended before the first look, or never
@@ -127,10 +129,13 @@ func tuiPinnedStarter(steps, screen, raw, marks string, timeoutSeconds int, dead
 			switch _, err := providercert.LinkSpawned(native, created.UnixNano(), before); {
 			case err == nil:
 				report(before, nil)
+				// The generation tuiDiscover found and the link bound, not ptydrive's.
+				return &p3Native{Process: process, pid: int(native), created: uint64(created.UnixNano()/100) + 116444736000000000}, nil
 			case errors.Is(err, providercert.ErrNativeChanged):
 				process.Stop()
+				process.Wait()
 				report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
-				return nil, fmt.Errorf("POST_SPAWN unverified")
+				return nil, errP3PartialStart
 			default:
 				report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
 			}

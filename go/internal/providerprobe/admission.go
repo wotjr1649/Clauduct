@@ -38,6 +38,9 @@ type AdmissionInput struct {
 	GatesPassed map[string]bool
 	// Required are the states of the scope's requiresScope entries.
 	Required map[string]string
+	// ScopeFaults are the run's own faults, not a case's (PROBE_CASE_ABORTED, an unreaped run, a
+	// receiver stream not conserved): INCONCLUSIVE as RECEIVER_FAULT after rule 2.
+	ScopeFaults []string
 }
 
 // AdmissionOutcome is a scope's state and each case's label.
@@ -65,14 +68,50 @@ func Admit(in AdmissionInput) AdmissionOutcome {
 			return out
 		}
 	}
+	if len(in.ScopeFaults) > 0 {
+		reason := "RECEIVER_FAULT"
+		if in.ScopeFaults[0] == "PROBE_CASE_ABORTED" {
+			reason = "PROBE_CASE_ABORTED"
+		}
+		return inconclusive(reason)
+	}
+	labels, reasons, mismatch := admitCases(in)
+	out.Labels = labels
+	if mismatch {
+		return inconclusive("MATRIX_RESULTS_MISMATCH")
+	}
+	if len(reasons) > 0 {
+		out.State, out.Reasons = app.AdmissionInconclusive, reasons
+		return out
+	}
+	for _, scope := range admissioncontract.Scopes()[in.Scope].RequiresScope {
+		switch in.Required[scope] {
+		case app.AdmissionAdmitted:
+		case app.AdmissionNotAdmitted:
+			out.State, out.Reasons = app.AdmissionNotAdmitted, []string{"REQUIRED_SCOPE_NOT_ADMITTED:" + scope}
+			return out
+		default:
+			return inconclusive("REQUIRED_SCOPE_NOT_ADMITTED:" + scope)
+		}
+	}
+	out.State = app.AdmissionAdmitted
+	return out
+}
+
+// admitCases is Admit's rules 3-7 over a run's case results: each case's label, and the reasons the
+// cases do not admit the scope (rules 4-6, else rule 7's), or mismatch when the results are not the
+// scope's case set. The RP01 short-entry check reads a cached entry through the same rules.
+func admitCases(in AdmissionInput) (labels map[string]string, reasons []string, mismatch bool) {
+	labels = map[string]string{}
+	var gated []string
 	// 3
 	want := admissioncontract.ShortCases(in.Scope)
 	if len(want) == 0 || len(in.Results) != len(want) {
-		return inconclusive("MATRIX_RESULTS_MISMATCH")
+		return labels, nil, true
 	}
 	for _, id := range want {
 		if _, ok := in.Results[id]; !ok {
-			return inconclusive("MATRIX_RESULTS_MISMATCH")
+			return labels, nil, true
 		}
 	}
 	optional := admissioncontract.Scopes()[in.Scope].Optional
@@ -95,12 +134,11 @@ func Admit(in AdmissionInput) AdmissionOutcome {
 		disposed[d.Case] = d
 	}
 	// 4, 5, 6 and 6b all leave the scope INCONCLUSIVE; each names its case.
-	var reasons []string
 	note := func(reason string) { reasons = append(reasons, reason) }
 	for _, id := range want {
 		r := in.Results[id]
 		if d, ok := disposed[id]; ok {
-			out.Labels[id] = d.Label
+			labels[id] = d.Label
 			continue
 		}
 		switch {
@@ -109,19 +147,19 @@ func Admit(in AdmissionInput) AdmissionOutcome {
 		case r.Verdict == "PASS" && r.Purpose == "SAFE_REFUSAL":
 			note(id + ":SAFE_REFUSAL_CASE_PASS")
 		case r.Verdict == "PASS":
-			out.Labels[id] = "PASS"
+			labels[id] = "PASS"
 		case r.Verdict == "SAFETY_PASS" && r.Purpose == "SAFETY":
-			out.Labels[id] = "SAFETY_PASS"
+			labels[id] = "SAFETY_PASS"
 		case r.Verdict == "SAFETY_PASS":
 			note(id + ":SAFETY_PASS_OUTSIDE_SAFETY")
 		case r.Verdict == "SAFE_REFUSAL_PASS" && r.Purpose == "SAFE_REFUSAL":
-			out.Labels[id] = "SAFE_REFUSAL"
+			labels[id] = "SAFE_REFUSAL"
 		case r.Verdict == "SAFE_REFUSAL_PASS":
 			note(id + ":SAFE_REFUSAL_OUTSIDE_SAFE_REFUSAL")
 		case r.Verdict == "NOT_EXERCISABLE" && slices.Contains(optional, id):
-			out.Labels[id] = "NOT_EXERCISABLE"
+			labels[id] = "NOT_EXERCISABLE"
 		case r.Verdict == VerdictPathAbsent && r.CLIBackgroundEntry:
-			out.Labels[id] = VerdictPathAbsent
+			labels[id] = VerdictPathAbsent
 		case r.Verdict == "FAIL_SAFETY":
 			note(id + ":FOREIGN_SESSION_STATE_CHANGED")
 		case r.Verdict == "FAIL_FUNCTION":
@@ -133,36 +171,20 @@ func Admit(in AdmissionInput) AdmissionOutcome {
 		}
 	}
 	if len(reasons) > 0 {
-		out.State, out.Reasons = app.AdmissionInconclusive, reasons
-		return out
+		return labels, reasons, false
 	}
 	// 7
-	for id, label := range out.Labels {
+	for id, label := range labels {
 		if label == "BLOCKING" {
-			out.Reasons = append(out.Reasons, id+":BLOCKING")
+			gated = append(gated, id+":BLOCKING")
 		}
 		// A disposition with an equivalent gate holds only when that gate passed in this run.
 		if d, ok := disposed[id]; ok && d.EquivalentGate != "" && !in.GatesPassed[id] {
-			out.Reasons = append(out.Reasons, id+":EQUIVALENT_GATE_NOT_SHOWN")
+			gated = append(gated, id+":EQUIVALENT_GATE_NOT_SHOWN")
 		}
 	}
-	slices.Sort(out.Reasons)
-	if len(out.Reasons) > 0 {
-		out.State = app.AdmissionInconclusive
-		return out
-	}
-	for _, scope := range admissioncontract.Scopes()[in.Scope].RequiresScope {
-		switch in.Required[scope] {
-		case app.AdmissionAdmitted:
-		case app.AdmissionNotAdmitted:
-			out.State, out.Reasons = app.AdmissionNotAdmitted, []string{"REQUIRED_SCOPE_NOT_ADMITTED:" + scope}
-			return out
-		default:
-			return inconclusive("REQUIRED_SCOPE_NOT_ADMITTED:" + scope)
-		}
-	}
-	out.State = app.AdmissionAdmitted
-	return out
+	slices.Sort(gated)
+	return labels, gated, false
 }
 
 // RP01Satisfied is admission r2's rule for a scope's separate RP01 entry.

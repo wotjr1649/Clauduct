@@ -97,10 +97,19 @@ func inConfigDir(env map[string]string, configDir string) bool {
 // whose environment names the probe's config dir: the probe's own natives and no one else's.
 // Observation only.
 func probeNatives(pinnedImage, configDir string, since time.Time, roles map[string]string) []p3NativeProcess {
+	out, _ := probeNativeCensus(pinnedImage, configDir, since, roles)
+	return out
+}
+
+// probeNativeCensus is probeNatives and whether the census is complete: false when the process
+// snapshot failed or a live process with the native's file name could not be read (its image,
+// times or environment). A process that ended before it was read is not a gap.
+func probeNativeCensus(pinnedImage, configDir string, since time.Time, roles map[string]string) (_ []p3NativeProcess, complete bool) {
 	snapshot, err := syscall.CreateToolhelp32Snapshot(syscall.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return nil
+		return nil, false
 	}
+	complete = true
 	defer syscall.CloseHandle(snapshot)
 	var out []p3NativeProcess
 	entry := syscall.ProcessEntry32{Size: uint32(unsafe.Sizeof(syscall.ProcessEntry32{}))}
@@ -109,19 +118,29 @@ func probeNatives(pinnedImage, configDir string, since time.Time, roles map[stri
 			continue
 		}
 		pid := int(entry.ProcessID)
-		if image, err := imagePath(pid); err != nil || !strings.EqualFold(image, pinnedImage) {
+		image, err := imagePath(pid)
+		if err != nil {
+			complete = complete && p3ProcessGone(uint32(pid))
+			continue
+		}
+		if !strings.EqualFold(image, pinnedImage) {
 			continue
 		}
 		h, err := syscall.OpenProcess(0x0400|0x0010, false, uint32(pid))
 		if err != nil {
+			complete = complete && p3ProcessGone(uint32(pid))
 			continue
 		}
 		var created, exited, kernel, user syscall.Filetime
-		syscall.GetProcessTimes(h, &created, &exited, &kernel, &user)
+		timesErr := syscall.GetProcessTimes(h, &created, &exited, &kernel, &user)
 		when := time.Unix(0, created.Nanoseconds())
 		env, envErr := processEnvironment(h)
 		syscall.CloseHandle(h)
-		if envErr != nil || when.Before(since) {
+		if timesErr != nil || envErr != nil {
+			complete = complete && p3ProcessGone(uint32(pid))
+			continue
+		}
+		if when.Before(since) {
 			continue
 		}
 		if !inConfigDir(env, configDir) {
@@ -139,7 +158,19 @@ func probeNatives(pinnedImage, configDir string, since time.Time, roles map[stri
 		}
 		out = append(out, p3NativeProcess{PID: pid, ParentPID: entry.ParentProcessID, Created: when, Command: providercert.CommandWord(uint32(pid)), Env: classes})
 	}
-	return out
+	return out, complete
+}
+
+// p3ProcessGone reports a pid with no live process: it cannot be opened as one (ERROR_INVALID_PARAMETER)
+// or has exited. A process that is denied to the probe is not gone.
+var p3ProcessGone = func(pid uint32) bool {
+	h, err := syscall.OpenProcess(syscall.SYNCHRONIZE, false, pid)
+	if err != nil {
+		return err == syscall.Errno(87) // ERROR_INVALID_PARAMETER
+	}
+	defer syscall.CloseHandle(h)
+	state, err := syscall.WaitForSingleObject(h, 0)
+	return err == nil && state == syscall.WAIT_OBJECT_0
 }
 
 // ownDaemon reads the daemon named by the probe config dir's lock, confirms it runs the pinned

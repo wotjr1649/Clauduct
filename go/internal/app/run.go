@@ -137,6 +137,8 @@ type Options struct {
 	AdmittedNativeSHA256 string
 	// backgroundUnderStrategy lets a probe run the unverified background path under a strategy.
 	backgroundUnderStrategy bool
+	// Only ProbeControlOptions sets this for the synthetic UNPROTECTED baseline.
+	probeUnprotectedControl bool
 	// foregroundCheckpoint persists newly dispatched jobs before their first gateway request.
 	foregroundCheckpoint func() error
 	// interrupts replaces the console's Ctrl+C in a test. Nil subscribes to os.Interrupt.
@@ -229,6 +231,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// pass cannot become the user's real account.
 	if o.StartGateway == nil || o.ModelList == nil {
 		return Result{}, ErrNoUpstream
+	}
+	if o.probeUnprotectedControl && (o.ProviderStrategy != "" || o.Settings != nil || o.Regenerate != nil) {
+		return Result{}, ErrProbeControl
 	}
 	o = o.withDefaults()
 	launchArgs := o.Args // as given: a background resident records them for its regeneration
@@ -358,7 +363,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		resumeID = current.Session
 	} else if BackgroundRequested(forward) {
 		if forkedFrom, err = backgroundResume(forward, resumeID); err != nil {
-			return Result{}, err
+			if !o.probeUnprotectedControl || !errors.Is(err, ErrBackgroundResumeNeedsFork) && !errors.Is(err, ErrBackgroundContinue) {
+				return Result{}, err
+			}
+			err = nil
 		}
 	}
 	o.Args = forward
@@ -397,7 +405,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	nativeBefore, _ := os.Stat(exe)
 	defer func() { result.NativeReplaced = nativeReplaced(exe, nativeBefore) }()
-	if !information && o.Settings == nil && o.Regenerate == nil && providerFlag == "" && nativeBefore != nil && strings.EqualFold(filepath.Base(exe), "claude.exe") {
+	if !information && o.Settings == nil && o.Regenerate == nil && providerFlag == "" && !o.probeUnprotectedControl && nativeBefore != nil && strings.EqualFold(filepath.Base(exe), "claude.exe") {
 		var query childprocess.ProcessIdentity
 		defer func() { result.nativeProviderQuery = query }()
 		if err := checkNativeProvider(ctx, exe, o, &query); err != nil {

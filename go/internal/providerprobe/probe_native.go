@@ -37,6 +37,19 @@ func imagePath(pid int) (string, error) {
 	return syscall.UTF16ToString(buf[:size]), nil
 }
 
+// p3Native is a started native and the generation its starter linked to the pinned image: the
+// direct native, or the Claude process a TUI driver started (tuiDiscover). pid and created are
+// evidence, and RP01's owner (rp01_run.go); a start without a linked generation is not a p3Native.
+type p3Native struct {
+	*childprocess.Process
+	pid     int
+	created uint64 // Windows FILETIME ticks
+}
+
+// errP3PartialStart is a start refused after its process existed: the process was ended, and its
+// Job is not confirmed empty (the run is unreaped).
+var errP3PartialStart = errors.New("POST_SPAWN unverified: the started process was ended")
+
 // pinnedStarter starts the real native and links the new process to the exact image it runs. Nothing
 // is held against native's updater: the image is observed with full sharing before the spawn and
 // the live process is linked to its mapped image afterwards (providercert.LinkProcess). The
@@ -67,18 +80,24 @@ func pinnedStarter(report spawnReport) starter {
 		owned, ok := process.(*childprocess.Process)
 		if !ok {
 			process.Stop()
+			process.Wait()
 			report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: unexpected process type"))
-			return nil, fmt.Errorf("POST_SPAWN unverified")
+			return nil, errP3PartialStart
 		}
 		// The file was hashed before the spawn; the process is bound to that file object by its
 		// mapped image, with no hash after the spawn, so a child that finishes quickly is not lost.
 		switch _, err := providercert.LinkSpawned(uint32(owned.PID()), 0, before); {
 		case err == nil:
 			report(before, nil)
+			if id, err := owned.Identity(); err == nil && id.InOwnedJob {
+				return &p3Native{Process: owned, pid: id.PID, created: id.Creation}, nil
+			}
 		case errors.Is(err, providercert.ErrNativeChanged):
+			// Ended and waited for, so its Job handle is released; the run stays unconfirmed.
 			process.Stop()
+			process.Wait()
 			report(providercert.Identity{}, fmt.Errorf("POST_SPAWN: %w", err))
-			return nil, fmt.Errorf("POST_SPAWN unverified")
+			return nil, errP3PartialStart
 		default:
 			// Not linkable (it was gone before its image could be read): the diagnostic still
 			// runs, but the checkpoint is missing, so the run is INCONCLUSIVE_NATIVE_IDENTITY and

@@ -470,7 +470,9 @@ type p3HookProcs struct {
 
 // p3ReapHookProcesses finds the wrapper and child processes of a world's sidecar by the pid and
 // creation time they recorded, waits for those that are still ending, and ends the rest.
-func p3ReapHookProcesses(sidecar string, wait time.Duration) p3HookProcs {
+// stop, when set, is the run's absolute deadline: no wait, the kill waits included, runs past it
+// (a target still alive then is ended and counted as killed).
+func p3ReapHookProcesses(sidecar string, wait time.Duration, stop time.Time) p3HookProcs {
 	type target struct {
 		pid     int
 		created time.Time
@@ -488,7 +490,11 @@ func p3ReapHookProcesses(sidecar string, wait time.Duration) p3HookProcs {
 		}
 	}
 	var out p3HookProcs
+	// One end for every wait: the reap's own bound, never past the run's absolute deadline.
 	deadline := time.Now().Add(wait)
+	if !stop.IsZero() && stop.Before(deadline) {
+		deadline = stop
+	}
 	for _, t := range targets {
 		if t.pid <= 0 {
 			continue
@@ -512,7 +518,11 @@ func p3ReapHookProcesses(sidecar string, wait time.Duration) p3HookProcs {
 		state, err := syscall.WaitForSingleObject(h, uint32(max(left, 0).Milliseconds()))
 		if err != nil || state != syscall.WAIT_OBJECT_0 {
 			syscall.TerminateProcess(h, 1)
-			syscall.WaitForSingleObject(h, 5000)
+			kill := 5 * time.Second
+			if !stop.IsZero() {
+				kill = min(kill, max(time.Until(stop), 0))
+			}
+			syscall.WaitForSingleObject(h, uint32(kill.Milliseconds()))
 			out.Killed++
 		}
 		syscall.CloseHandle(h)

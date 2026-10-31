@@ -112,11 +112,19 @@ type countingListener struct {
 	observer *Observer
 }
 
-func (l countingListener) Accept() (net.Conn, error) {
+func newCountingListener(raw net.Listener, counter *Counter, observer *Observer) *countingListener {
+	return &countingListener{Listener: raw, counter: counter, observer: observer}
+}
+
+func (l *countingListener) Accept() (net.Conn, error) {
 	conn, err := l.Listener.Accept()
 	if err != nil {
 		return nil, err
 	}
+	return l.register(conn), nil
+}
+
+func (l *countingListener) register(conn net.Conn) net.Conn {
 	var closed *sync.Once
 	if l.observer != nil {
 		l.observer.mu.Lock()
@@ -150,7 +158,7 @@ func (l countingListener) Accept() (net.Conn, error) {
 		}
 		l.counter.mu.Unlock()
 	}
-	return countingConn{Conn: conn, counter: l.counter, accepted: connection, observer: l.observer, closed: closed, drainOwner: drainOwner}, nil
+	return countingConn{Conn: conn, counter: l.counter, accepted: connection, observer: l.observer, closed: closed, drainOwner: drainOwner}
 }
 
 // Canary is one turn's marker in the prompt. Only its digest goes into evidence.
@@ -344,8 +352,8 @@ type Seen struct {
 	// carried no request; it is recorded apart from an undecodable one.
 	TLSRejected bool     `json:"tlsRejected,omitempty"`
 	Canaries    []string `json:"canaries,omitempty"`
-	// Authority is a proxied tunnel's host:port. Kept out of evidence: it can name a loopback
-	// port, and the probe only needs it in memory to attribute a tunnel to its own receivers.
+	// Authority is the destination authority of a proxied request, including HTTP absolute-form
+	// requests and CONNECT tunnels. Kept out of evidence: it can name a loopback port.
 	Authority string `json:"-"`
 }
 
@@ -453,7 +461,7 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 	o.trackActivity(owner, 0, 1)
 	o.mu.Unlock()
 	defer func() { o.mu.Lock(); o.trackActivity(owner, 0, -1); o.mu.Unlock() }()
-	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
+	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
 		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
@@ -579,6 +587,18 @@ func (o *Observer) update(index int, fn func(*Seen)) {
 	}
 }
 
+// ReceiverSnapshot is one receiver's counter and request view, cloned together. Complete is
+// whether no accepted connection or request was still in flight when it was read.
+type ReceiverSnapshot struct {
+	Seen     []Seen
+	Total    int
+	Dropped  int
+	Bytes    int64
+	Conns    int64
+	Owners   []ConnOwner
+	Complete bool
+}
+
 // Receiver is one loopback destination the probe owns.
 type Receiver struct {
 	URL      string
@@ -587,25 +607,74 @@ type Receiver struct {
 	// CertSHA256 is the hex SHA-256 of a TLS receiver's certificate DER: the pin a synthetic
 	// stored gateway credential carries. CertPEM is that certificate, for the probe child's
 	// trust store only.
-	CertSHA256 string
-	CertPEM    []byte
-	server     *http.Server
-	done       chan error
+	CertSHA256  string
+	CertPEM     []byte
+	certificate *tls.Certificate
+	origin      string
+	server      *http.Server
+	done        chan error
+	listener    *countingListener
+	closeOnce   sync.Once
+	closeErr    error
 }
 
-// Close stops the receiver. Bytes that arrived before Close are already counted.
+// Read is the receiver's view now; Complete is Observer.Drained at the read. A read after the
+// senders exited is what the probe's ledger settles on.
+func (r *Receiver) Read() ReceiverSnapshot {
+	if r == nil || r.Observer == nil {
+		return ReceiverSnapshot{}
+	}
+	return r.receiverSnapshot(r.Observer.Drained())
+}
+
+func (r *Receiver) receiverSnapshot(complete bool) ReceiverSnapshot {
+	snapshot := ReceiverSnapshot{Complete: complete}
+	if r == nil {
+		return snapshot
+	}
+	if r.Observer != nil {
+		seen, total, dropped := r.Observer.Seen()
+		snapshot.Seen = cloneSeen(seen)
+		snapshot.Total = total
+		snapshot.Dropped = dropped
+	}
+	if r.Counter != nil {
+		snapshot.Bytes = r.Counter.Bytes.Load()
+		snapshot.Conns = r.Counter.Conns.Load()
+		snapshot.Owners = r.Counter.Owners()
+	}
+	return snapshot
+}
+
+func cloneSeen(seen []Seen) []Seen {
+	copy := make([]Seen, len(seen))
+	for i, item := range seen {
+		item.Canaries = slices.Clone(item.Canaries)
+		if item.Connection != nil {
+			connection := *item.Connection
+			item.Connection = &connection
+		}
+		copy[i] = item
+	}
+	return copy
+}
+
+// Close stops the receiver. Bytes that arrived before Close are already counted. A second Close
+// (the probe's scope end, then its test cleanup) returns the first one's result.
 func (r *Receiver) Close() error {
 	if r == nil || r.server == nil {
 		return nil
 	}
-	if r.Observer != nil {
-		r.Observer.shutdown()
-	}
-	err := r.server.Close()
-	if serveErr := <-r.done; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-		err = errors.Join(err, serveErr)
-	}
-	return err
+	r.closeOnce.Do(func() {
+		if r.Observer != nil {
+			r.Observer.shutdown()
+		}
+		r.closeErr = r.server.Close()
+		if serveErr := <-r.done; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			r.closeErr = errors.Join(r.closeErr, serveErr)
+		}
+	})
+	return r.closeErr
 }
 
 // Listen starts a plain HTTP receiver on 127.0.0.1.
@@ -619,8 +688,9 @@ func ListenUnix(o *Observer, path string) (*Receiver, error) {
 		return nil, err
 	}
 	counter := &Counter{}
-	r := &Receiver{URL: path, Counter: counter, Observer: o, server: &http.Server{Handler: o, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
-	go func() { r.done <- r.server.Serve(countingListener{Listener: raw, counter: counter, observer: o}) }()
+	listener := newCountingListener(raw, counter, o)
+	r := &Receiver{URL: path, Counter: counter, Observer: o, server: &http.Server{Handler: o, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1), listener: listener}
+	go func() { r.done <- r.server.Serve(listener) }()
 	return r, nil
 }
 
@@ -639,8 +709,9 @@ func listen(handler http.Handler, cert *tls.Certificate, der []byte, o *Observer
 		return nil, err
 	}
 	counter := &Counter{}
-	var l net.Listener = countingListener{Listener: raw, counter: counter, observer: o}
-	r := &Receiver{Counter: counter, Observer: o, server: &http.Server{Handler: handler, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1)}
+	listener := newCountingListener(raw, counter, o)
+	var l net.Listener = listener
+	r := &Receiver{Counter: counter, Observer: o, server: &http.Server{Handler: handler, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1), listener: listener}
 	scheme := "http"
 	if cert != nil {
 		scheme = "https"
@@ -650,6 +721,7 @@ func listen(handler http.Handler, cert *tls.Certificate, der []byte, o *Observer
 		l = tls.NewListener(l, &tls.Config{Certificates: []tls.Certificate{*cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12})
 	}
 	r.URL = scheme + "://" + raw.Addr().String()
+	r.origin, r.certificate = r.URL, cert
 	go func() { r.done <- r.server.Serve(l) }()
 	return r, nil
 }
@@ -722,7 +794,8 @@ func hostOnly(authority string) string {
 	return authority
 }
 
-// CatchAll is a loopback proxy that terminates TLS with a probe-only CA and forwards nothing.
+// CatchAll never dials a destination. Registered receivers are served in-process;
+// every other authority stays on the recording, blocking observer.
 type CatchAll struct {
 	*Receiver
 	// CAPEM is the probe CA certificate, for NODE_EXTRA_CA_CERTS in the probe child only. The
@@ -732,10 +805,18 @@ type CatchAll struct {
 	caKey  *ecdsa.PrivateKey
 	mu     sync.Mutex
 	leaves map[string]*tls.Certificate
+	owned  map[string]*Receiver
 }
 
 // ListenCatchAll starts the proxy around o.
-func ListenCatchAll(o *Observer) (*CatchAll, error) {
+func ListenCatchAll(o *Observer, owned ...*Receiver) (*CatchAll, error) {
+	targets := map[string]*Receiver{}
+	for _, target := range owned {
+		if target == nil || target.origin == "" || target.URL != target.origin || target.Observer == nil || targets[target.origin] != nil {
+			return nil, errors.New("invalid owned proxy receiver")
+		}
+		targets[target.origin] = target
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -752,7 +833,7 @@ func ListenCatchAll(o *Observer) (*CatchAll, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &CatchAll{CAPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), caCert: ca, caKey: key, leaves: map[string]*tls.Certificate{}}
+	c := &CatchAll{CAPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), caCert: ca, caKey: key, leaves: map[string]*tls.Certificate{}, owned: targets}
 	r, err := listen(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { c.serveProxy(w, r, o) }), nil, nil, o)
 	if err != nil {
 		return nil, err
@@ -763,11 +844,29 @@ func ListenCatchAll(o *Observer) (*CatchAll, error) {
 
 func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observer) {
 	if r.Method != http.MethodConnect {
-		// An absolute-form plain HTTP request through the proxy.
-		o.observe(w, r, r.Host)
+		// The absolute request target is authoritative even when a mismatched Host header
+		// keeps it out of an owned receiver; preserve it so the blocked attempt is attributable.
+		authority := r.Host
+		if r.URL.IsAbs() {
+			authority = r.URL.Host
+			if r.URL.Scheme == "http" && r.URL.Host == r.Host && receiverConnection(r) != nil {
+				if target := c.owned["http://"+authority]; target != nil {
+					target.Observer.observe(w, r, authority)
+					return
+				}
+			}
+		}
+		o.observe(w, r, authority)
 		return
 	}
 	authority := r.Host
+	target := c.owned["https://"+authority]
+	observer := o
+	if target != nil && receiverConnection(r) != nil {
+		observer = target.Observer
+	} else {
+		target = nil
+	}
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "no hijack", http.StatusInternalServerError)
@@ -788,12 +887,15 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
 	// the probe cannot see into must not vanish from the record.
 	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect", PathTemplate: PathTemplate(http.MethodConnect, authority, "")}
-	tunnel := o.record(&seen)
-	o.observed(r, seen)
+	tunnel := observer.record(&seen)
+	observer.observed(r, seen)
 	var hello atomic.Bool
 	tlsConn := tls.Server(inner, &tls.Config{NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12,
 		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			hello.Store(true)
+			if target != nil {
+				return target.certificate, nil
+			}
 			name := info.ServerName
 			if name == "" {
 				name = hostOnly(authority)
@@ -807,15 +909,21 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 		if hello.Load() {
 			// A ClientHello, then no handshake: a refused pin or certificate, h2-only, a client
 			// that left. No application data could have crossed.
-			o.update(tunnel, func(s *Seen) { s.TLSRejected = true })
+			observer.update(tunnel, func(s *Seen) { s.TLSRejected = true })
 		} else {
 			// Bytes that were not a TLS ClientHello the probe could read.
-			o.update(tunnel, func(s *Seen) { s.Undecodable = true })
+			observer.update(tunnel, func(s *Seen) { s.Undecodable = true })
 		}
 		tlsConn.Close()
 		return
 	}
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { o.observe(w, r, authority) }), BaseContext: func(net.Listener) context.Context {
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if target != nil && r.Host == authority && !r.URL.IsAbs() {
+			target.Observer.observe(w, r, authority)
+			return
+		}
+		o.observe(w, r, authority)
+	}), BaseContext: func(net.Listener) context.Context {
 		ctx := context.Background()
 		if connection := receiverConnection(r); connection != nil {
 			ctx = context.WithValue(ctx, receiverConnectionKey{}, connection)

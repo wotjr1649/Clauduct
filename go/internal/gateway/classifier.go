@@ -27,6 +27,7 @@ const classifierContextPrefix = "The following is the user's CLAUDE.md configura
 func (g *Gateway) ConfigureClassifierModel(pair bridge.Pair) { g.classifierModel = pair }
 
 func (g *Gateway) auxiliarySelection(request *anthropic.Request, count bool, entry *record) ([]bridge.Route, error) {
+	entry.nativeRoute("independent_auxiliary")
 	stage, _ := autoModeClassifierStage(request, count)
 	entry.classifier(stage)
 	routes, err := g.classifierSelection(request, count)

@@ -336,6 +336,8 @@ func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 // Ingress is one authenticated inference request as read in full. Seq is the request's record
 // number, which its outcome carries too.
 type Ingress struct {
+	// Context lets a probe observer correlate this authenticated body with its backend request.
+	Context      context.Context
 	Seq          int64
 	Path         string
 	RequestClass string
@@ -371,7 +373,7 @@ func (g *Gateway) observeIngress(w http.ResponseWriter, r *http.Request, body []
 		header := r.Header.Clone()
 		header.Del("Authorization")
 		header.Del("X-Api-Key")
-		(*fn)(Ingress{Seq: recordOf(w).seqNumber(), Path: r.URL.Path, RequestClass: r.Header.Get("X-Claude-Code-Request-Class"), Body: body, Header: header})
+		(*fn)(Ingress{Context: r.Context(), Seq: recordOf(w).seqNumber(), Path: r.URL.Path, RequestClass: r.Header.Get("X-Claude-Code-Request-Class"), Body: body, Header: header})
 	}
 }
 

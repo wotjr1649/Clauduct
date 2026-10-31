@@ -93,7 +93,7 @@ func AdmitLaunch(ctx context.Context, in GateInput) (Admission, error) {
 			continue
 		}
 		if in.Stderr != nil {
-			fmt.Fprintf(in.Stderr, "clauduct: verifying provider control for %s with this build and native (%v); this takes a few minutes and starts nothing of yours\n", s, missReason(err, entry))
+			fmt.Fprintf(in.Stderr, "clauduct: verifying provider control for %s with this build and native (%v); this can take an hour or more and starts nothing of yours\n", s, missReason(err, entry))
 		}
 		if err := run(ctx, ProbeCall{Scope: s, Home: in.Home, Stderr: in.Stderr}); err != nil {
 			return Admission{}, fmt.Errorf("ROUTING_PROVIDER_UNVERIFIED: the provider-control probe for %s failed: %w", s, err)

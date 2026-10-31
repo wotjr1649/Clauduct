@@ -51,6 +51,8 @@ func NativeEventsModule() string { return nativeEventsModule }
 // list. The probe has no real upstream to fall back to, so it has no default either.
 var ErrProbeUpstream = errors.New("PROBE_UPSTREAM_REQUIRED: the probe must pass its synthetic gateway and model list")
 
+var ErrProbeControl = errors.New("PROBE_CONTROL_INVALID: a synthetic control requires the unprotected native launch")
+
 // ProbeOptions completes base with the probe's synthetic upstream: the gateway start and the
 // account list it measures against. Both are required, so a probe session cannot be built
 // without them and cannot reach a credential provider through an omission; Run itself
@@ -62,5 +64,21 @@ func ProbeOptions(base Options, startGateway func() (*gateway.Gateway, error), m
 	}
 	base.StartGateway = startGateway
 	base.ModelList = modelList
+	base.probeUnprotectedControl = false
 	return base, nil
+}
+
+// ProbeControlOptions measures the native threat before the product's launch refusals.
+// No product option or environment variable can enable this synthetic-only control.
+// TestProbeControlProductionCallerIsPinned guards the sole probe-owned production caller.
+func ProbeControlOptions(base Options, startGateway func() (*gateway.Gateway, error), modelList func(context.Context, string) (*bridge.Catalogue, ModelListFacts, error)) (Options, error) {
+	if base.ProviderStrategy != "" || base.Settings != nil || base.Regenerate != nil {
+		return Options{}, ErrProbeControl
+	}
+	options, err := ProbeOptions(base, startGateway, modelList)
+	if err != nil {
+		return Options{}, err
+	}
+	options.probeUnprotectedControl = true
+	return options, nil
 }

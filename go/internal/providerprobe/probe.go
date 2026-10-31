@@ -460,7 +460,7 @@ func (w *p3World) wrongResponder(id string) func(http.ResponseWriter, *http.Requ
 	}
 }
 
-func newP3World(t TB, transport *p3Transport) *p3World {
+func newP3World(t TB, transport *p3Transport, bedrockTLS bool) *p3World {
 	t.Helper()
 	w := &p3World{t: t, configDir: t.TempDir(), home: t.TempDir(), managedDir: t.TempDir(), transport: transport}
 	_, w.cwd = workspace(t)
@@ -482,7 +482,7 @@ func newP3World(t TB, transport *p3Transport) *p3World {
 	}
 	w.sgA = mk("WRONG_STORED_GATEWAY_A", true)
 	w.sgB = mk("WRONG_STORED_GATEWAY_B", true)
-	w.settings = mk("WRONG_SETTINGS", false)
+	w.settings = mk("WRONG_SETTINGS", bedrockTLS)
 	socketObserver := &providercert.Observer{ID: "WRONG_SOCKET", Canaries: w.liveCanaries}
 	socketObserver.Respond = w.wrongResponder("WRONG_SOCKET")
 	w.socket, err = providercert.ListenUnix(socketObserver, filepath.Join(t.TempDir(), "p3.sock"))
@@ -517,6 +517,9 @@ func newP3World(t TB, transport *p3Transport) *p3World {
 	// as a real stored gateway's certificate would be trusted; nothing else is added.
 	w.caFile = filepath.Join(t.TempDir(), "p3-ca.pem")
 	bundle := append(append(append([]byte{}, w.catchAll.CAPEM...), w.sgA.CertPEM...), w.sgB.CertPEM...)
+	if bedrockTLS {
+		bundle = append(bundle, w.settings.CertPEM...)
+	}
 	if err := os.WriteFile(w.caFile, bundle, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1062,7 +1065,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 	native := p3RunNative(c, p.timeout, p.settle)
 	obs.nativeDeadline, obs.runDeadline = began.Add(native), began.Add(native+p3RunTeardownFor(c))
 	transport := &p3Transport{script: c.Script, delay: c.ReplyDelay, agent: c.Agent}
-	w := newP3World(t, transport)
+	w := newP3World(t, transport, c.ID == "R13b")
 	obs.world = w
 	p.ledger.add(obs.Run, p3WorldReceivers(w)...)
 	if p.surface {
@@ -2073,7 +2076,7 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 				// The gateway's own record of this turn's conversation-bearing requests: the
 				// category it refused one with, matched by the record number, or "" if served.
 				// Only the turn's own model request: count_tokens meets other boundaries.
-				if len(in.canaries) > 0 && !strings.EqualFold(in.class, "auxiliary") && in.path == "/v1/messages" && (!p3R03Case(c) || p3R03Main(in)) {
+				if (len(in.canaries) > 0 || p3R03Case(c)) && !strings.EqualFold(in.class, "auxiliary") && in.path == "/v1/messages" && (!p3R03Case(c) || p3R03Main(in)) {
 					turn.Refusals = append(turn.Refusals, in.outcome)
 				}
 			}

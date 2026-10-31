@@ -32,10 +32,11 @@ const (
 )
 
 var (
-	p3VariantLinkPattern   = regexp.MustCompile(`^[a-f0-9]{32}$`)
-	p3VariantNoncePattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
-	p3VariantDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	p3VariantLoopbackURL   = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}$`)
+	p3VariantLinkPattern    = regexp.MustCompile(`^[a-f0-9]{32}$`)
+	p3VariantNoncePattern   = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+	p3VariantDigestPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	p3VariantSessionPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
+	p3VariantLoopbackURL    = regexp.MustCompile(`^http://127\.0\.0\.1:[0-9]{1,5}$`)
 )
 
 // p3VariantReceipt contains only fixed labels, a request nonce digest and booleans. The
@@ -58,8 +59,8 @@ type p3VariantConfirmation struct {
 	Index         int    `json:"index"`
 	Search        bool   `json:"search"`
 	Auxiliary     bool   `json:"auxiliary,omitempty"`
-	Confirmations bool   `json:"confirmations,omitempty"`
-	Unmatched     bool   `json:"unmatched,omitempty"`
+	Confirmations bool   `json:"confirmations"`
+	Unmatched     bool   `json:"unmatched"`
 }
 
 func p3VariantReceiptPath(sidecar string) string {
@@ -94,7 +95,7 @@ func p3VariantReceiptExercised(c p3Case, receipt p3VariantReceipt, confirmationS
 	}
 	switch c.Plugin {
 	case p3PluginStale:
-		return receipt.Outcome == "closed_link" && receipt.ExitCode == 2 && receipt.LinkAttempted && receipt.ClosedLinkAttempt && !receipt.MarkerEmitted
+		return receipt.Outcome == "closed_link" && receipt.ExitCode == 3 && receipt.LinkAttempted && receipt.ClosedLinkAttempt && !receipt.MarkerEmitted
 	case p3PluginForeign:
 		return receipt.LinkAttempted && !receipt.ClosedLinkAttempt &&
 			(receipt.Outcome == "foreign_refused" && receipt.ExitCode == 3 && !receipt.MarkerEmitted ||
@@ -144,8 +145,9 @@ func p3PluginHelper(args []string, in io.Reader, out io.Writer) int {
 		_, err := sessionlink.Read(linkID)
 		receipt.LinkAttempted = true
 		switch {
-		case errors.Is(err, sessionlink.ErrUnavailable) && !errors.Is(err, sessionlink.ErrBusy):
+		case errors.Is(err, sessionlink.ErrNotFound):
 			receipt.Outcome, receipt.ClosedLinkAttempt = "closed_link", true
+			code = 3
 		case err == nil:
 			receipt.Outcome = "link_open"
 		default:
@@ -185,12 +187,27 @@ func p3ReadVariantConfirmation(in io.Reader) (p3VariantConfirmation, string, []b
 	if err != nil || len(raw) == 0 || len(raw) > p3VariantMaxRequestBytes {
 		return p3VariantConfirmation{}, "", nil, false
 	}
-	fields := []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"}
-	if _, err := wire.Fields(raw, fields); err != nil {
+	allowed := []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"}
+	fields, err := wire.Fields(raw, allowed)
+	if err != nil {
+		return p3VariantConfirmation{}, "", nil, false
+	}
+	for _, name := range []string{"nonce", "session", "agent", "turn", "index", "search", "confirmations", "unmatched"} {
+		if _, presence := wire.Of(fields, name); presence != wire.Present {
+			return p3VariantConfirmation{}, "", nil, false
+		}
+	}
+	if _, presence := wire.Of(fields, "auxiliary"); presence == wire.Null {
 		return p3VariantConfirmation{}, "", nil, false
 	}
 	var request p3VariantConfirmation
-	if json.Unmarshal(raw, &request) != nil || !p3VariantNoncePattern.MatchString(request.Nonce) {
+	if json.Unmarshal(raw, &request) != nil || !p3VariantNoncePattern.MatchString(request.Nonce) || !p3VariantSessionPattern.MatchString(request.Session) {
+		return p3VariantConfirmation{}, "", nil, false
+	}
+	matched := request.Turn != "" && request.Index >= 0
+	unmatched := request.Agent == "" && request.Turn == "" && request.Index == -1
+	if request.Confirmations && request.Unmatched || request.Confirmations && !matched || request.Unmatched && !unmatched ||
+		!request.Confirmations && !request.Unmatched && !matched && !unmatched {
 		return p3VariantConfirmation{}, "", nil, false
 	}
 	sum := sha256.Sum256([]byte(request.Nonce))

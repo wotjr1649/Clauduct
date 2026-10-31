@@ -81,12 +81,17 @@ type ReceiverConnection struct {
 	Client   string    `json:"-"`
 	Server   string    `json:"-"`
 	Owner    ConnOwner `json:"owner"`
+	http     *tlsHTTPAccounting
 }
 
 type receiverConnectionKey struct{}
 
 func receiverConnContext(ctx context.Context, c net.Conn) context.Context {
-	if secured, ok := c.(*tls.Conn); ok {
+	for {
+		secured, ok := c.(interface{ NetConn() net.Conn })
+		if !ok {
+			break
+		}
 		c = secured.NetConn()
 	}
 	if counted, ok := c.(countingConn); ok {
@@ -590,13 +595,14 @@ func (o *Observer) update(index int, fn func(*Seen)) {
 // ReceiverSnapshot is one receiver's counter and request view, cloned together. Complete is
 // whether no accepted connection or request was still in flight when it was read.
 type ReceiverSnapshot struct {
-	Seen     []Seen
-	Total    int
-	Dropped  int
-	Bytes    int64
-	Conns    int64
-	Owners   []ConnOwner
-	Complete bool
+	Seen                    []Seen
+	Total                   int
+	Dropped                 int
+	Bytes                   int64
+	Conns                   int64
+	Owners                  []ConnOwner
+	UnclassifiedConnections int64 // direct TLS accepts without an exact, generation-bound HTTP observation
+	Complete                bool
 }
 
 // Receiver is one loopback destination the probe owns.
@@ -643,7 +649,58 @@ func (r *Receiver) receiverSnapshot(complete bool) ReceiverSnapshot {
 		snapshot.Conns = r.Counter.Conns.Load()
 		snapshot.Owners = r.Counter.Owners()
 	}
+	if r.certificate != nil && r.Counter != nil {
+		snapshot.UnclassifiedConnections = r.unclassifiedTLSConnections(snapshot)
+	}
 	return snapshot
+}
+
+func (r *Receiver) unclassifiedTLSConnections(snapshot ReceiverSnapshot) int64 {
+	endpoint, err := url.Parse(r.origin)
+	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" {
+		return snapshot.Conns
+	}
+	type accepted struct {
+		server, client string
+		at             time.Time
+		owner          receiverOwner
+		account        *tlsHTTPAccounting
+	}
+	seen := make(map[int64]accepted)
+	invalid := make(map[int64]bool)
+	requests := make(map[int64]int)
+	for _, item := range snapshot.Seen {
+		connection := item.Connection
+		if connection == nil || connection.Server != endpoint.Host {
+			continue
+		}
+		if connection.ID <= 0 || connection.ID > snapshot.Conns || connection.Client == "" || connection.Accepted.IsZero() ||
+			connection.Owner.PID == 0 || connection.Owner.Created.IsZero() {
+			continue
+		}
+		current := accepted{server: connection.Server, client: connection.Client, at: connection.Accepted,
+			owner: receiverOwnerOf(connection.Owner), account: connection.http}
+		if prior, exists := seen[connection.ID]; exists &&
+			(prior.server != current.server || prior.client != current.client || !prior.at.Equal(current.at) || prior.owner != current.owner || prior.account != current.account) {
+			delete(seen, connection.ID)
+			invalid[connection.ID] = true
+			continue
+		}
+		if !invalid[connection.ID] {
+			seen[connection.ID] = current
+			requests[connection.ID]++
+		}
+	}
+	for id, entry := range seen {
+		if entry.account == nil || !entry.account.matches(requests[id]) {
+			delete(seen, id)
+		}
+	}
+	unclassified := snapshot.Conns - int64(len(seen))
+	if unclassified < 0 {
+		return snapshot.Conns
+	}
+	return unclassified
 }
 
 func cloneSeen(seen []Seen) []Seen {
@@ -718,7 +775,7 @@ func listen(handler http.Handler, cert *tls.Certificate, der []byte, o *Observer
 		sum := sha256.Sum256(der)
 		r.CertSHA256 = hex.EncodeToString(sum[:])
 		r.CertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-		l = tls.NewListener(l, &tls.Config{Certificates: []tls.Certificate{*cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12})
+		l = &tlsHTTPListener{Listener: l, observer: o, config: &tls.Config{Certificates: []tls.Certificate{*cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12}}
 	}
 	r.URL = scheme + "://" + raw.Addr().String()
 	r.origin, r.certificate = r.URL, cert

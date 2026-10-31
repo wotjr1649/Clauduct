@@ -56,7 +56,7 @@ func (l *p3Ledger) poisoned() bool {
 }
 
 func p3SameCounts(a, b providercert.ReceiverSnapshot) bool {
-	return a.Conns == b.Conns && a.Bytes == b.Bytes && a.Total == b.Total && a.Dropped == b.Dropped
+	return a.Conns == b.Conns && a.Bytes == b.Bytes && a.Total == b.Total && a.Dropped == b.Dropped && a.UnclassifiedConnections == b.UnclassifiedConnections
 }
 
 // p3Settle reads every receiver once all are drained (at most p3SettleDrain) and again after

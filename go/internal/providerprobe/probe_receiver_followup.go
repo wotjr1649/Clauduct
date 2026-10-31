@@ -74,7 +74,7 @@ func p3ProxyClassified(proxyURL string, proxy providercert.ReceiverSnapshot, tar
 	}
 	records := slices.Clone(proxy.Seen)
 	for _, target := range targets {
-		if !target.Complete || target.Dropped != 0 {
+		if !target.Complete || target.Dropped != 0 || target.UnclassifiedConnections != 0 {
 			return false
 		}
 		records = append(records, target.Seen...)

@@ -42,8 +42,13 @@ func p3R03EvidenceOf(c p3Case, observed *p3Observed) p3R03Evidence {
 		!e.Run.CleanupFailed && !e.Run.UnexpectedError && observed.NativeStarts == 1 &&
 		!observed.TimedOut && !observed.CleanupFailed && !observed.SpawnFailed && !observed.UnexpectedRunError && observed.ReceiversDrained && !observed.ReceiverFault
 	for _, in := range observed.Ingress {
-		if !p3R03Main(in) || !slices.Contains(in.canaries, "turn1") {
+		if !p3R03Main(in) {
 			continue
+		}
+		turn := "turn1"
+		if !slices.Contains(in.canaries, "turn1") {
+			e.Complete = false
+			turn = ""
 		}
 		if len(e.Requests) == p3VariantMaxReceipts {
 			e.Truncated = true
@@ -52,7 +57,7 @@ func p3R03EvidenceOf(c p3Case, observed *p3Observed) p3R03Evidence {
 		}
 		variant := p3VariantExercised(c, observed, in)
 		e.VariantVerified = e.VariantVerified && variant
-		e.Requests = append(e.Requests, p3R03Request{Run: in.run, Gateway: in.gateway, Seq: in.seq, Turn: "turn1", Method: in.method, Path: in.recordPath, Status: in.status, Category: in.outcome, ConfirmationSHA256: in.confirmationSHA256, VariantVerified: variant})
+		e.Requests = append(e.Requests, p3R03Request{Run: in.run, Gateway: in.gateway, Seq: in.seq, Turn: turn, Method: in.method, Path: in.recordPath, Status: in.status, Category: in.outcome, ConfirmationSHA256: in.confirmationSHA256, VariantVerified: variant})
 		if in.run != e.Run.Index || in.gateway != e.Run.Gateway || in.seq <= 0 || in.method != "POST" || in.recordPath != in.path ||
 			in.status != 503 || in.outcome != "NATIVE_CONFIRMATION_TIMEOUT" || in.nativeRouteScope != "conversation" || len(in.confirmationSHA256) != 64 {
 			e.Complete = false

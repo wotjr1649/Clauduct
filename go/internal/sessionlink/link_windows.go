@@ -20,6 +20,9 @@ import (
 
 var ErrUnavailable = errors.New("BACKGROUND_CONNECTION_UNAVAILABLE")
 
+// ErrNotFound marks a name with no open pipe instance and still matches ErrUnavailable.
+var ErrNotFound = fmt.Errorf("%w: pipe not found", ErrUnavailable)
+
 // ErrBusy is ErrUnavailable because the live link did not answer within its bound (another
 // client held it, or the machine was slow), as opposed to there being no link at all.
 var ErrBusy = fmt.Errorf("%w: busy", ErrUnavailable)
@@ -248,6 +251,9 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 		}
 	}
 	if err != nil {
+		if err == syscall.ERROR_FILE_NOT_FOUND {
+			return Connection{}, ErrNotFound
+		}
 		return Connection{}, ErrUnavailable
 	}
 	defer syscall.CloseHandle(h)

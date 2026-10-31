@@ -107,7 +107,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 		fmt.Fprintln(out, "clauduct: cannot read", SumsAsset+":", err)
 		return 1
 	}
-	for _, name := range Binaries {
+	for _, name := range Wanted(sums) {
 		fmt.Fprintln(out, "  ", name, sums[name])
 	}
 
@@ -128,13 +128,16 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	}
 
 	// The retired copies go too (Apply), so they are named before the question: consent to an
-	// unnamed set is not consent.
+	// unnamed set is not consent. So is a probe of an earlier release that this one does not carry.
+	if _, listed := sums[Probe]; !listed && isFile(filepath.Join(dir, Probe)) {
+		fmt.Fprintln(out, "   remove", Probe, "(this release does not carry one)")
+	}
 	for _, name := range Retired {
 		if isFile(filepath.Join(dir, name)) {
 			fmt.Fprintln(out, "   remove", name, "(a copy from 0.3.x; a session started before this update loses its hook)")
 		}
 	}
-	if !consented && !confirmed(in, out) {
+	if !consented && !confirmed(in, out, Wanted(sums)) {
 		fmt.Fprintln(out, "clauduct: nothing was changed")
 		return 0
 	}
@@ -160,6 +163,14 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	leftovers, err := Apply(dir, files)
 	if err != nil {
 		fmt.Fprintln(out, "clauduct: update failed:", err)
+		var stuck *NotRestoredError
+		if errors.As(err, &stuck) {
+			fmt.Fprintln(out, "          the previous binaries could not all be put back; the installation may mix old and new files")
+			for _, path := range stuck.Paths {
+				fmt.Fprintln(out, "          not restored:", path)
+			}
+			return 1
+		}
 		fmt.Fprintln(out, "          the previous binaries were put back")
 		return 1
 	}
@@ -299,8 +310,8 @@ func digests(ctx context.Context, client *http.Client, release Release) (map[str
 
 // confirmed asks once. Anything that is not a yes is a no, including end of input: an
 // update that proceeds because nobody was there to object is not one anybody approved.
-func confirmed(in io.Reader, out io.Writer) bool {
-	fmt.Fprint(out, "replace "+strings.Join(Binaries, ", ")+"? [y/N] ")
+func confirmed(in io.Reader, out io.Writer, names []string) bool {
+	fmt.Fprint(out, "replace "+strings.Join(names, ", ")+"? [y/N] ")
 	return yes(in, out)
 }
 
@@ -316,12 +327,18 @@ func yes(in io.Reader, out io.Writer) bool {
 	return answer == "y" || answer == "yes"
 }
 
-// current reports whether every installed binary already has the digest the release states.
+// current reports whether every installed binary already has the digest the release states,
+// and no probe the release omits is installed.
 //
 // A file that cannot be read is not current: the answer to "is this already what the
 // release says" is no when there is nothing there to compare.
 func current(dir string, sums map[string]string) bool {
-	for _, name := range Binaries {
+	// A probe an earlier release installed and this one does not carry is still a change: the
+	// update removes it.
+	if _, listed := sums[Probe]; !listed && isFile(filepath.Join(dir, Probe)) {
+		return false
+	}
+	for _, name := range Wanted(sums) {
 		want, ok := sums[name]
 		if !ok {
 			return false

@@ -33,6 +33,13 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseHeaders(w, r, bad)
 		return
 	}
+	session := r.Header.Get("X-Claude-Code-Session-Id")
+	finishProfile, err := g.useCountSessionProfile(session, r)
+	if err != nil {
+		g.refuseSessionProfile(w, session, err)
+		return
+	}
+	defer finishProfile()
 	ctx, release, admitted := g.admitRequest(w, r, maxRequestBytes, modelAdmission)
 	if !admitted {
 		return
@@ -91,7 +98,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	defer releaseAgent()
 	if err != nil {
 		entry.selectionRefused(err)
-		g.refuseCategory(w, http.StatusBadRequest, selectionCategory(err))
+		g.refuseCategory(w, selectionStatus(err), selectionCategory(err))
 		return
 	}
 	if r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary" || entry.nativeConfirmation != nil {
@@ -111,6 +118,10 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	built, err := g.selection.BuildRequest(request, override...)
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
+		return
+	}
+	if err := g.resolveToolHistory(r, built, false, entry.nativeTurn); err != nil {
+		g.refuseCategory(w, 400, err.Error())
 		return
 	}
 	if g.delegations != nil {

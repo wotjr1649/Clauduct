@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
@@ -16,7 +17,28 @@ const checkpointInterval = 2 * time.Second
 // before the session is ended for it (#295).
 const policyRetries = 3
 
-const routingMismatchDetail = "a hook of this session found native configured for another endpoint, or native's start-up model list never reached this gateway (a stored Claude apps gateway login: /logout in Claude Code, or a separate CLAUDE_CONFIG_DIR)"
+const routingMismatchDetail = "a hook of this session found native configured for another endpoint, or native's start-up model list never reached this gateway (a stored Claude apps gateway login: end Clauduct and sign out of it in standalone Claude Code, or use a separate CLAUDE_CONFIG_DIR)"
+
+type routingMonitor struct{ unreadable int }
+
+func (m *routingMonitor) check(gw *gateway.Gateway, policy func() ([]policyDocument, error)) (string, string) {
+	if gw.RoutingMismatch() {
+		return "routing_mismatch", routingMismatchDetail
+	}
+	err := managedRouting(policy())
+	if errors.Is(err, errPolicyUnreadable) {
+		m.unreadable++
+		if m.unreadable < policyRetries {
+			return "", ""
+		}
+	} else {
+		m.unreadable = 0
+	}
+	if err != nil {
+		return "managed_routing_policy", err.Error()
+	}
+	return "", ""
+}
 
 // SessionDuration parses only the explicit launcher setting. It is never inferred
 // from a model, prompt, or native option. Invalid limits fail before spawning.
@@ -34,9 +56,12 @@ func SessionDuration(env map[string]string) (time.Duration, error) {
 
 // LifecycleFacts records the last observed state, not proof
 // that the process is still alive. Final is set only after native was waited on.
+// ProcessPID and ProcessCreatedAt identify its Clauduct owner (OS creation time, UnixNano).
 type LifecycleFacts struct {
 	State               string    `json:"state"`
 	Final               bool      `json:"final"`
+	ProcessPID          uint32    `json:"processPid,omitempty"`
+	ProcessCreatedAt    int64     `json:"processCreatedAt,omitempty"`
 	Reason              string    `json:"reason,omitempty"`
 	StartedAt           time.Time `json:"startedAt"`
 	ObservedAt          time.Time `json:"observedAt"`
@@ -79,8 +104,14 @@ func drainReady(d gateway.Diagnostics) bool {
 }
 
 func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o Options, initial Result,
-	interrupts <-chan os.Signal, print bool) (bool, LifecycleFacts, error) {
-	life := LifecycleFacts{State: "running", StartedAt: time.Now().UTC()}
+	interrupts <-chan os.Signal, print bool, routing *routingMonitor) (bool, LifecycleFacts, error) {
+	life := LifecycleFacts{State: "running", ProcessPID: uint32(os.Getpid()), StartedAt: time.Now().UTC()}
+	if h, err := syscall.GetCurrentProcess(); err == nil {
+		var created, exited, kernel, user syscall.Filetime
+		if syscall.GetProcessTimes(h, &created, &exited, &kernel, &user) == nil {
+			life.ProcessCreatedAt = created.Nanoseconds()
+		}
+	}
 	// Keep caller cancellation immediate. A harness deadline gets a separate,
 	// bounded drain so it cannot destroy the gateway in the middle of compaction.
 	waitCtx, cancel := context.WithCancel(context.Background())
@@ -100,11 +131,16 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 	}
 	tick := time.NewTicker(checkpointInterval)
 	defer tick.Stop()
+	var foregroundTick <-chan time.Time
+	if o.foregroundCheckpoint != nil {
+		timer := time.NewTicker(100 * time.Millisecond)
+		defer timer.Stop()
+		foregroundTick = timer.C
+	}
 	caller := ctx.Done()
 	var lastReceived, lastActive int64 = -1, -1
 	var lastDrainReceived int64 = -1
 	var idleSince time.Time
-	unreadable := 0
 	checkpoint := func() gateway.Diagnostics {
 		gw.ReconcileNativeCancellations()
 		if err := gw.CheckpointSessionProfiles(false); err != nil {
@@ -141,11 +177,19 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 			life.ObservedAt = time.Now().UTC()
 			if life.Reason == "" {
 				life.Reason = "native_exit"
+				// The child can finish before the console delivers our copy of Ctrl+C.
+				if print && w.reaped && process.ExitCode() == 0xc000013a { // STATUS_CONTROL_C_EXIT
+					life.Reason = "user_interrupt"
+				}
 			}
 			if life.Reason == "caller_cancelled" && w.err == context.Canceled {
 				return w.reaped, life, ctx.Err()
 			}
 			return w.reaped, life, w.err
+		case <-foregroundTick:
+			if err := o.foregroundCheckpoint(); err != nil {
+				life.CheckpointFailures++
+			}
 		case <-caller:
 			caller = nil
 			deadline, grace = nil, nil
@@ -182,26 +226,8 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 			if life.State == "stopping" {
 				continue
 			}
-			// Native re-reads settings while it runs (#295). Ending the session is the only
-			// answer once its requests may no longer come here; a turn in flight is not drained.
-			if gw.RoutingMismatch() {
-				life.Reason, life.Detail = "routing_mismatch", routingMismatchDetail
-				deadline, grace = nil, nil
-				stop()
-				continue
-			}
-			// A source being rewritten can be unreadable for a moment; only one that stays
-			// unreadable for policyRetries ticks ends the session. A routing key ends it at once.
-			err := managedRouting(o.ManagedPolicy())
-			if errors.Is(err, errPolicyUnreadable) {
-				if unreadable++; unreadable < policyRetries {
-					err = nil
-				}
-			} else {
-				unreadable = 0
-			}
-			if err != nil {
-				life.Reason, life.Detail = "managed_routing_policy", err.Error()
+			if reason, detail := routing.check(gw, o.ManagedPolicy); reason != "" {
+				life.Reason, life.Detail = reason, detail
 				deadline, grace = nil, nil
 				stop()
 				continue

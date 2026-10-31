@@ -49,7 +49,7 @@ Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는
 ## 3. 패키지 구조
 
 ```text
-go.mod                        module github.com/wotjr1649/Clauduct, go 1.27.0 — 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
+go.mod                        module github.com/wotjr1649/Clauduct, go 1.27.2 — 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
 go/                           패키지 경로는 그대로 github.com/wotjr1649/Clauduct/go/...
 ├── cmd/clauduct/             제품 launcher. 첫 인자·실행 파일 이름으로 hook·렌더러·--dev도 맡는다
 ├── internal/{hookcmd,devcmd} hook / --dev(version·doctor·usage·probe). v0.3.x까지 별도 바이너리
@@ -119,6 +119,15 @@ Claude Code 2.1.286의 공개 옵션 형태(2.1.283의 필수값 옵션 `--clien
 
 프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
 
+native의 Claude 계정 subcommand(`auth login`·`auth logout`·`setup-token`)는 위 검사와 같은 단계에서 거부한다. 옵션 뒤에
+와도 native가 subcommand로 실행하므로 옵션을 건너뛰어 찾고, `-p` 뒤에서는 prompt이므로 넘긴다(2.1.294 측정). 값의 경계를
+모르는 옵션 뒤에서는 그 뒤 어디에든 이 명령이 있으면 거부한다(`--desktop`과 같은 원칙).
+`/login`·`/logout`·`/upgrade`·`/usage-credits`·`/install-github-app`은 세션 요구값의 `DISABLE_*_COMMAND`로 숨긴다.
+
+개발 후보(v0.6.11 전)의 launch는 provider-control admission gate를 거치지 않는다(#319 결정 17).
+provider strategy 없이 아래의 endpoint·settings 고정·hook 시작 handshake로 연결한다
+([COMPATIBILITY.md](COMPATIBILITY.md#개발-후보v0611-전--지원-환경과-보장-한계-319)).
+
 명시적 `--bg`·`--background` 생성은 세션별 연결 유지 프로세스가 맡는다. 최초 실행기는 native의
 생성 판정과 같이 정확한 두 토큰을 일반 옵션 경계보다 먼저 찾는다. native 2.1.282는 도움말·버전 옵션이나
 `--` 뒤에 이 토큰이 있어도 작업을 생성하므로, 일반 옵션 조회로 분류하면 살아 있는 작업의 연결이 끊긴다.
@@ -146,18 +155,16 @@ cloud로 보냈다. 그래서 다음을 함께 둔다.
 - foreground·background 모두 `--settings` env에 gateway 주소, 빈 provider 선택 변수(native 목록 7종), 빈
   `ANTHROPIC_UNIX_SOCKET`·`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, loopback을 더한 `NO_PROXY`, 필수 환경을 넣는다.
   native는 `--settings`를 user·project·local settings보다 높게 두고, 파일이 실행 중 바뀌어도 그렇다. token은
-  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다).
+  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다). v0.6.11 개발 브랜치부터 세션 기본값도 `--settings` env로 넣고, token은 session link를 읽는 key helper(`apiKeyHelper`)가 준다. native의 OS 환경에는 Clauduct 값을 넣지 않고 `ANTHROPIC_*`·OAuth token·provider 선택 변수를 지운다. native supervisor가 자기를 띄운 native의 OS 환경을 이후 standalone worker에 넘기기 때문이다.
 - `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`는 쓰지 않는다. 실측에서 settings 파일의 모델 선택까지 무시하게 했고,
   hook 환경의 token도 지웠다. 상속도 하지 않는다.
-- 저장된 Claude apps gateway 로그인은 환경을 바꾸지 않고 요청을 그 gateway로 보낸다. native는 시작할 때 endpoint에 모델 목록을
-  묻고(매 시작, 첫 hook보다 먼저), 저장된 로그인이 있으면 그 요청도 그 gateway로 간다. 그래서 SessionStart와 매 prompt의 hook이 `routing-proof`로
-  그 요청이 이 gateway에 왔는지 확인한다. SessionStart는 native를 막지 못해 일찍 알리기만 하고, UserPromptSubmit hook이 모델 요청 전에 막는다(#299). 모델 목록 조회 변수는 필수 env다. credential은 읽지 않는다.
+- 저장된 Claude apps gateway 로그인이 있으면 native의 시작 모델 목록 조회도 그 gateway로 갈 수 있다. 모델 목록 요청은 항상 첫 hook보다 먼저 온다는 전제가 성립하지 않는다. SessionStart와 매 `UserPromptSubmit` hook은 `/clauduct/routing-proof`로 같은 native의 목록 요청이 이 gateway에 왔는지 묻는다. gateway는 proof를 보낸 native와 PID·생성 시각이 같은 native의 직접 `GET /v1/models`만 인정하고, 그 요청을 기다리는 시간은 최대 5초다. 다른 native의 목록은 proof가 아니므로 이를 대신하지 않는다. 같은 native의 목록이 기한 안에 오면 204를 반환하고, 오지 않으면 409를 반환한다. 요청 native가 resident gateway 시작 전부터 실행됐고 같은 PID·생성 시각의 목록이 끝내 확인되지 않은 경우에는 `ROUTING_PROOF_PRIOR_GENERATION`으로 분류한다. 무제어 경로는 기한까지 증명이 없으면 fail-closed 거절과 routing mismatch 처리를 유지한다. 인증된 provider-control 경로에서는 각 prompt마다 최대 5초 기다린 뒤에도 일반 proof가 없으면 누락을 진단으로만 기록하며 mismatch를 확정하지 않는다. 단, resident gateway 시작 전부터 실행된 native는 같은 PID·생성 시각의 목록이 끝내 없으면 controlled 여부와 무관하게 gateway가 409 `ROUTING_PROOF_PRIOR_GENERATION`을 반환하고 hook이 해당 event를 거부한다(#299). 목록 조회 변수는 필수 환경이며, credential을 읽지 않는다.
 - managed 설정은 Clauduct보다 높다. HKLM·HKCU 레지스트리 정책, `managed-settings.json`과 drop-in(기본 위치와
   `CLAUDE_CODE_MANAGED_SETTINGS_PATH`), `CLAUDE_CODE_REMOTE_SETTINGS_PATH` 파일에 라우팅 env, `apiKeyHelper`, `policyHelper`, gateway 로그인 강제,
   `allowedProviders`가 있으면 시작하지 않는다. 세션 중 생기면 native를 끝내고 `ROUTING_UNVERIFIED`로 보고한다.
   잠깐 읽지 못한 출처는 연속 세 번 확인한 뒤에만 세션을 끝낸다.
 - hook은 명령 인수(foreground)나 세션 연결(background)로 gateway를 안다. native가 적용한 환경의 endpoint,
-  provider 선택, unix socket을 이것과 대조해, 다르면 prompt를 막고 gateway에 알려 세션을 끝낸다.
+  provider 선택, unix socket을 이것과 대조해, 다르면 prompt를 막고 gateway에 알려 세션을 끝낸다. v0.6.11 개발 브랜치부터 foreground hook도 세션 연결을 읽는다. 환경 이름은 Windows처럼 대소문자 없이 모든 철자를 대조하고, 값이 다른 중복 철자는 거부한다. 대조를 통과하면 routing 증명과 이후 호출은 세션 연결의 주소·token으로 보낸다.
 
 기존의 광범위 secret 제거를 축소하면 MCP 호환은 개선되지만 **child에 보이는 secret 범위가 넓어진다.** 이를 보안상 동일한 동작으로 표현하지 않는다.
 
@@ -183,7 +190,7 @@ background의 재기동 설정에는 endpoint, 필수 환경, hook·plugin 경�
 | `/v1/messages/count_tokens` | 별도 capability | 기본 지원 선언 금지 |
 | `POST /clauduct/agents` | native 자식의 선택·연결 등록 | 위임 시 model·effort·session·agent 근거를 검증. 자식 없는 일반 시작에서 등록을 미리 요구하지 않음 |
 | `POST /clauduct/routing-mismatch` | 이 세션 hook이 native의 다른 endpoint 사용을 알림 | 인증 필요, 본문을 읽지 않음, launcher가 세션을 끝냄(#295) |
-| `POST /clauduct/routing-proof` | SessionStart와 UserPromptSubmit hook이 native의 시작 모델 목록 요청이 이 gateway에 왔는지 물음 | 인증 필요, 왔으면 204, 2초 안에 오지 않으면 409. hook은 409에서 세션을 끝낸다(#299) |
+| `POST /clauduct/routing-proof` | SessionStart와 `UserPromptSubmit` hook은 proof를 보낸 native와 PID·생성 시각이 같은 native의 직접 모델 목록 요청을 확인한다 | 인증 필요. 같은 native의 `GET /v1/models`를 최대 5초 기다려 확인되면 204, 기한까지 확인되지 않으면 409다. 이전 generation native도 기다림 없이 거부하지 않으며, 같은 PID·생성 시각의 목록이 끝내 없을 때 `ROUTING_PROOF_PRIOR_GENERATION`으로 분류한다. 무제어 경로에서 기한까지 증명이 없으면 mismatch로 세션을 끝낸다. 인증된 provider-control 경로에서는 prompt마다 최대 5초 기다린 뒤 일반 proof 누락을 진단으로만 처리하고 mismatch로 세션을 끝내지 않는다. 단, resident gateway 시작 전부터 실행된 native의 같은 PID·생성 시각 목록이 끝내 없으면 controlled 여부와 무관하게 409 `ROUTING_PROOF_PRIOR_GENERATION`을 반환하고 hook이 event를 거부한다. gateway가 닫히는 중이면 `GATEWAY_CLOSED` error envelope의 503을 반환하며, 닫히는 중의 `/clauduct/routing-mismatch` 보고도 거부한다. proof 요청 예산은 7초다. 다른 hook HTTP 요청 예산은 3초다(#299) |
 | 기타 | 명확한 unsupported 응답 | 침묵 성공·임의 upstream forwarding 금지 |
 
 기본 실행은 필수 hook을 구성하며 위임이 생기면 이 등록 경로를 사용한다.
@@ -301,6 +308,12 @@ text는 검증된 event 범위에서 streaming할 수 있다. **부작용을 유
 SSE parser는 byte 경계가 UTF-8 문자·JSON token·CRLF·빈 줄 가운데에서 끊겨도 동작해야 한다. 64 KiB를 넘는 합법 event를 기본 scanner limit 때문에 자르지 않되 무제한 buffer도 허용하지 않는다. frame·event count·총 bytes·최대 depth·idle·총 요청 budget은 명시적 configuration schema로 관리하고 단위를 구분하며 overflow를 검사한다.
 
 terminal 이벤트·`[DONE]`·중복 완료·완료 이후 trailing data·비정상 EOF의 의미를 backend 계약으로 고정한다. terminal을 봤다는 이유로 뒤의 프로토콜 위반을 정상 처리하지 않는다.
+
+v0.6.11 개발 브랜치는 `response.metadata` 중 OpenAI의 표시 정보인
+`metadata.openai_chatgpt_moderation_metadata` 객체만 별도로 인식한다. 바깥 필드는 `type`·`metadata`와
+선택적인 `sequence_number`·`response_id`만 허용한다. 내용은 client에 전달하거나 진단에 저장하지 않고
+`moderationMetadata` 횟수만 센다. 이 알림은 routing 증명·terminal·답변을 대신하지 않는다.
+모르는 metadata, 다른 필드가 섞인 알림과 잘못된 형태는 거부하며, `safety_buffering` 검증은 별도로 유지한다.
 
 `StreamEnd`는 모든 relay 반환 경로에서 마지막 read 오류, client context, terminal 관측,
 event 수와 읽은 byte 수를 기록한다. `DoneObserved`는 `[DONE]` 관측 여부이며 `TrailingEvent`는
@@ -496,9 +509,53 @@ child `Wait`만으로 모든 손자가 종료됐다고 단정하지 않는다. n
 명시적 background 생성은 연결을 소유하는 별도 `clauduct.exe` 하나를 콘솔 창 없이 시작한다. native를
 호출하는 생성 프로세스의 Job 계약은 유지하고, 그 뒤의 worker는 native supervisor가 소유한다. 연결 유지
 프로세스는 gateway·검증 예산·필수 plugin 수명을 맡아 worker stop·재기동 사이에도 이를 보존한다.
-native `stop`은 나중에 깨울 수 있도록 연결을 남기며, 세션 삭제나 `--background-stop`은 연결도 끝낸다.
-worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업 상태 파일의
-부재만 보며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다.
+native `stop`은 나중에 깨울 수 있도록 나열된 job의 resident record와 events 디렉터리를 남긴다.
+모든 job이 stopped가 되면 연결 유지 프로세스는 끝나고, 다시 attach할 때 record로 재생성한다.
+hook의 복원 요청은 숨은 relay 프로세스를 창 없이 시작하고 종료를 기다린 뒤, link 대기를 같은
+마감의 남은 예산 안에서 계속한다(hook reconnect 2초, key helper 30초). 별도 relay 200 ms 상한은 없다.
+relay는 기존 플래그로 resident를 띄우고 즉시 끝나며, resident의 stdin·stdout·stderr는 NUL이다.
+시작 실패는 native 전 실패도 포함해 status 임시 디렉터리의 `resident-restore/<link>.txt`에 허용된
+고정 category 하나만 원자적으로 남긴다. 경로·오류 원문·credential은 기록하지 않는다. link를 얻지
+못한 key helper와 소유 native session을 확인한 hook reconnect는 파일을 소비하고 자기 stderr에
+`CLAUDUCT_RESIDENT_RESTORE_FAILED: <category>`를 쓴다. 소비 뒤, link 성공 관측 때, 다음 복원 시도 전에
+그 link의 파일 하나만 지운다. 소비되지 않은 파일은 그때까지 임시 영역에 남으며 이름·mtime sweep은 없다.
+파일 접근 실패나 허용목록 밖 내용은 경로 없는 `RESIDENT_DIAGNOSTIC_UNAVAILABLE`로만 알린다.
+relay는 받은 환경을 그대로 전달하고 credential을 만들거나 읽지 않는다. relay가 이미 끝났으면
+native의 hook timeout `taskkill /T`가 그 부모 체인을 따라 resident까지 도달하지 않는다.
+relay 실패·마감 초과는 복원 실패이며 직접 spawn으로 대체하지 않는다. relay가 resident를 띄우고
+끝나기 전의 짧은 경합에서는 둘 다 kill될 수 있다. 콜드 스타트·AV 지연과 native job 종료의 영향은
+별도 실측이 필요하다.
+`clauduct --background-stop`은 연결을 끝내며 job 삭제는 native `rm <id>`로 한다.
+worker 종료에는 정확히 그 작업 ID의 native `stop`만 사용한다. 삭제 관측은 해당 native 작업의 상태 파일과
+그 디렉터리가 모두 없을 때만 하며 상태 파일을 수정하지 않는다. native의 향후 상태 경로 변경은 재측정 대상이다. v0.6.11 개발 브랜치부터 공개 빌드의 foreground에서도 native Agent View가 켜져 있다. interactive 실행은 같은 콘솔의 launcher 아래 자식 `clauduct.exe`로 돈다. native가 실행 중일 때 foreground는 native job 상태의 `respawnFlags`에 든 `--settings` key helper가 자기 세션 link를 정확히 가리키는 job만 자기 것으로 보고, 처음 본 때 resident record를 쓴다. native가 끝났을 때 그런 job이 있으면 record를 쓴 뒤 launcher에 native 종료 코드를 넘겨 터미널을 돌려주고, 콘솔에서 떨어져 같은 gateway·token·link로 그 job들이 끝날 때까지 연결 유지 프로세스로 남는다. launcher가 이미 없어도 그렇다. 이 인계는 native가 정상 종료했고 호출자 context가 취소되지 않았을 때만 일어난다. 마감·취소·`-p` 인터럽트·라우팅 또는 managed policy 중지에서는 인계하지 않고, 같은 link로 확인된 Agent View job을 native `stop`으로 끝내며 원래 종료 원인을 그대로 돌려준다. 이때 현재 설정이 다른 link를 증명하는 job은 건드리지 않고, 목록에서 잠시 보이지 않는 job은 짧게 다시 확인한다. 끝내 소유를 증명하지 못한 job은 중지하지 않고 `BACKGROUND_STOP_LINK_UNVERIFIED`로 보고한다. 이 보고는 인계 전의 라우팅 중지에서는 stderr의 `CLEANUP_FAILED`로, 인계 뒤에는 status 파일의 정리 실패 표시로 남는다. 인계 뒤에도 연결 유지 프로세스는 foreground와 같은 주기와 연속 unreadable 기준으로 라우팅 불일치와 managed policy를 감시하고, 위반하면 같은 link의 job을 끝낸다. record를 쓰지 못해 launcher가 붙어 있는 경로에도 같은 감시와 같은 link 한정 중지가 구현되어 있다. 이 중지는 native 상태가 이미 stopped·done인 job은 다시 중지하지 않고, 상태를 읽지 못한 job을 끝난 것으로 보지 않는다.
+
+resident record의 `session`은 primary job의 native 상태 파일에서 읽는다. foreground가 등록한 마지막 세션으로 대신하지 않는다.
+연결 유지 프로세스는 job이 소유하지 않는 세션의 등록 native가 모두 종료됐고 사용 중인 요청도 없을 때, 프로필을 저장하고
+잠금을 해제한다. 따라서 다른 job을 계속 서비스하면서 원래 foreground 세션을 다시 열 수 있다. job 상태를 읽지 못하거나
+native 종료를 확인하지 못하거나 유지할 job의 세션 프로필이 아직 등록되지 않았으면 잠금을 유지하며, 저장 실패도 잠금을 유지하고 연결 유지 프로세스가 끝날 때 보고한다. 새 job이 부모 세션의 프로필을 복사하기 전에 부모 잠금을 해제하지 않기 위해서다.
+
+`clauduct rm <id>`·`clauduct stop <id>`·`clauduct logs <id>`는 세션을 열지 않는 관리 경로다.
+argv의 첫 원소가 정확히 `rm`·`stop`·`logs`인 형태만 지원하고, 그 뒤 인자는 그대로 native에 전달한다.
+하위 명령 앞에 옵션이 있는 형태는 관리 경로로 판정하지 않고 기존 세션 경로로 처리한다.
+gateway를 시작하거나 모델 목록을 조회하지 않고, 세션 settings·plugin·effort·agents 옵션도 주입하지 않는다.
+기존 제어 명령용 env 정리로 `ANTHROPIC_*`·OAuth token을 제거한다.
+`DISABLE_TELEMETRY`·`DISABLE_ERROR_REPORTING`은 세션과 같은 기본값을 사용하며 사용자 env 값이 우선한다.
+native의 종료 코드를 그대로 반환한다. `clauduct attach`와 `clauduct respawn`은 이 예외에 넣지 않고 기존 세션
+경로로 처리한다. native가 이때 supervisor를 새로 띄울 수 있고, supervisor는 최초 실행의 OS env를 보존한다.
+그래서 세션 경로는 Clauduct 값을 OS env가 아니라 `--settings`와 key helper로만 넘긴다(위 라우팅 불변식).
+
+`clauduct rm <id>`가 성공하면 같은 실행 끝에 해당 job이 사라진 resident 자원을 회수한다.
+실패한 `rm`은 회수하지 않는다. `claude rm <id>`나
+agents 화면에서 삭제했다면 다음 일반 Clauduct 실행이 끝날 때 회수한다. 회수는 해당 home의
+record 단위이며, link 잠금을 얻고 모든 job의 부재를 재확인한 뒤 TEMP 직하위 events 디렉터리를
+먼저 지우고 record를 지운다. 디렉터리와 하위 항목의 reparse point는 거부하고 TEMP 밖으로 삭제하지 않는다.
+잠금은 `.clauduct`·`residents`의 reparse point를 거부하며 home이나 그 상위 경로의 junction은 허용한다.
+나열된 job, 활성 잠금, 목록 조회 불확실, config 경로가 없는 이전 record, 다른 record와 공유하는
+디렉터리는 보존한다. 삭제 실패나 경로 거부도 record를 남겨 다음 실행에서 다시 시도하며,
+foreground는 resident 회수 실패를 경로 없이 `RESIDENT_CLEANUP_INCOMPLETE`로 실행당 최대 한 줄 알린다.
+record 없는 foreground 자기 events 디렉터리의 삭제 실패는 `NATIVE_EVENT_CLEANUP_FAILED`로만 보고하며
+다음 실행의 자동 회수 대상이 아니다. orphan 회수 실패는
+세션의 종료 코드를 바꾸지 않는다. 자동 만료나 저장 용량 상한은 두지 않는다.
 
 Windows named pipe는 동일 로그인 SID의 접근만 허용하고 원격 접속을 거부한다. helper도 서버의 로그인
 SID를 확인하며 요청 대기에는 3초 상한을 둔다. helper의 토큰 출력은 pipe로만 허용한다. 새 전역 서비스나

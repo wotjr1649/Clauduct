@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -37,6 +38,8 @@ var processKernel = syscall.NewLazyDLL("kernel32.dll")
 var createJob = processKernel.NewProc("CreateJobObjectW")
 var setJob = processKernel.NewProc("SetInformationJobObject")
 var terminateJob = processKernel.NewProc("TerminateJobObject")
+var isProcessInJob = processKernel.NewProc("IsProcessInJob")
+var queryJob = processKernel.NewProc("QueryInformationJobObject")
 var initializeAttributes = processKernel.NewProc("InitializeProcThreadAttributeList")
 var updateAttribute = processKernel.NewProc("UpdateProcThreadAttribute")
 var deleteAttributes = processKernel.NewProc("DeleteProcThreadAttributeList")
@@ -61,6 +64,206 @@ type Process struct {
 	outputs sync.WaitGroup
 	copyErr error
 	pipes   []*os.File
+	// reap is set by RecordReap only; nil keeps Wait and Stop exactly as before.
+	reap *jobReap
+}
+
+// jobReap is RecordReap's state: survivors are the Job's other members still alive when the
+// process had exited and nothing had ended them yet; stopped is a Stop while the process ran.
+type jobReap struct {
+	noted, done, stopped bool
+	survivors            uint32
+	err                  error
+}
+
+// reapGrace bounds the wait for the terminated Job to report no active process.
+const reapGrace = 5 * time.Second
+
+// ErrReapNotRecorded is JobEmpty on a Process without RecordReap, or before Wait returned.
+var ErrReapNotRecorded = errors.New("JOB_REAP_NOT_RECORDED")
+
+// RecordReap makes Wait prove the Job empty: before anything ends the tree it counts the Job's
+// members other than the exited process (a held process), then terminates the Job and waits up
+// to reapGrace for JOBOBJECT_BASIC_ACCOUNTING_INFORMATION.ActiveProcesses to reach zero. Only
+// the provider probe's starters call it; a launch without it keeps Wait's kill-on-close path.
+func (p *Process) RecordReap() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.reap = &jobReap{}
+}
+
+// JobEmpty is Wait's reap result under RecordReap: the held members it counted, and nil only
+// when the Job was confirmed empty. stopped is true when Stop ended the tree while the process
+// still ran, so no member was counted as held.
+func (p *Process) JobEmpty() (survivors uint32, stopped bool, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.reap == nil || !p.reap.done {
+		return 0, false, ErrReapNotRecorded
+	}
+	return p.reap.survivors, p.reap.stopped, p.reap.err
+}
+
+// noteSurvivorsLocked records, once, the Job's members other than the process that are alive
+// before anything ends them. A Stop while the process still runs is its caller ending the whole
+// tree, not a held process.
+func (p *Process) noteSurvivorsLocked(exited bool) {
+	r := p.reap
+	if r == nil || r.noted || p.job == 0 {
+		return
+	}
+	r.noted = true
+	if !exited {
+		r.stopped = true
+		return
+	}
+	// JOBOBJECT_BASIC_PROCESS_ID_LIST with room for 64 ids; ERROR_MORE_DATA still fills the count.
+	var list struct {
+		Assigned, Listed uint32
+		IDs              [64]uintptr
+	}
+	if ok, _, e := queryJob.Call(uintptr(p.job), 3, uintptr(unsafe.Pointer(&list)), unsafe.Sizeof(list), 0); ok == 0 && e != syscall.ERROR_MORE_DATA {
+		r.err = fmt.Errorf("JOB_MEMBERS_UNREAD: %w", e)
+		return
+	}
+	self := uintptr(p.cmd.Process.Pid)
+	r.survivors = list.Assigned
+	for _, id := range list.IDs[:min(list.Listed, uint32(len(list.IDs)))] {
+		if id == self {
+			r.survivors--
+		}
+	}
+}
+
+// activeProcesses is JOBOBJECT_BASIC_ACCOUNTING_INFORMATION.ActiveProcesses.
+func activeProcesses(job syscall.Handle) (uint32, error) {
+	var info struct {
+		TotalUser, TotalKernel, PeriodUser, PeriodKernel                 int64
+		PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses uint32
+	}
+	if ok, _, e := queryJob.Call(uintptr(job), 1, uintptr(unsafe.Pointer(&info)), unsafe.Sizeof(info), 0); ok == 0 {
+		return 0, e
+	}
+	return info.ActiveProcesses, nil
+}
+
+// proveEmpty is Wait's reap under RecordReap: count held members, terminate the Job, and wait
+// for it to report no active process.
+func (p *Process) proveEmpty() {
+	p.mu.Lock()
+	r := p.reap
+	if r == nil {
+		p.mu.Unlock()
+		return
+	}
+	p.noteSurvivorsLocked(true)
+	job := p.job
+	p.mu.Unlock()
+	err := errors.New("JOB_UNAVAILABLE")
+	if job != 0 {
+		if ok, _, e := terminateJob.Call(uintptr(job), 1); ok == 0 {
+			err = fmt.Errorf("JOB_TERMINATE: %w", e)
+		} else {
+			err = errors.New("JOB_NOT_EMPTY")
+			for deadline := time.Now().Add(reapGrace); ; time.Sleep(50 * time.Millisecond) {
+				n, e := activeProcesses(job)
+				if e != nil {
+					err = fmt.Errorf("JOB_ACCOUNTING_UNREAD: %w", e)
+					break
+				}
+				if n == 0 {
+					err = nil
+					break
+				}
+				if time.Now().After(deadline) {
+					break
+				}
+			}
+		}
+	}
+	p.mu.Lock()
+	r.err, r.done = errors.Join(r.err, err), true
+	p.mu.Unlock()
+}
+
+// ProcessIdentity is a read-only observation of the process owned by Process.
+// InOwnedJob refers only to this Process object's exact job handle; it never
+// means AnyJob membership.
+type ProcessIdentity struct {
+	PID        int
+	Creation   uint64
+	InOwnedJob bool
+}
+
+// ProcessIdentityError keeps the operation and underlying native error
+// available to callers without exposing command or payload text in Error().
+type ProcessIdentityError struct {
+	Operation string
+	Err       error
+}
+
+func (e *ProcessIdentityError) Error() string {
+	return "PROCESS_IDENTITY_" + e.Operation
+}
+
+func (e *ProcessIdentityError) Unwrap() error { return e.Err }
+
+var errProcessIdentityNotLive = errors.New("process identity target is not live")
+
+// Identity observes the live process handle, creation time, and membership in
+// the exact Job created by Start. The mutex covers the whole observation so a
+// concurrent Wait cannot close p.job between IsProcessInJob and the return.
+// A successful false membership result is distinct from an API failure.
+func (p *Process) Identity() (ProcessIdentity, error) {
+	if p == nil {
+		return ProcessIdentity{}, &ProcessIdentityError{Operation: "UNAVAILABLE", Err: errors.New("owned process is unavailable")}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.cmd == nil || p.cmd.Process == nil || p.job == 0 {
+		return ProcessIdentity{}, &ProcessIdentityError{Operation: "UNAVAILABLE", Err: errors.New("owned process is unavailable")}
+	}
+	identity := ProcessIdentity{PID: p.cmd.Process.Pid}
+	var callbackErr error
+	handleErr := p.cmd.Process.WithHandle(func(raw uintptr) {
+		handle := syscall.Handle(raw)
+		state, err := syscall.WaitForSingleObject(handle, 0)
+		if err != nil {
+			callbackErr = &ProcessIdentityError{Operation: "WAIT", Err: err}
+			return
+		}
+		if state != syscall.WAIT_TIMEOUT {
+			callbackErr = &ProcessIdentityError{Operation: "NOT_LIVE", Err: errProcessIdentityNotLive}
+			return
+		}
+		var created, exited, kernel, user syscall.Filetime
+		if err := syscall.GetProcessTimes(handle, &created, &exited, &kernel, &user); err != nil {
+			callbackErr = &ProcessIdentityError{Operation: "PROCESS_TIMES", Err: err}
+			return
+		}
+		identity.Creation = uint64(created.HighDateTime)<<32 | uint64(created.LowDateTime)
+		var associated int32
+		if ok, _, err := isProcessInJob.Call(raw, uintptr(p.job), uintptr(unsafe.Pointer(&associated))); ok == 0 {
+			callbackErr = &ProcessIdentityError{Operation: "IS_PROCESS_IN_JOB", Err: err}
+			return
+		}
+		identity.InOwnedJob = associated != 0
+		state, err = syscall.WaitForSingleObject(handle, 0)
+		if err != nil {
+			callbackErr = &ProcessIdentityError{Operation: "WAIT_AFTER", Err: err}
+			return
+		}
+		if state != syscall.WAIT_TIMEOUT {
+			callbackErr = &ProcessIdentityError{Operation: "NOT_LIVE_AFTER", Err: errProcessIdentityNotLive}
+		}
+	})
+	if handleErr != nil {
+		return ProcessIdentity{}, &ProcessIdentityError{Operation: "PROCESS_HANDLE", Err: handleErr}
+	}
+	if callbackErr != nil {
+		return ProcessIdentity{}, callbackErr
+	}
+	return identity, nil
 }
 
 func (p *Process) Stop() error {
@@ -68,6 +271,15 @@ func (p *Process) Stop() error {
 	defer p.mu.Unlock()
 	if p.job == 0 {
 		return nil
+	}
+	if p.reap != nil {
+		// A process already waited for has released its handle: it had exited.
+		running := false
+		p.cmd.Process.WithHandle(func(raw uintptr) {
+			state, err := syscall.WaitForSingleObject(syscall.Handle(raw), 0)
+			running = err == nil && state == syscall.WAIT_TIMEOUT
+		})
+		p.noteSurvivorsLocked(!running)
 	}
 	if ok, _, err := terminateJob.Call(uintptr(p.job), 1); ok == 0 {
 		return err
@@ -93,6 +305,7 @@ func (p *Process) Wait() error {
 	p.cmd.ProcessState = state
 	// Reap native, then terminate descendants before waiting for their inherited
 	// output pipes. Otherwise a surviving child could keep EOF away forever.
+	p.proveEmpty()
 	jobErr := p.closeJob()
 	p.outputs.Wait()
 	for _, f := range p.pipes {
@@ -129,7 +342,18 @@ func Run(ctx context.Context, cmd *exec.Cmd) error {
 // job before the first instruction, closing even the suspended-then-assign race.
 // The non-inheritable, unnamed job handle never enters the child's handle list.
 // stdio files and console group are preserved for the native TUI and Ctrl+C.
-func Start(cmd *exec.Cmd) (_ *Process, err error) {
+func Start(cmd *exec.Cmd) (*Process, error) { return start(cmd, nil) }
+
+// StartObserved captures the owned generation before its first instruction. A failed
+// observation terminates the still-suspended job; ordinary Start has no extra suspension.
+func StartObserved(cmd *exec.Cmd, observe func(*Process) error) (*Process, error) {
+	if observe == nil {
+		return nil, errors.New("PROCESS_OBSERVER_REQUIRED")
+	}
+	return start(cmd, observe)
+}
+
+func start(cmd *exec.Cmd, observe func(*Process) error) (_ *Process, err error) {
 	stdin, stdout, stderr := cmd.Stdin, cmd.Stdout, cmd.Stderr
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
@@ -140,6 +364,9 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 		return nil, errors.New("UNSUPPORTED_OWNED_PROCESS_ATTRIBUTES")
 	}
 	cmd.SysProcAttr.CreationFlags = syscall.CREATE_UNICODE_ENVIRONMENT | 0x80000
+	if observe != nil {
+		cmd.SysProcAttr.CreationFlags |= 0x4
+	} // CREATE_SUSPENDED
 	if cmd.Err != nil {
 		return nil, cmd.Err
 	}
@@ -323,6 +550,17 @@ func Start(cmd *exec.Cmd) (_ *Process, err error) {
 	cmd.Process, err = os.FindProcess(int(pi.ProcessId))
 	if err != nil {
 		return nil, err
+	}
+	if observe != nil {
+		if err = observe(p); err != nil {
+			_ = cmd.Process.Release()
+			return nil, err
+		}
+		resumed, _, resumeErr := processKernel.NewProc("ResumeThread").Call(uintptr(pi.Thread))
+		if resumed != 1 {
+			_ = cmd.Process.Release()
+			return nil, &ProcessIdentityError{Operation: "RESUME", Err: resumeErr}
+		}
 	}
 	for _, copy := range copies {
 		go copy()

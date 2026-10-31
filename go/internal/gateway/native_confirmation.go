@@ -25,7 +25,7 @@ type nativeConfirmation struct {
 	Auxiliary     bool            `json:"auxiliary,omitempty"`
 	Confirmations bool            `json:"confirmations,omitempty"`
 	Unmatched     bool            `json:"unmatched,omitempty"`
-	cancellation  error           // request cancelled before a proof was admitted; never input data
+	cancellation  error           // request cancelled, or unanswered in time, before a proof was admitted; never input data
 	helper        context.Context // actual helper owner; never native input data
 	lease         context.Context
 	close         context.CancelFunc
@@ -51,7 +51,7 @@ func anonymousNativeFork(r *http.Request) bool {
 // One fresh live helper connection per HTTP request. Stale files cannot grant a proof.
 // ponytail: serialize the short local handshake (64 admitted model requests),
 // not inference. One fixed challenge file bounds storage over a long session.
-func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt, search bool) (proof *nativeConfirmation) {
+func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt, search bool, records ...*record) (proof *nativeConfirmation) {
 	n := &g.nativeEvents
 	// A queued request does not own the mailbox yet. Bound the whole queue by
 	// the admitted request count, while cancellation and shutdown remain immediate.
@@ -69,16 +69,29 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	case <-g.closing.Done():
 		return nil
 	}
-	if n.confirmationFailed.Load() || ctx.Err() != nil || g.closing.Err() != nil {
+	// The native process that sent this request: its own failures stop only it (#319 decision
+	// 18e). The zero key is a launch without native identity.
+	var native processKey
+	if id, required := g.identityOf(r); required {
+		native = id.native
+	}
+	if n.confirmationBlocked(native) || ctx.Err() != nil || g.closing.Err() != nil {
 		return nil
 	}
+	// shared marks a failure of state every native relies on (the control directory, a
+	// storage error): that latches the launch, not one native.
+	shared := false
+	// unreadable: the turn's cancellation receipt was last seen mid-write. Still so at the
+	// deadline, it is damage, not a slow answer.
+	unreadable := false
 	cancelled := func() (*nativeConfirmation, error) {
 		if err := r.Context().Err(); err != nil {
 			return &nativeConfirmation{cancellation: err}, nil
 		}
 		if turn != nil {
 			source, err := g.nativeCancellationSource(nativeTurnReceipt{Session: r.Header.Get("X-Claude-Code-Session-Id"), Agent: r.Header.Get("X-Claude-Code-Agent-Id"), Turn: turn.Turn})
-			if errors.Is(err, errCancellationPending) {
+			unreadable = errors.Is(err, errCancellationPending)
+			if unreadable {
 				return nil, nil // Checked again on the next tick; the module also refuses cancelled turns.
 			}
 			if err != nil {
@@ -96,9 +109,22 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	if anonymousNativeFork(r) {
 		return &nativeConfirmation{Unmatched: true}
 	}
+	// pending is this request's challenge once published. A timeout after its only answer came
+	// from a helper the OS could not name is an identity lookup failure, not this native's.
+	var pending *pendingConfirmation
 	defer func() {
-		if proof == nil && r.Context().Err() == nil && g.closing.Err() == nil {
-			n.confirmationFailed.Store(true)
+		excused := false
+		if pending != nil {
+			n.mu.Lock()
+			excused = pending.unidentified
+			n.mu.Unlock()
+		}
+		if proof == nil && r.Context().Err() == nil && g.closing.Err() == nil && !excused {
+			if shared {
+				n.confirmationFailed.Store(true)
+			} else {
+				n.latchConfirmation(native)
+			}
 		}
 	}()
 	if n.directory == "" {
@@ -107,6 +133,11 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	want := nativeConfirmation{Session: r.Header.Get("X-Claude-Code-Session-Id"), Agent: r.Header.Get("X-Claude-Code-Agent-Id"), Index: -1, Search: search, Auxiliary: !search && r.Header.Get("X-Claude-Code-Request-Class") == "auxiliary"}
 	if !correlationShape.MatchString(want.Session) {
 		return nil
+	}
+	// A session whose own native broke the protocol is refused here and nowhere latched: the
+	// record is the session's, and this native's other sessions go on.
+	if n.sessionTainted(want.Session) {
+		return &nativeConfirmation{Unmatched: true}
 	}
 	tick := time.NewTicker(5 * time.Millisecond)
 	defer tick.Stop()
@@ -132,6 +163,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 		return &nativeConfirmation{Unmatched: true}
 	}
 	if err != nil {
+		shared = storageFailure(err)
 		return nil
 	}
 	if !found || turn == nil || step.Turn != turn.Turn {
@@ -142,8 +174,11 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	if err != nil {
 		return nil
 	}
+	if len(records) > 0 {
+		records[0].confirmation(want.Nonce)
+	}
 	lease, closeLease := context.WithCancel(r.Context())
-	pending := &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease}
+	pending = &pendingConfirmation{want: want, reply: make(chan *nativeConfirmation, 1), lease: lease, close: closeLease, native: native}
 	n.mu.Lock()
 	if n.confirmations == nil {
 		n.confirmations = map[string]*pendingConfirmation{}
@@ -160,6 +195,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 	}()
 	body, _ := json.Marshal(want)
 	if err = g.writeNativeControl("confirmation-request.json", body); err != nil {
+		shared = true
 		return nil
 	}
 	for {
@@ -180,6 +216,15 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 				if reply.Confirmations || reply.Agent != "" || reply.Turn != "" || reply.Index != -1 {
 					return nil
 				}
+				if ctx.Err() != nil || g.closing.Err() != nil {
+					return nil
+				}
+				if proof, err := cancelled(); proof != nil || err != nil {
+					return proof
+				}
+				if reply.helper.Err() != nil || reply.lease.Err() != nil {
+					return &nativeConfirmation{Unmatched: true}
+				}
 				return reply
 			}
 			if !reply.Confirmations {
@@ -193,6 +238,7 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 				return &nativeConfirmation{Unmatched: true}
 			}
 			if err != nil || ctx.Err() != nil || g.closing.Err() != nil {
+				shared = storageFailure(err)
 				return nil
 			}
 			if !found || step.Turn != reply.Turn || step.Index != reply.Index {
@@ -213,8 +259,21 @@ func (g *Gateway) nativeConfirmationFor(r *http.Request, turn *nativeTurnReceipt
 			}
 			return &nativeConfirmation{Unmatched: true}
 		case <-ctx.Done():
-			proof, _ := cancelled()
-			return proof
+			proof, err := cancelled()
+			if proof != nil || err != nil {
+				return proof
+			}
+			// Nothing from this native's own helper in time: refuse this request only. The
+			// next one still needs its own fresh proof; an answer that broke the protocol, or
+			// one the OS could not name, keeps its handling below.
+			n.mu.Lock()
+			silent := !pending.answered && !pending.unidentified && !unreadable
+			n.mu.Unlock()
+			if silent {
+				n.unanswered.Add(1)
+				return &nativeConfirmation{cancellation: errNativeConfirmationTimeout}
+			}
+			return nil
 		case <-tick.C:
 			if proof, err := cancelled(); proof != nil || err != nil {
 				return proof

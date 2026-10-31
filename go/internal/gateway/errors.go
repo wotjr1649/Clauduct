@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
@@ -90,6 +91,9 @@ func (g *Gateway) refuseHeaders(w http.ResponseWriter, r *http.Request, bad refu
 // refuseDetail refuses with a detail after the category. The detail is empty or built from
 // fixed vocabularies, like the category itself.
 func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) {
+	if hint := auth.LoginHint(r.category); hint != "" {
+		detail += "; " + hint
+	}
 	// After dispatch the replay ledger refuses any repeat of this request, so a status that
 	// invites a retry only trades this category for NATIVE_REQUEST_REPLAY_BLOCKED in front of
 	// the user (#84). The client checks x-should-retry before the status class (claude
@@ -106,13 +110,11 @@ func (g *Gateway) refuseDetail(w http.ResponseWriter, r refusal, detail string) 
 	recordOf(w).refusedWith(r.status, r.category)
 	control := http.NewResponseController(w)
 	switch r.category {
-	case refuseCancelled.category, refuseTooLarge.category,
+	case refuseCancelled.category, refuseTooLarge.category, refuseClosed.category,
 		errMemoryBudget.Error(), errMemoryQueue.Error(), errMemoryTimeout.Error(), errMemoryStatus.Error():
 		// These close without reading more. A cancelled read must not be pooled with the
-		// next turn, even when a filter still delivers this refusal; an oversized body is
-		// already past its limit and the closing socket is drained by httpguard; a busy
-		// gateway must not wait on a slow upload. The expired read deadline also stops
-		// net/http's background reader.
+		// next turn, an oversized upload is already past its limit, and shutdown must not
+		// wait on a slow body. The expired read deadline also stops net/http's background reader.
 		_ = control.SetReadDeadline(time.Now())
 		w.Header().Set("Connection", "close")
 	default:
@@ -152,6 +154,15 @@ func routeCategory(err error) string {
 	return "UNSUPPORTED_MODEL_OR_EFFORT"
 }
 
+// selectionStatus: an unanswered confirmation is the one selection refusal native's own
+// client should retry (503 is retried in the same step, measured 2.1.302, #319 decision 19c).
+func selectionStatus(err error) int {
+	if errors.Is(err, errNativeConfirmationTimeout) {
+		return http.StatusServiceUnavailable
+	}
+	return http.StatusBadRequest
+}
+
 // selectionCategory names a refused agent selection. A child started on a retired route is
 // told so, rather than only that its selection could not be verified.
 func selectionCategory(err error) string {
@@ -163,6 +174,9 @@ func selectionCategory(err error) string {
 	}
 	if errors.Is(err, errNativeConfirmations) {
 		return errNativeConfirmations.Error()
+	}
+	if errors.Is(err, errNativeConfirmationTimeout) {
+		return errNativeConfirmationTimeout.Error()
 	}
 	if errors.Is(err, errClassifierModel) {
 		return errClassifierModel.Error()
@@ -182,6 +196,8 @@ func refusalMessage(category string) string {
 		return category + "; no matching live native scope proved this request's origin. This request was not sent; other verified requests remain available."
 	case "NATIVE_CONFIRMATION_UNVERIFIED":
 		return category + "; required native confirmation rules or request origin could not be verified. This request was not sent. Preserve managed policy and check that execution and outbound tools require native confirmation."
+	case "NATIVE_CONFIRMATION_TIMEOUT":
+		return category + "; native did not confirm this request's origin in time. This request was not sent; the next request is confirmed again."
 	case "AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED":
 		return category + "; the classifier_model pair is not a model and effort this session's Codex account list offers. Edit classifier_model in ~/.clauduct/settings.json; no replacement was executed."
 	case "NATIVE_REQUEST_REPLAY_BLOCKED":

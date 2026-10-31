@@ -1,0 +1,1418 @@
+{
+  "schema": "clauduct.p3.provider-control-contract",
+  "routingContractRevision": 5,
+  "probeSchemaRevision": 8,
+  "boundedObservation": {
+    "durationMs": 8000,
+    "r03QuiescenceGraceMs": 3000,
+    "r03Cases": [
+      "R03ps",
+      "R03pf",
+      "R03px"
+    ],
+    "r03Trigger": "같은 Run/gateway/Seq의 root main POST /v1/messages, turn1 canary, 실제 503 NATIVE_CONFIRMATION_TIMEOUT, 동일 confirmation nonce SHA-256의 실행된 helper 변형 receipt가 모두 확인된 뒤 관측 창을 한 번 시작한다.",
+    "r03Completion": "첫 503로 Run을 취소하지 않는다. 고정 8초 동안 모든 native 재시도와 wrong receiver 접촉을 관측한다. 8초 시점에 이미 진행 중인 main 요청이 있으면 최대 3초 동안 완료를 기다린다. 요청을 완결할 수 없으면 관측 미완료로 종료하고 INCONCLUSIVE다. quiescent 상태에서만 별도 관측 완료 cause로 종료한다. native가 먼저 자연 종료해도 모든 필수 증거를 검사한다. 창 안의 저장 gateway fallback은 FAIL_ROUTING이다.",
+    "optionalControlCases": [
+      "R13a",
+      "R13b",
+      "R13c",
+      "R13d",
+      "R14n"
+    ],
+    "optionalControlTrigger": "UNPROTECTED control의 이 case 구간 자기 catch-all에서 decoded turn1 root-main inference(/v1/messages, R13b에 한해 /model/{id}/invoke 또는 invoke-with-response-stream)가 실제 503으로 차단되고 그 연결의 accept owner가 기록된 뒤 같은 8초 창을 시작한다. 외부로 전달하지 않는다. 요청 주체는 그 case의 native Job 트리(직접 native와 그 Job 안의 자손)이며, case는 순차로 돌고 각 run은 회수가 증명된 뒤에만 다음이 시작하므로 그 구간의 모든 접촉은 이 트리의 것이다(scopeLedger). PID와 creation은 evidence이며 판정 입력이 아니다. 연결 owner가 기록되지 않은 차단은 보수적으로 인정하지 않는다.",
+    "optionalControlCompletion": "control run이 회수 증명(scopeLedger.reap: Job 비움 확인, 자연 종료 시 남은 Job 구성원 없음, config dir census 완전·비어 있음, run deadline 안)과 구간 settle(scopeLedger.settle)을 통과하고, 그 구간에 world 밖 변화(이전 world receiver의 접촉)가 없을 때만 차단 관측을 인정한다. Established 경로에도 같은 world 밖 조건이 적용된다. owned receiver의 위협이 재현되지 않았고 treatment가 독립적으로 깨끗할 때만 NOT_EXERCISABLE이다. 이를 제품 PASS나 scope의 전체 기능 검증으로 세지 않는다.",
+    "failureRule": "실제 harness deadline, 불완전한 창, 미일치 요청·helper·run metadata, routing/managed-policy/예기치 않은 Run 오류, 미회수 native, 불완전 receiver settle은 INCONCLUSIVE다. 정상적인 window 종료가 이런 오류를 지우지 않는다. 회수 증명 실패·settle 실패·중단은 scope ledger를 poison하며 이후 모든 구간과 scope가 RECEIVER_FAULT INCONCLUSIVE다. run이 panic·Goexit·Fatal로 끝나면 이후 case를 시작하지 않고 scope는 PROBE_CASE_ABORTED INCONCLUSIVE다. scope 끝 보존 검사(scopeLedger.conservation)가 맞지 않으면 RECEIVER_FAULT INCONCLUSIVE다. 확정된 FAIL_ROUTING·BACKGROUND_ENTRY_REACHED는 이 모두에 앞선다.",
+    "limits": {
+      "maxMainRequests": 64,
+      "maxHelperReceipts": 64,
+      "maxHelperReceiptBytes": 512
+    },
+    "registration": "Follow-up 1에서 다음 live 측정 전에 고정한 유한 관측 정책이다. 이후 창 길이·시작·종료·판정 조건 변경은 새 revision과 재검토가 필요하다."
+  },
+  "authority": "P3 — Process-scoped Provider Control + Capability Certification 채택 및 HKLM machine-policy 기본 구현 제외",
+  "decisionSpec": [
+    "inputs/continuation-spec-07.md",
+    "inputs/continuation-spec-08.md"
+  ],
+  "freezeRule": "이 파일은 HostManaged 실제 native 측정 전에 고정한다. 고정 뒤에는 판정을 강화하거나 사례를 더하는 경우에만 바꿀 수 있고, 그때는 routingContractRevision 또는 probeSchemaRevision을 올린 새 파일로 만든다. 측정 결과를 본 뒤 routing 판정이나 필수 사례를 약하게 하거나 빼지 않는다. timeout 값은 INCONCLUSIVE만 낳고 PASS를 만들 수 없으므로 같은 revision 안에서 늘릴 수 있되 바꾼 이력을 남긴다.",
+  "invariant": "사용자 내용이 포함된 첫 inference/model 요청이 나가기 전부터 native 프로세스와 그 native가 띄우는 worker가 끝날 때까지, 모든 inference 요청은 이 Clauduct 세션의 loopback gateway로만 간다. 그 밖의 목적지에는 inference 요청과 사용자 내용이 0이고, 저장 gateway 목적지에는 어떤 byte도 가지 않는다. 이 통제가 지금 실행하려는 정확한 native 실행 파일에서 성립한다는 certification이 있어야 native를 띄운다.",
+  "notSecurityEvidence": [
+    "CLAUDE_CODE_USE_GATEWAY 또는 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST가 환경에 있다는 사실",
+    "GET /v1/models가 이 gateway에 왔다는 사실",
+    "hook이 막았거나 알렸다는 사실(hook은 진단·변조 신호다)",
+    "native 버전 문자열",
+    "화면의 오류 문구"
+  ],
+  "configurations": {
+    "rule": "아래 구성 밖의 차이는 다른 strategy다. 구성을 바꾸려면 새 strategy ID나 revision이 필요하다. 모든 구성은 제품 launch spec 조립 경로(launch.Build, routingSettingsEnv, backgroundSettings)에서 만들고 아래 차이만 더한다.",
+    "UNPROTECTED": {
+      "purpose": "control 전용. provider-control이 없고 #295 settings pin도 없는 상태로, 합성 provider 상태나 변이가 보호 없는 native를 실제로 다른 목적지로 보내는지 보인다.",
+      "processEnv": "제품과 같다(ANTHROPIC_BASE_URL·ANTHROPIC_AUTH_TOKEN은 세션 값, 두 strategy 플래그 없음)",
+      "settingsEnv": "routingSettingsEnv의 항목을 넣지 않는다. 그 밖의 --settings 내용은 제품과 같다",
+      "backgroundRespawnSettings": "backgroundSettings에서 routingSettingsEnv 항목을 빼고 ANTHROPIC_BASE_URL만 둔다. token은 제품처럼 apiKeyHelper로 전달한다"
+    },
+    "BASELINE": {
+      "purpose": "surface 비교 기준. 현재 제품 구성 그대로다.",
+      "processEnv": "제품과 같다",
+      "settingsEnv": "routingSettingsEnv 그대로(두 strategy 플래그를 빈 값으로 지운다)",
+      "backgroundRespawnSettings": "backgroundSettings 그대로"
+    },
+    "HOST_MANAGED": {
+      "processEnv": "제품 값에 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST=1을 더한다. launch의 deny 목록이 이 이름을 지우므로 strategy adapter가 조립 마지막에 넣는다. ANTHROPIC_BASE_URL·ANTHROPIC_AUTH_TOKEN은 세션 값, ANTHROPIC_API_KEY·ANTHROPIC_CUSTOM_HEADERS·CLAUDE_CODE_OAUTH_TOKEN은 빈 값(제품과 같다)",
+      "settingsEnv": "routingSettingsEnv에서 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST만 \"1\"로 바꾼다. ANTHROPIC_BASE_URL, 빈 provider 선택 변수(CLAUDE_CODE_USE_GATEWAY 포함), 빈 ANTHROPIC_UNIX_SOCKET, loopback을 더한 NO_PROXY는 그대로 둔다",
+      "backgroundRespawnSettings": "backgroundSettings의 env에서 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST만 \"1\"로 바꾼다. token은 apiKeyHelper로 전달한다(제품과 같다)",
+      "documented": true,
+      "priorEvidence": "기존 host 모드 실험(provider-control r1~r3)도 route·auth를 child 프로세스 env와 --settings env 양쪽에 두었고 플래그도 양쪽에 두었다. 결과는 잘못된 목적지 0, intended inference 0이었고 원인은 진단하지 않았다. 그 실험은 hook token·모델 선택 영향을 분리하지 않았으므로 최종 근거로 쓰지 않고 이 구성으로 진단과 함께 다시 잰다. 문서는 이 플래그가 저장 gateway 세션보다 우선한다고 보장하지 않으므로 측정으로만 판정한다."
+    },
+    "GATEWAY_ENV_COMPAT": {
+      "processEnv": "제품 값에 CLAUDE_CODE_USE_GATEWAY=1을 strategy adapter가 마지막에 더한다",
+      "settingsEnv": "routingSettingsEnv에서 CLAUDE_CODE_USE_GATEWAY만 \"1\"로 바꾼다. CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST는 빈 값 그대로",
+      "backgroundRespawnSettings": "backgroundSettings의 env에서 CLAUDE_CODE_USE_GATEWAY만 \"1\"로 바꾼다",
+      "documented": false,
+      "opensOnlyIf": "HOST_MANAGED가 INCOMPATIBLE이거나, Phase 2에서 NONFUNCTIONAL로 분류되거나, 소유자가 HOST_MANAGED의 surface 차이를 필수 호환성 실패로 판정한 경우. NONFUNCTIONAL은 서로 다른 두 certification run에서 R01~R04의 control이 모두 성립했는데 treatment의 INTENDED canary 수신이 모두 0인 경우이며, 소유자 처분을 거쳐 HOST_MANAGED를 제품 활성 목록에서 뺀다. runtime의 INCONCLUSIVE 자체로는 넘어가지 않는다",
+      "isolation": "이 변수는 strategy adapter 한 곳에서만 만든다. 공개 제품 계약으로 문서화하지 않는다",
+      "protocolSurface": "구현 전에 현재 native가 이 모드에서 gateway 쪽에 보내는 요청 전체를 bounded synthetic capture로 inventory한다. 필요한 최소 endpoint만 구현한다. 모르는 path/method는 거부, body 크기 제한, telemetry·보조 body 영구 저장 금지, body 기록 금지, 외부 forwarding 금지, 사용자 내용 불필요 보존 금지. 요구 surface가 바뀌면 probeSchemaRevision을 올린다"
+    }
+  },
+  "strategySelection": "제품이 활성화한 strategy를 순서(HOST_MANAGED, GATEWAY_ENV_COMPAT)대로 본다. cache가 CERTIFIED면 그 strategy를 쓴다. INCOMPATIBLE이면 다음 strategy로 간다. MISS·stale·backoff가 끝난 INCONCLUSIVE면 certification을 돌린다. 앞 strategy가 INCONCLUSIVE(backoff 중 포함)면 다음 strategy로 넘어가지 않고 이번 launch를 ROUTING_PROVIDER_UNVERIFIED로 끝낸다. 처음 CERTIFIED가 된 strategy를 쓴다. 하나도 없으면 ROUTING_PROVIDER_UNVERIFIED로 끝내고 사용자 prompt를 native inference 경로에 보내지 않는다. GATEWAY_ENV_COMPAT는 Phase 3에서 구현되고 surface가 받아들여진 경우에만 활성 목록에 들어간다.",
+  "receivers": {
+    "INTENDED": "이 세션의 loopback gateway. probe에서는 제품 gateway를 그대로 띄우고 upstream만 Codex를 부르지 않는 probe transport로 바꾼다. probe transport는 turn마다 고유 reply marker로 답한다.",
+    "WRONG_STORED_GATEWAY_A": "합성 저장 gateway credential이 가리키는 TLS loopback listener. listener가 받은 raw TCP byte(TLS handshake 포함)와 연결 시도를 센다. 요청은 해석해 inference 여부와 canary만 기록하고 내용은 버린다.",
+    "WRONG_STORED_GATEWAY_B": "교체 변이에서 쓰는 두 번째 TLS loopback listener. A와 같은 계수.",
+    "WRONG_SETTINGS": "settings env 변조·managed 파일 변이·provider 선택 변수가 가리키는 loopback listener(필요하면 TLS). raw TCP byte와 연결 시도를 센다.",
+    "CATCH_ALL": "probe child의 HTTPS_PROXY·HTTP_PROXY인 loopback proxy. probe 전용 CA로 TLS를 종료해 host·path·method를 분류하고 body는 canary 검사만 한 뒤 버린다. 어떤 요청도 밖으로 전달하지 않는다. R15에서만 관측된 Anthropic server-managed settings 요청에 routing env 정책으로 답한다.",
+    "WRONG_SOCKET": "settings 변조의 ANTHROPIC_UNIX_SOCKET이 가리키는 probe 전용 AF_UNIX socket listener. raw byte와 연결 시도를 센다.",
+    "STANDALONE_STORED_GATEWAY_C": "R08b의 사전 기동에서만 쓰는 TLS loopback listener. 계수는 진단이며 판정에 쓰지 않는다."
+  },
+  "measurement": {
+    "canary": "case·turn마다 새 128-bit 난수 canary(hex)를 prompt에 넣는다. evidence에는 canary의 SHA-256만 남긴다.",
+    "canaryDecoding": "canary는 원문, standard·URL-safe base64의 세 정렬, content-encoding gzip·deflate를 푼 body, WebSocket message를 fragment 재조립·unmask·permessage-deflate 해제한 뒤 한 연결의 message를 이어 붙인 흐름에서 찾는다. 그 밖의 content-encoding(br, zstd 포함)이나 풀 수 없는 body는 UNDECODABLE_EGRESS다.",
+    "inferenceClass": "host와 무관하게 다음 path의 요청: /v1/messages(query 포함), /v1/messages/count_tokens, /v1/complete, /model/*/invoke, /model/*/invoke-with-response-stream, *:rawPredict, *:streamRawPredict, Foundry의 /anthropic/v1/messages.",
+    "providerTraffic": "control에서 잘못된 provider가 그 case의 각 turn에 받은 inferenceClass 요청 수. treatment에서 INTENDED가 같은 turn에 받은 수가 이보다 적으면 보조 요청 일부가 관측되지 않은 곳으로 갔을 수 있으므로 PROVIDER_TRAFFIC_NOT_COVERED다.",
+    "loginAccountClass": "host가 claude.ai·*.claude.ai·claude.com·console.anthropic.com·platform.claude.com이거나 path에 /oauth/·/v1/oauth·/api/oauth·/api/auth/·/login이 있는 요청, 그리고 WRONG_STORED_GATEWAY_* 로 가는 모든 요청.",
+    "storedGatewayBytes": "WRONG_STORED_GATEWAY_A+B의 raw TCP byte 합. partial·중단된 body 포함.",
+    "replyMarker": "각 receiver는 CLAUDUCT-PROBE-REPLY-<receiverId>-<turnNonce> 형태의 marker로만 답한다. 출력 판정은 이 marker만 본다. 출력은 -p stdout과 probe config의 세션 transcript를 읽고, TUI 화면은 판정에 쓰지 않는다.",
+    "noBodyRetention": "어느 receiver도 요청 body·header 값·token을 파일에 쓰지 않는다. evidence는 계수·path class·host 이름·digest만 담는다.",
+    "boundedLimitDerived": "canary가 없는 파생 내용(요약 등)은 이 검사가 보지 못한다. 그 내용을 싣는 요청이 inferenceClass면 P3이, 아니면 진단으로만 남는다.",
+    "encodingInventory": "Phase 2는 각 receiver가 본 요청의 Content-Encoding 분포를 기록한다. native의 통상 egress가 br·zstd를 쓰면 anchor가 INCONCLUSIVE로 남으므로 그 사실을 소유자에게 보고하고, 디코더 추가는 별도 결정으로 다룬다."
+  },
+  "probeEnvironment": {
+    "configDir": "probe가 만든 임시 CLAUDE_CONFIG_DIR. 사용자 config·credential을 읽거나 복사하지 않는다.",
+    "launchSpec": "configurations의 구성에 시험 전용 항목만 더한다: CATCH_ALL proxy 변수, probe CA를 위한 NODE_EXTRA_CA_CERTS, DISABLE_AUTOUPDATER=1, case별 hook 변형, case별 합성 provider 상태, probe 전용 managed 설정 파일 경로.",
+    "syntheticStoredGateway": "probe config의 .credentials.json에 합성 gateway 세션(WRONG_STORED_GATEWAY_A URL, 합성 jwt, 만료 1시간 뒤, 해당 listener 인증서 pin)을 둔다. 실제 사용자 credential을 읽어 만들지 않는다.",
+    "remotePolicy": "WRONG_STORED_GATEWAY_*는 /managed/settings에 routing env를 WRONG_SETTINGS로 바꾸고 disableAllHooks·allowManagedHooksOnly를 켜는 유효한 정책을 내준다. treatment에서는 이 정책을 가져가는 요청 자체가 위반이다.",
+    "machineManagedSources": "probe는 machine 관리 출처를 만들거나 바꾸지 않는다. Clauduct의 기존 managed 출처 reader로 읽은 지문을 cache key에 넣는다.",
+    "noAutoUpdateOutsideProbe": "DISABLE_AUTOUPDATER는 probe child에만 두고 사용자 settings·User/System 환경·registry에 쓰지 않는다."
+  },
+  "identity": {
+    "fields": [
+      "resolvedPath",
+      "volumeSerial",
+      "fileIndex",
+      "size",
+      "sha256"
+    ],
+    "resolution": "제품 launch가 실행할 경로와 같은 방법으로 해석한다.",
+    "checkpoints": [
+      "CERT_START",
+      "CASE_PRE:<caseId>",
+      "CASE_POST:<caseId>",
+      "CERT_END",
+      "PRE_SPAWN",
+      "POST_SPAWN"
+    ],
+    "spawnPin": "PRE_SPAWN의 마지막 hash는 실행 파일을 쓰기·삭제 공유 없이 연 handle로 읽고, CreateProcess가 돌아오고 POST_SPAWN에서 새 프로세스 image의 file ID가 pin과 같음을 확인할 때까지 그 handle을 유지한다. probe가 띄우는 native에도 같은 pin을 쓴다. 이 짧은 창 동안 다른 terminal의 업데이트 rename은 실패할 수 있다.",
+    "changeRule": "certification 도중 어느 checkpoint라도 다르면 NATIVE_CHANGED_DURING_CERTIFICATION으로 그 run의 모든 결과를 버린다. 다른 identity의 control과 treatment를 합치지 않는다. PRE_SPAWN이 cache의 nativeSHA256과 다르면 그 cache를 쓰지 않는다. POST_SPAWN이 다르면 child를 Job으로 끝내고 gateway는 그 child의 inference를 받지 않는다."
+  },
+  "control": {
+    "rule": "모든 treatment case에는 같은 entry·합성 상태·변이·시점을 UNPROTECTED 구성으로 돌린 control이 짝으로 있다. 시작 상태 사례의 control은 hook을 끈다. stateful 사례의 control은 사례의 hook 상태를 그대로 둔다. observeHooks 사례는 command hook이 실행되는 모든 run(control·treatment)에 같은 관측 wrapper를 쓴다. 시작 상태 사례의 control은 hook을 끄므로 감쌀 hook이 없다. 같은 certification run, 같은 identity에서 돈다.",
+    "established": {
+      "STORED_GATEWAY_A": "control에서 WRONG_STORED_GATEWAY_A가 그 turn의 canary가 든 inference 요청을 받음. R15도 이 규칙이다",
+      "STORED_GATEWAY_CREATE": "control에서 생성 뒤 turn(turn2)이 WRONG_STORED_GATEWAY_A로 감",
+      "STORED_GATEWAY_REPLACE": "control에서 교체 뒤 turn(turn3)이 WRONG_STORED_GATEWAY_B로 감",
+      "STORED_GATEWAY_DELETE": "control에서 생성 뒤 turn(turn2)이 WRONG_STORED_GATEWAY_A로 감(삭제 전 상태가 효력이 있었음)",
+      "SETTINGS_OR_MANAGED_REDIRECT": "control에서 해당 turn이 WRONG_SETTINGS 또는 WRONG_SOCKET으로 감",
+      "OTHER": "case 정의에 적은 wrong receiver가 control에서 canary가 든 inference 요청을 받음"
+    },
+    "mutationTurn1": "stateful 변이 사례의 control에서 turn1이 INTENDED reply marker로 끝나지 않으면 control은 CONTROL_PREREQUISITE_UNPROVEN이다(변이가 시험되지 않음).",
+    "anchorCases": "저장 gateway A가 시작부터 있는 case(R01~R08b, R15, 그리고 release의 같은 상태 사례)는 anchor다. anchor의 control이 성립하지 않으면 그 case는 INCONCLUSIVE(CONTROL_PREREQUISITE_UNPROVEN)다. 저장 gateway를 이 native에서 재현하지 못하면 어떤 strategy도 인증하지 않는다.",
+    "optionalExercise": "anchor가 아닌 case(변이, settings·provider 변조, 합성 계정 상태)의 control이 성립하지 않으면, treatment가 P1~P7을 모두 충족할 때에 한해 NOT_EXERCISABLE이다: 보호 없는 이 native에서 그 상태가 이 시간 안에 목적지를 바꾸지 않았다는 기록이며 PASS가 아니다. P8은 control 없이 정의되지 않으므로 이때 보지 않는다. treatment가 P1~P7 중 하나라도 못 채우면 그 이유로 INCONCLUSIVE다. NOT_EXERCISABLE은 runtime CERTIFIED를 막지 않지만 doctor와 evidence에 사례별로 남고, release에서는 사례마다 소유자 처분이 있어야 한다.",
+    "threatReproduction": "control에서 wrong receiver가 그 turn의 canary가 든 inference 요청을 실제로 받아야 성립한다. handshake만 있거나 canary 없는 요청만 있으면 성립하지 않는다. treatment가 0 byte여도 성립하지 않은 control의 case는 PASS가 아니다."
+  },
+  "caseVerdict": {
+    "pass": [
+      "P1 WRONG_STORED_GATEWAY_A·B의 raw TCP byte = 0, 연결 시도 = 0. 그리고 INTENDED가 아닌 어느 probe receiver(STANDALONE_STORED_GATEWAY_C 포함)도 이번 case의 canary가 든 요청을 받지 않음",
+      "P2 WRONG_SETTINGS·WRONG_SOCKET의 raw byte = 0, 연결 시도 = 0",
+      "P3 CATCH_ALL의 inferenceClass 요청 = 0, decoded canary 검출 = 0, UNDECODABLE_EGRESS = 0",
+      "P4 INTENDED가 turn마다 그 turn의 canary가 든 inference 요청을 1건 이상, 세션 token 인증으로 받음",
+      "P5-R INTENDED_ROUTING_LIVENESS: turn마다, 이 run의 INTENDED gateway ingress가 그 turn의 정확한 canary를 담은 inferenceClass 요청을 받았고 그 요청의 request class가 auxiliary가 아님. TCP·TLS handshake, /v1/models, auxiliary 요청은 근거가 아니다. INTENDED가 그 요청을 받아 읽은 뒤 사례가 기대한 제품 보안 정책 분류(NATIVE_REQUEST_ORIGIN_UNVERIFIED, NATIVE_CONFIRMATION_UNVERIFIED, R03ps/pf/px의 NATIVE_CONFIRMATION_TIMEOUT)로 backend 전에 거부한 것은 routing 실패가 아니다. 그 분류는 같은 요청의 gateway 기록 번호(Seq)로 상관되어야 하며, 임의의 4xx·5xx는 근거가 아니다",
+      "P6 case의 모든 identity checkpoint가 같음",
+      "P7 receiver가 spawn 전부터 Job이 빈 것을 확인할 때까지 살아 있었고, child가 모두 끝났고, 결과가 완전함",
+      "P8 turn마다 INTENDED가 받은 inferenceClass 요청 수가 짝 control에서 잘못된 provider가 받은 수 이상",
+      "P5-F NATIVE_PRESERVATION: turn마다 사례의 expect를 따른다. SUCCESS: 출력(-p stdout, 세션 transcript)에 그 turn의 INTENDED reply marker가 있고 다른 receiver의 marker가 없음. SUCCESS_WITH_HOOK_DIAGNOSTIC: SUCCESS이고, 그 turn의 시간 창 안에 native transcript가 사례의 diagnosticEvent에 대한 hook 실패 기록(attachment type hook_non_blocking_error, hook_cancelled, hook_error_during_execution 중 하나, hookEvent 일치)을 가짐. EXPECTED_FAIL_CLOSED: 그 turn의 canary를 담은 INTENDED ingress 본 요청의 gateway 분류가 모두 사례의 failClosedAs 중 하나이고(사례가 지정하지 않으면 r2의 expectedRefusals), 그 turn의 대화/실행 세대에 귀속된 backend 호출이 0이고 INTENDED backend 응답과 INTENDED marker가 없음. 같은 gateway·Seq의 기록이 non-independent route와 upstream dispatch를 증명할 때만 backend 호출을 센다. R07의 서로 다른 once 실행은 run 세대로 귀속하여 이전 canary를 든 새 실행의 호출을 놓치지 않는다. 독립 title/classifier 요청과 다른 turn의 호출은 넣지 않는다. STIMULUS: r2와 같음."
+    ],
+    "failRouting": "P1·P2 위반, P3의 inferenceClass나 decoded canary 위반, 출력에 INTENDED가 아닌 receiver의 marker가 있음, 또는 INTENDED가 그 turn에 canary를 담은 요청을 backend로 응답했는데 ingress에 그 turn의 canary가 없음 — 이 중 하나면 case는 FAIL_ROUTING이다.",
+    "inconclusive": "FAIL_ROUTING이 아니고 P3의 UNDECODABLE_EGRESS, P4, P5-R, P6, P7, P8 중 하나를 못 채우면 INCONCLUSIVE이며 이유를 다음 중에서 단다: SPAWN_FAILED, TIMEOUT, RESULT_MISSING, LOOPBACK_BIND_FAILED, RECEIVER_FAULT, NATIVE_ERROR_BEFORE_INFERENCE, UNOBSERVED_REPLY(출력에 marker 없는 assistant 응답이 있고 INTENDED가 그 turn을 받지도 응답하지도 않음), AUXILIARY_ONLY(그 turn의 canary가 auxiliary 요청에만 있음), UNDECODABLE_EGRESS, PROVIDER_TRAFFIC_NOT_COVERED, HELD_PROCESS, CLEANUP_FAILED, HARNESS_INTEGRITY, CONTROL_PREREQUISITE_UNPROVEN, UNATTRIBUTED_CONTACT, NATIVE_CHANGED_DURING_CERTIFICATION.",
+    "expectedRefusals": [
+      "NATIVE_REQUEST_ORIGIN_UNVERIFIED",
+      "NATIVE_CONFIRMATION_UNVERIFIED"
+    ],
+    "failFunction": "routing 판정을 모두 통과했는데 P5-F를 못 채우면 FAIL_FUNCTION이다: expect SUCCESS인 turn에 INTENDED reply marker가 없거나(제품·surface 결함으로 보고), expect EXPECTED_FAIL_CLOSED인 turn이 INTENDED backend로 응답되었거나 기대한 분류로 거부되지 않았음(origin·confirmation 보호가 기대대로 닫히지 않음). FAIL_FUNCTION은 숨기지 않고 보고한다.",
+    "attribution": "case에 attribution CANARY_ONLY가 있으면 P1은 'WRONG_STORED_GATEWAY_A·B가 이번 case의 canary가 든 요청을 받지 않음'으로 읽고, canary 없는 접촉은 FAIL이 아니라 INCONCLUSIVE(UNATTRIBUTED_CONTACT)다. 그 밖의 case는 raw byte 규칙 그대로다.",
+    "expectedRefusalsNote": "r3에서는 사례마다 failClosedAs를 둔다. 위 목록은 failClosedAs가 없는 사례의 기본값이다. R03ps/pf/px는 helper가 현재 세션의 confirmation을 끝내지 못하므로 NATIVE_CONFIRMATION_TIMEOUT(제품 503)을 기대한다. 이 범주는 native_confirmation.go의 unanswered helper 처리에서 실제 발생하는 제품 분류다. root main 요청·같은 Run/gateway/Seq의 503·동일 challenge hash의 실행된 helper receipt를 모두 요구한다. boundedObservation의 사전 고정 8초 창 또는 native의 자연 종료를 관측한 뒤 종료·회수·receiver drain을 필수로 검증한다. 실제 harness deadline이나 불완전한 증거는 INCONCLUSIVE다.",
+    "safety": "purpose가 SAFETY인 사례: 라우팅 판정(P1~P3, foreign marker, served without canary)은 그대로 먼저 적용한다. control은 문서용으로 함께 돌리되 성립 여부와 P8을 읽지 않는다. 단계마다 합성 상태가 의도대로 읽혀야 하고(아니면 INCONCLUSIVE STATE_NOT_APPLIED), P4·P5-R·P6·P7이 성립하고, P5-F가 성립하면 SAFETY_PASS다. P5-F를 못 채우면 FAIL_FUNCTION. SAFETY_PASS는 억제 효과의 근거가 아니며 strategy 판정에서 따로 나열한다.",
+    "stateApplication": "requireApplication 사례는 다음 turn의 UserPromptSubmit에서 관측 wrapper가 native 환경의 변경(ANTHROPIC_BASE_URL이 세션 gateway와 다르거나 socket·provider switch 설정)을 기록해야 한다. 없으면 INCONCLUSIVE(STATE_APPLICATION_UNOBSERVED). 파일 쓰기 완료만으로 적용을 주장하지 않는다.",
+    "failClosedScope": "EXPECTED_FAIL_CLOSED와 failClosedAs는 그 turn의 canary를 담은 /v1/messages 본 요청(auxiliary 아님)의 gateway 분류로만 판정한다. count_tokens는 다른 경계를 지나므로 넣지 않는다. 예외: count_tokens 자체를 시험하는 release X42는 그 count_tokens 요청의 분류로 판정한다.",
+    "variantExercised": "requireExercised가 있는 사례는 그 조건이 실제로 일어나야 한다(R04L의 늦은 hook, R03pf의 다른 세션 link 사용). 일어나지 않으면 INCONCLUSIVE(VARIANT_NOT_EXERCISED)이다.",
+    "foreignSession": "sentinel 사례에서 다른 live 세션은 별도 gateway와 foreground link이며, link는 gateway 앞의 투명 계수 proxy를 가리킨다. 그 gateway가 기록을 열거나 routing mismatch를 받거나, proxy가 confirmation이 아닌 요청을 받으면 FAIL_SAFETY(FOREIGN_SESSION_STATE_CHANGED). 라우팅 위반은 이보다 먼저 판정한다. 한계: sentinel에는 진행 중인 native 요청이 없으므로, 다른 세션의 진행 중 confirmation을 가로채는 경우는 이 시험이 보지 않는다.",
+    "safeRefusal": "purpose가 SAFE_REFUSAL인 사례는 EXPECTED_SAFE_REFUSAL turn을 1개 이상 가져야 한다(없으면 FAIL_FUNCTION). 거부 직전에 그 세션의 profile snapshot이 있어야 하고, backend 생성은 그 turn에 귀속된 것만 센다. 그 turn은 UNOBSERVED_REPLY 판정에서도 제외한다. 그 turn은 INTENDED 요청이 없어야 정상이므로 P4·P5-R·P8을 읽지 않는다. 대신 거부 문구와 정확한 복구 명령, 그 turn canary의 backend 생성 0, 저장된 profile snapshot·이전 대화 보존, INTENDED 응답·marker 없음을 요구한다. 라우팅 판정은 그대로 먼저 적용한다. 통과하면 SAFE_REFUSAL_PASS이며, 정상 기능 PASS나 억제 근거로 세지 않는다. 다른 목적의 사례 안에 있는 EXPECTED_SAFE_REFUSAL turn도 같은 요구를 따른다.",
+    "restore": "restoreTurn이 있는 사례는 그 turn에 귀속된 backend 생성이 turn1의 canary(대화)를 담고, turn1의 backend 생성과 같은 model·effort로 실행되어야 한다(probe transport가 받은 실제 실행 값, 둘 다 비어 있지 않음). R07m은 turn1의 backend 쌍이 시작에 지정한 비기본 쌍(gpt-6-luna, low)이어야 한다. 아니면 FAIL_FUNCTION(RESTORE_NOT_OBSERVED)."
+  },
+  "strategyVerdict": {
+    "order": [
+      "1 어느 checkpoint라도 identity가 바뀌었으면 INCONCLUSIVE(NATIVE_CHANGED_DURING_CERTIFICATION)",
+      "2 어느 treatment case라도 FAIL_ROUTING이면 INCOMPATIBLE",
+      "3 사례 목록이 정확하지 않으면 INCONCLUSIVE(MATRIX_RESULTS_MISMATCH)",
+      "4 어느 case라도 INCONCLUSIVE, SAFETY 사례의 PASS, SAFETY가 아닌 사례의 SAFETY_PASS, anchor의 NOT_EXERCISABLE이면 INCONCLUSIVE",
+      "5 어느 case라도 FAIL_SAFETY면 INCONCLUSIVE(FOREIGN_SESSION_STATE_CHANGED)이고 보고한다",
+      "6 어느 case라도 FAIL_FUNCTION이면 INCONCLUSIVE(NATIVE_PRESERVATION_FAILED)이고 제품 결함으로 보고한다. 영구 판정으로 cache하지 않는다",
+      "6b SAFE_REFUSAL_PASS는 SAFE_REFUSAL 사례에만 허용하고 따로 나열한다. 그 사례의 PASS는 INCONCLUSIVE다",
+      "7 그 밖에 모든 case가 PASS, optional의 NOT_EXERCISABLE, SAFETY 사례의 SAFETY_PASS이면 CERTIFIED. SAFETY_PASS와 NOT_EXERCISABLE 사례는 따로 나열하고 억제 근거로 세지 않는다. 아래 gaps에 필수 미검증 경로가 남아 있으면 그 공백을 결과와 함께 보고하고 FULL PASS로 승격하지 않는다"
+    ],
+    "earlyStop": "runner는 FAIL_ROUTING이나 identity 변경을 보면 남은 case를 건너뛸 수 있다. 그 밖에는 모든 case를 돈다.",
+    "noRetry": "certification 안에서 case를 재시도해 PASS를 만들지 않는다."
+  },
+  "runtimeMatrix": [
+    {
+      "id": "R01",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "state": "저장 gateway A 로그인"
+    },
+    {
+      "id": "R02",
+      "entry": "PRINT",
+      "hooks": "DISABLED_BY_USER_SETTINGS",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "state": "저장 gateway A 로그인"
+    },
+    {
+      "id": "R03",
+      "entry": "PRINT",
+      "hooks": "COMMAND_LOAD_FAILURE",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "state": "저장 gateway A 로그인. 모든 command hook 실패, plugin 정상"
+    },
+    {
+      "id": "R04",
+      "entry": "PRINT",
+      "hooks": "TIMEOUT",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "state": "저장 gateway A 로그인. 모든 command hook timeout, plugin 정상"
+    },
+    {
+      "id": "R03p",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS_WITH_HOOK_DIAGNOSTIC",
+      "hookFaults": {
+        "UserPromptSubmit": "COMMAND_LOAD_FAILURE"
+      },
+      "diagnosticEvent": "UserPromptSubmit",
+      "state": "저장 gateway A 로그인. SessionStart가 등록, UserPromptSubmit hook만 실패"
+    },
+    {
+      "id": "R04p",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS_WITH_HOOK_DIAGNOSTIC",
+      "hookFaults": {
+        "UserPromptSubmit": "TIMEOUT"
+      },
+      "diagnosticEvent": "UserPromptSubmit",
+      "state": "R03p와 같되 timeout"
+    },
+    {
+      "id": "R03pa",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "hookFaults": {
+        "UserPromptSubmit": "COMMAND_LOAD_FAILURE"
+      },
+      "plugin": "ABSENT",
+      "failClosedAs": [
+        "NATIVE_REQUEST_ORIGIN_UNVERIFIED"
+      ],
+      "state": "R03p + native-events plugin 없음(증명 부재)"
+    },
+    {
+      "id": "R03ps",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "hookFaults": {
+        "UserPromptSubmit": "COMMAND_LOAD_FAILURE"
+      },
+      "plugin": "STALE_LINK",
+      "failClosedAs": [
+        "NATIVE_CONFIRMATION_TIMEOUT"
+      ],
+      "state": "R03p + helper가 닫힌 link를 가리킴(stale). 올바른 matched/unmatched confirmation 입력과 pipe 부재가 모두 확인된 경우에만 exit 3으로 종료해 다음 nonce도 처리하며 각 재시도의 exact challenge receipt를 남긴다. 재점유·서버 검증·응답 해석 오류와 잘못된 입력·receipt 기록 실패는 exit 2다. canary 없는 root-main 재시도도 증거와 refusal 기록에서 빠지지 않으며 turn 귀속이 입증되지 않으면 INCONCLUSIVE다"
+    },
+    {
+      "id": "R03pf",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "hookFaults": {
+        "UserPromptSubmit": "COMMAND_LOAD_FAILURE"
+      },
+      "plugin": "FOREIGN_LINK",
+      "failClosedAs": [
+        "NATIVE_CONFIRMATION_TIMEOUT"
+      ],
+      "sentinel": true,
+      "requireExercised": "helper의 confirmation 시도가 sentinel의 계수 proxy에 1건 이상 도달해야 한다. 없으면 INCONCLUSIVE(VARIANT_NOT_EXERCISED)",
+      "state": "R03p + helper가 다른 live 세션의 link를 가리킴"
+    },
+    {
+      "id": "R03px",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "hookFaults": {
+        "UserPromptSubmit": "COMMAND_LOAD_FAILURE"
+      },
+      "plugin": "FORGED_HELPER",
+      "failClosedAs": [
+        "NATIVE_CONFIRMATION_TIMEOUT"
+      ],
+      "state": "R03p + 연결하지 않고 연결됐다고 답하는 helper(위조)"
+    },
+    {
+      "id": "R04L",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS_WITH_HOOK_DIAGNOSTIC",
+      "hookFaults": {
+        "UserPromptSubmit": "DELAYED_PAST_TIMEOUT"
+      },
+      "diagnosticEvent": "UserPromptSubmit",
+      "sentinel": true,
+      "turns": 3,
+      "delayMs": 1500,
+      "timeoutSeconds": 1,
+      "requireExercised": "한 turn에서 시작한 지연 hook이 뒤 turn의 시간 창 안에서 끝난 기록(wrapper start·finish 쌍)이 있어야 한다. 없으면 INCONCLUSIVE(VARIANT_NOT_EXERCISED)",
+      "state": "저장 gateway A 로그인. 3 turn. 매 turn UserPromptSubmit의 실제 hook이 1초 timeout 뒤 1.5초에 시작해 늦게 post. 뒤 turn과 다른 live 세션 상태가 바뀌지 않아야 함",
+      "r4Status": "r3 결과 보존. 자식 변형 미측정(미완료)"
+    },
+    {
+      "id": "R06",
+      "entry": "RESUME",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "state": "저장 gateway A 로그인"
+    },
+    {
+      "id": "R07r",
+      "entry": "CONTINUE_REFUSAL",
+      "hooks": "NORMAL",
+      "purpose": "SAFE_REFUSAL",
+      "expect": "SUCCESS;turn2=EXPECTED_SAFE_REFUSAL",
+      "state": "저장 gateway A 로그인. turn1 -p --session-id S, turn2 --continue. turn2: SESSION_RESTART_REQUIRED와 clauduct --resume S 안내, 그 turn canary의 backend 생성 0, S의 profile snapshot과 이전 대화 보존"
+    },
+    {
+      "id": "R07m",
+      "entry": "CONTINUE_THEN_RESUME",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS;turn2=EXPECTED_SAFE_REFUSAL",
+      "restoreTurn": 3,
+      "state": "turn1은 기본값이 아닌 쌍(--model gpt-6-luna --effort low, 기본 쌍과 같으면 시험 오류)으로 시작, turn2 --continue 거부, turn3 플래그 없는 --resume S. turn3 자신의 backend 생성이 turn1과 같은 model·effort로 turn1 대화를 담고 INTENDED marker로 완료"
+    },
+    {
+      "id": "R07n",
+      "entry": "CONTINUE_LEGACY",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "restoreTurn": 2,
+      "state": "turn1 뒤 S의 profile snapshot을 지움(snapshot 이전 세션), turn2 --continue가 turn1 대화를 이어 정상 완료"
+    },
+    {
+      "id": "R09",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "purpose": "SAFETY",
+      "optional": true,
+      "scenario": "SAME_PID_CHANGE",
+      "state": "turn1 뒤 저장 gateway A 생성, turn2"
+    },
+    {
+      "id": "R09s",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS;turn2=STIMULUS",
+      "purpose": "SAFETY",
+      "optional": true,
+      "scenario": "SAME_PID_CHANGE",
+      "state": "R09 + turn2 첫 시도에 401"
+    },
+    {
+      "id": "R10",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "purpose": "SAFETY",
+      "optional": true,
+      "scenario": "SAME_PID_CHANGE",
+      "turns": 3,
+      "state": "A 생성, turn2, B로 교체, turn3"
+    },
+    {
+      "id": "R11",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "purpose": "SAFETY",
+      "optional": true,
+      "scenario": "SAME_PID_CHANGE",
+      "turns": 3,
+      "state": "A 생성, turn2, 삭제, turn3"
+    },
+    {
+      "id": "R14",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "purpose": "SAFETY",
+      "optional": true,
+      "scenario": "SAME_PID_CHANGE",
+      "state": "turn1 뒤 local managed 파일(env ANTHROPIC_BASE_URL) 생성, turn2"
+    },
+    {
+      "id": "R12o",
+      "entry": "SAME_PROCESS_MULTI_TURN",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "optional": true,
+      "scenario": "LOCAL_SETTINGS_RELOAD",
+      "observeHooks": true,
+      "settleSeconds": 10,
+      "requireApplication": true,
+      "state": "turn1, user settings env를 WRONG_SETTINGS로 바꾸고 strategy 플래그를 비우며 같은 쓰기에 비routing 표지 CLAUDUCT_P3_SETTINGS_EPOCH를 넣음, 10초 대기, turn2. treatment의 turn2 UserPromptSubmit에서 그 표지가 보여야 함. control은 turn2가 WRONG_SETTINGS로 가는 것(위협 재현)이 곧 적용의 증거다. treatment에서는 --settings env가 routing 값을 고정하므로 routing 변수의 변화가 아니라 표지로 재읽기를 관측한다"
+    },
+    {
+      "id": "R13a",
+      "entry": "PRINT",
+      "hooks": "DISABLED_BY_USER_SETTINGS",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "optional": true,
+      "scenario": "NEW_START_WITH_CHANGED_STATE",
+      "state": "시작 시 user settings env ANTHROPIC_BASE_URL"
+    },
+    {
+      "id": "R13b",
+      "entry": "PRINT",
+      "hooks": "DISABLED_BY_USER_SETTINGS",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "optional": true,
+      "scenario": "NEW_START_WITH_CHANGED_STATE",
+      "state": "시작 시 Bedrock 전환. R13b 전용 WRONG_SETTINGS는 합성 HTTPS endpoint이며 probe가 해당 인증서를 신뢰한다. CONNECT→TLS→Bedrock invoke POST를 같은 accept connection의 정확한 owned receiver에 귀속한다. proxy를 거치지 않은 직접 TLS accept도 분류해야 하며 미분류 연결은 RECEIVER_FAULT/INCONCLUSIVE다. 다른 사례의 WRONG_SETTINGS는 HTTP를 유지한다"
+    },
+    {
+      "id": "R13c",
+      "entry": "PRINT",
+      "hooks": "DISABLED_BY_USER_SETTINGS",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "optional": true,
+      "scenario": "NEW_START_WITH_CHANGED_STATE",
+      "state": "시작 시 ANTHROPIC_UNIX_SOCKET. r2에서 control 미재현(native가 env BASE_URL로 보냄). 처분 전까지 PASS로 세지 않음",
+      "applicability": {
+        "disposition": "NOT_APPLICABLE",
+        "scope": "native sha256 eb95bb65955f8b1702e800815f9a2c0388a5de0f196c354c7ee1dd5cb9a2ba23, Windows, user settings env",
+        "evidence": "results/p3-applicability-diagnosis-r1, R13c control in p3-phase2-hostmanaged-contract-r2, p3-link-print17-r1, p3-r3-print25-r1",
+        "note": "routing PASS가 아니다. 판정 코드는 NOT_EXERCISABLE로 두고 억제 근거로 세지 않는다. 이 처분은 보고에서 따로 나열한다"
+      }
+    },
+    {
+      "id": "R13d",
+      "entry": "PRINT",
+      "hooks": "DISABLED_BY_USER_SETTINGS",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "optional": true,
+      "scenario": "NEW_START_WITH_CHANGED_STATE",
+      "state": "시작 시 BASE_URL과 strategy 플래그 비움"
+    },
+    {
+      "id": "R14n",
+      "entry": "PRINT",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS",
+      "optional": true,
+      "observeHooks": true,
+      "scenario": "NEW_START_WITH_CHANGED_STATE",
+      "state": "시작 시 local managed 파일(env ANTHROPIC_BASE_URL, hook 제한 없음). managed env는 --settings보다 우선하므로 #295가 treatment를 가릴 수 있어 관측 wrapper를 쓴다",
+      "applicability": {
+        "disposition": "UNDETERMINED",
+        "note": "미확정. PASS로 세지 않는다"
+      }
+    },
+    {
+      "id": "R15",
+      "entry": "PRINT",
+      "hooks": "DISABLED_BY_USER_SETTINGS",
+      "expect": "EXPECTED_FAIL_CLOSED",
+      "failClosedAs": [
+        "SESSION_PROFILE_UNVERIFIED"
+      ],
+      "state": "r2와 같은 다중 credential 조합"
+    },
+    {
+      "id": "R05",
+      "entry": "TUI",
+      "state": "STORED_GATEWAY_A",
+      "hooks": "NORMAL",
+      "expect": "SUCCESS"
+    },
+    {
+      "id": "R08",
+      "entry": "BACKGROUND",
+      "state": "STORED_GATEWAY_A",
+      "hooks": "NORMAL",
+      "note": "생성 turn과, native worker stop 뒤 다시 깨운 respawn turn 둘 다 판정",
+      "expect": "SUCCESS"
+    },
+    {
+      "id": "R08b",
+      "entry": "BACKGROUND_PREEXISTING_SUPERVISOR",
+      "state": "STORED_GATEWAY_A",
+      "hooks": "NORMAL",
+      "note": "같은 probe config에서 Clauduct overlay 없는 순수 native launch로 background supervisor를 먼저 띄워 둔다(standalone 사용 모사). 사전 기동은 별도 저장 gateway receiver C를 가리키는 credential로 하고, 끝난 뒤 credential을 A로 바꾼 다음 strategy 구성으로 생성·respawn turn을 판정한다. 공유 supervisor가 띄운 worker는 Clauduct Job 밖에 있을 수 있으므로 A의 위반은 연결 소유자가 아니라 canary로 귀속한다: A가 이번 case의 canary가 든 요청을 받으면 FAIL_ROUTING, canary 없는 접촉은 출처를 가를 수 없으므로 INCONCLUSIVE(UNATTRIBUTED_CONTACT)다. C의 계수는 진단으로만 남긴다",
+      "attribution": "CANARY_ONLY",
+      "expect": "SUCCESS"
+    }
+  ],
+  "runtimeHookVariantsNote": "hook 전체 비활성은 R02, R13a~d, R15. 모든 command hook 실패는 R03(로드 실패)·R04(timeout). 한 event만 실패는 R03p 계열과 R04p·R04L. 그 밖의 사례는 hook 정상이다. stateful 변이에 hook 실패를 결합하지 않는다.",
+  "deadlines": {
+    "caseWorkers": 1,
+    "perNativeRunSeconds": 60,
+    "perStartTeardownSeconds": 15,
+    "perRunTeardownSeconds": 62.5,
+    "backgroundCycleSeconds": 240,
+    "syntheticCaseSeconds": 300,
+    "receiverDrainSeconds": 2,
+    "settleStableReadMs": 500,
+    "certificationTotalSeconds": {
+      "PRINT_SINGLE": 9908,
+      "RESUME_EXPLICIT": 4453,
+      "CONTINUE_PRINT": 5493,
+      "MULTI_TURN_SAME_PROCESS": 7633,
+      "TUI": 10398.5
+    },
+    "rp01TreatmentDelaySeconds": 600,
+    "lockWaitSeconds": 12000,
+    "producerShortMinutes": 190,
+    "producerLongMinutes": 150,
+    "rule": "모든 deadline은 시작 때 정한 절대 시각에서 내려 받는다. 재시도·phase가 deadline을 다시 늘리지 않는다. run 하나의 native deadline은 perNative(entry)이고 그 안의 모든 native start(resume/continue seed, continue-recover, TUI resume seed, background cycle)가 그때까지 끝난다. run deadline은 perNative + perRunTeardownSeconds + hookKillWaitSeconds × hook 대상 수(child 방식 hook fault는 turn마다 wrapper와 child 둘, 그 밖은 2)다. hook 회수의 모든 대기(첫 대기와 대상마다의 종료 대기 포함)는 하나의 끝 시각에서 잘리며 그 시각은 이 deadline을 넘지 않고, settle까지 끝난 시점이 이를 넘으면 미회수로 scope ledger를 poison한다.",
+    "perNative": "start = runFor + perStartTeardownSeconds. runFor는 print 60s(Settle이 있으면 60s+Settle), multi·TUI 다중 prompt는 turn 수×60s + 대기 수×Settle, TUI 자극 case는 180s다. CLI는 (1+CLIPrior)×start+8s, resume·continue·continue-refusal·legacy는 2×start, continue-recover는 3×start, TUI resume은 2×start, background는 (1+step 수)×(backgroundCycleSeconds+perStartTeardownSeconds), 경계 관찰 print는 start+8s다.",
+    "perCase": "control(noControl이 아니면)과 treatment, variant마다 같은 계산을 더한다. synthetic case(R04S)는 syntheticCaseSeconds다.",
+    "certificationTotal": "scope의 short case 예산 합이며 코드(p3CertificationTotal)와 같아야 한다(contract 시험). RP01 holder는 rp01TreatmentDelaySeconds + RP01 run deadline + 최종 관측이다.",
+    "caps": "lockWaitSeconds는 가장 긴 holder(scope 상한 + run 정리 + 보존 검사, RP01 holder)보다 길고, producerShortMinutes는 가장 긴 short holder, producerLongMinutes는 RP01 holder보다 길다(contract 시험). producer 값은 private probe-evidence-nopin.ps1에 있다.",
+    "note": "상한은 조기 종료를 막는 값이며 실측이 아니다. 넘으면 TIMEOUT INCONCLUSIVE다. 실측 시간은 Phase 2에서 기록하고 소유자에게 보고한다.",
+    "hookKillWaitSeconds": 5
+  },
+  "releaseMatrix": {
+    "rule": "release certification은 runtimeMatrix와 아래 사례 전부를 같은 caseVerdict·control·strategyVerdict 규칙과 정확한 개수 규칙으로 판정한다. anchor는 control.anchorCases와 같은 상태(STORED_GATEWAY_A로 시작)의 사례이고, 그 밖의 사례는 optionalExercise 규칙을 따르며 NOT_EXERCISABLE마다 소유자 처분이 있어야 한다. 문서에 인증 생략 변수가 없는 provider는 그 사실을 evidence에 남긴다.",
+    "cases": [
+      {
+        "id": "X01",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "COMMAND_EXIT_1",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X02",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "MALFORMED_JSON_OUTPUT",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X03",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "SESSION_START_ONLY_FAILURE",
+        "expect": "SUCCESS_WITH_HOOK_DIAGNOSTIC",
+        "diagnosticEvent": "SessionStart"
+      },
+      {
+        "id": "X04",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "USER_PROMPT_SUBMIT_ONLY_FAILURE",
+        "expect": "SUCCESS_WITH_HOOK_DIAGNOSTIC",
+        "diagnosticEvent": "UserPromptSubmit"
+      },
+      {
+        "id": "X05",
+        "entry": "TUI",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "NORMAL",
+        "expect": "SUCCESS"
+      },
+      {
+        "id": "X06",
+        "entry": "TUI",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "COMMAND_LOAD_FAILURE",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X07",
+        "entry": "TUI",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "TIMEOUT",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X08",
+        "entry": "RESUME",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "NORMAL",
+        "expect": "SUCCESS"
+      },
+      {
+        "id": "X09",
+        "entry": "RESUME",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "COMMAND_LOAD_FAILURE",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X10",
+        "entry": "RESUME",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "TIMEOUT",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X11",
+        "entry": "BACKGROUND",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "NORMAL",
+        "expect": "SUCCESS"
+      },
+      {
+        "id": "X12",
+        "entry": "BACKGROUND",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "COMMAND_LOAD_FAILURE",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X13",
+        "entry": "BACKGROUND",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "TIMEOUT",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X14",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A+MANAGED_FILE_ALLOW_MANAGED_HOOKS_ONLY",
+        "hooks": "NORMAL",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X15",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A+MANAGED_FILE_DISABLE_ALL_HOOKS",
+        "hooks": "NORMAL",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X16",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A+MANAGED_FILE_ALLOW_MANAGED_PERMISSION_RULES_ONLY",
+        "hooks": "NORMAL",
+        "expect": "SUCCESS"
+      },
+      {
+        "id": "X17",
+        "entry": "PRINT",
+        "state": "PROJECT_SETTINGS_ENV_TAMPER_AT_START",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X18",
+        "entry": "PRINT",
+        "state": "LOCAL_SETTINGS_ENV_TAMPER_AT_START",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X19",
+        "entry": "SAME_PROCESS_MULTI_TURN",
+        "mutation": "PROJECT_SETTINGS_ENV_HOT_RELOAD",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X20",
+        "entry": "SAME_PROCESS_MULTI_TURN",
+        "mutation": "LOCAL_SETTINGS_ENV_HOT_RELOAD",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X21",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:CLAUDE_CODE_USE_BEDROCK=1+CLAUDE_CODE_SKIP_BEDROCK_AUTH=1+ANTHROPIC_BEDROCK_BASE_URL=WRONG_SETTINGS+AWS_REGION=us-east-1",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X22",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:CLAUDE_CODE_USE_VERTEX=1+CLAUDE_CODE_SKIP_VERTEX_AUTH=1+ANTHROPIC_VERTEX_BASE_URL=WRONG_SETTINGS+ANTHROPIC_VERTEX_PROJECT_ID=probe+CLOUD_ML_REGION=us-east5",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X23",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:CLAUDE_CODE_USE_FOUNDRY=1+CLAUDE_CODE_SKIP_FOUNDRY_AUTH=1+ANTHROPIC_FOUNDRY_BASE_URL=WRONG_SETTINGS",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X24",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:CLAUDE_CODE_USE_ANTHROPIC_AWS=1+ANTHROPIC_AWS_BASE_URL=WRONG_SETTINGS+문서의 인증 생략 변수",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X25",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD=1+해당 provider의 base URL 변수=WRONG_SETTINGS+문서의 인증 생략 변수",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X26",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:CLAUDE_CODE_USE_MANTLE=1+해당 provider의 base URL 변수=WRONG_SETTINGS+문서의 인증 생략 변수",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X27",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_STRATEGY_FLAG_TAMPER",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "note": "user settings env가 CLAUDE_CODE_USE_GATEWAY=1과 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST 빈 값을 넣고 ANTHROPIC_BASE_URL=WRONG_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X28",
+        "entry": "PRINT",
+        "state": "USER_SETTINGS_ENV:ANTHROPIC_UNIX_SOCKET=WRONG_SOCKET",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X29",
+        "entry": "TUI_SECOND_PROMPT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X30",
+        "entry": "TUI_RESUME",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X31",
+        "entry": "FORK_SESSION",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X32",
+        "entry": "BACKGROUND_MESSAGE",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X33",
+        "entry": "BACKGROUND_ATTACH",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X34",
+        "entry": "BACKGROUND_RESPAWN_TWICE",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X35",
+        "entry": "BACKGROUND_DELETE_THEN_CREATE",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X36",
+        "entry": "NATIVE_WORKER_RESTART",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X37",
+        "entry": "SUBAGENT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X38",
+        "entry": "TEAMMATE",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X39",
+        "entry": "COMPACTION_AND_AUXILIARY",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X40",
+        "entry": "WEB_SEARCH",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X41",
+        "entry": "REASONING_CONTINUITY",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X42",
+        "entry": "COUNT_TOKENS",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "NATIVE_REQUEST_ORIGIN_UNVERIFIED",
+          "NATIVE_CONFIRMATION_UNVERIFIED"
+        ],
+        "expectNote": "count_tokens는 session profile 경계를 거치지 않는다. plugin이 꺼져 있으므로 origin 증명 부재 분류다"
+      },
+      {
+        "id": "X43",
+        "entry": "MODEL_PICKER_SWITCH",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X44",
+        "entry": "EXPLICIT_MODEL",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X45",
+        "entry": "EXPLICIT_EFFORT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X46",
+        "entry": "PRINT",
+        "state": "SYNTHETIC_CLAUDE_AI_OAUTH",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "note": "UNPROTECTED도 process env에 INTENDED BASE_URL을 두므로 control이 성립하지 않을 수 있다. 그때는 optionalExercise 규칙을 따른다",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X47",
+        "entry": "PRINT",
+        "state": "SYNTHETIC_CONSOLE_API_KEY",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "note": "UNPROTECTED도 process env에 INTENDED BASE_URL을 두므로 control이 성립하지 않을 수 있다. 그때는 optionalExercise 규칙을 따른다",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X48",
+        "entry": "PRINT",
+        "state": "ANTHROPIC_PROFILE_OR_FEDERATION",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "note": "probe 전용 위치로 한정할 수 있을 때만 실행한다. 한정할 수 없으면 INCONCLUSIVE이고 FULL PASS 전에 소유자 결정이 필요하다",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X49",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "NORMAL",
+        "fidelity": "NO_PROXY",
+        "note": "CATCH_ALL 없이 실제 네트워크 조건. 합성 prompt와 loopback token만 나갈 수 있다. P3은 적용하지 않는다",
+        "expect": "SUCCESS"
+      },
+      {
+        "id": "X50",
+        "entry": "PRINT",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "fidelity": "NO_PROXY",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      },
+      {
+        "id": "X51",
+        "entry": "TUI",
+        "state": "STORED_GATEWAY_A",
+        "hooks": "DISABLED_BY_USER_SETTINGS",
+        "fidelity": "NO_PROXY",
+        "expect": "EXPECTED_FAIL_CLOSED",
+        "failClosedAs": [
+          "SESSION_PROFILE_UNVERIFIED"
+        ]
+      }
+    ],
+    "separateChecks": [
+      "wrong·stale·cross-session token 거부는 기존 gateway 인증 시험이 맡는다"
+    ],
+    "boundedLimits": [
+      "저장 gateway의 1시간 주기 원격 정책 갱신과, 몇 시간 뒤의 credential 재읽기는 짧은 probe에서 재현하지 않는다. 대신 P1이 시작, 변이 직후, 401 자극 뒤 모두 성립해야 한다",
+      "HTTPS_PROXY를 따르지 않는 native egress는 CATCH_ALL이 보지 못한다. 주 turn은 P4·P5, 보조 요청은 P8이 이를 INCONCLUSIVE로 바꾼다. 사용자 내용이 아닌 비loopback 요청은 진단으로만 남는다"
+    ],
+    "autoUpdateSpawnInvestigation": {
+      "id": "AU1",
+      "rule": "probe 전용 경로에 native 사본을 두고 background를 시작한 뒤 그 사본을 다른 bytes로 바꾸고 worker를 다시 깨워, respawn된 worker의 image path·SHA와 Clauduct launcher 경유 여부를 기록한다. 같은 사용자의 standalone native가 띄운 supervisor를 Clauduct 세션이 공유하는지도 기록한다. Clauduct를 거치지 않고 새 bytes로 inference-capable 프로세스가 뜨면 session-scoped containment 검토를 소유자에게 올린다."
+    },
+    "functionalRule": "release 사례마다 expect와 failClosedAs(또는 diagnosticEvent)를 cases에 고정한다. command hook 하나만 실패하고 다른 하나가 세션을 등록하는 사례는 SUCCESS_WITH_HOOK_DIAGNOSTIC, 모든 command hook이 실패·비활성이거나 managed 정책이 hook을 막는 사례는 SESSION_PROFILE_UNVERIFIED로 fail-closed, 그 밖의 hook 정상 사례는 SUCCESS다. 관측된 쪽을 기록하는 식의 기대값은 두지 않는다."
+  },
+  "surfaceComparison": {
+    "method": "같은 prompt·같은 합성 config에서 저장 gateway 없이 BASELINE과 strategy를 비교한다. 각 항목은 SAME, DIFFERENT, NOT_OBSERVED로 기록하고 DIFFERENT의 허용 여부는 측정 뒤 소유자가 정한다.",
+    "fields": [
+      "S01 routed model: 기본, --model, user settings의 model·fallbackModel·modelOverrides, 세션 중 /model",
+      "S02 effort: output_config.effort 유무와 값, --effort, 세션 중 /effort, 기본 effort",
+      "S03 thinking 필드 형태(adaptive, budget, 없음)",
+      "S04 context_management 필드",
+      "S05 anthropic-beta header token 집합",
+      "S06 fast mode 관련 필드·beta와 /fast 사용 가능 여부",
+      "S07 tool 이름 목록과 수, defer_loading 등 tool 필드",
+      "S08 Agent: subagent 실행과 x-claude-code-agent-id",
+      "S09 ToolSearch: tool_reference·defer_loading",
+      "S10 WebSearch hosted tool type·version",
+      "S11 TUI 표시: 상태 줄·시작 화면의 model·effort 표시",
+      "S12 background 생성·stop·재기동·attach·메시지",
+      "S13 resume·continue·fork와 history 보존",
+      "S14 hook 환경의 gateway 정보·token과 hook 기반 기능(POST /clauduct/agents)",
+      "S15 GET /v1/models 도착(진단)",
+      "S16 x-claude-code-* header와 hint header",
+      "S17 telemetry·OTLP 목적지와 DISABLE_TELEMETRY 상호작용",
+      "S18 system prompt attribution block",
+      "S19 요청 body 최상위 key 집합",
+      "S20 보조 요청(title, classifier, auto mode server classifier)의 경로와 형태",
+      "S21 count_tokens 사용",
+      "S22 settings 파일 model 선택이 지켜지는지(launch.go의 2.1.289 실측 재검증)",
+      "S23 settings env의 비routing 변수(CLAUDE_CODE_MAX_OUTPUT_TOKENS, MAX_THINKING_TOKENS 등)가 지켜지는지",
+      "S24 background의 apiKeyHelper 기반 credential 경로"
+    ]
+  },
+  "cache": {
+    "key": [
+      "nativeSHA256",
+      "strategyId",
+      "routingContractRevision",
+      "probeSchemaRevision",
+      "clauductBinarySHA256",
+      "managedSourceFingerprint"
+    ],
+    "keyNote": "clauductBinarySHA256은 probe 코드가 다른 Clauduct에서 이전 PASS를 다시 쓰지 않게 한다. managedSourceFingerprint는 Clauduct managed 출처 reader가 읽은 각 출처의 유무와 내용 digest이며, 그 상태에서 얻은 판정을 native만의 판정으로 기록하지 않게 한다.",
+    "location": "ClauductHome 아래 provider-certification 디렉터리. reparse point나 경로 교체가 보이면 읽지도 쓰지도 않고 MISS로 본다.",
+    "states": {
+      "CERTIFIED": "key가 정확히 같고 PRE_SPAWN identity가 nativeSHA256과 같을 때만 launch를 허가한다",
+      "INCOMPATIBLE": "그 key에서 끝난 판정이다. 다음 strategy로 간다. 수동 pre-warm은 다시 돌릴 수 있다",
+      "INCONCLUSIVE": "허가하지 않는다. 자동 경로는 600초 backoff 뒤 다시 시도한다. 수동 pre-warm은 backoff를 무시한다. 영구 판정으로 쓰지 않는다"
+    },
+    "miss": "파일 없음, parse 실패, 모르는 schema, 파일 이름과 내용의 key 불일치, 부분 기록은 모두 MISS다. MISS는 CERTIFIED가 아니다.",
+    "staleReasons": [
+      "NATIVE_CHANGED",
+      "STRATEGY_CHANGED",
+      "CONTRACT_REVISION_CHANGED",
+      "PROBE_SCHEMA_CHANGED",
+      "CLAUDUCT_BINARY_CHANGED",
+      "MANAGED_SOURCES_CHANGED"
+    ],
+    "write": "같은 디렉터리의 임시 파일을 쓴 뒤 rename한다. key별 lock 파일(owner PID와 생성 시각)을 가진 runner만 쓴다. owner가 죽은 lock은 넘겨받는다. lock을 기다리는 쪽은 bounded로 기다린 뒤 결과를 다시 읽는다.",
+    "writeFailure": "CERTIFIED 판정 뒤 cache 쓰기가 실패하면 이번 launch에 한해 메모리 판정을 쓸 수 있다. 단 PRE_SPAWN identity가 같아야 하고 CACHE_WRITE_FAILED를 진단에 남긴다.",
+    "entry": [
+      "schema",
+      "key fields",
+      "verdict",
+      "reasons",
+      "case 요약(id, verdict, 이유, 계수, NOT_EXERCISABLE 여부)",
+      "evidenceDigest",
+      "createdAt",
+      "probeImplementation(Clauduct version, revision, binary SHA-256)",
+      "contractSHA256"
+    ]
+  },
+  "triggers": {
+    "automatic": "TUI, -p, resume, continue, background 생성, respawn 등 inference를 할 수 있는 native 프로세스를 새로 띄우기 직전에, 활성 strategy의 cache가 MISS·stale·backoff 끝난 INCONCLUSIVE인 경우",
+    "notTriggered": "help, version, usage, doctor 등 조회·관리 명령",
+    "manual": "clauduct --dev --probe provider-control",
+    "doctor": "probe를 돌리지 않는다. native identity(경로, SHA-256), strategy별 cache 상태, contract revision, probe schema revision, stale reason, 실패 분류, NOT_EXERCISABLE 사례를 보인다.",
+    "sameRunner": "자동 경로와 수동 pre-warm은 같은 runner, 같은 판정 코드, 같은 cache를 쓴다."
+  },
+  "loginLogoutNegativeGate": {
+    "id": "LN",
+    "policy": "Clauduct 안에서 /login·/logout과 Anthropic 계정·구독 관리 명령은 금지다. 세션 중 provider 전환 사례로 다루지 않는다.",
+    "commands": [
+      "/login",
+      "/logout",
+      "/upgrade",
+      "/usage-credits",
+      "/passes",
+      "/privacy-settings",
+      "/design-login",
+      "/install-github-app"
+    ],
+    "argv": [
+      "auth login",
+      "auth logout",
+      "setup-token"
+    ],
+    "inventoryRule": "release 때 현재 native의 명령 목록을 inventory한다. 설명에 sign-in, account, plan, subscription, billing, credential이 있는 명령이 위 목록에 없으면 revision을 올려 더한 뒤에만 FULL PASS를 판정한다.",
+    "mechanismCandidates": "문서에 있는 DISABLE_LOGIN_COMMAND, DISABLE_LOGOUT_COMMAND, DISABLE_UPGRADE_COMMAND, DISABLE_EXTRA_USAGE_COMMAND, DISABLE_INSTALL_GITHUB_APP_COMMAND를 사용자 settings보다 높은 --settings env에 둔다. 계정 subcommand는 native에 넘기기 전에 거부한다. 문서에 끄는 방법이 없는 명령(/passes, /privacy-settings, /design-login)은 관측으로만 판정한다. 후보가 실제로 막는지는 아래 관측으로만 판정한다.",
+    "pass": [
+      "auth flow 시작 0: Job 안에 허용 목록(claude.exe, Clauduct hook, conhost) 밖의 프로세스가 생기지 않음, Job 프로세스가 새 listen socket을 열지 않음, probe 전용 BROWSER stub 호출 0, TUI에서 로그인·계정 화면에 도달하지 않음",
+      "credential 쓰기 0: probe config의 .credentials.json bytes(또는 부재)가 그대로이고 이름에 credential·token·auth가 든 새 파일이 없음",
+      "provider 상태 변이 0: probe config의 .claude.json 인증 관련 key(oauthAccount, primaryApiKey, customApiKeyResponses, hasCompletedOnboarding)와 settings 파일, probe Anthropic 설정 위치가 그대로",
+      "login/account endpoint 요청 0: CATCH_ALL loginAccountClass 0, WRONG_STORED_GATEWAY_* byte 0",
+      "inference 목적지 변화 0: 같은 프로세스의 다음 turn이 caseVerdict P1~P5를 만족"
+    ],
+    "controls": [
+      "/logout control: 합성 credential이 있는 UNPROTECTED에서 차단 장치 없이 /logout이 합성 credential을 지우는 것을 관측해 credential 관측기가 동작함을 보인다",
+      "/login control: UNPROTECTED에서 로그인 방법 선택 화면에 도달하는 것까지만 관측한다. 실제 브라우저를 열 수 있는 선택은 보내지 않는다"
+    ],
+    "uiRule": "treatment에서 로그인·계정 화면이 보이면 그 즉시 FAIL로 끝내고 더 입력하지 않는다. 화면의 오류 문구는 PASS 근거가 아니다. PASS는 위 계수가 모두 0일 때만이다.",
+    "boundedLimit": "native가 BROWSER를 따르지 않고 Job 밖의 shell로 브라우저를 열면 stub이 보지 못한다. 그 경우도 listen socket·credential·endpoint 계수로 판정한다.",
+    "blockerRule": "native가 명령을 먼저 처리해 계수 중 하나라도 0이 아니면 숨기지 않고 blocker로 보고한다."
+  },
+  "evidenceSchema": {
+    "case": [
+      "runId",
+      "caseId",
+      "configuration",
+      "strategyId",
+      "contractSHA256",
+      "routingContractRevision",
+      "probeSchemaRevision",
+      "nativeIdentity",
+      "identityCheckpoints",
+      "receivers 계수(INTENDED, WRONG_STORED_GATEWAY_A, WRONG_STORED_GATEWAY_B, WRONG_SETTINGS, CATCH_ALL)",
+      "canary SHA-256",
+      "turn별 inferenceClass 수",
+      "native 종료(exit code, timedOut, spawnError, reply marker 관측)",
+      "Runs: index, gateway, nativeStarted, nativePid, nativeCreationFiletime(decimal string), exit, naturalExit, cleanupFailed, unexpectedError, window(kind, durationMs=8000, graceMs=R03:3000/optional:0, elapsedMs, completed, trigger). nativePid·nativeCreationFiletime은 starter가 pinned image에 link한 generation(PRINT·MULTI는 직접 native, TUI는 driver 아래 발견·link된 Claude 프로세스)이며 short scope 판정에서는 evidence only다. RP01만 control의 owner 결속(scopeLedger.rp01.ownerBinding)에 이 값을 쓰고, 값이 없으면 INCONCLUSIVE다.",
+      "R03 (HOST_MANAGED treatment의 R03ps/pf/px 필수): Complete, VariantVerified, Run, Requests(각 Run/gateway/Seq/turn/method/path/status=503/category/challenge SHA-256/variant proof), Truncated=false; 누락/불일치는 INCONCLUSIVE",
+      "PluginVariantReceiptsComplete 및 PluginVariantReceipts: 최대 64개, variant/confirmationSha256/outcome/exitCode/linkAttempted/closedLinkAttempt/markerEmitted만 저장; 원문 nonce·본문·token·link ID는 저장하지 않음",
+      "ReceiversDrained 및 ReceiverFault: 각 run의 ledger 구간은 직전 run이 확정한 읽기부터 이 run의 확정 읽기까지다(scopeLedger.interval). settle은 모든 등록 receiver의 Observer drain(연결·handler, 최대 2초) 뒤 500ms 간격의 두 읽기에서 Conns·Bytes·Total·Dropped가 같을 때 확정이다. 범주는 raw Conns·Bytes, Observer Total, Dropped이며 있음/없음으로만 쓴다. present(r) = ΔConns>0 ∨ ΔBytes>0 ∨ ΔTotal>0 ∨ 이 run의 CATCH_ALL 기록 중 r을 지목한 tunnel(연결 key 중복 제거)이다. 자기 world wrong receiver는 Wrong{Conns: ΔConns, Bytes: ΔBytes}이고 present인데 둘 다 0이면 Conns=1이다. ΔDropped>0은 fault다. 모든 accepted proxy connection의 분류 증명은 유지한다. 미완료·닫힌 partial header·HTTP 없는 TLS tunnel은 RECEIVER_FAULT다. settle이 bounded 시간 안에 확정되지 않으면 RECEIVER_FAULT이고 ledger를 poison한다.",
+      "OptionalControlBlock: 지정된 UNPROTECTED optional control만 sequence/connectionId/ownerPid/ownerCreated/turnCanary/status/protocol/mainRoot/connectionKnown와 일치하는 bounded window 또는 자연 종료를 요구한다. ownerPid/ownerCreated는 그 연결에 기록된 accept owner가 있어야 한다는 보수적 결속이며, Run의 nativePid/nativeCreationFiletime과의 일치는 요구하지 않는다(evidence only).",
+      "hook 변형과 hook 진단",
+      "verdict",
+      "reasons",
+      "harness(runner digest, 시작·끝 시각, 절대 deadline, cleanup: Job 비움, 남은 프로세스 수, receiver 닫힘)"
+    ],
+    "run": [
+      "runId",
+      "nonce",
+      "nativeIdentity",
+      "strategy별 verdict",
+      "control 결과",
+      "case 결과 digest 목록",
+      "clauductBinarySHA256",
+      "managedSourceFingerprint",
+      "probe implementation digest"
+    ],
+    "forbidden": [
+      "요청 body",
+      "header 값",
+      "token",
+      "prompt 원문",
+      "probe 밖 파일 내용"
+    ]
+  },
+  "lifecycleGate": {
+    "id": "provider-probe-lifecycle",
+    "cases": [
+      "PL01 probe native와 그 자손이 KILL_ON_JOB_CLOSE Job에 속함을 Job 프로세스 목록으로 확인",
+      "PL02 모든 deadline이 시작 때의 절대 시각에서 내려옴. 재시도·phase가 늘리지 않음",
+      "PL03 deadline 초과 native는 Job으로 끝내고 TIMEOUT, cleanup 확인",
+      "PL04 spawn 실패는 SPAWN_FAILED, receiver 닫힘, cache CERTIFIED 없음",
+      "PL05 receiver는 spawn 전에 bind하고 scope ledger에 등록해 scope 끝까지 연다. 각 run은 native 종료와 Job 비움(JobEmpty: 자연 종료 시 남은 구성원 계수 후 TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION.ActiveProcesses=0을 최대 5초 확인)을 확인한 뒤 settle한다. scope 끝에는 열린 listener로 최종 안정 읽기를 한 뒤에만 닫고, 닫은 뒤 drain과 같은 읽기를 다시 확인한다. 종료 직전 도착 byte도 셈",
+      "PL06 native 종료 뒤 남은 자손은 Job으로 끝내고 HELD_PROCESS",
+      "PL07 probe 부모가 강제 종료되면 probe child가 모두 끝남",
+      "PL08 죽은 runner가 남긴 임시 디렉터리·lock은 다음 runner가 owner marker가 맞는 것만 정리",
+      "PL09 loopback bind 실패는 LOOPBACK_BIND_FAILED",
+      "PL10 Job 종료·임시 디렉터리 삭제 실패는 CLEANUP_FAILED이고 CERTIFIED가 될 수 없음",
+      "PL11 receiver bind 뒤, native spawn 뒤, control 결과 뒤, 판정 뒤 cache 게시 전, 게시 중 각각에서 runner가 죽어도 CERTIFIED 항목과 고아 프로세스가 남지 않음",
+      "PL12 사용자 취소(Ctrl-C)는 child를 끝내고 INCONCLUSIVE, launch 중단",
+      "PL13 probe가 띄운 native background supervisor와 worker는 case 끝에 정확한 작업 ID의 native stop으로 끝내고, Job 밖에 남은 probe 소유 프로세스가 없음을 확인"
+    ]
+  },
+  "integrityGate": {
+    "id": "provider-proof-integrity",
+    "cases": [
+      "PI01 case 결과가 없으면 RESULT_MISSING이고 PASS가 아님",
+      "PI02 다른 runId·nonce의 결과는 거부",
+      "PI03 다른 case·strategy·identity·contract의 결과는 거부",
+      "PI04 parse할 수 없는 cache는 MISS",
+      "PI05 key의 각 구성요소가 바뀐 cache는 그 stale reason과 함께 MISS",
+      "PI06 이름과 내용의 key가 다르거나 모르는 schema인 cache는 MISS",
+      "PI07 게시가 중간에 끊겨도 부분 항목이 보이지 않음",
+      "PI08 CERTIFIED 뒤 cache 쓰기 실패는 cache.writeFailure 규칙만 허용",
+      "PI09 같은 key의 동시 certification은 lock으로 하나만 돌고 결과가 섞이지 않음",
+      "PI10 certification 중 native identity 변경은 결과 전체 폐기",
+      "PI11 spawn pin 중 실행 파일 교체가 막히거나, image 불일치면 inference 없이 끝냄",
+      "PI12 판정 코드에서 P1~P8, control 성립 조건, anchor 규칙, NOT_EXERCISABLE의 P1~P7 조건, identity 검사를 하나씩 없앤 mutation이 각각 시험에서 실패함",
+      "PI13 evidence가 identity·strategy·revision·contractSHA256·Clauduct binary·runId를 담고 cache의 evidenceDigest와 일치",
+      "PI14 cache 위치의 reparse point·경로 교체는 거부",
+      "PI15 CERTIFIED는 해당 matrix의 모든 case 결과가 정확히 있을 때만",
+      "PI16 canary 검사가 gzip·deflate·base64·WebSocket mask·permessage-deflate에 숨은 canary를 찾고, br·zstd와 그 밖의 풀 수 없는 encoding은 UNDECODABLE_EGRESS",
+      "PI17 P5-R·P5-F 판정이 ingress의 request class와 gateway 기록 번호(Seq)로 같은 요청의 분류를 상관하며, 상관되지 않은 거부나 auxiliary 요청만으로는 통과하지 않음",
+      "PI18 사례별 failClosedAs와 hook 진단이 그 turn의 시간 창과 같은 요청의 gateway 분류로 판정되고, SAFETY_PASS가 억제 근거로 집계되지 않음",
+      "PI19 관측 wrapper가 command hook이 실행되는 control·treatment run에 똑같이 적용되고, 제품 binary에는 그 동작이 없음"
+    ]
+  },
+  "integrationGate": {
+    "id": "runtime-certification-integration",
+    "cases": [
+      "RC01 cache MISS에서 자동 certification 후 launch, 사용자 prompt는 certification 뒤에만 native에 감",
+      "RC02 CERTIFIED cache 적중이면 probe 없이 launch, PRE_SPAWN·POST_SPAWN 확인",
+      "RC03 수동 pre-warm이 같은 runner·cache를 씀",
+      "RC04 doctor는 probe를 돌리지 않고 상태만 보임",
+      "RC05 help·version·usage·doctor는 probe를 돌리지 않음",
+      "RC06 strategy 순서, INCOMPATIBLE 건너뛰기, INCONCLUSIVE에서는 다음 strategy로 넘어가지 않음",
+      "RC07 모든 strategy 실패면 ROUTING_PROVIDER_UNVERIFIED, native inference 경로에 사용자 prompt 0",
+      "RC08 INCONCLUSIVE backoff와 수동 pre-warm의 backoff 무시",
+      "RC09 native 업데이트로 SHA가 바뀐 뒤 다음 launch가 자동으로 다시 certification",
+      "RC10 일반 세션에 DISABLE_AUTOUPDATER를 넣지 않고 사용자 settings·환경·registry를 바꾸지 않음",
+      "RC11 채택 strategy의 실제 foreground·background 구성이 configurations의 정의와 바이트 단위로 같음",
+      "RC12 R12p: 제품 통합 상태에서 settings env를 다른 목적지로 바꾸면 #295가 wrong egress 전에 세션을 끝냄(관측 wrapper 없음)"
+    ]
+  },
+  "anchorCases": [
+    "R01",
+    "R02",
+    "R03",
+    "R04",
+    "R05",
+    "R06",
+    "R08",
+    "R08b",
+    "R15",
+    "R07r",
+    "R07m",
+    "R07n",
+    "R03p",
+    "R04p",
+    "R03pa",
+    "R03ps",
+    "R03pf",
+    "R03px",
+    "R04L"
+  ],
+  "supersedes": {
+    "contract": "go/internal/admissioncontract/routing-r4.json",
+    "sha256": "c428371e04e57d6e54ac1e4030852bf998a9add4e8ff831a6cc84fbde676b6e8",
+    "routingContractRevision": 4,
+    "note": "r4 파일과 이전 측정 증거는 수정하지 않는다. r5는 R03ps/pf/px의 제품 confirmation timeout 거부와 관측 종료를 명시하고 EXPECTED_FAIL_CLOSED의 backend 호출 0을 강제한다. 이전 revision의 결과를 새 PASS로 재해석하지 않는다."
+  },
+  "functionFailureDisposition": "같은 cache key에서 FAIL_FUNCTION이 반복되면(결정적 제품·surface 결함) strategy는 INCONCLUSIVE(NATIVE_PRESERVATION_FAILED)로 남고 cache하지 않는다. 그 case와 원인을 surface 비교의 DIFFERENT 항목으로 소유자 처분에 올린다. 판정 기준을 바꾸거나 다음 strategy로 넘기는 근거로 쓰지 않는다.",
+  "residuals": [
+    "R12·R14의 control은 hook 정상이라 Clauduct의 #295 env 검사가 hot reload된 변조를 막을 수 있다. 그러면 control이 위협을 재현하지 못해 NOT_EXERCISABLE(optional)이다. #295 검사만 뺀 control 변형은 제품에 없는 구성이라 만들지 않는다. 결과는 소유자 처분 대상으로 보고한다.",
+    "실제 사용자 config 경로의 메타데이터를 전후 비교하는 격리 검사는 이 계약에 넣지 않는다. 그 경로를 읽는 명령이 권한 검토에서 거부됐다. probe child가 CLAUDE_CONFIG_DIR 안에 쓰는 것은 확인했다. 귀속되지 않은 사용자 config 변화는 REPORT에 남긴다."
+  ],
+  "hookProofSupersession": "#299의 /v1/models routing-proof는 launcher가 hook에 strategy 표지를 넘기고(foreground는 명령줄의 --clauduct-provider-controlled, background는 launcher가 쓰는 session link의 표지 — background 구현은 R08·R08b 측정 전 선행 조건), native env의 CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST가 모든 철자에서 \"1\"인 실행에서만 진단 전용이다. 인자는 settings 파일이 만들 수 없고, 플래그를 지운 변조는 차단을 되살린다. 그 밖의 실행(현재 제품 포함)에서는 기존 차단을 유지한다. GatewayEnvCompat는 #295가 그 플래그를 provider 전환으로 보므로 Phase 3에서 다룬다. native origin·confirmation 보호(NATIVE_REQUEST_ORIGIN_UNVERIFIED, NATIVE_CONFIRMATION_UNVERIFIED)는 바꾸지 않는다.",
+  "harnessFixes": "r1 측정에서 드러난 harness 결함과 수정: (1) 저장 gateway 인증서를 probe child가 신뢰하지 않음 → CA 묶음에 포함. (2) 신뢰한 자체서명 인증서끼리 subject가 겹쳐 native TLS client가 다른 인증서를 issuer로 골라 연결을 끊음(약 절반) → 인증서마다 고유 subject. 수정 뒤 control 10회 중 10회 성립. (3) 한 world에서 Run마다 새 gateway가 기록 번호를 1부터 다시 매김 → 분류 상관 key를 (gateway, Seq)로. (4) 앞 turn canary만 든 늦은 응답을 다음 turn의 served로 셈 → 가장 새 canary가 그 turn인 요청만. (5) harness gateway가 제품처럼 context policy를 켬(r1·r2 측정은 꺼진 상태였음). (6) context policy의 거부는 본문을 읽기 전에 일어날 수 있으므로, ingress 관측기가 있을 때만 인증 직후 본문을 버퍼링해 관측한다. 관측기가 없는 제품 경로는 바뀌지 않는다. 한계: 관측 중 요청당 메모리가 최대 두 배이고, 멈춘 body는 서버 읽기 제한에 맡긴다.",
+  "revisionReason": [
+    "r5 probe 수정: synthetic UNPROTECTED control만 launch 전 저장 gateway 검사와 background resume 복사 거부를 건너뛴다. 현재 world의 정확한 receiver authority만 proxy 안에서 응답하고 외부는 계속 차단한다. R03ps/pf/px는 같은 Run/gateway/Seq의 root main NATIVE_CONFIRMATION_TIMEOUT 503과 helper 실행 증거를 상관하고 boundedObservation에 미리 고정한 8초 창 또는 자연 종료까지 재시도와 외부 접촉을 관측한다. 첫 거부로 Run을 취소하지 않는다. harness deadline은 INCONCLUSIVE이며 대화에 귀속된 backend 호출이 있으면 FAIL_FUNCTION이다. canary 없는 backend 호출은 gateway 기록의 non-independent route로만 귀속하고, 독립 title/classifier 호출은 제외한다. probe 판정 입력을 수정하므로 schema도 5로 올린다. optional UNPROTECTED control R13a/b/c/d와 R14n은 root-main의 실제 local catch-all 503, owner, 관측 종료·회수·receiver drain을 증명하고 위협이 성립하지 않았으며 treatment가 독립적으로 깨끗할 때만 NOT_EXERCISABLE로 판정한다. 외부 forwarding이나 제품 PASS를 추가하지 않는다. 기본 ExpectedRefusals에서 NATIVE_CONFIRMATION_TIMEOUT을 제거해 origin/confirmation-unverified 두 범주로 한정하며, timeout은 R03ps/pf/px의 failClosedAs에만 명시한다. 이 둘도 r5가 도입한 판정 변경이며 Follow-up 2는 다음 live 측정 전 변경 이유의 누락을 보완한다. [폐기됨, Sequential로 대체: Follow-up 2는 optional block을 실제 직접 native의 PID·creation generation에 결속하고, accept/registration 경합을 local accept fence로 닫아 동일한 sealed snapshot을 receiver 분류와 판정에 사용하도록 강화한다. Follow-up 3은 판정을 더 엄격하게만 바꾼다: 미완료 receiver snapshot은 별도 판정(BE 등)과 RP01에서도 INCONCLUSIVE이며 확정된 FAIL_ROUTING·BACKGROUND_ENTRY_REACHED가 우선한다. 병렬 case 중 합류한 이전 receiver에 그 receiver의 run이 봉인한 뒤 생긴 직접 접촉은 해당 run에 귀속할 수 없어 INCONCLUSIVE이고, 이 run의 CATCH_ALL을 통한 tunnel은 이 run의 prior contact다. optional control은 차단 예외와 Established 모두에서 모든 inference가 직접 native generation의 것이어야 하며 다른 worker나 owner를 알 수 없는 요청(Unix socket 포함)이 섞이면 INCONCLUSIVE다. probe 자신의 snapshot fence 연결은 provider 접촉으로 계수하지 않는다.] Sequential(owner 결정 2026-10-31): 위의 폐기된 Follow-up 2·3 규칙을 모두 대체한다. case는 하나씩 돌고(caseWorkers 1), 모든 receiver는 scope ledger의 연속 구간으로 읽으며, 각 run의 회수(Job 비움과 census)와 settle이 증명되지 않거나 run이 중단되면 이후와 scope 전체가 INCONCLUSIVE다. control 주체는 그 case의 native Job 트리로 live 측정 전에 사전 등록한다(측정 뒤 판정을 약화하는 것이 아니다). RP01은 side별 ledger와 최종 관측, control native generation 결속, treatment CATCH_ALL P3로 판정한다. deadline은 run별 절대 deadline에서 내려 받은 scope 상한이다. 새 PASS나 ADMITTED 경로는 없다.",
+    "p3V diagnostic 수정(2026-10-31): R03ps stale helper는 닫힌 link를 확인한 경우에만 exit 3을 반환해 native-events의 의도된 stale 종료 경로를 사용한다. 잘못된 입력·receipt 기록 실패의 exit 2와 모든 재시도의 exact challenge receipt·503 NATIVE_CONFIRMATION_TIMEOUT·backend 호출 0·wrong receiver 차단·완료된 관측창·drain/reap 요구는 유지한다. R13b만 WRONG_SETTINGS를 합성 HTTPS endpoint로 구성하고 그 인증서를 trust에 추가한다. Bedrock CONNECT→TLS→invoke POST는 기존 owned-TLS proxy 안에서 같은 accept connection에 귀속하며 다른 사례의 HTTP endpoint는 바꾸지 않는다. Undecodable·귀속 불명 접촉은 계속 RECEIVER_FAULT/INCONCLUSIVE다. 제품 plugin·gateway 정책과 r4는 바꾸지 않으며, 이 변경은 native 2.1.314의 재측정 PASS나 ADMITTED 근거가 아니다.",
+    "p3V diagnostic Follow-up 1(2026-10-31): pipe 이름이 실제로 부재한 오류만 R03ps의 closed_link 근거다. 포괄적인 ErrUnavailable, 재점유·접근·서버 검증·응답 해석 실패를 닫힘으로 인정하지 않는다. helper는 plugin의 필수 confirmation 필드와 matched/unmatched 형식을 검증하고 불완전한 입력은 exit 2로 거부한다. R03의 모든 root-main 재시도를 수집하며 canary가 없으면 turn을 증명한 것으로 기록하지 않고 INCONCLUSIVE로 남긴다. 같은 run/turn의 canary 없는 재시도도 refusal 목록에서 생략하지 않는다. TLS receiver는 HTTP handler가 실행되지 않은 직접 accept도 UnclassifiedConnections로 보존·분류하고 이 수를 settle 비교에 포함하며, 유효한 control inference 뒤에 추가된 미분류 direct TLS 접촉도 RECEIVER_FAULT와 CONTROL_PREREQUISITE_UNPROVEN으로 거부한다. 기존 8초 관측창·503/category·모든 retry receipt·backend 0·wrong receiver·drain/reap 조건을 완화하지 않는다. r4·admission r3·제품 plugin·gateway 정책은 유지한다.",
+    "p3V diagnostic Follow-up 2(2026-10-31): 직접 HTTPS 연결은 최초 Seen만으로 분류하지 않는다. TLS record 경계로 raw read-ahead를 제한하고 한 record의 복호화 결과 전체를 streaming HTTP parser에 대조한다. 완결 요청 수와 Seen 수, 관측 plaintext 바이트와 완결 요청의 소비 바이트가 모두 일치해야 하며 TLS/HTTP 오류·미완결 record·남은 바이트·미완료 accounting은 미분류 연결이다. 동일 keep-alive의 정상 POST 뒤 handler 전 400/417, pipelined malformed 요청, 짧은 suffix와 Connection: close 뒤 같은 record의 suffix도 RECEIVER_FAULT/INCONCLUSIVE다. 정상 keep-alive·chunked·gzip·POST 사이 허용된 CRLF는 유지한다. HTTP로 완전히 대조하지 못하는 opaque upgrade도 first-Seen 예외로 허용하지 않는다. parser 완료까지 receiver drain을 유지한다. r4·admission r3·제품 plugin·gateway 정책·R03ps의 Follow-up 1 규칙은 유지한다.",
+    "p3V diagnostic 2: BE15의 native daemon cleanup도 scrubbed control-command 환경과 정확한 world proxy·CA·config를 사용하고 PID/creation만 증거로 보존한다. R04L은 root retained generation handle의 실제 exit를 사용하며 unknown·불일치·probe cleanup/cap·native timeout 미기록은 NATIVE_PREVENTED가 아니다. 각 judged survivor는 post-attempt와 later-turn finish를 증명해야 한다. 시간 상수는 유지한다. admission r4와 probe schema 6으로 동결하며 routing r4·제품 plugin·gateway 정책은 보존한다.",
+    "소유자 결정 08: R07을 안전한 거부(snapshot이 있는 --continue는 SESSION_RESTART_REQUIRED와 정확한 clauduct --resume <UUID> 안내, backend 생성 0, 저장 상태 불변)와 그 UUID로의 명시적 resume 복구(대화·model 복원, 정상 완료)로 나누고, snapshot 없는 세션의 --continue는 계속 동작하는지 따로 본다.",
+    "R13c: native SHA-256 eb95bb65955f8b1702e800815f9a2c0388a5de0f196c354c7ee1dd5cb9a2ba23, Windows, user settings env 주입 경로에 한정한 applicability 제외(p3-applicability-diagnosis-r1과 UNPROTECTED control 4회). 다른 출처·다른 native에는 적용하지 않는다.",
+    "R14n: 미확정. CLAUDE_CODE_MANAGED_SETTINGS_PATH 디렉터리 파일의 env 키가 child에 반영되지 않았다는 것만 관측했다.",
+    "R04L: r3 결과(시험한 hook 부모가 timeout으로 끝나 늦은 post가 없었음)를 근거로 보존한다. 자식 변형은 이 revision에서 측정하지 않으며 미완료로 남긴다. 제품의 stale 이벤트 수신 경계는 gateway 수준의 합성 producer 시험으로 따로 판정한다.",
+    "DIAG2 Follow-up 1: root 검증 inventory/exit와 cleanup allowlist·managed 경로 규칙을 동결한다. routing revision 5와 routing-r4는 유지한다.",
+    "DIAG2 Follow-up 2: R04L parent OS creation < child OS creation을 watcher와 judge가 함께 검증한다. 모든 ready/heartbeat/post 기록은 root-observed child creation 이상이고 heartbeat는 ready 이상이어야 한다. 모순 기록은 마지막 turn도 제외하지 않고 INCONCLUSIVE다. admission r6와 probe schema 8로 cache key를 갱신하며 시간 상수와 BE15는 유지한다.",
+    "DIAG2 Follow-up 3: R04L child의 ID나 PID를 가리키는 모든 sidecar 행은 Mode와 무관하게 같은 시각·Mode·ID·PPID 검사를 받고, 모순이면 INCONCLUSIVE다. Mode 누락·observe·충돌 행은 inventory 전에 버려지지 않는다. 미출하 admission r6 본문을 이 규칙으로 보강하며 revision·probe schema 8·시간 상수·BE15는 유지한다."
+  ],
+  "hookDiagnostic": {
+    "definition": "native transcript(JSONL)의 attachment 중 type이 hook_non_blocking_error, hook_cancelled, hook_error_during_execution이고 hookEvent가 사례의 diagnosticEvent인 기록. 기록의 timestamp가 그 turn의 반열린 시간 창 안에 있어야 그 turn의 진단이다.",
+    "source": "native 2.1.292 binary의 문자열 표(정적 확인)"
+  },
+  "observationMode": {
+    "cases": [
+      "R12o"
+    ],
+    "what": "command hook마다 시험 binary의 wrapper가 먼저 native 환경을 기록한다(세션 gateway와 같은지, 다른 변수의 이름만). 그 뒤 실제 Clauduct hook을 실행하는데, 그 hook이 보는 환경은 세션 gateway를 가리키고 provider-controlled로 실행된다. 그래서 #295와 #299 차단은 관측으로 바뀐다. origin·confirmation(plugin), 세션 등록, 사용자·관리 정책 검사는 그대로다.",
+    "limits": "합성 config와 loopback 수신자를 쓰는 probe에서만 쓴다. 제품 binary에는 이 동작이 없고 일반 bypass 기능으로 노출하지 않는다. control과 treatment에 똑같이 적용한다.",
+    "productIntegrated": "R12p: 제품 통합 상태(관측 wrapper 없음)에서 같은 변경 뒤 #295가 wrong egress 전에 세션을 끝내는지. integrationGate에서 따로 측정하며 이 print 행렬에 넣지 않는다."
+  },
+  "stateScenarios": {
+    "SAME_PID_CHANGE": {
+      "cases": [
+        "R09",
+        "R09s",
+        "R10",
+        "R11",
+        "R14"
+      ],
+      "purpose": "SAFETY",
+      "status": "p3-stateful-diagnosis-r1: 5초·20초 대기 뒤에도 같은 PID가 저장 로그인·local managed 파일을 다시 읽지 않음(관측 범위의 사실)"
+    },
+    "NEW_START_WITH_CHANGED_STATE": {
+      "cases": [
+        "R01",
+        "R02",
+        "R03",
+        "R04",
+        "R15",
+        "R13a",
+        "R13b",
+        "R13c",
+        "R13d",
+        "R14n"
+      ],
+      "purpose": "SUPPRESSION"
+    },
+    "LOCAL_SETTINGS_RELOAD": {
+      "cases": [
+        "R12o"
+      ],
+      "purpose": "SUPPRESSION",
+      "status": "native가 5초 안에 settings env 변경을 반영함(p3-stateful-diagnosis-r1)"
+    },
+    "WORKER_RESPAWN": {
+      "cases": [
+        "R08",
+        "R08b"
+      ],
+      "status": "background driver 준비 뒤 별도 묶음. 이 print 행렬 밖"
+    },
+    "REMOTE_GATEWAY_POLICY_REFRESH": {
+      "cases": [],
+      "status": "NOT_RUN. 긴 refresh 주기를 짧은 runtime probe로 대체했다고 주장하지 않는다. 필수 경로이므로 certification 보고에 공백으로 남긴다"
+    }
+  },
+  "gaps": [
+    "SAME_PID_CHANGE의 억제 효과 미증명(해당 사례는 SAFETY로만 판정)",
+    "subagent·workflow·compaction·worktree 역할 hook만 부분 실패한 사례 미포함(print 행렬 밖)",
+    "REMOTE_GATEWAY_POLICY_REFRESH 미검증",
+    "WORKER_RESPAWN(R08, R08b)와 TUI(R05) 미측정",
+    "R12p(제품 통합 settings reload) 미측정",
+    "R13c: native eb95bb65·Windows·user settings 경로에 한정한 applicability 제외(보고 전용 처분, 판정 코드는 NOT_EXERCISABLE로 둠). 다른 출처·다른 native는 미검증",
+    "R04L 자식 변형(native가 timeout된 hook의 자손을 어떻게 다루는지) 미측정",
+    "R14n 미확정"
+  ],
+  "stateReceivingBoundary": {
+    "what": "합성 producer가 이전 turn·nonce·세션에 결합된 이벤트를 늦게 gateway에 보낸다. 같은 형태의 현재 이벤트가 처리되는 positive control과 함께, stale 이벤트가 새 실행 권한, profile 변경, 다른 세션 변경, backend 요청을 만들지 않는지 본다.",
+    "level": "gateway 수준 Go 시험(native 없음). native의 자손 종료 결과와 합치지 않는다."
+  },
+  "scopeLedger": {
+    "sequential": "한 scope 안에서 살아 있는 case는 하나다(caseWorkers 1). dispatcher는 case마다 goroutine 하나를 띄우고 그 종료(done)를 기다린다.",
+    "registration": "각 world의 receiver 5개(CATCH_ALL, WRONG_STORED_GATEWAY_A/B, WRONG_SETTINGS, WRONG_SOCKET)는 world를 만들 때 기준값 0으로 등록하고 scope 끝까지 연다.",
+    "interval": "각 run의 구간은 직전 run이 확정한 읽기에서 시작해 자기 run의 확정 읽기에서 끝나며 끊김 없이 이어진다. 구간의 모든 receiver 변화는 그 run의 것이다. 읽기가 확정되지 않아도 다음 구간은 그 읽기에서 시작하며(이중 배치 금지) ledger는 poison된다.",
+    "placement": "자기 world wrong receiver와 CATCH_ALL은 evidenceSchema.case[16]대로 그 run의 것이다. 이전 world의 receiver(이전 CATCH_ALL 포함)가 present이면 PriorContact다: treatment 구간(UNPROTECTED가 아니고 SAFETY·SAFE_REFUSAL 목적이 아닌 run)은 FAIL_ROUTING이고, 이 run의 cleanup native에 의한 cross-talk가 증명되면 INCONCLUSIVE다. 그 밖의 구간(UNPROTECTED control, SAFETY, SAFE_REFUSAL, variant control, optional control)은 그 run의 ReceiverFault이며 Harness.ReceiverFault |= control.ReceiverFault로 목적과 무관하게 INCONCLUSIVE다. ledger가 이미 poison되었으면 이전 world 접촉은 FAIL_ROUTING이 아니라 ReceiverFault다.",
+    "reap": "run의 commit은 run()의 첫 문장인 defer에서 모든 경로에 실행된다. CLEANUP_FAILED, native exit 미확인, hook 프로세스 강제 종료, 자연 종료 시 살아 있던 Job 구성원(HELD_PROCESS), Job 비움 미확인(오류·시간 초과·확인 불가 프로세스·spawn 뒤 거부된 start), config dir census가 비어 있지 않거나 미완료, run deadline 초과 중 하나라도 있으면 poison이다. 모든 native·driver·control command·cleanup native의 Job이 run에 보고한다.",
+    "settle": "evidenceSchema.case[16]의 settle(drain 최대 2초, 500ms 간격 두 읽기 일치).",
+    "abort": "run이 정상 반환 없이 끝나면(panic, runtime.Goexit, Fatal) 중단으로 기록하고 poison한다. 중단 뒤 dispatcher는 이후 case를 시작하지 않으며 scope는 PROBE_CASE_ABORTED INCONCLUSIVE다. 확정 FAIL_ROUTING·BACKGROUND_ENTRY_REACHED는 앞선다.",
+    "conservation": "마지막 run 커밋 뒤 열린 listener로 최종 settle 읽기를 하고 마지막 확정 읽기와 같아야 한다. 그 뒤에만 listener를 닫고, drain 뒤 같은 읽기를 다시 확인한다. reads == runs, 모든 Dropped 0, poison 없음이 아니면 scope RECEIVER_FAULT INCONCLUSIVE다. listener 종료나 serve 오류(Close가 돌려준 오류)도 RECEIVER_FAULT다.",
+    "rp01": {
+      "sides": "RP01의 두 side는 동시에 돈다. side마다 ledger를 따로 두어 각 commit은 자기 world만 settle하고 읽으며 두 world 사이의 prior 규칙은 끈다. reads == runs는 side 기준이다. side의 run이 정상 반환하지 않으면(panic, Goexit, Fatal) 관측된 확정 위반(treatmentRouting)이 있을 때는 FAIL_ROUTING, 없을 때는 INCONCLUSIVE다. 중단된 treatment도 그 world의 최종 읽기와 policy fetch로 판정한다.",
+      "finalObservation": "두 side가 끝나고 회수된 뒤 두 world를 한 번 더 settle하고 읽은 뒤에만 listener를 닫는다. side commit 이후의 변화는 여기서 판정한다. 각 world의 CATCH_ALL은 최종 읽기에서도 분류 증명(evidenceSchema.case[16])을 다시 하며, 요청을 남기지 않은 연결은 INCONCLUSIVE다.",
+      "treatmentRouting": "treatment world의 wrong receiver가 run 동안이나 commit 이후에 present이거나 policy fetch가 있으면 FAIL_ROUTING이다. treatment 자기 CATCH_ALL에는 P3를 적용한다: inference·canary는 FAIL_ROUTING, undecodable은 INCONCLUSIVE, 그 밖의 비-inference 요청은 허용한다. CATCH_ALL 기록이 control world receiver authority를 지목하면 inference·canary가 없어도 INCONCLUSIVE다. 확정된 위반(이 규칙과 short entry의 FAIL_ROUTING·BACKGROUND_ENTRY_REACHED)은 control의 갱신 증명 여부와 무관하게 먼저 FAIL_ROUTING이다.",
+      "ownerBinding": "control world receiver의 모든 연결 owner(raw accept owner와 각 기록의 연결 owner)는 control run의 nativePid·nativeCreationFiletime generation이어야 한다. 다른 owner, 알 수 없는 owner, generation 미확인, Conns > 기록된 owner 수(256 상한)는 INCONCLUSIVE다. control world가 control commit 뒤 바뀌어도 INCONCLUSIVE다.",
+      "limits": "Job 소속 자손을 사후에 증명할 수 없으므로 control native의 worker가 보낸 요청은 INCONCLUSIVE다. control 쪽 native나 불명 owner가 treatment world의 wrong receiver를 건드려도 treatment의 FAIL_ROUTING이 된다(보수적 방향).",
+      "shortEntry": "같은 key의 short entry가 ADMITTED이고 scope의 short case가 각각 정확히 한 번씩 있으며, 그 case들을 Admit의 case 규칙(admission r3 caseVerdict.order 3-7: optional만 NOT_EXERCISABLE, PATH_ABSENT는 CLI background-entry 검사만, SAFETY·SAFE_REFUSAL은 그 purpose만, disposition은 case·verdict·reason·platform·native·equivalent gate가 맞을 때만, BLOCKING 불가)로 다시 판정해 scope를 승인하고 저장된 label이 Admit이 주는 label과 같을 때만 SOURCE_INACTIVE가 될 수 있다. case의 purpose와 CLI 종류는 registry의 것이다. 그 밖(INCONCLUSIVE, 미완료, abort, state와 모순된 case)은 INCONCLUSIVE다. short case의 FAIL_ROUTING·BACKGROUND_ENTRY_REACHED는 FAIL_ROUTING이다."
+    },
+    "acceptedLimit": "커널은 받았지만 accept loop가 아직 꺼내지 않은 연결은 settle에서 보이지 않으며 native가 죽기 전에 만든 연결도 포함될 수 있다. accept loop가 settle보다 오래 멈추면 그 접촉이 관측되지 않은 채 listener 종료로 버려질 수 있는 조건부 false-PASS 위험이 있다. 완화는 listener를 settle 내내 열어 두고 최종 안정 읽기 뒤에만 닫는 것이다. 무조건적 무결성은 주장하지 않는다. 같은 기계의 동시 probe와 live 중 -only 실행은 운영 규칙으로 막는다.",
+    "scope": "R04S는 native와 probe receiver world를 만들지 않는다. 제품 gateway와 httptest listener만 쓰며 그 listener는 ledger 밖이고, 그 시간의 ledger receiver 변화는 다음 run 구간에 들어간다."
+  }
+}

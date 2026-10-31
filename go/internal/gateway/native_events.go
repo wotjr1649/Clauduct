@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -22,16 +24,28 @@ import (
 type nativeEventState struct {
 	confirmationsRequired bool // immutable launcher requirement
 	confirmationGate      chan struct{}
-	confirmationFailed    atomic.Bool // latched confirmation or cancellation verification failure
-	mu                    sync.Mutex
-	directory             string
-	verified              bool
-	invalid               int64
-	cancellations         map[*nativeCancellation]struct{}
-	confirmations         map[string]*pendingConfirmation
+	confirmationFailed    atomic.Bool         // latched shared failure: the control directory or storage (all natives)
+	failedNatives         map[processKey]bool // mu; natives whose own confirmation or cancellation proof failed
+	violatedSessions      map[string]bool     // mu; sessions whose own native claimed another scope; never cleared
+	// Confirmation answers not taken, by reason (#319 decision 18f): bounded counts only.
+	foreignAnswers      atomic.Int64 // another native's answer to a live challenge
+	staleAnswers        atomic.Int64 // an answer for a request that already ended
+	unidentifiedAnswers atomic.Int64 // the OS named no native for the answering helper, or none for the request
+	ownerFailures       atomic.Int64 // the requesting native's own handshake or cancellation receipt failed
+	unanswered          atomic.Int64 // no answer from the requesting native in time; that request alone was refused
+	mu                  sync.Mutex
+	directory           string
+	verified            bool
+	invalid             int64
+	cancellations       map[*nativeCancellation]struct{}
+	confirmations       map[string]*pendingConfirmation
+	issued              map[string]map[string]toolIssuance
+	resumedSession      string // immutable explicit startup history, not an execution lease
+	resumedHistory      map[string]toolIssuance
 }
 
 var errNativeConfirmations = errors.New("NATIVE_CONFIRMATION_UNVERIFIED")
+var errNativeConfirmationTimeout = errors.New("NATIVE_CONFIRMATION_TIMEOUT")
 var errNativeOriginUnverified = errors.New("NATIVE_REQUEST_ORIGIN_UNVERIFIED")
 
 // teammateAddress is an Agent teams teammate's address, <name>@<team>. Native 2.1.289
@@ -106,6 +120,17 @@ type NativeEventReport struct {
 	ReplayStateFailed bool `json:"replayStateFailed"`
 	// RetiredTurns is how many finished child turns gave their keys back.
 	RetiredTurns int64 `json:"retiredTurns"`
+	// ForeignAnswers counts confirmation answers from a native other than the one that sent the
+	// request; each was told the request is gone and decided nothing (#319 decision 18e).
+	ForeignAnswers int64 `json:"foreignAnswers"`
+	// StaleAnswers answered a request that had already ended; UnidentifiedAnswers came from a
+	// helper (or for a request) whose native the OS did not name -- neither decided anything.
+	// OwnerFailures is how often a native's own proof failed and stopped that native;
+	// Unanswered how often a native's helper did not answer in time, stopping nothing.
+	StaleAnswers        int64 `json:"staleAnswers"`
+	UnidentifiedAnswers int64 `json:"unidentifiedAnswers"`
+	OwnerFailures       int64 `json:"ownerFailures"`
+	Unanswered          int64 `json:"unanswered"`
 }
 type nativeTurnReceipt struct {
 	Session string `json:"session"`
@@ -188,11 +213,17 @@ func (g *Gateway) readNativeJSON(name string, fields []string, out any) (found b
 	}
 	defer f.Close()
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 2048 {
+	if err != nil {
+		return false, errNativeStorage
+	}
+	if !info.Mode().IsRegular() || info.Size() > 2048 {
 		return false, errDelegationUnverified
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, 2049))
-	if err != nil || len(raw) > 2048 {
+	if err != nil {
+		return false, errNativeStorage
+	}
+	if len(raw) > 2048 {
 		return false, errDelegationUnverified
 	}
 	if _, err := wire.Fields(raw, fields); err != nil {
@@ -202,20 +233,57 @@ func (g *Gateway) readNativeJSON(name string, fields []string, out any) (found b
 	return err == nil, err
 }
 
+// journalAbsent reports whether err says path is not there and it really is not: the nearest
+// component that exists is a real directory. Windows also reports ErrNotExist for a path below a
+// regular file (a journal directory or a parent replaced by a file), which is damage, not an
+// empty journal; anything unverifiable counts as not absent. openProjects classifies the same way.
+func journalAbsent(path string, err error) bool {
+	if !errors.Is(err, os.ErrNotExist) {
+		return false
+	}
+	for current := filepath.Clean(path); ; {
+		info, statErr := os.Lstat(current)
+		if statErr == nil {
+			return current != filepath.Clean(path) && info.IsDir()
+		}
+		parent := filepath.Dir(current)
+		if !errors.Is(statErr, os.ErrNotExist) || parent == current {
+			return false
+		}
+		current = parent
+	}
+}
+
+// listActiveJournal lists the active journal; a test replaces it to make the listing fail.
+var listActiveJournal = os.ReadDir
+
 // Each attempt has a unique filename. A zero-byte ready marker is published only
 // after the body write completes. Seeing an unfinished newer attempt refuses the
 // old turn; callers pin the returned receipt for the whole request.
-func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, found bool, err error) {
+func (g *Gateway) readCurrentNativeTurn(session, id string) (receipt nativeTurnReceipt, found bool, err error) {
 	if g.nativeEvents.directory == "" {
 		return
 	}
-	name := "root"
-	if id != "" {
-		if !correlationShape.MatchString(id) {
+	if id != "" && !correlationShape.MatchString(id) {
+		return receipt, false, errDelegationUnverified
+	}
+	if id == "" && !correlationShape.MatchString(session) {
+		// A request naming no session cannot be matched to any conversation's root: with no
+		// root journal at all (native --bare) there is nothing to match; with any, it is refused.
+		active := filepath.Join(g.nativeEvents.directory, "active")
+		entries, listErr := listActiveJournal(active)
+		if listErr != nil && !journalAbsent(active, listErr) {
+			// Only an absent journal says there is no root; one that cannot be listed says nothing.
 			return receipt, false, errDelegationUnverified
 		}
-		name = "child-" + id
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "root-") {
+				return receipt, false, errDelegationUnverified
+			}
+		}
+		return receipt, false, nil
 	}
+	name := nativeScopeName(session, id)
 	root, err := os.OpenRoot(g.nativeEvents.directory)
 	if err != nil {
 		return receipt, false, err
@@ -223,7 +291,7 @@ func (g *Gateway) readCurrentNativeTurn(id string) (receipt nativeTurnReceipt, f
 	defer root.Close()
 	directory := "active/" + name
 	dir, err := root.Open(directory)
-	if errors.Is(err, os.ErrNotExist) {
+	if err != nil && journalAbsent(filepath.Join(g.nativeEvents.directory, filepath.FromSlash(directory)), err) {
 		return receipt, false, nil
 	}
 	if err != nil {
@@ -306,7 +374,7 @@ func (g *Gateway) pinNativeTurn(r *http.Request, entry *record) (turn *nativeTur
 		}
 		results.mu.Unlock()
 	}
-	receipt, found, err := g.readCurrentNativeTurn(agent)
+	receipt, found, err := g.readCurrentNativeTurn(r.Header.Get("X-Claude-Code-Session-Id"), agent)
 	entry.turnValid = err == nil && (!found || validActiveReceipt(g.selection, receipt, session, agent))
 	if found && entry.turnValid {
 		entry.nativeTurn = &receipt
@@ -348,7 +416,8 @@ func (g *Gateway) nativeEventReport() NativeEventReport {
 	n := &g.nativeEvents
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired}
+	return NativeEventReport{Configured: n.directory != "", Observed: n.verified, Invalid: n.invalid, ReplayKeys: keys, ReplayIdentities: identities, ReplayStateFailed: failed, RetiredTurns: retired, ForeignAnswers: n.foreignAnswers.Load(),
+		StaleAnswers: n.staleAnswers.Load(), UnidentifiedAnswers: n.unidentifiedAnswers.Load(), OwnerFailures: n.ownerFailures.Load(), Unanswered: n.unanswered.Load()}
 }
 
 func (g *Gateway) applyNativeTurn(id string, receipt nativeTurnReceipt) bool {
@@ -618,4 +687,82 @@ func (g *Gateway) FinalizeNativeResults() {
 	}
 	r.mu.Unlock()
 	g.delegations.saveWorkflowCheckpoints()
+}
+
+// confirmationBlocked: the launch's shared latch, or this native process's own (#319
+// decision 18e). The zero key is a launch without native identity: only the shared latch.
+func (n *nativeEventState) confirmationBlocked(native processKey) bool {
+	if n.confirmationFailed.Load() {
+		return true
+	}
+	if native == (processKey{}) {
+		return false
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.failedNatives[native]
+}
+
+// latchConfirmation stops confirmations for the native process whose own handshake or
+// cancellation receipt failed; other natives go on. Without native identity it stops the
+// launch, as before. Shared trust state (the control directory, a storage error) is latched
+// by its caller for everyone.
+func (n *nativeEventState) latchConfirmation(native processKey) {
+	n.ownerFailures.Add(1)
+	if native == (processKey{}) {
+		n.confirmationFailed.Store(true)
+		return
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.failedNatives == nil {
+		n.failedNatives = map[processKey]bool{}
+	}
+	n.failedNatives[native] = true
+}
+
+// errNativeStorage: the events directory itself failed a read (stat, read), as opposed to a
+// document one native wrote being wrong. Callers still see errDelegationUnverified.
+var errNativeStorage = fmt.Errorf("%w: native events storage", errDelegationUnverified)
+
+// storageFailure reports whether err is damage to state every native relies on -- the
+// directory failing an open, stat or read -- rather than one native's document or answer
+// (#319 decision 18f). Only that latches the launch.
+func storageFailure(err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, errNativeStorage):
+		return true
+	case errors.Is(err, errDelegationUnverified), errors.Is(err, wire.ErrMalformed), errors.Is(err, errNativeStepUnmatched),
+		errors.Is(err, errNativeConfirmations), errors.Is(err, errCancellationPending):
+		return false
+	}
+	return true // an OS error opening the directory or a file in it
+}
+
+// taintSession records that a session's own native answered for another scope. The session gets
+// no confirmation for the rest of this gateway, from any native process: a respawn or a new
+// process does not clear it. Caller holds n.mu.
+func (n *nativeEventState) taintSession(session string) {
+	if n.violatedSessions == nil {
+		n.violatedSessions = map[string]bool{}
+	}
+	n.violatedSessions[session] = true
+}
+
+func (n *nativeEventState) sessionTainted(session string) bool {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.violatedSessions[session]
+}
+
+// nativeScopeName names one scope's files in the events directory every native process of the
+// launch shares: a child by its Agent id, a conversation's root by its session. One root name
+// for all let two natives' root turns overwrite each other's step (#319 decision 18f).
+func nativeScopeName(session, agent string) string {
+	if agent != "" {
+		return "child-" + agent
+	}
+	return "root-" + session
 }

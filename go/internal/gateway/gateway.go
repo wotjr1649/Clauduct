@@ -11,6 +11,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -24,6 +25,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -32,6 +34,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/httpguard"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -110,7 +113,22 @@ type Gateway struct {
 
 	received   atomic.Int64
 	modelLists atomic.Int64
-	// routingMismatch is set when this session's own hook saw native use another endpoint (#295).
+	// ingress, when set, sees each authenticated inference body once it is read in full.
+	ingress atomic.Pointer[func(Ingress)]
+	// requestObserver, set only by tests, sees every request that passed the boundary check.
+	requestObserver atomic.Pointer[func(*http.Request)]
+	// nativeImage, once set, makes every connection's native process an OS fact (native_identity.go).
+	nativeImage atomic.Pointer[string]
+	identify    identifyFunc // nil is the OS lookup; tests replace it
+	// commandLine reads the same OS process at its accepted creation time; tests replace it.
+	commandLine func(uint32, int64) string
+	// discovered holds each native process that asked this gateway for its model list.
+	discovered sync.Map // processKey -> struct{}
+	startedAt  int64
+	restoredAt atomic.Int64
+	// processStatus is the OS liveness and creation-time check; tests replace it.
+	processStatus func(uint32, int64) providercert.ProcessState
+	// routingMismatch is set by this session's hook or its failed uncontrolled proof.
 	routingMismatch atomic.Bool
 	// Counted rather than refused. A subagent whose registration has not arrived, or whose
 	// role has no route, runs on what the client asked for -- and these are how often that
@@ -168,11 +186,22 @@ type Gateway struct {
 // keeping the listener has no such window. The caller passes the resulting address to the
 // child, so there is never a guess about which port is live.
 func Start(transport upstream.Transport) (*Gateway, error) {
+	return StartAt(transport, 0)
+}
+
+// StartAt is Start on a given 127.0.0.1 port; 0 lets the system choose. A regenerated
+// background resident binds the port its native job was dispatched with (#319 decision 18c):
+// that job's settings name it and cannot be changed. A port another process holds is an error,
+// never a different port.
+func StartAt(transport upstream.Transport, port int) (*Gateway, error) {
+	if port < 0 || port > 65535 {
+		return nil, errors.New("GATEWAY_PORT_INVALID")
+	}
 	physical, _, err := systemMemory()
 	if err != nil {
 		return nil, err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +215,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 	}
 	closing, stopClose := context.WithCancel(context.Background())
 	g := &Gateway{
+		startedAt:    time.Now().UnixNano(),
 		closing:      closing,
 		stopClose:    stopClose,
 		listener:     listener,
@@ -211,6 +241,7 @@ func Start(transport upstream.Transport) (*Gateway, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return context.Background() },
 	}
+	g.server.ConnContext = g.connContext
 	go func() {
 		err := httpguard.Serve(g.server, listener, g.closing, maxRequestBytes)
 		if errors.Is(err, http.ErrServerClosed) {
@@ -302,7 +333,90 @@ func (g *Gateway) ClientVersion() string {
 // arrives.
 func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
 
-// RoutingMismatch reports whether a hook of this session found native configured for an
+// Ingress is one authenticated inference request as read in full. Seq is the request's record
+// number, which its outcome carries too.
+type Ingress struct {
+	// Context lets a probe observer correlate this authenticated body with its backend request.
+	Context      context.Context
+	Seq          int64
+	Path         string
+	RequestClass string
+	Body         []byte
+	// Header is the request's headers without its credentials (Authorization, X-Api-Key).
+	Header http.Header
+}
+
+// ObserveIngress registers fn to see each authenticated inference request body as soon as it
+// has been read in full, before any later admission check can refuse it. Provider
+// certification (P3, #320) needs to know what native sent to this gateway even when this
+// gateway then declines it; nothing else uses it and an unset gateway behaves as before. fn
+// runs on the request goroutine and must not keep the body. Set it before native starts.
+func (g *Gateway) ObserveIngress(fn func(Ingress)) { g.ingress.Store(&fn) }
+
+// ObserveRequests registers fn to see every request that passed the boundary check, before
+// any route handles it (#319 decision 18 request identity experiments). fn runs on the
+// request goroutine and must not read the body. The product never sets it.
+func (g *Gateway) ObserveRequests(fn func(*http.Request)) { g.requestObserver.Store(&fn) }
+
+// ObserveOutcome registers fn to see each request's final record when it closes: its outcome,
+// the refusal category if any, and the same Seq its ingress carried. No body is in it. fn runs
+// on the request goroutine before the request is released, so it must return promptly.
+//
+// Every recorded request reaches fn, including one refused before its credential was accepted.
+// While fn is set a record also carries Remote, the request's loopback client address, so fn can
+// name the process on the other end of that connection while it is still open (#319 decision
+// 18). Remote is never serialised. Set it before native starts.
+func (g *Gateway) ObserveOutcome(fn func(RequestRecord)) { g.ring.finished.Store(&fn) }
+
+func (g *Gateway) observeIngress(w http.ResponseWriter, r *http.Request, body []byte) {
+	if fn := g.ingress.Load(); fn != nil && *fn != nil {
+		header := r.Header.Clone()
+		header.Del("Authorization")
+		header.Del("X-Api-Key")
+		(*fn)(Ingress{Context: r.Context(), Seq: recordOf(w).seqNumber(), Path: r.URL.Path, RequestClass: r.Header.Get("X-Claude-Code-Request-Class"), Body: body, Header: header})
+	}
+}
+
+// observeIngressEarly gives an ingress observer an authenticated model request's body before
+// any check that may refuse it unread (a session boundary, for one), so a refusal can still be
+// matched to the request it refused. The handler then reads the same bytes followed by the
+// rest of the stream, under its own limit. Without an observer nothing is read here.
+func (g *Gateway) observeIngressEarly(w http.ResponseWriter, r *http.Request) *http.Request {
+	fn := g.ingress.Load()
+	if fn == nil || *fn == nil || r.Method != http.MethodPost || (r.URL.Path != "/v1/messages" && r.URL.Path != "/v1/messages/count_tokens") {
+		return r
+	}
+	// A read that fails here fails again for the handler, after the same bytes: the body's
+	// error is returned to every later read.
+	//
+	// Bounded as the handlers' own read is: a read deadline that is also the cancellation
+	// mechanism, ended by the request, the native turn's cancellation or the gateway closing.
+	head := func() []byte {
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		stopClosing := context.AfterFunc(g.closing, cancel)
+		defer stopClosing()
+		readCtx, finish := g.bindNativeCancellation(ctx, r, recordOf(w), true)
+		defer finish()
+		control := http.NewResponseController(w)
+		_ = control.SetReadDeadline(time.Now().Add(requestBodyTimeout))
+		stop := httpguard.WatchReadCancellation(readCtx, func() { _ = control.SetReadDeadline(time.Now()) })
+		defer stop()
+		head, _ := io.ReadAll(io.LimitReader(r.Body, maxRequestBytes+1))
+		return head
+	}()
+	r.Body = struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(bytes.NewReader(head), r.Body), r.Body}
+	if t, ok := w.(*tracked); ok {
+		t.body = r.Body
+	}
+	g.observeIngress(w, r, head)
+	return r
+}
+
+// RoutingMismatch reports whether this session's hook or routing proof found native configured for an
 // endpoint other than this gateway. The launcher ends the session on it (#295).
 func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 
@@ -310,9 +424,10 @@ func (g *Gateway) RoutingMismatch() bool { return g.routingMismatch.Load() }
 // request reached this gateway (#299).
 const RoutingProofPath = "/clauduct/routing-proof"
 
-// routingProofWait bounds how long that answer waits for a list request still in flight. The
-// hook's own budget is three seconds.
-const routingProofWait = 2 * time.Second
+// RoutingProofWait bounds how long a proof waits for a list request still in flight.
+const RoutingProofWait = 5 * time.Second
+
+var routingProofWait = RoutingProofWait
 
 // ExpectTools sets the tools this session's mode should be offered; a name no request
 // offered is reported as missing (#300). Nil, the default, compares nothing.
@@ -516,12 +631,21 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != statusPath && !helper {
 		entry := g.ring.open(r.Method, r.URL.Path)
 		defer entry.finish()
+		// Only for an outcome observer, and only a loopback client: nothing else reads it.
+		if fn := g.ring.finished.Load(); fn != nil && *fn != nil {
+			if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil && isLoopback(host) {
+				entry.client(r.RemoteAddr)
+			}
+		}
 		w = &tracked{ResponseWriter: w, rec: entry, body: r.Body, class: r.Header.Get("X-Claude-Code-Request-Class")}
 	}
 
 	if bad, ok := g.checkBoundary(r); !ok {
 		g.refuse(w, bad)
 		return
+	}
+	if observe := g.requestObserver.Load(); observe != nil {
+		(*observe)(r)
 	}
 
 	// Readiness answers without a credential because that is what the client sends: the
@@ -545,12 +669,18 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	// After the credential: the version is taken once and printed on every exit line, so
 	// only the child this session started may name it.
 	g.noteClient(r.Header.Get("User-Agent"))
+	r = g.observeIngressEarly(w, r)
 
 	if r.URL.Path == "/v1/messages" {
 		g.handleMessages(w, r)
 		return
 	}
 	if r.URL.Path == "/v1/messages/count_tokens" {
+		// Counting reaches the backend too: only the native process itself may ask.
+		if id, required := g.identityOf(r); required && (id.native == (processKey{}) || !id.direct) {
+			g.refuseIdentity(w)
+			return
+		}
 		g.handleCountTokens(w, r)
 		return
 	}
@@ -576,6 +706,10 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 			g.refuse(w, refuseMethod)
 			return
 		}
+		if g.closing != nil && g.closing.Err() != nil {
+			g.refuse(w, refuseClosed)
+			return
+		}
 		// Only the fact travels; the hook sends no endpoint and nothing is read.
 		g.routingMismatch.Store(true)
 		w.WriteHeader(http.StatusNoContent)
@@ -586,21 +720,86 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 			g.refuse(w, refuseMethod)
 			return
 		}
-		// #299: native asks its endpoint for the model list at start, before the session's
-		// first hook (measured 2.1.289, every start, foreground and background). A stored
-		// Claude apps gateway login sends that request -- and then the conversation -- to the
-		// stored gateway instead, with this session's endpoint left in place for the hooks to
-		// see. So the first hook asks whether the list came here, waiting briefly for a
-		// request still in flight. Nothing is read from any credential store.
-		deadline := time.Now().Add(routingProofWait)
-		for g.modelLists.Load() == 0 && time.Now().Before(deadline) {
-			time.Sleep(20 * time.Millisecond)
+		// #299: native asks its endpoint for the model list at start, possibly after a hook
+		// starts. A stored Claude apps gateway login sends that request -- and then the
+		// conversation -- to the stored gateway instead, while hooks still see this session's
+		// endpoint. The hook asks whether the list came here, waiting briefly for a request
+		// still in flight. Nothing is read from any credential store.
+		// With native identity required, the list must have come from this hook's own native
+		// process: another worker's list proves nothing about this one (#319 decision 18d).
+		proved := func() bool { return g.modelLists.Load() != 0 }
+		priorGeneration := false
+		if id, required := g.identityOf(r); required {
+			if id.native == (processKey{}) {
+				g.refuseIdentity(w)
+				return
+			}
+			proved = func() bool { _, seen := g.discovered.Load(id.native); return seen }
+			priorGeneration = g.restoredAt.Load() > id.native.created
 		}
-		if g.modelLists.Load() == 0 {
-			g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
+		waitStarted := time.Now()
+		closing := (<-chan struct{})(nil)
+		if g.closing != nil {
+			closing = g.closing.Done()
+		}
+		closingStarted, waitExpired := false, false
+		if !proved() {
+			timer := time.NewTimer(routingProofWait)
+			ticker := time.NewTicker(20 * time.Millisecond)
+			for !proved() {
+				select {
+				case <-closing:
+					closingStarted = true
+				case <-timer.C:
+					waitExpired = true
+				case <-ticker.C:
+				}
+				if closingStarted || waitExpired {
+					break
+				}
+			}
+			timer.Stop()
+			ticker.Stop()
+		}
+		if g.closing != nil && g.closing.Err() != nil {
+			closingStarted = true
+		}
+		recordOf(w).routingProofWait(time.Since(waitStarted).Milliseconds())
+		if closingStarted {
+			g.refuse(w, refuseClosed)
 			return
 		}
-		w.WriteHeader(http.StatusNoContent)
+		if proved() {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if priorGeneration {
+			g.refuseCategory(w, http.StatusConflict, "ROUTING_PROOF_PRIOR_GENERATION")
+			return
+		}
+		// Decide here even if the hook has already exhausted its deadline.
+		// A saturated read cannot prove EOF, so it fails closed without reading further.
+		control := http.NewResponseController(w)
+		stopClosing := func() bool { return true }
+		if g.closing != nil {
+			stopClosing = context.AfterFunc(g.closing, func() { _ = control.SetReadDeadline(time.Now()) })
+		}
+		raw, readErr := io.ReadAll(io.LimitReader(r.Body, 256))
+		stopClosing()
+		if g.closing != nil && g.closing.Err() != nil {
+			g.refuse(w, refuseClosed)
+			return
+		}
+		fields, parseErr := wire.Fields(raw, []string{"controlled"})
+		controlled := readErr == nil && len(raw) < 256 && parseErr == nil && bytes.Equal(fields["controlled"], []byte("true"))
+		if !controlled {
+			if g.closing != nil && g.closing.Err() != nil {
+				g.refuse(w, refuseClosed)
+				return
+			}
+			g.routingMismatch.Store(true)
+		}
+		g.refuseCategory(w, http.StatusConflict, "ROUTING_UNVERIFIED")
 		return
 	}
 	if r.URL.Path == "/clauduct/confirmation" {
@@ -615,6 +814,10 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
 		g.modelLists.Add(1)
+		// Discovery and routing observation for the native that asked, never an inference grant.
+		if id, required := g.identityOf(r); required && id.direct {
+			g.discovered.Store(id.native, struct{}{})
+		}
 		g.handleModels(w)
 		return
 	}

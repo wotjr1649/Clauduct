@@ -8,11 +8,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# clauduct.exe, and the two names a 0.3.x installation also had (a 0.3.x updater still writes
+# clauduct.exe, the diagnostic clauduct-probe.exe that ships beside it, and the two names a 0.3.x installation also had (a 0.3.x updater still writes
 # them as copies through v0.4.x), plus what --update leaves behind: a running executable
 # cannot be overwritten but can be renamed, so the updater moves the old one aside and tells
 # the user to delete it once the process ends. This is that deletion.
-$Names = @('clauduct.exe', 'clauduct-hook.exe', 'clauduct-dev.exe')
+$Names = @('clauduct.exe', 'clauduct-probe.exe', 'clauduct-hook.exe', 'clauduct-dev.exe')
 
 # Removing the entry because our files left would take everything else in the directory with
 # it. claude.exe lives here on a default install.

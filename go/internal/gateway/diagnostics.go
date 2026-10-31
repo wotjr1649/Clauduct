@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -24,7 +27,7 @@ import (
 // tells a reader that something was refused and nothing about what.
 //
 // Everything here is a count, a fixed label or a timing. No request body, no header value,
-// no prompt and no model output is recorded, and nothing derived from them is either. A
+// no prompt or model output is recorded; classifier verdicts keep only fixed labels. A
 // diagnostic that has to be redacted before it can be read is one nobody reads.
 
 // Stages a request passes through, in order. Named for where it actually got to, so a
@@ -70,6 +73,7 @@ const refusedElementLimit = 8
 
 // RequestRecord is one request's account of itself.
 type RequestRecord struct {
+	ResponseDelivered  bool   `json:"responseDelivered,omitempty"`
 	Seq                int64  `json:"seq"`
 	Method             string `json:"method"`
 	Path               string `json:"path"`
@@ -80,6 +84,10 @@ type RequestRecord struct {
 	CancellationSource string `json:"cancellationSource,omitempty"`
 	ToolPolicy         string `json:"toolPolicy,omitempty"`
 	Control            string `json:"control,omitempty"`
+	ClassifierStage    string `json:"classifierStage,omitempty"`
+	ClassifierVerdict  string `json:"classifierVerdict,omitempty"`
+	NativeRouteScope   string `json:"nativeRouteScope,omitempty"`
+	ConfirmationSHA256 string `json:"confirmationSHA256,omitempty"`
 	Status             int    `json:"status,omitempty"`
 
 	// CAP03: what was asked for and what ran, kept apart. A record that keeps only the
@@ -127,10 +135,20 @@ type RequestRecord struct {
 	// same_step, same_body; the earliest claim when several match). Diagnostic only (#288).
 	ReplayOf *ReplayOf `json:"replayOf,omitempty"`
 
+	// Remote is the request's loopback client address (ip:port), kept only while an outcome
+	// observer is registered (Gateway.ObserveOutcome). That observer runs before the request is
+	// released, so it can name the process holding the client end of this very connection --
+	// including a request refused before its credential was accepted, which no ingress observer
+	// sees. Never serialised: not part of the status or the account (#319 decision 18).
+	Remote string `json:"-"`
+
 	UpstreamEnd *UpstreamEndRecord `json:"upstreamEnd,omitempty"`
 
 	// What a backend failure event said about itself, in fixed vocabularies (#84).
 	UpstreamFailure *codex.FailureDetail `json:"upstreamFailure,omitempty"`
+
+	// RoutingProofWaitMs is the time this request spent waiting for its native's model list.
+	RoutingProofWaitMs *int64 `json:"routingProofWaitMs,omitempty"`
 
 	// Milliseconds from when this gateway started. Relative rather than wall clock: a
 	// diagnostic that travels should not carry when the machine was running, and the
@@ -200,6 +218,15 @@ func streamErrorLabel(err error) string {
 	}
 }
 
+func (r *record) responseDelivered(delivered bool) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.data.ResponseDelivered = delivered
+	r.mu.Unlock()
+}
+
 func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, bytes int, done bool, trailing string) {
 	if r == nil {
 		return
@@ -223,6 +250,8 @@ type record struct {
 	epoch              time.Time
 	data               RequestRecord
 	owner              *ring
+
+	auxiliaryToolsBlocked bool // handler-owned capability; independent auxiliary cannot call tools
 }
 
 func (r *record) rejectedWorkflow() {
@@ -432,6 +461,25 @@ func (r *record) route(requested, model, effort, source string) {
 	r.data.Effort, r.data.Source = effort, source
 }
 
+func (r *record) nativeRoute(scope string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.NativeRouteScope = scope
+}
+
+func (r *record) confirmation(nonce string) {
+	if r == nil {
+		return
+	}
+	sum := sha256.Sum256([]byte(nonce))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.ConfirmationSHA256 = hex.EncodeToString(sum[:])
+}
+
 // refusedWith records the category a refusal was answered with.
 //
 // Called from the one place every refusal goes through, which is what makes "a refused
@@ -574,7 +622,30 @@ func (r *record) finish() {
 	}
 	if r.owner != nil {
 		r.owner.count(r.data)
+		if fn := r.owner.finished.Load(); fn != nil && *fn != nil {
+			(*fn)(r.data)
+		}
 	}
+}
+
+// client keeps the request's loopback client address for an outcome observer (Remote).
+func (r *record) client(addr string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.Remote = addr
+}
+
+// seqNumber is the record's request number, or -1 for a request nothing recorded.
+func (r *record) seqNumber() int64 {
+	if r == nil {
+		return -1
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.data.Seq
 }
 
 // began is when the request arrived, which is when the client started waiting. Now for a
@@ -604,8 +675,19 @@ func (r *record) snapshot() RequestRecord {
 	return r.data
 }
 
+func (r *record) routingProofWait(ms int64) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.data.RoutingProofWaitMs = &ms
+}
+
 // ring keeps the most recent records.
 type ring struct {
+	// finished, when set, sees each record as it closes (Gateway.ObserveOutcome).
+	finished     atomic.Pointer[func(RequestRecord)]
 	mu           sync.Mutex
 	epoch        time.Time
 	seq          int64

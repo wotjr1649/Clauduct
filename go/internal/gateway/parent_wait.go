@@ -118,10 +118,7 @@ func (g *Gateway) readNativeStep(session, id string) (parentStep, bool, error) {
 	if !correlationShape.MatchString(session) || id != "" && !correlationShape.MatchString(id) {
 		return step, false, errDelegationUnverified
 	}
-	name := "root"
-	if id != "" {
-		name = "child-" + id
-	}
+	name := nativeScopeName(session, id)
 	found, err := g.readNativeJSON("step-"+name+".json", []string{"session", "agent", "turn", "index", "eligible", "mode", "handback", "peer"}, &step)
 	if err != nil {
 		return step, false, err
@@ -341,10 +338,7 @@ func (d *delegations) returnedWorkflowLaunch(request *anthropic.Request, session
 }
 
 func (g *Gateway) writeParentDecision(step *parentStep, hold bool) error {
-	name := "root"
-	if step.Agent != "" {
-		name = "child-" + step.Agent
-	}
+	name := nativeScopeName(step.Session, step.Agent)
 	decision, _ := json.Marshal(struct {
 		Turn  string `json:"turn"`
 		Index int    `json:"index"`

@@ -1,6 +1,6 @@
-// Package sessionlink keeps a background session credential in memory. The named
-// pipe's DACL admits only this Windows logon; neither its name nor the CLI carries
-// a credential. There is no network listener, credential file or recovery replay.
+// Package sessionlink keeps a session's gateway credential in memory for its hooks and
+// helpers. The named pipe's DACL admits only this Windows logon; neither its name nor the CLI
+// carries a credential. There is no network listener, credential file or recovery replay.
 package sessionlink
 
 import (
@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"runtime"
 	"sync"
@@ -18,6 +19,16 @@ import (
 )
 
 var ErrUnavailable = errors.New("BACKGROUND_CONNECTION_UNAVAILABLE")
+
+// ErrNotFound marks a name with no open pipe instance and still matches ErrUnavailable.
+var ErrNotFound = fmt.Errorf("%w: pipe not found", ErrUnavailable)
+
+// ErrBusy is ErrUnavailable because the live link did not answer within its bound (another
+// client held it, or the machine was slow), as opposed to there being no link at all.
+var ErrBusy = fmt.Errorf("%w: busy", ErrUnavailable)
+
+// RequestTimeout bounds a single authenticated pipe exchange.
+const RequestTimeout = 3 * time.Second
 
 var kernel = syscall.NewLazyDLL("kernel32.dll")
 var createPipe = kernel.NewProc("CreateNamedPipeW")
@@ -33,7 +44,10 @@ var validID = regexp.MustCompile(`^[a-f0-9]{32}$`)
 type Connection struct {
 	BaseURL string `json:"baseURL"`
 	Token   string `json:"token"`
-	PID     int    `json:"-"` // verified by GetNamedPipeServerProcessId, never trusted from JSON
+	// Foreground is set by StartForeground: the link's server is an ancestor of every hook
+	// and helper that may read it, which a background link's server is not.
+	Foreground bool `json:"foreground,omitempty"`
+	PID        int  `json:"-"` // verified by GetNamedPipeServerProcessId, never trusted from JSON
 }
 
 type Server struct {
@@ -81,16 +95,43 @@ func pipeName(id string) (*uint16, error) {
 	return syscall.UTF16PtrFromString(`\\.\pipe\clauduct-` + id)
 }
 
+// Start serves a background session's connection. A client may also ask it to stop, which
+// is how a background session is ended.
 func Start(parent context.Context, connection Connection) (*Server, error) {
+	return start(parent, connection, true, "")
+}
+
+// Restart serves a background connection again under the id a native job was dispatched
+// with: its hooks and key helper name that id and cannot be told another (#319 decision 18c).
+// The pipe is created first-instance, so a live server under the id makes this fail.
+func Restart(parent context.Context, id string, connection Connection) (*Server, error) {
+	if !validID.MatchString(id) {
+		return nil, ErrUnavailable
+	}
+	return start(parent, connection, true, id)
+}
+
+// StartForeground serves a foreground session's connection to its hooks and confirmation
+// helper, which cannot rely on native's environment: under a host-managed provider native
+// does not pass ANTHROPIC_AUTH_TOKEN to them (measured 2.1.292). There is no stop command; the
+// session ends with its native and closes the link itself.
+func StartForeground(parent context.Context, connection Connection) (*Server, error) {
+	connection.Foreground = true
+	return start(parent, connection, false, "")
+}
+
+func start(parent context.Context, connection Connection, stoppable bool, id string) (*Server, error) {
 	sid, err := ownLogon()
 	if err != nil {
 		return nil, err
 	}
-	var nonce [16]byte
-	if _, err = rand.Read(nonce[:]); err != nil {
-		return nil, err
+	if id == "" {
+		var nonce [16]byte
+		if _, err = rand.Read(nonce[:]); err != nil {
+			return nil, err
+		}
+		id = hex.EncodeToString(nonce[:])
 	}
-	id := hex.EncodeToString(nonce[:])
 	name, _ := pipeName(id)
 	sddl, _ := syscall.UTF16PtrFromString("D:P(A;;GA;;;" + sid + ")")
 	var descriptor uintptr
@@ -117,7 +158,7 @@ func Start(parent context.Context, connection Connection) (*Server, error) {
 			call, stop := context.WithTimeout(ctx, 3*time.Second)
 			var command [1]byte
 			n, err := operation(call, syscall.Handle(h), command[:], 'r')
-			if err == nil && n == 1 && (command[0] == 'k' || command[0] == 's') {
+			if err == nil && n == 1 && (command[0] == 'k' || command[0] == 's' && stoppable) {
 				reply := body
 				if command[0] == 's' {
 					reply = []byte(`{}`)
@@ -186,15 +227,18 @@ func operation(ctx context.Context, h syscall.Handle, buf []byte, kind byte) (ui
 	return n, nil
 }
 
-func request(id string, command byte, wait bool) (Connection, error) {
+func request(parent context.Context, id string, command byte, wait bool) (Connection, error) {
 	name, err := pipeName(id)
 	if err != nil {
 		return Connection{}, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(parent, RequestTimeout)
 	defer cancel()
 	var h syscall.Handle
 	for {
+		if ctx.Err() != nil {
+			return Connection{}, ErrBusy
+		}
 		// Identification only: a hostile server cannot impersonate this client.
 		h, err = syscall.CreateFile(name, syscall.GENERIC_READ|syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING, 0x40000000|0x100000|0x10000, 0)
 		if err != syscall.Errno(231) {
@@ -202,11 +246,14 @@ func request(id string, command byte, wait bool) (Connection, error) {
 		} // ERROR_PIPE_BUSY
 		select {
 		case <-ctx.Done():
-			return Connection{}, ErrUnavailable
+			return Connection{}, ErrBusy
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
 	if err != nil {
+		if err == syscall.ERROR_FILE_NOT_FOUND {
+			return Connection{}, ErrNotFound
+		}
 		return Connection{}, ErrUnavailable
 	}
 	defer syscall.CloseHandle(h)
@@ -231,12 +278,12 @@ func request(id string, command byte, wait bool) (Connection, error) {
 		return Connection{}, ErrUnavailable
 	}
 	if _, err = operation(ctx, h, []byte{command}, 'w'); err != nil {
-		return Connection{}, err
+		return Connection{}, busy(ctx, err)
 	}
 	buf := make([]byte, 4096)
 	n, err := operation(ctx, h, buf, 'r')
 	if err != nil {
-		return Connection{}, err
+		return Connection{}, busy(ctx, err)
 	}
 	var reply Connection
 	if json.Unmarshal(buf[:n], &reply) != nil {
@@ -244,7 +291,7 @@ func request(id string, command byte, wait bool) (Connection, error) {
 	}
 	reply.PID = int(pid)
 	if _, err = operation(ctx, h, []byte{'a'}, 'w'); err != nil {
-		return Connection{}, err
+		return Connection{}, busy(ctx, err)
 	}
 	if wait {
 		state, err := syscall.WaitForSingleObject(p, 10000)
@@ -256,6 +303,23 @@ func request(id string, command byte, wait bool) (Connection, error) {
 	return reply, nil
 }
 
-func Read(id string) (Connection, error) { return request(id, 'k', false) }
-func Stop(id string) error               { _, err := request(id, 's', false); return err }
-func StopAndWait(id string) error        { _, err := request(id, 's', true); return err }
+// busy reports an exchange that ran out of its bound as ErrBusy.
+func busy(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ErrBusy
+	}
+	return err
+}
+
+func Read(id string) (Connection, error) { return ReadContext(context.Background(), id) }
+
+// ReadContext keeps the three-second bound, shortened by the caller's deadline.
+func ReadContext(ctx context.Context, id string) (Connection, error) {
+	return request(ctx, id, 'k', false)
+}
+
+func Stop(id string) error { _, err := request(context.Background(), id, 's', false); return err }
+func StopAndWait(id string) error {
+	_, err := request(context.Background(), id, 's', true)
+	return err
+}

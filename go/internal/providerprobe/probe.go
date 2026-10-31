@@ -863,6 +863,14 @@ type p3Watched struct {
 	// held and unconfirmed are the Job's reap (DESIGN-SEQ §4.2): members alive when the process
 	// exited on its own, or a Job not confirmed empty, including a process that cannot say.
 	held, unconfirmed *bool
+	beforeStop        func()
+}
+
+func (w *p3Watched) Stop() error {
+	if w.beforeStop != nil {
+		w.beforeStop()
+	}
+	return w.Process.Stop()
 }
 
 func (w *p3Watched) Wait() error {
@@ -933,7 +941,9 @@ type p3Observed struct {
 	// HookFailures are native's transcript records of failed command hooks.
 	HookFailures []p3HookFailure
 	// Wrapped are the hook wrappers' records (observation, delay and child modes).
-	Wrapped []p3WrapperRecord
+	Wrapped        []p3WrapperRecord
+	ChildExits     []p3ChildExitEvidence
+	CleanupNatives []p3CleanupNative
 	// HookProcs is the post-case census of the child mode's wrapper and child processes.
 	HookProcs p3HookProcs
 	// SentinelChanged is another live session's state changed during the run.
@@ -1090,10 +1100,24 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 			t.Fatal(err)
 		}
 	}
-	extra := map[string]string{"CLAUDE_CODE_MANAGED_SETTINGS_PATH": w.managedDir}
+	extraEnv := map[string]string{"CLAUDE_CODE_MANAGED_SETTINGS_PATH": w.managedDir}
 	for k, v := range c.ProcessEnv {
-		extra[k] = v(w)
+		extraEnv[k] = v(w)
 	}
+	var childWatch *p3ChildExitWatch
+	if p3ChildFault(w.hookFaults["UserPromptSubmit"]) {
+		childWatch = p3WatchChildExits(w.sidecar)
+		defer func() {
+			obs.ChildExits = childWatch.finish()
+		}()
+	}
+	defer func() {
+		for _, native := range p.cleanups.all() {
+			if native.Run == obs.Run {
+				obs.CleanupNatives = append(obs.CleanupNatives, native)
+			}
+		}
+	}()
 	// Everything the harness does to end this case (the boundary watch's supervisor stop, the
 	// no-natives check, the step goroutine's join) runs through cleanup and finishes before the
 	// interval commit, so native traffic it causes lands in this run's own interval.
@@ -1101,6 +1125,9 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 	var cleanups []func()
 	cleanup := func(f func()) { cleanups = append(cleanups, f) }
 	finishCleanups := func() {
+		if childWatch != nil {
+			childWatch.markCleanup()
+		}
 		for len(cleanups) > 0 {
 			f := cleanups[len(cleanups)-1]
 			cleanups = cleanups[:len(cleanups)-1]
@@ -1255,9 +1282,9 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 				if p3ControlCommand(spec.Args) {
 					// Native's control processes (supervisor, stop) the product starts under a
 					// strategy: they carry no settings, only the probe's own environment.
-					spec, err = w.applyProbeEnv(spec, configuration, extra)
+					spec, err = w.applyProbeEnv(spec, configuration, extraEnv)
 				} else {
-					spec, err = w.applyConfiguration(spec, configuration, hooks, extra)
+					spec, err = w.applyConfiguration(spec, configuration, hooks, extraEnv)
 					if err == nil {
 						spec, err = w.applyPlugin(spec)
 					}
@@ -1283,7 +1310,12 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 						w.mu.Unlock()
 					}
 				}
-				return &p3Watched{Process: process, failed: &obs.CleanupFailed, held: &obs.HeldProcess, unconfirmed: &obs.JobUnconfirmed}, nil
+				return &p3Watched{Process: process, failed: &obs.CleanupFailed, held: &obs.HeldProcess, unconfirmed: &obs.JobUnconfirmed,
+					beforeStop: func() {
+						if childWatch != nil {
+							childWatch.markCleanup()
+						}
+					}}, nil
 			},
 		}
 		// The probe's upstream is synthetic: ProbeOptions refuses a session without it, and Run is
@@ -1367,7 +1399,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		// Delivery evidence is the stimulus launch's own native starts and exit, not the prior
 		// turn's.
 		obs.NativeStarts = 0
-		finish := p.boundaryWatch(w, obs)
+		finish := p.boundaryWatch(w, obs, configuration, extraEnv)
 		exits, outputs, began := len(obs.ExitCodes), len(obs.Outputs), time.Now()
 		once(p3FillArgs(c.Args, prompt(obs.Turns[i].Canary)), nil, &out)
 		obs.Stimulus = p3StimulusLaunch{Exit: app.ExitCodeUnknown, Took: time.Since(began), Stderr: strings.TrimSpace(obs.Outputs[outputs:]) != ""}
@@ -1386,7 +1418,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		var out strings.Builder
 		if c.WatchBoundary {
 			cleanup(func() { p3CheckNoNatives(p.exe, w, obs) })
-			cleanup(p.boundaryWatch(w, obs))
+			cleanup(p.boundaryWatch(w, obs, configuration, extraEnv))
 		}
 		once(append([]string{"-p", prompt(obs.Turns[i].Canary)}, c.Args...), nil, &out)
 		end(i)
@@ -1491,7 +1523,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 			}
 			timeoutSeconds = 180
 			cleanup(func() { p3CheckNoNatives(p.exe, w, obs) })
-			cleanup(p.boundaryWatch(w, obs))
+			cleanup(p.boundaryWatch(w, obs, configuration, extraEnv))
 		} else if total := max(len(c.Steps)+1, c.Turns); total >= 2 {
 			// Same process, several prompts. A state change between prompts k and k+1 runs
 			// once prompt k's request reached any receiver and its reply had time to show; the
@@ -1544,7 +1576,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 			}
 		}
 		if c.TUIAfterReply != nil {
-			cleanup(p.boundaryWatch(w, obs))
+			cleanup(p.boundaryWatch(w, obs, configuration, extraEnv))
 		}
 		raw := filepath.Join(filepath.Dir(steps), "raw.log")
 		marks := filepath.Join(filepath.Dir(steps), "marks.txt")
@@ -1780,7 +1812,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 	// child are found by the pid and creation time they recorded; a child still running past its
 	// own cap is ended, and counted as a cleanup failure.
 	finishCleanups()
-	obs.HookProcs = p3ReapHookProcesses(w.sidecar, min(10*time.Second, max(time.Until(obs.runDeadline), 0)), obs.runDeadline)
+	obs.HookProcs = p3ReapHookProcesses(w.sidecar, min(10*time.Second, max(time.Until(obs.runDeadline), 0)), obs.runDeadline, childWatch)
 	if obs.HookProcs.Killed > 0 {
 		obs.CleanupFailed = true
 		obs.RunErrors = append(obs.RunErrors, fmt.Sprintf("%d hook wrapper processes outlived the case and were ended", obs.HookProcs.Killed))
@@ -2336,6 +2368,8 @@ type p3Evidence struct {
 	Steps                         []p3StepState                       `json:",omitempty"`
 	PluginApplied                 bool                                `json:",omitempty"`
 	Wrapped                       []p3WrapperRecord                   `json:",omitempty"`
+	ChildExits                    []p3ChildExitEvidence               `json:",omitempty"`
+	CleanupNatives                []p3CleanupNative                   `json:",omitempty"`
 	LateHook                      *p3LateHook                         `json:",omitempty"`
 	HookProcs                     *p3HookProcs                        `json:",omitempty"`
 	SentinelConfirmations         int                                 `json:",omitempty"`
@@ -2377,6 +2411,7 @@ func p3EvidenceOf(c p3Case, configuration string, obs *p3Observed, result provid
 		e.BE10 = &facts
 	}
 	e.Wrapped, e.SentinelConfirmations, e.SentinelChanged = obs.Wrapped, obs.SentinelConfirmations, obs.SentinelChanged
+	e.ChildExits, e.CleanupNatives = p3ChildExitFacts(obs), obs.CleanupNatives
 	if e.LateHook = p3LateHookOf(c.HookFaults, obs); e.LateHook != nil {
 		e.HookProcs = &obs.HookProcs
 	}
@@ -2453,7 +2488,7 @@ func (p p3Runner) runMatrix(t TB, cases []p3Case, strategy string, write func(st
 // function runs, then records the background boundary (admission r2 backgroundEntryChecks):
 // a supervisor lock, job directories, the processes seen. A supervisor that appeared is stopped
 // through native for that config dir only (PL13).
-func (p p3Runner) boundaryWatch(w *p3World, obs *p3Observed) func() {
+func (p p3Runner) boundaryWatch(w *p3World, obs *p3Observed, configuration string, extraEnv map[string]string) func() {
 	since, stop := time.Now(), make(chan struct{})
 	natives := make(chan []p3NativeProcess, 1)
 	go func() {
@@ -2474,7 +2509,11 @@ func (p p3Runner) boundaryWatch(w *p3World, obs *p3Observed) func() {
 		obs.Natives = <-natives
 		if _, err := os.Stat(filepath.Join(w.configDir, "daemon.lock")); err == nil {
 			obs.SupervisorLock = true
-			if err := p3StopOwnSupervisor(p.exe, w.configDir, p.cleanups, obs.Run); err != nil {
+			env, err := w.cleanupEnvironment(configuration, extraEnv)
+			if err == nil {
+				err = p3StopOwnSupervisor(p.exe, w.configDir, env, p.cleanups, obs.Run)
+			}
+			if err != nil {
 				obs.CleanupFailed = true
 				obs.RunErrors = append(obs.RunErrors, "own supervisor stop: "+err.Error())
 			}

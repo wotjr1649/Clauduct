@@ -16,7 +16,7 @@ import (
 // only with an independently clean treatment; NATIVE_CONFIRMATION_TIMEOUT is case-specific.
 const (
 	RoutingContractRevision = 5
-	ProbeSchemaRevision     = 5
+	ProbeSchemaRevision     = 8
 )
 
 // Case outcomes.

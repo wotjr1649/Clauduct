@@ -1,7 +1,7 @@
 {
   "schema": "clauduct.p3.provider-control-contract",
   "routingContractRevision": 5,
-  "probeSchemaRevision": 5,
+  "probeSchemaRevision": 8,
   "boundedObservation": {
     "durationMs": 8000,
     "r03QuiescenceGraceMs": 3000,
@@ -1314,10 +1314,14 @@
     "p3V diagnostic 수정(2026-10-31): R03ps stale helper는 닫힌 link를 확인한 경우에만 exit 3을 반환해 native-events의 의도된 stale 종료 경로를 사용한다. 잘못된 입력·receipt 기록 실패의 exit 2와 모든 재시도의 exact challenge receipt·503 NATIVE_CONFIRMATION_TIMEOUT·backend 호출 0·wrong receiver 차단·완료된 관측창·drain/reap 요구는 유지한다. R13b만 WRONG_SETTINGS를 합성 HTTPS endpoint로 구성하고 그 인증서를 trust에 추가한다. Bedrock CONNECT→TLS→invoke POST는 기존 owned-TLS proxy 안에서 같은 accept connection에 귀속하며 다른 사례의 HTTP endpoint는 바꾸지 않는다. Undecodable·귀속 불명 접촉은 계속 RECEIVER_FAULT/INCONCLUSIVE다. 제품 plugin·gateway 정책과 r4는 바꾸지 않으며, 이 변경은 native 2.1.314의 재측정 PASS나 ADMITTED 근거가 아니다.",
     "p3V diagnostic Follow-up 1(2026-10-31): pipe 이름이 실제로 부재한 오류만 R03ps의 closed_link 근거다. 포괄적인 ErrUnavailable, 재점유·접근·서버 검증·응답 해석 실패를 닫힘으로 인정하지 않는다. helper는 plugin의 필수 confirmation 필드와 matched/unmatched 형식을 검증하고 불완전한 입력은 exit 2로 거부한다. R03의 모든 root-main 재시도를 수집하며 canary가 없으면 turn을 증명한 것으로 기록하지 않고 INCONCLUSIVE로 남긴다. 같은 run/turn의 canary 없는 재시도도 refusal 목록에서 생략하지 않는다. TLS receiver는 HTTP handler가 실행되지 않은 직접 accept도 UnclassifiedConnections로 보존·분류하고 이 수를 settle 비교에 포함하며, 유효한 control inference 뒤에 추가된 미분류 direct TLS 접촉도 RECEIVER_FAULT와 CONTROL_PREREQUISITE_UNPROVEN으로 거부한다. 기존 8초 관측창·503/category·모든 retry receipt·backend 0·wrong receiver·drain/reap 조건을 완화하지 않는다. r4·admission r3·제품 plugin·gateway 정책은 유지한다.",
     "p3V diagnostic Follow-up 2(2026-10-31): 직접 HTTPS 연결은 최초 Seen만으로 분류하지 않는다. TLS record 경계로 raw read-ahead를 제한하고 한 record의 복호화 결과 전체를 streaming HTTP parser에 대조한다. 완결 요청 수와 Seen 수, 관측 plaintext 바이트와 완결 요청의 소비 바이트가 모두 일치해야 하며 TLS/HTTP 오류·미완결 record·남은 바이트·미완료 accounting은 미분류 연결이다. 동일 keep-alive의 정상 POST 뒤 handler 전 400/417, pipelined malformed 요청, 짧은 suffix와 Connection: close 뒤 같은 record의 suffix도 RECEIVER_FAULT/INCONCLUSIVE다. 정상 keep-alive·chunked·gzip·POST 사이 허용된 CRLF는 유지한다. HTTP로 완전히 대조하지 못하는 opaque upgrade도 first-Seen 예외로 허용하지 않는다. parser 완료까지 receiver drain을 유지한다. r4·admission r3·제품 plugin·gateway 정책·R03ps의 Follow-up 1 규칙은 유지한다.",
+    "p3V diagnostic 2: BE15의 native daemon cleanup도 scrubbed control-command 환경과 정확한 world proxy·CA·config를 사용하고 PID/creation만 증거로 보존한다. R04L은 root retained generation handle의 실제 exit를 사용하며 unknown·불일치·probe cleanup/cap·native timeout 미기록은 NATIVE_PREVENTED가 아니다. 각 judged survivor는 post-attempt와 later-turn finish를 증명해야 한다. 시간 상수는 유지한다. admission r4와 probe schema 6으로 동결하며 routing r4·제품 plugin·gateway 정책은 보존한다.",
     "소유자 결정 08: R07을 안전한 거부(snapshot이 있는 --continue는 SESSION_RESTART_REQUIRED와 정확한 clauduct --resume <UUID> 안내, backend 생성 0, 저장 상태 불변)와 그 UUID로의 명시적 resume 복구(대화·model 복원, 정상 완료)로 나누고, snapshot 없는 세션의 --continue는 계속 동작하는지 따로 본다.",
     "R13c: native SHA-256 eb95bb65955f8b1702e800815f9a2c0388a5de0f196c354c7ee1dd5cb9a2ba23, Windows, user settings env 주입 경로에 한정한 applicability 제외(p3-applicability-diagnosis-r1과 UNPROTECTED control 4회). 다른 출처·다른 native에는 적용하지 않는다.",
     "R14n: 미확정. CLAUDE_CODE_MANAGED_SETTINGS_PATH 디렉터리 파일의 env 키가 child에 반영되지 않았다는 것만 관측했다.",
-    "R04L: r3 결과(시험한 hook 부모가 timeout으로 끝나 늦은 post가 없었음)를 근거로 보존한다. 자식 변형은 이 revision에서 측정하지 않으며 미완료로 남긴다. 제품의 stale 이벤트 수신 경계는 gateway 수준의 합성 producer 시험으로 따로 판정한다."
+    "R04L: r3 결과(시험한 hook 부모가 timeout으로 끝나 늦은 post가 없었음)를 근거로 보존한다. 자식 변형은 이 revision에서 측정하지 않으며 미완료로 남긴다. 제품의 stale 이벤트 수신 경계는 gateway 수준의 합성 producer 시험으로 따로 판정한다.",
+    "DIAG2 Follow-up 1: root 검증 inventory/exit와 cleanup allowlist·managed 경로 규칙을 동결한다. routing revision 5와 routing-r4는 유지한다.",
+    "DIAG2 Follow-up 2: R04L parent OS creation < child OS creation을 watcher와 judge가 함께 검증한다. 모든 ready/heartbeat/post 기록은 root-observed child creation 이상이고 heartbeat는 ready 이상이어야 한다. 모순 기록은 마지막 turn도 제외하지 않고 INCONCLUSIVE다. admission r6와 probe schema 8로 cache key를 갱신하며 시간 상수와 BE15는 유지한다.",
+    "DIAG2 Follow-up 3: R04L child의 ID나 PID를 가리키는 모든 sidecar 행은 Mode와 무관하게 같은 시각·Mode·ID·PPID 검사를 받고, 모순이면 INCONCLUSIVE다. Mode 누락·observe·충돌 행은 inventory 전에 버려지지 않는다. 미출하 admission r6 본문을 이 규칙으로 보강하며 revision·probe schema 8·시간 상수·BE15는 유지한다."
   ],
   "hookDiagnostic": {
     "definition": "native transcript(JSONL)의 attachment 중 type이 hook_non_blocking_error, hook_cancelled, hook_error_during_execution이고 hookEvent가 사례의 diagnosticEvent인 기록. 기록의 timestamp가 그 turn의 반열린 시간 창 안에 있어야 그 turn의 진단이다.",

@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 )
 
@@ -66,12 +70,112 @@ func (l *p3CleanupLog) all() []p3CleanupNative {
 	return append([]p3CleanupNative(nil), l.natives...)
 }
 
-// p3StopOwnSupervisor stops the native supervisor of one probe config dir and its sessions, and
-// waits until no native of that dir is left; a process still running is reported, not ended.
-// The stop native is recorded in log (run names the case) before it is waited for.
-func p3StopOwnSupervisor(exe, configDir string, log *p3CleanupLog, run string) error {
+// cleanupEnvironment gives probe-owned control commands a bounded system environment and the
+// same routing overlay as the case's native process.
+func (w *p3World) cleanupEnvironment(configuration string, extra map[string]string) ([]string, error) {
+	ambient := map[string]string{}
+	for _, entry := range os.Environ() {
+		if name, value, ok := strings.Cut(entry, "="); ok && name != "" {
+			ambient[strings.ToUpper(name)] = value
+		}
+	}
+	p3ScrubProbeEnv(ambient)
+
+	// Keep only the process settings needed by the system. User and application paths below
+	// always point into this world's temporary home, never the agent's shell environment.
+	const systemEnv = "COMSPEC PATH PATHEXT SYSTEMROOT WINDIR OS PROCESSOR_ARCHITECTURE PROCESSOR_IDENTIFIER NUMBER_OF_PROCESSORS"
+	env := map[string]string{}
+	for _, name := range strings.Fields(systemEnv) {
+		if value, ok := ambient[name]; ok {
+			env[name] = value
+		}
+	}
+	if w.home == "" || w.configDir == "" || w.managedDir == "" {
+		return nil, errors.New("CLEANUP_WORLD_PATH_REQUIRED")
+	}
+	appData := filepath.Join(w.home, "AppData", "Roaming")
+	localAppData := filepath.Join(w.home, "AppData", "Local")
+	temp := filepath.Join(w.home, "Temp")
+	for _, dir := range []string{appData, localAppData, temp} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("CLEANUP_WORLD_DIR: %w", err)
+		}
+	}
+	env["HOME"], env["USERPROFILE"] = w.home, w.home
+	env["APPDATA"], env["LOCALAPPDATA"] = appData, localAppData
+	env["TEMP"], env["TMP"] = temp, temp
+	env["XDG_CONFIG_HOME"] = filepath.Join(w.home, ".config")
+	env["XDG_CACHE_HOME"] = filepath.Join(w.home, ".cache")
+	env["XDG_DATA_HOME"] = filepath.Join(w.home, ".local", "share")
+	if drive := filepath.VolumeName(w.home); drive != "" {
+		env["HOMEDRIVE"] = drive
+		env["HOMEPATH"] = strings.TrimPrefix(w.home, drive)
+	}
+	env["CLAUDE_CONFIG_DIR"] = w.configDir
+	// This command belongs to the probe, so its explicit flags are not a product overlay-gap observation.
+	switch configuration {
+	case p3HostManaged:
+		env[launch.HostRoutedEnv] = "1"
+	case p3GatewayEnv:
+		env["CLAUDE_CODE_USE_GATEWAY"] = "1"
+	case p3Unprotected, p3Baseline:
+	default:
+		return nil, fmt.Errorf("unknown cleanup configuration %q", configuration)
+	}
+	caseEnv, err := p3CleanupCaseEnv(extra)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range caseEnv {
+		env[name] = value
+	}
+	// These paths are probe-owned. In particular, neither ambient nor case-provided
+	// managed-settings paths can redirect the cleanup command.
+	env["CLAUDE_CONFIG_DIR"] = w.configDir
+	env["CLAUDE_CODE_MANAGED_SETTINGS_PATH"] = w.managedDir
+	env["DISABLE_AUTOUPDATER"] = "1"
+	entries := make([]string, 0, len(env)+4)
+	for name, value := range env {
+		entries = append(entries, name+"="+value)
+	}
+	spec, err := w.applyProbeEnv(launch.Spec{Env: entries}, configuration, nil)
+	return spec.Env, err
+}
+
+// p3CleanupCaseEnv keeps only case inputs that the diagnostic deliberately adds to native.
+// Credentials, arbitrary provider settings and user-selected paths never reach cleanup.
+func p3CleanupCaseEnv(extra map[string]string) (map[string]string, error) {
+	allowed := map[string]string{
+		"ANTHROPIC_BASE_URL":            "ANTHROPIC_BASE_URL",
+		"ANTHROPIC_BEDROCK_BASE_URL":    "ANTHROPIC_BEDROCK_BASE_URL",
+		"ANTHROPIC_UNIX_SOCKET":         "ANTHROPIC_UNIX_SOCKET",
+		"AWS_REGION":                    "AWS_REGION",
+		"CLAUDE_CODE_SKIP_BEDROCK_AUTH": "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+		"CLAUDE_CODE_USE_BEDROCK":       "CLAUDE_CODE_USE_BEDROCK",
+		"CLAUDUCT_DIAG2_STOP_STUB":      "CLAUDUCT_DIAG2_STOP_STUB",
+		"CLAUDUCT_SEQ_SIDE":             "CLAUDUCT_SEQ_SIDE",
+	}
+	caseEnv := make(map[string]string, len(extra))
+	for name, value := range extra {
+		canonical, ok := allowed[strings.ToUpper(name)]
+		if !ok {
+			continue
+		}
+		if _, duplicate := caseEnv[canonical]; duplicate {
+			return nil, fmt.Errorf("CLEANUP_ENV_DUPLICATE_ALLOWED_NAME: %s", canonical)
+		}
+		caseEnv[canonical] = value
+	}
+	return caseEnv, nil
+}
+
+// p3StopOwnSupervisor runs with its world's prepared environment and records the cleanup generation.
+func p3StopOwnSupervisor(exe, configDir string, env []string, log *p3CleanupLog, run string) error {
+	if len(env) == 0 {
+		return errors.New("CLEANUP_ENV_REQUIRED")
+	}
 	cmd := exec.Command(exe, "daemon", "stop", "--any")
-	cmd.Env = append(os.Environ(), "CLAUDE_CONFIG_DIR="+configDir, "DISABLE_AUTOUPDATER=1")
+	cmd.Env = slices.Clone(env)
 	cmd.Dir = configDir
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	err := p3RunRecorded(ctx, cmd, log, run)

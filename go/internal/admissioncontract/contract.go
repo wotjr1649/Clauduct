@@ -13,7 +13,7 @@ import (
 	"sort"
 )
 
-//go:embed admission-r3.json
+//go:embed admission-r6.json
 var admission []byte
 
 //go:embed routing-r5.json

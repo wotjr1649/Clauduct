@@ -54,11 +54,8 @@ const (
 	// child's late post and native is shown running past every child's fate window.
 	p3ReplyDelay = 1500 * time.Millisecond
 
-	// The fate window around the timeout T: a child whose last sign of life is in
-	// [T-p3TerminateBefore, T+p3TerminateUntil) and that never posted was ended by native. A child
-	// alive at or past T+p3TerminateUntil was not (the late post at T+3s is strictly after the
-	// window, a heartbeat is 100ms apart, so a child alive at the timeout has beaten within
-	// p3TerminateBefore).
+	// Native prevention needs an OS-observed exit inside this bounded window. Heartbeats alone
+	// keep their diagnostic fate but cannot establish termination. The late post stays beyond it.
 	p3TerminateBefore = 400 * time.Millisecond
 	p3TerminateUntil  = 2 * time.Second
 
@@ -73,6 +70,8 @@ const (
 	// ReasonChildTerminatedUnrecorded is a terminated child whose native timeout handling is not
 	// in native's own transcript for every proof.
 	ReasonChildTerminatedUnrecorded = "CHILD_TERMINATED_TIMEOUT_UNRECORDED"
+	ReasonChildExitUnproven         = "CHILD_EXIT_UNPROVEN"
+	ReasonChildNoEarlierTurn        = "CHILD_NO_EARLIER_TURN"
 	reasonNoHookInvocation          = "NO_HOOK_INVOCATION"
 	reasonChildFateAmbiguous        = "CHILD_FATE_AMBIGUOUS"
 	reasonChildFateMixed            = "CHILD_FATE_MIXED"
@@ -188,6 +187,11 @@ func p3HookChildMain(args []string) int {
 		time.Sleep(p3ChildHeartbeat)
 		emit("heartbeat")
 	}
+	if !time.Now().Before(start.Add(p3ChildCap)) {
+		emit("probe-cap")
+		return 2
+	}
+	emit("post-attempt")
 	cmd := exec.Command(real[0], real[1:]...)
 	cmd.Env, cmd.Stdin, cmd.Stdout = os.Environ(), bytes.NewReader(event), io.Discard
 	var stderr bytes.Buffer
@@ -223,6 +227,7 @@ type p3ChildProof struct {
 	LastHeartbeat     time.Time
 	FinishAt          time.Time
 	Fate              string
+	HeartbeatFate     string
 	FateBecause       string `json:",omitempty"`
 	// FinishInLaterTurn is the child's finish landed inside a turn that began after the hook did.
 	FinishInLaterTurn bool
@@ -230,7 +235,21 @@ type p3ChildProof struct {
 	Judged bool
 	// NativeTimeoutRecorded is native's own transcript record of a failed UserPromptSubmit hook
 	// inside the turn the invocation began in.
-	NativeTimeoutRecorded bool
+	NativeTimeoutRecorded  bool
+	HandleKnown            bool
+	ParentKnown            bool
+	ObservedParentPID      uint32
+	ObservedParentCreated  time.Time
+	ObservedCreated        time.Time
+	ExitAt                 time.Time
+	ProbeCleanup, ProbeCap bool
+	GenerationVerified     bool
+	EvidenceTimeInvalid    bool
+	ExitVerified           bool
+	TerminationProven      bool
+	PostAttemptAt          time.Time
+	PostResult             string
+	PostExit               int
 }
 
 // p3LateHook is the judge's reading of a late-hook case's records.
@@ -249,28 +268,48 @@ type p3LateGuards struct {
 var p3AllGuards = p3LateGuards{Ready: true, PIDMatch: true}
 
 // judgeLateHook reads the child-mode records of UserPromptSubmit invocations.
-func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookFailure, guards p3LateGuards) p3LateHook {
+func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookFailure, guards p3LateGuards, exits []p3ChildExitEvidence) p3LateHook {
 	var order []string
 	byID := map[string][]p3WrapperRecord{}
+	unidentified := false
+	add := func(id string) {
+		if _, exists := byID[id]; !exists {
+			order = append(order, id)
+			byID[id] = nil
+		}
+	}
 	for _, r := range wrapped {
-		if r.Mode != "child" || r.ID == "" {
+		if r.Mode != "child" {
 			continue
 		}
-		if r.Phase == "start" && r.Event == "UserPromptSubmit" {
-			order = append(order, r.ID)
+		if r.ID == "" {
+			unidentified = true
+			continue
 		}
+		add(r.ID)
 		byID[r.ID] = append(byID[r.ID], r)
+	}
+	// Root-observed children remain obligations even if the sidecar loses their start or all rows.
+	for _, exit := range exits {
+		if exit.ID == "" {
+			unidentified = true
+			continue
+		}
+		add(exit.ID)
+	}
+	if unidentified {
+		return p3LateHook{Outcome: p3LateInconclusive, Reason: ReasonChildExitUnproven}
 	}
 	if len(order) == 0 {
 		return p3LateHook{Outcome: p3LateNotExercised, Reason: reasonNoHookInvocation}
 	}
 	var lastTurnStart time.Time
-	if len(turns) > 1 {
+	if len(turns) > 0 {
 		lastTurnStart = turns[len(turns)-1].Start
 	}
 	var proofs []p3ChildProof
 	for _, id := range order {
-		proofs = append(proofs, childProof(id, byID[id], order, byID, turns, lastTurnStart, failures, guards))
+		proofs = append(proofs, childProof(id, byID[id], wrapped, order, byID, turns, lastTurnStart, failures, guards, exits))
 	}
 	var judged []*p3ChildProof
 	for i := range proofs {
@@ -278,12 +317,8 @@ func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookF
 			judged = append(judged, &proofs[i])
 		}
 	}
-	if len(judged) == 0 {
-		// Every invocation began in the last turn: no later turn exists to receive a late event.
-		for i := range proofs {
-			proofs[i].Judged = true
-			judged = append(judged, &proofs[i])
-		}
+	if len(turns) < 2 || len(judged) == 0 {
+		return p3LateHook{Outcome: p3LateInconclusive, Reason: ReasonChildNoEarlierTurn, Proofs: proofs}
 	}
 	var ready []*p3ChildProof
 	for _, p := range judged {
@@ -292,8 +327,16 @@ func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookF
 		}
 	}
 	out := p3LateHook{Proofs: proofs}
-	if len(ready) == 0 {
+	if slices.ContainsFunc(judged, func(p *p3ChildProof) bool { return !p.GenerationVerified || p.EvidenceTimeInvalid }) {
+		out.Outcome, out.Reason = p3LateInconclusive, ReasonChildExitUnproven
+		return out
+	}
+	if len(ready) != len(judged) {
 		out.Outcome, out.Reason = p3LateNotExercised, ReasonChildNotReady
+		return out
+	}
+	if slices.ContainsFunc(ready, func(p *p3ChildProof) bool { return !p.ExitVerified }) {
+		out.Outcome, out.Reason = p3LateInconclusive, ReasonChildExitUnproven
 		return out
 	}
 	fates := map[string]bool{}
@@ -308,12 +351,18 @@ func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookF
 	case fates[p3FateSurvived] && fates[p3FateTerminated]:
 		out.Outcome, out.Reason = p3LateInconclusive, reasonChildFateMixed
 	case fates[p3FateTerminated] && !slices.ContainsFunc(ready, func(p *p3ChildProof) bool { return p.Fate == p3FateTerminated && !p.NativeTimeoutRecorded }):
-		out.Outcome, out.Reason = p3LateNotExercised, ReasonChildTerminated
+		if slices.ContainsFunc(ready, func(p *p3ChildProof) bool { return !p.TerminationProven }) {
+			out.Outcome, out.Reason = p3LateInconclusive, ReasonChildExitUnproven
+		} else {
+			out.Outcome, out.Reason = p3LateNotExercised, ReasonChildTerminated
+		}
 	case fates[p3FateTerminated]:
 		// The child ended, but native's own handling of the hook timeout was not observed for
 		// every terminated proof: the end is not shown to be native's.
 		out.Outcome, out.Reason = p3LateInconclusive, ReasonChildTerminatedUnrecorded
-	case late:
+	case late && !slices.ContainsFunc(ready, func(p *p3ChildProof) bool {
+		return !p.FinishInLaterTurn || p.PostAttemptAt.IsZero() || p.PostResult != "EXITED"
+	}):
 		out.Outcome = p3LateExercised
 	default:
 		out.Outcome, out.Reason = p3LateInconclusive, reasonChildSurvivedNoLate
@@ -321,47 +370,94 @@ func judgeLateHook(wrapped []p3WrapperRecord, turns []p3Turn, failures []p3HookF
 	return out
 }
 
-func childProof(id string, records []p3WrapperRecord, order []string, byID map[string][]p3WrapperRecord, turns []p3Turn, lastTurnStart time.Time, failures []p3HookFailure, guards p3LateGuards) p3ChildProof {
-	p := p3ChildProof{ID: id, Fate: p3FateAmbiguous}
+func childProof(id string, records, all []p3WrapperRecord, order []string, byID map[string][]p3WrapperRecord, turns []p3Turn, lastTurnStart time.Time, failures []p3HookFailure, guards p3LateGuards, exits []p3ChildExitEvidence) p3ChildProof {
+	p := p3ChildProof{ID: id, Judged: true, Fate: p3FateAmbiguous, PostResult: "NOT_ATTEMPTED"}
 	var start, spawned, ready *p3WrapperRecord
+	startCount, spawnCount, readyCount := 0, 0, 0
 	for i := range records {
 		r := &records[i]
 		switch r.Phase {
 		case "start":
+			startCount++
 			if start == nil {
 				start = r
 			}
 		case "spawned":
+			spawnCount++
 			if spawned == nil {
 				spawned = r
 			}
 		case "ready":
+			readyCount++
 			if ready == nil {
 				ready = r
 			}
 		}
 	}
-	p.Start, p.WrapperPID = start.At, start.PID
-	// The timeout runs from native's spawn of the hook, which is at or before the wrapper's own
-	// creation: the earlier of the two is the conservative start.
-	base := start.At
-	if !start.Created.IsZero() && start.Created.Before(base) {
-		base = start.Created
+	if start != nil {
+		p.Start, p.WrapperPID = start.At, start.PID
+		p.TimeoutAt = start.Created.Add(p3HookTimeout)
 	}
-	timeout := p3HookTimeout
-	if start.TimeoutMs > 0 {
-		timeout = time.Duration(start.TimeoutMs) * time.Millisecond
-	}
-	p.TimeoutAt = base.Add(timeout)
-	p.Judged = lastTurnStart.IsZero() || start.At.Before(lastTurnStart)
 	notReady := func(why string) p3ChildProof {
 		p.NotReadyBecause = why
 		return p
 	}
-	if spawned == nil || spawned.ChildPID <= 0 || spawned.Created.IsZero() {
+	if startCount != 1 || spawnCount != 1 || readyCount > 1 || start.Event != "UserPromptSubmit" {
+		return notReady("duplicate or conflicting identity records")
+	}
+	if spawned == nil || !p3ChildSpawnMatches(*start, *spawned) {
 		return notReady("no spawn record with the child's pid and creation time")
 	}
 	p.ChildPID = spawned.ChildPID
+	var exit *p3ChildExitEvidence
+	duplicate := false
+	for i := range exits {
+		if exits[i].ID == id {
+			duplicate = duplicate || exit != nil
+			exit = &exits[i]
+		}
+	}
+	if exit != nil {
+		p.HandleKnown, p.ObservedCreated, p.ExitAt = exit.HandleKnown, exit.ObservedCreated, exit.ExitAt
+		p.ParentKnown, p.ObservedParentPID, p.ObservedParentCreated = exit.ParentKnown, exit.ObservedParentPID, exit.ObservedParentCreated
+		p.ProbeCleanup, p.ProbeCap = exit.ProbeCleanup, exit.ProbeCap
+		p.GenerationVerified = !duplicate && exit.HandleKnown && exit.ParentKnown && exit.ObservedParentPID == uint32(start.PID) &&
+			exit.ObservedParentCreated.Equal(start.Created) && exit.PID == uint32(spawned.ChildPID) &&
+			exit.Created.Equal(spawned.Created) && exit.ObservedCreated.Equal(spawned.Created) &&
+			exit.ObservedParentCreated.Before(exit.ObservedCreated)
+	}
+	// Contradictory child records remain obligations, including in the last turn. Every row that
+	// names this invocation or its child process is checked, whatever its Mode says.
+	if p.GenerationVerified {
+		for _, r := range all {
+			namesChild := (r.PID == spawned.ChildPID || r.ChildPID == spawned.ChildPID) && (r.Created.IsZero() || r.Created.Equal(spawned.Created))
+			if r.ID != id && !namesChild {
+				continue
+			}
+			if r.Mode != p3HookChild || r.ID != id {
+				p.EvidenceTimeInvalid = true
+				return notReady("a record names the child under another mode or invocation")
+			}
+			switch r.Phase {
+			case "ready", "heartbeat", "post-attempt", "finish", "run-failed":
+				if r.At.Before(p.ObservedCreated) || r.Phase == "heartbeat" && ready != nil && r.At.Before(ready.At) {
+					p.EvidenceTimeInvalid = true
+					return notReady("child evidence precedes OS creation or readiness")
+				}
+				if r.PPID != 0 && r.PPID != start.PID {
+					p.EvidenceTimeInvalid = true
+					return notReady("child evidence names another parent")
+				}
+			}
+		}
+	}
+	base := start.Created
+	// An unverified generation is never excluded as a final-turn child.
+	if p.GenerationVerified {
+		base = exit.ObservedParentCreated
+		p.Judged = !lastTurnStart.IsZero() && base.Before(lastTurnStart)
+	}
+	p.TimeoutAt = base.Add(p3HookTimeout)
 	if ready == nil {
 		return notReady("no ready record")
 	}
@@ -379,7 +475,7 @@ func childProof(id string, records []p3WrapperRecord, order []string, byID map[s
 		pid = ready.PID
 	}
 	for _, r := range records {
-		if r.PID != pid {
+		if r.PID != pid || guards.PIDMatch && !r.Created.Equal(spawned.Created) {
 			continue
 		}
 		switch r.Phase {
@@ -390,6 +486,13 @@ func childProof(id string, records []p3WrapperRecord, order []string, byID map[s
 			}
 		case "finish":
 			p.FinishAt = r.At
+			p.PostResult, p.PostExit = "EXITED", r.Exit
+		case "post-attempt":
+			p.PostAttemptAt, p.PostResult = r.At, "INCOMPLETE"
+		case "run-failed":
+			p.PostResult, p.PostExit = "START_FAILED", r.Exit
+		case "probe-cap":
+			p.ProbeCap = true
 		}
 	}
 	alive := ready.At
@@ -399,18 +502,11 @@ func childProof(id string, records []p3WrapperRecord, order []string, byID map[s
 	if p.FinishAt.After(alive) {
 		alive = p.FinishAt
 	}
-	// Native demonstrably ran past the fate window: a later turn or a later hook invocation.
+	// Only root-observed turn endings establish that native ran past the fate window.
 	var horizon time.Time
 	for _, tr := range turns {
 		if tr.End.After(horizon) {
 			horizon = tr.End
-		}
-	}
-	for _, other := range order {
-		if other != id {
-			if s := byID[other][0]; s.At.After(horizon) {
-				horizon = s.At
-			}
 		}
 	}
 	switch {
@@ -427,24 +523,46 @@ func childProof(id string, records []p3WrapperRecord, order []string, byID map[s
 	default:
 		p.FateBecause = "last sign of life is outside the window around the timeout"
 	}
+	p.HeartbeatFate = p.Fate
+	// Missing and incomplete root exits have the same fail-closed fate, including survivors.
+	p.ExitVerified = p.GenerationVerified && !p.ExitAt.IsZero() && !p.ExitAt.Before(alive) && !p.ExitAt.Before(p.ObservedCreated)
+	switch {
+	case !p.ExitVerified || p.ProbeCleanup || p.ProbeCap:
+		p.Fate, p.FateBecause = p3FateAmbiguous, "exit proof is missing, inconsistent, or probe-caused"
+	case !p.ExitAt.Before(p.TimeoutAt.Add(p3TerminateUntil)):
+		p.Fate = p3FateSurvived
+	case !p.ExitAt.Before(p.TimeoutAt.Add(-p3TerminateBefore)) && p.FinishAt.IsZero() && p.PostAttemptAt.IsZero() && !horizon.Before(p.TimeoutAt.Add(p3TerminateUntil)):
+		p.Fate = p3FateTerminated
+	default:
+		p.Fate, p.FateBecause = p3FateAmbiguous, "exit is outside the termination window or a post was attempted"
+	}
 	if !p.FinishAt.IsZero() {
 		for k := 1; k < len(turns); k++ {
 			tr := turns[k]
-			if start.At.Before(tr.Start) && !p.FinishAt.Before(tr.Start) && !p.FinishAt.After(tr.End) {
+			if base.Before(tr.Start) && !p.FinishAt.Before(tr.Start) && !p.FinishAt.After(tr.End) && !p.PostAttemptAt.IsZero() && !p.PostAttemptAt.After(p.FinishAt) {
 				p.FinishInLaterTurn = true
 			}
 		}
 	}
 	for _, f := range failures {
-		if f.Event != "UserPromptSubmit" {
+		if f.Event != "UserPromptSubmit" || f.Type != "hook_cancelled" || f.At.Before(p.TimeoutAt) {
 			continue
 		}
 		for i := range turns {
-			if inWindow(turns, i, start.At) && inWindow(turns, i, f.At) {
-				p.NativeTimeoutRecorded = true
+			if inWindow(turns, i, base) && inWindow(turns, i, f.At) {
+				invocations := 0
+				for _, other := range order {
+					if slices.ContainsFunc(byID[other], func(r p3WrapperRecord) bool { return r.Phase == "start" && inWindow(turns, i, r.Created) }) {
+						invocations++
+					}
+				}
+				p.NativeTimeoutRecorded = invocations == 1
 			}
 		}
 	}
+	p.TerminationProven = p.ExitVerified && p.Fate == p3FateTerminated && p.NativeTimeoutRecorded &&
+		!p.ProbeCleanup && !p.ProbeCap && p.Heartbeats > 0 && p.FinishAt.IsZero() && p.PostAttemptAt.IsZero() &&
+		!horizon.Before(p.TimeoutAt.Add(p3TerminateUntil))
 	return p
 }
 
@@ -457,8 +575,19 @@ func p3LateHookOf(hookFaults map[string]string, obs *p3Observed) *p3LateHook {
 	if !p3ChildFault(hookFaults["UserPromptSubmit"]) {
 		return nil
 	}
-	j := judgeLateHook(obs.Wrapped, obs.Turns, obs.HookFailures, p3AllGuards)
+	j := judgeLateHook(obs.Wrapped, obs.Turns, obs.HookFailures, p3AllGuards, p3ChildExitFacts(obs))
 	return &j
+}
+
+// Root release faults taint both the judge and serialized exit facts.
+func p3ChildExitFacts(obs *p3Observed) []p3ChildExitEvidence {
+	exits := slices.Clone(obs.ChildExits)
+	if obs.HeldProcess || obs.JobUnconfirmed || obs.CleanupFailed || obs.TimedOut {
+		for i := range exits {
+			exits[i].ProbeCleanup = true
+		}
+	}
+	return exits
 }
 
 // p3HookProcs is the post-case census of the processes the child-mode wrapper left.
@@ -472,7 +601,7 @@ type p3HookProcs struct {
 // creation time they recorded, waits for those that are still ending, and ends the rest.
 // stop, when set, is the run's absolute deadline: no wait, the kill waits included, runs past it
 // (a target still alive then is ended and counted as killed).
-func p3ReapHookProcesses(sidecar string, wait time.Duration, stop time.Time) p3HookProcs {
+func p3ReapHookProcesses(sidecar string, wait time.Duration, stop time.Time, watch *p3ChildExitWatch) p3HookProcs {
 	type target struct {
 		pid     int
 		created time.Time
@@ -517,6 +646,9 @@ func p3ReapHookProcesses(sidecar string, wait time.Duration, stop time.Time) p3H
 		out.StillRunning++
 		state, err := syscall.WaitForSingleObject(h, uint32(max(left, 0).Milliseconds()))
 		if err != nil || state != syscall.WAIT_OBJECT_0 {
+			if watch != nil {
+				watch.markProbeCap(uint32(t.pid), t.created)
+			}
 			syscall.TerminateProcess(h, 1)
 			kill := 5 * time.Second
 			if !stop.IsZero() {

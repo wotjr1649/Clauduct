@@ -1,6 +1,6 @@
 # Claude Code native 지원 범위
 
-이 문서는 Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위를 설명한다. Clauduct는 native 버전을 고정하지 않고 자동 갱신되는 native를 그대로 실행한다. 새 native마다 무과금 재측정과 표면 관문으로 차이를 확인하며, 최근 확인한 버전은 2.1.304다. 행에 적힌 버전은 그 내용을 확인한 native다. 제품은 설치된 native를 실행하며 사용자 설정·승인·도구 실행과 UI는 native가 담당하고, 모델 요청의 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다. 새 native와 모든 plugin/MCP 조합의 성공은 자동 승계하지 않는다. 현재 검증 결과와 남은 제약은 [호환성 문서](COMPATIBILITY.md)에 있다.
+이 문서는 Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위를 설명한다. Clauduct는 native 버전을 고정하지 않고 자동 갱신되는 native를 그대로 실행한다. 새 native마다 무과금 재측정과 표면 관문으로 차이를 확인하며, 최근 확인한 버전은 2.1.316이다. 행에 적힌 버전은 그 내용을 확인한 native다. 제품은 설치된 native를 실행하며 사용자 설정·승인·도구 실행과 UI는 native가 담당하고, 모델 요청의 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다. 새 native와 모든 plugin/MCP 조합의 성공은 자동 승계하지 않는다. 현재 검증 결과와 남은 제약은 [호환성 문서](COMPATIBILITY.md)에 있다.
 
 ## 지원 경로
 
@@ -22,7 +22,7 @@
 | Monitor | native의 버전·기능 노출 조건을 따른다. 현재 모든 flag/계정 조합의 실행을 검증하지 않았다 | 세션의 실제 제공 여부를 확인한다. 미검증을 지원 완료로 표시하지 않는다 |
 | TaskOutput·옛 Task 이름 | 현행 native가 제거하거나 이름을 바꾼 옛 표면은 강제로 복원하지 않는다 | 현행 native의 Read·Agent 등 해당 기능을 사용한다 |
 | Agent View 입력창의 dispatch별 /effort | 고정 native302에 없는 입력창 동작이다. GPT backend는 native의 명령 parser나 UI를 바꾸지 않는다 | clauduct agents --model … --effort …, clauduct --bg --effort … 또는 지원되는 settings를 사용한다. 같은 native에서 네 기본값 조합을 검증한다 |
-| Windows warm spare | native 2.1.302·2.1.303은 `I()==="windows"` 코드 가드로 warm pool 생성 전에 반환한다(CODE_INFERRED). 실행된 warm 성공으로 보고하지 않는다 | 지원되는 cold dispatch와 복원을 사용한다. 다른 native에서 warm이 생기면 별도 검증한다 |
+| Windows warm spare | native 2.1.302·2.1.303은 `I()==="windows"` 코드 가드로 warm pool 생성 전에 반환한다(CODE_INFERRED). 2.1.312·2.1.314·2.1.316도 전용 `--bg-spare` pool은 Windows에서 생성 전에 반환하지만, Agent View dispatch의 미리 띄우기 경로에는 그 전체 반환이 없어 warm spare 전체를 NOT_APPLICABLE로 판정하지 않는다(정적 판독, 실제 생성 성공은 미관측) | 지원되는 cold dispatch와 복원을 사용한다. warm 성공은 별도 실행 검증이 필요하다 |
 | teammate split pane·resume·print | native의 터미널·세션 수명 제약이 있다. Windows Terminal split pane과 teammate 복원을 bridge가 새로 구현하지 않는다 | 지원되는 in-process/일반 대화 경로를 사용한다. /resume은 native가 teammate를 복원하는 보장이 아니다 |
 | Artifact·RemoteTrigger·SendUserFile·PushNotification·ShareOnboardingGuide의 Anthropic-hosted 부분 | Claude 계정·원격 서비스·요금제의 기능이다. Codex 모델 추론 자격으로 해당 서비스 권한이 생기지 않는다 | 로컬 파일 출력, 사용자가 승인한 별도 외부 연동을 사용한다. Anthropic cloud 기능의 동등 구현은 제공하지 않는다 |
 | /usage·/cost·Claude 계정 관리 | Claude 구독 통계와 Codex backend 계수는 서로 다른 서비스다. Clauduct 안의 login/logout 등 계정 변경은 거부한다 | Clauduct의 사용량·진단과 standalone native의 계정 관리를 사용한다 |

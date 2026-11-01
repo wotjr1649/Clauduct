@@ -1,8 +1,8 @@
-# v0.6.11 — 라우팅 불변식, 경계 프로필, 공개 빌드 Agent View (출하 전 초안)
+# v0.6.11 — 라우팅 불변식, 경계 프로필, 공개 빌드 Agent View
 
-2026-10-16 초안이다. 태그와 Release는 아직 없다. 범위는 v0.6.10 뒤 기본 branch에 들어간 PR(#296–#318)과
+⟦TBD:ship-date⟧ 출시(태그 `v0.6.11` → `⟦TBD:tag-commit⟧`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.11)). 2026-10-16 초안에서 시작했다. 범위는 v0.6.10 뒤 기본 branch에 들어간 PR(#296–#318)과
 [#319](https://github.com/wotjr1649/Clauduct/issues/319)·[#320](https://github.com/wotjr1649/Clauduct/issues/320) 개발 브랜치다.
-남은 제한과 다시 볼 조건은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절의 "알려진 제한 원장"과 "개발 후보(v0.6.11 전)" 표가 관리한다.
+남은 제한과 다시 볼 조건은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절의 "알려진 제한 원장"과 "v0.6.11 — 지원 환경과 보장 한계" 표가 관리한다.
 
 **2026-10-22 갱신.** 최초 초안과 아래 날짜별 관문 이력은 그대로 보존한다. `cc604134` 이후 변경과 미커밋 작업을
 추가했으며, 현재 후보의 최종 관문·실제 backend·재측정·출하 결과는 `TBD(gate)`다. 과거 후보의 PASS를 현재 후보에 승계하지 않는다.
@@ -10,6 +10,9 @@
 **2026-10-23 갱신.** 아래 2026-10-22의 미커밋·패치 준비·재측정 미완료 표시는 당시 이력으로 보존하고, 현재 상태는
 "2026-10-23 추가"와 "native" 절의 갱신으로 대체한다. 측정 기준은 native 2.1.305·Codex CLI 0.163.0이다. 무과금 재측정은
 완료했지만 현재 후보의 최종 전체 관문·실제 backend·출하는 여전히 `TBD(gate)`다.
+
+**출하 상태(⟦TBD:ship-date⟧).** 이 문서의 날짜별 `TBD(gate)` 표시는 당시의 미완료 표시로 보존한다. 출하 후보의 최종 결과와
+그 표시들의 정산은 "출하 검사"의 "최종 출하 후보" 절이 소유한다. 출하 전에 끝나지 않은 항목은 후속 Issue로 남겼다.
 
 ## 바뀐 것
 
@@ -38,7 +41,7 @@
   주고 문서를 stdin에 쓰면 거부하던 것을 같은 크기 상한으로 받는다.
 - **지원 환경과 보장 한계**(#319·#320, 결정 17): provider-control admission을 launch 필수 조건에서 빼고 진단 전용으로 둔다.
   진단 도구 `clauduct-probe.exe`를 `clauduct.exe`와 한 쌍으로 싣는다([PACKAGING](PACKAGING.md) 1절). 지원·제외 환경과 남는 위험은
-  COMPATIBILITY 3절 "개발 후보(v0.6.11 전)" 표에 있다.
+  COMPATIBILITY 3절 "v0.6.11 — 지원 환경과 보장 한계" 표에 있다.
 - **background와 연결 유지**(#319)
   - Claude 계정 명령(`auth login`·`auth logout`·`setup-token`)은 시작 전에 거부하고 계정 slash command를 숨긴다.
   - `--resume <session id> --bg`는 native가 copy로 시작하므로 `--fork-session` 없이 쓰면 거부한다(`BACKGROUND_RESUME_IS_A_COPY`).
@@ -149,7 +152,80 @@
     관측 누락·overflow는 계속 성공으로 인정하지 않는다. 보강 후 최종 통합·실제 고부하·종료 검증은 `TBD(gate)`이며,
     아래 r5 실패와 단독 재실행 이력은 그대로 보존한다.
 
+### 2026-10-24~28 추가 (`68f4373f` 이후)
+
+- **측정 기준 native 2.1.309~2.1.312**(`2f506afe`·`506520b6`·`e7a7be1e`·`4b963405`): 자동 갱신된 native를 버전마다 무과금
+  재측정해 측정 기준과 `clauduct-probe.exe` digest를 갱신했다. Codex CLI는 2.1.309부터 0.164.0이다. 결과는 "native" 절에 있다.
+- **경로 template 5개 추가(365 → 370)**: `/worker/sender_addr`(2.1.309), `/worker/agent-metadata-events/batch-get`(2.1.310),
+  `/worker/event-batch`와 `platform.claude.com`의 `/docs/mcp`(2.1.311), `/api/organizations/{uuid}/dust/generate_title_and_branch`(2.1.312).
+  host 목록은 그대로다. 문자열 표의 추출 잡음은 넣지 않았다. **기록용 채택은 트래픽 승인이 아니다.**
+- **기록만 하고 경로표에 넣지 않은 관찰**(2.1.309 정적 판독)
+  - Google Cloud provider(`claude.googleapis.com`)의 base 경로가 `/v1/projects/{p}/locations/{l}`로 바뀌었다. launch가 provider
+    전환 변수를 지우므로 Clauduct가 띄운 native에서는 쓰이지 않아야 한다. 보류했다([#337](https://github.com/wotjr1649/Clauduct/issues/337)).
+  - CCR 세션은 `/worker/sender_addr` 응답으로 받은 두 값을 이후 요청의 `x-ssr-client-ip`·`x-ssr-client-ip-sig` 헤더로
+    붙인다(정적 판독). 경로 template은 헤더를 기록하지 않으며 실제 송신은 측정하지 않았다([#338](https://github.com/wotjr1649/Clauduct/issues/338)).
+- **routing proof 대기 5초**(`f38cf2b6`): 위 "저장된 Claude apps gateway 로그인 감지" 항목에 반영했다. gateway가 닫히는 중이면
+  proof에 503 `GATEWAY_CLOSED`로 답하고, hook은 이를 종료로 처리해 mismatch로 보고하지 않고 prompt를 막는다.
+- **PR #330 리뷰 수정 2차**(`4aa8b3a7`): Agent View 인계 조건과 link 한정 중지(위 "공개 빌드 foreground Agent View"),
+  `state.json` 없는 job 디렉터리를 부재로 보지 않음, PDF alias PATH 완화(native settings 파일이 PATH를 정의하거나 읽을 수 없으면
+  쓰지 않음).
+- **다른 native의 재개 실패 격리(B10)**(`fb66791b`): 다른 native에서 재시작이 필요한 재개가 실패해도 신원이 확인된 정상
+  소유자의 같은 세션 요청과 준비 상태를 막지 않는다. 재시작이 필요한 native의 요청은 계속 거부하며, native 신원이 없는 요청은
+  같은 세션의 재시작 대기를 구분할 수 없어 계속 거부한다.
+- **검증의 native 신원 판정 정리**: 출하 관문의 판정기는 실행 이미지를 확인하지 못한 증거(이미지 분류 `unknown`, capture 오류나
+  누락)를 부재나 성공으로 보지 않는다. 그런 프로세스는 같은 세대의 승인된 연결이나 유효한 capture가 있을 때만 받고, 없으면
+  그 행을 PASS로 두지 않는다. 제품 실행 파일의 동작은 바뀌지 않는다.
+
+### 2026-10-30 추가 (`5926b619` 이후)
+
+- **측정 기준 native 2.1.314**(`cb069eab`, probe digest 갱신 commit `123c7632`): 2026-10-30 무과금 재측정에서 도구 표면은 버전 줄 외에
+  같았다. 도움말은 `auto-mode` 설명 문구(`classifier` 삭제)만, plugin API는 `RenderComponent`의 `Placed`와 `$.ui.place` 선언
+  추가만 달랐고 Clauduct는 두 선언을 쓰지 않는다. fixture 시험과 표면 관문이 통과했다. 설치본 Codex CLI는 0.166.0으로 자동
+  갱신됐지만 도움말이 같아 측정 기준은 0.164.0으로 두었다.
+- **경로 template 9개 추가(370 → 379)**: 2.1.314 정적 판독에서 본 `/v1/code/channels`(`/{seg}`, `/{seg}/config`,
+  `/{seg}/messages`, `/{seg}/setup-proposals` 포함), `/v1/code/mcp/meta`, `/v1/code/memory/channel/{seg}/memories`(`/{seg}` 포함),
+  `/v1/filestore/fs/readFileMetadata`. 모두 host를 가리지 않는 기록 template이며 host 목록과 제외·HOLD는 그대로다.
+  **기록용 채택은 트래픽 승인이 아니다.** 제품 라우팅은 바뀌지 않았다.
+- **받은 upstream 전송 오류 보존**(`0248efbc`): upstream 응답 chunk와 함께 EOF가 아닌 읽기 오류가 왔는데 같은 chunk의
+  downstream 전달도 실패하면(클라이언트 취소나 소켓 쓰기 오류), 전달 실패(`CANCELLED`·`DELIVERY_FAILED`)가 받은 오류를
+  덮지 않고 응답 해석의 판정(`TRUNCATED_STREAM`·`INVALID_UTF8`)으로 끝낸다. 비스트리밍 요청은 전달 실패가 취소일 때만 이
+  규칙을 쓴다. 시각에 따라 갈리던 시험 실패에서 찾았고, 결정적으로 재현해 실제 HTTP 회귀 시험으로 고정했다. 대상은 스트리밍
+  relay에서 read 직후 owner context가 살아 있는 경우다. 이 분기는 실제 backend PASS 없음(offline real-HTTP 회귀만 있음)이다.
+  실제 backend 연결은 HTTP/2라 데이터와 오류가 보통 따로 반환되고, 같은 chunk의 client 쓰기 실패 시점도 제어할 수 없다.
+  그래서 출하 판정에서는 이 분기를 문서화된 한계로 둔다(소유자 결정 2026-10-31). fault injection 검사는
+  [#342](https://github.com/wotjr1649/Clauduct/issues/342)가 이어받는다.
+- **ctl v2 검사용 ptydrive 단계 관찰**(`cdb5aa8b`): 검증용 ConPTY driver가 입력·대기 pattern·화면 내용 없이 고정된 driver
+  상태만 알리는 단계 관찰자를 받는다. ctl v2 control 행이 CR 쓰기 시점을 감싸고 driver 신원을 결속하는 데 쓴다. 관찰자 없는
+  기존 사용은 그대로이며 제품 실행 파일의 동작은 바뀌지 않는다.
+
+### 2026-10-31~11-01 추가 (`123c7632` 이후)
+
+- **provider-control 진단 probe 보강**(`e57723e7`·`9d878bbb`·`a31f015d`, probe digest 갱신 commit `713b4a65`·`e116601e`·
+  `be3ce5cd`): `clauduct --dev --probe provider-control`의 case를 차례로 실행하고, 수신 연결 기록과 child 종료 증거를 보강했다.
+  진단 전용이며 일반 launch는 admission을 쓰지 않는다. gateway 요청 기록에 진단 필드(`nativeRouteScope`·`confirmationSHA256`·
+  `responseDelivered`)가 늘었고 응답 내용과 라우팅은 바뀌지 않는다. probe의 전체 8개 entry ADMITTED 증거와 CTL v2 controller
+  campaign은 이번 출하에 포함하지 않았다. R04L은 같은 후보의 MULTI_TURN 무과금 진단 3회에서 INCONCLUSIVE였다
+  ([#340](https://github.com/wotjr1649/Clauduct/issues/340), "최종 출하 후보").
+- **연결이 없는 `--background-stop`의 오류 문구**(`9d878bbb`): 열린 pipe 인스턴스가 없는 연결 ID에 `clauduct --background-stop <연결 ID>`를
+  실행하면 표준 오류에 `BACKGROUND_CONNECTION_UNAVAILABLE: pipe not found`를 쓰고 종료 코드 1로 끝난다. 이전에는
+  `BACKGROUND_CONNECTION_UNAVAILABLE`만 썼고 종료 코드는 같다. 그 밖의 연결 실패 문구는 그대로다. 이 변경의 실제 backend 검증은
+  "최종 출하 후보"의 "실제 backend" 결과에 포함한다.
+- **측정 기준 native 2.1.316**(`cc8393b1`, probe digest 갱신 commit `6ddb44d8`): 2026-10-31 무과금 재측정에서 도움말·plugin API는
+  같았고 도구 표면은 버전 줄 외에 같았다. fixture 시험과 표면 관문이 통과했다. 2.1.314와 비교한 정적 추출의 route·host 집합도
+  같아 경로표는 그대로다(379개). 설치본 Codex CLI는 0.166.0이지만 도움말이 같아 측정 기준은 0.164.0으로 두었다. 다만
+  native가 보내는 system prompt는 2.1.314와 비교해 6개 경로 모두 달랐다. 버전 헤더가 바뀌었고 코드 스타일 지시 한 문장
+  ("Write code that reads like the surrounding code: …")이 빠졌다. 소유자는 이를 native 자체의 변경으로 받아들였다(2026-11-01).
+  Clauduct 구현은 변경하지 않았다. 달라진 prompt는 backend 입력에 전달되며 응답에 미치는 영향은 이 비교로 확인하지 않았다.
+
 ## native
+
+> **최종(⟦TBD:ship-date⟧):** 측정 기준은 Claude Code 2.1.316·Codex CLI 0.164.0이다(`cc8393b1`, 2026-10-31 재측정·2026-11-01 반영).
+> 도움말·plugin API는 같고 도구 표면은 버전 줄 외에 같으며, fixture 시험과 표면 관문이 통과했다. 출하 관문의 native는
+> 2.1.316(`e896a9d8…2d52`)이다. 직전 기준 2.1.314(`cb069eab`, 2026-10-30 재측정·반영)의 차이는 위 "2026-10-30 추가"에 적었다. 그 전 기준
+> 2.1.312(`4b963405`, 2026-10-27 재측정·2026-10-28 반영)는 도움말·plugin API·도구 표면이 버전 줄 외에 같았다.
+> 2.1.312·2.1.314·2.1.316 정적 판독에서 전용 `--bg-spare` pool은 Windows에서 spare를 만들기 전에 반환하지만,
+> Agent View dispatch의 미리 띄우기 경로는 그렇지 않다. 그래서 세 버전의 Windows warm spare는 native 코드 가드를 이유로
+> NOT_APPLICABLE로 판정하지 않는다(실행 관측 아님).
 
 > **2026-10-23 갱신:** 현재 측정 기준은 Claude Code 2.1.305·Codex CLI 0.163.0이다(`c6264df9`). 같은 날 무과금 재측정에서
 > 도움말·plugin API·도구 표면은 버전 줄 외에 변함없고 fixture 묶음·표면 관문은 PASS였다. 아래 2026-10-22의 재측정 미완료
@@ -169,9 +245,33 @@ Claude Code 2.1.299, Codex CLI 0.162.1이었다(2026-10-14 무과금 재측정).
 warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPPORT](NATIVE-SUPPORT.md)). 그래서 warm spare dispatch는 실행된
 성공으로 보고하지 않는다.
 
-## 출하 검사 (관문 실패)
+## 출하 검사
 
-출하 전 초안이므로 출하 신원(태그, digest, 빌드)은 없다.
+출하 신원과 최종 결과는 바로 아래 "최종 출하 후보" 절에 있다. 그 아래 절들은 날짜별 이력이다.
+
+### 최종 출하 후보 (⟦TBD:ship-date⟧, `⟦TBD:tag-commit⟧`)
+
+- **최종 로컬 전체 관문:** ⟦TBD:full-gate⟧ — gofmt·vet·build, 전체 Go·race, 합성·TUI, 문서 인용.
+- **provider-control probe·CTL v2 controller:** v0.6.11은 provider-control probe 8 entry ADMITTED와 CTL v2 controller campaign(pilot → 단일 세트 → N=5) 없이 출하한다. campaign은 실행하지 않았다. 제품 launch는 admission을 사용하지 않는다(#319 decision 17). R04L은 native 2.1.316 무과금 진단(같은 후보의 MULTI_TURN 3 run)에서 INCONCLUSIVE이고, RESUME_EXPLICIT·CONTINUE_PRINT·TUI·RP01 scope는 실행하지 않았다. [#340](https://github.com/wotjr1649/Clauduct/issues/340)이 이어받는다. `0248efbc4`(같은 chunk의 upstream 오류와 downstream 실패)는 실제 backend PASS 없음(offline real-HTTP 회귀만 있음)이다.
+- **실제 backend:** ⟦TBD:live-18⟧ — 18개 회귀 묶음, 변경 영향(`9d878bbb`의 `--background-stop` 오류 문구 포함)과 TUI,
+  backend 생성 한도 capability 재측정.
+- **routing proof 대기·종료 중 503·요청 진단 필드의 실제 backend 판정:** ⟦TBD:runtime-316⟧ — proof 대기(2초를 넘겨 5초 안에
+  확인된 표본), gateway 종료 중 503 `GATEWAY_CLOSED`와 hook의 종료 처리, 요청 기록의 진단 필드 형식(`f38cf2b6`·`e57723e7`).
+  항목마다 PASS·FAIL·NOT_EXERCISED로 적고, NOT_EXERCISED는 실제 backend PASS로 보지 않는다.
+- **무과금 재측정:** native 2.1.316(SHA-256 `e896a9d8…2d52`), 2026-10-31 재측정·2026-11-01 기준 반영(`cc8393b1`). Codex CLI는
+  설치본 0.166.0을 관측했고 도움말이 같아 측정 기준 0.164.0을 유지했다. 도움말·plugin API는 같고 도구 표면은 버전 줄 외에 같으며,
+  fixture 시험과 표면 관문이 통과했다. 직전 기준 2.1.314(`66e00df3…6cfa`)의 2026-10-30 재측정과 2.1.312(`6099672e…c865`)의
+  2026-10-27 재측정도 통과했다. 출하 관문의 native: 2.1.316(`e896a9d8…2d52`).
+- **출하 신원:** ⟦TBD:ship-hashes⟧ — `clauduct.exe`·`clauduct-probe.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`의 SHA-256,
+  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치, 내장 probe digest ⟦TBD:probe-digest⟧.
+- **설치·업데이트·되돌리기:** ⟦TBD:install-check⟧ — 제품과 probe의 짝, 새 설치, v0.6.10에서 교체·되돌리기, 설치본 실행과
+  재업데이트 무변경.
+- **앞선 `TBD(gate)` 정산**
+  - 버전 고정 없는 신원 확인 보완(2026-10-22)과 capture 대기 판정(`5d36c9b0`)·PR #330 리뷰 수정(`abc6e56b`·`e6eabfd4`·`7a12005e`·
+    `4aa8b3a7`·B10 `fb66791b`)은 이 후보에 들어 있고 위 관문·실제 backend·설치 결과가 그 검증이다. 자동 갱신 중 동작: ⟦TBD:autoupdate-identity⟧.
+  - 경로 template 보류 4개는 출하 전에 재실행하지 않았다. HOLD로 남고 [#336](https://github.com/wotjr1649/Clauduct/issues/336)가 이어받는다.
+  - #325 관측기 고부하·종료 검증: ⟦TBD:obs-325⟧.
+  - Go 1.27.2 최종 빌드·재현성과 probe digest는 위 "출하 신원"이다.
 
 ### 현재 출하 후보 — 2026-10-22 갱신
 
@@ -189,7 +289,7 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   무변경. v0.6.10 이하의 `--update`는 제품만 교체하므로 probe가 필요하면 새 제품으로 한 번 더 업데이트한다
   ([PACKAGING](PACKAGING.md) 5.1절). 출하 절차는 같은 문서의 4.1절을 따른다.
 
-아래의 "마지막 실행"·"현재"와 제품 소스 표시는 각 절의 날짜에 해당한다. 이번 후보의 최종 결과는 위 `TBD(gate)` 항목이 소유한다.
+아래의 "마지막 실행"·"현재"와 제품 소스 표시는 각 절의 날짜에 해당한다. 이번 출하의 최종 결과는 위 "최종 출하 후보" 절이 소유한다.
 
 ### #319 마감 관문 (2026-10-20, HEAD `124f1f76`, 제품 동작 소스 `5e6de560`, native 2.1.303)
 
@@ -269,7 +369,7 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
 - **출하 빌드·태그·Release·설치**: 소유자 지시가 있어야 한다. 아직 없다.
 
 > **2026-10-22 갱신:** 바로 위 "소유자 지시가 있어야 한다. 아직 없다"는 2026-10-17 당시의 기록이다. 현재 출하 신원과
-> 실행 결과는 앞의 "현재 출하 후보" 절에서 `TBD(gate)`로 관리한다. 이 문서 갱신 작업은 병합·태그·Release·설치를 수행하지 않는다.
+> 실행 결과는 앞의 "최종 출하 후보" 절에 있다. 이 문서 갱신 작업은 병합·태그·Release·설치를 수행하지 않는다.
 
 ## 알려진 제한
 
@@ -289,4 +389,14 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   - **2026-10-23 갱신:** 위 재측정 미완료와 경로표 반영 미완료 표시는 각각 2.1.305 무과금 재측정 PASS와 `028cd1ce`의
     반영 사실로 대체한다. #325 검증 보강은 "2026-10-23 추가"에 기록했다. 최종 관문·고부하 검증과 보류 4개 경로의 재실행은
     계속 `TBD(gate)`다. #319의 2.1.303 결과는 해당 과거 후보에만 적용한다.
+- **출하 시점(⟦TBD:ship-date⟧):** 위 두 항목의 최종 상태다. 측정 기준은 2.1.316·Codex CLI 0.164.0이고 출하 관문의 native는
+  2.1.316(`e896a9d8…2d52`)이다. 보류 4개 경로는 재실행하지 않아 HOLD로 남는다([#336](https://github.com/wotjr1649/Clauduct/issues/336)). #325는 ⟦TBD:obs-325⟧.
+- 관리 명령·`--bg` argv 판정 차이([#331](https://github.com/wotjr1649/Clauduct/issues/331))와 복원한 resident가 hook 트리·job
+  종료와 함께 끝나는 것([#332](https://github.com/wotjr1649/Clauduct/issues/332))은 v0.6.11 범위 밖이며 COMPATIBILITY 원장에 있다.
+- 세션 중 `/model`로 바꾼 model·effort pair가, resident가 다시 만들어진 뒤 그 세션을 resume하면 시작 pair로 돌아갈 수 있다.
+  코드 경로를 읽어 판단했고 실행해서 재현하지는 않았다. v0.6.11은 이를 알려진 제한으로 두고 출하한다(소유자 결정 2026-10-31).
+  수정과 그 실제 backend 검사는 [#341](https://github.com/wotjr1649/Clauduct/issues/341)이 이어받는다.
+- 같은 chunk의 upstream 읽기 오류와 downstream 전달 실패가 겹치는 분기(`0248efbc`)는 실제 backend PASS 없이 문서화된 한계로
+  출하한다("2026-10-30 추가", [#342](https://github.com/wotjr1649/Clauduct/issues/342)).
+- provider-control probe 8 entry ADMITTED와 CTL v2 controller campaign 없이 출하한다("최종 출하 후보", [#340](https://github.com/wotjr1649/Clauduct/issues/340)).
 - 그 밖의 남은 제한은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절에 있다.

@@ -12,6 +12,7 @@ import (
 
 type nativeCancellation struct {
 	identity nativeTurnReceipt
+	native   processKey // the native process that sent the request; zero without native identity
 	cancel   context.CancelFunc
 	record   *record
 	reading  bool
@@ -67,6 +68,9 @@ func (g *Gateway) bindNativeCancellation(ctx context.Context, r *http.Request, e
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	binding := &nativeCancellation{identity: id, cancel: cancel, record: entry, reading: reading}
+	if who, required := g.identityOf(r); required {
+		binding.native = who.native
+	}
 	n.mu.Lock()
 	if n.cancellations == nil {
 		n.cancellations = map[*nativeCancellation]struct{}{}
@@ -185,7 +189,13 @@ func (g *Gateway) ReconcileNativeCancellations() {
 			err = errNativeConfirmations
 		}
 		if err != nil {
-			n.confirmationFailed.Store(true)
+			// A receipt that never became readable, or one for another scope, is this native's
+			// failure; a storage error is everyone's.
+			if storageFailure(err) {
+				n.confirmationFailed.Store(true)
+			} else {
+				n.latchConfirmation(p.native)
+			}
 			source = "native_cancellation_unverified"
 		}
 		if source == "" {

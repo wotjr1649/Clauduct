@@ -15,6 +15,10 @@ import (
 // legacy identities, not another account's list, not a cache whose account is unknown.
 var ErrModelList = errors.New("ACCOUNT_MODEL_LIST_UNAVAILABLE")
 
+// ErrRoutingUnverified is the refusal a session ends with when a model request left by a route this
+// session's gateway did not verify; the message keeps its "ROUTING_UNVERIFIED: <detail>" form.
+var ErrRoutingUnverified = errors.New(CategoryRouting)
+
 // ModelListFacts is the provenance of the session's account list, for the exit status.
 type ModelListFacts struct {
 	// Source is "account" for a list fetched at start, "last-good" for the same account's
@@ -56,13 +60,18 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 		}
 	} else {
 		facts.Source, facts.FetchFailure = "last-good", failureCategory(err)
+		_, hint := upstream.CredentialRefusal(err)
 		key, keyErr := direct.AccountKey()
 		if keyErr != nil || home == "" {
-			return nil, facts, fmt.Errorf("%w: %s; the account could not be confirmed for a saved list", ErrModelList, facts.FetchFailure)
+			category := facts.FetchFailure
+			if keyCategory, keyHint := upstream.CredentialRefusal(keyErr); keyCategory != "" {
+				category, hint = keyCategory, keyHint
+			}
+			return nil, facts, modelListFailure(category, hint, "the account could not be confirmed for a saved list")
 		}
 		list, err = upstream.LoadAccountModels(home, key)
 		if err != nil {
-			return nil, facts, fmt.Errorf("%w: %s; no saved list for this account", ErrModelList, facts.FetchFailure)
+			return nil, facts, modelListFailure(facts.FetchFailure, hint, "no saved list for this account")
 		}
 	}
 	facts.FetchedAt = list.FetchedAt.UTC().Format(time.RFC3339)
@@ -79,9 +88,19 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	return catalogue, facts, nil
 }
 
+func modelListFailure(category, hint, reason string) error {
+	if hint != "" {
+		reason += "; " + hint
+	}
+	return fmt.Errorf("%w: %s; %s", ErrModelList, category, reason)
+}
+
 // failureCategory names a fetch failure without its text, which may carry details the
 // exit status must not repeat.
 func failureCategory(err error) string {
+	if category, _ := upstream.CredentialRefusal(err); category != "" {
+		return category
+	}
 	var failure upstream.Failure
 	switch {
 	case errors.As(err, &failure):
@@ -95,4 +114,11 @@ func failureCategory(err error) string {
 		return "MODEL_LIST_SHAPE"
 	}
 	return "MODEL_LIST_FETCH_FAILED"
+}
+
+// AccountModelList is the product's ModelList: the account's list fetched through direct, the
+// same transport that serves the session's requests, with that account's last good list as
+// the fallback. The product entry point (cmd/clauduct) passes it; Run never assembles it.
+func AccountModelList(ctx context.Context, direct *upstream.Direct, home string) (*bridge.Catalogue, ModelListFacts, error) {
+	return accountModelList(ctx, direct, home)
 }

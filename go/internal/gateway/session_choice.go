@@ -28,7 +28,7 @@ var nativeModelChoice = regexp.MustCompile("^<local-command-stdout>Set model to 
 // keeps its effort (measured: low stayed low after a picker change).
 var nativeModelChoice287 = regexp.MustCompile("^<local-command-stdout>Set model to `([^`]+)`(?: for this session only| and saved as your default for new sessions)(?: with `([a-z]+)` effort)?[^<]*</local-command-stdout>$")
 var nativeModelKept = regexp.MustCompile("^<local-command-stdout>Kept model as `([^`]+)`")
-var nativeEffortChoice = regexp.MustCompile(`^<local-command-stdout>Set effort level to ([a-z]+)(?: \(this session only\))?: [^<\r\n]+</local-command-stdout>$`)
+var nativeEffortChoice = regexp.MustCompile(`^<local-command-stdout>Set effort level to ([a-z]+)(?: \((?:this session only|saved as your default for new sessions)\))?: [^<\r\n]+</local-command-stdout>$`)
 
 type choiceRow struct {
 	displayRow

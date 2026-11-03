@@ -3,6 +3,7 @@ package hookcmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -20,15 +21,20 @@ const ConfirmationArg = "--clauduct-confirmation"
 // for its nonce: the request ended first. The module closes it without failing.
 const ConfirmationStale = 3
 
-// linkedConfirmation is a background worker's helper. The worker's environment
-// carries no gateway token, so the connection comes from the session link, as
-// it does for the background hooks.
+// linkedConfirmation is the helper of a session with a link, foreground or background.
+// Native's environment may carry no gateway token (a background worker, or a host-managed
+// provider), so the connection comes from the session link, as it does for the hooks.
 func linkedConfirmation(link string, in io.Reader, out io.Writer, env map[string]string) int {
 	connection, err := sessionlink.Read(link)
+	if errors.Is(err, sessionlink.ErrBusy) {
+		// A held or slow link sent nothing: the gateway refuses that request alone when it
+		// times out, so the module must not latch either (#319 decision 19b).
+		return ConfirmationStale
+	}
 	if err != nil {
 		return 2
 	}
-	env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"] = connection.BaseURL, connection.Token
+	pinGatewayEnv(env, connection)
 	return confirmation(in, out, env)
 }
 
@@ -42,7 +48,7 @@ func confirmation(in io.Reader, out io.Writer, env map[string]string) int {
 	if _, err = wire.Fields(raw, []string{"nonce", "session", "agent", "turn", "index", "search", "auxiliary", "confirmations", "unmatched"}); err != nil {
 		return 2
 	}
-	base, token := env["ANTHROPIC_BASE_URL"], env["ANTHROPIC_AUTH_TOKEN"]
+	base, token := envValue(env, "ANTHROPIC_BASE_URL"), envValue(env, "ANTHROPIC_AUTH_TOKEN")
 	if !loopback.MatchString(base) || token == "" {
 		return 2
 	}

@@ -125,6 +125,7 @@ func Failure(eventType string, raw []byte) error {
 
 // TextDeltaEvent is the incremental text the model produced.
 type TextDeltaEvent struct {
+	OutputIndex  *int
 	ItemID       string
 	ContentIndex int
 	Delta        string
@@ -134,6 +135,7 @@ type TextDeltaEvent struct {
 // compared against what the deltas built, which is the only way to notice that a delta
 // went missing between here and there.
 type TextDoneEvent struct {
+	OutputIndex  *int
 	ItemID       string
 	ContentIndex int
 	Text         string
@@ -169,11 +171,18 @@ type Usage struct {
 
 // DecodeTextDelta reads a response.output_text.delta payload.
 func DecodeTextDelta(raw []byte) (TextDeltaEvent, error) {
-	fields, err := wire.Fields(raw, nil)
+	fields, err := contentEventFields(raw, TextDelta, "delta")
 	if err != nil {
 		return TextDeltaEvent{}, ErrEventShape
 	}
 	var event TextDeltaEvent
+	if _, present := fields["output_index"]; present {
+		var index int
+		if intField(fields, "output_index", &index) != nil || index < 0 {
+			return TextDeltaEvent{}, ErrEventShape
+		}
+		event.OutputIndex = &index
+	}
 	if err := stringField(fields, "item_id", &event.ItemID); err != nil {
 		return TextDeltaEvent{}, err
 	}
@@ -189,11 +198,18 @@ func DecodeTextDelta(raw []byte) (TextDeltaEvent, error) {
 
 // DecodeTextDone reads a response.output_text.done payload.
 func DecodeTextDone(raw []byte) (TextDoneEvent, error) {
-	fields, err := wire.Fields(raw, nil)
+	fields, err := contentEventFields(raw, TextDone, "text")
 	if err != nil {
 		return TextDoneEvent{}, ErrEventShape
 	}
 	var event TextDoneEvent
+	if _, present := fields["output_index"]; present {
+		var index int
+		if intField(fields, "output_index", &index) != nil || index < 0 {
+			return TextDoneEvent{}, ErrEventShape
+		}
+		event.OutputIndex = &index
+	}
 	if err := stringField(fields, "item_id", &event.ItemID); err != nil {
 		return TextDoneEvent{}, err
 	}
@@ -208,23 +224,32 @@ func DecodeTextDone(raw []byte) (TextDoneEvent, error) {
 
 // ArgumentsDeltaEvent is one piece of a tool call's arguments as it streams.
 type ArgumentsDeltaEvent struct {
-	ItemID string
-	Delta  string
+	ItemID      string
+	Delta       string
+	OutputIndex *int
 }
 
 // ArgumentsDoneEvent is the backend's account of the arguments it finished writing.
 type ArgumentsDoneEvent struct {
-	ItemID    string
-	Arguments string
+	ItemID      string
+	Arguments   string
+	OutputIndex *int
 }
 
 // DecodeArgumentsDelta reads a response.function_call_arguments.delta payload.
 func DecodeArgumentsDelta(raw []byte) (ArgumentsDeltaEvent, error) {
-	fields, err := wire.Fields(raw, nil)
+	fields, err := contentEventFields(raw, FuncArgsDelta, "delta")
 	if err != nil {
 		return ArgumentsDeltaEvent{}, ErrEventShape
 	}
 	var event ArgumentsDeltaEvent
+	if _, present := fields["output_index"]; present {
+		var index int
+		if intField(fields, "output_index", &index) != nil || index < 0 {
+			return ArgumentsDeltaEvent{}, ErrEventShape
+		}
+		event.OutputIndex = &index
+	}
 	if err := stringField(fields, "item_id", &event.ItemID); err != nil {
 		return ArgumentsDeltaEvent{}, err
 	}
@@ -242,11 +267,18 @@ func DecodeArgumentsDelta(raw []byte) (ArgumentsDeltaEvent, error) {
 // backend's statement of what it streamed, and re-encoding them would make them agree with
 // the accumulated deltas for the wrong reason.
 func DecodeArgumentsDone(raw []byte) (ArgumentsDoneEvent, error) {
-	fields, err := wire.Fields(raw, nil)
+	fields, err := contentEventFields(raw, FuncArgsDone, "arguments")
 	if err != nil {
 		return ArgumentsDoneEvent{}, ErrEventShape
 	}
 	var event ArgumentsDoneEvent
+	if _, present := fields["output_index"]; present {
+		var index int
+		if intField(fields, "output_index", &index) != nil || index < 0 {
+			return ArgumentsDoneEvent{}, ErrEventShape
+		}
+		event.OutputIndex = &index
+	}
 	if err := stringField(fields, "item_id", &event.ItemID); err != nil {
 		return ArgumentsDoneEvent{}, err
 	}
@@ -277,23 +309,39 @@ func DecodeResponseID(raw []byte) (string, error) {
 	return id, nil
 }
 
-// DecodeReturnedRoute reads the model and reasoning effort a completed response says it ran
-// on. Empty when absent or not a string; nothing here refuses, it only reports (#91).
-func DecodeReturnedRoute(raw []byte) (model, effort string) {
-	var body struct {
-		Response struct {
-			Model     json.RawMessage `json:"model"`
-			Reasoning struct {
-				Effort json.RawMessage `json:"effort"`
-			} `json:"reasoning"`
-		} `json:"response"`
+// DecodeReturnedRoute distinguishes omitted route metadata from malformed metadata.
+// Nullable reasoning/effort metadata makes no route claim; a stated value must be a nonempty string.
+func DecodeReturnedRoute(raw []byte) (model, effort string, err error) {
+	fields, err := wire.Fields(raw, nil)
+	if err != nil {
+		return "", "", ErrEventShape
 	}
-	if json.Unmarshal(raw, &body) != nil {
-		return "", ""
+	value, presence := wire.Of(fields, "response")
+	if presence != wire.Present {
+		return "", "", ErrEventShape
 	}
-	_ = json.Unmarshal(body.Response.Model, &model)
-	_ = json.Unmarshal(body.Response.Reasoning.Effort, &effort)
-	return model, effort
+	response, err := wire.Fields(value, nil)
+	if err != nil {
+		return "", "", ErrEventShape
+	}
+	if _, set := response["model"]; set {
+		if stringField(response, "model", &model) != nil || model == "" {
+			return "", "", ErrEventShape
+		}
+	}
+	value, presence = wire.Of(response, "reasoning")
+	if presence == wire.Present {
+		reasoning, e := wire.Fields(value, nil)
+		if e != nil {
+			return "", "", ErrEventShape
+		}
+		if _, presence := wire.Of(reasoning, "effort"); presence == wire.Present {
+			if stringField(reasoning, "effort", &effort) != nil || effort == "" {
+				return "", "", ErrEventShape
+			}
+		}
+	}
+	return model, effort, nil
 }
 
 // DecodeUsage reads the counts out of a response.completed payload. A payload without
@@ -344,7 +392,7 @@ func readCount(fields map[string]json.RawMessage, name string, into *int64, know
 		return
 	}
 	var count int
-	if intValue(value, &count) == nil {
+	if intValue(value, &count) == nil && count >= 0 {
 		*into, *known = int64(count), true
 	}
 }
@@ -408,4 +456,52 @@ func intValue(value json.RawMessage, into *int) error {
 	}
 	*into = number
 	return nil
+}
+
+// Content events validate every field even when execution waits for completion.
+func contentEventFields(raw []byte, kind, payload string) (map[string]json.RawMessage, error) {
+	allowed := []string{"type", "item_id", "output_index", "sequence_number", payload, "safety_buffering"}
+	if kind == FuncArgsDelta || kind == TextDelta {
+		allowed = append(allowed, "obfuscation")
+	}
+	if kind == TextDelta || kind == TextDone {
+		allowed = append(allowed, "content_index", "logprobs", "annotations")
+	}
+	fields, err := wire.Fields(raw, allowed)
+	if err != nil {
+		return nil, ErrEventShape
+	}
+	if _, present := fields["type"]; present {
+		var actual string
+		if stringField(fields, "type", &actual) != nil || actual != kind {
+			return nil, ErrEventShape
+		}
+	}
+	if _, present := fields["sequence_number"]; present {
+		var sequence int
+		if intField(fields, "sequence_number", &sequence) != nil || sequence < 0 {
+			return nil, ErrEventShape
+		}
+	}
+	if _, present := fields["obfuscation"]; present {
+		var padding string
+		if stringField(fields, "obfuscation", &padding) != nil {
+			return nil, ErrEventShape
+		}
+	}
+	if !safetyBufferingOK(fields) {
+		return nil, ErrEventShape
+	}
+	for _, key := range []string{"logprobs", "annotations"} {
+		if value, present := fields[key]; present {
+			if key == "logprobs" && string(value) == "null" {
+				continue
+			}
+			var entries []json.RawMessage
+			if string(value) == "null" || json.Unmarshal(value, &entries) != nil || len(entries) != 0 {
+				return nil, ErrEventShape
+			}
+		}
+	}
+	return fields, nil
 }

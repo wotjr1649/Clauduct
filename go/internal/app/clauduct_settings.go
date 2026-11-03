@@ -20,8 +20,10 @@ import (
 
 func nativeConfigDirectory(env map[string]string, cwd string) string {
 	configDir := ""
+	spelling := ""
 	for key, value := range env {
-		if strings.EqualFold(key, "CLAUDE_CONFIG_DIR") {
+		if strings.EqualFold(key, "CLAUDE_CONFIG_DIR") && key > spelling {
+			spelling = key // Match launch's sorted, case-insensitive last-wins rule.
 			configDir = value
 		}
 	}
@@ -167,7 +169,7 @@ func defaultClauductSettings() ClauductSettings {
 		BoundaryProfile: boundaryDefault}
 }
 
-func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string) (bridge.Pair, string, string, error) {
+func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string, finalSettings string) (bridge.Pair, string, string, error) {
 	model, named := optionValue(spec.Args, "--model")
 	effort, _ := optionValue(spec.Args, "--effort")
 	modelSource, effortSource := config.StartupSource, config.StartupSource
@@ -187,8 +189,12 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 		}
 	}
 	cli := cliRoles{}
-	if err := cli.scope(spec.Args, spec.Dir); err != nil {
+	if err := cli.scope(requested, spec.Dir); err != nil {
 		return bridge.Pair{}, "", "", err
+	}
+	_, userSettingsModel := cli.flagEnv["ANTHROPIC_MODEL"]
+	if finalSettings != "" {
+		cli.readFlagEnv([]byte(finalSettings))
 	}
 	configDir := nativeConfigDirectory(env, spec.Dir)
 	if !named {
@@ -197,7 +203,7 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 			return bridge.Pair{}, "", "", err
 		}
 		model = value
-		if strings.HasPrefix(source, "native.") {
+		if strings.HasPrefix(source, "native.") && !(source == "native.settings.env.ANTHROPIC_MODEL" && !userSettingsModel && model == config.Startup.Model) {
 			modelSource = source
 		}
 	}

@@ -18,12 +18,16 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/admissioncontract"
+	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/buildinfo"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
@@ -153,5 +157,63 @@ func doctor(out io.Writer) int {
 	catalogue(out, codex, codexErr)
 	credential, err := (&auth.Provider{}).Credential()
 	credentialReport(out, credential, err)
+	admissionReport(out)
 	return status
+}
+
+// admissionReport shows provider-control admission (#320) per scope, without running a probe.
+// It is a diagnostic: the launch reads none of it (#319 decision 17), and a scope's state is
+// never shown as the native's certification.
+func admissionReport(out io.Writer) {
+	home, _ := os.UserHomeDir()
+	fmt.Fprintln(out, "admission    diagnostic only: launches use no provider strategy and read no entry")
+	key, keyErr := app.CurrentAdmissionKey(platform.Environment(os.Environ()))
+	if keyErr != nil {
+		fmt.Fprintf(out, "admission    current key unavailable: %v\n", keyErr)
+	}
+	fmt.Fprintf(out, "admission    contract configuration %s (contract restrictions, not the launch's: %s)\n", admissioncontract.ConfigurationID, strings.Join(admissioncontract.Restrictions(), ", "))
+	probe := app.ExpectedProbeSHA256
+	if probe == "" {
+		probe = "none: this build runs no provider-control probe"
+	}
+	fmt.Fprintf(out, "admission    contract %.12s, expected probe %s\n", admissioncontract.AdmissionSHA256(), probe)
+	if native, err := app.ResolvedNativeSHA256(); err == nil {
+		fmt.Fprintf(out, "admission    native %s\n", native)
+	}
+	if self, err := os.Executable(); err == nil {
+		path := filepath.Join(filepath.Dir(self), app.ProbeName)
+		if id, err := providercert.Observe(path); err == nil {
+			fmt.Fprintf(out, "admission    probe file %s %s\n", path, id.SHA256)
+		} else {
+			fmt.Fprintf(out, "admission    probe file %s absent or unreadable\n", path)
+		}
+	}
+	for _, s := range app.AdmissionStatuses(home, key) {
+		line := fmt.Sprintf("admission    %-24s %s", s.Scope, s.State)
+		if s.State != "NONE" {
+			match := "current"
+			if s.Stale != "" {
+				match = "stale: " + s.Stale
+			}
+			line += fmt.Sprintf(" (%s, %s; native %.12s, clauduct %.12s, probe %.12s)", match, s.CreatedAt.Format(time.RFC3339),
+				s.Key.NativeSHA256, s.Key.ClauductBinarySHA256, s.Key.ProbeExecutableSHA256)
+		}
+		if len(s.Reasons) > 0 {
+			line += " reasons " + strings.Join(s.Reasons, ",")
+		}
+		fmt.Fprintln(out, line)
+		if len(s.NotExercisable) > 0 {
+			fmt.Fprintf(out, "admission    %-24s not exercisable: %s\n", "", strings.Join(s.NotExercisable, ","))
+		}
+		if len(s.Labels) > 0 {
+			fmt.Fprintf(out, "admission    %-24s labels: %s\n", "", strings.Join(s.Labels, ","))
+		}
+		if len(s.Gaps) > 0 {
+			fmt.Fprintf(out, "admission    %-24s open gaps: %s\n", "", strings.Join(s.Gaps, ","))
+		}
+	}
+	for _, gap := range admissioncontract.Gaps() {
+		fmt.Fprintf(out, "admission    contract gap: %s\n", gap)
+	}
+	fmt.Fprintln(out, "routing r4   HOST_MANAGED INCOMPATIBLE (R08 background FAIL_ROUTING); a scope admission is not a certification")
 }

@@ -110,6 +110,9 @@ func probe(args []string, out, errOut io.Writer) int {
 	if len(args) > 0 && args[0] == "accept" {
 		return acceptCommand(args[1:], out, errOut)
 	}
+	if len(args) > 0 && args[0] == "provider-control" {
+		return providerControl(args[1:], errOut)
+	}
 	if len(args) != 2 || args[1] != "--send" {
 		return usageProbe(out)
 	}

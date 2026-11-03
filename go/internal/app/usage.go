@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 )
 
 // Reading back what sessions wrote.
@@ -39,6 +41,10 @@ func (r Reading) Age() time.Duration { return time.Since(r.Taken) }
 // rather than reported: the directory is a temporary one and anything may be in it, and a
 // an older build or an interrupted write may have left an incomplete account.
 func Readings(dir string, limit int) []Reading {
+	return readings(dir, limit, providercert.ProcessStatus)
+}
+
+func readings(dir string, limit int, processStatus func(uint32, int64) providercert.ProcessState) []Reading {
 	if dir == "" {
 		dir = StatusDir()
 	}
@@ -61,6 +67,13 @@ func Readings(dir string, limit int) []Reading {
 		var status Status
 		if json.Unmarshal(raw, &status) != nil {
 			continue
+		}
+		// A checkpoint proves neither continued life nor a final outcome; never rewrite it.
+		if life := status.Lifecycle; status.Category == "RUNNING" || life != nil && !life.Final {
+			if life == nil || life.ProcessPID == 0 || life.ProcessCreatedAt == 0 ||
+				processStatus(life.ProcessPID, life.ProcessCreatedAt) != providercert.ProcessAlive {
+				status.Category = CategoryFinalUnverified
+			}
 		}
 		info, err := entry.Info()
 		if err != nil {

@@ -1,0 +1,1112 @@
+package providercert
+
+import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
+	"compress/zlib"
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/pem"
+	"errors"
+	"io"
+	"math/big"
+	"net"
+	"net/http"
+	"net/url"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/coder/websocket"
+)
+
+// Counter is what a destination saw at the TCP read, before TLS: for a wrong destination a
+// handshake alone is already a non-zero count.
+type Counter struct {
+	Bytes atomic.Int64
+	Conns atomic.Int64
+	// owners are the local processes that opened the first connections, for attribution.
+	mu     sync.Mutex
+	owners []ConnOwner
+}
+
+// maxOwners bounds the attribution kept per receiver; the counts above stay exact.
+const maxOwners = 256
+
+// Owners returns the processes that opened the receiver's connections, as far as recorded.
+func (c *Counter) Owners() []ConnOwner {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.owners)
+}
+
+type countingConn struct {
+	net.Conn
+	counter    *Counter
+	accepted   *ReceiverConnection
+	observer   *Observer
+	closed     *sync.Once
+	drainOwner receiverOwner
+}
+
+func (c countingConn) Close() error {
+	err := c.Conn.Close()
+	if c.closed != nil {
+		c.closed.Do(func() {
+			c.observer.mu.Lock()
+			defer c.observer.mu.Unlock()
+			c.observer.trackActivity(c.drainOwner, -1, 0)
+		})
+	}
+	return err
+}
+
+// ReceiverConnection is captured once before HTTP/TLS consumes the connection.
+// It holds the loopback tuple for in-process joins only: evidence never carries an address, so
+// the tuple is not serialized; the ID and the OS identity of the owner are.
+type ReceiverConnection struct {
+	ID       int64     `json:"id"`
+	Accepted time.Time `json:"accepted"`
+	Client   string    `json:"-"`
+	Server   string    `json:"-"`
+	Owner    ConnOwner `json:"owner"`
+	http     *tlsHTTPAccounting
+}
+
+type receiverConnectionKey struct{}
+
+func receiverConnContext(ctx context.Context, c net.Conn) context.Context {
+	for {
+		secured, ok := c.(interface{ NetConn() net.Conn })
+		if !ok {
+			break
+		}
+		c = secured.NetConn()
+	}
+	if counted, ok := c.(countingConn); ok {
+		return context.WithValue(ctx, receiverConnectionKey{}, counted.accepted)
+	}
+	return ctx
+}
+
+func receiverConnection(r *http.Request) *ReceiverConnection {
+	connection, _ := r.Context().Value(receiverConnectionKey{}).(*ReceiverConnection)
+	return connection
+}
+
+func (c countingConn) Read(b []byte) (int, error) {
+	n, err := c.Conn.Read(b)
+	c.counter.Bytes.Add(int64(n))
+	return n, err
+}
+
+type countingListener struct {
+	net.Listener
+	counter  *Counter
+	observer *Observer
+}
+
+func newCountingListener(raw net.Listener, counter *Counter, observer *Observer) *countingListener {
+	return &countingListener{Listener: raw, counter: counter, observer: observer}
+}
+
+func (l *countingListener) Accept() (net.Conn, error) {
+	conn, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return l.register(conn), nil
+}
+
+func (l *countingListener) register(conn net.Conn) net.Conn {
+	var closed *sync.Once
+	if l.observer != nil {
+		l.observer.mu.Lock()
+		l.observer.trackActivity(receiverOwner{}, 1, 0)
+		l.observer.mu.Unlock()
+		closed = &sync.Once{}
+	}
+	id := l.counter.Conns.Add(1)
+	accepted := time.Now()
+	owner := ownerAtAccept(conn.RemoteAddr(), conn.LocalAddr(), id <= maxOwners)
+	drainOwner := receiverOwnerOf(owner)
+	if l.observer != nil {
+		l.observer.mu.Lock()
+		l.observer.trackActivity(receiverOwner{}, -1, 0)
+		l.observer.trackActivity(drainOwner, 1, 0)
+		l.observer.mu.Unlock()
+	}
+	var connection *ReceiverConnection
+	_, clientTCP := conn.RemoteAddr().(*net.TCPAddr)
+	_, serverTCP := conn.LocalAddr().(*net.TCPAddr)
+	if clientTCP && serverTCP {
+		connection = &ReceiverConnection{ID: id, Accepted: accepted, Client: conn.RemoteAddr().String(), Server: conn.LocalAddr().String(), Owner: owner}
+	}
+	l.counter.mu.Lock()
+	full := len(l.counter.owners) >= maxOwners
+	l.counter.mu.Unlock()
+	if !full {
+		l.counter.mu.Lock()
+		if len(l.counter.owners) < maxOwners {
+			l.counter.owners = append(l.counter.owners, owner)
+		}
+		l.counter.mu.Unlock()
+	}
+	return countingConn{Conn: conn, counter: l.counter, accepted: connection, observer: l.observer, closed: closed, drainOwner: drainOwner}
+}
+
+// Canary is one turn's marker in the prompt. Only its digest goes into evidence.
+type Canary struct {
+	ID    string
+	Value []byte
+}
+
+// NewCanary returns a fresh 128-bit hex canary.
+func NewCanary(id string) (Canary, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return Canary{}, err
+	}
+	return Canary{ID: id, Value: []byte("clauduct-probe-" + hex.EncodeToString(b))}, nil
+}
+
+// Digest is what evidence records instead of the canary.
+func (c Canary) Digest() string {
+	sum := sha256.Sum256(c.Value)
+	return hex.EncodeToString(sum[:])
+}
+
+// patterns are the forms the canary is searched in: raw, and standard and URL-safe base64 at
+// each of the three byte alignments, cut to the characters the canary bytes alone determine.
+func (c Canary) patterns() [][]byte {
+	out := [][]byte{c.Value}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.URLEncoding} {
+		for k := 0; k < 3; k++ {
+			s := enc.EncodeToString(append(make([]byte, k), c.Value...))
+			start, end := (k+2)/3*4, (k+len(c.Value))/3*4
+			if end > start {
+				out = append(out, []byte(s[start:end]))
+			}
+		}
+	}
+	return out
+}
+
+// maxScannedBody bounds how much of one request body is read looking for a canary.
+const maxScannedBody = 64 << 20
+
+// maxKeptBody bounds the part of a body kept for a receiver's responder.
+const maxKeptBody = 4 << 20
+
+// limitedWriter keeps at most n bytes and reports every write as complete.
+type limitedWriter struct {
+	b *bytes.Buffer
+	n int
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if room := w.n - w.b.Len(); room > 0 {
+		w.b.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+// errUndecodable marks a body whose encoding the probe cannot undo.
+var errUndecodable = errors.New("UNDECODABLE_EGRESS")
+
+// scanner looks for canaries in a byte stream fed in pieces, keeping only a sliding window as
+// long as the longest pattern. One scanner spans every message of a WebSocket connection, so a
+// canary split across messages is still found.
+type scanner struct {
+	canaries []Canary
+	patterns []scanPattern
+	longest  int
+	window   []byte
+	found    map[string]bool
+}
+
+type scanPattern struct {
+	id    string
+	value []byte
+}
+
+func newScanner(canaries []Canary) *scanner {
+	s := &scanner{found: map[string]bool{}}
+	s.add(canaries)
+	return s
+}
+
+// add extends the search to canaries not yet searched for, keeping the window: a socket opened
+// in turn 1 must still be searched for turn 2's canary.
+func (s *scanner) add(canaries []Canary) {
+	for _, c := range canaries {
+		if slices.ContainsFunc(s.canaries, func(have Canary) bool { return have.ID == c.ID }) {
+			continue
+		}
+		s.canaries = append(s.canaries, c)
+		for _, p := range c.patterns() {
+			s.patterns = append(s.patterns, scanPattern{c.ID, p})
+			s.longest = max(s.longest, len(p))
+		}
+	}
+}
+
+func (s *scanner) feed(b []byte) {
+	s.window = append(s.window, b...)
+	for _, p := range s.patterns {
+		if !s.found[p.id] && bytes.Contains(s.window, p.value) {
+			s.found[p.id] = true
+		}
+	}
+	if keep := s.longest - 1; keep > 0 && len(s.window) > keep {
+		s.window = append(s.window[:0], s.window[len(s.window)-keep:]...)
+	}
+}
+
+func (s *scanner) ids() []string {
+	ids := []string{}
+	for _, c := range s.canaries {
+		if s.found[c.ID] {
+			ids = append(ids, c.ID)
+		}
+	}
+	return ids
+}
+
+// scan reads at most maxScannedBody bytes of r and returns the IDs of canaries found. A body
+// longer than that was not searched in full, which is undecodable rather than clean.
+func scan(r io.Reader, canaries []Canary) ([]string, error) {
+	s := newScanner(canaries)
+	buf := make([]byte, 64<<10)
+	var read int64
+	for {
+		n, err := r.Read(buf)
+		read += int64(n)
+		s.feed(buf[:n])
+		if errors.Is(err, io.EOF) {
+			return s.ids(), nil
+		}
+		if err != nil {
+			return s.ids(), err
+		}
+		if read > maxScannedBody {
+			return s.ids(), errUndecodable
+		}
+	}
+}
+
+// decoded undoes the request's Content-Encoding for gzip and deflate. Any other coding, br and
+// zstd included, is undecodable: the standard library has no decoder and the verdict treats it
+// as inconclusive rather than as clean.
+func decoded(header http.Header, body io.Reader) (io.Reader, error) {
+	var codings []string
+	for _, value := range header.Values("Content-Encoding") {
+		for _, part := range strings.Split(value, ",") {
+			if part = strings.ToLower(strings.TrimSpace(part)); part != "" && part != "identity" {
+				codings = append(codings, part)
+			}
+		}
+	}
+	// Codings are listed in the order applied, so they are undone from the last.
+	for i := len(codings) - 1; i >= 0; i-- {
+		var err error
+		switch codings[i] {
+		case "gzip", "x-gzip":
+			body, err = gzip.NewReader(body)
+		case "deflate":
+			body, err = zlib.NewReader(body)
+		default:
+			return nil, errUndecodable
+		}
+		if err != nil {
+			return nil, errUndecodable
+		}
+	}
+	return body, nil
+}
+
+// Seen is one request a receiver observed: never its body or header values.
+type Seen struct {
+	Connection *ReceiverConnection `json:"connection,omitempty"`
+	Sequence   int                 `json:"sequence,omitempty"`
+	At         time.Time           `json:"at"`
+	Host       string              `json:"host"`
+	Method     string              `json:"method"`
+	PathClass  string              `json:"pathClass"`
+	// PathTemplate is method + host + the path with variable parts normalized (see PathTemplate):
+	// no query, token, e-mail, file path or other secret-bearing value.
+	PathTemplate string `json:"pathTemplate"`
+	Inference    bool   `json:"inference"`
+	Account      bool   `json:"account"`
+	WebSocket    bool   `json:"webSocket"`
+	Undecodable  bool   `json:"undecodable"`
+	// TLSRejected is a tunnel whose client sent a TLS ClientHello and then did not complete the
+	// handshake (it refused the probe's certificate, or left). TLS carries no application data
+	// before the handshake completes and this server accepts no early data, so such a tunnel
+	// carried no request; it is recorded apart from an undecodable one.
+	TLSRejected bool     `json:"tlsRejected,omitempty"`
+	Canaries    []string `json:"canaries,omitempty"`
+	// Authority is the destination authority of a proxied request, including HTTP absolute-form
+	// requests and CONNECT tunnels. Kept out of evidence: it can name a loopback port.
+	Authority string `json:"-"`
+}
+
+// maxSeen bounds one receiver's record; requests past it are still counted.
+const maxSeen = 512
+
+type receiverOwner struct {
+	pid     uint32
+	created int64
+}
+
+func receiverOwnerOf(owner ConnOwner) receiverOwner {
+	if owner.PID == 0 || owner.Created.IsZero() {
+		return receiverOwner{}
+	}
+	return receiverOwner{pid: owner.PID, created: owner.Created.UnixNano()}
+}
+
+type receiverActivity struct {
+	connections, requests int
+}
+
+// Observer is the handler behind every probe receiver. It classifies and scans each request,
+// then lets Respond answer it. Respond never sees the body: it has been consumed.
+type Observer struct {
+	ID       string
+	Canaries func() []Canary
+	Respond  func(w http.ResponseWriter, r *http.Request, seen Seen)
+	// Observed receives metadata for every recorded request, including CONNECT and upgrades.
+	Observed func(metadata ObservationMetadata, seen Seen)
+
+	mu          sync.Mutex
+	seen        []Seen
+	total       int
+	dropped     int
+	active      int
+	connections atomic.Int64
+	activity    map[receiverOwner]receiverActivity
+	// stop ends WebSocket reads, which outlive the HTTP server's Close once hijacked.
+	stop     chan struct{}
+	stopOnce sync.Once
+}
+
+type ObservationMetadata struct {
+	RemoteAddr  string
+	AuthHeaders []string
+}
+
+func (o *Observer) observed(r *http.Request, seen Seen) {
+	if o.Observed == nil {
+		return
+	}
+	metadata := ObservationMetadata{RemoteAddr: r.RemoteAddr}
+	for name := range r.Header {
+		lower := strings.ToLower(name)
+		if strings.Contains(lower, "auth") || strings.Contains(lower, "token") || strings.Contains(lower, "key") || strings.Contains(lower, "cookie") {
+			metadata.AuthHeaders = append(metadata.AuthHeaders, name)
+		}
+	}
+	slices.Sort(metadata.AuthHeaders)
+	seen.Canaries = slices.Clone(seen.Canaries)
+	if seen.Connection != nil {
+		copy := *seen.Connection
+		seen.Connection = &copy
+	}
+	o.Observed(metadata, seen)
+}
+
+func (o *Observer) stopped() chan struct{} {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.stop == nil {
+		o.stop = make(chan struct{})
+	}
+	return o.stop
+}
+
+func (o *Observer) shutdown() {
+	ch := o.stopped()
+	o.stopOnce.Do(func() { close(ch) })
+}
+
+// Seen returns a snapshot of the requests observed and how many were not kept.
+func (o *Observer) Seen() (seen []Seen, total, dropped int) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]Seen(nil), o.seen...), o.total, o.dropped
+}
+
+func (o *Observer) ServeHTTP(w http.ResponseWriter, r *http.Request) { o.observe(w, r, r.Host) }
+
+func (o *Observer) canaries() []Canary {
+	if o.Canaries == nil {
+		return nil
+	}
+	return o.Canaries()
+}
+
+func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority string) {
+	var owner receiverOwner
+	if connection := receiverConnection(r); connection != nil {
+		owner = receiverOwnerOf(connection.Owner)
+	}
+	o.mu.Lock()
+	o.trackActivity(owner, 0, 1)
+	o.mu.Unlock()
+	defer func() { o.mu.Lock(); o.trackActivity(owner, 0, -1); o.mu.Unlock() }()
+	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
+		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
+	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		seen.WebSocket = true
+		index := o.record(&seen)
+		o.observed(r, seen)
+		o.webSocket(w, r, index)
+		return
+	}
+	// The decoded body's first part is kept for the responder, which reads r.Body after the scan.
+	var kept bytes.Buffer
+	if body, err := decoded(r.Header, r.Body); err != nil {
+		seen.Undecodable = true
+		_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxScannedBody))
+	} else {
+		// A canary found before the body failed to decode is still proof of the contact.
+		ids, err := scan(io.TeeReader(body, &limitedWriter{&kept, maxKeptBody}), o.canaries())
+		seen.Canaries = ids
+		seen.Undecodable = err != nil
+	}
+	r.Body = io.NopCloser(bytes.NewReader(kept.Bytes()))
+	o.record(&seen)
+	o.observed(r, seen)
+	if o.Respond != nil {
+		o.Respond(w, r, seen)
+		return
+	}
+	w.WriteHeader(http.StatusNotFound)
+}
+
+// Drained includes accepted connections before HTTP/TLS starts a handler. Call only after the sender exits.
+func (o *Observer) Drained() bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.active == 0 && o.connections.Load() == 0
+}
+
+// trackActivity requires mu. Empty entries are removed so only live activity is retained.
+func (o *Observer) trackActivity(owner receiverOwner, connections, requests int) {
+	if o.activity == nil {
+		o.activity = map[receiverOwner]receiverActivity{}
+	}
+	activity := o.activity[owner]
+	activity.connections += connections
+	activity.requests += requests
+	if activity == (receiverActivity{}) {
+		delete(o.activity, owner)
+	} else {
+		o.activity[owner] = activity
+	}
+	o.connections.Add(int64(connections))
+	o.active += requests
+}
+
+// DrainedFor ignores other proved owners; unknown ownership keeps the proof incomplete.
+// Call after the exact sender generation exits, including its accepted but unread connections.
+func (o *Observer) DrainedFor(pid uint32, created time.Time) bool {
+	owner := receiverOwnerOf(ConnOwner{PID: pid, Created: created})
+	if owner == (receiverOwner{}) {
+		return false
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.activity[owner] == (receiverActivity{}) && o.activity[receiverOwner{}] == (receiverActivity{})
+}
+
+// webSocket accepts the upgrade and scans every message for as long as the connection or the
+// receiver lives. The record at index is updated as canaries appear, so a snapshot taken while
+// the socket is still open already sees them. The library unmasks frames and undoes
+// permessage-deflate; any end other than a normal close is undecodable.
+func (o *Observer) webSocket(w http.ResponseWriter, r *http.Request, index int) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true, CompressionMode: websocket.CompressionContextTakeover})
+	if err != nil {
+		o.update(index, func(s *Seen) { s.Undecodable = true })
+		return
+	}
+	defer conn.CloseNow()
+	conn.SetReadLimit(maxScannedBody)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-o.stopped():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	stream := newScanner(o.canaries())
+	for {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			if status := websocket.CloseStatus(err); status != websocket.StatusNormalClosure && status != websocket.StatusGoingAway {
+				o.update(index, func(s *Seen) { s.Undecodable = true })
+			}
+			return
+		}
+		stream.add(o.canaries())
+		stream.feed(data)
+		ids := stream.ids()
+		o.update(index, func(s *Seen) { s.Canaries = ids })
+	}
+}
+
+// record keeps seen and returns its index, or -1 once the record is full. Requests past the
+// bound are still counted in total and dropped, which the verdict reads as a receiver fault.
+func (o *Observer) record(seen *Seen) int {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.total++
+	seen.Sequence = o.total
+	if len(o.seen) < maxSeen {
+		o.seen = append(o.seen, *seen)
+		return len(o.seen) - 1
+	}
+	o.dropped++
+	return -1
+}
+
+func (o *Observer) update(index int, fn func(*Seen)) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if index >= 0 && index < len(o.seen) {
+		fn(&o.seen[index])
+	}
+}
+
+// ReceiverSnapshot is one receiver's counter and request view, cloned together. Complete is
+// whether no accepted connection or request was still in flight when it was read.
+type ReceiverSnapshot struct {
+	Seen                    []Seen
+	Total                   int
+	Dropped                 int
+	Bytes                   int64
+	Conns                   int64
+	Owners                  []ConnOwner
+	UnclassifiedConnections int64 // direct TLS accepts without an exact, generation-bound HTTP observation
+	Complete                bool
+}
+
+// Receiver is one loopback destination the probe owns.
+type Receiver struct {
+	URL      string
+	Counter  *Counter
+	Observer *Observer
+	// CertSHA256 is the hex SHA-256 of a TLS receiver's certificate DER: the pin a synthetic
+	// stored gateway credential carries. CertPEM is that certificate, for the probe child's
+	// trust store only.
+	CertSHA256  string
+	CertPEM     []byte
+	certificate *tls.Certificate
+	origin      string
+	server      *http.Server
+	done        chan error
+	listener    *countingListener
+	closeOnce   sync.Once
+	closeErr    error
+}
+
+// Read is the receiver's view now; Complete is Observer.Drained at the read. A read after the
+// senders exited is what the probe's ledger settles on.
+func (r *Receiver) Read() ReceiverSnapshot {
+	if r == nil || r.Observer == nil {
+		return ReceiverSnapshot{}
+	}
+	return r.receiverSnapshot(r.Observer.Drained())
+}
+
+func (r *Receiver) receiverSnapshot(complete bool) ReceiverSnapshot {
+	snapshot := ReceiverSnapshot{Complete: complete}
+	if r == nil {
+		return snapshot
+	}
+	if r.Observer != nil {
+		seen, total, dropped := r.Observer.Seen()
+		snapshot.Seen = cloneSeen(seen)
+		snapshot.Total = total
+		snapshot.Dropped = dropped
+	}
+	if r.Counter != nil {
+		snapshot.Bytes = r.Counter.Bytes.Load()
+		snapshot.Conns = r.Counter.Conns.Load()
+		snapshot.Owners = r.Counter.Owners()
+	}
+	if r.certificate != nil && r.Counter != nil {
+		snapshot.UnclassifiedConnections = r.unclassifiedTLSConnections(snapshot)
+	}
+	return snapshot
+}
+
+func (r *Receiver) unclassifiedTLSConnections(snapshot ReceiverSnapshot) int64 {
+	endpoint, err := url.Parse(r.origin)
+	if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" {
+		return snapshot.Conns
+	}
+	type accepted struct {
+		server, client string
+		at             time.Time
+		owner          receiverOwner
+		account        *tlsHTTPAccounting
+	}
+	seen := make(map[int64]accepted)
+	invalid := make(map[int64]bool)
+	requests := make(map[int64]int)
+	for _, item := range snapshot.Seen {
+		connection := item.Connection
+		if connection == nil || connection.Server != endpoint.Host {
+			continue
+		}
+		if connection.ID <= 0 || connection.ID > snapshot.Conns || connection.Client == "" || connection.Accepted.IsZero() ||
+			connection.Owner.PID == 0 || connection.Owner.Created.IsZero() {
+			continue
+		}
+		current := accepted{server: connection.Server, client: connection.Client, at: connection.Accepted,
+			owner: receiverOwnerOf(connection.Owner), account: connection.http}
+		if prior, exists := seen[connection.ID]; exists &&
+			(prior.server != current.server || prior.client != current.client || !prior.at.Equal(current.at) || prior.owner != current.owner || prior.account != current.account) {
+			delete(seen, connection.ID)
+			invalid[connection.ID] = true
+			continue
+		}
+		if !invalid[connection.ID] {
+			seen[connection.ID] = current
+			requests[connection.ID]++
+		}
+	}
+	for id, entry := range seen {
+		if entry.account == nil || !entry.account.matches(requests[id]) {
+			delete(seen, id)
+		}
+	}
+	unclassified := snapshot.Conns - int64(len(seen))
+	if unclassified < 0 {
+		return snapshot.Conns
+	}
+	return unclassified
+}
+
+func cloneSeen(seen []Seen) []Seen {
+	copy := make([]Seen, len(seen))
+	for i, item := range seen {
+		item.Canaries = slices.Clone(item.Canaries)
+		if item.Connection != nil {
+			connection := *item.Connection
+			item.Connection = &connection
+		}
+		copy[i] = item
+	}
+	return copy
+}
+
+// Close stops the receiver. Bytes that arrived before Close are already counted. A second Close
+// (the probe's scope end, then its test cleanup) returns the first one's result.
+func (r *Receiver) Close() error {
+	if r == nil || r.server == nil {
+		return nil
+	}
+	r.closeOnce.Do(func() {
+		if r.Observer != nil {
+			r.Observer.shutdown()
+		}
+		r.closeErr = r.server.Close()
+		if serveErr := <-r.done; serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			r.closeErr = errors.Join(r.closeErr, serveErr)
+		}
+	})
+	return r.closeErr
+}
+
+// Listen starts a plain HTTP receiver on 127.0.0.1.
+func Listen(o *Observer) (*Receiver, error) { return listen(o, nil, nil, o) }
+
+// ListenUnix starts a plain HTTP receiver on an AF_UNIX socket at path, the destination a
+// settings ANTHROPIC_UNIX_SOCKET would name. URL is the socket path.
+func ListenUnix(o *Observer, path string) (*Receiver, error) {
+	raw, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	counter := &Counter{}
+	listener := newCountingListener(raw, counter, o)
+	r := &Receiver{URL: path, Counter: counter, Observer: o, server: &http.Server{Handler: o, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1), listener: listener}
+	go func() { r.done <- r.server.Serve(listener) }()
+	return r, nil
+}
+
+// ListenTLS starts an HTTPS receiver on 127.0.0.1 with a fresh self-signed certificate.
+func ListenTLS(o *Observer) (*Receiver, error) {
+	cert, der, err := issue([]string{"127.0.0.1", "localhost"}, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return listen(o, &cert, der, o)
+}
+
+func listen(handler http.Handler, cert *tls.Certificate, der []byte, o *Observer) (*Receiver, error) {
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	counter := &Counter{}
+	listener := newCountingListener(raw, counter, o)
+	var l net.Listener = listener
+	r := &Receiver{Counter: counter, Observer: o, server: &http.Server{Handler: handler, ConnContext: receiverConnContext, ReadHeaderTimeout: 10 * time.Second}, done: make(chan error, 1), listener: listener}
+	scheme := "http"
+	if cert != nil {
+		scheme = "https"
+		sum := sha256.Sum256(der)
+		r.CertSHA256 = hex.EncodeToString(sum[:])
+		r.CertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+		l = &tlsHTTPListener{Listener: l, observer: o, config: &tls.Config{Certificates: []tls.Certificate{*cert}, NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12}}
+	}
+	r.URL = scheme + "://" + raw.Addr().String()
+	r.origin, r.certificate = r.URL, cert
+	go func() { r.done <- r.server.Serve(l) }()
+	return r, nil
+}
+
+// Request classes. Paths are matched, never the full URL.
+var inferencePathParts = []string{"/v1/messages", "/v1/complete", "/invoke", ":rawpredict", ":streamrawpredict"}
+
+// IsInference reports whether a path is a model request on any provider's wire format,
+// count_tokens included: it carries the conversation too.
+func IsInference(path string) bool {
+	p := strings.ToLower(path)
+	for _, part := range inferencePathParts {
+		if strings.Contains(p, part) {
+			return true
+		}
+	}
+	return false
+}
+
+// PathClass is a path with its variable parts dropped, for evidence.
+func PathClass(path string) string {
+	p := strings.ToLower(path)
+	switch {
+	case IsInference(p):
+		return "inference"
+	case strings.HasPrefix(p, "/v1/models"):
+		return "models"
+	case strings.Contains(p, "/managed/settings") || strings.Contains(p, "/claude_code/settings"):
+		return "managed-settings"
+	case strings.Contains(p, "/oauth") || strings.Contains(p, "/auth/") || strings.Contains(p, "/login"):
+		return "account"
+	case strings.Contains(p, "/v1/traces") || strings.Contains(p, "/v1/metrics") || strings.Contains(p, "/v1/logs"):
+		return "otlp"
+	default:
+		return "other"
+	}
+}
+
+var accountHosts = []string{"claude.ai", "claude.com", "console.anthropic.com", "platform.claude.com"}
+var accountPathParts = []string{"/oauth/", "/v1/oauth", "/api/oauth", "/api/auth/", "/login"}
+
+// distributionHosts serve native's own release and plugin files under an account domain. A
+// request to one is not a login or account request unless its path says so.
+var distributionHosts = []string{"downloads.claude.ai"}
+
+// IsAccount reports whether a request is an Anthropic login or account request.
+func IsAccount(host, path string) bool {
+	h := strings.ToLower(hostOnly(host))
+	p := strings.ToLower(path)
+	if slices.Contains(distributionHosts, h) {
+		return slices.ContainsFunc(accountPathParts, func(part string) bool { return strings.Contains(p, part) })
+	}
+	for _, account := range accountHosts {
+		if h == account || strings.HasSuffix(h, "."+account) {
+			return true
+		}
+	}
+	for _, part := range accountPathParts {
+		if strings.Contains(p, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func hostOnly(authority string) string {
+	if host, _, err := net.SplitHostPort(authority); err == nil {
+		return host
+	}
+	return authority
+}
+
+// CatchAll never dials a destination. Registered receivers are served in-process;
+// every other authority stays on the recording, blocking observer.
+type CatchAll struct {
+	*Receiver
+	// CAPEM is the probe CA certificate, for NODE_EXTRA_CA_CERTS in the probe child only. The
+	// CA key never leaves this process's memory.
+	CAPEM  []byte
+	caCert *x509.Certificate
+	caKey  *ecdsa.PrivateKey
+	mu     sync.Mutex
+	leaves map[string]*tls.Certificate
+	owned  map[string]*Receiver
+}
+
+// ListenCatchAll starts the proxy around o.
+func ListenCatchAll(o *Observer, owned ...*Receiver) (*CatchAll, error) {
+	targets := map[string]*Receiver{}
+	for _, target := range owned {
+		if target == nil || target.origin == "" || target.URL != target.origin || target.Observer == nil || targets[target.origin] != nil {
+			return nil, errors.New("invalid owned proxy receiver")
+		}
+		targets[target.origin] = target
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	caSerial := serial()
+	template := &x509.Certificate{SerialNumber: caSerial, Subject: pkix.Name{CommonName: "clauduct provider probe CA " + caSerial.Text(16)},
+		NotBefore: time.Now().Add(-24 * time.Hour), NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true,
+		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, MaxPathLenZero: true}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return nil, err
+	}
+	ca, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	c := &CatchAll{CAPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), caCert: ca, caKey: key, leaves: map[string]*tls.Certificate{}, owned: targets}
+	r, err := listen(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { c.serveProxy(w, r, o) }), nil, nil, o)
+	if err != nil {
+		return nil, err
+	}
+	c.Receiver = r
+	return c, nil
+}
+
+func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observer) {
+	if r.Method != http.MethodConnect {
+		// The absolute request target is authoritative even when a mismatched Host header
+		// keeps it out of an owned receiver; preserve it so the blocked attempt is attributable.
+		authority := r.Host
+		if r.URL.IsAbs() {
+			authority = r.URL.Host
+			if r.URL.Scheme == "http" && r.URL.Host == r.Host && receiverConnection(r) != nil {
+				if target := c.owned["http://"+authority]; target != nil {
+					target.Observer.observe(w, r, authority)
+					return
+				}
+			}
+		}
+		o.observe(w, r, authority)
+		return
+	}
+	authority := r.Host
+	target := c.owned["https://"+authority]
+	observer := o
+	if target != nil && receiverConnection(r) != nil {
+		observer = target.Observer
+	} else {
+		target = nil
+	}
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "no hijack", http.StatusInternalServerError)
+		return
+	}
+	conn, buffered, err := hijacker.Hijack()
+	if err != nil {
+		return
+	}
+	if _, err := conn.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n")); err != nil {
+		conn.Close()
+		return
+	}
+	var inner net.Conn = conn
+	if buffered != nil && buffered.Reader.Buffered() > 0 {
+		inner = &prefixedConn{Conn: conn, prefix: buffered.Reader}
+	}
+	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
+	// the probe cannot see into must not vanish from the record.
+	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect", PathTemplate: PathTemplate(http.MethodConnect, authority, "")}
+	tunnel := observer.record(&seen)
+	observer.observed(r, seen)
+	var hello atomic.Bool
+	tlsConn := tls.Server(inner, &tls.Config{NextProtos: []string{"http/1.1"}, MinVersion: tls.VersionTLS12,
+		GetCertificate: func(info *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			hello.Store(true)
+			if target != nil {
+				return target.certificate, nil
+			}
+			name := info.ServerName
+			if name == "" {
+				name = hostOnly(authority)
+			}
+			return c.leaf(name)
+		}})
+	handshake, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = tlsConn.HandshakeContext(handshake)
+	cancel()
+	if err != nil {
+		if hello.Load() {
+			// A ClientHello, then no handshake: a refused pin or certificate, h2-only, a client
+			// that left. No application data could have crossed.
+			observer.update(tunnel, func(s *Seen) { s.TLSRejected = true })
+		} else {
+			// Bytes that were not a TLS ClientHello the probe could read.
+			observer.update(tunnel, func(s *Seen) { s.Undecodable = true })
+		}
+		tlsConn.Close()
+		return
+	}
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if target != nil && r.Host == authority && !r.URL.IsAbs() {
+			target.Observer.observe(w, r, authority)
+			return
+		}
+		o.observe(w, r, authority)
+	}), BaseContext: func(net.Listener) context.Context {
+		ctx := context.Background()
+		if connection := receiverConnection(r); connection != nil {
+			ctx = context.WithValue(ctx, receiverConnectionKey{}, connection)
+		}
+		return ctx
+	}, ReadHeaderTimeout: 10 * time.Second}
+	_ = server.Serve(newOneConn(tlsConn))
+}
+
+func (c *CatchAll) leaf(name string) (*tls.Certificate, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if cert, ok := c.leaves[name]; ok {
+		return cert, nil
+	}
+	cert, _, err := issue([]string{name}, c.caCert, c.caKey)
+	if err != nil {
+		return nil, err
+	}
+	c.leaves[name] = &cert
+	return &cert, nil
+}
+
+func serial() *big.Int {
+	n, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 120))
+	if err != nil {
+		return big.NewInt(time.Now().UnixNano())
+	}
+	return n
+}
+
+// issue makes a leaf for names, signed by parent or by itself when parent is nil.
+func issue(names []string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (tls.Certificate, []byte, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	// Each certificate gets a subject no other trusted probe certificate has. The probe child
+	// trusts every stored gateway receiver's self-signed certificate at once; measured on native
+	// 2.1.292, two of them sharing a subject made the TLS client pick the wrong one as issuer
+	// and drop the connection after the handshake about half the time. Names go only in SANs.
+	id := serial()
+	template := &x509.Certificate{SerialNumber: id, Subject: pkix.Name{Organization: []string{"Clauduct provider probe"}, CommonName: "clauduct-probe-" + id.Text(16)},
+		NotBefore: time.Now().Add(-24 * time.Hour), NotAfter: time.Now().Add(24 * time.Hour),
+		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	for _, name := range names {
+		if ip := net.ParseIP(name); ip != nil {
+			template.IPAddresses = append(template.IPAddresses, ip)
+		} else {
+			template.DNSNames = append(template.DNSNames, name)
+		}
+	}
+	signer, signerKey := template, key
+	if parent != nil {
+		signer, signerKey = parent, parentKey
+	} else {
+		// A self-signed server certificate is its own trust anchor. BoringSSL, which native's
+		// runtime uses, accepts an extra trusted certificate only when it is a CA.
+		template.IsCA, template.BasicConstraintsValid = true, true
+		template.KeyUsage |= x509.KeyUsageCertSign
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, signer, &key.PublicKey, signerKey)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, der, nil
+}
+
+// oneConn is a listener that yields one connection, then blocks until that connection closes.
+type oneConn struct {
+	conn net.Conn
+	once sync.Once
+	done chan struct{}
+}
+
+func newOneConn(conn net.Conn) *oneConn { return &oneConn{conn: conn, done: make(chan struct{})} }
+
+func (l *oneConn) Accept() (net.Conn, error) {
+	var conn net.Conn
+	l.once.Do(func() { conn = &closeNotify{Conn: l.conn, done: l.done} })
+	if conn != nil {
+		return conn, nil
+	}
+	<-l.done
+	return nil, net.ErrClosed
+}
+
+func (l *oneConn) Close() error   { return nil }
+func (l *oneConn) Addr() net.Addr { return l.conn.LocalAddr() }
+
+type closeNotify struct {
+	net.Conn
+	done chan struct{}
+	once sync.Once
+}
+
+func (c *closeNotify) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(func() { close(c.done) })
+	return err
+}
+
+type prefixedConn struct {
+	net.Conn
+	prefix *bufio.Reader
+}
+
+func (c *prefixedConn) Read(b []byte) (int, error) {
+	if c.prefix != nil && c.prefix.Buffered() > 0 {
+		return c.prefix.Read(b)
+	}
+	return c.Conn.Read(b)
+}
+
+// Scan returns the IDs of the canaries in r, in any of the searched forms, reading at most
+// maxScannedBody bytes. It is for bodies the probe reads itself, such as INTENDED's backend
+// calls.
+func Scan(r io.Reader, canaries []Canary) ([]string, error) { return scan(r, canaries) }
+
+// rawRequestPath is the request path exactly as it was sent: url.RawPath when the parser kept it,
+// otherwise the escaped form of the decoded path. EscapedPath alone is not enough: it returns
+// RawPath only when that is a valid encoding, and otherwise re-escapes the DECODED path, which turns
+// an escaped slash (%2F) into a real segment separator.
+func rawRequestPath(u *url.URL) string {
+	if u.RawPath != "" {
+		return u.RawPath
+	}
+	return u.EscapedPath()
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -98,12 +99,17 @@ func (config ClauductSettings) takeUserSettings(args []string, cwd string) ([]st
 		if err != nil {
 			return nil, nil, nil, errUserSettings
 		}
+		seen := map[string]bool{}
 		for key, raw := range env {
 			var value string
 			if json.Unmarshal(raw, &value) != nil {
 				return nil, nil, nil, errUserSettings
 			}
 			upper := strings.ToUpper(key)
+			if seen[upper] {
+				return nil, nil, nil, errUserSettings
+			}
+			seen[upper] = true
 			if required, ok := config.sessionRequirements()[upper]; ok && value != required {
 				return nil, nil, nil, errSettingsConflict
 			}
@@ -125,9 +131,59 @@ func (config ClauductSettings) takeUserSettings(args []string, cwd string) ([]st
 	return forward, fields, slots, nil
 }
 
-// Native remains responsible for user setting schemas and hook permissions.
+// Check explicit settings before native can ignore or normalise an unsupported effort.
+func (config ClauductSettings) validateUserEffortSettings(user map[string]json.RawMessage, model string) error {
+	check := func(model string, raw json.RawMessage) error {
+		var effort string
+		// Native drops an effort its settings cannot hold (max) instead of refusing it.
+		if json.Unmarshal(raw, &effort) != nil || !bridge.TransmittableEffort(effort) || !storedEffort(effort) {
+			return bridge.ErrUnsupportedRoute
+		}
+		_, err := config.Selection.SelectRoute(model, effort)
+		return err
+	}
+	if raw, ok := user["effortLevel"]; ok {
+		if err := check(model, raw); err != nil {
+			return err
+		}
+	}
+	if raw, ok := user["modelSettings"]; ok {
+		models, err := wire.Fields(raw, nil)
+		if err != nil {
+			return errUserSettings
+		}
+		for model, raw := range models {
+			entry, err := wire.Fields(raw, nil)
+			if err != nil {
+				return errUserSettings
+			}
+			if effort, ok := entry["effortLevel"]; ok {
+				if err := check(model, effort); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Native remains responsible for other setting schemas and hook permissions.
 // Keep user hook entries intact and append the required bindings to each event.
 func mergeUserSettings(required string, user map[string]json.RawMessage) (string, error) {
+	return mergeUserSettingsFor(required, user, nil)
+}
+
+// mergeUserSettings propagates the user's top-level effort only to the generated models whose
+// route supports it.
+func (config ClauductSettings) mergeUserSettings(required string, user map[string]json.RawMessage) (string, error) {
+	return mergeUserSettingsFor(required, user, func(model, effort string) bool {
+		_, err := config.Selection.SelectRoute(model, effort)
+		return err == nil
+	})
+}
+
+// supports, when set, says whether a model can take an effort; nil takes every pair.
+func mergeUserSettingsFor(required string, user map[string]json.RawMessage, supports func(model, effort string) bool) (string, error) {
 	if user == nil {
 		return required, nil
 	}
@@ -140,7 +196,17 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 		out[key] = value
 	}
 	for key, value := range base {
-		if key == "env" {
+		if key == "effortLevel" {
+			if _, specified := user[key]; !specified {
+				out[key] = value
+			}
+		} else if key == "modelSettings" {
+			merged, err := mergeModelSettings(value, user[key], user["effortLevel"], supports)
+			if err != nil {
+				return "", err
+			}
+			out[key] = merged
+		} else if key == "env" {
 			// takeUserSettings already rejects connection/required-key overrides.
 			// Other user preferences keep their normal precedence over defaults.
 			merged, err := wire.Fields(value, nil)
@@ -153,6 +219,15 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 					return "", errUserSettings
 				}
 				for name, value := range extra {
+					for previous := range merged {
+						if strings.EqualFold(previous, name) {
+							if strings.EqualFold(name, "NO_PROXY") {
+								merged[previous] = value
+							} else {
+								delete(merged, previous)
+							}
+						}
+					}
 					merged[name] = value
 				}
 			}
@@ -187,6 +262,53 @@ func mergeUserSettings(required string, user map[string]json.RawMessage) (string
 		return "", errUserSettings
 	}
 	return string(raw), nil
+}
+
+func mergeModelSettings(required, user, effort json.RawMessage, supports func(model, effort string) bool) (json.RawMessage, error) {
+	base, err := wire.Fields(required, nil)
+	if err != nil {
+		return nil, errUserSettings
+	}
+	fields := map[string]json.RawMessage{}
+	if len(user) != 0 {
+		fields, err = wire.Fields(user, nil)
+		if err != nil {
+			return nil, errUserSettings
+		}
+	}
+	for model, raw := range base {
+		defaults, err := wire.Fields(raw, nil)
+		if err != nil {
+			return nil, errUserSettings
+		}
+		entry := map[string]json.RawMessage{}
+		if specified, ok := fields[model]; ok {
+			entry, err = wire.Fields(specified, nil)
+			if err != nil {
+				return nil, errUserSettings
+			}
+		}
+		for key, value := range defaults {
+			if specified, ok := entry[key]; ok {
+				if key != "effortLevel" && !jsonEqual(specified, value) {
+					return nil, errSettingsConflict
+				}
+			} else if key == "effortLevel" && len(effort) != 0 && supportsEffort(supports, model, effort) {
+				// A generated model default must not mask the user's top-level effort, but only a
+				// model that can take it receives it; another keeps its own valid default.
+				entry[key] = effort
+			} else {
+				entry[key] = value
+			}
+		}
+		fields[model], _ = json.Marshal(entry)
+	}
+	return json.Marshal(fields)
+}
+
+func supportsEffort(supports func(model, effort string) bool, model string, effort json.RawMessage) bool {
+	var name string
+	return supports == nil || json.Unmarshal(effort, &name) == nil && supports(model, name)
 }
 
 func mergeHookSettings(required, user json.RawMessage) (json.RawMessage, error) {

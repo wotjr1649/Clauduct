@@ -25,6 +25,16 @@ import (
 //
 // dir empty means the directory sessions write to.
 func WriteUsage(dir string, out io.Writer) int {
+	sessions := Readings(dir, 0)
+	unverified := 0
+	for _, session := range sessions {
+		if session.Status.Category == CategoryFinalUnverified {
+			unverified++
+		}
+	}
+	if unverified > 0 {
+		fmt.Fprintf(out, "final     %s (%d accounts; final status unverified)\n", CategoryFinalUnverified, unverified)
+	}
 	reading, ok := LatestQuota(dir)
 	if !ok {
 		fmt.Fprintln(out, "no reading yet.")
@@ -52,7 +62,6 @@ func WriteUsage(dir string, out io.Writer) int {
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "as of    ", roughly(reading.Age()), "ago,", reading.Path)
 
-	sessions := Readings(dir, 0)
 	attempts, inferences, spent := 0, 0, 0
 	for _, session := range sessions {
 		attempts += session.Status.Attempts

@@ -69,6 +69,8 @@ func dispatch(argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 	return dispatchContext(ctx, argv, in, out, errOut)
 }
 
+var readHookLinkContext = sessionlink.ReadContext
+
 func dispatchContext(ctx context.Context, argv []string, in io.Reader, out, errOut io.Writer) (int, bool) {
 	if len(argv) == 0 {
 		return 0, false
@@ -96,7 +98,7 @@ func dispatchContext(ctx context.Context, argv []string, in io.Reader, out, errO
 		// environment, so there is nothing to fall back to when the link is gone.
 		read := sessionlink.Read
 		if args[0] == Arg {
-			read = func(link string) (sessionlink.Connection, error) { return sessionlink.ReadContext(ctx, link) }
+			read = func(link string) (sessionlink.Connection, error) { return readHookLinkContext(ctx, link) }
 		}
 		connection, err := read(args[1])
 		if err != nil && ctx.Err() != nil && args[0] == Arg {
@@ -725,6 +727,11 @@ func post(ctx context.Context, body []byte, env map[string]string) error {
 	return err
 }
 
+// Keep the OS dial replaceable without bypassing the request's guards or deadlines.
+var dialHookGateway = func(ctx context.Context, network, address string, budget time.Duration) (net.Conn, error) {
+	return (&net.Dialer{Timeout: budget}).DialContext(ctx, network, address)
+}
+
 func postReply(parent context.Context, body []byte, env map[string]string, path string, retryRegistration bool) ([]byte, error) {
 	base := envValue(env, "ANTHROPIC_BASE_URL")
 	token := envValue(env, "ANTHROPIC_AUTH_TOKEN")
@@ -763,7 +770,7 @@ func postReply(parent context.Context, body []byte, env map[string]string, path 
 				if retryRegistration && dialed.Swap(true) {
 					return nil, errInvalidGateway
 				}
-				return (&net.Dialer{Timeout: requestBudget}).DialContext(ctx, network, address)
+				return dialHookGateway(ctx, network, address, requestBudget)
 			},
 		},
 		CheckRedirect: func(*http.Request, []*http.Request) error { return errInvalidGateway },

@@ -196,6 +196,9 @@ func waitForSession(ctx context.Context, process Process, gw *gateway.Gateway, o
 			life.Reason = "caller_cancelled"
 			stop()
 		case <-interrupts:
+			if bp, ok := process.(*backgroundProcess); ok && bp.interruptStop() {
+				continue
+			}
 			// Interactive native owns Ctrl+C (in its raw mode it is a keystroke), and a
 			// second press under -p changes nothing already under way.
 			if !print || life.Reason == "user_interrupt" || life.State == "stopping" {

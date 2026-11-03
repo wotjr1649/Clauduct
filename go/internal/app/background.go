@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -16,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
@@ -174,12 +174,18 @@ type backgroundProcess struct {
 	home     string
 	proved   func() []gateway.NativeProcess
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
-	nativeStatus    func() (registered, notExited int, active int64)
-	releaseProfiles func([]string) error
-	routingCheck    func() bool
-	linkScopedStops bool
-	crashed         bool // the test crash ended the wait: the record stays, as after a real death
-	unlisted        bool // The Run cleanup removes the directory before the record.
+	nativeStatus      func() (registered, notExited int, active int64)
+	releaseProfiles   func([]string) error
+	routingCheck      func() bool
+	interrupts        <-chan os.Signal
+	cancelOnInterrupt bool
+	stopNotice        io.Writer
+	stopMu            sync.Mutex
+	stopInterrupt     chan struct{}
+	stopErr           error
+	linkScopedStops   bool
+	crashed           bool // the test crash ended the wait: the record stays, as after a real death
+	unlisted          bool // The Run cleanup removes the directory before the record.
 }
 
 // noDispatch stands in for the dispatch process of a regenerated resident.
@@ -190,9 +196,195 @@ func (noDispatch) ExitCode() int { return 0 }
 func (noDispatch) Stop() error   { return nil }
 
 func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
+
+const backgroundStopTimeout = 30 * time.Second
+
+// waitForSession owns console signals until its wait finishes.
+func (p *backgroundProcess) interruptStop() bool {
+	p.stopMu.Lock()
+	defer p.stopMu.Unlock()
+	if p.stopInterrupt == nil {
+		return false
+	}
+	select {
+	case p.stopInterrupt <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+func (p *backgroundProcess) nativeStopError() error {
+	p.stopMu.Lock()
+	defer p.stopMu.Unlock()
+	return p.stopErr
+}
+
+func (p *backgroundProcess) stopNative(jobs map[string]int, everSeen map[string]struct{}) (result error) {
+	ctx, cancel := context.WithTimeout(context.Background(), backgroundStopTimeout)
+	defer cancel()
+	interrupt := make(chan struct{}, 1)
+	p.stopMu.Lock()
+	p.stopInterrupt = interrupt
+	p.stopMu.Unlock()
+	defer func() {
+		p.stopMu.Lock()
+		p.stopInterrupt = nil
+		p.stopErr = result
+		p.stopMu.Unlock()
+	}()
+	type child struct {
+		process Process
+		done    chan error
+	}
+	pending := map[string]child{}
+	attempted := map[string]struct{}{}
+	failures := map[string]error{}
+	failed := func(job string) { failures[job] = fmt.Errorf("BACKGROUND_NATIVE_STOP_FAILED: %s", job) }
+	finish := func() error {
+		keys := make([]string, 0, len(failures))
+		for job := range failures {
+			keys = append(keys, job)
+		}
+		slices.Sort(keys)
+		var errs []error
+		for _, job := range keys {
+			errs = append(errs, failures[job])
+		}
+		return errors.Join(errs...)
+	}
+	// Eligibility is unchanged; speculative polls while children run spend no retry passes.
+	selectJobs := func() (targets, unverified []string) {
+		if !p.linkScopedStops {
+			for job := range jobs {
+				if _, done := attempted[job]; !done {
+					targets = append(targets, job)
+				}
+			}
+		} else {
+			finished := func(job string) bool {
+				_, completed, err := jobRunning(p.config, job)
+				return err == nil && completed
+			}
+			current := nativeJobsWithLink(p.config, p.link.ID)
+			for _, job := range current {
+				if _, done := attempted[job]; !done {
+					if finished(job) {
+						attempted[job] = struct{}{}
+					} else {
+						targets = append(targets, job)
+					}
+				}
+			}
+			for job := range everSeen {
+				if _, done := attempted[job]; !done && !slices.Contains(current, job) && !jobGone(p.config, job) && !jobLinkedElsewhere(p.config, job, p.link.ID) && !finished(job) {
+					unverified = append(unverified, job)
+				}
+			}
+		}
+		slices.Sort(targets)
+		return targets, unverified
+	}
+	start := p.start
+	if start == nil {
+		start = startOSProcess
+	}
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	began, notified, passes := time.Now(), false, 0
+	for {
+		// Reap before selecting again so the final counted pass never uses a stale listing.
+		for job, c := range pending {
+			select {
+			case err := <-c.done:
+				if err != nil {
+					failed(job)
+				}
+				delete(pending, job)
+			default:
+			}
+		}
+		targets, unverified := selectJobs()
+		for _, job := range targets {
+			if ctx.Err() != nil {
+				failed(job)
+				continue
+			}
+			attempted[job] = struct{}{}
+			process, err := start(launch.Spec{File: p.exe, Args: []string{"stop", job}, Dir: p.cwd, Env: p.env}, nil, nil, nil)
+			if err != nil {
+				failed(job)
+				continue
+			}
+			done := make(chan error, 1)
+			pending[job] = child{process, done}
+			go func() { done <- process.Wait() }()
+		}
+		if len(pending) == 0 {
+			if len(unverified) == 0 {
+				return finish()
+			}
+			passes++
+			if passes >= 10 {
+				for _, job := range unverified {
+					failures[job] = fmt.Errorf("BACKGROUND_STOP_LINK_UNVERIFIED: %s", job)
+				}
+				return finish()
+			}
+		}
+		if !notified && time.Since(began) >= 3*time.Second && p.stopNotice != nil {
+			io.WriteString(p.stopNotice, "Clauduct: waiting for native stop commands; press Ctrl+C to interrupt cleanup.\n")
+			notified = true
+		}
+		select {
+		case <-tick.C:
+			continue
+		case <-interrupt:
+			cancel()
+		case <-p.interrupts:
+			cancel()
+		case <-ctx.Done():
+		}
+		for _, job := range unverified {
+			failures[job] = fmt.Errorf("BACKGROUND_STOP_LINK_UNVERIFIED: %s", job)
+		}
+		// Stop every child before waiting in one shared grace period.
+		for job, c := range pending {
+			failed(job)
+			_ = c.process.Stop()
+		}
+		grace := time.NewTimer(stopGrace)
+		defer grace.Stop()
+		for len(pending) > 0 {
+			for job, c := range pending {
+				select {
+				case <-c.done:
+					delete(pending, job)
+				default:
+				}
+			}
+			if len(pending) == 0 {
+				break
+			}
+			select {
+			case <-tick.C:
+			case <-grace.C:
+				return finish()
+			}
+		}
+		return finish()
+	}
+}
+
 func (p *backgroundProcess) Wait() (result error) {
 	var profileErr error
-	defer func() { result = errors.Join(result, profileErr) }()
+	defer func() {
+		if profileErr != nil {
+			result = errors.Join(result, profileErr)
+			p.stopMu.Lock()
+			p.stopErr = errors.Join(p.stopErr, profileErr)
+			p.stopMu.Unlock()
+		}
+	}()
 	var observed map[string]int // the jobs this wait serves, saved in the record or not
 	releaseProfiles := func() {
 		// Keep serving jobs on a failed final save; report the failure when the resident ends.
@@ -253,83 +445,7 @@ func (p *backgroundProcess) Wait() (result error) {
 		p.record.Jobs = all
 	}
 	syncJobs() // seeded jobs reach the startup write too
-	stopOne := func(id string) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		if p.start != nil {
-			process, err := p.start(launch.Spec{File: p.exe, Args: []string{"stop", id}, Dir: p.cwd, Env: p.env}, nil, nil, nil)
-			if err != nil {
-				return errors.New("BACKGROUND_NATIVE_STOP_FAILED")
-			}
-			done := make(chan error, 1)
-			go func() { done <- process.Wait() }()
-			select {
-			case err = <-done:
-			case <-ctx.Done():
-				process.Stop()
-				<-done
-				err = ctx.Err()
-			}
-			if err != nil {
-				return errors.New("BACKGROUND_NATIVE_STOP_FAILED")
-			}
-			return nil
-		}
-		cmd := exec.Command(p.exe, "stop", id)
-		cmd.Dir, cmd.Env = p.cwd, p.env
-		if childprocess.Run(ctx, cmd) != nil {
-			return errors.New("BACKGROUND_NATIVE_STOP_FAILED")
-		}
-		return nil
-	}
-	stopNative := func() error {
-		var err error
-		if p.linkScopedStops {
-			// A retained record may name jobs that have since moved to another link.
-			// Every job this wait serves (the record's, everSeen) must be stopped, proved on
-			// another link, or gone; a listing that briefly lacks one is re-read a few times.
-			stopped := map[string]struct{}{}
-			unverified := false
-			// A job whose native state is already stopped or done needs no stop; an unreadable
-			// state is never taken as done.
-			finished := func(job string) bool {
-				_, completed, stateErr := jobRunning(p.config, job)
-				return stateErr == nil && completed
-			}
-			for attempt := 0; attempt < 10; attempt++ {
-				current := nativeJobsWithLink(p.config, p.link.ID)
-				for _, job := range current {
-					if _, done := stopped[job]; !done {
-						stopped[job] = struct{}{}
-						if !finished(job) {
-							err = errors.Join(err, stopOne(job))
-						}
-					}
-				}
-				unverified = false
-				for job := range everSeen {
-					if _, done := stopped[job]; !done && !slices.Contains(current, job) && !jobGone(p.config, job) && !jobLinkedElsewhere(p.config, job, p.link.ID) && !finished(job) {
-						unverified = true
-						break
-					}
-				}
-				if !unverified {
-					break
-				}
-				if attempt < 9 {
-					time.Sleep(100 * time.Millisecond)
-				}
-			}
-			if unverified {
-				err = errors.Join(err, errors.New("BACKGROUND_STOP_LINK_UNVERIFIED"))
-			}
-			return err
-		}
-		for job := range jobs {
-			err = errors.Join(err, stopOne(job))
-		}
-		return err
-	}
+	stopNative := func() error { return p.stopNative(jobs, everSeen) }
 	defer p.cancel()
 	if p.ctx.Err() != nil {
 		return stopNative()
@@ -376,10 +492,17 @@ func (p *backgroundProcess) Wait() (result error) {
 		defer monitor.Stop()
 		routingTick = monitor.C
 	}
+	var interrupts <-chan os.Signal
+	if p.cancelOnInterrupt {
+		interrupts = p.interrupts
+	}
 	nativeIdle := 0
 	completedIdle := 0
 	for {
 		select {
+		case <-interrupts:
+			p.cancel()
+			return stopNative()
 		case <-p.crash:
 			p.crashed = true
 			return errors.New("BACKGROUND_TEST_CRASH")

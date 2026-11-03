@@ -294,7 +294,7 @@ func request(parent context.Context, id string, command byte, wait bool) (Connec
 		return Connection{}, busy(ctx, err)
 	}
 	if wait {
-		state, err := syscall.WaitForSingleObject(p, 10000)
+		state, err := syscall.WaitForSingleObject(p, 50000)
 		var code uint32
 		if err != nil || state != syscall.WAIT_OBJECT_0 || syscall.GetExitCodeProcess(p, &code) != nil || code != 0 {
 			return Connection{}, errors.New("BACKGROUND_STOP_UNVERIFIED: inspect the resident status")

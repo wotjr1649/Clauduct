@@ -872,6 +872,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
 		bp.home = clauductHome
+		if foreground != nil {
+			bp.stopNotice = o.Stderr
+		}
 		bp.proved = gw.ProvedNativeProcesses
 		bp.nativeStatus = nativeStatus
 		bp.releaseProfiles = gw.ReleaseIdleSessionProfiles
@@ -926,6 +929,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 
 	routing := &routingMonitor{}
 	reaped, lifecycle, waitErr := waitForSession(ctx, process, gw, o, result, interrupts, printMode(o.Args), routing)
+	var backgroundStopErr error
+	if bp, ok := process.(*backgroundProcess); ok {
+		backgroundStopErr = bp.nativeStopError()
+	}
 	// A hook that blocked the prompt may have ended a short session before the next checkpoint
 	// saw its report; the report still decides how the session ended (#295).
 	if gw.RoutingMismatch() && lifecycle.Reason != "managed_routing_policy" {
@@ -993,21 +1000,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if stopping {
 				cancel()
 			}
-			if foregroundRecordErr != nil && !stopping {
-				go func() {
-					select {
-					case <-interrupts:
-						cancel()
-					case <-handoverCtx.Done():
-					}
-				}()
-			}
 			var record *ResidentRecord
 			if resident != nil && resident.record.Job != "" {
 				record = resident.record
 			}
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
+				interrupts: interrupts, cancelOnInterrupt: foregroundRecordErr != nil && !stopping, stopNotice: o.Stderr,
 				job: jobs[0], record: record, home: clauductHome, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus, releaseProfiles: gw.ReleaseIdleSessionProfiles}
 			if record != nil {
 				bp.job = record.Job
@@ -1040,7 +1039,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	// Reap native first, then drain the gateway before taking its final account.
 	// Otherwise a cancellation could still be in flight when status claimed completion.
-	result.CleanupErr = errors.Join(closeGateway(gw, o.ShutdownTimeout), foregroundRecordErr)
+	result.CleanupErr = errors.Join(closeGateway(gw, o.ShutdownTimeout), foregroundRecordErr, backgroundStopErr)
 	if reaped {
 		gw.FinalizeNativeResults()
 		result.CleanupErr = errors.Join(result.CleanupErr, gw.CheckpointSessionProfiles(true))
@@ -1092,9 +1091,17 @@ func waitFor(ctx context.Context, process Process) (err error, reaped bool) {
 
 	select {
 	case waitErr := <-done:
+		if _, background := process.(*backgroundProcess); background && waitErr == nil && ctx.Err() != nil {
+			return ctx.Err(), true
+		}
 		return waitErr, true
 	case <-ctx.Done():
 		stopErr := process.Stop()
+		grace := stopGrace
+		_, background := process.(*backgroundProcess)
+		if background {
+			grace = backgroundStopTimeout + 2*stopGrace
+		}
 
 		// Reaped so the handles are really released, but not waited on forever. A Stop that
 		// did not work would otherwise block here for as long as the child chose to live,
@@ -1106,10 +1113,13 @@ func waitFor(ctx context.Context, process Process) (err error, reaped bool) {
 		// the caller ended look like one the child ended: Run treats an ExitError as the
 		// native process's own answer.
 		select {
-		case <-done:
-		case <-time.After(stopGrace):
+		case waitErr := <-done:
+			if background && waitErr != nil {
+				return errors.Join(ctx.Err(), stopErr, waitErr), true
+			}
+		case <-time.After(grace):
 			return fmt.Errorf("the child did not exit within %v of being stopped after %w",
-				stopGrace, ctx.Err()), false
+				grace, ctx.Err()), false
 		}
 
 		if stopErr != nil {

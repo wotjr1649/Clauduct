@@ -43,6 +43,7 @@
   진단 도구 `clauduct-probe.exe`를 `clauduct.exe`와 한 쌍으로 싣는다([PACKAGING](PACKAGING.md) 1절). 지원·제외 환경과 남는 위험은
   COMPATIBILITY 3절 "v0.6.11 — 지원 환경과 보장 한계" 표에 있다.
 - **background와 연결 유지**(#319)
+  - 소유 작업의 native stop 명령은 공통 30초 예산에서 실행되며, 한 작업의 Wait를 기다리지 않고 다른 소유 작업에도 stop을 발송한다. 다만 공통 예산이 만료되면 일부 작업에는 발송하지 못할 수 있다. 취소 중 stop 실패는 기존 정리 진단에 남긴다. native 명령의 성공(ACK), `done`·`failed`·`stopped` 상태, worker의 실제 OS 종료는 서로 다르다. 후속 상태가 없거나 live로 남아 있어도 stop 명령의 exit 0은 ACK 수준 성공이며 worker·자손의 완전 종료를 보장하지 않는다. native 자체의 종료/kill 동작도 모든 경로에서 특정 시간 안에 실행·성공함을 보장하지 않는다. 기존 moved-link 경합은 남는다.
   - Claude 계정 명령(`auth login`·`auth logout`·`setup-token`)은 시작 전에 거부하고 계정 slash command를 숨긴다.
   - `--resume <session id> --bg`는 native가 copy로 시작하므로 `--fork-session` 없이 쓰면 거부한다(`BACKGROUND_RESUME_IS_A_COPY`).
   - 연결 유지 프로세스가 사라진 job은 resident record로 같은 port·link에 다시 띄운다. 복원은 창 없는 relay를 거치고, 시작 실패는

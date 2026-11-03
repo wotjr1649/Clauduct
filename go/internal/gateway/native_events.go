@@ -21,12 +21,20 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
+type confirmationTestHooks struct {
+	afterUnpreparedAdvance func()
+	phaseDecision          func(connected bool, now, canonicalDeadline, ctxDeadline time.Time)
+	beforeReservation      func()
+	beforeNativeJSONRead   func(name string, file *os.File)
+}
+
 type nativeEventState struct {
 	confirmationsRequired bool // immutable launcher requirement
 	confirmationGate      chan struct{}
-	confirmationFailed    atomic.Bool         // latched shared failure: the control directory or storage (all natives)
-	failedNatives         map[processKey]bool // mu; natives whose own confirmation or cancellation proof failed
-	violatedSessions      map[string]bool     // mu; sessions whose own native claimed another scope; never cleared
+	confirmationTestHooks *confirmationTestHooks // Set before requests in ordered phase tests.
+	confirmationFailed    atomic.Bool            // latched shared failure: the control directory or storage (all natives)
+	failedNatives         map[processKey]bool    // mu; natives whose own confirmation or cancellation proof failed
+	violatedSessions      map[string]bool        // mu; sessions whose own native claimed another scope; never cleared
 	// Confirmation answers not taken, by reason (#319 decision 18f): bounded counts only.
 	foreignAnswers      atomic.Int64 // another native's answer to a live challenge
 	staleAnswers        atomic.Int64 // an answer for a request that already ended
@@ -218,6 +226,11 @@ func (g *Gateway) readNativeJSON(name string, fields []string, out any) (found b
 	}
 	if !info.Mode().IsRegular() || info.Size() > 2048 {
 		return false, errDelegationUnverified
+	}
+	if strings.HasPrefix(name, "cancel-") {
+		if hooks := n.confirmationTestHooks; hooks != nil && hooks.beforeNativeJSONRead != nil {
+			hooks.beforeNativeJSONRead(name, f)
+		}
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, 2049))
 	if err != nil {

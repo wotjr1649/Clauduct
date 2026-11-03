@@ -97,7 +97,7 @@
   그 요청만 거부한다([SETTINGS](SETTINGS.md)).
 - **저장된 native gateway 시작 전 거부**(#319): 새 세션은 같은 native의 `auth status --json`으로 저장 provider 상태를 먼저 본다.
   저장된 Claude apps gateway면 `NATIVE_STORED_GATEWAY`, 확인하지 못하면 `NATIVE_PROVIDER_STATUS_UNVERIFIED`로 모델 세션 전에
-  거부한다. 실행 중 바뀌는 credential은 인증하지 않는다([NATIVE-SUPPORT](NATIVE-SUPPORT.md)).
+  거부한다. 실행 중 바뀌는 credential은 인증하지 않는다([NATIVE-SUPPORT](NATIVE-SUPPORT.md)). 시작 전 native provider 상태 확인에는 30초 한도를 적용하며 호출자의 마감이 더 이르면 먼저 종료한다. 확인과 만료 후 최대 5초의 프로세스 종료·수거 대기 때문에 **새 진행 출력 없이 약 35초까지 기다릴 수 있다**. 동기 OS 호출이나 스케줄링 지연이 있으면 전체 경과 시간은 더 길어질 수 있다. provider 상태 검사에서 거부하면 모델 세션을 시작하지 않고 stderr에 내용 없는 메타데이터 다섯 항목, 실패 단계(`stage`), 고정 사유(`reason`), 정리를 포함한 경과 밀리초(`elapsed_ms`), 수거 여부(`reaped`), 종료 코드 또는 unknown(`exit`)을 한 줄로 남긴다. credential과 query 출력 내용은 기록하지 않는다.
 - **hook 시간 예산**(#319): 사용자·plugin hook의 timeout과 생략된 설정은 그대로 두고 native가 집행한다. Clauduct가 만든 bridge
   hook에만 외부 30초를 명시한다. 제품 hook은 공유 18초 안에서 끝나며, proof 요청은 최대 7초를 쓴다([NATIVE-SUPPORT](NATIVE-SUPPORT.md)).
 - **생성 worker 역할의 도구**(#319): Clauduct가 생성하는 worker 역할이 부모의 native 도구 집합을 상속한다. 고정 목록 때문에

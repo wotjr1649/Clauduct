@@ -105,9 +105,20 @@ type step struct {
 	// has been quiet for EchoQuietMS (default 300), at most EchoMaxMS (default 3000): Enter is
 	// then sent alone, once the TUI has taken the typed text. A gate that times out still sends,
 	// and the outcome is marked, never assumed.
-	EchoGate      bool `json:"echo_gate"`
-	EchoQuietMS   int  `json:"echo_quiet_ms"`
-	EchoMaxMS     int  `json:"echo_max_ms"`
+	EchoGate    bool `json:"echo_gate"`
+	EchoQuietMS int  `json:"echo_quiet_ms"`
+	EchoMaxMS   int  `json:"echo_max_ms"`
+	// EchoRequired (with EchoGate) never sends the write after the text unless the last screen
+	// observation made before the step's own deadline (its timeout_s, started with the step) shows
+	// the text: only what is left of that deadline is waited, EchoMaxMS does not apply, and an
+	// observation that finished at or after the deadline never makes or keeps a success.
+	// Otherwise the step fails as "echo_not_ready" with no Enter written.
+	// TurnSteps (with EchoRequired) is how many of the steps after this one belong to the same
+	// turn: when the text is typed, one absolute deadline is set for them, the typing time plus the
+	// last of them's timeout_s, and the echo and each of those steps match only on a screen read
+	// that finished before it.
+	EchoRequired  bool `json:"echo_required"`
+	TurnSteps     int  `json:"turn_steps"`
 	pattern       *regexp.Regexp
 	until         *regexp.Regexp
 	confirmScreen *regexp.Regexp
@@ -479,12 +490,17 @@ func run(args []string, observer StepObserver, scriptBytes []byte, scriptBytesPr
 		if observerFailed {
 			return "observer_error"
 		}
+		var window turnWindow // the deadline the steps of one turn share, opened where the prompt is typed
 		for i, s := range steps {
 			limit := time.Duration(max(s.Timeout, 1)) * time.Second
 			limitAt := time.Now().Add(limit)
 			capped := false
 			if !stepsEnd.IsZero() && stepsEnd.Before(limitAt) {
 				limitAt, capped = stepsEnd, true
+			}
+			inWindow := window.enter()
+			if inWindow && window.end.Before(limitAt) {
+				limitAt = window.end
 			}
 			if s.HoldConsoleAfterExit && limitAt.Before(holdEnd) {
 				holdEnd = limitAt
@@ -496,7 +512,10 @@ func run(args []string, observer StepObserver, scriptBytes []byte, scriptBytesPr
 			var signalErr error
 			// The step is checked once even when its time is already gone.
 			for first := true; first || time.Now().Before(limitAt); first = false {
-				rawSnapshot := screenSnapshot()
+				rawSnapshot, counts := window.read(inWindow, screenSnapshot, time.Now)
+				if !counts { // the read finished at or after the shared deadline: what it shows does not count
+					break
+				}
 				current := compactScreen(rawSnapshot)
 				if !screenMatched {
 					base := min(from, len(current))
@@ -515,6 +534,10 @@ func run(args []string, observer StepObserver, scriptBytes []byte, scriptBytesPr
 				}
 				if screenMatched {
 					matched, signalErr = readyFile(s.WaitFile)
+					if matched && inWindow && !window.admits(time.Now()) {
+						matched = false
+						break
+					}
 					if matched || signalErr != nil {
 						break
 					}
@@ -578,11 +601,40 @@ func run(args []string, observer StepObserver, scriptBytes []byte, scriptBytesPr
 				}
 			}
 			for j, part := range s.Send {
+				if j == 0 && s.EchoRequired {
+					// The turn's one deadline is anchored here, just before the prompt is written: a stall after the write (an
+					// observer, the scheduler) must not move it.
+					window = openTurnWindow(time.Now(), steps[i+1:i+1+s.TurnSteps])
+				}
 				if want := echoText(s.Send[max(j-1, 0)]); j > 0 && s.EchoGate && want != "" {
-					out := awaitEcho(func() bool { return echoed(compact(), want, shown[j-1]) },
-						func() int { return len(compact()) }, orDefault(s.EchoQuietMS, 300), orDefault(s.EchoMaxMS, 3000), time.Now, time.Sleep)
+					seen := func() bool { return echoed(compact(), want, shown[j-1]) }
+					size := func() int { return len(compact()) }
+					var out echoOutcome
+					if s.EchoRequired {
+						deadline := limitAt
+						if !window.end.IsZero() && window.end.Before(deadline) {
+							deadline = window.end
+						}
+						// one screen snapshot per observation: the echo and the quiet it is judged by come from the same screen
+						observe := func() (bool, int) {
+							screen := compact()
+							return echoed(screen, want, shown[j-1]), len(screen)
+						}
+						out = awaitEchoBy(deadline, observe, orDefault(s.EchoQuietMS, 300), time.Now, time.Sleep)
+					} else {
+						out = awaitEcho(seen, size, orDefault(s.EchoQuietMS, 300), orDefault(s.EchoMaxMS, 3000), time.Now, time.Sleep)
+					}
 					fmt.Printf("%secho=%d seen=%v quiet=%v after_ms=%d\n", phase, i, out.Seen, out.Quiet, out.Elapsed.Milliseconds())
 					mark(fmt.Sprintf("echo%s%d", phase, i), fmt.Sprintf("seen=%v quiet=%v after_ms=%d", out.Seen, out.Quiet, out.Elapsed.Milliseconds()))
+					if s.EchoRequired && !out.Seen {
+						if *contentFree {
+							fmt.Fprintln(os.Stderr, "screen withheld")
+						} else {
+							fmt.Fprintf(os.Stderr, "screen (last %d bytes):\n%s\n", screenTail, tail(text(), screenTail))
+							_ = writeText()
+						}
+						return "echo_not_ready"
+					}
 				} else if j > 0 {
 					time.Sleep(300 * time.Millisecond)
 				}
@@ -728,6 +780,76 @@ func run(args []string, observer StepObserver, scriptBytes []byte, scriptBytesPr
 	return 0
 }
 
+// turnWindow is the one absolute deadline the steps of one turn share (echo, a permission step, the reply marker). It is set
+// once, where the prompt is typed, from budgets that already exist: the typing time plus the last of the turn's steps'
+// timeout_s. A screen read counts only when it finished before the deadline.
+type turnWindow struct {
+	end  time.Time
+	left int // steps of the turn still to come
+}
+
+// openTurnWindow is the window for the steps that follow the typed prompt; none for no steps.
+func openTurnWindow(typedAt time.Time, following []step) turnWindow {
+	if len(following) == 0 {
+		return turnWindow{}
+	}
+	return turnWindow{end: typedAt.Add(time.Duration(max(following[len(following)-1].Timeout, 1)) * time.Second), left: len(following)}
+}
+
+// enter consumes one step of the turn and reports whether the step that is starting belongs to it.
+func (w *turnWindow) enter() bool {
+	if w.left <= 0 {
+		return false
+	}
+	w.left--
+	return true
+}
+
+// admits reports whether a screen read that finished at completed may count.
+func (w turnWindow) admits(completed time.Time) bool {
+	return w.end.IsZero() || completed.Before(w.end)
+}
+
+// read takes a screen snapshot and says whether it counts: a step outside the window always counts, one inside only when
+// the read finished (the clock is read after the snapshot) before the shared deadline.
+func (w turnWindow) read(inside bool, snapshot func() []byte, now func() time.Time) ([]byte, bool) {
+	raw := snapshot()
+	return raw, !inside || w.admits(now())
+}
+
+// awaitEchoBy is awaitEcho held to a deadline. Success is the LAST observation made before the deadline showing the echo
+// (an echo that was shown and then removed is not one), and an observation is made before it only when it finished
+// (the clock is read after the screen was) before it. An exhausted budget, or a read that ran past the deadline, makes no
+// success; the polling that overshoots the deadline neither makes nor erases one. Quiet needs the screen to stand still
+// within the deadline too. observe returns the echo and the screen's size from ONE snapshot, so a fragment arriving between
+// two reads cannot prove both the echo and the quiet; the quiet runs from the observation that last saw the size change.
+func awaitEchoBy(deadline time.Time, observe func() (shown bool, size int), quiet time.Duration, now func() time.Time, sleep func(time.Duration)) echoOutcome {
+	const interval = 25 * time.Millisecond
+	began := now()
+	last, lastChange := -1, began
+	var out echoOutcome
+	for {
+		shown, n := observe()
+		at := now()
+		if n != last {
+			last, lastChange = n, at
+		}
+		inTime := at.Before(deadline)
+		out.Elapsed = at.Sub(began)
+		if inTime {
+			out.Seen = shown
+		}
+		if inTime && out.Seen && at.Sub(lastChange) >= quiet {
+			out.Quiet = true
+			return out
+		}
+		if !inTime {
+			return out
+		}
+		sleep(interval)
+	}
+}
+
 // echoText is a write's text as the screen shows it: the control sequences and all whitespace
 // removed (the TUI places words with cursor moves). Empty for a key such as Enter.
 func echoText(write string) string {
@@ -799,6 +921,12 @@ func loadStepsBytes(raw []byte, previous []step) ([]step, error) {
 		}
 		if (s.ConfirmFile != "" || s.ConfirmScreen != "") && s.ConfirmMS <= 0 {
 			return nil, fmt.Errorf("a submission check needs a positive confirm_ms")
+		}
+		if s.EchoRequired && !s.EchoGate {
+			return nil, fmt.Errorf("echo_required needs echo_gate")
+		}
+		if s.TurnSteps < 0 || s.TurnSteps > 0 && !s.EchoRequired || i+s.TurnSteps >= len(steps) && s.TurnSteps > 0 {
+			return nil, fmt.Errorf("turn_steps needs echo_required and that many steps after it")
 		}
 		if s.ConfirmFile != "" && !filepath.IsAbs(s.ConfirmFile) {
 			return nil, fmt.Errorf("confirm_file must be absolute")
@@ -958,7 +1086,7 @@ func check(err error, what string, contentFree bool) bool {
 
 func safeFailureKind(failure string) string {
 	switch failure {
-	case "wait_file", "write", "close_console", "child_exit", "wait_timeout", "driver_error", "reader_incomplete", "observer_error":
+	case "wait_file", "write", "close_console", "child_exit", "wait_timeout", "driver_error", "reader_incomplete", "observer_error", "echo_not_ready":
 		return failure
 	case "":
 		return "none"

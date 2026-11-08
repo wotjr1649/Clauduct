@@ -26,7 +26,7 @@ func TestNativeToolIDCarriesStepBinding(t *testing.T) {
 }
 
 func TestBackendRequestPreservesOpaqueCallIDs(t *testing.T) {
-	request := decodeRequest(t, `{"model":"gpt-6-sol","max_tokens":64,"stream":true,
+	request := decodeRequest(t, `{"model":"`+fixtureModel("sol6").ID+`","max_tokens":64,"stream":true,
 		"tools":[{"name":"Read","input_schema":{"type":"object"}}],
 		"messages":[{"role":"user","content":"read"},
 		{"role":"assistant","content":[{"type":"tool_use","id":"call_abc123__cdt0123456789ab","name":"Read","input":{}}]},

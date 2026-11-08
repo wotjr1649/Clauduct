@@ -38,7 +38,7 @@ func TestACompactionPreservesEffort(t *testing.T) {
 			t.Errorf("source = %q at %s", built.Source, effort)
 		}
 		// Compaction must also preserve the resolved model.
-		if built.Model != "gpt-6.1-sol" {
+		if built.Model != fixtureModel("sol").ID {
 			t.Errorf("the compaction was moved to %s", built.Model)
 		}
 	}
@@ -48,7 +48,7 @@ func TestCompactionKeepsTheAgentOverride(t *testing.T) {
 	for _, route := range catalogueRoutes() {
 		for _, effort := range Efforts {
 			route.Effort, route.Source = effort, "agent"
-			rq := &anthropic.Request{Model: "gpt-6-astra", Effort: "low",
+			rq := &anthropic.Request{Model: fixtureModel("astra").ID, Effort: "low",
 				Messages: []anthropic.Message{text("user", compaction("synthetic transcript"))}}
 			got, err := BuildRequest(rq, route)
 			if err != nil {

@@ -64,7 +64,7 @@ func TestAssistantPhaseSurvivesNativeRoundTrip(t *testing.T) {
 			if err := json.Unmarshal(raw, &native); err != nil {
 				t.Fatal(err)
 			}
-			request := decodeRequest(t, `{"model":"gpt-6-astra","max_tokens":10000,"messages":[{"role":"user","content":"PUBLIC_START"},{"role":"assistant","content":`+string(native.Content)+`},{"role":"user","content":"PUBLIC_NEXT"}]}`)
+			request := decodeRequest(t, `{"model":"`+fixtureModel("astra").ID+`","max_tokens":10000,"messages":[{"role":"user","content":"PUBLIC_START"},{"role":"assistant","content":`+string(native.Content)+`},{"role":"user","content":"PUBLIC_NEXT"}]}`)
 			built, err := BuildRequest(request)
 			if err != nil {
 				t.Fatal(err)
@@ -156,7 +156,7 @@ func TestAssistantPhaseTrustBoundary(t *testing.T) {
 }
 
 func TestExactTextCountDoesNotGuessPhaseFraming(t *testing.T) {
-	built, err := BuildRequest(decodeRequest(t, `{"model":"gpt-6-luna","max_tokens":100,"messages":[{"role":"user","content":"PUBLIC_START"},{"role":"assistant","content":"PUBLIC_REPLY"},{"role":"user","content":"PUBLIC_NEXT"}]}`))
+	built, err := BuildRequest(decodeRequest(t, `{"model":"`+fixtureModel("luna").ID+`","max_tokens":100,"messages":[{"role":"user","content":"PUBLIC_START"},{"role":"assistant","content":"PUBLIC_REPLY"},{"role":"user","content":"PUBLIC_NEXT"}]}`))
 	if err != nil {
 		t.Fatal(err)
 	}

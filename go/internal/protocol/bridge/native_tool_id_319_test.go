@@ -10,7 +10,7 @@ import (
 )
 
 func TestOpaqueHistoryIDsAreNotGuessed319(t *testing.T) {
-	r := decodeRequest(t, `{"model":"gpt-6-sol","max_tokens":64,"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"plain","name":"Read","input":{}},{"type":"tool_use","id":"plain__cdt0123456789ab","name":"Read","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"plain","content":"A"},{"type":"tool_result","tool_use_id":"plain__cdt0123456789ab","content":"B"}]}]}`)
+	r := decodeRequest(t, `{"model":"`+fixtureModel("sol6").ID+`","max_tokens":64,"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"plain","name":"Read","input":{}},{"type":"tool_use","id":"plain__cdt0123456789ab","name":"Read","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"plain","content":"A"},{"type":"tool_result","tool_use_id":"plain__cdt0123456789ab","content":"B"}]}]}`)
 	built, err := BuildRequest(r)
 	if err != nil {
 		t.Fatal(err)

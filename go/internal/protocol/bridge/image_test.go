@@ -32,7 +32,7 @@ func imageRequest(t *testing.T, body string) *Request {
 // and gives it an input entry of its own, and that is what this asserts -- including the
 // absence of a text field beside it, which a single struct with omitempty would have added.
 func TestAnAttachedImageBecomesTheBackendsDataURL(t *testing.T) {
-	built := imageRequest(t, `{"model":"gpt-6-astra","max_tokens":64,"stream":true,"messages":[
+	built := imageRequest(t, `{"model":"`+fixtureModel("astra").ID+`","max_tokens":64,"stream":true,"messages":[
 	  {"role":"user","content":[
 	    {"type":"text","text":"what is this"},
 	    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"`+onePixelPNG+`"}}
@@ -72,7 +72,7 @@ func TestAnAttachedImageBecomesTheBackendsDataURL(t *testing.T) {
 
 // And a picture in a tool result travels with the rest of that result.
 func TestAnImageInAToolResultTravelsWithIt(t *testing.T) {
-	built := imageRequest(t, `{"model":"gpt-6-astra","max_tokens":64,"stream":true,
+	built := imageRequest(t, `{"model":"`+fixtureModel("astra").ID+`","max_tokens":64,"stream":true,
 	  "tools":[{"name":"Screenshot","description":"d","input_schema":{"type":"object"}}],
 	  "messages":[
 	    {"role":"assistant","content":[{"type":"tool_use","id":"toolu_1","name":"Screenshot","input":{}}]},

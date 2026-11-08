@@ -18,7 +18,7 @@ func event(kind, payload string) stream.Event {
 }
 
 func TestDisplayOnlyHistoryEncodesAnEmptyInputArray(t *testing.T) {
-	request, err := BuildRequest(&anthropic.Request{Model: "gpt-6-astra"})
+	request, err := BuildRequest(&anthropic.Request{Model: fixtureModel("astra").ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,7 +596,7 @@ func parts(t *testing.T, entry InputEntry) []InputPart {
 }
 
 func TestBuildRequestCarriesTheConversation(t *testing.T) {
-	request := decodeRequest(t, `{"model":"gpt-6-astra","max_tokens":2048,"stream":true,
+	request := decodeRequest(t, `{"model":"`+fixtureModel("astra").ID+`","max_tokens":2048,"stream":true,
 	  "system":[{"type":"text","text":"You are Claude Code."}],
 	  "output_config":{"effort":"high"},
 	  "messages":[
@@ -608,7 +608,7 @@ func TestBuildRequestCarriesTheConversation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
-	if out.Model != "gpt-6-astra" || !out.Stream {
+	if out.Model != fixtureModel("astra").ID || !out.Stream {
 		t.Fatalf("envelope = %+v", out)
 	}
 	// No top-level instructions: the system prompt is the developer turn below (#144).

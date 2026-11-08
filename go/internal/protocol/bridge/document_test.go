@@ -22,7 +22,7 @@ const onePagePDF = "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAw
 // Before 2026-09-17 a document block was refused as UNSUPPORTED_CONTENT, which killed the
 // turn. The client sends one whenever Read opens a PDF, so that was the common path.
 func TestAnAttachedDocumentBecomesAnInputFile(t *testing.T) {
-	built := imageRequest(t, `{"model":"gpt-6-astra","max_tokens":64,"stream":true,"messages":[
+	built := imageRequest(t, `{"model":"`+fixtureModel("astra").ID+`","max_tokens":64,"stream":true,"messages":[
 	  {"role":"user","content":[
 	    {"type":"text","text":"what does this say"},
 	    {"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"`+onePagePDF+`"}}
@@ -61,7 +61,7 @@ func TestAnAttachedDocumentBecomesAnInputFile(t *testing.T) {
 // claude 2.1.274 rather than assumed -- so a document has to decode inside a tool_result and
 // not only at the top of a turn.
 func TestADocumentInAToolResultTravelsWithIt(t *testing.T) {
-	built := imageRequest(t, `{"model":"gpt-6-astra","max_tokens":64,"stream":true,
+	built := imageRequest(t, `{"model":"`+fixtureModel("astra").ID+`","max_tokens":64,"stream":true,
 	  "tools":[{"name":"Read","description":"read","input_schema":{"type":"object"}}],
 	  "messages":[
 	    {"role":"user","content":"read the pdf"},

@@ -7,8 +7,9 @@ import (
 )
 
 func TestAccountCatalogueKeepsOnlyWhatNativeCanSend(t *testing.T) {
+	solID := fixtureModel("sol").ID
 	c, skipped, err := NewCatalogue([]AccountModel{
-		{ID: "gpt-6.1-sol", Efforts: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, Default: "low", Visible: true},
+		{ID: solID, Efforts: []string{"low", "medium", "high", "xhigh", "max", "ultra"}, Default: "low", Visible: true},
 		{ID: "gpt-new", Efforts: []string{"ultra", "medium", "none"}, Default: "ultra"},
 		{ID: "gpt-only-ultra", Efforts: []string{"ultra"}, Default: "ultra", Visible: true},
 		{ID: "sol", Efforts: []string{"low"}, Default: "low"},
@@ -21,7 +22,7 @@ func TestAccountCatalogueKeepsOnlyWhatNativeCanSend(t *testing.T) {
 	if !slices.Equal(skipped, []string{"gpt-only-ultra"}) {
 		t.Fatalf("skipped %v", skipped)
 	}
-	sol, _ := c.ByID("gpt-6.1-sol")
+	sol, _ := c.ByID(solID)
 	if !slices.Equal(sol.Efforts, lowToMax) || sol.Effort != "low" || sol.Key != "sol" || sol.Alias != "opus" || sol.Menu != "sol" || !sol.Visible || !sol.CountValidated {
 		t.Fatalf("legacy identity not joined: %+v", sol)
 	}
@@ -59,32 +60,38 @@ func TestAccountCatalogueKeepsOnlyWhatNativeCanSend(t *testing.T) {
 // Effort order: explicit request, then modelDefaults, then the account default. A
 // configured effort the model does not take fails instead of falling through.
 func TestEffortComesFromRequestThenPreferencesThenAccount(t *testing.T) {
+	luna, astra := fixtureModel("luna").ID, fixtureModel("astra").ID
+	requireUnknownModels(t, "gpt-gone")
 	c, _, err := NewCatalogue([]AccountModel{
-		{ID: "gpt-6-luna", Efforts: []string{"low", "medium", "high"}, Default: "medium"},
-		{ID: "gpt-6-astra", Efforts: []string{"low", "medium"}, Default: "low"},
+		{ID: luna, Efforts: []string{"low", "medium", "high"}, Default: "medium"},
+		{ID: astra, Efforts: []string{"low", "medium"}, Default: "low"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := Selection{ModelDefaults: map[string]Default{"gpt-6-luna": {Effort: "high"}, "gpt-6-astra": {Effort: "max"}, "gpt-gone": {Effort: "low"}}}.WithCatalogue(c)
+	if _, offered := c.ByID("gpt-gone"); offered {
+		t.Fatal("unknown model unexpectedly offered")
+	}
+	s := Selection{ModelDefaults: map[string]Default{luna: {Effort: "high"}, astra: {Effort: "max"}, "gpt-gone": {Effort: "low"}}}.WithCatalogue(c)
 	for _, check := range []struct{ model, effort, want string }{
-		{"gpt-6-luna", "low", "low"},
-		{"gpt-6-luna", "", "high"},
+		{luna, "low", "low"},
+		{luna, "", "high"},
 	} {
 		if got, err := s.SelectRoute(check.model, check.effort); err != nil || got.Effort != check.want {
 			t.Fatalf("%+v: %+v %v", check, got, err)
 		}
 	}
-	if got, err := (Selection{}).WithCatalogue(c).SelectRoute("gpt-6-luna", ""); err != nil || got.Effort != "medium" {
+	if got, err := (Selection{}).WithCatalogue(c).SelectRoute(luna, ""); err != nil || got.Effort != "medium" {
 		t.Fatalf("account default: %+v %v", got, err)
 	}
-	if _, err := s.SelectRoute("gpt-6-astra", ""); !errors.Is(err, ErrUnsupportedRoute) {
+	if _, err := s.SelectRoute(astra, ""); !errors.Is(err, ErrUnsupportedRoute) {
 		t.Fatalf("an unsupported configured effort was replaced: %v", err)
 	}
 	if _, err := s.SelectRoute("gpt-gone", "low"); !errors.Is(err, ErrUnsupportedRoute) {
 		t.Fatalf("a model the account lacks was routed: %v", err)
 	}
-	want := []string{"modelDefaults.gpt-6-astra: effort max is not supported", "modelDefaults.gpt-gone: not in the account model list"}
+	want := []string{"modelDefaults." + astra + ": effort max is not supported", "modelDefaults.gpt-gone: not in the account model list"}
+	slices.Sort(want)
 	if got := s.Problems(); !slices.Equal(got[:2], want) {
 		t.Fatalf("problems %v", got)
 	}
@@ -92,8 +99,15 @@ func TestEffortComesFromRequestThenPreferencesThenAccount(t *testing.T) {
 
 // The retired table only explains a refusal; a name the account still lists is routed.
 func TestARetiredNameTheAccountListsIsRouted(t *testing.T) {
+	requireUnknownModels(t, "gpt-9-unknown")
 	// gpt-5.5 is listed until the account retires it on 2026-10-14 (successor gpt-6.1-sol).
-	for _, id := range []string{"gpt-5.6-sol", "gpt-5.5"} {
+	for id, successor := range map[string]string{"gpt-5.6-sol": fixtureModel("sol6").ID, "gpt-5.5": fixtureModel("sol").ID} {
+		if Retired[id] != successor {
+			t.Fatalf("retirement %q must name %q", id, successor)
+		}
+		if _, offered := testCatalogue.ByID(id); offered {
+			t.Fatalf("retired fixture model %q is still offered", id)
+		}
 		c, _, err := NewCatalogue([]AccountModel{{ID: id, Efforts: []string{"low"}, Default: "low", Visible: true}})
 		if err != nil {
 			t.Fatal(err)
@@ -105,7 +119,7 @@ func TestARetiredNameTheAccountListsIsRouted(t *testing.T) {
 			t.Fatalf("unlisted retired name %s: %v", id, err)
 		}
 	}
-	if Retired["gpt-5.5"] != "gpt-6.1-sol" {
+	if Retired["gpt-5.5"] != fixtureModel("sol").ID {
 		t.Fatalf("gpt-5.5 successor = %q", Retired["gpt-5.5"])
 	}
 	// Review finding: a listed retired name with an effort it lacks is an ordinary refusal.
@@ -120,8 +134,10 @@ func TestARetiredNameTheAccountListsIsRouted(t *testing.T) {
 
 // An override (role pair, classifier pair, compaction route) is checked like any request.
 func TestAnOverrideTheAccountDoesNotOfferIsRefused(t *testing.T) {
-	for _, route := range []Route{{Model: "gpt-gone", Effort: "low"}, {Model: "gpt-6-luna", Effort: "ultra"}} {
-		if _, err := testSelection.ResolveRoute(decodeRequest(t, `{"model":"gpt-6-luna","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`), route); !errors.Is(err, ErrUnsupportedRoute) {
+	requireUnknownModels(t, "gpt-gone")
+	luna := fixtureModel("luna").ID
+	for _, route := range []Route{{Model: "gpt-gone", Effort: "low"}, {Model: luna, Effort: "ultra"}} {
+		if _, err := testSelection.ResolveRoute(decodeRequest(t, `{"model":"`+luna+`","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"x"}]}`), route); !errors.Is(err, ErrUnsupportedRoute) {
 			t.Fatalf("%+v accepted: %v", route, err)
 		}
 	}

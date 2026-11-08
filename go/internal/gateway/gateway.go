@@ -284,15 +284,6 @@ func (g *Gateway) BaseURL() string { return "http://" + g.Addr() }
 // and never written to an error string.
 func (g *Gateway) Token() string { return g.token }
 
-// ReferenceClient is the client version this gateway's rules were measured against.
-//
-// Evidence, not a pin. Nothing here refuses a version and nothing should: the client
-// updates itself, so a build that only runs against one version would be broken by design
-// rather than by a defect. What the account gets instead is the observed version beside
-// this one, so a session that starts failing after an update says so in one line rather
-// than becoming a bisect.
-var ReferenceClient = upstream.ReferenceClaudeVersion
-
 // clientAgent matches the client naming itself.
 //
 // Both product names and a trailing suffix, because that is what was measured rather than

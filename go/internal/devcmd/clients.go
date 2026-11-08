@@ -35,19 +35,16 @@ func claudeVersion(path string) (string, error) {
 	return match[1], nil
 }
 
-// versionReport compares an installed client with the version Clauduct was last measured
-// against. A difference is not a failure -- both clients update on their own and sessions
-// keep running -- it says a re-measure is due (#121, #127).
-func versionReport(out io.Writer, name, installed string, err error, measured string) {
+// versionReport prints an installed client's version. It is recorded evidence: both clients
+// update on their own, sessions keep running, and what a session compares is the tool names
+// it was offered, not the version (#333).
+func versionReport(out io.Writer, name, installed string, err error) {
 	label := fmt.Sprintf("%-12s ", name)
-	switch {
-	case err != nil:
-		fmt.Fprintf(out, "%sversion unavailable, measured %s\n", label, measured)
-	case installed == measured:
-		fmt.Fprintf(out, "%s%s, the measured version\n", label, installed)
-	default:
-		fmt.Fprintf(out, "%s%s, measured %s: re-measure due; sessions still run\n", label, installed, measured)
+	if err != nil {
+		fmt.Fprintf(out, "%sversion unavailable\n", label)
+		return
 	}
+	fmt.Fprintf(out, "%s%s (recorded; sessions compare tool names, not the version)\n", label, installed)
 }
 
 // credentialReport says whether the Codex login a session would use is usable. It is read

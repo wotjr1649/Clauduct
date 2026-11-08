@@ -209,9 +209,9 @@ func refusalMessage(category string) string {
 	case "NATIVE_REQUEST_CAPACITY":
 		return category + "; this session reached its execution tracking limit. Start a new session before sending more requests. No replacement was executed."
 	case "CONTEXT_REQUEST_CLASS_UNVERIFIED":
-		return category + "; this session requires X-Claude-Code-Request-Class. Update Claude Code or repair the local integration. Reference client: " + ReferenceClient + "."
+		return category + "; this session requires X-Claude-Code-Request-Class. Update Claude Code or repair the local integration."
 	case "REQUEST_CLASS_UNKNOWN":
-		return category + "; this Clauduct build does not know the X-Claude-Code-Request-Class Claude Code sent. Update Clauduct; the session status names the class under requests.refusedElements. Reference client: " + ReferenceClient + "."
+		return category + "; this Clauduct build does not know the X-Claude-Code-Request-Class Claude Code sent. Update Clauduct; the session status names the class under requests.refusedElements."
 	case "CONTEXT_SESSION_UNVERIFIED":
 		return category + "; the Clauduct session hook has not registered a transcript. Check the hook error, restore the connection and submit the prompt again. Context recovery was not bypassed."
 	case "MODEL_RETIRED":

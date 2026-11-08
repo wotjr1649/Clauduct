@@ -122,7 +122,7 @@ func acceptCommand(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(errOut, "probe   REFUSED %s\n", err)
 		return 1
 	}
-	fmt.Fprintf(out, "client  codex-cli %s (%s)\n", version, upstream.Status(version))
+	fmt.Fprintf(out, "client  codex-cli %s\n", version)
 
 	var ledgers []*upstream.Ledger
 	code := acceptProbe(plan, func(effort string) upstream.Transport {

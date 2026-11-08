@@ -30,6 +30,12 @@
 - **native 기능 표면 대조**([#297](https://github.com/wotjr1649/Clauduct/issues/297) PR #298,
   [#300](https://github.com/wotjr1649/Clauduct/issues/300) PR #303): 재측정이 표면 관문을 돈다. 세션은 측정 기준에 없는 tool과
   받지 못한 기본 tool을 status와 종료 줄(`added_tools=`·`missing_tools=`)에 보인다. 보고이고 차단하지 않는다.
+- **CLI 버전은 기록만 한다**([#333](https://github.com/wotjr1649/Clauduct/issues/333)): `measured-clients.json`에서 Claude Code·Codex CLI 버전을 뺐다.
+  내장 자료에는 측정한 도구 표면(이름과 모드별 core)만 남는다. 버전만 바뀌면 내장 자료와 probe는 그대로다. 버전 기반 판정(`unmeasured=`, `re-measure due`,
+  `reference`·`status` 필드)을 없앴다. `gateway.client.verified`의 의미는 `verifiedMeaning:tool_names_and_mode_core_only`다. 세션의 `verified`는 부분 검사다: 비교 대상이며 비어 있지 않은 모드 core 기대 목록이 있는 세션에서, 세션 중 한 요청의 실제 도구 정의(tools 배열)에 모드의 core 도구가 모두 있고, 세션의 어느 요청에도 측정 목록 밖 비-MCP 도구 정의가 없으며, 추가 도구 이름 진단의 16개 보관 한도 초과가 한 번도 없을 때 true다. 비교하지 않는 세션(기대 core 목록이 비어 있는 경우: 예를 들어 도구를 좁힌 `--tools`, background)은 도구 정의가 있어도 항상 false다. 서로 다른 요청의 부분 core는 합치지 않고, 프롬프트의 deferred 도구 안내 텍스트는 true를 입증하는 근거로 쓰지 않는다. core가 deferred로만 전달되면 false이며, deferred 진단에서만 보관 한도를 초과해도 세션은 false를 유지한다. 측정된 비핵심 도구의 부재, schema, MCP는 검증하지 않는다. false는 차이 또는 미비교일 뿐 거부가 아니며, 버전은 기록만 한다.
+  설치된 두 클라이언트 버전은
+  `--dev --doctor`와 status에 기록만 한다. 재측정은 버전이 아니라 동작과 표면의 차이를 계속 비교하며, native 신원 변화만 있고 나머지가 같으면 `IDENTITY_ONLY`로
+  분류한다(사람 검토 요구·자동 수락 금지는 그대로). 구조적 UNKNOWN(TUI 목록, route)이 있으면 `REVIEW_REQUIRED`로 남는다.
 - **`max_tokens`를 backend 생성 한도로**([#309](https://github.com/wotjr1649/Clauduct/issues/309), PR #316): 생성 요청에
   `max_output_tokens`로 보낸다. thinking을 끈 요청은 보내지 않는다. 완료 뒤 검사는 유지한다.
 - **역할 없이 부른 teammate 시작**([#307](https://github.com/wotjr1649/Clauduct/issues/307), PR #311)
@@ -228,11 +234,18 @@
   정적 판독에서 native 내부 loopback MCP 인증이 URL 경로의 secret에서 Bearer header로 이동했다. 이 내부 구현 변경을 모든 plugin/MCP 조합의 실행 성공으로 확대하지 않는다.
   이번 평가에서 전체 fixture·전체 관문·실제 backend와 317 warm spare는 실행하지 않았다. 316의 PASS와 warm 판정을 317 결과로 승계하지 않는다.
 
+### ⟦TBD:c1-date⟧ native 재측정 (c1 관측, 최종 바이트 아님)
+
+- **native ⟦TBD:native-version⟧ 관측(c1)**(SHA-256 ⟦TBD:c1-sha⟧): 이 관측은 #333 변경을 적용하기 전 바이트의 무과금 재측정이며 최종 바이트의 증거가 아니다. 재측정과 fresh print/TUI × reference/clauduct/strict 표면 관문의 결과는
+  ⟦TBD:c1-result⟧이다. 직전 기준 2.1.317 대비 차이와 그 처리는 ⟦TBD:remeasure-diff⟧이다. 버전은 비교 기준이 아니라 기록이다. native 신원 차이는
+  `native diff`로 남기고, 도움말·도구 표면·plugin API·시스템 prompt·정적 추출은 계속 비교한다. 이 재측정에서 전체 fixture·전체 관문·실제 backend와 해당 native의 warm spare는
+  이 항목의 결과에 포함하지 않는다. 317의 표면 PASS와 warm 판정을 이 native의 결과로 승계하지 않는다.
+
 ## native
 
-> **최종(⟦TBD:ship-date⟧):** 측정 기준은 Claude Code 2.1.317·Codex CLI 0.164.0이다(2026-11-03 무과금 재측정).
-> 도움말·도구 집합은 316과 같고 desktop용 Backdrop plugin API가 추가됐으며, 6경로 표면 관문이 통과했다. 전체 fixture·전체 관문·실제 backend는 이번 평가에서 미실행이다.
-> 출하 검증 대상 native는 2.1.317(`26b01ec2…6038`)이다. 직전 기준 316의 fixture·표면 결과는 위 "2026-10-31~11-01 추가"에 보존한다.
+> **최종(⟦TBD:ship-date⟧):** Claude Code·Codex CLI 버전은 측정 기준이 아니라 기록이다(#333). 출하 검증에 쓴 native·Codex CLI 버전, native SHA와 근거는 아래 "검증한 클라이언트" 표에 있다.
+> 직전 측정(2.1.317, 2026-11-03)은 도움말·도구 집합이 316과 같고 desktop용 Backdrop plugin API가 추가됐으며 6경로 표면 관문이 통과했다. 그 평가는 전체 fixture·전체 관문·실제 backend를 실행하지 않았다.
+> 직전 기준 316의 fixture·표면 결과는 위 "2026-10-31~11-01 추가"에 보존한다.
 > 그 전 기준 2.1.314(`cb069eab`, 2026-10-30 재측정·반영)의 차이는 위 "2026-10-30 추가"에 적었다. 그 전 기준
 > 2.1.312(`4b963405`, 2026-10-27 재측정·2026-10-28 반영)는 도움말·plugin API·도구 표면이 버전 줄 외에 같았다.
 > 2.1.312·2.1.314·2.1.316 정적 판독에서 전용 `--bg-spare` pool은 Windows에서 spare를 만들기 전에 반환하지만,
@@ -247,7 +260,7 @@
 > 검증 완료 버전으로 읽지 않는다. 2.1.305는 경로표 추출 대상에 추가됐지만, 그 사실만으로 재측정이나 전체 관문이 통과한 것은 아니다.
 > 현재 출하 기준은 이 갱신으로 대체하며, 최종 native·Codex CLI 버전, native SHA와 무과금 재측정 결과는 `TBD(gate)`다.
 
-측정 기준(`measured-clients.json`)은 Claude Code 2.1.304, Codex CLI 0.163.0이다(2026-10-20 무과금 재측정). native는 고정하지 않는다. 아래는 그 전의 경과다. 처음 측정 기준은
+이 줄은 2026-10-20의 기록이다. 당시 측정 기준(`measured-clients.json`)은 Claude Code 2.1.304, Codex CLI 0.163.0이었고 v0.6.11(#333)부터 버전은 내장하지 않는다. native는 고정하지 않는다. 아래는 그 전의 경과다. 처음 측정 기준은
 Claude Code 2.1.299, Codex CLI 0.162.1이었다(2026-10-14 무과금 재측정). 설치본 native는
 2026-10-15에 2.1.300으로, 2026-10-16 합성 관문 도중 2.1.301로 자동 갱신됐다. 실행 중 바이너리가 바뀐 관문은 무효로 남겼다.
 2.1.301의 6경로 무과금 도구 표면 재측정은 통과했다. 도움말과 선택 UI API 선언의 차이를 확인했고, Agent View를 켠 구성에서는
@@ -256,6 +269,17 @@ Claude Code 2.1.299, Codex CLI 0.162.1이었다(2026-10-14 무과금 재측정).
 2026-10-19부터 #319 마감 검증은 2.1.303만 대상으로 하며 같은 방식으로 읽기 잠금을 걸어 실행했다. Windows에서 2.1.302·2.1.303은
 warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPPORT](NATIVE-SUPPORT.md)). 그래서 warm spare dispatch는 실행된
 성공으로 보고하지 않는다.
+
+### 검증한 클라이언트
+
+버전은 고정·내장하지 않는 기록이다. 아래는 이 릴리스 검증이 실제로 본 값이다.
+
+⟦TBD:tested-clients⟧
+
+| 클라이언트 | 버전 | SHA-256 | 근거 |
+|---|---|---|---|
+| Claude Code native | ⟦TBD:native-version⟧ | ⟦TBD:native-sha⟧ | 최종 재측정(c2)·A11·Phase C·live-depin ⟦TBD:native-evidence⟧ |
+| Codex CLI | ⟦TBD:codex-version⟧ | ⟦TBD:codex-sha⟧ | 최종 재측정(c2)의 `versions.json`·live-depin ⟦TBD:codex-evidence⟧ |
 
 ## 출하 검사
 
@@ -270,10 +294,10 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
 - **routing proof 대기·종료 중 503·요청 진단 필드의 실제 backend 판정:** ⟦TBD:runtime-317⟧ — proof 대기(2초를 넘겨 5초 안에
   확인된 표본), gateway 종료 중 503 `GATEWAY_CLOSED`와 hook의 종료 처리, 요청 기록의 진단 필드 형식(`f38cf2b6`·`e57723e7`).
   항목마다 PASS·FAIL·NOT_EXERCISED로 적고, NOT_EXERCISED는 실제 backend PASS로 보지 않는다.
-- **무과금 재측정:** native 2.1.317(SHA-256 `26b01ec2…6038`), 2026-11-03. Codex CLI는 설치본 0.166.0을 관측했고 도움말이 같아
-  측정 기준 0.164.0을 유지했다. 도움말·도구 집합은 316과 같고 desktop용 Backdrop plugin API가 추가됐으며 6경로 표면 관문이 통과했다.
-  전체 fixture·전체 관문·실제 backend는 이번 평가에서 미실행이다. 2.1.316(`e896a9d8…2d52`)의 2026-10-31 fixture·표면 PASS와 앞선
-  314·312의 재측정은 과거 입력의 결과로 유지한다. 출하 검증 대상 native: 2.1.317(`26b01ec2…6038`).
+- **무과금 재측정(2026-11-03, 이력):** native 2.1.317(SHA-256 `26b01ec2…6038`). Codex CLI는 설치본 0.166.0을 관측했고 도움말이 같았다.
+  최종 바이트의 재측정(c2)은 "검증한 클라이언트" 표가 소유한다. 위 "c1 관측" 절은 변경 적용 전 바이트의 이력이다. 도움말·도구 집합은 316과 같고 desktop용 Backdrop plugin API가 추가됐으며 6경로 표면 관문이 통과했다.
+  전체 fixture·전체 관문·실제 backend는 그 평가에서 미실행이다. 2.1.316(`e896a9d8…2d52`)의 2026-10-31 fixture·표면 PASS와 앞선
+  314·312의 재측정은 과거 입력의 결과로 유지한다. 출하 검증 대상 native는 "검증한 클라이언트" 표가 정한다.
 - **출하 신원:** ⟦TBD:ship-hashes⟧ — `clauduct.exe`·`clauduct-probe.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`의 SHA-256,
   깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치, 내장 probe digest ⟦TBD:probe-digest⟧.
 - **설치·업데이트·되돌리기:** ⟦TBD:install-check⟧ — 제품과 probe의 짝, 새 설치, v0.6.10에서 교체·되돌리기, 설치본 실행과
@@ -395,14 +419,14 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
 - fork 부모를 증명하지 못하면 그 fork는 `SESSION_PROFILE_UNVERIFIED`로 거부된다.
 - 2.1.301의 `-p --continue` 합성 행은 `SESSION_RESTART_REQUIRED`로 거부됐고 두 번째 추론 요청이 없었다. 같은 구성의 명시적 `--resume <UUID>`는 다음 요청을 처리했다. `--continue`의 연속 요청 성공은 확인되지 않았다.
 - 측정 기준은 2.1.304, #319 마감 관문의 native는 2.1.303이다. 설치본 native가 자동 갱신되면 doctor는 `re-measure due`를 보일 수 있다.
+  - **v0.6.11(#333)로 대체:** 버전은 내장하지 않고 기록만 하므로 doctor는 `re-measure due`를 보이지 않는다. 위 줄은 2026-10-20의 기록이다.
   - **2026-10-22 갱신:** 위 2.1.304는 기록된 기준이다. 현재 출하 기준·2.1.305 재측정 여부는 "native" 절의 `TBD(gate)`로
     대체해 관리한다. #319의 2.1.303 결과는 해당 과거 후보에만 적용한다.
 - #325 관측기 보강과 경로표 결정의 최종 반영·재실행은 `TBD(gate)`다. 보류 경로의 유지와 기록용 경로 채택은 통신 허용을 뜻하지 않는다.
   - **2026-10-23 갱신:** 위 재측정 미완료와 경로표 반영 미완료 표시는 각각 2.1.305 무과금 재측정 PASS와 `028cd1ce`의
     반영 사실로 대체한다. #325 검증 보강은 "2026-10-23 추가"에 기록했다. 최종 관문·고부하 검증과 보류 4개 경로의 재실행은
     계속 `TBD(gate)`다. #319의 2.1.303 결과는 해당 과거 후보에만 적용한다.
-- **출하 시점(⟦TBD:ship-date⟧):** 위 두 항목의 최종 상태다. 측정 기준은 2.1.317·Codex CLI 0.164.0이고 출하 검증 대상 native는
-  2.1.317(`26b01ec2…6038`)이다. 보류 4개 경로는 재실행하지 않아 HOLD로 남는다([#336](https://github.com/wotjr1649/Clauduct/issues/336)). #325는 ⟦TBD:obs-325⟧.
+- **출하 시점(⟦TBD:ship-date⟧):** 위 두 항목의 최종 상태다. 검증한 native·Codex CLI 버전과 native SHA는 "검증한 클라이언트" 표에 있다. 보류 4개 경로는 재실행하지 않아 HOLD로 남는다([#336](https://github.com/wotjr1649/Clauduct/issues/336)). #325는 ⟦TBD:obs-325⟧.
 - 관리 명령·`--bg` argv 판정 차이([#331](https://github.com/wotjr1649/Clauduct/issues/331))와 복원한 resident가 hook 트리·job
   종료와 함께 끝나는 것([#332](https://github.com/wotjr1649/Clauduct/issues/332))은 v0.6.11 범위 밖이며 COMPATIBILITY 원장에 있다.
 - 세션 중 `/model`로 바꾼 model·effort pair가, resident가 다시 만들어진 뒤 그 세션을 resume하면 시작 pair로 돌아갈 수 있다.
@@ -411,4 +435,5 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
 - 같은 chunk의 upstream 읽기 오류와 downstream 전달 실패가 겹치는 분기(`0248efbc`)는 실제 backend PASS 없이 문서화된 한계로
   출하한다("2026-10-30 추가", [#342](https://github.com/wotjr1649/Clauduct/issues/342)).
 - provider-control probe 8 entry ADMITTED와 CTL v2 controller campaign 없이 출하한다("최종 출하 후보", [#340](https://github.com/wotjr1649/Clauduct/issues/340)).
+- 스트리밍 응답은 backend의 완료 이벤트를 받은 뒤 HTTP 응답 본문이 정상 종료됐는지 확인하기 전에 도구 호출과 응답 완료를 클라이언트에 전달할 수 있다. 이후 본문이 비정상적으로 끊기거나 유효하지 않은 후속 데이터가 발견되면 응답은 실패로 처리되지만, 클라이언트가 이미 받은 도구 호출을 실행할 가능성이 있다. 별도 재시도 시 중복 실행도 가능하지만 실제 실행이나 중복 발생 여부는 확인되지 않았다. 비스트리밍 JSON 응답은 본문의 정상 종료를 확인한 뒤 전달된다. v0.6.11은 이를 알려진 제한으로 두고 출하한다(소유자 결정 2026-11-06). 수정은 [#365](https://github.com/wotjr1649/Clauduct/issues/365)가 v0.6.12에서 이어받는다.
 - 그 밖의 남은 제한은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절에 있다.

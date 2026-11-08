@@ -189,8 +189,8 @@ v0.6.6부터 `gpt-5.5 → gpt-6.1-sol`이 은퇴 표에 있다. 계정 목록에
 계정이 숨긴(visibility가 `list`가 아닌) 모델은 `/model`에 나오지 않지만 전체 ID로 선택할 수 있다.
 v0.6.5부터는 위임 메뉴와 Agent의 `model`·`effort` 선택지에도 나오지 않는다. 모델이 숨김 모델을 스스로
 고르지 않게 하려는 것이다. 사용자가 전체 ID를 지정하면 Agent `model` 인자와 Workflow는 그대로 실행한다.
-측정 기준 Claude Code·Codex CLI 버전도 내장 자료(`go/internal/upstream/measured-clients.json`)이며,
-설치된 버전은 실행할 때마다 기계에서 읽는다.
+측정된 도구 표면(도구 이름과 모드별 core)은 내장 자료(`go/internal/upstream/measured-clients.json`)이다.
+Claude Code·Codex CLI 버전은 내장하지 않는다. 설치된 버전은 실행할 때마다 기계에서 읽어 기록만 한다.
 
 위임 메뉴는 기존 모델에 `clauduct-<key>`, 새 모델에 `clauduct-<전체 ID>`를 만든다. 이름이 기존 키,
 `inherit` 또는 과거 effort별 이름과 겹치면 메뉴 항목을 만들지 않으며, 그 모델은 Agent의 model 인자로 계속 쓸 수 있다.

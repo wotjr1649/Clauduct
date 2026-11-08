@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"io"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -16,23 +17,10 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
-// ReferenceClientVersion is the Codex CLI version last re-measured against this bridge's wire.
-// It is product data (measured-clients.json, written by the re-measure's --accept), not
-// code; the installed version is always read from the machine at run time.
-//
-// Evidence, not a pin. A different installed version still runs and is reported as
-// unverified, because refusing to start on a version nobody has checked would be stricter
-// than the evidence supports and would break on every Codex release. A re-measure records
-// how the installed client's requests differ from this bridge's; it does not copy them, so
-// matching this version says the difference is known, not that there is none (#121).
-var ReferenceClientVersion = measured.codex
-
-// ReferenceClaudeVersion is the Claude Code version last re-measured, from the same file.
-var ReferenceClaudeVersion = measured.claude
-
 // ReferenceTools are the tool names native offered a Clauduct session when it was last
-// re-measured, sorted (#297). The surface gate writes them with the versions; a session
-// reports a name outside them rather than refusing it. Empty when none were recorded.
+// re-measured, sorted (#297). The surface gate writes them; no client version is embedded
+// (versions are recorded evidence, never a gate, #333). A session reports a name outside
+// them rather than refusing it.
 var ReferenceTools = measured.tools
 
 // ReferenceCoreTools are, per mode ("print", "tui"), the tools native offered Clauduct's own
@@ -43,8 +31,6 @@ var ReferenceCoreTools = measured.core
 //go:embed measured-clients.json
 var measuredDocument []byte
 
-var measuredVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-
 var measured = func() measuredClients {
 	m, err := parseMeasured(measuredDocument)
 	if err != nil {
@@ -54,29 +40,38 @@ var measured = func() measuredClients {
 }()
 
 type measuredClients struct {
-	claude, codex string
-	tools         []string
-	core          map[string][]string
+	tools []string
+	core  map[string][]string
 }
 
 var toolName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
 var errMeasured = errors.New("invalid measured clients")
 
-// parseMeasured reads the re-measure's own versions.json shape, so --accept writes one file.
+// parseMeasured reads the measured tool surface: the sorted tool names and, per mode, the
+// core names. The document is strict: the top-level keys are exactly "tools" and "core"
+// (matched case-sensitively, so a client version or a case variant such as "TOOLS" is refused),
+// a second document and an empty surface are refused, so a malformed file cannot quietly
+// switch the surface comparison off.
 func parseMeasured(document []byte) (m measuredClients, err error) {
-	var doc struct {
-		Claude string              `json:"claude"`
-		Codex  string              `json:"codex"`
-		Tools  []string            `json:"tools"`
-		Core   map[string][]string `json:"core"`
-	}
-	if json.Unmarshal(document, &doc) != nil {
+	var top map[string]json.RawMessage
+	dec := json.NewDecoder(bytes.NewReader(document))
+	if dec.Decode(&top) != nil || dec.Decode(&struct{}{}) != io.EOF { // only whitespace and EOF follow the first document
 		return m, errMeasured
 	}
-	claude, okClaude := strings.CutSuffix(doc.Claude, " (Claude Code)")
-	codex, okCodex := strings.CutPrefix(doc.Codex, "codex-cli ")
-	if !okClaude || !okCodex || !measuredVersion.MatchString(claude) || !measuredVersion.MatchString(codex) || !sortedNames(doc.Tools) {
+	for key := range top {
+		if key != "tools" && key != "core" {
+			return m, errMeasured
+		}
+	}
+	var doc struct {
+		Tools []string
+		Core  map[string][]string
+	}
+	if json.Unmarshal(top["tools"], &doc.Tools) != nil || json.Unmarshal(top["core"], &doc.Core) != nil {
+		return m, errMeasured
+	}
+	if len(doc.Tools) == 0 || len(doc.Core["print"]) == 0 || len(doc.Core["tui"]) == 0 || !sortedNames(doc.Tools) {
 		return m, errMeasured
 	}
 	known := map[string]bool{}
@@ -93,7 +88,7 @@ func parseMeasured(document []byte) (m measuredClients, err error) {
 			}
 		}
 	}
-	m.claude, m.codex, m.tools, m.core = claude, codex, doc.Tools, doc.Core
+	m.tools, m.core = doc.Tools, doc.Core
 	return m, nil
 }
 
@@ -141,15 +136,6 @@ func InstalledVersionFunc(resolve func() (string, error)) func() (string, error)
 		once.Do(func() { version, err = resolve() })
 		return version, err
 	}
-}
-
-// Status reports whether a version is the one the wire was measured against. It is printed,
-// never sent: the header carries the installed version whatever this says.
-func Status(version string) string {
-	if version == ReferenceClientVersion {
-		return "reference"
-	}
-	return "unverified"
 }
 
 func readInstalledVersion() (string, error) {

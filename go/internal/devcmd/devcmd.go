@@ -24,7 +24,6 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/buildinfo"
-	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
@@ -131,7 +130,7 @@ func doctor(out io.Writer) int {
 	case found:
 		fmt.Fprintf(out, "claude       found %s\n", path)
 		installed, err := claudeVersion(path)
-		versionReport(out, "claude", installed, err, gateway.ReferenceClient)
+		versionReport(out, "claude", installed, err)
 	default:
 		fmt.Fprintf(out, "claude       NOT FOUND (looked for %s and each PATH entry)\n", path)
 		status = 1
@@ -153,7 +152,7 @@ func doctor(out io.Writer) int {
 		fmt.Fprintf(out, "codex        found %s\n", path)
 	}
 	codex, codexErr := upstream.InstalledVersion()()
-	versionReport(out, "codex", codex, codexErr, upstream.ReferenceClientVersion)
+	versionReport(out, "codex", codex, codexErr)
 	catalogue(out, codex, codexErr)
 	credential, err := (&auth.Provider{}).Credential()
 	credentialReport(out, credential, err)

@@ -992,15 +992,19 @@ func recordOf(w http.ResponseWriter) *record {
 	return nil
 }
 
-// ClientReport is which client this session ran against, and whether that is the one the
-// wire rules were measured on.
+// ClientReport is which client this session ran against, and whether the tools it offered
+// matched the measured tool surface.
 //
-// Version is what the client called itself; empty means it never did. Verified false is not
-// a fault -- it says the client has moved and nothing has re-measured it yet, which is the
-// one fact a session that started failing after an auto-update needs to hand over.
+// Version is what the client called itself, recorded and never compared; empty means it never
+// did. Verified is a partial check (VerifiedMeaning): true only when one request defines every
+// tool of the mode's core set, no request defines a non-MCP name outside the measured list, and
+// no added diagnostic name was omitted. Deferred text cannot positively establish Verified,
+// so a session whose core tools are deferred is not verified. Missing measured non-core tools,
+// schemas and MCP tools are not verified either. False is a difference or no comparison at all
+// (a narrowed or background session, or no tools defined), not a fault. AddedTools and
+// MissingTools are diagnostics and also read that deferred text.
 type ClientReport struct {
 	Version         string `json:"version,omitempty"`
-	Reference       string `json:"reference"`
 	Verified        bool   `json:"verified"`
 	VerifiedMeaning string `json:"verifiedMeaning"`
 	// Capability requirement and cumulative missing-header refusals, independent
@@ -1011,17 +1015,18 @@ type ClientReport struct {
 	// not, MCP tools aside (#297). MissingTools are the tools Clauduct's own launch was offered
 	// in this mode when re-measured that no request of this session offered (#300). Reports,
 	// never refusals.
-	AddedTools   []string `json:"addedTools,omitempty"`
-	MissingTools []string `json:"missingTools,omitempty"`
+	AddedTools          []string `json:"addedTools,omitempty"`
+	MissingTools        []string `json:"missingTools,omitempty"`
+	AddedToolsTruncated bool     `json:"addedToolsTruncated,omitempty"`
+	// Omitted occurrences include repeat observations of names not retained, up to 2^53-1.
+	AddedToolsOmittedOccurrences uint64 `json:"addedToolsOmittedOccurrences,omitempty"`
+	DeferredToolsIncomplete      bool   `json:"deferredToolsIncomplete,omitempty"`
 }
 
-// CodexReport is the Codex CLI version resolved for this session's requests and how it compares
-// with the one the wire was measured against. Absent until a request resolved one. Status is
-// upstream.Status: a version match only, never a check of the wire.
+// CodexReport is the Codex CLI version resolved for this session's requests, recorded and not
+// compared. Absent until a request resolved one.
 type CodexReport struct {
-	Version   string `json:"version"`
-	Reference string `json:"reference"`
-	Status    string `json:"status"`
+	Version string `json:"version"`
 }
 
 type Diagnostics struct {
@@ -1134,13 +1139,14 @@ func (g *Gateway) Snapshot() Diagnostics {
 	var codex *CodexReport
 	if sender, ok := g.transport.(interface{ SentVersion() string }); ok {
 		if version := sender.SentVersion(); version != "" {
-			codex = &CodexReport{Version: version, Reference: upstream.ReferenceClientVersion, Status: upstream.Status(version)}
+			codex = &CodexReport{Version: version}
 		}
 	}
 	if g.delegations != nil {
 		results = g.delegations.results.report()
 		selections = g.delegations.selectionReport()
 	}
+	addedTools, missingTools, toolsMatched, addedOmitted, deferredIncomplete := g.tools.snapshot()
 	return Diagnostics{
 		Admission: g.requests.report(),
 		UptimeMs:  time.Since(g.ring.epoch).Milliseconds(),
@@ -1165,14 +1171,16 @@ func (g *Gateway) Snapshot() Diagnostics {
 		},
 		Betas: g.betas.report(),
 		Client: ClientReport{
-			Version:              g.ClientVersion(),
-			Reference:            ReferenceClient,
-			Verified:             g.ClientVersion() == ReferenceClient,
-			VerifiedMeaning:      "version_match_only",
-			RequestClassRequired: g.contexts != nil,
-			RequestClassMissing:  refusedBy["CONTEXT_REQUEST_CLASS_UNVERIFIED"],
-			AddedTools:           g.tools.report(),
-			MissingTools:         g.tools.missing(),
+			Version:                      g.ClientVersion(),
+			Verified:                     toolsMatched,
+			VerifiedMeaning:              "tool_names_and_mode_core_only",
+			RequestClassRequired:         g.contexts != nil,
+			RequestClassMissing:          refusedBy["CONTEXT_REQUEST_CLASS_UNVERIFIED"],
+			AddedTools:                   addedTools,
+			MissingTools:                 missingTools,
+			AddedToolsTruncated:          addedOmitted > 0,
+			AddedToolsOmittedOccurrences: addedOmitted,
+			DeferredToolsIncomplete:      deferredIncomplete,
 		},
 		Codex:               codex,
 		Features:            g.ring.featureReport(),

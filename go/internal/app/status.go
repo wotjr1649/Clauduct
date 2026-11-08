@@ -271,7 +271,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused-account.Gateway.Requests.CancelledCounts-account.Gateway.Requests.CancelledAuxiliary,
-		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account)+replacedField(account), where)
+		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), surfaceField(account)+replacedField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
 	}
@@ -433,28 +433,23 @@ func countsCancelledField(account Status) string {
 	return field
 }
 
-// unmeasuredField names a client this session ran that is not the version Clauduct was last
-// measured against. Both clients update on their own, and this line is the one place a user
-// sees every session: it says a re-measure is due, not that anything failed (#127).
-func unmeasuredField(account Status) string {
-	var names []string
-	if client := account.Gateway.Client; client.Version != "" && client.Version != client.Reference {
-		names = append(names, "claude/"+client.Version)
-	}
-	if codex := account.Gateway.Codex; codex != nil && codex.Version != codex.Reference {
-		names = append(names, "codex/"+codex.Version)
-	}
+// surfaceField names the tools native offered this session that the measured surface did not
+// have, and the measured tools of this mode it never offered (#297, #300). Versions are
+// recorded, not compared (#333), so a client update alone adds nothing here; this line is the
+// one place a user sees every session, and it reports a difference, not a failure.
+func surfaceField(account Status) string {
 	field := ""
-	if len(names) > 0 {
-		field = " unmeasured=" + strings.Join(names, ",")
-	}
-	// #297, #300: tools native offered that the re-measured native did not, and measured
-	// tools of this mode it never offered.
 	if tools := account.Gateway.Client.AddedTools; len(tools) > 0 {
 		field += " added_tools=" + strings.Join(tools, ",")
 	}
 	if tools := account.Gateway.Client.MissingTools; len(tools) > 0 {
 		field += " missing_tools=" + strings.Join(tools, ",")
+	}
+	if account.Gateway.Client.AddedToolsTruncated {
+		field += fmt.Sprintf(" added_tools_truncated=1 added_tools_omitted_occurrences=%d", account.Gateway.Client.AddedToolsOmittedOccurrences)
+	}
+	if account.Gateway.Client.DeferredToolsIncomplete {
+		field += " deferred_tools_incomplete=1"
 	}
 	return field
 }

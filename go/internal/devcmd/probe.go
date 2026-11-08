@@ -138,7 +138,7 @@ func probe(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(errOut, "probe   REFUSED %s\n", err)
 		return 1
 	}
-	fmt.Fprintf(out, "client  codex-cli %s (%s)\n", version, upstream.Status(version))
+	fmt.Fprintf(out, "client  codex-cli %s\n", version)
 
 	budget := upstream.ApprovedBudget()
 	budget.Limit = selected.attempts

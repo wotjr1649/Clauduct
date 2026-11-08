@@ -85,6 +85,7 @@ type ReceiverConnection struct {
 }
 
 type receiverConnectionKey struct{}
+type receiverTunnelHostMismatchKey struct{}
 
 func receiverConnContext(ctx context.Context, c net.Conn) context.Context {
 	for {
@@ -346,11 +347,12 @@ type Seen struct {
 	PathClass  string              `json:"pathClass"`
 	// PathTemplate is method + host + the path with variable parts normalized (see PathTemplate):
 	// no query, token, e-mail, file path or other secret-bearing value.
-	PathTemplate string `json:"pathTemplate"`
-	Inference    bool   `json:"inference"`
-	Account      bool   `json:"account"`
-	WebSocket    bool   `json:"webSocket"`
-	Undecodable  bool   `json:"undecodable"`
+	PathTemplate       string `json:"pathTemplate"`
+	Inference          bool   `json:"inference"`
+	Account            bool   `json:"account"`
+	WebSocket          bool   `json:"webSocket"`
+	TunnelHostMismatch bool   `json:"tunnelHostMismatch,omitempty"`
+	Undecodable        bool   `json:"undecodable"`
 	// TLSRejected is a tunnel whose client sent a TLS ClientHello and then did not complete the
 	// handshake (it refused the probe's certificate, or left). TLS carries no application data
 	// before the handshake completes and this server accepts no early data, so such a tunnel
@@ -360,6 +362,8 @@ type Seen struct {
 	// Authority is the destination authority of a proxied request, including HTTP absolute-form
 	// requests and CONNECT tunnels. Kept out of evidence: it can name a loopback port.
 	Authority string `json:"-"`
+	// ConnectTarget443 preserves the port check without publishing ephemeral destination ports.
+	ConnectTarget443 *bool `json:"connectTarget443,omitempty"`
 }
 
 // maxSeen bounds one receiver's record; requests past it are still counted.
@@ -403,6 +407,8 @@ type Observer struct {
 }
 
 type ObservationMetadata struct {
+	// Request is borrowed only for the synchronous callback; never serialized or retained.
+	Request     *http.Request `json:"-"`
 	RemoteAddr  string
 	AuthHeaders []string
 }
@@ -411,7 +417,7 @@ func (o *Observer) observed(r *http.Request, seen Seen) {
 	if o.Observed == nil {
 		return
 	}
-	metadata := ObservationMetadata{RemoteAddr: r.RemoteAddr}
+	metadata := ObservationMetadata{RemoteAddr: r.RemoteAddr, Request: r}
 	for name := range r.Header {
 		lower := strings.ToLower(name)
 		if strings.Contains(lower, "auth") || strings.Contains(lower, "token") || strings.Contains(lower, "key") || strings.Contains(lower, "cookie") {
@@ -467,7 +473,8 @@ func (o *Observer) observe(w http.ResponseWriter, r *http.Request, authority str
 	o.mu.Unlock()
 	defer func() { o.mu.Lock(); o.trackActivity(owner, 0, -1); o.mu.Unlock() }()
 	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: r.Method, PathClass: PathClass(r.URL.Path), PathTemplate: PathTemplate(r.Method, authority, rawRequestPath(r.URL)),
-		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path)}
+		Inference: IsInference(r.URL.Path), Account: IsAccount(authority, r.URL.Path),
+		TunnelHostMismatch: r.Context().Value(receiverTunnelHostMismatchKey{}) == true}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 		seen.WebSocket = true
 		index := o.record(&seen)
@@ -944,6 +951,9 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 	// Every tunnel is recorded, with its authority, before anything is read from it: a tunnel
 	// the probe cannot see into must not vanish from the record.
 	seen := Seen{Connection: receiverConnection(r), At: time.Now(), Host: hostOnly(authority), Authority: authority, Method: http.MethodConnect, PathClass: "connect", PathTemplate: PathTemplate(http.MethodConnect, authority, "")}
+	_, port, portErr := net.SplitHostPort(authority)
+	port443 := portErr == nil && port == "443"
+	seen.ConnectTarget443 = &port443
 	tunnel := observer.record(&seen)
 	observer.observed(r, seen)
 	var hello atomic.Bool
@@ -975,11 +985,16 @@ func (c *CatchAll) serveProxy(w http.ResponseWriter, r *http.Request, o *Observe
 		return
 	}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mismatch := r.Host == "" || !strings.EqualFold(r.Host, authority) || r.URL.IsAbs() && !strings.EqualFold(r.URL.Host, authority)
+		r = r.WithContext(context.WithValue(r.Context(), receiverTunnelHostMismatchKey{}, mismatch))
+		if mismatch {
+			observer.update(tunnel, func(s *Seen) { s.TunnelHostMismatch = true })
+		}
 		if target != nil && r.Host == authority && !r.URL.IsAbs() {
 			target.Observer.observe(w, r, authority)
 			return
 		}
-		o.observe(w, r, authority)
+		o.observe(w, r, r.Host)
 	}), BaseContext: func(net.Listener) context.Context {
 		ctx := context.Background()
 		if connection := receiverConnection(r); connection != nil {

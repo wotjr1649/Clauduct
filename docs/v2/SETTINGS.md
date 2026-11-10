@@ -108,6 +108,10 @@ Clauduct 세션 `--settings`를 이어받아 시작 모델·시작 effort를 쓴
 값은 세션 `--settings`에 들어가며, 이 설정은 user·project·local settings 파일보다 우선한다. 모델 요청은 프로필과
 상관없이 항상 이 세션의 gateway로 간다([라우팅 불변식](COMPATIBILITY.md#2-제약)).
 
+두 프로필에 공통인 세션 기본 환경 `CLAUDE_CODE_DISABLE_FAST_MODE=1`은 native의 fast mode와
+`penguin_mode` 확인을 끈다(v0.6.13). 사용자가 셸이나 native settings의 `env`에서 같은 이름을 다르게 주면
+그 값이 우선하는 기존 기본값 규칙을 따른다. native 2.1.321의 print·TUI·`--bg`에서 확인했다.
+
 | | `default` | `strict` |
 |---|---|---|
 | claude.ai connector 자동 연결(`disableClaudeAiConnectors`) | 끔 | 끔 |
@@ -120,6 +124,8 @@ Clauduct 세션 `--settings`를 이어받아 시작 모델·시작 effort를 쓴
 - `default`는 Anthropic 접속이 없는 프로필이 아니다. 무과금 loopback 측정(native 2.1.289)에서 TUI는 `api.anthropic.com`,
   `downloads.claude.ai`, `github.com`, `api.github.com`, `raw.githubusercontent.com`에 접속하려 했다. `strict`는 같은 측정에서
   외부 호스트 0개였다.
+- 이 과거 `strict` 측정은 native 2.1.321의 background 공유 supervisor·dispatch 통신이나 저장 Claude login의 계정 조회까지
+  꺼진다는 보장이 아니다. v0.6.13에 남는 경로와 분류는 [서버 경계 원장](COMPATIBILITY.md#서버-경계-원장-v0611)을 따른다.
 - `strict`가 WebFetch 사전 점검을 끄면, native가 WebFetch로 가져올 domain을 Anthropic에 묻지 않는다. 그 대신 Anthropic의
   차단 목록 검사도 사라진다. 이 보안상 trade-off를 사용자가 감수한다.
 - marketplace 변수는 native가 처음 볼 때 자기 설정에 "정책으로 막힘"을 영구 기록한다. 그래서 그 뒤 Clauduct 없이 쓰는 native에서도

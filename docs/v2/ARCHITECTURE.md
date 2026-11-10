@@ -145,6 +145,7 @@ native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. �
 | cloud provider 선택(native 목록 7종: `CLAUDE_CODE_USE_BEDROCK`·`_VERTEX`·`_FOUNDRY`·`_ANTHROPIC_AWS`·`_ANTHROPIC_GOOGLE_CLOUD`·`_MANTLE`·`_GATEWAY`) | 상속하지 않고, 설정 env에서는 빈 값으로 덮는다. native는 provider를 모든 credential보다 먼저 고른다(#295). 같은 접두어의 다른 옵션(`CLAUDE_CODE_USE_POWERSHELL_TOOL` 등)은 그대로 둔다 |
 | `GITHUB_TOKEN`·AWS/service key·MCP secret | 무차별 삭제하지 않는다. native child 환경에서만 보존 |
 | `CLAUDE_CONFIG_DIR` | 사용자의 명시적 선택을 보존. 기본 별도 프로필을 강제하지 않는다 |
+| `CLAUDE_CODE_DISABLE_FAST_MODE` | v0.6.13의 세션 기본값 `1`. native fast mode와 `penguin_mode` 확인을 끈다. 사용자 셸·native settings env 값이 우선한다. native 2.1.321의 print·TUI·`--bg`에서 확인했다 |
 | proxy·CA 설정 | 신뢰된 사용자 네트워크 구성으로 취급. TLS 검증 완화는 하지 않는다. 다만 `NO_PROXY`에 loopback(`127.0.0.1`·`localhost`·`::1`)을 더해 평문 gateway 요청이 proxy를 거치지 않게 한다(#295) |
 | bridge 내부 run-id·port·token | 자기 프로세스와 child에 필요한 범위만 |
 
@@ -155,7 +156,7 @@ cloud로 보냈다. 그래서 다음을 함께 둔다.
 - foreground·background 모두 `--settings` env에 gateway 주소, 빈 provider 선택 변수(native 목록 7종), 빈
   `ANTHROPIC_UNIX_SOCKET`·`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, loopback을 더한 `NO_PROXY`, 필수 환경을 넣는다.
   native는 `--settings`를 user·project·local settings보다 높게 두고, 파일이 실행 중 바뀌어도 그렇다. token은
-  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다). v0.6.11부터 세션 기본값도 `--settings` env로 넣고, token은 session link를 읽는 key helper(`apiKeyHelper`)가 준다. native의 OS 환경에는 Clauduct 값을 넣지 않고 `ANTHROPIC_*`·OAuth token·provider 선택 변수를 지운다. native supervisor가 자기를 띄운 native의 OS 환경을 이후 standalone worker에 넘기기 때문이다.
+  비밀이라 여기에 넣지 않는다. 사용자의 `--settings`는 이 값들을 바꿀 수 없다(`NO_PROXY`는 항목을 유지하고 loopback만 더한다). 세션 기본값도 `--settings` env로 넣고, token은 session link를 읽는 key helper(`apiKeyHelper`)가 준다. 일반 foreground print·TUI는 세션 기본값을 OS 환경에도 넣지만, Agent View·background dispatch의 native OS 환경에는 Clauduct 값을 넣지 않고 `ANTHROPIC_*`·OAuth token·provider 선택 변수를 지운다. native supervisor가 자기를 띄운 native의 OS 환경을 이후 standalone worker에 넘기기 때문이다. 이 구분으로 남는 background telemetry는 [서버 경계 원장](COMPATIBILITY.md#서버-경계-원장-v0611)의 알려진 제한이다.
 - `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`는 쓰지 않는다. 실측에서 settings 파일의 모델 선택까지 무시하게 했고,
   hook 환경의 token도 지웠다. 상속도 하지 않는다.
 - 저장된 Claude apps gateway 로그인이 있으면 native의 시작 모델 목록 조회도 그 gateway로 갈 수 있다. 모델 목록 요청은 항상 첫 hook보다 먼저 온다는 전제가 성립하지 않는다. SessionStart와 매 `UserPromptSubmit` hook은 `/clauduct/routing-proof`로 같은 native의 목록 요청이 이 gateway에 왔는지 묻는다. gateway는 proof를 보낸 native와 PID·생성 시각이 같은 native의 직접 `GET /v1/models`만 인정하고, 그 요청을 기다리는 시간은 최대 5초다. 다른 native의 목록은 proof가 아니므로 이를 대신하지 않는다. 같은 native의 목록이 기한 안에 오면 204를 반환하고, 오지 않으면 409를 반환한다. 요청 native가 resident gateway 시작 전부터 실행됐고 같은 PID·생성 시각의 목록이 끝내 확인되지 않은 경우에는 `ROUTING_PROOF_PRIOR_GENERATION`으로 분류한다. 무제어 경로는 기한까지 증명이 없으면 fail-closed 거절과 routing mismatch 처리를 유지한다. 인증된 provider-control 경로에서는 각 prompt마다 최대 5초 기다린 뒤에도 일반 proof가 없으면 누락을 진단으로만 기록하며 mismatch를 확정하지 않는다. 단, resident gateway 시작 전부터 실행된 native는 같은 PID·생성 시각의 목록이 끝내 없으면 controlled 여부와 무관하게 gateway가 409 `ROUTING_PROOF_PRIOR_GENERATION`을 반환하고 hook이 해당 event를 거부한다(#299). 목록 조회 변수는 필수 환경이며, credential을 읽지 않는다.

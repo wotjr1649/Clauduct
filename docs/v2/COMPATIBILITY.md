@@ -350,7 +350,7 @@ v0.6.0에서는 native가 `SubagentHandback` 보고를 받아들인 뒤에도 �
 | `--resume` · `--permission-mode` · `--worktree` · `--plugin-dir` | G5, 동작으로 측정 |
 | `--bare` 대화 실행 | 현재 지원 범위에서 제외한다. 과거 G5는 context·세션 profile을 검증하지 않은 연결 검사였다. native 2.1.284에서 제품 정책을 켠 두 표본(도구 목록 있음·없음)은 `SESSION_PROFILE_UNVERIFIED`로 거부됐다. `--bare`를 제외한 표준 native 모드를 사용한다. 과거 연결 PASS와 현재 거부를 구분하며 [#223](https://github.com/wotjr1649/Clauduct/issues/223)에서 v0.6.2 출하 때 최종 바이너리로 거부를 다시 확인하고 닫았다 |
 | 서브에이전트 역할·모델·effort 선택 | 원래 지정 여부와 native 자식 식별을 대조. built-in 역할의 알려진 표기 차이와 `subagent_type` 생략 처리. 아래 최근 TUI 범위 참조 |
-| 위임 메뉴·모델 표 | v0.6.4부터 메뉴는 세션의 계정 목록에서 만든다: 기존 모델은 `clauduct-<key>`, 새 모델은 `clauduct-<전체 ID>`, 이름이 겹치면 항목 없이 Agent model 인자로 사용. 은퇴 표는 계정이 그 이름을 나열하지 않을 때만 `MODEL_RETIRED` 이유가 되며, effort는 계정 지원 수준 ∩ low–max만 보낸다(아래 v0.6.4 절). 이하 v0.6.3까지의 기록: v0.3.4부터 `clauduct-<model>` 메뉴 + `clauduct-inherit`. v0.6.3부터 5종(`clauduct-sol`은 gpt-6.1-sol, `clauduct-sol6`은 gpt-6-sol). effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6.1-sol(v0.6.3, 이전 gpt-6-sol), sonnet→gpt-5.6-terra, haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
+| 위임 메뉴·모델 표 | v0.6.4부터 메뉴는 세션의 계정 목록에서 만든다: 기존 모델은 `clauduct-<key>`, 새 모델은 `clauduct-<전체 ID>`, 이름이 겹치면 항목 없이 Agent model 인자로 사용. 은퇴 표는 계정이 그 이름을 나열하지 않을 때만 `MODEL_RETIRED` 이유가 되며, effort는 계정 지원 수준 ∩ low–max만 보낸다(아래 v0.6.4 절). 이하 v0.6.3까지의 기록: v0.3.4부터 `clauduct-<model>` 메뉴 + `clauduct-inherit`. v0.6.3부터 5종(`clauduct-sol`은 gpt-6.1-sol, `clauduct-sol6`은 gpt-6-sol). effort는 Agent `effort` 인자로 받고 없으면 모델 기본값. [카탈로그 기반 생성](../../go/internal/app/agents.go). 표는 fable→gpt-6-astra, opus→gpt-6.1-sol(v0.6.3, 이전 gpt-6-sol), sonnet→gpt-6.1-terra(v0.6.12, 이전 gpt-5.6-terra. gpt-5.6-terra는 `terra56` 키·`clauduct-terra56` 메뉴로 유지), haiku→gpt-6-luna. gpt-5.6-sol·gpt-5.6-luna와 v0.3.3의 `clauduct-<model>-<effort>` 이름은 `MODEL_RETIRED`로 거부하며 대체 실행하지 않음. Codex 카탈로그의 `ultra`는 2026-09-24 측정에서 gpt-6-sol·gpt-6-astra·gpt-5.6-terra 모두 HTTP 400이라 어느 모델에도 노출하지 않음. 메뉴 존재는 모든 모델의 최신 TUI 통과를 뜻하지 않음 |
 | 중첩 Agent 자동 재진입 | 원래 계보와 현재 native turn을 확인한 뒤 확정 선택 유지. TUI에서 ROOT → A → B → C의 완료 결과 전달 확인. native 2.1.283 SDK 기본 모드에서는 손자 결과가 루트에 도착해도 중간 Agent가 자동으로 다시 답하지 않을 수 있다. 루트가 실제 손자 결과를 확인한 뒤 중간 Agent ID로 `SendMessage`를 보내 재개한다. UUID 재시작 뒤의 이 절차도 실제 backend로 확인했다. SDK 기본값은 바꾸지 않으며, 명시적인 `CLAUDE_CODE_FORK_SUBAGENT=1`은 native의 문맥 상속·백그라운드 실행 의미를 따른다 |
 | 완료 Agent의 SendMessage 재개 | 최근 TUI에서 동일 child ID의 Sol/high 유지·두 번째 결과 수신 확인 |
 | Agent teams(native 실험 기능, v0.6.9) | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`인 TUI의 in-process teammate를 지원한다(#269). native 2.1.289는 teammate의 HTTP 요청에는 주소(`이름@팀`)를, hook 이벤트에는 루프 ID를 싣는다. 세션 plugin이 spawn 때 둘의 대응과 Agent 호출·역할을 기록하고, gateway는 그 기록이 있을 때만 주소를 받아들인다. 요청마다 native 메타데이터가 여전히 그 주소의 teammate 작업인지 확인하고, 사용자가 중지한 teammate는 계속 거부한다. 첫 요청은 모델이 그 호출의 선택과 맞아야 실행한다. native가 모델을 고른 호출이면 그 turn의 native 영수증과 맞아야 한다. teammate 이름은 영문·숫자·`_`·`-`만 받고, 그 밖의 이름을 쓴 teammate의 요청은 거부한다. teammate의 보고는 native가 idle 알림으로 lead에게 전달하므로 gateway는 그 결과를 따로 추적하지 않는다. 확인: loopback에서 spawn → teammate 도구 호출 → 보고 → idle → lead의 `SendMessage`로 다시 시작 → 두 번째 보고 → 종료, 실제 backend TUI 2회(teammate luna/low)에서 같은 흐름. flag를 끈 세션의 이름 붙은 subagent는 기존대로 동작한다. 제외: split pane(tmux·iTerm2, Windows 미지원), `-p`(native가 teammate를 만들지 않는다). `/resume` 뒤 teammate가 복원되지 않는 것은 native 제한이다. v0.6.8 이하는 2.1.289에서 teammate 요청을 모두 거부했다(`INVALID_SESSION_ID`) |
@@ -557,10 +557,10 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
 
-### 알려진 제한 원장 (v0.6.11)
+### 알려진 제한 원장 (v0.6.12)
 
 v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알려진 제한과 미검증 항목을 한곳에 모았다(#273).
-각 항목의 근거는 해당 릴리스 기록과 이 문서의 절에 있다. "구조상 불가"로 영구 종결하지 않고, 다시 볼 조건을 항목마다 둔다. v0.6.11의 추가 항목은 [지원 환경과 보장 한계 아래 표](#v0611-추가-제한)에 있다.
+각 항목의 근거는 해당 릴리스 기록과 이 문서의 절에 있다. "구조상 불가"로 영구 종결하지 않고, 다시 볼 조건을 항목마다 둔다. v0.6.11의 추가 항목은 [지원 환경과 보장 한계 아래 표](#v0611-추가-제한)에 있다. v0.6.12는 `sonnet`·`terra`를 `gpt-6.1-terra`로 옮기는 모델 표 변경만 담고 새 제한을 더하지 않는다. 분류기 측정 결과는 아래 "분류기 pair 품질" 행과 v0.6.7 절의 표에 있다.
 
 | 분류 | 뜻 |
 |---|---|
@@ -590,7 +590,7 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | 분류기가 계속 읽을 수 없는 판정을 내면 native가 분류 요청을 더 보낸다(v0.6.10, 합성 backend 표본 1회에서 10번) | `OUT_OF_SCOPE` | 설계: native의 재질문을 따른다. 판정 없이 호출을 실행하지 않는다. HTTP 오류·시간 초과·끊긴 응답은 전처럼 2번이다 | 비용이나 지연이 문제로 보고될 때 |
 | bypass 세션 도중 모드 전환 시 필수 확인 목록(v0.6.3) | `FIXED` | v0.6.4에서 Clauduct 권한 규칙을 없애 해당 없음 | — |
 | `/model`·`/effort` TUI, 다른 세션으로 가는 `SendMessage` 승인, gateway 경유 `WebSearch`·native `WebFetch`를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.3 최종 후보와 출시 바이트에서 실제 backend로 통과. `/model`은 그 뒤 출하마다 TUI 회귀에서 확인. v0.6.4부터 `SendMessage` 승인은 native 규칙이 정한다 | — |
-| 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Luna low·medium. Sol 6.1 low는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
+| 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Terra 6.1 low(핵심 정상 표본 차단), Luna low·medium. Sol 6.1 low, Terra 6.1 medium·high는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
 | hosted web search의 `allowed_callers`·`response_inclusion`·`cache_control` 값을 검사하지 않음(v0.6.8) | `OUT_OF_SCOPE` | 키만 받고 쓰지 않는다. native 2.1.289는 보내지 않는다(`cache_control` 포함) | native가 보내기 시작할 때 |
 | background stop·attach 직후 첫 입력에서 이전 완료 보고 반복(v0.6.2) | `MEASURE` | #234(v0.6.3)에서 v0.6.1과 v0.6.2가 각각 4회 중 2회 재현돼 v0.6.2 회귀가 아니라고 판정. native가 대기 중이던 완료 알림을 입력 앞에 붙이고 backend가 새로 생성한 응답이다. 반복 여부는 모델이 정하므로 무과금으로 재현할 수 없어 v0.6.11에서도 재측정하지 않았다(#312) | native가 알림 전달 방식을 바꾸거나 사용자 영향이 보고될 때 |
 | 원인 미확정 과거 간헐 실패 #206 #211 #212 #213 #215 #220 #229 | `MEASURE` | 고장 주입으로 안전한 처리를 확인했고 진단을 넣었다 | 재발할 때 진단으로 가른다 |
@@ -1200,6 +1200,8 @@ v0.6.3(2026-10-02)은 핵심 71·독립 18개 표본이다. 기준은 핵심 표
 | `gpt-6-luna/low` | 불합격: 2026-10-03 재측정에서 위험 32개 중 2개(D08 Windows 작업 범위, D16 GitHub 승인) 허용. 독립 20개는 통과. 2026-09-29에는 5개 |
 | `gpt-6-luna/medium` | 불합격: 위험 2개 허용(2026-09-29) |
 | `gpt-6.1-sol/low` | 판정 미완료: 보안 표본 하나를 backend가 `cyber_policy`로 두 번 거부(2026-10-02) |
+| `gpt-6.1-terra/low` | 불합격(v0.6.12, 2026-11-10): 위험 허용 0·판정 거부 0이지만 핵심 정상 표본 하나(승인된 태그 push)를 차단. 핵심 74개 완료 |
+| `gpt-6.1-terra/medium`·`high` | 판정 미완료(v0.6.12, 2026-11-10): 13번째 요청의 보안 표본을 backend가 `cyber_policy`로 거부해 중단. 완료한 12개에서 위험 허용 0 |
 | 그 밖의 pair | 측정하지 않음 |
 
 **사용자 Claude Mods.** native 2.1.287부터 플러그인이 function hook으로 더 깊은 동작을 바꿀 수 있다("Claude Mods"). Clauduct는
@@ -1295,7 +1297,7 @@ record도 소유 기록도 없는 이전 버전의 events 디렉터리는 자동
 
 #### v0.6.11 추가 제한
 
-[알려진 제한 원장](#알려진-제한-원장-v0611)의 분류와 재검토 원칙에 따라, 이 버전의 지원 환경과 관련된 추가 항목을 모았다.
+[알려진 제한 원장](#알려진-제한-원장-v0612)의 분류와 재검토 원칙에 따라, 이 버전의 지원 환경과 관련된 추가 항목을 모았다.
 
 | 항목 | 분류 | 현재 상태 | 다시 볼 조건 |
 |---|---|---|---|

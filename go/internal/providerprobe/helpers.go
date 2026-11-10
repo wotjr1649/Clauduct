@@ -202,6 +202,7 @@ var p3Catalogue = func() *bridge.Catalogue {
 		{ID: "gpt-6-astra", Efforts: all, Default: "medium", Visible: true},
 		{ID: "gpt-6.1-sol", Efforts: all, Default: "xhigh", Visible: true},
 		{ID: "gpt-6-sol", Efforts: all, Default: "xhigh", Visible: true},
+		{ID: "gpt-6.1-terra", Efforts: all, Default: "high", Visible: true},
 		{ID: "gpt-5.6-terra", Efforts: all, Default: "high", Visible: true},
 		{ID: "gpt-6-luna", Efforts: all, Default: "max", Visible: true},
 	})

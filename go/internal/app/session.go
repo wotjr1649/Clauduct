@@ -167,6 +167,10 @@ func (config ClauductSettings) sessionEnvironment() map[string]string {
 		"CLAUDE_CODE_AUTO_MODE_SERVER": "0",
 		// Deferred schemas are discovered through the client's native ToolSearch.
 		"ENABLE_TOOL_SEARCH": "true",
+		// Fast mode is an Anthropic model feature this backend cannot serve, and its availability
+		// check goes to api.anthropic.com with the stored Claude login whatever the base URL
+		// (measured 2.1.321, #372, #378 decision 3). Off unless the user turns it back on.
+		"CLAUDE_CODE_DISABLE_FAST_MODE": "1",
 
 		// The same launch-wide window serves every model. Native retains its
 		// own output reserve and may compact before the gateway's estimate target.

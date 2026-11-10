@@ -4,9 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/wotjr1649/Clauduct/go/internal/gateway"
+	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"syscall"
 	"time"
@@ -23,6 +29,11 @@ type BackgroundReply struct {
 // job. CREATE_NO_WINDOW detaches it from the dispatching console; no global
 // service, startup entry or process execution policy is installed.
 func StartBackground(ctx context.Context, args []string, cwd string, out, errOut io.Writer) error {
+	// A refused background resume is said here, before a resident starts and reports only that
+	// it failed.
+	if _, err := backgroundResume(prepareSessionArgs(args)); err != nil {
+		return err
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -66,11 +77,12 @@ func StartBackground(ctx context.Context, args []string, cwd string, out, errOut
 			}
 			return errors.New("BACKGROUND_START_FAILED: see native startup diagnostic")
 		}
-		if d.reply.Session.PID != cmd.Process.Pid || !regexp.MustCompile(`^[a-f0-9]{8}$`).MatchString(d.reply.Session.JobID) || !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(d.reply.Session.ConnectionID) {
+		if d.reply.Session.PID != cmd.Process.Pid || !regexp.MustCompile(`^[a-f0-9]{8}$`).MatchString(d.reply.Session.JobID) || !regexp.MustCompile(`^[a-f0-9]{32}$`).MatchString(d.reply.Session.ConnectionID) ||
+			d.reply.Session.ForkedFrom != "" && !gateway.IsSessionUUID(d.reply.Session.ForkedFrom) {
 			_ = cmd.Process.Kill()
 			return errors.New("BACKGROUND_START_UNVERIFIED")
 		}
-		fmtBackground(out, d.reply.Session.JobID, d.reply.Session.ConnectionID)
+		fmtBackground(out, *d.reply.Session)
 		return nil
 	case <-ctx.Done():
 		_ = cmd.Process.Kill()
@@ -78,5 +90,200 @@ func StartBackground(ctx context.Context, args []string, cwd string, out, errOut
 	case <-deadline.C:
 		_ = cmd.Process.Kill()
 		return errors.New("BACKGROUND_START_UNVERIFIED")
+	}
+}
+
+// RegenerateResident starts the resident for link again when a dead one left its record, and
+// waits up to wait for the link to answer (#319 decision 18c). The background key helper calls
+// it when the link is gone; on any failure the helper still answers CONNECTION_UNAVAILABLE.
+// Like StartBackground it is a detached process of this user: no service, no startup entry.
+func RegenerateResident(link string, wait time.Duration) {
+	deadline := time.Now().Add(wait)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	record, err := LoadResident(home, link)
+	if err != nil {
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	if clearResidentRestoreFailure(link) != nil {
+		fmt.Fprintln(os.Stderr, "clauduct: RESIDENT_DIAGNOSTIC_UNAVAILABLE")
+		return
+	}
+	if runResidentRelay(self, link, record.Cwd, time.Until(deadline)) != nil {
+		return
+	}
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	for time.Now().Before(deadline) {
+		if _, err := sessionlink.ReadContext(ctx, link); err == nil {
+			if clearResidentRestoreFailure(link) != nil {
+				fmt.Fprintln(os.Stderr, "clauduct: RESIDENT_DIAGNOSTIC_UNAVAILABLE")
+			}
+			return
+		}
+		time.Sleep(min(200*time.Millisecond, time.Until(deadline)))
+	}
+}
+
+var errResidentRelay = errors.New("CLAUDUCT_RESIDENT_RESTORE_FAILED: RESIDENT_RELAY_FAILED")
+
+func runResidentRelay(self, link, cwd string, wait time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, self, ResidentRelayRole, link)
+	cmd.Dir, cmd.Stderr = cwd, os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	if cmd.Run() != nil {
+		return errResidentRelay
+	}
+	return nil
+}
+
+// RelayResident validates the link before spawning, inherits the environment, and never waits
+// for the resident. A dead relay breaks native's taskkill /T parent chain.
+func RelayResident(link string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return errResidentRelay
+	}
+	record, err := LoadResident(home, link)
+	if err != nil {
+		return errResidentRelay
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return errResidentRelay
+	}
+	return startRestoredResident(self, link, record.Cwd)
+}
+
+// startRestoredResident starts the restore resident outside the caller's job when it can.
+//
+// Clauduct starts native inside its own job (KILL_ON_JOB_CLOSE, no breakaway allowed), so every
+// hook under a Clauduct-launched native runs in a job that refuses CREATE_BREAKAWAY_FROM_JOB.
+// Refusing there would make hook-driven restoration impossible, so the start falls back to
+// staying in that job. Remaining limit: a resident that did not break away ends with its job,
+// and native tearing the hook tree down before the relay exits can still kill it; restoration
+// then waits for the next hook. A launch that escapes the job is a follow-up.
+func startRestoredResident(self, link, cwd string) error {
+	start := func(flags uint32) (*exec.Cmd, error) {
+		cmd := exec.Command(self, ResidentRestoreRole, link)
+		cmd.Dir = cwd
+		// Nil standard streams are NUL; no native hook pipe survives in the resident.
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: flags}
+		return cmd, cmd.Start()
+	}
+	// CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB, then CREATE_NO_WINDOW alone.
+	cmd, err := start(0x08000000 | 0x01000000)
+	if err != nil {
+		cmd, err = start(0x08000000)
+	}
+	if err != nil {
+		return errResidentRelay
+	}
+	if cmd.Process.Release() != nil {
+		return errResidentRelay
+	}
+	return nil
+}
+
+var errResidentBusy = errors.New("RESIDENT_RECORD_BUSY")
+
+func lockResident(home, link string, wait time.Duration) (func(), error) {
+	if home == "" || !residentLink.MatchString(link) {
+		return nil, errors.New("RESIDENT_RECORD_INVALID")
+	}
+	dir := filepath.Dir(residentPath(home, link))
+	for _, path := range []string{filepath.Dir(dir), dir} {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.IsDir() || info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return nil, errors.New("RESIDENT_RECORD_INVALID")
+		}
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, link+".lock")
+	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
+		return nil, errors.New("RESIDENT_RECORD_INVALID")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) && !errors.Is(err, syscall.Errno(5)) && !errors.Is(err, errSharingViolation) {
+		return nil, err
+	}
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(wait)
+	for {
+		h, err := syscall.CreateFile(name, syscall.GENERIC_WRITE|0x00010000, 0, nil, syscall.OPEN_ALWAYS, syscall.FILE_ATTRIBUTE_NORMAL|0x04000000, 0)
+		if err == nil {
+			f := os.NewFile(uintptr(h), link+".lock")
+			if err := f.Truncate(0); err != nil {
+				f.Close()
+				return nil, err
+			}
+			if _, err := fmt.Fprintf(f, "pid %d since %s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339)); err != nil {
+				f.Close()
+				return nil, err
+			}
+			return func() { f.Close() }, nil
+		}
+		if !errors.Is(err, errSharingViolation) && !errors.Is(err, syscall.Errno(5)) {
+			return nil, err
+		}
+		if wait == 0 || !time.Now().Before(deadline) {
+			return nil, errResidentBusy
+		}
+		time.Sleep(min(100*time.Millisecond, time.Until(deadline)))
+	}
+}
+
+var reconnectRegenerateResident = RegenerateResident
+
+// ReconnectResident waits at most two seconds and checks native's job identity.
+func ReconnectResident(link, session string) {
+	ReconnectResidentContext(context.Background(), link, session)
+}
+
+// ReconnectResidentContext shortens the wait without canceling restoration.
+func ReconnectResidentContext(parent context.Context, link, session string) {
+	ctx, cancel := context.WithTimeout(parent, hookcmd.ReconnectTimeout)
+	defer cancel()
+	if ctx.Err() != nil {
+		return
+	}
+	done := make(chan struct{})
+	attempted := make(chan struct{})
+	go func() {
+		defer close(done)
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		record, err := LoadResident(home, link)
+		if err != nil || !record.ownsSession(nativeConfigDirectory(platform.Environment(os.Environ()), record.Cwd), session) {
+			return
+		}
+		close(attempted)
+		reconnectRegenerateResident(link, hookcmd.ReconnectTimeout)
+	}()
+	// The caller's deadline does not cancel the resident or its restoration.
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+	select {
+	case <-attempted:
+		ReportResidentRestoreFailure(link, os.Stderr)
+	default:
 	}
 }

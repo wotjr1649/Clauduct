@@ -177,6 +177,20 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 
 출하 빌드는 `CGO_ENABLED=0`이다.
 
+`clauduct-probe.exe`는 provider-control 진단 도구다(#320). launch는 이 파일도 admission entry도 쓰지 않는다(#319 결정 17).
+`clauduct --dev --probe provider-control`과 doctor가 쓰며, `clauduct.exe`는 짝 probe의 SHA-256을 `cmd/clauduct/probe.sha256`에서
+내장하고 다른 probe는 실행하지 않는다. probe는 commit과 무관한 bytes가 나오도록 VCS stamp 없이
+빌드하고, 그 digest를 적은 뒤 `clauduct.exe`를 빌드한다.
+
+```powershell
+go build -trimpath -buildvcs=false -o $env:TEMP\clauduct-probe.exe ./cmd/clauduct-probe
+(Get-FileHash $env:TEMP\clauduct-probe.exe -Algorithm SHA256).Hash.ToLower() | Set-Content -NoNewline cmd\clauduct\probe.sha256
+go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
+```
+
+`probe.sha256`이 비어 있는 빌드는 provider-control 진단을 `PROBE_EXPECTED_UNKNOWN`으로 거부한다. launch는 영향받지 않는다.
+릴리스는 `clauduct-probe.exe`를 `clauduct.exe`와 같은 자산으로 올리고(v0.6.11부터), 출하 빌드 검사는 위 명령으로 빌드한 probe의 digest가 그 트리의 `probe.sha256`과 같은지 확인한다.
+
 ## 지켜야 할 계약
 
 - **CLI 계약은 [ARCHITECTURE.md 4절](../docs/v2/ARCHITECTURE.md#4-cli-계약)이 소유한다.** `app.Run`이 거부 검사와 설정 병합을 적용하고, `launch.Build`는 세션 overlay 뒤에 argv를 그대로 복사한다. 값 경계 변경은 settings 추출·역할 검색·실제 native 대조 검사로 확인한다.
@@ -195,7 +209,9 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 |---|---|
 | `cmd/clauduct` | 제품 launcher. native 인자를 전달하며 `--bg`·`--background`는 연결 유지 프로세스를 시작한다. `--background-stop`과 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`), 내부 `--clauduct-*` 역할을 처리한다 |
 | `internal/devcmd`·`internal/hookcmd` | `--dev` 명령과 hook. v0.3.x까지 별도 바이너리였고, 그 이름의 사본은 이름으로 같은 역할을 한다(#112) |
-| `cmd/ptydrive` | 유지보수 도구. ConPTY에서 TUI를 단계 파일대로 조작한다. 출하하지 않는다 |
+| `cmd/ptydrive`·`internal/ptydrive` | 유지보수 도구. ConPTY에서 TUI를 단계 파일대로 조작한다. 출하하지 않는다. probe가 같은 코드를 자기 role로 쓴다 |
+| `cmd/clauduct-probe`·`internal/providerprobe` | provider-control 진단(#320). 합성 receiver와 fixture로 scope별 사례를 돌려 admission entry를 쓴다. 제품 launch는 entry를 읽지 않는다 |
+| `internal/admissioncontract` | 동결된 admission r2·routing r4 계약을 바이트 그대로 내장한다 |
 | `internal/app` | 순서와 생명주기. 자체 업무 규칙은 없다 |
 | `internal/launch` | argv/env/cwd 사양 계산. spawn하지 않는다 |
 | `internal/sessionlink` | background 연결 정보를 메모리로만 전달하는 Windows 로그인 제한 named pipe |

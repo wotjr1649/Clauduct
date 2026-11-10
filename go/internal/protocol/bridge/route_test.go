@@ -19,29 +19,31 @@ import (
 // entries ran the identical route and a fourth model could not be selected at all. The four
 // tiers now map onto the four models.
 func TestClaudeNamesRouteToTheTiersTheyBelongTo(t *testing.T) {
+	astra, sol, sol6 := fixtureModel("astra").ID, fixtureModel("sol").ID, fixtureModel("sol6").ID
+	terra, luna := fixtureModel("terra").ID, fixtureModel("luna").ID
 	for requested, want := range map[string]Route{
 		// Short aliases.
-		"haiku":  {Model: "gpt-6-luna", Effort: "max", Source: "alias"},
-		"sonnet": {Model: "gpt-5.6-terra", Effort: "high", Source: "alias"},
-		"opus":   {Model: "gpt-6.1-sol", Effort: "xhigh", Source: "alias"},
-		"fable":  {Model: "gpt-6-astra", Effort: "medium", Source: "alias"},
+		"haiku":  {Model: luna, Effort: "max", Source: "alias"},
+		"sonnet": {Model: terra, Effort: "high", Source: "alias"},
+		"opus":   {Model: sol, Effort: "xhigh", Source: "alias"},
+		"fable":  {Model: astra, Effort: "medium", Source: "alias"},
 
 		// Versioned ids, matched by family so no version is pinned here.
-		"claude-opus-5":              {Model: "gpt-6.1-sol", Effort: "xhigh", Source: "family"},
-		"claude-opus-4-1":            {Model: "gpt-6.1-sol", Effort: "xhigh", Source: "family"},
-		"claude-sonnet-5":            {Model: "gpt-5.6-terra", Effort: "high", Source: "family"},
-		"claude-haiku-4-5-20251001":  {Model: "gpt-6-luna", Effort: "max", Source: "family"},
-		"claude-fable-5-1":           {Model: "gpt-6-astra", Effort: "medium", Source: "family"},
-		"claude-opus-99-not-yet-out": {Model: "gpt-6.1-sol", Effort: "xhigh", Source: "family"},
+		"claude-opus-5":              {Model: sol, Effort: "xhigh", Source: "family"},
+		"claude-opus-4-1":            {Model: sol, Effort: "xhigh", Source: "family"},
+		"claude-sonnet-5":            {Model: terra, Effort: "high", Source: "family"},
+		"claude-haiku-4-5-20251001":  {Model: luna, Effort: "max", Source: "family"},
+		"claude-fable-5-1":           {Model: astra, Effort: "medium", Source: "family"},
+		"claude-opus-99-not-yet-out": {Model: sol, Effort: "xhigh", Source: "family"},
 
 		// Catalogue keys and backend ids named outright.
-		"luna":          {Model: "gpt-6-luna", Effort: "max", Source: "catalogue"},
-		"sol":           {Model: "gpt-6.1-sol", Effort: "xhigh", Source: "catalogue"},
-		"sol6":          {Model: "gpt-6-sol", Effort: "xhigh", Source: "catalogue"},
-		"gpt-6-sol":     {Model: "gpt-6-sol", Effort: "xhigh", Source: "direct"},
-		"terra":         {Model: "gpt-5.6-terra", Effort: "high", Source: "catalogue"},
-		"gpt-6-astra":   {Model: "gpt-6-astra", Effort: "medium", Source: "direct"},
-		"gpt-5.6-terra": {Model: "gpt-5.6-terra", Effort: "high", Source: "direct"},
+		"luna":  {Model: luna, Effort: "max", Source: "catalogue"},
+		"sol":   {Model: sol, Effort: "xhigh", Source: "catalogue"},
+		"sol6":  {Model: sol6, Effort: "xhigh", Source: "catalogue"},
+		sol6:    {Model: sol6, Effort: "xhigh", Source: "direct"},
+		"terra": {Model: terra, Effort: "high", Source: "catalogue"},
+		astra:   {Model: astra, Effort: "medium", Source: "direct"},
+		terra:   {Model: terra, Effort: "high", Source: "direct"},
 	} {
 		t.Run(requested, func(t *testing.T) {
 			got, err := SelectRoute(requested, "")
@@ -60,6 +62,7 @@ func TestClaudeNamesRouteToTheTiersTheyBelongTo(t *testing.T) {
 // A default would run the request on a model the user did not ask for and bill them for it.
 // The failure a user can see and fix is better than the one they find on an invoice.
 func TestAnUnsupportedRouteIsRefusedNotDefaulted(t *testing.T) {
+	requireUnknownModels(t, "gpt-9-nonesuch", "gpt-6-lunaa", "gpt-5.6")
 	for name, tc := range map[string]struct{ model, effort string }{
 		"a model nobody offers":       {"gpt-9-nonesuch", ""},
 		"an empty model":              {"", ""},
@@ -142,14 +145,14 @@ func TestTheReplyNamesTheModelThatAnswered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildRequest: %v", err)
 	}
-	if backend.Model != "gpt-6.1-sol" {
+	if backend.Model != fixtureModel("sol").ID {
 		t.Fatalf("the backend request named %q", backend.Model)
 	}
 
 	// The gateway states the route it built; runFor's empty value is the caller that has
 	// none, and both are checked because only one of them is the product path.
 	for name, tc := range map[string]struct{ effective, want string }{
-		"the gateway, which knows the route": {backend.Model, "gpt-6.1-sol"},
+		"the gateway, which knows the route": {backend.Model, fixtureModel("sol").ID},
 		"a caller with no route to state":    {"", "claude-opus-5"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -246,10 +249,10 @@ func TestANameThatIsNotAMenuEntryRoutesNowhere(t *testing.T) {
 		"clauduct-venus", // not a model in the catalogue
 		"clauduct-",
 		"clauduct",
-		"terra",                // the prefix is what says this build defined it
-		"CLAUDUCT-TERRA",       // and it is not case-insensitive
-		"gpt-5.6-terra",        // a model name is not an agent type
-		"some-users-own-agent", // theirs, and theirs to route
+		"terra",                  // the prefix is what says this build defined it
+		"CLAUDUCT-TERRA",         // and it is not case-insensitive
+		fixtureModel("terra").ID, // a model name is not an agent type
+		"some-users-own-agent",   // theirs, and theirs to route
 		"clauduct-terra-ish",
 	} {
 		if route, known := RoleRoute(role); known {
@@ -262,11 +265,11 @@ func TestANameThatIsNotAMenuEntryRoutesNowhere(t *testing.T) {
 // the caller asks for arrives through the gateway's Agent effort argument.
 func TestAMenuEntryResolvesToWhatItsNameSays(t *testing.T) {
 	for role, want := range map[string]Route{
-		"clauduct-astra": {Model: "gpt-6-astra", Effort: "medium", Source: "role"},
-		"clauduct-sol":   {Model: "gpt-6.1-sol", Effort: "xhigh", Source: "role"},
-		"clauduct-sol6":  {Model: "gpt-6-sol", Effort: "xhigh", Source: "role"},
-		"clauduct-terra": {Model: "gpt-5.6-terra", Effort: "high", Source: "role"},
-		"clauduct-luna":  {Model: "gpt-6-luna", Effort: "max", Source: "role"},
+		"clauduct-astra": {Model: fixtureModel("astra").ID, Effort: "medium", Source: "role"},
+		"clauduct-sol":   {Model: fixtureModel("sol").ID, Effort: "xhigh", Source: "role"},
+		"clauduct-sol6":  {Model: fixtureModel("sol6").ID, Effort: "xhigh", Source: "role"},
+		"clauduct-terra": {Model: fixtureModel("terra").ID, Effort: "high", Source: "role"},
+		"clauduct-luna":  {Model: fixtureModel("luna").ID, Effort: "max", Source: "role"},
 	} {
 		route, known := RoleRoute(role)
 		if !known || route != want {
@@ -278,7 +281,13 @@ func TestAMenuEntryResolvesToWhatItsNameSays(t *testing.T) {
 // #104: GPT-5.6 Sol and Luna are refused by name, with a category that says they were
 // retired, and nothing runs the replacement in their place. The tier names moved.
 func TestARetiredModelIsRefusedNotReplaced(t *testing.T) {
-	for _, requested := range []string{"gpt-5.6-sol", "gpt-5.6-luna"} {
+	for requested, successor := range map[string]string{"gpt-5.6-sol": fixtureModel("sol6").ID, "gpt-5.6-luna": fixtureModel("luna").ID} {
+		if Retired[requested] != successor {
+			t.Fatalf("retirement %q must name %q", requested, successor)
+		}
+		if _, offered := testCatalogue.ByID(requested); offered {
+			t.Fatalf("retired model %q is still in the fixture catalogue", requested)
+		}
 		for _, effort := range []string{"", "low"} {
 			route, err := SelectRoute(requested, effort)
 			if !errors.Is(err, ErrRetiredRoute) || !errors.Is(err, ErrUnsupportedRoute) || route != (Route{}) {
@@ -286,7 +295,8 @@ func TestARetiredModelIsRefusedNotReplaced(t *testing.T) {
 			}
 		}
 	}
-	for requested, want := range map[string]string{"opus": "gpt-6.1-sol", "haiku": "gpt-6-luna", "sol": "gpt-6.1-sol", "sol6": "gpt-6-sol", "gpt-6-sol": "gpt-6-sol", "luna": "gpt-6-luna", "claude-opus-5": "gpt-6.1-sol", "claude-haiku-4-5": "gpt-6-luna"} {
+	sol, sol6, luna := fixtureModel("sol").ID, fixtureModel("sol6").ID, fixtureModel("luna").ID
+	for requested, want := range map[string]string{"opus": sol, "haiku": luna, "sol": sol, "sol6": sol6, sol6: sol6, "luna": luna, "claude-opus-5": sol, "claude-haiku-4-5": luna} {
 		if route, err := SelectRoute(requested, ""); err != nil || route.Model != want {
 			t.Errorf("SelectRoute(%q) = %+v, %v; want %s", requested, route, err, want)
 		}
@@ -381,7 +391,7 @@ func TestASystemTurnSetsTheEffortForThatTurn(t *testing.T) {
 
 	// A role override wins: a subagent routed by what it is doing does not take an effort
 	// out of the transcript. The baseline draws the same line.
-	role := Route{Model: "gpt-6-luna", Effort: "max", Source: "role"}
+	role := Route{Model: fixtureModel("luna").ID, Effort: "max", Source: "role"}
 	routed, err := BuildRequest(decodeRequest(t,
 		head+`{"role":"system","content":"go carefully","output_config":{"effort":"low"}}]}`), role)
 	if err != nil {

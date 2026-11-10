@@ -68,6 +68,15 @@ func CategoryOf(err error) string {
 	return ""
 }
 
+// LoginHint names the recovery only for categories a fresh Codex login can fix.
+func LoginHint(category string) string {
+	switch category {
+	case CategoryUnavailable, CategoryTokenExpired, CategoryInvalidCache, CategoryFileUnavailable:
+		return `run "codex login" (install the Codex CLI first if the codex command is not found), then start clauduct again`
+	}
+	return ""
+}
+
 // Credential is what a request needs to authenticate. It is deliberately small: the token,
 // the account it belongs to, and when it stops being usable.
 type Credential struct {

@@ -83,10 +83,30 @@ func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Read
 		return 1
 	}
 
-	parked, err := remove(dir, self, parkDir, present, leftovers)
-	if err != nil {
+	parked, remaining, err := remove(dir, self, parkDir, present, leftovers)
+	switch {
+	case errors.Is(err, errUninstallIncomplete):
+		// Everything was moved aside, so the installation no longer runs; these copies are left.
+		fmt.Fprintf(out, "clauduct: UNINSTALL_INCOMPLETE %v\n", err)
+		for _, path := range remaining {
+			fmt.Fprintf(out, "  del \"%s\"\n", path)
+		}
+		fmt.Fprintln(out, "  (running clauduct --uninstall again also removes them)")
+	case errors.Is(err, errUninstallNotRestored):
+		// The uninstall stopped, and putting a moved file back failed too: say exactly where.
+		fmt.Fprintf(out, "clauduct: UNINSTALL_FAILED %v\n", err)
+		for _, path := range remaining {
+			fmt.Fprintf(out, "  left aside: %s\n", path)
+		}
+		fmt.Fprintln(out, "  rename each back without .uninstalling, or run clauduct --uninstall again")
+	case err != nil:
 		fmt.Fprintf(out, "clauduct: UNINSTALL_FAILED %v\n", err)
 		fmt.Fprintln(out, "nothing was removed")
+	}
+	if err != nil {
+		if errors.Is(err, errUninstallIncomplete) && parked != "" && sameDir(dir, parked) {
+			fmt.Fprintf(out, "  del \"%s\"\n", parked)
+		}
 		return 1
 	}
 
@@ -112,12 +132,18 @@ func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Read
 // copies a 0.3.x updater left under the retired names, and the predecessors an earlier
 // --update could not delete while it was running them.
 func survey(dir string) (present, leftovers []string) {
-	for _, name := range append(append([]string{}, Binaries...), Retired...) {
+	for _, name := range append(append([]string{Probe}, Binaries...), Retired...) {
 		if isFile(filepath.Join(dir, name)) {
 			present = append(present, name)
 		}
 		if old := name + ".old"; isFile(filepath.Join(dir, old)) {
 			leftovers = append(leftovers, old)
+		}
+		// A copy an earlier uninstall staged and could not delete.
+		for _, staged := range []string{name + ".uninstalling", name + ".old.uninstalling"} {
+			if isFile(filepath.Join(dir, staged)) {
+				leftovers = append(leftovers, staged)
+			}
 		}
 	}
 	return present, leftovers
@@ -128,41 +154,87 @@ func survey(dir string) (present, leftovers []string) {
 // The order is the safety, the same way it is in Apply. If this executable cannot be moved
 // aside, nothing else is touched either: a half-removed installation is the one state
 // nobody would think to look for.
-func remove(dir, self, parkDir string, present, leftovers []string) (parked string, err error) {
-	moved := ""
+func remove(dir, self, parkDir string, present, leftovers []string) (parked string, remaining []string, err error) {
+	moved, movedOld := "", ""
 	if sameDir(dir, self) {
-		moved = park(self, parkDir)
+		moved, movedOld = park(self, parkDir)
 		if moved == "" {
-			return "", errCannotMoveSelf
+			return "", nil, errCannotMoveSelf
 		}
 	}
-	restore := func() {
-		if moved != "" {
-			_ = os.Rename(moved, self)
-		}
+	// Every other file is renamed aside before any is deleted. A file something holds open
+	// cannot be renamed, so a failure shows up while the installation can still be put back
+	// exactly as it was -- the probe included. Only after every rename has succeeded are the
+	// staged copies deleted, and by then nothing is left that could refuse.
+	type staged struct{ path, aside string }
+	var done []staged
+	var prestaged []string
+	if movedOld != "" {
+		// park moved an earlier update's clauduct.exe.old aside to take its name.
+		done = append(done, staged{self + ".old", movedOld})
 	}
-	for _, name := range present {
+	// restore puts everything back and returns what it could not.
+	restore := func() (stuck []string) {
+		// The executable first: when it was parked as clauduct.exe.old, that name is the one the
+		// displaced earlier .old goes back to.
+		if moved != "" && os.Rename(moved, self) != nil {
+			stuck = append(stuck, moved)
+		}
+		for i := len(done) - 1; i >= 0; i-- {
+			if os.Rename(done[i].aside, done[i].path) != nil {
+				stuck = append(stuck, done[i].aside)
+			}
+		}
+		return stuck
+	}
+	stage := func(name string) error {
 		path := filepath.Join(dir, name)
-		if path == self {
-			continue
+		if path == self || path == moved || path == movedOld {
+			return nil
 		}
-		if err := os.Remove(path); err != nil {
-			restore()
-			return "", err
+		if strings.HasSuffix(name, ".uninstalling") {
+			// Already staged by an earlier uninstall: deleted with the rest, never put back.
+			prestaged = append(prestaged, path)
+			return nil
+		}
+		aside := path + ".uninstalling"
+		_ = os.Remove(aside)
+		if err := os.Rename(path, aside); err != nil {
+			return err
+		}
+		done = append(done, staged{path, aside})
+		return nil
+	}
+	for _, name := range append(append([]string{}, present...), leftovers...) {
+		if err := stage(name); err != nil {
+			if stuck := restore(); len(stuck) > 0 {
+				return "", stuck, fmt.Errorf("%w: %v", errUninstallNotRestored, err)
+			}
+			return "", nil, err
 		}
 	}
-	for _, name := range leftovers {
-		path := filepath.Join(dir, name)
-		if path == moved {
-			continue
-		}
-		if err := os.Remove(path); err != nil {
-			restore()
-			return "", err
+	// Every file is aside; delete them all, and name each one that would not go.
+	for _, s := range done {
+		prestaged = append(prestaged, s.aside)
+	}
+	for _, path := range prestaged {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			remaining = append(remaining, path)
 		}
 	}
-	return moved, nil
+	if len(remaining) > 0 {
+		return moved, remaining, fmt.Errorf("%w (%d file(s) could not be deleted)", errUninstallIncomplete, len(remaining))
+	}
+	return moved, nil, nil
 }
+
+// errUninstallIncomplete is a failure after every file was moved aside: the installation no
+// longer runs, and the staged copies listed are what is left to delete.
+var errUninstallIncomplete = errors.New("the installation was removed, but staged copies remain")
+
+// errUninstallNotRestored is a stopped uninstall whose put-back also failed for some files: the
+// installation is not as it was, and the files listed are where they were left.
+var errUninstallNotRestored = errors.New("the uninstall stopped and some files could not be put back")
 
 // errCannotMoveSelf means the running executable could not be moved out of the way, which is
 // the one failure that stops an uninstall before it touches anything else.
@@ -183,21 +255,34 @@ var errCannotMoveSelf = errors.New("the running executable could not be moved as
 // The fallback is the old behaviour, for an installation on a different volume from TEMP,
 // where the rename would be a copy and fails. Then the name beside the executable is used and
 // the caller prints the one command that finishes the job.
-func park(self, parkDir string) string {
+//
+// An earlier update's clauduct.exe.old in the way is moved aside, not deleted, and named as
+// movedOld so a stopped uninstall can put it back too.
+func park(self, parkDir string) (moved, movedOld string) {
 	if parkDir != "" {
 		target := filepath.Join(parkDir,
 			fmt.Sprintf("clauduct-removed-%d%s", os.Getpid(), filepath.Ext(self)))
 		_ = os.Remove(target)
 		if os.Rename(self, target) == nil {
-			return target
+			return target, ""
 		}
 	}
 	beside := self + ".old"
-	_ = os.Remove(beside)
-	if os.Rename(self, beside) == nil {
-		return beside
+	if isFile(beside) {
+		aside := beside + ".uninstalling"
+		_ = os.Remove(aside)
+		if os.Rename(beside, aside) != nil {
+			return "", ""
+		}
+		movedOld = aside
 	}
-	return ""
+	if os.Rename(self, beside) == nil {
+		return beside, movedOld
+	}
+	if movedOld != "" {
+		_ = os.Rename(movedOld, beside)
+	}
+	return "", ""
 }
 
 // reportPath says what the directory still holds and stops there.

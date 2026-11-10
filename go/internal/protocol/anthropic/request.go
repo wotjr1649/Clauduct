@@ -128,6 +128,9 @@ func refuseUnknown(code, kind string) error {
 // identifier matches the baseline's id() shape, used for names the backend will echo.
 var identifier = regexp.MustCompile(`^[A-Za-z0-9_-]{1,200}$`)
 
+// ValidToolIdentifier preserves the wire identity constraint before ID adaptation.
+func ValidToolIdentifier(id string) bool { return identifier.MatchString(id) }
+
 // Block is one piece of message content. Raw keeps the bytes so nothing is lost for the
 // blocks this build does not yet interpret.
 //

@@ -55,7 +55,7 @@ func TestThinkingOffLimitCountsTheAnswer(t *testing.T) {
 	} {
 		translator := NewTranslatorFor(decodeRequest(t, `{"model":"sonnet","max_tokens":2,"stream":true,`+
 			`"messages":[{"role":"user","content":"x"}]`+tc.thinking+`}`), "")
-		for _, e := range []stream.Event{textDelta("x"), textDone("x")} {
+		for _, e := range []stream.Event{itemAdded(0, messageItem(defaultItem)), textDelta("x"), textDone("x"), itemDone(0, messageItem(defaultItem, "x"))} {
 			if _, err := translator.Accept(e); err != nil {
 				t.Fatal(err)
 			}

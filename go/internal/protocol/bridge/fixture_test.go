@@ -1,18 +1,43 @@
 package bridge
 
-import "github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
+import (
+	"testing"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/anthropic"
+)
+
+func fixtureModel(key string) Model {
+	for _, model := range LegacyModels() {
+		if model.Key == key {
+			return model
+		}
+	}
+	panic("missing synthetic catalogue model: " + key)
+}
+
+func requireUnknownModels(t testing.TB, ids ...string) {
+	t.Helper()
+	for _, id := range ids {
+		if _, offered := testCatalogue.ByID(id); offered {
+			t.Fatalf("unknown fixture model %q is offered", id)
+		}
+		if _, retired := Retired[id]; retired {
+			t.Fatalf("unknown fixture model %q is retired", id)
+		}
+	}
+}
 
 // A synthetic account list standing in for the one a session fetches at start. Its default
 // levels are the v0.6.3 factory efforts, so tests written against those keep their meaning.
 var testCatalogue = func() *Catalogue {
 	all := []string{"low", "medium", "high", "xhigh", "max"}
-	c, _, err := NewCatalogue([]AccountModel{
-		{ID: "gpt-6-astra", Efforts: all, Default: "medium", Visible: true},
-		{ID: "gpt-6.1-sol", Efforts: all, Default: "xhigh", Visible: true},
-		{ID: "gpt-6-sol", Efforts: all, Default: "xhigh", Visible: true},
-		{ID: "gpt-5.6-terra", Efforts: all, Default: "high", Visible: true},
-		{ID: "gpt-6-luna", Efforts: all, Default: "max", Visible: true},
-	})
+	var models []AccountModel
+	for _, item := range []struct{ key, effort string }{
+		{"astra", "medium"}, {"sol", "xhigh"}, {"sol6", "xhigh"}, {"terra", "high"}, {"luna", "max"},
+	} {
+		models = append(models, AccountModel{ID: fixtureModel(item.key).ID, Efforts: all, Default: item.effort, Visible: true})
+	}
+	c, _, err := NewCatalogue(models)
 	if err != nil {
 		panic(err)
 	}

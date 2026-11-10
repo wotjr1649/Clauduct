@@ -2,7 +2,8 @@ package gateway
 
 import (
 	"bytes"
-	"regexp"
+	"encoding/json"
+	"io"
 	"strings"
 	"sync"
 
@@ -17,19 +18,29 @@ import (
 //
 // A session can also be told the tools its mode should see (#300); those it never saw are
 // reported as missing once any tools were offered at all.
+//
+// Two things are kept apart. The added and missing diagnostics read both the tool definitions
+// and the deferred-tool text in the prompt (a diagnostic only: a user system prompt or message
+// can write the same words). A positive match needs one request to define the complete core,
+// no unmeasured non-MCP definition, and no omitted diagnostic names.
 type toolSurface struct {
-	mu        sync.Mutex
-	reference map[string]bool
-	added     map[string]bool
-	expected  map[string]bool
-	seen      map[string]bool
-	offered   bool
+	mu                 sync.Mutex
+	reference          map[string]bool
+	added              map[string]bool
+	expected           map[string]bool
+	seen               map[string]bool
+	offered            bool
+	matchedRequest     bool
+	definedOutside     bool
+	addedOmitted       uint64
+	deferredIncomplete bool
 }
-
-var toolSurfaceName = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 
 // toolSurfaceNames bounds what a session keeps: the first names it met.
 const toolSurfaceNames = 16
+
+// shortcut: count saturates at JavaScript's safe integer; widen the status format if needed.
+const maxToolOmissions = 1<<53 - 1
 
 func newToolSurface(reference []string) *toolSurface {
 	s := &toolSurface{reference: map[string]bool{}, added: map[string]bool{}, seen: map[string]bool{}}
@@ -47,67 +58,107 @@ func (s *toolSurface) observe(tools []anthropic.Tool, body []byte) {
 	if len(s.reference) == 0 {
 		return // nothing was measured, so nothing can be outside it
 	}
-	names := deferredTools(body)
-	for _, tool := range tools {
-		names = append(names, tool.Name)
-	}
+	names, incomplete := deferredTools(body)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.offered = s.offered || len(names) > 0
-	for _, name := range names {
+	s.offered = s.offered || len(names)+len(tools) > 0
+	s.deferredIncomplete = s.deferredIncomplete || incomplete
+	defined := make(map[string]bool, len(s.expected))
+	record := func(name string) {
 		if s.expected[name] {
-			s.seen[name] = true // bounded: only expected names are kept
+			s.seen[name] = true
 		}
-		if s.reference[name] || strings.HasPrefix(name, "mcp__") || !toolSurfaceName.MatchString(name) {
-			continue
+		if s.reference[name] || strings.HasPrefix(name, "mcp__") || !anthropic.ValidToolIdentifier(name) || s.added[name] {
+			return
 		}
-		if len(s.added) < toolSurfaceNames {
-			s.added[name] = true
+		if len(s.added) == toolSurfaceNames {
+			if s.addedOmitted < maxToolOmissions {
+				s.addedOmitted++
+			}
+			return
 		}
+		s.added[name] = true
+	}
+	for _, tool := range tools {
+		if s.expected[tool.Name] {
+			defined[tool.Name] = true
+		}
+		if !s.reference[tool.Name] && !strings.HasPrefix(tool.Name, "mcp__") {
+			s.definedOutside = true
+		}
+		record(tool.Name)
+	}
+	s.matchedRequest = s.matchedRequest || len(s.expected) > 0 && len(defined) == len(s.expected)
+	for _, name := range names {
+		record(name)
 	}
 }
 
 // deferredNames bounds one body's deferred names. Far above native's own tools, so a long MCP
 // list cannot push a core tool past it and have it reported missing (#300).
-const deferredNames = 4096
-
-var (
-	deferredMarker = []byte("deferred tools are now available via ToolSearch")
-	deferredStart  = []byte("before calling them:")
-	escapedLine    = []byte(`\n`)
+const (
+	deferredNames     = 4096
+	deferredNameBytes = 200
+	deferredMarker    = "deferred tools are now available via ToolSearch"
+	deferredStart     = "before calling them:"
 )
 
-// deferredTools reads native's deferred-tool lists from the JSON body as sent: one name per
-// escaped line after each list's introduction. A line that is not one whole name ends that
-// list, so a sentence after it is never read as a tool; names with a hyphen (MCP) are read
-// past and left to observe's filter.
-func deferredTools(body []byte) []string {
+// deferredTools decodes JSON strings before reading the diagnostic lists. A limit or invalid
+// JSON makes the diagnostic incomplete; deferred names cannot positively establish Verified.
+func deferredTools(body []byte) ([]string, bool) {
+	if len(body) == 0 || !bytes.Contains(body, []byte(deferredMarker)) && !bytes.Contains(body, []byte(`\u`)) {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
 	var names []string
-	for rest := body; len(names) < deferredNames; {
-		at := bytes.Index(rest, deferredMarker)
-		if at < 0 {
-			break
+	incomplete := false
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return names, incomplete
 		}
-		rest = rest[at+len(deferredMarker):]
-		start := bytes.Index(rest, deferredStart)
-		if start < 0 || start > 512 {
+		if err != nil {
+			return names, true
+		}
+		text, ok := token.(string)
+		if !ok {
 			continue
 		}
-		list := rest[start+len(deferredStart):]
-		for len(names) < deferredNames && bytes.HasPrefix(list, escapedLine) {
-			line := list[len(escapedLine):]
-			end := 0
-			for end < len(line) && end < 128 && nameByte(line[end]) {
-				end++
-			}
-			if end == 0 || !bytes.HasPrefix(line[end:], escapedLine) && !bytes.HasPrefix(line[end:], []byte(`"`)) {
+		for rest := text; ; {
+			at := strings.Index(rest, deferredMarker)
+			if at < 0 {
 				break
 			}
-			names = append(names, string(line[:end]))
-			list = line[end:]
+			rest = rest[at+len(deferredMarker):]
+			limit := min(len(rest), 512+len(deferredStart))
+			start := strings.Index(rest[:limit], deferredStart)
+			if start < 0 || start > 512 {
+				continue
+			}
+			list := rest[start+len(deferredStart):]
+			for strings.HasPrefix(list, "\n") || strings.HasPrefix(list, "\r\n") {
+				line := strings.TrimPrefix(list, "\r")
+				line = line[1:]
+				end := 0
+				for end < len(line) && end <= deferredNameBytes && nameByte(line[end]) {
+					end++
+				}
+				if end > deferredNameBytes {
+					incomplete = true
+					break
+				}
+				if end == 0 || end < len(line) && line[end] != '\n' && !strings.HasPrefix(line[end:], "\r\n") {
+					break
+				}
+				names = append(names, line[:end])
+				if len(names) == deferredNames {
+					return names, true
+				}
+				list = line[end:]
+			}
 		}
 	}
-	return names
 }
 
 func nameByte(b byte) bool {
@@ -125,6 +176,7 @@ func (s *toolSurface) expect(names []string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.expected = map[string]bool{}
+	s.matchedRequest = false
 	for _, name := range names {
 		s.expected[name] = true
 	}
@@ -135,6 +187,11 @@ func (s *toolSurface) expect(names []string) {
 func (s *toolSurface) missing() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.missingLocked()
+}
+
+// missingLocked is missing for a caller that holds s.mu.
+func (s *toolSurface) missingLocked() []string {
 	if !s.offered {
 		return nil
 	}
@@ -148,3 +205,16 @@ func (s *toolSurface) missing() []string {
 }
 
 var referenceTools = upstream.ReferenceTools
+
+// snapshot reads added, missing and whether this session's observation matched, under one lock
+// so the three agree. added and missing are the diagnostics (tool definitions and deferred text).
+// matched is the partial check behind Verified: one request must define every expected core
+// name, no request may define an unmeasured non-MCP name, and no diagnostic name may be omitted.
+// Deferred text never provides positive evidence. expect(nil), a narrowed argv or a background
+// session leaves nothing to compare; measured non-core omissions, schemas and MCP are not verified.
+func (s *toolSurface) snapshot() (added, missing []string, matched bool, addedOmitted uint64, deferredIncomplete bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	added, missing = sorted(s.added), s.missingLocked()
+	return added, missing, s.matchedRequest && !s.definedOutside && s.addedOmitted == 0, s.addedOmitted, s.deferredIncomplete
+}

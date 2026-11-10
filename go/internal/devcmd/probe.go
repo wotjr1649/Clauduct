@@ -110,6 +110,9 @@ func probe(args []string, out, errOut io.Writer) int {
 	if len(args) > 0 && args[0] == "accept" {
 		return acceptCommand(args[1:], out, errOut)
 	}
+	if len(args) > 0 && args[0] == "provider-control" {
+		return providerControl(args[1:], errOut)
+	}
 	if len(args) != 2 || args[1] != "--send" {
 		return usageProbe(out)
 	}
@@ -135,7 +138,7 @@ func probe(args []string, out, errOut io.Writer) int {
 		fmt.Fprintf(errOut, "probe   REFUSED %s\n", err)
 		return 1
 	}
-	fmt.Fprintf(out, "client  codex-cli %s (%s)\n", version, upstream.Status(version))
+	fmt.Fprintf(out, "client  codex-cli %s\n", version)
 
 	budget := upstream.ApprovedBudget()
 	budget.Limit = selected.attempts

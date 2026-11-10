@@ -42,10 +42,7 @@ func (g *Gateway) writeSummary(step *parentStep, parts []string) {
 	if len(shown) == 0 {
 		return
 	}
-	name := "root"
-	if step.Agent != "" {
-		name = "child-" + step.Agent
-	}
+	name := nativeScopeName(step.Session, step.Agent)
 	body, _ := json.Marshal(struct {
 		Session string   `json:"session"`
 		Agent   string   `json:"agent"`

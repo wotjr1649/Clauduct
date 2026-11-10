@@ -45,6 +45,9 @@ const (
 	CategoryRouting = "ROUTING_UNVERIFIED"
 )
 
+// CategoryFinalUnverified means the last checkpoint cannot prove the final outcome.
+const CategoryFinalUnverified = "FINAL_STATUS_UNVERIFIED"
+
 // SessionFacts describe launcher defaults and installed integration components.
 //
 // Context defaults are not a reading of the native client's effective configuration.
@@ -268,7 +271,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused-account.Gateway.Requests.CancelledCounts-account.Gateway.Requests.CancelledAuxiliary,
-		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), unmeasuredField(account)+replacedField(account), where)
+		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), surfaceField(account)+replacedField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
 	}
@@ -295,6 +298,17 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 // would be this build deleting files by pattern, which is a worse trade.
 // The uninstall path names this location without owning it.
 func StatusDir() string { return filepath.Join(os.TempDir(), "clauduct") }
+
+// WriteFinal writes the final account as Report does, without the line: for a process whose
+// stderr is not a terminal of its own (a regenerated resident's reaches native's key helper).
+func WriteFinal(result Result) error {
+	encoded, err := json.Marshal(Account(result))
+	if err != nil {
+		return err
+	}
+	_, err = writeStatus(encoded, 40)
+	return err
+}
 
 // WriteCheckpoint uses the same bounded metadata schema and atomic file as the
 // final report. It never writes to the terminal while native owns the TUI.
@@ -352,6 +366,11 @@ func writeStatus(encoded []byte, renames int) (string, error) {
 // Ordered by which answer is most use to a reader. A cancelled session usually also shows a
 // non-zero exit, and "you stopped it" is the better of the two answers; an exhausted budget
 // usually also shows a failed client, and the budget is the cause of that.
+// sessionRefusals are the gateway's answers that stop a session's prompt or requests outright,
+// in the order a reader is best served by: the start registration first.
+var sessionRefusals = []string{"SESSION_START_UNREGISTERED", "SESSION_RESTART_REQUIRED", "SESSION_ALREADY_IN_USE",
+	"SESSION_PROFILE_UNVERIFIED", "SESSION_SELECTION_UNVERIFIED", "CONTEXT_JOURNAL_UNVERIFIED"}
+
 func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledger) string {
 	if ctx != nil && ctx.Err() != nil {
 		return CategoryCancelled
@@ -359,6 +378,13 @@ func endedAs(ctx interface{ Err() error }, result Result, ledger *upstream.Ledge
 	if ledger != nil {
 		if _, _, refused := ledger.Spent(); refused > 0 {
 			return CategoryBudget
+		}
+	}
+	// A prompt the gateway would not register or serve never ran, whatever native's exit says:
+	// native -p exits 0 after a hook blocks its prompt (#319 decision 18m R10).
+	for _, category := range sessionRefusals {
+		if result.Diagnostics.Requests.RefusedBy[category] > 0 {
+			return category
 		}
 	}
 	if result.NativeExitCode != 0 {
@@ -407,28 +433,23 @@ func countsCancelledField(account Status) string {
 	return field
 }
 
-// unmeasuredField names a client this session ran that is not the version Clauduct was last
-// measured against. Both clients update on their own, and this line is the one place a user
-// sees every session: it says a re-measure is due, not that anything failed (#127).
-func unmeasuredField(account Status) string {
-	var names []string
-	if client := account.Gateway.Client; client.Version != "" && client.Version != client.Reference {
-		names = append(names, "claude/"+client.Version)
-	}
-	if codex := account.Gateway.Codex; codex != nil && codex.Version != codex.Reference {
-		names = append(names, "codex/"+codex.Version)
-	}
+// surfaceField names the tools native offered this session that the measured surface did not
+// have, and the measured tools of this mode it never offered (#297, #300). Versions are
+// recorded, not compared (#333), so a client update alone adds nothing here; this line is the
+// one place a user sees every session, and it reports a difference, not a failure.
+func surfaceField(account Status) string {
 	field := ""
-	if len(names) > 0 {
-		field = " unmeasured=" + strings.Join(names, ",")
-	}
-	// #297, #300: tools native offered that the re-measured native did not, and measured
-	// tools of this mode it never offered.
 	if tools := account.Gateway.Client.AddedTools; len(tools) > 0 {
 		field += " added_tools=" + strings.Join(tools, ",")
 	}
 	if tools := account.Gateway.Client.MissingTools; len(tools) > 0 {
 		field += " missing_tools=" + strings.Join(tools, ",")
+	}
+	if account.Gateway.Client.AddedToolsTruncated {
+		field += fmt.Sprintf(" added_tools_truncated=1 added_tools_omitted_occurrences=%d", account.Gateway.Client.AddedToolsOmittedOccurrences)
+	}
+	if account.Gateway.Client.DeferredToolsIncomplete {
+		field += " deferred_tools_incomplete=1"
 	}
 	return field
 }

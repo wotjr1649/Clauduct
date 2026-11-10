@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -63,12 +65,24 @@ func (g *Gateway) nativeProgressReport() NativeProgressReport {
 	}
 	type target struct{ session, agent, turn string }
 	targets := []target{}
-	if main, found, err := g.readCurrentNativeTurn(""); err != nil {
+	// Each conversation root has its own journal (one per native session of the launch).
+	active := filepath.Join(g.nativeEvents.directory, "active")
+	entries, err := listActiveJournal(active)
+	if err != nil && !journalAbsent(active, err) {
 		out.Unreadable++
-	} else if found && correlationShape.MatchString(main.Session) && correlationShape.MatchString(main.Turn) && main.Agent == "" {
-		targets = append(targets, target{main.Session, "", main.Turn})
-	} else if found {
-		out.Unreadable++
+	}
+	for _, entry := range entries {
+		session, isRoot := strings.CutPrefix(entry.Name(), "root-")
+		if !isRoot || !entry.IsDir() {
+			continue
+		}
+		if main, found, err := g.readCurrentNativeTurn(session, ""); err != nil {
+			out.Unreadable++
+		} else if found && main.Session == session && correlationShape.MatchString(main.Turn) && main.Agent == "" {
+			targets = append(targets, target{main.Session, "", main.Turn})
+		} else if found {
+			out.Unreadable++
+		}
 	}
 	if g.delegations != nil {
 		r := &g.delegations.results
@@ -87,10 +101,7 @@ func (g *Gateway) nativeProgressReport() NativeProgressReport {
 		out.CapacityExceeded = true
 	}
 	for _, t := range targets {
-		name := "progress-root.json"
-		if t.agent != "" {
-			name = "progress-child-" + t.agent + ".json"
-		}
+		name := "progress-" + nativeScopeName(t.session, t.agent) + ".json"
 		var p NativeProgress
 		found, err := g.readNativeJSON(name, []string{"session", "agent", "turn", "phase", "signal", "sequence", "at", "pendingTools", "permissionRequests"}, &p)
 		if !found && err == nil {

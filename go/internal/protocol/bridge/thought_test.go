@@ -85,7 +85,7 @@ func TestAChainOfThoughtReachesTheTranscript(t *testing.T) {
 	item := reasoningItem("rs_1", "ENCRYPTEDPAYLOAD", oneSummary)
 	frames, err := run(t,
 		itemAdded(0, openingOf(item)), itemDone(0, item),
-		textDelta("answer"), textDone("answer"),
+		itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")),
 		event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -121,8 +121,8 @@ func TestAThoughtIsEmittedAfterTheTextAndBeforeTheTools(t *testing.T) {
 	call := `{"id":"fc_1","type":"function_call","call_id":"call_1","name":"Read","arguments":"{}"}`
 	frames, err := runFor(t, callable("Read"),
 		itemAdded(0, openingOf(item)), itemDone(0, item),
-		textDelta("answer"), textDone("answer"),
-		itemAdded(1, openingOf(call)), itemDone(1, call),
+		itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")),
+		itemAdded(2, openingOf(call)), itemDone(2, call),
 		event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -145,7 +145,7 @@ func TestAThoughtIsNotWrittenBeforeTheResponseCompletes(t *testing.T) {
 	item := reasoningItem("rs_1", "E", `[]`)
 	frames, err := runFor(t, decodeRequest(t, minimalRequest),
 		itemAdded(0, openingOf(item)), itemDone(0, item),
-		textDelta("partial"))
+		itemAdded(1, messageItem(defaultItem)), textDelta("partial"))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestAThoughtThatCannotBeKeptIsRefused(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := run(t,
 				itemAdded(0, openingOf(c.item)), itemDone(0, c.item),
-				textDelta("answer"), textDone("answer"),
+				itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")),
 				event(codex.Completed, completedOK))
 			if !errors.Is(err, ErrMissingEncryptedReasoning) {
 				t.Fatalf("err = %v, want %v", err, ErrMissingEncryptedReasoning)
@@ -183,7 +183,7 @@ func TestAnEmptyReasoningItemIsNotAnError(t *testing.T) {
 	item := `{"id":"rs_1","type":"reasoning","summary":[]}`
 	frames, err := run(t,
 		itemAdded(0, openingOf(item)), itemDone(0, item),
-		textDelta("answer"), textDone("answer"),
+		itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")),
 		event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -202,7 +202,7 @@ func TestWhatIsWrittenCanBeReadBackByTheOtherHalf(t *testing.T) {
 	item := reasoningItem("rs_round", "PAYLOAD", oneSummary)
 	frames, err := run(t,
 		itemAdded(0, openingOf(item)), itemDone(0, item),
-		textDelta("a"), textDone("a"),
+		itemAdded(1, messageItem(defaultItem)), textDelta("a"), textDone("a"), itemDone(1, messageItem(defaultItem, "a")),
 		event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
@@ -236,7 +236,7 @@ func TestTheEnvelopeIsUnpaddedBase64URL(t *testing.T) {
 			item := reasoningItem("rs_1", encrypted, `[]`)
 			frames, err := run(t,
 				itemAdded(0, openingOf(item)), itemDone(0, item),
-				textDelta("a"), textDone("a"),
+				itemAdded(1, messageItem(defaultItem)), textDelta("a"), textDone("a"), itemDone(1, messageItem(defaultItem, "a")),
 				event(codex.Completed, completedOK))
 			if err != nil {
 				t.Fatalf("Accept: %v", err)
@@ -262,7 +262,7 @@ func TestAnEnvelopeThisBridgeCannotReadIsNotWritten(t *testing.T) {
 	item := reasoningItem("has spaces", "E", `[]`)
 	_, err := run(t,
 		itemAdded(0, openingOf(item)), itemDone(0, item),
-		textDelta("answer"), textDone("answer"),
+		itemAdded(1, messageItem(defaultItem)), textDelta("answer"), textDone("answer"), itemDone(1, messageItem(defaultItem, "answer")),
 		event(codex.Completed, completedOK))
 	if err == nil {
 		t.Fatal("an envelope this bridge cannot read was written anyway")

@@ -14,8 +14,15 @@ $ErrorActionPreference = 'Stop'
 # One file since v0.4.0: clauduct.exe is also the hook, the PDF renderer and `clauduct --dev`
 # (#112). The names a 0.3.x installation also had are removed once it is in place; releases
 # through v0.4.x still publish them as copies, for the 0.3.x updater that requires all three.
+#
+# Releases that list clauduct-probe.exe in SHA256SUMS ship it as the provider-control diagnostic
+# `clauduct --dev --probe provider-control` runs from clauduct.exe's directory (#319, #320); no
+# launch needs it. It is installed beside clauduct.exe as a pair (Select-Names adds it); a release
+# that does not list it removes a leftover one, because the previous release's probe belongs to
+# the previous clauduct.exe.
 $Names    = @('clauduct.exe')
 $Retired  = @('clauduct-hook.exe', 'clauduct-dev.exe')
+$ProbeName = 'clauduct-probe.exe'
 $SumsName = 'SHA256SUMS'
 
 # Reads SHA256SUMS the way the built-in updater does (update.Sums): two whitespace-separated
@@ -98,6 +105,15 @@ function Install-Set([string] $Source, [string] $Root) {
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $path) { Write-Host "note: $path is still running; delete it once it exits" }
     }
+    # A release without a probe (a rollback with -Tag) must not keep the probe of the release
+    # it replaces: this clauduct.exe never runs it, and an unpaired file is the state this
+    # pairing exists to avoid.
+    if ($Names -notcontains $ProbeName) {
+        $path = Join-Path $Root $ProbeName
+        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath "$path.old" -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $path) { Write-Host "note: $path is still running; delete it once it exits" }
+    }
 }
 
 function Get-Release([string] $Dir) {
@@ -127,6 +143,9 @@ function Select-Names([string] $Dir) {
     if ($sums.ContainsKey('clauduct-hook.exe') -and $sums['clauduct-hook.exe'] -cne $sums['clauduct.exe']) {
         $script:Names = @('clauduct.exe') + $Retired
         $script:Retired = @()
+    } elseif ($sums.ContainsKey($ProbeName)) {
+        # Both are verified by Assert-Digests and swapped by Install-Set as one set.
+        $script:Names = @('clauduct.exe', $ProbeName)
     }
 }
 
@@ -271,7 +290,7 @@ function Ensure-Settings {
     $dir = Join-Path $env:USERPROFILE '.clauduct'
     $target = Join-Path $dir 'settings.json'
     if (Test-Path -LiteralPath $target -PathType Leaf) {
-        if ($Names.Count -ne 1) { return }
+        if ($Names -contains 'clauduct-hook.exe') { return }
         $sync = Invoke-Installed '--dev --sync-settings' 'CLAUDUCT_SETTINGS_SYNC_FAILED' 'settings sync'
         # Every release since v0.4.0 answers an unknown --dev word with its usage line and
         # exit 2. A crash can also exit 2, so the usage line is what identifies an old release.
@@ -287,7 +306,7 @@ function Ensure-Settings {
         return
     }
     if (Test-Path -LiteralPath $target) { throw 'CLAUDUCT_SETTINGS_CREATE_FAILED: settings.json is not a file' }
-    if ($Names.Count -ne 1) {
+    if ($Names -contains 'clauduct-hook.exe') {
         Write-Host 'note: this historical release has no settings initializer; existing preferences were preserved'
         return
     }

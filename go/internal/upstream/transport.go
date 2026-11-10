@@ -38,6 +38,12 @@ var (
 	ErrNoClientVersion = errors.New("CLI_VERSION_UNREADABLE")
 )
 
+// CredentialRefusal reports a credential error's category and its login recovery hint.
+func CredentialRefusal(err error) (category, hint string) {
+	category = auth.CategoryOf(err)
+	return category, auth.LoginHint(category)
+}
+
 // Timeouts are per phase. One overall deadline would cut a long thinking response at the
 // same moment it would cut a hung connection, and those are different failures.
 const (

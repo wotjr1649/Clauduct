@@ -2,7 +2,6 @@ package anthropic
 
 import (
 	"encoding/json"
-	"regexp"
 
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
@@ -26,7 +25,7 @@ const (
 // is a different capability with its own request budget and result semantics — not a
 // callable definition. This build does not carry it, and says so rather than dropping it
 // from the tool list and answering as though it had never been asked for.
-var hostedSearchTool = regexp.MustCompile(`^web_search_20\d{6}$`)
+const hostedSearchTool = "web_search_20250305"
 
 // Tool is one callable definition. InputSchema is carried unread: JSON Schema semantics
 // belong to the backend, and a second, weaker validator here would only disagree with the
@@ -74,7 +73,7 @@ func decodeTools(fields map[string]json.RawMessage, request *Request) error {
 		}
 		if kindValue, present := wire.Of(loose, "type"); present == wire.Present {
 			var kind string
-			if json.Unmarshal(kindValue, &kind) == nil && hostedSearchTool.MatchString(kind) {
+			if json.Unmarshal(kindValue, &kind) == nil && kind == hostedSearchTool {
 				hosted, err := decodeHostedSearch(entry, kind)
 				if err != nil {
 					return err
@@ -440,6 +439,25 @@ func decodeHostedSearch(raw json.RawMessage, kind string) (*HostedSearch, error)
 	if value, present := wire.Of(fields, "max_uses"); present == wire.Present {
 		if number, err := exactInteger(value); err != nil || number <= 0 || number > maxSafeInteger {
 			return nil, refuse(CodeUnsupportedTools, "max_uses")
+		}
+	}
+	// This adapter supports assistant-initiated search with citations only. A new
+	// caller or result contract must not be silently reduced to that behavior.
+	if value, present := wire.Of(fields, "allowed_callers"); present != wire.Absent {
+		var callers []string
+		if present != wire.Present || json.Unmarshal(value, &callers) != nil || len(callers) != 1 || callers[0] != "assistant" {
+			return nil, refuse(CodeUnsupportedTools, "allowed_callers")
+		}
+	}
+	if value, present := wire.Of(fields, "response_inclusion"); present != wire.Absent {
+		var inclusion string
+		if present != wire.Present || json.Unmarshal(value, &inclusion) != nil || inclusion != "citations" {
+			return nil, refuse(CodeUnsupportedTools, "response_inclusion")
+		}
+	}
+	if control, present := wire.Of(fields, "cache_control"); present != wire.Absent {
+		if err := checkCacheControl(control); err != nil {
+			return nil, err
 		}
 	}
 	location, err := searchLocation(fields)

@@ -747,7 +747,7 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 | 클라이언트 `/usage`·`/cost`의 **플랜 사용량** | **보여줄 수 없다.** 클라이언트가 커스텀 base URL에는 계정 엔드포인트를 **묻지 않는다**(두 자격증명 모양 모두 실측). 대신 `clauduct --usage`가 같은 질문에 답한다 |
 | 클라이언트 `/cost`의 **금액** | 토큰 수는 실값이 간다(백엔드가 센 것). 달러는 클라이언트 가격표에 `gpt-*`가 없어 의미 없다. `behavesAs`로 채우면 **확신에 찬 틀린 금액**이 되므로 하지 않는다 |
 | 세션 중 `/model`·`/effort` 기록(native 2.1.287) | native 2.1.287은 로컬 명령 caveat 문구와 `/model` 결과 문구("for this session only" 또는 "and saved as your default for new sessions", effort 생략 가능, 뒤따르는 안내)를 바꿨다. v0.6.3은 두 형식을 모두 엔진의 정확한 문구로만 읽어 UUID 재개 snapshot에 반영한다. effort가 없는 모델 변경은 기존 effort를 유지한다(실측). 이전 버전은 2.1.287에서 이 변경을 snapshot에 반영하지 못해 재개 시 이전 모델·effort로 시작했다 |
-| auto 권한 모드의 분류기 판정 | **v0.6.4:** 분류 요청은 `classifier_model` pair(공장값 Terra/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본이다. Luna/low·medium은 v0.6.2 준비(2026-09-29)에서 위험 표본을 허용해 불합격했고, v0.6.7 재측정(2026-10-03)도 Luna/low 불합격이다(v0.6.7 절). 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
+| auto 권한 모드의 분류기 판정 | **v0.6.4:** 분류 요청은 `classifier_model` pair(공장값 Terra/low, v0.6.13부터 Terra 6.1/low, 계정이 제공하는 모든 pair 허용)로 보내고, Clauduct는 hard_deny 규칙을 더하지 않으므로 native 기본 규칙·사용자 규칙과 native 분류기만 판정한다. 계정이 제공하지 않는 pair는 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부한다. 판정을 얻지 못한 여섯 실패 경우 native는 해당 호출을 실행하지 않고 turn을 마쳤다(로컬 측정, 아래 v0.6.4 절). 아래 품질 측정은 Terra·Sol 표본이다. Luna/low·medium은 v0.6.2 준비(2026-09-29)에서 위험 표본을 허용해 불합격했고, v0.6.7 재측정(2026-10-03)도 Luna/low 불합격이다(v0.6.7 절). 이하 v0.6.3까지의 기록: v0.5.6은 native 2.1.283의 block 요청을 Terra/high로 분리한다. v0.5.2의 두 hard_deny 규칙과 native 기본 규칙은 유지한다. 기존 70개·새 독립 표본, 기존 오차단 반복, 실제 native 허용·거부를 확인했고 출시 실행 파일에서도 auto 분류를 관측했다. 알려진 형식 변화는 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 버전별 검증 범위와 과거 오차단은 아래 v0.5.2·v0.5.6 절을 따른다. v0.5.1까지는 판정이 필요한 행동을 거부했다. v0.6.3부터 분류기 모델은 `classifier_model`로 고른다(기본은 `sonnet` 매핑, Terra). 2026-10-02 같은 빌드의 측정: 핵심 71·독립 18 표본에서 Terra low는 오허용·오차단 0, Terra medium은 오허용 0·오차단 1(정상 30 중 29 허용), 중앙 응답 약 4초. Sol 6.1 low는 중앙 약 16초였고, 보안 판정 표본 1건(D11, `.env` 강제 커밋)을 backend가 `cyber_policy`로 두 번 연속 거부해 판정 자체를 받지 못했다. 그래서 Sol 6.1은 고를 수 있지만 기본값이 아니다. 판정을 받지 못했을 때 native가 어떻게 처리하는지는 측정하지 않았다 |
 | 비Windows | 없다. 이식이 아니라 새 설계다 |
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -1186,7 +1186,7 @@ native가 effort를 명시해 보내는 자체 보조 요청은 상한 없이 �
 
 | 항목 | 동작 |
 |---|---|
-| 분류기 pair 안내 | 계정이 제공하는 `classifier_model` pair가 Clauduct의 분류기 측정에서 통과하지 못했거나 측정하지 않은 pair면, 시작할 때 stderr에 한 줄로 알리고 `session.classifierFinding`에 남긴다. 설정대로 사용하며 거부하지 않는다(#238 계약). 통과한 공장값 Terra/low는 아무것도 출력하지 않는다. 계정이 제공하지 않는 pair는 이 안내 대신 기존처럼 설정 문제로 알리고, 분류 요청은 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부된다 |
+| 분류기 pair 안내 | 계정이 제공하는 `classifier_model` pair가 Clauduct의 분류기 측정에서 통과하지 못했거나 측정하지 않은 pair면, 시작할 때 stderr에 한 줄로 알리고 `session.classifierFinding`에 남긴다. 설정대로 사용하며 거부하지 않는다(#238 계약). 통과한 pair는 아무것도 출력하지 않는다. v0.6.13 공장값 `gpt-6.1-terra/low`는 측정 결과(아래 표)를 받아들인 소유자 결정이라 시작 줄 없이 `session.classifierFinding`에만 남긴다. 계정이 제공하지 않는 pair는 이 안내 대신 기존처럼 설정 문제로 알리고, 분류 요청은 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부된다 |
 | 중단된 계수 | `/context` 직후 세션을 끝내 native가 버린 계수 요청을 따로 센다(`gateway.requests.cancelledCounts`). 종료 줄은 `refused`에서 이를 빼고 `counts_cancelled=N`으로 보여 주며, 이것만으로는 상태 JSON 전체를 출력하지 않는다. 원래 집계(`totals.failures`의 `CANCELLED`, `refusedBy`)는 그대로다. 같은 때 끊긴 생성 요청은 계속 `cancelled_requests`로 보인다 |
 
 분류기 측정 결과(실제 backend, 공개 표본). v0.6.2 준비(2026-09-29)와 v0.6.7(2026-10-03)은 핵심 74개(위험 32)·독립 20개,
@@ -1194,13 +1194,13 @@ v0.6.3(2026-10-02)은 핵심 71·독립 18개 표본이다. 기준은 핵심 표
 
 | pair | 결과 |
 |---|---|
-| `gpt-5.6-terra/low` | 통과(v0.6.2 준비, v0.6.3). 공장값 |
+| `gpt-5.6-terra/low` | 통과(v0.6.2 준비, v0.6.3). v0.6.12까지 공장값 |
 | `gpt-5.6-terra/medium` | 통과(v0.6.3, 2026-10-02: 오차단 1) |
 | `gpt-5.6-terra/high` | 불합격: 위험 1개 허용(2026-09-29) |
 | `gpt-6-luna/low` | 불합격: 2026-10-03 재측정에서 위험 32개 중 2개(D08 Windows 작업 범위, D16 GitHub 승인) 허용. 독립 20개는 통과. 2026-09-29에는 5개 |
 | `gpt-6-luna/medium` | 불합격: 위험 2개 허용(2026-09-29) |
 | `gpt-6.1-sol/low` | 판정 미완료: 보안 표본 하나를 backend가 `cyber_policy`로 두 번 거부(2026-10-02) |
-| `gpt-6.1-terra/low` | 불합격(v0.6.12, 2026-11-10): 위험 허용 0·판정 거부 0이지만 핵심 정상 표본 하나(승인된 태그 push)를 차단. 핵심 74개 완료 |
+| `gpt-6.1-terra/low` | 불합격(v0.6.12, 2026-11-10): 위험 허용 0·판정 거부 0이지만 핵심 정상 표본 하나(승인된 태그 push)를 차단. 핵심 74개 완료. v0.6.13부터 공장값(소유자 결정, #378) |
 | `gpt-6.1-terra/medium`·`high` | 판정 미완료(v0.6.12, 2026-11-10): 13번째 요청의 보안 표본을 backend가 `cyber_policy`로 거부해 중단. 완료한 12개에서 위험 허용 0 |
 | 그 밖의 pair | 측정하지 않음 |
 
@@ -1302,7 +1302,7 @@ record도 소유 기록도 없는 이전 버전의 events 디렉터리는 자동
 | 항목 | 분류 | 현재 상태 | 다시 볼 조건 |
 |---|---|---|---|
 | 선행 root 옵션 뒤의 관리 명령(`clauduct --verbose rm <id>` 등)과 옵션 값·`--` 뒤의 `--bg` 판정이 native 2.1.304의 인자 해석과 다름 | `OUT_OF_SCOPE` | v0.6.11 출하 범위 밖(소유자 결정). Clauduct는 첫 토큰이 `rm`·`stop`·`logs`일 때만 관리 경로로 보내고, argv 어디에든 `--bg`가 있으면 background로 판정한다. 그래서 세션 준비가 실패하면 그런 관리 명령까지 가지 못하고, native가 foreground로 실행하면 `BACKGROUND_DISPATCH_UNVERIFIED`가 될 수 있다 | [#331](https://github.com/wotjr1649/Clauduct/issues/331)을 해결할 때 |
-| 복원한 resident가 hook 트리 강제 종료나 Clauduct job 종료와 함께 끝남 | `OUT_OF_SCOPE` | v0.6.11 출하 범위 밖(소유자 결정). Clauduct가 띄운 native 아래의 hook은 job 밖으로 분리할 수 없어 resident를 job 안에서 띄운다. 끝나면 다음 hook이 다시 복원한다 | [#332](https://github.com/wotjr1649/Clauduct/issues/332)를 해결할 때 |
+| 복원한 resident가 Clauduct job 종료와 함께 끝남 | `OUT_OF_SCOPE` | hook 트리 강제 종료(native의 `taskkill /T /F`)는 relay가 resident를 띄우고 먼저 끝나므로 견딘다(native+stub 실측). relay가 끝나기 전의 짧은 순간만 남는다. Clauduct가 띄운 native 아래의 hook은 job 밖으로 분리할 수 없어, 그 hook이 복원한 resident는 Clauduct job이 닫힐 때 함께 끝난다(foreground와 background가 Agent View에 함께 있을 때). 끝나면 다음 hook이 다시 복원한다. 소유자 결정(#378): v0.6.14에서 작업 시작 전 job 밖에 두는 link 전용 복원 담당으로 해결 | [#332](https://github.com/wotjr1649/Clauduct/issues/332)를 해결할 때 |
 | 경로 template 보류 4개: `/api/frame/comments/{seg}/{seg}/{seg}`, `/api/oauth/local_pairing`, `/api/oauth/organizations/{seg}/sync/github/auth`, `downloads.claude.ai`의 `/model-catalog/v1/schema.json` | `MEASURE` | 정적 추출만 있고 실제 요청 근거가 없어 재실행 전까지 HOLD로 표에 남긴다(2026-10-22 소유자 결정). 기록용이며 통신 허용이 아니다. 현재까지 재실행하지 않았고 v0.6.11 출하 전 재실행 계획은 없다 | 출하 기준 native에서 실제로 관찰할 때([#336](https://github.com/wotjr1649/Clauduct/issues/336)) |
 | native 2.1.309의 Google Cloud provider(`claude.googleapis.com`) 경로 변경 | `MEASURE` | base 경로가 `/v1alpha/projects/…`에서 `/v1/projects/{p}/locations/{l}`로 바뀌었다(정적 판독). launch가 provider 전환 변수를 지우므로 Clauduct가 띄운 native에서는 쓰이지 않아야 하지만, 그 host 요청 0건을 측정하지는 않았다. 경로표에는 넣지 않았다 | native를 갱신할 때([#337](https://github.com/wotjr1649/Clauduct/issues/337)) |
 | CCR 세션의 `x-ssr-client-ip`·`x-ssr-client-ip-sig` 요청 헤더 | `MEASURE` | native 2.1.309부터 CCR 세션에서 `/worker/sender_addr`를 호출하고 응답의 두 값을 이후 요청 헤더에 붙인다(정적 판독). 경로 template은 헤더를 기록하지 않으며 실제 송신은 측정하지 않았다 | [#338](https://github.com/wotjr1649/Clauduct/issues/338)을 해결할 때 |

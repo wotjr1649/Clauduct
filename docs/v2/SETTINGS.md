@@ -67,7 +67,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `agents` | 해당 agent의 모델·effort 기본 pair |
 | `context_window` | 모든 모델에 공통인 context 관리값. 기본 272,000, 정수 100,000–872,000 |
 | `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
-| `classifier_model` | auto 권한 모드 분류기의 `{"model", "effort"}` pair. 공장값은 `gpt-5.6-terra`/low. [분류기 절](#보조-요청과-auto-권한-분류기-v064) |
+| `classifier_model` | auto 권한 모드 분류기의 `{"model", "effort"}` pair. 공장값은 `gpt-6.1-terra`/low(v0.6.13, 이전 `gpt-5.6-terra`/low). [분류기 절](#보조-요청과-auto-권한-분류기-v064) |
 | `boundary_profile` | native가 Anthropic 서버로 가는 기능 경로 가운데 무엇을 남길지. `"default"`(공장값) 또는 `"strict"`. 다른 값은 시작할 때 거부한다. [경계 프로필](#경계-프로필-v0611) |
 | `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
 
@@ -274,7 +274,7 @@ background 완료 판정 등 도구 없는 독립 보조 요청은 위 effort �
 그대로 따른다. v0.6.2–v0.6.3의 `auxiliary_effort_cap`은 적용하지 않는다. 같은 요청의 token count와
 generation은 같은 선택을 사용한다.
 
-auto 권한 모드의 분류 요청은 `classifier_model`의 pair로 보낸다. 공장값은 `gpt-5.6-terra`/low다. 계정이
+auto 권한 모드의 분류 요청은 `classifier_model`의 pair로 보낸다. 공장값은 `gpt-6.1-terra`/low다(v0.6.13). 계정이
 제공하는 모델과 effort는 모두 쓸 수 있다. v0.6.3의 Terra 이상 규칙과 내장 허용 목록은 없어졌고 Luna도 고를 수 있다.
 effort를 낮추는 장치는 없으며 생성과 계수가 같은 pair를 쓴다. 요청 기록의 출처는
 `native-auto-mode+classifier_model`이고, status에는 `session.classifierModel`, `classifierEffort`,
@@ -292,7 +292,10 @@ v0.6.3의 문자열 형식(`"classifier_model": "gpt-5.6-terra"`)은 v0.6.4에�
 Terra/high, Luna/low·medium은 위험 표본을 허용했고(Luna/low는 2026-10-03 재측정에서도 32개 중 2개), Sol 6.1/low는
 보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 받지 못했다. v0.6.12에서 잰 Terra 6.1은 low가 위험 허용 0이지만
 핵심 정상 표본 하나를 차단했고, medium·high는 보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 마치지 못했다.
-그래서 공장값은 `gpt-5.6-terra`/low로 둔다. v0.6.7부터는 통과하지 않았거나 측정하지 않은
+v0.6.12는 공장값을 `gpt-5.6-terra`/low로 두었다. v0.6.13은 소유자 결정(#378)으로 `gpt-6.1-terra`/low로 바꿨다. 위험 허용 0·판정
+거부 0이라는 안전 기준은 충족하지만, 승인된 태그 push 같은 핵심 정상 동작이 auto 모드에서 막힐 수 있다는 측정 결과를 받아들인
+선택이다. 이 공장값 pair는 시작할 때마다 안내하지 않고 `session.classifierFinding`에만 남긴다. 이미 있는 `settings.json`의
+`classifier_model`은 바뀌지 않는다. v0.6.7부터는 통과하지 않았거나 측정하지 않은
 pair를 고르면 시작할 때 그 사실을 한 줄로 알리고, 설정대로 사용한다([COMPATIBILITY.md](COMPATIBILITY.md) v0.6.7 절).
 계정 목록에 있다는 사실은 분류 품질에 대한 주장이 아니다. 과거 오허용과 미검증 조합은
 [#218](https://github.com/wotjr1649/Clauduct/issues/218)에 남기며 이 설정의 구현을 안전성 통과로 해석하지 않는다.

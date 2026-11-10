@@ -384,7 +384,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		listFacts.Problems = config.Selection.Problems()
 		if config.ClassifierModel != (bridge.Pair{}) && !config.Selection.ValidPair(config.ClassifierModel) {
 			listFacts.Problems = append(listFacts.Problems, "classifier_model: "+config.ClassifierModel.Model+"/"+config.ClassifierModel.Effort+" is not offered by the account")
-		} else if classifierFinding = classifierFindingOf(config.ClassifierModel); classifierFinding != "" {
+		} else if classifierFinding = classifierFindingOf(config.ClassifierModel); classifierFinding != "" && config.ClassifierModel != bridge.DefaultClassifierModel() {
+			// The factory pair's finding is an accepted, documented trade-off (#378 decision 10):
+			// kept in status, not repeated on every start.
 			fmt.Fprintf(o.Stderr, "clauduct: %s\n", classifierFinding)
 		}
 		if listFacts.Source == "last-good" {
@@ -786,6 +788,14 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	} else {
 		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession, background != nil)
 		gw.RestoreSessionProfiles(siblings)
+		if o.Regenerate != nil && resumed != nil {
+			gw.KeepResumedLast(resumed.Last)
+		}
+	}
+	if o.Regenerate != nil && background != nil {
+		// The restarted link held its hooks and key helper until here: everything they reach
+		// is configured now (#365 B).
+		background.Ready()
 	}
 
 	// Pressed before there was a child to receive it: the launch is what was cancelled, and
@@ -905,7 +915,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			releaseResident, residentLocked = release, true
 		}
 		if resident == nil {
-			resident = &backgroundProcess{config: configDir, home: clauductHome, proved: gw.ProvedNativeProcesses,
+			resident = &backgroundProcess{config: configDir, home: clauductHome, proved: gw.ProvedNativeProcesses, sessionNatives: gw.SessionNatives,
 				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
 		}
 		err := resident.checkpointForeground()
@@ -1007,7 +1017,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			bp := &backgroundProcess{Process: noDispatch{}, link: foreground, ctx: handoverCtx, cancel: cancel, exe: exe, cwd: o.Cwd, config: configDir,
 				env: backgroundControlEnv(spec.Env), output: &backgroundOutput{}, stdout: io.Discard, stderr: io.Discard,
 				interrupts: interrupts, cancelOnInterrupt: foregroundRecordErr != nil && !stopping, stopNotice: o.Stderr,
-				job: jobs[0], record: record, home: clauductHome, proved: gw.ProvedNativeProcesses, nativeStatus: nativeStatus, releaseProfiles: gw.ReleaseIdleSessionProfiles}
+				job: jobs[0], record: record, home: clauductHome, proved: gw.ProvedNativeProcesses, sessionNatives: gw.SessionNatives, nativeStatus: nativeStatus, releaseProfiles: gw.ReleaseIdleSessionProfiles}
 			if record != nil {
 				bp.job = record.Job
 			}

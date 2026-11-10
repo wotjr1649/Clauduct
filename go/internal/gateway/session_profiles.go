@@ -351,6 +351,19 @@ func (p *profileState) serving(session string) bool {
 // ConfigureSessionProfiles binds immutable routing preferences before native
 // starts. Choosing another saved session requires a fresh native launch with
 // that snapshot; a mismatched process never sends an inference first.
+// KeepResumedLast puts back the pair a resumed session last used. A regenerated resident
+// re-reads the job's recorded start options; they are its history, not a new choice, and must
+// not replace what the user picked with /model since (#341). The pair is not checked here:
+// one the account no longer offers is refused when it is used, never replaced.
+func (g *Gateway) KeepResumedLast(pair bridge.Pair) {
+	if g.profiles == nil || g.profiles.expected == "" || pair == (bridge.Pair{}) {
+		return
+	}
+	if profile := g.profiles.profiles[g.profiles.expected]; profile != nil {
+		profile.Last = pair
+	}
+}
+
 func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridge.Pair, resumed *SessionProfile, fork, background bool) {
 	if g.contexts == nil {
 		return
@@ -902,6 +915,24 @@ func (g *Gateway) CurrentSession() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.last
+}
+
+// SessionNatives reports the native processes (exact PID and creation time) that registered
+// session here: the workers a stop of that session's job concerns, and no other process.
+func (g *Gateway) SessionNatives(session string) []NativeProcess {
+	p := g.profiles
+	if p == nil || session == "" {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []NativeProcess
+	for process := range p.registrants[session] {
+		if process.pid > 0 && process.created > 0 {
+			out = append(out, NativeProcess{PID: process.pid, Created: process.created})
+		}
+	}
+	return out
 }
 
 // Sessions reports every session a native process has registered here.

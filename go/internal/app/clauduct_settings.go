@@ -98,7 +98,7 @@ var errBoundarySettings = fmt.Errorf(`%w: boundary_profile must be "default" or 
 
 // errClassifierSettings explains the one shape change v0.6.4 made to an existing key. The
 // file is never converted: the user edits it, and nothing runs on a guessed effort.
-var errClassifierSettings = fmt.Errorf(`%w: classifier_model must be an object with both model and effort, for example "classifier_model": {"model": "gpt-5.6-terra", "effort": "low"}; the v0.6.3 string form is no longer accepted. Edit ~/.clauduct/settings.json`, errClauductSettings)
+var errClassifierSettings = fmt.Errorf(`%w: classifier_model must be an object with both model and effort, for example "classifier_model": {"model": %q, "effort": %q}; the v0.6.3 string form is no longer accepted. Edit ~/.clauduct/settings.json`, errClauductSettings, bridge.DefaultClassifierModel().Model, bridge.DefaultClassifierModel().Effort)
 
 // deprecatedSettings are keys v0.6.4 stopped applying. They are accepted, left in the file
 // and reported; every other unknown key is still refused.

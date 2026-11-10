@@ -1,6 +1,6 @@
 # v0.6.12 — `sonnet`을 GPT-6.1 Terra로
 
-2026-11-10. 범위는 [#371](https://github.com/wotjr1649/Clauduct/issues/371)이다. 남은 제한과 다시 볼 조건은
+2026-11-10 출시(태그 `v0.6.12` → `234e13b93d0f077565db62c92a021ccf788d1c33`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.12)). 범위는 [#371](https://github.com/wotjr1649/Clauduct/issues/371)이다. 남은 제한과 다시 볼 조건은
 [COMPATIBILITY.md](COMPATIBILITY.md)의 3절 "알려진 제한 원장"이 관리한다.
 
 ## 바뀐 것
@@ -37,8 +37,22 @@
   backend가 받았다. native가 stderr에 `[claude-code:unrecognized_model]` 한 줄을 쓰지만 v0.6.11의 `gpt-5.6-terra`·
   `gpt-6.1-sol`에서도 같다(응답·라우팅 영향 없음).
 - **분류기 측정**: 위 표. 실제 backend 138회.
-- 단위·race 검사, 문서 인용 검사: 결과는 발행 기록에서 채운다(PR CI 포함).
-- 출하 빌드·발행 검사([PACKAGING](PACKAGING.md#41-릴리스-만들기)): 발행 기록에서 채운다.
+- 로컬 `go test ./...`·`-race`: 26개 패키지 통과. app 패키지의 실패 2건은 비공개 driver가 시험 모델 목록 개수를 5로 고정한 것이라 고친 뒤 해당 시험을 unit·race로 다시 돌려 통과했다. 문서 인용 검사 실패 0. PR #376 CI(go, httpguard 2종) 통과.
+- 출하 검사([PACKAGING](PACKAGING.md#41-릴리스-만들기)): `build-release`(두 빌드 바이트 동일, probe digest 일치), `probe limit --send`(3회, `max_output_tokens` 상한 유지), `ship-install`, `ship-session`(5회, 위임·`/clear`·두 번째 turn 통과), 무과금 표면 관문, 발행 후 `verify-release`·`ship-update`·`ship-legacy`(v0.3.5) 모두 PASS.
+- TUI 요약 회귀(`tui-summary.mjs`)는 on·off 모두 v0.6.11과 같은 `ROUTING_UNVERIFIED`로 실패했다(구형 하네스 결함, RELEASE-v0.6.11 참고). 대신 릴리스 exe를 TUI로 1 turn 돌린 routing smoke(격리 profile)가 라우팅 증명·turn 라우팅을 통과했다. 요약 표시 동작은 이번에 재지 않았다. 그 실행에서 native(2.1.321)가 `downloads.claude.ai` 연결을 1회 시도했고 기록용 proxy가 거부했다(#336).
+
+## 출하 신원
+
+| 항목 | 값 |
+|---|---|
+| 태그 | `v0.6.12` → `234e13b93d0f077565db62c92a021ccf788d1c33` |
+| `clauduct.exe` | `5cf95711c8e8bdc4131c5b4b082c742e989c00382d609a7f2a483993dedb21f7` |
+| `clauduct-probe.exe` | `ad64bdec845f498a2811852caf6e23f55f111f326fd0ad1ffe6aa60dcda5b416` |
+| `install.ps1` | `6720976f89e9016a33bd046f02bcf36e1acfdb411097b93c1d8a443f55356c58` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `fa0de140bff626479dce424f8a8e83604442f8b5dfb3ca0836727f3e7bf6abf6` |
+
+Go 1.27.2, `CGO_ENABLED=0`, `-trimpath`. native를 쓴 검사(`sonnet` 경로 smoke, 출하 검사)는 모두 Claude Code 2.1.321에서 돌았다. 등록 측정은 native 없이 backend에 직접 보낸다.
 
 ## 알려진 제한
 

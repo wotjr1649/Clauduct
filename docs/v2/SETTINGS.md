@@ -42,7 +42,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
       "effort": "medium"
     },
     "my-plugin:reviewer": {
-      "model": "gpt-5.6-terra",
+      "model": "gpt-6.1-terra",
       "effort": "high"
     }
   },
@@ -72,7 +72,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
 
 공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,
-terra medium, luna xhigh), 아래 alias 매핑, `agents`(Explore luna/max, Plan과 general-purpose 6.1-sol/high)를 담는다.
+6.1-terra medium, 5.6-terra medium, luna xhigh), 아래 alias 매핑, `agents`(Explore luna/max, Plan과 general-purpose 6.1-sol/high)를 담는다.
 `gpt-6-sol`의 `modelDefaults` 항목은 없다. 기존 파일의 값은 이 공장값으로 바뀌지 않는다.
 v0.6.4–v0.6.10의 공장값은 luna max였다. native settings는 `max`를 담지 못하므로, 그 값이 남은 파일에서는 luna의
 기본 effort가 세션 settings에 들어가지 않는다(아래 시작 effort 설명). 이 파일의 luna 항목은 직접 `xhigh`로 고친다.
@@ -171,16 +171,21 @@ picker 항목에 "No default effort: choose one"이 표시된다.
 v0.6.3부터 `sol` 키·`opus` 별칭·공장 시작 모델은 `gpt-6.1-sol`이다. `gpt-6-sol`은 전체 ID,
 `sol6` 키, `clauduct-sol6` 위임 메뉴로 계속 쓴다(native Agent 인자에는 `opus` 단계로 적지만 실제
 경로는 native 생성 이벤트가 전체 ID로 고정한다).
+v0.6.12부터 `terra` 키와 `sonnet` 별칭은 `gpt-6.1-terra`다. `gpt-5.6-terra`는 같은 방식으로 전체 ID,
+`terra56` 키, `clauduct-terra56` 위임 메뉴로 계속 쓴다(Agent 인자에는 `sonnet` 단계로 적는다). 이미 있는
+`~/.clauduct/settings.json`의 `modelMapping.sonnet`·`modelDefaults`·`classifier_model` 값은 바뀌지 않는다. 새 매핑을 쓰려면
+`modelMapping.sonnet`을 `gpt-6.1-terra`로 고치고 `modelDefaults`에 `"gpt-6.1-terra": {"effort": "medium"}`을 더한다. 기존 파일에는 이
+항목이 없으므로, 더하지 않으면 `gpt-6.1-terra`(`clauduct-terra` 메뉴 포함)는 계정 기본 effort로 실행된다(2026-11-10 계정 목록: low).
 
 | Claude alias | 내장 GPT 매핑 | 공장 `modelDefaults` effort |
 |---|---|---|
 | `fable` | `gpt-6-astra` | medium |
 | `opus` | `gpt-6.1-sol` | high |
-| `sonnet` | `gpt-5.6-terra` | medium |
+| `sonnet` | `gpt-6.1-terra` | medium |
 | `haiku` | `gpt-6-luna` | xhigh |
 
 내장 제품 자료(`go/internal/protocol/bridge/models.json`)는 v0.6.4부터 기존 이름만 담는다.
-키(`sol`·`sol6`·`astra`·`terra`·`luna`), 별칭(`fable`·`opus`·`sonnet`·`haiku`)과 버전형 이름, Agent 단계,
+키(`sol`·`sol6`·`astra`·`terra`·`terra56`·`luna`), 별칭(`fable`·`opus`·`sonnet`·`haiku`)과 버전형 이름, Agent 단계,
 로컬 계수 허용(`countValidated`), 은퇴 표다. 이 자료는 선택 범위를 제한하지 않는다. 은퇴 표는 계정이 그 이름을
 더는 나열하지 않을 때 거부 이유를 설명하는 데만 쓴다. 예를 들어 계정이 `gpt-5.6-sol`을 나열하면 그 모델은 다시 라우팅된다.
 v0.6.6부터 `gpt-5.5 → gpt-6.1-sol`이 은퇴 표에 있다. 계정 목록에는 2026-10-14 은퇴 예정이라고 적혀 있다. 그때까지는
@@ -285,7 +290,9 @@ v0.6.3의 문자열 형식(`"classifier_model": "gpt-5.6-terra"`)은 v0.6.4에�
 
 분류 품질은 같은 공개 표본(핵심·독립)으로 일부 pair만 측정했다. 통과한 pair는 Terra/low·medium이다.
 Terra/high, Luna/low·medium은 위험 표본을 허용했고(Luna/low는 2026-10-03 재측정에서도 32개 중 2개), Sol 6.1/low는
-보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 받지 못했다. v0.6.7부터는 통과하지 않았거나 측정하지 않은
+보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 받지 못했다. v0.6.12에서 잰 Terra 6.1은 low가 위험 허용 0이지만
+핵심 정상 표본 하나를 차단했고, medium·high는 보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 마치지 못했다.
+그래서 공장값은 `gpt-5.6-terra`/low로 둔다. v0.6.7부터는 통과하지 않았거나 측정하지 않은
 pair를 고르면 시작할 때 그 사실을 한 줄로 알리고, 설정대로 사용한다([COMPATIBILITY.md](COMPATIBILITY.md) v0.6.7 절).
 계정 목록에 있다는 사실은 분류 품질에 대한 주장이 아니다. 과거 오허용과 미검증 조합은
 [#218](https://github.com/wotjr1649/Clauduct/issues/218)에 남기며 이 설정의 구현을 안전성 통과로 해석하지 않는다.

@@ -306,8 +306,8 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   전체 fixture·전체 관문·실제 backend는 그 평가에서 미실행이다. 2.1.316(`e896a9d8…2d52`)의 2026-10-31 fixture·표면 PASS와 앞선
   314·312의 재측정은 과거 입력의 결과로 유지한다. 출하 검증 대상 native는 "검증한 클라이언트" 표가 정한다.
 - **출하 신원:** 아래 "출하 신원" 표 — `clauduct.exe`·`clauduct-probe.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`의 SHA-256,
-  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치(`verification/v0611-release-20261110/build.json`)를 확인했다. 내장 probe digest는 `ab774c83c42234d03dba5f18bf9d0fc6c6010b51704e22b37bac4ca6aca9e515`이며, 후보 `fea861701`의 깨끗한 checkout에서 두 번 만든 `clauduct-probe.exe`와 같다.
-- **설치·업데이트·되돌리기(발행 전·후 결과, `verification/v0611-release-20261110/`):**
+  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치를 확인했다. 내장 probe digest는 `ab774c83c42234d03dba5f18bf9d0fc6c6010b51704e22b37bac4ca6aca9e515`이며, 후보 `fea861701`의 깨끗한 checkout에서 두 번 만든 `clauduct-probe.exe`와 같다.
+- **설치·업데이트·되돌리기(발행 전·후 결과):**
   - 발행 전 `ship-install`(v0.6.10 ↔ v0.6.11): 새 설치, 이전 릴리스 설치, v0.6.11 설치 스크립트로 교체, 설정 보존과 사용자 PATH 불변은 PASS다. "이전 설치 스크립트로 되돌리기"는 **FAIL**이다: v0.6.10의 `install.ps1`로 되돌리면 `clauduct-probe.exe`가 남는다. 옛 설치 스크립트는 probe를 모른다. v0.6.11의 `install.ps1 -Tag v0.6.10`은 probe를 지운다([PACKAGING](PACKAGING.md) 4.1절). 알려진 제한으로 둔다.
   - 발행 후 `ship-update`: `install.ps1 -Tag v0.6.11`로 설치, v0.6.10의 `--update --yes`가 v0.6.11로 교체, 다음 실행의 `.old` 정리, 두 번째 `--update`의 `already current`, 사용자 PATH 불변이 모두 PASS다.
   - 발행 후 `ship-legacy`(v0.3.5): 0.3.x updater가 v0.6.11을 거부하고 파일을 그대로 두며, 새 설치 스크립트가 `clauduct.exe` 하나로 교체한다. PASS다.

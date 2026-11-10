@@ -1,6 +1,6 @@
 # v0.6.11 — 라우팅 불변식, 경계 프로필, 공개 빌드 Agent View
 
-2026-11-10 출시 예정(후보 `fea861701`). 태그 `v0.6.11`과 정식 Release는 아직 없다. 태그 commit `⟦TBD:tag-commit⟧`는 태그 생성 후 별도 문서 갱신으로 기록한다. 2026-10-16 초안에서 시작했다. 범위는 v0.6.10 뒤 기본 branch에 들어간 PR(#296–#318)과
+2026-11-10 출시(태그 `v0.6.11` → `52316ca0ef42b6962b55093ed183884aea31e854`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.11)). 시험한 후보는 `fea861701`이고 태그 commit은 PR #330 병합 commit이며 `go/`와 `scripts/`가 후보와 같다. 2026-10-16 초안에서 시작했다. 범위는 v0.6.10 뒤 기본 branch에 들어간 PR(#296–#318)과
 [#319](https://github.com/wotjr1649/Clauduct/issues/319)·[#320](https://github.com/wotjr1649/Clauduct/issues/320) 개발 브랜치다.
 남은 제한과 다시 볼 조건은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절의 "알려진 제한 원장"과 "v0.6.11 — 지원 환경과 보장 한계" 표가 관리한다.
 
@@ -290,9 +290,9 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
 
 출하 신원과 최종 결과는 바로 아래 "최종 출하 후보" 절에 있다. 그 아래 절들은 날짜별 이력이다.
 
-### 최종 출하 후보 (2026-11-10, `⟦TBD:tag-commit⟧`)
+### 최종 출하 후보 (2026-11-10, 태그 `52316ca0e`)
 
-시험한 후보는 공개 `fea861701`이다. 태그 commit은 태그를 만든 뒤에야 정해진다. 태그 대상 문서에 자기 commit 해시를 넣을 수 없으므로 `⟦TBD:tag-commit⟧`는 태그 생성 후 별도 문서 갱신으로 기록한다. 이 절은 태그·Release 전의 후보 상태다.
+시험한 후보는 공개 `fea861701`이고, 태그 `v0.6.11`은 PR #330 병합 commit `52316ca0e`에 붙었다. 병합 commit의 `go/`·`scripts/`는 후보와 같다(`git diff fea861701 52316ca0e -- go scripts`가 비어 있다). 이 절의 항목은 발행 전 상태이고, 발행 전·후 출하 검사 결과는 "설치·업데이트·되돌리기" 항목과 "출하 신원" 표가 갱신한다. 태그 대상 문서는 자기 commit 해시를 담을 수 없어 이 해시는 발행 뒤 문서 갱신으로 적었다.
 
 - **전체 관문 실행기:** 후보 `fea861701`, native 2.1.318 고정. 2026-11-09 19:24부터 2026-11-10 00:00(KST)까지 13단계(vet, 전체 Go, fixture 2구성, 구조 검사, 전체 race, foreground, background 4구성, Agent View·수명, F123)가 모두 종료 코드 0이고 `ALLDONE failed=0`이다. 그러나 검증 범위 판정기(closure coverage)는 FAIL이므로 전체 관문 PASS가 아니다(위 "출하 판정", "알려진 제한"). foreground·background·Agent View 단계에는 실제 backend를 쓰는 검사가 들어 있지만 별도 18묶음의 PASS를 뜻하지 않는다. 문서 인용 검사는 별도로 확인한다.
 - **provider-control probe·CTL v2 controller:** v0.6.11은 provider-control probe 8 entry ADMITTED와 CTL v2 controller campaign(pilot → 단일 세트 → N=5) 없이 출하한다. campaign은 실행하지 않았다. 제품 launch는 admission을 사용하지 않는다(#319 decision 17). R04L은 native 2.1.316 무과금 진단(같은 후보의 MULTI_TURN 3 run)에서 INCONCLUSIVE이고, RESUME_EXPLICIT·CONTINUE_PRINT·TUI·RP01 scope는 실행하지 않았다. [#340](https://github.com/wotjr1649/Clauduct/issues/340)이 이어받는다. `0248efbc4`(같은 chunk의 upstream 오류와 downstream 실패)는 실제 backend PASS 없음(offline real-HTTP 회귀만 있음)이다.
@@ -305,16 +305,35 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   최종 바이트의 재측정(c2)은 "검증한 클라이언트" 표가 소유한다. 위 "c1 관측" 절은 변경 적용 전 바이트의 이력이다. 도움말·도구 집합은 316과 같고 desktop용 Backdrop plugin API가 추가됐으며 6경로 표면 관문이 통과했다.
   전체 fixture·전체 관문·실제 backend는 그 평가에서 미실행이다. 2.1.316(`e896a9d8…2d52`)의 2026-10-31 fixture·표면 PASS와 앞선
   314·312의 재측정은 과거 입력의 결과로 유지한다. 출하 검증 대상 native는 "검증한 클라이언트" 표가 정한다.
-- **출하 신원:** ⟦TBD:ship-hashes⟧ — `clauduct.exe`·`clauduct-probe.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`의 SHA-256,
-  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치(태그를 만든 뒤 채운다). 내장 probe digest는 `ab774c83c42234d03dba5f18bf9d0fc6c6010b51704e22b37bac4ca6aca9e515`이며, 후보 `fea861701`의 깨끗한 checkout에서 두 번 만든 `clauduct-probe.exe`와 같다.
-- **설치·업데이트·되돌리기:** ⟦TBD:install-check⟧ — 제품과 probe의 짝, 새 설치, v0.6.10에서 교체·되돌리기, 설치본 실행과
-  재업데이트 무변경.
+- **출하 신원:** 아래 "출하 신원" 표 — `clauduct.exe`·`clauduct-probe.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`의 SHA-256,
+  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치(`verification/v0611-release-20261110/build.json`)를 확인했다. 내장 probe digest는 `ab774c83c42234d03dba5f18bf9d0fc6c6010b51704e22b37bac4ca6aca9e515`이며, 후보 `fea861701`의 깨끗한 checkout에서 두 번 만든 `clauduct-probe.exe`와 같다.
+- **설치·업데이트·되돌리기(발행 전·후 결과, `verification/v0611-release-20261110/`):**
+  - 발행 전 `ship-install`(v0.6.10 ↔ v0.6.11): 새 설치, 이전 릴리스 설치, v0.6.11 설치 스크립트로 교체, 설정 보존과 사용자 PATH 불변은 PASS다. "이전 설치 스크립트로 되돌리기"는 **FAIL**이다: v0.6.10의 `install.ps1`로 되돌리면 `clauduct-probe.exe`가 남는다. 옛 설치 스크립트는 probe를 모른다. v0.6.11의 `install.ps1 -Tag v0.6.10`은 probe를 지운다([PACKAGING](PACKAGING.md) 4.1절). 알려진 제한으로 둔다.
+  - 발행 후 `ship-update`: `install.ps1 -Tag v0.6.11`로 설치, v0.6.10의 `--update --yes`가 v0.6.11로 교체, 다음 실행의 `.old` 정리, 두 번째 `--update`의 `already current`, 사용자 PATH 불변이 모두 PASS다.
+  - 발행 후 `ship-legacy`(v0.3.5): 0.3.x updater가 v0.6.11을 거부하고 파일을 그대로 두며, 새 설치 스크립트가 `clauduct.exe` 하나로 교체한다. PASS다.
+  - 발행 후 `verify-release`: 공식 스크립트는 Release의 `target_commitish`가 `main`이라(태그는 `52316ca0e`를 가리킨다) commit 단언에서 멈췄다. 그 한 단언만 원격 태그 commit 확인으로 바꾼 복사본에서는 자산 5개의 API digest, 내려받은 바이트, `SHA256SUMS`, 신원이 모두 일치했다. 공식 스크립트의 PASS는 아니다.
+- **발행 전 발견 사항(출하 검사, 같은 폴더):**
+  - `surface.mjs`(native 2.1.318): 첫 실행이 `SECRET_LIKE_BODY_REFUSED`로 실패했다. 값 없는 진단으로 보면 규칙 6이 시스템 프롬프트의 자동 메모리 경로 문자열(66자)에 맞았고, 그 경로에 `mkdtemp("surface-")`의 6자 무작위 접미사가 들어 있다. 접미사가 대·소문자·숫자를 모두 가질 때만 걸리므로 비결정이며 비밀 노출 증거가 아니다(`surface-diag.jsonl`). 진단 복사본 한 번에서 TUI clauduct arm이 분류·경계 원장 행이 없는 `cafe.github.com:443`을 시도했다(proxy가 거부, 다른 실행에는 없음). 공식 `surface.mjs`는 통과하지 못했고 이 항목은 미해결이다.
+  - TUI 요약 회귀(`tui-summary.mjs`)는 summary-on·off 모두 `ROUTING_UNVERIFIED`로 실패했다. 이 구형 하네스가 relay에 `nativeIdentityOff`를 넘기지 않는 결함으로 보이며, 릴리스 `clauduct.exe`를 `ptydrive` TUI로 직접 돌린 routing smoke는 clean·소유자 profile 모두 라우팅 증명을 통과했다(`tui-routing-smoke-*.txt`; 기록용 proxy가 Anthropic host를 거부한 상태, 소유자 profile 실행은 종료 단계가 실패했고 제품이 `~/.clauduct/settings.json`에 `boundary_profile`을 추가했다). 요약 표시 판정은 재실행하지 않았다.
+  - `ship-session.mjs`(과금 6회): 위임과 `/clear`는 통과했으나 child launch가 2건(라우트 기록의 subagent 2건)이라 6회 상한과 native output limit에 닿아 두 번째 turn 없이 끝났다(`second:false`). 부모의 이중 위임 때문이며 제품 결함으로 보지 않는다(출하 담당 판단, 별도 재실행 없음).
+  - 실제 backend 18묶음은 소유자 결정으로 NOT_RUN이다.
 - **앞선 `TBD(gate)` 정산**
   - 버전 고정 없는 신원 확인 보완(2026-10-22)과 capture 대기 판정(`5d36c9b0`)·PR #330 리뷰 수정(`abc6e56b`·`e6eabfd4`·`7a12005e`·
     `4aa8b3a7`·B10 `fb66791b`)은 이 후보에 들어 있다. 확보한 검증은 전체 관문 실행기 13단계(closure coverage FAIL)와 c2 재측정, 별도 live-depin뿐이다. 실제 backend 18묶음과 설치 검사는 미완료다. 자동 갱신 중 동작: 검증 동안 native를 고정했으므로 실행하지 않았다.
   - 경로 template 보류 4개는 출하 전에 재실행하지 않았다. HOLD로 남고 [#336](https://github.com/wotjr1649/Clauduct/issues/336)가 이어받는다.
   - #325 관측기 고부하·종료 검증: 출하 전 실제 고부하 검증은 하지 않았다. #325가 이어받는다.
   - Go 1.27.2 최종 빌드·재현성과 probe digest는 위 "출하 신원"이다.
+
+#### 출하 신원
+
+| 항목 | 값 |
+|---|---|
+| 태그 | `v0.6.11` → `52316ca0ef42b6962b55093ed183884aea31e854` |
+| `clauduct.exe` | `b1a99600d25fb5622e3954ec224c9c7cfafda8c5a33aeb92be97724d1c06c0af` |
+| `clauduct-probe.exe` | `ab774c83c42234d03dba5f18bf9d0fc6c6010b51704e22b37bac4ca6aca9e515` |
+| `install.ps1` | `6720976f89e9016a33bd046f02bcf36e1acfdb411097b93c1d8a443f55356c58` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `bce4d8082fc951cb64074e624ea71df07b2571339712984b9a58958dd23205cd` |
 
 ### 현재 출하 후보 — 2026-10-22 갱신
 

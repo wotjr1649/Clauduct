@@ -112,6 +112,15 @@ func Restart(parent context.Context, id string, connection Connection) (*Server,
 	if !validID.MatchString(id) {
 		return nil, ErrUnavailable
 	}
+	return start(parent, connection, true, id, false)
+}
+
+// RestartHeld is Restart for a resident whose session is not configured yet: the id is taken at
+// once, so a second restore still fails, but no client gets a reply until Ready (#365 B).
+func RestartHeld(parent context.Context, id string, connection Connection) (*Server, error) {
+	if !validID.MatchString(id) {
+		return nil, ErrUnavailable
+	}
 	return start(parent, connection, true, id, true)
 }
 
@@ -196,7 +205,7 @@ func start(parent context.Context, connection Connection, stoppable bool, id str
 
 func (s *Server) Close() { s.cancel(); <-s.Done }
 
-// Ready lets clients in. Restart holds them until the caller has configured what they reach.
+// Ready lets clients in. RestartHeld holds them until the caller has configured what they reach.
 func (s *Server) Ready() { s.readyOnce.Do(func() { close(s.ready) }) }
 
 // operation reaps canceled overlapped I/O before releasing its buffer/event.

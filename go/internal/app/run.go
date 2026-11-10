@@ -613,7 +613,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			if o.Regenerate != nil {
 				err = restoreResidentProof(gw, o.Regenerate.Link, *o.Regenerate)
 				if err == nil {
-					background, err = sessionlink.Restart(context.Background(), o.Regenerate.Link, connection)
+					background, err = sessionlink.RestartHeld(context.Background(), o.Regenerate.Link, connection)
 				}
 			} else {
 				background, err = sessionlink.Start(context.Background(), connection)

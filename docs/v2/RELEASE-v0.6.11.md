@@ -1,6 +1,6 @@
 # v0.6.11 — 라우팅 불변식, 경계 프로필, 공개 빌드 Agent View
 
-⟦TBD:ship-date⟧ 출시(태그 `v0.6.11` → `⟦TBD:tag-commit⟧`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.11)). 2026-10-16 초안에서 시작했다. 범위는 v0.6.10 뒤 기본 branch에 들어간 PR(#296–#318)과
+2026-11-10 출시 예정(후보 `fea861701`). 태그 `v0.6.11`과 정식 Release는 아직 없다. 태그 commit `⟦TBD:tag-commit⟧`는 태그 생성 후 별도 문서 갱신으로 기록한다. 2026-10-16 초안에서 시작했다. 범위는 v0.6.10 뒤 기본 branch에 들어간 PR(#296–#318)과
 [#319](https://github.com/wotjr1649/Clauduct/issues/319)·[#320](https://github.com/wotjr1649/Clauduct/issues/320) 개발 브랜치다.
 남은 제한과 다시 볼 조건은 [COMPATIBILITY.md](COMPATIBILITY.md) 3절의 "알려진 제한 원장"과 "v0.6.11 — 지원 환경과 보장 한계" 표가 관리한다.
 
@@ -11,8 +11,13 @@
 "2026-10-23 추가"와 "native" 절의 갱신으로 대체한다. 측정 기준은 native 2.1.305·Codex CLI 0.163.0이다. 무과금 재측정은
 완료했지만 현재 후보의 최종 전체 관문·실제 backend·출하는 여전히 `TBD(gate)`다.
 
-**출하 상태(⟦TBD:ship-date⟧).** 이 문서의 날짜별 `TBD(gate)` 표시는 당시의 미완료 표시로 보존한다. 출하 후보의 최종 결과와
+**출하 상태(2026-11-10).** 이 문서의 날짜별 `TBD(gate)` 표시는 당시의 미완료 표시로 보존한다. 출하 후보의 최종 결과와
 그 표시들의 정산은 "출하 검사"의 "최종 출하 후보" 절이 소유한다. 출하 전에 끝나지 않은 항목은 후속 Issue로 남겼다.
+
+**출하 판정(2026-11-10, 소유자 결정).** 후보 `fea861701`의 전체 관문 실행기는 13단계가 종료 코드 0으로 끝났다(`ALLDONE failed=0`). 그러나 검증 범위 판정기(closure coverage)는 FAIL이므로 이를 전체 관문 PASS로 읽지 않는다. 별도 실제 backend 18묶음은 실행하지 않았다(NOT_RUN). 소유자는 이를 알려진 제한으로 문서화하고 출하 후보로 진행하기로 했다. 판정이 FAIL인 이유는 네 가지다.
+(1) Anthropic 관련 요청 일부의 발신자가 제품 계보인지 확인하지 못했다. 관측된 `/v1/messages`의 발신자와 터널의 실제 목적지는 미확정이다. (2) native가 telemetry를 끈 세션에서도 `event_logging`·`eval` 요청을 시도한 기록이 있고
+[#372](https://github.com/wotjr1649/Clauduct/issues/372)가 조사한다. (3) A06 block 종류 표면은 이전처럼 PARTIAL이고, W1 spare의 발신자 귀속 증거가 부족하다. (4) 판정기 실행·행 분류·프로세스 귀속 등의 하네스 문제와 F1 대조 두 건의 FAIL이 남아 있다. F1 원인은 미확정이며
+[#373](https://github.com/wotjr1649/Clauduct/issues/373)에서 조사한다. 항목별 내용은 "알려진 제한"에 있다. 이 판정은 별도 18묶음의 PASS나 경계 원장 telemetry 행의 검증을 뜻하지 않는다.
 
 ## 바뀐 것
 
@@ -234,16 +239,16 @@
   정적 판독에서 native 내부 loopback MCP 인증이 URL 경로의 secret에서 Bearer header로 이동했다. 이 내부 구현 변경을 모든 plugin/MCP 조합의 실행 성공으로 확대하지 않는다.
   이번 평가에서 전체 fixture·전체 관문·실제 backend와 317 warm spare는 실행하지 않았다. 316의 PASS와 warm 판정을 317 결과로 승계하지 않는다.
 
-### ⟦TBD:c1-date⟧ native 재측정 (c1 관측, 최종 바이트 아님)
+### 2026-11-07 native 재측정 (c1 관측, 최종 바이트 아님)
 
-- **native ⟦TBD:native-version⟧ 관측(c1)**(SHA-256 ⟦TBD:c1-sha⟧): 이 관측은 #333 변경을 적용하기 전 바이트의 무과금 재측정이며 최종 바이트의 증거가 아니다. 재측정과 fresh print/TUI × reference/clauduct/strict 표면 관문의 결과는
-  ⟦TBD:c1-result⟧이다. 직전 기준 2.1.317 대비 차이와 그 처리는 ⟦TBD:remeasure-diff⟧이다. 버전은 비교 기준이 아니라 기록이다. native 신원 차이는
+- **native 2.1.318 관측(c1)**(SHA-256 `b9aa5b08…1082`): 이 관측은 #333 변경을 적용하기 전 바이트의 무과금 재측정이며 최종 바이트의 증거가 아니다. 재측정과 fresh print/TUI × reference/clauduct/strict 표면 관문의 결과는
+  `REVIEW_REQUIRED`(세부 검사 SAME 48·DIFF 20·UNKNOWN 24)이다. 직전 기준 2.1.317 대비 plugin API 선언 표면의 추가를 리뷰가 수락했고, 이에 따라 기준 스냅샷을 다시 만든 뒤 최종 바이트의 재측정(c2)을 했다. c2는 DIFF 0(SAME 68·UNKNOWN 24, UNKNOWN은 관측 한계로 항목별 수락)이다. 버전은 비교 기준이 아니라 기록이다. native 신원 차이는
   `native diff`로 남기고, 도움말·도구 표면·plugin API·시스템 prompt·정적 추출은 계속 비교한다. 이 재측정에서 전체 fixture·전체 관문·실제 backend와 해당 native의 warm spare는
   이 항목의 결과에 포함하지 않는다. 317의 표면 PASS와 warm 판정을 이 native의 결과로 승계하지 않는다.
 
 ## native
 
-> **최종(⟦TBD:ship-date⟧):** Claude Code·Codex CLI 버전은 측정 기준이 아니라 기록이다(#333). 출하 검증에 쓴 native·Codex CLI 버전, native SHA와 근거는 아래 "검증한 클라이언트" 표에 있다.
+> **최종(2026-11-10):** Claude Code·Codex CLI 버전은 측정 기준이 아니라 기록이다(#333). 출하 검증에 쓴 native·Codex CLI 버전, native SHA와 근거는 아래 "검증한 클라이언트" 표에 있다.
 > 직전 측정(2.1.317, 2026-11-03)은 도움말·도구 집합이 316과 같고 desktop용 Backdrop plugin API가 추가됐으며 6경로 표면 관문이 통과했다. 그 평가는 전체 fixture·전체 관문·실제 backend를 실행하지 않았다.
 > 직전 기준 316의 fixture·표면 결과는 위 "2026-10-31~11-01 추가"에 보존한다.
 > 그 전 기준 2.1.314(`cb069eab`, 2026-10-30 재측정·반영)의 차이는 위 "2026-10-30 추가"에 적었다. 그 전 기준
@@ -274,39 +279,41 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
 
 버전은 고정·내장하지 않는 기록이다. 아래는 이 릴리스 검증이 실제로 본 값이다.
 
-⟦TBD:tested-clients⟧
+검증 동안 native는 2.1.318로 고정했다(자동 갱신 없음). 아래 값의 근거는 각각 범위가 다르다. 별도 실제 backend 18묶음은 실행하지 않았고, 이 근거들을 합쳐 전체 backend 회귀 PASS로 읽지 않는다.
 
 | 클라이언트 | 버전 | SHA-256 | 근거 |
 |---|---|---|---|
-| Claude Code native | ⟦TBD:native-version⟧ | ⟦TBD:native-sha⟧ | 최종 재측정(c2)·A11·Phase C·live-depin ⟦TBD:native-evidence⟧ |
-| Codex CLI | ⟦TBD:codex-version⟧ | ⟦TBD:codex-sha⟧ | 최종 재측정(c2)의 `versions.json`·live-depin ⟦TBD:codex-evidence⟧ |
+| Claude Code native | 2.1.318 | `b9aa5b08dc2cc46ea77d334dce792d1b8fdbb3a43bb290efdebdc905b1181082` | 최종 재측정(c2), 전체 관문 실행기 13단계(foreground·background·Agent View의 실제 backend 사용 검사 포함, closure coverage는 FAIL), 별도 live-depin 실제 backend PASS. 별도 18묶음은 NOT_RUN |
+| Codex CLI | 0.167.0 | `edfdd48f8b458af0…`(재측정 기록의 앞 16자리) | 최종 재측정(c2)의 `versions.json`, 별도 live-depin의 doctor 기록 |
 
 ## 출하 검사
 
 출하 신원과 최종 결과는 바로 아래 "최종 출하 후보" 절에 있다. 그 아래 절들은 날짜별 이력이다.
 
-### 최종 출하 후보 (⟦TBD:ship-date⟧, `⟦TBD:tag-commit⟧`)
+### 최종 출하 후보 (2026-11-10, `⟦TBD:tag-commit⟧`)
 
-- **최종 로컬 전체 관문:** ⟦TBD:full-gate⟧ — gofmt·vet·build, 전체 Go·race, 합성·TUI, 문서 인용.
+시험한 후보는 공개 `fea861701`이다. 태그 commit은 태그를 만든 뒤에야 정해진다. 태그 대상 문서에 자기 commit 해시를 넣을 수 없으므로 `⟦TBD:tag-commit⟧`는 태그 생성 후 별도 문서 갱신으로 기록한다. 이 절은 태그·Release 전의 후보 상태다.
+
+- **전체 관문 실행기:** 후보 `fea861701`, native 2.1.318 고정. 2026-11-09 19:24부터 2026-11-10 00:00(KST)까지 13단계(vet, 전체 Go, fixture 2구성, 구조 검사, 전체 race, foreground, background 4구성, Agent View·수명, F123)가 모두 종료 코드 0이고 `ALLDONE failed=0`이다. 그러나 검증 범위 판정기(closure coverage)는 FAIL이므로 전체 관문 PASS가 아니다(위 "출하 판정", "알려진 제한"). foreground·background·Agent View 단계에는 실제 backend를 쓰는 검사가 들어 있지만 별도 18묶음의 PASS를 뜻하지 않는다. 문서 인용 검사는 별도로 확인한다.
 - **provider-control probe·CTL v2 controller:** v0.6.11은 provider-control probe 8 entry ADMITTED와 CTL v2 controller campaign(pilot → 단일 세트 → N=5) 없이 출하한다. campaign은 실행하지 않았다. 제품 launch는 admission을 사용하지 않는다(#319 decision 17). R04L은 native 2.1.316 무과금 진단(같은 후보의 MULTI_TURN 3 run)에서 INCONCLUSIVE이고, RESUME_EXPLICIT·CONTINUE_PRINT·TUI·RP01 scope는 실행하지 않았다. [#340](https://github.com/wotjr1649/Clauduct/issues/340)이 이어받는다. `0248efbc4`(같은 chunk의 upstream 오류와 downstream 실패)는 실제 backend PASS 없음(offline real-HTTP 회귀만 있음)이다.
-- **실제 backend:** ⟦TBD:live-18⟧ — 18개 회귀 묶음, 변경 영향(`9d878bbb`의 `--background-stop` 오류 문구 포함)과 TUI,
-  backend 생성 한도 capability 재측정.
-- **routing proof 대기·종료 중 503·요청 진단 필드의 실제 backend 판정:** ⟦TBD:runtime-317⟧ — proof 대기(2초를 넘겨 5초 안에
-  확인된 표본), gateway 종료 중 503 `GATEWAY_CLOSED`와 hook의 종료 처리, 요청 기록의 진단 필드 형식(`f38cf2b6`·`e57723e7`).
-  항목마다 PASS·FAIL·NOT_EXERCISED로 적고, NOT_EXERCISED는 실제 backend PASS로 보지 않는다.
+- **실제 backend:** NOT_RUN(소유자 결정 2026-11-10) — 18개 회귀 묶음, 변경 영향(`9d878bbb`의 `--background-stop` 오류 문구 포함)과 TUI,
+  backend 생성 한도 capability 재측정을 이번 출하에서 실행하지 않았다. 이전 후보의 18/18 PASS(native 2.1.303, 위 "#319 마감 관문")는 이 후보에 승계하지 않는다.
+- **routing proof 대기·종료 중 503·요청 진단 필드의 실제 backend 판정:** 이번 후보의 별도 실제 backend 판정은 NOT_RUN이다 — proof 대기(2초를 넘겨 5초 안에
+  확인된 표본), gateway 종료 중 503 `GATEWAY_CLOSED`와 hook의 종료 처리, 요청 기록의 진단 필드 형식(`f38cf2b6`·`e57723e7`) 항목의 개별 관측 여부는
+  확인하지 않아 미확정이다. NOT_RUN은 실제 backend PASS로 보지 않는다.
 - **무과금 재측정(2026-11-03, 이력):** native 2.1.317(SHA-256 `26b01ec2…6038`). Codex CLI는 설치본 0.166.0을 관측했고 도움말이 같았다.
   최종 바이트의 재측정(c2)은 "검증한 클라이언트" 표가 소유한다. 위 "c1 관측" 절은 변경 적용 전 바이트의 이력이다. 도움말·도구 집합은 316과 같고 desktop용 Backdrop plugin API가 추가됐으며 6경로 표면 관문이 통과했다.
   전체 fixture·전체 관문·실제 backend는 그 평가에서 미실행이다. 2.1.316(`e896a9d8…2d52`)의 2026-10-31 fixture·표면 PASS와 앞선
   314·312의 재측정은 과거 입력의 결과로 유지한다. 출하 검증 대상 native는 "검증한 클라이언트" 표가 정한다.
 - **출하 신원:** ⟦TBD:ship-hashes⟧ — `clauduct.exe`·`clauduct-probe.exe`·`install.ps1`·`uninstall.ps1`·`SHA256SUMS`의 SHA-256,
-  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치, 내장 probe digest ⟦TBD:probe-digest⟧.
+  깨끗한 태그에서 Go 1.27.2·`CGO_ENABLED=0`·`-trimpath`로 만든 두 빌드의 일치(태그를 만든 뒤 채운다). 내장 probe digest는 `ab774c83c42234d03dba5f18bf9d0fc6c6010b51704e22b37bac4ca6aca9e515`이며, 후보 `fea861701`의 깨끗한 checkout에서 두 번 만든 `clauduct-probe.exe`와 같다.
 - **설치·업데이트·되돌리기:** ⟦TBD:install-check⟧ — 제품과 probe의 짝, 새 설치, v0.6.10에서 교체·되돌리기, 설치본 실행과
   재업데이트 무변경.
 - **앞선 `TBD(gate)` 정산**
   - 버전 고정 없는 신원 확인 보완(2026-10-22)과 capture 대기 판정(`5d36c9b0`)·PR #330 리뷰 수정(`abc6e56b`·`e6eabfd4`·`7a12005e`·
-    `4aa8b3a7`·B10 `fb66791b`)은 이 후보에 들어 있고 위 관문·실제 backend·설치 결과가 그 검증이다. 자동 갱신 중 동작: ⟦TBD:autoupdate-identity⟧.
+    `4aa8b3a7`·B10 `fb66791b`)은 이 후보에 들어 있다. 확보한 검증은 전체 관문 실행기 13단계(closure coverage FAIL)와 c2 재측정, 별도 live-depin뿐이다. 실제 backend 18묶음과 설치 검사는 미완료다. 자동 갱신 중 동작: 검증 동안 native를 고정했으므로 실행하지 않았다.
   - 경로 template 보류 4개는 출하 전에 재실행하지 않았다. HOLD로 남고 [#336](https://github.com/wotjr1649/Clauduct/issues/336)가 이어받는다.
-  - #325 관측기 고부하·종료 검증: ⟦TBD:obs-325⟧.
+  - #325 관측기 고부하·종료 검증: 출하 전 실제 고부하 검증은 하지 않았다. #325가 이어받는다.
   - Go 1.27.2 최종 빌드·재현성과 probe digest는 위 "출하 신원"이다.
 
 ### 현재 출하 후보 — 2026-10-22 갱신
@@ -426,7 +433,13 @@ warm pool을 만들기 전에 반환한다(native의 코드 가드, [NATIVE-SUPP
   - **2026-10-23 갱신:** 위 재측정 미완료와 경로표 반영 미완료 표시는 각각 2.1.305 무과금 재측정 PASS와 `028cd1ce`의
     반영 사실로 대체한다. #325 검증 보강은 "2026-10-23 추가"에 기록했다. 최종 관문·고부하 검증과 보류 4개 경로의 재실행은
     계속 `TBD(gate)`다. #319의 2.1.303 결과는 해당 과거 후보에만 적용한다.
-- **출하 시점(⟦TBD:ship-date⟧):** 위 두 항목의 최종 상태다. 검증한 native·Codex CLI 버전과 native SHA는 "검증한 클라이언트" 표에 있다. 보류 4개 경로는 재실행하지 않아 HOLD로 남는다([#336](https://github.com/wotjr1649/Clauduct/issues/336)). #325는 ⟦TBD:obs-325⟧.
+- **출하 후보 상태(2026-11-10):** 위 두 항목의 최종 상태다. 검증한 native·Codex CLI 버전과 native SHA는 "검증한 클라이언트" 표에 있다. 보류 4개 경로는 재실행하지 않아 HOLD로 남는다([#336](https://github.com/wotjr1649/Clauduct/issues/336)). #325의 실제 고부하 검증은 하지 않았고 #325가 이어받는다.
+- **closure coverage FAIL과 실제 backend 미실행(소유자 결정 2026-11-10):** 아래 네 항목은 알려진 제한이며 "출하 판정"에 요약했다.
+  - Anthropic 관련 요청 일부의 발신자가 제품 계보인지 확인하지 못했다. 관측된 `/v1/messages`의 발신자 귀속과 터널의 실제 목적지는 미확정이다. 해당 시험 proxy는 요청을 전달하지 않았고 제품이 사용자·모델 요청을 Anthropic에 보냈다는 직접 증거는 없지만, 제품 귀속 가능성을 배제하지 못했고 직접 외부 연결이 없었음도 입증하지 못했다. proxy가 그 밖의 모든 외부 연결을 막았다는 뜻은 아니다.
+  - native가 `DISABLE_TELEMETRY=1`인 시험 실행에서도 `event_logging`·`eval` 요청을 시도했다. 조사는 [#372](https://github.com/wotjr1649/Clauduct/issues/372)다. 서버 경계 원장의 telemetry 행은 2.1.318에서 검증하지 못했다.
+  - A06 block 종류 표면은 이전처럼 PARTIAL이고, W1 spare의 발신자 귀속 증거가 부족하다.
+  - 판정기 실행·행 분류·프로세스 분리(breakaway) 귀속 등의 하네스 문제와 F1 대조 두 건의 FAIL이 남아 있다. F1은 주입 재현 실패 또는 증거·하네스 문제로 원인이 미확정이며 [#373](https://github.com/wotjr1649/Clauduct/issues/373)에서 조사한다.
+  - 실제 backend 18묶음은 실행하지 않았다("최종 출하 후보").
 - 관리 명령·`--bg` argv 판정 차이([#331](https://github.com/wotjr1649/Clauduct/issues/331))와 복원한 resident가 hook 트리·job
   종료와 함께 끝나는 것([#332](https://github.com/wotjr1649/Clauduct/issues/332))은 v0.6.11 범위 밖이며 COMPATIBILITY 원장에 있다.
 - 세션 중 `/model`로 바꾼 model·effort pair가, resident가 다시 만들어진 뒤 그 세션을 resume하면 시작 pair로 돌아갈 수 있다.

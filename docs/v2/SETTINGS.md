@@ -52,7 +52,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 
 `version`은 필수이며 현재 값은 `1`이다. 나머지 항목은 생략할 수 있지만, 일반 실행에서 빠진 최상위 키만 메모리에서 기본값으로 채운다.
 `startup`, `classifier_model`과 각 `agents` 항목을 쓰면 `model`과 `effort`를 모두 적는다.
-알 수 없는 필드, 중복 JSON 키, 부분적인 pair, `null`, 1 MiB를 넘는 파일, 형식이 맞지 않는 모델 ID,
+격리 모드의 `isolation` 키([문서 끝](#격리-모드-v0614))를 포함해 알 수 없는 필드, 중복 JSON 키, 부분적인 pair, `null`, 1 MiB를 넘는 파일, 형식이 맞지 않는 모델 ID,
 `low`·`medium`·`high`·`xhigh`·`max` 밖의 effort는 `CLAUDUCT_SETTINGS_INVALID`로 거부한다.
 형식은 맞지만 계정이 제공하지 않는 모델·effort는 [계정 목록에 없는 선택](#계정-목록에-없는-선택)대로 처리한다.
 
@@ -66,7 +66,6 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
 | `classifier_model` | auto 권한 모드 분류기의 `{"model", "effort"}` pair. 공장값은 `gpt-6.1-terra`/low(v0.6.13, 이전 `gpt-5.6-terra`/low). [분류기 절](#보조-요청과-auto-권한-분류기-v064) |
 | `boundary_profile` | native가 Anthropic 서버로 가는 기능 경로 가운데 무엇을 남길지. `"default"`(공장값) 또는 `"strict"`. 다른 값은 시작할 때 거부한다. [경계 프로필](#경계-프로필-v0611) |
-| `isolation` | 격리 모드([#379](https://github.com/wotjr1649/Clauduct/issues/379)). `"off"`(키가 없을 때와 같음) 또는 `"on"`. 다른 값은 시작할 때 `CLAUDUCT_SETTINGS_INVALID`로 거부한다. 공장 문서에는 없으며 설정 동기화가 덧붙이지 않는다. 켜면 native가 Clauduct 전용 설정 폴더로 실행된다(v0.6.14 예정, 동작은 이후 commit과 함께 문서화) |
 | `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
 
 공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,
@@ -496,3 +495,47 @@ context 설정의 허용 범위, effort 어휘, 입력 검증과 처리 상한, 
 사용할 수 있는 모델과 effort는 세션의 계정 목록이 정하며, 기존 이름(키·별칭·단계·계수 허용·은퇴 표)만 내장 제품 자료로 둔다.
 Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실행값은 `classifier_model`이 정한다.
 개발용 probe의 지출 범위는 일반 세션 설정과 독립된 제품 자료이며 설정 변경으로 확대되지 않는다.
+
+## 격리 모드 (v0.6.14)
+
+`isolation: "on"`은 Clauduct가 띄우는 native가 **저장된 Claude 로그인과 계정에 묶여 Anthropic에 보내는 부수 요청**(telemetry, feature flag
+조회, 계정 조회, 시작 때의 quota 확인)을 줄이는 선택 기능이다([#379](https://github.com/wotjr1649/Clauduct/issues/379)). 사용자의 커스터마이즈를
+숨기지 않는다. 떼어 내는 것은 (1) 로그인과 계정 정보, (2) supervisor와 실행 중 상태 둘뿐이다. 기본(`off`)에서는 아무것도 바뀌지 않는다.
+
+켜면 모든 Clauduct 실행(foreground·`--bg`·`attach`·`agents`·`respawn`·`stop`·`rm`·`logs`)이 native에
+`CLAUDE_CONFIG_DIR=<전용 폴더>`와 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`·`DISABLE_TELEMETRY=1`·`DISABLE_ERROR_REPORTING=1`을
+강제한다(사용자의 셸 값보다 우선). 전용 폴더는 `~\.clauduct\isolated\claude`이고 지우기 전까지 남는다. native는 설정 폴더마다 자기 supervisor를
+따로 띄우므로 격리 job은 별도 supervisor 하나를 공유한다. Clauduct는 그 supervisor를 자동으로 끝내지 않는다.
+
+| 사용자 폴더(`~\.claude` 또는 `CLAUDE_CONFIG_DIR`)의 항목 | 격리에서 |
+|---|---|
+| `rules` `agents` `commands` `skills` `output-styles` `workflows` `themes` `agent-memory` `plans` `tasks` `todos` | 디렉터리 junction으로 **공유** |
+| `plugins`(설치본·marketplace·plugin data) | junction으로 공유 |
+| `projects`(대화 transcript·프로젝트 auto memory) `file-history` `paste-cache` | junction으로 공유 |
+| `history.jsonl` | hard link로 공유(native가 교체 쓰기를 하면 끊길 수 있고, 그때는 시작 때 알린다) |
+| `CLAUDE.md` | 전용 폴더의 `CLAUDE.md` 첫 줄이 `@<사용자 CLAUDE.md>` import다. 그 아래에 적은 내용은 보존된다(격리 세션에서 `/memory`로 편집하면 거기에 들어간다) |
+| `settings.json` | **실행마다 파생**: 인증 helper(`apiKeyHelper`·`aws…`·`gcpAuthRefresh`·`otelHeadersHelper`)·로그인 제한 키·endpoint/credential/provider `env`·telemetry 재활성 `env`를 뺀다. `ANTHROPIC_MODEL` 같은 모델 선택 `env`는 그대로 둔다 |
+| `.claude.json` | **실행마다 파생**: 이름으로 고른 키만(user·project `mcpServers`, MCP 토글, 전역 UI 토글). 계정(`oauthAccount` 등)·식별자는 가져오지 않는다 |
+| `keybindings.json` | 복사 |
+| `.credentials.json`(저장 login), `jobs`·`daemon`·`sessions`·캐시 등 그 밖의 모든 것 | **공유하지 않는다**(전용 폴더에만) |
+
+- 사용자의 파일은 읽기만 한다. 쓰기는 공유할 디렉터리가 사용자 폴더에 없을 때 빈 디렉터리를 만드는 것뿐이다(격리 세션이 새로 만든 자산이 전용 폴더에
+  갇히지 않게). 전용 폴더에서 이미 다른 것이 되어 있는 공유 이름은 옮기거나 지우지 않고 `ISOLATION_LINK_CONFLICT`로 거부한다.
+- **전용 폴더를 직접 지우지 않는다.** junction을 따라가는 도구는 사용자 자산을 지울 수 있다. `clauduct --dev --isolation-reset`(`--yes`)가 링크를 먼저
+  떼고 지운다. 전용 supervisor가 살아 있으면 거부한다.
+- 파생 파일은 한 방향이다. 격리 세션 안의 `/config`·`claude mcp add` 변경은 다음 실행에서 사라지고, 시작 때 한 줄로 알린다. 원본에 되쓰지 않는다.
+- 사용자가 `CLAUDE_CONFIG_DIR`을 줬다면 그 폴더가 "사용자 폴더"다. 전용 폴더와 겹치는 값은 `ISOLATION_CONFIG_CONFLICT`로 거부한다.
+- `boundary_profile`과 독립이다. 격리만으로는 WebFetch 사전 점검과 공식 marketplace 자동 등록이 남는다. 접속을 최소화하려면 `strict`와 함께 쓴다.
+- 대화 이력은 공유하므로 두 모드 사이에 `--resume`이 된다. 다른 모드의 supervisor에서 **실행 중인** job의 세션은 `RESUME_RUNNING_IN_OTHER_MODE`로 거부하고,
+  멈춘 세션은 허용한다. 실행 중 `/resume` 선택기와 `--continue`는 native의 것이라 이 검사를 받지 않는다. 사용자가 직접 넘기는 대화는 막지 않는다:
+  Anthropic 모델로 만든 대화를 Clauduct에서 이어 가면 그 이력이 Codex/OpenAI backend로 가고, GPT 세션을 Clauduct 없이 여는 native로 이어 가면
+  Anthropic으로 간다(격리와 무관하게 기본 모드에서도 같다).
+- 다른 모드의 `agents` 목록에는 이 job이 보이지 않는다. `--bg` 안내문이 `clauduct agents`를 가리킨다.
+- NONESSENTIAL의 부작용: native auto-update, `/feedback`, release notes, PR 상태 배지, fast mode 등 availability 확인, plugin `command` source의 background 실행,
+  marketplace 자동 갱신, **feature flag 조회**(Remote Control 등 flag 의존 기능, claude.ai 계정 plugin·skill 동기화)가 꺼진다.
+- 알려진 제한: 전용 폴더에는 저장 login이 없으므로 OAuth가 필요한 원격 MCP 서버·plugin의 민감한 설정값은 격리에서 다시 인증·입력해야 할 수 있다.
+  managed 정책(기계 전체)은 격리되지 않는다. Windows 전용.
+- 켜진 세션은 시작 때 `clauduct: isolation on: …`을 stderr에 한 줄 내고, 종료 줄에 `isolation=on`, status의 `session.isolation`에 이름·개수를 남긴다.
+  `clauduct --dev --doctor`가 모드·폴더·공유 상태·supervisor를 보여 준다.
+- `isolation`은 공장 문서에 없다. 설정 동기화가 덧붙이지 않고, v0.6.13 이하 바이너리는 이 키를 모르는 키로 거부하므로 되돌리기 전에 지운다.
+

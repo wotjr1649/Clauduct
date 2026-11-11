@@ -43,7 +43,11 @@ var settingsForced = map[string]string{"syncClaudeAiSkills": "false", "syncClaud
 func settingsEnvDropped(name string) bool {
 	upper := strings.ToUpper(name)
 	switch {
-	case strings.HasPrefix(upper, "ANTHROPIC_"), strings.HasPrefix(upper, "OTEL_"):
+	case strings.HasPrefix(upper, "ANTHROPIC_"):
+		// Model selection is the user's own (ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_*_MODEL ...) and works as
+		// in the default mode; endpoint, credential and header names are not.
+		return !strings.Contains(upper, "_MODEL")
+	case strings.HasPrefix(upper, "OTEL_"):
 		return true
 	case upper == "CLAUDE_CODE_OAUTH_TOKEN", upper == launch.HostRoutedEnv, upper == "CLAUDE_CONFIG_DIR",
 		upper == "CLAUDE_CODE_ENABLE_TELEMETRY", upper == "CLAUDE_CODE_ENABLE_FEEDBACK_SURVEY_FOR_OTEL",

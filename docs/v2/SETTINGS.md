@@ -524,7 +524,12 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 - **전용 폴더를 직접 지우지 않는다.** junction을 따라가는 도구는 사용자 자산을 지울 수 있다. `clauduct --dev --isolation-reset`(`--yes`)가 링크를 먼저
   떼고 지운다. 전용 supervisor가 살아 있으면 거부한다.
 - 파생 파일은 한 방향이다. 격리 세션 안의 `/config`·`claude mcp add` 변경은 다음 실행에서 사라지고, 시작 때 한 줄로 알린다. 원본에 되쓰지 않는다.
-- 사용자가 `CLAUDE_CONFIG_DIR`을 줬다면 그 폴더가 "사용자 폴더"다. 전용 폴더와 겹치는 값은 `ISOLATION_CONFIG_CONFLICT`로 거부한다.
+- 격리 중인 native가 이미 돌고 있을 때 두 번째 격리 실행이 시작되면, `.claude.json` 파생은 쓰기 직전에 파일을 다시 읽어 native가 그 사이에 쓴 자기 상태를
+  유지한 채 병합하고(최대 3번), 가져오는 키가 바뀌지 않았으면 아예 쓰지 않는다. 마지막 읽기와 교체 사이의 짧은 틈은 남는다. native와 공유하는 잠금이 없어 그 틈에
+  native가 쓴 값은 사라질 수 있다(native의 자기 상태이며 다음 저장 때 다시 쓰인다).
+- 사용자가 `CLAUDE_CONFIG_DIR`을 줬다면 그 폴더가 "사용자 폴더"다. 전용 폴더와 겹치는 값은 `ISOLATION_CONFIG_CONFLICT`로 거부한다. 사용자 폴더가
+  네트워크 경로(`\\server\share\…`)이면 junction을 만들 수 없어 `ISOLATION_LINK_TARGET_UNSUPPORTED`로 거부한다(로컬 드라이브 경로여야 한다).
+- 전용 `CLAUDE.md`의 첫 줄은 Clauduct가 쓴 import(사용자 `CLAUDE.md`를 가리키는 정확히 그 줄, 대소문자 무시)만 관리한다. 사용자가 직접 쓴 다른 import는 그대로 둔다.
 - `boundary_profile`과 독립이다. 격리만으로는 WebFetch 사전 점검과 공식 marketplace 자동 등록이 남는다. 접속을 최소화하려면 `strict`와 함께 쓴다.
 - 대화 이력은 공유하므로 두 모드 사이에 `--resume`이 된다. 다른 모드의 supervisor에서 **실행 중인** job의 세션은 `RESUME_RUNNING_IN_OTHER_MODE`로 거부하고,
   멈춘 세션은 허용한다. 실행 중 `/resume` 선택기와 `--continue`는 native의 것이라 이 검사를 받지 않는다. 사용자가 직접 넘기는 대화는 막지 않는다:

@@ -90,7 +90,7 @@ func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *
 			return nil, "", err
 		}
 		facts.SettingsDropped, facts.ClaudeJSONKeys, facts.ClaudeMd = derived.SettingsDropped, derived.ClaudeJSONKeys, derived.ClaudeMd
-		if !BackgroundRequested(o.Args) || o.Stderr != nil {
+		if o.Stderr != nil {
 			fmt.Fprintf(o.Stderr, "clauduct: isolation on: %s (your configuration: %s)\n", dedicated, source)
 			if derived.SettingsEdited {
 				fmt.Fprintf(o.Stderr, "clauduct: isolation: settings changed inside the isolated session were not kept; edit %s\n", filepath.Join(source, "settings.json"))

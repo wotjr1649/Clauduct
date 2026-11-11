@@ -1,0 +1,352 @@
+package app
+
+import (
+	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"strings"
+
+	"github.com/wotjr1649/Clauduct/go/internal/launch"
+)
+
+// Files the dedicated folder derives from the user's own on every isolated launch (#379). They are
+// rebuilt rather than linked because they mix what the user wrote with what ties native to a
+// Claude account, and only the first may come across. The user's files are only read.
+
+const (
+	deriveSettingsBytes   = 1 << 20
+	deriveClaudeJSONBytes = 8 << 20
+	derivedMarker         = ".clauduct-derived.json"
+)
+
+var errIsolationSettingsFile = errors.New("ISOLATION_SETTINGS_UNREADABLE: your settings.json could not be read as a JSON object within 1 MiB, so the isolated settings could not be built from it; nothing was started")
+
+// settingsDropped are the top-level settings keys that sign native in, or choose how, so they stay
+// behind. Native's own settings reference decides the list; a test fixes it to that reading.
+var settingsDropped = []string{"apiKeyHelper", "awsAuthRefresh", "awsCredentialExport", "gcpAuthRefresh",
+	"otelHeadersHelper", "forceLoginMethod", "forceLoginOrgUUID", "forceLoginGatewayUrl"}
+
+// settingsForced are keys an isolated settings.json always carries, whatever the user's says: no
+// account sync of skills or plugins, no connectors, no Remote Control at start-up.
+var settingsForced = map[string]string{"syncClaudeAiSkills": "false", "syncClaudeAiPlugins": "false",
+	"remoteControlAtStartup": "false", "disableClaudeAiConnectors": "true"}
+
+// settingsEnvDropped reports an `env` name that would route requests, sign native in, or turn
+// traffic or telemetry back on. The three policy names are replaced by the forced values instead.
+func settingsEnvDropped(name string) bool {
+	upper := strings.ToUpper(name)
+	switch {
+	case strings.HasPrefix(upper, "ANTHROPIC_"), strings.HasPrefix(upper, "OTEL_"):
+		return true
+	case upper == "CLAUDE_CODE_OAUTH_TOKEN", upper == launch.HostRoutedEnv, upper == "CLAUDE_CONFIG_DIR",
+		upper == "CLAUDE_CODE_ENABLE_TELEMETRY", upper == "CLAUDE_CODE_ENABLE_FEEDBACK_SURVEY_FOR_OTEL",
+		upper == "FORCE_AUTOUPDATE_PLUGINS":
+		return true
+	}
+	for _, name := range launch.ProviderSwitches {
+		if upper == name {
+			return true
+		}
+	}
+	return false
+}
+
+// deriveSettings builds the isolated settings.json from the user's. Everything the user wrote is
+// kept as written except what settingsDropped and settingsEnvDropped name; values are never
+// logged. raw may be nil (no file): the result then carries only the forced keys.
+func deriveSettings(raw []byte) (out []byte, dropped int, err error) {
+	fields := map[string]json.RawMessage{}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if len(raw) > deriveSettingsBytes || json.Unmarshal(raw, &fields) != nil || fields == nil {
+			return nil, 0, errIsolationSettingsFile
+		}
+	}
+	for _, key := range settingsDropped {
+		if _, present := fields[key]; present {
+			delete(fields, key)
+			dropped++
+		}
+	}
+	for key, value := range settingsForced {
+		fields[key] = json.RawMessage(value)
+	}
+	env := map[string]json.RawMessage{}
+	if value, present := fields["env"]; present {
+		if json.Unmarshal(value, &env) != nil || env == nil {
+			env, dropped = map[string]json.RawMessage{}, dropped+1 // not an object: native would ignore it too
+		}
+	}
+	for name := range env {
+		if settingsEnvDropped(name) || strings.EqualFold(name, nonessentialTraffic) ||
+			strings.EqualFold(name, "DISABLE_TELEMETRY") || strings.EqualFold(name, "DISABLE_ERROR_REPORTING") {
+			delete(env, name)
+			dropped++
+		}
+	}
+	env[nonessentialTraffic], env["DISABLE_TELEMETRY"], env["DISABLE_ERROR_REPORTING"] = json.RawMessage(`"1"`), json.RawMessage(`"1"`), json.RawMessage(`"1"`)
+	fields["env"], err = json.Marshal(env)
+	if err != nil {
+		return nil, 0, err
+	}
+	out, err = json.MarshalIndent(fields, "", "  ")
+	return append(out, '\n'), dropped, err
+}
+
+// claudeJSONTop and claudeJSONProject are the only keys of native's global config file that come
+// across, by name. Everything else -- the account (oauthAccount and the rest), the user and device
+// identifiers, usage and telemetry state, per-project history -- stays out. The names are native's
+// own: documented ones only. The per-project trust key and the first-run flag are not documented;
+// they are added once a measurement on a synthetic folder names them (MEASURE.md M4, M5).
+var claudeJSONTop = []string{"mcpServers", "autoConnectIde", "autoInstallIdeExtension", "claudeInChromeDefaultEnabled",
+	"copyFullResponse", "copyOnSelect", "defaultToAgentsView", "diffTool", "externalEditorContext",
+	"leftArrowOpensAgents", "prStatusFooterEnabled"}
+
+var claudeJSONProject = []string{"mcpServers", "enabledMcpServers", "disabledMcpServers"}
+
+// deriveClaudeJSON merges the user's allowlisted keys into the dedicated global config file and
+// leaves everything native wrote there alone. A key the user's file lacks is removed from the
+// dedicated one, so deleting an MCP server in the user's config removes it here too. changed is
+// false when the result equals what is there, and then nothing needs writing.
+func deriveClaudeJSON(userRaw, dedicatedRaw []byte) (out []byte, keys int, changed bool, err error) {
+	user, dedicated := map[string]json.RawMessage{}, map[string]json.RawMessage{}
+	if userRaw != nil && (len(userRaw) > deriveClaudeJSONBytes || json.Unmarshal(userRaw, &user) != nil || user == nil) {
+		return nil, 0, false, errors.New("ISOLATION_CLAUDE_JSON_UNREADABLE: your global config file could not be read as a JSON object; nothing was started")
+	}
+	if dedicatedRaw != nil && json.Unmarshal(dedicatedRaw, &dedicated) != nil || dedicated == nil {
+		dedicated = map[string]json.RawMessage{} // a damaged derived file is rebuilt, native recreates its own state
+	}
+	for _, key := range claudeJSONTop {
+		if value, present := user[key]; present {
+			dedicated[key] = value
+			keys++
+		} else {
+			delete(dedicated, key)
+		}
+	}
+	userProjects, dedicatedProjects := map[string]map[string]json.RawMessage{}, map[string]map[string]json.RawMessage{}
+	_ = json.Unmarshal(user["projects"], &userProjects)
+	_ = json.Unmarshal(dedicated["projects"], &dedicatedProjects)
+	if dedicatedProjects == nil {
+		dedicatedProjects = map[string]map[string]json.RawMessage{}
+	}
+	for path, entry := range userProjects {
+		for _, key := range claudeJSONProject {
+			if dedicatedProjects[path] == nil {
+				dedicatedProjects[path] = map[string]json.RawMessage{}
+			}
+			if value, present := entry[key]; present {
+				dedicatedProjects[path][key] = value
+				keys++
+			} else {
+				delete(dedicatedProjects[path], key)
+			}
+		}
+	}
+	for path, entry := range dedicatedProjects {
+		if _, known := userProjects[path]; !known {
+			for _, key := range claudeJSONProject {
+				delete(entry, key)
+			}
+		}
+		if len(entry) == 0 {
+			delete(dedicatedProjects, path)
+		}
+	}
+	if len(dedicatedProjects) > 0 {
+		dedicated["projects"], err = json.Marshal(dedicatedProjects)
+		if err != nil {
+			return nil, 0, false, err
+		}
+	} else {
+		delete(dedicated, "projects")
+	}
+	out, err = json.MarshalIndent(dedicated, "", "  ")
+	if err != nil {
+		return nil, 0, false, err
+	}
+	out = append(out, '\n')
+	// Same content, not same bytes: native formats and orders its own file as it likes.
+	var was, now any
+	return out, keys, dedicatedRaw == nil || json.Unmarshal(dedicatedRaw, &was) != nil || json.Unmarshal(out, &now) != nil || !reflect.DeepEqual(was, now), nil
+}
+
+// claudeMdStub is the first line of the dedicated CLAUDE.md: an import of the user's own file.
+// Native loads user-scope imports without an approval dialog, and relative imports inside the
+// user's file resolve from that file. A space in the path takes a backslash, so the path is
+// written with slashes.
+func claudeMdStub(source string) string {
+	return "@" + strings.ReplaceAll(filepath.ToSlash(filepath.Join(source, "CLAUDE.md")), " ", `\ `)
+}
+
+// deriveClaudeMd returns the dedicated CLAUDE.md with its first line managed: the import when the
+// user has a CLAUDE.md, no import when not. What follows the first line belongs to whoever wrote it
+// (a /memory edit inside an isolated session lands there) and is kept.
+func deriveClaudeMd(current []byte, haveUser bool, source string) []byte {
+	stub := claudeMdStub(source)
+	text := string(current)
+	first, rest, _ := strings.Cut(text, "\n")
+	ours := strings.HasPrefix(first, "@") && strings.HasSuffix(strings.TrimRight(first, "\r"), "CLAUDE.md")
+	switch {
+	case haveUser && strings.TrimRight(first, "\r") == stub:
+		return current
+	case haveUser && ours:
+		return []byte(stub + "\n" + rest)
+	case haveUser && text == "":
+		return []byte(stub + "\n")
+	case haveUser:
+		return []byte(stub + "\n" + text)
+	case ours:
+		return []byte(rest)
+	}
+	return current
+}
+
+// deriveReport says what an isolated launch rebuilt, by count and name only.
+type deriveReport struct {
+	SettingsDropped int
+	ClaudeJSONKeys  int
+	ClaudeMd        string // "imported" or "absent"
+	Keybindings     bool
+	// SettingsEdited is set when the dedicated settings.json changed since the last launch wrote it:
+	// a /config change made inside an isolated session. It is replaced, not copied back.
+	SettingsEdited bool
+}
+
+func readIfExists(path string, limit int64) ([]byte, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Size() > limit {
+		return nil, errors.New("ISOLATION_SOURCE_FILE_UNREADABLE")
+	}
+	raw, err := os.ReadFile(path)
+	if raw == nil && err == nil {
+		raw = []byte{}
+	}
+	return raw, err
+}
+
+// writeFileAtomic replaces path with data in one step, so native never reads half a file.
+func writeFileAtomic(path string, data []byte) error {
+	var nonce [6]byte
+	rand.Read(nonce[:])
+	tmp := path + ".tmp-" + hex.EncodeToString(nonce[:])
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+func writeIfChanged(path string, data []byte) error {
+	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, data) {
+		return nil
+	}
+	return writeFileAtomic(path, data)
+}
+
+// sourceGlobalConfig is where the user's native keeps its global config file: inside the config
+// folder when CLAUDE_CONFIG_DIR is set, at ~\.claude.json when it is not.
+func sourceGlobalConfig(source, userHome string, custom bool) string {
+	if custom {
+		return filepath.Join(source, ".claude.json")
+	}
+	return filepath.Join(userHome, ".claude.json")
+}
+
+// deriveFiles rebuilds the derived files of the dedicated folder from the user's.
+func deriveFiles(dedicated, source, userHome string, custom bool) (deriveReport, error) {
+	var report deriveReport
+	userSettings, err := readIfExists(filepath.Join(source, "settings.json"), deriveSettingsBytes)
+	if err != nil {
+		return report, errIsolationSettingsFile
+	}
+	settings, dropped, err := deriveSettings(userSettings)
+	if err != nil {
+		return report, err
+	}
+	report.SettingsDropped = dropped
+	userJSON, err := readIfExists(sourceGlobalConfig(source, userHome, custom), deriveClaudeJSONBytes)
+	if err != nil {
+		return report, errors.New("ISOLATION_CLAUDE_JSON_UNREADABLE: your global config file could not be read; nothing was started")
+	}
+	dedicatedJSON, err := readIfExists(filepath.Join(dedicated, ".claude.json"), deriveClaudeJSONBytes)
+	if err != nil {
+		dedicatedJSON = nil
+	}
+	globalConfig, keys, changed, err := deriveClaudeJSON(userJSON, dedicatedJSON)
+	if err != nil {
+		return report, err
+	}
+	report.ClaudeJSONKeys = keys
+
+	// A /config change made inside an isolated session: the file is not what the last launch wrote.
+	path := filepath.Join(dedicated, "settings.json")
+	sum := func(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+	var state struct {
+		Settings string `json:"settings"`
+	}
+	if raw, rerr := os.ReadFile(filepath.Join(dedicated, derivedMarker)); rerr == nil {
+		_ = json.Unmarshal(raw, &state)
+	}
+	if current, rerr := os.ReadFile(path); rerr == nil && state.Settings != "" && sum(current) != state.Settings {
+		report.SettingsEdited = true
+	}
+	if err := writeIfChanged(path, settings); err != nil {
+		return report, err
+	}
+	if marker, merr := json.Marshal(map[string]string{"settings": sum(settings)}); merr == nil {
+		if err := writeIfChanged(filepath.Join(dedicated, derivedMarker), marker); err != nil {
+			return report, err
+		}
+	}
+	if changed {
+		if err := writeFileAtomic(filepath.Join(dedicated, ".claude.json"), globalConfig); err != nil {
+			return report, err
+		}
+	}
+
+	userMd, err := readIfExists(filepath.Join(source, "CLAUDE.md"), 4<<20)
+	if err != nil {
+		return report, fmt.Errorf("ISOLATION_SOURCE_FILE_UNREADABLE: CLAUDE.md")
+	}
+	haveMd := userMd != nil
+	currentMd, _ := readIfExists(filepath.Join(dedicated, "CLAUDE.md"), 4<<20)
+	if next := deriveClaudeMd(currentMd, haveMd, source); !bytes.Equal(next, currentMd) {
+		if len(next) == 0 {
+			os.Remove(filepath.Join(dedicated, "CLAUDE.md"))
+		} else if err := writeFileAtomic(filepath.Join(dedicated, "CLAUDE.md"), next); err != nil {
+			return report, err
+		}
+	}
+	report.ClaudeMd = "absent"
+	if haveMd {
+		report.ClaudeMd = "imported"
+	}
+
+	// keybindings.json is a user file native does not write back: a plain copy, removed when the
+	// user's is.
+	keys2, err := readIfExists(filepath.Join(source, "keybindings.json"), deriveSettingsBytes)
+	if err != nil {
+		return report, errors.New("ISOLATION_SOURCE_FILE_UNREADABLE: keybindings.json")
+	}
+	if keys2 != nil {
+		report.Keybindings = true
+		return report, writeIfChanged(filepath.Join(dedicated, "keybindings.json"), keys2)
+	}
+	if err := os.Remove(filepath.Join(dedicated, "keybindings.json")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return report, err
+	}
+	return report, nil
+}

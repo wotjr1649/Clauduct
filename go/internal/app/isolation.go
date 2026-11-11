@@ -85,6 +85,9 @@ type isolationMarkerFile struct {
 	Version   int    `json:"version"`
 	CreatedAt string `json:"createdAt"`
 	Source    string `json:"source"`
+	// Custom is whether the source folder came from CLAUDE_CONFIG_DIR: native keeps its global
+	// config file inside that folder then, and at ~\.claude.json otherwise.
+	Custom bool `json:"custom,omitempty"`
 }
 
 func readIsolationMarker(dedicated string) (isolationMarkerFile, bool) {
@@ -99,21 +102,26 @@ func readIsolationMarker(dedicated string) (isolationMarkerFile, bool) {
 // isolationSource is the user's configuration folder an isolated launch is built from: what
 // CLAUDE_CONFIG_DIR (or ~\.claude) names, unless that is the isolated folder itself -- a clauduct
 // started inside an isolated session inherits it -- and then the folder's marker says.
-func isolationSource(env map[string]string, cwd, dedicated string) (string, error) {
+func isolationSource(env map[string]string, cwd, dedicated string) (source string, custom bool, err error) {
 	configured := nativeConfigDirectory(env, cwd)
 	switch {
 	case configured == "":
-		return "", errIsolationSource
+		return "", false, errIsolationSource
 	case sameFolder(configured, dedicated):
 		m, ok := readIsolationMarker(dedicated)
 		if !ok {
-			return "", errIsolationSource
+			return "", false, errIsolationSource
 		}
-		return m.Source, nil
+		return m.Source, m.Custom, nil
 	case insideFolder(dedicated, configured) || insideFolder(configured, dedicated):
-		return "", errIsolationConflict
+		return "", false, errIsolationConflict
 	}
-	return configured, nil
+	for name, value := range env {
+		if strings.EqualFold(name, "CLAUDE_CONFIG_DIR") && value != "" {
+			custom = true
+		}
+	}
+	return configured, custom, nil
 }
 
 // plainDirectory is a real directory when it exists: not a link, junction or other reparse point.
@@ -140,7 +148,7 @@ var osIsolationHosts = isolationHosts{lockOwner: supervisorLockOwner, created: i
 // never changes a folder that is a link, and it refuses a supervisor that predates isolated mode:
 // that one was started without the OS environment isolated mode forces, and native keeps a
 // supervisor's start environment for every session after it.
-func prepareDedicated(dedicated, source string, now time.Time, host isolationHosts) (isolationMarkerFile, error) {
+func prepareDedicated(dedicated, source string, custom bool, now time.Time, host isolationHosts) (isolationMarkerFile, error) {
 	// Every folder from the Clauduct home's .clauduct down must be a plain directory when it exists.
 	for _, dir := range []string{filepath.Dir(filepath.Dir(dedicated)), filepath.Dir(dedicated), dedicated} {
 		if _, err := plainDirectory(dir); err != nil {
@@ -168,7 +176,7 @@ func prepareDedicated(dedicated, source string, now time.Time, host isolationHos
 	if host.lockOwner(dedicated) != 0 {
 		return isolationMarkerFile{}, errIsolationActive
 	}
-	marker := isolationMarkerFile{Version: 1, CreatedAt: now.UTC().Format(time.RFC3339Nano), Source: filepath.Clean(source)}
+	marker := isolationMarkerFile{Version: 1, CreatedAt: now.UTC().Format(time.RFC3339Nano), Source: filepath.Clean(source), Custom: custom}
 	raw, err := json.Marshal(marker)
 	if err != nil {
 		return isolationMarkerFile{}, err
@@ -179,7 +187,7 @@ func prepareDedicated(dedicated, source string, now time.Time, host isolationHos
 		if _, ok := readIsolationMarker(dedicated); !ok {
 			return isolationMarkerFile{}, errIsolationUnsafe
 		}
-		return prepareDedicated(dedicated, source, now, host)
+		return prepareDedicated(dedicated, source, custom, now, host)
 	}
 	if err != nil {
 		return isolationMarkerFile{}, err

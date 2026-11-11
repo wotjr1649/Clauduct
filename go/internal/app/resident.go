@@ -225,6 +225,15 @@ func RegenerableJob(link string) (string, bool) {
 	return r.Job, err == nil
 }
 
+// sessionConfig is the config folder the record's jobs live in. A job on the isolated folder keeps
+// it in the record; a hook's environment is only a fallback for the others, as before.
+func (r ResidentRecord) sessionConfig(env map[string]string) string {
+	if r.Isolated && r.Config != "" {
+		return r.Config
+	}
+	return nativeConfigDirectory(env, r.Cwd)
+}
+
 func (r ResidentRecord) ownsSession(config, session string) bool {
 	if !gateway.IsSessionUUID(session) {
 		return false

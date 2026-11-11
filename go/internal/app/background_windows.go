@@ -270,7 +270,7 @@ func ReconnectResidentContext(parent context.Context, link, session string) {
 			return
 		}
 		record, err := LoadResident(home, link)
-		if err != nil || !record.ownsSession(nativeConfigDirectory(platform.Environment(os.Environ()), record.Cwd), session) {
+		if err != nil || !record.ownsSession(record.sessionConfig(platform.Environment(os.Environ())), session) {
 			return
 		}
 		close(attempted)

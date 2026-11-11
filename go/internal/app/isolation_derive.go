@@ -181,6 +181,40 @@ func deriveClaudeJSON(userRaw, dedicatedRaw []byte) (out []byte, keys int, chang
 	return out, keys, dedicatedRaw == nil || json.Unmarshal(dedicatedRaw, &was) != nil || json.Unmarshal(out, &now) != nil || !reflect.DeepEqual(was, now), nil
 }
 
+// mergeGlobalConfig brings the dedicated global config file up to date with the user's, touching
+// only the imported keys, and returns how many it imported. A running isolated native rewrites this
+// file with its own state, so the merge is done from what is on disk right before the replace: if the
+// file changed since it was read, it is read and merged again (up to three times; the last merge is
+// written without a further check). That narrows the window in which an update of native's own keys
+// could be lost to the moment between the last read and the rename. It cannot close it: native does
+// not take a lock this code could share, and Windows has no compare-and-swap for a file. beforeWrite
+// is a test hook, called after a merge that needs writing and before the file is read again.
+func mergeGlobalConfig(path string, userRaw []byte, beforeWrite func()) (keys int, err error) {
+	const attempts = 3
+	for attempt := 0; ; attempt++ {
+		current, readErr := readIfExists(path, deriveClaudeJSONBytes)
+		if readErr != nil {
+			current = nil // unreadable or oversized: rebuilt, native recreates its own state
+		}
+		out, n, changed, deriveErr := deriveClaudeJSON(userRaw, current)
+		if deriveErr != nil {
+			return 0, deriveErr
+		}
+		if !changed {
+			return n, nil
+		}
+		if beforeWrite != nil {
+			beforeWrite()
+		}
+		if attempt == attempts {
+			return n, writeFileAtomic(path, out)
+		}
+		if again, _ := readIfExists(path, deriveClaudeJSONBytes); bytes.Equal(again, current) {
+			return n, writeFileAtomic(path, out)
+		}
+	}
+}
+
 // claudeMdStub is the first line of the dedicated CLAUDE.md: an import of the user's own file.
 // Native loads user-scope imports without an approval dialog, and relative imports inside the
 // user's file resolve from that file. A space in the path takes a backslash, so the path is
@@ -196,9 +230,12 @@ func deriveClaudeMd(current []byte, haveUser bool, source string) []byte {
 	stub := claudeMdStub(source)
 	text := string(current)
 	first, rest, _ := strings.Cut(text, "\n")
-	ours := strings.HasPrefix(first, "@") && strings.HasSuffix(strings.TrimRight(first, "\r"), "CLAUDE.md")
+	// Ours is exactly the import this folder's source gives, in any letter case (Windows paths) and
+	// with either line ending. Any other first line, an import the user wrote included, is theirs.
+	line := strings.TrimRight(first, "\r")
+	ours := strings.EqualFold(line, stub)
 	switch {
-	case haveUser && strings.TrimRight(first, "\r") == stub:
+	case haveUser && line == stub:
 		return current
 	case haveUser && ours:
 		return []byte(stub + "\n" + rest)
@@ -285,11 +322,9 @@ func deriveFiles(dedicated, source, userHome string, custom bool) (deriveReport,
 	if err != nil {
 		return report, errors.New("ISOLATION_CLAUDE_JSON_UNREADABLE: your global config file could not be read; nothing was started")
 	}
-	dedicatedJSON, err := readIfExists(filepath.Join(dedicated, ".claude.json"), deriveClaudeJSONBytes)
-	if err != nil {
-		dedicatedJSON = nil
-	}
-	globalConfig, keys, changed, err := deriveClaudeJSON(userJSON, dedicatedJSON)
+	// The global config file is written last of the derived files that native may be using, and only
+	// when an imported key changed: see mergeGlobalConfig.
+	keys, err := mergeGlobalConfig(filepath.Join(dedicated, ".claude.json"), userJSON, nil)
 	if err != nil {
 		return report, err
 	}
@@ -312,11 +347,6 @@ func deriveFiles(dedicated, source, userHome string, custom bool) (deriveReport,
 	}
 	if marker, merr := json.Marshal(map[string]string{"settings": sum(settings)}); merr == nil {
 		if err := writeIfChanged(filepath.Join(dedicated, derivedMarker), marker); err != nil {
-			return report, err
-		}
-	}
-	if changed {
-		if err := writeFileAtomic(filepath.Join(dedicated, ".claude.json"), globalConfig); err != nil {
 			return report, err
 		}
 	}

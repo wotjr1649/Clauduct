@@ -111,3 +111,54 @@ func isolationSourceOf(facts *IsolationFacts) string {
 	}
 	return facts.Source
 }
+
+// errResumeRunningElsewhere refuses opening a session that a job in the other mode is running:
+// the two natives would append to one transcript, and neither supervisor can see the other.
+type errResumeRunningElsewhere struct{ Session, Job, Mode string }
+
+func (e errResumeRunningElsewhere) Error() string {
+	return fmt.Sprintf("RESUME_RUNNING_IN_OTHER_MODE: session %s is running as job %s in the %s mode; open it there (clauduct attach %s) or stop it first. A stopped session can be resumed from either mode", e.Session, e.Job, e.Mode, e.Job)
+}
+
+// resumeGuard refuses --resume <session> while a job of the other mode is running that session
+// (#379). A stopped or finished job is not in the way. A jobs folder or state that cannot be read
+// proves nothing, so it does not stop the user's resume; it is said on stderr instead. The default
+// mode looks at the isolated folder only if isolated mode has been used on this machine.
+func (o Options) resumeGuard(isolation *IsolationFacts, home, session string) error {
+	if session == "" || o.Regenerate != nil || home == "" {
+		return nil
+	}
+	other, mode := "", ""
+	if isolation != nil {
+		other, mode = isolation.Source, "default"
+	} else if dedicated := dedicatedConfigDir(home); !sameFolder(dedicated, nativeConfigDirectory(o.Env, o.Cwd)) {
+		if _, ok := readIsolationMarker(dedicated); ok {
+			other, mode = dedicated, "isolated"
+		}
+	}
+	if other == "" {
+		return nil
+	}
+	entries, err := os.ReadDir(filepath.Join(other, "jobs"))
+	if err != nil {
+		return nil // no jobs folder: nothing runs there
+	}
+	unreadable := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || !residentJob.MatchString(entry.Name()) {
+			continue
+		}
+		running, completed, err := jobRunning(other, entry.Name())
+		if err != nil || running && !completed && nativeJobSession(other, entry.Name()) == "" {
+			unreadable++
+			continue
+		}
+		if running && !completed && nativeJobSession(other, entry.Name()) == session {
+			return errResumeRunningElsewhere{Session: session, Job: entry.Name(), Mode: mode}
+		}
+	}
+	if unreadable > 0 && o.Stderr != nil {
+		fmt.Fprintf(o.Stderr, "clauduct: resume: %d job state(s) in the %s mode could not be read, so a running copy of this session there was not ruled out\n", unreadable, mode)
+	}
+	return nil
+}

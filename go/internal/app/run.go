@@ -332,6 +332,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	forward, resumeID := prepareSessionArgs(forward)
+	if !information && o.Settings == nil {
+		if err := o.resumeGuard(isolation, clauductHome, resumeID); err != nil {
+			return Result{}, err
+		}
+	}
 	forkedFrom := ""
 	releaseResident := func() {}
 	residentLocked := false

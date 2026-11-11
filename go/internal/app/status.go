@@ -89,6 +89,8 @@ type SessionFacts struct {
 	// and role routing never happens, and the delegation menu moves the model without the
 	// effort. That is a failure nobody would think to look for.
 	HookInstalled bool `json:"hookInstalled"`
+	// Isolation is set when the session ran on the isolated config folder (#379); names and counts only.
+	Isolation *IsolationFacts `json:"isolation,omitempty"`
 }
 
 // NativeContextDefaults records the configured native envelope, not proof that
@@ -215,6 +217,7 @@ func Account(result Result) Status {
 			NonStreamingFallback:  defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
 			DelegationMenuEntries: result.MenuEntries,
 			HookInstalled:         result.HookInstalled,
+			Isolation:             result.Isolation,
 		},
 		Gateway:        result.Diagnostics,
 		Lifecycle:      result.Lifecycle,
@@ -271,7 +274,7 @@ func Report(result Result, errOut io.Writer, env map[string]string) {
 	fmt.Fprintf(errOut, "clauduct: process=%s exit=%d requests=%d refused=%d%s%s attempts=%d inferences=%d%s%s status=%s\n",
 		account.Category, account.ExitCode,
 		account.Gateway.Requests.Received, account.Gateway.Requests.Refused-account.Gateway.Requests.CancelledCounts-account.Gateway.Requests.CancelledAuxiliary,
-		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), surfaceField(account)+replacedField(account), where)
+		countsCancelledField(account), brokenField(account), account.Attempts, account.Inferences, quotaField(account), surfaceField(account)+replacedField(account)+isolationField(account), where)
 	if account.Completion.APIFailures > 0 || account.Completion.CancelledRequests > 0 || account.Completion.NativeCancellations > 0 || account.Completion.NativeToolFailures > 0 || account.Completion.RejectedWorkflowCalls > 0 || account.Completion.UnacquiredResults > 0 || account.Completion.ControlTransitions > 0 {
 		fmt.Fprintf(errOut, "clauduct: api_failures=%d cancelled_requests=%d native_cancellations=%d native_tool_failures=%d rejected_workflow_calls=%d results_unacquired_recent=%d compaction_controls=%d acceptance=not_assessed\n", account.Completion.APIFailures, account.Completion.CancelledRequests, account.Completion.NativeCancellations, account.Completion.NativeToolFailures, account.Completion.RejectedWorkflowCalls, account.Completion.UnacquiredResults, account.Completion.ControlTransitions)
 	}

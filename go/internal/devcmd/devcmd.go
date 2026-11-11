@@ -66,6 +66,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		fmt.Fprintln(stdout, "settings: missing keys use factory defaults; no sync needed")
 		return 0
+	case "isolation-reset":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = ""
+		}
+		return app.IsolationReset(args[1:], stdout, stderr, home)
 	case "doctor":
 		return doctor(stdout)
 	case "usage":
@@ -73,7 +79,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--sync-settings|--doctor|--usage|--probe]")
+		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--sync-settings|--isolation-reset|--doctor|--usage|--probe]")
 		return 2
 	}
 }
@@ -130,6 +136,9 @@ func doctor(out io.Writer) int {
 	credential, err := (&auth.Provider{}).Credential()
 	credentialReport(out, credential, err)
 	admissionReport(out)
+	if home, err := os.UserHomeDir(); err == nil {
+		app.IsolationReport(out, home)
+	}
 	return status
 }
 

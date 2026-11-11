@@ -123,6 +123,9 @@ type ClauductSettings struct {
 	// BoundaryProfile is "default" or "strict": which Anthropic-hosted paths native keeps
 	// (#301, boundary_profile in settings.json).
 	BoundaryProfile string
+	// Isolation is "off" or "on" (#379): whether native runs on Clauduct's dedicated config
+	// folder. A key that is absent means off.
+	Isolation string
 	// marketplace is the user's own marketplace setting a strict session keeps (strictReady).
 	marketplace string
 	// Deprecated names keys present in the file that this build ignores.
@@ -172,7 +175,7 @@ func defaultClauductSettings() ClauductSettings {
 		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
 		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
 		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "factory.classifier_model",
-		BoundaryProfile: boundaryDefault}
+		BoundaryProfile: boundaryDefault, Isolation: isolationOff}
 }
 
 func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string, finalSettings string) (bridge.Pair, string, string, error) {
@@ -283,7 +286,7 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 }
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
-	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model", "boundary_profile"}, deprecatedSettings...))
+	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model", "boundary_profile", "isolation"}, deprecatedSettings...))
 	var version int
 	if err != nil || json.Unmarshal(fields["version"], &version) != nil || version != 1 {
 		return ClauductSettings{}, errClauductSettings
@@ -364,6 +367,14 @@ func resolveClauductSettings(fields map[string]json.RawMessage) (ClauductSetting
 			return ClauductSettings{}, errBoundarySettings
 		}
 		delete(fields, "boundary_profile")
+	}
+	if value, present := fields["isolation"]; present {
+		mode, err := parseIsolation(value)
+		if err != nil {
+			return ClauductSettings{}, err
+		}
+		settings.Isolation = mode
+		delete(fields, "isolation")
 	}
 	settings.ContextPolicy, err = settings.Context.Policy()
 	if err != nil {

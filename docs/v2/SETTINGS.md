@@ -66,6 +66,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 | `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
 | `classifier_model` | auto 권한 모드 분류기의 `{"model", "effort"}` pair. 공장값은 `gpt-6.1-terra`/low(v0.6.13, 이전 `gpt-5.6-terra`/low). [분류기 절](#보조-요청과-auto-권한-분류기-v064) |
 | `boundary_profile` | native가 Anthropic 서버로 가는 기능 경로 가운데 무엇을 남길지. `"default"`(공장값) 또는 `"strict"`. 다른 값은 시작할 때 거부한다. [경계 프로필](#경계-프로필-v0611) |
+| `isolation` | 격리 모드([#379](https://github.com/wotjr1649/Clauduct/issues/379)). `"off"`(키가 없을 때와 같음) 또는 `"on"`. 다른 값은 시작할 때 `CLAUDUCT_SETTINGS_INVALID`로 거부한다. 공장 문서에는 없으며 설정 동기화가 덧붙이지 않는다. 켜면 native가 Clauduct 전용 설정 폴더로 실행된다(v0.6.14 예정, 동작은 이후 commit과 함께 문서화) |
 | `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
 
 공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,

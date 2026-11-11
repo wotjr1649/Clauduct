@@ -116,6 +116,10 @@ func isolationSource(env map[string]string, cwd, dedicated string) (source strin
 	case insideFolder(dedicated, configured) || insideFolder(configured, dedicated):
 		return "", false, errIsolationConflict
 	}
+	// Refused before anything is made: a junction cannot point at a network share.
+	if _, err := junctionTarget(configured); err != nil {
+		return "", false, err
+	}
 	for name, value := range env {
 		if strings.EqualFold(name, "CLAUDE_CONFIG_DIR") && value != "" {
 			custom = true

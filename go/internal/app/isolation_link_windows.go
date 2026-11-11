@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"unicode/utf16"
 )
@@ -67,6 +68,9 @@ func isJunction(path string) (target string, ok bool) {
 
 // makeJunction creates link as a junction to the existing directory target.
 func makeJunction(link, target string) error {
+	if _, err := junctionTarget(target); err != nil {
+		return err
+	}
 	if err := os.Mkdir(link, 0o700); err != nil {
 		return err
 	}
@@ -77,8 +81,30 @@ func makeJunction(link, target string) error {
 	return nil
 }
 
+// ErrIsolationLinkTarget refuses a junction target that Windows cannot make a junction to.
+var ErrIsolationLinkTarget = errors.New("ISOLATION_LINK_TARGET_UNSUPPORTED: your configuration folder is on a network share or another path a directory junction cannot point to; isolated mode needs it on a local drive (a drive-letter path)")
+
+// junctionTarget is the absolute drive-letter path a junction can name. A junction (a mount-point
+// reparse point) holds a local volume path only: a UNC target (\\server\share\...) has no valid
+// \??\UNC\... form that Windows accepts for one, so it is refused with a code rather than made into
+// a link that cannot be opened. An extended-length local path (\\?\C:\...) is the same folder as its
+// plain form and is accepted.
+func junctionTarget(target string) (string, error) {
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	if rest, extended := strings.CutPrefix(abs, `\\?\`); extended {
+		abs = rest
+	}
+	if len(abs) < 3 || abs[1] != ':' || abs[2] != '\\' || !(abs[0] >= 'A' && abs[0] <= 'Z' || abs[0] >= 'a' && abs[0] <= 'z') {
+		return "", ErrIsolationLinkTarget
+	}
+	return abs, nil
+}
+
 func setJunction(link, target string) error {
-	target, err := filepath.Abs(target)
+	target, err := junctionTarget(target)
 	if err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf16"
 )
 
@@ -153,21 +154,14 @@ func linkShared(dedicated, source string) (linkReport, error) {
 		switch entry.kind {
 		case sharedJunction:
 			if info, err := os.Stat(from); errors.Is(err, os.ErrNotExist) {
-				if err := os.Mkdir(from, 0o700); err != nil {
+				// ErrExist: another first launch made it between the Stat and here; it is the folder we want.
+				if err := os.Mkdir(from, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
 					return report, err
 				}
 			} else if err != nil || !info.IsDir() {
 				return report, ErrIsolationLink{entry.name}
 			}
-			if target, ok := isJunction(to); ok {
-				if !sameFolder(target, from) {
-					return report, ErrIsolationLink{entry.name}
-				}
-			} else if _, err := os.Lstat(to); err == nil {
-				return report, ErrIsolationLink{entry.name}
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return report, err
-			} else if err := makeJunction(to, from); err != nil {
+			if err := linkJunction(to, from, entry.name); err != nil {
 				return report, err
 			}
 			report.Shared = append(report.Shared, entry.name)
@@ -176,6 +170,38 @@ func linkShared(dedicated, source string) (linkReport, error) {
 		}
 	}
 	return report, nil
+}
+
+// linkJunction makes to a junction to from, or confirms it already is. Another first launch
+// can be between making the folder and turning it into a junction; what it shows then is an empty
+// directory or an existing name, so those are looked at again a few times before they count as a
+// conflict. The folder is never opened for its content: an open handle makes the other launch's
+// setJunction fail, and a listing taken just after it turned into the junction shows the user's files.
+func linkJunction(to, from, name string) error {
+	for try := 0; ; try++ {
+		if target, ok := isJunction(to); ok {
+			if !sameFolder(target, from) {
+				return ErrIsolationLink{name}
+			}
+			return nil
+		}
+		_, err := os.Lstat(to)
+		if errors.Is(err, os.ErrNotExist) {
+			if err = makeJunction(to, from); err == nil || !errors.Is(err, os.ErrExist) {
+				return err
+			}
+		}
+		// What is left (an empty folder, a name caught while it turns into the junction, a lookup
+		// that failed under the other launch's hands) is looked at again; a name that stays
+		// something else is the conflict, and a lookup that keeps failing keeps its own cause.
+		if try == 40 {
+			if err != nil && !errors.Is(err, os.ErrExist) {
+				return err
+			}
+			return ErrIsolationLink{name}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 // linkHistory hard-links the prompt history. It never merges two files: one that has already

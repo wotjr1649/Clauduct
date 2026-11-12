@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,10 +22,13 @@ type IsolationFacts struct {
 	ClaudeMd        string `json:"claudeMd,omitempty"`
 }
 
+var errIsolationControl = errors.New("ISOLATION_MODE_UNREADABLE: ~/.clauduct/settings.json could not be read and isolated mode has been used on this machine, so this command was not sent to the default supervisor; fix the file and run it again")
+
 // controlIsolation points a management command (rm, stop, logs) at the dedicated folder when
 // isolated mode is on. It reads the mode leniently: those commands never needed a valid settings
-// file, so a missing or unreadable one stays the default behavior; only a key that is present and
-// not "off" or "on" is refused.
+// file, so a missing one (or an unreadable one on a machine that never used isolation) stays the
+// default behavior. An unreadable one once isolation was used, or a key that is present and not
+// "off" or "on", is refused.
 func (o *Options) controlIsolation(home string) error {
 	if home == "" {
 		return nil
@@ -32,6 +36,11 @@ func (o *Options) controlIsolation(home string) error {
 	raw, err := os.ReadFile(filepath.Join(home, ".clauduct", "settings.json"))
 	var fields map[string]json.RawMessage
 	if err != nil || len(raw) > clauductSettingsBytes || json.Unmarshal(raw, &fields) != nil {
+		// A file that is simply absent keeps the default. One that exists but cannot be read, once
+		// isolated mode has been used here, must not send the command to the default supervisor.
+		if _, used := readIsolationMarker(dedicatedConfigDir(home)); used && !errors.Is(err, os.ErrNotExist) {
+			return errIsolationControl
+		}
 		return nil
 	}
 	value, present := fields["isolation"]

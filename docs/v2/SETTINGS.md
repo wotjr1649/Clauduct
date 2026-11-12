@@ -544,3 +544,10 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
   `clauduct --dev --doctor`가 모드·폴더·공유 상태·supervisor를 보여 준다.
 - `isolation`은 공장 문서에 없다. 설정 동기화가 덧붙이지 않고, v0.6.13 이하 바이너리는 이 키를 모르는 키로 거부하므로 되돌리기 전에 지운다.
 
+- 비밀이 든 값은 복제된다. 사용자 `settings.json`의 `env`·hook 값과 `.claude.json`의 MCP 서버 설정(env·header)은 그대로 전용 폴더의 파생 파일에도 들어간다.
+  원본보다 노출이 늘지는 않지만 복제본이 하나 더 생긴다. Windows에서 파일 권한 비트는 효과가 없고 폴더의 상속 ACL에 의존한다. `--isolation-reset`이 복제본을 지운다.
+- 격리를 한 번 쓴 기계에서 `~/.clauduct/settings.json`이 읽히지 않으면(깨졌거나 1 MiB 초과) `rm`·`stop`·`logs`는 기본 supervisor로 가지 않고
+  `ISOLATION_MODE_UNREADABLE`로 거부한다. 나머지 명령은 원래대로 설정 오류로 거부한다. `isolation`을 `off`로 바꾼 뒤에는 제어 명령이 기본
+  supervisor만 보므로, 남은 격리 job은 `isolation`을 잠시 `on`으로 되돌려 정리한 뒤 다시 `off`로 바꾼다. 그래야 격리가 강제하는 env가 그 명령에도 붙는다.
+- 전용 `.claude.json`을 읽지 못하면(잠김·파일 아님·8 MiB 초과) 새로 만들어 덮어쓰지 않고 `ISOLATION_DEDICATED_CONFIG_UNREADABLE`로 시작을 거부한다.
+  `--isolation-reset`은 전용 폴더나 그 상위가 링크이면 `ISOLATION_RESET_REFUSED`로 거부한다.

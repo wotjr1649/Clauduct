@@ -26,6 +26,8 @@ const (
 	derivedMarker         = ".clauduct-derived.json"
 )
 
+var errIsolationDedicatedConfig = errors.New("ISOLATION_DEDICATED_CONFIG_UNREADABLE: the isolated folder's .claude.json could not be read (locked, not a file, or over 8 MiB), so it was not replaced; nothing was started. If another program holds it, try again; only if it is not a file or is over 8 MiB, run clauduct --dev --isolation-reset, which also removes the isolated jobs and state")
+
 var errIsolationSettingsFile = errors.New("ISOLATION_SETTINGS_UNREADABLE: your settings.json could not be read as a JSON object within 1 MiB, so the isolated settings could not be built from it; nothing was started")
 
 // settingsDropped are the top-level settings keys that sign native in, or choose how, so they stay
@@ -67,6 +69,7 @@ func settingsEnvDropped(name string) bool {
 // logged. raw may be nil (no file): the result then carries only the forced keys.
 func deriveSettings(raw []byte) (out []byte, dropped int, err error) {
 	fields := map[string]json.RawMessage{}
+	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if len(bytes.TrimSpace(raw)) > 0 {
 		if len(raw) > deriveSettingsBytes || json.Unmarshal(raw, &fields) != nil || fields == nil {
 			return nil, 0, errIsolationSettingsFile
@@ -194,7 +197,9 @@ func mergeGlobalConfig(path string, userRaw []byte, beforeWrite func()) (keys in
 	for attempt := 0; ; attempt++ {
 		current, readErr := readIfExists(path, deriveClaudeJSONBytes)
 		if readErr != nil {
-			current = nil // unreadable or oversized: rebuilt, native recreates its own state
+			// A read that failed is not an absent file: replacing it would drop native's own state
+			// (trust approvals) on a transient error. Refused; a retry or --isolation-reset recovers.
+			return 0, errIsolationDedicatedConfig
 		}
 		out, n, changed, deriveErr := deriveClaudeJSON(userRaw, current)
 		if deriveErr != nil {
@@ -209,7 +214,9 @@ func mergeGlobalConfig(path string, userRaw []byte, beforeWrite func()) (keys in
 		if attempt == attempts {
 			return n, writeFileAtomic(path, out)
 		}
-		if again, _ := readIfExists(path, deriveClaudeJSONBytes); bytes.Equal(again, current) {
+		// A re-read that fails is not "unchanged" (nil equals an absent first read): go round, and
+		// the next first read refuses it if it still fails.
+		if again, againErr := readIfExists(path, deriveClaudeJSONBytes); againErr == nil && bytes.Equal(again, current) {
 			return n, writeFileAtomic(path, out)
 		}
 	}

@@ -75,6 +75,13 @@ func IsolationReset(args []string, out, errOut io.Writer, home string) int {
 		fmt.Fprintln(out, "nothing to reset: the isolated folder does not exist")
 		return 0
 	}
+	// The same guard a launch uses: a link above or at the folder would point the removal elsewhere.
+	for _, dir := range []string{filepath.Dir(filepath.Dir(dedicated)), filepath.Dir(dedicated), dedicated} {
+		if _, err := plainDirectory(dir); err != nil {
+			fmt.Fprintf(errOut, "clauduct: ISOLATION_RESET_REFUSED: %v\n", err)
+			return 1
+		}
+	}
 	if pid := osIsolationHosts.lockOwner(dedicated); pid != 0 {
 		fmt.Fprintf(errOut, "clauduct: ISOLATION_RESET_REFUSED: a native supervisor (pid %d) is running for the isolated folder; stop it first (claude daemon stop --any with CLAUDE_CONFIG_DIR=%s)\n", pid, dedicated)
 		return 1

@@ -38,9 +38,9 @@ type BackgroundSession struct {
 // 2.1.323 scans argv for an exact background token up to the first "--", skipping the value slot
 // of each value option (launch.NativeBackgroundFlag), so `--name --bg` and `-- --bg` are a name
 // and a prompt, not a job; native 2.1.282 had started a job there (v0.4.3). The narrowing is
-// pinned to that native version: when the installed native is another version, or its version
-// cannot be read, any exact token still counts, because a job native starts that the launcher
-// took for foreground loses its gateway (#331).
+// pinned to that native build (the resolved file's SHA-256): when the native is another build, or
+// cannot be identified, any exact token still counts, because a job native starts that the
+// launcher took for foreground loses its gateway (#331).
 func BackgroundRequested(args []string) bool {
 	if !slices.Contains(args, "--bg") && !slices.Contains(args, "--background") {
 		return false

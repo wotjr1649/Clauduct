@@ -1,18 +1,14 @@
 package app
 
 import (
-	"bytes"
-	"context"
-	"os/exec"
-	"regexp"
 	"slices"
 	"strings"
 	"sync"
-	"time"
+	"sync/atomic"
 
-	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 )
 
 // Only known native arities prove that an option-shaped token is a value.
@@ -98,13 +94,22 @@ func accountCommand(args []string) error {
 // option parsing, or "". Native does that for a leading verb and, behind options, for a verb
 // followed by an 8-hex id; anything else, an unknown option included, stays on the session
 // path, which hands argv to native unchanged. Options whose side effects are unmeasured stay
-// there too. Native starts a job for a background token first.
+// there too. Native starts a job for a background token first. The widened shapes (a verb
+// behind options, and a leading kill) are only known for the pinned native build; for any
+// other build, or when it cannot be identified, only a leading rm|stop|logs is sent, as
+// before: native may parse the rest as a session, which must run on the gateway (#331).
 func nativeControl(args []string) string {
 	if BackgroundRequested(args) {
 		return ""
 	}
 	verb := launch.NativeManagementVerb(args)
-	if verb == "" || args[0] == verb {
+	if verb == "" {
+		return ""
+	}
+	if (args[0] != verb || verb == "kill") && nativeArgvVersion() != launch.NativeDispatchVersion {
+		return ""
+	}
+	if args[0] == verb {
 		return verb
 	}
 	for _, arg := range args {
@@ -116,32 +121,63 @@ func nativeControl(args []string) string {
 	return verb
 }
 
-// unmeasuredBeforeVerb are options native may act on before it dispatches a verb. Only
-// --settings and --managed-settings were read (#331 M0), so these keep the session path.
-var unmeasuredBeforeVerb = []string{"--debug-file", "--teleport", "--remote-control", "--plugin-url"}
+// nativeControlIn is nativeControl for a launch with env. Inside a background worker
+// (CLAUDE_CODE_SESSION_KIND=bg) native does not look past options for a verb, so a verb
+// behind options is a root-parsed session there and keeps the session path.
+func nativeControlIn(args []string, env map[string]string) string {
+	command := nativeControl(args)
+	if command == "" || args[0] == command {
+		return command
+	}
+	for key, value := range env {
+		if strings.EqualFold(key, "CLAUDE_CODE_SESSION_KIND") && value == "bg" {
+			return ""
+		}
+	}
+	return command
+}
 
-// nativeArgvVersion is the installed native's version for the argv pins, "" when unknown. It
-// runs native --version once, and only when a pinned rule would change an answer.
-var nativeArgvVersion = sync.OnceValue(func() string {
-	exe, found, err := platform.Resolver{}.Claude()
+// unmeasuredBeforeVerb are options native may act on before it dispatches a verb. Only
+// --settings and --managed-settings were read (#331 M0), so these keep the session path:
+// the ones with a measured side effect or an alias of one (--rc is --remote-control's), and
+// the ones that start or attach a remote or worktree session. Invert this into a list of
+// measured options once M1 has measured more of them.
+var unmeasuredBeforeVerb = []string{"--debug-file", "--teleport", "--remote-control", "--rc", "--plugin-url",
+	"--remote", "--cloud", "--worktree", "-w", "--from-pr"}
+
+// nativeArgvVersion is the pinned native version when the native this process resolves is the
+// exact build the dispatch tables were read from (same SHA-256), "" otherwise: another
+// build, not found, or unreadable. It runs nothing; the hash is computed once per path, and
+// only when a rule would change an answer. shortcut: the cache ignores a file replaced while
+// the process runs, a long-lived process would need the file identity in the key.
+var nativeArgvVersion = func() string {
+	resolve := argvResolveClaude.Load()
+	exe, found, err := (*resolve)()
 	if err != nil || !found {
 		return ""
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	var out bytes.Buffer
-	cmd := exec.Command(exe, "--version")
-	cmd.Stdout = &out
-	if childprocess.Run(ctx, cmd) != nil {
-		return ""
+	if cached, ok := argvPinned.Load(exe); ok {
+		return cached.(string)
 	}
-	if match := nativeVersionLine.FindStringSubmatch(strings.TrimSpace(out.String())); match != nil {
-		return match[1]
+	version := ""
+	if id, err := providercert.Observe(exe); err == nil && id.SHA256 == launch.NativeDispatchSHA256 {
+		version = launch.NativeDispatchVersion
 	}
-	return ""
-})
+	argvPinned.Store(exe, version)
+	return version
+}
 
-var nativeVersionLine = regexp.MustCompile(`^(\d+\.\d+\.\d+) \(Claude Code\)$`)
+// argvResolveClaude is the native the argv pins judge: Run points it at Options.ResolveClaude,
+// so the build judged is the build the session resolves (the probe's included).
+var (
+	argvResolveClaude atomic.Pointer[func() (string, bool, error)]
+	argvPinned        sync.Map
+)
+
+func init() {
+	resolve := platform.Resolver{}.Claude
+	argvResolveClaude.Store(&resolve)
+}
 
 // Native handles background dispatch before its ordinary help/version flags.
 func nativeInformation(args []string) bool {

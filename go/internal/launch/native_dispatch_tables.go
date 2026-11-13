@@ -7,7 +7,10 @@ package launch
 // The sets below were read from the 2.1.323 executable bytes (nothing executed, #331 M0,
 // sha256 NativeDispatchSHA256) and are pinned by the golden table
 // go/internal/app/testdata/native-argv-2.1.323.json. Another native version may differ, so
-// callers narrow only when NativeDispatchVersion matches the installed native.
+// callers narrow only when the resolved native's SHA-256 is NativeDispatchSHA256.
+//
+// The golden table is private and runs in the full gate (A11), not in public CI. Whoever changes
+// a set moves the three together: these sets, the two constants below, and the golden table.
 
 // NativeDispatchVersion is the native version the sets below were read from.
 const NativeDispatchVersion = "2.1.323"

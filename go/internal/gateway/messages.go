@@ -975,6 +975,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 	check := time.NewTicker(quietCheck)
 	defer check.Stop()
 	summarized := 0
+	// Frames of the completed response, and whether it decided a parent wait (#365 A).
+	var held []anthropic.Frame
+	completed, decideParent := false, false
 
 	for {
 		var read chunk
@@ -1026,7 +1029,12 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 					fail(err)
 					return false
 				}
-				if g.nativeEvents.confirmationsRequired {
+				// ARCHITECTURE §8 (#365 A): once the response has completed, its frames carry the
+				// tool calls and the stop. They, their issuance and the parent decision wait until
+				// the body has ended normally; a reset or trailing violation then fails the
+				// response without the client ever holding a call it might run.
+				completed = completed || codex.Terminal(event.Type)
+				if g.nativeEvents.confirmationsRequired && !completed {
 					if err := g.publishToolIssuance(frames, reserved, issuanceProof, recordOf(w).nativeTurn); err != nil {
 						fail(err)
 						return false
@@ -1039,7 +1047,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 					summarized = len(parts)
 				}
 				if translator.Builder().WaitingForChildren() {
-					if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {
+					if completed {
+						decideParent = true
+					} else if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {
 						fail(errParentWaitUnverified)
 						return false
 					}
@@ -1053,6 +1063,10 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 						entry.data.ParentReadiness = &snapshot
 					}
 					entry.mu.Unlock()
+				}
+				if completed {
+					held = append(held, frames...)
+					continue
 				}
 				if err := emit(frames); err != nil {
 					if readErr != nil && !errors.Is(readErr, io.EOF) && read.contextErr == nil && (!request.NonStreaming || errors.Is(err, ctx.Err())) {
@@ -1071,6 +1085,27 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 			// parser is told so rather than being asked to judge well-formed framing.
 			if err := parser.Finish(errors.Is(readErr, io.EOF)); err != nil {
 				fail(err)
+				return false
+			}
+			// The body ended normally: what the completed response produced may now go out.
+			if g.nativeEvents.confirmationsRequired {
+				if err := g.publishToolIssuance(held, reserved, issuanceProof, recordOf(w).nativeTurn); err != nil {
+					fail(err)
+					return false
+				}
+			}
+			if decideParent {
+				if err := g.writeParentDecision(scopes[0].parentWait, true); err != nil {
+					fail(errParentWaitUnverified)
+					return false
+				}
+			}
+			if err := emit(held); err != nil {
+				if request.NonStreaming {
+					fail(err)
+				} else {
+					g.deliveryFailed(ctx, w)
+				}
 				return false
 			}
 			if request.NonStreaming {

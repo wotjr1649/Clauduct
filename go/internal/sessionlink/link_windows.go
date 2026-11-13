@@ -56,6 +56,10 @@ type Server struct {
 	Done    chan struct{}
 	cancel  context.CancelFunc
 	once    sync.Once
+	// ready releases replies. A restarted link holds them until its session is configured
+	// (#365 B): a client is connected and waits for its reply.
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 func logonSID(token syscall.Token) (string, error) {
@@ -98,7 +102,7 @@ func pipeName(id string) (*uint16, error) {
 // Start serves a background session's connection. A client may also ask it to stop, which
 // is how a background session is ended.
 func Start(parent context.Context, connection Connection) (*Server, error) {
-	return start(parent, connection, true, "")
+	return start(parent, connection, true, "", false)
 }
 
 // Restart serves a background connection again under the id a native job was dispatched
@@ -108,7 +112,16 @@ func Restart(parent context.Context, id string, connection Connection) (*Server,
 	if !validID.MatchString(id) {
 		return nil, ErrUnavailable
 	}
-	return start(parent, connection, true, id)
+	return start(parent, connection, true, id, false)
+}
+
+// RestartHeld is Restart for a resident whose session is not configured yet: the id is taken at
+// once, so a second restore still fails, but no client gets a reply until Ready (#365 B).
+func RestartHeld(parent context.Context, id string, connection Connection) (*Server, error) {
+	if !validID.MatchString(id) {
+		return nil, ErrUnavailable
+	}
+	return start(parent, connection, true, id, true)
 }
 
 // StartForeground serves a foreground session's connection to its hooks and confirmation
@@ -117,10 +130,10 @@ func Restart(parent context.Context, id string, connection Connection) (*Server,
 // session ends with its native and closes the link itself.
 func StartForeground(parent context.Context, connection Connection) (*Server, error) {
 	connection.Foreground = true
-	return start(parent, connection, false, "")
+	return start(parent, connection, false, "", false)
 }
 
-func start(parent context.Context, connection Connection, stoppable bool, id string) (*Server, error) {
+func start(parent context.Context, connection Connection, stoppable bool, id string, held bool) (*Server, error) {
 	sid, err := ownLogon()
 	if err != nil {
 		return nil, err
@@ -146,7 +159,10 @@ func start(parent context.Context, connection Connection, stoppable bool, id str
 		return nil, ErrUnavailable
 	}
 	ctx, cancel := context.WithCancel(parent)
-	s := &Server{ID: id, Stopped: make(chan struct{}), Done: make(chan struct{}), cancel: cancel}
+	s := &Server{ID: id, Stopped: make(chan struct{}), Done: make(chan struct{}), cancel: cancel, ready: make(chan struct{})}
+	if !held {
+		s.Ready()
+	}
 	body, _ := json.Marshal(connection)
 	go func() {
 		defer close(s.Done)
@@ -158,6 +174,15 @@ func start(parent context.Context, connection Connection, stoppable bool, id str
 			call, stop := context.WithTimeout(ctx, 3*time.Second)
 			var command [1]byte
 			n, err := operation(call, syscall.Handle(h), command[:], 'r')
+			// A held link answers within the call once Ready; a client that gives up first is
+			// disconnected as usual and the next one waits in turn (#365 B).
+			if err == nil {
+				select {
+				case <-s.ready:
+				case <-call.Done():
+					err = call.Err()
+				}
+			}
 			if err == nil && n == 1 && (command[0] == 'k' || command[0] == 's' && stoppable) {
 				reply := body
 				if command[0] == 's' {
@@ -179,6 +204,9 @@ func start(parent context.Context, connection Connection, stoppable bool, id str
 }
 
 func (s *Server) Close() { s.cancel(); <-s.Done }
+
+// Ready lets clients in. RestartHeld holds them until the caller has configured what they reach.
+func (s *Server) Ready() { s.readyOnce.Do(func() { close(s.ready) }) }
 
 // operation reaps canceled overlapped I/O before releasing its buffer/event.
 func operation(ctx context.Context, h syscall.Handle, buf []byte, kind byte) (uint32, error) {

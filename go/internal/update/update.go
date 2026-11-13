@@ -226,6 +226,16 @@ func (e *NotRestoredError) Unwrap() error { return e.Cause }
 // removeFile and renameFile are the rollback's file operations; a test replaces them.
 var removeFile, renameFile = os.Remove, os.Rename
 
+// writeSynced writes a file and flushes it to disk before it is renamed into place.
+func writeSynced(path string, body []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(body)
+	return errors.Join(err, f.Sync(), f.Close())
+}
+
 // Apply replaces clauduct.exe in dir, together with the Probe when files carries one, and
 // puts everything back if any of it cannot be written.
 //
@@ -270,6 +280,22 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	if _, ok := files[Probe]; ok {
 		names = append(names, Probe)
 	}
+	// Every new file is written whole beside its target before anything is moved (#365 D): an
+	// update cut off while writing leaves the installation as it was, plus a .new to delete.
+	staged := map[string]string{}
+	unstage := func() {
+		for _, tmp := range staged {
+			_ = os.Remove(tmp)
+		}
+	}
+	for _, name := range names {
+		tmp := filepath.Join(dir, name+".new")
+		staged[name] = tmp
+		if err := writeSynced(tmp, files[name]); err != nil {
+			unstage()
+			return nil, err
+		}
+	}
 	for _, name := range names {
 		path := filepath.Join(dir, name)
 		backup := path + ".old"
@@ -277,14 +303,18 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 		had := true
 		if err := os.Rename(path, backup); err != nil {
 			if name == Binaries[0] || !errors.Is(err, os.ErrNotExist) {
-				return nil, fail(err)
+				unstage()
+				// Typically a backup a running clauduct still holds: kept, and named so it can go.
+				return nil, fail(fmt.Errorf("%w (could not move %s aside; if %s is left from a running clauduct, close it or delete that file and run --update again)", err, name, backup))
 			}
 			had = false
 		}
 		swapped = append(swapped, swap{path, backup, had})
-		if err := os.WriteFile(path, files[name], 0o755); err != nil {
+		if err := renameFile(staged[name], path); err != nil {
+			unstage()
 			return nil, fail(err)
 		}
+		delete(staged, name)
 	}
 
 	// The binary running this is the file just replaced, so its predecessor is still open

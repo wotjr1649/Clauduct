@@ -20,6 +20,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
 
@@ -173,6 +174,8 @@ type backgroundProcess struct {
 	stopJobs []string
 	home     string
 	proved   func() []gateway.NativeProcess
+	// sessionNatives are the natives that registered a session here (#378 decision 14).
+	sessionNatives func(string) []gateway.NativeProcess
 	// nativeStatus counts registered natives, those not known to have exited, and active requests.
 	nativeStatus      func() (registered, notExited int, active int64)
 	releaseProfiles   func([]string) error
@@ -198,6 +201,45 @@ func (noDispatch) Stop() error   { return nil }
 func (p *backgroundProcess) Stop() error { p.cancel(); return p.Process.Stop() }
 
 const backgroundStopTimeout = 30 * time.Second
+
+// workerStatus reads a native's exact identity; a test replaces it.
+var workerStatus = providercert.ProcessStatus
+
+// reportLiveWorkers gives the workers of the stopped jobs the stop grace, within the stop
+// budget, to exit (#358, #378 decision 14). A stop ACK is not the worker's exit, yet a worker
+// and its process tree are native's: one still running is reported, never ended here.
+func (p *backgroundProcess) reportLiveWorkers(ctx context.Context, interrupt <-chan struct{}, workers []gateway.NativeProcess) {
+	if len(workers) == 0 || p.stopNotice == nil {
+		return
+	}
+	grace := time.NewTimer(stopGrace)
+	defer grace.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		var live []gateway.NativeProcess
+		for _, w := range workers {
+			if workerStatus(w.PID, w.Created) == providercert.ProcessAlive {
+				live = append(live, w)
+			}
+		}
+		if len(live) == 0 {
+			return
+		}
+		select {
+		case <-tick.C:
+			continue
+		case <-grace.C:
+		case <-ctx.Done():
+		case <-interrupt:
+		case <-p.interrupts:
+		}
+		for _, w := range live {
+			fmt.Fprintf(p.stopNotice, "Clauduct: native acknowledged the stop, but its worker (PID %d) is still running; that process is native's to end. End it yourself if it should not keep running.\n", w.PID)
+		}
+		return
+	}
+}
 
 // waitForSession owns console signals until its wait finishes.
 func (p *backgroundProcess) interruptStop() bool {
@@ -291,6 +333,7 @@ func (p *backgroundProcess) stopNative(jobs map[string]int, everSeen map[string]
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	began, notified, passes := time.Now(), false, 0
+	var workers []gateway.NativeProcess
 	for {
 		// Reap before selecting again so the final counted pass never uses a stale listing.
 		for job, c := range pending {
@@ -310,6 +353,9 @@ func (p *backgroundProcess) stopNative(jobs map[string]int, everSeen map[string]
 				continue
 			}
 			attempted[job] = struct{}{}
+			if p.sessionNatives != nil {
+				workers = append(workers, p.sessionNatives(nativeJobSession(p.config, job))...)
+			}
 			process, err := start(launch.Spec{File: p.exe, Args: []string{"stop", job}, Dir: p.cwd, Env: p.env}, nil, nil, nil)
 			if err != nil {
 				failed(job)
@@ -321,6 +367,7 @@ func (p *backgroundProcess) stopNative(jobs map[string]int, everSeen map[string]
 		}
 		if len(pending) == 0 {
 			if len(unverified) == 0 {
+				p.reportLiveWorkers(ctx, interrupt, workers)
 				return finish()
 			}
 			passes++
@@ -498,6 +545,9 @@ func (p *backgroundProcess) Wait() (result error) {
 	}
 	nativeIdle := 0
 	completedIdle := 0
+	// Consecutive failed reads of a job state, which native rewrites in place: one is a file
+	// caught mid-write and is read again next tick; three in a row stop the link (#365 C).
+	unreadable := map[string]int{}
 	for {
 		select {
 		case <-interrupts:
@@ -573,8 +623,14 @@ func (p *backgroundProcess) Wait() (result error) {
 			for job, missing := range jobs {
 				running, completed, err := jobRunning(p.config, job)
 				if err != nil {
-					return errors.Join(errors.New("BACKGROUND_STATE_UNREADABLE"), stopNative())
+					if unreadable[job]++; unreadable[job] >= 3 {
+						return errors.Join(errors.New("BACKGROUND_STATE_UNREADABLE"), stopNative())
+					}
+					// Counted as running and not completed until a read settles it.
+					allCompleted = false
+					continue
 				}
+				delete(unreadable, job)
 				allCompleted = allCompleted && completed
 				if missing++; running {
 					missing = 0

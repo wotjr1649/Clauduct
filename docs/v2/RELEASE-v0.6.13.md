@@ -1,6 +1,6 @@
 # v0.6.13 — 견고성 수정과 소유자 결정
 
-범위는 [#378](https://github.com/wotjr1649/Clauduct/issues/378)과 관련 작업 [#365](https://github.com/wotjr1649/Clauduct/issues/365)(A–D), [#341](https://github.com/wotjr1649/Clauduct/issues/341), [#358](https://github.com/wotjr1649/Clauduct/issues/358), [#370](https://github.com/wotjr1649/Clauduct/issues/370), [#372](https://github.com/wotjr1649/Clauduct/issues/372), [#373](https://github.com/wotjr1649/Clauduct/issues/373), [#363](https://github.com/wotjr1649/Clauduct/issues/363), [#364](https://github.com/wotjr1649/Clauduct/issues/364), [#350](https://github.com/wotjr1649/Clauduct/issues/350), 분류기 공장값 결정 10, 종료 계약 결정 14와 [#332](https://github.com/wotjr1649/Clauduct/issues/332) 제한 정정이다.
+2026-11-13 출시(태그 `v0.6.13` → `725ac5c1945a17adf82a8df5885aebcae2ab76fd`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.13)). 범위는 [#378](https://github.com/wotjr1649/Clauduct/issues/378)과 관련 작업 [#365](https://github.com/wotjr1649/Clauduct/issues/365)(A–D), [#341](https://github.com/wotjr1649/Clauduct/issues/341), [#358](https://github.com/wotjr1649/Clauduct/issues/358), [#370](https://github.com/wotjr1649/Clauduct/issues/370), [#372](https://github.com/wotjr1649/Clauduct/issues/372), [#373](https://github.com/wotjr1649/Clauduct/issues/373), [#363](https://github.com/wotjr1649/Clauduct/issues/363), [#364](https://github.com/wotjr1649/Clauduct/issues/364), [#350](https://github.com/wotjr1649/Clauduct/issues/350), 분류기 공장값 결정 10, 종료 계약 결정 14와 [#332](https://github.com/wotjr1649/Clauduct/issues/332) 제한 정정이다.
 
 판단 근거는 공개 [소유자 결정 기록](https://github.com/wotjr1649/Clauduct/issues/378#issuecomment-6760268582)과 [#332 후속 결정](https://github.com/wotjr1649/Clauduct/issues/378#issuecomment-6760521694)이다. 출하 판단과 소유자 예외는 [출하 결정 기록](https://github.com/wotjr1649/Clauduct/issues/378#issuecomment-6840040797)에 있다. 실제 backend 결과는 "출하 검사"의 "실제 backend(신규 영향)"에 모은다.
 
@@ -58,9 +58,30 @@
 | E1+C1 | fast mode 끔(E)과 분류기 안내 미반복(C). print·TUI·`--bg` 각 1회 | 측정 구간의 `claude_code_penguin_mode` 요청이 0건이어야 한다. 이때 해독된 api.anthropic.com 요청이 1건 이상이고 해독 불가 행은 0이어야 한다. 후보 stderr(TUI는 화면)의 `clauduct: classifier_model` 줄도 0건이어야 한다. 정상 종료·관측 완전·정리 완료·native 불변이어야 한다 | **PASS**(3/3). penguin 0·0·0, 안내 줄 0·0·0, 해독된 요청 3·3·11, 해독 불가 0 |
 | D1 | `/model`로 바꾼 pair가 resident 재생성 뒤에도 유지(#341) | 첫 resident의 요청에서 고른 pair를 얻는다. 재생성한 resident의 main 요청이 모두 그 pair(모델·effort)와 같아야 한다. 재생성 resident의 생성 예약이 1건 이상이고, 종료 뒤 시작 pair(sol/low) 예약은 0이어야 한다. 응답이 있고 정리가 확인돼야 한다 | **PASS**(모델 유지로 한정). 고른 pair `gpt-6-luna/low`, 재생성 resident의 main 요청 모두 같은 pair, 종료 뒤 sol 예약 0, 재생성 resident 생성 예약 있음, 응답·정리 확인. native가 `/model` 뒤에도 effort를 low로 유지해 effort 유지는 구분하지 못했다 |
 
+### 출하 빌드·발행 검사
+
+[PACKAGING](PACKAGING.md#41-릴리스-만들기)의 절차를 따랐다.
+
+- `build-release`: 두 번의 독립 캐시 빌드 바이트가 같고, probe digest가 `go/cmd/clauduct/probe.sha256`과 일치한다.
+- 발행 전 `probe limit --send`(3회): `max_output_tokens` 상한을 유지한다(HONOURED).
+- `ship-install`: 새 설치, v0.6.12에서 업데이트, 되돌리기, 설정 보존, 사용자 PATH 불변을 확인했다.
+- `ship-session`(5회): 위임, `/clear`, 두 번째 turn, 부모 luna/max·자식 luna/low route를 확인했다.
+- 무과금 표면 관문(`surface`): 모든 차이가 분류됐다. 첫 실행은 native 단독 기준 실행의 요청 본문을 비밀값 패턴으로 오인해 거부했고, 다시 실행해 통과했다.
+- TUI 요약 회귀(`tui-summary`)는 v0.6.11·v0.6.12와 같은 구형 하네스 결함 때문에 실행하지 않았다.
+- 발행 뒤 `verify-release`(내려받은 바이트·API digest·`SHA256SUMS`), `ship-update`(이전 릴리스의 `--update`와 `already current`), `ship-legacy`(v0.3.5)를 모두 통과했다.
+
 ## 출하 신원
 
-발행 뒤 채움
+| 항목 | 값 |
+|---|---|
+| 태그 | `v0.6.13` → `725ac5c1945a17adf82a8df5885aebcae2ab76fd` |
+| `clauduct.exe` | `58ef34a54e22a7f5e8aac3d332cb46e88519845af2454b6bcad26b88fa275368` |
+| `clauduct-probe.exe` | `4d299e56192c903917bd541ba96b4f54973ce775b6f48ad2f605761d7fc33ecc` |
+| `install.ps1` | `6720976f89e9016a33bd046f02bcf36e1acfdb411097b93c1d8a443f55356c58` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `c4514062b8970de685ad9c1e42f5a60dea56b3180fe22d0f624760521d957884` |
+
+Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`. native를 쓴 검사(실제 backend 표본, 출하 검사)는 모두 Claude Code 2.1.321에서 돌았다. 실제 backend 표본의 후보(SHA-256 `174150b2…`, commit `fd22484d9`)는 같은 소스를 개발 신원으로 빌드한 것이라 출하 `clauduct.exe`와 digest가 다르다.
 
 ## 알려진 제한
 

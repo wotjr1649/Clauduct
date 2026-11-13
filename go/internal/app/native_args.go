@@ -1,9 +1,18 @@
 package app
 
 import (
+	"bytes"
+	"context"
+	"os/exec"
+	"regexp"
+	"slices"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/childprocess"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
 // Only known native arities prove that an option-shaped token is a value.
@@ -85,17 +94,54 @@ func accountCommand(args []string) error {
 	return nil
 }
 
-// Options before a subcommand may consume it as a variadic value and open a session.
+// nativeControl returns the management verb (rm, stop, kill, logs) native dispatches before
+// option parsing, or "". Native does that for a leading verb and, behind options, for a verb
+// followed by an 8-hex id; anything else, an unknown option included, stays on the session
+// path, which hands argv to native unchanged. Options whose side effects are unmeasured stay
+// there too. Native starts a job for a background token first.
 func nativeControl(args []string) string {
-	if len(args) == 0 {
+	if BackgroundRequested(args) {
 		return ""
 	}
-	switch args[0] {
-	case "rm", "stop", "logs":
-		return args[0]
+	verb := launch.NativeManagementVerb(args)
+	if verb == "" || args[0] == verb {
+		return verb
+	}
+	for _, arg := range args {
+		name, _, _ := strings.Cut(arg, "=")
+		if slices.Contains(unmeasuredBeforeVerb, name) {
+			return ""
+		}
+	}
+	return verb
+}
+
+// unmeasuredBeforeVerb are options native may act on before it dispatches a verb. Only
+// --settings and --managed-settings were read (#331 M0), so these keep the session path.
+var unmeasuredBeforeVerb = []string{"--debug-file", "--teleport", "--remote-control", "--plugin-url"}
+
+// nativeArgvVersion is the installed native's version for the argv pins, "" when unknown. It
+// runs native --version once, and only when a pinned rule would change an answer.
+var nativeArgvVersion = sync.OnceValue(func() string {
+	exe, found, err := platform.Resolver{}.Claude()
+	if err != nil || !found {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	var out bytes.Buffer
+	cmd := exec.Command(exe, "--version")
+	cmd.Stdout = &out
+	if childprocess.Run(ctx, cmd) != nil {
+		return ""
+	}
+	if match := nativeVersionLine.FindStringSubmatch(strings.TrimSpace(out.String())); match != nil {
+		return match[1]
 	}
 	return ""
-}
+})
+
+var nativeVersionLine = regexp.MustCompile(`^(\d+\.\d+\.\d+) \(Claude Code\)$`)
 
 // Native handles background dispatch before its ordinary help/version flags.
 func nativeInformation(args []string) bool {

@@ -88,6 +88,7 @@ func (g *Gateway) RestoreRoutingProof(proved []NativeProcess) {
 			g.discovered.Store(processKey{p.PID, p.Created}, struct{}{})
 		}
 	}
+	g.publishRouting()
 }
 
 // NativeProcesses reports natives registered here or observed by routing discovery.

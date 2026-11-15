@@ -130,7 +130,14 @@ provider strategy 없이 아래의 endpoint·settings 고정·hook 시작 handsh
 
 명시적 `--bg`·`--background` 생성은 세션별 연결 유지 프로세스가 맡는다. 최초 실행기는 native의
 생성 판정과 같이 정확한 두 토큰을 일반 옵션 경계보다 먼저 찾는다. native 2.1.282는 도움말·버전 옵션이나
-`--` 뒤에 이 토큰이 있어도 작업을 생성하므로, 일반 옵션 조회로 분류하면 살아 있는 작업의 연결이 끊긴다.
+`--` 뒤에 이 토큰이 있어도 작업을 생성했으므로(v0.4.3), 일반 옵션 조회로 분류하면 살아 있는 작업의 연결이 끊겼다.
+native 2.1.325는 첫 `--` 앞에서, 값 옵션의 값 자리가 아닌 정확한 토큰만 작업으로 본다
+(`--name --bg`·`-- --bg`는 이름·프롬프트로 foreground). 이 좁힘과 아래의 관리 명령 확장은 해석한 native 파일의
+SHA-256이 표를 읽은 빌드와 같을 때만 켜지고, 다른 빌드이거나 확인할 수 없으면 정확한 토큰은 어디에 있든 background,
+관리 명령은 첫 토큰 `rm`·`stop`·`logs`만으로 현행을 유지한다(#331). 고정 빌드에서는 `--verbose rm <id>`처럼 옵션 뒤 8자리 ID가
+따르는 `rm`·`stop`·`kill`·`logs`와 선두 `kill`도 native로 바로 보낸다. 사전 동작을 측정하지 않은 옵션
+(`--debug-file`·`--teleport`·`--remote-control`/`--rc`·`--plugin-url`·`--remote`·`--cloud`·`--worktree`/`-w`·`--from-pr`)
+뒤, 그리고 `CLAUDE_CODE_SESSION_KIND=bg` 환경의 옵션 뒤 동사는 세션 경로를 유지한다.
 생성 완료와 세션 ID를 확인한 뒤 반환한다. `clauduct --background-stop <connection-id>`는 연결 유지 프로세스에 해당 작업 ID들의 native `stop` 실행을 요청하고,
 유지 프로세스의 종료 결과를 제한된 시간 안에서 확인한다. 이 결과는 native stop 명령의 ACK 수준 성공이다. worker의 실제 종료는 확인해 알리지만(v0.6.13) 자손의 OS 종료는 인증하지 않는다. 관리·메시지·attach·stop은
 native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. 생명주기는 11절을 따른다.

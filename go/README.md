@@ -120,6 +120,10 @@ contract test(`internal/protocol`의 anthropic·bridge·codex, `internal/stream`
 로컬에서 돌리며, 공개 CI는 위 세 검사, 그 contract test, `internal/httpguard`의 Linux·macOS build와 PowerShell 7
 스크립트의 AST·최소 버전을 검사한다.
 
+비공개 하네스 검사의 native 기록 구조(census 항목, 하네스가 직접 실행한 명령의 기록)를 바꾸면, 실제 기록 경로(census 적용,
+하네스 handle 등록, 세대 수집)를 두 도착 순서로 거쳐 만든 기록을 판정 함수에 넣는 소비자 fixture를 함께 추가한다. 손으로 채운
+기록 fixture는 기록 경로의 변경을 보지 못한다. 기록 구조의 필드 목록 시험이 이 변경을 알린다.
+
 성능 벤치마크는 기본 `go test`에서 실행되지 않는다. 유지보수자의 비공개 검사가 있는 작업 폴더에서
 다음과 같이 별도로 실행한다. 일반 회귀에도 벤치마크의 대표 준비 경로를 포함해 native 선택 증거가
 낡으면 측정 전 실패를 발견한다. `-mutexprofile`은 현재 Windows/Go 검증 환경에서 사용하지 않는다.

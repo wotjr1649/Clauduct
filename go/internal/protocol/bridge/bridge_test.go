@@ -793,25 +793,35 @@ func TestStreamedToolArgumentsAreAccountedForNotRefused(t *testing.T) {
 
 // The backend's finished arguments against what it streamed. A tool call is executed by the
 // client, so two accounts disagreeing is where this stops rather than picking one.
-func TestArgumentsThatDisagreeWithTheStreamAreRefused(t *testing.T) {
+func TestArgumentsDoneMustMatchAnyStreamedDeltas(t *testing.T) {
 	for name, tc := range map[string]struct {
 		deltas []string
 		done   string
+		want   error
 	}{
-		"a delta went missing": {[]string{`{"file_`}, `{"file_path":"a.txt"}`},
-		"a delta was invented": {[]string{`{"file_path":"a.txt"}`, `extra`}, `{"file_path":"a.txt"}`},
-		"the value differs":    {[]string{`{"file_path":"b.txt"}`}, `{"file_path":"a.txt"}`},
-		"nothing streamed":     {nil, `{"file_path":"a.txt"}`},
-		"whitespace differs":   {[]string{`{"file_path": "a.txt"}`}, `{"file_path":"a.txt"}`},
+		"a delta went missing": {[]string{`{"file_`}, `{"file_path":"a.txt"}`, ErrArgumentsMismatch},
+		"a delta was invented": {[]string{`{"file_path":"a.txt"}`, `extra`}, `{"file_path":"a.txt"}`, ErrArgumentsMismatch},
+		"the value differs":    {[]string{`{"file_path":"b.txt"}`}, `{"file_path":"a.txt"}`, ErrArgumentsMismatch},
+		"nothing streamed":     {nil, `{"file_path":"a.txt"}`, nil},
+		"an empty delta":       {[]string{""}, `{"file_path":"a.txt"}`, ErrArgumentsMismatch},
+		"whitespace differs":   {[]string{`{"file_path": "a.txt"}`}, `{"file_path":"a.txt"}`, ErrArgumentsMismatch},
 	} {
 		t.Run(name, func(t *testing.T) {
 			events := []any{itemAdded(0, `{"id":"fc_1","type":"function_call"}`)}
 			for _, delta := range tc.deltas {
 				events = append(events, argsDelta("fc_1", delta))
 			}
-			events = append(events, argsDone("fc_1", tc.done))
-			if _, err := run(t, events...); !errors.Is(err, ErrArgumentsMismatch) {
-				t.Fatalf("err = %v, want %v", err, ErrArgumentsMismatch)
+			events = append(events, argsDone("fc_1", tc.done),
+				itemDone(0, functionItem("fc_1", "call_1", "Read", tc.done)), event(codex.Completed, completedOK))
+			frames, err := runFor(t, callable("Read"), events...)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+			if tc.want == nil {
+				delta := blockAt(t, frames, "content_block_delta", 0)["delta"].(map[string]any)
+				if delta["partial_json"] != tc.done {
+					t.Fatalf("arguments = %v, want %s", delta["partial_json"], tc.done)
+				}
 			}
 		})
 	}
@@ -829,6 +839,89 @@ func TestInterleavedArgumentStreamsStayApart(t *testing.T) {
 		itemDone(1, functionItem("fc_2", "call_2", "Read", `{"b":2}`)), event(codex.Completed, completedOK))
 	if err != nil {
 		t.Fatalf("Accept: %v", err)
+	}
+}
+
+func TestWholeArgumentsDoneMustMatchFinalSnapshot386(t *testing.T) {
+	for name, final := range map[string]string{
+		"different value": `{"file_path":"b.txt"}`,
+		"different bytes": `{"file_path": "a.txt"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := runFor(t, callable("Read"),
+				itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+				argsDone("fc_1", `{"file_path":"a.txt"}`),
+				itemDone(0, functionItem("fc_1", "call_1", "Read", final)))
+			if !errors.Is(err, ErrArgumentsMismatch) {
+				t.Fatalf("err = %v, want %v", err, ErrArgumentsMismatch)
+			}
+		})
+	}
+}
+
+func TestStreamedArgumentsDoneMustMatchFinalSnapshot386(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`),
+		argsDelta("fc_1", `{"file_path":"a.txt"}`),
+		argsDone("fc_1", `{"file_path":"a.txt"}`),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"file_path":"b.txt"}`)))
+	if !errors.Is(err, ErrArgumentsMismatch) {
+		t.Fatalf("err = %v, want %v", err, ErrArgumentsMismatch)
+	}
+}
+
+func TestWholeArgumentsDonePreservesOpeningPrefix386(t *testing.T) {
+	_, err := runFor(t, callable("Read"),
+		itemAdded(0, functionItem("fc_1", "call_1", "Read", `{"other":`)),
+		argsDone("fc_1", `{"file_path":"a.txt"}`),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"file_path":"a.txt"}`)))
+	if !errors.Is(err, ErrArgumentsMismatch) {
+		t.Fatalf("err = %v, want %v", err, ErrArgumentsMismatch)
+	}
+}
+
+func TestParallelWholeArgumentsDoneStayApart386(t *testing.T) {
+	first, second := `{"file_path":"a.txt"}`, `{"file_path":"b.txt"}`
+	firstDone, secondDone := argsDone("fc_1", first), argsDone("fc_2", second)
+	firstDone.Raw = []byte(strings.TrimSuffix(string(firstDone.Raw), "}") + `,"output_index":0}`)
+	secondDone.Raw = []byte(strings.TrimSuffix(string(secondDone.Raw), "}") + `,"output_index":1}`)
+	frames, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`), itemAdded(1, `{"id":"fc_2","type":"function_call"}`),
+		secondDone, firstDone,
+		itemDone(1, functionItem("fc_2", "call_2", "Read", second)),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", first)), event(codex.Completed, completedOK))
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	for index, want := range []struct{ id, arguments string }{{"call_1", first}, {"call_2", second}} {
+		start := blockAt(t, frames, "content_block_start", index)
+		block := start["content_block"].(map[string]any)
+		delta := blockAt(t, frames, "content_block_delta", index)
+		if block["id"] != want.id || block["name"] != "Read" || delta["index"] != start["index"] ||
+			delta["delta"].(map[string]any)["partial_json"] != want.arguments {
+			t.Fatalf("call %d: start = %v, delta = %v, want %s/%s", index, start, delta, want.id, want.arguments)
+		}
+	}
+}
+
+func TestMixedArgumentDeliveriesStayApart386(t *testing.T) {
+	frames, err := runFor(t, callable("Read"),
+		itemAdded(0, `{"id":"fc_1","type":"function_call"}`), itemAdded(1, `{"id":"fc_2","type":"function_call"}`),
+		argsDelta("fc_1", `{"a":`), argsDone("fc_2", `{"b":2}`),
+		argsDelta("fc_1", `1}`), argsDone("fc_1", `{"a":1}`),
+		itemDone(1, functionItem("fc_2", "call_2", "Read", `{"b":2}`)),
+		itemDone(0, functionItem("fc_1", "call_1", "Read", `{"a":1}`)), event(codex.Completed, completedOK))
+	if err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	for index, want := range []struct{ id, arguments string }{{"call_1", `{"a":1}`}, {"call_2", `{"b":2}`}} {
+		start := blockAt(t, frames, "content_block_start", index)
+		block := start["content_block"].(map[string]any)
+		delta := blockAt(t, frames, "content_block_delta", index)
+		if block["id"] != want.id || delta["index"] != start["index"] ||
+			delta["delta"].(map[string]any)["partial_json"] != want.arguments {
+			t.Fatalf("call %d: start = %v, delta = %v, want %s/%s", index, start, delta, want.id, want.arguments)
+		}
 	}
 }
 

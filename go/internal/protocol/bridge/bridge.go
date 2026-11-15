@@ -680,6 +680,7 @@ func (t *Translator) Summaries() []string { return t.summaries }
 // heldItem is one output item and whether the backend has finished writing it.
 type heldItem struct {
 	argumentsDone bool
+	doneArguments string
 	item          codex.OutputItem
 	done          bool
 	partSnapshots map[int]string
@@ -895,19 +896,13 @@ func (t *Translator) Accept(event stream.Event) ([]anthropic.Frame, error) {
 		if err != nil {
 			return nil, err
 		}
-		// The backend's own account of what it wrote, against what arrived. A tool call is
-		// executed by the client, so a stream nobody can account for is not one to build a
-		// call from -- even though the call itself comes from the completed output.
-		//
-		// Strict on purpose, and deliberately unlike closeItem below. This event is the end
-		// of an argument stream: its arrival says there was one, so no deltas having
-		// arrived is the missing-delta case rather than a backend delivering the arguments
-		// whole. closeItem answers a different question -- an item that never streamed
-		// arguments at all -- and tolerance there is right for the same reason strictness
-		// is right here. Reviewed 2026-09-17 and left as it was.
-		if t.streamedArgs[done.ItemID] != done.Arguments {
+		// The backend now also delivers whole arguments in done without any delta (#386,
+		// 2026-11-15). If any delta arrived, even an empty one, it must still match done.
+		// closeItem checks final against done for both delta streams and whole delivery.
+		if streamed, saw := t.streamedArgs[done.ItemID]; saw && streamed != done.Arguments {
 			return nil, ErrArgumentsMismatch
 		}
+		held.doneArguments = done.Arguments
 		held.argumentsDone = true
 		return nil, nil
 
@@ -1086,12 +1081,12 @@ func (t *Translator) closeItem(event codex.OutputItemEvent) error {
 		if held.item.Name != "" && final.Name != held.item.Name {
 			return ErrItemSnapshotMismatch
 		}
-		// Against what actually streamed, when anything did. An item whose arguments never
-		// streamed is not a mismatch: the backend is entitled to deliver them whole, and
-		// when it does it sends no argument stream and no .done to end one. That is why
-		// this tolerates what the FuncArgsDone branch refuses -- the two events say
-		// different things, and a .done is a statement that a stream happened.
-		if streamed, saw := t.streamedArgs[final.ID]; (saw || held.argumentsDone) && streamed != string(final.Arguments) {
+		// Check final against done or deltas; with neither, final may deliver arguments whole.
+		arguments, saw := t.streamedArgs[final.ID]
+		if held.argumentsDone {
+			arguments = held.doneArguments
+		}
+		if (saw || held.argumentsDone) && arguments != string(final.Arguments) {
 			return ErrArgumentsMismatch
 		}
 	}

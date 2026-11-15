@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The functions here mirror native 2.1.323's own argv dispatch (see native_dispatch_tables.go).
+// The functions here mirror native 2.1.325's own argv dispatch (see native_dispatch_tables.go).
 // They are separate from NativeArgEnd on purpose: that one follows the public --help and stops
 // at options it does not know, while native's dispatch walks its own, larger option sets.
 

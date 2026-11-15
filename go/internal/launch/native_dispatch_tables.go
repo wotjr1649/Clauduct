@@ -1,22 +1,22 @@
 package launch
 
-// Native 2.1.323 reads argv before option parsing in two places, and the launcher has to
+// Native 2.1.325 reads argv before option parsing in two places, and the launcher has to
 // decide the same way: whether a background token will start a job (`--bg`, native's kS
 // scan) and whether a management verb leads the argv (`rm|stop|kill|logs`, native's yai).
 // Both walk argv with one helper (xlt) over option sets compiled into the native executable.
-// The sets below were read from the 2.1.323 executable bytes (nothing executed, #331 M0,
+// The sets below were read from the 2.1.325 executable bytes (nothing executed, #331 M0,
 // sha256 NativeDispatchSHA256) and are pinned by the golden table
-// go/internal/app/testdata/native-argv-2.1.323.json. Another native version may differ, so
+// go/internal/app/testdata/native-argv-2.1.325.json. Another native version may differ, so
 // callers narrow only when the resolved native's SHA-256 is NativeDispatchSHA256.
 //
 // The golden table is private and runs in the full gate (A11), not in public CI. Whoever changes
 // a set moves the three together: these sets, the two constants below, and the golden table.
 
 // NativeDispatchVersion is the native version the sets below were read from.
-const NativeDispatchVersion = "2.1.323"
+const NativeDispatchVersion = "2.1.325"
 
 // NativeDispatchSHA256 anchors the executable the sets were read from.
-const NativeDispatchSHA256 = "5064e6e0572dca86257363ca04d48653eef20ef27f1bd04b504ed7199ed3fd13"
+const NativeDispatchSHA256 = "87e0cb6ae0f4775da388cd3043f4d8097ef961dcddbf55fe90bc61ffc3f57a30"
 
 // nativeValueOptions (native a) skip the next token whatever it looks like.
 var nativeValueOptions = []string{

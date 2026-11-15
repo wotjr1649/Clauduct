@@ -90,10 +90,16 @@ func (g *Gateway) resolveTeammate(r *http.Request) (*http.Request, bool) {
 		defer cancel()
 		// $.fs.write is not atomic, so a record caught mid-write reads as malformed: within
 		// the window that is waited out like absence, and refused only if it stays so.
+	wait:
 		for delay := 5 * time.Millisecond; err != nil || !found; delay = min(delay*2, 100*time.Millisecond) {
 			select {
 			case <-ctx.Done():
-				return r, false
+				// The last backoff read can precede the deadline by up to ~45 ms: read once more
+				// unless the request itself ended, and let the checks below decide (#383).
+				if r.Context().Err() == nil {
+					read()
+				}
+				break wait
 			case <-time.After(delay):
 				read()
 			}
@@ -202,7 +208,13 @@ func (g *Gateway) readNativeReceipt(name string, out any) (found bool, err error
 	return
 }
 
+// receiptReadProbe is a test seam: set only by tests that count receipt reads (#383).
+var receiptReadProbe func(kind string)
+
 func (g *Gateway) readNativeJSON(name string, fields []string, out any) (found bool, err error) {
+	if receiptReadProbe != nil {
+		receiptReadProbe("native")
+	}
 	n := &g.nativeEvents
 	if n.directory == "" {
 		return false, nil

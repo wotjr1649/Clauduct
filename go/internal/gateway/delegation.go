@@ -591,6 +591,7 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 			ctx, cancel = context.WithTimeout(contexts[0], time.Second)
 			defer cancel()
 		}
+	wait:
 		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
 			// A pending sibling proves nothing about this child. Workflow metadata
 			// lives in the registered run directory; ordinary Agent metadata may
@@ -610,7 +611,14 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 			}
 			select {
 			case <-ctx.Done():
-				return bridge.Route{}, false, refusedBecause("metadata_wait_expired")
+				// One last read at the deadline unless the request ended (#383); no findWorkflow.
+				if contexts[0].Err() == nil {
+					meta, err = d.metadata(binding)
+				}
+				if errors.Is(err, errMetadataPending) {
+					return bridge.Route{}, false, refusedBecause("metadata_wait_expired")
+				}
+				break wait
 			case <-time.After(delay):
 				meta, err = d.metadata(binding)
 			}
@@ -716,10 +724,18 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 	if errors.Is(err, errMetadataPending) && len(contexts) != 0 {
 		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
 		defer cancel()
+	wait:
 		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
 			select {
 			case <-ctx.Done():
-				return bridge.Route{}, false, refusedBecause("metadata_wait_expired")
+				// One last read at the deadline unless the request ended (#383).
+				if contexts[0].Err() == nil {
+					meta, err = d.readMetadata(binding)
+				}
+				if errors.Is(err, errMetadataPending) {
+					return bridge.Route{}, false, refusedBecause("metadata_wait_expired")
+				}
+				break wait
 			case <-time.After(delay):
 				meta, err = d.readMetadata(binding)
 			}
@@ -1095,6 +1111,9 @@ func (d *delegations) readMetadata(binding agentBinding) (delegationMetadata, er
 // subagentFile reads one of native's files for this child, bounded and inside the projects
 // tree. Absence is errMetadataPending: native writes these asynchronously.
 func (d *delegations) subagentFile(binding agentBinding, suffix string, limit int64) ([]byte, error) {
+	if receiptReadProbe != nil {
+		receiptReadProbe(suffix)
+	}
 	if filepath.Base(binding.TranscriptPath) != binding.SessionID+".jsonl" {
 		return nil, errDelegationUnverified
 	}
@@ -1170,10 +1189,15 @@ func (d *delegations) nativeFork(scope delegationScope, id string, binding agent
 	if errors.Is(err, errMetadataPending) && len(contexts) > 0 {
 		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
 		defer cancel()
+	wait:
 		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
 			select {
 			case <-ctx.Done():
-				return none, false
+				// One last read at the deadline unless the request ended (#383); the check below refuses a still-pending result.
+				if contexts[0].Err() == nil {
+					meta, first, err = d.forkEvidence(binding)
+				}
+				break wait
 			case <-time.After(delay):
 				meta, first, err = d.forkEvidence(binding)
 			}
@@ -1242,10 +1266,15 @@ func (d *delegations) conversationFork(scope delegationScope, id string, binding
 	if errors.Is(err, errMetadataPending) && len(contexts) > 0 {
 		ctx, cancel := context.WithTimeout(contexts[0], time.Second)
 		defer cancel()
+	wait:
 		for delay := 5 * time.Millisecond; errors.Is(err, errMetadataPending); delay = min(delay*2, 100*time.Millisecond) {
 			select {
 			case <-ctx.Done():
-				return none, false
+				// One last read at the deadline unless the request ended (#383); the check below refuses a still-pending result.
+				if contexts[0].Err() == nil {
+					meta, first, err = d.forkEvidence(binding)
+				}
+				break wait
 			case <-time.After(delay):
 				meta, first, err = d.forkEvidence(binding)
 			}

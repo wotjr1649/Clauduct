@@ -238,6 +238,9 @@ func (d *delegations) workflowRoute(ctx context.Context, scope delegationScope, 
 	}
 }
 func (d *delegations) findWorkflow(ctx context.Context, scope delegationScope, id string, binding agentBinding) (bridge.Route, bool, error) {
+	if receiptReadProbe != nil {
+		receiptReadProbe("workflow")
+	}
 	if scope.parent != "" || binding.SessionID != scope.session || binding.ID != id {
 		return bridge.Route{}, false, errDelegationUnverified
 	}

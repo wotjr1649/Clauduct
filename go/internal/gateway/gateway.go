@@ -124,8 +124,12 @@ type Gateway struct {
 	commandLine func(uint32, int64) string
 	// discovered holds each native process that asked this gateway for its model list.
 	discovered sync.Map // processKey -> struct{}
-	startedAt  int64
-	restoredAt atomic.Int64
+	// routingChanged is closed, and replaced on the next watch, each time publishRouting
+	// announces new routing evidence; routing-proof waiters wake on it instead of polling.
+	routingMu      sync.Mutex
+	routingChanged chan struct{}
+	startedAt      int64
+	restoredAt     atomic.Int64
 	// processStatus is the OS liveness and creation-time check; tests replace it.
 	processStatus func(uint32, int64) providercert.ProcessState
 	// routingMismatch is set by this session's hook or its failed uncontrolled proof.
@@ -323,6 +327,28 @@ func (g *Gateway) ClientVersion() string {
 // Anthropic one, and the only difference visible from here is that this request never
 // arrives.
 func (g *Gateway) ModelLists() int64 { return g.modelLists.Load() }
+
+// routingWatch returns the channel the next publishRouting closes.
+func (g *Gateway) routingWatch() <-chan struct{} {
+	g.routingMu.Lock()
+	defer g.routingMu.Unlock()
+	if g.routingChanged == nil {
+		g.routingChanged = make(chan struct{})
+	}
+	return g.routingChanged
+}
+
+// publishRouting wakes every routing-proof waiter after modelLists or discovered changed. The
+// wake is a hint: each waiter re-checks the stored evidence, and the final check at its deadline
+// does not depend on the wake arriving.
+func (g *Gateway) publishRouting() {
+	g.routingMu.Lock()
+	defer g.routingMu.Unlock()
+	if g.routingChanged != nil {
+		close(g.routingChanged)
+		g.routingChanged = nil
+	}
+}
 
 // Ingress is one authenticated inference request as read in full. Seq is the request's record
 // number, which its outcome carries too.
@@ -736,21 +762,25 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		closingStarted, waitExpired := false, false
 		if !proved() {
 			timer := time.NewTimer(routingProofWait)
-			ticker := time.NewTicker(20 * time.Millisecond)
-			for !proved() {
+			for {
+				// Watch before the check: evidence stored and published after this point closes
+				// changed; evidence stored before it is seen by proved().
+				changed := g.routingWatch()
+				if proved() {
+					break
+				}
 				select {
 				case <-closing:
 					closingStarted = true
 				case <-timer.C:
 					waitExpired = true
-				case <-ticker.C:
+				case <-changed:
 				}
 				if closingStarted || waitExpired {
 					break
 				}
 			}
 			timer.Stop()
-			ticker.Stop()
 		}
 		if g.closing != nil && g.closing.Err() != nil {
 			closingStarted = true
@@ -809,6 +839,7 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 		if id, required := g.identityOf(r); required && id.direct {
 			g.discovered.Store(id.native, struct{}{})
 		}
+		g.publishRouting() // after both stores: a waiter woken here can already prove
 		g.handleModels(w)
 		return
 	}

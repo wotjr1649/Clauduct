@@ -383,7 +383,11 @@ func (g *Gateway) writeNativeControl(name string, body []byte) error {
 		if attempt == 4 {
 			break
 		}
-		time.Sleep(2 * time.Millisecond)
+		nativeControlSleep(2 * time.Millisecond)
 	}
 	return renameErr
 }
+
+// nativeControlSleep is the pause between rename attempts; tests replace it to prove that an
+// attempt follows every pause however long it ran.
+var nativeControlSleep = time.Sleep

@@ -103,9 +103,9 @@ clauduct --uninstall --yes  # 무인
 제거는 바이너리가 합니다. `--update`와 같은 규칙이라 **첫 인자일 때만** 인식하고,
 `clauduct -p "how do I --uninstall"`은 아무것도 지우지 않습니다.
 
-실행 중인 `clauduct.exe`는 `%TEMP%\clauduct-removed-<pid>.exe`로 옮깁니다. 볼륨이 달라 이동할 수
-없으면 설치 폴더에 `.old`로 옮기고 삭제 방법을 출력합니다. PATH와 진단 파일까지 지우려면
-저장소의 제거 스크립트를 사용합니다.
+제거할 때 실행 중인 `clauduct.exe`를 시스템 임시 폴더의 `clauduct-removed-<pid>.exe`로 옮깁니다. 이 이동이
+실패하면 설치 폴더의 `clauduct.exe.old`로 옮기는 방법을 시도하고, 성공하면 삭제 방법을 출력합니다.
+PATH 항목과 진단 파일은 저장소의 제거 스크립트에서 각각 `-RemovePath`와 `-Purge`로 정리할 수 있습니다.
 
 ```powershell
 pwsh -NoProfile -File scripts\uninstall.ps1 -Purge       # 진단 파일(%TEMP%\clauduct)까지
@@ -128,8 +128,9 @@ clauduct --usage       # 이 계정이 주간 한도를 얼마나 썼는지. 요
 clauduct --dev --doctor  # 이 빌드 자신에 대한 질문은 --dev 뒤로
 ```
 
-거의 모든 인자는 그대로 native로 전달됩니다. 런처는 첫 인자인 `--update`·`--usage`·`--uninstall`·
-`--dev`·`--background-stop`을 처리합니다. 권한 해제 옵션 2종과 별도 Claude Desktop 실행(`--desktop`)은 거부합니다.
+거의 모든 인자는 그대로 native로 전달됩니다. 런처는 첫 인자인 `--update`·`--usage`·`--uninstall`·`--dev`와
+`--background-stop <connection-id>` 형태를 처리합니다. 권한 해제 옵션 2종, 별도 Claude Desktop 실행(`--desktop`),
+Claude 계정 변경 명령(`auth login`·`auth logout`·`setup-token`)은 거부합니다.
 `--settings`는 0.3.0부터 거부 대신 필수 settings와 **병합**됩니다 — 필수 연결이나 hook과
 충돌할 때만 거부합니다. `--setting-sources`는 그대로 native에 전달됩니다.
 

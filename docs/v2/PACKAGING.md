@@ -26,7 +26,7 @@
 | 필요한 것 | 왜 | 없으면 |
 |---|---|---|
 | `claude.exe` | 띄울 대상이다. `~/.local/bin` 우선, 그다음 PATH. 설치만 필요하고 Claude 계정 로그인·구독은 필요 없다 | `CLAUDE_NOT_FOUND`, 찾아본 경로를 함께 출력 |
-| `codex.exe` | 설치 버전을 시작 전 계정 모델 목록 조회와 backend 요청에 사용한다 | 모델 목록을 조회할 수 없다. 같은 계정의 마지막 정상 목록이 있으면 재사용하고, 없으면 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 native 시작 전에 끝난다. `--version`·`--help`는 계정 목록을 조회하지 않는다 |
+| `codex.exe` | 설치 버전을 시작 전 계정 모델 목록 조회와 backend 요청에 사용한다 | 계정의 마지막 정상 목록을 재사용할 수 없으면 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 native 시작 전에 끝난다. 목록을 재사용해 native가 시작돼도 실제 추론 요청은 보낼 수 없다. 단독 `--version`·`--help`는 계정 목록을 조회하지 않는다 |
 | `~/.codex/auth.json` | ChatGPT 구독 credential. 읽기 전용으로만 접근한다 | 시작할 때 계정 모델 목록을 확인하지 못해 native를 띄우기 전에 끝난다: `ACCOUNT_MODEL_LIST_UNAVAILABLE: CREDENTIAL_UNAVAILABLE_OR_EXPIRED; …; run "codex login" (install the Codex CLI first if the codex command is not found), then start clauduct again`. 세션 중에 만료되면 요청이 503으로 거부되고 같은 안내가 붙는다. `codex login`으로 회복 |
 
 **Claude Code를 처음 실행하는 사람(2.1.296 실측).** native만 실행하면 테마 선택 다음에 로그인 방법 선택(Claude 구독·Console·3rd-party)이 나온다. Clauduct로 시작하면 이 단계가 없다. 테마 선택 → 보안 안내 → 폴더 신뢰를 거쳐 입력창으로 간다. native가 Clauduct gateway의 인증 설정을 받아 로그인 단계를 건너뛰기 때문이다. 입력창 머리글의 `API Usage Billing`은 native가 이 인증 방식에 붙이는 이름이다. 요청은 Codex 구독으로 가고 Anthropic에 과금되지 않는다.
@@ -322,11 +322,9 @@ digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말�
 되돌린다. 성공 후 `clauduct.exe.old`는 **이 프로세스가 끝나야** 지울 수 있고, 그래서 지우라고
 출력한다. 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여준다 — 업데이트 전에 시작한 세션은 그 뒤 hook을 잃으므로 다시 시작한다. **v0.6.4부터** 교체가 끝나면 새로 설치한 바이너리의 `--dev --sync-settings`를 최소 환경·10초 상한으로 실행하고, 이 명령이 없는 대상 버전은 `--dev --init-settings`로 대신한다. 동기화가 실패하면 바이너리는 설치됐고 설정 동기화만 실패했다고 알리며 바이너리를 되돌리지 않는다. 설치 스크립트도 기존 설정이 있으면 같은 동기화를 실행한다. [설정 동기화 계약](SETTINGS.md#설정-동기화-v064)
 
-**이미 최신이면 바이너리를 교체하지 않는다.** 설치된 `clauduct.exe`와 릴리스에 진단 도구가 있을 때
-`clauduct-probe.exe`의 digest가 모두 일치하고 제거할 probe도 없으면 묻지 않고 `already current`로 끝난다. 버전은
-빌드가 자기를 부르는 이름이라 두 빌드가 같은 이름을 쓸 수 있다. 손으로 갈아끼웠거나
-반만 받아진 파일은 일치하지 않으므로 그때는 고쳐진다. 이 검사가 없으면 같은 바이트로 교체하고
-`clauduct.exe.old`를 남기는데, **아무것도 바꾸지 않은 업데이트가 남긴 잔여물은 고장으로 읽힌다.**
+**이미 최신이면 바이너리를 교체하지 않는다.** `clauduct.exe`와 릴리스가 제공하는 `clauduct-probe.exe`의 digest가
+모두 일치하고 제거할 probe도 없으면 확인 질문 없이 `already current`를 출력한다. 이어서 [설정 동기화](SETTINGS.md#설정-동기화-v064)를 실행한다.
+같은 버전 문자열을 쓰는 빌드도 바이트가 다를 수 있다. 손으로 교체했거나 손상된 파일은 digest가 일치하지 않아 교체 대상이 된다.
 
 **그 잔여물은 다음 실행이 치운다.** 실행 중인 이미지를 Windows가 붙들고 있어 자기 선대를 지울 수
 있는 첫 프로세스는 다음 실행이다. 자기 옆의 자기 이름 `.old` 하나만, 조용히, 실패는 무시한다 —
@@ -338,8 +336,8 @@ housekeeping 때문에 세션이 죽는 것이 잔여물보다 나쁘다.
 **초기 릴리스 기록 (2026-09-17).** v0.2.0 정식 릴리스는 `clauduct.exe`·`clauduct-hook.exe`·
 `clauduct-dev.exe`와 `SHA256SUMS`를 실었다. v0.1.0은 Node 구현의 zip으로 발행됐다.
 
-릴리스에 자산이 빠져 있으면 `--update`는 파일 이름을 알리고 종료한다. GitHub API 한도에 걸리면
-`RATE_LIMITED`와 재시도 시각을 알린다.
+업데이트에 필요한 자산이 빠져 있으면 `--update`는 파일 이름을 알리고 종료한다. GitHub 응답에서 요청 한도 소진을
+확인하면 `RATE_LIMITED`를 표시하고, 한도 재설정 정보를 읽을 수 있으면 재시도까지 남은 시간도 알린다.
 
 ## 5.1.1 제거
 

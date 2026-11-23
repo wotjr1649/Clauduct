@@ -1218,8 +1218,8 @@ native 2.1.288에서 확인했다: `--plugin-dir`로 준 mod의 `prompt.submit` 
 켜져 있을 때만 제공한다. Clauduct 세션은 둘 다 아니므로 쓸 수 없다. mod를 원격으로 끄는 플래그가 telemetry를 끈 상태에서
 어떻게 동작하는지는 확인하지 않았다.
 
-**Anthropic 서버를 쓰는 native 기능(2.1.288 당시 관측).** Clauduct gateway는 `POST /v1/messages`, `POST /v1/messages/count_tokens`,
-`GET /v1/models`만 backend로 보낸다. native 자체의 현행 통신과 strict 조건은 [서버 경계 원장](#서버-경계-원장-v0611)을 따른다.
+**Anthropic 서버를 쓰는 native 기능(2.1.288 당시 관측).** Clauduct gateway는 `POST /v1/messages`와 `POST /v1/messages/count_tokens`를 받아
+Codex backend를 이용해 생성·계수를 처리한다. `GET /v1/models`에는 세션에 고정한 모델 목록으로 응답한다. native 자체의 현행 통신과 strict 조건은 [서버 경계 원장](#서버-경계-원장-v0611)을 따른다.
 
 | 기능 | 상태 |
 |---|---|
@@ -1307,7 +1307,7 @@ record도 소유 기록도 없는 이전 버전의 events 디렉터리는 자동
 
 | 항목 | 분류 | 현재 상태 | 다시 볼 조건 |
 |---|---|---|---|
-| 선행 root 옵션 뒤의 관리 명령(`clauduct --verbose rm <id>` 등)과 옵션 값·`--` 뒤의 `--bg` 판정이 native의 인자 해석과 다름 | 2.1.325 빌드만 native와 맞춤(#331), 그 밖의 빌드는 `OUT_OF_SCOPE` | 해석한 native 파일의 SHA-256이 표를 읽은 2.1.325 빌드와 같을 때만 `--name --bg`·`-- --bg`를 foreground로, `--verbose rm <id>`·선두 `kill`을 native로 바로 보낸다. v0.6.14 출하 기준 2.1.330을 포함한 다른 빌드이거나 SHA-256을 확인할 수 없는 경우에는 보수적으로 판정한다. 첫 토큰 `rm`·`stop`·`logs`만 관리 경로, argv 어디에든 정확한 `--bg`·`--background` 토큰이 있으면 background(세션 준비 실패 시 그런 관리 명령에 못 가고, native가 foreground로 실행하면 `BACKGROUND_DISPATCH_UNVERIFIED`가 될 수 있다). 사전 동작이 미측정인 옵션 뒤와 bg worker 환경의 옵션 뒤 동사는 세션 경로 | 새 native 빌드마다 표·골든·상수를 다시 읽을 때 |
+| 선행 root 옵션 뒤의 관리 명령(`clauduct --verbose rm <id>` 등)과 옵션 값·`--` 뒤의 `--bg` 판정이 native의 인자 해석과 다름 | 2.1.325 빌드만 native와 맞춤(#331), 그 밖의 빌드는 `OUT_OF_SCOPE` | 해석한 native 파일의 SHA-256이 표를 읽은 2.1.325 빌드와 같을 때만 `--name --bg`·`-- --bg`를 foreground로, `--verbose rm <id>`·선두 `kill`을 native로 바로 보낸다. v0.6.14 출하 기준 2.1.330을 포함한 다른 빌드이거나 SHA-256을 확인할 수 없는 경우에는 보수적으로 판정한다. argv 어디에든 정확한 `--bg`·`--background` 토큰이 있으면 먼저 background로 판정하고, 그 외에는 첫 토큰 `rm`·`stop`·`logs`만 관리 경로 후보로 삼는다(세션 준비 실패 시 그런 관리 명령에 못 가고, native가 foreground로 실행하면 `BACKGROUND_DISPATCH_UNVERIFIED`가 될 수 있다). 사전 동작이 미측정인 옵션 뒤와 bg worker 환경의 옵션 뒤 동사는 세션 경로 | 새 native 빌드마다 표·골든·상수를 다시 읽을 때 |
 | 복원한 resident가 Clauduct job 종료와 함께 끝남 | `OUT_OF_SCOPE` | hook 트리 강제 종료(native의 `taskkill /T /F`)는 relay가 resident를 띄우고 먼저 끝나므로 견딘다(native+stub 실측). relay가 끝나기 전의 짧은 순간만 남는다. Clauduct가 띄운 native 아래의 hook은 job 밖으로 분리할 수 없어, 그 hook이 복원한 resident는 Clauduct job이 닫힐 때 함께 끝난다(foreground와 background가 Agent View에 함께 있을 때). 끝나면 다음 hook이 다시 복원한다. 작업 시작 전 job 밖에 두는 link 전용 복원 담당은 후속 작업이다. [v0.6.14 알려진 제한](RELEASE-v0.6.14.md#알려진-제한) | [#332](https://github.com/wotjr1649/Clauduct/issues/332)를 해결할 때 |
 | 경로 template 보류 4개: `/api/frame/comments/{seg}/{seg}/{seg}`, `/api/oauth/local_pairing`, `/api/oauth/organizations/{seg}/sync/github/auth`, `downloads.claude.ai`의 `/model-catalog/v1/schema.json` | `MEASURE` | 정적 추출만 있고 실제 요청 근거가 없어 재실행 전까지 HOLD로 표에 남긴다(2026-10-22 소유자 결정). 기록용이며 통신 허용이 아니다. 현재까지 재실행하지 않았고 v0.6.11 출하 전 재실행 계획은 없다 | 출하 기준 native에서 실제로 관찰할 때([#336](https://github.com/wotjr1649/Clauduct/issues/336)) |
 | native 2.1.309의 Google Cloud provider(`claude.googleapis.com`) 경로 변경 | `MEASURE` | base 경로가 `/v1alpha/projects/…`에서 `/v1/projects/{p}/locations/{l}`로 바뀌었다(정적 판독). launch가 provider 전환 변수를 지우므로 Clauduct가 띄운 native에서는 쓰이지 않아야 하지만, 그 host 요청 0건을 측정하지는 않았다. 경로표에는 넣지 않았다 | native를 갱신할 때([#337](https://github.com/wotjr1649/Clauduct/issues/337)) |

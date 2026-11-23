@@ -1,11 +1,11 @@
 # v0.6.x 후속 품질 검증
 
-현재 Windows 지원 범위를 검증하고 한계를 명시한다. 기존 미지원 기능을 확대하거나 새 버전의 출시를
-선언하는 문서가 아니다. 출시·설치 상태는 [현재 상태](README.md), 기능 계약은 [호환성](COMPATIBILITY.md)이 소유한다.
+v0.6.0 이후 Windows 후속 작업의 검증 계획과 당시 관측을 보존한다. 현재 출시·설치 상태는
+[현행 인덱스](README.md), 기능 계약은 [호환성 문서](COMPATIBILITY.md)를 참고한다.
 
 ## 우선순위와 완료 경계
 
-| 작업 | 범위 | 완료 경계 |
+| 당시 작업 | 범위 | 완료 경계 |
 |---|---|---|
 | [후속 패치 출하 #198](https://github.com/wotjr1649/Clauduct/issues/198) | Agent 종료 수정 등 승인된 후속 변경 전달 | 별도 출하 지시와 최종 자산·설치 검증. 개발 PR 병합만으로 완료하지 않음 |
 | [벤치마크 #199](https://github.com/wotjr1649/Clauduct/issues/199) | native 이벤트 경로와 합성 모델 metadata 일치, 반복 성능 측정 | 회귀 검출·로컬 측정·리뷰·병합 후 확인 |
@@ -56,8 +56,8 @@ handle·thread를 관측한다. 요청·전체 실행 시간과 메모리 중단
 `/effort`는 slider의 `s`로 세션에만 적용한다. 실제 후속 요청과 UUID 재개의 effort, Clauduct·native 설정 파일의
 보존을 대조한다. native의 기본값 저장과 세션 전용 선택은 [공식 effort 문서](https://code.claude.com/docs/en/model-config#adjust-effort-level)를 따른다.
 `/context`의 backend 계수와 본문 생성을 분리하며, 조회가 항상 backend 호출 0이라는 뜻으로 설명하지 않는다.
-Claude Code 2.1.283·2.1.284의 `/agents`는 마법사 제거 안내를 표시한다. `/list-agents`는 현재 세션과
-실행 중인 Agent·다른 세션의 목록을 보여주는 경로다. 설정 마법사와 역할이 다르며, 제거된 마법사를 지원 완료 목록으로 올리지 않는다.
+당시 Claude Code 2.1.283·2.1.284에서 `/agents`는 마법사 제거 안내를 표시했다. `/list-agents`는 현재 세션과
+실행 중인 Agent·다른 세션의 목록을 보여줬다. 이 관측은 두 native 버전의 표본이다.
 
 복합 Office 표본은 DOCX의 표·이미지·header, XLSX의 수식·병합 셀·chart, PPTX의 표·이미지·chart를 포함한다.
 Sol과 Luna의 서로 다른 입력에서 실제 native 도구로 읽기→한 곳 편집→다시 읽기를 검사한다. 별도 검사기는

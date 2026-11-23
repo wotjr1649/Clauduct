@@ -1,6 +1,6 @@
 # Claude Code native 지원 범위
 
-이 문서는 Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위를 설명한다. Clauduct는 native 버전을 고정하거나 내장하지 않고 자동 갱신되는 native를 그대로 실행한다. 버전은 기록만 하며 비교하지 않는다. 새 native마다 무과금 재측정과 표면 관문으로 동작·도구 표면의 차이를 확인한다. 세션의 `verified`는 부분 검사다: 비교 대상이며 비어 있지 않은 모드 core 기대 목록이 있는 세션에서, 세션 중 한 요청의 실제 도구 정의(tools 배열)에 모드의 core 도구가 모두 있고, 세션의 어느 요청에도 측정 목록 밖 비-MCP 도구 정의가 없으며, 추가 도구 이름 진단의 16개 보관 한도 초과가 한 번도 없을 때 true다. 비교하지 않는 세션(기대 core 목록이 비어 있는 경우: 예를 들어 도구를 좁힌 `--tools`, background)은 도구 정의가 있어도 항상 false다. 서로 다른 요청의 부분 core는 합치지 않고, 프롬프트의 deferred 도구 안내 텍스트는 true를 입증하는 근거로 쓰지 않는다. core가 deferred로만 전달되면 false이며, deferred 진단에서만 보관 한도를 초과해도 세션은 false를 유지한다. 측정된 비핵심 도구의 부재, schema, MCP는 검증하지 않는다. false는 차이 또는 미비교일 뿐 거부가 아니며, 버전은 기록만 한다. v0.6.11 출하 검증에 쓴 native 버전·SHA와 근거는 [v0.6.11 기록의 검증한 클라이언트 표](RELEASE-v0.6.11.md#검증한-클라이언트)에 기록한다. 행에 적힌 버전은 그 내용을 확인한 native다. 제품은 설치된 native를 실행하며 사용자 설정·승인·도구 실행과 UI는 native가 담당하고, 모델 요청의 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다. 새 native와 모든 plugin/MCP 조합의 성공은 자동 승계하지 않는다. 현재 검증 결과와 남은 제약은 [호환성 문서](COMPATIBILITY.md)에 있다.
+Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위다. 설치된 native를 그대로 실행하고 버전을 기록한다. 인자 판정에 쓰는 2.1.325 특정 빌드의 SHA-256 조건은 [CLI 계약](ARCHITECTURE.md#4-cli-계약)에 있다. 세션의 `verified`는 [도구 이름과 모드별 core의 부분 판정](COMPATIBILITY.md#0-기준과-판정-방법--2026-09-20-실행-2026-09-19)이다. 출하별 native와 측정 범위는 [현행 인덱스](README.md)가 가리키는 출시 기록을 참고한다. 행에 적힌 버전은 관측에 사용한 native다. 사용자 설정·승인·도구·UI는 native가, 모델 요청 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다.
 
 ## 지원 경로
 
@@ -9,7 +9,7 @@
 - Clauduct가 생성하는 worker 역할은 부모의 native 도구 집합을 상속한다. 고정 whitelist로 WebFetch 검색이 막히던 결함을 수정했으며, 사용자 `--agents`의 명시적 제한·빈 배열·메뉴 대체는 유지한다. 도구 노출은 실행 승인과 별개이며 deny·ask가 계속 적용된다.
 - model과 effort는 실제 계정 목록과 허용 경로로 검증한다. 모르는 이름·지원하지 않는 effort·은퇴 모델은 이유를 표시하고 거부한다. 후속 모델 안내는 자동 대체 실행이 아니다.
 - 명시적으로 같은 Reply를 다시 보내면 새 제출이다. 같은 제출의 복원·재시도와 빈 wake가 중복 효과를 만들지는 않아야 한다.
-- routing 증명은 같은 native의 PID와 생성 시각에 묶인다. 모델 목록 요청을 최대 5초 기다리며, resident gateway 시작 전부터 실행 중이던 native도 기다림 없이 거부하지 않는다. 같은 PID와 생성 시각의 목록이 끝내 없으면 `ROUTING_PROOF_PRIOR_GENERATION`으로 거부한다. 다른 native의 목록은 이 proof를 대신하지 않는다. 무제어 경로는 일반 proof 누락 시 fail-closed routing mismatch로 세션을 종료한다. 인증된 provider-control 경로는 일반 proof 누락을 진단으로만 기록하며 mismatch를 확정하지 않는다. 다만 이전 generation native의 미증명 요청은 provider-control 여부와 관계없이 5초 대기 뒤 `ROUTING_PROOF_PRIOR_GENERATION`으로 거부해 hook event를 막는다. 서로 독립적으로 살아 있어야 하는 작업에는 독립 gateway 자격을 사용한다.
+- routing 증명은 같은 native의 PID와 생성 시각에 묶인다. 모델 목록 대기와 누락 시 처리는 [routing proof 계약](ARCHITECTURE.md#6-http-façade)을 따른다. 서로 독립적으로 살아 있어야 하는 작업에는 독립 gateway 자격을 사용한다.
 - 사용자 config·MCP·Skills·기록을 공유한다. 같은 native config의 Agent View 목록도 공유하며, Clauduct와 standalone의 목록을 서로 숨기는 profile 분리는 제공하지 않는다.
 
 ## 도구·UI별 조건과 대체 경로
@@ -44,7 +44,7 @@
 
 native의 도구 목록에 있는 기능도 대응 backend 의미가 없으면 같은 결과를 보장할 수 없다. temperature/top_p, thinking budget, metadata, cache breakpoint, pause_turn, 도구 결과 이미지/PDF의 명시적 warmup 계수는 현행 backend와 일대일 대응하지 않는 제약이 있다. stop_sequences는 로컬 절단이며 backend 비용·지연을 줄인다는 보장이 아니다. refusal·annotation·citation의 모든 형태를 보존하는 adapter가 없을 때는 조용한 손실 대신 명시적 실패로 처리한다. 실패 차단을 해당 기능 지원으로 부르지 않는다.
 
-기본 신규 세션은 같은 native의 `auth status --json`으로 저장 provider 상태를 먼저 확인한다. native가 저장된 Claude apps gateway를 보고하면 `NATIVE_STORED_GATEWAY`, 상태를 확인하지 못하면 `NATIVE_PROVIDER_STATUS_UNVERIFIED`로 모델 세션 시작 전에 거절한다. 시작 전 native provider 상태 확인에는 30초 한도를 적용하며 호출자의 마감이 더 이르면 먼저 종료한다. 확인과 만료 후 최대 5초의 프로세스 종료·수거 대기 때문에 **새 진행 출력 없이 약 35초까지 기다릴 수 있다**. 동기 OS 호출이나 스케줄링 지연이 있으면 전체 경과 시간은 더 길어질 수 있다. provider 상태 검사에서 거부하면 모델 세션을 시작하지 않고 stderr에 내용 없는 메타데이터 다섯 항목, 실패 단계(`stage`), 고정 사유(`reason`), 정리를 포함한 경과 밀리초(`elapsed_ms`), 수거 여부(`reaped`), 종료 코드 또는 unknown(`exit`)을 한 줄로 남긴다. credential과 query 출력 내용은 기록하지 않는다. 사용자는 Clauduct를 끝낸 뒤 standalone Claude Code에서 gateway 로그인을 해제하고 다시 실행할 수 있다. Clauduct가 credential 파일을 직접 읽거나 자동 로그아웃하지 않는다. 일반 first-party OAuth 상태는 거절 대상이 아니다. 충돌하는 관리 routing 정책과 사용자가 전달한 parent routing 정책도 시작 전에 거절한다.
+기본 신규 세션은 같은 native의 `auth status --json`으로 저장 provider 상태를 먼저 확인한다. 저장된 Claude apps gateway는 `NATIVE_STORED_GATEWAY`, 미확인 상태는 `NATIVE_PROVIDER_STATUS_UNVERIFIED`로 모델 세션 시작 전에 거부한다. 진행 출력 없이 기다릴 수 있는 시간과 실패 진단 항목은 [지원 환경 표](COMPATIBILITY.md#v0611--지원-환경과-보장-한계-319)에 있다. 사용자는 Clauduct를 끝낸 뒤 standalone Claude Code에서 gateway 로그인을 해제하고 다시 실행할 수 있다. 일반 Claude OAuth 상태는 허용하며, 충돌하는 관리 routing 정책과 사용자가 전달한 parent routing 정책은 시작 전에 거부한다.
 
 이 시작 검사는 실행 중 공유 credential 변경이나 기존 supervisor가 보유한 provider 상태까지 인증하지 않는다. 기존 resident 복원은 새 모델 프로세스를 시작하지 않고 기존 routing proof와 reconnect 기한을 사용한다. 따라서 모든 사용자 환경에서 잘못된 목적지 송신0 또는 강한 provider certification을 보장하지 않으며, 검사를 지난 뒤 provider가 바뀌는 경로에는 잔여 위험이 있다. 자동 certification·cache·pre-warm은 제공하지 않는다. HOST_MANAGED/GATEWAY_ENV_COMPAT 전략의 background 제한을 일반 기본 경로의 미지원으로 옮겨 쓰지 않는다.
 
@@ -58,8 +58,8 @@ HKLM provider pin·TxR·고정 broker를 사용하는 enterprise hardening은 �
 
 사용자·plugin hook의 timeout과 생략된 설정은 보존하고 native가 집행한다. Clauduct가 생성한 bridge hook에만 외부 30초를 명시한다. 이는 제품이 구성한 예산이며, 모든 native event의 기본값이 30초라는 뜻은 아니다.
 
-제품 hook의 공유 작업 예산은 18초다: link 조회 3초 + reconnect 대기 2초 + link 재조회 3초 + routing proof 요청 7초 + 다른 요청 3초. proof 실패 뒤의 mismatch 보고는 등록을 대신하며, 등록의 503 재시도는 같은 HTTP 3초를 공유한다. routing proof 요청 예산은 gateway의 5초 대기에 2초 여유를 더한 값이며, proof가 아닌 hook HTTP 요청은 3초다. stdin 대기·해석·단계 전환도 전체 예산을 소비하므로 각 단계는 공유 기한과 자기 기한 중 먼저 오는 시각에 끝난다. reconnect 2초는 호출자의 대기 제한이며 복원 프로세스 전체 수명을 뜻하지 않는다.
+제품 hook의 공유 작업 예산은 18초다. link 조회 3초, reconnect 대기 2초, link 재조회 3초와 [routing proof·기타 HTTP 예산](ARCHITECTURE.md#6-http-façade)을 공유한다. proof 실패 뒤의 mismatch 보고는 등록을 대신하며, 등록의 503 재시도도 같은 HTTP 3초를 쓴다. stdin 대기·해석·단계 전환이 소비한 시간도 포함하고 각 단계는 공유 기한과 자기 기한 중 먼저 오는 시각에 끝난다. reconnect 2초는 호출자의 대기 제한이다.
 
 끝나지 않는 stdin도 공유 18초 기한에 종료하며, 취소 뒤 입력이 도착해도 후속 hook 작업을 시작하지 않는다. 입력 reader의 회수는 일회성 hook 프로세스의 종료에 의존한다. 외부 30초와 내부 18초의 차이는 임의의 OS 시작·종료 지연을 보장하지 않는다. 기존 event별 거절과 native 실패 정책은 유지하며, 사용자·plugin hook에 제품 제한이나 onFailure 정책을 일괄 적용하지 않는다. 설정 형식과 event별 기본값은 [native hooks 문서](https://code.claude.com/docs/en/hooks#common-fields)를 따른다.
 
-개발 중에는 변경 영향 시험과 유효한 기존 근거를 사용한다. 전체 관문은 push/출하 전에 새 후보에서 실행하고, 전체 exit 0과 요구별 근거 충족을 각각 확인한다. 선택형 시험·지원하지 않는 native 기능·과거 실패는 원래 상태와 이유를 남긴다. 미해결 결함을 SKIP으로 바꾸지 않는다. 최종 태그 자산·설치·업데이트·제거 확인은 출하 요청 시 별도 절차로 수행한다.
+개발 중에는 변경 영향 시험과 유효한 기존 근거를 사용한다. 출하 검증은 후보와 변경 범위에 맞는 관문을 적용하며, 전체 관문을 실행할 때는 종료 결과와 요구별 근거를 함께 확인한다. 선택형 시험·미지원 기능·과거 실패는 상태와 이유를 남긴다. 최종 태그 자산·설치·업데이트·제거 확인은 [출하 절차](PACKAGING.md#41-릴리스-만들기)를 따른다.

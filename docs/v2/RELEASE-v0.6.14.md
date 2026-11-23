@@ -1,6 +1,6 @@
 # v0.6.14 — 도구 호출 호환성과 요청 대기 보완
 
-출하 후보는 `a2be1014d3d47bb67bed5a16db77136cf07fe276`이다. v0.6.13 이후 도구 인자 수신, 라우팅 증거 대기, 특정 native 빌드의 인자 판정을 손봤다. 2026-11-23 소유자 결정에 따라 이번 출하는 소유자 예외 경로를 따른다.
+2026-11-24 출시(태그 `v0.6.14` → `6782e6affa130a800cd0e7ac9b08df362c29e51d`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.14), 출하 기록 [#389](https://github.com/wotjr1649/Clauduct/issues/389)). 제품 소스는 출하 후보 `a2be1014d3d47bb67bed5a16db77136cf07fe276`과 같고 태그 commit은 이 문서만 더했다. v0.6.13 이후 도구 인자 수신, 라우팅 증거 대기, 특정 native 빌드의 인자 판정을 손봤다. 2026-11-23 소유자 결정에 따라 이번 출하는 소유자 예외 경로를 따른다.
 
 ## 바뀐 것
 
@@ -24,19 +24,30 @@
 
 ### 표면 재측정과 발행 검사
 
-- native 2.1.330 무과금 도구 표면·core 도구 재측정(`c1`) — 수집 완료, native 연속성 PASS. 도구 이름·core 도구 목록·slash command·skill·agent 목록은 2.1.325와 같다. 도구 설명과 선택 입력(`ListAgents`의 `cursor`, `ReportFindings`의 `severity`), system prompt 문구, `--help`, plugin API에 차이가 있다. 독립 검토에서 제품 변경이 필요한 차이는 없다고 판정했다. `Workflow`의 `resumeFromRunId`로 명시 재실행할 때의 캐시 동작은 확인하지 않았다..
-- 정식 태그가 가리키는 commit, 발행 자산과 `SHA256SUMS`의 SHA-256, 설치·업데이트 및 발행 뒤 확인 결과는 출하 검사에서 확정한다. [PACKAGING §4.1](PACKAGING.md#41-릴리스-만들기), `docs/v2/PACKAGING.md:151`.
+- native 2.1.330 무과금 도구 표면·core 도구 재측정(`c1`) — 수집 완료, native 연속성 PASS. 도구 이름·core 도구 목록·slash command·skill·agent 목록은 2.1.325와 같다. 도구 설명과 선택 입력(`ListAgents`의 `cursor`, `ReportFindings`의 `severity`), system prompt 문구, `--help`, plugin API에 차이가 있다. 독립 검토에서 제품 변경이 필요한 차이는 없다고 판정했다. `Workflow`의 `resumeFromRunId`로 명시 재실행할 때의 캐시 동작은 확인하지 않았다.
+
+### 출하 빌드·발행 검사
+
+[PACKAGING](PACKAGING.md#41-릴리스-만들기)의 절차를 따랐다. native를 쓴 검사는 모두 Claude Code 2.1.330에서 돌았다.
+
+- `build-release`: 두 번의 독립 캐시 빌드 바이트가 같고, probe digest가 `go/cmd/clauduct/probe.sha256`과 일치한다.
+- 발행 전 `probe limit --send`(3회): `max_output_tokens` 상한을 유지한다(HONOURED).
+- `ship-install`: 새 설치, v0.6.13에서 업데이트, 되돌리기, 설정 보존, 사용자 PATH 불변을 확인했다.
+- `ship-session`, TUI 요약 회귀(`tui-summary`), 무과금 표면 관문(`surface`), 실제 backend 18개는 NOT_RUN(소유자 최소 경로). 표면은 위 c1 재측정으로 대신했다.
+- 발행 뒤 `verify-release`(내려받은 바이트·API digest·`SHA256SUMS`), `ship-update`(이전 릴리스의 `--update`와 `already current`), `ship-legacy`(v0.3.5)를 모두 통과했다.
 
 ## 출하 신원
 
 | 항목 | 값 |
 |---|---|
-| 대상 태그 | `v0.6.14` |
-| 후보 commit | `a2be1014d3d47bb67bed5a16db77136cf07fe276` |
-| 로컬 후보 빌드 `clauduct.exe` SHA-256 | `68e5e886f084834fafe75552968ad94fccc9ae44f7eaa40225b1c97d7616f2d1` |
-| 재측정 대상 native | Claude Code 2.1.330, SHA-256 `fa797c1bc7d4a3511da42622bae53a2b7f1276ae328c668f2bfef44635301caa` |
+| 태그 | `v0.6.14` → `6782e6affa130a800cd0e7ac9b08df362c29e51d` |
+| `clauduct.exe` | `10727985122742a22563af1bd23f23a1661971538f91211105d0fff6b955aac3` |
+| `clauduct-probe.exe` | `9f5a324b0e1e08e3c5689eb4b19b644883416c8d0371a71fa3e32aabf2a4e687` |
+| `install.ps1` | `6720976f89e9016a33bd046f02bcf36e1acfdb411097b93c1d8a443f55356c58` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `05e81b32b1c48682d7af261e86b2c16666b0b4f0897cd51a43234899acb48bfe` |
 
-로컬 후보의 빌드 환경은 Windows/amd64, Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`다. 공개 자산의 신원은 발행 뒤 확인한 값으로 기록한다.
+Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`. 실제 backend 표본의 후보(SHA-256 `68e5e886…`, commit `a2be1014d`)는 같은 제품 소스를 개발 신원으로 빌드한 것이라 출하 `clauduct.exe`와 digest가 다르다.
 
 ## 알려진 제한
 

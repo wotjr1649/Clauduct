@@ -3,7 +3,7 @@ package launch
 // Native 2.1.330 walks argv before root option parsing to recognize a background request
 // (`--bg`, `--background`) or a management verb (`rm|stop|kill|logs`). Both scans use the
 // same option sets to skip values. The sets below were read from the native executable
-// (#331 M0) and are pinned by the golden table go/internal/app/testdata/native-argv-2.1.330.json.
+// (#331 M0). The private golden test checks these sets.
 // Callers narrow only when the resolved native's SHA-256 is NativeDispatchSHA256.
 //
 // The golden table is private and runs in the full gate (A11), not in public CI. Whoever changes

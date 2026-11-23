@@ -57,8 +57,8 @@ func skipOption(args []string, i int) int {
 	return end
 }
 
-// NativeBackgroundFlag reports an exact background token before the first "--", outside
-// option value slots. The scan includes tokens after the first operand, so `prompt --bg`
+// NativeBackgroundFlag skips option values and reports an exact background token before the first
+// "--" not consumed as an option value. The scan includes tokens after the first operand, so `prompt --bg`
 // counts. Native may handle the request in the fast path or defer it to the root parser.
 func NativeBackgroundFlag(args []string) bool {
 	for i := 0; i < len(args); i++ {

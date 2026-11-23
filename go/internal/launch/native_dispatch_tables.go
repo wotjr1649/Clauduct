@@ -1,24 +1,21 @@
 package launch
 
-// Native 2.1.325 reads argv before option parsing in two places, and the launcher has to
-// decide the same way: whether a background token will start a job (`--bg`, native's kS
-// scan) and whether a management verb leads the argv (`rm|stop|kill|logs`, native's yai).
-// Both walk argv with one helper (xlt) over option sets compiled into the native executable.
-// The sets below were read from the 2.1.325 executable bytes (nothing executed, #331 M0,
-// sha256 NativeDispatchSHA256) and are pinned by the golden table
-// go/internal/app/testdata/native-argv-2.1.325.json. Another native version may differ, so
-// callers narrow only when the resolved native's SHA-256 is NativeDispatchSHA256.
+// Native 2.1.330 walks argv before root option parsing to recognize a background request
+// (`--bg`, `--background`) or a management verb (`rm|stop|kill|logs`). Both scans use the
+// same option sets to skip values. The sets below were read from the native executable
+// (#331 M0) and are pinned by the golden table go/internal/app/testdata/native-argv-2.1.330.json.
+// Callers narrow only when the resolved native's SHA-256 is NativeDispatchSHA256.
 //
 // The golden table is private and runs in the full gate (A11), not in public CI. Whoever changes
 // a set moves the three together: these sets, the two constants below, and the golden table.
 
 // NativeDispatchVersion is the native version the sets below were read from.
-const NativeDispatchVersion = "2.1.325"
+const NativeDispatchVersion = "2.1.330"
 
 // NativeDispatchSHA256 anchors the executable the sets were read from.
-const NativeDispatchSHA256 = "87e0cb6ae0f4775da388cd3043f4d8097ef961dcddbf55fe90bc61ffc3f57a30"
+const NativeDispatchSHA256 = "fa797c1bc7d4a3511da42622bae53a2b7f1276ae328c668f2bfef44635301caa"
 
-// nativeValueOptions (native a) skip the next token whatever it looks like.
+// nativeValueOptions skip the next token whatever it looks like.
 var nativeValueOptions = []string{
 	"--prefill",
 	"--prefill-b64",
@@ -28,6 +25,7 @@ var nativeValueOptions = []string{
 	"--handle-uri",
 	"--settings",
 	"--managed-settings",
+	"--initialize-fields",
 	"--setting-sources",
 	"--client-data-url",
 	"--watch-artifact",
@@ -103,6 +101,7 @@ var nativeValueOptions = []string{
 	"--ref",
 	"--on-branch",
 	"--correlation-id",
+	"--metadata",
 	"--forward-home-settings",
 	"--project-config-root",
 	"--attach-serve",
@@ -110,7 +109,7 @@ var nativeValueOptions = []string{
 	"--session-began-as-copy",
 }
 
-// nativeOptionalValueOptions (native d) skip the next token only when it does not look like an option.
+// nativeOptionalValueOptions skip the next token only when it does not look like an option.
 var nativeOptionalValueOptions = []string{
 	"-d",
 	"--debug",
@@ -128,7 +127,7 @@ var nativeOptionalValueOptions = []string{
 	"--prompt-suggestions",
 }
 
-// nativeVariadicValueOptions (native cGo) are value options that also take every following token up
+// nativeVariadicValueOptions are value options that also take every following token up
 // to the next option-looking one.
 var nativeVariadicValueOptions = []string{
 	"--allowedTools",
@@ -144,7 +143,7 @@ var nativeVariadicValueOptions = []string{
 	"--dangerously-load-development-channels",
 }
 
-// nativeBooleanOptions (native f) are the known options without a value, for the management check.
+// nativeBooleanOptions are the known options without a value, for the management check.
 var nativeBooleanOptions = []string{
 	"-d2e",
 	"--debug-to-stderr",
@@ -161,6 +160,7 @@ var nativeBooleanOptions = []string{
 	"--forward-subagent-text",
 	"--session-mirror",
 	"--await-claim",
+	"--hold-repository-while-parked",
 	"--await-initialize",
 	"--managed-settings-in-initialize",
 	"--dangerously-skip-permissions",
@@ -195,7 +195,7 @@ var nativeBooleanOptions = []string{
 	"--hard-fail",
 }
 
-// nativeNoVerbValueOptions (native h) are value options that do not let a management verb follow.
+// nativeNoVerbValueOptions are value options that do not let a management verb follow.
 var nativeNoVerbValueOptions = []string{
 	"--exec",
 	"-m",

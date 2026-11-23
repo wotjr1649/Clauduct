@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// The functions here mirror native 2.1.325's own argv dispatch (see native_dispatch_tables.go).
+// The functions here mirror native 2.1.330's argv scans (see native_dispatch_tables.go).
 // They are separate from NativeArgEnd on purpose: that one follows the public --help and stops
 // at options it does not know, while native's dispatch walks its own, larger option sets.
 
@@ -36,7 +36,7 @@ var (
 
 func optionShaped(arg string) bool { return len(arg) > 1 && strings.HasPrefix(arg, "-") }
 
-// skipOption is native's xlt: the index of the last token option args[i] owns.
+// skipOption returns the index of the last token that option args[i] owns.
 func skipOption(args []string, i int) int {
 	name := args[i]
 	if optionalSet[name] {
@@ -57,9 +57,9 @@ func skipOption(args []string, i int) int {
 	return end
 }
 
-// NativeBackgroundFlag is native's kS("--bg") || kS("--background"): an exact background token
-// before the first "--" that is not the value slot of a value option. It does not stop at the
-// first operand, so `prompt --bg` counts.
+// NativeBackgroundFlag reports an exact background token before the first "--", outside
+// option value slots. The scan includes tokens after the first operand, so `prompt --bg`
+// counts. Native may handle the request in the fast path or defer it to the root parser.
 func NativeBackgroundFlag(args []string) bool {
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--" {
@@ -112,7 +112,7 @@ func NativeManagementVerb(args []string) string {
 	return args[at]
 }
 
-// knownBeforeVerb reports whether arg may precede a management verb (native's c, minus x).
+// knownBeforeVerb reports whether arg may precede a management verb.
 func knownBeforeVerb(arg string) bool {
 	switch arg {
 	case "-p", "--print", "--bg", "--background", "--routine", "-h", "--help", "-v", "-V", "--version":

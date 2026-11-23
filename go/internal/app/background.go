@@ -34,13 +34,10 @@ type BackgroundSession struct {
 	ForkedFrom string `json:"forkedFrom,omitempty"`
 }
 
-// BackgroundRequested reports whether native will start a background job for args. Native
-// 2.1.325 scans argv for an exact background token up to the first "--", skipping the value slot
-// of each value option (launch.NativeBackgroundFlag), so `--name --bg` and `-- --bg` are a name
-// and a prompt, not a job; native 2.1.282 had started a job there (v0.4.3). The narrowing is
-// pinned to that native build (the resolved file's SHA-256): when the native is another build, or
-// cannot be identified, any exact token still counts, because a job native starts that the
-// launcher took for foreground loses its gateway (#331).
+// BackgroundRequested reports whether args request a background job. Native 2.1.330 scans
+// up to the first "--", skipping option values, and decides how to handle recognized requests
+// after the scan. For other or unidentified builds, any exact background token counts so
+// that a job started by native keeps its gateway (#331).
 func BackgroundRequested(args []string) bool {
 	if !slices.Contains(args, "--bg") && !slices.Contains(args, "--background") {
 		return false

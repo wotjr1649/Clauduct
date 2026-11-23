@@ -115,9 +115,9 @@ go run ./cmd/clauduct --dev --version
 go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측정 버전, Codex 로그인 사용 가능 여부(범주·만료만), 모델 캐시(~/.codex/models_cache.json)를 참고로 나열한다(세션의 모델 목록 근거는 아니다). 자식은 claude --version·codex --version
 ```
 
-v0.3.3부터 테스트·race·evidence 검사와 그 입력은 공개 트리에 없다. 예외는 v0.6.9부터 공개하는 합성 protocol
-contract test(`internal/protocol`의 anthropic·bridge·codex, `internal/stream`, `internal/wire`)다. 나머지는 유지보수자가
-로컬에서 돌리며, 공개 CI는 위 세 검사, 그 contract test, `internal/httpguard`의 Linux·macOS build와 PowerShell 7
+공개 테스트는 합성 protocol contract test(#271, `internal/protocol`의 anthropic·bridge·codex, `internal/stream`,
+`internal/wire`)와 `.github/tests/`의 argv 판정 테스트(#331)다. 유지보수자는 나머지 테스트·race·evidence 검사를
+로컬에서 돌린다. 공개 CI는 위 세 검사와 공개 테스트, `internal/httpguard`의 Linux·macOS build와 PowerShell 7
 스크립트의 AST·최소 버전을 검사한다.
 
 비공개 하네스 검사의 native 기록 구조(census 항목, 하네스가 직접 실행한 명령의 기록)를 바꾸면, 실제 기록 경로(census 적용,

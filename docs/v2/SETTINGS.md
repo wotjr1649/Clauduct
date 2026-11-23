@@ -4,7 +4,7 @@ v0.5.3에서 도입한 설정 형식이다. v0.5.4에서 초기 문서와 적용
 출하 범위는 [v0.5.4](RELEASE-v0.5.4.md), v0.5.5의 phase 대화 호환 범위는 아래 재개 절에 있다.
 
 v0.6.4는 모델 목록을 계정에서 받고, 누락 키 동기화와 `classifier_model`의 pair 형식을 더하고,
-두 effort 상한을 더 이상 적용하지 않는다. 아래 본문은 v0.6.4 기준이다.
+두 effort 상한을 더 이상 적용하지 않는다. 후속 설정인 경계 프로필과 분류기 공장값은 각각 아래 절에서 설명한다.
 
 Clauduct는 실행할 때 사용자 홈의 `.clauduct/settings.json`을 읽는다. 파일은 직접 편집한다.
 파일이 없으면 설치·업데이트·일반 실행이 startup, modelDefaults, modelMapping, 내장 agents,
@@ -194,9 +194,9 @@ v0.6.12부터 `terra` 키와 `sonnet` 별칭은 `gpt-6.1-terra`다. `gpt-5.6-ter
 키(`sol`·`sol6`·`astra`·`terra`·`terra56`·`luna`), 별칭(`fable`·`opus`·`sonnet`·`haiku`)과 버전형 이름, Agent 단계,
 로컬 계수 허용(`countValidated`), 은퇴 표다. 이 자료는 선택 범위를 제한하지 않는다. 은퇴 표는 계정이 그 이름을
 더는 나열하지 않을 때 거부 이유를 설명하는 데만 쓴다. 예를 들어 계정이 `gpt-5.6-sol`을 나열하면 그 모델은 다시 라우팅된다.
-v0.6.6부터 `gpt-5.5 → gpt-6.1-sol`이 은퇴 표에 있다. 계정 목록에는 2026-10-14 은퇴 예정이라고 적혀 있다. 그때까지는
-그대로 실행되고, 목록에서 빠진 뒤에는 그 모델을 고른 설정·세션이 `MODEL_RETIRED`와 후속 모델 안내로 거부된다.
-자동으로 바꾸지는 않는다.
+v0.6.6부터 `gpt-5.5 → gpt-6.1-sol`이 은퇴 표에 있다. 2026-10-18에는 계정 목록에서 `gpt-5.5`가
+빠진 것을 확인했다. 계정이 이 모델을 나열하지 않을 때 해당 모델을 고른 시작 설정·세션·Agent는 `MODEL_RETIRED`와 후속 모델 안내로
+거부한다. [실측 근거](COMPATIBILITY.md#알려진-제한-원장-v0614)
 계정이 숨긴(visibility가 `list`가 아닌) 모델은 `/model`에 나오지 않지만 전체 ID로 선택할 수 있다.
 v0.6.5부터는 위임 메뉴와 Agent의 `model`·`effort` 선택지에도 나오지 않는다. 모델이 숨김 모델을 스스로
 고르지 않게 하려는 것이다. 사용자가 전체 ID를 지정하면 Agent `model` 인자와 Workflow는 그대로 실행한다.
@@ -238,7 +238,7 @@ redirect는 거부하고 목적지는 고정이다. 각 모델의 id, 지원 수
 가리켜도 파일에서 지우거나 바꾸지 않는다. 시작할 때 stderr와 status `session.modelList.problems`에 알리고,
 그 항목을 실제로 선택했을 때만 실패한다. 공장 agents 기본값이 계정에 없을 때도 같은 방식으로 알린다.
 
-## 전역 context와 압축 목표 (v0.6.2 준비)
+## 전역 context와 압축 목표
 
 두 context 항목은 모델별 설정이 아니다. Sol·Luna·Astra·Terra와 자식 Agent에 같은 값을 적용한다.
 Clauduct는 실행 시 `floor(context_window * min(auto_compact_token_limit_percent, 90) / 100)`으로
@@ -263,7 +263,7 @@ v0.6.4부터 자동·수동 압축 모두 현재 선택을 사용한다. Agent�
 자체에 적은 모델과 effort를 쓴다(한 번만 쓰는 system turn의 effort는 적용하지 않는다). 이전 요청의 route를 다시 쓰지
 않으므로, 모델을 바꾼 뒤의 압축은 새로 선택한 모델에서 실행된다(v0.6.3까지는 이전 route였다).
 v0.6.3까지 적용하던 `auto_compact_effort_cap`은 적용하지 않는다. 압축 시작 조건(`context_window`,
-`auto_compact_token_limit_percent`)은 그대로다. high·max 압축이 시간과 사용량에 주는 영향은 측정하지 않았다.
+`auto_compact_token_limit_percent`)은 그대로다. `gpt-6-luna`의 medium·high·max 압축 시간과 토큰은 [v0.6.4의 effort별 1회 표본](COMPATIBILITY.md#v064--계정-모델-목록-권한-규칙-제거-설정-동기화)에 기록했다.
 
 외부 플러그인 agent는 `plugin-name:agent-name`처럼 native의 실제 이름을 사용한다.
 Clauduct의 pair는 역할의 실행 선택을 바꾼다. 역할의 원래 prompt·tools·권한은 native가 읽고 적용한다.

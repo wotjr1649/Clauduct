@@ -6,8 +6,8 @@ Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 그대로 담당
 추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다.
 Codex app-server를 호출하거나 실행 중인 Codex 앱 세션에 요청을 넘기는 구현이 아닙니다.
 
-제품은 Go 단일 바이너리 `clauduct.exe` 하나입니다(v0.4.0부터, hook·`--dev` 명령 포함). 현행 동작·제약·미지원은
-[docs/v2/COMPATIBILITY.md](docs/v2/COMPATIBILITY.md) 하나가 소유합니다.
+Go 실행기 `clauduct.exe`에 hook과 `--dev` 명령이 들어 있습니다. 설치·업데이트는 v0.6.11부터 진단용
+`clauduct-probe.exe`도 함께 다룹니다. 기능과 제약은 [호환성 문서](docs/v2/COMPATIBILITY.md)를 참고하세요.
 
 이전 Node 구현(v1, `clauduct-node`)은 v0.3.3에서 저장소에서 은퇴했습니다. 마지막 소스와 문서는
 [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481)에
@@ -55,15 +55,15 @@ Windows PowerShell 5.1(`powershell`)은 지원하지 않습니다. 검증 환경
 `clauduct.exe`와 내장 `--update`·`--uninstall`은 Go로 구현되어 PowerShell 런타임을 요구하지 않습니다.
 실행 정책이 스크립트를 막으면 해당 환경의 정책에 따라 허용된 실행 경로를 사용해야 합니다.
 
-최신 릴리스에서 `clauduct.exe`와 `SHA256SUMS`를 받아 **대조가 끝난 뒤에** `~\.local\bin`에
-넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. 받은 바이트가 릴리스가 말하는 digest와 다르면
-`INSTALL_DIGEST_MISMATCH`로 멈추고 **대상 폴더는 손대지 않은 상태로 남습니다.**
+최신 릴리스에서 `clauduct.exe`·`clauduct-probe.exe`·`SHA256SUMS`를 받아 두 실행 파일의 digest를
+대조한 뒤 `~\.local\bin`에 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. digest가 다르면
+`INSTALL_DIGEST_MISMATCH`로 멈추고 **대상 폴더는 그대로 둡니다.**
 
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.
 
 ```powershell
-pwsh -NoProfile -File .\scripts\install.ps1 -Tag v0.6.1       # 태그 고정
-pwsh -NoProfile -File .\scripts\install.ps1 -FromPath .\dist  # 직접 빌드한 것으로 (clauduct.exe + SHA256SUMS 필요)
+pwsh -NoProfile -File .\scripts\install.ps1 -Tag v0.6.14      # 태그 고정
+pwsh -NoProfile -File .\scripts\install.ps1 -FromPath .\dist  # 직접 빌드한 자산(실행 파일과 SHA256SUMS)
 pwsh -NoProfile -File .\scripts\install.ps1 -NoPathUpdate     # PATH는 직접 관리
 pwsh -NoProfile -File .\scripts\install.ps1 -SkipPreflight    # Claude Code·Codex CLI를 나중에 설치할 때
 ```
@@ -103,9 +103,9 @@ clauduct --uninstall --yes  # 무인
 제거는 바이너리가 합니다. `--update`와 같은 규칙이라 **첫 인자일 때만** 인식하고,
 `clauduct -p "how do I --uninstall"`은 아무것도 지우지 않습니다.
 
-실행 중인 자기 자신은 지울 수 없으므로 `.old`로 옮기고 그 한 줄을 출력합니다. **PATH와 진단
-파일은 건드리지 않고** 무엇이 남았는지만 알립니다 — 기본 설치 폴더에는 `claude.exe`도 살기
-때문입니다. 그것까지 지우려면 저장소의 스크립트를 씁니다.
+실행 중인 `clauduct.exe`는 `%TEMP%\clauduct-removed-<pid>.exe`로 옮깁니다. 볼륨이 달라 이동할 수
+없으면 설치 폴더에 `.old`로 옮기고 삭제 방법을 출력합니다. PATH와 진단 파일까지 지우려면
+저장소의 제거 스크립트를 사용합니다.
 
 ```powershell
 pwsh -NoProfile -File scripts\uninstall.ps1 -Purge       # 진단 파일(%TEMP%\clauduct)까지
@@ -128,8 +128,8 @@ clauduct --usage       # 이 계정이 주간 한도를 얼마나 썼는지. 요
 clauduct --dev --doctor  # 이 빌드 자신에 대한 질문은 --dev 뒤로
 ```
 
-거의 모든 인자는 그대로 native로 전달됩니다. 이 런처가 소유하는 옵션은 `--update`·`--usage`·`--uninstall`·`--dev`
-넷이고(모두 **첫 인자일 때만** 인식), 거부하는 것은 **둘**입니다(권한 해제 2종).
+거의 모든 인자는 그대로 native로 전달됩니다. 런처는 첫 인자인 `--update`·`--usage`·`--uninstall`·
+`--dev`·`--background-stop`을 처리합니다. 권한 해제 옵션 2종과 별도 Claude Desktop 실행(`--desktop`)은 거부합니다.
 `--settings`는 0.3.0부터 거부 대신 필수 settings와 **병합**됩니다 — 필수 연결이나 hook과
 충돌할 때만 거부합니다. `--setting-sources`는 그대로 native에 전달됩니다.
 
@@ -148,8 +148,8 @@ native의 `S` 선택은 현재 세션에 적용하고, UUID 재개에서는 마�
 ## 무엇이 검증됐는가
 
 v0.3.2까지의 증거는 [docs/v2/VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)가 소유합니다. 요구 ID, 게이트, 실행한 검사와
-**실행하지 않은 검사**를 함께 적습니다 — 미실행은 통과가 아닙니다. v0.3.3부터 테스트와 검증 기록은
-이 저장소에 두지 않고 로컬에서 관리합니다. 공개 CI는 빌드만 확인합니다.
+**실행하지 않은 검사**를 함께 적습니다. v0.3.3부터 전체 회귀와 검증 기록은 로컬에서 관리합니다.
+공개 CI는 v0.6.9부터 공개한 합성 protocol contract test와 gofmt·vet·빌드, 설치·제거 스크립트의 PowerShell 7 문법과 최소 버전을 검사합니다.
 
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 공식 지원하지 않는다고 명시합니다.
 이것은 제3자 호환 구현이며 "공식 지원"이나 "전체 기능 100% 보장"으로 설명하지 않습니다.

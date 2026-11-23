@@ -10,8 +10,10 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 | 출하 후 후속 | 알려진 제한과 미검증 항목은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0614)에 분류와 다시 볼 조건을 붙여 한곳에 모았다(v0.6.9, #273). 릴리스별 기록의 "알려진 제한" 절은 그 릴리스 당시의 기록이다 |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다. launch에는 필요 없고, 설치·업데이트는 둘을 한 쌍으로 다룬다([PACKAGING](PACKAGING.md) 1절·5.1절). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go(필요 버전은 `go.mod`가 유일한 출처, [PACKAGING](PACKAGING.md#툴체인-버전-370)), **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
-| 측정된 도구 표면과 검증한 클라이언트 | 측정된 도구 표면(이름과 모드별 core)은 내장 자료(`measured-clients.json`)이다. 세션의 `verified`는 부분 검사다: 비교 대상이며 비어 있지 않은 모드 core 기대 목록이 있는 세션에서, 세션 중 한 요청의 실제 도구 정의(tools 배열)에 모드의 core 도구가 모두 있고, 세션의 어느 요청에도 측정 목록 밖 비-MCP 도구 정의가 없으며, 추가 도구 이름 진단의 16개 보관 한도 초과가 한 번도 없을 때 true다. 비교하지 않는 세션(기대 core 목록이 비어 있는 경우: 예를 들어 도구를 좁힌 `--tools`, background)은 도구 정의가 있어도 항상 false다. 서로 다른 요청의 부분 core는 합치지 않고, 프롬프트의 deferred 도구 안내 텍스트는 true를 입증하는 근거로 쓰지 않는다. core가 deferred로만 전달되면 false이며, deferred 진단에서만 보관 한도를 초과해도 세션은 false를 유지한다. 측정된 비핵심 도구의 부재, schema, MCP는 검증하지 않는다. false는 차이 또는 미비교일 뿐 거부가 아니며, 버전은 기록만 한다. Claude Code·Codex CLI 버전은 고정·내장하지 않고 기록만 한다(v0.6.11, #333). v0.6.11 출하 검증에 쓴 native·Codex CLI 버전과 근거는 [검증한 클라이언트 표](RELEASE-v0.6.11.md#검증한-클라이언트)에 있다. 아래는 버전별 재측정 이력이다. 2026-11-03 무과금 재측정(native 2.1.317, Codex CLI 설치본 0.166.0): 도움말과 도구 이름·core 집합은 2.1.316과 같고, plugin API에 desktop용 `Backdrop`·`$.ui.backdrop`가 추가됐다. fresh print/TUI × reference/clauduct/strict 표면 관문은 통과했다. 이번 평가에서 전체 fixture·전체 관문·실제 backend는 실행하지 않았다. 당시 Codex CLI 설치본은 0.166.0이었고 도움말이 같았다. 전체 관문 실행기는 13단계가 종료 코드 0(`ALLDONE failed=0`)이었으나 검증 범위 판정기는 FAIL이라 전체 관문 PASS가 아니며(알려진 제한), 별도 실제 backend 18묶음은 실행하지 않았다(NOT_RUN, 소유자 결정 2026-11-10)이다([v0.6.11](RELEASE-v0.6.11.md)). #319 마감 관문(2.1.303)의 결과는 그 과거 후보에만 해당한다. 이전 기준 2.1.316의 2026-10-31 fixture·표면 PASS는 그 당시 입력에만 유효하다. 이전 기준은 2.1.314·2.1.312·2.1.311·2.1.310·2.1.309(Codex CLI 0.164.0), 2.1.305·2.1.304·2.1.303(0.163.0), 그 전은 2.1.299·0.162.1이다. 2026-10-14 무과금 재측정: 2.1.289 기준 대비 `attach`·`logs`가 이름도 받고, hook 타입에 선택 필드(workflow·resume·command·requestMeta 등)가 늘었으며, fixture 시험과 도구 표면 gate가 통과했다. print 목록의 native 전용 `claude` agent는 Agent View 기본 agent로, 2.1.299 측정에서 `CLAUDE_CODE_DISABLE_AGENT_VIEW`가 있을 때만 빠졌다. v0.6.11은 이 변수를 넣지 않는다(공개 빌드 Agent View). 2026-10-16에는 자동 갱신된 2.1.301에서 6경로 무과금 도구 표면 재측정이 통과했다. 도움말과 선택 UI API 선언의 차이를 확인했으며, 제품의 측정 기준과 기준 스냅샷은 갱신하지 않았다. 같은 native를 고정한 제품 소스 599da41b의 관문은 launcher 종료 합성 행에서 실패했고, 검증 driver의 콘솔 종료 경합을 보정한 4813b7ae의 후속 관문 상태를 기록한다([v0.6.11](RELEASE-v0.6.11.md)). Go 1.27.2. 이전 기준은 2.1.289·0.160.0. 2026-10-04 무과금 재측정(#267): 2.1.289 바이너리를 지정해 도움말은 같고, 세션 plugin이 쓰는 hook 타입에서 teammate 관련 차이(`isTeammate`, `teammateId`, `AgentTeammateRecord`)를 보고했으며, 설치본 native로 도는 fixture 시험이 통과했다. 같은 날 요청 형태 전수 수집(비대화형 11경로, TUI 4경로)이 2.1.288과 같았고, 실제 backend 회귀 18개가 통과했다. 이전 기준은 2.1.288(v0.6.8), 2.1.287·0.159.3(v0.6.3). Windows, Go 1.27.1, PowerShell 7.6.6. [v0.6.3 실행 결과](RELEASE-v0.6.3.md), Worktree·media·phase·Bundle C와 식별자별 NOT_RUN은 [v0.6.0 기록](RELEASE-v0.6.0.md)에서 구분한다 |
+| 측정된 도구 표면과 검증한 클라이언트 | 도구 이름과 모드별 core는 내장 자료(`measured-clients.json`)로 비교한다. 세션의 [`verified` 판정](COMPATIBILITY.md#0-기준과-판정-방법--2026-09-20-실행-2026-09-19)은 도구 이름과 모드별 core에 한정한다. v0.6.14 출하는 native 2.1.330에서 표면을 재측정하고 실제 backend 표본 3종을 확인했다. v0.6.13의 신규 영향 실측은 2.1.321에서 했다. [v0.6.14 출하 검사](RELEASE-v0.6.14.md#출하-검사), [v0.6.13 출하 검사](RELEASE-v0.6.13.md#출하-검사) |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 예외는 v0.6.9부터 공개하는 합성 protocol contract test다(#271). 공개 CI는 그 테스트와 gofmt·vet·build, PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
+
+### 이전 문서와 검증 기록
 
 기능별 현행은 [COMPATIBILITY.md](COMPATIBILITY.md)가 소유한다. v0.3.2까지의 판정·격차·증거는
 [DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md),
@@ -19,13 +21,21 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 [VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)에
 고정돼 있다.
 
-v0.6.x 후속 작업은 현행 Windows 지원 범위를 검증한다. [우선순위·성능·자원·직접 인수 범위](QUALITY-v0.6.x.md)에
-출하 검사와 개발 검증을 구분한다. v0.6.11은 2026-11-10에 발행했지만 전체 관문의 closure coverage와 실제 backend 18묶음은 통과하지 않았다. 알려진 제한과 발행 전 발견 사항은 [RELEASE-v0.6.11.md](RELEASE-v0.6.11.md)와 알려진 제한 원장이 소유하며, 발행 사실을 그 항목들의 해소로 읽지 않는다.
+[v0.6.x 후속 품질 기록](QUALITY-v0.6.x.md)은 당시의 성능·자원·직접 인수를 담는다. 검증 예산·설치와 대표·경계
+인수의 당시 범위는 [v0.4.4 기록](RELEASE-v0.4.4.md)과 [v0.6.0 기록](RELEASE-v0.6.0.md)에 있다.
 
-v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 같은 총상한 아래에서 검증한다.
-전체 기능 감사와 수정 후 회귀, 순수 태그의 실제 backend 16회, 재현 빌드·설치·공개 업데이트 및
-실제 설치본 확인을 [릴리스 노트](RELEASE-v0.4.4.md)에 기록했다. v0.6.0에서는 최종 바이너리의 필수
-대표·경계 인수를 완료했다. 열거한 모든 native UI·옵션의 개별 실행을 완료했다는 뜻은 아니다.
+<details>
+<summary>v0.6.11까지의 클라이언트 재측정 이력</summary>
+
+- 2026-11-03, native 2.1.317·Codex CLI 0.166.0. 도움말과 도구 이름·core 집합은 2.1.316과 같았고 plugin API에 desktop용 `Backdrop`·`$.ui.backdrop`가 추가됐다. fresh print/TUI × reference/clauduct/strict 표면 검사만 통과했다. 이 재측정에서 전체 fixture·전체 관문·실제 backend는 실행하지 않았다.
+- 2026-10-31의 native 2.1.316 fixture·표면 PASS는 당시 입력에 한정한다. 이전 기준은 2.1.314·2.1.312·2.1.311·2.1.310·2.1.309(Codex CLI 0.164.0), 2.1.305·2.1.304·2.1.303(0.163.0), 그 전은 2.1.299·0.162.1이다. #319의 2.1.303 관문은 당시 후보의 기록이다.
+- 2026-10-16, native 2.1.301의 6경로 무과금 표면 재측정이 통과했다. 도움말과 선택 UI API 선언에 차이가 있었고 측정 스냅샷은 갱신하지 않았다. 소스 `599da41b` 관문은 launcher 종료 합성 행에서 실패했다. `4813b7ae`의 콘솔 종료 경합 보정 뒤 관문 상태는 [v0.6.11 기록](RELEASE-v0.6.11.md)에 있다.
+- 2026-10-14, 2.1.289 대비 `attach`·`logs`가 이름을 받았고 선택 hook 필드(workflow·resume·command·requestMeta 등)가 늘었다. fixture와 도구 표면 검사가 통과했다. 2.1.299에서 Agent View 기본 `claude` agent는 `CLAUDE_CODE_DISABLE_AGENT_VIEW`를 주었을 때만 목록에서 빠졌으며 v0.6.11은 이 변수를 넣지 않는다.
+- 2026-10-04, native 2.1.289·Codex CLI 0.160.0. 도움말은 같았고 teammate hook 타입이 달라졌다. fixture 및 실제 backend 회귀 18개가 통과했고 요청 형태(비대화형 11경로, TUI 4경로)는 2.1.288과 같았다. 이전 기준은 2.1.288과 2.1.287·0.159.3이다. [v0.6.9 기록](RELEASE-v0.6.9.md), [v0.6.3 기록](RELEASE-v0.6.3.md)
+
+v0.6.11의 출하 관문은 실행기 13단계가 종료 코드 0이었으나 closure coverage가 FAIL이었다. 실제 backend 18묶음은 별도로 실행하지 않았다. [v0.6.11 검증한 클라이언트와 출하 검사](RELEASE-v0.6.11.md#검증한-클라이언트)
+
+</details>
 
 ## 2. 문서 위치와 책임
 
@@ -42,8 +52,8 @@ v0.4.4는 #134 검증 예산을 보완해 명시적으로 허용한 검색도 �
 ## 3. 이 시점에 아직 사실이 아닌 것
 
 - **forked Skill(`context: fork`)의 자식 재개는 native에 맡긴다.** 루트와 subagent 안의 fork(v0.5.0)는 받아들이고,
-  fork 자식의 `SendMessage` 재개는 native 영수증과 대조해 실행하지만, Agent 자식과 달리 재개 연결과 사용자 중지를
-  따로 검증하지 않는다([COMPATIBILITY.md](COMPATIBILITY.md) 3절).
+  `SendMessage`로 재개한 자식은 native 영수증과 대조한다. 재개 연결은 따로 검증하지 않으며, metadata에
+  `stoppedByUser`가 있으면 거부한다. [fork 관측과 제한](COMPATIBILITY.md#알려진-제한-원장-v0614)
 - **커스텀 역할 기본값**은 `--add-dir`·`--setting-sources`·settings의 `CLAUDE_CODE_SUBAGENT_MODEL`까지
   native와 같게 수집한다. v0.5.1에서 ZIP plugin 역할과 세션 중 `/cd`를 확인했고, v0.5.4에서는 설정 우선순위와
   managed 출처를 검증할 수 없는 경우의 거부 경계를 검사했다. 모든 managed 배포·세션 중 `/add-dir`·임의 URL

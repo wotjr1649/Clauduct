@@ -26,7 +26,7 @@
 | 필요한 것 | 왜 | 없으면 |
 |---|---|---|
 | `claude.exe` | 띄울 대상이다. `~/.local/bin` 우선, 그다음 PATH. 설치만 필요하고 Claude 계정 로그인·구독은 필요 없다 | `CLAUDE_NOT_FOUND`, 찾아본 경로를 함께 출력 |
-| `codex.exe` | **버전이 모든 요청의 header에 들어간다.** 없으면 보낼 것을 만들 수 없다 | 요청이 `CODEX_NOT_FOUND`로 거부된다. 세션은 시작되고 `--version`·`--help`는 정상 |
+| `codex.exe` | 설치 버전을 시작 전 계정 모델 목록 조회와 backend 요청에 사용한다 | 모델 목록을 조회할 수 없다. 같은 계정의 마지막 정상 목록이 있으면 재사용하고, 없으면 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 native 시작 전에 끝난다. `--version`·`--help`는 계정 목록을 조회하지 않는다 |
 | `~/.codex/auth.json` | ChatGPT 구독 credential. 읽기 전용으로만 접근한다 | 시작할 때 계정 모델 목록을 확인하지 못해 native를 띄우기 전에 끝난다: `ACCOUNT_MODEL_LIST_UNAVAILABLE: CREDENTIAL_UNAVAILABLE_OR_EXPIRED; …; run "codex login" (install the Codex CLI first if the codex command is not found), then start clauduct again`. 세션 중에 만료되면 요청이 503으로 거부되고 같은 안내가 붙는다. `codex login`으로 회복 |
 
 **Claude Code를 처음 실행하는 사람(2.1.296 실측).** native만 실행하면 테마 선택 다음에 로그인 방법 선택(Claude 구독·Console·3rd-party)이 나온다. Clauduct로 시작하면 이 단계가 없다. 테마 선택 → 보안 안내 → 폴더 신뢰를 거쳐 입력창으로 간다. native가 Clauduct gateway의 인증 설정을 받아 로그인 단계를 건너뛰기 때문이다. 입력창 머리글의 `API Usage Billing`은 native가 이 인증 방식에 붙이는 이름이다. 요청은 Codex 구독으로 가고 Anthropic에 과금되지 않는다.
@@ -47,7 +47,7 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 
 **2026-09-15 G7부터** `clauduct`가 시작한 모든 추론 요청은 사용자의 Codex 구독에 도달한다. 제품 세션에는 **요청 수 상한이 없다** — Node 기준선에도 없고, 상한을 두면 긴 세션이 중간에 멈춘다.
 
-모델을 호출하지 않는 명령은 아무것도 쓰지 않는다. `--version`·`--help`는 credential을 읽지 않고 `codex --version`도 띄우지 않는다. 둘 다 **첫 요청**에서만 일어난다. 테스트가 그것을 고정한다.
+일반 모델 세션은 native를 시작하기 전에 credential과 설치된 Codex 버전으로 계정 모델 목록을 조회한다. 조회 실패 시 같은 계정의 마지막 정상 목록만 재사용한다. native `--version`·`--help`는 credential을 읽거나 `codex --version`을 실행하지 않는다.
 
 검증용 실호출은 별개의 예산이다. v0.4.3의 `CLAUDUCT_VERIFICATION_BUDGET`은 여러 프로세스·worker 재기동에 걸쳐 모델·effort와 시도 상한을 전송 전에 강제한다. 실제 출하 바이너리의 protocol 버전도 실행 전에 확인한다. 형식과 운영 조건은 [개발 안내](../../go/README.md#검증용-실호출은-별개의-예산이다)를 따른다.
 
@@ -72,7 +72,7 @@ go build -trimpath -o clauduct.exe      ./cmd/clauduct
 clauduct --dev --version
 # clauduct     <태그. 태그 없는 commit은 pseudo-version, 수정된 worktree는 끝에 +dirty>
 # commit       <40자 hash>
-# go           go<루트 go.mod의 go 버전> windows/amd64
+# go           go<빌드에 사용한 Go 버전> windows/amd64
 ```
 
 worktree가 수정된 상태로 빌드하면 commit 뒤에 `+dirty`가 붙는다. **그런 빌드는 릴리스 후보가 아니다.**
@@ -160,8 +160,8 @@ if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
 `max_output_tokens`를 받는지 확인한다. 2026-10-05 한 구성의 3회 probe에서는 받았고, v0.6.11은 생성 요청에 보낸다(#309).
 backend가 다시 거부하면 출하를 멈추고 COMPATIBILITY 원장 행을 다시 판정한다. temperature·top_p·strict·새 출력 이벤트는 원장 행의 다시 볼 조건이 생겼을 때만 잰다.
 
-**구버전→신버전 경로는 v0.2.2에서 실측됐다.** 설치된 0.2.1이 릴리스를 읽고 화면에 digest 3개를
-띄운 뒤 교체했고, 그 세 값은 발행된 `SHA256SUMS`와 같았다. 이어서 네 가지가 순서대로 확인됐다:
+현재 설치·업데이트의 출하 검사 결과는 [현행 인덱스](README.md)가 가리키는 릴리스 기록에서 확인한다.
+**초기 업데이트 실측 (v0.2.1 → v0.2.2).** 설치된 0.2.1이 릴리스를 읽어 digest 3개를 확인했고 발행된 `SHA256SUMS`와 일치했다.
 
 | 잰 것 | 결과 |
 |---|---|
@@ -320,11 +320,11 @@ digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말�
 교체 대상은 `clauduct.exe`이고, 릴리스의 `SHA256SUMS`가 `clauduct-probe.exe`를 적었으면 그것도 같이다(v0.6.11부터). 둘 다 내려받아 digest를 확인한 뒤에야 교체를 시작하고, 어느 쪽이든 실패하면 둘 다 원래대로 되돌리며 새로 놓은 probe는 지운다. 적지 않은 릴리스면 남아 있던 probe를 지우고 확인 질문 전에 그렇게 말한다. 이미 최신인지는 probe의 digest도 본다. **probe가 없는 릴리스의 `--update`는 probe를 모르므로** v0.6.10 이하에서 처음 업데이트하면 `clauduct.exe`만 바뀐다. launch는 probe 없이 동작하고, 진단 도구가 필요하면 그 `clauduct.exe`의 `clauduct --update`를 한 번 더 실행해 probe를 놓는다(`install.ps1`은 한 번에 둘 다 놓는다). 실행 중인 exe는 덮어쓸 수
 없지만 이름은 바꿀 수 있으므로 `*.old`로 옮기고 새 파일을 쓴다. 중간에 실패하면 옮긴 것을 전부
 되돌린다. 성공 후 `clauduct.exe.old`는 **이 프로세스가 끝나야** 지울 수 있고, 그래서 지우라고
-출력한다. 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여준다 — 업데이트 전에 시작한 세션은 그 뒤 hook을 잃으므로 다시 시작한다. **v0.6.4부터** 교체가 끝나면 새로 설치한 바이너리의 `--dev --sync-settings`를 최소 환경·10초 상한으로 실행하고, 이 명령이 없는 대상 버전은 `--dev --init-settings`로 대신한다. 동기화가 실패하면 바이너리는 설치됐고 설정 동기화만 실패했다고 알리며 바이너리를 되돌리지 않는다. `scripts/install.ps1`도 settings.json이 이미 있으면 설치한 바이너리로 같은 동기화를 실행한다.
+출력한다. 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여준다 — 업데이트 전에 시작한 세션은 그 뒤 hook을 잃으므로 다시 시작한다. **v0.6.4부터** 교체가 끝나면 새로 설치한 바이너리의 `--dev --sync-settings`를 최소 환경·10초 상한으로 실행하고, 이 명령이 없는 대상 버전은 `--dev --init-settings`로 대신한다. 동기화가 실패하면 바이너리는 설치됐고 설정 동기화만 실패했다고 알리며 바이너리를 되돌리지 않는다. 설치 스크립트도 기존 설정이 있으면 같은 동기화를 실행한다. [설정 동기화 계약](SETTINGS.md#설정-동기화-v064)
 
-**이미 최신이면 바이너리를 교체하지 않는다.** 설치된 `clauduct.exe`의 digest가 릴리스가 말하는 것과 전부
-같으면 묻지 않고 `already current`로 끝난다. 버전 문자열이 아니라 digest로 보는 이유는, 버전은
-빌드가 자기를 부르는 이름이고 두 빌드가 같은 이름을 쓸 수 있기 때문이다 — 손으로 갈아끼웠거나
+**이미 최신이면 바이너리를 교체하지 않는다.** 설치된 `clauduct.exe`와 릴리스에 진단 도구가 있을 때
+`clauduct-probe.exe`의 digest가 모두 일치하고 제거할 probe도 없으면 묻지 않고 `already current`로 끝난다. 버전은
+빌드가 자기를 부르는 이름이라 두 빌드가 같은 이름을 쓸 수 있다. 손으로 갈아끼웠거나
 반만 받아진 파일은 일치하지 않으므로 그때는 고쳐진다. 이 검사가 없으면 같은 바이트로 교체하고
 `clauduct.exe.old`를 남기는데, **아무것도 바꾸지 않은 업데이트가 남긴 잔여물은 고장으로 읽힌다.**
 
@@ -335,11 +335,11 @@ housekeeping 때문에 세션이 죽는 것이 잔여물보다 나쁘다.
 `clauduct update`(하이픈 없음)는 이 명령이 아니다 — 그대로 클라이언트에 전달되어 **Claude Code**가
 갱신된다. 클라이언트에는 `--update` 옵션이 없으므로(2.1.274 실측) 이 이름은 아무것도 가리지 않는다.
 
-**릴리스는 있다.** `v0.2.0`이 `clauduct.exe`·`clauduct-hook.exe`·`clauduct-dev.exe`와
-`SHA256SUMS`를 싣고 있고 draft도 pre-release도 아니다(2026-09-17 확인). `v0.1.0`은 Node 구현의
-zip이고 그대로 둔다. 릴리스에 자산이 빠져 있으면 `--update`는 무엇이 빠졌는지 이름으로 말하고
-종료하며, 인증 없는 GitHub API는 주소당 시간당 60회이므로 한도에 걸리면 그것도 이름으로
-말한다(`RATE_LIMITED`, 재시도 시각 포함).
+**초기 릴리스 기록 (2026-09-17).** v0.2.0 정식 릴리스는 `clauduct.exe`·`clauduct-hook.exe`·
+`clauduct-dev.exe`와 `SHA256SUMS`를 실었다. v0.1.0은 Node 구현의 zip으로 발행됐다.
+
+릴리스에 자산이 빠져 있으면 `--update`는 파일 이름을 알리고 종료한다. GitHub API 한도에 걸리면
+`RATE_LIMITED`와 재시도 시각을 알린다.
 
 ## 5.1.1 제거
 
@@ -409,12 +409,10 @@ clauduct --usage       # 또는 clauduct --dev --usage — 같은 뷰다
 변환하지 않으며, 구버전에서 계속 작업하려면 새 대화를 시작한다. 설정 snapshot 형식은 그대로다.
 설치 스크립트는 v0.5.5부터 PowerShell 7을 요구한다.
 
-**v0.5.4 설정과 v0.5.3 이전 버전.** 새 설치는 완전한 Clauduct 설정 문서를 생성하고 기존 파일은
-보존한다. 설치 스크립트가 초기화 문서를 중복 보유하지 않고 검증된 바이너리의
-`--dev --init-settings`를 호출한다. 이 명령이 없는 역사 버전은 안내 후 기존 설정을 보존한다.
-v0.5.3 이상의 UUID 재개는 설정 snapshot을 읽는다. v0.5.2는 같은 대화를 이전 기본값으로 열 수
-있지만 설정·snapshot·대화 파일을 삭제하거나 변환하지 않는다. 자세한 범위는
-[세션 선택과 되돌림](SETTINGS.md#현재-세션의-선택과-저장)을 따른다.
+**초기 Go 설정 형식.** v0.5.4 설치 스크립트는 검증된 바이너리의 `--dev --init-settings`로 설정을
+초기화했다. 현행 초기화와 동기화는 [설정 동기화](SETTINGS.md#설정-동기화-v064)를 따른다.
+UUID snapshot을 읽는 버전과 구형 바이너리의 재개 범위는
+[세션 선택과 되돌림](SETTINGS.md#현재-세션의-선택과-저장)에 있다.
 
 v0.5.4 개발 검증의 설치 호스트는 PowerShell 7.6.6이다. 이 머신의 Windows PowerShell 5.1은
 실행 정책이 스크립트를 차단하므로 문법(AST)만 검사했고 설치 실행은 미검증이다.
@@ -432,9 +430,8 @@ v0.3.1 writer가 만든 bytes를 그대로 v0.3.0 reader에 넣어 확인했다.
 [대조군과 검사 범위](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-release-20260923/README.md). 구버전으로 되돌릴 때는
 새 세션을 시작하는 경로를 사용하고, 기존 세션은 해당 기록을 쓴 버전에서 계속한다.
 
-**v0.6.4 설정과 이전 버전.** v0.6.4보다 오래된 바이너리는 `classifier_model` 객체를 거부하고(v0.6.3은 문자열을
-읽었다) 동기화가 덧붙인 다른 키도 거부할 수 있다. 되돌리기 전에 동기화가 남긴 `.clauduct/settings.backup-…json`을
-복원하거나 파일을 직접 편집한다. 바이너리는 설정을 지우지 않는다. [세션 선택과 되돌림](SETTINGS.md#현재-세션의-선택과-저장).
+**v0.6.4 설정으로 이전 버전을 설치할 때.** 지원하는 키를 [되돌림 범위](SETTINGS.md#현재-세션의-선택과-저장)에서
+확인하고, 필요하면 동기화가 알린 백업을 복원하거나 구버전 호환 설정을 직접 편집한다.
 
 **Node 구현으로 되돌리는 경로는 v0.3.3에서 닫았다.** 이 저장소는 더 이상 Node 구현을 싣지 않는다.
 이미 설치된 `clauduct-node`는 이 문서의 설치·업데이트·제거가 건드리지 않으므로 그대로 동작한다.

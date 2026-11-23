@@ -49,7 +49,7 @@ Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는
 ## 3. 패키지 구조
 
 ```text
-go.mod                        module github.com/wotjr1649/Clauduct, go 지시문이 Go 버전의 정책 출처 — 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
+go.mod                        module github.com/wotjr1649/Clauduct, Go 버전은 toolchain 우선, 없으면 go 지시문. 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
 go/                           패키지 경로는 그대로 github.com/wotjr1649/Clauduct/go/...
 ├── cmd/clauduct/             제품 launcher. 첫 인자·실행 파일 이름으로 hook·렌더러·--dev도 맡는다
 ├── internal/{hookcmd,devcmd} hook / --dev(version·doctor·usage·probe). v0.3.x까지 별도 바이너리
@@ -117,7 +117,7 @@ Claude Code 2.1.286의 공개 옵션 형태(2.1.283의 필수값 옵션 `--clien
 기준선의 `blockedOptions` 30개와 그 인과 분해는 [DECISION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md) 2.6절에 있다.
 현재 거부 목록을 늘릴 때는 값을 먹지 않는 옵션인지와 그 이름의 과잉 거부를 수용할지 별도로 결정한다.
 
-프로세스 시작마다 credential을 읽지 않는다. 실제 inference 요청 시점의 lazy loading을 쓴다. 그래야 native help/version이 로그인 부재로 막히지 않는다.
+일반 모델 세션은 native 시작 전에 credential과 설치된 Codex 버전으로 계정 모델 목록을 조회한다. 조회 실패 시 같은 계정의 마지막 정상 목록만 재사용할 수 있다. native `--help`·`--version`은 목록을 조회하지 않는다.
 
 native의 Claude 계정 subcommand(`auth login`·`auth logout`·`setup-token`)는 위 검사와 같은 단계에서 거부한다. 옵션 뒤에
 와도 native가 subcommand로 실행하므로 옵션을 건너뛰어 찾고, `-p` 뒤에서는 prompt이므로 넘긴다(2.1.294 측정). 값의 경계를
@@ -134,7 +134,7 @@ provider strategy 없이 아래의 endpoint·settings 고정·hook 시작 handsh
 native 2.1.325는 첫 `--` 앞에서, 값 옵션의 값 자리가 아닌 정확한 토큰만 작업으로 본다
 (`--name --bg`·`-- --bg`는 이름·프롬프트로 foreground). 이 좁힘과 아래의 관리 명령 확장은 해석한 native 파일의
 SHA-256이 표를 읽은 빌드와 같을 때만 켜지고, 다른 빌드이거나 확인할 수 없으면 정확한 토큰은 어디에 있든 background,
-관리 명령은 첫 토큰 `rm`·`stop`·`logs`만으로 현행을 유지한다(#331). 고정 빌드에서는 `--verbose rm <id>`처럼 옵션 뒤 8자리 ID가
+첫 토큰 `rm`·`stop`·`logs`만 관리 경로 후보로 삼는다(#331, v0.6.14 출하 기준 native 2.1.330 포함). 고정 빌드에서는 `--verbose rm <id>`처럼 옵션 뒤 8자리 ID가
 따르는 `rm`·`stop`·`kill`·`logs`와 선두 `kill`도 native로 바로 보낸다. 사전 동작을 측정하지 않은 옵션
 (`--debug-file`·`--teleport`·`--remote-control`/`--rc`·`--plugin-url`·`--remote`·`--cloud`·`--worktree`/`-w`·`--from-pr`)
 뒤, 그리고 `CLAUDE_CODE_SESSION_KIND=bg` 환경의 옵션 뒤 동사는 세션 경로를 유지한다.
@@ -543,8 +543,8 @@ resident record의 `session`은 primary job의 native 상태 파일에서 읽는
 native 종료를 확인하지 못하거나 유지할 job의 세션 프로필이 아직 등록되지 않았으면 잠금을 유지하며, 저장 실패도 잠금을 유지하고 연결 유지 프로세스가 끝날 때 보고한다. 새 job이 부모 세션의 프로필을 복사하기 전에 부모 잠금을 해제하지 않기 위해서다.
 
 `clauduct rm <id>`·`clauduct stop <id>`·`clauduct logs <id>`는 세션을 열지 않는 관리 경로다.
-argv의 첫 원소가 정확히 `rm`·`stop`·`logs`인 형태만 지원하고, 그 뒤 인자는 그대로 native에 전달한다.
-하위 명령 앞에 옵션이 있는 형태는 관리 경로로 판정하지 않고 기존 세션 경로로 처리한다.
+선행 옵션 뒤 관리 명령과 선두 `kill`은 [CLI 계약](#4-cli-계약)에 적은 2.1.325 SHA-256 일치 조건을
+충족할 때만 관리 경로로 가고, 그 뒤 인자는 그대로 native에 전달한다.
 gateway를 시작하거나 모델 목록을 조회하지 않고, 세션 settings·plugin·effort·agents 옵션도 주입하지 않는다.
 기존 제어 명령용 env 정리로 `ANTHROPIC_*`·OAuth token을 제거한다.
 `DISABLE_TELEMETRY`·`DISABLE_ERROR_REPORTING`은 세션과 같은 기본값을 사용하며 사용자 env 값이 우선한다.

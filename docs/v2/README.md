@@ -2,11 +2,11 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (`<RELEASE_DATE>`, v0.6.15 출시)
+## 1. 현재 상태 (2026-11-24, v0.6.15 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.6.15** (태그 `v0.6.15` → `<TAG_COMMIT>`). native 2.1.330에서 subagent 역할 선택과 background·관리 명령 인자 판정을 수정했다. Workflow 파일 소스는 Read 권한을 검증한 native에서만 허용한다. PDF 첨부와 Read 결과는 원본만 backend에 보내고 내장 렌더러와 `pdftoppm` 별칭을 제거했다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.15.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.15). 그 이전 **v0.6.14** (태그 `v0.6.14` → `6782e6a`). backend가 delta 없이 `arguments.done`으로 보낸 도구 인자를 받아들이고, 라우팅 증거가 들어오면 대기 중인 요청을 바로 깨운다. native 2.1.325 특정 빌드용 `--bg`·관리 명령 판정은 기준 native 2.1.330에서는 꺼져 v0.6.13과 같은 경로를 쓴다. 전체 관문과 실제 backend 18묶음은 실행하지 않았다(소유자 예외). [변경·출하 검사와 알려진 제한](RELEASE-v0.6.14.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.14). |
+| 최신 출시 | **v0.6.15** (태그 `v0.6.15` → `97adf8f`). native 2.1.330에서 subagent 역할 선택과 background·관리 명령 인자 판정을 수정했다. Workflow 파일 소스는 Read 권한을 검증한 native에서만 허용한다. PDF 첨부와 Read 결과는 원본만 backend에 보내고 내장 렌더러와 `pdftoppm` 별칭을 제거했다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.15.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.15). 그 이전 **v0.6.14** (태그 `v0.6.14` → `6782e6a`). backend가 delta 없이 `arguments.done`으로 보낸 도구 인자를 받아들이고, 라우팅 증거가 들어오면 대기 중인 요청을 바로 깨운다. native 2.1.325 특정 빌드용 `--bg`·관리 명령 판정은 기준 native 2.1.330에서는 꺼져 v0.6.13과 같은 경로를 쓴다. 전체 관문과 실제 backend 18묶음은 실행하지 않았다(소유자 예외). [변경·출하 검사와 알려진 제한](RELEASE-v0.6.14.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.14). |
 | 출하 후 후속 | 알려진 제한과 미검증 항목은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0615)에 분류와 다시 볼 조건을 붙여 한곳에 모았다(v0.6.9, #273). 릴리스별 기록의 "알려진 제한" 절은 그 릴리스 당시의 기록이다 |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook과 `--dev` 명령이 같은 파일이다(v0.4.0, #112). v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다. launch에는 필요 없고, 설치·업데이트는 둘을 한 쌍으로 다룬다([PACKAGING](PACKAGING.md) 1절·5.1절). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go(필요 버전은 `go.mod`가 유일한 출처, [PACKAGING](PACKAGING.md#툴체인-버전-370)), **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |

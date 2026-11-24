@@ -1,6 +1,6 @@
 # v0.6.15 — native 2.1.330 호환성 수정과 PDF 전송 단순화
 
-`<RELEASE_DATE>` 출시(태그 `v0.6.15` → `<TAG_COMMIT>`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.15)). 출하 기록 초안이며 태그·자산 신원과 검사 결과는 발행 기록으로 확정한다.
+2026-11-24 출시(태그 `v0.6.15` → `97adf8f876a7f88a6f3256ab328705f34a42f64f`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.15)).
 
 범위는 native 2.1.330에서 발견한 호환성 결함 수정(역할 선택, Workflow 권한, PDF 페이지 Read)과 [#331](https://github.com/wotjr1649/Clauduct/issues/331)의 2.1.330 재고정, PDF 전송 단순화다. v0.6.14는 native 2.1.330에서 아래 결함이 있었다.
 
@@ -14,35 +14,35 @@
 
 ## 출하 검사
 
-이번 출하부터 태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 판정을 기록한다. 아래 항목은 결과를 대조할 목록이다.
+태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 2.1.330의 버전과 SHA-256에 결속한 `GATE-T1`을 통과했다. 이번 출하부터 매 출하 관문이다.
 
-- [ ] `vet`, 전체 오프라인 Go 테스트.
-- [ ] 태그 fixture `fixtures`·`fixtures-bg`, `structural`, native smoke 15행.
-- [ ] 변경 동작의 실제 backend 표본 `s331`(background·관리 명령), `roles`(subagent 역할 선택), `workflow`(파일 소스 거부와 inline 실행), `PDF`(짧은 PDF 페이지 Read).
-- [ ] `c1` 무과금 도구 이름·core 재측정. 직전 유효 T1/T2와 native 이미지가 달라졌을 때 실행한다.
-- [ ] 동시성 코드가 바뀐 패키지의 race. 실행하지 않은 단계는 `NOT_RUN`과 이유를 기록한다.
+- `vet`, 전체 오프라인 Go 테스트, 태그 fixture `fixtures`·`fixtures-bg`, `structural`, native smoke 15행: PASS.
+- 변경 동작의 실제 backend 표본: `s331`(background·관리 명령), subagent 역할 선택 5종, Workflow 파일 소스 거부와 inline 실행, PDF 짧은 Read 모두 PASS. PDF 표본은 원본 1개 전달과 텍스트 문항으로 판정하고 그림 문항은 기록으로 남긴다.
+- `c1` 무과금 도구 표면 재측정: 도구 이름·core가 기준선과 같아 정기 회귀(T2) 조건에 해당하지 않는다.
+- race는 동시성 코드 변경이 없어 실행하지 않았다(NOT_RUN).
+- 시험 과정에서 native 2.1.330이 transcript 복사 때 추가하는 `requestSessionId`, 여러 스위트를 합친 smoke 판정의 결속 방식, 표본 판정 기준을 시험 쪽에서 고쳤다. 제품 코드 변경은 아니다.
 
 ### 출하 빌드·발행 검사
 
-[PACKAGING §4.1](PACKAGING.md#41-릴리스-만들기)의 절차에 따라 출하 자산과 검사 기록을 대조한다.
+[PACKAGING §4.1](PACKAGING.md#41-릴리스-만들기)의 절차를 따랐다.
 
-- [ ] `build-release`. 두 독립 빌드의 바이트와 probe digest를 대조한다.
-- [ ] 발행 전 `ship-install`. 새 설치, v0.6.14에서 업데이트, 되돌리기와 사용자 PATH 불변을 확인한다.
-- [ ] 발행 전 `probe limit --send` 3회. backend의 `max_output_tokens` 상한 적용을 확인한다.
-- [ ] 발행 뒤 `verify-release`. 내려받은 자산과 API digest·`SHA256SUMS`를 대조한다.
-- [ ] 발행 뒤 `ship-update`·`ship-legacy`. 이전 릴리스의 `--update`와 `already current`, v0.3.5에서의 이전 경로를 확인한다.
-- [ ] 발행 기록 병합 뒤 `post-publish`. 최신 Release·태그·자산을 현행 인덱스, 이 문서의 출하 신원, 호환성 원장과 대조한다.
+- `build-release`: 두 독립 빌드의 바이트가 같고 probe digest가 저장소 값과 일치한다.
+- 발행 전 `ship-install`: 새 설치, v0.6.14에서 업데이트, 되돌리기, 사용자 PATH 불변을 확인했다.
+- 발행 전 `probe limit --send`(3회): `max_output_tokens` 상한을 지킨다.
+- 발행 뒤 `verify-release`(내려받은 바이트·API digest·`SHA256SUMS`), `ship-update`(이전 릴리스의 `--update`와 `already current`), `ship-legacy`(v0.3.5)를 모두 통과했다.
 
 ## 출하 신원
 
 | 항목 | 값 |
 |---|---|
-| 태그 | `v0.6.15` → `<TAG_COMMIT>` |
-| `clauduct.exe` | `<ASSET_SHA_EXE>` |
-| `clauduct-probe.exe` | `<ASSET_SHA_PROBE>` |
-| `install.ps1` | `<ASSET_SHA_INSTALL>` |
-| `uninstall.ps1` | `<ASSET_SHA_UNINSTALL>` |
-| `SHA256SUMS` | `<SHA256SUMS>` |
+| 태그 | `v0.6.15` → `97adf8f876a7f88a6f3256ab328705f34a42f64f` |
+| `clauduct.exe` | `53d4b78a8cf9caf4c806cef04ed15a806726cd8d4c5c158f8b973030df75f31a` |
+| `clauduct-probe.exe` | `f56abcf8a3e177bd5d82c509bea06c22e7860057e310b7a32bed3f4c68ea807a` |
+| `install.ps1` | `6720976f89e9016a33bd046f02bcf36e1acfdb411097b93c1d8a443f55356c58` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `7bc048a548af5ff24c547d1a2dfd8400667641b6a283df84250168a9dbaf8c1b` |
+
+Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`. native를 쓴 검사는 모두 Claude Code 2.1.330에서 돌았다.
 
 ## 알려진 제한
 

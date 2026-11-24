@@ -756,6 +756,13 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// Restore provenance without enabling persistent writes for this run.
 		gw.ConfigureSessionProfiles(nil, result.Startup, resumed, forkSession, background != nil)
 	} else {
+		if profiles != nil {
+			if background != nil {
+				profiles.TrackResident(background.ID)
+			} else if foreground != nil && o.agentView() {
+				profiles.TrackResident(foreground.ID)
+			}
+		}
 		gw.ConfigureSessionProfiles(profiles, result.Startup, resumed, forkSession, background != nil)
 		gw.RestoreSessionProfiles(siblings)
 		if o.Regenerate != nil && resumed != nil {

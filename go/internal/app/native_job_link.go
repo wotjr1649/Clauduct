@@ -57,16 +57,20 @@ func nativeJobsWithLink(config, link string) []string {
 }
 
 func jobHasLink(raw []byte, link string) bool {
-	if len(raw) > settingsBytes || !residentLink.MatchString(link) {
-		return false
+	return link != "" && nativeJobLink(raw) == link
+}
+
+func nativeJobLink(raw []byte) string {
+	if len(raw) > settingsBytes {
+		return ""
 	}
 	state, err := wire.Fields(raw, nil)
 	if err != nil {
-		return false
+		return ""
 	}
 	var flags []string
 	if json.Unmarshal(state["respawnFlags"], &flags) != nil {
-		return false
+		return ""
 	}
 	seen := map[string]bool{}
 	var settings string
@@ -74,7 +78,7 @@ func jobHasLink(raw []byte, link string) bool {
 		end, known := nativeArgEnd(flags, i)
 		name, value, attached := strings.Cut(flags[i], "=")
 		if !known || end > len(flags) || !strings.HasPrefix(name, "-") || name == "-" || name == "--" || seen[name] {
-			return false
+			return ""
 		}
 		seen[name] = true
 		if name == "--settings" {
@@ -87,16 +91,19 @@ func jobHasLink(raw []byte, link string) bool {
 	}
 	fields, err := wire.Fields([]byte(settings), nil)
 	if err != nil {
-		return false
+		return ""
 	}
 	var helper string
 	if json.Unmarshal(fields["apiKeyHelper"], &helper) != nil {
-		return false
+		return ""
 	}
 	prefix, linked, found := strings.Cut(helper, " --clauduct-background-key ")
-	if !found || linked != link || len(prefix) < 3 || prefix[0] != '"' || prefix[len(prefix)-1] != '"' {
-		return false
+	if !found || !residentLink.MatchString(linked) || len(prefix) < 3 || prefix[0] != '"' || prefix[len(prefix)-1] != '"' {
+		return ""
 	}
 	exe := prefix[1 : len(prefix)-1]
-	return filepath.IsAbs(exe) && !strings.ContainsRune(exe, '"')
+	if !filepath.IsAbs(exe) || strings.ContainsRune(exe, '"') {
+		return ""
+	}
+	return linked
 }

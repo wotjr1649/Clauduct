@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
@@ -41,9 +42,10 @@ type SessionProfile struct {
 // SessionProfiles owns the OS locks for one launcher. A record stays locked
 // until that launcher has reaped native and saved its final observed choice.
 type SessionProfiles struct {
-	mu    sync.Mutex
-	root  *os.Root
-	locks map[string]*os.File
+	mu            sync.Mutex
+	root          *os.Root
+	locks         map[string]*os.File
+	residentBytes []int64
 }
 
 func OpenSessionProfiles(directory string) (*SessionProfiles, error) {
@@ -72,6 +74,73 @@ func (s *SessionProfiles) Close() error {
 	return nil
 }
 
+// TrackResident marks this launch's profile handles before it starts serving native jobs.
+func (s *SessionProfiles) TrackResident(link string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.residentBytes = profileResidentBytes(link)
+	for _, file := range s.locks {
+		s.markResident(file)
+	}
+}
+
+func profileResidentBytes(link string) []int64 {
+	if len(link) != 32 {
+		return nil
+	}
+	// Distinct ranges encode the entire link without overlapping the byte-zero lock.
+	var offsets []int64
+	for i, part := range []string{link[:11], link[11:22], link[22:]} {
+		value, err := strconv.ParseUint(part, 16, 44)
+		if err != nil {
+			return nil
+		}
+		offsets = append(offsets, 1+(int64(i)<<44)+int64(value))
+	}
+	return offsets
+}
+
+func (s *SessionProfiles) markResident(file *os.File) {
+	for _, offset := range s.residentBytes {
+		if platform.LockFileAt(file, offset) != nil {
+			return // The byte-zero lock still protects the profile.
+		}
+	}
+}
+
+// SessionProfileHeldBy observes the marks on the same handle that protects the profile.
+func SessionProfileHeldBy(directory, id, link string) bool {
+	offsets := profileResidentBytes(link)
+	if len(offsets) == 0 || !sessionUUID.MatchString(id) {
+		return false
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	name := id + ".lock"
+	info, err := root.Lstat(name)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	info, err = file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	for _, offset := range offsets {
+		if !platform.FileByteLocked(file, offset) {
+			return false
+		}
+	}
+	return true
+}
+
 // lock is called with s.mu held. Names are canonical UUIDs, excluding Windows
 // device names, separators, aliases and case-insensitive filename collisions.
 func (s *SessionProfiles) lock(id string) error {
@@ -96,6 +165,7 @@ func (s *SessionProfiles) lock(id string) error {
 		file.Close()
 		return ErrSessionInUse
 	}
+	s.markResident(file)
 	s.locks[id] = file
 	return nil
 }

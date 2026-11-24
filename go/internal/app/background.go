@@ -738,38 +738,9 @@ func jobLinkedElsewhere(config, job, link string) bool {
 		return false
 	}
 	name := filepath.Join(job, "state.json")
-	info, err := root.Lstat(name)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > settingsBytes {
-		return false
-	}
-	file, err := root.Open(name)
-	if err != nil {
-		return false
-	}
-	info, statErr := file.Stat()
-	if statErr != nil || !info.Mode().IsRegular() || info.Size() > settingsBytes {
-		file.Close()
-		return false
-	}
-	raw, readErr := io.ReadAll(io.LimitReader(file, settingsBytes+1))
-	if errors.Join(readErr, file.Close()) != nil || len(raw) > settingsBytes {
-		return false
-	}
-	var state struct {
-		RespawnFlags []string `json:"respawnFlags"`
-	}
-	if json.Unmarshal(raw, &state) != nil {
-		return false
-	}
-	value, ok := optionValue(state.RespawnFlags, "--settings")
-	var settings struct {
-		APIKeyHelper string `json:"apiKeyHelper"`
-	}
-	if !ok || json.Unmarshal([]byte(value), &settings) != nil {
-		return false
-	}
-	_, other, ok := strings.Cut(settings.APIKeyHelper, " --clauduct-background-key ")
-	return ok && other != link && jobHasLink(raw, other)
+	raw, err := readNativeJobState(root, name)
+	other := nativeJobLink(raw)
+	return err == nil && other != "" && other != link
 }
 
 // jobGone reports whether native's job listing positively lacks job: the jobs directory is
@@ -832,6 +803,16 @@ func runNativeControl(ctx context.Context, o Options, command string) (Result, e
 		signal.Notify(interrupts, os.Interrupt)
 		defer signal.Stop(interrupts)
 	}
+	home := o.ClauductHome
+	if home == "" && (command == "stop" || command == "rm") {
+		home, _ = os.UserHomeDir()
+	}
+	var config string
+	var target controlJobState
+	if home != "" && len(o.Args) == 2 && residentJob.MatchString(o.Args[1]) && (command == "stop" || command == "rm") {
+		config = nativeConfigDirectory(o.Env, o.Cwd)
+		target = readControlJob(ctx, config, o.Args[1])
+	}
 	select {
 	case <-interrupts:
 		return Result{NativeExitCode: ExitCodeUnknown, Category: CategoryCancelled}, ErrInterrupted
@@ -853,14 +834,111 @@ func runNativeControl(ctx context.Context, o Options, command string) (Result, e
 	if waitErr != nil && !errors.As(waitErr, &exitErr) {
 		return result, waitErr
 	}
-	if command == "rm" && result.NativeExitCode == 0 {
-		home := o.ClauductHome
-		if home == "" {
-			home, _ = os.UserHomeDir()
+	if result.NativeExitCode == 0 {
+		if target.Link != "" {
+			job := o.Args[1]
+			closed := false
+			if command == "stop" {
+				state := readControlJob(ctx, config, job)
+				closed = state.Session == target.Session && state.Link == target.Link && (state.State == "done" || state.State == "stopped")
+			} else {
+				closed = jobGone(config, job)
+			}
+			if closed {
+				waitForSessionRelease(ctx, interrupts, filepath.Join(home, ".clauduct", "sessions"), target.Session, target.Link)
+			}
 		}
-		reportResidentCleanup(o.Stderr, collectResidents(home))
+		if command == "rm" {
+			reportResidentCleanup(o.Stderr, collectResidents(home))
+		}
 	}
 	return result, nil
+}
+
+type controlJobState struct {
+	Session string `json:"sessionId"`
+	State   string `json:"state"`
+	Link    string `json:"-"`
+}
+
+// Retry brief sharing conflicts and partial native state within the same budget.
+func readControlJob(ctx context.Context, config, job string) controlJobState {
+	if config == "" {
+		return controlJobState{}
+	}
+	jobs := filepath.Join(config, "jobs")
+	deadline := time.NewTimer(300 * time.Millisecond)
+	defer deadline.Stop()
+	tick := time.NewTicker(25 * time.Millisecond)
+	defer tick.Stop()
+	name := filepath.Join(job, "state.json")
+	for {
+		root, err := os.OpenRoot(jobs)
+		if err == nil {
+			raw, readErr := readNativeJobState(root, name)
+			root.Close()
+			if errors.Is(readErr, os.ErrNotExist) && jobGone(config, job) {
+				return controlJobState{}
+			}
+			var state controlJobState
+			if readErr == nil && json.Unmarshal(raw, &state) == nil && gateway.IsSessionUUID(state.Session) && state.State != "" {
+				state.Link = nativeJobLink(raw)
+				return state
+			}
+		} else if !errors.Is(err, errSharingViolation) {
+			return controlJobState{}
+		}
+		select {
+		case <-ctx.Done():
+			return controlJobState{}
+		case <-deadline.C:
+			return controlJobState{}
+		case <-tick.C:
+		}
+	}
+}
+
+func readNativeJobState(root *os.Root, name string) ([]byte, error) {
+	info, err := root.Lstat(name)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > settingsBytes {
+		return nil, errors.New("NATIVE_JOB_STATE_INVALID")
+	}
+	file, err := root.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if info, err := file.Stat(); err != nil || !info.Mode().IsRegular() || info.Size() > settingsBytes {
+		file.Close()
+		return nil, errors.New("NATIVE_JOB_STATE_INVALID")
+	}
+	raw, readErr := io.ReadAll(io.LimitReader(file, settingsBytes+1))
+	closeErr := file.Close()
+	if len(raw) > settingsBytes {
+		return nil, errors.New("NATIVE_JOB_STATE_INVALID")
+	}
+	return raw, errors.Join(readErr, closeErr)
+}
+
+// Native can acknowledge stop or rm before the resident has finalized its profile.
+func waitForSessionRelease(ctx context.Context, interrupts <-chan os.Signal, directory, session, link string) {
+	deadline := time.NewTimer(stopGrace)
+	defer deadline.Stop()
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	for gateway.SessionProfileHeldBy(directory, session, link) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-interrupts:
+			return
+		case <-deadline.C:
+			return
+		case <-tick.C:
+		}
+	}
 }
 
 func backgroundControlEnv(env []string) []string {

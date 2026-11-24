@@ -861,30 +861,32 @@ type controlJobState struct {
 	Link    string `json:"-"`
 }
 
-// The native writer can temporarily expose partial JSON or no state file while the job still exists.
+// Retry brief sharing conflicts and partial native state within the same budget.
 func readControlJob(ctx context.Context, config, job string) controlJobState {
 	if config == "" {
 		return controlJobState{}
 	}
-	root, err := os.OpenRoot(filepath.Join(config, "jobs"))
-	if err != nil {
-		return controlJobState{}
-	}
-	defer root.Close()
+	jobs := filepath.Join(config, "jobs")
 	deadline := time.NewTimer(300 * time.Millisecond)
 	defer deadline.Stop()
 	tick := time.NewTicker(25 * time.Millisecond)
 	defer tick.Stop()
 	name := filepath.Join(job, "state.json")
 	for {
-		raw, err := readNativeJobState(root, name)
-		if errors.Is(err, os.ErrNotExist) && jobGone(config, job) {
+		root, err := os.OpenRoot(jobs)
+		if err == nil {
+			raw, readErr := readNativeJobState(root, name)
+			root.Close()
+			if errors.Is(readErr, os.ErrNotExist) && jobGone(config, job) {
+				return controlJobState{}
+			}
+			var state controlJobState
+			if readErr == nil && json.Unmarshal(raw, &state) == nil && gateway.IsSessionUUID(state.Session) && state.State != "" {
+				state.Link = nativeJobLink(raw)
+				return state
+			}
+		} else if !errors.Is(err, errSharingViolation) {
 			return controlJobState{}
-		}
-		var state controlJobState
-		if err == nil && json.Unmarshal(raw, &state) == nil && gateway.IsSessionUUID(state.Session) && state.State != "" {
-			state.Link = nativeJobLink(raw)
-			return state
 		}
 		select {
 		case <-ctx.Done():

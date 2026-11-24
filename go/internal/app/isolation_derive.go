@@ -106,11 +106,9 @@ func deriveSettings(raw []byte) (out []byte, dropped int, err error) {
 	return append(out, '\n'), dropped, err
 }
 
-// claudeJSONTop and claudeJSONProject are the only keys of native's global config file that come
-// across, by name. Everything else -- the account (oauthAccount and the rest), the user and device
-// identifiers, usage and telemetry state, per-project history -- stays out. The names are native's
-// own: documented ones only. The per-project trust key and the first-run flag are not documented;
-// they are added once a measurement on a synthetic folder names them (MEASURE.md M4, M5).
+// claudeJSONTop and claudeJSONProject list the settings mirrored from native's global config file.
+// Account fields, user and device identifiers, telemetry and per-project history stay out.
+// Onboarding and trust are imported separately to keep approvals native made in the dedicated folder.
 var claudeJSONTop = []string{"mcpServers", "autoConnectIde", "autoInstallIdeExtension", "claudeInChromeDefaultEnabled",
 	"copyFullResponse", "copyOnSelect", "defaultToAgentsView", "diffTool", "externalEditorContext",
 	"leftArrowOpensAgents", "prStatusFooterEnabled"}
@@ -118,9 +116,9 @@ var claudeJSONTop = []string{"mcpServers", "autoConnectIde", "autoInstallIdeExte
 var claudeJSONProject = []string{"mcpServers", "enabledMcpServers", "disabledMcpServers"}
 
 // deriveClaudeJSON merges the user's allowlisted keys into the dedicated global config file and
-// leaves everything native wrote there alone. A key the user's file lacks is removed from the
-// dedicated one, so deleting an MCP server in the user's config removes it here too. changed is
-// false when the result equals what is there, and then nothing needs writing.
+// keeps native's other state. Missing keys in the lists above are removed, so deleting an MCP
+// server in the user's config removes it here too. Onboarding and trust are updated only when the
+// source supplies a boolean. changed is false when the result matches the dedicated file.
 func deriveClaudeJSON(userRaw, dedicatedRaw []byte) (out []byte, keys int, changed bool, err error) {
 	user, dedicated := map[string]json.RawMessage{}, map[string]json.RawMessage{}
 	if userRaw != nil && (len(userRaw) > deriveClaudeJSONBytes || json.Unmarshal(userRaw, &user) != nil || user == nil) {
@@ -137,6 +135,13 @@ func deriveClaudeJSON(userRaw, dedicatedRaw []byte) (out []byte, keys int, chang
 			delete(dedicated, key)
 		}
 	}
+	// In the 2026-11-25 synthetic run of native 2.1.331, hasCompletedOnboarding=true
+	// skipped theme and security prompts. The project boolean below records folder approval.
+	switch value := user["hasCompletedOnboarding"]; string(value) {
+	case "true", "false":
+		dedicated["hasCompletedOnboarding"] = value
+		keys++
+	}
 	userProjects, dedicatedProjects := map[string]map[string]json.RawMessage{}, map[string]map[string]json.RawMessage{}
 	_ = json.Unmarshal(user["projects"], &userProjects)
 	_ = json.Unmarshal(dedicated["projects"], &dedicatedProjects)
@@ -144,10 +149,15 @@ func deriveClaudeJSON(userRaw, dedicatedRaw []byte) (out []byte, keys int, chang
 		dedicatedProjects = map[string]map[string]json.RawMessage{}
 	}
 	for path, entry := range userProjects {
+		if dedicatedProjects[path] == nil {
+			dedicatedProjects[path] = map[string]json.RawMessage{}
+		}
+		switch value := entry["hasTrustDialogAccepted"]; string(value) {
+		case "true", "false":
+			dedicatedProjects[path]["hasTrustDialogAccepted"] = value
+			keys++
+		}
 		for _, key := range claudeJSONProject {
-			if dedicatedProjects[path] == nil {
-				dedicatedProjects[path] = map[string]json.RawMessage{}
-			}
 			if value, present := entry[key]; present {
 				dedicatedProjects[path][key] = value
 				keys++

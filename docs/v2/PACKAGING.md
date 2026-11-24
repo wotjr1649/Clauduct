@@ -98,42 +98,42 @@ Go 버전의 정책 출처는 루트 `go.mod`다. `toolchain goX.Y.Z` 줄이 정
 
 `--update`가 읽는 것은 **최신 태그 릴리스의 자산**이므로, 이름과 형식이 계약이다. 태그 전 로컬 검사에는 과금 없는 TUI 검사를 `go/cmd/ptydrive`로 돌리는 것이 들어간다([go/README.md](../../go/README.md#tui-검사-conpty)). 이 도구는 자산이 아니다.
 
-```powershell
-# 0. 버전을 올리는 PR은 v0.4.0부터 없다. go.mod가 저장소 루트에 있어 toolchain이 태그를 그대로
-#    버전으로 stamp한다(#111). v0.3.x까지는 태그보다 먼저 상수를 올리는 커밋이 필요했고, v0.3.2는
-#    상수가 0.3.1인 커밋에 태그가 붙을 뻔했다. 아래 검사가 버전과 태그를 그대로 비교한다.
-$tag = 'v0.6.11'
+1. **후보를 준비한다.** 태그의 commit을 확인하고, 별도 작업 트리를 만든다.
+   유지보수 출하 도구는 `<release-root>/tree`를 태그 작업 트리로 사용한다.
 
-# 1. 깨끗한 체크아웃에서 빌드한다. 작업 트리에 untracked 파일만 있어도 commit 스탬프에
-#    +dirty가 붙고, 그런 빌드는 릴리스 후보가 아니다(4장).
-git worktree add ../clauduct-release $tag
-cd ../clauduct-release/go
-$env:CGO_ENABLED = '0'
-# 산출물은 반드시 트리 **바깥**으로. 안에 쓰면 두 번째 빌드부터 자기가 만든 exe 때문에
-# 트리가 dirty가 되고 commit 스탬프에 +dirty가 붙는다 — 이 절차를 처음 실행하면서 실제로
-# 겪었다.
-go build -trimpath -o ../../release-assets/clauduct.exe      ./cmd/clauduct
-# v0.4.x만(1장): 0.3.x의 --update가 받을 수 있도록 같은 바이트를 옛 이름으로도 뒀다.
-# v0.5.0부터 사본은 없다(#136). v0.6.11부터 같은 트리에서 진단 도구 probe도 빌드한다. VCS 스탬프 없이
-# 빌드하고(go/README.md), 그 SHA-256이 이 트리의 go/cmd/clauduct/probe.sha256과 같아야 한다.
-# 다르면 그 clauduct.exe의 provider-control 진단이 probe를 거부하므로 빌드 검사(build-release.mjs)가 PROBE_PAIR_MISMATCH로 멈춘다.
-go build -trimpath -buildvcs=false -o ../../release-assets/clauduct-probe.exe ./cmd/clauduct-probe
-# 자산은 clauduct.exe·clauduct-probe.exe·install.ps1·uninstall.ps1·SHA256SUMS 다섯이다(v0.6.10까지는 probe 없는 넷).
+   ```powershell
+   $tag = 'v0.6.15'
+   $commit = git rev-parse --verify "refs/tags/$tag^{commit}"
+   if ($LASTEXITCODE -ne 0) { throw 'RELEASE_TAG_UNKNOWN' }
+   git worktree add --detach '.tmp/release-v0.6.15/tree' $commit
+   ```
 
-# 버전이 태그와 같고 스탬프에 +dirty가 없는지 확인한다. 어긋나면 그 빌드는 릴리스 후보가 아니다.
-$version = & ../../release-assets/clauduct.exe --dev --version
-$version
-if (-not ($version -match "^clauduct\s+$([regex]::Escape($tag))$")) { throw "VERSION_MISMATCH $tag" }
-if ($version -match '\+dirty') { throw 'DIRTY_BUILD' }
+   태그 작업 트리는 untracked 파일까지 비워 둔다. Go 도구가 태그와 commit을 실행 파일에 넣는다(#111).
+   출하 도구의 후보 준비 단계는 태그 작업 트리 밖에 독립 빌드를 만들어 SHA-256을 비교한다.
+   제품은 `CGO_ENABLED=0`과 `-trimpath`로 빌드한다.
+   v0.6.11부터 probe는 같은 트리에서 VCS 스탬프 없이 빌드하고
+   `go/cmd/clauduct/probe.sha256`과도 대조한다.
 
-# 2. 자산 이름 그대로 SHA256SUMS를 만든다. 파서는 공백으로 나뉜 두 필드를 읽고 이름 앞의
-#    `*`(sha256sum의 binary 표시)를 떼므로 `<hex>  <name>`과 `<hex> *<name>` 둘 다 받는다.
-#    v0.2.0과 v0.2.1은 Windows sha256sum이 기본으로 내는 `*` 형식으로 나갔다.
-# 3. 스크립트 둘을 자산에 함께 올린다. 저장소가 없는 머신이 설치하는 경로가 그것이다.
-#    cp <checkout>/scripts/install.ps1 <checkout>/scripts/uninstall.ps1 ../../release-assets/
-# 4. gh release create $tag clauduct.exe clauduct-probe.exe install.ps1 uninstall.ps1 SHA256SUMS
-#    v0.6.10까지는 probe 없이 넷, v0.4.x는 사본 둘을 더한 여섯 개였다(1장). 태그별 자산 집합은 출하 검사가 태그로 정한다.
-```
+2. **후보를 검증한다.** 준비 자산으로 새 설치, 이전 릴리스에서의 교체, 이전 버전으로의 롤백을 확인한다.
+   바뀐 동작에 필요한 검사와 아래 backend capability 검사를 수행한다.
+   검증 결과는 해당 태그·commit 및 검사에 쓴 실행 파일에 결속한다.
+   설치 검사에서 사용한 스크립트와 체크섬도 출하 자산과 일치해야 한다.
+
+3. **출하 자산을 확정한다.** 출하 도구는 깨끗한 태그 작업 트리에서 재현 빌드를 확인하고
+   후보 검증 결과와 자산 해시를 대조한다. 검사가 끝나면 자산 세트와 출하 보고서를 함께 확정한다.
+   두 설치 스크립트와 태그에 맞는 모든 실행 파일을 `SHA256SUMS`에 넣는다.
+   실제 배포하는 체크섬은 `<hex>  <name>` 형식이다.
+   설치·갱신 파서는 이름 앞에 `*`가 붙은 기존 `sha256sum` 형식도 읽는다.
+
+4. **발행 진입점을 실행한다.** 태그·commit, 확정된 빌드, 공개 릴리스 노트를 넘긴다.
+   발행 진입점은 원격 태그와 commit, 자산과 `SHA256SUMS`,
+   출하 보고서에 결속된 검증 기록을 다시 대조한 뒤 해당 태그의 자산만 발행한다.
+   발행을 중단한 경우 실패한 검사를 고치고 확정 단계에서 다시 검사한다.
+
+확정된 발행 자산은 아래 표의 이름을 사용한다.
+v0.6.11부터 실행 파일 두 개, 설치 스크립트 두 개, `SHA256SUMS` 하나다.
+v0.6.10까지의 probe 없는 세트와 v0.4.x의 옛 이름 사본은 태그별 자산 규칙에 따른다.
+발행 후에는 이 절의 다운로드·업데이트 검사로 공개된 바이트를 확인한다.
 
 | 자산 이름 | 왜 이 이름이어야 하나 |
 |---|---|

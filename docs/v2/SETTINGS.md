@@ -500,7 +500,8 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 
 `isolation: "on"`은 Clauduct가 띄우는 native가 **저장된 Claude 로그인과 계정에 묶여 Anthropic에 보내는 부수 요청**(telemetry, feature flag
 조회, 계정 조회, 시작 때의 quota 확인)을 줄이는 선택 기능이다([#379](https://github.com/wotjr1649/Clauduct/issues/379)). 사용자의 커스터마이즈를
-숨기지 않는다. 떼어 내는 것은 (1) 로그인과 계정 정보, (2) supervisor와 실행 중 상태 둘뿐이다. 기본(`off`)에서는 아무것도 바뀌지 않는다.
+숨기지 않는다. 떼어 내는 것은 (1) 로그인과 계정 정보, (2) supervisor와 실행 중 상태 둘뿐이다. 기본(`off`)은 기존 실행 경로를 사용한다.
+격리를 사용한 뒤에는 격리 모드에서 실행 중인 세션에 대한 `--resume`을 기본 모드에서도 거부한다.
 
 켜면 모든 Clauduct 실행(foreground·`--bg`·`attach`·`agents`·`respawn`·`stop`·`rm`·`logs`)이 native에
 `CLAUDE_CONFIG_DIR=<전용 폴더>`와 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`·`DISABLE_TELEMETRY=1`·`DISABLE_ERROR_REPORTING=1`을
@@ -515,14 +516,16 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 | `projects`(대화 transcript·프로젝트 auto memory) `file-history` `paste-cache` | junction으로 공유 |
 | `history.jsonl` | hard link로 공유(native가 교체 쓰기를 하면 끊길 수 있고, 그때는 시작 때 알린다) |
 | `CLAUDE.md` | 전용 폴더의 `CLAUDE.md` 첫 줄에서 공식 `@` import로 사용자 `CLAUDE.md`를 읽는다. 그 아래에 적은 내용은 보존된다(격리 세션에서 `/memory`로 편집하면 거기에 들어간다). [CLAUDE.md import](https://code.claude.com/docs/en/memory#import-additional-files) |
-| `settings.json` | **실행마다 파생**: 인증 helper(`apiKeyHelper`·`aws…`·`gcpAuthRefresh`·`otelHeadersHelper`)·로그인 제한 키·endpoint/credential/provider `env`·telemetry 재활성 `env`를 뺀다. Remote Control, 계정 동기화·connector, 피드백 초안·설문을 끈다. `ANTHROPIC_MODEL` 같은 모델 선택 `env`는 그대로 둔다 |
+| `settings.json` | **실행마다 파생**: 인증 helper(`apiKeyHelper`·`aws…`·`gcpAuthRefresh`·`otelHeadersHelper`)·로그인 제한 키·endpoint/credential/provider `env`·telemetry 재활성 `env`를 뺀다. Remote Control, 계정 플러그인 동기화·connector, 피드백 초안·설문을 끈다. `syncClaudeAiSkills`와 `ANTHROPIC_MODEL` 같은 모델 선택 `env`는 사용자 값을 유지한다. 격리에는 저장된 Claude 로그인이 없으므로 계정에서 스킬을 내려받지 않는다 |
 | `.claude.json` | **실행마다 파생**: 이름으로 고른 키만(user·project `mcpServers`, MCP 토글, 전역 UI 토글, 불리언 온보딩·프로젝트 신뢰). 계정(`oauthAccount` 등)·식별자는 가져오지 않는다 |
 | `keybindings.json` | 복사 |
 | `.credentials.json`(저장 login), `jobs`·`daemon`·`sessions`·캐시 등 그 밖의 모든 것 | 전용 폴더에 따로 보관한다. 원본 `.credentials.json`은 Claude 로그인도 저장하므로 링크하거나 복사하지 않는다. |
 
 - 위 사용자 설정 폴더의 공유 구성에서 Windows junction과 `history.jsonl` hard link를 사용하는 동작은 native의 공식 문서에 명시되어 있지 않다.
-- 사용자의 파일은 읽기만 한다. 쓰기는 공유할 디렉터리가 사용자 폴더에 없을 때 빈 디렉터리를 만드는 것뿐이다(격리 세션이 새로 만든 자산이 전용 폴더에
-  갇히지 않게). 전용 폴더에서 이미 다른 것이 되어 있는 공유 이름은 옮기거나 지우지 않고 `ISOLATION_LINK_CONFLICT`로 거부한다.
+- Clauduct 런처는 격리를 초기화할 때 원본 설정을 읽고, 공유할 디렉터리가 없으면 사용자 폴더에 빈 디렉터리를 만든다. 격리에서 실행된 native는 공유 링크를 통해
+  transcript·프롬프트 이력·공유 자산을 사용자 폴더에 직접 쓸 수 있다. 사용자나 관리자 설정이 스킬 동기화를 끄면 native의 정리 정책은 공유 `skills`에도 적용될 수 있다.
+  전용 폴더에서 공유 이름이 이미 다른 용도로 쓰이고 있으면 `ISOLATION_LINK_CONFLICT`로 거부한다.
+  [스킬 동기화 설정](https://code.claude.com/docs/en/settings-reference#syncclaudeaiskills)
 - 이전 빌드의 전용 `plugins` junction은 사용자 폴더의 `plugins`를 가리킬 때 링크만 제거한다. `ISOLATION_PLUGIN_MIGRATION_BUSY`가 나오면
   `CLAUDE_CONFIG_DIR`을 오류에 나온 전용 폴더로 설정하고 `claude daemon stop --any`를 실행한 뒤 다시 시작한다.
   전용 `plugins` 경로가 다른 대상을 가리키거나 별도 데이터가 들어 있으면 `ISOLATION_LINK_CONFLICT`로 시작을 거부한다.
@@ -531,8 +534,9 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 - 두 모드가 같은 플러그인 루트를 사용하면 설치 목록을 공유한다. 사용자 범위 플러그인의 활성화 상태는 원본 `settings.json`에서 관리한다. 같은 프로젝트에서 두 모드가 범위를
   공유하려면 프로젝트 또는 로컬 범위로 설치한다.
 - **전용 폴더를 직접 지우지 않는다.** junction을 따라가는 도구는 사용자 자산을 지울 수 있다. `clauduct --dev --isolation-reset`(`--yes`)가 링크를 먼저
-  떼고 지운다. 전용 supervisor가 살아 있으면 거부한다.
-- 파생 파일은 한 방향이다. 격리 세션 안의 `/config`·`claude mcp add` 변경은 다음 실행에서 사라지고, 시작 때 한 줄로 알린다. 원본에 되쓰지 않는다.
+  떼고 지운다. 전용 supervisor가 살아 있으면 거부한다. 원본 속성을 바꾸지 않고 `history.jsonl` 링크를 제거할 수 없으면 reset이 오류를 반환한다.
+- 파생 파일은 한 방향이다. 격리 세션 안의 `/config`·`claude mcp add` 변경 중 파생으로 덮이는 값은 다음 실행에서 사라진다.
+  시작 경고는 전용 `settings.json`의 해시가 직전 파생본과 다를 때 표시된다. 파생 변경은 원본에 되쓰지 않는다.
 - 격리 중인 native가 이미 돌고 있을 때 두 번째 격리 실행이 시작되면, `.claude.json` 파생은 쓰기 직전에 파일을 다시 읽어 native가 그 사이에 쓴 자기 상태를
   유지한 채 병합하고(최대 3번), 가져오는 키가 바뀌지 않았으면 아예 쓰지 않는다. 마지막 읽기와 교체 사이의 짧은 틈은 남는다. native와 공유하는 잠금이 없어 그 틈에
   native가 쓴 값은 사라질 수 있다(native의 자기 상태이며 다음 저장 때 다시 쓰인다).
@@ -556,11 +560,13 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 - `isolation`은 공장 문서에 없다. 설정 동기화가 덧붙이지 않고, v0.6.13 이하 바이너리는 이 키를 모르는 키로 거부하므로 되돌리기 전에 지운다.
 
 - MCP 서버 정의는 전용 `.claude.json`으로 미러링된다. 비밀값은 지원되는 필드에서 `${VAR}`로 확장하거나 HTTP 헤더를 `headersHelper`에서 가져온다.
-  MCP 정의에 평문 비밀을 넣으면 전용 `.claude.json`에도 평문 복제본이 생긴다. 사용자 `settings.json`의 `env`·hook에 있는 비밀도 파생 파일에 복제될 수 있다.
+  MCP 정의에 평문 비밀을 넣으면 전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`와 hook에 평문 비밀을 넣으면
+  전용 `settings.json`에도 복제된다. 비밀은 실행 환경에서 제공하고, 지원되는 곳에서 환경 변수로 참조한다.
   Windows에서는 폴더의 상속 ACL이 파일 접근을 제어한다. `--isolation-reset`이 복제본을 지운다.
   [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
-- 격리를 한 번 쓴 기계에서 `~/.clauduct/settings.json`이 읽히지 않으면(깨졌거나 1 MiB 초과) `rm`·`stop`·`logs`는 기본 supervisor로 가지 않고
+- 격리를 한 번 쓴 기계에서 `~/.clauduct/settings.json`이 읽히지 않으면(깨진 JSON, 객체가 아닌 값, 중복 키, `"isolation": null`, 1 MiB 초과 등) `rm`·`stop`·`logs`는 기본 supervisor로 가지 않고
   `ISOLATION_MODE_UNREADABLE`로 거부한다. 나머지 명령은 원래대로 설정 오류로 거부한다. `isolation`을 `off`로 바꾼 뒤에는 제어 명령이 기본
   supervisor만 보므로, 남은 격리 job은 `isolation`을 잠시 `on`으로 되돌리고 `clauduct stop <id>` 또는 `clauduct rm <id>`로 정리한 뒤 다시 `off`로 바꾼다.
 - 전용 `.claude.json`을 읽지 못하면(잠김·파일 아님·8 MiB 초과) 새로 만들어 덮어쓰지 않고 `ISOLATION_DEDICATED_CONFIG_UNREADABLE`로 시작을 거부한다.
+  전용 `CLAUDE.md`를 읽지 못해도 기존 내용을 보존하고 `ISOLATION_DEDICATED_FILE_UNREADABLE`로 시작을 거부한다.
   `--isolation-reset`은 전용 폴더나 그 상위가 링크이면 `ISOLATION_RESET_REFUSED`로 거부한다.

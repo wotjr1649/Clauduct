@@ -1354,7 +1354,7 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 
 | 기능 | 격리 켜짐 | 근거 |
 |---|---|---|
-| background dispatch·공유 supervisor의 telemetry·feature flag 조회 | `MEASURE`(목표 `NATIVE_DISABLED`) | #372 후속 실측(합성 login, 전용 폴더 + supervisor·dispatch telemetry off)에서 0건. 이 구현의 실측 대기 |
+| print·TUI·background dispatch 및 전용 supervisor의 telemetry·feature flag 조회 | 계측 표본 0건(목표 `NATIVE_DISABLED`) | [#379](https://github.com/wotjr1649/Clauduct/issues/379)의 v0.6.17 통합 후보 `fc74ef59a`와 native 2.1.331에서 print·TUI·background 표본을 계측했다. 해당 측정 창에서 event logging과 eval/feature flag 요청은 각각 0건이었다 |
 | 저장된 Claude login의 계정 조회(bootstrap·oauth/profile) | `MEASURE`(목표 `NATIVE_DISABLED`) | 전용 폴더에 login을 옮기지 않는다. 같은 후속 실측에서 0건 |
 | 시작 때 quota 확인(spare 세션의 1토큰 `/v1/messages`) | `MEASURE` | 정적 근거만: native 2.1.321의 확인 함수 첫 분기가 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`를 검사한다. 실측 전 |
 | MCP registry 목록·native 자동 업데이트·release notes·marketplace 자동 갱신 | `NATIVE_DISABLED` 목표 | NONESSENTIAL(공식 env 문서). `strict`와 같은 효과 |
@@ -1371,6 +1371,6 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 - Claude 로그인이 들어 있는 원본 `.credentials.json`은 링크하거나 복사하지 않는다. OAuth가 필요한 원격 MCP 서버는 격리 세션의 `/mcp`에서 서버별로 한 번 인증한다.
   [원격 MCP 인증](https://code.claude.com/docs/en/mcp#authenticate-with-remote-mcp-servers)
 - MCP 정의는 전용 `.claude.json`에 미러링된다. 지원되는 필드의 `${VAR}` 확장 또는 `headersHelper`로 비밀값을 제공한다. 값을 정의에 평문으로 넣으면
-  전용 `.claude.json`에도 평문 복제본이 생긴다.
+  전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`·hook 값도 전용 파일에 복제된다. 비밀은 실행 환경에서
+  제공하고 지원되는 곳에서 환경 변수로 참조한다.
   [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
-

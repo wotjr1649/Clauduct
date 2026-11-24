@@ -38,5 +38,6 @@ Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`. native를 쓴 검사는 모두 Claude C
 
 ## 알려진 제한
 
-- **옵션 값이나 `--` 뒤에 `--bg`를 쓰면 background 요청으로 판정한다.** native는 `--name --bg`·`-- --bg`를 foreground로 처리하므로 두 판단이 갈려 `BACKGROUND_DISPATCH_UNVERIFIED`로 실패한다. 이름이나 프롬프트에 `--bg`라는 문자열을 단독 인자로 쓰지 않으면 영향이 없다.- **10쪽이 넘는 PDF를 페이지 지정으로 읽으려면 Poppler(`pdftoppm`)가 필요하다.** native Claude Code와 같은 동작이다.
+- **옵션 값이나 `--` 뒤에 `--bg`를 쓰면 background 요청으로 판정한다.** native는 `--name --bg`·`-- --bg`를 foreground로 처리하므로 두 판단이 갈려 `BACKGROUND_DISPATCH_UNVERIFIED`로 실패한다. 이름이나 프롬프트에 `--bg`라는 문자열을 단독 인자로 쓰지 않으면 영향이 없다.
+- **10쪽이 넘는 PDF를 페이지 지정으로 읽으려면 Poppler(`pdftoppm`)가 필요하다.** native Claude Code와 같은 동작이다.
 - background의 native telemetry·계정 조회와 Clauduct job 종료 시 복원한 resident가 함께 끝날 수 있는 제한은 계속 적용된다. [v0.6.14 알려진 제한](RELEASE-v0.6.14.md#알려진-제한).

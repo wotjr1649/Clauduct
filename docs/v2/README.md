@@ -2,13 +2,13 @@
 
 V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 자리**다.
 
-## 1. 현재 상태 (2026-11-24, v0.6.14 출시)
+## 1. 현재 상태 (2026-11-24, v0.6.15 출시)
 
 | 항목 | 값 |
 |---|---|
-| 최신 출시 | **v0.6.14** (태그 `v0.6.14` → `6782e6a`). backend가 delta 없이 `arguments.done`으로 보낸 도구 인자를 받아들이고, 라우팅 증거가 들어오면 대기 중인 요청을 바로 깨운다. native 2.1.325 특정 빌드용 `--bg`·관리 명령 판정은 기준 native 2.1.330에서는 꺼져 v0.6.13과 같은 경로를 쓴다. 전체 관문과 실제 backend 18묶음은 실행하지 않았다(소유자 예외). [변경·출하 검사와 알려진 제한](RELEASE-v0.6.14.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.14). 그 이전 **v0.6.13** (태그 `v0.6.13` → `725ac5c`). streaming 완료 신호를 본문 정상 종료 뒤 전달하고, resident 재생성 중 응답 보류와 `/model` pair 유지, background stop 뒤 worker 종료 확인, native fast mode 확인 끔을 더했다. 분류기 공장값은 `gpt-6.1-terra/low`이고 기존 설정 파일은 바뀌지 않는다. 전체 관문은 같은 후보의 리허설 결과로 갈음했고 실제 backend 18묶음은 실행하지 않았다(소유자 예외). [변경·출하 검사와 알려진 제한](RELEASE-v0.6.13.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.13). |
-| 출하 후 후속 | 알려진 제한과 미검증 항목은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0614)에 분류와 다시 볼 조건을 붙여 한곳에 모았다(v0.6.9, #273). 릴리스별 기록의 "알려진 제한" 절은 그 릴리스 당시의 기록이다 |
-| 실행기 | `clauduct.exe` 하나 = Go 빌드. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(v0.4.0, #112). v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다. launch에는 필요 없고, 설치·업데이트는 둘을 한 쌍으로 다룬다([PACKAGING](PACKAGING.md) 1절·5.1절). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
+| 최신 출시 | **v0.6.15** (태그 `v0.6.15` → `97adf8f`). native 2.1.330에서 subagent 역할 선택과 background·관리 명령 인자 판정을 수정했다. Workflow 파일 소스는 Read 권한을 검증한 native에서만 허용한다. PDF 첨부와 Read 결과는 원본만 backend에 보내고 내장 렌더러와 `pdftoppm` 별칭을 제거했다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.15.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.15). 그 이전 **v0.6.14** (태그 `v0.6.14` → `6782e6a`). backend가 delta 없이 `arguments.done`으로 보낸 도구 인자를 받아들이고, 라우팅 증거가 들어오면 대기 중인 요청을 바로 깨운다. native 2.1.325 특정 빌드용 `--bg`·관리 명령 판정은 기준 native 2.1.330에서는 꺼져 v0.6.13과 같은 경로를 쓴다. 전체 관문과 실제 backend 18묶음은 실행하지 않았다(소유자 예외). [변경·출하 검사와 알려진 제한](RELEASE-v0.6.14.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.14). |
+| 출하 후 후속 | 알려진 제한과 미검증 항목은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0615)에 분류와 다시 볼 조건을 붙여 한곳에 모았다(v0.6.9, #273). 릴리스별 기록의 "알려진 제한" 절은 그 릴리스 당시의 기록이다 |
+| 실행기 | `clauduct.exe` 하나 = Go 빌드. hook과 `--dev` 명령이 같은 파일이다(v0.4.0, #112). v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다. launch에는 필요 없고, 설치·업데이트는 둘을 한 쌍으로 다룬다([PACKAGING](PACKAGING.md) 1절·5.1절). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go(필요 버전은 `go.mod`가 유일한 출처, [PACKAGING](PACKAGING.md#툴체인-버전-370)), **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
 | 측정된 도구 표면과 검증한 클라이언트 | 도구 이름과 모드별 core는 내장 자료(`measured-clients.json`)로 비교한다. 세션의 [`verified` 판정](COMPATIBILITY.md#0-기준과-판정-방법--2026-09-20-실행-2026-09-19)은 도구 이름과 모드별 core에 한정한다. v0.6.14 출하는 native 2.1.330에서 표면을 재측정하고 실제 backend 표본 3종을 확인했다. v0.6.13의 신규 영향 실측은 2.1.321에서 했다. [v0.6.14 출하 검사](RELEASE-v0.6.14.md#출하-검사), [v0.6.13 출하 검사](RELEASE-v0.6.13.md#출하-검사) |
 | 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 예외는 v0.6.9부터 공개하는 합성 protocol contract test다(#271). 공개 CI는 그 테스트와 gofmt·vet·build, PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
@@ -53,7 +53,7 @@ v0.6.11의 출하 관문은 실행기 13단계가 종료 코드 0이었으나 cl
 
 - **forked Skill(`context: fork`)의 자식 재개는 native에 맡긴다.** 루트와 subagent 안의 fork(v0.5.0)는 받아들이고,
   `SendMessage`로 재개한 자식은 native 영수증과 대조한다. 재개 연결은 따로 검증하지 않으며, metadata에
-  `stoppedByUser`가 있으면 거부한다. [fork 관측과 제한](COMPATIBILITY.md#알려진-제한-원장-v0614)
+  `stoppedByUser`가 있으면 거부한다. [fork 관측과 제한](COMPATIBILITY.md#알려진-제한-원장-v0615)
 - **커스텀 역할 기본값**은 `--add-dir`·`--setting-sources`·settings의 `CLAUDE_CODE_SUBAGENT_MODEL`까지
   native와 같게 수집한다. v0.5.1에서 ZIP plugin 역할과 세션 중 `/cd`를 확인했고, v0.5.4에서는 설정 우선순위와
   managed 출처를 검증할 수 없는 경우의 거부 경계를 검사했다. 모든 managed 배포·세션 중 `/add-dir`·임의 URL

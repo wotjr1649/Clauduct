@@ -19,14 +19,7 @@ import (
 )
 
 func nativeConfigDirectory(env map[string]string, cwd string) string {
-	configDir := ""
-	spelling := ""
-	for key, value := range env {
-		if strings.EqualFold(key, "CLAUDE_CONFIG_DIR") && key > spelling {
-			spelling = key // Match launch's sorted, case-insensitive last-wins rule.
-			configDir = value
-		}
-	}
+	configDir, _ := windowsEnvValue(env, "CLAUDE_CONFIG_DIR")
 	if configDir == "" {
 		if home, err := os.UserHomeDir(); err == nil {
 			configDir = filepath.Join(home, ".claude")
@@ -36,6 +29,16 @@ func nativeConfigDirectory(env map[string]string, cwd string) string {
 		configDir = filepath.Join(cwd, configDir)
 	}
 	return configDir
+}
+
+func windowsEnvValue(env map[string]string, name string) (string, bool) {
+	spelling := ""
+	for key := range env {
+		if strings.EqualFold(key, name) && key > spelling {
+			spelling = key // Match launch's sorted, case-insensitive last-wins rule.
+		}
+	}
+	return env[spelling], spelling != ""
 }
 
 // UUIDs can be loaded before launch; titles and pickers remain native-owned.

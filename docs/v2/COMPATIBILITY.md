@@ -1350,8 +1350,7 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 ### 서버 경계 원장 — 격리 모드 (v0.6.14)
 
 `isolation: "on"`([SETTINGS.md](SETTINGS.md#격리-모드-v0614), [#379](https://github.com/wotjr1649/Clauduct/issues/379))에서 위 원장의 행이 달라지는 것만 적는다.
-나머지 행과 default·strict 열은 그대로다. 아래 분류는 **구현은 끝났고 이 구현의 native 실측은 아직 없다**: 근거가 이미 있는 행은 그 근거를,
-없는 행은 `MEASURE`를 적고, 실측(비공개 하네스의 격리 행)이 통과하면 확정한다.
+`MEASURE`로 표시한 서버 경계는 격리 모드 계측을 통과하면 확정한다.
 
 | 기능 | 격리 켜짐 | 근거 |
 |---|---|---|
@@ -1361,6 +1360,17 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 | MCP registry 목록·native 자동 업데이트·release notes·marketplace 자동 갱신 | `NATIVE_DISABLED` 목표 | NONESSENTIAL(공식 env 문서). `strict`와 같은 효과 |
 | claude.ai 계정 plugin·skill 동기화 | `NATIVE_DISABLED` 목표 | feature flag 조회 off, 전용 폴더에 login 없음 |
 | WebFetch 사전 domain 점검, 공식 marketplace 자동 등록 | `ALLOWED_EGRESS`(불변) | 격리가 끄지 않는다. `strict`와 함께 쓴다 |
-| 사용자 자산(CLAUDE.md·agents·skills·commands·plugin·user MCP·transcript) | `LOCAL_NATIVE` | 서버 접속이 아니다. junction·파생으로 같은 자산을 쓴다 |
+| 사용자 자산(CLAUDE.md·agents·skills·commands·plugin·user MCP·transcript) | `LOCAL_NATIVE` | Windows 링크와 파생 파일로 같은 자산을 읽는다. `CLAUDE.md`는 공식 `@` import, 플러그인 루트는 공식 `CLAUDE_CODE_PLUGIN_CACHE_DIR`를 사용한다 |
 | 사용자가 Clauduct 없이 연 native, 같은 폴더를 직접 연 native | `OUT_OF_SCOPE` | 보장 밖 |
+
+격리의 알려진 제한
+
+- `agents`, `skills`, `commands`, `rules`, `output-styles`, `workflows`, `themes`, `agent-memory`, `plans`, `tasks`, `todos`, `projects`, `file-history`, `paste-cache`는
+  Windows junction으로 공유하고 `history.jsonl`은 hard link로 공유한다. 이 설정 폴더의 링크 동작은 native의 공식 문서에 명시되어 있지 않다.
+  [CLAUDE.md import](https://code.claude.com/docs/en/memory#import-additional-files) · [플러그인 루트](https://code.claude.com/docs/en/plugins/loading#find-plugins-on-disk)
+- Claude 로그인이 들어 있는 원본 `.credentials.json`은 링크하거나 복사하지 않는다. OAuth가 필요한 원격 MCP 서버는 격리 세션의 `/mcp`에서 서버별로 한 번 인증한다.
+  [원격 MCP 인증](https://code.claude.com/docs/en/mcp#authenticate-with-remote-mcp-servers)
+- MCP 정의는 전용 `.claude.json`에 미러링된다. 지원되는 필드의 `${VAR}` 확장 또는 `headersHelper`로 비밀값을 제공한다. 값을 정의에 평문으로 넣으면
+  전용 `.claude.json`에도 평문 복제본이 생긴다.
+  [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
 

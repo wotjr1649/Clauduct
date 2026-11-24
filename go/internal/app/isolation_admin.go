@@ -91,6 +91,11 @@ func IsolationReset(args []string, out, errOut io.Writer, home string) int {
 		fmt.Fprintln(out, "nothing was removed; run again with --yes")
 		return 1
 	}
+	marker, _ := readIsolationMarker(dedicated)
+	if err := removeLegacyPluginJunction(dedicated, marker.Source); err != nil {
+		fmt.Fprintf(errOut, "clauduct: ISOLATION_RESET_REFUSED: %v\n", err)
+		return 1
+	}
 	left, err := removeSharedLinks(dedicated)
 	if err != nil {
 		fmt.Fprintf(errOut, "clauduct: ISOLATION_RESET_FAILED: %v\n", err)

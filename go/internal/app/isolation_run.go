@@ -52,10 +52,11 @@ func (o *Options) controlIsolation(home string) error {
 		return err
 	}
 	dedicated := dedicatedConfigDir(home)
-	if _, _, err := isolationSource(o.Env, o.Cwd, dedicated); err != nil {
+	source, _, err := isolationSource(o.Env, o.Cwd, dedicated)
+	if err != nil {
 		return err
 	}
-	o.Env = isolationEnv(o.Env, dedicated)
+	o.Env = isolationEnv(o.Env, dedicated, source)
 	return nil
 }
 
@@ -89,6 +90,9 @@ func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *
 		if _, err := prepareDedicated(dedicated, source, custom, time.Now(), osIsolationHosts); err != nil {
 			return nil, "", err
 		}
+		if err := removeLegacyPluginJunction(dedicated, source); err != nil {
+			return nil, "", err
+		}
 		links, err := linkShared(dedicated, source)
 		if err != nil {
 			return nil, "", err
@@ -109,7 +113,7 @@ func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *
 			}
 		}
 	}
-	o.Env = isolationEnv(o.Env, dedicated)
+	o.Env = isolationEnv(o.Env, dedicated, source)
 	return facts, source, nil
 }
 

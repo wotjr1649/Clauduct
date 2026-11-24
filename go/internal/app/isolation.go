@@ -14,8 +14,9 @@ import (
 // Isolated mode (#379): Clauduct sessions run native on a dedicated config folder, so the stored
 // Claude login and the shared supervisor stay out of reach of the requests native sends on its own.
 const (
-	isolationOff = "off"
-	isolationOn  = "on"
+	isolationOff      = "off"
+	isolationOn       = "on"
+	pluginCacheDirEnv = "CLAUDE_CODE_PLUGIN_CACHE_DIR"
 )
 
 var errIsolationSettings = fmt.Errorf(`%w: isolation must be "off" or "on". Edit ~/.clauduct/settings.json`, errClauductSettings)
@@ -36,12 +37,15 @@ func (config ClauductSettings) Isolated() bool { return config.Isolation == isol
 // shell says. Routing values (endpoint, token, session) are deliberately not here: the supervisor
 // keeps its start environment for every job that follows, so it may only carry what is the same
 // for all of them.
-func isolationEnv(env map[string]string, dedicated string) map[string]string {
+func isolationEnv(env map[string]string, dedicated, source string) map[string]string {
 	forced := map[string]string{
 		"CLAUDE_CONFIG_DIR":       dedicated,
 		nonessentialTraffic:       "1", // also what makes native skip its start-up quota check (2.1.321, static)
 		"DISABLE_TELEMETRY":       "1",
 		"DISABLE_ERROR_REPORTING": "1",
+	}
+	if _, set := windowsEnvValue(env, pluginCacheDirEnv); !set {
+		forced[pluginCacheDirEnv] = filepath.Join(source, "plugins")
 	}
 	out := make(map[string]string, len(env)+len(forced))
 	for name, value := range env {

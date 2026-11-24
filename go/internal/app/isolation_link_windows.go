@@ -10,12 +10,11 @@ import (
 	"syscall"
 	"time"
 	"unicode/utf16"
+	"unsafe"
 )
 
-// What the dedicated config folder shares with the user's own (#379), and how. This table is the
-// one place that decides it: moving plugins from a junction to native's CLAUDE_CODE_PLUGIN_CACHE_DIR
-// (open question Q10) is a change here. Anything not named is not shared: login, supervisor
-// state and the caches that belong to an account stay in the dedicated folder only.
+// The filesystem links shared with the user's configuration (#379). Native shares its plugin
+// root through CLAUDE_CODE_PLUGIN_CACHE_DIR, leaving account-synced plugins in its configuration.
 type sharedKind int
 
 const (
@@ -33,7 +32,6 @@ var sharedEntries = []sharedEntry{
 	{"skills", sharedJunction}, {"output-styles", sharedJunction},
 	{"workflows", sharedJunction}, {"themes", sharedJunction}, {"agent-memory", sharedJunction},
 	{"plans", sharedJunction}, {"tasks", sharedJunction}, {"todos", sharedJunction},
-	{"plugins", sharedJunction},
 	{"projects", sharedJunction}, {"file-history", sharedJunction}, {"paste-cache", sharedJunction},
 	{"history.jsonl", sharedHardLink},
 }
@@ -56,6 +54,66 @@ const (
 	fsctlSetReparsePoint = 0x000900A4
 	ioReparseTagMount    = 0xA0000003
 )
+
+var setFileInformationByHandle = syscall.NewLazyDLL("kernel32.dll").NewProc("SetFileInformationByHandle")
+
+// Remove only the old junction itself. Read its substitute name and mark that same handle for
+// deletion, without allowing another open to retarget it between the check and the deletion.
+func removeLegacyPluginJunction(dedicated, source string) error {
+	path := filepath.Join(dedicated, "plugins")
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	const deleteAccess = 0x00010000
+	var h syscall.Handle
+	for try := 0; ; try++ {
+		h, err = syscall.CreateFile(name, deleteAccess, 0, nil, syscall.OPEN_EXISTING,
+			syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if !errors.Is(err, errSharingViolation) || try == 40 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if err != nil {
+		return err
+	}
+	defer syscall.CloseHandle(h)
+	var buf [syscall.MAXIMUM_REPARSE_DATA_BUFFER_SIZE]byte
+	var size uint32
+	conflict := ErrIsolationLink{"plugins"}
+	err = syscall.DeviceIoControl(h, syscall.FSCTL_GET_REPARSE_POINT, nil, 0, &buf[0], uint32(len(buf)), &size, nil)
+	if err != nil || size < 16 || binary.LittleEndian.Uint32(buf[:4]) != ioReparseTagMount {
+		return conflict
+	}
+	start := 16 + int(binary.LittleEndian.Uint16(buf[8:10]))
+	n := int(binary.LittleEndian.Uint16(buf[10:12]))
+	if start%2 != 0 || n%2 != 0 || start+n > int(size) {
+		return conflict
+	}
+	target := make([]uint16, n/2)
+	for i := range target {
+		target[i] = binary.LittleEndian.Uint16(buf[start+2*i:])
+	}
+	to, local := strings.CutPrefix(string(utf16.Decode(target)), `\??\`)
+	from, pathErr := junctionTarget(filepath.Join(source, "plugins"))
+	if source == "" || pathErr != nil || !local || !sameFolder(to, from) {
+		return conflict
+	}
+	if osIsolationHosts.lockOwner(dedicated) != 0 {
+		return errors.New("ISOLATION_PLUGIN_MIGRATION_BUSY: stop the isolated native supervisor before replacing the old plugins junction")
+	}
+	const fileDispositionInfo = 4
+	remove := byte(1)
+	ok, _, err := setFileInformationByHandle.Call(uintptr(h), fileDispositionInfo, uintptr(unsafe.Pointer(&remove)), 1)
+	if ok == 0 {
+		return fmt.Errorf("ISOLATION_PLUGIN_MIGRATION_FAILED: %w", err)
+	}
+	return nil
+}
 
 // isJunction reports whether path is a directory junction and, if so, where it points.
 func isJunction(path string) (target string, ok bool) {

@@ -112,7 +112,7 @@ native의 실제 모델·effort를 확인하며 완료 추적을 유지한다. �
 
 **2026-09-21 v0.3.1 개발 묶음 2 — 미출하.** native 턴 영수증을 턴별 파일과 완료 표시로
 기록하고, 한 요청의 선택·취소·실패 기록이 같은 턴을 사용한다. 재개 시 이전 턴의 복구 여부와
-native 모델·effort를 초기화하며 검증된 continuation은 보존한다. 세션 전용 plugin/PDF 임시
+native 모델·effort를 초기화하며 검증된 continuation은 보존한다. 세션 전용 plugin 임시
 폴더는 종료·drain·최종 진단 뒤에 정리하고, 정리 불확실성과 실패를 별도로 보고한다.
 실행 근거와 한계는 [v0.3.1 두 번째 묶음 기록](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/v031-events-20260921/REPORT.md)에 있다.
 
@@ -341,7 +341,7 @@ v0.6.0에서는 native가 `SubagentHandback` 보고를 받아들인 뒤에도 �
 |---|---|
 | 스트리밍 대화·도구 왕복·도구 결과 재실행 방지 | TOOL01/02/06, 실클라이언트 |
 | 이미지 입력 | A1, 실백엔드 왕복 |
-| **PDF 입력**(`document` 블록 → `input_file`) | 직접 document 변환과 native Read 페이지 이미지 경로를 구분. native 2.1.278의 혼합 PDF(텍스트·표·raster chart·vector diagram·수식) 3페이지는 S46/S47 실제 TUI에서 내용 확인. S45의 tool-output 이미지 계수 불일치는 남아 있으며 해당 warmup 계수는 미지원. Agent View에서 shell PATH에 `pdftoppm.exe`가 없고 native 설정 파일이 `env.PATH`를 정의하거나 읽을 수 없으면 Clauduct는 세션 PDF alias를 추가하지 않으므로, PDF 페이지 이미지에는 해당 PATH의 `pdftoppm.exe`가 필요하다. |
+| **PDF 입력**(`document` 블록 → `input_file`) | 첨부와 짧은 `Read` 결과는 원본 PDF를 `input_file` 한 개로 전송한다. `Read(pages=…)`의 페이지 이미지는 native가 생성한다. 도구 결과의 이미지·PDF warmup 계수는 S45 불일치로 미지원이다. |
 | 대화 중 도구 추가/삭제(`tool_addition`/`tool_removal`) | A4a, 베타 게이트 포함 |
 | 추론 왕복(`redacted_thinking` ↔ `reasoning.encrypted_content`) | A4b, 실백엔드가 자기 기록을 되받음 |
 | hosted **WebSearch** | A2 + 2026-09-17 실백엔드 재확인(32,060 bytes, 20 links) |
@@ -621,6 +621,7 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | `cache_write_tokens`를 `cache_creation_input_tokens`로 연결하지 않음 | `MEASURE` | backend 값의 의미 미확인 | 0이 아닌 값이 관측될 때 |
 | `pause_turn` | `CURRENT_BACKEND_UNMAPPABLE` | backend 경로에 대응 종료 사유가 없다 | backend가 서버 도구 반복 중단을 알릴 때 |
 | 도구 결과 안 이미지·PDF의 warmup 계수 | `CURRENT_BACKEND_UNMAPPABLE` | 계수와 실제 usage 불일치(S45)로 그 계수만 미지원. 일반 생성은 무관 | backend 계수가 usage와 맞을 때 |
+| Windows의 PDF 페이지 범위 `Read(pages=…)` | `NATIVE_CLIENT_LIMIT` | 사용자가 Poppler를 설치하고 native의 `PATH`에 `pdftoppm.exe`가 있는 디렉터리를 추가해야 한다 | native가 Windows에서 페이지 변환을 자체 제공할 때 |
 | 클라이언트 `/usage`·`/cost`의 플랜 사용량 | `NATIVE_CLIENT_LIMIT` | native가 custom base URL에는 계정 엔드포인트를 묻지 않는다. `clauduct --usage`로 대신한다 | native가 묻기 시작할 때 |
 | 클라이언트 `/cost`의 금액 | `NATIVE_CLIENT_LIMIT` | native 가격표에 `gpt-*`가 없다. 토큰 수는 실제 값이다 | native가 가격을 받을 수 있을 때 |
 | `/model`에서 Enter가 기본값을 저장 | `NATIVE_CLIENT_LIMIT` | native 동작. 이번 세션에만 쓰려면 `s` | native가 동작을 바꿀 때 |
@@ -657,8 +658,7 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 
 native 기능 가운데 Anthropic 서버에 기대는 것을 단계별로 나눴다(#305). 로컬 단계(native가 이 PC에서 하는 일)와 서버 단계 (어딘가로 요청을 보내는 일)를 따로 분류한다. 프로필은 [경계 프로필](SETTINGS.md#경계-프로필-v0611)이다. 근거는 셋으로
 나눈다. 실측은 따로 적지 않으면 과금 없는 loopback과 거부 프록시, 새 설정, claude.ai 로그인 없이 native 2.1.289로 쟀다. 정적은
-2.1.289 실행 파일의 문자열이다. 문서는 공식 문서다. 실측 기록은 비공개로 보관한다.
-Anthropic 계정은 쓰지 않았으므로, claude.ai 로그인이 저장된 설정에서의 동작은 따로 적은 곳 말고는 재지 않았다.
+2.1.289 실행 파일의 문자열이다. 문서는 공식 문서다. 실측 기록은 비공개로 보관한다. Anthropic 계정은 쓰지 않았으므로, claude.ai 로그인이 저장된 설정에서의 동작은 따로 적은 곳 말고는 재지 않았다.
 
 | 분류 | 뜻 |
 |---|---|

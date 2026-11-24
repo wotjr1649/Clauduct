@@ -134,10 +134,6 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		addCompactGuidance(built)
 	}
 	entry.at(stagePrepare)
-	if err := g.prepareDocuments(ctx, built); err != nil {
-		g.refuseCategory(w, 400, "COUNT_TOKENS_FAILED_"+err.Error())
-		return
-	}
 	raw, err := json.Marshal(built)
 	if err != nil {
 		g.refuseCategory(w, 400, "COUNT_TOKENS_FAILED_ENCODE")

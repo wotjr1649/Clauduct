@@ -276,10 +276,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if entry.auxiliaryToolsBlocked {
 		backendRequest.ToolChoice = "none" // Preserve definitions for history and cache; grant no calls.
 	}
-	if err := g.prepareDocuments(ctx, backendRequest); err != nil {
-		g.refuseCategory(w, 400, err.Error())
-		return
-	}
 	encoded, err := json.Marshal(backendRequest)
 	if err != nil {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")

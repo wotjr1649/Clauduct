@@ -5,7 +5,7 @@
 // including --help and --version, so their meaning stays the native one. The exceptions
 // are a handful of first arguments no native option is: --update, --usage, --uninstall,
 // --dev for Clauduct's own commands (clauduct --dev --version is this build's identity),
-// and the hook and PDF renderer roles the session runs this same file for. Since v0.4.0
+// and the hook role the session runs this same file for. Since v0.4.0
 // that is the whole installation (#112); a copy named clauduct-hook.exe or clauduct-dev.exe
 // takes the role its name says.
 //

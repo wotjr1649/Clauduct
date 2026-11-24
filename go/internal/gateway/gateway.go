@@ -105,7 +105,6 @@ type Gateway struct {
 	nativeEvents nativeEventState
 	displays     displayHistory
 	toolFailures toolFailures
-	documents    documentRenderer
 	// cacheSalt keys promptCacheKey. Random per gateway, never sent.
 	cacheSalt [32]byte
 

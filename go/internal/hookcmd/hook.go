@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
-	"github.com/wotjr1649/Clauduct/go/internal/pdf"
 	"github.com/wotjr1649/Clauduct/go/internal/platform"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
@@ -57,8 +56,7 @@ const Arg = "--clauduct-hook"
 const ProviderControlledArg = "--clauduct-provider-controlled"
 
 // Dispatch runs the role argv asks for, if it asks for one of these, and reports whether
-// it did. It has to come before anything else the launcher does: the renderer runs with an
-// empty environment and the hook inside the client's timeout, and neither is a launch.
+// it did. It runs before launcher setup so the hook can answer within the client's timeout.
 func Dispatch(argv []string) (int, bool) {
 	return dispatch(argv, os.Stdin, os.Stdout, os.Stderr)
 }
@@ -141,42 +139,14 @@ func dispatchContext(ctx context.Context, argv []string, in io.Reader, out, errO
 		return routedContext(ctx, connection, controlled, in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	switch {
-	case Named(argv[0], "pdftoppm"):
-		return nativePDF(args, in, out, errOut), true
 	case Named(argv[0], "clauduct-hook"):
 		// The copy a 0.3.x updater installs, which a session started before the update still
-		// names, with that version's renderer argument.
-		if alone("--render-pdf") {
-			return renderPDF(), true
-		}
+		// names.
 		return runWithOutputContext(ctx, in, out, errOut, platform.Environment(os.Environ())), true
-	case alone(pdf.RenderArg):
-		return renderPDF(), true
 	case alone(Arg):
 		return runWithOutputContext(ctx, in, out, errOut, platform.Environment(os.Environ())), true
 	}
 	return 0, false
-}
-
-// Used only by the gateway's sealed, deadline-bound renderer subprocess.
-// PDF bytes and page images stay in pipes/memory; diagnostics contain no data.
-func renderPDF() int {
-	data, err := io.ReadAll(io.LimitReader(os.Stdin, pdf.MaxBytes+1))
-	if err != nil || len(data) > pdf.MaxBytes {
-		fmt.Fprintln(os.Stderr, "PDF_INPUT_LIMIT")
-		return 1
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	pages, err := pdf.Render(ctx, data)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "PDF_RENDER_FAILED")
-		return 1
-	}
-	if json.NewEncoder(os.Stdout).Encode(pages) != nil {
-		return 1
-	}
-	return 0
 }
 
 // The bounds. A hook event is a small object; anything past these is not one.

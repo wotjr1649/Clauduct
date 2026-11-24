@@ -11,6 +11,17 @@ import (
 const textOnly = `{"model":"gpt-6-astra","max_tokens":1024,"stream":true,
   "messages":[{"role":"user","content":"ping"}]}`
 
+func TestDocumentDecoderRefusesOver24MiB(t *testing.T) {
+	const header = "JVBERi0x" // %PDF-1
+	data := header + strings.Repeat("A", (32<<20)+4-len(header))
+	raw := `{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"` + data + `"}}`
+	_, err := decodeMedia(json.RawMessage(raw), "document")
+	var refusal *RequestError
+	if !errors.As(err, &refusal) || refusal.Code != CodeUnsupportedDocument {
+		t.Fatalf("document over 24 MiB: err=%v", err)
+	}
+}
+
 func decode(t *testing.T, body string) (*Request, *RequestError) {
 	t.Helper()
 	request, err := DecodeRequest([]byte(body))

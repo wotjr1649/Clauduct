@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,37 +96,6 @@ func nativeEventSource(receipts, link string, catalogue *bridge.Catalogue) strin
 	helperArgs, _ := json.Marshal(args)
 	return strings.NewReplacer("__CLAUDUCT_EVENT_ROOT__", string(root), "__CLAUDUCT_CONFIRMATION_HELPER__", string(helper), "__CLAUDUCT_CONFIRMATION_ARGS__", string(helperArgs), "__CLAUDUCT_MODELS__", string(ids),
 		"__CLAUDUCT_EFFORTS__", string(efforts)).Replace(nativeEventModule)
-}
-
-// Native's optional PDF executable is provided only inside this child process's
-// PATH. Existing system installations take precedence. No global tool is installed.
-func prepareNativePDF(directory, hook string) (string, error) {
-	bin := filepath.Join(directory, "bin")
-	if err := os.Mkdir(bin, 0700); err != nil {
-		return "", err
-	}
-	alias := filepath.Join(bin, "pdftoppm.exe")
-	if err := os.Link(hook, alias); err == nil {
-		return bin, nil
-	}
-	in, err := os.Open(hook)
-	if err != nil {
-		return "", err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(alias, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0700)
-	if err != nil {
-		return "", err
-	}
-	_, copyErr := io.Copy(out, in)
-	closeErr := out.Close()
-	if copyErr != nil {
-		return "", copyErr
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	return bin, nil
 }
 
 // nativeEventsModule is the plugin's hook module, relative to the plugin directory: a module

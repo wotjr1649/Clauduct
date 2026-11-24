@@ -651,6 +651,8 @@ var imageMediaTypes = map[string]bool{
 // somebody's image on the way through.
 var base64Payload = regexp.MustCompile(`^[A-Za-z0-9+/]*={0,2}$`)
 
+const maxDocumentBytes = 24 << 20
+
 // decodeMedia reads native base64 image/document blocks, including tool results.
 // Both key sets are closed. URLs and file references require fetching or a Files API
 // and remain unsupported. PDF is the only document media type measured end to end.
@@ -692,8 +694,21 @@ func decodeMedia(raw json.RawMessage, kind string) (Block, error) {
 		return Block{}, refuse(unsupported, "source.media_type")
 	}
 	dataValue, ok := wire.Of(source, "data")
-	if ok != wire.Present || json.Unmarshal(dataValue, &data) != nil || !base64Payload.MatchString(data) {
+	if ok != wire.Present || json.Unmarshal(dataValue, &data) != nil ||
+		(document && len(data) > base64.StdEncoding.EncodedLen(maxDocumentBytes)) || !base64Payload.MatchString(data) {
 		return Block{}, refuse(unsupported, "source.data")
+	}
+	if document {
+		// The alphabet and terminal padding were checked above. Decode only the
+		// first two groups to check the PDF signature without copying the file.
+		if len(data) < 8 || len(data)%4 != 0 {
+			return Block{}, refuse(unsupported, "source.data")
+		}
+		var header [6]byte
+		n, err := base64.StdEncoding.Decode(header[:], []byte(data[:8]))
+		if err != nil || !strings.HasPrefix(string(header[:n]), "%PDF-") {
+			return Block{}, refuse(unsupported, "source.data")
+		}
 	}
 	return Block{Type: kind, Raw: raw, MediaType: mediaType, Data: data}, nil
 }

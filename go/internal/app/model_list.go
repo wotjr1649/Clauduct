@@ -53,12 +53,7 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	defer cancel()
 	list, err := direct.AccountModels(fetch)
 	facts := ModelListFacts{Source: "account"}
-	if err == nil {
-		if home != "" {
-			// A failed save only loses the fallback for a later session.
-			_ = upstream.SaveAccountModels(home, list)
-		}
-	} else {
+	if err != nil {
 		facts.Source, facts.FetchFailure = "last-good", failureCategory(err)
 		_, hint := upstream.CredentialRefusal(err)
 		key, keyErr := direct.AccountKey()
@@ -83,6 +78,10 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	facts.Skipped = skipped
 	if err != nil {
 		return nil, facts, fmt.Errorf("%w: the list offers no model this build can route", ErrModelList)
+	}
+	if facts.Source == "account" && home != "" {
+		// A failed save only loses the fallback for a later session.
+		_ = upstream.SaveAccountModels(home, list)
 	}
 	facts.Models = len(catalogue.Models())
 	return catalogue, facts, nil

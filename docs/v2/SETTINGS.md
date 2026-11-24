@@ -511,7 +511,7 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 | 사용자 폴더(`~\.claude` 또는 `CLAUDE_CONFIG_DIR`)의 항목 | 격리에서 |
 |---|---|
 | `rules` `agents` `commands` `skills` `output-styles` `workflows` `themes` `agent-memory` `plans` `tasks` `todos` | 디렉터리 junction으로 **공유** |
-| `plugins`(설치본·marketplace·plugin data) | `CLAUDE_CODE_PLUGIN_CACHE_DIR`로 사용자 폴더의 `plugins`를 공유한다. 셸에서 이 변수를 이미 설정했으면 그 값을 쓴다. 계정 동기화용 `synced/`와 `.trash/`의 위치는 native 설정 폴더에 속한다. [플러그인 저장 위치](https://code.claude.com/docs/en/plugins/loading#find-plugins-on-disk) |
+| `plugins`(설치본·marketplace·plugin data) | 격리 실행은 `CLAUDE_CODE_PLUGIN_CACHE_DIR`의 비어 있지 않은 셸 값, 원본 `settings.json`의 `env` 값, 사용자 폴더의 `plugins` 순으로 루트를 고른다. `~`, `~/`, `~\`는 OS 홈으로 펼친다. native와 Clauduct의 플러그인 역할 조회가 이 루트를 사용한다. 계정 동기화용 `synced/`와 `.trash/`의 위치는 native 설정 폴더에 속한다. [플러그인 저장 위치](https://code.claude.com/docs/en/plugins/loading#find-plugins-on-disk) |
 | `projects`(대화 transcript·프로젝트 auto memory) `file-history` `paste-cache` | junction으로 공유 |
 | `history.jsonl` | hard link로 공유(native가 교체 쓰기를 하면 끊길 수 있고, 그때는 시작 때 알린다) |
 | `CLAUDE.md` | 전용 폴더의 `CLAUDE.md` 첫 줄에서 공식 `@` import로 사용자 `CLAUDE.md`를 읽는다. 그 아래에 적은 내용은 보존된다(격리 세션에서 `/memory`로 편집하면 거기에 들어간다). [CLAUDE.md import](https://code.claude.com/docs/en/memory#import-additional-files) |
@@ -523,9 +523,12 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 - 위 사용자 설정 폴더의 공유 구성에서 Windows junction과 `history.jsonl` hard link를 사용하는 동작은 native의 공식 문서에 명시되어 있지 않다.
 - 사용자의 파일은 읽기만 한다. 쓰기는 공유할 디렉터리가 사용자 폴더에 없을 때 빈 디렉터리를 만드는 것뿐이다(격리 세션이 새로 만든 자산이 전용 폴더에
   갇히지 않게). 전용 폴더에서 이미 다른 것이 되어 있는 공유 이름은 옮기거나 지우지 않고 `ISOLATION_LINK_CONFLICT`로 거부한다.
-- 이전 빌드의 전용 `plugins` junction은 사용자 폴더의 `plugins`를 가리킬 때 링크만 제거한다. 전용 supervisor가 실행 중이면 먼저 종료하고 다시 시작한다.
+- 이전 빌드의 전용 `plugins` junction은 사용자 폴더의 `plugins`를 가리킬 때 링크만 제거한다. `ISOLATION_PLUGIN_MIGRATION_BUSY`가 나오면
+  `CLAUDE_CONFIG_DIR`을 오류에 나온 전용 폴더로 설정하고 `claude daemon stop --any`를 실행한 뒤 다시 시작한다.
   전용 `plugins` 경로가 다른 대상을 가리키거나 별도 데이터가 들어 있으면 `ISOLATION_LINK_CONFLICT`로 시작을 거부한다.
-- 두 모드는 플러그인 설치 목록을 공유한다. 사용자 범위 플러그인의 활성화 상태는 원본 `settings.json`에서 관리한다. 같은 프로젝트에서 두 모드가 범위를
+- 격리 모드는 플러그인 루트 변수를 파생 `settings.json`에서 제거하고 launch 환경과 세션에 같은 루트를 전달한다. 다른 루트를 지정한
+  `--settings` 또는 관리 설정은 격리 시작을 거부한다. 캐시 루트를 바꿀 때는 기존 격리 supervisor를 종료한 뒤 새 세션을 시작한다.
+- 두 모드가 같은 플러그인 루트를 사용하면 설치 목록을 공유한다. 사용자 범위 플러그인의 활성화 상태는 원본 `settings.json`에서 관리한다. 같은 프로젝트에서 두 모드가 범위를
   공유하려면 프로젝트 또는 로컬 범위로 설치한다.
 - **전용 폴더를 직접 지우지 않는다.** junction을 따라가는 도구는 사용자 자산을 지울 수 있다. `clauduct --dev --isolation-reset`(`--yes`)가 링크를 먼저
   떼고 지운다. 전용 supervisor가 살아 있으면 거부한다.

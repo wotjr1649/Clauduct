@@ -64,7 +64,7 @@ func settingsEnvDropped(name string) bool {
 	case strings.HasPrefix(upper, "OTEL_"):
 		return true
 	case upper == "CLAUDE_CODE_OAUTH_TOKEN", upper == "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", upper == "CLAUDE_CODE_OAUTH_SCOPES",
-		upper == launch.HostRoutedEnv, upper == "CLAUDE_CONFIG_DIR",
+		upper == launch.HostRoutedEnv, upper == "CLAUDE_CONFIG_DIR", upper == pluginCacheDirEnv,
 		upper == "CLAUDE_CODE_ENABLE_TELEMETRY", upper == "CLAUDE_CODE_ENABLE_FEEDBACK_SURVEY_FOR_OTEL",
 		upper == "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA", upper == "ENABLE_ENHANCED_TELEMETRY_BETA",
 		upper == "ENABLE_BETA_TRACING_DETAILED", upper == "BETA_TRACING_ENDPOINT", upper == "CLAUDE_CODE_PROPAGATE_TRACEPARENT",
@@ -343,13 +343,17 @@ func sourceGlobalConfig(source, userHome string, custom bool) string {
 	return filepath.Join(userHome, ".claude.json")
 }
 
-// deriveFiles rebuilds the derived files of the dedicated folder from the user's.
-func deriveFiles(dedicated, source, userHome string, custom bool) (deriveReport, error) {
-	var report deriveReport
-	userSettings, err := readIfExists(filepath.Join(source, "settings.json"), deriveSettingsBytes)
+func readIsolationSettings(source string) ([]byte, error) {
+	raw, err := readIfExists(filepath.Join(source, "settings.json"), deriveSettingsBytes)
 	if err != nil {
-		return report, errIsolationSettingsFile
+		return nil, errIsolationSettingsFile
 	}
+	return raw, nil
+}
+
+// deriveFiles rebuilds the dedicated files from the same settings snapshot used for the plugin root.
+func deriveFiles(dedicated, source, userHome string, custom bool, userSettings []byte) (deriveReport, error) {
+	var report deriveReport
 	settings, dropped, err := deriveSettings(userSettings)
 	if err != nil {
 		return report, err

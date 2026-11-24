@@ -129,6 +129,8 @@ type ClauductSettings struct {
 	// Isolation is "off" or "on" (#379): whether native runs on Clauduct's dedicated config
 	// folder. A key that is absent means off.
 	Isolation string
+	// pluginCacheRoot is resolved once per isolated launch, before native or role loading.
+	pluginCacheRoot string
 	// marketplace is the user's own marketplace setting a strict session keeps (strictReady).
 	marketplace string
 	// Deprecated names keys present in the file that this build ignores.

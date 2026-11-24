@@ -104,7 +104,7 @@ func removeLegacyPluginJunction(dedicated, source string) error {
 		return conflict
 	}
 	if osIsolationHosts.lockOwner(dedicated) != 0 {
-		return errors.New("ISOLATION_PLUGIN_MIGRATION_BUSY: stop the isolated native supervisor before replacing the old plugins junction")
+		return fmt.Errorf("ISOLATION_PLUGIN_MIGRATION_BUSY: set CLAUDE_CONFIG_DIR to %s, then run claude daemon stop --any before retrying", dedicated)
 	}
 	const fileDispositionInfo = 4
 	remove := byte(1)

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/platform"
 )
 
 // Isolated mode (#379): Clauduct sessions run native on a dedicated config folder, so the stored
@@ -37,15 +40,13 @@ func (config ClauductSettings) Isolated() bool { return config.Isolation == isol
 // shell says. Routing values (endpoint, token, session) are deliberately not here: the supervisor
 // keeps its start environment for every job that follows, so it may only carry what is the same
 // for all of them.
-func isolationEnv(env map[string]string, dedicated, source string) map[string]string {
+func isolationEnv(env map[string]string, dedicated, pluginRoot string) map[string]string {
 	forced := map[string]string{
 		"CLAUDE_CONFIG_DIR":       dedicated,
+		pluginCacheDirEnv:         pluginRoot,
 		nonessentialTraffic:       "1", // also what makes native skip its start-up quota check (2.1.321, static)
 		"DISABLE_TELEMETRY":       "1",
 		"DISABLE_ERROR_REPORTING": "1",
-	}
-	if _, set := windowsEnvValue(env, pluginCacheDirEnv); !set {
-		forced[pluginCacheDirEnv] = filepath.Join(source, "plugins")
 	}
 	out := make(map[string]string, len(env)+len(forced))
 	for name, value := range env {
@@ -57,6 +58,54 @@ func isolationEnv(env map[string]string, dedicated, source string) map[string]st
 		out[name] = value
 	}
 	return out
+}
+
+func resolveIsolationPluginRoot(env map[string]string, source, cwd string, raw []byte) (string, error) {
+	root, _ := windowsEnvValue(env, pluginCacheDirEnv)
+	if root == "" {
+		values := map[string]string{}
+		var settings struct {
+			Env map[string]json.RawMessage
+		}
+		// The same JSON BOM and env shape as deriveSettings.
+		if json.Unmarshal(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")), &settings) == nil {
+			for name, rawValue := range settings.Env {
+				if strings.EqualFold(name, pluginCacheDirEnv) {
+					var value string
+					if json.Unmarshal(rawValue, &value) == nil {
+						values[name] = value
+					}
+				}
+			}
+		}
+		root, _ = windowsEnvValue(values, pluginCacheDirEnv)
+	}
+	if root == "" {
+		return filepath.Join(source, "plugins"), nil
+	}
+	return nativePluginRootPath(root, cwd)
+}
+
+func nativePluginRootPath(root, cwd string) (string, error) {
+	if root == "~" || strings.HasPrefix(root, "~/") || strings.HasPrefix(root, `~\`) {
+		home, err := platform.OSUserHome()
+		if err != nil {
+			return "", errors.New("ISOLATION_PLUGIN_HOME_UNAVAILABLE: the OS home could not be resolved for the plugin cache")
+		}
+		return filepath.Join(home, strings.TrimLeft(root[1:], `/\`)), nil
+	}
+	if filepath.IsAbs(root) {
+		return filepath.Clean(root), nil
+	}
+	volume := filepath.VolumeName(root)
+	if volume != "" && !strings.EqualFold(volume, filepath.VolumeName(cwd)) {
+		return filepath.Abs(root)
+	}
+	relative := root[len(volume):]
+	if relative != "" && os.IsPathSeparator(relative[0]) {
+		return filepath.Clean(filepath.VolumeName(cwd) + relative), nil
+	}
+	return filepath.Join(cwd, relative), nil
 }
 
 const isolationMarker = ".clauduct-isolation"

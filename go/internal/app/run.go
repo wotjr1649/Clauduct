@@ -277,6 +277,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	config := defaultClauductSettings()
 	var isolation *IsolationFacts
+	var managedDocs []policyDocument
 	roleConfig := "" // the user's own config folder when isolated: product readers walk it directly
 	// Before anything is fetched or bound: a machine policy that can move model requests off
 	// the gateway is one this launcher cannot outrank (#295). Help and version send none.
@@ -285,6 +286,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if err := managedRouting(docs, readErr); err != nil {
 			return Result{}, err
 		}
+		managedDocs = docs
 		if providerFlag != "" || !BackgroundRequested(o.Args) && !o.agentView() {
 			// The foreground's agent-view restriction holds against machine policy too.
 			if err := managedAgentViewOverride(docs); err != nil {
@@ -311,7 +313,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if config, err = config.strictReady(o.Env); err != nil {
 			return Result{}, err
 		}
-		if isolation, roleConfig, err = o.applyIsolation(&config, clauductHome); err != nil {
+		if isolation, roleConfig, err = o.applyIsolation(&config, clauductHome, managedDocs); err != nil {
 			return Result{}, err
 		}
 	}
@@ -859,7 +861,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			record := *o.Regenerate
 			bp.job, bp.record = record.Job, &record
 		} else if clauductHome != "" && o.Settings == nil && residentLocked {
-			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Isolated: isolation != nil, Source: isolationSourceOf(isolation), Cwd: o.Cwd, Args: residentArgs(launchArgs)}
+			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Isolated: isolation != nil, Source: isolationSourceOf(isolation), PluginCacheRoot: config.pluginCacheRoot, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
 		bp.home = clauductHome
 		if foreground != nil {
@@ -896,7 +898,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		if resident == nil {
 			resident = &backgroundProcess{config: configDir, home: clauductHome, proved: gw.ProvedNativeProcesses, sessionNatives: gw.SessionNatives,
-				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Isolated: isolation != nil, Source: isolationSourceOf(isolation), Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
+				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Isolated: isolation != nil, Source: isolationSourceOf(isolation), PluginCacheRoot: config.pluginCacheRoot, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
 		}
 		err := resident.checkpointForeground()
 		retainPlugin = err != nil

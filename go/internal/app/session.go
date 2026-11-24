@@ -242,6 +242,9 @@ func (config ClauductSettings) sessionRequirements() map[string]string {
 	if config.BoundaryProfile == boundaryStrict || config.Isolated() {
 		values[nonessentialTraffic] = "1" // #301, #379: a settings file must not turn it back on
 	}
+	if config.pluginCacheRoot != "" {
+		values[pluginCacheDirEnv] = config.pluginCacheRoot
+	}
 	if config.BoundaryProfile == boundaryStrict && config.marketplace != "" {
 		values[marketplaceInstall] = config.marketplace // the user's value, kept (strictReady)
 	}

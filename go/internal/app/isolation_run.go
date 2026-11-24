@@ -56,7 +56,31 @@ func (o *Options) controlIsolation(home string) error {
 	if err != nil {
 		return err
 	}
-	o.Env = isolationEnv(o.Env, dedicated, source)
+	var settings []byte
+	if shell, _ := windowsEnvValue(o.Env, pluginCacheDirEnv); shell == "" {
+		if settings, err = readIsolationSettings(source); err != nil {
+			return err
+		}
+	}
+	root, err := resolveIsolationPluginRoot(o.Env, source, o.Cwd, settings)
+	if err != nil {
+		return err
+	}
+	if o.ManagedPolicy != nil {
+		docs, err := o.ManagedPolicy()
+		if err != nil {
+			return err
+		}
+		if err := managedIsolationPluginRoot(docs, root, o.Cwd); err != nil {
+			return err
+		}
+	}
+	config := defaultClauductSettings()
+	config.Isolation, config.pluginCacheRoot = isolationOn, root
+	if _, _, _, err := config.takeUserSettings(o.Args, o.Cwd); err != nil {
+		return err
+	}
+	o.Env = isolationEnv(o.Env, dedicated, root)
 	return nil
 }
 
@@ -66,7 +90,7 @@ func (o *Options) controlIsolation(home string) error {
 // below -- launch, provider check, control commands, job state -- names the dedicated folder. It
 // returns the user's folder, which the product's own role and agent readers use directly, because
 // a junction root is not something a directory walk descends into.
-func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *IsolationFacts, source string, err error) {
+func (o *Options) applyIsolation(config *ClauductSettings, home string, policy []policyDocument) (facts *IsolationFacts, source string, err error) {
 	if o.Regenerate != nil {
 		// The record decides, not today's settings: the job runs where it was dispatched.
 		config.Isolation = isolationOff
@@ -79,9 +103,25 @@ func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *
 	}
 	dedicated := dedicatedConfigDir(home)
 	var custom bool
+	var settings []byte
+	config.pluginCacheRoot = ""
 	if o.Regenerate != nil {
 		source = o.Regenerate.Source
+		config.pluginCacheRoot = o.Regenerate.PluginCacheRoot
 	} else if source, custom, err = isolationSource(o.Env, o.Cwd, dedicated); err != nil {
+		return nil, "", err
+	}
+	if config.pluginCacheRoot == "" {
+		if shell, _ := windowsEnvValue(o.Env, pluginCacheDirEnv); o.Regenerate == nil || shell == "" {
+			if settings, err = readIsolationSettings(source); err != nil {
+				return nil, "", err
+			}
+		}
+		if config.pluginCacheRoot, err = resolveIsolationPluginRoot(o.Env, source, o.Cwd, settings); err != nil {
+			return nil, "", err
+		}
+	}
+	if err := managedIsolationPluginRoot(policy, config.pluginCacheRoot, o.Cwd); err != nil {
 		return nil, "", err
 	}
 	facts = &IsolationFacts{Mode: isolationOn, ConfigDir: dedicated, Source: source}
@@ -98,7 +138,7 @@ func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *
 			return nil, "", err
 		}
 		facts.Shared, facts.History = links.Shared, links.History
-		derived, err := deriveFiles(dedicated, source, home, custom)
+		derived, err := deriveFiles(dedicated, source, home, custom, settings)
 		if err != nil {
 			return nil, "", err
 		}
@@ -113,7 +153,7 @@ func (o *Options) applyIsolation(config *ClauductSettings, home string) (facts *
 			}
 		}
 	}
-	o.Env = isolationEnv(o.Env, dedicated, source)
+	o.Env = isolationEnv(o.Env, dedicated, config.pluginCacheRoot)
 	return facts, source, nil
 }
 

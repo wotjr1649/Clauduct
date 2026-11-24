@@ -36,24 +36,43 @@ var settingsDropped = []string{"apiKeyHelper", "awsAuthRefresh", "awsCredentialE
 	"otelHeadersHelper", "forceLoginMethod", "forceLoginOrgUUID", "forceLoginGatewayUrl"}
 
 // settingsForced are keys an isolated settings.json always carries, whatever the user's says: no
-// account sync of skills or plugins, no connectors, no Remote Control at start-up.
+// account sync, connectors, Remote Control, or feedback.
 var settingsForced = map[string]string{"syncClaudeAiSkills": "false", "syncClaudeAiPlugins": "false",
-	"remoteControlAtStartup": "false", "disableClaudeAiConnectors": "true"}
+	"remoteControlAtStartup": "false", "disableClaudeAiConnectors": "true", "disableRemoteControl": "true",
+	"feedbackDrafts": `"off"`, "feedbackSurveyRate": "0"}
+
+var settingsEnvForced = map[string]string{
+	nonessentialTraffic: "1", "DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1",
+	"CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1", "ENABLE_CLAUDEAI_MCP_SERVERS": "false",
+}
 
 // settingsEnvDropped reports an `env` name that would route requests, sign native in, or turn
-// traffic or telemetry back on. The three policy names are replaced by the forced values instead.
+// traffic or telemetry back on. Forced values also replace differently cased spellings.
 func settingsEnvDropped(name string) bool {
 	upper := strings.ToUpper(name)
+	if _, forced := settingsEnvForced[upper]; forced {
+		return true
+	}
+	// The fast-model region name is a routing setting despite containing _MODEL.
 	switch {
+	case upper == "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION":
+		return true
 	case strings.HasPrefix(upper, "ANTHROPIC_"):
 		// Model selection is the user's own (ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_*_MODEL ...) and works as
 		// in the default mode; endpoint, credential and header names are not.
 		return !strings.Contains(upper, "_MODEL")
 	case strings.HasPrefix(upper, "OTEL_"):
 		return true
-	case upper == "CLAUDE_CODE_OAUTH_TOKEN", upper == launch.HostRoutedEnv, upper == "CLAUDE_CONFIG_DIR",
+	case upper == "CLAUDE_CODE_OAUTH_TOKEN", upper == "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", upper == "CLAUDE_CODE_OAUTH_SCOPES",
+		upper == launch.HostRoutedEnv, upper == "CLAUDE_CONFIG_DIR",
 		upper == "CLAUDE_CODE_ENABLE_TELEMETRY", upper == "CLAUDE_CODE_ENABLE_FEEDBACK_SURVEY_FOR_OTEL",
-		upper == "FORCE_AUTOUPDATE_PLUGINS":
+		upper == "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA", upper == "ENABLE_ENHANCED_TELEMETRY_BETA",
+		upper == "ENABLE_BETA_TRACING_DETAILED", upper == "BETA_TRACING_ENDPOINT", upper == "CLAUDE_CODE_PROPAGATE_TRACEPARENT",
+		upper == "CLAUDE_CODE_SEND_FEEDBACK", upper == "FORCE_AUTOUPDATE_PLUGINS", upper == "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE",
+		upper == "CLAUDE_CODE_SYNC_SKILLS", upper == "CLAUDE_CODE_SYNC_PLUGINS",
+		upper == "CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH", upper == "CLAUDE_CODE_SKIP_ANTHROPIC_GOOGLE_CLOUD_AUTH",
+		upper == "CLAUDE_CODE_SKIP_BEDROCK_AUTH", upper == "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+		upper == "CLAUDE_CODE_SKIP_MANTLE_AUTH", upper == "CLAUDE_CODE_SKIP_VERTEX_AUTH", upper == "AWS_BEARER_TOKEN_BEDROCK":
 		return true
 	}
 	for _, name := range launch.ProviderSwitches {
@@ -91,13 +110,14 @@ func deriveSettings(raw []byte) (out []byte, dropped int, err error) {
 		}
 	}
 	for name := range env {
-		if settingsEnvDropped(name) || strings.EqualFold(name, nonessentialTraffic) ||
-			strings.EqualFold(name, "DISABLE_TELEMETRY") || strings.EqualFold(name, "DISABLE_ERROR_REPORTING") {
+		if settingsEnvDropped(name) {
 			delete(env, name)
 			dropped++
 		}
 	}
-	env[nonessentialTraffic], env["DISABLE_TELEMETRY"], env["DISABLE_ERROR_REPORTING"] = json.RawMessage(`"1"`), json.RawMessage(`"1"`), json.RawMessage(`"1"`)
+	for key, value := range settingsEnvForced {
+		env[key] = json.RawMessage(`"` + value + `"`)
+	}
 	fields["env"], err = json.Marshal(env)
 	if err != nil {
 		return nil, 0, err

@@ -1,12 +1,13 @@
 package app
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 // IsolationFacts is what an isolated launch tells the exit report: names and counts, never values.
@@ -33,18 +34,25 @@ func (o *Options) controlIsolation(home string) error {
 	if home == "" {
 		return nil
 	}
-	raw, err := os.ReadFile(filepath.Join(home, ".clauduct", "settings.json"))
-	var fields map[string]json.RawMessage
-	if err != nil || len(raw) > clauductSettingsBytes || json.Unmarshal(raw, &fields) != nil {
-		// A file that is simply absent keeps the default. One that exists but cannot be read, once
-		// isolated mode has been used here, must not send the command to the default supervisor.
-		if _, used := readIsolationMarker(dedicatedConfigDir(home)); used && !errors.Is(err, os.ErrNotExist) {
+	settingsPath := filepath.Join(home, ".clauduct", "settings.json")
+	raw, err := readIfExists(settingsPath, clauductSettingsBytes)
+	if err == nil && raw == nil {
+		if _, err := os.Lstat(settingsPath); errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+	}
+	fields, decodeErr := wire.Fields(raw, nil)
+	value, present := wire.Of(fields, "isolation")
+	if err != nil || len(raw) > clauductSettingsBytes || decodeErr != nil || present == wire.Null {
+		if _, used := readIsolationMarker(dedicatedConfigDir(home)); used {
 			return errIsolationControl
+		}
+		if present == wire.Null {
+			return errIsolationSettings
 		}
 		return nil
 	}
-	value, present := fields["isolation"]
-	if !present {
+	if present == wire.Absent {
 		return nil
 	}
 	mode, err := parseIsolation(value)
@@ -192,9 +200,21 @@ func (o Options) resumeGuard(isolation *IsolationFacts, home, session string) er
 	if other == "" {
 		return nil
 	}
-	entries, err := os.ReadDir(filepath.Join(other, "jobs"))
-	if err != nil {
-		return nil // no jobs folder: nothing runs there
+	jobs := filepath.Join(other, "jobs")
+	info, err := os.Stat(jobs)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	var entries []os.DirEntry
+	// On Windows, ReadDir can report an ordinary file as an empty directory.
+	if err == nil && info.IsDir() {
+		entries, err = os.ReadDir(jobs)
+	}
+	if err != nil || !info.IsDir() {
+		if o.Stderr != nil {
+			fmt.Fprintf(o.Stderr, "clauduct: resume: the jobs folder in the %s mode could not be read, so a running copy of this session there was not ruled out\n", mode)
+		}
+		return nil
 	}
 	unreadable := 0
 	for _, entry := range entries {

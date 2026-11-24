@@ -122,6 +122,7 @@ var (
 	errIsolationSource   = errors.New("ISOLATION_SOURCE_UNKNOWN: CLAUDE_CONFIG_DIR is Clauduct's isolated folder and its marker does not name your own configuration folder; start clauduct from a shell without CLAUDE_CONFIG_DIR set to it")
 	errIsolationChanged  = errors.New("ISOLATION_SOURCE_CHANGED: your configuration folder is not the one the isolated folder was built from; run clauduct --dev --isolation-reset, then start again")
 	errIsolationUnsafe   = errors.New("ISOLATION_CONFIG_UNSAFE: the isolated configuration folder or a folder above it is a link or is not a directory; nothing was changed")
+	errIsolationMarker   = errors.New("ISOLATION_MARKER_UNREADABLE: the isolated configuration marker is invalid or could not be read; nothing was started. Check its contents and access, or run clauduct --dev --isolation-reset to rebuild the folder")
 	errIsolationActive   = errors.New("ISOLATION_SUPERVISOR_UNVERIFIED: a native background supervisor that was not started under isolated mode is running for the isolated folder; stop it (claude daemon stop --any with that CLAUDE_CONFIG_DIR) and start again")
 )
 
@@ -215,45 +216,63 @@ func prepareDedicated(dedicated, source string, custom bool, now time.Time, host
 	if err := os.MkdirAll(dedicated, 0o700); err != nil {
 		return isolationMarkerFile{}, err
 	}
-	if marker, ok := readIsolationMarker(dedicated); ok {
-		if !sameFolder(marker.Source, source) {
-			return isolationMarkerFile{}, errIsolationChanged
+	marker, ok := readIsolationMarker(dedicated)
+	if !ok {
+		if host.lockOwner(dedicated) != 0 {
+			return isolationMarkerFile{}, errIsolationActive
 		}
-		created, err := time.Parse(time.RFC3339Nano, marker.CreatedAt)
-		if err != nil {
-			return isolationMarkerFile{}, errIsolationUnsafe
+		marker = isolationMarkerFile{Version: 1, CreatedAt: now.UTC().Format(time.RFC3339Nano), Source: filepath.Clean(source), Custom: custom}
+		if err := publishIsolationMarker(dedicated, marker); err == nil {
+			return marker, nil
+		} else if !errors.Is(err, os.ErrExist) {
+			return isolationMarkerFile{}, err
 		}
-		if pid := host.lockOwner(dedicated); pid != 0 {
-			if at, known := host.created(pid); !known || at.Before(created.Add(-time.Second)) {
-				return isolationMarkerFile{}, errIsolationActive
-			}
+		if marker, ok = readIsolationMarker(dedicated); !ok {
+			return isolationMarkerFile{}, errIsolationMarker
 		}
-		return marker, nil
 	}
-	if host.lockOwner(dedicated) != 0 {
-		return isolationMarkerFile{}, errIsolationActive
+	if !sameFolder(marker.Source, source) {
+		return isolationMarkerFile{}, errIsolationChanged
 	}
-	marker := isolationMarkerFile{Version: 1, CreatedAt: now.UTC().Format(time.RFC3339Nano), Source: filepath.Clean(source), Custom: custom}
+	created, err := time.Parse(time.RFC3339Nano, marker.CreatedAt)
+	if err != nil {
+		return isolationMarkerFile{}, errIsolationMarker
+	}
+	if pid := host.lockOwner(dedicated); pid != 0 {
+		if at, known := host.created(pid); !known || at.Before(created.Add(-time.Second)) {
+			return isolationMarkerFile{}, errIsolationActive
+		}
+	}
+	return marker, nil
+}
+
+func publishIsolationMarker(dedicated string, marker isolationMarkerFile) error {
 	raw, err := json.Marshal(marker)
 	if err != nil {
-		return isolationMarkerFile{}, err
+		return err
 	}
-	// Exclusive create: two first launches race to one marker and the loser reads the winner's.
-	file, err := os.OpenFile(filepath.Join(dedicated, isolationMarker), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, os.ErrExist) {
-		if _, ok := readIsolationMarker(dedicated); !ok {
-			return isolationMarkerFile{}, errIsolationUnsafe
-		}
-		return prepareDedicated(dedicated, source, custom, now, host)
-	}
+	file, err := os.CreateTemp(dedicated, isolationMarker+".tmp-*")
 	if err != nil {
-		return isolationMarkerFile{}, err
+		return err
 	}
-	_, werr := file.Write(raw)
-	if cerr := file.Close(); werr == nil {
-		werr = cerr
+	defer os.Remove(file.Name())
+	_, writeErr := file.Write(raw)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		return err
 	}
-	return marker, werr
+	from, err := syscall.UTF16PtrFromString(file.Name())
+	if err != nil {
+		return err
+	}
+	to, err := syscall.UTF16PtrFromString(filepath.Join(dedicated, isolationMarker))
+	if err != nil {
+		return err
+	}
+	// MoveFile publishes the complete marker without replacing another launch's marker.
+	if err := syscall.MoveFile(from, to); err != nil {
+		return &os.LinkError{Op: "publish isolation marker", Old: file.Name(), New: filepath.Join(dedicated, isolationMarker), Err: err}
+	}
+	return nil
 }
 
 // isolationProcessCreated is when pid started, from the OS.

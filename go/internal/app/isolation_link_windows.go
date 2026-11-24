@@ -302,9 +302,13 @@ func removeSharedLinks(dedicated string) (left []string, err error) {
 				left = append(left, entry.name)
 			}
 		case sharedHardLink:
-			// Removing one name of a hard link leaves the other; the user's file is untouched.
-			if rerr := os.Remove(to); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-				err = errors.Join(err, rerr)
+			// os.Remove may clear READONLY on the file shared with the user's folder.
+			path, rerr := syscall.UTF16PtrFromString(to)
+			if rerr == nil {
+				rerr = syscall.DeleteFile(path)
+			}
+			if rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+				err = errors.Join(err, &os.PathError{Op: "remove history link", Path: to, Err: rerr})
 			}
 		}
 	}

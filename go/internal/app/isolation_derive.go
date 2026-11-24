@@ -36,8 +36,9 @@ var settingsDropped = []string{"apiKeyHelper", "awsAuthRefresh", "awsCredentialE
 	"otelHeadersHelper", "forceLoginMethod", "forceLoginOrgUUID", "forceLoginGatewayUrl"}
 
 // settingsForced are keys an isolated settings.json always carries, whatever the user's says: no
-// account sync, connectors, Remote Control, or feedback.
-var settingsForced = map[string]string{"syncClaudeAiSkills": "false", "syncClaudeAiPlugins": "false",
+// account plugin sync, connectors, Remote Control, or feedback. Forcing skill sync off would
+// move synced skills to the trash through the shared skills junction.
+var settingsForced = map[string]string{"syncClaudeAiPlugins": "false",
 	"remoteControlAtStartup": "false", "disableClaudeAiConnectors": "true", "disableRemoteControl": "true",
 	"feedbackDrafts": `"off"`, "feedbackSurveyRate": "0"}
 
@@ -291,7 +292,6 @@ type deriveReport struct {
 	SettingsDropped int
 	ClaudeJSONKeys  int
 	ClaudeMd        string // "imported" or "absent"
-	Keybindings     bool
 	// SettingsEdited is set when the dedicated settings.json changed since the last launch wrote it:
 	// a /config change made inside an isolated session. It is replaced, not copied back.
 	SettingsEdited bool
@@ -397,11 +397,23 @@ func deriveFiles(dedicated, source, userHome string, custom bool, userSettings [
 		return report, fmt.Errorf("ISOLATION_SOURCE_FILE_UNREADABLE: CLAUDE.md")
 	}
 	haveMd := userMd != nil
-	currentMd, _ := readIfExists(filepath.Join(dedicated, "CLAUDE.md"), 4<<20)
+	mdPath := filepath.Join(dedicated, "CLAUDE.md")
+	currentMd, err := readIfExists(mdPath, 4<<20)
+	if err != nil {
+		return report, fmt.Errorf("ISOLATION_DEDICATED_FILE_UNREADABLE: CLAUDE.md: %w", err)
+	}
+	if currentMd == nil {
+		// A dangling link exists even when its target cannot be read.
+		if _, err := os.Lstat(mdPath); !errors.Is(err, os.ErrNotExist) {
+			return report, errors.New("ISOLATION_DEDICATED_FILE_UNREADABLE: CLAUDE.md")
+		}
+	}
 	if next := deriveClaudeMd(currentMd, haveMd, source); !bytes.Equal(next, currentMd) {
 		if len(next) == 0 {
-			os.Remove(filepath.Join(dedicated, "CLAUDE.md"))
-		} else if err := writeFileAtomic(filepath.Join(dedicated, "CLAUDE.md"), next); err != nil {
+			if err := os.Remove(mdPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return report, err
+			}
+		} else if err := writeFileAtomic(mdPath, next); err != nil {
 			return report, err
 		}
 	}
@@ -417,7 +429,6 @@ func deriveFiles(dedicated, source, userHome string, custom bool, userSettings [
 		return report, errors.New("ISOLATION_SOURCE_FILE_UNREADABLE: keybindings.json")
 	}
 	if keys2 != nil {
-		report.Keybindings = true
 		return report, writeIfChanged(filepath.Join(dedicated, "keybindings.json"), keys2)
 	}
 	if err := os.Remove(filepath.Join(dedicated, "keybindings.json")); err != nil && !errors.Is(err, os.ErrNotExist) {

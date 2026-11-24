@@ -734,7 +734,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		cli.subagent = sync.OnceValues(func() (string, error) { return subagentModel(roleConfig, o.Cwd, managedRoot(), cli, o.Env) })
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
-			sources := sessionRoleSources(roleConfig, o.Cwd, cli, o.Env, role)
+			sources := sessionRoleSources(roleConfig, o.Cwd, cli, o.Env, role, config.pluginCacheRoot)
 			sources.selection = config.Selection
 			return sources.resolve(role, parent)
 		})

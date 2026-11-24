@@ -82,6 +82,11 @@ Clauduct 자신에 대한 질문은 `clauduct --dev`(`--version`·`--doctor`·`-
 일반 native 인자는 보존하지만 `--settings` 병합·UUID 선택 복원·background 연결 관리는 Clauduct가
 보완합니다. [native와의 책임 경계](docs/v2/ARCHITECTURE.md#2-책임-경계)에 추가 동작을 명시합니다.
 
+Windows에서 10쪽이 넘는 PDF의 페이지 범위를 읽으려면 Poppler가 필요합니다. `winget install oschwartz10612.Poppler`
+또는 `choco install poppler`로 설치한 뒤, 새 터미널에서 `pdftoppm -v`로 확인하세요. 실행 파일을 찾지 못하면
+`pdftoppm.exe`가 있는 폴더를 `PATH`에 추가하세요. [Claude Code Read 문서](https://code.claude.com/docs/en/tools-reference#read-tool-behavior),
+[WinGet 패키지](https://github.com/microsoft/winget-pkgs/pull/263920/files), [Chocolatey 패키지](https://community.chocolatey.org/packages/poppler)
+
 ### 업데이트
 
 ```powershell

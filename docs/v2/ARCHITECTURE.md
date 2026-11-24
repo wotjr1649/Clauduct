@@ -131,10 +131,10 @@ provider strategy 없이 아래의 endpoint·settings 고정·hook 시작 handsh
 명시적 `--bg`·`--background` 생성은 세션별 연결 유지 프로세스가 맡는다. 최초 실행기는 native의
 생성 판정과 같이 정확한 두 토큰을 일반 옵션 경계보다 먼저 찾는다. native 2.1.282는 도움말·버전 옵션이나
 `--` 뒤에 이 토큰이 있어도 작업을 생성했으므로(v0.4.3), 일반 옵션 조회로 분류하면 살아 있는 작업의 연결이 끊겼다.
-native 2.1.325는 첫 `--` 앞에서, 값 옵션의 값 자리가 아닌 정확한 토큰만 작업으로 본다
-(`--name --bg`·`-- --bg`는 이름·프롬프트로 foreground). 이 좁힘과 아래의 관리 명령 확장은 해석한 native 파일의
-SHA-256이 표를 읽은 빌드와 같을 때만 켜지고, 다른 빌드이거나 확인할 수 없으면 정확한 토큰은 어디에 있든 background,
-첫 토큰 `rm`·`stop`·`logs`만 관리 경로 후보로 삼는다(#331, v0.6.14 출하 기준 native 2.1.330 포함). 고정 빌드에서는 `--verbose rm <id>`처럼 옵션 뒤 8자리 ID가
+native 2.1.330은 옵션 값을 건너뛰고 첫 구분자 `--` 전의 정확한 토큰을 배경 요청으로 보고, 설정에 따라 root 경로에서 처리할 수 있다.
+`--name --bg`·`-- --bg`는 이름·프롬프트다. 이 좁힘과 아래의 관리 명령 확장은 해석한 native 파일의 SHA-256이
+표를 읽은 빌드와 같을 때만 켜지고, 다른 빌드이거나 확인할 수 없으면 정확한 토큰은 어디에 있든 background,
+첫 토큰 `rm`·`stop`·`logs`만 관리 경로 후보로 삼는다(#331). 고정 빌드에서는 `--verbose rm <id>`처럼 옵션 뒤 8자리 ID가
 따르는 `rm`·`stop`·`kill`·`logs`와 선두 `kill`도 native로 바로 보낸다. 사전 동작을 측정하지 않은 옵션
 (`--debug-file`·`--teleport`·`--remote-control`/`--rc`·`--plugin-url`·`--remote`·`--cloud`·`--worktree`/`-w`·`--from-pr`)
 뒤, 그리고 `CLAUDE_CODE_SESSION_KIND=bg` 환경의 옵션 뒤 동사는 세션 경로를 유지한다.
@@ -543,7 +543,7 @@ resident record의 `session`은 primary job의 native 상태 파일에서 읽는
 native 종료를 확인하지 못하거나 유지할 job의 세션 프로필이 아직 등록되지 않았으면 잠금을 유지하며, 저장 실패도 잠금을 유지하고 연결 유지 프로세스가 끝날 때 보고한다. 새 job이 부모 세션의 프로필을 복사하기 전에 부모 잠금을 해제하지 않기 위해서다.
 
 `clauduct rm <id>`·`clauduct stop <id>`·`clauduct logs <id>`는 세션을 열지 않는 관리 경로다.
-선행 옵션 뒤 관리 명령과 선두 `kill`은 [CLI 계약](#4-cli-계약)에 적은 2.1.325 SHA-256 일치 조건을
+선행 옵션 뒤 관리 명령과 선두 `kill`은 [CLI 계약](#4-cli-계약)에 적은 2.1.330 SHA-256 일치 조건을
 충족할 때만 관리 경로로 가고, 그 뒤 인자는 그대로 native에 전달한다.
 gateway를 시작하거나 모델 목록을 조회하지 않고, 세션 settings·plugin·effort·agents 옵션도 주입하지 않는다.
 기존 제어 명령용 env 정리로 `ANTHROPIC_*`·OAuth token을 제거한다.

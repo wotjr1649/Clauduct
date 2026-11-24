@@ -94,7 +94,7 @@ func accountCommand(args []string) error {
 // option parsing, or "". Native does that for a leading verb and, behind options, for a verb
 // followed by an 8-hex id; anything else, an unknown option included, stays on the session
 // path, which hands argv to native unchanged. Options whose side effects are unmeasured stay
-// there too. Native starts a job for a background token first. The widened shapes (a verb
+// there too. A background request stays on the session path. The widened shapes (a verb
 // behind options, and a leading kill) are only known for the pinned native build; for any
 // other build, or when it cannot be identified, only a leading rm|stop|logs is sent, as
 // before: native may parse the rest as a session, which must run on the gateway (#331).
@@ -179,15 +179,37 @@ func init() {
 	argvResolveClaude.Store(&resolve)
 }
 
-// Native handles background dispatch before its ordinary help/version flags.
+// Native considers background requests before its ordinary help/version flags.
 func nativeInformation(args []string) bool {
 	if BackgroundRequested(args) {
 		return false
 	}
-	for _, flag := range []string{"--help", "-h", "--version", "-v"} {
-		if _, found := optionValue(args, flag); found {
+	for i := 0; i < len(args) && args[i] != "--"; {
+		end, known := nativeArgEnd(args, i)
+		name, _, attached := strings.Cut(args[i], "=")
+		if !known {
+			// These hidden arities were measured for the pinned build only (#331).
+			switch name {
+			case "--initialize-fields", "--metadata":
+				if !attached {
+					end++
+				}
+			case "--hold-repository-while-parked":
+			default:
+				return false
+			}
+			if nativeArgvVersion() != launch.NativeDispatchVersion {
+				return false
+			}
+		}
+		if end > len(args) {
+			return false
+		}
+		switch name {
+		case "--help", "-h", "--version", "-v":
 			return true
 		}
+		i = end
 	}
 	return false
 }

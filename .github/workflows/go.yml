@@ -1,10 +1,7 @@
 name: go
 
-# Since v0.6.9 (#271) the public tree carries the synthetic protocol contract tests
-# (internal/protocol, internal/stream, internal/wire), and this workflow runs them. Every
-# other test, the race run, evidence checks and their inputs stay off the public tree; the
-# maintainer runs them locally before a push. The step names its packages and fails if any of
-# them reports "no test files", which go test would otherwise count as a pass.
+# The public checks cover synthetic protocol contracts (#271) and argv dispatch (#331).
+# The private suite, race run, evidence checks and their inputs stay off the public tree.
 
 on:
   push:
@@ -15,6 +12,7 @@ on:
       - 'go.sum'
       - '.gitattributes'
       - 'scripts/**'
+      - '.github/tests/native_dispatch_test.go'
       - '.github/workflows/go.yml'
   pull_request:
     paths:
@@ -23,6 +21,7 @@ on:
       - 'go.sum'
       - '.gitattributes'
       - 'scripts/**'
+      - '.github/tests/native_dispatch_test.go'
       - '.github/workflows/go.yml'
 
 defaults:
@@ -93,6 +92,18 @@ jobs:
           $out
           if ($code -ne 0) { exit $code }
           if ($out -match 'no test files') { Write-Error 'a contract-test package has no test files'; exit 1 }
+
+      - name: native argv contract
+        run: |
+          $testPath = Join-Path $PWD 'internal/app/native_dispatch_public_test.go'
+          $source = (Resolve-Path ../.github/tests/native_dispatch_test.go).Path
+          $overlay = Join-Path $env:RUNNER_TEMP 'native-dispatch-overlay.json'
+          @{ Replace = @{ $testPath = $source } } | ConvertTo-Json | Set-Content -LiteralPath $overlay
+          $out = go test -count=1 "-overlay=$overlay" ./internal/app 2>&1
+          $code = $LASTEXITCODE
+          $out
+          if ($code -ne 0) { exit $code }
+          if ($out -match 'no test files') { Write-Error 'the native argv contract test was not loaded'; exit 1 }
 
   httpguard-portable:
     # This compiles the shared filter only; the full launcher remains Windows-only.

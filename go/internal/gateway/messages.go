@@ -276,10 +276,6 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if entry.auxiliaryToolsBlocked {
 		backendRequest.ToolChoice = "none" // Preserve definitions for history and cache; grant no calls.
 	}
-	if err := g.prepareDocuments(ctx, backendRequest); err != nil {
-		g.refuseCategory(w, 400, err.Error())
-		return
-	}
 	encoded, err := json.Marshal(backendRequest)
 	if err != nil {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_ENCODE_FAILED")
@@ -850,6 +846,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 				isRecovery := origin.recoveryOf != ""
 				restored := isRecovery && g.delegations.workflows[delegationKey{scopes[0].session, origin.recoveryOf}].restored
 				g.delegations.mu.Unlock()
+				if origin.source {
+					g.delegations.authorizeWorkflowSource(ctx, scopes[0].session, id)
+				}
 				if isRecovery {
 					recordOf(w).checked("workflow_recovery")
 					if restored {

@@ -8,7 +8,7 @@
 
 | 파일 | 하는 일 |
 |---|---|
-| `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·PDF 렌더러·`--dev` 명령이다 |
+| `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·`--dev` 명령도 맡는다 |
 | `clauduct-probe.exe` | **v0.6.11부터.** provider-control 진단 도구다(#319, #320). `clauduct --dev --probe provider-control`이 `clauduct.exe`와 같은 디렉터리에서 실행한다. launch는 이 파일을 쓰지 않으므로 없어도 실행된다(결정 17). `clauduct.exe`는 SHA-256을 `go/cmd/clauduct/probe.sha256`에서 내장하고 그 digest의 probe만 실행한다. 그래서 `clauduct.exe`와 한 쌍으로 내려받아 검증하고 설치한다 |
 | `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라간 `clauduct.exe`의 바이트 동일 사본. v0.5.0부터 올리지 않는다(#136). 새 설치·업데이트는 받지 않는다(아래) |
 
@@ -16,7 +16,7 @@
 
 **사본을 올렸던 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. v0.4.x의 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. **v0.5.0부터는 사본을 올리지 않는다.** 남은 0.3.x 설치의 `--update`는 `clauduct: release v0.5.0 does not carry clauduct-hook.exe, clauduct-dev.exe`로 멈추고 아무것도 바꾸지 않는다. 그 설치는 [README](../../README.md)의 설치 스크립트로 다시 설치한다. 설치 스크립트가 0.3.x의 세 파일을 `clauduct.exe` 하나로 바꾼다. 과거 릴리스의 자산은 그대로 둔다.
 
-**hook은 실행 중인 파일 자신이다.** `findHook()`은 `os.Executable()`이고, 세션 설정의 hook 명령은 `"<clauduct.exe>" --clauduct-hook`, gateway의 PDF 렌더러는 `--clauduct-render-pdf`, native가 찾는 `pdftoppm.exe`는 세션 임시 폴더에 둔 하드링크다(이름으로 역할을 고른다). PATH는 뒤지지 않는다 — 클라이언트는 그 결과를 실행하라는 말을 듣게 된다.
+세션의 hook 명령은 `"<clauduct.exe>" --clauduct-hook`이다. `findHook()`은 `os.Executable()`로 실행 중인 파일 경로를 얻는다.
 
 
 ## 2. 실행에 필요한 것
@@ -57,7 +57,7 @@ Node도 .NET도 필요 없다. `internal/app`의 스캔이 제품 소스에 `.mj
 cd go
 $env:CGO_ENABLED = '0'
 go build -trimpath -o clauduct.exe      ./cmd/clauduct
-# 하나다. hook·PDF 렌더러·`--dev` 명령이 같은 파일이다(#112, 1장).
+# 하나다. hook·`--dev` 명령이 같은 파일이다(#112, 1장).
 # v0.4.x 릴리스만 이것을 clauduct-hook.exe·clauduct-dev.exe로도 복사해 올렸다(1장).
 ```
 

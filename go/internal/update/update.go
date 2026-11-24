@@ -42,7 +42,7 @@ const API = "https://api.github.com/repos/" + Repository + "/releases/latest"
 const Timeout = 3 * time.Minute
 
 // Binaries are what an installation consists of: one file since v0.4.0, which is also the
-// hook, the PDF renderer and Clauduct's own commands (#112).
+// hook and Clauduct's own commands (#112).
 var Binaries = []string{"clauduct.exe"}
 
 // Retired are the names a 0.3.x installation had beside clauduct.exe. Releases through

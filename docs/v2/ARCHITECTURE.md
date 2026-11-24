@@ -26,7 +26,7 @@ Codex 로그인과 credential 갱신은 사용자와 Codex 도구가 소유하�
 
 | 경계 | native가 담당하는 것 | Clauduct가 더하는 것 |
 |---|---|---|
-| 실행·도구 | TUI·입력 편집·Read/Edit/Bash·MCP·plugin/skill 로딩·권한 판단 | loopback 연결, 프로세스 수명 관리, Windows PDF 렌더러 연결 |
+| 실행·도구 | TUI·입력 편집·Read/Edit/Bash·MCP·plugin/skill 로딩·권한 판단 | loopback 연결, 프로세스 수명 관리 |
 | 설정·모델 | 기존 Claude 설정과 picker 화면 | 전용 settings.json과 누락 키 동기화, 세션 시작 때 받아 고정하는 계정 모델 목록, 모델 매핑·시작 pair·agent pair, 세션용 `--settings` 병합과 GPT picker 항목 |
 | 안전 정책 | native 기본 규칙과 사용자·관리 규칙, auto 분류기 판정, 승인 UI | 권한 판단 규칙은 더하지 않는다(v0.6.4). v0.6.11부터 경계 프로필의 deny 규칙(Anthropic 서버 경로의 tool: DesignSync, strict에서 Artifact 계열)만 세션 `--settings`에 더한다(#301). gateway의 native classifier 경로(`classifier_model` pair)와 요청 출처 확인 |
 | 세션 재개 | 대화 저장·목록·native resume | 설정 snapshot과 마지막 선택의 UUID 복원, 검증하지 못한 재개 경로의 명시적 거부·명령 안내 |
@@ -51,7 +51,7 @@ Go나 Codex가 Bash/Edit를 중복 실행하는 단계는 없다(D09). 예외는
 ```text
 go.mod                        module github.com/wotjr1649/Clauduct, Go 버전은 toolchain 우선, 없으면 go 지시문. 저장소 루트(v0.4.0, 태그를 버전으로 stamp하려면)
 go/                           패키지 경로는 그대로 github.com/wotjr1649/Clauduct/go/...
-├── cmd/clauduct/             제품 launcher. 첫 인자·실행 파일 이름으로 hook·렌더러·--dev도 맡는다
+├── cmd/clauduct/             제품 launcher. 첫 인자·실행 파일 이름으로 hook·--dev도 맡는다
 ├── internal/{hookcmd,devcmd} hook / --dev(version·doctor·usage·probe). v0.3.x까지 별도 바이너리
 └── internal/
     ├── app/                  구성·생명주기 조립
@@ -66,7 +66,6 @@ go/                           패키지 경로는 그대로 github.com/wotjr1649
     ├── childprocess/         Windows 소유 process tree
     ├── sessionlink/          background 연결용 로그인 제한 IPC
     ├── httpguard/            HTTP framing·bounded drain
-    ├── pdf/                  Windows PDF 렌더러
     ├── update/               digest 검증·설치 갱신·제거
     ├── wire/                 엄격한 JSON 필드·presence 검사
     └── buildinfo/
@@ -265,6 +264,7 @@ gateway 종료 신호는 이미 진행 중인 drain을 중단한다. 응답 전�
 Go `encoding/json`의 기본 동작이 위 요구와 같다고 가정하지 않는다. 선택한 Go 버전과 JSON API의 차이를 테스트로 고정한다.
 
 text·system instruction·role·image/document·tool 정의·tool_use/tool_result·tool 오류·content block 순서·structured output·reasoning opaque·cache hint·compaction 요청을 분류한다. 전부 초기 지원할 필요는 없지만 **silent drop은 금지**다. 의미를 바꾸는 필드를 지원 못 하면 명확한 capability 오류를 반환한다.
+첨부와 `Read` 도구 결과의 PDF `document` 블록은 원본 데이터가 담긴 `input_file` 한 개로 변환한다.
 
 도구 arguments를 임의로 보정하지 않는다. 다음 셋은 자동으로 같은 뜻이 되지 않는다.
 

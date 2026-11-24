@@ -119,7 +119,7 @@ func (config ClauductSettings) takeUserSettings(args []string, cwd string) ([]st
 				return nil, nil, nil, errSettingsConflict
 			}
 			switch upper {
-			case "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR", "CLAUDUCT_PDF_PROJECTS_ROOT":
+			case "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR":
 				return nil, nil, nil, errSettingsConflict
 			case "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS":
 				if value != "1" {

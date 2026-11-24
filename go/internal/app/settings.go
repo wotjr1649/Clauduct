@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
@@ -147,8 +145,7 @@ func foregroundSettings(settings, link string, env map[string]string) (string, e
 	return string(encoded), err
 }
 
-// Apply aliases after the user merge, so a user PATH cannot hide the PDF renderer.
-func (config ClauductSettings) nativeEventSettings(settings, pdf, configDir string, o Options, base string) (string, error) {
+func (config ClauductSettings) nativeEventSettings(settings string, o Options, base string) (string, error) {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal([]byte(settings), &fields) != nil || fields == nil {
 		return "", errSettingsConflict
@@ -157,34 +154,8 @@ func (config ClauductSettings) nativeEventSettings(settings, pdf, configDir stri
 	if raw, ok := fields["env"]; ok && json.Unmarshal(raw, &env) != nil || env == nil {
 		return "", errSettingsConflict
 	}
-	names, scanErr := nativeSettingsEnvNames(o) // Name discovery never adds a startup gate.
+	names, _ := nativeSettingsEnvNames(o) // Name discovery never adds a startup gate.
 	config.pinNativeSettingsEnv(env, names, o.Env, base)
-	// A PATH in native's own settings files stays visible: a --settings PATH would outrank it.
-	// The PDF alias is omitted for a file PATH or an unprovable scan (follow-up: file PATH alias support).
-	filePath := slices.ContainsFunc(names, func(name string) bool { return strings.EqualFold(name, "PATH") })
-	if pdf != "" && scanErr == nil && !filePath {
-		path := ""
-		spelling := ""
-		for name, value := range o.Env {
-			if strings.EqualFold(name, "PATH") && name > spelling {
-				spelling = name
-				path = value
-			}
-		}
-		for name, value := range env {
-			if strings.EqualFold(name, "PATH") {
-				path = value
-				delete(env, name)
-			}
-		}
-		env["PATH"] = pdf
-		if path != "" {
-			env["PATH"] += string(os.PathListSeparator) + path
-		}
-		if configDir != "" {
-			env["CLAUDUCT_PDF_PROJECTS_ROOT"] = filepath.Join(configDir, "projects")
-		}
-	}
 	fields["env"], _ = json.Marshal(env)
 	encoded, err := json.Marshal(fields)
 	return string(encoded), err

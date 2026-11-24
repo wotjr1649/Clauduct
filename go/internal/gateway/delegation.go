@@ -665,14 +665,12 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 			return bridge.Route{}, false, errDelegationUnverified
 		}
 		actual, err := d.selection.SelectRoute(active.Model, active.Effort)
-		if err != nil {
+		if err != nil || actual.Model != active.Model {
 			return bridge.Route{}, false, errDelegationUnverified
 		}
 		actual.Source = "native-selection"
 		choice.route = actual
-		if model, ok := d.selection.ModelByID(actual.Model); ok {
-			choice.alias = model.AgentAlias
-		}
+		choice.alias = actual.Model
 	}
 	switch {
 	case choice.parent != scope.parent || meta.ParentAgentID != scope.parent:
@@ -999,7 +997,11 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		return empty, false, errDelegationUnverified
 	}
 	meta, err := d.metadata(binding)
-	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || !roleMatches(saved.Role, meta.AgentType, saved.CustomRole) || !metadataModelMatches(saved.Role, saved.Alias, meta.Model, saved.Source, saved.CustomRole) || meta.StoppedByUser {
+	selector := saved.Alias
+	if saved.Source == "native-selection" {
+		selector = saved.Model
+	}
+	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || !roleMatches(saved.Role, meta.AgentType, saved.CustomRole) || !metadataModelMatches(saved.Role, selector, meta.Model, saved.Source, saved.CustomRole) || meta.StoppedByUser {
 		return empty, false, errDelegationUnverified
 	}
 	// A child started on a route v0.3.4 retired is refused by name, not resumed elsewhere.
@@ -1033,7 +1035,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		return empty, false, errDelegationUnverified
 	}
 	route.Source = saved.Source
-	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: saved.Alias, route: route, inherited: saved.Inherited, custom: saved.CustomRole, restored: true}
+	choice := resolvedChoice{session: saved.Session, parent: saved.Parent, call: saved.Call, role: saved.Role, alias: selector, route: route, inherited: saved.Inherited, custom: saved.CustomRole, restored: true}
 	if saved.Intent != nil {
 		intent := saved.Intent
 		if saved.Version < 2 {
@@ -1047,7 +1049,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		if !modelOK || !effortOK || !intent.ModelProvided && intent.Model != "" || intent.EffortProvided != (intent.Effort != "") {
 			return empty, false, errDelegationUnverified
 		}
-		choice.receipt = &SelectionRecord{Session: saved.Session, Parent: saved.Parent, Call: saved.Call, Role: saved.Role, CustomRole: saved.CustomRole, RequestedModel: intent.Model, RequestedEffort: intent.Effort, ModelProvided: intent.ModelProvided, EffortProvided: intent.EffortProvided, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: saved.Alias}
+		choice.receipt = &SelectionRecord{Session: saved.Session, Parent: saved.Parent, Call: saved.Call, Role: saved.Role, CustomRole: saved.CustomRole, RequestedModel: intent.Model, RequestedEffort: intent.Effort, ModelProvided: intent.ModelProvided, EffortProvided: intent.EffortProvided, PresenceVerified: true, Model: route.Model, Effort: route.Effort, Source: route.Source, NativeModel: selector}
 	}
 	return choice, true, nil
 }
@@ -1069,16 +1071,16 @@ type delegationMetadata struct {
 }
 
 // 2.1.276 records inherit for native fork, rather than Agent's compatibility
-// alias. Call, parent, role and session are checked by both callers; dispatch
+// alias. Native selection uses the exact ID from its verified route. Dispatch
 // separately verifies the native request's resolved model against the choice.
-func metadataModelMatches(role, alias, model, source string, custom bool) bool {
+func metadataModelMatches(role, selector, model, source string, custom bool) bool {
 	if source == "native-selection" {
-		return model == ""
+		return model == "" || model == selector
 	}
 	if !custom && bridge.IsFork(role) {
 		return model == "inherit"
 	}
-	return model == alias
+	return model == selector
 }
 
 func (d *delegations) metadata(binding agentBinding) (delegationMetadata, error) {

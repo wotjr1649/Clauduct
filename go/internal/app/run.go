@@ -543,7 +543,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 		}
 	}()
-	nativePDF := ""
 	hook := ""
 	if o.Settings != nil {
 		settings = *o.Settings
@@ -640,7 +639,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	if o.Settings == nil {
 		gw.RequireNativeConfirmations()
-		gw.ConfigurePDFRenderer(hook)
 		if hook != "" {
 			link := ""
 			if background != nil {
@@ -661,14 +659,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				return result, fmt.Errorf("NATIVE_EVENT_SETUP_FAILED")
 			}
 			gw.ConfigureNativeEvents(filepath.Join(nativePlugin, "receipts"))
-			// The alias goes on a new native's PATH; the job a regenerated resident serves has its own.
-			if _, foundErr := exec.LookPath("pdftoppm.exe"); foundErr != nil && o.Regenerate == nil {
-				nativePDF, err = prepareNativePDF(nativePlugin, hook)
-				if err != nil {
-					result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
-					return result, fmt.Errorf("NATIVE_PDF_SETUP_FAILED")
-				}
-			}
 		}
 	}
 	configDir := nativeConfigDirectory(o.Env, o.Cwd)
@@ -683,7 +673,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	if o.agentView() && nativePlugin != "" {
-		settings, err = config.nativeEventSettings(settings, nativePDF, configDir, o, gw.BaseURL())
+		settings, err = config.nativeEventSettings(settings, o, gw.BaseURL())
 		if err != nil {
 			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 			return result, err
@@ -716,21 +706,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 	if nativePlugin != "" && !o.agentView() {
 		filtered := spec.Env[:0]
-		pathAdded := false
 		for _, value := range spec.Env {
 			key, _, _ := strings.Cut(value, "=")
-			if nativePDF != "" && strings.EqualFold(key, "PATH") {
-				_, old, _ := strings.Cut(value, "=")
-				filtered = append(filtered, key+"="+nativePDF+string(os.PathListSeparator)+old)
-				pathAdded = true
-				continue
-			}
 			if !strings.EqualFold(key, "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS") {
 				filtered = append(filtered, value)
 			}
-		}
-		if nativePDF != "" && !pathAdded {
-			filtered = append(filtered, "PATH="+nativePDF)
 		}
 		spec.Env = append(filtered, "CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1")
 	}
@@ -744,16 +724,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			}
 		}
 		gw.ConfigureWorkflowSources(append(workflowDirs, filepath.Join(configDir, "workflows")))
-		if nativePDF != "" && !o.agentView() {
-			filtered := spec.Env[:0]
-			for _, entry := range spec.Env {
-				key, _, _ := strings.Cut(entry, "=")
-				if !strings.EqualFold(key, "CLAUDUCT_PDF_PROJECTS_ROOT") {
-					filtered = append(filtered, entry)
-				}
-			}
-			spec.Env = append(filtered, "CLAUDUCT_PDF_PROJECTS_ROOT="+filepath.Join(configDir, "projects"))
-		}
 		cli := sessionCLIRoles(roleArgs, agents, o.Cwd)
 		if o.agentView() {
 			cli.readFlagEnv([]byte(finalSettings))
@@ -855,11 +825,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
 		var long *childprocess.CommandLineTooLong
 		if errors.As(startErr, &long) {
-			if nativePDF != "" && o.agentView() {
-				startErr = fmt.Errorf("%w. PDF alias lookup carries PATH in --settings alongside the delegation menu (%d entries) and the /model list; their combined launch arguments exceed the Windows limit. Nothing was started and no model was left out", startErr, result.MenuEntries)
-			} else {
-				startErr = fmt.Errorf("%w. The delegation menu (%d entries) and the /model list are passed as launch arguments, one entry per model the account lists in its picker. Nothing was started and no model was left out", startErr, result.MenuEntries)
-			}
+			startErr = fmt.Errorf("%w. The delegation menu (%d entries) and the /model list are passed as launch arguments, one entry per model the account lists in its picker. Nothing was started and no model was left out", startErr, result.MenuEntries)
 		}
 		return result, startErr
 	}

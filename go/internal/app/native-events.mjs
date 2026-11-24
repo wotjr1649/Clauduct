@@ -430,6 +430,7 @@ export const register = on => {
 	  if (!await $.fs.exists(file)) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
 	  const source=JSON.parse(await $.fs.read(file));
 	  if (source.session!==sid || source.call!==call || !Array.isArray(source.paths) || !source.paths.length || source.paths.length>64 || typeof source.trailer!=='string') return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};
+	  if (source.readVerified!==true) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED: file and named Workflow sources require verified native Read permissions. Use an inline script.'};
 	  let selected;
 	  for (const path of source.paths) {
 	    if (typeof path!=='string' || path.length>4096) return {deny:'CLAUDUCT_WORKFLOW_SOURCE_UNVERIFIED'};

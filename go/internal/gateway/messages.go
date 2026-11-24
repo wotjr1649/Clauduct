@@ -846,6 +846,9 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 				isRecovery := origin.recoveryOf != ""
 				restored := isRecovery && g.delegations.workflows[delegationKey{scopes[0].session, origin.recoveryOf}].restored
 				g.delegations.mu.Unlock()
+				if origin.source {
+					g.delegations.authorizeWorkflowSource(ctx, scopes[0].session, id)
+				}
 				if isRecovery {
 					recordOf(w).checked("workflow_recovery")
 					if restored {

@@ -99,11 +99,13 @@ jobs:
           $source = (Resolve-Path ../.github/tests/native_dispatch_test.go).Path
           $overlay = Join-Path $env:RUNNER_TEMP 'native-dispatch-overlay.json'
           @{ Replace = @{ $testPath = $source } } | ConvertTo-Json | Set-Content -LiteralPath $overlay
-          $out = go test -count=1 "-overlay=$overlay" ./internal/app 2>&1
+          $out = go test -v -count=1 "-overlay=$overlay" -run '^TestNativeConservativeDispatchContract$' ./internal/app 2>&1
           $code = $LASTEXITCODE
           $out
           if ($code -ne 0) { exit $code }
-          if ($out -match 'no test files') { Write-Error 'the native argv contract test was not loaded'; exit 1 }
+          if (-not ($out -match '^--- PASS: TestNativeConservativeDispatchContract ')) {
+            Write-Error 'the native argv contract test was not loaded'; exit 1
+          }
 
   httpguard-portable:
     # This compiles the shared filter only; the full launcher remains Windows-only.

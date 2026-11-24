@@ -100,8 +100,9 @@ PowerShell 5.1 지원은 v0.5.5부터 종료하며, 실행 정책을 변경해�
 `claude agents`·`claude attach <id>`·`claude stop <id>`에서 관리한다. native stop 뒤에도 연결 유지
 프로세스는 남는다. 연결까지 끝내려면 출력된 식별자로 `clauduct --background-stop <connection-id>`를 실행한다.
 동일 로그인 중의 지원·검증 범위와 실패 정책은 [호환성 문서](../docs/v2/COMPATIBILITY.md#v043--메시지-background-검증-예산)를 따른다.
-native 2.1.282는 `--bg`·`--background` 토큰을 일반 옵션 해석보다 먼저 처리한다. 도움말이나 버전만
-확인하려면 이 두 인자를 함께 넣지 않는다. Clauduct도 native가 만든 작업의 연결을 유지하도록 같은 생성 판정을 쓴다.
+Clauduct는 모든 native에서 argv 어디에든 정확한 `--bg`·`--background` 토큰이 있으면 background 요청으로
+판정한다. `--name --bg` 같은 옵션 값과 `--` 뒤의 토큰도 포함한다. background 요청이 없으면 첫 토큰
+`rm`·`stop`·`logs`만 관리 경로 후보로 삼는다. [CLI 계약](../docs/v2/ARCHITECTURE.md#4-cli-계약)
 
 ```powershell
 cd go

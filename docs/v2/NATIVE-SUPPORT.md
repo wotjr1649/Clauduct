@@ -1,6 +1,6 @@
 # Claude Code native 지원 범위
 
-Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위다. 설치된 native를 그대로 실행하고 버전을 기록한다. 인자 판정에 쓰는 2.1.325 특정 빌드의 SHA-256 조건은 [CLI 계약](ARCHITECTURE.md#4-cli-계약)에 있다. 세션의 `verified`는 [도구 이름과 모드별 core의 부분 판정](COMPATIBILITY.md#0-기준과-판정-방법--2026-09-20-실행-2026-09-19)이다. 출하별 native와 측정 범위는 [현행 인덱스](README.md)가 가리키는 출시 기록을 참고한다. 행에 적힌 버전은 관측에 사용한 native다. 사용자 설정·승인·도구·UI는 native가, 모델 요청 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다.
+Windows의 Clauduct 기본 경로에서 확인한 Claude Code native 지원 범위다. 설치된 native를 그대로 실행하고 버전을 기록한다. 모든 native에 적용하는 인자 판정은 [CLI 계약](ARCHITECTURE.md#4-cli-계약)에 있다. 세션의 `verified`는 [도구 이름과 모드별 core의 부분 판정](COMPATIBILITY.md#0-기준과-판정-방법--2026-09-20-실행-2026-09-19)이다. 출하별 native와 측정 범위는 [현행 인덱스](README.md)가 가리키는 출시 기록을 참고한다. 행에 적힌 버전은 관측에 사용한 native다. 사용자 설정·승인·도구·UI는 native가, 모델 요청 변환·Codex 인증·응답 무결성은 Clauduct가 담당한다.
 
 ## 지원 경로
 

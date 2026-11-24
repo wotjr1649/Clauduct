@@ -236,11 +236,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return Result{}, ErrProbeControl
 	}
 	o = o.withDefaults()
-	// The argv pins (#331) judge the native this session resolves.
-	if resolve := o.ResolveClaude; resolve != nil {
-		previous := argvResolveClaude.Swap(&resolve)
-		defer argvResolveClaude.Store(previous)
-	}
 	launchArgs := o.Args // as given: a background resident records them for its regeneration
 
 	// First, before anything is resolved or bound. A refused session must not cost an
@@ -273,7 +268,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if clauductHome != "" && o.Settings == nil && !information {
 		defer func() { reportForegroundEventsCleanup(o.Stderr, collectForegroundEvents(clauductHome)) }()
 	}
-	if command := nativeControlIn(o.Args, o.Env); command != "" && o.Regenerate == nil {
+	if command := nativeControl(o.Args); command != "" && o.Regenerate == nil {
 		return runNativeControl(ctx, o, command)
 	}
 	config := defaultClauductSettings()

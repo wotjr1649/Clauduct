@@ -253,7 +253,7 @@ func (in startupInputs) model() (string, string, error) {
 	return "", "", nil
 }
 
-func (in startupInputs) effort(model string) (string, string, error) {
+func (in startupInputs) explicitEffort() (string, string, error) {
 	effort, source, err := in.environment(effortEnv)
 	if err != nil || effort != "" {
 		return effort, source, err
@@ -263,6 +263,14 @@ func (in startupInputs) effort(model string) (string, string, error) {
 			return "", "", errNativeSelection
 		}
 		return effort, "native.cli.effort", nil
+	}
+	return "", "", nil
+}
+
+func (in startupInputs) effort(model string) (string, string, error) {
+	effort, source, err := in.explicitEffort()
+	if err != nil || effort != "" {
+		return effort, source, err
 	}
 	for _, perModel := range []bool{true, false} {
 		for i := len(in.layers) - 1; i >= 0; i-- {

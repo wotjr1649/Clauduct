@@ -223,12 +223,14 @@ func (e *NotRestoredError) Error() string {
 
 func (e *NotRestoredError) Unwrap() error { return e.Cause }
 
-// removeFile and renameFile are the rollback's file operations; a test replaces them.
-var removeFile, renameFile = os.Remove, os.Rename
+const stageSuffix = ".update-new"
+
+// renameFile is the replacement and rollback operation; interruption tests pause it.
+var renameFile = os.Rename
 
 // writeSynced writes a file and flushes it to disk before it is renamed into place.
 func writeSynced(path string, body []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o755)
 	if err != nil {
 		return err
 	}
@@ -239,9 +241,8 @@ func writeSynced(path string, body []byte) error {
 // Apply replaces clauduct.exe in dir, together with the Probe when files carries one, and
 // puts everything back if any of it cannot be written.
 //
-// A running executable cannot be overwritten on Windows but it can be renamed, which is
-// what makes this possible at all: each old file is moved aside, the new one is written in
-// its place, and the process doing this keeps running from the file it renamed.
+// An NTFS hard-link backup keeps the running image alive while its original name is
+// replaced. Moving that name aside first would leave no way to start recovery.
 //
 // The two are a pair: clauduct.exe runs only the probe whose digest it carries, so a failure
 // on either restores both, and a file that did not exist before is removed again. Without a Probe in files, one left by an earlier release is
@@ -250,80 +251,54 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	if _, ok := files[Binaries[0]]; !ok {
 		return nil, fmt.Errorf("%w: %s", ErrMissingFile, Binaries[0])
 	}
-	type swap struct {
-		path, backup string
-		had          bool
+	lock, err := lockInstallation(dir)
+	if err != nil {
+		return nil, err
 	}
-	var swapped []swap
-	// rollback puts every swap back and returns the paths it could not: a new image it could not
-	// remove, a backup it could not rename back. Those are where the installation is not as it was.
-	rollback := func() (stuck []string) {
-		for i := len(swapped) - 1; i >= 0; i-- {
-			s := swapped[i]
-			if err := removeFile(s.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				stuck = append(stuck, s.path)
-				continue // the new image is still in the way of its backup
-			}
-			if s.had && renameFile(s.backup, s.path) != nil {
-				stuck = append(stuck, s.backup)
-			}
-		}
-		return stuck
+	defer lock.Close()
+
+	self := filepath.Join(dir, Binaries[0])
+	probe := filepath.Join(dir, Probe)
+	if !mayExist(self+stageSuffix) && mayExist(probe+stageSuffix) {
+		return nil, fmt.Errorf("UPDATE_RECOVERY_REQUIRED: restart clauduct to recover the interrupted update")
 	}
-	fail := func(err error) error {
-		if stuck := rollback(); len(stuck) > 0 {
-			return &NotRestoredError{Cause: err, Paths: stuck}
-		}
-		return err
+	if err := discardStages(self); err != nil {
+		return nil, err
 	}
+
 	names := []string{Binaries[0]}
 	if _, ok := files[Probe]; ok {
 		names = append(names, Probe)
 	}
-	// Every new file is written whole beside its target before anything is moved (#365 D): an
-	// update cut off while writing leaves the installation as it was, plus a .new to delete.
-	staged := map[string]string{}
-	unstage := func() {
-		for _, tmp := range staged {
-			_ = os.Remove(tmp)
-		}
-	}
+	// The executable stage is written first and consumed first. While it exists,
+	// the installed executable and probe have yet to be replaced.
 	for _, name := range names {
-		tmp := filepath.Join(dir, name+".new")
-		staged[name] = tmp
+		tmp := filepath.Join(dir, name+stageSuffix)
 		if err := writeSynced(tmp, files[name]); err != nil {
-			unstage()
-			return nil, err
+			return nil, errors.Join(err, discardStages(self))
 		}
 	}
-	for _, name := range names {
-		path := filepath.Join(dir, name)
-		backup := path + ".old"
-		os.Remove(backup)
-		had := true
-		if err := os.Rename(path, backup); err != nil {
-			if name == Binaries[0] || !errors.Is(err, os.ErrNotExist) {
-				unstage()
-				// Typically a backup a running clauduct still holds: kept, and named so it can go.
-				return nil, fail(fmt.Errorf("%w (could not move %s aside; if %s is left from a running clauduct, close it or delete that file and run --update again)", err, name, backup))
+	if err := replaceStaged(self, false); err != nil {
+		return nil, errors.Join(err, discardStages(self))
+	}
+	if _, ok := files[Probe]; ok {
+		if err := replaceStaged(probe, true); err != nil {
+			if restoreErr := renameFile(self+".old", self); restoreErr != nil {
+				// Keep the verified stage if the next run needs to finish the swap.
+				return nil, &NotRestoredError{Cause: errors.Join(err, restoreErr), Paths: []string{self + ".old"}}
 			}
-			had = false
+			return nil, errors.Join(err, discardStages(self))
 		}
-		swapped = append(swapped, swap{path, backup, had})
-		if err := renameFile(staged[name], path); err != nil {
-			unstage()
-			return nil, fail(err)
-		}
-		delete(staged, name)
 	}
 
-	// The binary running this is the file just replaced, so its predecessor is still open
+	// The updater is running the previous executable, so its backup is still open
 	// and cannot be removed until this process exits. Reported rather than retried: a
 	// leftover is a file the user can delete, and a retry loop here would be waiting for
 	// itself.
-	for _, s := range swapped {
-		if s.had && os.Remove(s.backup) != nil {
-			leftovers = append(leftovers, s.backup)
+	for _, name := range names {
+		backup := filepath.Join(dir, name+".old")
+		if removeIfPresent(backup) != nil {
+			leftovers = append(leftovers, backup)
 		}
 	}
 
@@ -341,6 +316,21 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 		}
 	}
 	return leftovers, nil
+}
+
+// Keeping another link to the old bytes lets Windows replace even a running image.
+func replaceStaged(path string, optional bool) error {
+	backup := path + ".old"
+	if err := removeIfPresent(backup); err != nil {
+		return fmt.Errorf("could not clear %s; close any process using it and run --update again: %w", backup, err)
+	}
+	if err := os.Link(path, backup); err != nil && !(optional && errors.Is(err, os.ErrNotExist)) {
+		return fmt.Errorf("could not create hard-link backup %s; if this drive does not support hard links, reinstall from the release: %w", backup, err)
+	}
+	if err := renameFile(path+stageSuffix, path); err != nil {
+		return errors.Join(err, removeIfPresent(backup))
+	}
+	return nil
 }
 
 func fetch(ctx context.Context, client *http.Client, url string, limit int64) ([]byte, error) {

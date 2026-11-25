@@ -7,14 +7,14 @@
   "admissionContractRevision": 7,
   "authority": "소유자 결정 10·11·12·13·14·15 (inputs/owner-decision-10.md … -15.md). 결정 08·09의 금지·보존 조건을 그대로 따른다.",
   "relation": {
-    "routingContract": "provider-control-contract-r4.json (SHA c428371e04e57d6e54ac1e4030852bf998a9add4e8ff831a6cc84fbde676b6e8, 변경 없음)",
+    "routingContract": "routing-r6.json (SHA 5145fee2103679ea93a65ba71bc9bca0ce0a5c8a7bb47be3a28516c38748646f)",
     "preserved": [
       "r4 전체 strategyVerdict: HOST_MANAGED = INCOMPATIBLE (R08 FAIL_ROUTING)",
       "R08·R08b는 background 정상 동작 요구로 계속 미충족이며 required에서 빠지지 않는다",
       "제품 전체 release 판정: PRE_RELEASE_VERIFICATION=BLOCKED"
     ],
     "rule": "admission은 실행 경로(scope)별 허가다. 어느 scope의 ADMITTED도 r4 전체 판정, CERTIFIED, FULL PASS, release 상태를 바꾸지 않는다. BE 사례의 PASS는 R08 기능 PASS로 합산하지 않는다.",
-    "precedence": "개발 후보의 launch 결정은 이 계약의 gate가 정한다. r4 strategySelection의 다음 strategy 이동은 쓰지 않는다. 활성 configuration은 HOST_MANAGED_RESTRICTED 하나다. GATEWAY_ENV_COMPAT은 활성 목록에 없다. r4 전체 판정은 doctor에 그대로 표시한다"
+    "precedence": "개발 후보의 launch 결정은 이 계약의 gate가 정한다. r6 strategySelection의 다음 strategy 이동은 쓰지 않는다. 활성 configuration은 HOST_MANAGED_RESTRICTED 하나다. GATEWAY_ENV_COMPAT은 활성 목록에 없다. r4 전체 판정은 doctor에 그대로 표시한다"
   },
   "scopes": {
     "PRINT_SINGLE": {
@@ -704,5 +704,5 @@
       "rule": "처분과 무관하게 MULTI_TURN_SAME_PROCESS·TUI의 required다"
     }
   },
-  "revisionReason": "DIAG2 Follow-up 1: last-turn-only 처분 금지, root 검증 generation에 따른 제외와 orphan inventory 보존, 생존 child의 missing exit 거부, cleanup allowlist 및 trusted managed 경로 복원."
+  "revisionReason": "설정 v2 R07: --continue는 profile 유무에 관계없이 시작·추론 0건으로 조기 거부하고 저장 상태를 보존한다(R07r/n). R07m은 명시 UUID로 재개하며, 같은 실행에 귀속된 첫 본 요청에서 seed의 model·effort와 이전 대화를 확인한다."
 }

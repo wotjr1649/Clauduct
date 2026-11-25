@@ -549,7 +549,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 항목 | 상태 |
 |---|---|
 | 계수 지원 범위 밖의 입력 | 해당 계수 요청만 명시적으로 실패. 일반 생성·압축은 원격 사전 계수 없이 backend usage와 예방 압축 정책을 사용. 추정값을 정확 계수로 표시하지 않음 |
-| forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). v0.6.2에서는 `-p` 등에서 직접 입력한 fork 명령의 HTTP에 Agent ID가 없으면 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 거부한다. 식별자가 있는 모델 호출 경로는 유지한다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. 재개 연결은 따로 검증하지 않는다. 자식 metadata에 `stoppedByUser`가 있으면 #91 차단이 fork에도 적용된다. native 2.1.289에서 agents 목록의 `x to stop`은 이 필드를 남겼고 종료 확인 창과 모델 TaskStop은 남기지 않았다([알려진 제한 원장](#알려진-제한-원장-v0616)) |
+| forked Skill(`context: fork`) | **구현.** 실제 backend TUI(2026-09-24, luna/low, 파일 skill을 모델이 호출)에서 fork 자식의 검증·실행과 백그라운드 결과 전달을 확인했다. TUI에서 fork는 백그라운드로 돌고, 결과를 기다리는 부모의 빈 턴은 Agent·Workflow처럼 대기로 처리한다. 같은 요청 안에서 성공한 Skill 결과가 백그라운드 fork 시작을 알릴 때만이며, 인라인 skill의 빈 답은 그대로 `EMPTY_REPLY`다. 이 대기는 같은 날 실제 backend TUI에서 오류 없이 확인했다. 내장 `code-review`는 실제 backend `-p`(2026-09-24, luna/low)에서 모델이 불러 fork 자식 요청이 모두 검증·실행되고, 리뷰가 Skill 도구 결과로 돌아오는 것을 확인했다. 모델이 Skill 도구로 부른 fork의 자식은 native가 그 턴에 기록한 모델·effort로 실행한다(선택 출처 `native-fork`). toolUseId 없는 메타데이터, 그 skill을 부른 대화 바로 아래 깊이의 general-purpose(루트면 깊이 1, subagent면 그 자식의 기록된 깊이 + 1), skill 본문이 meta 사용자 메시지로 시작하는 transcript가 모두 맞아야 하고(파일 skill과 내장 `code-review` 모두) 하나라도 어긋나면 거부한다. 보고서는 gateway가 중계하지 않고 native가 전달한다(`-p`에서는 Skill 도구 결과, TUI에서는 백그라운드 완료 알림). v0.6.2에서는 `-p` 등에서 직접 입력한 fork 명령의 HTTP에 Agent ID가 없으면 `NATIVE_REQUEST_ORIGIN_UNVERIFIED`로 거부한다. 식별자가 있는 모델 호출 경로는 유지한다. **v0.5.0부터 subagent 안에서 부른 fork도 받아들인다.** 부모는 같은 세션에서 이미 검증된 자식이어야 하고, 손자의 메타데이터가 요청 헤더의 부모를 가리켜야 한다(2.1.283 측정: spawnDepth 2). 그 전에는 손자 요청이 `AGENT_SELECTION_UNVERIFIED`로 거부돼 subagent가 Skill 결과로 API 오류를 받았다. **fork 자식의 `SendMessage` 재개**는 2.1.283에서 같은 프로세스와 `--resume` 재시작 뒤 모두 native가 받아들이고 같은 ID가 `native-fork`로 다시 검증된다. 이전 문서의 "재개 거부"는 검사 없이 남은 서술이었다. 재개 연결은 따로 검증하지 않는다. 자식 metadata에 `stoppedByUser`가 있으면 #91 차단이 fork에도 적용된다. native 2.1.289에서 agents 목록의 `x to stop`은 이 필드를 남겼고 종료 확인 창과 모델 TaskStop은 남기지 않았다([알려진 제한 원장](#알려진-제한-원장-v0617)) |
 | V1 `review-diff` 헬퍼 | **v0.6.0에서 문서상 정식 은퇴.** native `/code-review`의 tracked/untracked 파일 대상과 독립 결함 표본을 실제 backend로 확인했다. V2에는 이 헬퍼가 없으므로 제품 코드를 삭제한 변경은 아님. native 읽기 권한과 현행 다른 경로의 용량·경로 보호는 유지 |
 | Workflow remote·자식의 별도 Workflow·근거 없는 재개 | native workflow-subagent는 Workflow 도구를 제외한다. 이를 제거해 도구 제한을 확대하지 않음. 같은 run의 검증된 명시적 source 재개는 위 native 규칙을 따르며, 결과 회수·독립 계획은 별도 계약. 다른 세션과 기록 없는 강제 종료의 재개는 거부 |
 | Workflow plugin/bundled 이름 전체 | Read 권한을 검증한 native 이미지에서 로컬 `.js`를 이름으로 탐색하거나 `scriptPath`로 지정할 수 있다. plugin/bundled 이름은 미지원이다. |
@@ -557,7 +557,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | PPTX·DOCX·XLSX 직접 API 입력 | 이미지/PDF API 입력과 별개. bridge의 직접 document 입력으로 지원하지 않음. 아래의 native 로컬 도구를 통한 읽기·편집과 구분 |
 | 임의 Workflow JavaScript 전체 | native `pipeline`·중첩 `parallel`의 콜백에서 `agent()`를 호출하는 형태는 S49 native 검증. 임의 `globalThis.agent` 우회나 native VM가 거부하는 코드까지 지원한다는 뜻은 아님 |
 
-### 알려진 제한 원장 (v0.6.16)
+### 알려진 제한 원장 (v0.6.17)
 
 v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알려진 제한과 미검증 항목을 한곳에 모았다(#273).
 각 항목의 근거는 해당 릴리스 기록과 이 문서의 절에 있다. "구조상 불가"로 영구 종결하지 않고, 다시 볼 조건을 항목마다 둔다. v0.6.11의 추가 항목은 [지원 환경과 보장 한계 아래 표](#v0611-추가-제한)에 있다. v0.6.12는 `sonnet`·`terra`를 `gpt-6.1-terra`로 옮기는 모델 표 변경만 담고 새 제한을 더하지 않는다. 분류기 측정 결과는 아래 "분류기 pair 품질" 행과 v0.6.7 절의 표에 있다.
@@ -748,12 +748,12 @@ native 도구의 읽기→편집→다시 읽기와 별도 파일 검사를 대�
 통과했다. 이 실패를 브리지 오류나 성공으로 집계하지 않았다. 매크로·암호 문서·복잡한 Office 객체,
 모든 서식·렌더링 보존까지 검증한 것은 아니다. 편집 도구가 필요하며 제품이 자동 설치하지 않는다.
 
-빈 응답 출처·부분 인자 중 취소·사용량·비Windows 제한은 [알려진 제한 원장](#알려진-제한-원장-v0616)에서 확인한다. advisor와 서버 의존 베타는 [서버 경계 원장](#서버-경계-원장-v0611)에 있다.
+빈 응답 출처·부분 인자 중 취소·사용량·비Windows 제한은 [알려진 제한 원장](#알려진-제한-원장-v0617)에서 확인한다. advisor와 서버 의존 베타는 [서버 경계 원장](#서버-경계-원장-v0611)에 있다.
 
 | 과거 검증 항목 | 관측 범위 |
 |---|---|
 | 세션 중 `/model`·`/effort` 기록(native 2.1.287) | v0.6.3은 바뀐 `/model` 결과 문구(`for this session only` 또는 `and saved as your default for new sessions`)를 UUID 재개 snapshot에 반영했다. effort가 생략된 모델 변경은 기존 effort를 유지했다. 그 전 빌드는 이 버전의 문구를 읽지 못해 재개 시 이전 선택으로 시작했다. [v0.6.3 기록](RELEASE-v0.6.3.md) |
-| auto 권한 모드의 분류기 판정 | v0.6.3의 2026-10-02 표본(핵심 71·독립 18)에서 Terra low는 오허용·오차단 0, Terra medium은 정상 30개 중 1개를 차단했다. 중앙 응답은 약 4초였다. Sol 6.1 low는 중앙 약 16초였고 `cyber_policy` 때문에 한 표본에서 두 번 모두 판정을 받지 못했다. v0.5.2·v0.5.6의 권한 규칙과 v0.6.7의 Luna 재측정은 각 버전 절에 있다. 현행 pair와 제한은 [설정 문서](SETTINGS.md#보조-요청과-auto-권한-분류기-v064)와 [알려진 제한 원장](#알려진-제한-원장-v0616)를 따른다 |
+| auto 권한 모드의 분류기 판정 | v0.6.3의 2026-10-02 표본(핵심 71·독립 18)에서 Terra low는 오허용·오차단 0, Terra medium은 정상 30개 중 1개를 차단했다. 중앙 응답은 약 4초였다. Sol 6.1 low는 중앙 약 16초였고 `cyber_policy` 때문에 한 표본에서 두 번 모두 판정을 받지 못했다. v0.5.2·v0.5.6의 권한 규칙과 v0.6.7의 Luna 재측정은 각 버전 절에 있다. 현행 pair와 제한은 [설정 문서](SETTINGS.md#보조-요청과-auto-권한-분류기-v064)와 [알려진 제한 원장](#알려진-제한-원장-v0617)를 따른다 |
 
 
 `web_search` 외의 hosted 도구(`web_fetch`·`code_execution`·`computer`·`text_editor`·`memory`)는
@@ -1303,7 +1303,7 @@ record도 소유 기록도 없는 이전 버전의 events 디렉터리는 자동
 
 #### v0.6.11 추가 제한
 
-[알려진 제한 원장](#알려진-제한-원장-v0616)의 분류와 재검토 원칙에 따라, 이 버전의 지원 환경과 관련된 추가 항목을 모았다.
+[알려진 제한 원장](#알려진-제한-원장-v0617)의 분류와 재검토 원칙에 따라, 이 버전의 지원 환경과 관련된 추가 항목을 모았다.
 
 | 항목 | 분류 | 현재 상태 | 다시 볼 조건 |
 |---|---|---|---|

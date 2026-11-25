@@ -1,6 +1,6 @@
 # v0.6.18 — Claude Code 2.1.332 auto 모드 호환 수정
 
-출시일과 정식 Release 링크: 발행 후 기록 (Release URL 자리표시, 발행 뒤 이 줄을 출시 문장으로 바꾼다)
+2026-11-26 출시(태그 `v0.6.18` → `3f2000fb69a35f3f5e3b01db1caa8df5a10cb3ba`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.18)).
 
 Claude Code 2.1.332로 업데이트한 뒤 auto 모드에서 분류가 필요한 도구 실행이 차단될 수 있던 문제를 고쳤다. [#414](https://github.com/wotjr1649/Clauduct/issues/414), [PR #415](https://github.com/wotjr1649/Clauduct/pull/415).
 
@@ -22,7 +22,10 @@ Claude Code 2.1.332로 업데이트한 뒤 auto 모드에서 분류가 필요한
 - `build-release`의 독립 캐시 빌드 두 번이 바이트 단위로 일치했다.
 - 발행 전 `ship-install`에서 새 설치, 발행된 v0.6.17에서 교체, v0.6.17로 되돌리기, 설정 파일과 사용자 PATH 보존을 확인했다.
 - 발행 전 `probe limit --send` 3회에서 backend가 `max_output_tokens` 상한 16·48토큰을 지켰다(`HONOURED`). 예약 3건이 모두 성공했고 거부는 없었다.
-- 발행 뒤 `verify-release`, `ship-update`, `ship-legacy`, `post-publish` 결과: 발행 후 기록.
+- 발행 뒤 `verify-release`: 정식 Release가 draft·prerelease가 아닌 최신 Release로 보이고, 자산 5개의 API 다이제스트와 내려받은 바이트가 `SHA256SUMS`와 모두 일치했다. 내려받은 `clauduct.exe`는 `v0.6.18`, 태그 commit과 같은 신원을 보고한다.
+- 발행 뒤 `ship-update`(`SHIP_UPDATE PASS`): 발행된 v0.6.18의 설치 스크립트로 새로 설치했다. v0.6.17 설치에서 `clauduct --update --yes`로 v0.6.18로 바뀌고, 남은 `.old`는 다음 실행에서 정리되며, 이어지는 `--update`는 변경 없이 끝났다. 사용자 PATH는 그대로였다.
+- 발행 뒤 `ship-legacy`(`SHIP_LEGACY PASS`): 0.3.x 설치(v0.3.5)의 구 updater는 v0.6.18을 거부하고 설치를 그대로 두었다. 새 설치 스크립트로 그 위에 설치하면 v0.6.18이 되고 사용자 PATH는 그대로였다.
+- `post-publish`(이 기록의 문서 값과 GATE-FULL 원장의 출하 기록)는 이 문서 변경을 병합한 뒤 실행한다.
 
 ## 출하 신원
 

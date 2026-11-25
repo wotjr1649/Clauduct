@@ -10,7 +10,7 @@ import (
 
 type startupSelection struct {
 	main    verifiedStartup
-	resolve func(session, cwd string, args []string) (bridge.Pair, func(bridge.Pair) bool, error)
+	resolve func(session, cwd string, native NativeProcess) (bridge.Pair, func(bridge.Pair) bool, error)
 }
 
 type verifiedStartup struct {
@@ -25,7 +25,7 @@ func (g *Gateway) ConfigureStartupSelection(pair bridge.Pair, permits func(bridg
 }
 
 // ConfigureTaskStartup resolves independently dispatched sessions using their native launch.
-func (g *Gateway) ConfigureTaskStartup(resolve func(string, string, []string) (bridge.Pair, func(bridge.Pair) bool, error)) {
+func (g *Gateway) ConfigureTaskStartup(resolve func(string, string, NativeProcess) (bridge.Pair, func(bridge.Pair) bool, error)) {
 	g.startup.resolve = resolve
 }
 

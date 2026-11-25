@@ -767,6 +767,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		})
 	}
 	gw.ConfigureSelection(config.Selection)
+	var foregroundIdentity gateway.NativeProcess
+	var foregroundStarted chan struct{}
 	if !information && o.Settings == nil {
 		gw.ConfigureStartupSelection(config.Startup, func(pair bridge.Pair) bool {
 			return in.permits(pair, config.Selection)
@@ -779,7 +781,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 				link = foreground.ID
 			}
 			if link != "" {
-				gw.ConfigureTaskStartup(taskStartup(config, in, listFacts, spec, configDir, link, o.Env, managedDocs))
+				var isForeground func(gateway.NativeProcess) bool
+				if foreground != nil {
+					started := make(chan struct{})
+					foregroundStarted = started
+					isForeground = func(native gateway.NativeProcess) bool {
+						// The hook can reach the gateway before StartProcess returns.
+						<-started
+						return foregroundIdentity == native
+					}
+				}
+				gw.ConfigureTaskStartup(taskStartup(config, in, listFacts, isForeground, configDir, link, o.Env, managedDocs))
 			}
 		}
 	}
@@ -810,6 +822,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	// nothing is started only to be stopped again.
 	select {
 	case <-interrupts:
+		if foregroundStarted != nil {
+			close(foregroundStarted)
+		}
 		result.Diagnostics = gw.Diagnose()
 		result.Category = CategoryCancelled
 		result.NativeExitCode = ExitCodeUnknown
@@ -843,6 +858,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	var startErr error
 	if o.Regenerate == nil {
 		process, startErr = startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, stdout, stderr)
+	}
+	if foregroundStarted != nil {
+		foregroundIdentity = nativeProcessIdentity(process)
+		close(foregroundStarted)
 	}
 	if startErr != nil {
 		// The child never ran, so the port it was going to use must not outlive the

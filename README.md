@@ -11,8 +11,8 @@ Go 실행기 `clauduct.exe`에 hook과 `--dev` 명령이 들어 있습니다. �
 
 최신 정식 출시는 [v0.6.17](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.17)입니다.
 변경·출하 검사와 알려진 제한은 [릴리스 문서](docs/v2/RELEASE-v0.6.17.md)에 있습니다.
-이전 정식 출시는 [v0.6.16](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.16)입니다.
 출하 준비 중인 v0.6.18의 변경과 제한은 [릴리스 문서](docs/v2/RELEASE-v0.6.18.md)에 있습니다.
+이전 정식 출시는 [v0.6.16](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.16)입니다.
 
 이전 Node 구현(v1, `clauduct-node`)은 v0.3.3에서 저장소에서 은퇴했습니다. 마지막 소스와 문서는
 [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481)에

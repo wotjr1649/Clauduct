@@ -6,7 +6,7 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 
 | 항목 | 값 |
 |---|---|
-| 출하 준비 | **v0.6.18**. Claude Code 2.1.332 auto 모드의 분류 요청을 처리하도록 고쳤다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.18.md) |
+| 출하 준비 | **v0.6.18**. Claude Code 2.1.332 auto 모드의 분류 요청을 처리하도록 고쳤다. v0.6.17 이하는 native 2.1.332에서 auto 모드의 분류 요청이 거부된다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.18.md) |
 | 최신 출시 | **v0.6.17** (태그 `v0.6.17` → `cb1edf2`). 선택형 격리 모드를 추가했다. 기본 모드에서 background 작업을 `stop`·`rm`한 직후 세션을 다시 열 수 있고, 쓸 수 없는 모델 목록을 받으면 마지막 정상 캐시를 보존한다. 설치·업데이트·일반 실행은 Clauduct 설정 파일을 자동으로 쓰지 않는다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.17.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.17). 그 이전 **v0.6.16** (태그 `v0.6.16` → `a450202`). 모든 native에서 같은 규칙으로 background·관리 명령을 판정하고 native 2.1.330 전용 판정 표를 제거했다. 긴 PDF 페이지 Read에 필요한 Poppler 설치 방법을 안내한다. [변경·출하 검사와 알려진 제한](RELEASE-v0.6.16.md), [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.16). |
 | 출하 후 후속 | 알려진 제한과 미검증 항목은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0618)에 분류와 다시 볼 조건을 붙여 한곳에 모았다(v0.6.9, #273). 릴리스별 기록의 "알려진 제한" 절은 그 릴리스 당시의 기록이다 |
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook과 `--dev` 명령이 같은 파일이다(v0.4.0, #112). v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다. launch에는 필요 없고, 설치·업데이트는 둘을 한 쌍으로 다룬다([PACKAGING](PACKAGING.md) 1절·5.1절). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |

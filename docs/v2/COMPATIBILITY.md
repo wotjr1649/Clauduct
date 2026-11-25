@@ -275,7 +275,7 @@ S48 코드와 실행 근거를 재대조했다. 위에서 수용한 native 표�
 | non-streaming API | 구현. 동일 backend SSE를 한 번 소비해 검증된 완료만 JSON으로 반환. 16 MiB/1,024 block 상한, 실패 시 부분 성공 미반환. 4개 모델의 공개 live 요청에서 text/usage/완료 확인. 도구·opaque reasoning·검색 결과는 HTTP/프로토콜 회귀로 확인 |
 | Workflow `tools` | 구현. raw agent와 계획 step 모두 최대 64개 정확 이름 목록 또는 빈 목록. native 도구 목록과 교집합이며 과거 도구 기록이 새 호출 권한이 되지 않음. 지연 발견 도구가 필요하면 `ToolSearch` 자체도 허용 목록에 포함해야 함 |
 | Workflow `maxTurns`, custom `agentType` | 역할 지침·도구·`maxTurns`는 native 유지. S49는 모델 생략 시 역할 정의와 실제 native turn을 대조한다. native metadata의 빈 model은 요청에서 모델을 생략했다는 뜻일 수 있으므로 실제 turn과 구분. 직접 `agent(...,{maxTurns})`는 native가 적용하지 않아 거부하며 역할 정의를 사용 |
-| named/scriptPath Workflow | v0.6.15는 요청을 보낸 native 프로세스의 실행 이미지 SHA-256이 Read 권한을 검증한 2.1.325 빌드와 일치할 때만 파일 소스를 허용한다. 파일별 금지와 전역 금지에서 `Read`가 성공한 2.1.330 및 다른 미검증 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. inline `script`는 계속 지원한다. 허용 이미지에서도 native `Read`의 권한·훅을 통과한 최대 500 KiB의 전체 텍스트에만 adapter를 적용한다. `scriptPath`가 우선하며 named 파일은 cwd부터 Git root까지 `.claude/workflows`를 탐색한 뒤 profile의 `workflows`를 찾는다. |
+| named/scriptPath Workflow | v0.6.15는 요청을 보낸 native 프로세스의 실행 이미지 SHA-256이 Read 권한을 검증한 2.1.325 빌드와 일치할 때만 파일 소스를 허용한다. 파일별 금지와 전역 금지에서 `Read`가 성공한 2.1.330·2.1.331·2.1.332를 포함한 다른 미검증 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. inline `script`는 계속 지원한다. 허용 이미지에서도 native `Read`의 권한·훅을 통과한 최대 500 KiB의 전체 텍스트에만 adapter를 적용한다. `scriptPath`가 우선하며 named 파일은 cwd부터 Git root까지 `.claude/workflows`를 탐색한 뒤 profile의 `workflows`를 찾는다. |
 | launcher 재시작 후 Workflow 복원 | native 수거 후 본문 없는 메타데이터 저장, 같은 UUID의 SessionStart 경로에서만 복원. journal/metadata 해시와 선택·종료 근거 재검증. 결과 회수·plan-v1은 원 script 해시도 확인하고, 명시적 native 재개는 편집한 source 허용. 독립 계획 재개는 디스크의 배타적 claim, native 재개는 native의 동시 실행 거부를 유지. 강제 종료로 근거가 없거나 캐시 기록이 변경되면 거부 |
 | `--settings` | 구현. 최대 2 MiB JSON 객체/일반 파일, 중복 키 거부, 마지막 옵션 우선. 사용자 hook을 보존하고 필수 binding 추가. 연결·필수 정책 충돌은 조용히 덮지 않고 거부 |
 | `--setting-sources` | native user/project/빈 source 적용을 공개 fixture와 실제 native CLI로 확인. 필수 CLI settings는 별도로 유지 |
@@ -1378,8 +1378,8 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 ## v0.6.18 — Claude Code 2.1.332의 auto 모드 분류기
 
 Claude Code 2.1.332의 auto 모드 로컬 분류기는 transcript를 열기 전에
-고정 표식 `unreadable-tools-used-before-summary`을 태그로 감싼 텍스트 블록을 보낸다.
+고정 표식 `unreadable-tools-used-before-summary`를 태그로 감싼 텍스트 블록을 보낸다.
 v0.6.18은 이 블록 한 개가 여는 표식 바로 앞에 오는 형식과 2.1.331의 기존 형식을 받는다.
-다른 선행 블록은 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 요청 본문과 정책,
+v0.6.17 이하는 이 블록을 알지 못해 두 단계 요청 모두 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부했다. v0.6.18에서도 다른 선행 블록은 같은 코드로 거부한다. 요청 본문과 정책,
 단계별 출력 한도·정지 문자열 및 설정된 분류기 모델·effort는 보존한다.
 [#414](https://github.com/wotjr1649/Clauduct/issues/414)

@@ -71,7 +71,7 @@
 
 v0.6.17은 v1 파일의 누락된 키를 메모리로 채웠다. v2는 파일에 있는 키만 읽고 나머지에는 위의 기본값을 적용한다.
 `clauduct --dev --init-settings`는 파일이 없을 때 `{"version":2}`를 만든다. 이미 있는 파일은 보존한다.
-`clauduct --dev --sync-settings`는 제거되어 오류를 반환한다.
+`clauduct --dev --sync-settings`는 이전 업데이트 프로그램과의 호환을 위해 v2 수동 편집 안내를 출력하고 성공한다. 이 명령은 파일을 만들거나 수정하지 않는다.
 
 ## 모델과 agent
 

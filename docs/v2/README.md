@@ -12,7 +12,7 @@ V2(Go Native-Host-Preserving Bridge)의 **현재 상태를 읽는 단 하나의 
 | 실행기 | `clauduct.exe` 하나 = Go 빌드. hook과 `--dev` 명령이 같은 파일이다(v0.4.0, #112). v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다. launch에는 필요 없고, 설치·업데이트는 둘을 한 쌍으로 다룬다([PACKAGING](PACKAGING.md) 1절·5.1절). 이전 Node 구현은 v0.3.3에서 저장소에서 은퇴했다 — [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481) |
 | Go 모듈 | `github.com/wotjr1649/Clauduct`(`go.mod`은 저장소 루트, 패키지는 `go/` 아래), Go(필요 버전은 `go.mod`가 유일한 출처, [PACKAGING](PACKAGING.md#툴체인-버전-370)), **CGO_ENABLED=0**. 검토·고정한 의존성은 정확 계수용 3개와 역할 frontmatter용 YAML 1개. [계수 의존성 결정](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md) |
 | 측정된 도구 표면과 검증한 클라이언트 | 도구 이름과 모드별 core는 내장 자료(`measured-clients.json`)로 비교한다. 세션의 [`verified` 판정](COMPATIBILITY.md#0-기준과-판정-방법--2026-09-20-실행-2026-09-19)은 도구 이름과 모드별 core에 한정한다. v0.6.14 출하는 native 2.1.330에서 표면을 재측정하고 실제 backend 표본 3종을 확인했다. v0.6.13의 신규 영향 실측은 2.1.321에서 했다. [v0.6.14 출하 검사](RELEASE-v0.6.14.md#출하-검사), [v0.6.13 출하 검사](RELEASE-v0.6.13.md#출하-검사) |
-| 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 예외는 v0.6.9부터 공개하는 합성 protocol contract test다(#271). 공개 CI는 그 테스트와 gofmt·vet·build, PowerShell 7 AST/최소 버전을 검사한다. 전체 회귀·race는 로컬 관문이다 |
+| 테스트·증거 | v0.3.3부터 공개 저장소에 두지 않고 로컬에서 관리한다. 예외는 v0.6.9부터 공개하는 합성 protocol contract test다(#271). 공개 CI는 그 테스트와 gofmt·vet·build, PowerShell 7 AST/최소 버전을 검사하고, v0.6.19부터 govulncheck·Staticcheck도 실행한다. 전체 회귀·race는 로컬 관문이다 |
 
 ### 이전 문서와 검증 기록
 

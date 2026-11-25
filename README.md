@@ -160,7 +160,7 @@ native의 `S` 선택은 현재 세션에 적용하고, UUID 재개에서는 마�
 
 v0.3.2까지의 증거는 [docs/v2/VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)가 소유합니다. 요구 ID, 게이트, 실행한 검사와
 **실행하지 않은 검사**를 함께 적습니다. v0.3.3부터 전체 회귀와 검증 기록은 로컬에서 관리합니다.
-공개 CI는 v0.6.9부터 공개한 합성 protocol contract test와 gofmt·vet·빌드, 설치·제거 스크립트의 PowerShell 7 문법과 최소 버전을 검사합니다.
+공개 CI는 v0.6.9부터 공개한 합성 protocol contract test와 gofmt·vet·빌드, 설치·제거 스크립트의 PowerShell 7 문법과 최소 버전을 검사하고, v0.6.19부터 govulncheck와 Staticcheck도 실행합니다.
 
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 공식 지원하지 않는다고 명시합니다.
 이것은 제3자 호환 구현이며 "공식 지원"이나 "전체 기능 100% 보장"으로 설명하지 않습니다.

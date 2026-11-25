@@ -93,6 +93,16 @@ func classifierTranscript(blocks []anthropic.Block) []anthropic.Block {
 	return blocks
 }
 
+func classifierSuffixStage(suffix string) string {
+	if strings.HasPrefix(suffix, "\nErr on the side of blocking. Stage 1 does NOT apply user intent or ALLOW exceptions") && strings.Contains(suffix, "<block>") {
+		return "1"
+	}
+	if strings.HasPrefix(suffix, "\nReview the classification process and follow it carefully,") && strings.Contains(suffix, "before responding with <block>") {
+		return "2"
+	}
+	return ""
+}
+
 func autoModeClassifierStage(request *anthropic.Request, count bool) (string, error) {
 	// A changed policy heading must not quietly send the known block envelope back
 	// to Sonnet. These independent markers also catch that form of native drift.
@@ -100,10 +110,13 @@ func autoModeClassifierStage(request *anthropic.Request, count bool) (string, er
 	for _, message := range request.Messages {
 		blocks := message.Blocks
 		for i, block := range blocks {
-			// An unexpected leading block must not hide a classifier with a changed policy heading.
-			transcript := classifierTranscript(blocks[i:])
-			envelope = envelope || strings.HasPrefix(block.Text, classifierContextPrefix) ||
-				transcript != nil && strings.Contains(transcript[len(transcript)-1].Text, "<block>")
+			envelope = envelope || strings.HasPrefix(block.Text, classifierContextPrefix)
+			if transcript := classifierTranscript(blocks[i:]); !envelope && transcript != nil {
+				suffix := transcript[len(transcript)-1].Text
+				// A shifted transcript needs the stage suffix to distinguish it from ordinary summaries.
+				envelope = classifierSuffixStage(suffix) != "" ||
+					len(transcript) == len(blocks) && strings.Contains(suffix, "<block>")
+			}
 		}
 	}
 	var system []struct{ Text string }
@@ -145,25 +158,21 @@ func autoModeClassifierStage(request *anthropic.Request, count bool) (string, er
 	if blocks == nil {
 		return "", errClassifierContract
 	}
+	hasPreamble := len(blocks) != len(message.Blocks)
 	for _, block := range blocks {
-		if block.Type != "text" {
+		if block.Type != "text" || hasPreamble && block.Text == classifierToolsPreamble {
 			return "", errClassifierContract
 		}
 	}
 	// Transcript cache chunks and native meta lines vary; only the protocol envelope
 	// is inspected. Unknown envelopes fail before dispatch instead of using Sonnet's default.
-	suffix := blocks[len(blocks)-1].Text
-	first := strings.HasPrefix(suffix, "\nErr on the side of blocking. Stage 1 does NOT apply user intent or ALLOW exceptions") && strings.Contains(suffix, "<block>")
-	second := strings.HasPrefix(suffix, "\nReview the classification process and follow it carefully,") && strings.Contains(suffix, "before responding with <block>")
-	if !first && !second || !count && (!request.NonStreaming ||
-		first && (request.MaxTokens != 2112 || len(request.StopSequences) != 1 || request.StopSequences[0] != "</block>") ||
-		second && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
+	stage := classifierSuffixStage(blocks[len(blocks)-1].Text)
+	if stage == "" || !count && (!request.NonStreaming ||
+		stage == "1" && (request.MaxTokens != 2112 || len(request.StopSequences) != 1 || request.StopSequences[0] != "</block>") ||
+		stage == "2" && (request.MaxTokens != 10240 || len(request.StopSequences) != 0)) {
 		return "", errClassifierContract
 	}
-	if first {
-		return "1", nil
-	}
-	return "2", nil
+	return stage, nil
 }
 
 func (r *record) classifier(stage string) {

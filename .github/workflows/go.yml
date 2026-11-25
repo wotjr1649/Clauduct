@@ -13,6 +13,7 @@ on:
       - '.gitattributes'
       - 'scripts/**'
       - '.github/tests/native_dispatch_test.go'
+      - '.github/tests/staticcheck-baseline.txt'
       - '.github/workflows/go.yml'
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - '.gitattributes'
       - 'scripts/**'
       - '.github/tests/native_dispatch_test.go'
+      - '.github/tests/staticcheck-baseline.txt'
       - '.github/workflows/go.yml'
 
 defaults:
@@ -83,6 +85,36 @@ jobs:
 
       - name: build
         run: go build ./...
+
+      - name: Install Go analyzers
+        run: |
+          $env:GOBIN = $env:RUNNER_TEMP
+          go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+          exit $LASTEXITCODE
+
+      - name: govulncheck
+        run: '& "$env:RUNNER_TEMP/govulncheck.exe" ./...'
+
+      - name: Staticcheck
+        run: |
+          $diagnostics = & "$env:RUNNER_TEMP/staticcheck.exe" -f json -fail= -checks 'SA*,U1000' ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $baseline = [Collections.Generic.List[string]]::new()
+          $baseline.AddRange([string[]]@(Get-Content -LiteralPath ../.github/tests/staticcheck-baseline.txt))
+          $failed = $false
+          foreach ($record in $diagnostics) {
+            $finding = ConvertFrom-Json -InputObject $record
+            $location = $finding.location
+            $path = [IO.Path]::GetRelativePath($PWD.Path, $location.file).Replace('\', '/')
+            # Ignore line shifts and consume one baseline entry per occurrence.
+            if ($baseline.Remove("${path} $($finding.code) $($finding.message)")) { continue }
+            Write-Output "${path}:$($location.line):$($location.column): $($finding.message) ($($finding.code))"
+            $failed = $true
+          }
+          if ($failed) { exit 1 }
 
       # The public contract tests (#271).
       - name: contract tests

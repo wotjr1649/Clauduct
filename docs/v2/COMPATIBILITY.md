@@ -1374,3 +1374,12 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
   전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`·hook 값도 전용 파일에 복제된다. 비밀은 실행 환경에서
   제공하고 지원되는 곳에서 환경 변수로 참조한다.
   [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
+
+## v0.6.18 — Claude Code 2.1.332의 auto 모드 분류기
+
+Claude Code 2.1.332의 auto 모드 로컬 분류기는 transcript를 열기 전에
+고정 표식 `unreadable-tools-used-before-summary`을 태그로 감싼 텍스트 블록을 보낸다.
+v0.6.18은 이 블록 한 개가 여는 표식 바로 앞에 오는 형식과 2.1.331의 기존 형식을 받는다.
+다른 선행 블록은 `AUTO_MODE_CLASSIFIER_UNVERIFIED`로 거부한다. 요청 본문과 정책,
+단계별 출력 한도·정지 문자열 및 설정된 분류기 모델·effort는 보존한다.
+[#414](https://github.com/wotjr1649/Clauduct/issues/414)

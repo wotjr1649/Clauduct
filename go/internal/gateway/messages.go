@@ -261,7 +261,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pair := bridge.Pair{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort}
-	if !g.routePermitted(pair) {
+	if !g.routePermitted(r, pair) {
 		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_MODEL_POLICY")
 		return
 	}
@@ -581,7 +581,7 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 		return
 	}
 	pair := bridge.Pair{Model: route.Model, Effort: route.Effort}
-	if !g.routePermitted(pair) {
+	if !g.routePermitted(r, pair) {
 		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_MODEL_POLICY")
 		return
 	}

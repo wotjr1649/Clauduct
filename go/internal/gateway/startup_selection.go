@@ -9,30 +9,42 @@ import (
 )
 
 type startupSelection struct {
-	main      verifiedStartup
-	residents map[string]*verifiedStartup
-	permits   func(bridge.Pair) bool
+	main    verifiedStartup
+	resolve func(session, cwd string, args []string) (bridge.Pair, func(bridge.Pair) bool, error)
 }
 
 type verifiedStartup struct {
 	pair     bridge.Pair
+	permits  func(bridge.Pair) bool
 	verified atomic.Bool
 }
 
 // ConfigureStartupSelection binds the launch decision before native can submit requests.
 func (g *Gateway) ConfigureStartupSelection(pair bridge.Pair, permits func(bridge.Pair) bool) {
-	g.startup.main.pair, g.startup.permits = pair, permits
+	g.startup.main.pair, g.startup.main.permits = pair, permits
+}
+
+// ConfigureTaskStartup resolves independently dispatched sessions using their native launch.
+func (g *Gateway) ConfigureTaskStartup(resolve func(string, string, []string) (bridge.Pair, func(bridge.Pair) bool, error)) {
+	g.startup.resolve = resolve
+}
+
+func (g *Gateway) sessionStartup(r *http.Request) *verifiedStartup {
+	if p := g.profiles; p != nil {
+		p.mu.Lock()
+		start := p.starts[r.Header.Get("X-Claude-Code-Session-Id")]
+		p.mu.Unlock()
+		return start
+	}
+	return &g.startup.main
 }
 
 func (g *Gateway) pendingStartup(r *http.Request) *verifiedStartup {
 	if r.Header.Get("X-Claude-Code-Agent-Id") != "" || r.Header.Get("X-Claude-Code-Request-Class") != "main" {
 		return nil
 	}
-	start := g.startup.residents[r.Header.Get("X-Claude-Code-Session-Id")]
-	if start == nil {
-		start = &g.startup.main
-	}
-	if start.pair == (bridge.Pair{}) || start.verified.Load() {
+	start := g.sessionStartup(r)
+	if start == nil || start.pair == (bridge.Pair{}) || start.verified.Load() {
 		return nil
 	}
 	return start
@@ -49,6 +61,10 @@ func (g *Gateway) matchesStartup(start *verifiedStartup, request *anthropic.Requ
 	return err == nil && route.Source == "catalogue" && route.Model == effective.Model
 }
 
-func (g *Gateway) routePermitted(pair bridge.Pair) bool {
-	return g.startup.permits == nil || g.startup.permits(pair)
+func (g *Gateway) routePermitted(r *http.Request, pair bridge.Pair) bool {
+	start := g.sessionStartup(r)
+	if start == nil {
+		start = &g.startup.main
+	}
+	return start.permits == nil || start.permits(pair)
 }

@@ -15,8 +15,8 @@ import (
 // It also permits the five optional controls' proved local 503 block to yield NOT_EXERCISABLE
 // only with an independently clean treatment; NATIVE_CONFIRMATION_TIMEOUT is case-specific.
 const (
-	RoutingContractRevision = 5
-	ProbeSchemaRevision     = 8
+	RoutingContractRevision = 6
+	ProbeSchemaRevision     = 9
 )
 
 // Case outcomes.

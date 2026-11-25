@@ -521,6 +521,7 @@ func runWithOutputContext(ctx context.Context, in io.Reader, out, errOut io.Writ
 		Transcript string `json:"transcript_path"`
 		Trigger    string `json:"trigger"`
 		Source     string `json:"source"`
+		Cwd        string `json:"cwd"`
 		Tool       string `json:"tool_name"`
 	}
 	decoded := json.Unmarshal(raw, &compact) == nil
@@ -537,6 +538,9 @@ func runWithOutputContext(ctx context.Context, in io.Reader, out, errOut io.Writ
 		fields := map[string]string{"event": compact.Event, "sessionId": compact.Session, "agentId": compact.Agent}
 		if compact.Event == "SessionStart" && compact.Source != "" {
 			fields["source"] = compact.Source
+			if compact.Cwd != "" && len(compact.Cwd) <= 4096 {
+				fields["cwd"] = compact.Cwd
+			}
 		}
 		if compact.Trigger != "" {
 			if compact.Trigger != "auto" && compact.Trigger != "manual" {

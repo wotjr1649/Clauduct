@@ -11,38 +11,50 @@ import (
 )
 
 func (g *Gateway) commandLineForkSession(process processKey) string {
+	return forkResumeArguments(g.nativeArguments(process))
+}
+
+func (g *Gateway) nativeArguments(process processKey) []string {
 	if process.pid == 0 || process.created <= 0 {
-		return ""
+		return nil
 	}
 	read := g.commandLine
 	if read == nil {
 		read = providercert.ProcessCommandLine
 	}
-	return forkResumeSession(read(process.pid, process.created))
+	return nativeArguments(read(process.pid, process.created))
 }
 
 // Only native's explicit long resume option proves a parent; option values and prompts do not.
 func forkResumeSession(line string) string {
+	return forkResumeArguments(nativeArguments(line))
+}
+
+func nativeArguments(line string) []string {
 	if line == "" {
-		return ""
+		return nil
 	}
 	text, err := syscall.UTF16PtrFromString(line)
 	if err != nil {
-		return ""
+		return nil
 	}
 	var count int32
 	argv, err := syscall.CommandLineToArgv(text, &count)
 	if err != nil {
-		return ""
+		return nil
 	}
 	defer syscall.LocalFree(syscall.Handle(unsafe.Pointer(argv)))
-	if count < 2 || count > int32(len(argv)) {
-		return ""
+	if count < 1 || count > int32(len(argv)) {
+		return nil
 	}
 	args := make([]string, 0, count-1)
 	for _, arg := range argv[1:count] {
 		args = append(args, syscall.UTF16ToString(arg[:]))
 	}
+	return args
+}
+
+func forkResumeArguments(args []string) string {
 	var resume string
 	fork := false
 	for i := 0; i < len(args) && args[i] != "--"; {

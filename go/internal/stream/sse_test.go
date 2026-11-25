@@ -2,9 +2,12 @@ package stream
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/codex"
 )
 
 // terminal marks message_stop as the event that ends a response, matching how the caller
@@ -76,6 +79,28 @@ func TestTrailingEventDiagnosticsPreserveRejectionAndPrivacy(t *testing.T) {
 	}
 	if _, label := p.Tail(); label != "done_sentinel" {
 		t.Fatal("duplicate sentinel not identified")
+	}
+}
+
+func TestFirstTerminalTypeSurvivesTrailingFailure(t *testing.T) {
+	for _, first := range []string{codex.Completed, codex.Failed} {
+		for _, split := range []bool{false, true} {
+			p := NewParser(DefaultLimits())
+			p.IsTerminal = codex.Terminal
+			head := "data: " + fmt.Sprintf(`{"type":%q}`, first) + "\n\n"
+			tail := `data: {"type":"response.failed","error":{"message":"PUBLIC_TAIL_MARKER"}}` + "\n\n"
+			if split {
+				if _, err := p.Push([]byte(head)); err != nil {
+					t.Fatal(err)
+				}
+				head = ""
+			}
+			_, err := p.Push([]byte(head + tail))
+			_, trailing := p.Tail()
+			if !errors.Is(err, ErrEventAfterCompletion) || p.FirstTerminalType() != first || trailing != codex.Failed {
+				t.Fatalf("first=%q split=%t: err=%v recorded=%q trailing=%q", first, split, err, p.FirstTerminalType(), trailing)
+			}
+		}
 	}
 }
 

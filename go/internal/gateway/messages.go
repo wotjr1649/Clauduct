@@ -732,7 +732,7 @@ func (g *Gateway) relay(ctx context.Context, w http.ResponseWriter, control *htt
 		// empty reply. Keep the observed read state on every exit, not just EOF.
 		events, bytes := parser.Stats()
 		done, trailing := parser.Tail()
-		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.Completed(), events, bytes, done, trailing)
+		recordOf(w).streamEnd(lastReadErr, ctx.Err(), parser.FirstTerminalType(), events, bytes, done, trailing)
 	}()
 	// The translator is told which tools are callable now, so a call naming a withdrawn
 	// tool is refused rather than passed to a client that would try to run it.

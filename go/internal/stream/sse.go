@@ -77,12 +77,12 @@ type Parser struct {
 	events  int
 	closed  bool
 
-	// completed records that a terminal event has been seen, sentinel that [DONE] has.
+	// firstTerminalType records the first terminal event, sentinel that [DONE] has arrived.
 	// They are separate because the contract allows a terminal event without [DONE] and
 	// refuses [DONE] without a terminal event, and collapsing them would permit both.
-	completed     bool
-	sentinel      bool
-	trailingEvent string // closed diagnostic labels only; never an arbitrary backend value
+	firstTerminalType string
+	sentinel          bool
+	trailingEvent     string // closed diagnostic labels only; never an arbitrary backend value
 
 	sequenceMode bool
 	nextSequence int64
@@ -100,7 +100,10 @@ func NewParser(limits Limits) *Parser {
 }
 
 // Completed reports whether a terminal event has been seen.
-func (p *Parser) Completed() bool { return p.completed }
+func (p *Parser) Completed() bool { return p.firstTerminalType != "" }
+
+// FirstTerminalType returns the first accepted terminal event type, or an empty string.
+func (p *Parser) FirstTerminalType() string { return p.firstTerminalType }
 
 // Push feeds the next chunk of the response body and returns any events it completed.
 //
@@ -155,7 +158,7 @@ func (p *Parser) Finish(complete bool) error {
 	if strings.Trim(p.pending.String(), "\r\n") != "" {
 		return ErrTruncatedStream
 	}
-	if !p.completed {
+	if !p.Completed() {
 		return ErrIncompleteResponse
 	}
 	return nil
@@ -170,7 +173,7 @@ func (p *Parser) drain() ([]Event, error) {
 			// No complete frame yet. What is buffered still counts against the ceiling,
 			// or a sender could hold memory open by never closing a frame.
 			if len(text) > p.limits.MaxFrameBytes {
-				if p.completed {
+				if p.Completed() {
 					p.trailingEvent = "unclassified_large"
 				}
 				return out, ErrFrameTooLarge
@@ -184,9 +187,9 @@ func (p *Parser) drain() ([]Event, error) {
 
 		event, emit, err := p.frame(value)
 		if err != nil {
-			if p.completed && (err == ErrInvalidSSE || err == ErrIncompleteResponse) {
+			if p.Completed() && (err == ErrInvalidSSE || err == ErrIncompleteResponse) {
 				p.trailingEvent = "invalid_event"
-			} else if p.completed && err == ErrFrameTooLarge {
+			} else if p.Completed() && err == ErrFrameTooLarge {
 				p.trailingEvent = "unclassified_large"
 			}
 			return out, err
@@ -266,13 +269,13 @@ func (p *Parser) frame(value string) (Event, bool, error) {
 		return Event{}, false, ErrEventAfterCompletion
 	}
 	if raw == "[DONE]" {
-		if named || !p.completed {
+		if named || !p.Completed() {
 			return Event{}, false, ErrIncompleteResponse
 		}
 		p.sentinel = true
 		return Event{}, false, nil
 	}
-	if p.completed {
+	if p.Completed() {
 		p.recordTrailingEvent(raw, name, named)
 		return Event{}, false, ErrEventAfterCompletion
 	}
@@ -287,7 +290,7 @@ func (p *Parser) frame(value string) (Event, bool, error) {
 		return Event{}, false, err
 	}
 	if p.IsTerminal(eventType) {
-		p.completed = true
+		p.firstTerminalType = eventType
 	}
 	return Event{Type: eventType, Raw: []byte(raw)}, true, nil
 }
@@ -373,5 +376,5 @@ func (p *Parser) recordTrailingEvent(raw, name string, named bool) {
 
 func (p *Parser) String() string {
 	return fmt.Sprintf("stream.Parser{events:%d bytes:%d completed:%t done:%t}",
-		p.events, p.total, p.completed, p.sentinel)
+		p.events, p.total, p.Completed(), p.sentinel)
 }

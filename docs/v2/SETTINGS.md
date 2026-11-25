@@ -7,13 +7,10 @@ v0.6.4는 모델 목록을 계정에서 받고, 누락 키 동기화와 `classif
 두 effort 상한을 더 이상 적용하지 않는다. 후속 설정인 경계 프로필과 분류기 공장값은 각각 아래 절에서 설명한다.
 
 Clauduct는 실행할 때 사용자 홈의 `.clauduct/settings.json`을 읽는다. 파일은 직접 편집한다.
-파일이 없으면 설치·업데이트·일반 실행이 startup, modelDefaults, modelMapping, 내장 agents,
-`classifier_model`을 모두 담은 [기본 문서](../../go/internal/settingsfile/defaults.json)를 생성한다.
-파일이 있으면 [설정 동기화](#설정-동기화-v064)가 이 기본 문서의 최상위 키 중 파일에 없는 것만 끝에 덧붙인다.
-기존 값은 덮어쓰거나 병합하지 않으며, 잘못된 파일은 보존한 채 새 세션 실행을 거부한다.
-`--help`·`--version`은 파일을 생성하거나 바꾸지 않는다.
-v0.6.3까지는 v0.5.3이 만든 `{"version":1}` 같은 기존 파일을 확장하지 않았다. v0.6.4부터는 이런 파일에도
-빠진 최상위 키가 모두 덧붙는다. 업데이트가 동기화하지 않은 경우(v0.6.4 이전 updater 등)에는 다음 일반 실행이 한다.
+v0.6.17부터 일반 실행·설치·업데이트는 설정 파일을 만들거나 바꾸지 않는다.
+파일이 없으면 [기본 문서](../../go/internal/settingsfile/defaults.json)의 값으로 실행한다.
+기존 v1 파일에서 빠진 최상위 키는 실행할 때 [메모리에서 채운다](#설정-동기화-v0617).
+잘못된 설정 파일은 그대로 두고 새 세션 실행을 거부한다.
 Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정에서 관리한다.
 
 ## 설정 예
@@ -53,7 +50,7 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 }
 ```
 
-`version`은 필수이며 현재 값은 `1`이다. 나머지 항목은 생략할 수 있지만, 일반 실행의 동기화가 빠진 최상위 키를 채운다.
+`version`은 필수이며 현재 값은 `1`이다. 나머지 항목은 생략할 수 있지만, 일반 실행에서 빠진 최상위 키만 메모리에서 기본값으로 채운다.
 `startup`, `classifier_model`과 각 `agents` 항목을 쓰면 `model`과 `effort`를 모두 적는다.
 알 수 없는 필드, 중복 JSON 키, 부분적인 pair, `null`, 1 MiB를 넘는 파일, 형식이 맞지 않는 모델 ID,
 `low`·`medium`·`high`·`xhigh`·`max` 밖의 effort는 `CLAUDUCT_SETTINGS_INVALID`로 거부한다.
@@ -136,32 +133,20 @@ Clauduct 세션 `--settings`를 이어받아 시작 모델·시작 effort를 쓴
   (`disableClaudeAiConnectors: false`, `skipWebFetchPreflight: false`, strict에서 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`
   변경)은 `SETTINGS_CONFLICT`로 거부한다.
 
-## 설정 동기화 (v0.6.4)
+## 설정 동기화 (v0.6.17)
 
-동기화는 다음 시점에 같은 규칙으로 실행한다. 로그인과 네트워크는 사용하지 않는다.
+v1 파일은 이전 동기화가 성공했을 때와 같은 설정으로 실행한다. 기본 문서에 있고 파일에 없는 최상위 키만
+메모리에서 채운다. `agents`·`modelDefaults`·`modelMapping`에 빈 맵이나 일부 항목만 적으면 그대로 적용한다.
+이미 있는 값은 기존 형식으로 검증한다.
 
-- 모든 일반 실행에서 엄격한 설정 검사 전
-- `clauduct --dev --sync-settings`
-- `--update` 뒤. updater는 새로 설치한 바이너리의 `--dev --sync-settings`를 최소 환경과 10초 상한으로 실행한다.
-  이 명령이 없는 대상 버전은 `--dev --init-settings`로 대신한다. 동기화가 실패하면 바이너리는 설치됐고
-  설정 동기화만 실패했다고 알리며, 바이너리를 되돌리지 않는다
-- `install.ps1`에서 settings.json이 이미 있을 때
+파일에 빠진 키가 있으면 일반 실행에서 공장값으로 실행하며 별도 작업이 필요 없다고 한 줄 알려준다.
+채운 키의 출처는 `factory (not in file).<key>`로 표시한다. 예를 들어 v0.6.3 파일에 `classifier_model`이 없으면
+공장 pair를 쓴다. 해당 키를 문자열로 적은 파일은 [분류기 절](#보조-요청과-auto-권한-분류기-v064)의
+형식 오류로 거부된다.
 
-규칙은 다음과 같다.
-
-- 새 빌드 기본 문서의 최상위 키 중 파일에 없는 것만 파일 끝에 덧붙인다. 기존 바이트·값·순서는 바꾸지 않는다.
-- `agents`·`modelDefaults`·`modelMapping` 안으로는 들어가지 않는다. 값이 `null`·`false`·`{}`인 키도 있는 것으로 본다.
-- 덧붙일 키가 없으면 아무것도 쓰지 않고 백업도 만들지 않는다.
-- 쓰기 전에 원래 바이트를 `.clauduct/settings.backup-<UTC 시각>-<난수>.json`으로 저장하며 기존 파일을 덮어쓰지 않는다.
-  작업은 잠금 파일 `.clauduct/settings.lock` 아래에서 한다.
-- 잘못된 JSON, 중복 키, `version`이 1이 아닌 파일은 손대지 않는다. 이런 파일은 이어지는 엄격한 검사가 거부한다.
-- 읽은 뒤 교체하기 전에 파일이 바뀌었으면 중단하고 백업 이름을 알린다. 링크나 디렉터리인 settings.json은 거부한다.
-- 일반 실행에서 덧붙였다면 추가한 키와 백업 경로를 stderr에 표시한다. 일반 실행의 동기화가 위의 잘못된 파일 외의
-  이유로 실패하면 `CLAUDUCT_SETTINGS_SYNC_FAILED`로 시작을 거부하며 원래 파일은 교체되지 않는다.
-
-예를 들어 v0.6.3 기본 문서로 만든 파일에는 `classifier_model`이 없으므로 공장 pair가 덧붙고, 두 상한 키는 은퇴한 키로 남는다.
-v0.6.3에서 `classifier_model`을 문자열로 적었다면 키가 이미 있으므로 덧붙이지 않으며, 그 파일은
-[분류기 절](#보조-요청과-auto-권한-분류기-v064)의 형식 오류로 거부된다.
+`clauduct --dev --sync-settings`는 이전 updater 호환용이다. 설정 파일에 접근하지 않고 안내 한 줄을 출력한 뒤
+성공한다. 직접 편집할 기본 문서가 필요하면 `clauduct --dev --init-settings`로 만들 수 있다.
+이 명령은 파일이 없을 때만 생성한다.
 
 ## 모델과 agent
 
@@ -453,8 +438,8 @@ v0.6.1 이하 설정 parser는 새 context·effort 상한 키를 알 수 없는 
 현재 파일을 백업한 뒤 네 키를 제외한 구버전 호환 설정을 직접 사용한다. 바이너리 되돌림이
 설정·대화·snapshot을 자동 삭제하거나 변환하지 않는다.
 
-v0.6.4보다 오래된 바이너리는 `classifier_model` 객체를 거부한다(v0.6.3은 문자열을 읽었다). 동기화가 덧붙인
-다른 키도 거부할 수 있다. 되돌리기 전에 동기화가 알린 백업(`.clauduct/settings.backup-…json`)을 복원하거나
+v0.6.4보다 오래된 바이너리는 `classifier_model` 객체를 거부한다(v0.6.3은 문자열을 읽었다). 이전 동기화가 덧붙인
+다른 키도 거부할 수 있다. 되돌리기 전에 기존 동기화 백업(`.clauduct/settings.backup-…json`)을 복원하거나
 파일을 직접 편집한다. 어느 바이너리도 설정 파일을 지우지 않는다.
 
 v0.5.4의 background worker는 같은 연결·같은 세션으로 재시작하고 마지막 선택이 시작 인자와
@@ -469,17 +454,18 @@ v0.5.4는 각각 `startupModelSource`, `startupEffortSource`도 기록한다.
 
 | 출처 | 의미 |
 |---|---|
-| `factory.startup` | 파일에서 생략한 시작 pair의 제품 기본값 |
+| `factory (not in file).startup` | 파일에 시작 pair가 없어 적용한 공장값 |
 | `settings.startup` | 수동 파일에 명시한 시작 pair |
 | `session-snapshot.last` | UUID snapshot에서 복원한 마지막 선택 |
 | `cli.model`, `cli.effort` | 해당 CLI 인자에 명시한 값 |
 | `environment.CLAUDE_CODE_EFFORT_LEVEL` | native effort 환경변수로 고정한 값 |
 | `native.user.env.*`, `native.project.env.*`, `native.local.env.*`, `native.settings.env.*` | native 설정의 `env`가 선택한 모델 또는 effort. `--setting-sources`와 마지막 `--settings`를 반영 |
-| `factory.modelDefaults`, `settings.modelDefaults`, `session-snapshot.modelDefaults` | 모델만 명시한 선택의 effort 기본값 |
+| `factory (not in file).modelDefaults`, `settings.modelDefaults`, `session-snapshot.modelDefaults` | 모델만 명시한 선택의 effort 기본값 |
 | `account.default_reasoning_level` | 모델만 명시했고 설정이 그 모델의 effort를 적지 않아 계정의 기본 수준을 쓴 경우(v0.6.4) |
 
-alias나 버전형 Claude 이름으로 선택하면 model 출처에 `+factory.modelMapping`,
-`+settings.modelMapping` 또는 `+session-snapshot.modelMapping`이 붙는다.
+alias나 버전형 Claude 이름으로 선택하면 model 출처에 `+factory (not in file).modelMapping`,
+`+settings.modelMapping` 또는 `+session-snapshot.modelMapping`이 붙는다. 파일의 `modelMapping`에 해당 alias 항목이 없어
+내장 매핑을 쓰면 `+factory.modelMapping`이 붙는다.
 한쪽만 명시한 경우 두 출처는 다를 수 있다. 이 진단은 수동 파일을 쓰거나 모델 요청을 만들지 않는다.
 Windows 환경변수 이름의 대소문자는 구분하지 않는다. 같은 선택 키의 대소문자 중복이나 잘못된 값은
 거부한다. native managed 설정에서 선택 환경변수를 강제한 경우의 순위는 아직 검증되지 않았으므로
@@ -491,7 +477,9 @@ Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 �
 대화 본문·설정 원문·credential은 출처 진단에 넣지 않는다.
 
 `session.context`는 window, 요청한 `requestedPercent`, clamp 후 `effectivePercent`, 계산한
-`autoCompactTokenLimit`과 각 설정의 `factory.*` 또는 `settings.*` 출처를 기록한다.
+`autoCompactTokenLimit`을 기록한다. 키가 빠졌으면 `windowSource`와 `percentSource`가 각각
+`factory (not in file).context_window`과 `factory (not in file).auto_compact_token_limit_percent`을 표시한다.
+파일에 명시된 값의 출처는 `settings.context_window`과 `settings.auto_compact_token_limit_percent`이다.
 실제 압축 요청에 사용한 모델·effort는 `gateway.recent`의 `kind: compaction` 기록에서 확인한다.
 v0.6.4에서 `session.auxiliaryEffortCap`·`auxiliaryEffortCapSource`와 `session.context.autoCompactEffortCap`·
 `effortCapSource`는 없어졌고, 요청 기록의 출처에 `+auxiliary-cap`·`+auto-compact`도 붙지 않는다.

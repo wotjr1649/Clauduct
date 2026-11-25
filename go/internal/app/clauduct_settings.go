@@ -104,6 +104,8 @@ var errClassifierSettings = fmt.Errorf(`%w: classifier_model must be an object w
 // and reported; every other unknown key is still refused.
 var deprecatedSettings = []string{"auto_compact_effort_cap", "auxiliary_effort_cap"}
 
+const factorySettingsSource = "factory (not in file)"
+
 // ClauductSettings contains validated launch preferences. SessionProfile owns
 // the separately versioned persistent format.
 type ClauductSettings struct {
@@ -124,7 +126,8 @@ type ClauductSettings struct {
 	// marketplace is the user's own marketplace setting a strict session keeps (strictReady).
 	marketplace string
 	// Deprecated names keys present in the file that this build ignores.
-	Deprecated []string
+	Deprecated  []string
+	missingKeys []string
 }
 
 // classifierMeasurements is what Clauduct's auto-mode classifier gate observed per pair on
@@ -229,7 +232,7 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 	if explicitModel && !explicitEffort && !environmentEffort {
 		effortSource = "account.default_reasoning_level"
 		if _, configured := config.Selection.ModelDefaults[route.Model]; configured {
-			effortSource = config.SelectionSource + ".modelDefaults"
+			effortSource = config.settingsSource("modelDefaults")
 		}
 	}
 	if strings.HasPrefix(route.Source, "alias") || strings.HasPrefix(route.Source, "family") {
@@ -237,7 +240,7 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 			if model == candidate.Alias || candidate.Family != "" && strings.HasPrefix(model, candidate.Family) {
 				mappingSource := "factory.modelMapping"
 				if _, configured := config.Selection.ModelMapping[candidate.Alias]; configured {
-					mappingSource = config.SelectionSource + ".modelMapping"
+					mappingSource = config.settingsSource("modelMapping")
 				}
 				modelSource += "+" + mappingSource
 				break
@@ -247,16 +250,22 @@ func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []st
 	return bridge.Pair{Model: route.Model, Effort: route.Effort}, modelSource, effortSource, nil
 }
 
-// loadClauductSettings reads only the Clauduct-owned file under the given home.
-// A missing file uses the complete document Ensure will publish, including its
-// explicit agent pairs. A present malformed file fails closed.
+func (c ClauductSettings) settingsSource(key string) string {
+	if c.SelectionSource == "settings" && slices.Contains(c.missingKeys, key) {
+		return factorySettingsSource + "." + key
+	}
+	return c.SelectionSource + "." + key
+}
+
+// loadClauductSettings reads the file once. A missing file uses the embedded factory
+// document, and a present malformed file fails closed.
 func loadClauductSettings(home string) (ClauductSettings, error) {
 	if !filepath.IsAbs(home) {
 		return ClauductSettings{}, errClauductSettings
 	}
 	file, err := os.Open(filepath.Join(home, ".clauduct", "settings.json"))
 	if errors.Is(err, os.ErrNotExist) {
-		return parseClauductSettings([]byte(settingsfile.Defaults()))
+		return resolveClauductSettings(nil)
 	}
 	if err != nil {
 		return ClauductSettings{}, errClauductSettings
@@ -274,28 +283,46 @@ func loadClauductSettings(home string) (ClauductSettings, error) {
 }
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
-	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
 	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model", "boundary_profile"}, deprecatedSettings...))
+	var version int
+	if err != nil || json.Unmarshal(fields["version"], &version) != nil || version != 1 {
+		return ClauductSettings{}, errClauductSettings
+	}
+	return resolveClauductSettings(fields)
+}
+
+func resolveClauductSettings(fields map[string]json.RawMessage) (ClauductSettings, error) {
+	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
+	factory, err := wire.Fields([]byte(settingsfile.Defaults()), nil)
 	if err != nil {
 		return bad()
 	}
 	settings := defaultClauductSettings()
-	var version int
-	if json.Unmarshal(fields["version"], &version) != nil || version != 1 {
-		return bad()
+	if fields == nil {
+		fields = factory
+		settings.SelectionSource = factorySettingsSource
+	} else {
+		settings.SelectionSource = "settings"
+		// Preserve v1's top-level-only fill, including empty or partial user maps.
+		for key, value := range factory {
+			if _, present := fields[key]; !present {
+				fields[key] = value
+				settings.missingKeys = append(settings.missingKeys, key)
+			}
+		}
 	}
 	if value, ok := fields["startup"]; ok {
 		settings.Startup, err = bridge.ParsePair(value)
 		if err != nil {
 			return bad()
 		}
-		settings.StartupSource = "settings.startup"
+		settings.StartupSource = settings.settingsSource("startup")
 	}
 	if value, present := fields["context_window"]; present {
 		if string(value) == "null" || json.Unmarshal(value, &settings.Context.Window) != nil {
 			return bad()
 		}
-		settings.ContextWindowSource = "settings.context_window"
+		settings.ContextWindowSource = settings.settingsSource("context_window")
 		delete(fields, "context_window")
 	}
 	if value, present := fields["auto_compact_token_limit_percent"]; present {
@@ -308,7 +335,7 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		}
 		settings.Context.Percent = percent
 		settings.ContextRequestedPercent = json.Number(number)
-		settings.ContextPercentSource = "settings.auto_compact_token_limit_percent"
+		settings.ContextPercentSource = settings.settingsSource("auto_compact_token_limit_percent")
 		delete(fields, "auto_compact_token_limit_percent")
 	}
 	for _, name := range deprecatedSettings {
@@ -328,7 +355,7 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		if err != nil {
 			return ClauductSettings{}, errClassifierSettings
 		}
-		settings.ClassifierModelSource = "settings.classifier_model"
+		settings.ClassifierModelSource = settings.settingsSource("classifier_model")
 		delete(fields, "classifier_model")
 	}
 	if value, present := fields["boundary_profile"]; present {
@@ -352,6 +379,5 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 	if err != nil {
 		return bad()
 	}
-	settings.SelectionSource = "settings"
 	return settings, nil
 }

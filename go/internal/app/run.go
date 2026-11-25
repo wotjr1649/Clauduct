@@ -23,7 +23,6 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
-	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
 )
 
@@ -290,24 +289,14 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if clauductHome == "" {
 			return Result{}, errClauductSettings
 		}
-		// An updater older than this build never runs its settings sync, so the first
-		// normal start adds the top-level keys this build's defaults have and the file
-		// lacks. A file that is invalid is left exactly as it is and refused below.
-		// A sync that cannot write (a held file, a busy lock, a disk error) is reported, never
-		// shown as done, and does not stop the session: an omitted key still takes its
-		// factory value at run time, and the next start tries again.
-		synced, syncErr := settingsfile.Sync(clauductHome)
-		if syncErr != nil && !errors.Is(syncErr, settingsfile.ErrSyncInvalid) && !errors.Is(syncErr, settingsfile.ErrSyncVersion) {
-			fmt.Fprintf(o.Stderr, "clauduct: CLAUDUCT_SETTINGS_SYNC_FAILED: %v; continuing with the file as it is, and the next start tries again\n", syncErr)
-		}
-		if len(synced.Added) > 0 {
-			fmt.Fprintf(o.Stderr, "clauduct: settings: added %s; previous file kept as %s\n", strings.Join(synced.Added, ", "), synced.Backup)
-		}
 		// Context is global launch configuration, including UUID resume. Only
 		// model/effort preferences are subsequently restored from the snapshot.
 		config, err = loadClauductSettings(clauductHome)
 		if err != nil {
 			return Result{}, err
+		}
+		if len(config.missingKeys) > 0 {
+			fmt.Fprintln(o.Stderr, "clauduct: settings: missing keys use factory defaults; no action needed")
 		}
 		if len(config.Deprecated) > 0 {
 			fmt.Fprintf(o.Stderr, "clauduct: settings: %s no longer applied since v0.6.4; the keys stay in the file and may be removed\n", strings.Join(config.Deprecated, ", "))

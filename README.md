@@ -60,7 +60,8 @@ Windows PowerShell 5.1(`powershell`)은 지원하지 않습니다. 검증 환경
 `clauduct.exe`와 내장 `--update`·`--uninstall`은 Go로 구현되어 PowerShell 런타임을 요구하지 않습니다.
 실행 정책이 스크립트를 막으면 해당 환경의 정책에 따라 허용된 실행 경로를 사용해야 합니다.
 
-v0.6.20 이상은 `clauduct.exe`와 `SHA256SUMS`를 받습니다. 설치 스크립트는 해당 릴리스의 실행 파일을 검증해
+v0.6.20 이상은 `clauduct.exe`와 `SHA256SUMS`를 받습니다. v0.6.11–v0.6.19는 `clauduct-probe.exe`도 설치합니다.
+설치 스크립트는 해당 릴리스의 실행 파일을 검증해
 `~\.local\bin`에 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. digest가 다르면
 `INSTALL_DIGEST_MISMATCH`로 멈추고 **대상 폴더는 그대로 둡니다.**
 

@@ -127,7 +127,7 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	// The retired copies go too (Apply), so they are named before the question: consent to an
 	// unnamed set is not consent.
 	for _, name := range retiredProbes {
-		if mayExist(filepath.Join(dir, name)) {
+		if isFile(filepath.Join(dir, name)) {
 			fmt.Fprintln(out, "   remove", name, "(no longer shipped)")
 		}
 	}
@@ -229,7 +229,7 @@ func yes(in io.Reader, out io.Writer) bool {
 // release says" is no when there is nothing there to compare.
 func current(dir string, sums map[string]string) bool {
 	for _, name := range retiredProbes {
-		if mayExist(filepath.Join(dir, name)) {
+		if isFile(filepath.Join(dir, name)) {
 			return false
 		}
 	}

@@ -7,6 +7,7 @@ import "strings"
 // existing role scanner's contract. Unknown options cannot prove where
 // a later option begins. This is not native option validation.
 // --proactivity and --reply-on-resume follow the 2.1.300 handover argv.
+// --inherit-permission-mode follows the 2.1.332 Agent View worker argv.
 // end is exclusive; a missing required value returns len(args)+1.
 func NativeArgEnd(args []string, i int) (end int, known bool) {
 	arg := args[i]
@@ -37,7 +38,7 @@ func NativeArgEnd(args []string, i int) (end int, known bool) {
 	case "--add-dir", "--agent", "--agents", "--append-system-prompt", "--append-system-prompt-file",
 		"--append-subagent-system-prompt", "--append-subagent-system-prompt-file", "--allowedTools", "--allowed-tools",
 		"--autocompact", "--betas", "--claude-md-file", "--client-data-url", "--debug-file", "--disallowedTools", "--disallowed-tools",
-		"--effort", "--environment", "--fallback-model", "--file", "--input-format", "--json-schema",
+		"--effort", "--environment", "--fallback-model", "--file", "--inherit-permission-mode", "--input-format", "--json-schema",
 		"--max-budget-usd", "--max-turns", "--managed-settings", "--mcp-config", "--model", "--name", "-n", "--output-format",
 		"--permission-mode", "--permission-prompt-tool", "--permission-prompts", "--plugin-dir", "--plugin-dir-no-mcp", "--proactivity",
 		"--plugin-url", "--remote-control-session-name-prefix", "--session-id", "--settings", "--setting-sources",

@@ -96,7 +96,7 @@ const clauductSettingsBytes = 1 << 20
 var errClauductSettings = errors.New(
 	`CLAUDUCT_SETTINGS_INVALID: edit ~/.clauduct/settings.json to use v2 (minimal form: {"version":2})`)
 
-var errBoundarySettings = errClauductSettings
+var errBoundarySettings = invalidSettingsField("boundaryProfile", nil)
 var errClassifierSettings = fmt.Errorf(`%w: use "classifier":{"model":"gpt-6.1-terra","effort":"low"} to set both values`, errClauductSettings)
 
 // ClauductSettings contains launch preferences. SessionProfile owns the saved routing format.
@@ -210,7 +210,7 @@ func parseClauductSettings(raw []byte) (ClauductSettings, error) {
 		config.BoundaryProfile = "" // JSON null must not inherit the default.
 		if json.Unmarshal(value, &config.BoundaryProfile) != nil ||
 			config.BoundaryProfile != boundaryDefault && config.BoundaryProfile != boundaryStrict {
-			return ClauductSettings{}, invalidSettingsField("boundaryProfile", nil)
+			return ClauductSettings{}, errBoundarySettings
 		}
 	}
 	if value, present := fields["isolation"]; present {

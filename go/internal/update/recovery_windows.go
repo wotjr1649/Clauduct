@@ -116,11 +116,14 @@ func recoverIn(self, expected string, sweep bool) error {
 		return recoveryError(fmt.Errorf("both %s and %s exist", journal, cleanup))
 	case cleaning:
 		pair, err := readStagedPair(dir, cleanupName)
-		if err == nil {
-			err = pair.verify(dir)
+		if err != nil {
+			return recoveryError(err)
 		}
-		if err == nil {
+		switch err = pair.verify(dir); {
+		case err == nil:
 			err = pair.cleanup(dir)
+		case errors.Is(err, os.ErrNotExist) && !probeMismatch(probe, expected):
+			err = removeFile(cleanup)
 		}
 		if err != nil {
 			return recoveryError(err)

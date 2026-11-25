@@ -5,28 +5,28 @@
 ## 바뀐 것
 
 - **설정 파일은 v2 형식만 읽는다.** 파일이 없으면 `{"version":2}`와 같은 기본값으로 실행한다. 파일이 있으면 `version`이 `2`여야 한다. v1 파일, 모르는 키·값, 중복 키, `null`은 `CLAUDUCT_SETTINGS_INVALID`로 native 실행 전에 거부한다. v0.6.17·v0.6.18이 v1 파일의 빠진 키를 메모리로 채우던 동작은 없어졌다. 일반 실행, 설치, 업데이트는 이 파일을 만들거나 바꾸지 않는다. `clauduct --dev --init-settings`는 파일이 없을 때만 v2 최소 파일을 만든다. [설정 문서](SETTINGS.md).
-- **새 세션의 시작 모델은 native의 선택을 먼저 따른다.** 순서는 native `--model`, `ANTHROPIC_MODEL`, 활성 native 설정의 `model`, `ANTHROPIC_DEFAULT_MODEL`이다. 이 선택이 모두 비었을 때만 계정의 최신 모델 목록에서 priority가 **단독 1위**인 표시 모델을 쓴다. 동점이거나 순위가 없거나 마지막 정상 캐시뿐이면 `ACCOUNT_PRIORITY_UNAVAILABLE`로 멈추고 `--model`로 직접 고르라고 안내한다. gateway가 첫 본 요청의 모델·effort를 확정한 값과 대조하고, `clauduct --dev --doctor`가 선택 출처를 보여 준다. Clauduct 설정의 `startup`·`modelMapping`·`agents`는 더는 읽지 않는다.
-- **모르는 effort는 일찍 거부한다.** `low`·`medium`·`high`·`xhigh`·`max` 밖의 `--effort`나 `CLAUDE_CODE_EFFORT_LEVEL`은 계정 목록 조회와 native 인증 확인보다 먼저 `UNSUPPORTED_MODEL_OR_EFFORT`로 거부한다. 어휘 안의 값이라도 계정이 그 모델에서 지원하지 않으면 전처럼 목록과 대조해 거부한다. 모르는 모델·effort를 기본값으로 바꿔 실행하지 않는다.
-- **재개와 fork는 저장된 선택을 쓴다.** 명시한 세션 UUID를 `--resume`하면 저장된 모델·effort를 복원한다. `--resume <uuid> --continue`나 지원 범위 밖의 `--continue`는 native 시작 전에 `SESSION_RESUME_UUID_REQUIRED`로 거부한다.
-- **`--update`가 중간에 끊겨도 다음 실행이 복구한다.** 새 `clauduct.exe`와 `clauduct-probe.exe`를 교체하는 도중(교체 직전, exe만 교체된 직후, 둘 다 교체된 직후)에 프로세스가 끝나도 다음 실행이 쌍을 완성하거나 되돌린다. 복구할 수 없으면 `UPDATE_RECOVERY_REQUIRED`와 재설치 안내를 출력한다. 다른 실행이 정리 중이면 `UPDATE_BUSY`다. 사용자가 둔 이전 링크와 이미 일치하는 probe는 보존한다. [#365](https://github.com/wotjr1649/Clauduct/issues/365), [PR #412](https://github.com/wotjr1649/Clauduct/pull/412), [업데이트 절차](PACKAGING.md#51-업데이트).
-- **진단: 첫 terminal 이벤트.** 상태 JSON의 요청 기록 `streamEnd.firstTerminalType`에 응답이 처음 보낸 종료 이벤트 종류(`response.completed`, `response.failed`, `response.incomplete`, `error`)가 남는다. 본문, 응답 ID, 자유 형식 오류 문구는 기록하지 않는다. 사용자 동작은 바뀌지 않는다. [#416](https://github.com/wotjr1649/Clauduct/issues/416), [PR #417](https://github.com/wotjr1649/Clauduct/pull/417).
+- **새 세션의 시작 모델은 native의 선택을 먼저 따른다.** 순서는 native `--model`, `ANTHROPIC_MODEL`, 활성 native 설정의 `model`, `ANTHROPIC_DEFAULT_MODEL`이다. 이 선택이 모두 비었을 때만 신선한 계정 모델 목록에서 고른다. 후보는 표시 대상이고 이 빌드가 라우팅할 수 있으며 쓸 수 있는 기본 effort와 native 정책을 충족하는 모델이고, 그중 priority 숫자가 가장 낮은 모델이 단독으로 확인돼야 한다. 동점, 후보 순위 누락, 유효 후보 없음 또는 마지막 정상 캐시만 있으면 `ACCOUNT_PRIORITY_UNAVAILABLE`로 멈추고 `--model`을 안내한다. gateway가 첫 본 대화 요청의 모델·effort를 확정한 값과 대조한다. `clauduct --dev --doctor`는 저장 목록 기준의 미리보기를 보여 주고, 실제 실행값과 출처는 종료 상태 JSON의 `session.startupModel`·`startupEffort`와 `startupModelSource`·`startupEffortSource`에서 확인한다. Clauduct 설정의 `startup`·`modelMapping`·`agents`는 더는 읽지 않는다.
+- **모르는 effort는 일찍 거부한다.** 새 세션을 시작할 때 적용되는 명시 effort가 `low`·`medium`·`high`·`xhigh`·`max` 밖이면 계정 모델 목록 조회와 native 인증 확인보다 먼저 `UNSUPPORTED_MODEL_OR_EFFORT`로 거부한다. 비어 있지 않은 `CLAUDE_CODE_EFFORT_LEVEL`은 `--effort`보다 우선한다. 아는 값이라도 그 모델에서 지원하는지는 계정 목록으로 확인한다. 모르는 모델·effort를 기본값으로 바꿔 실행하지 않는다.
+- **재개와 fork는 저장된 선택을 쓴다.** UUID를 명시한 재개·fork는 저장된 마지막 모델·effort를 기본으로 쓴다. 계정과 정책이 허용하는 `--model`·`--effort`를 직접 줄 수도 있다. foreground에서 `--continue`를 붙이면 UUID와 함께 적어도 `SESSION_RESUME_UUID_REQUIRED`로 거부한다. background의 `--continue`는 `BACKGROUND_CONTINUE_UNVERIFIED`로 거부한다.
+- **`--update`가 중간에 끊겨도 다음 실행이 복구한다.** 새 `clauduct.exe`와 `clauduct-probe.exe`를 교체하는 도중(교체 직전, exe만 교체된 직후, 둘 다 교체된 직후)에 프로세스가 끝나면 다음 실행이 업데이트 기록과 파일 해시를 대조한다. 교체 전 중단이면 기존 쌍을 유지하고, exe만 바뀌었으면 검증된 준비 probe로 새 쌍을 완성한다. 쌍이 이미 일치하면 남은 업데이트 기록과 준비 파일을 정리한다. 무결성을 확인하거나 복구할 수 없으면 `UPDATE_RECOVERY_REQUIRED`로 시작을 멈춘다. 이때는 실행 중인 Clauduct를 닫고 다시 시도하거나 같은 릴리스의 쌍을 다시 설치한다. 설치 잠금이 경합하면 `UPDATE_BUSY`이므로 잠시 뒤 다시 실행한다. 복구는 이번 업데이트의 백업으로 확인된 이전 probe 링크만 정리한다. [#365](https://github.com/wotjr1649/Clauduct/issues/365), [PR #412](https://github.com/wotjr1649/Clauduct/pull/412), [업데이트 절차](PACKAGING.md#51-업데이트).
+- **진단: 첫 terminal 이벤트.** 상태 JSON의 요청 기록 `streamEnd.firstTerminalType`에 검증을 통과한 첫 종료 이벤트의 종류(`response.completed`, `response.failed`, `response.incomplete`, `error`)가 남는다. 관측된 종료 이벤트가 없으면 이 필드를 생략한다. 본문, 응답 ID, 자유 형식 오류 문구는 기록하지 않는다. 사용자 동작은 바뀌지 않는다. [#416](https://github.com/wotjr1649/Clauduct/issues/416), [PR #417](https://github.com/wotjr1649/Clauduct/pull/417).
 
 ## 개발자 변경
 
 - **시작 관문 `AdmitLaunch`를 제거했다.** 제품 경로에서 호출하지 않던 코드와 `Options.AdmittedNativeSHA256`을 지웠다. foreground, background, native provider 조회는 기존 인자로 각 시작 함수를 직접 부른다. provider-control probe와 `doctor` 진단은 그대로다. 동작 변화는 없다. [#419](https://github.com/wotjr1649/Clauduct/issues/419).
-- **죽은 코드 정리(`Gateway.CurrentSession` 등 45줄).** 호출·참조가 없음을 확인한 뒤 지웠다. 동작 변화는 없다. [#366](https://github.com/wotjr1649/Clauduct/issues/366).
+- **죽은 코드 정리(45줄).** 호출이 없던 함수 두 개(`Gateway.CurrentSession` 등)와 항상 거짓인 조건의 분기 세 곳을, 참조가 없음을 확인한 뒤 지웠다. 동작 변화는 없다. [#366](https://github.com/wotjr1649/Clauduct/issues/366).
 - **공개 CI에 정적 분석을 더했다.** Windows 작업에서 staticcheck와 govulncheck를 실행한다. 기존 진단 25건은 소스 위치에 결속한 기준선으로 관리하고, 새 진단은 실패로 본다. 사용자 영향은 없다. [PR #411](https://github.com/wotjr1649/Clauduct/pull/411).
-- **비공개 시험의 시간 결정성.** `resident` 종료 대기 시험을 가상 시간으로 바꾸고, 종료가 제한 시간을 넘기면 검증 행이 실패하게 했다. 공개 코드는 바뀌지 않는다. [#382](https://github.com/wotjr1649/Clauduct/issues/382).
+- **비공개 시험의 시간 결정성.** `resident` 종료 대기 시험을 가상 시간으로 바꾸고, L1·L3에서 resident 종료를 정해진 시간 안에 관측하지 못하면 해당 행을 실패로 기록하게 했다. 공개 코드는 바뀌지 않는다. [#382](https://github.com/wotjr1649/Clauduct/issues/382).
 
 ## v0.6.18에서 올라올 때
 
 1. **업데이트 전에** `~/.clauduct/settings.json`이 있으면 복사본을 둔다. 업데이터와 설치 스크립트는 이 파일을 만들거나 바꾸지 않는다.
 2. `clauduct --update`(무인 실행은 `clauduct --update --yes`)로 v0.6.19를 받는다.
-3. **첫 실행이 `CLAUDUCT_SETTINGS_INVALID`로 멈추면 v1 파일이다.** 다음 중 하나를 한다.
-   - 기본값으로 충분하면 파일 내용을 `{"version":2}` 한 줄로 바꾼다.
+3. **첫 실행이 `CLAUDUCT_SETTINGS_INVALID`로 멈추면** 파일의 `version`과 오류 안내를 확인한다. v2 파일이 오타, 잘못된 값, 중복 키, `null` 때문에 같은 코드를 낼 수도 있으므로, 그 경우에는 설정 문서에 따라 잘못된 항목만 고친다. `version`이 `1`인 v1 파일이면 먼저 파일을 백업하고 다음 중 하나를 한다.
+   - 기본값으로 충분하면 파일 전체를 `{"version":2}` 한 줄로 바꾼다.
    - 바꿔 둔 값이 있으면 아래 대응표대로 옮긴다. 모르는 키가 하나라도 있으면 거부되므로 v1 전용 키는 지운다.
-   - 파일을 지워도 된다. 없으면 최소 v2로 실행한다. 다시 만들려면 `clauduct --dev --init-settings`.
-4. 새 세션이 다른 모델로 시작할 수 있다. 원하는 모델은 `clauduct --model <전체 모델 ID>`나 native 설정의 `model`로 고정한다. 어느 선택이 쓰였는지는 `clauduct --dev --doctor`가 보여 준다.
+   - 백업한 뒤 파일을 지워도 된다. 없으면 최소 v2로 실행한다. 다시 만들려면 `clauduct --dev --init-settings`.
+4. 새 세션이 다른 모델로 시작할 수 있다. 원하는 모델은 `clauduct --model <전체 모델 ID>`나 native 설정의 `model`로 고정한다. `clauduct --dev --doctor`는 저장 목록 기준의 미리보기를 보여 주고, 실제 실행값과 출처는 종료 상태 JSON의 `session.startupModel`·`startupEffort`와 `startupModelSource`·`startupEffortSource`에서 확인한다.
 
 v1 파일이 이런 모양이었다면:
 
@@ -75,7 +75,7 @@ v2에서는 이렇게 쓴다. `startup`은 파일에서 빠지고, 시작 모델
 
 - 설정: v2 최소 파일·파일 없음·v1 거부(native 시작과 예약 0건)·업데이트 뒤 v1 파일의 바이트와 mtime 보존.
 - 모델 선택: 계정 priority 기본값, native 명시 선택, 명시 UUID 재개·fork의 pair 복원, 모르는 effort의 조기 거부, `--resume <uuid> --continue` 거부.
-- 업데이트: 세 중단 상태에서 다음 실행의 복구와 실제 응답, 새 설치·v0.6.18에서 업데이트·되돌리기·설정과 PATH 보존.
+- 업데이트: 세 중단 상태에서 다음 실행의 복구와 실제 응답, 새 설치·v0.6.18에서 업데이트·되돌리기·설정과 PATH 보존, v0.6.16 updater에서 v0.6.19로 갱신할 때 `--dev --sync-settings`가 exit 0이고 설정이 보존되는지.
 - 진단: 정상 streaming 응답의 `firstTerminalType`.
 - 시작 경로: foreground print와 `--bg`, background `stop`·`rm` 직후 재개.
 - 공통: `go vet`, 전체 오프라인 Go 테스트, 동시성 코드가 바뀐 패키지의 race, 태그 fixture 두 단계, structural, native smoke 15행.
@@ -97,9 +97,9 @@ v2에서는 이렇게 쓴다. `startup`은 파일에서 빠지고, 시작 모델
 
 ## 알려진 제한
 
-- **파일 기반 Workflow(`named`·`scriptPath`)는 Read 권한을 검증한 native 이미지(2.1.325)에서만 받는다.** 2.1.330·2.1.331·2.1.332를 포함한 다른 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. 원인은 native의 mod `$.tool.call` Read가 Read 거부 규칙을 지키지 않는 동작이며 upstream에 보고했다. [anthropics/claude-code#110979](https://github.com/anthropics/claude-code/issues/110979), [#403](https://github.com/wotjr1649/Clauduct/issues/403). inline `script`는 계속 지원한다.
+- **파일 기반 Workflow(`named`·`scriptPath`)는 Read 권한을 검증한 native 이미지(2.1.325)에서만 받는다.** 2.1.330·2.1.331·2.1.332를 포함한 다른 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. 원인은 native의 mod `$.tool.call` Read가 Read 거부 규칙을 지키지 않는 동작이며 upstream에 보고했다. [anthropics/claude-code#110979의 관측](https://github.com/anthropics/claude-code/issues/110979#issuecomment-7162373953), [#403](https://github.com/wotjr1649/Clauduct/issues/403). inline `script`는 계속 지원한다.
 - **설정 v2의 호환성 경계.** v1 파일을 자동으로 변환하지 않는다. v0.6.18 이하로 되돌리면 v2 파일을 거부한다.
-- **`--update` 복구는 NTFS 하드 링크가 되는 설치 드라이브를 전제로 한다.** 하드 링크를 지원하지 않으면 교체 전에 멈추고 기존 쌍을 보존한 채 재설치를 안내한다.
-- **복원한 background resident의 profile 잠금 문제는 이번 릴리스에 없다.** [#351](https://github.com/wotjr1649/Clauduct/issues/351).
+- **`--update` 복구는 하드 링크를 지원하는 설치 볼륨을 전제로 한다.** 하드 링크를 지원하지 않으면 교체 전에 멈추고 기존 쌍을 보존한 채 재설치를 안내한다.
+- **복원한 background resident의 프로필 잠금 제한은 v0.6.19에도 남아 있다.** 수정은 이번 릴리스 범위 밖이다. [#351](https://github.com/wotjr1649/Clauduct/issues/351).
 - **teammate에게 보낸 두 번째 메시지의 전달과 재개 뒤 이전 reasoning의 재실림은 진단으로 확인하지 못했다.** 진단 필드는 다음 릴리스 이후로 미뤘다. [#329](https://github.com/wotjr1649/Clauduct/issues/329).
-- 공통 제한은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0618)에 있다. auto 모드 분류 요청 형식의 제한은 [v0.6.18 문서](RELEASE-v0.6.18.md#알려진-제한)와 같다.
+- 공통 제한은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0618-)에 있다. auto 모드 분류 요청 형식의 제한은 [v0.6.18 문서](RELEASE-v0.6.18.md#알려진-제한)와 같다.

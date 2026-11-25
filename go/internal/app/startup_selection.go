@@ -471,8 +471,8 @@ func startupModelID(selection bridge.Selection, model string) (string, error) {
 	return "", fmt.Errorf("%w: choose an account model with --model", bridge.ErrUnsupportedRoute)
 }
 
-// resumeTarget also recognises combined short flags, using the native argv boundaries.
-func resumeTarget(args []string) bool {
+// requiresResumeUUID recognises combined short flags at native argv boundaries.
+func requiresResumeUUID(args []string, resumeID string) bool {
 	for i := 0; i < len(args) && args[i] != "--"; {
 		end, known := nativeArgEnd(args, i)
 		if !known || end > len(args) {
@@ -480,12 +480,16 @@ func resumeTarget(args []string) bool {
 		}
 		name, _, _ := strings.Cut(args[i], "=")
 		switch name {
-		case "--resume", "--continue", "--fork-session", "--from-pr", "--teleport":
+		case "--continue", "--from-pr", "--teleport":
 			return true
+		case "--resume", "--fork-session":
+			if resumeID == "" {
+				return true
+			}
 		}
 		if len(name) > 1 && name[0] == '-' && name[1] != '-' {
 			for _, flag := range name[1:] {
-				if flag == 'c' || flag == 'r' {
+				if flag == 'c' || flag == 'r' && resumeID == "" {
 					return true
 				}
 				if !strings.ContainsRune("pvh", flag) {

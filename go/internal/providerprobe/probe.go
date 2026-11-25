@@ -1475,7 +1475,8 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		once([]string{"--continue", "-p", prompt(obs.Turns[j].Canary)}, nil, &outs[1])
 		end(j)
 		after := w.sessionState(session)
-		obs.RefusalSideEffect = len(before.transcript) == 0 || before.profile != after.profile || !bytes.Equal(before.transcript, after.transcript)
+		obs.RefusalSideEffect = !before.valid || !after.valid || before.profile != after.profile ||
+			before.path != after.path || !bytes.Equal(before.transcript, after.transcript)
 		obs.TranscriptAppended = len(after.transcript) - len(before.transcript)
 		n := 2
 		if c.Entry == p3ContinueRecover {

@@ -433,22 +433,37 @@ type p3SessionState struct {
 	profile    string
 	transcript []byte
 	path       string
+	valid      bool
 }
 
 func (w *p3World) sessionState(session string) p3SessionState {
 	var state p3SessionState
-	if raw, err := os.ReadFile(filepath.Join(w.home, ".clauduct", "sessions", session+".json")); err == nil {
+	raw, err := os.ReadFile(filepath.Join(w.home, ".clauduct", "sessions", session+".json"))
+	if err == nil {
 		sum := sha256.Sum256(raw)
 		state.profile = hex.EncodeToString(sum[:])
+	} else if !os.IsNotExist(err) {
+		return state
 	}
 	projects := filepath.Join(w.configDir, "projects")
-	filepath.Walk(projects, func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && filepath.Base(path) == session+".jsonl" {
-			state.path, _ = filepath.Rel(projects, path)
-			state.transcript, _ = os.ReadFile(path)
+	err = filepath.Walk(projects, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
-		return nil
+		if filepath.Base(path) != session+".jsonl" {
+			return nil
+		}
+		if !info.Mode().IsRegular() || state.path != "" {
+			return errors.New("ambiguous transcript")
+		}
+		state.path, err = filepath.Rel(projects, path)
+		if err != nil {
+			return err
+		}
+		state.transcript, err = os.ReadFile(path)
+		return err
 	})
+	state.valid = err == nil && len(state.transcript) > 0
 	return state
 }
 
@@ -459,7 +474,7 @@ func (w *p3World) seedControlResume(session string, pair bridge.Pair) error {
 	if state.profile != "" {
 		return nil
 	}
-	if state.path == "" || len(state.transcript) == 0 {
+	if !state.valid {
 		return errors.New("control seed transcript missing")
 	}
 	store, err := gateway.OpenSessionProfiles(filepath.Join(w.home, ".clauduct", "sessions"))

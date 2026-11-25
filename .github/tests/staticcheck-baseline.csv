@@ -1,0 +1,26 @@
+Path,Code,Message,Line,Column,Declaration
+internal/app/native_events.go,U1000,func prepareNativeEvents is unused,25,6,25
+internal/app/native_provider.go,U1000,func nativeProviderStatus is unused,97,6,97
+internal/app/resident.go,U1000,func (*backgroundProcess).releaseUnownedProfiles is unused,294,29,294
+internal/app/run.go,SA4006,this value of resumeID is never used,356,6,229
+internal/app/user_settings.go,U1000,func mergeUserSettings is unused,172,6,172
+internal/gateway/tool_surface.go,U1000,func (*toolSurface).missing is unused,187,23,187
+internal/gateway/tool_surface.go,U1000,func (*toolSurface).report is unused,168,23,168
+internal/hookcmd/hook.go,U1000,func reconnect is unused,276,6,276
+internal/hookcmd/hook.go,U1000,func routed is unused,186,6,186
+internal/hookcmd/hook.go,U1000,func runWithOutput is unused,439,6,439
+internal/providerprobe/be10.go,U1000,func (*p3AgentBackgroundOnce).observeIngress is unused,342,33,342
+internal/providerprobe/daemon_env.go,U1000,func p3SelfEnvironmentCheck is unused,320,6,320
+internal/providerprobe/helpers.go,U1000,func executable is unused,87,6,87
+internal/providerprobe/helpers.go,U1000,var productExecutable is unused,85,5,85
+internal/providerprobe/ledger.go,U1000,func (*p3Ledger).poisoned is unused,52,20,52
+internal/providerprobe/probe_bg.go,U1000,func p3BackgroundFamily is unused,108,6,108
+internal/providerprobe/probe_bg.go,U1000,func p3DedicatedFamily is unused,132,6,132
+internal/providerprobe/probe_native.go,U1000,func p3BuildIdentity is unused,138,6,138
+internal/providerprobe/probe_native.go,U1000,func userStateStat is unused,114,6,114
+internal/providerprobe/probe_r3.go,SA4006,this value of helper is never used,387,2,369
+internal/providerprobe/probe.go,U1000,func p3CaseIDs is unused,161,6,161
+internal/providerprobe/probe.go,U1000,func p3NativeStarts is unused,171,6,171
+internal/providerprobe/probe.go,U1000,func p3Runner.runMatrix is unused,2449,19,2449
+internal/providerprobe/surface.go,U1000,func p3CompareSurfaces is unused,117,6,117
+internal/ptydrive/ptydrive.go,U1000,func loadSteps is unused,873,6,873

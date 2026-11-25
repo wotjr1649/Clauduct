@@ -13,7 +13,7 @@ on:
       - '.gitattributes'
       - 'scripts/**'
       - '.github/tests/native_dispatch_test.go'
-      - '.github/tests/staticcheck-baseline.txt'
+      - '.github/tests/staticcheck-*'
       - '.github/workflows/go.yml'
   pull_request:
     paths:
@@ -23,7 +23,7 @@ on:
       - '.gitattributes'
       - 'scripts/**'
       - '.github/tests/native_dispatch_test.go'
-      - '.github/tests/staticcheck-baseline.txt'
+      - '.github/tests/staticcheck-*'
       - '.github/workflows/go.yml'
 
 defaults:
@@ -99,22 +99,14 @@ jobs:
 
       - name: Staticcheck
         run: |
-          $diagnostics = & "$env:RUNNER_TEMP/staticcheck.exe" -f json -fail= -checks 'SA*,U1000' ./...
+          # Source revision used to record the baseline's locations. Checkout is shallow.
+          $sourceBase = '3ebca34430df8b56651ed43cc3c484a25efd900d'
+          git fetch --no-tags --depth=1 origin $sourceBase
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ../.github/tests/staticcheck-check.ps1 -Staticcheck "$env:RUNNER_TEMP/staticcheck.exe" -SourceBase $sourceBase
 
-          $baseline = [Collections.Generic.List[string]]::new()
-          $baseline.AddRange([string[]]@(Get-Content -LiteralPath ../.github/tests/staticcheck-baseline.txt))
-          $failed = $false
-          foreach ($record in $diagnostics) {
-            $finding = ConvertFrom-Json -InputObject $record
-            $location = $finding.location
-            $path = [IO.Path]::GetRelativePath($PWD.Path, $location.file).Replace('\', '/')
-            # Ignore line shifts and consume one baseline entry per occurrence.
-            if ($baseline.Remove("${path} $($finding.code) $($finding.message)")) { continue }
-            Write-Output "${path}:$($location.line):$($location.column): $($finding.message) ($($finding.code))"
-            $failed = $true
-          }
-          if ($failed) { exit 1 }
+      - name: Staticcheck baseline regression
+        run: ../.github/tests/staticcheck-regression.ps1 -Staticcheck "$env:RUNNER_TEMP/staticcheck.exe"
 
       # The public contract tests (#271).
       - name: contract tests

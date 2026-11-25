@@ -77,7 +77,7 @@ type Parser struct {
 	events  int
 	closed  bool
 
-	// firstTerminalType records the first terminal event, sentinel that [DONE] has arrived.
+	// firstTerminalType records the first terminal event type. The sentinel flag records [DONE].
 	// They are separate because the contract allows a terminal event without [DONE] and
 	// refuses [DONE] without a terminal event, and collapsing them would permit both.
 	firstTerminalType string

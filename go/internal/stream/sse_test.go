@@ -400,6 +400,9 @@ func TestIncompleteStreamsAreRefused(t *testing.T) {
 		if _, err := feed(t, p, `data: {"type":"content_block_delta"}`+"\n\n"); !errors.Is(err, ErrIncompleteResponse) {
 			t.Fatalf("err = %v, want INCOMPLETE_RESPONSE", err)
 		}
+		if got := p.FirstTerminalType(); got != "" {
+			t.Fatalf("first terminal type = %q, want empty at EOF", got)
+		}
 	})
 	t.Run("frame never closed", func(t *testing.T) {
 		p := newTestParser(t)

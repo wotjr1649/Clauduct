@@ -234,6 +234,7 @@ func (r *record) streamEnd(readErr, clientErr error, terminal string, events, by
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// Keep the diagnostic vocabulary closed even if the parser's terminal filter changes.
 	if !codex.Terminal(terminal) {
 		terminal = ""
 	}

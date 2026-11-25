@@ -8,7 +8,6 @@ package providerprobe
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -296,8 +295,15 @@ type p3World struct {
 func (w *p3World) observe(g *gateway.Gateway) {
 	if w.transport.agent != nil {
 		w.transport.agent.bindGateway(g)
-		g.ObserveRequests(func(r *http.Request) { w.transport.agent.bindRequest(r, g) })
 	}
+	g.ObserveRequests(func(r *http.Request) {
+		if r.URL.Path == "/v1/messages" {
+			*r = *r.WithContext(context.WithValue(r.Context(), p3DispatchKey{}, &p3DispatchIdentity{}))
+		}
+		if w.transport.agent != nil {
+			w.transport.agent.bindRequest(r, g)
+		}
+	})
 	w.mu.Lock()
 	w.gatewayURL = g.BaseURL()
 	w.mu.Unlock()
@@ -314,6 +320,11 @@ func (w *p3World) observers() (func(gateway.Ingress), func(gateway.RequestRecord
 	run := w.run
 	w.mu.Unlock()
 	return func(in gateway.Ingress) {
+			if in.Context != nil {
+				if dispatch, ok := in.Context.Value(p3DispatchKey{}).(*p3DispatchIdentity); ok {
+					*dispatch = p3DispatchIdentity{run: run, gateway: gen, seq: in.Seq}
+				}
+			}
 			w.mu.Lock()
 			watch := w.r03
 			w.mu.Unlock()
@@ -624,13 +635,25 @@ type p3Transport struct {
 	delay time.Duration
 }
 
+type p3DispatchKey struct{}
+
+// The authenticated ingress stamps the identity in the same request context Execute receives.
+type p3DispatchIdentity struct {
+	run          int
+	gateway, seq int64
+}
+
 func (p *p3Transport) Execute(ctx context.Context, call upstream.Call) (*upstream.Response, error) {
 	ids := []string{}
 	if w := p.world(); w != nil {
 		ids, _ = providercert.Scan(strings.NewReader(string(call.Body)), w.liveCanaries())
 	}
+	seen := p3Call{at: time.Now(), canaries: ids, backendModel: call.Model, backendEffort: call.Effort}
+	if dispatch, ok := ctx.Value(p3DispatchKey{}).(*p3DispatchIdentity); ok {
+		seen.run, seen.gateway, seen.seq = dispatch.run, dispatch.gateway, dispatch.seq
+	}
 	p.mu.Lock()
-	p.calls = append(p.calls, p3Call{at: time.Now(), canaries: ids, backendModel: call.Model, backendEffort: call.Effort})
+	p.calls = append(p.calls, seen)
 	refuse := p.fail401 > 0 && len(ids) > 0
 	if refuse {
 		p.fail401--
@@ -1475,8 +1498,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		once([]string{"--continue", "-p", prompt(obs.Turns[j].Canary)}, nil, &outs[1])
 		end(j)
 		after := w.sessionState(session)
-		obs.RefusalSideEffect = !before.valid || !after.valid || before.profile != after.profile ||
-			before.path != after.path || !bytes.Equal(before.transcript, after.transcript)
+		obs.RefusalSideEffect = before.changed(after)
 		obs.TranscriptAppended = len(after.transcript) - len(before.transcript)
 		n := 2
 		if c.Entry == p3ContinueRecover {
@@ -2076,7 +2098,9 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 				}
 			}
 		}
-		if turn.RequireRestore && len(treatment.Turns) > 0 {
+		if turn.RequireRestore && c.Entry == p3ContinueRecover {
+			turn.Restored = p3ContinueRestored(c, treatment, i)
+		} else if turn.RequireRestore {
 			// Restored: this turn's own backend generation runs turn 1's pair and its request
 			// carries turn 1's conversation.
 			first := treatment.Turns[0].Canary.ID
@@ -2095,7 +2119,7 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 				}
 			}
 			turn.Restored = pair != nil && now != nil && pair.backendModel != "" && pair.backendEffort != "" && now.backendModel == pair.backendModel && now.backendEffort == pair.backendEffort
-			if (c.Entry == p3ContinueRecover || c.SeedPair) && pair != nil && (pair.backendModel != p3RestoreModel || pair.backendEffort != p3RestoreEffort) {
+			if c.SeedPair && pair != nil && (pair.backendModel != p3RestoreModel || pair.backendEffort != p3RestoreEffort) {
 				// Turn 1 did not run the non-default pair it was started with, so an equal pair at
 				// the resume would not show a restored snapshot.
 				turn.Restored = false

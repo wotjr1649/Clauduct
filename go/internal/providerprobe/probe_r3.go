@@ -428,12 +428,17 @@ func (w *p3World) applyPlugin(spec launch.Spec) (launch.Spec, error) {
 	return spec, os.WriteFile(module, []byte(text), 0o600)
 }
 
-// p3SessionState is a session's stored profile snapshot and conversation, by digest and size.
+// p3SessionState is a session's stored profile digest and conversation bytes.
 type p3SessionState struct {
 	profile    string
 	transcript []byte
 	path       string
 	valid      bool
+}
+
+func (before p3SessionState) changed(after p3SessionState) bool {
+	return !before.valid || !after.valid || before.profile != after.profile ||
+		before.path != after.path || !bytes.Equal(before.transcript, after.transcript)
 }
 
 func (w *p3World) sessionState(session string) p3SessionState {

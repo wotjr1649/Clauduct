@@ -151,30 +151,23 @@ func recoverStagedPair(self, probe, expected string) error {
 			return err
 		}
 	} else {
-		staged := pair.stage(dir, Probe)
-		if mayExist(staged) {
-			// Apply may already have made this backup before it was interrupted.
-			if sameFile(probe, probe+".old") {
-				err = renameFile(staged, probe)
-			} else {
-				err = replaceStaged(staged, probe, true)
+		if !binaryMatches(probe, expected) {
+			staged := pair.stage(dir, Probe)
+			if !mayExist(staged) {
+				return fmt.Errorf("%s is missing or does not match the probe SHA-256 embedded in this executable", probe)
 			}
-			if err != nil {
+			if err := renameFile(staged, probe); err != nil {
 				return err
 			}
 		}
-		if !binaryMatches(probe, expected) {
-			return fmt.Errorf("%s is missing or does not match the probe SHA-256 embedded in this executable", probe)
+		backup := probe + ".old"
+		if pair.PreviousProbe != nil {
+			if id := installedFileID(backup); id != nil && *id == *pair.PreviousProbe {
+				_ = removeFile(backup)
+			}
 		}
-		_ = removeFile(probe + ".old")
 	}
 	return pair.discard(dir)
-}
-
-func sameFile(a, b string) bool {
-	first, firstErr := os.Lstat(a)
-	second, secondErr := os.Lstat(b)
-	return firstErr == nil && secondErr == nil && os.SameFile(first, second)
 }
 
 func probeMismatch(probe, expected string) bool {

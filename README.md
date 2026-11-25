@@ -6,8 +6,8 @@ Read/Edit/Bash/MCP 실행과 사용자 승인은 Claude Code가 그대로 담당
 추론 경로는 **Claude Code → Clauduct의 127.0.0.1 gateway → ChatGPT Codex backend 직접 HTTPS**입니다.
 Codex app-server를 호출하거나 실행 중인 Codex 앱 세션에 요청을 넘기는 구현이 아닙니다.
 
-Go 실행기 `clauduct.exe`에 hook과 `--dev` 명령이 들어 있습니다. 설치·업데이트는 v0.6.11부터 진단용
-`clauduct-probe.exe`도 함께 다룹니다. 기능과 제약은 [호환성 문서](docs/v2/COMPATIBILITY.md)를 참고하세요.
+Go 실행기 `clauduct.exe`에 hook과 `--dev` 명령이 들어 있습니다. v0.6.20부터 실행 파일은 `clauduct.exe` 하나를 출하합니다.
+기능과 제약은 [호환성 문서](docs/v2/COMPATIBILITY.md)를 참고하세요.
 
 최신 정식 출시는 [v0.6.17](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.17)입니다.
 변경·출하 검사와 알려진 제한은 [릴리스 문서](docs/v2/RELEASE-v0.6.17.md)에 있습니다.
@@ -60,8 +60,8 @@ Windows PowerShell 5.1(`powershell`)은 지원하지 않습니다. 검증 환경
 `clauduct.exe`와 내장 `--update`·`--uninstall`은 Go로 구현되어 PowerShell 런타임을 요구하지 않습니다.
 실행 정책이 스크립트를 막으면 해당 환경의 정책에 따라 허용된 실행 경로를 사용해야 합니다.
 
-최신 릴리스에서 `clauduct.exe`·`clauduct-probe.exe`·`SHA256SUMS`를 받아 두 실행 파일의 digest를
-대조한 뒤 `~\.local\bin`에 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. digest가 다르면
+v0.6.20 이상은 `clauduct.exe`와 `SHA256SUMS`를 받습니다. 설치 스크립트는 해당 릴리스의 실행 파일을 검증해
+`~\.local\bin`에 넣고, 그 경로가 사용자 PATH에 없으면 추가합니다. digest가 다르면
 `INSTALL_DIGEST_MISMATCH`로 멈추고 **대상 폴더는 그대로 둡니다.**
 
 저장소를 클론했다면 `scripts/install.ps1`이 같은 파일이며, 옵션도 같습니다.

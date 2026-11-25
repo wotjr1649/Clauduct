@@ -17,7 +17,6 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,15 +34,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/update"
 )
 
-// probeSHA256 is the SHA-256 of the clauduct-probe.exe built from this source with
-// -trimpath -buildvcs=false (go/README.md): the only probe this build's diagnostics run or
-// trust. A launch never needs it.
-//
-//go:embed probe.sha256
-var probeSHA256 string
-
 func main() {
-	app.ExpectedProbeSHA256 = strings.TrimSpace(probeSHA256)
 	os.Exit(run())
 }
 
@@ -70,7 +61,7 @@ func run() int {
 		return regenerate(os.Args[2])
 	}
 	dev, isDev := devArgs(os.Args)
-	if err := update.Recover(app.ExpectedProbeSHA256, !isDev); err != nil {
+	if err := update.Recover(!isDev); err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct:", err)
 		return 1
 	}

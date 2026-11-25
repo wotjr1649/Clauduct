@@ -9,10 +9,10 @@
 | 파일 | 하는 일 |
 |---|---|
 | `clauduct.exe` | 제품. 설치된 `claude.exe`를 띄우고 모델 요청을 loopback gateway로 돌린다. 같은 파일이 hook·`--dev` 명령도 맡는다 |
-| `clauduct-probe.exe` | **v0.6.11부터.** provider-control 진단 도구다(#319, #320). `clauduct --dev --probe provider-control`이 `clauduct.exe`와 같은 디렉터리에서 실행한다. launch는 이 파일을 쓰지 않으므로 없어도 실행된다(결정 17). `clauduct.exe`는 SHA-256을 `go/cmd/clauduct/probe.sha256`에서 내장하고 그 digest의 probe만 실행한다. 그래서 `clauduct.exe`와 한 쌍으로 내려받아 검증하고 설치한다 |
+| `clauduct-probe.exe` | **v0.6.11–v0.6.19에서 출하.** 해당 태그의 provider-control 진단 도구다(#319, #320). `install.ps1 -Tag`로 해당 버전을 고르면 두 파일을 함께 검증해 설치한다. v0.6.20부터 이 자산을 출하하지 않는다(#420) |
 | `clauduct-hook.exe` · `clauduct-dev.exe` | **v0.4.x 릴리스에만** 올라간 `clauduct.exe`의 바이트 동일 사본. v0.5.0부터 올리지 않는다(#136). 새 설치·업데이트는 받지 않는다(아래) |
 
-제품 바이너리는 `clauduct.exe` 하나다(v0.4.0부터, #112). v0.6.11부터 그 옆에 진단 도구 `clauduct-probe.exe`가 한 쌍으로 선다. 별도로 설치하는 설정 파일·스크립트·데이터 디렉터리는 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`). 첫 인자의 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`·`--background-stop`)과 내부 `--clauduct-*` 역할은 제품이 처리한다. `--bg`·`--background`는 native에 전달하면서 연결 유지 프로세스를 시작한다. 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 전체 CLI 계약은 [ARCHITECTURE.md](ARCHITECTURE.md#4-cli-계약)를 따른다.
+제품 바이너리는 `clauduct.exe` 하나다(v0.4.0부터, #112). 별도로 설치하는 설정 파일·스크립트·데이터 디렉터리는 없다. 이 빌드 자신에 대한 질문은 `clauduct --dev`로 한다(`--version`·`--doctor`·`--usage`·`--probe`). 첫 인자의 관리 명령(`--update`·`--usage`·`--uninstall`·`--dev`·`--background-stop`)과 내부 `--clauduct-*` 역할은 제품이 처리한다. `--bg`·`--background`는 native에 전달하면서 연결 유지 프로세스를 시작한다. 나머지는 `--version`·`--help`를 포함해 native로 그대로 간다. 전체 CLI 계약은 [ARCHITECTURE.md](ARCHITECTURE.md#4-cli-계약)를 따른다.
 
 **사본을 올렸던 이유**: 0.3.x의 `--update`는 세 이름(그 버전의 `update.Binaries`)이 모두 있는 릴리스만 받는다. 사본은 자기 이름이 말하는 역할을 하므로 0.3.x에서 업데이트한 설치는 세 파일로도 동작한다. v0.4.x의 `--update`와 `install.ps1`은 `clauduct.exe`만 받고, 교체가 끝난 뒤 두 이름을 지운다. **v0.5.0부터는 사본을 올리지 않는다.** 남은 0.3.x 설치의 `--update`는 `clauduct: release v0.5.0 does not carry clauduct-hook.exe, clauduct-dev.exe`로 멈추고 아무것도 바꾸지 않는다. 그 설치는 [README](../../README.md)의 설치 스크립트로 다시 설치한다. 설치 스크립트가 0.3.x의 세 파일을 `clauduct.exe` 하나로 바꾼다. 과거 릴리스의 자산은 그대로 둔다.
 
@@ -111,8 +111,8 @@ Go 버전의 정책 출처는 루트 `go.mod`다. `toolchain goX.Y.Z` 줄이 정
    태그 작업 트리는 untracked 파일까지 비워 둔다. Go 도구가 태그와 commit을 실행 파일에 넣는다(#111).
    출하 도구의 후보 준비 단계는 태그 작업 트리 밖에 독립 빌드를 만들어 SHA-256을 비교한다.
    제품은 `CGO_ENABLED=0`과 `-trimpath`로 빌드한다.
-   v0.6.11부터 probe는 같은 트리에서 VCS 스탬프 없이 빌드하고
-   `go/cmd/clauduct/probe.sha256`과도 대조한다.
+   v0.6.20부터 출하 빌드는 제품 실행 파일만 만든다.
+   하네스는 C2까지 필요에 따라 probe를 소스에서 빌드한다.
 
 2. **후보를 검증한다.** 준비 자산으로 새 설치, 이전 릴리스에서의 교체, 이전 버전으로의 롤백을 확인한다.
    바뀐 동작에 필요한 검사와 아래 backend capability 검사를 수행한다.
@@ -131,14 +131,14 @@ Go 버전의 정책 출처는 루트 `go.mod`다. `toolchain goX.Y.Z` 줄이 정
    발행을 중단한 경우 실패한 검사를 고치고 확정 단계에서 다시 검사한다.
 
 확정된 발행 자산은 아래 표의 이름을 사용한다.
-v0.6.11부터 실행 파일 두 개, 설치 스크립트 두 개, `SHA256SUMS` 하나다.
-v0.6.10까지의 probe 없는 세트와 v0.4.x의 옛 이름 사본은 태그별 자산 규칙에 따른다.
+v0.6.20부터 `clauduct.exe`, 설치 스크립트 두 개, `SHA256SUMS`를 올린다.
+v0.6.11–v0.6.19의 probe와 v0.4.x의 옛 이름 사본은 태그별 자산 규칙에 따른다.
 발행 후에는 이 절의 다운로드·업데이트 검사로 공개된 바이트를 확인한다.
 
 | 자산 이름 | 왜 이 이름이어야 하나 |
 |---|---|
-| `clauduct.exe` | `update.Binaries`가 이 이름으로 찾는다. 없으면 이름으로 말하고 멈춘다. **v0.4.x는 `clauduct-hook.exe`·`clauduct-dev.exe`도 같은 바이트로 올리고 `SHA256SUMS`에 셋을 적었다** — 0.3.x의 `update.Binaries`가 세 이름을 모두 요구한다. v0.5.0부터 제품 실행 파일은 이 이름 하나다. v0.6.11부터 진단 전용 `clauduct-probe.exe`가 별도 자산으로 붙는다(아래 행) |
-| `clauduct-probe.exe` | v0.6.11부터. `SHA256SUMS`에 적는다. `install.ps1`과 `--update`는 이 파일이 `SHA256SUMS`에 있을 때만 받고, 있으면 `clauduct.exe`와 둘 다 검증한 뒤에야 한 쌍으로 교체한다. 없는 릴리스(`-Tag`로 되돌린 v0.6.10 이전)로 설치하면 남아 있던 probe를 지운다 |
+| `clauduct.exe` | `update.Binaries`가 이 이름으로 찾는다. 없으면 이름으로 말하고 멈춘다. **v0.4.x는 `clauduct-hook.exe`·`clauduct-dev.exe`도 같은 바이트로 올리고 `SHA256SUMS`에 셋을 적었다.** 0.3.x의 `update.Binaries`가 세 이름을 모두 요구하기 때문이다. v0.5.0부터 제품 실행 파일은 이 이름 하나다 |
+| `clauduct-probe.exe` | v0.6.11–v0.6.19에만 `SHA256SUMS`와 함께 출하했다. `install.ps1`은 해당 태그를 고르면 두 파일을 검증해 설치하고, `SHA256SUMS`에 probe가 없는 태그를 고르면 남은 파일을 지운다. v0.6.20의 `--update`는 이전 설치의 probe를 정리한다 |
 | `install.ps1` · `uninstall.ps1` | `releases/latest/download/install.ps1`이 동작하게 하는 것이 이 자산이다. `--update`는 이 둘을 건드리지 않는다 — 설치된 집합이 아니다 |
 | `SHA256SUMS` | 유일한 무결성 근거다. 서명이 없으므로 여기에 적힌 digest와 릴리스 API가 말하는 digest **둘 다** 대조한다. **스크립트 둘도 여기 적는다** — 받아서 실행하라고 안내하는 파일이므로 대조할 수단이 있어야 한다. `update.Sums`는 이름으로 찾으므로 추가 항목은 무시된다 |
 
@@ -179,7 +179,7 @@ backend가 다시 거부하면 출하를 멈추고 COMPATIBILITY 원장 행을 �
 
 ## 5. 설치
 
-PATH에 있는 디렉터리에 **`clauduct.exe`**(v0.6.11부터는 `clauduct-probe.exe`와 한 쌍)를 복사한다. 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`는
+PATH에 있는 디렉터리에 **`clauduct.exe`**를 복사한다. v0.6.11–v0.6.19를 수동 설치할 때는 해당 태그의 `clauduct-probe.exe`도 함께 복사한다. 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`는
 교체가 끝난 뒤 지운다(1장). hook은 실행 중인 `clauduct.exe` 자신이라 옆에 둘 것이 없다.
 
 **그 디렉터리에 `clauduct`라는 이름의 폴더가 있으면 안 된다.** MSYS/Git Bash의 PATH 탐색은 같은
@@ -317,18 +317,18 @@ clauduct --update --yes  # 무인
 digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말하고 끝난다. 릴리스 API가 자기 digest를
 싣고 있으면 그것과도 대조한다 — 둘이 일치하는 것은 값이 적지만, **둘이 다르면 멈출 이유**다.
 
-교체 대상은 `clauduct.exe`이고, 릴리스의 `SHA256SUMS`가 `clauduct-probe.exe`를 적었으면 그것도 같이다(v0.6.11부터). 둘 다 내려받아 digest를 확인한 뒤 설치 폴더 아래의 전용 디렉터리에 준비하고, 그 이름과 각 SHA-256을 `clauduct.exe.update-journal`에 기록한다. 하드 링크로 기존 파일을 `*.old`에 보존하면서 기존 파일 이름에 새 파일을 놓는다. 하드 링크를 지원하지 않는 볼륨에서는 설치 절차로 두 파일을 갱신한다. probe 교체가 실패하면 exe를 원래대로 되돌린다.
-probe를 적지 않은 릴리스면 남아 있던 probe를 지우고 확인 질문 전에 그렇게 말한다. **v0.6.10 이하에서 처음 업데이트하면** `clauduct.exe`만 바뀐다. launch는 probe 없이 동작하고, 진단 도구가 필요하면 그 `clauduct.exe`의 `clauduct --update`를 한 번 더 실행해 probe를 놓는다(`install.ps1`은 한 번에 둘 다 놓는다).
+v0.6.20의 업데이터는 `clauduct.exe`를 내려받아 digest를 확인한 뒤 설치 폴더 아래의 전용 디렉터리에 준비한다. 디렉터리 이름과 exe의 SHA-256을 `clauduct.exe.update-journal`에 기록한다. 하드 링크로 기존 exe를 `clauduct.exe.old`에 보존하고 새 exe를 원래 이름에 놓는다. 하드 링크를 지원하지 않는 볼륨에서는 설치 스크립트를 사용한다.
+교체가 성공하면 이전 설치에서 남은 `clauduct-probe.exe`와 `clauduct-probe.exe.old`를 지운다. 확인 질문 전에 정리 대상을 알리고, 사용 중이라 지우지 못하면 경로를 출력한다. 해당 프로세스를 닫은 뒤 `--update`를 다시 실행할 수 있다.
 
 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이거나 읽기 전용이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여주므로 업데이트 전에 시작한 세션은 다시 시작한다.
 
-**이미 최신이면 바이너리를 교체하지 않는다.** `clauduct.exe`와 릴리스가 제공하는 `clauduct-probe.exe`의 digest가
-모두 일치하고 제거할 probe도 없으면 확인 질문 없이 `already current`를 출력한다.
+**이미 최신이면 바이너리를 교체하지 않는다.** `clauduct.exe`의 digest가 일치하고 제거할 probe 이름이 없으면
+확인 질문 없이 `already current`를 출력한다.
 같은 버전 문자열을 쓰는 빌드도 바이트가 다를 수 있다. 손으로 교체했거나 손상된 파일은 digest가 일치하지 않아 교체 대상이 된다.
 
-**교체 중 강제 종료되면 다음 실행이 이어서 처리한다.** 준비 기록을 쓰기 전에 중단됐다면 기존 쌍을 쓰고, 기록된 준비 파일이 있으면 정리를 이어간다. 준비 디렉터리가 사라졌어도 설치된 쌍이 journal 및 내장 SHA-256과 일치하면 journal을 정리한다. cleanup 기록이 남았다면 probe 불일치가 없는 경우 이미 끝난 정리로 처리한다. 식별할 기록이 없는 준비 디렉터리는 보존하며, 다음 교체에 성공하면 남은 경로를 출력한다.
-exe만 교체됐다면 내장 SHA-256이 일치하는 준비 probe를 제자리에 놓는다. probe가 없는 릴리스면 이전 probe를 정리한다. 실행 중이라 남았던 `clauduct.exe.old`는 복구가 끝난 뒤 정리한다. 정상 업데이트는 예약된 `clauduct-probe.exe.old` 이름을 비운 뒤 새 백업을 만들고, 복구는 기록으로 이번 업데이트의 백업임을 확인한 probe 링크만 정리한다.
-업데이트 기록과 SHA-256으로 확인한 준비 파일만 정리한다. 알 수 없는 준비 파일이 같은 이름을 차지하면 보존한다. 준비 파일의 출처를 확인하거나 일치하는 probe를 복구할 수 없으면 `UPDATE_RECOVERY_REQUIRED`를 출력한다. 실행 중인 Clauduct를 모두 닫고 다시 시도하거나 같은 릴리스에서 exe와 probe를 빈 설치 폴더에 함께 재설치한다. 이전 버전의 updater가 중단되어 `clauduct.exe` 자체가 없을 때도 함께 재설치한다. 다른 프로세스가 설치 잠금을 잡고 있으면 시작이나 다운로드 후 교체 시 `UPDATE_BUSY`가 표시된다. 다른 작업이 끝난 뒤 같은 명령을 다시 실행한다. 이전 exe 정리만 남은 시작은 잠금 경합 시 정리를 건너뛴다.
+**교체 중 강제 종료되면 다음 실행이 이어서 처리한다.** 교체 전 중단이면 기존 exe를 유지하고, 새 exe가 설치됐다면 기록한 SHA-256을 확인한 뒤 정리한다. 준비 디렉터리가 사라졌어도 설치된 exe가 journal과 일치하면 journal을 치운다. cleanup 기록만 남았다면 이미 결정된 정리를 마친다. v0.6.19 업데이터의 두 journal 형태도 읽는다. 옛 기록에 probe가 있으면 기록으로 확인한 준비 파일과 이전 설치의 probe를 정리한다. 실행 중이라 남았던 `clauduct.exe.old`는 복구가 끝난 뒤 정리한다.
+업데이트 기록과 SHA-256으로 준비 파일을 확인한다. 식별할 기록이 없는 준비 디렉터리는 보존하며 다음 교체에 성공하면 남은 경로를 출력한다. 준비 파일의 출처나 exe 교체 상태를 확인할 수 없으면 `UPDATE_RECOVERY_REQUIRED`를 출력한다. 실행 중인 Clauduct를 모두 닫고 다시 시도하거나 빈 설치 폴더에 `clauduct.exe`를 재설치한다.
+다른 프로세스가 설치 잠금을 잡고 있으면 시작이나 다운로드 후 교체 시 `UPDATE_BUSY`가 표시된다. 이전 exe 정리만 남은 시작은 잠금 경합 시 정리를 건너뛴다.
 
 `clauduct update`(하이픈 없음)는 이 명령이 아니다 — 그대로 클라이언트에 전달되어 **Claude Code**가
 갱신된다. 클라이언트에는 `--update` 옵션이 없으므로(2.1.274 실측) 이 이름은 아무것도 가리지 않는다.

@@ -17,9 +17,8 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 )
 
-// ExpectedProbeSHA256 is the SHA-256 of the clauduct-probe.exe built from the same source as
-// this binary (admission r2 runner.invocation). cmd/clauduct sets it from the file embedded at
-// build; empty means this build knows no probe and runs none.
+// ExpectedProbeSHA256 identifies the probe for provider-control diagnostics. Release builds
+// leave it empty and reject provider-control with PROBE_EXPECTED_UNKNOWN (#420).
 var ExpectedProbeSHA256 string
 
 // ProbeName is the probe's file name; it is only ever run from this executable's directory.

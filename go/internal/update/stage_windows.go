@@ -19,15 +19,16 @@ const (
 )
 
 type stagedPair struct {
-	Directory     string
-	Exe           string
-	Probe         string
-	PreviousProbe *fileIdentity
+	Directory string
+	Exe       string
+	// The v0.6.19 updater could also journal a probe and its old hard link.
+	Probe         string        `json:",omitempty"`
+	PreviousProbe *fileIdentity `json:",omitempty"`
 }
 
 var writeStageFile = writeSynced
 
-func stagePair(dir string, files map[string][]byte) (pair stagedPair, err error) {
+func stagePair(dir string, exe []byte) (pair stagedPair, err error) {
 	if err := refuseUnmarkedStages(dir); err != nil {
 		return pair, err
 	}
@@ -54,23 +55,9 @@ func stagePair(dir string, files map[string][]byte) (pair stagedPair, err error)
 	}()
 
 	pair.Directory = filepath.Base(work)
-	pair.Exe = Digest(files[Binaries[0]])
-	if body, ok := files[Probe]; ok {
-		pair.Probe = Digest(body)
-		probe := filepath.Join(dir, Probe)
-		previous, backup := installedFileID(probe), installedFileID(probe+".old")
-		// A link that already pointed to the previous probe is not ours to clean up.
-		if previous != nil && (backup == nil || *previous != *backup) {
-			pair.PreviousProbe = previous
-		}
-	}
-	for _, name := range []string{Binaries[0], Probe} {
-		if body, ok := files[name]; ok {
-			path := filepath.Join(work, name+stageSuffix)
-			if err = writeStageFile(path, body, &created); err != nil {
-				return pair, err
-			}
-		}
+	pair.Exe = Digest(exe)
+	if err = writeStageFile(pair.stage(dir, Binaries[0]), exe, &created); err != nil {
+		return pair, err
 	}
 	record, err := json.Marshal(pair)
 	if err != nil {
@@ -187,10 +174,13 @@ func (pair stagedPair) discard(dir string) error {
 }
 
 func (pair stagedPair) cleanup(dir string) error {
-	for _, name := range []string{Probe, Binaries[0]} {
-		if err := removeFile(pair.stage(dir, name)); err != nil {
+	if pair.Probe != "" {
+		if err := removeFile(pair.stage(dir, Probe)); err != nil {
 			return err
 		}
+	}
+	if err := removeFile(pair.stage(dir, Binaries[0])); err != nil {
+		return err
 	}
 	if err := removeFile(filepath.Join(dir, cleanupName)); err != nil {
 		return err
@@ -209,26 +199,6 @@ func removeStageDir(path string) error {
 
 type fileIdentity struct {
 	Volume, IndexHigh, IndexLow uint32
-}
-
-// A hard link retains its source file's ID after the source name is replaced.
-func installedFileID(path string) *fileIdentity {
-	name, err := syscall.UTF16PtrFromString(path)
-	if err != nil {
-		return nil
-	}
-	const shareAll = syscall.FILE_SHARE_READ | syscall.FILE_SHARE_WRITE | syscall.FILE_SHARE_DELETE
-	handle, err := syscall.CreateFile(name, 0, shareAll, nil, syscall.OPEN_EXISTING, syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
-	if err != nil {
-		return nil
-	}
-	defer syscall.CloseHandle(handle)
-	var info syscall.ByHandleFileInformation
-	if err := syscall.GetFileInformationByHandle(handle, &info); err != nil ||
-		info.FileAttributes&(syscall.FILE_ATTRIBUTE_REPARSE_POINT|syscall.FILE_ATTRIBUTE_DIRECTORY) != 0 {
-		return nil
-	}
-	return &fileIdentity{info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow}
 }
 
 func reparsePoint(info os.FileInfo) bool {

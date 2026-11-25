@@ -3,6 +3,7 @@ package update
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,8 +56,8 @@ func lockInstallation(dir string) (*os.File, error) {
 	return os.NewFile(uintptr(handle), path), nil
 }
 
-// Recover finishes an interrupted pair swap before commands can use the installation.
-func Recover(expected string, sweep bool) error {
+// Recover finishes an interrupted executable swap before commands can use the installation.
+func Recover(sweep bool) error {
 	self, err := os.Executable()
 	if err != nil {
 		return nil
@@ -64,10 +65,10 @@ func Recover(expected string, sweep bool) error {
 	if resolved, err := filepath.EvalSymlinks(self); err == nil {
 		self = resolved
 	}
-	return recoverIn(self, expected, sweep)
+	return recoverIn(self, sweep, os.Stderr)
 }
 
-func recoverIn(self, expected string, sweep bool) error {
+func recoverIn(self string, sweep bool, out io.Writer) error {
 	if !strings.EqualFold(filepath.Base(self), Binaries[0]) {
 		if sweep {
 			sweepLeftoverOf(self)
@@ -75,7 +76,6 @@ func recoverIn(self, expected string, sweep bool) error {
 		return nil
 	}
 	dir := filepath.Dir(self)
-	probe := filepath.Join(dir, Probe)
 	journal := filepath.Join(dir, journalName)
 	cleanup := filepath.Join(dir, cleanupName)
 	lockPath := filepath.Join(dir, lockName)
@@ -91,7 +91,7 @@ func recoverIn(self, expected string, sweep bool) error {
 	lock, err := lockInstallation(dir)
 	if errors.Is(err, errUpdateBusy) {
 		// An earlier launch may hold the lock just to sweep the previous image.
-		if backup && !recorded && !probeMismatch(probe, expected) && !mayExist(journal) && !mayExist(cleanup) {
+		if backup && !recorded && !mayExist(journal) && !mayExist(cleanup) {
 			return nil
 		}
 		return err
@@ -100,10 +100,10 @@ func recoverIn(self, expected string, sweep bool) error {
 		return err
 	}
 	if err != nil {
-		if mayExist(lockPath) || mayExist(journal) || mayExist(cleanup) || probeMismatch(probe, expected) {
+		if mayExist(lockPath) || mayExist(journal) || mayExist(cleanup) {
 			return recoveryError(err)
 		}
-		return nil // There is only housekeeping and no evidence of a mismatched pair.
+		return nil // Only housekeeping remains.
 	}
 	defer lock.Close()
 
@@ -122,18 +122,21 @@ func recoverIn(self, expected string, sweep bool) error {
 		switch err = pair.verify(dir); {
 		case err == nil:
 			err = pair.cleanup(dir)
-		case errors.Is(err, os.ErrNotExist) && !probeMismatch(probe, expected):
+		case errors.Is(err, os.ErrNotExist):
 			err = removeFile(cleanup)
 		}
 		if err != nil {
 			return recoveryError(err)
 		}
 	case pending:
-		if err := recoverStagedPair(self, probe, expected); err != nil {
+		if err := recoverStagedPair(self); err != nil {
 			return recoveryError(err)
 		}
-	case probeMismatch(probe, expected):
-		return recoveryError(fmt.Errorf("%s is missing or does not match the probe SHA-256 embedded in this executable", probe))
+	}
+	if pending || cleaning {
+		for _, path := range removeRetiredProbes(dir) {
+			fmt.Fprintln(out, "clauduct: leftover", path, "(close any process using it and retry --update)")
+		}
 	}
 	if pending || cleaning || sweep {
 		sweepLeftoverOf(self)
@@ -141,64 +144,33 @@ func recoverIn(self, expected string, sweep bool) error {
 	return nil
 }
 
-func recoverStagedPair(self, probe, expected string) error {
+func recoverStagedPair(self string) error {
 	dir := filepath.Dir(self)
 	pair, err := readStagedPair(dir, journalName)
 	if err != nil {
 		return err
 	}
 	if err := pair.verify(dir); err != nil {
-		if !errors.Is(err, os.ErrNotExist) || !binaryMatches(self, pair.Exe) || pair.Probe != expected {
-			return err
-		}
-		if (expected == "" && mayExist(probe)) || (expected != "" && !binaryMatches(probe, expected)) {
+		if !errors.Is(err, os.ErrNotExist) || !binaryMatches(self, pair.Exe) {
 			return err
 		}
 		return removeFile(filepath.Join(dir, journalName))
 	}
 	if mayExist(pair.stage(dir, Binaries[0])) {
-		return pair.discard(dir) // The original pair is still installed.
+		return pair.discard(dir) // The original executable is still installed.
 	}
 	if !binaryMatches(self, pair.Exe) {
-		if mayExist(self+".old") || probeMismatch(probe, expected) {
+		if mayExist(self + ".old") {
 			return fmt.Errorf("%s does not match the update journal", self)
 		}
-		return pair.discard(dir) // The rollback restored the original pair.
+		return pair.discard(dir) // The executable replacement did not finish.
 	}
 
-	if pair.Probe != expected {
-		return fmt.Errorf("staged probe SHA-256 does not match this executable")
-	}
-	if pair.Probe == "" {
-		if err := removeFile(probe); err != nil {
-			return err
-		}
-	} else {
-		if !binaryMatches(probe, expected) {
-			staged := pair.stage(dir, Probe)
-			if !mayExist(staged) {
-				return fmt.Errorf("%s is missing or does not match the probe SHA-256 embedded in this executable", probe)
-			}
-			if err := renameFile(staged, probe); err != nil {
-				return err
-			}
-		}
-		backup := probe + ".old"
-		if pair.PreviousProbe != nil {
-			if id := installedFileID(backup); id != nil && *id == *pair.PreviousProbe {
-				_ = removeFile(backup)
-			}
-		}
-	}
 	return pair.discard(dir)
 }
 
-func probeMismatch(probe, expected string) bool {
-	return expected != "" && (mayExist(probe) || mayExist(probe+".old")) && !binaryMatches(probe, expected)
-}
-
 func recoveryError(err error) error {
-	return fmt.Errorf("%w: %w; close running Clauduct processes and retry, or reinstall clauduct.exe and clauduct-probe.exe from the same release in a clean directory", errUpdateRecovery, err)
+	return fmt.Errorf("%w: %w; close running Clauduct processes and retry, or reinstall clauduct.exe in a clean directory", errUpdateRecovery, err)
 }
 
 func mayExist(path string) bool {

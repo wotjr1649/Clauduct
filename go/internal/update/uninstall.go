@@ -129,8 +129,7 @@ func UninstallIn(dir, self, statusDir, parkDir string, args []string, in io.Read
 }
 
 // survey reports which of this build's files are in the directory: the binaries, the
-// copies a 0.3.x updater left under the retired names, and the predecessors an earlier
-// --update could not delete while it was running them.
+// retired probe and 0.3.x copies, and the predecessors an earlier --update could not delete.
 func survey(dir string) (present, leftovers []string) {
 	for _, name := range append(append([]string{Probe}, Binaries...), Retired...) {
 		if isFile(filepath.Join(dir, name)) {
@@ -164,7 +163,7 @@ func remove(dir, self, parkDir string, present, leftovers []string) (parked stri
 	}
 	// Every other file is renamed aside before any is deleted. A file something holds open
 	// cannot be renamed, so a failure shows up while the installation can still be put back
-	// exactly as it was -- the probe included. Only after every rename has succeeded are the
+	// exactly as it was. Only after every rename has succeeded are the
 	// staged copies deleted, and by then nothing is left that could refuse.
 	type staged struct{ path, aside string }
 	var done []staged

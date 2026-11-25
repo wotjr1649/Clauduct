@@ -152,30 +152,18 @@ func Sums(raw []byte) map[string]string {
 	return out
 }
 
-// Probe is the provider-control diagnostic `clauduct --dev --probe provider-control` runs from
-// clauduct.exe's directory (#319, #320); no launch needs it. It is not in Binaries, because
-// releases before the one that introduced it do not carry it; a release carries it exactly
-// when its SHA256SUMS lists it, and then it is fetched, verified and replaced together with
-// clauduct.exe.
+// Probe is the provider-control diagnostic shipped from v0.6.11 through v0.6.19.
+// Update and uninstall recognize the name to clean up installations from those releases.
 const Probe = "clauduct-probe.exe"
 
-// Wanted lists the files a release's digests make part of the installation: the Binaries,
-// and the Probe when the release lists one.
-func Wanted(sums map[string]string) []string {
-	names := append([]string{}, Binaries...)
-	if _, ok := sums[Probe]; ok {
-		names = append(names, Probe)
-	}
-	return names
-}
+var retiredProbes = [...]string{Probe, Probe + ".old"}
 
-// Download fetches every wanted file and checks it, returning nothing unless all of them pass.
+// Download fetches and verifies the product binary. Additional release assets are ignored.
 func Download(ctx context.Context, client *http.Client, release Release,
 	sums map[string]string) (map[string][]byte, error) {
 
-	names := Wanted(sums)
-	files := make(map[string][]byte, len(names))
-	for _, name := range names {
+	files := make(map[string][]byte, len(Binaries))
+	for _, name := range Binaries {
 		asset, ok := release.Asset(name)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s", ErrMissingFile, name)
@@ -210,34 +198,17 @@ func Digest(body []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// NotRestoredError is a failed update whose rollback also failed for some files: the
-// installation is not as it was, and Paths are where it was left.
-type NotRestoredError struct {
-	Cause error
-	Paths []string
-}
-
-func (e *NotRestoredError) Error() string {
-	return fmt.Sprintf("%v; the previous files could not all be put back: %s", e.Cause, strings.Join(e.Paths, ", "))
-}
-
-func (e *NotRestoredError) Unwrap() error { return e.Cause }
-
 // These are the replacement and backup operations interrupted or faulted by tests.
 var renameFile = os.Rename
 var linkFile = os.Link
 
-// Apply replaces clauduct.exe in dir, together with the Probe when files carries one, and
-// puts everything back if any of it cannot be written.
+// Apply atomically replaces clauduct.exe in dir, then removes obsolete files.
 //
 // An NTFS hard-link backup keeps the running image alive while its original name is
 // replaced. Moving that name aside first would leave no way to start recovery.
-//
-// The two are a pair: clauduct.exe runs only the probe whose digest it carries, so a failure
-// on either restores both, and a file that did not exist before is removed again. Without a Probe in files, one left by an earlier release is
-// removed once clauduct.exe is replaced, as the retired copies are.
 func Apply(dir string, files map[string][]byte) (leftovers []string, err error) {
-	if _, ok := files[Binaries[0]]; !ok {
+	exe, ok := files[Binaries[0]]
+	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrMissingFile, Binaries[0])
 	}
 	lock, err := lockInstallation(dir)
@@ -247,53 +218,33 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	defer lock.Close()
 
 	self := filepath.Join(dir, Binaries[0])
-	probe := filepath.Join(dir, Probe)
-	pair, err := stagePair(dir, files)
+	pair, err := stagePair(dir, exe)
 	if err != nil {
 		return nil, err
 	}
 
-	names := []string{Binaries[0]}
-	if pair.Probe != "" {
-		names = append(names, Probe)
-	}
-	if err := replaceStaged(pair.stage(dir, Binaries[0]), self, false); err != nil {
+	if err := replaceStaged(pair.stage(dir, Binaries[0]), self); err != nil {
 		return nil, errors.Join(err, pair.discard(dir))
-	}
-	if _, ok := files[Probe]; ok {
-		if err := replaceStaged(pair.stage(dir, Probe), probe, true); err != nil {
-			if restoreErr := renameFile(self+".old", self); restoreErr != nil {
-				// Keep the verified stage if the next run needs to finish the swap.
-				return nil, &NotRestoredError{Cause: errors.Join(err, restoreErr), Paths: []string{self + ".old"}}
-			}
-			return nil, errors.Join(err, pair.discard(dir))
-		}
 	}
 
 	// The updater is running the previous executable, so its backup is still open
 	// and cannot be removed until this process exits. Reported rather than retried: a
 	// leftover is a file the user can delete, and a retry loop here would be waiting for
 	// itself.
-	for _, name := range names {
-		backup := filepath.Join(dir, name+".old")
-		if removeFile(backup) != nil {
-			leftovers = append(leftovers, backup)
-		}
+	if backup := self + ".old"; removeFile(backup) != nil {
+		leftovers = append(leftovers, backup)
 	}
 
 	// Only after clauduct.exe is the new one, so a failure above leaves a 0.3.x installation
 	// whole. A copy a session started before the update is running as its hook right now
 	// cannot go, and is reported the same way.
-	gone := Retired
-	if _, ok := files[Probe]; !ok {
-		gone = append(append([]string{}, Retired...), Probe)
-	}
-	for _, name := range gone {
+	for _, name := range Retired {
 		path := filepath.Join(dir, name)
 		if removeFile(path) != nil {
 			leftovers = append(leftovers, path)
 		}
 	}
+	leftovers = append(leftovers, removeRetiredProbes(dir)...)
 	if err := pair.discard(dir); err != nil {
 		leftover := cleanupName
 		if mayExist(filepath.Join(dir, journalName)) {
@@ -310,13 +261,23 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	return leftovers, nil
 }
 
+func removeRetiredProbes(dir string) (leftovers []string) {
+	for _, name := range retiredProbes {
+		path := filepath.Join(dir, name)
+		if removeFile(path) != nil {
+			leftovers = append(leftovers, path)
+		}
+	}
+	return leftovers
+}
+
 // Keeping another link to the old bytes lets Windows replace even a running image.
-func replaceStaged(staged, path string, optional bool) error {
+func replaceStaged(staged, path string) error {
 	backup := path + ".old"
 	if err := removeFile(backup); err != nil {
 		return fmt.Errorf("could not clear %s; close any process using it and run --update again: %w", backup, err)
 	}
-	if err := linkFile(path, backup); err != nil && !(optional && errors.Is(err, os.ErrNotExist)) {
+	if err := linkFile(path, backup); err != nil {
 		return fmt.Errorf("could not create hard-link backup %s; if this drive does not support hard links, reinstall from the release: %w", backup, err)
 	}
 	if err := renameFile(staged, path); err != nil {

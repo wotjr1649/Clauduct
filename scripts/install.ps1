@@ -15,11 +15,9 @@ $ErrorActionPreference = 'Stop'
 # (#112). The names a 0.3.x installation also had are removed once it is in place; releases
 # through v0.4.x still publish them as copies, for the 0.3.x updater that requires all three.
 #
-# Releases that list clauduct-probe.exe in SHA256SUMS ship it as the provider-control diagnostic
-# `clauduct --dev --probe provider-control` runs from clauduct.exe's directory (#319, #320); no
-# launch needs it. It is installed beside clauduct.exe as a pair (Select-Names adds it); a release
-# that does not list it removes a leftover one, because the previous release's probe belongs to
-# the previous clauduct.exe.
+# v0.6.11 through v0.6.19 list clauduct-probe.exe in SHA256SUMS. Select-Names still installs
+# those releases as a pair, including when chosen with -Tag. Starting with v0.6.20 the release
+# omits the probe and the installer removes any previous copy (#420).
 $Names    = @('clauduct.exe')
 $Retired  = @('clauduct-hook.exe', 'clauduct-dev.exe')
 $ProbeName = 'clauduct-probe.exe'
@@ -105,9 +103,7 @@ function Install-Set([string] $Source, [string] $Root) {
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $path) { Write-Host "note: $path is still running; delete it once it exits" }
     }
-    # A release without a probe (a rollback with -Tag) must not keep the probe of the release
-    # it replaces: this clauduct.exe never runs it, and an unpaired file is the state this
-    # pairing exists to avoid.
+    # Remove obsolete probe files when SHA256SUMS omits the probe, including v0.6.20 onward.
     if ($Names -notcontains $ProbeName) {
         $path = Join-Path $Root $ProbeName
         Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue

@@ -113,9 +113,9 @@ func autoModeClassifierStage(request *anthropic.Request, count bool) (string, er
 			envelope = envelope || strings.HasPrefix(block.Text, classifierContextPrefix)
 			if transcript := classifierTranscript(blocks[i:]); !envelope && transcript != nil {
 				suffix := transcript[len(transcript)-1].Text
-				// A shifted transcript needs the stage suffix to distinguish it from ordinary summaries.
+				// After an ordinary prefix, the stage suffix distinguishes the classifier from summaries.
 				envelope = classifierSuffixStage(suffix) != "" ||
-					len(transcript) == len(blocks) && strings.Contains(suffix, "<block>")
+					i == 0 && strings.Contains(suffix, "<block>")
 			}
 		}
 	}

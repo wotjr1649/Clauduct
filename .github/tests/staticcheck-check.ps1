@@ -44,16 +44,27 @@ foreach ($record in $diagnostics) {
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         $originalLine = Get-OriginalLine $location.line $diff
         if ($originalLine) {
-            # Go is formatted before this check. Also bind the line to its top-level
-            # declaration so an identical line in another function cannot inherit it.
+            # A diff can align identical code in a different block. Go is formatted
+            # before this check, so also map the less-indented line and declaration.
             $source = [IO.File]::ReadAllLines($location.file)
             $declaration = $location.line
             while ($declaration -gt 1 -and $source[$declaration - 1] -cnotmatch '^(func|var|const|type)\s') {
                 $declaration--
             }
+            $scope = $location.line
+            $indent = [regex]::Match($source[$scope - 1], '^\t*').Length
+            for ($line = $scope - 1; $line -ge $declaration; $line--) {
+                $text = $source[$line - 1]
+                if ($text.Trim() -and [regex]::Match($text, '^\t*').Length -lt $indent) {
+                    $scope = $line
+                    break
+                }
+            }
             $originalDeclaration = Get-OriginalLine $declaration $diff
+            $originalScope = Get-OriginalLine $scope $diff
             $match = $entries | Where-Object {
-                [int]$_.Line -eq $originalLine -and [int]$_.Declaration -eq $originalDeclaration
+                [int]$_.Line -eq $originalLine -and [int]$_.Declaration -eq $originalDeclaration -and
+                [int]$_.Scope -eq $originalScope
             } | Select-Object -First 1
             if ($match -and $baselineEntries.Remove($match)) { continue }
         }

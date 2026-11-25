@@ -119,7 +119,11 @@ go run ./cmd/clauduct --dev --doctor  # 소켓 없이 두 client의 설치·측�
 공개 테스트는 합성 protocol contract test(#271, `internal/protocol`의 anthropic·bridge·codex, `internal/stream`,
 `internal/wire`)와 `.github/tests/`의 argv 판정 테스트(#331)다. 유지보수자는 나머지 테스트·race·evidence 검사를
 로컬에서 돌린다. 공개 CI는 위 세 검사와 공개 테스트, `internal/httpguard`의 Linux·macOS build와 PowerShell 7
-스크립트의 AST·최소 버전을 검사한다.
+스크립트의 AST·최소 버전을 검사한다. Windows 작업은 `go/`에서 `govulncheck v1.10.0`과
+Staticcheck `2026.2.2`(`v0.8.2`, `SA*`·`U1000`)도 `./...`에 실행한다. `govulncheck`는 도달 가능한
+알려진 취약점을 찾으면 실패한다. Staticcheck는 진단 줄과 선언·블록을 원본 커밋의 소스 위치에 대응시킨다.
+파일 경로·검사 코드·메시지와 원본 위치가 일치할 때 [기준선](../.github/tests/staticcheck-baseline.csv) 항목을
+한 번 소비한다. 대응하는 기준선이 없는 진단은 실패한다. 기존 진단을 해결할 때 해당 항목도 함께 제거한다.
 
 비공개 하네스 검사의 native 기록 구조(census 항목, 하네스가 직접 실행한 명령의 기록)를 바꾸면, 실제 기록 경로(census 적용,
 하네스 handle 등록, 세대 수집)를 두 도착 순서로 거쳐 만든 기록을 판정 함수에 넣는 소비자 fixture를 함께 추가한다. 손으로 채운

@@ -369,7 +369,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	o.Args = forward
-	if !information && o.Settings == nil && resumeID == "" && resumeTarget(forward) {
+	if !information && o.Settings == nil && requiresResumeUUID(forward, resumeID) {
 		return Result{}, ErrResumeUUIDRequired
 	}
 	// One account list per session, fixed before native starts and shared by display,

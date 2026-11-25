@@ -83,12 +83,20 @@ func recoverIn(self, expected string, sweep bool) error {
 		return err
 	}
 	backup := mayExist(self + ".old")
-	if !mayExist(lockPath) && !mayExist(journal) && !mayExist(cleanup) && !backup {
+	recorded := mayExist(journal) || mayExist(cleanup)
+	if !mayExist(lockPath) && !recorded && !backup {
 		return nil
 	}
 
 	lock, err := lockInstallation(dir)
-	if errors.Is(err, errUpdateBusy) || errors.Is(err, errUpdateRecovery) {
+	if errors.Is(err, errUpdateBusy) {
+		// An earlier launch may hold the lock just to sweep the previous image.
+		if backup && !recorded && !probeMismatch(probe, expected) && !mayExist(journal) && !mayExist(cleanup) {
+			return nil
+		}
+		return err
+	}
+	if errors.Is(err, errUpdateRecovery) {
 		return err
 	}
 	if err != nil {
@@ -108,6 +116,9 @@ func recoverIn(self, expected string, sweep bool) error {
 		return recoveryError(fmt.Errorf("both %s and %s exist", journal, cleanup))
 	case cleaning:
 		pair, err := readStagedPair(dir, cleanupName)
+		if err == nil {
+			err = pair.verify(dir)
+		}
 		if err == nil {
 			err = pair.cleanup(dir)
 		}
@@ -132,6 +143,15 @@ func recoverStagedPair(self, probe, expected string) error {
 	pair, err := readStagedPair(dir, journalName)
 	if err != nil {
 		return err
+	}
+	if err := pair.verify(dir); err != nil {
+		if !errors.Is(err, os.ErrNotExist) || !binaryMatches(self, pair.Exe) || pair.Probe != expected {
+			return err
+		}
+		if (expected == "" && mayExist(probe)) || (expected != "" && !binaryMatches(probe, expected)) {
+			return err
+		}
+		return removeFile(filepath.Join(dir, journalName))
 	}
 	if mayExist(pair.stage(dir, Binaries[0])) {
 		return pair.discard(dir) // The original pair is still installed.

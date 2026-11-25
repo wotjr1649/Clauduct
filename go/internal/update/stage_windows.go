@@ -129,13 +129,17 @@ func readStagedPair(dir, recordName string) (stagedPair, error) {
 	if err := json.Unmarshal(record, &pair); err != nil {
 		return pair, fmt.Errorf("unrecognized update journal %s: %w", path, err)
 	}
-	suffix := strings.TrimPrefix(pair.Directory, stagePrefix)
-	if suffix == pair.Directory || suffix == "" || strings.Trim(suffix, "0123456789") != "" ||
+	if !isStageDirectoryName(pair.Directory) ||
 		!validSHA256(pair.Exe) || (pair.Probe != "" && !validSHA256(pair.Probe)) {
 		return pair, fmt.Errorf("unrecognized update journal %s", path)
 	}
 
-	return pair, pair.verify(dir)
+	return pair, nil
+}
+
+func isStageDirectoryName(name string) bool {
+	suffix, ok := strings.CutPrefix(name, stagePrefix)
+	return ok && suffix != "" && strings.Trim(suffix, "0123456789") == ""
 }
 
 func (pair stagedPair) verify(dir string) error {

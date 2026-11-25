@@ -351,10 +351,9 @@ doctor는 추론이나 계정 목록의 실시간 조회를 실행하지 않는�
   네트워크 경로(`\\server\share\…`)이면 junction을 만들 수 없어 `ISOLATION_LINK_TARGET_UNSUPPORTED`로 거부한다(로컬 드라이브 경로여야 한다).
 - 전용 `CLAUDE.md`의 첫 줄은 Clauduct가 쓴 import(사용자 `CLAUDE.md`를 가리키는 정확히 그 줄, 대소문자 무시)만 관리한다. 사용자가 직접 쓴 다른 import는 그대로 둔다.
 - `boundaryProfile`과 독립이다. 격리만으로는 WebFetch 사전 점검과 공식 marketplace 자동 등록이 남는다. 접속을 최소화하려면 `strict`와 함께 쓴다.
-- 대화 이력은 공유하므로 두 모드 사이에 `--resume`이 된다. 다른 모드의 supervisor에서 **실행 중인** job의 세션은 `RESUME_RUNNING_IN_OTHER_MODE`로 거부하고,
-  멈춘 세션은 허용한다. 실행 중 `/resume` 선택기와 `--continue`는 native의 것이라 이 검사를 받지 않는다. 사용자가 직접 넘기는 대화는 막지 않는다:
-  Anthropic 모델로 만든 대화를 Clauduct에서 이어 가면 그 이력이 Codex/OpenAI backend로 가고, GPT 세션을 Clauduct 없이 여는 native로 이어 가면
-  Anthropic으로 간다(격리와 무관하게 기본 모드에서도 같다).
+- 두 모드는 대화 이력을 공유한다. Clauduct에서 재개하려면 저장된 Clauduct 프로필이 있는 세션 UUID를 `--resume <UUID>`로 지정한다.
+  프로필이 없으면 `SESSION_PROFILE_MISSING`으로, 대상이 확인되지 않는 `--continue`는 `SESSION_RESUME_UUID_REQUIRED`로 거부한다.
+  다른 모드의 supervisor에서 **실행 중인** job은 `RESUME_RUNNING_IN_OTHER_MODE`로 거부한다. 실행 중 `/resume`은 [세션 pair 규칙](#현재-세션의-선택과-저장)을 따른다.
 - 다른 모드의 `agents` 목록에는 이 job이 보이지 않는다. `--bg` 안내문이 `clauduct agents`를 가리킨다.
 - NONESSENTIAL의 부작용: native auto-update, `/feedback`, release notes, PR 상태 배지, fast mode 등 availability 확인, plugin `command` source의 background 실행,
   marketplace 자동 갱신, **feature flag 조회**(Remote Control 등 flag 의존 기능, claude.ai 계정 plugin·skill 동기화)가 꺼진다.

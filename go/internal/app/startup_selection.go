@@ -358,7 +358,18 @@ func (config *ClauductSettings) selectStartup(in startupInputs, facts ModelListF
 		if facts.Source != "account" {
 			return "", "", errors.New("ACCOUNT_PRIORITY_UNAVAILABLE: only a saved model list is available; use --model and, if needed, --effort")
 		}
-		pair, reason := config.Selection.Catalogue().PriorityDefault(func(pair bridge.Pair) bool { return in.permits(pair, config.Selection) })
+		pair, reason := config.Selection.Catalogue().PriorityDefault(func(pair bridge.Pair) bool {
+			if in.maxEffort != "" {
+				effort, _, err := in.effort(pair.Model)
+				if err != nil {
+					return true // Report the selected model's invalid effort below.
+				}
+				if effort != "" {
+					pair.Effort = effort
+				}
+			}
+			return in.permits(pair, config.Selection)
+		})
 		if reason != "" {
 			return "", "", fmt.Errorf("ACCOUNT_PRIORITY_UNAVAILABLE: %s; use --model and, if needed, --effort", reason)
 		}
@@ -388,6 +399,54 @@ func (config *ClauductSettings) selectStartup(in startupInputs, facts ModelListF
 		return "", "", errNativePolicy
 	}
 	return source, effortSource, in.checkRemap(config.Selection, model, id)
+}
+
+// taskStartup uses a worker's own native dispatch flags and SessionStart directory.
+// The native's job state must bind the same UUID and this exact session link.
+func taskStartup(config ClauductSettings, launchIn startupInputs, facts ModelListFacts, spec launch.Spec, configDir, link string, env map[string]string, managed []policyDocument) func(string, string, []string) (bridge.Pair, func(bridge.Pair) bool, error) {
+	return func(session, cwd string, args []string) (bridge.Pair, func(bridge.Pair) bool, error) {
+		if args != nil && slices.Equal(args, spec.Args) {
+			return config.Startup, func(pair bridge.Pair) bool { return launchIn.permits(pair, config.Selection) }, nil
+		}
+		if args == nil || !filepath.IsAbs(cwd) || len(cwd) > 4096 {
+			return bridge.Pair{}, nil, errNativeSelection
+		}
+		var flags []string
+		ambiguous := false
+		walkNativeJobs(configDir, link, func(_ string, raw []byte) bool {
+			var job struct {
+				Session string   `json:"sessionId"`
+				Cwd     string   `json:"cwd"`
+				Flags   []string `json:"respawnFlags"`
+			}
+			if json.Unmarshal(raw, &job) != nil || job.Session != session {
+				return true
+			}
+			if flags != nil || job.Cwd != "" && !strings.EqualFold(filepath.Clean(cwd), filepath.Clean(job.Cwd)) {
+				ambiguous = true
+				return false
+			}
+			flags = job.Flags
+			return true
+		})
+		if flags == nil || ambiguous {
+			return bridge.Pair{}, nil, errNativeSelection
+		}
+		value, _ := optionValue(flags, "--settings")
+		fields, err := wire.Fields([]byte(value), nil)
+		if err != nil {
+			return bridge.Pair{}, nil, errNativeSelection
+		}
+		in, err := readStartupInputs(flags, cwd, configDir, env, fields, managed)
+		if err != nil {
+			return bridge.Pair{}, nil, err
+		}
+		task := config
+		if _, _, err := task.selectStartup(in, facts); err != nil {
+			return bridge.Pair{}, nil, err
+		}
+		return task.Startup, func(pair bridge.Pair) bool { return in.permits(pair, task.Selection) }, nil
+	}
 }
 
 // Exact backend IDs and known short names are valid launch choices. Versioned

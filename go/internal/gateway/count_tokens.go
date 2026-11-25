@@ -121,7 +121,7 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pair := bridge.Pair{Model: built.Model, Effort: built.Effort.Effort}
-	if !g.routePermitted(pair) {
+	if !g.routePermitted(r, pair) {
 		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_MODEL_POLICY")
 		return
 	}

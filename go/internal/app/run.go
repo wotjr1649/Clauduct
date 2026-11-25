@@ -369,6 +369,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	o.Args = forward
+	if !information && o.Settings == nil && resumeID == "" && resumeTarget(forward) {
+		return Result{}, ErrResumeUUIDRequired
+	}
 	// One account list per session, fixed before native starts and shared by display,
 	// routing, Agent schemas and native hooks. Help and version never fetch one.
 	var catalogue *bridge.Catalogue
@@ -451,9 +454,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	var modelSource, effortSource, startupEffort string
 	var in startupInputs
 	if !information && o.Settings == nil {
-		if resumed == nil && resumeTarget(o.Args) {
-			return Result{}, ErrResumeUUIDRequired
-		}
 		in, err = readStartupInputs(o.Args, o.Cwd, nativeConfigDirectory(o.Env, o.Cwd), o.Env, userSettings, managedDocs)
 		if err != nil {
 			return Result{}, err
@@ -771,6 +771,17 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		gw.ConfigureStartupSelection(config.Startup, func(pair bridge.Pair) bool {
 			return in.permits(pair, config.Selection)
 		})
+		if profiles != nil && !ephemeral && o.agentView() && !o.probeUnprotectedControl && strings.EqualFold(filepath.Base(exe), "claude.exe") && !o.nativeIdentityOff {
+			link := ""
+			if background != nil {
+				link = background.ID
+			} else if foreground != nil {
+				link = foreground.ID
+			}
+			if link != "" {
+				gw.ConfigureTaskStartup(taskStartup(config, in, listFacts, spec, configDir, link, o.Env, managedDocs))
+			}
+		}
 	}
 	if ephemeral {
 		// Restore provenance without enabling persistent writes for this run.

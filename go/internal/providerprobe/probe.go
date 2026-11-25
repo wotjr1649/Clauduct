@@ -8,11 +8,11 @@ package providerprobe
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"io"
 	"net/http"
 	"os"
@@ -23,9 +23,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wotjr1649/Clauduct/go/internal/app"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -1343,16 +1345,19 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		}
 		obs.ExitCodes = append(obs.ExitCodes, result.NativeExitCode)
 		deadlineElapsed := deadlineCtx.Err() != nil || !time.Now().Before(limit)
+		refused := errors.Is(err, app.ErrResumeUUIDRequired) && !result.NativeStarted && runGateway == 0 &&
+			len(obs.Turns) > 0 && c.expect(len(obs.Turns)-1) == providercert.ExpectSafeRefusal
 		runFacts := p3RunEvidence{Index: runID, Gateway: runGateway, NativeStarted: result.NativeStarted, Exit: result.NativeExitCode,
-			NativePID: nativePID, NativeCreationFiletime: nativeCreation,
+			ResumeUUIDRequired: refused,
+			NativePID:          nativePID, NativeCreationFiletime: nativeCreation,
 			NaturalExit: ctx.Err() == nil && !deadlineElapsed, CleanupFailed: result.CleanupErr != nil,
-			UnexpectedError: p3UnexpectedRunError(err, result, ctx.Err()), Window: observation}
+			UnexpectedError: !refused && p3UnexpectedRunError(err, result, ctx.Err()), Window: observation}
 		obs.Runs = append(obs.Runs, runFacts)
 		obs.UnexpectedRunError = obs.UnexpectedRunError || runFacts.UnexpectedError
 		obs.Refusals = append(obs.Refusals, result.Diagnostics.Requests.RefusedBy)
 		if err != nil {
 			obs.RunErrors = append(obs.RunErrors, err.Error())
-			if !result.NativeStarted {
+			if !result.NativeStarted && !refused {
 				obs.SpawnFailed = true
 			}
 		}
@@ -1453,6 +1458,11 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		}
 		once(first, nil, &outs[0])
 		end(i)
+		if c.Entry == p3ContinueRecover && configuration == p3Unprotected {
+			if err := w.seedControlResume(session, bridge.Pair{Model: p3RestoreModel, Effort: p3RestoreEffort}); err != nil {
+				t.Fatal(err)
+			}
+		}
 		if c.Entry == p3ContinueLegacy {
 			// A session from before profile snapshots: nothing stored for it.
 			if err := os.Remove(filepath.Join(w.home, ".clauduct", "sessions", session+".json")); err != nil && !os.IsNotExist(err) {
@@ -1465,7 +1475,7 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		once([]string{"--continue", "-p", prompt(obs.Turns[j].Canary)}, nil, &outs[1])
 		end(j)
 		after := w.sessionState(session)
-		obs.RefusalSideEffect = !before.keptBy(after)
+		obs.RefusalSideEffect = len(before.transcript) == 0 || before.profile != after.profile || !bytes.Equal(before.transcript, after.transcript)
 		obs.TranscriptAppended = len(after.transcript) - len(before.transcript)
 		n := 2
 		if c.Entry == p3ContinueRecover {
@@ -2038,8 +2048,10 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 	for i, tr := range treatment.Turns {
 		turn := providercert.Turn{Expect: c.expect(i), FailClosedAs: c.FailClosedAs, RequireRestore: c.RestoreTurn != 0 && c.RestoreTurn == i}
 		if turn.Expect == providercert.ExpectSafeRefusal {
-			turn.SafeRefusal = treatment.Session != "" && treatment.SnapshotBefore && strings.Contains(treatment.Outputs, "SESSION_RESTART_REQUIRED") &&
-				strings.Contains(treatment.Outputs, "clauduct --resume "+treatment.Session)
+			turn.SafeRefusal = treatment.Session != "" && treatment.SnapshotBefore == (c.Entry != p3ContinueLegacy) &&
+				slices.ContainsFunc(treatment.Runs, func(run p3RunEvidence) bool {
+					return run.Index == tr.run && run.ResumeUUIDRequired && !run.NativeStarted && run.Gateway == 0 && !run.CleanupFailed
+				})
 			turn.SideEffect = treatment.RefusalSideEffect
 		}
 		if turn.Expect == providercert.ExpectSafeRefusal || turn.Expect == providercert.ExpectFailClosed {
@@ -2048,10 +2060,14 @@ func p3Observation(c p3Case, treatment, control *p3Observed) providercert.Observ
 				if in.backendStarted && in.nativeRouteScope == "" {
 					integrity = true
 				}
-				if in.conversationBackend && p3BackendTurn(c, treatment.Turns, in) < 0 {
+				if !in.conversationBackend && !(turn.Expect == providercert.ExpectSafeRefusal && in.backendStarted) {
+					continue
+				}
+				attributed := p3BackendTurn(c, treatment.Turns, in)
+				if attributed < 0 {
 					integrity = true
 				}
-				if in.conversationBackend && p3BackendTurn(c, treatment.Turns, in) == i {
+				if attributed == i {
 					turn.BackendCalls++
 					if slices.Contains(in.canaries, tr.Canary.ID) {
 						turn.IntendedServed = true
@@ -2277,7 +2293,8 @@ func p3PrintFamily() []p3Case {
 			ExpectTurns: map[int]string{1: providercert.ExpectSafeRefusal}, Established: anchorA},
 		{ID: "R07m", Entry: p3ContinueRecover, Hooks: p3HooksNormal, Setup: storedA, Expect: ok, RestoreTurn: 2,
 			ExpectTurns: map[int]string{1: providercert.ExpectSafeRefusal}, Established: anchorA},
-		{ID: "R07n", Entry: p3ContinueLegacy, Hooks: p3HooksNormal, Setup: storedA, Expect: ok, RestoreTurn: 1, Established: anchorA},
+		{ID: "R07n", Entry: p3ContinueLegacy, Hooks: p3HooksNormal, Purpose: providercert.PurposeSafeRefusal, Setup: storedA, Expect: ok,
+			ExpectTurns: map[int]string{1: providercert.ExpectSafeRefusal}, Established: anchorA},
 		// Same-process state changes (SAFETY): the change is applied and the session stays
 		// correct. No suppression is claimed; the control documents whether the threat appeared.
 		{ID: "R09", Entry: p3Multi, Hooks: p3HooksNormal, Optional: true, Purpose: safety, Steps: []func(*p3World) error{storedA}, StepCheck: stored("WRONG_STORED_GATEWAY_A"), Expect: ok, Established: gotCanary("WRONG_STORED_GATEWAY_A", 1)},

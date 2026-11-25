@@ -12,6 +12,7 @@ type p3RunEvidence struct {
 	Index                  int                          `json:"index"`
 	Gateway                int64                        `json:"gateway"`
 	NativeStarted          bool                         `json:"nativeStarted"`
+	ResumeUUIDRequired     bool                         `json:"resumeUUIDRequired,omitempty"`
 	NativePID              int                          `json:"nativePid,omitempty"`
 	NativeCreationFiletime uint64                       `json:"nativeCreationFiletime,string,omitempty"`
 	Exit                   int                          `json:"exit"`

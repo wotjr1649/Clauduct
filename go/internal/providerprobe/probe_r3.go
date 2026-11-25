@@ -26,6 +26,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	conpty "github.com/wotjr1649/Clauduct/go/internal/ptydrive"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
@@ -431,6 +432,7 @@ func (w *p3World) applyPlugin(spec launch.Spec) (launch.Spec, error) {
 type p3SessionState struct {
 	profile    string
 	transcript []byte
+	path       string
 }
 
 func (w *p3World) sessionState(session string) p3SessionState {
@@ -439,8 +441,10 @@ func (w *p3World) sessionState(session string) p3SessionState {
 		sum := sha256.Sum256(raw)
 		state.profile = hex.EncodeToString(sum[:])
 	}
-	filepath.Walk(filepath.Join(w.configDir, "projects"), func(path string, info os.FileInfo, err error) error {
+	projects := filepath.Join(w.configDir, "projects")
+	filepath.Walk(projects, func(path string, info os.FileInfo, err error) error {
 		if err == nil && !info.IsDir() && filepath.Base(path) == session+".jsonl" {
+			state.path, _ = filepath.Rel(projects, path)
 			state.transcript, _ = os.ReadFile(path)
 		}
 		return nil
@@ -448,8 +452,21 @@ func (w *p3World) sessionState(session string) p3SessionState {
 	return state
 }
 
-// keptBy reports whether a later state keeps this one: the same profile snapshot, and the
-// earlier conversation still there unchanged (lines may follow it).
-func (s p3SessionState) keptBy(later p3SessionState) bool {
-	return s.profile == later.profile && bytes.HasPrefix(later.transcript, s.transcript)
+// The unprotected control's first generation bypasses the Clauduct hook. Supply a
+// profile for its real transcript so the native resume can exercise the same stored gateway.
+func (w *p3World) seedControlResume(session string, pair bridge.Pair) error {
+	state := w.sessionState(session)
+	if state.profile != "" {
+		return nil
+	}
+	if state.path == "" || len(state.transcript) == 0 {
+		return errors.New("control seed transcript missing")
+	}
+	store, err := gateway.OpenSessionProfiles(filepath.Join(w.home, ".clauduct", "sessions"))
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.Save(gateway.SessionProfile{Version: 1, ID: session, Selection: bridge.Selection{}.WithCatalogue(p3Catalogue),
+		Last: pair, Transcript: state.path})
 }

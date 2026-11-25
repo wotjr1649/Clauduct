@@ -14,22 +14,30 @@ import (
 // Only the job's current helper identifies the gateway its next worker can reach.
 func nativeJobsWithLink(config, link string) []string {
 	var jobs []string
+	walkNativeJobs(config, link, func(job string, _ []byte) bool {
+		jobs = append(jobs, job)
+		return true
+	})
+	return jobs
+}
+
+func walkNativeJobs(config, link string, visit func(job string, raw []byte) bool) {
 	if config == "" || !residentLink.MatchString(link) {
-		return jobs
+		return
 	}
 	root, err := os.OpenRoot(filepath.Join(config, "jobs"))
 	if err != nil {
-		return jobs
+		return
 	}
 	defer root.Close()
 	dir, err := root.Open(".")
 	if err != nil {
-		return jobs
+		return
 	}
 	entries, readErr := dir.ReadDir(-1)
 	closeErr := dir.Close()
 	if readErr != nil || closeErr != nil {
-		return jobs
+		return
 	}
 	slices.SortFunc(entries, func(a, b os.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
 	for _, entry := range entries {
@@ -51,9 +59,10 @@ func nativeJobsWithLink(config, link string) []string {
 		if readErr != nil || closeErr != nil || len(raw) > settingsBytes || !jobHasLink(raw, link) {
 			continue
 		}
-		jobs = append(jobs, job)
+		if !visit(job, raw) {
+			return
+		}
 	}
-	return jobs
 }
 
 func jobHasLink(raw []byte, link string) bool {

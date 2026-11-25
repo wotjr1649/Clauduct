@@ -1,6 +1,6 @@
 # v0.6.17 — 선택형 격리 모드와 세션 재개·설정 개선
 
-선택형 격리 모드를 추가하고, 기본 모드의 background 세션 재개와 계정 모델 목록 캐시, Clauduct 설정 파일 처리를 고쳤다.
+2026-11-25 출시(태그 `v0.6.17` → `cb1edf2269f19643a19b493652078818c91b8b42`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.17)). 선택형 격리 모드를 추가하고, 기본 모드의 background 세션 재개와 계정 모델 목록 캐시, Clauduct 설정 파일 처리를 고쳤다.
 
 ## 바뀐 것
 
@@ -11,18 +11,32 @@
 
 ## 출하 검사
 
-태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 결과는 발행 뒤 이 문서에 기록한다.
+태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 2.1.331의 버전과 SHA-256에 결속한 `GATE-T1` 12단계를 모두 통과했다.
+
+- `vet`, 전체 오프라인 Go 테스트, 태그 fixture `fixtures`·`fixtures-bg`, `structural`, native smoke 15행을 통과했다. 받아 온 계정 모델 목록을 쓸 수 없을 때 마지막 정상 캐시를 보존하는 오프라인 회귀 검사도 통과했다.
+- 실제 backend 표본 5종에서 `stop`·`rm` 직후 재개, 설정 파일 보존, 격리 print, 격리 background의 `rm` 뒤 재개를 확인했다. 표본 5종의 backend 예약은 총 10건이었다. 두 격리 표본은 공식 marketplace 자동 설치를 끈 합성 프로필에서 저장된 Claude 로그인 분리와 관측 대상 요청 0건을 확인했다. 비격리 로그인 대조에서는 계정 조회를 관측했고 backend 예약은 0건이었다.
+- `c1` 무과금 도구 표면 재측정에서 도구 이름 48개와 print·TUI core 24개·27개가 기준선과 일치했다. 독립 검토 결과는 `SHIP_OK_WITH_NOTES`였고 이번 측정에서 T2를 요구하는 도구 차이는 없었다.
+- 세션 잠금 대기와 격리 마커 게시·재시도가 바뀐 `internal/app`의 race 검사를 통과했다.
+
+### 출하 빌드·발행 검사
+
+- `build-release`의 두 독립 빌드가 바이트 단위로 일치했고 probe digest가 저장소의 값과 같았다.
+- 발행 전 `ship-install`에서 새 설치, v0.6.16에서 업데이트, v0.6.16으로 되돌리기, 사용자 설정과 PATH 보존을 확인했다.
+- 발행 전 `probe limit --send` 3회에서 `max_output_tokens` 상한 16·48토큰을 지켰다.
+- 발행 뒤 `verify-release`에서 GitHub 자산 5개의 API digest와 다운로드 바이트를 대조했다. `ship-update`에서 태그 설치, v0.6.16에서 갱신, `.old` 정리와 재갱신 시 `already current`를 확인했다. `ship-legacy`의 v0.3.5 호환 검사도 통과했다.
 
 ## 출하 신원
 
 | 항목 | 값 |
 |---|---|
-| 태그 | 발행 후 기록 |
-| `clauduct.exe` | 발행 후 기록 |
-| `clauduct-probe.exe` | 발행 후 기록 |
-| `install.ps1` | 발행 후 기록 |
-| `uninstall.ps1` | 발행 후 기록 |
-| `SHA256SUMS` | 발행 후 기록 |
+| 태그 | `v0.6.17` → `cb1edf2269f19643a19b493652078818c91b8b42` |
+| `clauduct.exe` | `03d72ce7b52641cb2c4909d76c0fee2c15c6ea0ed54a79b98f917500595d243a` |
+| `clauduct-probe.exe` | `15c4fd328779399b7a78f4e1b6b44bab8ed6557348fc6e9d8683efc21c21d7fa` |
+| `install.ps1` | `8911dd3c6350d02a4490250734fd7362edb7fc1e40c87891916ecbc0633c6f55` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `5547b0ec676870255702108736c2a0f9f5326a48a7cf47d143e5b374a0149fee` |
+
+Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`. native를 쓴 출하 검사는 Claude Code 2.1.331에서 실행했다.
 
 ## 알려진 제한
 

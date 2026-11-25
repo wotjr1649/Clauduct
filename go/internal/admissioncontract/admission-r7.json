@@ -260,7 +260,7 @@
     "knownCandidate": "BE06 진단(r4b build)에서 /fork의 forked agent가 Clauduct gateway의 AGENT_SELECTION_UNVERIFIED로 실패했다. 재측정에서도 같으면 FAIL_FUNCTION이다"
   },
   "caseVerdict": {
-    "rule": "r4 caseVerdict를 사례마다 그대로 쓰고, r4 strategyVerdict.order를 scope 단위로 그대로 쓴다. 대응: strategy는 scope, CERTIFIED는 ADMITTED, INCOMPATIBLE은 NOT_ADMITTED. 순서·6b·earlyStop·noRetry를 포함한다",
+    "rule": "r6 caseVerdict를 사례마다 쓰고, r6 strategyVerdict.order를 scope 단위로 그대로 쓴다. 대응: strategy는 scope, CERTIFIED는 ADMITTED, INCOMPATIBLE은 NOT_ADMITTED. 순서·6b·earlyStop·noRetry를 포함한다",
     "order": [
       "1 어느 checkpoint라도 identity가 바뀌었으면 INCONCLUSIVE(NATIVE_CHANGED_DURING_CERTIFICATION)",
       "2 어느 treatment 사례라도 FAIL_ROUTING이거나 BE 사례가 BACKGROUND_ENTRY_REACHED면 NOT_ADMITTED",
@@ -417,7 +417,7 @@
   },
   "freezeRule": "동결 시 이 파일의 SHA-256을 freeze 기록에 남긴다. 동결 뒤에는 사례 삭제, PASS 조건 완화, 관측 창 축소, required의 optional 전환을 하지 않는다. 바꿀 수 있는 것은 사례 추가와 조건 강화뿐이며, 그때 admissionContractRevision을 올리고 새 SHA로 동결한다. 예외는 하나다: dispositions 배열에 소유자 결정을 추가하거나 철회하는 것은 revision을 올려 허용한다. 측정 결과를 본 뒤의 처분은 이 경로로만 하며, 각 처분은 소유자 결정 파일을 가리킨다. 동결 전에 측정한 결과는 admission 판정에 쓰지 않는다. cache key의 admissionContractSHA256이 다르면 MISS다",
   "foregroundConditions": {
-    "rule": "결정 10의 routing·origin·profile·권한·기능 조건이다. 아래 사례는 해당 scope의 required다. background 문제로 옮겨 제외하지 않는다. 각 사례는 r4 caseVerdict(P1–P8)를 그대로 쓰고, 권한 결과는 P5-F(기능 보존)의 일부로 판정한다",
+    "rule": "결정 10의 routing·origin·profile·권한·기능 조건이다. 아래 사례는 해당 scope의 required다. background 문제로 옮겨 제외하지 않는다. 각 사례는 r6 caseVerdict(P1–P8)를 쓰고, 권한 결과는 P5-F(기능 보존)의 일부로 판정한다",
     "cases": {
       "PM01": {
         "state": "저장 gateway A 로그인(r4와 같음)",
@@ -632,13 +632,13 @@
     "mainBinary": "clauduct.exe에는 gate, cache 검증, doctor, runner 호출만 둔다. fixture role(hook wrapper, 위조 helper 등)은 probe binary에만 있다",
     "invocation": "runner는 실행 중인 clauduct.exe와 같은 디렉터리의 clauduct-probe.exe만 쓴다. PATH 탐색이나 다른 위치의 같은 이름 binary는 쓰지 않는다. clauduct.exe는 build 때 짝 probe의 기대 SHA-256을 내장한다. 호출 직전에 그 파일을 고정(PinFile)하고 SHA를 읽어 기대값과 다르면 호출하지 않는다(PROBE_EXECUTABLE_MISMATCH). gate는 entry의 probeExecutableSHA256이 내장 기대값과 같을 때만 그 entry를 쓴다",
     "privateEvidence": "추가 adversarial·release evidence와 비용이 큰 live·독립 리뷰 fixture는 비공개일 수 있으나, 그것만이 runtime admission을 만들 수 있는 근거가 되어서는 안 된다",
-    "contracts": "runner는 판정에 쓰는 계약(이 admission 계약과 routing 계약 r4)을 공개 source에 바이트 그대로 두고 go:embed로 내장한다. cache key의 두 계약 SHA는 내장본의 SHA다. 공개 build만으로 사례 목록·판정 순서·처분을 재현할 수 있어야 한다",
+    "contracts": "runner는 판정에 쓰는 계약(이 admission 계약과 routing 계약 r6)을 공개 source에 바이트 그대로 두고 go:embed로 내장한다. cache key의 두 계약 SHA는 내장본의 SHA다. 공개 build만으로 사례 목록·판정 순서·처분을 재현할 수 있어야 한다",
     "reproducibility": "처분의 적용 여부는 그 run 자신의 관측으로 정한다(아래 caseFixtureDisposition.apply). 비공개 진단 결과는 소유자 결정의 근거일 뿐, runtime admission을 만드는 근거가 아니다"
   },
   "writer": {
     "canonical": "cache entry를 쓰는 것은 probe runner 하나뿐이다",
     "manual": "clauduct --dev --probe provider-control은 수동 pre-warm이다. 같은 runner를 호출해 짧은 사례 run을 한다. --long은 그 뒤에 RP01을 별도 run으로 돈다",
-    "automatic": "정상 inference launch에서 그 scope(와 requiresScope)의 entry가 MISS이거나 stale이면, gate가 같은 runner를 자동 호출해 짧은 사례(r4 deadlines 안)를 돌린다. 그 run이 entry를 쓰고, gate는 그 entry로 다시 판정한다. 자동 경로는 RP01을 돌리지 않는다",
+    "automatic": "정상 inference launch에서 그 scope(와 requiresScope)의 entry가 MISS이거나 stale이면, gate가 같은 runner를 자동 호출해 짧은 사례(r6 deadlines 안)를 돌린다. 그 run이 entry를 쓰고, gate는 그 entry로 다시 판정한다. 자동 경로는 RP01을 돌리지 않는다",
     "doctor": "doctor는 read-only다. runner를 호출하지 않는다",
     "same": "수동과 자동 경로는 같은 runner, 같은 판정 코드, 같은 cache schema를 쓴다"
   },

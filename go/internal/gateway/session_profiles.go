@@ -718,7 +718,7 @@ func (g *Gateway) registerSessionProfile(session, source, cwd string, process pr
 	pair, permits := p.startup, g.startup.main.permits
 	verify := g.startup.main.pair != (bridge.Pair{})
 	if source == "startup" && g.startup.resolve != nil {
-		pair, permits, err = g.startup.resolve(session, cwd, g.nativeArguments(process))
+		pair, permits, err = g.startup.resolve(session, cwd, NativeProcess{PID: process.pid, Created: process.created})
 		if err != nil {
 			return errStartupSelection
 		}

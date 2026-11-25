@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -403,12 +404,15 @@ func (config *ClauductSettings) selectStartup(in startupInputs, facts ModelListF
 
 // taskStartup uses a worker's own native dispatch flags and SessionStart directory.
 // The native's job state must bind the same UUID and this exact session link.
-func taskStartup(config ClauductSettings, launchIn startupInputs, facts ModelListFacts, spec launch.Spec, configDir, link string, env map[string]string, managed []policyDocument) func(string, string, []string) (bridge.Pair, func(bridge.Pair) bool, error) {
-	return func(session, cwd string, args []string) (bridge.Pair, func(bridge.Pair) bool, error) {
-		if args != nil && slices.Equal(args, spec.Args) {
+func taskStartup(config ClauductSettings, launchIn startupInputs, facts ModelListFacts, foreground func(gateway.NativeProcess) bool, configDir, link string, env map[string]string, managed []policyDocument) func(string, string, gateway.NativeProcess) (bridge.Pair, func(bridge.Pair) bool, error) {
+	return func(session, cwd string, native gateway.NativeProcess) (bridge.Pair, func(bridge.Pair) bool, error) {
+		if native.PID <= 1 || native.Created <= 0 {
+			return bridge.Pair{}, nil, errNativeSelection
+		}
+		if foreground != nil && foreground(native) {
 			return config.Startup, func(pair bridge.Pair) bool { return launchIn.permits(pair, config.Selection) }, nil
 		}
-		if args == nil || !filepath.IsAbs(cwd) || len(cwd) > 4096 {
+		if !filepath.IsAbs(cwd) || len(cwd) > 4096 {
 			return bridge.Pair{}, nil, errNativeSelection
 		}
 		var flags []string

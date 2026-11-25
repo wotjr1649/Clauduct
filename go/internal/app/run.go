@@ -197,6 +197,8 @@ type Result struct {
 	HandedOver []string
 	// Diagnostic identity of the native auth query; never an inference identity.
 	nativeProviderQuery childprocess.ProcessIdentity
+	// A short-lived auth query can exit before its identity is read.
+	nativeProviderCheckEntered bool
 }
 
 // ExitCodeUnknown is NativeExitCode when the child was never reaped.
@@ -372,6 +374,22 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if !information && o.Settings == nil && requiresResumeUUID(forward, resumeID) {
 		return Result{}, ErrResumeUUIDRequired
 	}
+	var in startupInputs
+	if !information && o.Settings == nil {
+		in, err = readStartupInputs(o.Args, o.Cwd, nativeConfigDirectory(o.Env, o.Cwd), o.Env, userSettings, managedDocs)
+		if err != nil {
+			return Result{}, err
+		}
+		if resumeID == "" {
+			effort, _, err := in.explicitEffort()
+			if err != nil {
+				return Result{}, err
+			}
+			if effort != "" && !bridge.TransmittableEffort(effort) {
+				return Result{}, fmt.Errorf("%w: invalid explicit effort", bridge.ErrUnsupportedRoute)
+			}
+		}
+	}
 	// One account list per session, fixed before native starts and shared by display,
 	// routing, Agent schemas and native hooks. Help and version never fetch one.
 	var catalogue *bridge.Catalogue
@@ -412,6 +430,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if !information && o.Settings == nil && o.Regenerate == nil && providerFlag == "" && !o.probeUnprotectedControl && nativeBefore != nil && strings.EqualFold(filepath.Base(exe), "claude.exe") {
 		var query childprocess.ProcessIdentity
 		defer func() { result.nativeProviderQuery = query }()
+		defer func() { result.nativeProviderCheckEntered = true }()
 		if err := checkNativeProvider(ctx, exe, o, &query); err != nil {
 			return Result{Category: CategoryRouting, NativeExitCode: ExitCodeUnknown}, err
 		}
@@ -452,12 +471,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	}
 
 	var modelSource, effortSource, startupEffort string
-	var in startupInputs
 	if !information && o.Settings == nil {
-		in, err = readStartupInputs(o.Args, o.Cwd, nativeConfigDirectory(o.Env, o.Cwd), o.Env, userSettings, managedDocs)
-		if err != nil {
-			return Result{}, err
-		}
 		if resumed == nil {
 			modelSource, effortSource, err = config.selectStartup(in, listFacts)
 			if err != nil {

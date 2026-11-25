@@ -239,11 +239,14 @@ func (config ClauductSettings) sessionRequirements() map[string]string {
 	for _, key := range []string{"DISABLE_LOGIN_COMMAND", "DISABLE_LOGOUT_COMMAND", "DISABLE_UPGRADE_COMMAND", "DISABLE_EXTRA_USAGE_COMMAND", "DISABLE_INSTALL_GITHUB_APP_COMMAND"} {
 		values[key] = "1"
 	}
-	if config.BoundaryProfile == boundaryStrict {
-		values[nonessentialTraffic] = "1" // #301: a settings file must not turn it back on
-		if config.marketplace != "" {
-			values[marketplaceInstall] = config.marketplace // the user's value, kept (strictReady)
-		}
+	if config.BoundaryProfile == boundaryStrict || config.Isolated() {
+		values[nonessentialTraffic] = "1" // #301, #379: a settings file must not turn it back on
+	}
+	if config.pluginCacheRoot != "" {
+		values[pluginCacheDirEnv] = config.pluginCacheRoot
+	}
+	if config.BoundaryProfile == boundaryStrict && config.marketplace != "" {
+		values[marketplaceInstall] = config.marketplace // the user's value, kept (strictReady)
 	}
 	return values
 }

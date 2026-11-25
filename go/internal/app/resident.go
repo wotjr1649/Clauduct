@@ -26,12 +26,17 @@ type ResidentRecord struct {
 	Job  string `json:"job"`
 	// Session is Job's native session from its state; the regenerated resident resumes it.
 	// Empty while the job state has no valid session ID.
-	Session   string   `json:"session,omitempty"`
-	Port      int      `json:"port"`
-	PluginDir string   `json:"pluginDir,omitempty"`
-	Cwd       string   `json:"cwd"`
-	Config    string   `json:"config,omitempty"`
-	Args      []string `json:"args"`
+	Session   string `json:"session,omitempty"`
+	Port      int    `json:"port"`
+	PluginDir string `json:"pluginDir,omitempty"`
+	Cwd       string `json:"cwd"`
+	Config    string `json:"config,omitempty"`
+	// Isolated and Source (#379): the job runs on the dedicated config folder built from Source,
+	// whatever the settings say when it is regenerated.
+	Isolated        bool     `json:"isolated,omitempty"`
+	Source          string   `json:"source,omitempty"`
+	PluginCacheRoot string   `json:"pluginCacheRoot,omitempty"`
+	Args            []string `json:"args"`
 	// AbsentObserved is used only if M1 requires absence across separate executions.
 	AbsentObserved bool `json:"absentObserved,omitempty"`
 	// Jobs are the other native jobs on this link: dispatched from its agent view, they share
@@ -55,7 +60,10 @@ func residentPath(home, link string) string {
 
 func (r ResidentRecord) check() error {
 	if !residentLink.MatchString(r.Link) || !residentJob.MatchString(r.Job) || r.Session != "" && !gateway.IsSessionUUID(r.Session) || r.Port < 1 || r.Port > 65535 || !filepath.IsAbs(r.Cwd) ||
-		r.Config != "" && !filepath.IsAbs(r.Config) || r.PluginDir != "" && !eventsDirValid(r.PluginDir) || len(r.Proved) > gateway.MaxRoutingProofs {
+		r.Config != "" && !filepath.IsAbs(r.Config) || r.Source != "" && !filepath.IsAbs(r.Source) || r.Isolated && r.Source == "" || r.PluginDir != "" && !eventsDirValid(r.PluginDir) || len(r.Proved) > gateway.MaxRoutingProofs {
+		return errors.New("RESIDENT_RECORD_INVALID")
+	}
+	if r.PluginCacheRoot != "" && (!r.Isolated || !filepath.IsAbs(r.PluginCacheRoot)) {
 		return errors.New("RESIDENT_RECORD_INVALID")
 	}
 	for _, job := range r.Jobs {
@@ -219,6 +227,15 @@ func RegenerableJob(link string) (string, bool) {
 	}
 	r, err := LoadResident(home, link)
 	return r.Job, err == nil
+}
+
+// sessionConfig is the config folder the record's jobs live in. A job on the isolated folder keeps
+// it in the record; a hook's environment is only a fallback for the others, as before.
+func (r ResidentRecord) sessionConfig(env map[string]string) string {
+	if r.Isolated && r.Config != "" {
+		return r.Config
+	}
+	return nativeConfigDirectory(env, r.Cwd)
 }
 
 func (r ResidentRecord) ownsSession(config, session string) bool {

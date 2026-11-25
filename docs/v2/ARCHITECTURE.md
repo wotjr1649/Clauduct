@@ -147,7 +147,7 @@ native 명령을 사용한다. 연결 식별자는 인증 토큰이 아니다. �
 | Anthropic endpoint·인증 선택 | gateway 연결로 일관되게 정리. 원래 Anthropic credential이 gateway·Codex로 새지 않게 한다 |
 | cloud provider 선택(native 목록 7종: `CLAUDE_CODE_USE_BEDROCK`·`_VERTEX`·`_FOUNDRY`·`_ANTHROPIC_AWS`·`_ANTHROPIC_GOOGLE_CLOUD`·`_MANTLE`·`_GATEWAY`) | 상속하지 않고, 설정 env에서는 빈 값으로 덮는다. native는 provider를 모든 credential보다 먼저 고른다(#295). 같은 접두어의 다른 옵션(`CLAUDE_CODE_USE_POWERSHELL_TOOL` 등)은 그대로 둔다 |
 | `GITHUB_TOKEN`·AWS/service key·MCP secret | 무차별 삭제하지 않는다. native child 환경에서만 보존 |
-| `CLAUDE_CONFIG_DIR` | 사용자의 명시적 선택을 보존. 기본 별도 프로필을 강제하지 않는다 |
+| `CLAUDE_CONFIG_DIR` | 사용자의 명시적 선택을 보존. 기본 별도 프로필을 강제하지 않는다. 격리 모드(`isolation: "on"`, v0.6.14)에서만 Clauduct 전용 폴더를 강제하고, 사용자의 값은 그 폴더를 만드는 원본으로 쓴다([SETTINGS.md](SETTINGS.md#격리-모드-v0614)) |
 | `CLAUDE_CODE_DISABLE_FAST_MODE` | v0.6.13의 세션 기본값 `1`. native fast mode와 `penguin_mode` 확인을 끈다. 사용자 셸·native settings env 값이 우선한다. native 2.1.321의 print·TUI·`--bg`에서 확인했다 |
 | proxy·CA 설정 | 신뢰된 사용자 네트워크 구성으로 취급. TLS 검증 완화는 하지 않는다. 다만 `NO_PROXY`에 loopback(`127.0.0.1`·`localhost`·`::1`)을 더해 평문 gateway 요청이 proxy를 거치지 않게 한다(#295) |
 | bridge 내부 run-id·port·token | 자기 프로세스와 child에 필요한 범위만 |

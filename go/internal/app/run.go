@@ -192,6 +192,8 @@ type Result struct {
 	// NativeReplaced is whether claude.exe changed on disk while this session ran:
 	// an updater ran meanwhile, from this native or another process (#229).
 	NativeReplaced bool
+	// Isolation is set when the session ran on the isolated config folder (#379).
+	Isolation *IsolationFacts
 	// HandedOver names the jobs an agent view session's gateway stayed for after native ended.
 	HandedOver []string
 	// Diagnostic identity of the native auth query; never an inference identity.
@@ -268,9 +270,15 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		defer func() { reportForegroundEventsCleanup(o.Stderr, collectForegroundEvents(clauductHome)) }()
 	}
 	if command := nativeControl(o.Args); command != "" && o.Regenerate == nil {
+		if err := o.controlIsolation(clauductHome); err != nil {
+			return Result{}, err
+		}
 		return runNativeControl(ctx, o, command)
 	}
 	config := defaultClauductSettings()
+	var isolation *IsolationFacts
+	var managedDocs []policyDocument
+	roleConfig := "" // the user's own config folder when isolated: product readers walk it directly
 	// Before anything is fetched or bound: a machine policy that can move model requests off
 	// the gateway is one this launcher cannot outrank (#295). Help and version send none.
 	if !information {
@@ -278,6 +286,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if err := managedRouting(docs, readErr); err != nil {
 			return Result{}, err
 		}
+		managedDocs = docs
 		if providerFlag != "" || !BackgroundRequested(o.Args) && !o.agentView() {
 			// The foreground's agent-view restriction holds against machine policy too.
 			if err := managedAgentViewOverride(docs); err != nil {
@@ -304,6 +313,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if config, err = config.strictReady(o.Env); err != nil {
 			return Result{}, err
 		}
+		if isolation, roleConfig, err = o.applyIsolation(&config, clauductHome, managedDocs); err != nil {
+			return Result{}, err
+		}
 	}
 	forward, userSettings, settingsSlots, err := config.takeUserSettings(o.Args, o.Cwd)
 	if err != nil {
@@ -322,6 +334,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	forward, resumeID := prepareSessionArgs(forward)
+	if !information && o.Settings == nil {
+		if err := o.resumeGuard(isolation, clauductHome, resumeID); err != nil {
+			return Result{}, err
+		}
+	}
 	forkedFrom := ""
 	releaseResident := func() {}
 	residentLocked := false
@@ -470,7 +487,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	gw.ExpectTools(expectedTools(o.Args, upstream.ReferenceCoreTools))
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
 		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource, ClassifierFinding: classifierFinding,
-		ModelList: listFacts, DeprecatedSettings: config.Deprecated}
+		ModelList: listFacts, DeprecatedSettings: config.Deprecated, Isolation: isolation}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -646,6 +663,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	configDir := nativeConfigDirectory(o.Env, o.Cwd)
+	if roleConfig == "" {
+		roleConfig = configDir
+	}
 	if userSettings != nil {
 		if settings == "" {
 			settings = "{}"
@@ -712,9 +732,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if o.agentView() {
 			cli.readFlagEnv([]byte(finalSettings))
 		}
-		cli.subagent = sync.OnceValues(func() (string, error) { return subagentModel(configDir, o.Cwd, managedRoot(), cli, o.Env) })
+		cli.subagent = sync.OnceValues(func() (string, error) { return subagentModel(roleConfig, o.Cwd, managedRoot(), cli, o.Env) })
 		gw.ConfigureRoleDefaults(func(role string, parent bridge.Route) (bridge.Route, bool, error) {
-			sources := sessionRoleSources(configDir, o.Cwd, cli, o.Env, role)
+			sources := sessionRoleSources(roleConfig, o.Cwd, cli, o.Env, role, config.pluginCacheRoot)
 			sources.selection = config.Selection
 			return sources.resolve(role, parent)
 		})
@@ -836,12 +856,12 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		backgroundCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		bp := &backgroundProcess{Process: process, link: background, ctx: backgroundCtx, cancel: cancel,
-			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr, forkedFrom: forkedFrom, crash: o.backgroundCrash}
+			exe: exe, cwd: o.Cwd, config: configDir, env: backgroundControlEnv(spec.Env), output: &dispatchOutput, ready: o.BackgroundReady, stdout: o.Stdout, stderr: o.Stderr, forkedFrom: forkedFrom, crash: o.backgroundCrash, isolated: isolation != nil}
 		if o.Regenerate != nil {
 			record := *o.Regenerate
 			bp.job, bp.record = record.Job, &record
 		} else if clauductHome != "" && o.Settings == nil && residentLocked {
-			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
+			bp.record = &ResidentRecord{Link: background.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Isolated: isolation != nil, Source: isolationSourceOf(isolation), PluginCacheRoot: config.pluginCacheRoot, Cwd: o.Cwd, Args: residentArgs(launchArgs)}
 		}
 		bp.home = clauductHome
 		if foreground != nil {
@@ -878,7 +898,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 		if resident == nil {
 			resident = &backgroundProcess{config: configDir, home: clauductHome, proved: gw.ProvedNativeProcesses, sessionNatives: gw.SessionNatives,
-				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
+				record: &ResidentRecord{Link: foreground.ID, Port: residentPort(gw.Addr()), PluginDir: nativePlugin, Config: configDir, Isolated: isolation != nil, Source: isolationSourceOf(isolation), PluginCacheRoot: config.pluginCacheRoot, Cwd: o.Cwd, Args: append(residentArgs(launchArgs), "--bg")}}
 		}
 		err := resident.checkpointForeground()
 		retainPlugin = err != nil

@@ -32,6 +32,9 @@ type BackgroundSession struct {
 	PID          int    `json:"pid"`
 	// ForkedFrom is the session a --resume <id> --fork-session --bg job copied, unchanged by it.
 	ForkedFrom string `json:"forkedFrom,omitempty"`
+	// Isolated is set for a job on the isolated config folder: native's own agents list shows only the
+	// default folder's jobs, so the manage hint names clauduct instead (#379).
+	Isolated bool `json:"isolated,omitempty"`
 }
 
 // BackgroundRequested recognizes exact background tokens anywhere so a native job keeps its gateway (#331).
@@ -188,6 +191,7 @@ type backgroundProcess struct {
 	linkScopedStops   bool
 	crashed           bool // the test crash ended the wait: the record stays, as after a real death
 	unlisted          bool // The Run cleanup removes the directory before the record.
+	isolated          bool // the job runs on the isolated config folder
 }
 
 // noDispatch stands in for the dispatch process of a regenerated resident.
@@ -524,11 +528,11 @@ func (p *backgroundProcess) Wait() (result error) {
 	}
 	releaseProfiles()
 	if p.ready != nil {
-		if err := p.ready(BackgroundSession{JobID: id, ConnectionID: p.link.ID, PID: os.Getpid(), ForkedFrom: p.forkedFrom}); err != nil {
+		if err := p.ready(BackgroundSession{JobID: id, ConnectionID: p.link.ID, PID: os.Getpid(), ForkedFrom: p.forkedFrom, Isolated: p.isolated}); err != nil {
 			return errors.Join(err, stopNative())
 		}
 	} else {
-		fmtBackground(p.stdout, BackgroundSession{JobID: id, ConnectionID: p.link.ID, ForkedFrom: p.forkedFrom})
+		fmtBackground(p.stdout, BackgroundSession{JobID: id, ConnectionID: p.link.ID, ForkedFrom: p.forkedFrom, Isolated: p.isolated})
 	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
@@ -778,7 +782,11 @@ func fmtBackground(out io.Writer, s BackgroundSession) {
 		io.WriteString(out, "Forked from session "+s.ForkedFrom+": the job continues a new session that starts from its conversation; "+s.ForkedFrom+" itself is unchanged\n")
 	}
 	io.WriteString(out, "Clauduct connection: "+s.ConnectionID+"\n")
-	io.WriteString(out, "Manage with claude agents; remove with clauduct rm "+s.JobID+"; end this connection with clauduct --background-stop "+s.ConnectionID+"\n")
+	manage := "claude agents"
+	if s.Isolated {
+		manage = "clauduct agents" // this job is not in the default folder's agents list
+	}
+	io.WriteString(out, "Manage with "+manage+"; remove with clauduct rm "+s.JobID+"; end this connection with clauduct --background-stop "+s.ConnectionID+"\n")
 }
 
 // Control commands get neither a session gateway nor its options or credential.

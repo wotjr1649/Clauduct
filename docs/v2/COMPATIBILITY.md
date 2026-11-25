@@ -1346,3 +1346,31 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
 3. **구현·지원 범위가 바뀌면 같은 변경에서 해당 행을 갱신한다.** 근거가 없는 완료 표현, 버전 일치만으로 `검증 완료` 처리, 단위 검사를 실제 TUI로 표시하는 변경은 하지 않는다.
 4. **실패를 재실행 성공으로 덮지 않는다.** 최초 실패·원인·수정·검증을 연결하고, 미지원/미검증/실행 조건 실패를 구분한다. 정상 종료 코드만으로 기능 합격을 선언하지 않는다.
 5. **추가 구현 전 남은 사실을 확인한다.** 진행 관측·TUI 대기 통합·독립 계획의 중복 방지 재개는 위 범위에서 구현했다. 다른 실행 모드·범용 스크립트 재개·의미상 성공 판정·모든 경계/멀티모달/성능의 검증은 남아 있다. 원본 사용자 세션이나 전역 설정을 문서 작업 때문에 변경하지 않는다.
+
+### 서버 경계 원장 — 격리 모드 (v0.6.14)
+
+`isolation: "on"`([SETTINGS.md](SETTINGS.md#격리-모드-v0614), [#379](https://github.com/wotjr1649/Clauduct/issues/379))에서 위 원장의 행이 달라지는 것만 적는다.
+`MEASURE`로 표시한 서버 경계는 격리 모드 계측을 통과하면 확정한다.
+
+| 기능 | 격리 켜짐 | 근거 |
+|---|---|---|
+| print·TUI·background dispatch 및 전용 supervisor의 telemetry·feature flag 조회 | 계측 표본 0건(목표 `NATIVE_DISABLED`) | [#379](https://github.com/wotjr1649/Clauduct/issues/379)의 v0.6.17 통합 후보 `fc74ef59a`와 native 2.1.331에서 print·TUI·background 표본을 계측했다. 해당 측정 창에서 event logging과 eval/feature flag 요청은 각각 0건이었다 |
+| 저장된 Claude login의 계정 조회(bootstrap·oauth/profile) | `MEASURE`(목표 `NATIVE_DISABLED`) | 전용 폴더에 login을 옮기지 않는다. 같은 후속 실측에서 0건 |
+| 시작 때 quota 확인(spare 세션의 1토큰 `/v1/messages`) | `MEASURE` | 정적 근거만: native 2.1.321의 확인 함수 첫 분기가 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`를 검사한다. 실측 전 |
+| MCP registry 목록·native 자동 업데이트·release notes·marketplace 자동 갱신 | `NATIVE_DISABLED` 목표 | NONESSENTIAL(공식 env 문서). `strict`와 같은 효과 |
+| claude.ai 계정 plugin·skill 동기화 | `NATIVE_DISABLED` 목표 | feature flag 조회 off, 전용 폴더에 login 없음 |
+| WebFetch 사전 domain 점검, 공식 marketplace 자동 등록 | `ALLOWED_EGRESS`(불변) | 격리가 끄지 않는다. `strict`와 함께 쓴다 |
+| 사용자 자산(CLAUDE.md·agents·skills·commands·plugin·user MCP·transcript) | `LOCAL_NATIVE` | Windows 링크와 파생 파일로 같은 자산을 읽는다. `CLAUDE.md`는 공식 `@` import, 플러그인 루트는 공식 `CLAUDE_CODE_PLUGIN_CACHE_DIR`를 사용한다 |
+| 사용자가 Clauduct 없이 연 native, 같은 폴더를 직접 연 native | `OUT_OF_SCOPE` | 보장 밖 |
+
+격리의 알려진 제한
+
+- `agents`, `skills`, `commands`, `rules`, `output-styles`, `workflows`, `themes`, `agent-memory`, `plans`, `tasks`, `todos`, `projects`, `file-history`, `paste-cache`는
+  Windows junction으로 공유하고 `history.jsonl`은 hard link로 공유한다. 이 설정 폴더의 링크 동작은 native의 공식 문서에 명시되어 있지 않다.
+  [CLAUDE.md import](https://code.claude.com/docs/en/memory#import-additional-files) · [플러그인 루트](https://code.claude.com/docs/en/plugins/loading#find-plugins-on-disk)
+- Claude 로그인이 들어 있는 원본 `.credentials.json`은 링크하거나 복사하지 않는다. OAuth가 필요한 원격 MCP 서버는 격리 세션의 `/mcp`에서 서버별로 한 번 인증한다.
+  [원격 MCP 인증](https://code.claude.com/docs/en/mcp#authenticate-with-remote-mcp-servers)
+- MCP 정의는 전용 `.claude.json`에 미러링된다. 지원되는 필드의 `${VAR}` 확장 또는 `headersHelper`로 비밀값을 제공한다. 값을 정의에 평문으로 넣으면
+  전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`·hook 값도 전용 파일에 복제된다. 비밀은 실행 환경에서
+  제공하고 지원되는 곳에서 환경 변수로 참조한다.
+  [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)

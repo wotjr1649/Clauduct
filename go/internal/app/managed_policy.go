@@ -114,6 +114,28 @@ func managedRouting(docs []policyDocument, readErr error) error {
 	return nil
 }
 
+// Managed policy outranks launch settings. Refuse a different plugin root rather than
+// read agent definitions from a registry other than the one native will use.
+func managedIsolationPluginRoot(docs []policyDocument, root, cwd string) error {
+	for _, doc := range docs {
+		value, found, err := settingsEnvironment([]byte(doc.JSON), pluginCacheDirEnv)
+		if err != nil {
+			return fmt.Errorf("%w: %s has an unreadable plugin cache setting", errPolicyUnreadable, doc.Source)
+		}
+		if !found {
+			continue
+		}
+		if value != "" {
+			resolved, err := nativePluginRootPath(value, cwd)
+			if err == nil && sameFolder(resolved, root) {
+				continue
+			}
+		}
+		return fmt.Errorf("ISOLATION_PLUGIN_CACHE_POLICY: %s overrides %s with a different plugin root; nothing was started", doc.Source, pluginCacheDirEnv)
+	}
+	return nil
+}
+
 // routingKey names the first routing key a settings document sets, or "" for none. It
 // reports false for a document it cannot read, which the caller does not take as none.
 func routingKey(document string) (string, bool) {

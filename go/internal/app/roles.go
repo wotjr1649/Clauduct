@@ -565,7 +565,7 @@ func managedRoot() string {
 	return "/etc/claude-code"
 }
 
-func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string, role string) roleSources {
+func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string, role, pluginRoot string) roleSources {
 	plugins := append([]string(nil), cli.plugins...) // appended to below; cli is shared across calls
 	s := roleSources{cli: cli.defs, err: cli.err}
 	// Native's platform directories; no invented environment override.
@@ -605,7 +605,10 @@ func sessionRoleSources(config, cwd string, cli cliRoles, env map[string]string,
 	if !strings.Contains(role, ":") {
 		return s
 	}
-	installed, err := installedRolePlugins(config, projectDirs, managed, cli.source)
+	if pluginRoot == "" {
+		pluginRoot = filepath.Join(config, "plugins")
+	}
+	installed, err := installedRolePlugins(config, pluginRoot, projectDirs, managed, cli.source)
 	if err != nil {
 		s.pluginError = err
 	}
@@ -701,7 +704,7 @@ func pluginManifestDirectories(dir string) ([]roleDirectory, error) {
 // or MCP configuration is run by this loader. Native remains the execution owner.
 // Settings of a source --setting-sources excludes enable nothing (measured on 2.1.283 for
 // user and project).
-func installedRolePlugins(config string, projects []string, managed string, source func(string) bool) ([]string, error) {
+func installedRolePlugins(config, pluginRoot string, projects []string, managed string, source func(string) bool) ([]string, error) {
 	var settings []string
 	if source("user") {
 		settings = append(settings, filepath.Join(config, "settings.json"))
@@ -734,7 +737,7 @@ func installedRolePlugins(config string, projects []string, managed string, sour
 	if len(enabled) == 0 {
 		return nil, nil
 	}
-	raw, err := boundedRoleFile(filepath.Join(config, "plugins", "installed_plugins.json"))
+	raw, err := boundedRoleFile(filepath.Join(pluginRoot, "installed_plugins.json"))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}

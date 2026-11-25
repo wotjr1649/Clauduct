@@ -1,0 +1,316 @@
+package app
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+	"unicode/utf16"
+	"unsafe"
+)
+
+// The filesystem links shared with the user's configuration (#379). Native shares its plugin
+// root through CLAUDE_CODE_PLUGIN_CACHE_DIR, leaving account-synced plugins in its configuration.
+type sharedKind int
+
+const (
+	sharedJunction sharedKind = iota // a directory junction to the same name in the user's folder
+	sharedHardLink                   // a file hard link (a junction cannot name a file)
+)
+
+type sharedEntry struct {
+	name string
+	kind sharedKind
+}
+
+var sharedEntries = []sharedEntry{
+	{"rules", sharedJunction}, {"agents", sharedJunction}, {"commands", sharedJunction},
+	{"skills", sharedJunction}, {"output-styles", sharedJunction},
+	{"workflows", sharedJunction}, {"themes", sharedJunction}, {"agent-memory", sharedJunction},
+	{"plans", sharedJunction}, {"tasks", sharedJunction}, {"todos", sharedJunction},
+	{"projects", sharedJunction}, {"file-history", sharedJunction}, {"paste-cache", sharedJunction},
+	{"history.jsonl", sharedHardLink},
+}
+
+// ErrIsolationLink refuses a shared name that is already something else in the dedicated folder.
+// Nothing there is moved or deleted: it may be the user's data.
+type ErrIsolationLink struct{ Name string }
+
+func (e ErrIsolationLink) Error() string {
+	return fmt.Sprintf("ISOLATION_LINK_CONFLICT: %s in the isolated configuration folder is not the link isolated mode makes; nothing was changed", e.Name)
+}
+
+// linkReport says what is shared, by name only.
+type linkReport struct {
+	Shared  []string
+	History string // "linked", "absent" (nothing to link yet) or "unlinked" (a separate file)
+}
+
+const (
+	fsctlSetReparsePoint = 0x000900A4
+	ioReparseTagMount    = 0xA0000003
+)
+
+var setFileInformationByHandle = syscall.NewLazyDLL("kernel32.dll").NewProc("SetFileInformationByHandle")
+
+// Remove only the old junction itself. Read its substitute name and mark that same handle for
+// deletion, without allowing another open to retarget it between the check and the deletion.
+func removeLegacyPluginJunction(dedicated, source string) error {
+	path := filepath.Join(dedicated, "plugins")
+	name, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	const deleteAccess = 0x00010000
+	var h syscall.Handle
+	for try := 0; ; try++ {
+		h, err = syscall.CreateFile(name, deleteAccess, 0, nil, syscall.OPEN_EXISTING,
+			syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if !errors.Is(err, errSharingViolation) || try == 40 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if err != nil {
+		return err
+	}
+	defer syscall.CloseHandle(h)
+	var buf [syscall.MAXIMUM_REPARSE_DATA_BUFFER_SIZE]byte
+	var size uint32
+	conflict := ErrIsolationLink{"plugins"}
+	err = syscall.DeviceIoControl(h, syscall.FSCTL_GET_REPARSE_POINT, nil, 0, &buf[0], uint32(len(buf)), &size, nil)
+	if err != nil || size < 16 || binary.LittleEndian.Uint32(buf[:4]) != ioReparseTagMount {
+		return conflict
+	}
+	start := 16 + int(binary.LittleEndian.Uint16(buf[8:10]))
+	n := int(binary.LittleEndian.Uint16(buf[10:12]))
+	if start%2 != 0 || n%2 != 0 || start+n > int(size) {
+		return conflict
+	}
+	target := make([]uint16, n/2)
+	for i := range target {
+		target[i] = binary.LittleEndian.Uint16(buf[start+2*i:])
+	}
+	to, local := strings.CutPrefix(string(utf16.Decode(target)), `\??\`)
+	from, pathErr := junctionTarget(filepath.Join(source, "plugins"))
+	if source == "" || pathErr != nil || !local || !sameFolder(to, from) {
+		return conflict
+	}
+	if osIsolationHosts.lockOwner(dedicated) != 0 {
+		return fmt.Errorf("ISOLATION_PLUGIN_MIGRATION_BUSY: set CLAUDE_CONFIG_DIR to %s, then run claude daemon stop --any before retrying", dedicated)
+	}
+	const fileDispositionInfo = 4
+	remove := byte(1)
+	ok, _, err := setFileInformationByHandle.Call(uintptr(h), fileDispositionInfo, uintptr(unsafe.Pointer(&remove)), 1)
+	if ok == 0 {
+		return fmt.Errorf("ISOLATION_PLUGIN_MIGRATION_FAILED: %w", err)
+	}
+	return nil
+}
+
+// isJunction reports whether path is a directory junction and, if so, where it points.
+func isJunction(path string) (target string, ok bool) {
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || info.Mode()&os.ModeIrregular == 0 {
+		return "", false
+	}
+	target, err = os.Readlink(path)
+	return target, err == nil
+}
+
+// makeJunction creates link as a junction to the existing directory target.
+func makeJunction(link, target string) error {
+	if _, err := junctionTarget(target); err != nil {
+		return err
+	}
+	if err := os.Mkdir(link, 0o700); err != nil {
+		return err
+	}
+	if err := setJunction(link, target); err != nil {
+		os.Remove(link)
+		return err
+	}
+	return nil
+}
+
+// ErrIsolationLinkTarget refuses a junction target that Windows cannot make a junction to.
+var ErrIsolationLinkTarget = errors.New("ISOLATION_LINK_TARGET_UNSUPPORTED: your configuration folder is on a network share or another path a directory junction cannot point to; isolated mode needs it on a local drive (a drive-letter path)")
+
+// junctionTarget is the absolute drive-letter path a junction can name. A junction (a mount-point
+// reparse point) holds a local volume path only: a UNC target (\\server\share\...) has no valid
+// \??\UNC\... form that Windows accepts for one, so it is refused with a code rather than made into
+// a link that cannot be opened. An extended-length local path (\\?\C:\...) is the same folder as its
+// plain form and is accepted.
+func junctionTarget(target string) (string, error) {
+	abs, err := filepath.Abs(target)
+	if err != nil {
+		return "", err
+	}
+	if rest, extended := strings.CutPrefix(abs, `\\?\`); extended {
+		abs = rest
+	}
+	if len(abs) < 3 || abs[1] != ':' || abs[2] != '\\' || !(abs[0] >= 'A' && abs[0] <= 'Z' || abs[0] >= 'a' && abs[0] <= 'z') {
+		return "", ErrIsolationLinkTarget
+	}
+	return abs, nil
+}
+
+func setJunction(link, target string) error {
+	target, err := junctionTarget(target)
+	if err != nil {
+		return err
+	}
+	name := utf16.Encode([]rune(`\??\` + target))
+	shown := utf16.Encode([]rune(target))
+	// REPARSE_DATA_BUFFER for a mount point: tag, data length, reserved, then four name fields and
+	// the two NUL-terminated names.
+	path := make([]uint16, 0, len(name)+len(shown)+2)
+	path = append(append(append(append(path, name...), 0), shown...), 0)
+	data := 8 + len(path)*2
+	buf := make([]byte, 8+data)
+	binary.LittleEndian.PutUint32(buf[0:], ioReparseTagMount)
+	binary.LittleEndian.PutUint16(buf[4:], uint16(data))
+	binary.LittleEndian.PutUint16(buf[8:], 0)
+	binary.LittleEndian.PutUint16(buf[10:], uint16(len(name)*2))
+	binary.LittleEndian.PutUint16(buf[12:], uint16(len(name)*2+2))
+	binary.LittleEndian.PutUint16(buf[14:], uint16(len(shown)*2))
+	for i, c := range path {
+		binary.LittleEndian.PutUint16(buf[16+i*2:], c)
+	}
+	p, err := syscall.UTF16PtrFromString(link)
+	if err != nil {
+		return err
+	}
+	h, err := syscall.CreateFile(p, syscall.GENERIC_WRITE, 0, nil, syscall.OPEN_EXISTING,
+		syscall.FILE_FLAG_BACKUP_SEMANTICS|syscall.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	if err != nil {
+		return err
+	}
+	defer syscall.CloseHandle(h)
+	var returned uint32
+	return syscall.DeviceIoControl(h, fsctlSetReparsePoint, &buf[0], uint32(len(buf)), nil, 0, &returned, nil)
+}
+
+// linkShared makes the dedicated folder share what sharedEntries names with source. It is
+// idempotent. A name that is already a different thing in the dedicated folder is a conflict, and
+// a user's folder that lacks a shared directory gets an empty one, so what an isolated session
+// creates there lands in the user's folder rather than in the dedicated one.
+func linkShared(dedicated, source string) (linkReport, error) {
+	report := linkReport{History: "absent"}
+	if err := os.MkdirAll(source, 0o700); err != nil {
+		return report, err
+	}
+	for _, entry := range sharedEntries {
+		from, to := filepath.Join(source, entry.name), filepath.Join(dedicated, entry.name)
+		switch entry.kind {
+		case sharedJunction:
+			if info, err := os.Stat(from); errors.Is(err, os.ErrNotExist) {
+				// ErrExist: another first launch made it between the Stat and here; it is the folder we want.
+				if err := os.Mkdir(from, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+					return report, err
+				}
+			} else if err != nil || !info.IsDir() {
+				return report, ErrIsolationLink{entry.name}
+			}
+			if err := linkJunction(to, from, entry.name); err != nil {
+				return report, err
+			}
+			report.Shared = append(report.Shared, entry.name)
+		case sharedHardLink:
+			report.History = linkHistory(from, to)
+		}
+	}
+	return report, nil
+}
+
+// linkJunction makes to a junction to from, or confirms it already is. Another first launch
+// can be between making the folder and turning it into a junction; what it shows then is an empty
+// directory or an existing name, so those are looked at again a few times before they count as a
+// conflict. The folder is never opened for its content: an open handle makes the other launch's
+// setJunction fail, and a listing taken just after it turned into the junction shows the user's files.
+func linkJunction(to, from, name string) error {
+	for try := 0; ; try++ {
+		if target, ok := isJunction(to); ok {
+			if !sameFolder(target, from) {
+				return ErrIsolationLink{name}
+			}
+			return nil
+		}
+		_, err := os.Lstat(to)
+		if errors.Is(err, os.ErrNotExist) {
+			if err = makeJunction(to, from); err == nil || !errors.Is(err, os.ErrExist) {
+				return err
+			}
+		}
+		// What is left (an empty folder, a name caught while it turns into the junction, a lookup
+		// that failed under the other launch's hands) is looked at again; a name that stays
+		// something else is the conflict, and a lookup that keeps failing keeps its own cause.
+		if try == 40 {
+			if err != nil && !errors.Is(err, os.ErrExist) {
+				return err
+			}
+			return ErrIsolationLink{name}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+// linkHistory hard-links the prompt history. It never merges two files: one that has already
+// diverged is reported, not touched, and nothing is created in the user's folder for it.
+func linkHistory(from, to string) string {
+	src, err := os.Stat(from)
+	if err != nil || !src.Mode().IsRegular() {
+		if _, lerr := os.Lstat(to); lerr == nil {
+			return "unlinked"
+		}
+		return "absent"
+	}
+	if dst, err := os.Stat(to); err == nil {
+		if os.SameFile(src, dst) {
+			return "linked"
+		}
+		return "unlinked"
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "unlinked"
+	}
+	if os.Link(from, to) != nil {
+		return "unlinked"
+	}
+	return "linked"
+}
+
+// removeSharedLinks removes the links linkShared made and nothing else, so that deleting the
+// dedicated folder afterwards cannot reach the user's folder. A junction is removed as a link
+// (its target is never opened); a name that is a real directory is left alone and reported.
+func removeSharedLinks(dedicated string) (left []string, err error) {
+	for _, entry := range sharedEntries {
+		to := filepath.Join(dedicated, entry.name)
+		switch entry.kind {
+		case sharedJunction:
+			if _, ok := isJunction(to); ok {
+				if rerr := os.Remove(to); rerr != nil {
+					err = errors.Join(err, rerr)
+				}
+			} else if _, lerr := os.Lstat(to); lerr == nil {
+				left = append(left, entry.name)
+			}
+		case sharedHardLink:
+			// os.Remove may clear READONLY on the file shared with the user's folder.
+			path, rerr := syscall.UTF16PtrFromString(to)
+			if rerr == nil {
+				rerr = syscall.DeleteFile(path)
+			}
+			if rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+				err = errors.Join(err, &os.PathError{Op: "remove history link", Path: to, Err: rerr})
+			}
+		}
+	}
+	return left, err
+}

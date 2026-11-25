@@ -60,8 +60,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "sync-settings":
-		fmt.Fprintln(stderr, "--sync-settings was removed; edit ~/.clauduct/settings.json using settings v2")
-		return 2
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, "usage: clauduct --dev --sync-settings")
+			return 2
+		}
+		// Older updaters invoke this after installing the new executable.
+		fmt.Fprintln(stdout, "settings v2: edit ~/.clauduct/settings.json; nothing was changed")
+		return 0
 	case "isolation-reset":
 		home, err := os.UserHomeDir()
 		if err != nil {

@@ -403,16 +403,6 @@ func (m MappedImage) Identify(catalog *Catalog) (NativeImage, error) {
 	return img.NameVersion(catalog)
 }
 
-// ImageOfProcess is AcquireMappedImage followed by Identify: the image a process runs, read
-// alive and hashed afterwards, with its catalog version.
-func ImageOfProcess(pid uint32, created int64, catalog *Catalog) (NativeImage, error) {
-	m, err := AcquireMappedImage(pid, created)
-	if err != nil {
-		return NativeImage{}, err
-	}
-	return m.Identify(catalog)
-}
-
 // LinkSpawned links the process pid to the exact image it runs and requires that image to be
 // want, an identity observed (with its SHA256) before the process was created. Nothing is
 // inherited from want: the SHA256 of the running image is computed from the file the process maps

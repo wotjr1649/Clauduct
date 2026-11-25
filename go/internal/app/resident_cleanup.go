@@ -9,9 +9,6 @@ import (
 	"strings"
 )
 
-// M1 determines whether two separate executions must observe absence.
-const residentRecheckAcrossRuns = false
-
 type reclaimOutcome struct {
 	Link     string
 	Category string
@@ -85,12 +82,6 @@ func reclaimResident(home, link string, refs map[string]int) string {
 	jobs := append([]string{rec.Job}, rec.Jobs...)
 	listed, known := jobListing(rec.Config, jobs)
 	if listed || !known {
-		if residentRecheckAcrossRuns && rec.AbsentObserved {
-			rec.AbsentObserved = false
-			if writeResident(home, rec) != nil {
-				return "KEPT_RECORD_INVALID"
-			}
-		}
 		if listed {
 			return "KEPT_LISTED"
 		}
@@ -99,21 +90,8 @@ func reclaimResident(home, link string, refs map[string]int) string {
 	if rec.PluginDir != "" && refs[strings.ToLower(filepath.Clean(rec.PluginDir))] != 1 {
 		return "KEPT_SHARED_DIR"
 	}
-	if residentRecheckAcrossRuns && !rec.AbsentObserved {
-		rec.AbsentObserved = true
-		if writeResident(home, rec) != nil {
-			return "KEPT_RECORD_INVALID"
-		}
-		return "KEPT_RECHECK_PENDING"
-	}
 	listed, known = jobListing(rec.Config, jobs)
 	if listed || !known {
-		if residentRecheckAcrossRuns && rec.AbsentObserved {
-			rec.AbsentObserved = false
-			if writeResident(home, rec) != nil {
-				return "KEPT_RECORD_INVALID"
-			}
-		}
 		if listed {
 			return "KEPT_LISTED"
 		}

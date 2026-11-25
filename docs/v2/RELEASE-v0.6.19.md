@@ -67,18 +67,25 @@ v2에서는 이렇게 쓴다. `startup`은 파일에서 빠지고, 시작 모델
 
 `clauduct --dev --sync-settings`는 이전 업데이터와의 호환을 위해 남아 있다. 파일을 바꾸지 않고 v2 수동 편집 안내를 출력한 뒤 성공한다.
 
-**v0.6.18로 되돌릴 때**는 v0.6.18이 v2 파일을 읽지 못한다. `scripts\install.ps1 -Tag v0.6.18`([PACKAGING](PACKAGING.md))로 설치한 뒤 백업한 v1 파일을 복원한다.
+**v0.6.18로 되돌릴 때**는 v0.6.18이 v2 파일을 읽지 못한다. 릴리스에서 내려받은 `install.ps1`을 `pwsh -NoProfile -File install.ps1 -Tag v0.6.18`로 실행해 설치하고([PACKAGING](PACKAGING.md)), `~/.clauduct/settings.json`을 백업해 둔 v1 파일로 바꾼다. v2 파일이 그대로 남아 있으면 v0.6.18이 거부한다.
+
+## 이전 updater(v0.6.16 이하)에서 올라올 때
+
+v0.6.4–v0.6.16의 `--update`는 설치 뒤 `clauduct --dev --sync-settings`를 한 번 호출한다. 이 호출은 사용자가 따로 실행하는 이전 절차가 아니다. v0.6.19의 이 명령은 설정 파일을 읽거나 바꾸지 않고 v2 수동 편집 안내만 출력한 뒤 성공(exit 0)하므로 업데이트는 실패로 끝나지 않는다. 그 안내가 나오면 위 3번의 백업과 수동 v2 이전을 한다.
+
+- **v0.6.11 이상(예: v0.6.16)**: 첫 `--update`가 `clauduct.exe`와 `clauduct-probe.exe`를 함께 받는다.
+- **v0.6.10**: 이 버전의 updater는 `clauduct.exe`만 받는다. 일반 실행 전에 `clauduct --update --yes`를 한 번 더 실행해 `clauduct-probe.exe`를 받아 한 쌍을 맞춘다.
 
 ## 출하 검사
 
-태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 결과는 발행 뒤 이 문서에 기록한다. 같은 native 이미지에서 직전 유효 T1을 통과했는지에 따라 `c1` 도구 표면 재측정 여부를 정하며, 그 결정과 근거도 함께 기록한다. 이번 후보가 확인하는 바뀐 동작은 다음과 같다.
+태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 결과는 발행 뒤 이 문서에 기록한다. 마지막 유효 T1·T2의 native 버전과 전체 SHA-256이 이번 native와 같은지에 따라 `c1` 도구 표면 재측정 여부를 정하며, 그 결정과 근거도 함께 기록한다. 이번 후보가 확인하는 바뀐 동작은 다음과 같다.
 
-- 설정: v2 최소 파일·파일 없음·v1 거부(native 시작과 예약 0건)·업데이트 뒤 v1 파일의 바이트와 mtime 보존.
-- 모델 선택: 계정 priority 기본값, native 명시 선택, 명시 UUID 재개·fork의 pair 복원, 모르는 effort의 조기 거부, `--resume <uuid> --continue` 거부.
-- 업데이트: 세 중단 상태에서 다음 실행의 복구와 실제 응답, 새 설치·v0.6.18에서 업데이트·되돌리기·설정과 PATH 보존, v0.6.16 updater에서 v0.6.19로 갱신할 때 `--dev --sync-settings`가 exit 0이고 설정이 보존되는지.
-- 진단: 정상 streaming 응답의 `firstTerminalType`.
-- 시작 경로: foreground print와 `--bg`, background `stop`·`rm` 직후 재개.
-- 공통: `go vet`, 전체 오프라인 Go 테스트, 동시성 코드가 바뀐 패키지의 race, 태그 fixture 두 단계, structural, native smoke 15행.
+- 설정: v2 최소 파일·파일 없음. 업데이트 뒤 v1 파일은 native 시작과 예약 0건으로 거부하고, 수동으로 v2로 옮긴 뒤에는 실행에 성공한다. 롤백 뒤에는 v2 파일을 거부하고 v1을 복원하면 성공한다. 새 설치는 설정 파일을 만들지 않고 `--dev --init-settings`가 명시적으로 만든다. v1·v2 파일의 바이트·mtime과 PATH는 설치·업데이트·롤백 전후에 보존한다.
+- 모델 선택: 계정 priority 기본값, native 명시 선택, 명시 UUID 재개·fork의 pair 복원, 모르는 effort의 조기 거부, `--resume <uuid> --continue` 거부. 같은 설정 표본에 두 Agent View 작업, 분류기 4건, context·역할·inline Workflow, 모델 목록·`count_tokens`·WebSearch 경계를 포함한다.
+- 업데이트: 세 중단 상태에서 다음 실행의 복구와 실제 응답. 새 설치, v0.6.18에서 업데이트·되돌리기, 설정과 PATH 보존. 원래 v0.6.18·v0.6.16·v0.6.10 updater가 v0.6.19로 갱신하는 전체 경로(`--dev --sync-settings`의 exit 0과 설정 보존, v0.6.10의 probe 보완 업데이트 포함).
+- 진단: 정상 streaming 응답의 `firstTerminalType`. #417은 정상 스트리밍과 분류기 허용·차단 세 표본이다.
+- 시작 경로(#419): foreground print, foreground Agent View 시작, background 첫 응답과 중지 세 표본. background `stop`·`rm` 직후 재개.
+- 공통: `go vet`, 전체 오프라인 Go 테스트, 동시성 코드가 바뀐 패키지의 race, 태그 fixture 두 단계, structural, native smoke 15행, 후보 자산의 재현 빌드, probe 출력 한도 검사.
 
 결과, 예약 수, 호스트 조건(검사 시점의 CPU 고정 여부)은 발행 후 기록한다.
 
@@ -97,8 +104,8 @@ v2에서는 이렇게 쓴다. `startup`은 파일에서 빠지고, 시작 모델
 
 ## 알려진 제한
 
-- **파일 기반 Workflow(`named`·`scriptPath`)는 Read 권한을 검증한 native 이미지(2.1.325)에서만 받는다.** 2.1.330·2.1.331·2.1.332를 포함한 다른 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. 원인은 native의 mod `$.tool.call` Read가 Read 거부 규칙을 지키지 않는 동작이며 upstream에 보고했다. [anthropics/claude-code#110979의 관측](https://github.com/anthropics/claude-code/issues/110979#issuecomment-7162373953), [#403](https://github.com/wotjr1649/Clauduct/issues/403). inline `script`는 계속 지원한다.
-- **설정 v2의 호환성 경계.** v1 파일을 자동으로 변환하지 않는다. v0.6.18 이하로 되돌리면 v2 파일을 거부한다.
+- **파일 기반 Workflow(`named`·`scriptPath`)는 Read 권한을 검증한 native 이미지(2.1.325)에서만 받는다.** 다른 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. native의 mod `$.tool.call` Read가 Read 거부 규칙을 지키지 않는 동작은 2.1.330·2.1.331·2.1.332에서 관측했고 upstream에 보고했다. 그 밖의 이미지에서는 관측하지 않았다. [anthropics/claude-code#110979의 관측](https://github.com/anthropics/claude-code/issues/110979#issuecomment-7162373953), [#403](https://github.com/wotjr1649/Clauduct/issues/403). inline `script`는 계속 지원한다.
+- **설정 v2의 호환성 경계.** v1 파일을 자동으로 변환하지 않는다. v0.6.18로 되돌리면 v2 파일을 거부한다. 그보다 이전 버전으로 되돌리는 경로는 이번 릴리스에서 확인하지 않았다.
 - **`--update` 복구는 하드 링크를 지원하는 설치 볼륨을 전제로 한다.** 하드 링크를 지원하지 않으면 교체 전에 멈추고 기존 쌍을 보존한 채 재설치를 안내한다.
 - **복원한 background resident의 프로필 잠금 제한은 v0.6.19에도 남아 있다.** 수정은 이번 릴리스 범위 밖이다. [#351](https://github.com/wotjr1649/Clauduct/issues/351).
 - **teammate에게 보낸 두 번째 메시지의 전달과 재개 뒤 이전 reasoning의 재실림은 진단으로 확인하지 못했다.** 진단 필드는 다음 릴리스 이후로 미뤘다. [#329](https://github.com/wotjr1649/Clauduct/issues/329).

@@ -24,15 +24,17 @@ func IsolationReport(out io.Writer, home string) {
 		}
 	}
 	dedicated := dedicatedConfigDir(home)
-	marker, haveMarker := readIsolationMarker(dedicated)
-	if mode == isolationOff && !haveMarker {
+	marker, markerErr := readIsolationMarker(dedicated)
+	if markerErr != nil {
+		if isolationMarkerPresent(dedicated) {
+			fmt.Fprintf(out, "isolation    %s\nisolation    %v\n", mode, errIsolationMarker)
+		} else if mode != isolationOff {
+			fmt.Fprintf(out, "isolation    %s\n", mode)
+			fmt.Fprintln(out, "isolation    the isolated folder is not made yet (the first isolated launch makes it)")
+		}
 		return
 	}
 	fmt.Fprintf(out, "isolation    %s\n", mode)
-	if !haveMarker {
-		fmt.Fprintln(out, "isolation    the isolated folder is not made yet (the first isolated launch makes it)")
-		return
-	}
 	fmt.Fprintf(out, "isolation    folder %s, built from %s since %s\n", dedicated, marker.Source, marker.CreatedAt)
 	var linked, wrong []string
 	for _, entry := range sharedEntries {

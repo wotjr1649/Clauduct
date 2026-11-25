@@ -144,13 +144,31 @@ type isolationMarkerFile struct {
 	Custom bool `json:"custom,omitempty"`
 }
 
-func readIsolationMarker(dedicated string) (isolationMarkerFile, bool) {
-	raw, err := os.ReadFile(filepath.Join(dedicated, isolationMarker))
-	var m isolationMarkerFile
-	if err != nil || len(raw) > 4096 || json.Unmarshal(raw, &m) != nil || m.Version != 1 || !filepath.IsAbs(m.Source) {
-		return isolationMarkerFile{}, false
+func isolationMarkerPresent(dedicated string) bool {
+	// A damaged marker still records prior use and cannot clear the cross-mode resume guard.
+	_, err := os.Lstat(filepath.Join(dedicated, isolationMarker))
+	return !errors.Is(err, os.ErrNotExist)
+}
+
+func readIsolationMarker(dedicated string) (isolationMarkerFile, error) {
+	path := filepath.Join(dedicated, isolationMarker)
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			// A concurrent publisher can leave the complete marker briefly unshareable.
+			if delay := time.Until(deadline); errors.Is(err, errSharingViolation) && delay > 0 {
+				time.Sleep(min(delay, 25*time.Millisecond))
+				continue
+			}
+			return isolationMarkerFile{}, err
+		}
+		var m isolationMarkerFile
+		if len(raw) > 4096 || json.Unmarshal(raw, &m) != nil || m.Version != 1 || !filepath.IsAbs(m.Source) {
+			return isolationMarkerFile{}, errIsolationMarker
+		}
+		return m, nil
 	}
-	return m, true
 }
 
 // isolationSource is the user's configuration folder an isolated launch is built from: what
@@ -162,8 +180,8 @@ func isolationSource(env map[string]string, cwd, dedicated string) (source strin
 	case configured == "":
 		return "", false, errIsolationSource
 	case sameFolder(configured, dedicated):
-		m, ok := readIsolationMarker(dedicated)
-		if !ok {
+		m, err := readIsolationMarker(dedicated)
+		if err != nil {
 			return "", false, errIsolationSource
 		}
 		return m.Source, m.Custom, nil
@@ -216,8 +234,8 @@ func prepareDedicated(dedicated, source string, custom bool, now time.Time, host
 	if err := os.MkdirAll(dedicated, 0o700); err != nil {
 		return isolationMarkerFile{}, err
 	}
-	marker, ok := readIsolationMarker(dedicated)
-	if !ok {
+	marker, err := readIsolationMarker(dedicated)
+	if errors.Is(err, os.ErrNotExist) {
 		if host.lockOwner(dedicated) != 0 {
 			return isolationMarkerFile{}, errIsolationActive
 		}
@@ -227,9 +245,10 @@ func prepareDedicated(dedicated, source string, custom bool, now time.Time, host
 		} else if !errors.Is(err, os.ErrExist) {
 			return isolationMarkerFile{}, err
 		}
-		if marker, ok = readIsolationMarker(dedicated); !ok {
-			return isolationMarkerFile{}, errIsolationMarker
-		}
+		marker, err = readIsolationMarker(dedicated)
+	}
+	if err != nil {
+		return isolationMarkerFile{}, errIsolationMarker
 	}
 	if !sameFolder(marker.Source, source) {
 		return isolationMarkerFile{}, errIsolationChanged

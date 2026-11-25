@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
 // IsolationFacts is what an isolated launch tells the exit report: names and counts, never values.
@@ -23,13 +21,11 @@ type IsolationFacts struct {
 	ClaudeMd        string `json:"claudeMd,omitempty"`
 }
 
-var errIsolationControl = errors.New("ISOLATION_MODE_UNREADABLE: ~/.clauduct/settings.json could not be read and isolated mode has been used on this machine, so this command was not sent to the default supervisor; fix the file and run it again")
+var errIsolationControl = errors.New("ISOLATION_MODE_UNREADABLE: ~/.clauduct/settings.json could not be read as valid v1 settings, so the command was not sent to a supervisor; fix the file and run it again")
 
 // controlIsolation points a management command (rm, stop, logs) at the dedicated folder when
-// isolated mode is on. It reads the mode leniently: those commands never needed a valid settings
-// file, so a missing one (or an unreadable one on a machine that never used isolation) stays the
-// default behavior. An unreadable one once isolation was used, or a key that is present and not
-// "off" or "on", is refused.
+// isolated mode is on. A missing file keeps the default. A file we cannot validate gives us no
+// authority to choose a supervisor.
 func (o *Options) controlIsolation(home string) error {
 	if home == "" {
 		return nil
@@ -41,23 +37,15 @@ func (o *Options) controlIsolation(home string) error {
 			return nil
 		}
 	}
-	fields, decodeErr := wire.Fields(raw, nil)
-	value, present := wire.Of(fields, "isolation")
-	if err != nil || len(raw) > clauductSettingsBytes || decodeErr != nil || present == wire.Null {
-		if _, used := readIsolationMarker(dedicatedConfigDir(home)); used {
-			return errIsolationControl
-		}
-		if present == wire.Null {
-			return errIsolationSettings
-		}
-		return nil
+	if err != nil || len(raw) > clauductSettingsBytes {
+		return errIsolationControl
 	}
-	if present == wire.Absent {
-		return nil
+	selected, err := parseClauductSettings(raw)
+	if err != nil {
+		return errIsolationControl
 	}
-	mode, err := parseIsolation(value)
-	if err != nil || mode != isolationOn {
-		return err
+	if !selected.Isolated() {
+		return nil
 	}
 	dedicated := dedicatedConfigDir(home)
 	source, _, err := isolationSource(o.Env, o.Cwd, dedicated)
@@ -193,7 +181,7 @@ func (o Options) resumeGuard(isolation *IsolationFacts, home, session string) er
 	if isolation != nil {
 		other, mode = isolation.Source, "default"
 	} else if dedicated := dedicatedConfigDir(home); !sameFolder(dedicated, nativeConfigDirectory(o.Env, o.Cwd)) {
-		if _, ok := readIsolationMarker(dedicated); ok {
+		if isolationMarkerPresent(dedicated) {
 			other, mode = dedicated, "isolated"
 		}
 	}

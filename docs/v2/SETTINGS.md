@@ -564,9 +564,10 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
   전용 `settings.json`에도 복제된다. 비밀은 실행 환경에서 제공하고, 지원되는 곳에서 환경 변수로 참조한다.
   Windows에서는 폴더의 상속 ACL이 파일 접근을 제어한다. `--isolation-reset`이 복제본을 지운다.
   [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
-- 격리를 한 번 쓴 기계에서 `~/.clauduct/settings.json`이 읽히지 않으면(깨진 JSON, 객체가 아닌 값, 중복 키, `"isolation": null`, 1 MiB 초과 등) `rm`·`stop`·`logs`는 기본 supervisor로 가지 않고
-  `ISOLATION_MODE_UNREADABLE`로 거부한다. 나머지 명령은 원래대로 설정 오류로 거부한다. `isolation`을 `off`로 바꾼 뒤에는 제어 명령이 기본
-  supervisor만 보므로, 남은 격리 job은 `isolation`을 잠시 `on`으로 되돌리고 `clauduct stop <id>` 또는 `clauduct rm <id>`로 정리한 뒤 다시 `off`로 바꾼다.
+- `rm`·`stop`·`logs`는 `~/.clauduct/settings.json`이 없으면 기본 모드를 사용한다. 파일이 있으면 유효한 v1 설정이어야 한다. 접근 오류, 깨진 JSON, 객체가 아닌 값, 중복 키,
+  잘못된 설정값, 1 MiB 초과 등으로 검증에 실패하면 `ISOLATION_MODE_UNREADABLE`로 거부한다. `isolation`을 `off`로 바꾼 뒤 격리 job을 정리하려면 잠시
+  `on`으로 되돌리고 `clauduct stop <id>` 또는 `clauduct rm <id>`를 실행한 뒤 다시 `off`로 바꾼다.
+- 격리 마커가 손상돼도 기본 모드의 `--resume`은 전용 폴더에서 실행 중인 job을 확인한다. 전용 폴더 초기화에서 마커를 읽을 수 없으면 `ISOLATION_MARKER_UNREADABLE`로 거부한다.
 - 전용 `.claude.json`을 읽지 못하면(잠김·파일 아님·8 MiB 초과) 새로 만들어 덮어쓰지 않고 `ISOLATION_DEDICATED_CONFIG_UNREADABLE`로 시작을 거부한다.
   전용 `CLAUDE.md`를 읽지 못해도 기존 내용을 보존하고 `ISOLATION_DEDICATED_FILE_UNREADABLE`로 시작을 거부한다.
   `--isolation-reset`은 전용 폴더나 그 상위가 링크이면 `ISOLATION_RESET_REFUSED`로 거부한다.

@@ -223,20 +223,9 @@ func (e *NotRestoredError) Error() string {
 
 func (e *NotRestoredError) Unwrap() error { return e.Cause }
 
-const stageSuffix = ".update-new"
-
-// renameFile is the replacement and rollback operation; interruption tests pause it.
+// These are the replacement and backup operations interrupted or faulted by tests.
 var renameFile = os.Rename
-
-// writeSynced writes a file and flushes it to disk before it is renamed into place.
-func writeSynced(path string, body []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o755)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(body)
-	return errors.Join(err, f.Sync(), f.Close())
-}
+var linkFile = os.Link
 
 // Apply replaces clauduct.exe in dir, together with the Probe when files carries one, and
 // puts everything back if any of it cannot be written.
@@ -259,35 +248,25 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 
 	self := filepath.Join(dir, Binaries[0])
 	probe := filepath.Join(dir, Probe)
-	if !mayExist(self+stageSuffix) && mayExist(probe+stageSuffix) {
-		return nil, fmt.Errorf("UPDATE_RECOVERY_REQUIRED: restart clauduct to recover the interrupted update")
-	}
-	if err := discardStages(self); err != nil {
+	pair, err := stagePair(dir, files)
+	if err != nil {
 		return nil, err
 	}
 
 	names := []string{Binaries[0]}
-	if _, ok := files[Probe]; ok {
+	if pair.Probe != "" {
 		names = append(names, Probe)
 	}
-	// The executable stage is written first and consumed first. While it exists,
-	// the installed executable and probe have yet to be replaced.
-	for _, name := range names {
-		tmp := filepath.Join(dir, name+stageSuffix)
-		if err := writeSynced(tmp, files[name]); err != nil {
-			return nil, errors.Join(err, discardStages(self))
-		}
-	}
-	if err := replaceStaged(self, false); err != nil {
-		return nil, errors.Join(err, discardStages(self))
+	if err := replaceStaged(pair.stage(dir, Binaries[0]), self, false); err != nil {
+		return nil, errors.Join(err, pair.discard(dir))
 	}
 	if _, ok := files[Probe]; ok {
-		if err := replaceStaged(probe, true); err != nil {
+		if err := replaceStaged(pair.stage(dir, Probe), probe, true); err != nil {
 			if restoreErr := renameFile(self+".old", self); restoreErr != nil {
 				// Keep the verified stage if the next run needs to finish the swap.
 				return nil, &NotRestoredError{Cause: errors.Join(err, restoreErr), Paths: []string{self + ".old"}}
 			}
-			return nil, errors.Join(err, discardStages(self))
+			return nil, errors.Join(err, pair.discard(dir))
 		}
 	}
 
@@ -297,7 +276,7 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	// itself.
 	for _, name := range names {
 		backup := filepath.Join(dir, name+".old")
-		if removeIfPresent(backup) != nil {
+		if removeFile(backup) != nil {
 			leftovers = append(leftovers, backup)
 		}
 	}
@@ -315,20 +294,27 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 			leftovers = append(leftovers, path)
 		}
 	}
+	if err := pair.discard(dir); err != nil {
+		leftover := cleanupName
+		if mayExist(filepath.Join(dir, journalName)) {
+			leftover = journalName
+		}
+		leftovers = append(leftovers, filepath.Join(dir, leftover))
+	}
 	return leftovers, nil
 }
 
 // Keeping another link to the old bytes lets Windows replace even a running image.
-func replaceStaged(path string, optional bool) error {
+func replaceStaged(staged, path string, optional bool) error {
 	backup := path + ".old"
-	if err := removeIfPresent(backup); err != nil {
+	if err := removeFile(backup); err != nil {
 		return fmt.Errorf("could not clear %s; close any process using it and run --update again: %w", backup, err)
 	}
-	if err := os.Link(path, backup); err != nil && !(optional && errors.Is(err, os.ErrNotExist)) {
+	if err := linkFile(path, backup); err != nil && !(optional && errors.Is(err, os.ErrNotExist)) {
 		return fmt.Errorf("could not create hard-link backup %s; if this drive does not support hard links, reinstall from the release: %w", backup, err)
 	}
-	if err := renameFile(path+stageSuffix, path); err != nil {
-		return errors.Join(err, removeIfPresent(backup))
+	if err := renameFile(staged, path); err != nil {
+		return errors.Join(err, removeFile(backup))
 	}
 	return nil
 }

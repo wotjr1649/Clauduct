@@ -353,6 +353,3 @@ func confirmedRemoval(in io.Reader, out io.Writer) bool {
 	fmt.Fprint(out, "remove them? [y/N] ")
 	return yes(in, out)
 }
-
-// The first run after an update can remove the predecessor the updater was running.
-func sweepLeftoverOf(self string) { _ = os.Remove(self + ".old") }

@@ -158,6 +158,10 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 	}
 
 	leftovers, err := Apply(dir, files)
+	if errors.Is(err, errUpdateBusy) || errors.Is(err, errUpdateRecovery) {
+		fmt.Fprintln(out, "clauduct:", err)
+		return 1
+	}
 	if err != nil {
 		fmt.Fprintln(out, "clauduct: update failed:", err)
 		var stuck *NotRestoredError
@@ -177,7 +181,9 @@ func RunIn(ctx context.Context, client *http.Client, api, dir string, args []str
 		// The running binary holds its own predecessor open until this process exits, and
 		// the next launch removes exactly that one (Recover). Any other leftover was
 		// held by some other process and stays until someone deletes it.
-		if strings.EqualFold(filepath.Base(path), Binaries[0]+".old") {
+		if name := filepath.Base(path); name == journalName || name == cleanupName {
+			fmt.Fprintln(out, "leftover ", path, "(the next clauduct run retries update cleanup)")
+		} else if strings.EqualFold(name, Binaries[0]+".old") {
 			fmt.Fprintln(out, "leftover ", path, "(the next clauduct run removes it; deleting it by hand is fine too)")
 		} else {
 			fmt.Fprintln(out, "leftover ", path, "(held by another process; delete it once that process has exited)")

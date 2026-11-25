@@ -9,6 +9,9 @@ Codex app-server를 호출하거나 실행 중인 Codex 앱 세션에 요청을 
 Go 실행기 `clauduct.exe`에 hook과 `--dev` 명령이 들어 있습니다. 설치·업데이트는 v0.6.11부터 진단용
 `clauduct-probe.exe`도 함께 다룹니다. 기능과 제약은 [호환성 문서](docs/v2/COMPATIBILITY.md)를 참고하세요.
 
+최신 정식 출시는 [v0.6.16](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.16)입니다.
+출하 준비 중인 v0.6.17의 변경과 제한은 [릴리스 문서](docs/v2/RELEASE-v0.6.17.md)에 있습니다.
+
 이전 Node 구현(v1, `clauduct-node`)은 v0.3.3에서 저장소에서 은퇴했습니다. 마지막 소스와 문서는
 [분리 직전 커밋](https://github.com/wotjr1649/Clauduct/tree/1b1c5e19b3f33fda63254b2da7c9d0b372553481)에
 그대로 있습니다.

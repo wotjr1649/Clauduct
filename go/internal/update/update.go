@@ -290,7 +290,7 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 	}
 	for _, name := range gone {
 		path := filepath.Join(dir, name)
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if removeFile(path) != nil {
 			leftovers = append(leftovers, path)
 		}
 	}
@@ -300,6 +300,12 @@ func Apply(dir string, files map[string][]byte) (leftovers []string, err error) 
 			leftover = journalName
 		}
 		leftovers = append(leftovers, filepath.Join(dir, leftover))
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != pair.Directory && isStageDirectoryName(entry.Name()) {
+			leftovers = append(leftovers, filepath.Join(dir, entry.Name()))
+		}
 	}
 	return leftovers, nil
 }

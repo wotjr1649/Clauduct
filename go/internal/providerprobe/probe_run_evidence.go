@@ -49,8 +49,20 @@ func p3BackendTurn(c p3Case, turns []p3Turn, in p3Call) int {
 func p3ContinueRestored(c p3Case, obs *p3Observed, resume int) bool {
 	seed := obs.Turns[0].Canary.ID
 	current := obs.Turns[resume].Canary.ID
+	gatewayFor := func(turn p3Turn) int64 {
+		for _, run := range obs.Runs {
+			if run.Index == turn.run && run.NativeStarted {
+				return run.Gateway
+			}
+		}
+		return 0
+	}
+	seedGateway, resumeGateway := gatewayFor(obs.Turns[0]), gatewayFor(obs.Turns[resume])
+	if seedGateway <= 0 || resumeGateway <= 0 || seedGateway == resumeGateway {
+		return false
+	}
 	main := func(in p3Call) bool {
-		return in.class == "main" && in.root && in.path == "/v1/messages" && in.gateway > 0 && in.seq > 0
+		return in.class == "main" && in.root && in.path == "/v1/messages" && in.seq > 0
 	}
 	var firstSeed, firstResume p3Call
 	for _, in := range obs.Ingress {
@@ -59,11 +71,11 @@ func p3ContinueRestored(c p3Case, obs *p3Observed, resume int) bool {
 		}
 		switch p3BackendTurn(c, obs.Turns, in) {
 		case 0:
-			if firstSeed.seq == 0 || in.seq < firstSeed.seq {
+			if in.gateway == seedGateway && (firstSeed.seq == 0 || in.seq < firstSeed.seq) {
 				firstSeed = in
 			}
 		case resume:
-			if firstResume.seq == 0 || in.seq < firstResume.seq {
+			if in.gateway == resumeGateway && (firstResume.seq == 0 || in.seq < firstResume.seq) {
 				firstResume = in
 			}
 		}
@@ -88,12 +100,15 @@ func p3ContinueRestored(c p3Case, obs *p3Observed, resume int) bool {
 		return false
 	}
 	// No later dispatch for this conversation may silently select a different pair.
+	hasConversation := func(call p3Call) bool {
+		return slices.Contains(call.canaries, seed) || slices.Contains(call.canaries, current)
+	}
 	for _, in := range obs.Ingress {
 		if !main(in) || in.run != firstResume.run || in.gateway != firstResume.gateway || in.seq <= firstResume.seq {
 			continue
 		}
 		call := dispatch(in)
-		if (in.backendStarted || call.seq != 0) && (slices.Contains(in.canaries, seed) || slices.Contains(call.canaries, seed)) && !correctPair(call) {
+		if (in.backendStarted || call.seq != 0) && (hasConversation(in) || hasConversation(call)) && !correctPair(call) {
 			return false
 		}
 	}

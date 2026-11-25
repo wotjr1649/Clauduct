@@ -827,7 +827,7 @@ func runNativeControl(ctx context.Context, o Options, command string) (Result, e
 	default:
 	}
 	result := Result{NativeExitCode: ExitCodeUnknown}
-	process, err := startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, o.Stdout, o.Stderr)
+	process, err := o.StartProcess(spec, o.Stdin, o.Stdout, o.Stderr)
 	if err != nil {
 		result.Category = CategoryStartFailed
 		return result, err

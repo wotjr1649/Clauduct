@@ -52,7 +52,8 @@ Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정�
 
 `version`은 필수이며 현재 값은 `1`이다. 나머지 항목은 생략할 수 있지만, 일반 실행에서 빠진 최상위 키만 메모리에서 기본값으로 채운다.
 `startup`, `classifier_model`과 각 `agents` 항목을 쓰면 `model`과 `effort`를 모두 적는다.
-격리 모드의 `isolation` 키([문서 끝](#격리-모드-v0614))를 포함해 알 수 없는 필드, 중복 JSON 키, 부분적인 pair, `null`, 1 MiB를 넘는 파일, 형식이 맞지 않는 모델 ID,
+격리 모드는 `isolation` 키로 켠다. [격리 모드](#격리-모드-v0614)
+알 수 없는 필드, 중복 JSON 키, 부분적인 pair, `null`, 1 MiB를 넘는 파일, 형식이 맞지 않는 모델 ID,
 `low`·`medium`·`high`·`xhigh`·`max` 밖의 effort는 `CLAUDUCT_SETTINGS_INVALID`로 거부한다.
 형식은 맞지만 계정이 제공하지 않는 모델·effort는 [계정 목록에 없는 선택](#계정-목록에-없는-선택)대로 처리한다.
 
@@ -557,7 +558,7 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
   `clauduct --dev --isolation-reset`(`--yes`)을 실행한다. 이 명령은 전용 작업과 파생 파일도 지운다.
 - 켜진 세션은 시작 때 `clauduct: isolation on: …`을 stderr에 한 줄 내고, 종료 줄에 `isolation=on`, status의 `session.isolation`에 이름·개수를 남긴다.
   `clauduct --dev --doctor`가 모드·폴더·공유 상태·supervisor를 보여 준다.
-- `isolation`은 공장 문서에 없다. 설정 동기화가 덧붙이지 않고, v0.6.13 이하 바이너리는 이 키를 모르는 키로 거부하므로 되돌리기 전에 지운다.
+- `isolation`은 공장 문서에 없다. 실행 중 설정 파일을 갱신하지 않는다. v0.6.13 이하 바이너리는 이 키를 모르는 키로 거부하므로 되돌리기 전에 지운다.
 
 - MCP 서버 정의는 전용 `.claude.json`으로 미러링된다. 비밀값은 지원되는 필드에서 `${VAR}`로 확장하거나 HTTP 헤더를 `headersHelper`에서 가져온다.
   MCP 정의에 평문 비밀을 넣으면 전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`와 hook에 평문 비밀을 넣으면

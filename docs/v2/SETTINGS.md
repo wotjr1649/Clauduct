@@ -140,7 +140,7 @@ v1 파일은 이전 동기화가 성공했을 때와 같은 설정으로 실행�
 이미 있는 값은 기존 형식으로 검증한다.
 
 파일에 빠진 키가 있으면 일반 실행에서 공장값으로 실행하며 별도 작업이 필요 없다고 한 줄 알려준다.
-적용값의 출처는 `factory (not in file)`로 표시한다. 예를 들어 v0.6.3 파일에 `classifier_model`이 없으면
+채운 키의 출처는 `factory (not in file).<key>`로 표시한다. 예를 들어 v0.6.3 파일에 `classifier_model`이 없으면
 공장 pair를 쓴다. 해당 키를 문자열로 적은 파일은 [분류기 절](#보조-요청과-auto-권한-분류기-v064)의
 형식 오류로 거부된다.
 
@@ -454,17 +454,18 @@ v0.5.4는 각각 `startupModelSource`, `startupEffortSource`도 기록한다.
 
 | 출처 | 의미 |
 |---|---|
-| `factory.startup` | 파일에서 생략한 시작 pair의 제품 기본값 |
+| `factory (not in file).startup` | 파일에 시작 pair가 없어 적용한 공장값 |
 | `settings.startup` | 수동 파일에 명시한 시작 pair |
 | `session-snapshot.last` | UUID snapshot에서 복원한 마지막 선택 |
 | `cli.model`, `cli.effort` | 해당 CLI 인자에 명시한 값 |
 | `environment.CLAUDE_CODE_EFFORT_LEVEL` | native effort 환경변수로 고정한 값 |
 | `native.user.env.*`, `native.project.env.*`, `native.local.env.*`, `native.settings.env.*` | native 설정의 `env`가 선택한 모델 또는 effort. `--setting-sources`와 마지막 `--settings`를 반영 |
-| `factory.modelDefaults`, `settings.modelDefaults`, `session-snapshot.modelDefaults` | 모델만 명시한 선택의 effort 기본값 |
+| `factory (not in file).modelDefaults`, `settings.modelDefaults`, `session-snapshot.modelDefaults` | 모델만 명시한 선택의 effort 기본값 |
 | `account.default_reasoning_level` | 모델만 명시했고 설정이 그 모델의 effort를 적지 않아 계정의 기본 수준을 쓴 경우(v0.6.4) |
 
-alias나 버전형 Claude 이름으로 선택하면 model 출처에 `+factory.modelMapping`,
-`+settings.modelMapping` 또는 `+session-snapshot.modelMapping`이 붙는다.
+alias나 버전형 Claude 이름으로 선택하면 model 출처에 `+factory (not in file).modelMapping`,
+`+settings.modelMapping` 또는 `+session-snapshot.modelMapping`이 붙는다. 파일의 `modelMapping`에 해당 alias 항목이 없어
+내장 매핑을 쓰면 `+factory.modelMapping`이 붙는다.
 한쪽만 명시한 경우 두 출처는 다를 수 있다. 이 진단은 수동 파일을 쓰거나 모델 요청을 만들지 않는다.
 Windows 환경변수 이름의 대소문자는 구분하지 않는다. 같은 선택 키의 대소문자 중복이나 잘못된 값은
 거부한다. native managed 설정에서 선택 환경변수를 강제한 경우의 순위는 아직 검증되지 않았으므로
@@ -476,7 +477,9 @@ Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 �
 대화 본문·설정 원문·credential은 출처 진단에 넣지 않는다.
 
 `session.context`는 window, 요청한 `requestedPercent`, clamp 후 `effectivePercent`, 계산한
-`autoCompactTokenLimit`과 각 설정의 `factory.*` 또는 `settings.*` 출처를 기록한다.
+`autoCompactTokenLimit`을 기록한다. 키가 빠졌으면 `windowSource`와 `percentSource`가 각각
+`factory (not in file).context_window`과 `factory (not in file).auto_compact_token_limit_percent`을 표시한다.
+파일에 명시된 값의 출처는 `settings.context_window`과 `settings.auto_compact_token_limit_percent`이다.
 실제 압축 요청에 사용한 모델·effort는 `gateway.recent`의 `kind: compaction` 기록에서 확인한다.
 v0.6.4에서 `session.auxiliaryEffortCap`·`auxiliaryEffortCapSource`와 `session.context.autoCompactEffortCap`·
 `effortCapSource`는 없어졌고, 요청 기록의 출처에 `+auxiliary-cap`·`+auto-compact`도 붙지 않는다.

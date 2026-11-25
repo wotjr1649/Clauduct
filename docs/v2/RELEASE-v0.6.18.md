@@ -1,5 +1,7 @@
 # v0.6.18 — Claude Code 2.1.332 auto 모드 호환 수정
 
+2026-11-26 출시(태그 `v0.6.18` → `3f2000fb69a35f3f5e3b01db1caa8df5a10cb3ba`, [정식 Release](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.18)).
+
 Claude Code 2.1.332로 업데이트한 뒤 auto 모드에서 분류가 필요한 도구 실행이 차단될 수 있던 문제를 고쳤다. [#414](https://github.com/wotjr1649/Clauduct/issues/414), [PR #415](https://github.com/wotjr1649/Clauduct/pull/415).
 
 ## 바뀐 것
@@ -9,18 +11,34 @@ Claude Code 2.1.332로 업데이트한 뒤 auto 모드에서 분류가 필요한
 
 ## 출하 검사
 
-태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 결과는 발행 뒤 이 문서에 기록한다. v0.6.17의 `GATE-T1`은 native 2.1.331에서 실행했고 이번에는 설치된 2.1.332에서 실행한다. native 이미지가 달라 `c1` 도구 표면 재측정 결과도 함께 기록한다.
+태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 2.1.332의 버전과 SHA-256(`e6652f9170a07df45f1db3e0520f1df0f7b385181ff74f70f49398a67b5fd320`)에 결속한 `GATE-T1` 12단계를 모두 통과했다. v0.6.17의 `GATE-T1`은 native 2.1.331에서 실행했고 이번에는 설치된 2.1.332에서 실행했다.
+
+- `vet`, 전체 오프라인 Go 테스트, 태그 fixture `fixtures`·`fixtures-bg`, `structural`, native smoke 15행, `./internal/gateway` race를 통과했다.
+- 실제 backend 분류기 표본 4종(공장 기본과 명시 override 각각의 허용·거부)을 통과했다. backend 예약은 총 14건이었다.
+- native 이미지가 2.1.331에서 2.1.332로 바뀌어 `c1` 무과금 도구 표면 재측정을 실행했다. 도구 이름 48개와 print·TUI core 24개·27개가 이전 이미지와 같았고 이번 측정에서 T2를 요구하는 도구 차이는 없었다.
+
+### 출하 빌드·발행 검사
+
+- `build-release`의 독립 캐시 빌드 두 번이 바이트 단위로 일치했다.
+- 발행 전 `ship-install`에서 새 설치, 발행된 v0.6.17에서 교체, v0.6.17로 되돌리기, 설정 파일과 사용자 PATH 보존을 확인했다.
+- 발행 전 `probe limit --send` 3회에서 backend가 `max_output_tokens` 상한 16·48토큰을 지켰다(`HONOURED`). 예약 3건이 모두 성공했고 거부는 없었다.
+- 발행 뒤 `verify-release`: 정식 Release가 draft·prerelease가 아닌 최신 Release로 보이고, 자산 5개의 API 다이제스트와 내려받은 바이트가 `SHA256SUMS`와 모두 일치했다. 내려받은 `clauduct.exe`는 `v0.6.18`, 태그 commit과 같은 신원을 보고한다.
+- 발행 뒤 `ship-update`(`SHIP_UPDATE PASS`): 발행된 v0.6.18의 설치 스크립트로 새로 설치했다. v0.6.17 설치에서 `clauduct --update --yes`로 v0.6.18로 바뀌고, 남은 `.old`는 다음 실행에서 정리되며, 이어지는 `--update`는 변경 없이 끝났다. 사용자 PATH는 그대로였다.
+- 발행 뒤 `ship-legacy`(`SHIP_LEGACY PASS`): 0.3.x 설치(v0.3.5)의 구 updater는 v0.6.18을 거부하고 설치를 그대로 두었다. 새 설치 스크립트로 그 위에 설치하면 v0.6.18이 되고 사용자 PATH는 그대로였다.
+- `post-publish`(이 기록의 문서 값과 GATE-FULL 원장의 출하 기록)는 이 문서 변경을 병합한 뒤 실행한다.
 
 ## 출하 신원
 
 | 항목 | 값 |
 |---|---|
-| 태그 | 발행 후 기록 |
-| `clauduct.exe` | 발행 후 기록 |
-| `clauduct-probe.exe` | 발행 후 기록 |
-| `install.ps1` | 발행 후 기록 |
-| `uninstall.ps1` | 발행 후 기록 |
-| `SHA256SUMS` | 발행 후 기록 |
+| 태그 | `v0.6.18` → `3f2000fb69a35f3f5e3b01db1caa8df5a10cb3ba` |
+| `clauduct.exe` | `570b95891154d5065d5bdfc90f840b64d329d09a47a0f998e5d79b1038ab5fb5` |
+| `clauduct-probe.exe` | `92ea033bc313afcc5056d8b73c63ac075e36b29b0ea7fb509bbe40e4224cc5ce` |
+| `install.ps1` | `8911dd3c6350d02a4490250734fd7362edb7fc1e40c87891916ecbc0633c6f55` |
+| `uninstall.ps1` | `a88d8f56719ee7ca7a199fd30214d8b74171a08c34c2d952cd60990b4d1ba295` |
+| `SHA256SUMS` | `669c90a809840e0197946d88e1c80bc365060ea068f75a9a050b8b903b758619` |
+
+Go 1.27.4, `CGO_ENABLED=0`, `-trimpath`. native를 쓴 출하 검사는 Claude Code 2.1.332에서 실행했다.
 
 ## 알려진 제한
 

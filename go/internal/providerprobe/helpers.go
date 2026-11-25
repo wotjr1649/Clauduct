@@ -198,14 +198,23 @@ func digest(b []byte) string {
 // p3Catalogue is the probe's synthetic account model list (the private test harness's list).
 var p3Catalogue = func() *bridge.Catalogue {
 	all := []string{"low", "medium", "high", "xhigh", "max"}
-	c, _, err := bridge.NewCatalogue([]bridge.AccountModel{
+	rows := []bridge.AccountModel{
 		{ID: "gpt-6-astra", Efforts: all, Default: "medium", Visible: true},
 		{ID: "gpt-6.1-sol", Efforts: all, Default: "xhigh", Visible: true},
 		{ID: "gpt-6-sol", Efforts: all, Default: "xhigh", Visible: true},
 		{ID: "gpt-6.1-terra", Efforts: all, Default: "high", Visible: true},
 		{ID: "gpt-5.6-terra", Efforts: all, Default: "high", Visible: true},
 		{ID: "gpt-6-luna", Efforts: all, Default: "max", Visible: true},
-	})
+	}
+	for i := range rows {
+		priority := int64(i + 2)
+		if rows[i].ID == "gpt-6.1-sol" {
+			priority = 1
+			rows[i].Default = "high"
+		}
+		rows[i].Priority = &priority
+	}
+	c, _, err := bridge.NewCatalogue(rows)
 	if err != nil {
 		panic(err)
 	}

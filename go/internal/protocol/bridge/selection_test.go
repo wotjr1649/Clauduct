@@ -10,7 +10,7 @@ func TestSelectionSnapshotFreezesFallbacksWithoutPromotingThem(t *testing.T) {
 	luna, sol6 := fixtureModel("luna").ID, fixtureModel("sol6").ID
 	original := Selection{ModelDefaults: map[string]Default{luna: {Effort: "low"}}}.WithCatalogue(testCatalogue)
 	frozen := original.Snapshot()
-	if len(frozen.ModelDefaults) != 1 || len(frozen.ModelMapping) != tieredModels() || len(frozen.RoleDefaults) != len(roleRoutes) || len(frozen.Agents) != 0 {
+	if len(frozen.ModelDefaults) != 1 || len(frozen.ModelMapping) != tieredModels() || len(frozen.RoleDefaults) != 0 || len(frozen.Agents) != 0 {
 		t.Fatal("snapshot is sparse or promoted builtin fallbacks")
 	}
 	original.ModelDefaults[luna] = Default{Effort: "high"}
@@ -67,8 +67,8 @@ func TestSelectionRoutes(t *testing.T) {
 	if got, ok := s.RoleRoute("explore"); !ok || got.Model != sol6 || got.Effort != "low" {
 		t.Fatalf("configured role = %+v, %v", got, ok)
 	}
-	if got, ok := s.RoleRoute("Plan"); !ok || got != roleRoutes["Plan"] {
-		t.Fatalf("fixed role = %+v, %v", got, ok)
+	if got, ok := s.RoleRoute("Plan"); ok || !s.KnownRole("Plan") {
+		t.Fatalf("native-owned role = %+v, %v", got, ok)
 	}
 	if got, ok := s.RoleRoute("clauduct-sol"); !ok || got.Effort != "high" {
 		t.Fatalf("menu default = %+v, %v", got, ok)

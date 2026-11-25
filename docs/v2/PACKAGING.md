@@ -193,8 +193,8 @@ PATH에 있는 디렉터리에 **`clauduct.exe`**(v0.6.11부터는 `clauduct-pro
 Clauduct도 같은 projects 트리에 선택·context·Workflow 복원용 metadata를 저장한다.
 설치 파일 교체와 이 세션 기록의 호환성은 별도로 확인해야 한다.
 
-v0.6.17의 설치 스크립트·업데이트·일반 실행은 `~/.clauduct/settings.json`을 만들거나 바꾸지 않는다. v0.6.16 설치 스크립트를 다시 쓰면 파일이 없을 때 `--dev --init-settings`로 생성한다.
-파일이 없거나 최상위 키가 빠져 있으면 실행 중 메모리에서 공장값을 적용한다. 직접 편집할 기본 문서는 `clauduct --dev --init-settings`로 만들 수 있다. [Clauduct 설정](SETTINGS.md#설정-동기화-v0617)
+설치 스크립트·업데이트·일반 실행은 `~/.clauduct/settings.json`을 만들거나 바꾸지 않는다.
+`clauduct --dev --init-settings`는 파일이 없을 때 `{"version":2}`를 만든다. v1 파일이 남아 있으면 시작 전에 오류가 표시된다. 파일을 직접 옮기는 방법은 [Clauduct 설정](SETTINGS.md#설정-예)을 따른다.
 세션은 시작할 때 받은 [계정 모델 목록](SETTINGS.md#계정-모델-목록-v064)을 `~/.clauduct/account-models.json`에 저장한다(v0.6.4부터). 계정 ID의 SHA-256을 키로 쓰며 token이나 원래 ID는 저장하지 않는다. 제거와 되돌리기도 사용자 설정·세션 기록을 지우지 않는다.
 
 **그 결정의 대가 (2026-09-18 관측).** 격리하지 않으므로 clauduct 세션이 고른 모델이 사용자의

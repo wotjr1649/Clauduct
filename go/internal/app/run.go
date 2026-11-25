@@ -170,7 +170,6 @@ type Result struct {
 	ClassifierModelSource string
 	ClassifierFinding     string
 	ModelList             ModelListFacts
-	DeprecatedSettings    []string
 	// MenuEntries counts the delegation menu, the inherit entry included.
 	MenuEntries    int
 	NativeStarted  bool
@@ -304,12 +303,6 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if err != nil {
 			return Result{}, err
 		}
-		if len(config.missingKeys) > 0 {
-			fmt.Fprintln(o.Stderr, "clauduct: settings: missing keys use factory defaults; no action needed")
-		}
-		if len(config.Deprecated) > 0 {
-			fmt.Fprintf(o.Stderr, "clauduct: settings: %s no longer applied since v0.6.4; the keys stay in the file and may be removed\n", strings.Join(config.Deprecated, ", "))
-		}
 		if config, err = config.strictReady(o.Env); err != nil {
 			return Result{}, err
 		}
@@ -389,7 +382,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		config.Selection = config.Selection.WithCatalogue(catalogue)
 		listFacts.Problems = config.Selection.Problems()
 		if config.ClassifierModel != (bridge.Pair{}) && !config.Selection.ValidPair(config.ClassifierModel) {
-			listFacts.Problems = append(listFacts.Problems, "classifier_model: "+config.ClassifierModel.Model+"/"+config.ClassifierModel.Effort+" is not offered by the account")
+			listFacts.Problems = append(listFacts.Problems, "classifier: "+config.ClassifierModel.Model+"/"+config.ClassifierModel.Effort+" is not offered by the account")
 		} else if classifierFinding = classifierFindingOf(config.ClassifierModel); classifierFinding != "" && config.ClassifierModel != bridge.DefaultClassifierModel() {
 			// The factory pair's finding is an accepted, documented trade-off (#378 decision 10):
 			// kept in status, not repeated on every start.
@@ -436,21 +429,62 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			saved, loadErr := profiles.Load(resumeID)
 			switch {
 			case errors.Is(loadErr, os.ErrNotExist):
-				// No snapshot: retain today's settings, including the startup pair.
+				return Result{}, errors.New("SESSION_PROFILE_MISSING: the requested UUID has no Clauduct profile")
 			case loadErr != nil:
 				return Result{}, loadErr
 			default:
 				saved.Selection = saved.Selection.WithCatalogue(catalogue)
-				if err := profiles.Refresh(&saved, filepath.Join(nativeConfigDirectory(o.Env, o.Cwd), "projects"), true, saved.Selection); err != nil {
+				saved, err = profiles.Candidate(saved, filepath.Join(nativeConfigDirectory(o.Env, o.Cwd), "projects"), true, saved.Selection)
+				if err != nil {
 					return Result{}, err
 				}
-				config.Selection, config.Startup, resumed = saved.Selection, saved.Last, &saved
-				config.StartupSource, config.SelectionSource = "session-snapshot.last", "session-snapshot"
+				config.Selection, config.Startup = saved.Selection, saved.Last
+				config.restoredSelection, resumed = true, &saved
 			}
 		}
 		if o.Regenerate != nil {
 			// Every other job on the link comes back with its own profile, not only the primary.
 			siblings = residentSiblingProfiles(profiles, nativeConfigDirectory(o.Env, o.Cwd), *o.Regenerate, resumeID, catalogue)
+		}
+	}
+
+	var modelSource, effortSource, startupEffort string
+	var in startupInputs
+	if !information && o.Settings == nil {
+		if resumed == nil && resumeTarget(o.Args) {
+			return Result{}, ErrResumeUUIDRequired
+		}
+		in, err = readStartupInputs(o.Args, o.Cwd, nativeConfigDirectory(o.Env, o.Cwd), o.Env, userSettings, managedDocs)
+		if err != nil {
+			return Result{}, err
+		}
+		if resumed == nil {
+			modelSource, effortSource, err = config.selectStartup(in, listFacts)
+			if err != nil {
+				return Result{}, err
+			}
+			if effortSource == "account.default_reasoning_level" {
+				startupEffort = config.Startup.Effort
+			}
+		} else {
+			modelSource, effortSource, err = config.selectResume(in, o.Regenerate != nil)
+			if err != nil {
+				return Result{}, err
+			}
+			startupEffort = config.Startup.Effort
+			// The reported native model must agree with the restored pair even if
+			// today's native settings point elsewhere.
+			if _, explicit := optionValue(o.Args, "--model"); !explicit {
+				o.Args = append([]string{"--model=" + config.Startup.Model}, o.Args...)
+				for i := range settingsSlots {
+					settingsSlots[i]++
+				}
+			}
+		}
+		if !config.restoredSelection && userSettings != nil {
+			if err := config.validateUserEffortSettings(userSettings, config.Startup.Model); err != nil {
+				return Result{}, err
+			}
 		}
 	}
 
@@ -487,7 +521,8 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	gw.ExpectTools(expectedTools(o.Args, upstream.ReferenceCoreTools))
 	result = Result{GatewayAddr: gw.Addr(), Startup: config.Startup, Context: config.contextFacts(),
 		ClassifierModel: config.ClassifierModel, ClassifierModelSource: config.ClassifierModelSource, ClassifierFinding: classifierFinding,
-		ModelList: listFacts, DeprecatedSettings: config.Deprecated, Isolation: isolation}
+		ModelList: listFacts, Isolation: isolation,
+		StartupModelSource: modelSource, StartupEffortSource: effortSource}
 	ledger := o.Ledger
 	// Named return values, and deliberately: a deferred write to an unnamed one is
 	// discarded, so the count would always have been zero.
@@ -548,21 +583,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	if o.Settings != nil {
 		settings = *o.Settings
 	} else {
-		effort = config.Startup.Effort
-		// A model named without an effort runs at that model's own default, as the Node
-		// launcher did (#87); the startup effort is for the startup model. A user's --effort
-		// still lands after this one and wins.
-		if model, named := optionValue(o.Args, "--model"); named {
-			if _, pinned := optionValue(o.Args, "--effort"); !pinned {
-				// Native trims and lowercases a model name before resolving it.
-				// No effort determinable for it: pass none rather than the startup effort,
-				// so the start is refused below instead of running on an effort nobody chose.
-				effort = ""
-				if route, err := config.Selection.SelectRoute(strings.ToLower(strings.TrimSpace(model)), ""); err == nil {
-					effort = route.Effort
-				}
-			}
-		}
+		effort = startupEffort
 		hook = findHook()
 		result.HookInstalled = hook != ""
 		if built, ok := config.sessionSettings(hook); ok {
@@ -746,20 +767,10 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		})
 	}
 	gw.ConfigureSelection(config.Selection)
-	startup, modelSource, effortSource, startupErr := config.effectiveStartup(spec, roleArgs, finalSettings)
-	result.Startup = startup
-	result.StartupModelSource, result.StartupEffortSource = modelSource, effortSource
-	if profiles != nil && startupErr != nil {
-		result.NativeExitCode = ExitCodeUnknown
-		result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
-		return result, startupErr
-	}
-	if !information && userSettings != nil {
-		if err := config.validateUserEffortSettings(userSettings, startup.Model); err != nil {
-			result.NativeExitCode = ExitCodeUnknown
-			result.CleanupErr = closeGateway(gw, o.ShutdownTimeout)
-			return result, err
-		}
+	if !information && o.Settings == nil {
+		gw.ConfigureStartupSelection(config.Startup, func(pair bridge.Pair) bool {
+			return in.permits(pair, config.Selection)
+		})
 	}
 	if ephemeral {
 		// Restore provenance without enabling persistent writes for this run.

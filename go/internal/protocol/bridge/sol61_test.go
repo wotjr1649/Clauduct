@@ -37,9 +37,6 @@ func TestSol61TakesTheOpusTierAndSol6StaysRoutable(t *testing.T) {
 	if !ok || !model.CountValidated {
 		t.Fatal("measured count match not admitted")
 	}
-	if DefaultStartup().Model != sol {
-		t.Fatal("factory startup did not move to GPT-6.1 Sol")
-	}
 	if _, retired := Retired[sol6]; retired {
 		t.Fatal("GPT-6 Sol must stay routable")
 	}

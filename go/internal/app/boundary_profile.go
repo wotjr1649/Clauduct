@@ -34,9 +34,9 @@ var (
 	strictDenied  = []string{"Artifact", "ArtifactCheck", "ArtifactComments", "ArtifactData", "DesignSync"}
 )
 
-var errStrictMarketplace = errors.New("BOUNDARY_PROFILE_STRICT: boundary_profile is strict but " + marketplaceInstall +
+var errStrictMarketplace = errors.New("BOUNDARY_PROFILE_STRICT: boundaryProfile is strict but " + marketplaceInstall +
 	" is not set to a value native reads as on (1, true, yes, on). Native records it in its own config the first time it sees it, so the official marketplace stays off for later sessions too; " +
-	"Clauduct does not make that change for you. Set " + marketplaceInstall + "=1 in the environment you start clauduct from, or use boundary_profile \"default\"")
+	"Clauduct does not make that change for you. Set " + marketplaceInstall + "=1 in the environment you start clauduct from, or use boundaryProfile \"default\"")
 
 // boundarySettings fills the profile's part of the child's settings.
 func (config ClauductSettings) boundarySettings(s *childSettings) {

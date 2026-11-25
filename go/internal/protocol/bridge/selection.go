@@ -37,7 +37,7 @@ type Selection struct {
 	catalogue *Catalogue
 }
 
-// ParseSelection applies the same strict schema to preferences and saved sessions.
+// ParseSelection reads the saved session schema, including older routing preferences.
 // It checks shape only; availability belongs to the session's account list.
 func ParseSelection(raw []byte) (Selection, error) {
 	bad := func() (Selection, error) { return Selection{}, ErrUnsupportedRoute }
@@ -103,7 +103,7 @@ func ParseSelection(raw []byte) (Selection, error) {
 		}
 		selection.RoleDefaults = make(map[string]Pair, len(entries))
 		for name, value := range entries {
-			if _, known := roleRoutes[name]; !known {
+			if !BuiltinRole(name) || CanonicalRole(name) != name {
 				return bad()
 			}
 			pair, err := ParsePair(value)
@@ -159,14 +159,9 @@ func (s Selection) Snapshot() Selection {
 	if copy.RoleDefaults == nil {
 		copy.RoleDefaults = map[string]Pair{}
 	}
-	for alias, id := range builtinDefaults.ModelMapping {
+	for alias, id := range compatModelMapping {
 		if _, exists := copy.ModelMapping[alias]; !exists {
 			copy.ModelMapping[alias] = id
-		}
-	}
-	for name, route := range roleRoutes {
-		if _, exists := copy.RoleDefaults[name]; !exists {
-			copy.RoleDefaults[name] = Pair{Model: route.Model, Effort: route.Effort}
 		}
 	}
 	return copy
@@ -194,7 +189,7 @@ func (s Selection) Retires(model string) bool {
 func (s Selection) ForAlias(alias string) (Model, bool) {
 	id, configured := s.ModelMapping[alias]
 	if !configured {
-		id = builtinDefaults.ModelMapping[alias]
+		id = compatModelMapping[alias]
 	}
 	return s.ModelByID(id)
 }
@@ -222,9 +217,6 @@ func (s Selection) RoleRoute(role string) (Route, bool) {
 	}
 	if pair, ok := s.RoleDefaults[role]; ok {
 		return Route{Model: pair.Model, Effort: pair.Effort, Source: "role"}, true
-	}
-	if route, ok := roleRoutes[role]; ok {
-		return route, true
 	}
 	return s.menuRoute(role)
 }

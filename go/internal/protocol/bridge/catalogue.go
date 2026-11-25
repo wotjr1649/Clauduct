@@ -10,10 +10,12 @@ import (
 // caller. Only the fields routing needs are carried; descriptions and instructions never
 // reach this package.
 type AccountModel struct {
-	ID      string
-	Efforts []string
-	Default string
-	Visible bool
+	ID       string
+	Efforts  []string
+	Default  string
+	Visible  bool
+	Priority *int64
+	Upgrade  string
 }
 
 // Catalogue is one session's immutable account model list. A session fixes it at start
@@ -42,6 +44,10 @@ func NewCatalogue(models []AccountModel) (catalogue *Catalogue, skipped []string
 			model = Model{ID: entry.ID, Menu: entry.ID}
 		}
 		model.Visible = entry.Visible
+		if entry.Priority != nil {
+			model.priority, model.ranked = *entry.Priority, true
+		}
+		model.Upgrade = entry.Upgrade
 		for _, effort := range lowToMax {
 			if slices.Contains(entry.Efforts, effort) {
 				model.Efforts = append(model.Efforts, effort)
@@ -112,4 +118,33 @@ func (c *Catalogue) Efforts() []string {
 		}
 	}
 	return all
+}
+
+// PriorityDefault considers only visible and routable entries with an account effort.
+func (c *Catalogue) PriorityDefault(allowed func(Pair) bool) (Pair, string) {
+	var best Pair
+	var priority int64
+	tied := false
+	for _, model := range c.Models() {
+		pair := Pair{Model: model.ID, Effort: model.Effort}
+		if !model.Visible || model.Effort == "" || !allowed(pair) {
+			continue
+		}
+		if !model.ranked {
+			return Pair{}, "a candidate has no account priority"
+		}
+		switch {
+		case best.Model == "" || model.priority < priority:
+			best, priority, tied = pair, model.priority, false
+		case model.priority == priority:
+			tied = true
+		}
+	}
+	if best.Model == "" {
+		return Pair{}, "the account offers no visible candidate with a usable default effort"
+	}
+	if tied {
+		return Pair{}, "the best account priority is tied"
+	}
+	return best, ""
 }

@@ -142,3 +142,42 @@ func TestAnOverrideTheAccountDoesNotOfferIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestPriorityDefaultRequiresUniqueRankForEveryCandidate(t *testing.T) {
+	zero, one, two := int64(0), int64(1), int64(2)
+	first := AccountModel{ID: "gpt-new-first", Efforts: []string{"low"}, Default: "low", Visible: true, Priority: &one, Upgrade: "gpt-advice"}
+	other := first
+	other.ID = "gpt-new-other"
+	for _, tc := range []struct {
+		name         string
+		firstRank    *int64
+		otherRank    *int64
+		visible      bool
+		otherDefault string
+		want         string
+	}{
+		{"strict minimum", &one, &two, true, "low", first.ID},
+		{"explicit zero", &zero, &one, true, "low", first.ID},
+		{"tied", &one, &one, true, "low", ""},
+		{"missing", &one, nil, true, "low", ""},
+		{"hidden only", &one, &two, false, "low", ""},
+		{"unusable default filtered", &two, &one, true, "max", first.ID},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, b := first, other
+			a.Visible, b.Visible = tc.visible, tc.visible
+			a.Priority, b.Priority, b.Default = tc.firstRank, tc.otherRank, tc.otherDefault
+			c, _, err := NewCatalogue([]AccountModel{b, a})
+			if err != nil {
+				t.Fatal(err)
+			}
+			pair, reason := c.PriorityDefault(func(Pair) bool { return true })
+			if pair.Model != tc.want || (pair.Model == "") != (reason != "") {
+				t.Fatalf("result %v, reason %q", pair, reason)
+			}
+			if got, _ := c.ByID(a.ID); got.Upgrade != "gpt-advice" {
+				t.Fatal("lost advisory upgrade metadata")
+			}
+		})
+	}
+}

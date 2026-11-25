@@ -25,12 +25,13 @@ import (
 const hookTimeout = int(hookcmd.NativeHookTimeout / time.Second)
 
 type childSettings struct {
-	Hooks         map[string][]hookMatcher     `json:"hooks,omitempty"`
-	ModelPicker   *modelPicker                 `json:"modelPicker,omitempty"`
-	EffortLevel   string                       `json:"effortLevel,omitempty"`
-	ModelSettings map[string]map[string]string `json:"modelSettings,omitempty"`
-	Env           map[string]string            `json:"env,omitempty"`
-	APIKeyHelper  string                       `json:"apiKeyHelper,omitempty"`
+	EffortLevel        string                       `json:"effortLevel,omitempty"`
+	ModelSettings      map[string]map[string]string `json:"modelSettings,omitempty"`
+	Hooks              map[string][]hookMatcher     `json:"hooks,omitempty"`
+	ModelPicker        *modelPicker                 `json:"modelPicker,omitempty"`
+	Env                map[string]string            `json:"env,omitempty"`
+	SwitchModelsOnFlag *bool                        `json:"switchModelsOnFlag,omitempty"`
+	APIKeyHelper       string                       `json:"apiKeyHelper,omitempty"`
 	// The boundary profile's part (#301, boundary_profile.go).
 	Permissions               *childPermissions `json:"permissions,omitempty"`
 	DisableClaudeAiConnectors bool              `json:"disableClaudeAiConnectors,omitempty"`
@@ -70,24 +71,8 @@ type modelPickerRow struct {
 // every subagent it starts -- worse than not routing them, because it is noise the user
 // cannot act on.
 func (config ClauductSettings) sessionSettings(hookPath string) (string, bool) {
-	settings := childSettings{ModelPicker: config.pickerRows()}
-	settings.ModelSettings = make(map[string]map[string]string)
-	for _, model := range config.Selection.Catalogue().Models() {
-		if effort, ok := config.Selection.DefaultFor(model.ID); ok && storedEffort(effort) {
-			settings.ModelSettings[model.ID] = map[string]string{"effortLevel": effort}
-		}
-	}
-	effort := config.Startup.Effort
-	if !storedEffort(effort) {
-		if fallback, ok := config.Selection.DefaultFor(config.Startup.Model); ok {
-			effort = fallback
-		}
-	}
-	if storedEffort(effort) {
-		settings.EffortLevel = effort
-		// Native's per-model flag setting wins over the top-level flag setting.
-		settings.ModelSettings[config.Startup.Model] = map[string]string{"effortLevel": effort}
-	}
+	disableFallback := false
+	settings := childSettings{ModelPicker: config.pickerRows(), SwitchModelsOnFlag: &disableFallback}
 	config.boundarySettings(&settings)
 	if hookPath != "" {
 		entry := []hookMatcher{{

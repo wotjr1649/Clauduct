@@ -6,7 +6,7 @@
 
 v0.5.3에서 초기 파일이 `{"version":1}`로 생성되어 편집할 모델·effort·agent가 드러나지 않았던
 누락을 보완한다. 파일이 없으면 `startup`, `modelDefaults`, `modelMapping`, `agents`를 모두 담은
-[기본 문서](../../go/internal/settingsfile/defaults.json)를 생성한다. 설치와 runtime의 생략값 처리는
+[기본 문서](https://github.com/wotjr1649/Clauduct/blob/58f9491540d6a7f6ebe9f4d74787a829d114cd63/go/internal/settingsfile/defaults.json)를 생성한다. 설치와 runtime의 생략값 처리는
 이 원본을 공유한다. 기존 파일은 내용과 버전에 관계없이 자동 덮어쓰기·병합하지 않는다.
 
 새 실행의 시작값은 Sol/xhigh이며 GPT 공통 effort와 개별 agent pair는 각각 독립적이다.

@@ -60,6 +60,9 @@ type Route struct {
 // short keys, Claude aliases and families, the native Agent tier -- and the
 // offline token-count validation. It no longer limits what a user may select.
 type Model struct {
+	priority int64
+	ranked   bool
+	Upgrade  string
 	// Key is the legacy short catalogue name, which the client may also send outright.
 	// Empty for a model this build has no legacy identity for.
 	Key string
@@ -222,16 +225,6 @@ func legacyByID(id string) (Model, bool) {
 	return Model{}, false
 }
 
-// Factory role pairs are independent of per-model effort defaults. They remain
-// fallbacks, below native definitions, until the user's file sets an agent pair.
-var roleRoutes = func() map[string]Route {
-	routes := make(map[string]Route, len(builtinDefaults.Agents))
-	for name, pair := range builtinDefaults.Agents {
-		routes[name] = Route{Model: pair.Model, Effort: pair.Effort, Source: "role"}
-	}
-	return routes
-}()
-
 // inheritRoles are roles this build knows about and deliberately does not reassign.
 //
 // Measured 2026-09-17: an agent started by the Workflow tool reports agent_type
@@ -277,8 +270,10 @@ func IsFork(role string) bool { return CanonicalRole(role) == "fork" }
 
 // CanonicalRole names the built-ins in the role tables. Callers must resolve
 // custom definitions first: native allows a custom Fork distinct from fork.
+var builtinRoles = []string{"Explore", "Plan", "general-purpose"}
+
 func CanonicalRole(role string) string {
-	for name := range roleRoutes {
+	for _, name := range builtinRoles {
 		if strings.EqualFold(name, role) {
 			return name
 		}
@@ -293,14 +288,13 @@ func CanonicalRole(role string) string {
 
 // BuiltinRole is one of native's own roles in the role table (not a menu entry).
 func BuiltinRole(role string) bool {
-	_, ok := roleRoutes[CanonicalRole(role)]
-	return ok
+	return slices.Contains(builtinRoles, CanonicalRole(role))
 }
 
 // KnownRole reports a role this session can route or deliberately leaves to the parent.
 func (s Selection) KnownRole(role string) bool {
 	_, routed := s.RoleRoute(role)
-	return routed || InheritsParent(role)
+	return routed || BuiltinRole(role) || InheritsParent(role)
 }
 
 // MenuPrefix begins the name of every agent type this build defines.

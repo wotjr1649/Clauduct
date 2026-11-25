@@ -69,12 +69,13 @@ func run() int {
 	if len(os.Args) == 3 && os.Args[1] == app.ResidentRestoreRole {
 		return regenerate(os.Args[2])
 	}
-	if err := update.Recover(app.ExpectedProbeSHA256); err != nil {
+	dev, isDev := devArgs(os.Args)
+	if err := update.Recover(app.ExpectedProbeSHA256, !isDev); err != nil {
 		fmt.Fprintln(os.Stderr, "clauduct:", err)
 		return 1
 	}
-	if args, ok := devArgs(os.Args); ok {
-		return devcmd.Run(args, os.Stdout, os.Stderr)
+	if isDev {
+		return devcmd.Run(dev, os.Stdout, os.Stderr)
 	}
 	args := os.Args[1:]
 	resident := len(args) > 0 && args[0] == app.BackgroundRole

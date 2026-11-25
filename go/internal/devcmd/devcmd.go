@@ -60,12 +60,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "sync-settings":
-		if len(args) != 1 {
-			fmt.Fprintln(stderr, "usage: clauduct --dev --sync-settings")
-			return 2
-		}
-		fmt.Fprintln(stdout, "settings: missing keys use factory defaults; no sync needed")
-		return 0
+		fmt.Fprintln(stderr, "--sync-settings was removed; edit ~/.clauduct/settings.json using settings v2")
+		return 2
 	case "isolation-reset":
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -79,7 +75,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "probe":
 		return probe(args[1:], stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--sync-settings|--isolation-reset|--doctor|--usage|--probe]")
+		fmt.Fprintln(stderr, "usage: clauduct --dev [--version|--verification-budget-version|--init-settings|--isolation-reset|--doctor|--usage|--probe]")
 		return 2
 	}
 }
@@ -126,7 +122,7 @@ func doctor(out io.Writer) int {
 	source := platform.Environment(os.Environ())
 	spec := launch.Build("", nil, source, "", launch.Overlay{BaseURL: "http://127.0.0.1:0", AuthToken: ""})
 	fmt.Fprintf(out, "env          %d parent vars, %d passed to child\n", len(source), len(spec.Env))
-	fmt.Fprintln(out, "env rule     drop ANTHROPIC_* and CLAUDE_CODE_OAUTH_TOKEN; everything else is inherited")
+	fmt.Fprintln(out, "env rule     filter Anthropic and OAuth variables, restore validated model preferences at launch")
 	if path, found, err := (platform.Resolver{}).Codex(); err == nil && found {
 		fmt.Fprintf(out, "codex        found %s\n", path)
 	}
@@ -138,6 +134,8 @@ func doctor(out io.Writer) int {
 	admissionReport(out)
 	if home, err := os.UserHomeDir(); err == nil {
 		app.IsolationReport(out, home)
+		cwd, _ := os.Getwd()
+		app.StartupReport(out, home, cwd, source, upstream.AccountKey(credential.Account))
 	}
 	return status
 }

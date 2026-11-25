@@ -206,7 +206,7 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 - **거부는 아무것도 얻기 전에 일어난다.** 실행 파일 조회도, bind도 하지 않는다. `internal/app`에 그 순서를 지키는 테스트가 있다.
 - **Node·.NET·PowerShell에 runtime 의존하지 않는다.** `internal/app`의 소스 스캔 테스트가 문자열 리터럴 수준에서 이를 강제한다. Node 기준선이 `<node.exe> <repo>/src/review-diff.mjs` 형태의 명령을 native에 넘기던 패턴이 다시 들어오면 그 자리에서 실패한다.
 - **검토·고정한 의존성만 허용.** 4개 모듈의 버전을 테스트로 고정한다 — 정확 계수를 위한 3개와, 역할 정의 frontmatter를 읽는 `go.yaml.in/yaml/v3`. [추가 결정과 검토](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md), [라이선스](THIRD_PARTY_NOTICES.txt). 새로운 의존성은 `docs/v2/ARCHITECTURE.md` 14장의 기준에 따라 별도 검토·기록한다.
-- **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 [`docs/v2/DECISION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md). Clauduct는 추가 secret 장벽이 아니다.
+- **child env의 상속 단계는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`을 제거한다.** 검증된 모델 선택 환경변수만 라우팅 overlay가 전달하며 연결용 값은 세션이 정한다. 사용자 결정이며 근거는 [`docs/v2/DECISION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md). Clauduct는 추가 secret 장벽이 아니다.
 - **세션 token은 로그·커맨드라인·오류 문자열에 넣지 않는다.**
 - **tool call은 `response.completed` 이전에 만들어지지 않는다.** 스트리밍 이벤트에서 호출을 조립하는 arm을 추가하면 barrier가 사라진다. `internal/protocol/bridge`에 그것을 잡는 테스트가 있다.
 - **상태 코드 계열은 재시도 지시다.** 측정상 5xx는 종류를 가리지 않고 재시도된다. 영구적인 로컬 조건은 4xx로 답한다.

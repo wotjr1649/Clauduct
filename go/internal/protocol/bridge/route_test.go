@@ -485,13 +485,3 @@ func TestEveryModelsEffortsAreOrderedAndHoldItsDefault(t *testing.T) {
 		}
 	}
 }
-
-// roleRoutes is written out on purpose (see its comment), so nothing derives it from the
-// table. This is what notices when a model it names leaves the table.
-func TestEveryRoleRouteIsARouteTheTableOffers(t *testing.T) {
-	for role, route := range roleRoutes {
-		if got, err := SelectRoute(route.Model, route.Effort); err != nil || got.Model != route.Model {
-			t.Errorf("%s runs on %s/%s, which the table does not offer: %v", role, route.Model, route.Effort, err)
-		}
-	}
-}

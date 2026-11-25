@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -55,7 +56,7 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	facts := ModelListFacts{Source: "account"}
 	if err != nil {
 		facts.Source, facts.FetchFailure = "last-good", failureCategory(err)
-		_, hint := upstream.CredentialRefusal(err)
+		refusal, hint := upstream.CredentialRefusal(err)
 		key, keyErr := direct.AccountKey()
 		if keyErr != nil || home == "" {
 			category := facts.FetchFailure
@@ -64,17 +65,18 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 			}
 			return nil, facts, modelListFailure(category, hint, "the account could not be confirmed for a saved list")
 		}
+		var failure upstream.Failure
+		if refusal != "" || errors.As(err, &failure) && (failure.Status == http.StatusUnauthorized || failure.Status == http.StatusForbidden) {
+			return nil, facts, modelListFailure(facts.FetchFailure, hint, "the account model list request was refused")
+		}
 		list, err = upstream.LoadAccountModels(home, key)
 		if err != nil {
 			return nil, facts, modelListFailure(facts.FetchFailure, hint, "no saved list for this account")
 		}
 	}
 	facts.FetchedAt = list.FetchedAt.UTC().Format(time.RFC3339)
-	models := make([]bridge.AccountModel, 0, len(list.Models))
-	for _, m := range list.Models {
-		models = append(models, bridge.AccountModel{ID: m.ID, Efforts: m.Efforts, Default: m.Default, Visible: m.Visible})
-	}
-	catalogue, skipped, err := bridge.NewCatalogue(models)
+	catalogue, skipped, err := catalogueFor(list)
+
 	facts.Skipped = skipped
 	if err != nil {
 		return nil, facts, fmt.Errorf("%w: the list offers no model this build can route", ErrModelList)
@@ -85,6 +87,14 @@ func modelList(ctx context.Context, direct modelSource, home string) (*bridge.Ca
 	}
 	facts.Models = len(catalogue.Models())
 	return catalogue, facts, nil
+}
+
+func catalogueFor(list upstream.AccountModels) (*bridge.Catalogue, []string, error) {
+	models := make([]bridge.AccountModel, 0, len(list.Models))
+	for _, m := range list.Models {
+		models = append(models, bridge.AccountModel{ID: m.ID, Efforts: m.Efforts, Default: m.Default, Visible: m.Visible, Priority: m.Priority, Upgrade: m.Upgrade})
+	}
+	return bridge.NewCatalogue(models)
 }
 
 func modelListFailure(category, hint, reason string) error {

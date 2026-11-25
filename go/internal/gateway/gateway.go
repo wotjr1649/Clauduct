@@ -83,6 +83,7 @@ var bannedProxyHeaders = []string{"Origin", "Sec-Fetch-Site", "Forwarded"}
 // Gateway is one session's listener. Two concurrent sessions share nothing: separate
 // listener, separate port, separate token, separate request registry.
 type Gateway struct {
+	startup      startupSelection
 	selection    bridge.Selection // configured once before native starts
 	profiles     *profileState
 	listener     net.Listener

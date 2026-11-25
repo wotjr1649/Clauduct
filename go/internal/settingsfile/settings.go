@@ -1,9 +1,8 @@
-// Package settingsfile provides the factory document and explicit settings initialization.
+// Package settingsfile provides explicit settings initialization.
 package settingsfile
 
 import (
 	"crypto/rand"
-	_ "embed"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,11 +10,7 @@ import (
 
 var ErrCreate = errors.New("CLAUDUCT_SETTINGS_CREATE_FAILED")
 
-//go:embed defaults.json
-var defaults string
-
-// Defaults is the complete factory document, shared by initialization and routing.
-func Defaults() string { return defaults }
+const initial = `{"version":2}` + "\n"
 
 func Ensure(home string) error {
 	if !filepath.IsAbs(home) {
@@ -44,7 +39,7 @@ func Ensure(home string) error {
 		return ErrCreate
 	}
 	defer root.Remove(temp)
-	_, writeErr := file.WriteString(defaults)
+	_, writeErr := file.WriteString(initial)
 	syncErr, closeErr := file.Sync(), file.Close()
 	if writeErr != nil || syncErr != nil || closeErr != nil {
 		return ErrCreate

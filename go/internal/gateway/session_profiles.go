@@ -489,6 +489,12 @@ func (g *Gateway) RestoreSessionProfiles(saved []SessionProfile) {
 			p.restored = make(map[string]bridge.Pair)
 		}
 		p.restored[copy.ID] = copy.Last
+		if g.startup.main.pair != (bridge.Pair{}) {
+			if g.startup.residents == nil {
+				g.startup.residents = make(map[string]*verifiedStartup)
+			}
+			g.startup.residents[copy.ID] = &verifiedStartup{pair: copy.Last}
+		}
 	}
 }
 
@@ -666,8 +672,11 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	parent := held
 	var forkParent *SessionProfile
 	if source == "fork" || p.fork && first {
-		// A new native's explicit resume target proves its parent even with several live sessions.
-		if source == "fork" && held == "" {
+		// The launcher already resolved the primary fork's parent before native started.
+		if p.fork && first && p.forkHistory != nil {
+			forkParent = p.forkHistory
+		}
+		if forkParent == nil && source == "fork" && held == "" {
 			if id := g.commandLineForkSession(process); id != "" {
 				if p.ended[id] {
 					return errSessionRestart
@@ -681,9 +690,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			}
 		}
 		// Without argv proof, keep the launch target, this native's session, or sole live candidate.
-		if forkParent == nil && p.fork && first && p.forkHistory != nil {
-			forkParent = p.forkHistory
-		} else if forkParent == nil && parent != "" && p.serving(parent) {
+		if forkParent == nil && parent != "" && p.serving(parent) {
 			forkParent = p.profiles[parent]
 		} else if forkParent == nil && parent == "" {
 			for id, candidate := range p.profiles {

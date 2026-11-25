@@ -26,7 +26,6 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
-	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	"github.com/wotjr1649/Clauduct/go/internal/providercert"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 	"github.com/wotjr1649/Clauduct/go/internal/upstream"
@@ -1450,9 +1449,6 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 		first := []string{"-p", prompt(obs.Turns[i].Canary), "--session-id", session}
 		if c.Entry == p3ContinueRecover {
 			// Not today's default pair, so a restored pair is told apart from a default one.
-			if bridge.DefaultStartup() == (bridge.Pair{Model: p3RestoreModel, Effort: p3RestoreEffort}) {
-				t.Fatal("the restore pair is the default pair; pick another")
-			}
 			first = append(first, "--model", p3RestoreModel, "--effort", p3RestoreEffort)
 		}
 		once(first, nil, &outs[0])
@@ -1489,9 +1485,6 @@ func (p p3Runner) run(t TB, c p3Case, configuration string) (obs *p3Observed) {
 			obs.Session = session
 			seed := []string{"-p", "", "--session-id", session}
 			if c.SeedPair {
-				if bridge.DefaultStartup() == (bridge.Pair{Model: p3RestoreModel, Effort: p3RestoreEffort}) {
-					t.Fatal("the restore pair is the default pair; pick another")
-				}
 				seed = append(seed, "--model", p3RestoreModel, "--effort", p3RestoreEffort)
 			}
 			s := turn(c.TUIResume)
@@ -2278,9 +2271,8 @@ func p3PrintFamily() []p3Case {
 		// live session.
 		{ID: "R04L", Entry: p3Multi, Turns: 3, Hooks: p3HooksNormal, HookFaults: promptFails(p3HookChild), DiagnosticEvent: "UserPromptSubmit", Sentinel: true, ReplyDelay: p3ReplyDelay, Setup: storedA, Expect: okDiag, Established: anchorA},
 		{ID: "R06", Entry: p3Resume, Hooks: p3HooksNormal, Setup: storedA, Expect: ok, Established: anchorA},
-		// --continue of a session with a stored profile is refused with the exact --resume to run
-		// (a kept contract, not --continue working); that --resume restores it; a session with no
-		// stored profile still continues.
+		// --continue cannot prove the saved target before launch, with or without a profile.
+		// An explicit UUID restores a recorded session's pair.
 		{ID: "R07r", Entry: p3ContinueRefusal, Hooks: p3HooksNormal, Purpose: providercert.PurposeSafeRefusal, Setup: storedA, Expect: ok,
 			ExpectTurns: map[int]string{1: providercert.ExpectSafeRefusal}, Established: anchorA},
 		{ID: "R07m", Entry: p3ContinueRecover, Hooks: p3HooksNormal, Setup: storedA, Expect: ok, RestoreTurn: 2,

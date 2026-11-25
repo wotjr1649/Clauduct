@@ -21,7 +21,7 @@ type IsolationFacts struct {
 	ClaudeMd        string `json:"claudeMd,omitempty"`
 }
 
-var errIsolationControl = errors.New("ISOLATION_MODE_UNREADABLE: ~/.clauduct/settings.json could not be read as valid v1 settings, so the command was not sent to a supervisor; fix the file and run it again")
+var errIsolationControl = errors.New("ISOLATION_MODE_UNREADABLE: ~/.clauduct/settings.json could not be read as valid v2 settings; edit the file (minimal form: {\"version\":2}) and run the command again")
 
 // controlIsolation points a management command (rm, stop, logs) at the dedicated folder when
 // isolated mode is on. A missing file keeps the default. A file we cannot validate gives us no

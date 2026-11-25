@@ -61,10 +61,12 @@ const ModelsHTTPError = "MODELS_HTTP_ERROR"
 // are the backend's strings as sent; choosing which of them can be transmitted is the
 // caller's decision.
 type AccountModel struct {
-	ID      string
-	Efforts []string
-	Default string
-	Visible bool
+	ID       string
+	Efforts  []string
+	Default  string
+	Visible  bool
+	Priority *int64
+	Upgrade  string
 }
 
 // AccountModels is one account's model list. Account is AccountKey of the credential's
@@ -211,9 +213,9 @@ func (d *Direct) AccountModels(ctx context.Context) (result AccountModels, err e
 
 func shapeError(reason string) error { return fmt.Errorf("%w: %s", ErrModelsShape, reason) }
 
-// parseAccountModels reads {"models":[...]}, keeping only slug, the effort strings,
-// default_reasoning_level and visibility. Other fields are scanned but never decoded or kept; a needed field
-// of the wrong type, a repeated key, or one bad model refuses the whole list.
+// parseAccountModels keeps the routing fields and the advisory upgrade target.
+// A malformed routing field refuses the list. An unusable rank blocks automatic
+// selection without invalidating the model or its explicitly selectable efforts.
 func parseAccountModels(raw []byte) ([]AccountModel, error) {
 	top, err := wire.Fields(raw, nil)
 	if err != nil {
@@ -252,6 +254,20 @@ func parseAccountModel(raw json.RawMessage) (AccountModel, error) {
 		return AccountModel{}, err
 	}
 	model.Visible = visibility == "list"
+	if value, presence := wire.Of(fields, "priority"); presence == wire.Present {
+		// Invalid rank is unranked. The exact model can still be requested.
+		var priority int64
+		if json.Unmarshal(value, &priority) == nil {
+			model.Priority = &priority
+		}
+	}
+	if value, presence := wire.Of(fields, "upgrade"); presence == wire.Present {
+		upgrade, err := wire.Fields(value, nil)
+		var target string
+		if err == nil && storedValue(upgrade, "model", &target) && modelSlug.MatchString(target) {
+			model.Upgrade = target
+		}
+	}
 	if value, presence := wire.Of(fields, "default_reasoning_level"); presence == wire.Present {
 		if json.Unmarshal(value, &model.Default) != nil {
 			return AccountModel{}, shapeError("default_reasoning_level")
@@ -300,7 +316,7 @@ func validateAccountModels(models []AccountModel) error {
 	}
 	seen := make(map[string]bool, len(models))
 	for _, model := range models {
-		if !modelSlug.MatchString(model.ID) {
+		if !modelSlug.MatchString(model.ID) || model.Upgrade != "" && !modelSlug.MatchString(model.Upgrade) {
 			return shapeError("slug")
 		}
 		if seen[model.ID] {

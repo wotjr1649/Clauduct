@@ -91,6 +91,22 @@ wildcard를 받지 않는다. 생략한 route는 이전처럼 모델·effort만 
 native background 상태 분류 같은 보조 생성도 예산에 포함한다. 2.1.282의 본문을 `gpt-6-luna/low`로
 실행했을 때 상태 분류는 `gpt-6-luna/max`로 요청됐으므로, 검증 계획은 실측한 보조 경로도 명시해야 한다.
 
+### 검증 전용 명령과 응답 캡처
+
+두 기능 모두 검증 하네스용이다. `--dev`를 첫 인자로 주거나 아래 변수를 명시적으로 지정하지 않으면 일반 실행은 이 경로를 쓰지 않는다.
+
+- `clauduct --dev --verify-catalogue-refusal`은 인자를 받지 않는다(추가 인자는 exit 2). 계정 모델 목록 요청이 401·403·503을
+  받을 때의 시작 경계를 프로세스 안에서 확인한다. 임시 폴더, 메모리 안의 합성 자격 증명, 프로세스 전용 TLS 수신기만 쓰며
+  `127.0.0.1` 밖의 연결은 연결 전에 거부한다. native와 gateway는 시작하지 않고 OS 자격 증명 저장소와 실제 backend를 읽지 않는다.
+  stdout에 한 줄 JSON(`commit`, 세 행의 `httpStatus`·`category`·cache 해시 전후·`nativeLookups`·`nativeStarts`·`gatewayStarts`)을 쓴다.
+  401·403은 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 거부하고 저장 목록을 바꾸지 않으며, 503은 같은 계정의 last-good을 쓴다.
+  동작은 [계정 모델 목록](../docs/v2/SETTINGS.md#계정-모델-목록-v064)을 따른다.
+- `CLAUDUCT_VERIFICATION_HTTP_CAPTURE=1`은 gateway가 인증된 native 연결의 `/v1/models`·`/v1/messages`·`/v1/messages/count_tokens` **응답**만
+  `$CLAUDUCT_VERIFICATION_BUDGET/http-capture/response-<seq>.json`에 기록하게 한다. 값은 정확히 `1`이어야 하고 같은 실행에
+  절대경로의 `CLAUDUCT_VERIFICATION_BUDGET`이 있어야 한다. 아니면 native를 띄우기 전에 `VERIFICATION_HTTP_CAPTURE_REQUIRES_BUDGET`으로 거부한다.
+  디렉터리는 새로 만들며 이미 있으면 거부한다. 기록은 gateway 순번·native PID와 생성 시각·loopback 연결 양끝·세션·launcher PID·상태·응답 본문(1 MiB 이하,
+  실행당 96건)이고 요청 header와 본문은 저장하지 않는다. 변수가 없으면 이 경로는 실행되지 않는다.
+
 ## 명령
 
 Windows 개발·검증 명령은 PowerShell 7(`pwsh`)에서 실행한다. 현재 검증 환경은 7.6.6이다.

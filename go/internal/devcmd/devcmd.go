@@ -12,6 +12,8 @@
 package devcmd
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -44,6 +46,21 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return version(stdout)
 	case "verification-budget-version":
 		fmt.Fprintln(stdout, upstream.VerificationBudgetVersion)
+		return 0
+	case "verify-catalogue-refusal":
+		if len(args) != 1 {
+			return 2
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		rows, err := app.VerifyCatalogueRefusal(ctx)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if err := json.NewEncoder(stdout).Encode(map[string]any{"commit": buildinfo.Read().CommitOrUnknown(), "rows": rows}); err != nil {
+			return 1
+		}
 		return 0
 	case "init-settings":
 		if len(args) != 1 {

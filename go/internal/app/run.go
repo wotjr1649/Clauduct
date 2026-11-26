@@ -530,6 +530,15 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 			gw.RequireNativeIdentity(image)
 		}
 	}
+	if request := o.Env["CLAUDUCT_VERIFICATION_HTTP_CAPTURE"]; request != "" {
+		budget := o.Env["CLAUDUCT_VERIFICATION_BUDGET"]
+		if request != "1" || !filepath.IsAbs(budget) {
+			return Result{}, errors.Join(errors.New("VERIFICATION_HTTP_CAPTURE_REQUIRES_BUDGET"), closeGateway(gw, o.ShutdownTimeout))
+		}
+		if err := gw.CaptureNativeVerificationResponses(budget); err != nil {
+			return Result{}, errors.Join(err, closeGateway(gw, o.ShutdownTimeout))
+		}
+	}
 	gw.ConfigureContextPolicy(config.ContextPolicy)
 	gw.ConfigureClassifierModel(config.ClassifierModel)
 	gw.ExpectTools(expectedTools(o.Args, upstream.ReferenceCoreTools))

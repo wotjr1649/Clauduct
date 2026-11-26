@@ -1125,6 +1125,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		return result, fmt.Errorf("%w: %s; the session was ended so no further model request could leave this session's gateway", ErrRoutingUnverified, lifecycle.Detail)
 	}
 
+	// A verification run that lost a captured response is not evidence. Only a configured capture can report this.
+	if captureErr := gw.VerificationCaptureError(); captureErr != nil {
+		return result, captureErr
+	}
+
 	// A non-zero native exit is the native process's answer, not this bridge's error. Only
 	// a failure to observe the child at all is returned as an error.
 	var exitErr *exec.ExitError

@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/wotjr1649/Clauduct/go/internal/auth"
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
@@ -30,8 +29,13 @@ func (f catalogueVerificationTransport) RoundTrip(r *http.Request) (*http.Respon
 }
 
 // VerifyCatalogueRefusal exercises the launcher's model-list boundary without
-// native children, OS credential storage or non-loopback network access.
-func VerifyCatalogueRefusal(ctx context.Context) ([]map[string]any, error) {
+// native children, OS credential storage or non-loopback network access. This package
+// builds no credential provider: newDirect (devcmd) turns the in-memory fixture account
+// and token into the Direct transport, and this function only replaces its HTTP client.
+func VerifyCatalogueRefusal(ctx context.Context, newDirect func(home, account, token string) *upstream.Direct) ([]map[string]any, error) {
+	if newDirect == nil {
+		return nil, errors.New("catalogue verification needs its Direct constructor")
+	}
 	home, err := os.MkdirTemp("", "clauduct-catalogue-verification-")
 	if err != nil {
 		return nil, err
@@ -85,13 +89,7 @@ func VerifyCatalogueRefusal(ctx context.Context) ([]map[string]any, error) {
 		return nil, errors.New("catalogue verification external dial control failed")
 	}
 	token := "fixture." + base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("{\"exp\":%d}", time.Now().Add(time.Hour).Unix()))) + ".fixture"
-	provider := &auth.Provider{Home: home, Environ: map[string]string{}, ReadFile: func(name string) ([]byte, error) {
-		if name != filepath.Join(home, "auth.json") {
-			return nil, os.ErrNotExist
-		}
-		return []byte(fmt.Sprintf("{\"auth_mode\":\"chatgpt\",\"tokens\":{\"account_id\":%q,\"access_token\":%q}}", account, token)), nil
-	}}
-	direct := upstream.NewDirect(provider, upstream.NewLedger(upstream.Budget{}), upstream.Fixed("0.160.0"))
+	direct := newDirect(home, account, token)
 	var observedStatus atomic.Int64
 	direct.Client = &http.Client{CheckRedirect: client.CheckRedirect, Transport: catalogueVerificationTransport(func(r *http.Request) (*http.Response, error) {
 		if r.Method != http.MethodGet || r.URL.Scheme != "https" || r.URL.Host != "chatgpt.com" ||

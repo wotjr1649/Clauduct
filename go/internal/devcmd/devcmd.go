@@ -53,7 +53,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		rows, err := app.VerifyCatalogueRefusal(ctx)
+		rows, err := app.VerifyCatalogueRefusal(ctx, catalogueDirect)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

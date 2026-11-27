@@ -79,7 +79,7 @@ v0.6.4–v0.6.16의 `--update`는 설치 뒤 `clauduct --dev --sync-settings`를
 
 ## 출하 검사
 
-태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 결과는 발행 뒤 이 문서에 기록한다. 마지막 유효 T1·T2의 native 버전과 전체 SHA-256이 이번 native와 같은지에 따라 `c1` 도구 표면 재측정 여부를 정하며, 그 결정과 근거도 함께 기록한다. 이번 후보가 확인하는 바뀐 동작은 다음과 같다.
+태그·commit, 후보 `clauduct.exe`와 `clauduct-probe.exe`, native 버전과 SHA-256에 결속한 `GATE-T1` 결과는 발행 뒤 이 문서에 기록한다. 마지막 유효 T1·T2의 native 버전과 전체 SHA-256이 이번 native와 같은지에 따라 `c1` 도구 표면 재측정 여부를 정하며, 그 결정과 근거도 함께 기록한다. 이번 출하의 필수 범위는 핵심 동작(모델 요청 중계, 계정 모델 선택, 서브에이전트·Workflow·재개·auto 권한·plugin/hook/MCP 공존, 압축, 자격증명·목적지 보호)이다. Agent View·`--bg`·resident·warm spare와 Agent teams는 best-effort 확장으로, 이번 후보에서 시험하지 않았고 그 결과는 출하를 막지 않는다. 이 기능들의 이전 측정은 [호환성 문서](COMPATIBILITY.md#확장-기능의-시험-상태)에서 현재 시험하지 않음 — 이전 실측 기록이다. 확장의 진단 단계를 실행하지 않은 경우 `NOT_RUN`과 이유를 이 절 끝에 적는다. 이번 후보가 확인하는 바뀐 동작은 다음과 같다.
 
 - 설정: v2 최소 파일·파일 없음. 업데이트 뒤 v1 파일은 native 시작과 예약 0건으로 거부하고, 수동으로 v2로 옮긴 뒤에는 실행에 성공한다. 롤백 뒤에는 v2 파일을 거부하고 v1을 복원하면 성공한다. 새 설치는 설정 파일을 만들지 않고 `--dev --init-settings`가 명시적으로 만든다. v1·v2 파일의 바이트·mtime과 PATH는 설치·업데이트·롤백 전후에 보존한다.
 - 모델 선택: 계정 priority 기본값, native 명시 선택, 명시 UUID 재개·fork의 pair 복원, 모르는 effort의 조기 거부, `--continue` 재개 거부. 같은 설정 표본에 두 Agent View 작업, 분류기 4건, context·역할·inline Workflow, 모델 목록·`count_tokens`·WebSearch 경계를 포함한다.
@@ -106,11 +106,12 @@ v0.6.4–v0.6.16의 `--update`는 설치 뒤 `clauduct --dev --sync-settings`를
 
 ## 알려진 제한
 
-- **파일 기반 Workflow(`named`·`scriptPath`)는 Read 권한을 검증한 native 이미지(2.1.325)에서만 받는다.** 다른 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. native의 mod `$.tool.call` Read가 Read 거부 규칙을 지키지 않는 동작은 2.1.330·2.1.331·2.1.332에서 관측했고 upstream에 보고했다. 그 밖의 이미지에서는 관측하지 않았다. [anthropics/claude-code#110979의 관측](https://github.com/anthropics/claude-code/issues/110979#issuecomment-7162373953), [#403](https://github.com/wotjr1649/Clauduct/issues/403). inline `script`는 계속 지원한다. Claude Code 2.1.332를 쓰는 설치에서는 파일 소스가 거부된다.
+- **파일 기반 Workflow(`named`·`scriptPath`)는 Read 권한을 검증한 native 이미지(2.1.325)에서만 받는다.** 다른 이미지는 `CLAUDUCT_WORKFLOW_SOURCE_IMAGE_UNVERIFIED`로 Read 전에 거부한다. native의 mod `$.tool.call` Read가 Read 거부 규칙을 지키지 않는 동작은 2.1.330·2.1.331·2.1.332에서 관측했고 upstream에 보고했다. 그 밖의 이미지에서는 관측하지 않았다. [anthropics/claude-code#110979의 관측](https://github.com/anthropics/claude-code/issues/110979#issuecomment-7162373953), [#403](https://github.com/wotjr1649/Clauduct/issues/403). inline `script`는 계속 지원한다. Claude Code 2.1.332를 쓰는 설치에서는 파일 소스가 거부된다. 당분간 변경 계획은 없고 upstream 동작이 바뀌면 다시 검토한다.
 - **Code Mode는 gateway 경로에서 제공하지 않는다.** native 2.1.331은 Amazon Bedrock·Google Cloud·Microsoft Foundry·Claude Platform on AWS의 터미널 세션에 Code Mode 지원을 더했다([Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md)). Clauduct가 쓰는 custom base URL 경로에서는 지원하지 않으며 이를 구현하지 않았다. 2026-11-26 기준 LLM gateway 문서에서 Code Mode 규약을 찾지 못했고, Code Mode 요청이 이 경로에 실제로 어떻게 나타나는지는 측정하지 않았다.
 - **사용자 Claude Mods는 로드·실행된다. 다만 제한이 있다.** 확인은 native 2.1.288의 합성 backend 기준이다([v0.6.7](RELEASE-v0.6.7.md)). mod가 `$.tool.call`로 Agent·SendMessage·Workflow·Skill을 직접 부르면 `NATIVE_DIRECT_DELEGATION_UNSUPPORTED`로 거부한다. 내장 mod "You should know"는 first-party 세션이면서 telemetry가 켜진 경우에만 제공되므로 Clauduct 세션에서는 쓸 수 없다. mod의 Read가 Read 거부 규칙을 지키지 않는 native 동작은 위 Workflow 파일 소스 제한의 이유다.
 - **설정 v2의 호환성 경계.** v1 파일을 자동으로 변환하지 않는다. v0.6.18로 되돌리면 v2 파일을 거부한다. 그보다 이전 버전으로 되돌리는 경로는 이번 릴리스에서 확인하지 않았다.
 - **`--update` 복구는 하드 링크를 지원하는 설치 볼륨을 전제로 한다.** 하드 링크를 지원하지 않으면 교체 전에 멈추고 기존 쌍을 보존한 채 재설치를 안내한다. Windows는 삭제 대기 중인 파일과 실제 접근 거부에 같은 `ERROR_ACCESS_DENIED`를 반환할 수 있어([CreateFileW](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew)) 이 오류를 `UPDATE_BUSY`로 바꾸지 않는다. 설치 잠금이 닫히는 순간 겹친 병렬 시작은 `UPDATE_BUSY` 또는 복구 안내로 멈출 수 있으며, 어느 쪽도 불일치한 쌍을 시작하지 않는다.
-- **복원한 background resident의 프로필 잠금 제한은 v0.6.19에도 남아 있다.** 수정은 이번 릴리스 범위 밖이다. [#351](https://github.com/wotjr1649/Clauduct/issues/351).
-- **teammate에게 보낸 두 번째 메시지의 전달과 재개 뒤 이전 reasoning의 재실림은 진단으로 확인하지 못했다.** 이 릴리스에서는 확인하지 못했고 진단은 #329에서 이어서 다룬다. [#329](https://github.com/wotjr1649/Clauduct/issues/329).
+- **복원한 background resident의 프로필 잠금 제한은 v0.6.19에도 남아 있다.** 수정은 보류했고 당분간 계획이 없다. 복원 resident와 `--bg` 관리는 best-effort 확장으로 이번 릴리스에서 시험하지 않았다. [#351](https://github.com/wotjr1649/Clauduct/issues/351).
+- **Agent teams는 이번 릴리스에서 시험하지 않았다.** teammate에게 보낸 두 번째 메시지의 전달과 재개 뒤 이전 reasoning의 재실림은 진단하지 않았고, 이 작업은 보류했다. [#329](https://github.com/wotjr1649/Clauduct/issues/329).
+- **확장 기능은 이번 릴리스에서 시험하지 않았다.** Agent View, `--bg`·resident·warm spare, Agent teams는 best-effort 확장이다. 이 기능의 이전 측정은 [호환성 문서](COMPATIBILITY.md#확장-기능의-시험-상태)에서 **현재 시험하지 않음 — 이전 실측 기록**이다. 현재 native와 이 빌드에서 다시 확인하지 않았다. 이 기능이 새 native에서 동작하지 않아도 출하를 막지 않는다. 자격증명 보호와 목적지 검사는 이 기능에도 같은 설계 불변식으로 적용한다.
 - 공통 제한은 [알려진 제한 원장](COMPATIBILITY.md#알려진-제한-원장-v0618-)에 있다. auto 모드 분류 요청 형식의 제한은 [v0.6.18 문서](RELEASE-v0.6.18.md#알려진-제한)와 같다.

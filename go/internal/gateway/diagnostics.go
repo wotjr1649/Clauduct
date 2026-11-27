@@ -192,13 +192,14 @@ func (r *record) contextEstimate(tokens int64, source string, opaque, media bool
 // StreamEndRecord contains closed labels and counters only. Never preserve transport error text, URLs,
 // headers or payloads in a diagnostic.
 type StreamEndRecord struct {
-	ReadError        string `json:"readError"`
-	ClientContext    string `json:"clientContext"`
-	TerminalObserved bool   `json:"terminalObserved"`
-	Events           int    `json:"events"`
-	Bytes            int    `json:"bytes"`
-	DoneObserved     bool   `json:"doneObserved"`
-	TrailingEvent    string `json:"trailingEvent,omitempty"`
+	ReadError         string `json:"readError"`
+	ClientContext     string `json:"clientContext"`
+	TerminalObserved  bool   `json:"terminalObserved"`
+	FirstTerminalType string `json:"firstTerminalType,omitempty"`
+	Events            int    `json:"events"`
+	Bytes             int    `json:"bytes"`
+	DoneObserved      bool   `json:"doneObserved"`
+	TrailingEvent     string `json:"trailingEvent,omitempty"`
 }
 
 func streamErrorLabel(err error) string {
@@ -227,13 +228,21 @@ func (r *record) responseDelivered(delivered bool) {
 	r.mu.Unlock()
 }
 
-func (r *record) streamEnd(readErr, clientErr error, terminal bool, events, bytes int, done bool, trailing string) {
+func (r *record) streamEnd(readErr, clientErr error, terminal string, events, bytes int, done bool, trailing string) {
 	if r == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.data.StreamEnd = &StreamEndRecord{streamErrorLabel(readErr), streamErrorLabel(clientErr), terminal, events, bytes, done, trailing}
+	// Keep the diagnostic vocabulary closed even if the parser's terminal filter changes.
+	if !codex.Terminal(terminal) {
+		terminal = ""
+	}
+	r.data.StreamEnd = &StreamEndRecord{
+		ReadError: streamErrorLabel(readErr), ClientContext: streamErrorLabel(clientErr),
+		TerminalObserved: terminal != "", FirstTerminalType: terminal,
+		Events: events, Bytes: bytes, DoneObserved: done, TrailingEvent: trailing,
+	}
 }
 
 // record is the live half of a RequestRecord, mutated as the request proceeds.

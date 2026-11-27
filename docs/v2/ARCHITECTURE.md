@@ -332,8 +332,11 @@ v0.6.11은 `response.metadata` 중 OpenAI의 표시 정보인
 모르는 metadata, 다른 필드가 섞인 알림과 잘못된 형태는 거부하며, `safety_buffering` 검증은 별도로 유지한다.
 
 `StreamEnd`는 모든 relay 반환 경로에서 마지막 read 오류, client context, terminal 관측,
-event 수와 읽은 byte 수를 기록한다. `DoneObserved`는 `[DONE]` 관측 여부이며 `TrailingEvent`는
-종료 뒤 거부한 데이터의 정해진 종류만 기록한다. 미등록 이름과 본문은 기록하지 않는다.
+event 수와 읽은 byte 수를 기록한다. `firstTerminalType`은 파서가 처음 관측한 terminal의
+타입(`response.completed`, `response.failed`, `response.incomplete`, `error`)이며,
+terminal을 관측하지 못하면 생략한다. `DoneObserved`는 `[DONE]` 관측 여부이며 `TrailingEvent`는
+종료 뒤 거부한 데이터의 정해진 종류만 기록한다. 이 진단에는 미등록 이름, 이벤트 본문,
+응답 ID와 오류 문구를 넣지 않는다.
 파싱·변환이 EOF 전에 실패하면 read 오류는 `none`일 수
 있다. `TerminalObserved:true`와 `EMPTY_REPLY`는 terminal 관측 후 빈 본문으로 거부한 상태이며,
 socket reset의 증거가 아니다. 최초 실패 category는 후속 재전송 거부와 별도로 보존한다.

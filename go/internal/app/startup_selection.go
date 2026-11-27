@@ -20,6 +20,9 @@ import (
 // ErrResumeUUIDRequired is an early refusal of an ambiguous resume entry point.
 var ErrResumeUUIDRequired = errors.New("SESSION_RESUME_UUID_REQUIRED: use clauduct --resume <UUID> with a recorded Clauduct session")
 
+// ErrSessionProfileMissing refuses a --resume UUID that has no Clauduct session profile.
+var ErrSessionProfileMissing = errors.New("SESSION_PROFILE_MISSING: the requested UUID has no Clauduct profile")
+
 var errNativeSelection = errors.New("NATIVE_SELECTION_UNVERIFIED: check Claude Code model and effort settings")
 var errNativeFallback = errors.New("NATIVE_MODEL_FALLBACK_UNSUPPORTED: remove fallbackModel or --fallback-model and choose a model explicitly")
 var errNativePolicy = errors.New("NATIVE_MODEL_POLICY: the configured model or effort is disallowed or its policy cannot be verified")

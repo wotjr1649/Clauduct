@@ -371,7 +371,9 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		}
 	}
 	o.Args = forward
-	if !information && o.Settings == nil && requiresResumeUUID(forward, resumeID) {
+	// The probe's unprotected control (ProbeControlOptions) measures native's own --continue and
+	// --resume handling, so it skips this refusal as it skips the background resume ones above.
+	if !information && o.Settings == nil && !o.probeUnprotectedControl && requiresResumeUUID(forward, resumeID) {
 		return Result{}, ErrResumeUUIDRequired
 	}
 	var in startupInputs
@@ -450,8 +452,11 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		if resumeID != "" {
 			saved, loadErr := profiles.Load(resumeID)
 			switch {
+			case errors.Is(loadErr, os.ErrNotExist) && o.probeUnprotectedControl:
+				// The probe's unprotected control resumes a session Clauduct never recorded
+				// (ProbeControlOptions): no snapshot, today's settings.
 			case errors.Is(loadErr, os.ErrNotExist):
-				return Result{}, errors.New("SESSION_PROFILE_MISSING: the requested UUID has no Clauduct profile")
+				return Result{}, ErrSessionProfileMissing
 			case loadErr != nil:
 				return Result{}, loadErr
 			default:

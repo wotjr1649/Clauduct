@@ -525,15 +525,21 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 		// The job's settings name the recorded port; any other serves nobody.
 		return Result{}, errors.Join(errors.New("RESIDENT_PORT_MISMATCH"), closeGateway(gw, o.ShutdownTimeout))
 	}
+	identityRequired := false
 	if o.Settings == nil {
 		if image := filepath.Base(exe); strings.EqualFold(image, "claude.exe") && !o.nativeIdentityOff {
 			gw.RequireNativeIdentity(image)
+			identityRequired = true
 		}
 	}
 	if request := o.Env["CLAUDUCT_VERIFICATION_HTTP_CAPTURE"]; request != "" {
 		budget := o.Env["CLAUDUCT_VERIFICATION_BUDGET"]
 		if request != "1" || !filepath.IsAbs(budget) {
 			return Result{}, errors.Join(errors.New("VERIFICATION_HTTP_CAPTURE_REQUIRES_BUDGET"), closeGateway(gw, o.ShutdownTimeout))
+		}
+		// The capture attaches only to an identified native connection; without the identity check it would record nothing and still succeed.
+		if !identityRequired {
+			return Result{}, errors.Join(errors.New("VERIFICATION_HTTP_CAPTURE_REQUIRES_NATIVE_IDENTITY"), closeGateway(gw, o.ShutdownTimeout))
 		}
 		if err := gw.CaptureNativeVerificationResponses(budget); err != nil {
 			return Result{}, errors.Join(err, closeGateway(gw, o.ShutdownTimeout))

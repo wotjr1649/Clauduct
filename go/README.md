@@ -104,6 +104,7 @@ native background 상태 분류 같은 보조 생성도 예산에 포함한다. 
 - `CLAUDUCT_VERIFICATION_HTTP_CAPTURE=1`은 gateway가 인증된 native 연결의 `/v1/models`·`/v1/messages`·`/v1/messages/count_tokens` **응답**만
   `$CLAUDUCT_VERIFICATION_BUDGET/http-capture/response-<seq>.json`에 기록하게 한다. 값은 정확히 `1`이어야 하고 같은 실행에
   절대경로의 `CLAUDUCT_VERIFICATION_BUDGET`이 있어야 한다. 아니면 native를 띄우기 전에 `VERIFICATION_HTTP_CAPTURE_REQUIRES_BUDGET`으로 거부한다.
+  native 신원 검사가 꺼진 실행(`claude.exe`가 아니거나 설정 재정의가 있는 실행)에서는 캡처가 붙을 수 없으므로 `VERIFICATION_HTTP_CAPTURE_REQUIRES_NATIVE_IDENTITY`로 거부한다.
   디렉터리는 새로 만들며 이미 있으면 거부한다. 기록은 gateway 순번·native PID와 생성 시각·loopback 연결 양끝·세션·launcher PID·상태·응답 본문(1 MiB 이하,
   실행당 96건)이고 요청 header와 본문은 저장하지 않는다. 변수가 없으면 이 경로는 실행되지 않는다.
   캡처를 잃으면 증거로 쓸 수 없으므로 실행이 실패한다. 파일 생성·쓰기 실패는 `VERIFICATION_HTTP_CAPTURE_WRITE_FAILED`, 같은 순번 파일이 이미 있으면

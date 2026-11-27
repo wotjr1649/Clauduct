@@ -131,9 +131,6 @@ type Options struct {
 	// ProviderStrategy is how native is held to this session's gateway (#320); empty is the
 	// launch without one. An unknown name is refused.
 	ProviderStrategy string
-	// AdmittedNativeSHA256 is the native the admission gate admitted (admission r2 cache.use):
-	// the session starts only that file, held against change until it is running.
-	AdmittedNativeSHA256 string
 	// backgroundUnderStrategy lets a probe run the unverified background path under a strategy.
 	backgroundUnderStrategy bool
 	// Only ProbeControlOptions sets this for the synthetic UNPROTECTED baseline.
@@ -891,7 +888,7 @@ func Run(ctx context.Context, o Options) (result Result, err error) {
 	var process Process = noDispatch{}
 	var startErr error
 	if o.Regenerate == nil {
-		process, startErr = startAdmitted(o.StartProcess, o.AdmittedNativeSHA256, spec, o.Stdin, stdout, stderr)
+		process, startErr = o.StartProcess(spec, o.Stdin, stdout, stderr)
 	}
 	if foregroundStarted != nil {
 		foregroundIdentity = nativeProcessIdentity(process)

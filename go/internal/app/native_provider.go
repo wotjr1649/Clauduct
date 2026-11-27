@@ -52,7 +52,7 @@ func checkNativeProviderWithStart(parent context.Context, exe string, o Options,
 	if ctx.Err() != nil {
 		return nativeProviderRefusal(o.Stderr, entered, nativeProviderFailure{"ctx", nativeProviderContextReason(parentDeadline, hasParentDeadline, queryDeadline, ctx.Err(), context.Cause(ctx))}, "na", "unknown", errNativeProviderStatus)
 	}
-	process, startErr := startAdmitted(start, o.AdmittedNativeSHA256, spec, nil, &output, io.Discard)
+	process, startErr := start(spec, nil, &output, io.Discard)
 	// A synchronous start can outlive the query budget. Snapshot the first context
 	// outcome before cleanup so a later cancellation cannot replace its cause.
 	startContextErr, startContextCause := ctx.Err(), context.Cause(ctx)

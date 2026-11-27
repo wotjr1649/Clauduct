@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
-	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 )
 
 // Inspect names only: file env stays native-owned, including its folder trust boundary.
@@ -49,7 +48,7 @@ func nativeSettingsEnvNames(o Options) ([]string, error) {
 func (config ClauductSettings) nativeSettingsEnv(o Options, base string) (map[string]string, error) {
 	env := config.sessionEnvironment()
 	var names []string
-	if o.agentView() {
+	if o.agentView() || BackgroundRequested(o.Args) {
 		var err error
 		names, err = nativeSettingsEnvNames(o)
 		// A partial scan keeps defaults; effectiveStartup still owns startup validation.
@@ -69,7 +68,7 @@ func (config ClauductSettings) nativeSettingsEnv(o Options, base string) (map[st
 	}
 	for key, name := range spellings {
 		if strings.HasPrefix(key, "ANTHROPIC_") {
-			continue // Shell Anthropic values are dropped, including from settings.
+			continue // Validated model values already came from sessionEnvironment.
 		}
 		if _, known := env[key]; !known {
 			continue
@@ -115,15 +114,6 @@ func (config ClauductSettings) pinNativeSettingsEnv(env map[string]string, names
 	}
 }
 
-// Strategy-free sessions carry these values in --settings env, keeping native's supervisor
-// OS snapshot free of Clauduct values (AV2/M1). An explicit --model still wins.
-
-// startupModel is what a session runs on when the user names nothing.
-//
-// The baseline's DEFAULT_SELECTION, and deliberately not an alias of the catalogue defaults:
-// it is the main startup value and has to stay independently changeable.
-var startupModel = bridge.DefaultStartup()
-
 // effortEnv is the name that pins the effort for a whole session.
 //
 // Named rather than inlined because what this build does with it is a decision: it is set by
@@ -139,14 +129,6 @@ func (config ClauductSettings) sessionEnvironment() map[string]string {
 		// Anthropic's reporting has nowhere to go from here.
 		"DISABLE_TELEMETRY":       "1",
 		"DISABLE_ERROR_REPORTING": "1",
-
-		// The startup model. Measured: ANTHROPIC_MODEL decides which model the client asks
-		// for and a --model on the command line beats it, so the user keeps the choice this
-		// makes a default of.
-		//
-		// The effort is deliberately not here. It travels as --effort instead, because that
-		// name does not behave the way this one does -- see launch.Overlay.Effort.
-		"ANTHROPIC_MODEL": config.Startup.Model,
 
 		// The picker entry for the startup route, and the discovery that fills the rest of
 		// the list from GET /v1/models. Without discovery the user's /model list is the
@@ -182,13 +164,14 @@ func (config ClauductSettings) sessionEnvironment() map[string]string {
 	// The client's own tiers, pointed at the models they belong to. Measured: with these
 	// set the client names the backend model outright instead of a Claude one, and the
 	// background tier stops running on whatever the conversation is using.
-	for alias, name := range map[string]string{
-		"fable":  "ANTHROPIC_DEFAULT_FABLE_MODEL",
-		"haiku":  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-		"sonnet": "ANTHROPIC_DEFAULT_SONNET_MODEL",
-		"opus":   "ANTHROPIC_DEFAULT_OPUS_MODEL",
-	} {
-		if model, known := config.Selection.ForAlias(alias); known {
+	if config.autoModel != "" {
+		session["ANTHROPIC_DEFAULT_MODEL"] = config.autoModel
+	}
+	if config.shellModel != "" {
+		session["ANTHROPIC_MODEL"] = config.shellModel
+	}
+	for alias, name := range tierEnvironment {
+		if model, known := config.Selection.ForAlias(alias); known && !config.nativeTierSettings[alias] {
 			session[name] = model.ID
 		}
 	}
@@ -232,6 +215,11 @@ func (config ClauductSettings) sessionRequirements() map[string]string {
 	// the first hook knows native talks to this gateway, so a settings file must not turn it off.
 	for _, key := range []string{"CLAUDE_CODE_GATEWAY_HINT_HEADERS", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"} {
 		values[key] = defaults[key]
+	}
+	if config.restoredSelection {
+		for _, key := range tierEnvironment {
+			values[key] = defaults[key]
+		}
 	}
 	// Clauduct does not sign in to or out of Claude or manage its plan (#319 decision 17,
 	// routing r4 LN): native's documented switches hide those commands. /passes,

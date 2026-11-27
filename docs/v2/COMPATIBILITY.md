@@ -526,7 +526,7 @@ v0.3.1 개발 묶음 6에서 `count_tokens`에도 같은 지침을 포함하도�
 | 런타임 의존 | `claude.exe` + `codex.exe`(버전이 요청 헤더) + `~/.codex/auth.json` |
 | 라우팅 불변식(#295) | 모델 요청은 이 세션의 loopback gateway로만 간다. foreground·background 모두 gateway 주소, 빈 provider 선택 변수(native 목록 7종)·`ANTHROPIC_UNIX_SOCKET`·`CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, loopback을 더한 `NO_PROXY`, 필수 환경을 `--settings` env로 넣는다(user·project·local settings보다 높다). 셸의 provider 선택 변수는 넘기지 않는다. hook은 native가 적용한 환경의 endpoint·provider·unix socket을 gateway와 대조해, 다르면 prompt를 막고 세션을 끝낸다(`ROUTING_UNVERIFIED`). v0.6.11부터 hook은 환경 이름을 Windows처럼 대소문자 없이 읽어 모든 철자를 대조하고(native는 settings 파일이 쓴 마지막 철자, 예를 들어 소문자 `anthropic_base_url`을 hook에 넘긴다), 값이 다른 중복 철자는 거부한다. 대조를 통과하면 routing 증명과 이후 호출은 session link의 주소·token으로 보낸다. 저장된 Claude apps gateway 로그인처럼 환경은 그대로인데 요청이 다른 곳으로 가는 경우는, 시작 때의 모델 목록 요청이 이 gateway에 왔는지를 SessionStart와 매 prompt의 hook이 확인하고, prompt hook이 모델 요청 전에 막는다(#299). v0.6.11부터 settings env의 `ANTHROPIC_AUTH_TOKEN`·`ANTHROPIC_API_KEY`·`ANTHROPIC_CUSTOM_HEADERS`·`CLAUDE_CODE_OAUTH_TOKEN`과 그 대소문자 변형은 빈 값으로 고정한다. 인증은 session link의 key helper가 제공한다 |
 | 거부하는 기기 정책 | managed 출처(HKLM·HKCU 레지스트리 `SOFTWARE\Policies\ClaudeCode`, `C:\Program Files\ClaudeCode`와 `CLAUDE_CODE_MANAGED_SETTINGS_PATH`의 `managed-settings.json`·`managed-settings.d`, native가 원격 managed 설정으로 읽는 `CLAUDE_CODE_REMOTE_SETTINGS_PATH` 파일)에 라우팅 env(endpoint·인증·unix socket·provider·host 변수, `127.0.0.1`이 빠진 `NO_PROXY`), `apiKeyHelper`, `policyHelper`, `forceLoginMethod: "gateway"`, `forceLoginGatewayUrl`, `allowedProviders`가 있으면 아무것도 띄우지 않고 `MANAGED_ROUTING_POLICY`로 거부한다. 읽을 수 없는 정책은 `MANAGED_POLICY_UNREADABLE`. 세션 중 생기면 native를 끝낸다(읽지 못한 상태는 연속 세 번 뒤에) |
-| Anthropic 경계 프로필(#301) | `~/.clauduct/settings.json`의 `boundary_profile`. `default`는 claude.ai connector와 DesignSync를 끄고 자동 업데이트·WebFetch 사전 점검·MCP registry 목록을 남긴다(Anthropic 접속 0이 아니다). `strict`는 비필수 접속·WebFetch 사전 점검·Artifact 계열도 끄고, 공식 marketplace 자동 등록 차단 변수를 사용자가 직접 설정해야 시작한다. 무과금 loopback(2.1.289)에서 TUI 외부 호스트는 default 5개, strict 0개. 자세한 표와 WebFetch 차단 목록 trade-off는 [SETTINGS](SETTINGS.md#경계-프로필-v0611) |
+| Anthropic 경계 프로필(#301) | `~/.clauduct/settings.json`의 `boundaryProfile`. `default`는 claude.ai connector와 DesignSync를 끄고 자동 업데이트·WebFetch 사전 점검·MCP registry 목록을 남긴다(Anthropic 접속 0이 아니다). `strict`는 비필수 접속·WebFetch 사전 점검·Artifact 계열도 끄고, 공식 marketplace 자동 등록 차단 변수를 사용자가 직접 설정해야 시작한다. 무과금 loopback(2.1.289)에서 TUI 외부 호스트는 default 5개, strict 0개. 자세한 표와 WebFetch 차단 목록 trade-off는 [SETTINGS](SETTINGS.md#경계-프로필-v0611) |
 
 ### Anthropic 요청 필드의 실제 처리 (v0.6.8)
 
@@ -598,7 +598,7 @@ v0.3.x부터 v0.6.8까지 릴리스 기록과 이 문서에 흩어져 있던 알
 | 분류기가 계속 읽을 수 없는 판정을 내면 native가 분류 요청을 더 보낸다(v0.6.10, 합성 backend 표본 1회에서 10번) | `OUT_OF_SCOPE` | 설계: native의 재질문을 따른다. 판정 없이 호출을 실행하지 않는다. HTTP 오류·시간 초과·끊긴 응답은 전처럼 2번이다 | 비용이나 지연이 문제로 보고될 때 |
 | bypass 세션 도중 모드 전환 시 필수 확인 목록(v0.6.3) | `FIXED` | v0.6.4에서 Clauduct 권한 규칙을 없애 해당 없음 | — |
 | `/model`·`/effort` TUI, 다른 세션으로 가는 `SendMessage` 승인, gateway 경유 `WebSearch`·native `WebFetch`를 출하 바이너리로 실행하지 않음(v0.6.2) | `FIXED` | v0.6.3 최종 후보와 출시 바이트에서 실제 backend로 통과. `/model`은 그 뒤 출하마다 TUI 회귀에서 확인. v0.6.4부터 `SendMessage` 승인은 native 규칙이 정한다 | — |
-| 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Terra 6.1 low(핵심 정상 표본 차단), Luna low·medium. Sol 6.1 low, Terra 6.1 medium·high는 판정 미완료(`cyber_policy`). 그 밖은 미측정이며 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
+| 분류기 pair 품질 | `MEASURE` | 통과: Terra low·medium. 불합격: Terra high, Terra 6.1 low(핵심 정상 표본 차단. v0.6.13부터 공장값으로 받아들임, 소유자 결정 10·[#378](https://github.com/wotjr1649/Clauduct/issues/378). 공장 pair는 시작 안내 없이 `session.classifierFinding`에만 남는다), Luna low·medium. Sol 6.1 low, Terra 6.1 medium·high는 판정 미완료(`cyber_policy`). 공장 pair 외에 통과하지 못했거나 측정하지 않은 pair는 시작할 때 안내 | 사용자가 요청하거나 공장값을 바꿀 때 |
 | hosted web search의 `allowed_callers`·`response_inclusion`·`cache_control` 값을 검사하지 않음(v0.6.8) | `OUT_OF_SCOPE` | 키만 받고 쓰지 않는다. native 2.1.289는 보내지 않는다(`cache_control` 포함) | native가 보내기 시작할 때 |
 | background stop·attach 직후 첫 입력에서 이전 완료 보고 반복(v0.6.2) | `MEASURE` | #234(v0.6.3)에서 v0.6.1과 v0.6.2가 각각 4회 중 2회 재현돼 v0.6.2 회귀가 아니라고 판정. native가 대기 중이던 완료 알림을 입력 앞에 붙이고 backend가 새로 생성한 응답이다. 반복 여부는 모델이 정하므로 무과금으로 재현할 수 없어 v0.6.11에서도 재측정하지 않았다(#312) | native가 알림 전달 방식을 바꾸거나 사용자 영향이 보고될 때 |
 | 원인 미확정 과거 간헐 실패 #206 #211 #212 #213 #215 #220 #229 | `MEASURE` | 고장 주입으로 안전한 처리를 확인했고 진단을 넣었다 | 재발할 때 진단으로 가른다 |
@@ -1382,6 +1382,15 @@ V2는 제3자 호환 구현이며 "Anthropic 공식 지원"이나 "전체 기능
   전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`·hook 값도 전용 파일에 복제된다. 비밀은 실행 환경에서
   제공하고 지원되는 곳에서 환경 변수로 참조한다.
   [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
+
+### 설정 v2의 시작 선택 (#409)
+
+- 자동 기본값은 새 세션에서만 적용한다. 신선한 계정 목록의 표시·지원 후보에 단독 최저 priority가 필요하다.
+  동점, 누락, 숨김 목록 또는 last-good만 있는 경우 `--model`로 직접 선택한다.
+- native 명시 선택은 활성 모델 제한과 일치해야 한다. 용도를 확인할 수 없는 강제 기본값 정책과 자동 fallback은 거부한다.
+  첫 본 대화 요청이 시작 pair와 다르면 gateway는 backend 요청을 만들지 않는다.
+- 재개·fork에는 저장 프로필이 있는 UUID가 필요하다. 제목, `--continue`와 프로필 없는 대화는 시작 전에 복원값을 정할 수 없다.
+- 설정 파일은 v2가 필요하다. 모델·effort 선택, v1에서 옮기는 항목은 [설정 문서](SETTINGS.md)를 따른다.
 
 ## v0.6.18 — Claude Code 2.1.332의 auto 모드 분류기
 

@@ -269,7 +269,8 @@ func residentSiblingProfiles(store *gateway.SessionProfiles, config string, reco
 			continue
 		}
 		saved.Selection = saved.Selection.WithCatalogue(catalogue)
-		if store.Refresh(&saved, filepath.Join(config, "projects"), true, saved.Selection) != nil {
+		saved, err = store.Candidate(saved, filepath.Join(config, "projects"), true, saved.Selection)
+		if err != nil {
 			continue
 		}
 		out = append(out, saved)

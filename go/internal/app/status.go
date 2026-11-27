@@ -79,7 +79,6 @@ type SessionFacts struct {
 	// classifier measurement (v0.6.7); empty for one that did.
 	ClassifierFinding     string         `json:"classifierFinding,omitempty"`
 	ModelList             ModelListFacts `json:"modelList"`
-	DeprecatedSettings    []string       `json:"deprecatedSettings,omitempty"`
 	NonStreamingFallback  bool           `json:"nonStreamingFallbackDisabled"`
 	DelegationMenuEntries int            `json:"delegationMenuEntries"`
 	// HookInstalled is whether the session got a hook: since #112 this executable itself.
@@ -213,7 +212,6 @@ func Account(result Result) Status {
 			ClassifierModelSource: result.ClassifierModelSource,
 			ClassifierFinding:     result.ClassifierFinding,
 			ModelList:             result.ModelList,
-			DeprecatedSettings:    result.DeprecatedSettings,
 			NonStreamingFallback:  defaultClauductSettings().sessionRequirements()["CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK"] == "1",
 			DelegationMenuEntries: result.MenuEntries,
 			HookInstalled:         result.HookInstalled,

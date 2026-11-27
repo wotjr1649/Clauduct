@@ -52,10 +52,12 @@ type storedAccountModels struct {
 }
 
 type storedAccountModel struct {
-	ID      string   `json:"id"`
-	Efforts []string `json:"efforts"`
-	Default string   `json:"default"`
-	Visible bool     `json:"visible"`
+	ID       string   `json:"id"`
+	Efforts  []string `json:"efforts"`
+	Default  string   `json:"default"`
+	Visible  bool     `json:"visible"`
+	Priority *int64   `json:"priority,omitempty"`
+	Upgrade  string   `json:"upgrade,omitempty"`
 }
 
 // SaveAccountModels replaces the stored list with m, under home/.clauduct. The file is
@@ -76,7 +78,7 @@ func SaveAccountModels(home string, m AccountModels) error {
 	}
 	for _, model := range m.Models {
 		efforts := append(make([]string, 0, len(model.Efforts)), model.Efforts...)
-		doc.Models = append(doc.Models, storedAccountModel{ID: model.ID, Efforts: efforts, Default: model.Default, Visible: model.Visible})
+		doc.Models = append(doc.Models, storedAccountModel{ID: model.ID, Efforts: efforts, Default: model.Default, Visible: model.Visible, Priority: model.Priority, Upgrade: model.Upgrade})
 	}
 	encoded, err := json.Marshal(doc)
 	if err != nil || len(encoded) > maxStoredModelsBytes {
@@ -202,10 +204,17 @@ func decodeStoredAccountModels(raw []byte, account string) (AccountModels, error
 		return AccountModels{}, ErrAccountModelsInvalid
 	}
 	for _, entry := range entries {
-		modelFields, err := wire.Fields(entry, []string{"id", "efforts", "default", "visible"})
+		modelFields, err := wire.Fields(entry, []string{"id", "efforts", "default", "visible", "priority", "upgrade"})
 		var model AccountModel
 		if err != nil || !storedValue(modelFields, "id", &model.ID) || !storedValue(modelFields, "efforts", &model.Efforts) ||
 			!storedValue(modelFields, "default", &model.Default) || !storedValue(modelFields, "visible", &model.Visible) {
+			return AccountModels{}, ErrAccountModelsInvalid
+		}
+		if _, present := modelFields["priority"]; present && !storedValue(modelFields, "priority", &model.Priority) {
+			return AccountModels{}, ErrAccountModelsInvalid
+		}
+		if _, present := modelFields["upgrade"]; present &&
+			(!storedValue(modelFields, "upgrade", &model.Upgrade) || !modelSlug.MatchString(model.Upgrade)) {
 			return AccountModels{}, ErrAccountModelsInvalid
 		}
 		out.Models = append(out.Models, model)

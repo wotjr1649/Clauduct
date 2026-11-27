@@ -20,6 +20,7 @@ import (
 
 var ErrSessionProfile = errors.New("SESSION_PROFILE_UNVERIFIED")
 var errSessionStartUnregistered = errors.New("SESSION_START_UNREGISTERED")
+var errStartupSelection = errors.New("NATIVE_STARTUP_SELECTION_UNVERIFIED")
 var ErrSessionInUse = errors.New("SESSION_ALREADY_IN_USE")
 var errSessionRestart = errors.New("SESSION_RESTART_REQUIRED")
 var sessionUUID = regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`)
@@ -385,6 +386,7 @@ type profileState struct {
 	fork       bool
 	background bool
 	profiles   map[string]*SessionProfile
+	starts     map[string]*verifiedStartup
 	slots      map[processKey]string // native process -> its current session
 	owner      map[string]processKey // session -> the native process that last registered it
 	pending    map[processKey]string // native process -> the session it must restart into
@@ -405,7 +407,7 @@ type profileState struct {
 	forkHistory *SessionProfile
 	// failedStart is the last start registration a native process failed. The hook repeats it
 	// without its source before each prompt; that repeat retries it as the original event.
-	failedStart map[processKey]struct{ session, source string }
+	failedStart map[processKey]struct{ session, source, cwd string }
 	users       map[string]int
 	registrants map[string]map[processKey]struct{}
 	ended       map[string]bool
@@ -449,8 +451,8 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 		return
 	}
 	p := &profileState{store: store, startup: startup, fork: fork, background: background, profiles: make(map[string]*SessionProfile),
-		slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool), refreshFailed: make(map[string]bool),
-		failedStart: make(map[processKey]struct{ session, source string }),
+		starts: make(map[string]*verifiedStartup), slots: make(map[processKey]string), owner: make(map[string]processKey), pending: make(map[processKey]string), ready: make(map[string]bool), refreshFailed: make(map[string]bool),
+		failedStart: make(map[processKey]struct{ session, source, cwd string }),
 		users:       make(map[string]int), registrants: make(map[string]map[processKey]struct{}), ended: make(map[string]bool)}
 	if resumed != nil && fork {
 		copy := *resumed
@@ -463,6 +465,9 @@ func (g *Gateway) ConfigureSessionProfiles(store *SessionProfiles, startup bridg
 		copy.Last = startup
 		p.expected = copy.ID
 		p.profiles[copy.ID] = &copy
+		if g.startup.main.pair != (bridge.Pair{}) {
+			p.starts[copy.ID] = &verifiedStartup{pair: startup, permits: g.startup.main.permits}
+		}
 	}
 	g.profiles = p
 }
@@ -489,6 +494,9 @@ func (g *Gateway) RestoreSessionProfiles(saved []SessionProfile) {
 			p.restored = make(map[string]bridge.Pair)
 		}
 		p.restored[copy.ID] = copy.Last
+		if g.startup.main.pair != (bridge.Pair{}) {
+			p.starts[copy.ID] = &verifiedStartup{pair: copy.Last, permits: g.startup.main.permits}
+		}
 	}
 }
 
@@ -510,7 +518,7 @@ func (g *Gateway) pruneExitedRegistrants(session string) {
 // Caller holds contexts.mu; no profile operation takes contexts.mu in return.
 // process is the native process the registering hook runs under: an OS fact when native
 // identity is required, otherwise what the hook said, the zero key when it said nothing.
-func (g *Gateway) registerSessionProfile(session, source string, process processKey) (err error) {
+func (g *Gateway) registerSessionProfile(session, source, cwd string, process processKey) (err error) {
 	p := g.profiles
 	if p == nil {
 		return nil
@@ -540,12 +548,12 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	}
 	p.registrants[session][process] = struct{}{}
 	if failed := p.failedStart[process]; source == "" && p.profiles[session] == nil && failed.session == session {
-		source = failed.source
+		source, cwd = failed.source, failed.cwd
 	}
 	defer func() {
 		if source != "" && err != nil && !errors.Is(err, errSessionRestart) && p.profiles[session] == nil {
 			if _, exists := p.failedStart[process]; exists || len(p.failedStart) < maxAgents {
-				p.failedStart[process] = struct{ session, source string }{session, source}
+				p.failedStart[process] = struct{ session, source, cwd string }{session, source, cwd}
 			}
 		}
 	}()
@@ -590,6 +598,9 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		want := p.startup
 		if isRestored {
 			want = savedPair
+		}
+		if start := p.starts[session]; start != nil {
+			want = start.pair
 		}
 		if known != nil {
 			// Kept until a registration of this session succeeds: a failed attempt must not
@@ -636,6 +647,9 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			}
 		}
 		*known = next
+		if start := p.starts[session]; start != nil && held != session {
+			p.starts[session] = &verifiedStartup{pair: start.pair, permits: start.permits}
+		}
 		delete(p.resumeIntent, resumeKey{process, session})
 		p.take(process, session)
 		return nil
@@ -654,7 +668,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	// The launch was for the expected session: a different one cannot be its first. A later
 	// native process of the same launch (a dispatched job) may start its own.
 	first := len(p.slots) == 0
-	if source == "startup" && p.expected != "" && first {
+	if source == "startup" && p.expected != "" && first && g.startup.resolve == nil {
 		return ErrSessionProfile
 	}
 	if !errors.Is(loadErr, os.ErrNotExist) {
@@ -666,8 +680,11 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 	parent := held
 	var forkParent *SessionProfile
 	if source == "fork" || p.fork && first {
-		// A new native's explicit resume target proves its parent even with several live sessions.
-		if source == "fork" && held == "" {
+		// The launcher already resolved the primary fork's parent before native started.
+		if p.fork && first && p.forkHistory != nil {
+			forkParent = p.forkHistory
+		}
+		if forkParent == nil && source == "fork" && held == "" {
 			if id := g.commandLineForkSession(process); id != "" {
 				if p.ended[id] {
 					return errSessionRestart
@@ -681,9 +698,7 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			}
 		}
 		// Without argv proof, keep the launch target, this native's session, or sole live candidate.
-		if forkParent == nil && p.fork && first && p.forkHistory != nil {
-			forkParent = p.forkHistory
-		} else if forkParent == nil && parent != "" && p.serving(parent) {
+		if forkParent == nil && parent != "" && p.serving(parent) {
 			forkParent = p.profiles[parent]
 		} else if forkParent == nil && parent == "" {
 			for id, candidate := range p.profiles {
@@ -700,7 +715,14 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			return ErrSessionProfile
 		}
 	}
-	pair := p.startup
+	pair, permits := p.startup, g.startup.main.permits
+	verify := g.startup.main.pair != (bridge.Pair{})
+	if source == "startup" && g.startup.resolve != nil {
+		pair, permits, err = g.startup.resolve(session, cwd, NativeProcess{PID: process.pid, Created: process.created})
+		if err != nil {
+			return errStartupSelection
+		}
+	}
 	if source == "clear" || source == "fork" && (!p.fork || !first) {
 		prior := p.profiles[parent]
 		if source == "fork" {
@@ -713,6 +735,10 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 			return err
 		}
 		pair = prior.Last
+		if start := p.starts[prior.ID]; start != nil {
+			permits = start.permits
+		}
+		verify = false // Native changes session within the same already verified conversation.
 	}
 	profile := &SessionProfile{Version: 1, ID: session, Selection: g.selection.Clone(), Last: pair, Transcript: g.contexts.sessions[session]}
 	if source == "resume" || p.fork && first {
@@ -757,6 +783,11 @@ func (g *Gateway) registerSessionProfile(session, source string, process process
 		return err
 	}
 	p.profiles[session] = profile
+	if g.startup.main.pair != (bridge.Pair{}) {
+		start := &verifiedStartup{pair: pair, permits: permits}
+		start.verified.Store(!verify)
+		p.starts[session] = start
+	}
 	p.take(process, session)
 	return nil
 }
@@ -927,6 +958,7 @@ func (g *Gateway) ReleaseIdleSessionProfiles(keep []string) error {
 		}
 		p.ended[session] = true
 		delete(p.profiles, session)
+		delete(p.starts, session)
 		delete(p.owner, session)
 		delete(p.ready, session)
 		for key := range p.resumeIntent {
@@ -968,8 +1000,8 @@ func (g *Gateway) refuseSessionProfile(w http.ResponseWriter, session string, er
 		}
 	} else if errors.Is(err, ErrSessionInUse) {
 		category = ErrSessionInUse.Error()
-	} else if errors.Is(err, errSessionStartUnregistered) {
-		category = errSessionStartUnregistered.Error()
+	} else if errors.Is(err, errSessionStartUnregistered) || errors.Is(err, errStartupSelection) {
+		category = err.Error()
 	}
 	g.refuseDetail(w, refusal{category: category, status: http.StatusBadRequest}, detail)
 }

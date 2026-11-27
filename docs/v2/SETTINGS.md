@@ -1,108 +1,41 @@
-# Clauduct 전용 설정
+# Clauduct 설정 v2
 
-v0.5.3에서 도입한 설정 형식이다. v0.5.4에서 초기 문서와 적용값 진단을 보완해 출하했다.
-출하 범위는 [v0.5.4](RELEASE-v0.5.4.md), v0.5.5의 phase 대화 호환 범위는 아래 재개 절에 있다.
-
-v0.6.4는 모델 목록을 계정에서 받고, 누락 키 동기화와 `classifier_model`의 pair 형식을 더하고,
-두 effort 상한을 더 이상 적용하지 않는다. 후속 설정인 경계 프로필과 분류기 공장값은 각각 아래 절에서 설명한다.
-
-Clauduct는 실행할 때 사용자 홈의 `.clauduct/settings.json`을 읽는다. 파일은 직접 편집한다.
-v0.6.17부터 일반 실행·설치·업데이트는 설정 파일을 만들거나 바꾸지 않는다.
-파일이 없으면 [기본 문서](../../go/internal/settingsfile/defaults.json)의 값으로 실행한다.
-기존 v1 파일에서 빠진 최상위 키는 실행할 때 [메모리에서 채운다](#설정-동기화-v0617).
-잘못된 설정 파일은 그대로 두고 새 세션 실행을 거부한다.
-Claude Code의 개인화·권한·알림·플러그인은 기존 native 설정에서 관리한다.
+선택 파일은 `~/.clauduct/settings.json`이다. 파일이 없으면 `{"version":2}`와 같은 기본값으로 실행한다.
+일반 실행, 설치, 업데이트는 파일을 만들거나 수정하지 않는다.
 
 ## 설정 예
 
 ```json
 {
-  "version": 1,
-  "context_window": 272000,
-  "auto_compact_token_limit_percent": 90,
-  "startup": {
-    "model": "gpt-6.1-sol",
-    "effort": "xhigh"
+  "version": 2,
+  "boundaryProfile": "default",
+  "isolation": "off",
+  "context": {
+    "window": 272000,
+    "compactPercent": 90
   },
-  "modelDefaults": {
-    "gpt-6-luna": {
-      "effort": "low"
-    }
-  },
-  "modelMapping": {
-    "sonnet": "gpt-6-luna",
-    "haiku": "gpt-6-luna"
-  },
-  "agents": {
-    "Explore": {
-      "model": "gpt-6-luna",
-      "effort": "medium"
-    },
-    "my-plugin:reviewer": {
-      "model": "gpt-6.1-terra",
-      "effort": "high"
-    }
-  },
-  "classifier_model": {
-    "model": "gpt-5.6-terra",
+  "classifier": {
+    "model": "gpt-6.1-terra",
     "effort": "low"
   }
 }
 ```
 
-`version`은 필수이며 현재 값은 `1`이다. 나머지 항목은 생략할 수 있지만, 일반 실행에서 빠진 최상위 키만 메모리에서 기본값으로 채운다.
-`startup`, `classifier_model`과 각 `agents` 항목을 쓰면 `model`과 `effort`를 모두 적는다.
-격리 모드는 `isolation` 키로 켠다. [격리 모드](#격리-모드-v0614)
-알 수 없는 필드, 중복 JSON 키, 부분적인 pair, `null`, 1 MiB를 넘는 파일, 형식이 맞지 않는 모델 ID,
-`low`·`medium`·`high`·`xhigh`·`max` 밖의 effort는 `CLAUDUCT_SETTINGS_INVALID`로 거부한다.
-형식은 맞지만 계정이 제공하지 않는 모델·effort는 [계정 목록에 없는 선택](#계정-목록에-없는-선택)대로 처리한다.
+| 항목 | 허용값 | 생략 시 |
+| --- | --- | --- |
+| `version` | 정수 `2` | 파일이 있으면 필수 |
+| `boundaryProfile` | `default`, `strict` | `default` |
+| `isolation` | `off`, `on` | `off` |
+| `context` | 두 키가 모두 필요하다. `window`는 100,000~872,000 사이의 정수, `compactPercent`는 1 이상의 정수다. 90을 넘으면 실행값을 90으로 제한한다 | 272,000과 90 |
+| `classifier` | 정확한 backend `model` ID와 `effort`가 모두 필요하다. 허용 effort는 `low`, `medium`, `high`, `xhigh`, `max`다 | `gpt-6.1-terra/low` |
 
-| 항목 | 적용 범위 |
-|---|---|
-| `startup` | 인자 없이 시작하는 새 실행의 모델·effort. 공장값은 `gpt-6.1-sol`/high. native settings의 최상위 `model`은 쓰지 않는다: Clauduct가 시작 모델을 `ANTHROPIC_MODEL`로 넘기고 native에서는 이 값이 settings `model`보다 앞선다(2026-10-07 측정). `--model`과 native settings `env`의 `ANTHROPIC_MODEL`은 반영된다 |
-| `modelDefaults` | 모델만 선택하고 effort를 명시하지 않은 경로의 기본 effort. 적지 않은 모델은 계정의 기본 수준을 쓴다 |
-| `modelMapping` | Claude alias 및 해당 버전형 이름이 가리키는 GPT 모델 |
-| `agents` | 해당 agent의 모델·effort 기본 pair |
-| `context_window` | 모든 모델에 공통인 context 관리값. 기본 272,000, 정수 100,000–872,000 |
-| `auto_compact_token_limit_percent` | 위 window에 대한 예방 압축 비율. 기본 90, 정수 1 이상. 90 초과는 90으로 clamp |
-| `classifier_model` | auto 권한 모드 분류기의 `{"model", "effort"}` pair. 공장값은 `gpt-6.1-terra`/low(v0.6.13, 이전 `gpt-5.6-terra`/low). [분류기 절](#보조-요청과-auto-권한-분류기-v064) |
-| `boundary_profile` | native가 Anthropic 서버로 가는 기능 경로 가운데 무엇을 남길지. `"default"`(공장값) 또는 `"strict"`. 다른 값은 시작할 때 거부한다. [경계 프로필](#경계-프로필-v0611) |
-| `auto_compact_effort_cap`, `auxiliary_effort_cap` | v0.6.4부터 적용하지 않는다. 값과 관계없이 거부하지 않고 파일에 그대로 두며, 시작할 때 stderr와 status `session.deprecatedSettings`에 알린다. 지워도 된다 |
-
-공장 기본 문서는 위 `startup`·`classifier_model` 외에 `modelDefaults`(astra medium, 6.1-sol high,
-6.1-terra medium, 5.6-terra medium, luna xhigh), 아래 alias 매핑, `agents`(Explore luna/max, Plan과 general-purpose 6.1-sol/high)를 담는다.
-`gpt-6-sol`의 `modelDefaults` 항목은 없다. 기존 파일의 값은 이 공장값으로 바뀌지 않는다.
-v0.6.4–v0.6.10의 공장값은 luna max였다. native settings는 `max`를 담지 못하므로, 그 값이 남은 파일에서는 luna의
-기본 effort가 세션 settings에 들어가지 않는다(아래 시작 effort 설명). 이 파일의 luna 항목은 직접 `xhigh`로 고친다.
-
-시작 pair와 개별 agent pair는 공통 GPT effort와 독립적이다. 위 예에서 Luna의 공통 effort는 low지만
-Explore는 medium이고 새 실행의 시작값은 Sol/xhigh다. 각각을 바꾸려면 해당 항목을 직접 편집한다.
-
-시작 effort는 Clauduct의 `startup.effort`다. native user settings의 `effortLevel`·`modelSettings`는
-Clauduct 세션의 시작 effort로 쓰지 않는다. Clauduct가 세션 `--settings`에 시작 effort와 모델별 기본
-effort를 넣고, 시작 모델의 항목은 시작 effort로 정한다. 다른 모델의 항목에는 `modelDefaults`를
-쓰며, 생략한 모델은 계정 기본값을 쓴다. native settings에 저장할 수 있는 값은
-`low`·`medium`·`high`·`xhigh`다. 저장할 수 없는 모델 기본값은 생략한다.
-
-사용자가 직접 준 `--settings`의 `effortLevel`·`modelSettings.<model>.effortLevel`은 자동으로 넣은
-effort보다 우선한다. 사용자 모델별 effort가 있으면 그 값이 사용자 최상위 effort보다 우선하며,
-같은 모델 항목의 다른 키와 `maxEffortLevel`은 기존 병합 규칙을 따른다. 명시한 `--effort`와 세션 중
-`/effort` 선택은 유지된다. foreground 시작 모델은 Clauduct가 넘기는 `--effort`(시작 effort나 사용자가
-명시한 값)가 settings보다 우선하므로, settings의 effort는 다른 모델과 dispatch에 적용된다.
-사용자 effort가 해당 모델에서 지원되지 않거나 native settings가 담을 수 없는 값(`max`)이면 native를
-시작하기 전에 `UNSUPPORTED_MODEL_OR_EFFORT`로 거부한다.
-
-foreground Agent View(v0.6.11부터 공개 빌드에서도 켜짐)의 무입력 dispatch는
-Clauduct 세션 `--settings`를 이어받아 시작 모델·시작 effort를 쓴다. startup effort가 `max`면 이 dispatch에는 해당 모델의
-저장 가능한 기본 effort를 넣고, foreground는 `--effort max`로 시작한다. 모델 기본값도 저장할 수
-없으면 해당 effort 키를 넣지 않는다. dispatch 입력창에서 다른 모델만 선택하면 그 모델의 저장된
-기본 effort를 쓰며, 시작 모델을 다시 선택하면 시작 effort가 적용된다. native는 `max`를 세션 한정
-값으로 다뤄 기본값으로 받지 않으므로, 기본 effort가 `max`인 모델을 고른 dispatch는 시작 effort로
-실행된다. 그 dispatch에 `max`가 필요하면 dispatch 뒤 `/effort max`를 쓴다.
+키 이름은 정확히 일치해야 한다. 모르는 키와 값, 중복 키, `null`, v1 파일은 native 실행 전에 `CLAUDUCT_SETTINGS_INVALID`로 거부된다.
+오류 메시지의 예를 따라 직접 편집한다. 기존 파일의 `startup`은 native `model`·effort 설정으로, `modelMapping`은 tier 환경변수로 옮길 수 있다.
+`agents` 설정의 역할별 선택은 native agent 정의에 넣는다.
 
 ## 경계 프로필 (v0.6.11)
 
-`boundary_profile`은 Clauduct 세션에서 native가 Anthropic 서버로 가는 경로 가운데 무엇을 남길지 정한다(#301).
+`boundaryProfile`은 Clauduct 세션에서 native가 Anthropic 서버로 가는 경로 가운데 무엇을 남길지 정한다(#301).
 값은 세션 `--settings`에 들어가며, 이 설정은 user·project·local settings 파일보다 우선한다. 모델 요청은 프로필과
 상관없이 항상 이 세션의 gateway로 간다([라우팅 불변식](COMPATIBILITY.md#2-제약)).
 
@@ -136,69 +69,33 @@ Clauduct 세션 `--settings`를 이어받아 시작 모델·시작 effort를 쓴
 
 ## 설정 동기화 (v0.6.17)
 
-v1 파일은 이전 동기화가 성공했을 때와 같은 설정으로 실행한다. 기본 문서에 있고 파일에 없는 최상위 키만
-메모리에서 채운다. `agents`·`modelDefaults`·`modelMapping`에 빈 맵이나 일부 항목만 적으면 그대로 적용한다.
-이미 있는 값은 기존 형식으로 검증한다.
-
-파일에 빠진 키가 있으면 일반 실행에서 공장값으로 실행하며 별도 작업이 필요 없다고 한 줄 알려준다.
-채운 키의 출처는 `factory (not in file).<key>`로 표시한다. 예를 들어 v0.6.3 파일에 `classifier_model`이 없으면
-공장 pair를 쓴다. 해당 키를 문자열로 적은 파일은 [분류기 절](#보조-요청과-auto-권한-분류기-v064)의
-형식 오류로 거부된다.
-
-`clauduct --dev --sync-settings`는 이전 updater 호환용이다. 설정 파일에 접근하지 않고 안내 한 줄을 출력한 뒤
-성공한다. 직접 편집할 기본 문서가 필요하면 `clauduct --dev --init-settings`로 만들 수 있다.
-이 명령은 파일이 없을 때만 생성한다.
+v0.6.17은 v1 파일의 누락된 키를 메모리로 채웠다. v2는 파일에 있는 키만 읽고 나머지에는 위의 기본값을 적용한다.
+`clauduct --dev --init-settings`는 파일이 없을 때 `{"version":2}`를 만든다. 이미 있는 파일은 보존한다.
+`clauduct --dev --sync-settings`는 이전 업데이트 프로그램과의 호환을 위해 v2 수동 편집 안내를 출력하고 성공한다. 이 명령은 파일을 만들거나 수정하지 않는다.
 
 ## 모델과 agent
 
-v0.6.4부터 선택할 수 있는 모델은 세션의 [계정 모델 목록](#계정-모델-목록-v064)이 정한다.
-설정 파일과 선택에는 그 목록의 전체 ID를 사용한다. 계정이 나열하는 모델은 Clauduct 새 릴리스 없이 전체 ID로 고를 수 있다.
-보내는 effort는 그 모델이 지원하는 수준 중 native가 표현하는 `low`, `medium`, `high`, `xhigh`, `max`다.
-`ultra` 등 그 밖의 수준은 보내지 않으며, 명시적으로 요청하면 낮추지 않고 거부한다.
+새 세션 모델의 우선순위는 native `--model` → `ANTHROPIC_MODEL` → 활성 native 설정의 `model` → `ANTHROPIC_DEFAULT_MODEL`이다.
+Clauduct는 이 선택이 모두 비었을 때만 신선한 계정 목록을 보고 `ANTHROPIC_DEFAULT_MODEL`로 시작값을 전달한다.
+`--setting-sources`와 마지막 `--settings`가 선택 범위에 반영된다. 대화형 실행은 native의 workspace 신뢰 상태를 따른다. `-p`는 신뢰 대화 상자 없이 활성 프로젝트 설정을 읽는다.
+실제 첫 본 대화 요청이 확정한 pair와 다르면 backend에 보내기 전에 거부한다.
 
-effort는 명시한 요청 → 세션 설정의 `modelDefaults` → 계정의 `default_reasoning_level` 순서로 정한다.
-설정한 effort를 그 모델이 받지 않으면 오류다. 쓸 수 있는 기본값이 없는 모델은 effort를 명시해야 하며,
-picker 항목에 "No default effort: choose one"이 표시된다.
+effort는 native의 `CLAUDE_CODE_EFFORT_LEVEL`, `--effort`, 모델별 `modelSettings`, 일반 `effortLevel` 순으로 확인한다.
+생략했다면 계정의 `default_reasoning_level`을 쓴다. 계정이 제공하는 정확한 모델 ID와 effort를 사용한다.
 
-v0.6.3부터 `sol` 키·`opus` 별칭·공장 시작 모델은 `gpt-6.1-sol`이다. `gpt-6-sol`은 전체 ID,
-`sol6` 키, `clauduct-sol6` 위임 메뉴로 계속 쓴다(native Agent 인자에는 `opus` 단계로 적지만 실제
-경로는 native 생성 이벤트가 전체 ID로 고정한다).
-v0.6.12부터 `terra` 키와 `sonnet` 별칭은 `gpt-6.1-terra`다. `gpt-5.6-terra`는 같은 방식으로 전체 ID,
-`terra56` 키, `clauduct-terra56` 위임 메뉴로 계속 쓴다(Agent 인자에는 `sonnet` 단계로 적는다). 이미 있는
-`~/.clauduct/settings.json`의 `modelMapping.sonnet`·`modelDefaults`·`classifier_model` 값은 바뀌지 않는다. 새 매핑을 쓰려면
-`modelMapping.sonnet`을 `gpt-6.1-terra`로 고치고 `modelDefaults`에 `"gpt-6.1-terra": {"effort": "medium"}`을 더한다. 기존 파일에는 이
-항목이 없으므로, 더하지 않으면 `gpt-6.1-terra`(`clauduct-terra` 메뉴 포함)는 계정 기본 effort로 실행된다(2026-11-10 계정 목록: low).
+| 별칭 | 환경변수 | 비어 있을 때의 호환 매핑 |
+| --- | --- | --- |
+| `fable` | `ANTHROPIC_DEFAULT_FABLE_MODEL` | `gpt-6-astra` |
+| `opus` | `ANTHROPIC_DEFAULT_OPUS_MODEL` | `gpt-6.1-sol` |
+| `sonnet` | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `gpt-6.1-terra` |
+| `haiku` | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `gpt-6-luna` |
 
-| Claude alias | 내장 GPT 매핑 | 공장 `modelDefaults` effort |
-|---|---|---|
-| `fable` | `gpt-6-astra` | medium |
-| `opus` | `gpt-6.1-sol` | high |
-| `sonnet` | `gpt-6.1-terra` | medium |
-| `haiku` | `gpt-6-luna` | xhigh |
+tier 환경변수에는 계정의 전체 모델 ID를 적는다. 적용된 tier를 사용하려면 그 모델이 계정 목록에 있어야 한다.
+내장 Agent의 모델과 effort는 native가 선택한다. Agent·Workflow 호출에서 명시한 선택과 native의 agent 정의는 기존 연결 근거를 통해 적용한다.
+사용자가 만든 역할의 도구와 권한은 해당 native 정의를 따른다.
+[Claude Code 모델 설정](https://code.claude.com/docs/en/model-config)
 
-내장 제품 자료(`go/internal/protocol/bridge/models.json`)는 v0.6.4부터 기존 이름만 담는다.
-키(`sol`·`sol6`·`astra`·`terra`·`terra56`·`luna`), 별칭(`fable`·`opus`·`sonnet`·`haiku`)과 버전형 이름, Agent 단계,
-로컬 계수 허용(`countValidated`), 은퇴 표다. 이 자료는 선택 범위를 제한하지 않는다. 은퇴 표는 계정이 그 이름을
-더는 나열하지 않을 때 거부 이유를 설명하는 데만 쓴다. 예를 들어 계정이 `gpt-5.6-sol`을 나열하면 그 모델은 다시 라우팅된다.
-v0.6.6부터 `gpt-5.5 → gpt-6.1-sol`이 은퇴 표에 있다. 2026-10-18에는 계정 목록에서 `gpt-5.5`가
-빠진 것을 확인했다. 계정이 이 모델을 나열하지 않을 때 해당 모델을 고른 시작 설정·세션·Agent는 `MODEL_RETIRED`와 후속 모델 안내로
-거부한다. [실측 근거](COMPATIBILITY.md#알려진-제한-원장-v0618)
-계정이 숨긴(visibility가 `list`가 아닌) 모델은 `/model`에 나오지 않지만 전체 ID로 선택할 수 있다.
-v0.6.5부터는 위임 메뉴와 Agent의 `model`·`effort` 선택지에도 나오지 않는다. 모델이 숨김 모델을 스스로
-고르지 않게 하려는 것이다. 사용자가 전체 ID를 지정하면 Agent `model` 인자와 Workflow는 그대로 실행한다.
-측정된 도구 표면(도구 이름과 모드별 core)은 내장 자료(`go/internal/upstream/measured-clients.json`)이다.
-Claude Code·Codex CLI 버전은 내장하지 않는다. 설치된 버전은 실행할 때마다 기계에서 읽어 기록만 한다.
-
-위임 메뉴는 기존 모델에 `clauduct-<key>`, 새 모델에 `clauduct-<전체 ID>`를 만든다. 이름이 기존 키,
-`inherit` 또는 과거 effort별 이름과 겹치면 메뉴 항목을 만들지 않으며, 그 모델은 Agent의 model 인자로 계속 쓸 수 있다.
-기존 단계가 없는 모델은 native Agent 도구의 `model` 인자를 생략하고(단계를 추정하지 않는다) native 생성 이벤트가
-전체 ID로 고정한다. 이 경로는 native 이벤트 모듈이 필요하다.
-
-토큰 계수는 모든 모델이 backend 계수를 먼저 쓴다. 로컬 공식은 backend 계수를 쓸 수 없는 요청 형태에서만, 측정한
-기존 모델(`countValidated`)에 쓰는 대체 경로다. backend 계수가 실패해도 추정값으로 대신하지 않는다.
-
-여러 alias를 같은 GPT 모델에 매핑해도 된다. 전체 GPT ID를 명시한 선택은 그 모델을 직접 선택한다.
-계정 목록과 backend 자체의 최대 용량을 설정 파일로 늘릴 수는 없다.
+계정이 은퇴 모델을 더는 나열하지 않을 때는 `MODEL_RETIRED`와 후속 모델을 안내한다. [실측 근거](COMPATIBILITY.md#알려진-제한-원장-v0618)
 
 ## 계정 모델 목록 (v0.6.4)
 
@@ -206,7 +103,7 @@ Claude Code·Codex CLI 버전은 내장하지 않는다. 설치된 버전은 실
 (`GET https://chatgpt.com/backend-api/codex/models?client_version=MAJOR.MINOR.PATCH`).
 요청은 그 세션의 credential provider로 보내므로 이후 요청과 같은 계정에 묶인다. 세션 도중 계정이 바뀌면
 기존처럼 `CREDENTIAL_ACCOUNT_CHANGED`로 거부한다. 요청은 10초, 본문 4 MiB, 모델 512개로 제한하며
-redirect는 거부하고 목적지는 고정이다. 각 모델의 id, 지원 수준, 기본 수준, visibility만 사용하고 설명·지침 문구는
+redirect는 거부하고 목적지는 고정이다. 각 모델의 ID, 지원 수준, 기본 수준, visibility, priority와 upgrade 대상 ID를 사용한다. 설명·지침 문구는
 무시한다. ChatGPT 인증 방식이므로 `supported_in_api`로 거르지 않는다.
 
 받은 목록은 `~/.clauduct/account-models.json`에 저장한다. 계정 키는 계정 ID의 SHA-256이며 token이나 원래 ID는
@@ -215,19 +112,25 @@ redirect는 거부하고 목적지는 고정이다. 각 모델의 id, 지원 수
 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 시작을 거부한다. Codex 자체의 `models_cache.json`은 근거로 쓰지 않으며
 `clauduct --dev --doctor`가 참고로만 보여 준다. `--help`·`--version`과 내부 hook·helper 경로는 목록을 받지 않는다.
 
+자동 시작 후보는 표시 대상이며 이 빌드가 라우팅할 수 있고 계정의 기본 effort를 쓸 수 있는 모델이다.
+후보 중 가장 낮은 숫자 priority가 단독으로 확인돼야 한다. 동점, 후보 순위 누락, 유효 후보 없음, last-good만 있으면
+`ACCOUNT_PRIORITY_UNAVAILABLE`과 `--model` 안내를 반환한다. 저장 목록은 명시한 pair와 저장 세션 pair의 검증에 쓸 수 있다.
+upgrade 대상은 doctor의 안내에 쓰인다.
+
 목록은 세션 동안 고정된다. picker, 라우팅, Agent 스키마, native hook 모듈이 같은 목록을 쓰며, 더 새로운 목록은
 다음 세션부터 적용한다. 이 GET은 추론 요청이 아니며 검증 예산 원장에 예약하지 않는다.
+401·403·503 응답의 처리는 `clauduct --dev --verify-catalogue-refusal`로 네트워크 없이 확인할 수 있다. [검증 전용 명령](../../go/README.md#검증-전용-명령과-응답-캡처)
 
 ## 계정 목록에 없는 선택
 
-`modelDefaults`·`modelMapping`·`agents` 항목과 `classifier_model`이 계정이 제공하지 않는 모델이나 effort를
-가리켜도 파일에서 지우거나 바꾸지 않는다. 시작할 때 stderr와 status `session.modelList.problems`에 알리고,
-그 항목을 실제로 선택했을 때만 실패한다. 공장 agents 기본값이 계정에 없을 때도 같은 방식으로 알린다.
+지원 여부는 모델과 effort를 함께 대조한다. 관리 `availableModels` 또는 `maxEffortLevel`이 pair를 막거나
+native `modelOverrides`가 선택을 바꾸면 시작을 거부한다. 자동 재선택이 설정된 `fallbackModel`과 `--fallback-model`도 거부한다.
+기존 프로필의 선택이 목록에서 사라졌으면 복원할 때 오류를 반환한다. 분류기 pair의 사용 불가 오류는 분류 요청에 한정된다.
 
 ## 전역 context와 압축 목표
 
 두 context 항목은 모델별 설정이 아니다. Sol·Luna·Astra·Terra와 자식 Agent에 같은 값을 적용한다.
-Clauduct는 실행 시 `floor(context_window * min(auto_compact_token_limit_percent, 90) / 100)`으로
+Clauduct는 실행 시 `floor(window * min(compactPercent, 90) / 100)`으로
 gateway의 예방 압축 목표를 한 번 계산한다. 기본값은 244,800 tokens다. 절대값을 따로 저장하는
 `auto_compact_token_limit` 항목은 받지 않는다. 1% 미만, 소수, 문자열, null은 오류이며,
 90% 초과는 입력 파일을 수정하지 않고 실행값만 90%로 제한한다. window의 범위 밖 값은 거부한다.
@@ -248,33 +151,16 @@ autocompact buffer였으며, 이를 gateway 목표 244,800과 같은 trigger라�
 v0.6.4부터 자동·수동 압축 모두 현재 선택을 사용한다. Agent는 자기 route를, 그 밖에는 native가 압축 요청
 자체에 적은 모델과 effort를 쓴다(한 번만 쓰는 system turn의 effort는 적용하지 않는다). 이전 요청의 route를 다시 쓰지
 않으므로, 모델을 바꾼 뒤의 압축은 새로 선택한 모델에서 실행된다(v0.6.3까지는 이전 route였다).
-v0.6.3까지 적용하던 `auto_compact_effort_cap`은 적용하지 않는다. 압축 시작 조건(`context_window`,
-`auto_compact_token_limit_percent`)은 그대로다. `gpt-6-luna`의 medium·high·max 압축 시간과 토큰은 [v0.6.4의 effort별 1회 표본](COMPATIBILITY.md#v064--계정-모델-목록-권한-규칙-제거-설정-동기화)에 기록했다.
-
-외부 플러그인 agent는 `plugin-name:agent-name`처럼 native의 실제 이름을 사용한다.
-Clauduct의 pair는 역할의 실행 선택을 바꾼다. 역할의 원래 prompt·tools·권한은 native가 읽고 적용한다.
-정의가 모델 alias를 사용하면 Clauduct 매핑으로 변환하고, 전체 GPT ID를 사용하면 직접 선택한다.
-
-설정한 agent pair는 일반 역할 정의보다 우선하며, 호출에서 명시한 모델·effort와 관리되는 역할 정의의
-우선순위는 보존한다. 모델 또는 effort를 명시한 Agent·Workflow 호출은 해당 명시값을 적용한다.
-내장 역할은 `Explore`, `Plan`, `general-purpose`의 이름으로 설정한다.
-native의 부모 상속 역할(`fork`, `workflow-subagent`, `clauduct-inherit`)은 별도 pair로 바꾸지 않는다.
+v0.6.4의 effort별 1회 압축 표본은 [호환성 기록](COMPATIBILITY.md#v064--계정-모델-목록-권한-규칙-제거-설정-동기화)에 있다.
 
 ## 보조 요청과 auto 권한 분류기 (v0.6.4)
 
-background 완료 판정 등 도구 없는 독립 보조 요청은 위 effort 순서(명시값 → `modelDefaults` → 계정 기본값)를
-그대로 따른다. v0.6.2–v0.6.3의 `auxiliary_effort_cap`은 적용하지 않는다. 같은 요청의 token count와
-generation은 같은 선택을 사용한다.
+background 완료 판정 등 도구 없는 독립 보조 요청은 명시 effort가 없으면 계정 기본값을 쓴다.
+이전 세션 프로필을 재개하면 당시 설정에 있던 모델별 effort도 읽는다. 같은 요청의 token count와 generation은 같은 선택을 사용한다.
 
-auto 권한 모드의 분류 요청은 `classifier_model`의 pair로 보낸다. 공장값은 `gpt-6.1-terra`/low다(v0.6.13). 계정이
-제공하는 모델과 effort는 모두 쓸 수 있다. v0.6.3의 Terra 이상 규칙과 내장 허용 목록은 없어졌고 Luna도 고를 수 있다.
-effort를 낮추는 장치는 없으며 생성과 계수가 같은 pair를 쓴다. 요청 기록의 출처는
-`native-auto-mode+classifier_model`이고, status에는 `session.classifierModel`, `classifierEffort`,
-`classifierModelSource`가 남는다.
-
-v0.6.3의 문자열 형식(`"classifier_model": "gpt-5.6-terra"`)은 v0.6.4에서 `CLAUDUCT_SETTINGS_INVALID`다.
-오류 문구가 고칠 형식 `"classifier_model": {"model": "gpt-5.6-terra", "effort": "low"}`를 보여 주며,
-파일을 자동으로 변환하지 않는다.
+auto 권한 모드의 분류 요청은 `classifier`의 pair로 보낸다. 기본값 `gpt-6.1-terra/low`는 본 대화 모델과 독립이다.
+계정이 제공하고 활성 모델 정책이 허용하는 pair로 바꿀 수 있다. 생성과 계수가 같은 pair를 쓰며,
+요청 출처는 `native-auto-mode+classifier_model`이다. 적용값은 status의 `session.classifierModel`, `classifierEffort`, `classifierModelSource`에 남는다.
 
 계정이 그 pair를 제공하지 않으면 분류 요청을 `AUTO_MODE_CLASSIFIER_MODEL_UNSUPPORTED`로 거부하고 다른 모델로
 대체하지 않는다. 판정을 얻지 못한 경우(HTTP 오류, 정책 거부, 시간 초과, 읽을 수 없거나 끊긴 판정, 제공되지
@@ -286,8 +172,7 @@ Terra/high, Luna/low·medium은 위험 표본을 허용했고(Luna/low는 2026-1
 핵심 정상 표본 하나를 차단했고, medium·high는 보안 표본 하나를 backend가 `cyber_policy`로 거부해 판정을 마치지 못했다.
 v0.6.12는 공장값을 `gpt-5.6-terra`/low로 두었다. v0.6.13은 소유자 결정(#378)으로 `gpt-6.1-terra`/low로 바꿨다. 위험 허용 0·판정
 거부 0이라는 안전 기준은 충족하지만, 승인된 태그 push 같은 핵심 정상 동작이 auto 모드에서 막힐 수 있다는 측정 결과를 받아들인
-선택이다. 이 공장값 pair는 시작할 때마다 안내하지 않고 `session.classifierFinding`에만 남긴다. 이미 있는 `settings.json`의
-`classifier_model`은 바뀌지 않는다. v0.6.7부터는 통과하지 않았거나 측정하지 않은
+선택이다. 이 공장값 pair는 시작할 때마다 안내하지 않고 `session.classifierFinding`에만 남긴다.  v0.6.7부터는 통과하지 않았거나 측정하지 않은
 pair를 고르면 시작할 때 그 사실을 한 줄로 알리고, 설정대로 사용한다([COMPATIBILITY.md](COMPATIBILITY.md) v0.6.7 절).
 계정 목록에 있다는 사실은 분류 품질에 대한 주장이 아니다. 과거 오허용과 미검증 조합은
 [#218](https://github.com/wotjr1649/Clauduct/issues/218)에 남기며 이 설정의 구현을 안전성 통과로 해석하지 않는다.
@@ -385,117 +270,39 @@ count와 generation 모두 도구 선택을 `none`으로 보내며, 압축 응�
 native의 모델·effort 화면에서 `S`로 확정하면 현재 세션의 선택이 된다. 이 선택은 수동
 `.clauduct/settings.json`을 수정하지 않는다. `Enter`를 비롯한 native 키의 원래 동작은 그대로다.
 
-Clauduct는 `.clauduct/sessions/<UUID>.json`에 당시 모델 매핑·agent 설정, 파일에 적은 `modelDefaults`와
-마지막 선택을 보존한다. v0.6.4부터 공장 `modelDefaults`는 snapshot에 고정하지 않으므로, 이름을 적지 않은 모델은
-재개한 세션 계정의 기본 수준을 쓴다.
-대화 본문은 이 파일에 복사하지 않는다. 질문을 보내지 않고 `S` 선택 후 종료한 경우도 native 기록에서
-선택을 확인한다. 같은 기록의 동시 작성은 OS 파일 잠금으로 차단한다.
+Clauduct는 `.clauduct/sessions/<UUID>.json`에 실제 선택, 당시 별칭 매핑과 계정 키를 보존한다.
+선택은 native transcript를 대조해 확인하고, 동일 기록의 동시 작성은 OS 파일 잠금으로 차단한다. 구형 프로필의 별칭·역할·effort 설정도 읽는다.
 
-`--resume <UUID>`로 재개하면 그 snapshot과 마지막 선택을 사용한다. 이후 새로 만드는 agent도 같은
-snapshot을 따른다. `--model`, `--effort`와 사용자가 지정한 native effort 환경변수는 명시적인 선택으로 적용한다.
-`--fork-session`은 원본의 snapshot과 선택을 복제한다.
-v0.6.4부터 저장된 snapshot의 항목 수가 현재 목록과 같을 필요는 없다. 저장된 마지막 선택, context journal,
-Agent 선택 기록은 현재 계정 목록과 대조하며, 쓸 수 없는 선택은 다른 값으로 바꾸지 않고 오류로 처리한다.
+`--resume <UUID>`와 `--fork-session`은 저장된 마지막 pair를 사용한다. `--model`이나 `--effort`를 명시하면 현재 계정과 native 정책이 허용하는 선택을 사용한다.
+이전 프로필은 현재 계정 목록으로 pair를 확인한다.
+복원할 기록이 없거나 손상됐으면 오류를 반환한다. resident 복원도 기록된 pair를 확인한다.
 
-context window와 비율은 snapshot에 저장하지 않는다. UUID 재개 시에도
-**현재 전역 settings.json**의 두 값을 읽는다. 따라서 재개 전에 window를 줄이면 기존 사용량이 새 목표에 도달하여 압축이
-필요할 수 있다. 모델·effort snapshot과 대화는 그대로 유지한다. 현재 설정 파일이 잘못되었다면
-UUID 재개도 native 실행 전에 거부하며 원본 파일은 보존한다.
-이 검증은 파일 전체에 적용한다. 현재 파일의 형식 오류(모르는 키, effort 어휘 밖의 값 등)는 무시하지 않고
-오류로 알린다. 계정 목록에 없는 선택은 [위 규칙](#계정-목록에-없는-선택)을 따른다. 유효한 파일을 읽은 뒤에는
-저장된 모델·effort 선택을 사용하며 현재 파일의 선택값으로 바꾸지 않는다.
-
-`/clear`는 현재 실행의 snapshot과 선택을 유지한다. 파일 편집은 새로운 Clauduct 실행에서 읽으며,
-저장된 세션의 모델·effort는 snapshot, context는 현재 전역 설정을 사용한다.
-실행 중인 세션과 `/clear`에는 편집한 context를 즉시 다시 읽어 적용하지 않는다.
+UUID 재개 시 context와 분류기는 현재 전역 v2 설정을 사용한다. 더 작은 window를 설정하면 기존 이력의 압축 시점이 앞당겨질 수 있다.
+현재 설정 파일의 형식 오류는 재개도 막는다. `--no-session-persistence`는 선택을 새로 저장하지 않으며,
+기존 UUID를 명시하면 저장된 pair를 읽을 수 있다.
 
 `EnterWorktree`·`ExitWorktree`는 native가 옮긴 transcript 경로에 snapshot과 context journal을 연결한다.
 기존 transcript가 사라지고 같은 UUID의 새 파일이 native projects 안에 존재하는지 확인한다.
 다른 살아 있는 transcript로 바꾸거나 경계를 벗어나는 경로는 거부한다. native의 권한과 worktree 격리
 규칙은 그대로 적용한다. v0.6.0에서 도구 실행 직후 경로 갱신 누락을 수정했다([#185](https://github.com/wotjr1649/Clauduct/issues/185)).
 
-snapshot이 있는 세션을 재개 목록, `--continue`·`-c`, 실행 중 `/resume`에서 선택하면 첫 backend
-요청을 차단하고 해당 UUID의 `clauduct --resume <UUID>` 명령을 안내한다. 초안을 정리하고 native를
-종료한 뒤 그 명령에 필요한 native 옵션을 함께 지정한다. Clauduct가 화면을 자동 종료하지 않는다.
+`--continue`, 제목, 대상 없는 `--resume`의 경우 시작 전에 pair를 확인할 수 없으므로 UUID를 요구한다. 실행 중 `/resume`에서
+다른 기록을 고르면 UUID를 명시한 새 Clauduct 실행을 안내한다. `/clear`는 현재 실행의 선택과 context를 사용한다.
 
-snapshot이 없는 이전 세션은 현재 설정의 시작값으로 연다. `--resume <UUID>`, `-r <UUID>`뿐 아니라
-재개 목록과 `--continue`·`-c`도 별도 가져오기 옵션이 필요 없다. 원하는 모델·effort는 `S`로 바꿔
-계속 사용한다. 첫 재개 시점의 설정을 새 기준으로 저장하며, 과거 설정을 복원한 것으로 간주하지 않는다.
-실행 중 `/resume`은 새 실행이 아니므로 위의 재실행 안내를 따른다.
-
-`--no-session-persistence`로 실행한 작업은 새 선택을 세션 기록에 보존하지 않는다.
-기존 UUID를 명시하면 그 snapshot을 읽어 시작값을 복원한다.
-
-설정 snapshot을 복원하는 되돌림 대상은 v0.5.3 이상이다. v0.5.2 이하 바이너리는 snapshot을
-읽지 않으므로 이전 버전의 기본 모델·effort로 시작할 수 있다. v0.5.2 실측에서는 Sol/medium
-대화가 Astra/low로 열렸다. 그 버전에서 계속하려면 S로 원하는 값을 선택한다.
-바이너리 되돌림 때문에 설정이나 snapshot을 지우거나 변환하지 않는다. 기존 파일을 보존한 채
-현재 버전으로 돌아오면 UUID snapshot으로 재개할 수 있다. 다만 v0.5.5부터 새 응답에 보존한
-`phase`가 포함된 대화는 v0.5.5 이상이 필요하다. v0.5.3/4는 그 대화의 후속 요청을 거부한다.
-설정 snapshot 호환성과 대화 payload 호환성은 별개다. 구버전 backend 응답 자체는 이
-무과금 호환성 검사의 범위가 아니다.
-
-v0.6.1 이하 설정 parser는 새 context·effort 상한 키를 알 수 없는 필드로 거부한다. 그 버전으로 되돌리려면
-현재 파일을 백업한 뒤 네 키를 제외한 구버전 호환 설정을 직접 사용한다. 바이너리 되돌림이
-설정·대화·snapshot을 자동 삭제하거나 변환하지 않는다.
-
-v0.6.4보다 오래된 바이너리는 `classifier_model` 객체를 거부한다(v0.6.3은 문자열을 읽었다). 이전 동기화가 덧붙인
-다른 키도 거부할 수 있다. 되돌리기 전에 기존 동기화 백업(`.clauduct/settings.backup-…json`)을 복원하거나
-파일을 직접 편집한다. 어느 바이너리도 설정 파일을 지우지 않는다.
-
-v0.5.4의 background worker는 같은 연결·같은 세션으로 재시작하고 마지막 선택이 시작 인자와
-일치할 때 현재 snapshot으로 재연결한다. 실행 중 settings.json 편집은 이 worker의 설정을 바꾸지 않는다.
-S로 시작값과 다른 선택을 저장했다면 원래 인자로 되살린 worker는 첫 요청을 거부하고 UUID 재개를 안내한다.
-다른 세션이나 일반 interactive resume에 이 재연결 예외를 적용하지 않는다.
+되돌릴 때는 해당 바이너리가 읽을 수 있는 설정 파일을 사용한다. 바이너리 교체는 설정이나 세션 데이터를 변경하지 않는다.
 
 ## 적용값 진단
 
-종료 상태 JSON의 `session.startupModel`과 `startupEffort`는 이 실행의 시작 선택이다.
-v0.5.4는 각각 `startupModelSource`, `startupEffortSource`도 기록한다.
+종료 상태 JSON에서 `session.startupModel`·`startupEffort`와 각각의 `Source`를 확인할 수 있다.
+`account priority`, `account.default_reasoning_level`, `native.cli.*`, `native.*.model`, `native.*.env.*`,
+`session-snapshot.last`가 기록된다. 호환 별칭을 썼다면 모델 출처에 `compat mapping`이 추가된다.
 
-| 출처 | 의미 |
-|---|---|
-| `factory (not in file).startup` | 파일에 시작 pair가 없어 적용한 공장값 |
-| `settings.startup` | 수동 파일에 명시한 시작 pair |
-| `session-snapshot.last` | UUID snapshot에서 복원한 마지막 선택 |
-| `cli.model`, `cli.effort` | 해당 CLI 인자에 명시한 값 |
-| `environment.CLAUDE_CODE_EFFORT_LEVEL` | native effort 환경변수로 고정한 값 |
-| `native.user.env.*`, `native.project.env.*`, `native.local.env.*`, `native.settings.env.*` | native 설정의 `env`가 선택한 모델 또는 effort. `--setting-sources`와 마지막 `--settings`를 반영 |
-| `factory (not in file).modelDefaults`, `settings.modelDefaults`, `session-snapshot.modelDefaults` | 모델만 명시한 선택의 effort 기본값 |
-| `account.default_reasoning_level` | 모델만 명시했고 설정이 그 모델의 effort를 적지 않아 계정의 기본 수준을 쓴 경우(v0.6.4) |
+`clauduct --dev --doctor`는 설정과 같은 계정의 저장 목록을 읽어 모델·effort 출처, 분류기 pair, 제공된 upgrade 대상을 보여 준다.
+doctor는 추론이나 계정 목록의 실시간 조회를 실행하지 않는다. 자동 시작에는 다음 실행의 신선한 응답이 필요하다.
 
-alias나 버전형 Claude 이름으로 선택하면 model 출처에 `+factory (not in file).modelMapping`,
-`+settings.modelMapping` 또는 `+session-snapshot.modelMapping`이 붙는다. 파일의 `modelMapping`에 해당 alias 항목이 없어
-내장 매핑을 쓰면 `+factory.modelMapping`이 붙는다.
-한쪽만 명시한 경우 두 출처는 다를 수 있다. 이 진단은 수동 파일을 쓰거나 모델 요청을 만들지 않는다.
-Windows 환경변수 이름의 대소문자는 구분하지 않는다. 같은 선택 키의 대소문자 중복이나 잘못된 값은
-거부한다. native managed 설정에서 선택 환경변수를 강제한 경우의 순위는 아직 검증되지 않았으므로
-추정한 시작값을 기록하지 않고 거부한다.
-
-실행 중 S 선택과 Agent의 실제 요청값은 `gateway.recent`와 `gateway.agentSelections`에서 확인한다.
-Agent 기록은 호출에 model·effort가 있었는지, 적용 pair와 선택 경로, 실제 자식 연결·완료를 구분한다.
-기존 Agent의 `source`는 선택 경로 분류이며 원본 설정 파일 경로를 뜻하지 않는다.
-대화 본문·설정 원문·credential은 출처 진단에 넣지 않는다.
-
-`session.context`는 window, 요청한 `requestedPercent`, clamp 후 `effectivePercent`, 계산한
-`autoCompactTokenLimit`을 기록한다. 키가 빠졌으면 `windowSource`와 `percentSource`가 각각
-`factory (not in file).context_window`과 `factory (not in file).auto_compact_token_limit_percent`을 표시한다.
-파일에 명시된 값의 출처는 `settings.context_window`과 `settings.auto_compact_token_limit_percent`이다.
-실제 압축 요청에 사용한 모델·effort는 `gateway.recent`의 `kind: compaction` 기록에서 확인한다.
-v0.6.4에서 `session.auxiliaryEffortCap`·`auxiliaryEffortCapSource`와 `session.context.autoCompactEffortCap`·
-`effortCapSource`는 없어졌고, 요청 기록의 출처에 `+auxiliary-cap`·`+auto-compact`도 붙지 않는다.
-`session.deprecatedSettings`는 파일에 남은 은퇴 키를, `session.modelList`는 계정 목록의 `source`,
-`fetchedAt`, `models`, `skipped`, `problems`, `fetchFailure`를 기록한다.
-`gateway.modelContexts[].target`은 이 실행의 공통 목표다. `nativeContextDefaults`는 전달한
-native 값이며, `applicationVerified:false`는 native가 그 정확한 시점에 압축했다는 증거가
-아니라는 뜻이다. 낮은 비율에서 반복 압축이 발생하면 비율과 실제 입력 크기를 함께 확인한다.
-
-## 코드에 유지하는 정책
-
-context 설정의 허용 범위, effort 어휘, 입력 검증과 처리 상한, native hook 연결과 요청 출처 확인은 코드에서 관리한다.
-사용할 수 있는 모델과 effort는 세션의 계정 목록이 정하며, 기존 이름(키·별칭·단계·계수 허용·은퇴 표)만 내장 제품 자료로 둔다.
-Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실행값은 `classifier_model`이 정한다.
-개발용 probe의 지출 범위는 일반 세션 설정과 독립된 제품 자료이며 설정 변경으로 확대되지 않는다.
+실행 중 선택은 `gateway.recent`와 `gateway.agentSelections`에서 확인한다. `session.context`에는 window, 요청한 압축 비율,
+적용한 비율, 압축 목표 및 출처가 기록된다. `context default`는 각 항목의 기본값을 뜻한다.
+`session.modelList`에는 목록의 출처와 조회 시각, 제외된 모델, 적용할 수 없는 설정, 조회 실패 범주가 남는다.
 
 ## 격리 모드 (v0.6.14)
 
@@ -544,11 +351,10 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
 - 사용자가 `CLAUDE_CONFIG_DIR`을 줬다면 그 폴더가 "사용자 폴더"다. 전용 폴더와 겹치는 값은 `ISOLATION_CONFIG_CONFLICT`로 거부한다. 사용자 폴더가
   네트워크 경로(`\\server\share\…`)이면 junction을 만들 수 없어 `ISOLATION_LINK_TARGET_UNSUPPORTED`로 거부한다(로컬 드라이브 경로여야 한다).
 - 전용 `CLAUDE.md`의 첫 줄은 Clauduct가 쓴 import(사용자 `CLAUDE.md`를 가리키는 정확히 그 줄, 대소문자 무시)만 관리한다. 사용자가 직접 쓴 다른 import는 그대로 둔다.
-- `boundary_profile`과 독립이다. 격리만으로는 WebFetch 사전 점검과 공식 marketplace 자동 등록이 남는다. 접속을 최소화하려면 `strict`와 함께 쓴다.
-- 대화 이력은 공유하므로 두 모드 사이에 `--resume`이 된다. 다른 모드의 supervisor에서 **실행 중인** job의 세션은 `RESUME_RUNNING_IN_OTHER_MODE`로 거부하고,
-  멈춘 세션은 허용한다. 실행 중 `/resume` 선택기와 `--continue`는 native의 것이라 이 검사를 받지 않는다. 사용자가 직접 넘기는 대화는 막지 않는다:
-  Anthropic 모델로 만든 대화를 Clauduct에서 이어 가면 그 이력이 Codex/OpenAI backend로 가고, GPT 세션을 Clauduct 없이 여는 native로 이어 가면
-  Anthropic으로 간다(격리와 무관하게 기본 모드에서도 같다).
+- `boundaryProfile`과 독립이다. 격리만으로는 WebFetch 사전 점검과 공식 marketplace 자동 등록이 남는다. 접속을 최소화하려면 `strict`와 함께 쓴다.
+- 두 모드는 대화 이력을 공유한다. Clauduct에서 재개하려면 저장된 Clauduct 프로필이 있는 세션 UUID를 `--resume <UUID>`로 지정한다.
+  프로필이 없으면 `SESSION_PROFILE_MISSING`으로, 대상이 확인되지 않는 `--continue`는 `SESSION_RESUME_UUID_REQUIRED`로 거부한다.
+  다른 모드의 supervisor에서 **실행 중인** job은 `RESUME_RUNNING_IN_OTHER_MODE`로 거부한다. 실행 중 `/resume`은 [세션 pair 규칙](#현재-세션의-선택과-저장)을 따른다.
 - 다른 모드의 `agents` 목록에는 이 job이 보이지 않는다. `--bg` 안내문이 `clauduct agents`를 가리킨다.
 - NONESSENTIAL의 부작용: native auto-update, `/feedback`, release notes, PR 상태 배지, fast mode 등 availability 확인, plugin `command` source의 background 실행,
   marketplace 자동 갱신, **feature flag 조회**(Remote Control 등 flag 의존 기능, claude.ai 계정 plugin·skill 동기화)가 꺼진다.
@@ -558,14 +364,14 @@ Clauduct는 native 권한 규칙을 더하지 않는다. auto 분류기의 실�
   `clauduct --dev --isolation-reset`(`--yes`)을 실행한다. 이 명령은 전용 작업과 파생 파일도 지운다.
 - 켜진 세션은 시작 때 `clauduct: isolation on: …`을 stderr에 한 줄 내고, 종료 줄에 `isolation=on`, status의 `session.isolation`에 이름·개수를 남긴다.
   `clauduct --dev --doctor`가 모드·폴더·공유 상태·supervisor를 보여 준다.
-- `isolation`은 공장 문서에 없다. 실행 중 설정 파일을 갱신하지 않는다. v0.6.13 이하 바이너리는 이 키를 모르는 키로 거부하므로 되돌리기 전에 지운다.
+- `isolation`을 생략하면 `off`를 사용한다.
 
 - MCP 서버 정의는 전용 `.claude.json`으로 미러링된다. 비밀값은 지원되는 필드에서 `${VAR}`로 확장하거나 HTTP 헤더를 `headersHelper`에서 가져온다.
   MCP 정의에 평문 비밀을 넣으면 전용 `.claude.json`에도 평문 복제본이 생긴다. 미러링되는 `settings.json`의 `env`와 hook에 평문 비밀을 넣으면
   전용 `settings.json`에도 복제된다. 비밀은 실행 환경에서 제공하고, 지원되는 곳에서 환경 변수로 참조한다.
   Windows에서는 폴더의 상속 ACL이 파일 접근을 제어한다. `--isolation-reset`이 복제본을 지운다.
   [MCP 변수 확장](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json) · [MCP 동적 헤더](https://code.claude.com/docs/en/mcp#use-dynamic-headers-for-custom-authentication)
-- `rm`·`stop`·`logs`는 `~/.clauduct/settings.json`이 없으면 기본 모드를 사용한다. 파일이 있으면 유효한 v1 설정이어야 한다. 접근 오류, 깨진 JSON, 객체가 아닌 값, 중복 키,
+- `rm`·`stop`·`logs`는 `~/.clauduct/settings.json`이 없으면 기본 모드를 사용한다. 파일이 있으면 유효한 v2 설정이어야 한다. 접근 오류, 깨진 JSON, 객체가 아닌 값, 중복 키,
   잘못된 설정값, 1 MiB 초과 등으로 검증에 실패하면 `ISOLATION_MODE_UNREADABLE`로 거부한다. `isolation`을 `off`로 바꾼 뒤 격리 job을 정리하려면 잠시
   `on`으로 되돌리고 `clauduct stop <id>` 또는 `clauduct rm <id>`를 실행한 뒤 다시 `off`로 바꾼다.
 - 격리 마커가 손상돼도 기본 모드의 `--resume`은 전용 폴더에서 실행 중인 job을 확인한다. 전용 폴더 초기화에서 마커를 읽을 수 없으면 `ISOLATION_MARKER_UNREADABLE`로 거부한다.

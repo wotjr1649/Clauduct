@@ -1,34 +1,15 @@
 package bridge
 
-import (
-	"encoding/json"
-	"errors"
+import "errors"
 
-	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
-)
+var compatModelMapping = map[string]string{
+	"fable":  "gpt-6-astra",
+	"opus":   "gpt-6.1-sol",
+	"sonnet": "gpt-6.1-terra",
+	"haiku":  "gpt-6-luna",
+}
 
-// Only the embedded, release-checked document is read here, and only for its shape. No
-// model is looked up at this point: commands that never route (help, version, hooks) must
-// not depend on which models a factory default names or an account offers. User files
-// use the strict session parser and never mutate these process-wide factory fallbacks.
-var builtinDefaults = func() (config struct {
-	Version         int  `json:"version"`
-	Startup         Pair `json:"startup"`
-	ClassifierModel Pair `json:"classifier_model"`
-	ContextSettings
-	Selection
-}) {
-	if json.Unmarshal([]byte(settingsfile.Defaults()), &config) != nil || config.Version != 1 {
-		panic("invalid embedded Clauduct defaults")
-	}
-	return config
-}()
-
-// DefaultStartup stays independent from per-model and per-agent effort defaults.
-func DefaultStartup() Pair { return builtinDefaults.Startup }
-
-// DefaultClassifierModel is the factory classifier pair; the zero Pair follows native's request.
-func DefaultClassifierModel() Pair { return builtinDefaults.ClassifierModel }
+func DefaultClassifierModel() Pair { return Pair{Model: "gpt-6.1-terra", Effort: "low"} }
 
 // ContextSettings is shared by every model in one launcher. It is not part of
 // Selection: resuming a saved selection still uses today's context preferences.
@@ -37,7 +18,7 @@ type ContextSettings struct {
 	Percent int64 `json:"auto_compact_token_limit_percent"`
 }
 
-func DefaultContextSettings() ContextSettings { return builtinDefaults.ContextSettings }
+func DefaultContextSettings() ContextSettings { return ContextSettings{Window: 272000, Percent: 90} }
 
 // Policy resolves the launch-time target once. Clamp before multiplication so
 // even the largest accepted integer percentage cannot overflow the calculation.

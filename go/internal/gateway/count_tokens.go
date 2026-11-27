@@ -120,6 +120,15 @@ func (g *Gateway) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusBadRequest, "COUNT_TOKENS_UNSUPPORTED")
 		return
 	}
+	pair := bridge.Pair{Model: built.Model, Effort: built.Effort.Effort}
+	if !g.routePermitted(r, pair) {
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_MODEL_POLICY")
+		return
+	}
+	if startup := g.pendingStartup(r); startup != nil && !g.matchesStartup(startup, request, pair) {
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_STARTUP_SELECTION_MISMATCH")
+		return
+	}
 	if err := g.resolveToolHistory(r, built, false, entry.nativeTurn); err != nil {
 		g.refuseCategory(w, 400, err.Error())
 		return

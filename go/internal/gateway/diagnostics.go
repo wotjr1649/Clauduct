@@ -955,6 +955,7 @@ func (g *ring) recent() []RequestRecord {
 // given a ResponseWriter and nothing else. Threading a second argument through every call
 // site would have been the same change made fifteen times.
 type tracked struct {
+	capture *capturedResponse
 	http.ResponseWriter
 	rec  *record
 	body io.Reader // handler lifetime only; never retained in the record or diagnostics
@@ -990,7 +991,11 @@ func (t *tracked) WriteHeader(status int) {
 
 func (t *tracked) Write(p []byte) (int, error) {
 	t.rec.wrote()
-	return t.ResponseWriter.Write(p)
+	n, err := t.ResponseWriter.Write(p)
+	if n > 0 && t.capture != nil {
+		t.capture.append(p[:n])
+	}
+	return n, err
 }
 
 // recordOf finds the record behind a ResponseWriter, or nil when there is none.

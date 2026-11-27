@@ -91,6 +91,26 @@ wildcard를 받지 않는다. 생략한 route는 이전처럼 모델·effort만 
 native background 상태 분류 같은 보조 생성도 예산에 포함한다. 2.1.282의 본문을 `gpt-6-luna/low`로
 실행했을 때 상태 분류는 `gpt-6-luna/max`로 요청됐으므로, 검증 계획은 실측한 보조 경로도 명시해야 한다.
 
+### 검증 전용 명령과 응답 캡처
+
+두 기능 모두 검증 하네스용이다. `--dev`를 첫 인자로 주거나 아래 변수를 명시적으로 지정하지 않으면 일반 실행은 이 경로를 쓰지 않는다.
+
+- `clauduct --dev --verify-catalogue-refusal`은 인자를 받지 않는다(추가 인자는 exit 2). 계정 모델 목록 요청이 401·403·503을
+  받을 때의 시작 경계를 프로세스 안에서 확인한다. 임시 폴더, 메모리 안의 합성 자격 증명, 프로세스 전용 TLS 수신기만 쓰며
+  `127.0.0.1` 밖의 연결은 연결 전에 거부한다. native와 gateway는 시작하지 않고 OS 자격 증명 저장소와 실제 backend를 읽지 않는다.
+  stdout에 한 줄 JSON(`commit`, 세 행의 `httpStatus`·`category`·cache 해시 전후·`nativeLookups`·`nativeStarts`·`gatewayStarts`)을 쓴다.
+  401·403은 `ACCOUNT_MODEL_LIST_UNAVAILABLE`로 거부하고 저장 목록을 바꾸지 않으며, 503은 같은 계정의 last-good을 쓴다.
+  동작은 [계정 모델 목록](../docs/v2/SETTINGS.md#계정-모델-목록-v064)을 따른다.
+- `CLAUDUCT_VERIFICATION_HTTP_CAPTURE=1`은 gateway가 인증된 native 연결의 `/v1/models`·`/v1/messages`·`/v1/messages/count_tokens` **응답**만
+  `$CLAUDUCT_VERIFICATION_BUDGET/http-capture/response-<seq>.json`에 기록하게 한다. 값은 정확히 `1`이어야 하고 같은 실행에
+  절대경로의 `CLAUDUCT_VERIFICATION_BUDGET`이 있어야 한다. 아니면 native를 띄우기 전에 `VERIFICATION_HTTP_CAPTURE_REQUIRES_BUDGET`으로 거부한다.
+  native 신원 검사가 꺼진 실행(`claude.exe`가 아니거나 설정 재정의가 있는 실행)에서는 캡처가 붙을 수 없으므로 `VERIFICATION_HTTP_CAPTURE_REQUIRES_NATIVE_IDENTITY`로 거부한다.
+  디렉터리는 새로 만들며 이미 있으면 거부한다. 기록은 gateway 순번·native PID와 생성 시각·loopback 연결 양끝·세션·launcher PID·상태·응답 본문(1 MiB 이하,
+  실행당 96건)이고 요청 header와 본문은 저장하지 않는다. 변수가 없으면 이 경로는 실행되지 않는다.
+  캡처를 잃으면 증거로 쓸 수 없으므로 실행이 실패한다. 파일 생성·쓰기 실패는 `VERIFICATION_HTTP_CAPTURE_WRITE_FAILED`, 같은 순번 파일이 이미 있으면
+  `VERIFICATION_HTTP_CAPTURE_COLLISION`, 응답이 1 MiB를 넘으면 `VERIFICATION_HTTP_CAPTURE_TOO_LARGE`, 96건을 넘으면 `VERIFICATION_HTTP_CAPTURE_LIMIT`,
+  공개한 뒤 쓰기가 오면 `VERIFICATION_HTTP_CAPTURE_LATE_WRITE`다. 이 오류는 native 종료 뒤 launcher의 오류로 반환된다.
+
 ## 명령
 
 Windows 개발·검증 명령은 PowerShell 7(`pwsh`)에서 실행한다. 현재 검증 환경은 7.6.6이다.
@@ -206,7 +226,7 @@ go build -trimpath -o $env:TEMP\clauduct.exe ./cmd/clauduct
 - **거부는 아무것도 얻기 전에 일어난다.** 실행 파일 조회도, bind도 하지 않는다. `internal/app`에 그 순서를 지키는 테스트가 있다.
 - **Node·.NET·PowerShell에 runtime 의존하지 않는다.** `internal/app`의 소스 스캔 테스트가 문자열 리터럴 수준에서 이를 강제한다. Node 기준선이 `<node.exe> <repo>/src/review-diff.mjs` 형태의 명령을 native에 넘기던 패턴이 다시 들어오면 그 자리에서 실패한다.
 - **검토·고정한 의존성만 허용.** 4개 모듈의 버전을 테스트로 고정한다 — 정확 계수를 위한 3개와, 역할 정의 frontmatter를 읽는 `go.yaml.in/yaml/v3`. [추가 결정과 검토](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/verification/policy-evidence-20260918/DEPENDENCIES.md), [라이선스](THIRD_PARTY_NOTICES.txt). 새로운 의존성은 `docs/v2/ARCHITECTURE.md` 14장의 기준에 따라 별도 검토·기록한다.
-- **child env는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`만 제거한다.** 나머지는 전부 상속된다. 사용자 결정이며 근거는 [`docs/v2/DECISION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md). Clauduct는 추가 secret 장벽이 아니다.
+- **child env의 상속 단계는 `ANTHROPIC_*`와 `CLAUDE_CODE_OAUTH_TOKEN`을 제거한다.** 검증된 모델 선택 환경변수만 라우팅 overlay가 전달하며 연결용 값은 세션이 정한다. 사용자 결정이며 근거는 [`docs/v2/DECISION.md`](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/DECISION.md). Clauduct는 추가 secret 장벽이 아니다.
 - **세션 token은 로그·커맨드라인·오류 문자열에 넣지 않는다.**
 - **tool call은 `response.completed` 이전에 만들어지지 않는다.** 스트리밍 이벤트에서 호출을 조립하는 arm을 추가하면 barrier가 사라진다. `internal/protocol/bridge`에 그것을 잡는 테스트가 있다.
 - **상태 코드 계열은 재시도 지시다.** 측정상 5xx는 종류를 가리지 않고 재시도된다. 영구적인 로컬 조건은 4xx로 답한다.

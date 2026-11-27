@@ -409,11 +409,13 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 				route, known = d.selection.RoleRoute(role)
 			}
 		}
-		if !known && !hasEffort && scope.route.Model != "" {
-			// Pending choices block parent completion before the child has an ID.
-			// Keep native's model choice, then bind its actual turn before dispatch.
-			d.unroutedRoles.Add(1)
-			known, inherited, source = true, false, "native-selection"
+		if !known && scope.route.Model != "" && (!hasEffort || bridge.BuiltinRole(role) && d.events != "") {
+			// The child turn proves the native model, including effort-only builtin calls.
+			if !bridge.BuiltinRole(role) {
+				d.unroutedRoles.Add(1)
+			}
+			known, inherited, source = true, hasEffort, "native-selection"
+			route.Effort = effort
 		}
 		if !known {
 			if hasEffort {
@@ -421,7 +423,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 			}
 			return raw, nil // Custom role defaults still require definition evidence.
 		}
-		if hasEffort {
+		if hasEffort && route.Model != "" {
 			route, err = d.selection.SelectRoute(route.Model, effort)
 			if err != nil {
 				return nil, err
@@ -449,7 +451,7 @@ func (d *delegations) prepare(scope delegationScope, id, name string, raw json.R
 	}
 	delete(fields, "effort")
 	route.Source = source
-	if hasEffort {
+	if hasEffort && route.Model != "" {
 		route.Source += "+effort"
 	}
 	nativeAlias := ""
@@ -660,17 +662,11 @@ func (d *delegations) route(scope delegationScope, id string, binding agentBindi
 		role = bridge.CanonicalRole(role)
 	}
 	if choice.route.Source == "native-selection" {
-		active := scope.nativeTurn
-		if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
-			return bridge.Route{}, false, errDelegationUnverified
+		actual, err := d.nativeAgentRoute(scope, id, choice.route.Effort)
+		if err != nil {
+			return bridge.Route{}, false, err
 		}
-		actual, err := d.selection.SelectRoute(active.Model, active.Effort)
-		if err != nil || actual.Model != active.Model {
-			return bridge.Route{}, false, errDelegationUnverified
-		}
-		actual.Source = "native-selection"
-		choice.route = actual
-		choice.alias = actual.Model
+		choice.route, choice.alias = actual, actual.Model
 	}
 	switch {
 	case choice.parent != scope.parent || meta.ParentAgentID != scope.parent:
@@ -776,17 +772,11 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 	// Where native chose the model, its receipt for this teammate's turn names it, as for
 	// an ordinary child; the metadata then records what native actually ran.
 	if choice.route.Source == "native-selection" {
-		active := scope.nativeTurn
-		if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
-			failure = "NATIVE_RECEIPT_UNVERIFIED"
-		} else if actual, err := d.selection.SelectRoute(active.Model, active.Effort); err != nil {
+		actual, err := d.nativeAgentRoute(scope, id, choice.route.Effort)
+		if err != nil {
 			failure = "NATIVE_RECEIPT_UNVERIFIED"
 		} else {
-			actual.Source = "native-selection"
-			choice.route = actual
-			if model, ok := d.selection.ModelByID(actual.Model); ok {
-				choice.alias = model.AgentAlias
-			}
+			choice.route, choice.alias = actual, actual.Model
 		}
 	}
 	switch {
@@ -795,7 +785,7 @@ func (d *delegations) teammateRoute(scope delegationScope, id string, binding ag
 		failure = "PARENT_MISMATCH"
 	case !roleMatches(role, link.Role, custom) && !(choice.omitted && link.Role == omittedTeammateRole):
 		failure = "ROLE_MISMATCH"
-	case meta.Model != choice.route.Model && !(choice.route.Source == "native-selection" && meta.Model == ""):
+	case meta.Model != choice.route.Model && !(nativeAgentSource(choice.route.Source) && meta.Model == ""):
 		failure = "METADATA_MODEL_MISMATCH"
 	}
 	if failure != "" {
@@ -998,7 +988,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 	}
 	meta, err := d.metadata(binding)
 	selector := saved.Alias
-	if saved.Source == "native-selection" {
+	if nativeAgentSource(saved.Source) {
 		selector = saved.Model
 	}
 	if err != nil || meta.ToolUseID != saved.Call || meta.ParentAgentID != saved.Parent || !roleMatches(saved.Role, meta.AgentType, saved.CustomRole) || !metadataModelMatches(saved.Role, selector, meta.Model, saved.Source, saved.CustomRole) || meta.StoppedByUser {
@@ -1030,7 +1020,7 @@ func (d *delegations) loadChoice(scope delegationScope, id string, binding agent
 		return empty, false, errDelegationUnverified
 	}
 	switch saved.Source {
-	case "agent-call-model", "agent-call-model+effort", "agent-call-role", "agent-call-role+effort", "agent-call-definition", "agent-call-definition+effort", "parent-route", "parent-route+effort", "delegation-inherited", "delegation-inherited+effort", "native-selection":
+	case "agent-call-model", "agent-call-model+effort", "agent-call-role", "agent-call-role+effort", "agent-call-definition", "agent-call-definition+effort", "parent-route", "parent-route+effort", "delegation-inherited", "delegation-inherited+effort", "native-selection", "native-selection+effort":
 	default:
 		return empty, false, errDelegationUnverified
 	}
@@ -1073,8 +1063,31 @@ type delegationMetadata struct {
 // 2.1.276 records inherit for native fork, rather than Agent's compatibility
 // alias. Native selection uses the exact ID from its verified route. Dispatch
 // separately verifies the native request's resolved model against the choice.
+func nativeAgentSource(source string) bool {
+	return source == "native-selection" || source == "native-selection+effort"
+}
+
+func (d *delegations) nativeAgentRoute(scope delegationScope, id, effort string) (bridge.Route, error) {
+	active := scope.nativeTurn
+	if active == nil || !validActiveReceipt(d.selection, *active, scope.session, id) {
+		return bridge.Route{}, errDelegationUnverified
+	}
+	route, err := d.selection.SelectRoute(active.Model, active.Effort)
+	if err != nil || route.Model != active.Model {
+		return bridge.Route{}, errDelegationUnverified
+	}
+	route.Source = "native-selection"
+	if effort != "" {
+		if !d.selection.ValidPair(bridge.Pair{Model: route.Model, Effort: effort}) {
+			return bridge.Route{}, bridge.ErrUnsupportedRoute
+		}
+		route.Effort, route.Source = effort, "native-selection+effort"
+	}
+	return route, nil
+}
+
 func metadataModelMatches(role, selector, model, source string, custom bool) bool {
-	if source == "native-selection" {
+	if nativeAgentSource(source) {
 		return model == "" || model == selector
 	}
 	if !custom && bridge.IsFork(role) {

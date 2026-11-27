@@ -12,9 +12,7 @@ import (
 	"strings"
 
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
-	"github.com/wotjr1649/Clauduct/go/internal/launch"
 	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
-	"github.com/wotjr1649/Clauduct/go/internal/settingsfile"
 	"github.com/wotjr1649/Clauduct/go/internal/wire"
 )
 
@@ -95,27 +93,20 @@ func prepareSessionArgs(args []string) ([]string, string) {
 
 const clauductSettingsBytes = 1 << 20
 
-var errClauductSettings = errors.New("CLAUDUCT_SETTINGS_INVALID")
+var errClauductSettings = errors.New(
+	`CLAUDUCT_SETTINGS_INVALID: edit ~/.clauduct/settings.json to use v2 (minimal form: {"version":2})`)
 
-var errBoundarySettings = fmt.Errorf(`%w: boundary_profile must be "default" or "strict". Edit ~/.clauduct/settings.json`, errClauductSettings)
+var errBoundarySettings = invalidSettingsField("boundaryProfile", nil)
+var errClassifierSettings = fmt.Errorf(`%w: use "classifier":{"model":"gpt-6.1-terra","effort":"low"} to set both values`, errClauductSettings)
 
-// errClassifierSettings explains the one shape change v0.6.4 made to an existing key. The
-// file is never converted: the user edits it, and nothing runs on a guessed effort.
-var errClassifierSettings = fmt.Errorf(`%w: classifier_model must be an object with both model and effort, for example "classifier_model": {"model": %q, "effort": %q}; the v0.6.3 string form is no longer accepted. Edit ~/.clauduct/settings.json`, errClauductSettings, bridge.DefaultClassifierModel().Model, bridge.DefaultClassifierModel().Effort)
-
-// deprecatedSettings are keys v0.6.4 stopped applying. They are accepted, left in the file
-// and reported; every other unknown key is still refused.
-var deprecatedSettings = []string{"auto_compact_effort_cap", "auxiliary_effort_cap"}
-
-const factorySettingsSource = "factory (not in file)"
-
-// ClauductSettings contains validated launch preferences. SessionProfile owns
-// the separately versioned persistent format.
+// ClauductSettings contains launch preferences. SessionProfile owns the saved routing format.
 type ClauductSettings struct {
 	Startup                 bridge.Pair
 	Selection               bridge.Selection
-	StartupSource           string
-	SelectionSource         string
+	autoModel               string
+	nativeTierSettings      map[string]bool
+	restoredSelection       bool
+	shellModel              string
 	Context                 bridge.ContextSettings
 	ContextRequestedPercent json.Number
 	ContextPolicy           bridge.ContextPolicy
@@ -123,19 +114,10 @@ type ClauductSettings struct {
 	ContextPercentSource    string
 	ClassifierModel         bridge.Pair
 	ClassifierModelSource   string
-	// BoundaryProfile is "default" or "strict": which Anthropic-hosted paths native keeps
-	// (#301, boundary_profile in settings.json).
-	BoundaryProfile string
-	// Isolation is "off" or "on" (#379): whether native runs on Clauduct's dedicated config
-	// folder. A key that is absent means off.
-	Isolation string
-	// pluginCacheRoot is resolved once per isolated launch, before native or role loading.
-	pluginCacheRoot string
-	// marketplace is the user's own marketplace setting a strict session keeps (strictReady).
-	marketplace string
-	// Deprecated names keys present in the file that this build ignores.
-	Deprecated  []string
-	missingKeys []string
+	BoundaryProfile         string
+	Isolation               string
+	pluginCacheRoot         string
+	marketplace             string
 }
 
 // classifierMeasurements is what Clauduct's auto-mode classifier gate observed per pair on
@@ -164,7 +146,7 @@ func classifierNotice(pair bridge.Pair) string {
 	} else if finding == "" {
 		return ""
 	}
-	return fmt.Sprintf("classifier_model %s/%s: %s in Clauduct's classifier measurement; it is used as configured, and gpt-5.6-terra/low passed", pair.Model, pair.Effort, finding)
+	return fmt.Sprintf("classifier %s/%s: %s in Clauduct's classifier measurement; it is used as configured, and gpt-5.6-terra/low passed", pair.Model, pair.Effort, finding)
 }
 
 func classifierFindingOf(pair bridge.Pair) string {
@@ -175,225 +157,110 @@ func classifierFindingOf(pair bridge.Pair) string {
 }
 
 func defaultClauductSettings() ClauductSettings {
-	return ClauductSettings{Startup: startupModel, StartupSource: "factory.startup", SelectionSource: "factory",
+	return ClauductSettings{
 		Context: bridge.DefaultContextSettings(), ContextPolicy: bridge.DefaultContextPolicy(),
 		ContextRequestedPercent: json.Number(strconv.FormatInt(bridge.DefaultContextSettings().Percent, 10)),
-		ContextWindowSource:     "factory.context_window", ContextPercentSource: "factory.auto_compact_token_limit_percent",
-		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "factory.classifier_model",
-		BoundaryProfile: boundaryDefault, Isolation: isolationOff}
+		ContextWindowSource:     "context default", ContextPercentSource: "context default",
+		ClassifierModel: bridge.DefaultClassifierModel(), ClassifierModelSource: "classifier default",
+		BoundaryProfile: boundaryDefault, Isolation: isolationOff,
+	}
 }
 
-func (config ClauductSettings) effectiveStartup(spec launch.Spec, requested []string, finalSettings string) (bridge.Pair, string, string, error) {
-	model, named := optionValue(spec.Args, "--model")
-	effort, _ := optionValue(spec.Args, "--effort")
-	modelSource, effortSource := config.StartupSource, config.StartupSource
-	_, explicitModel := optionValue(requested, "--model")
-	_, explicitEffort := optionValue(requested, "--effort")
-	if explicitModel {
-		modelSource = "cli.model"
-	}
-	if explicitEffort {
-		effortSource = "cli.effort"
-	}
-	env := map[string]string{}
-	for _, entry := range spec.Env {
-		key, value, _ := strings.Cut(entry, "=")
-		if key = strings.ToUpper(key); key == "ANTHROPIC_MODEL" || key == effortEnv || key == "CLAUDE_CONFIG_DIR" {
-			env[key] = value
-		}
-	}
-	cli := cliRoles{}
-	if err := cli.scope(requested, spec.Dir); err != nil {
-		return bridge.Pair{}, "", "", err
-	}
-	_, userSettingsModel := cli.flagEnv["ANTHROPIC_MODEL"]
-	if finalSettings != "" {
-		cli.readFlagEnv([]byte(finalSettings))
-	}
-	configDir := nativeConfigDirectory(env, spec.Dir)
-	if !named {
-		value, source, err := nativeEnvironment(configDir, spec.Dir, managedRoot(), "ANTHROPIC_MODEL", cli, env)
-		if err != nil {
-			return bridge.Pair{}, "", "", err
-		}
-		model = value
-		if strings.HasPrefix(source, "native.") && !(source == "native.settings.env.ANTHROPIC_MODEL" && !userSettingsModel && model == config.Startup.Model) {
-			modelSource = source
-		}
-	}
-	value, source, err := nativeEnvironment(configDir, spec.Dir, managedRoot(), effortEnv, cli, env)
-	if err != nil {
-		return bridge.Pair{}, "", "", err
-	}
-	environmentEffort := source != "" && value != ""
-	if environmentEffort {
-		effort, effortSource = value, source
-	}
-	model = strings.ToLower(strings.TrimSpace(model))
-	route, err := config.Selection.SelectRoute(model, effort)
-	if err != nil {
-		if config.Selection.Retires(model) {
-			return bridge.Pair{}, "", "", fmt.Errorf("%w: %s -> %s", err, model, bridge.Retired[model])
-		}
-		return bridge.Pair{}, "", "", err
-	}
-	if explicitModel && !explicitEffort && !environmentEffort {
-		effortSource = "account.default_reasoning_level"
-		if _, configured := config.Selection.ModelDefaults[route.Model]; configured {
-			effortSource = config.settingsSource("modelDefaults")
-		}
-	}
-	if strings.HasPrefix(route.Source, "alias") || strings.HasPrefix(route.Source, "family") {
-		for _, candidate := range bridge.LegacyModels() {
-			if model == candidate.Alias || candidate.Family != "" && strings.HasPrefix(model, candidate.Family) {
-				mappingSource := "factory.modelMapping"
-				if _, configured := config.Selection.ModelMapping[candidate.Alias]; configured {
-					mappingSource = config.settingsSource("modelMapping")
-				}
-				modelSource += "+" + mappingSource
-				break
-			}
-		}
-	}
-	return bridge.Pair{Model: route.Model, Effort: route.Effort}, modelSource, effortSource, nil
-}
-
-func (c ClauductSettings) settingsSource(key string) string {
-	if c.SelectionSource == "settings" && slices.Contains(c.missingKeys, key) {
-		return factorySettingsSource + "." + key
-	}
-	return c.SelectionSource + "." + key
-}
-
-// loadClauductSettings reads the file once. A missing file uses the embedded factory
-// document, and a present malformed file fails closed.
+// A missing file has exactly the same defaults as {"version":2}.
 func loadClauductSettings(home string) (ClauductSettings, error) {
 	if !filepath.IsAbs(home) {
 		return ClauductSettings{}, errClauductSettings
 	}
-	file, err := os.Open(filepath.Join(home, ".clauduct", "settings.json"))
+	path := filepath.Join(home, ".clauduct", "settings.json")
+	file, err := os.Open(path)
+	invalid := fmt.Errorf("%w: %s", errClauductSettings, path)
 	if errors.Is(err, os.ErrNotExist) {
-		return resolveClauductSettings(nil)
+		return defaultClauductSettings(), nil
 	}
 	if err != nil {
-		return ClauductSettings{}, errClauductSettings
+		return ClauductSettings{}, invalid
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil || !info.Mode().IsRegular() || info.Size() > clauductSettingsBytes {
-		return ClauductSettings{}, errClauductSettings
+		return ClauductSettings{}, invalid
 	}
 	raw, err := io.ReadAll(io.LimitReader(file, clauductSettingsBytes+1))
 	if err != nil || len(raw) > clauductSettingsBytes {
-		return ClauductSettings{}, errClauductSettings
+		return ClauductSettings{}, invalid
 	}
-	return parseClauductSettings(raw)
+	config, err := parseClauductSettings(raw)
+	if err != nil {
+		return ClauductSettings{}, fmt.Errorf("%w: %s", err, path)
+	}
+	return config, nil
 }
 
 func parseClauductSettings(raw []byte) (ClauductSettings, error) {
-	fields, err := wire.Fields(raw, append([]string{"version", "startup", "modelDefaults", "modelMapping", "agents", "context_window", "auto_compact_token_limit_percent", "classifier_model", "boundary_profile", "isolation"}, deprecatedSettings...))
-	var version int
-	if err != nil || json.Unmarshal(fields["version"], &version) != nil || version != 1 {
-		return ClauductSettings{}, errClauductSettings
-	}
-	return resolveClauductSettings(fields)
-}
-
-func resolveClauductSettings(fields map[string]json.RawMessage) (ClauductSettings, error) {
-	bad := func() (ClauductSettings, error) { return ClauductSettings{}, errClauductSettings }
-	factory, err := wire.Fields([]byte(settingsfile.Defaults()), nil)
+	fields, err := wire.Fields(raw, []string{"version", "boundaryProfile", "isolation", "context", "classifier"})
 	if err != nil {
-		return bad()
+		return ClauductSettings{}, invalidSettingsField("settings", err)
 	}
-	settings := defaultClauductSettings()
-	if fields == nil {
-		fields = factory
-		settings.SelectionSource = factorySettingsSource
-	} else {
-		settings.SelectionSource = "settings"
-		// Preserve v1's top-level-only fill, including empty or partial user maps.
-		for key, value := range factory {
-			if _, present := fields[key]; !present {
-				fields[key] = value
-				settings.missingKeys = append(settings.missingKeys, key)
-			}
-		}
+	var version int
+	if json.Unmarshal(fields["version"], &version) != nil || version != 2 {
+		return ClauductSettings{}, invalidSettingsField("version", nil)
 	}
-	if value, ok := fields["startup"]; ok {
-		settings.Startup, err = bridge.ParsePair(value)
-		if err != nil {
-			return bad()
-		}
-		settings.StartupSource = settings.settingsSource("startup")
-	}
-	if value, present := fields["context_window"]; present {
-		if string(value) == "null" || json.Unmarshal(value, &settings.Context.Window) != nil {
-			return bad()
-		}
-		settings.ContextWindowSource = settings.settingsSource("context_window")
-		delete(fields, "context_window")
-	}
-	if value, present := fields["auto_compact_token_limit_percent"]; present {
-		// Fields already validated the JSON token. Reject non-integer notation;
-		// positive int64 overflow is still above 90 and must clamp, not fail.
-		number := string(value)
-		percent, parseErr := strconv.ParseInt(number, 10, 64)
-		if strings.ContainsAny(number, ".eE") || parseErr != nil && !errors.Is(parseErr, strconv.ErrRange) || percent < 1 {
-			return bad()
-		}
-		settings.Context.Percent = percent
-		settings.ContextRequestedPercent = json.Number(number)
-		settings.ContextPercentSource = settings.settingsSource("auto_compact_token_limit_percent")
-		delete(fields, "auto_compact_token_limit_percent")
-	}
-	for _, name := range deprecatedSettings {
-		if _, present := fields[name]; present {
-			settings.Deprecated = append(settings.Deprecated, name)
-			delete(fields, name)
-		}
-	}
-	if value, present := fields["classifier_model"]; present {
-		// Both halves of an exact backend ID and a transmittable effort. An alias would move
-		// with modelMapping; the account list decides availability when it is used.
-		var legacy string
-		if json.Unmarshal(value, &legacy) == nil {
-			return ClauductSettings{}, errClassifierSettings
-		}
-		settings.ClassifierModel, err = bridge.ParsePair(value)
-		if err != nil {
-			return ClauductSettings{}, errClassifierSettings
-		}
-		settings.ClassifierModelSource = settings.settingsSource("classifier_model")
-		delete(fields, "classifier_model")
-	}
-	if value, present := fields["boundary_profile"]; present {
-		if string(value) == "null" || json.Unmarshal(value, &settings.BoundaryProfile) != nil ||
-			settings.BoundaryProfile != boundaryDefault && settings.BoundaryProfile != boundaryStrict {
+	config := defaultClauductSettings()
+	if value, present := fields["boundaryProfile"]; present {
+		config.BoundaryProfile = "" // JSON null must not inherit the default.
+		if json.Unmarshal(value, &config.BoundaryProfile) != nil ||
+			config.BoundaryProfile != boundaryDefault && config.BoundaryProfile != boundaryStrict {
 			return ClauductSettings{}, errBoundarySettings
 		}
-		delete(fields, "boundary_profile")
 	}
 	if value, present := fields["isolation"]; present {
-		mode, err := parseIsolation(value)
+		config.Isolation, err = parseIsolation(value)
 		if err != nil {
 			return ClauductSettings{}, err
 		}
-		settings.Isolation = mode
-		delete(fields, "isolation")
 	}
-	settings.ContextPolicy, err = settings.Context.Policy()
-	if err != nil {
-		return bad()
+	if value, present := fields["context"]; present {
+		context, err := wire.Fields(value, []string{"window", "compactPercent"})
+		var window int64
+		number := string(context["compactPercent"])
+		percent, numberErr := strconv.ParseInt(number, 10, 64)
+		// Positive overflow still clamps to 90. Only JSON integer notation is accepted.
+		if err != nil {
+			return ClauductSettings{}, invalidSettingsField("context", err)
+		}
+		if json.Unmarshal(context["window"], &window) != nil || window == 0 {
+			return ClauductSettings{}, invalidSettingsField("context.window", nil)
+		}
+		if strings.ContainsAny(number, ".eE") || numberErr != nil && !errors.Is(numberErr, strconv.ErrRange) || percent < 1 {
+			return ClauductSettings{}, invalidSettingsField("context.compactPercent", nil)
+		}
+		config.Context = bridge.ContextSettings{Window: window, Percent: percent}
+		config.ContextPolicy, err = config.Context.Policy()
+		if err != nil {
+			return ClauductSettings{}, invalidSettingsField("context.window", nil)
+		}
+		config.ContextRequestedPercent = json.Number(number)
+		config.ContextWindowSource, config.ContextPercentSource = "settings.context.window", "settings.context.compactPercent"
 	}
-	delete(fields, "version")
-	delete(fields, "startup")
-	preferences, err := json.Marshal(fields)
-	if err != nil {
-		return bad()
+	if value, present := fields["classifier"]; present {
+		config.ClassifierModel, err = bridge.ParsePair(value)
+		if err != nil {
+			_, shape := wire.Fields(value, []string{"model", "effort"})
+			var key *wire.FieldError
+			if errors.As(shape, &key) {
+				return ClauductSettings{}, fmt.Errorf("%w: %v %q", errClassifierSettings, key.Reason, key.Field)
+			}
+			return ClauductSettings{}, errClassifierSettings
+		}
+		config.ClassifierModelSource = "settings.classifier"
 	}
-	settings.Selection, err = bridge.ParseSelection(preferences)
-	if err != nil {
-		return bad()
+	return config, nil
+}
+
+func invalidSettingsField(field string, cause error) error {
+	var key *wire.FieldError
+	if errors.As(cause, &key) {
+		return fmt.Errorf("%w: %s: %v %q", errClauductSettings, field, key.Reason, key.Field)
 	}
-	return settings, nil
+	return fmt.Errorf("%w: invalid %s", errClauductSettings, field)
 }

@@ -26,6 +26,7 @@ import (
 	"github.com/wotjr1649/Clauduct/go/internal/gateway"
 	"github.com/wotjr1649/Clauduct/go/internal/hookcmd"
 	"github.com/wotjr1649/Clauduct/go/internal/launch"
+	"github.com/wotjr1649/Clauduct/go/internal/protocol/bridge"
 	conpty "github.com/wotjr1649/Clauduct/go/internal/ptydrive"
 	"github.com/wotjr1649/Clauduct/go/internal/sessionlink"
 )
@@ -427,29 +428,65 @@ func (w *p3World) applyPlugin(spec launch.Spec) (launch.Spec, error) {
 	return spec, os.WriteFile(module, []byte(text), 0o600)
 }
 
-// p3SessionState is a session's stored profile snapshot and conversation, by digest and size.
+// p3SessionState is a session's stored profile digest and conversation bytes.
 type p3SessionState struct {
 	profile    string
 	transcript []byte
+	path       string
+	valid      bool
+}
+
+func (before p3SessionState) changed(after p3SessionState) bool {
+	return !before.valid || !after.valid || before.profile != after.profile ||
+		before.path != after.path || !bytes.Equal(before.transcript, after.transcript)
 }
 
 func (w *p3World) sessionState(session string) p3SessionState {
 	var state p3SessionState
-	if raw, err := os.ReadFile(filepath.Join(w.home, ".clauduct", "sessions", session+".json")); err == nil {
+	raw, err := os.ReadFile(filepath.Join(w.home, ".clauduct", "sessions", session+".json"))
+	if err == nil {
 		sum := sha256.Sum256(raw)
 		state.profile = hex.EncodeToString(sum[:])
+	} else if !os.IsNotExist(err) {
+		return state
 	}
-	filepath.Walk(filepath.Join(w.configDir, "projects"), func(path string, info os.FileInfo, err error) error {
-		if err == nil && !info.IsDir() && filepath.Base(path) == session+".jsonl" {
-			state.transcript, _ = os.ReadFile(path)
+	projects := filepath.Join(w.configDir, "projects")
+	err = filepath.Walk(projects, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
-		return nil
+		if filepath.Base(path) != session+".jsonl" {
+			return nil
+		}
+		if !info.Mode().IsRegular() || state.path != "" {
+			return errors.New("ambiguous transcript")
+		}
+		state.path, err = filepath.Rel(projects, path)
+		if err != nil {
+			return err
+		}
+		state.transcript, err = os.ReadFile(path)
+		return err
 	})
+	state.valid = err == nil && len(state.transcript) > 0
 	return state
 }
 
-// keptBy reports whether a later state keeps this one: the same profile snapshot, and the
-// earlier conversation still there unchanged (lines may follow it).
-func (s p3SessionState) keptBy(later p3SessionState) bool {
-	return s.profile == later.profile && bytes.HasPrefix(later.transcript, s.transcript)
+// The unprotected control's first generation bypasses the Clauduct hook. Supply a
+// profile for its real transcript so the native resume can exercise the same stored gateway.
+func (w *p3World) seedControlResume(session string, pair bridge.Pair) error {
+	state := w.sessionState(session)
+	if state.profile != "" {
+		return nil
+	}
+	if !state.valid {
+		return errors.New("control seed transcript missing")
+	}
+	store, err := gateway.OpenSessionProfiles(filepath.Join(w.home, ".clauduct", "sessions"))
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.Save(gateway.SessionProfile{Version: 1, ID: session, Selection: bridge.Selection{}.WithCatalogue(p3Catalogue),
+		Last: pair, Transcript: state.path})
 }

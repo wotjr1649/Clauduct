@@ -83,6 +83,9 @@ var bannedProxyHeaders = []string{"Origin", "Sec-Fetch-Site", "Forwarded"}
 // Gateway is one session's listener. Two concurrent sessions share nothing: separate
 // listener, separate port, separate token, separate request registry.
 type Gateway struct {
+	verificationCapture atomic.Pointer[verificationCapture]
+
+	startup      startupSelection
 	selection    bridge.Selection // configured once before native starts
 	profiles     *profileState
 	listener     net.Listener
@@ -681,6 +684,9 @@ func (g *Gateway) handle(w http.ResponseWriter, r *http.Request) {
 	if !g.authorized(r) {
 		g.refuse(w, refuseSession)
 		return
+	}
+	if g.verificationCapture.Load() != nil {
+		defer g.observeVerificationResponse(w, r)()
 	}
 	// After the credential: the version is taken once and printed on every exit line, so
 	// only the child this session started may name it.

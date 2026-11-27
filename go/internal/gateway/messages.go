@@ -208,7 +208,7 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 			g.refuseCategory(w, http.StatusBadRequest, anthropic.CodeHostedToolUnsupp)
 			return
 		}
-		g.searchFor(ctx, w, control, request, query, override...)
+		g.searchFor(ctx, w, control, r, request, query, override...)
 		return
 	}
 	finishResults := g.deliverResults(r, request, entry)
@@ -260,6 +260,18 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		g.refuseCategory(w, http.StatusInternalServerError, "REQUEST_CONVERSION_FAILED")
 		return
 	}
+	pair := bridge.Pair{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort}
+	if !g.routePermitted(r, pair) {
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_MODEL_POLICY")
+		return
+	}
+	startup := g.pendingStartup(r)
+	if startup != nil && !g.matchesStartup(startup, request, pair) {
+		entry.route(request.Model, pair.Model, pair.Effort, backendRequest.Source)
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_STARTUP_SELECTION_MISMATCH")
+		return
+	}
+
 	if err := g.resolveToolHistory(r, backendRequest, true, entry.nativeTurn); err != nil {
 		g.refuseCategory(w, 400, err.Error())
 		return
@@ -347,6 +359,9 @@ func (g *Gateway) handleMessages(w http.ResponseWriter, r *http.Request) {
 		delegationScope{session: scope.session, parent: r.Header.Get("X-Claude-Code-Agent-Id"), nativeModel: request.Model, nativeTurn: entry.nativeTurn, parentWait: parentWait, route: bridge.Route{Model: backendRequest.Model, Effort: backendRequest.Effort.Effort, Source: backendRequest.Source},
 			summary: summary})
 	entry.responseDelivered(resultsDelivered)
+	if startup != nil && resultsDelivered {
+		startup.verified.Store(true)
+	}
 	g.rememberUsage(encoded, entry)
 	if resultsDelivered {
 		g.auxiliaryAnswered(w, scope.session, r.Header.Get("X-Claude-Code-Agent-Id"))
@@ -451,6 +466,10 @@ func (g *Gateway) agentSelection(r *http.Request, request *anthropic.Request, en
 				if (strings.HasPrefix(route.Source, "workflow-") || nativeChosen) && (request.Effort != route.Effort || nativeChosen && (scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != route.Effort)) {
 					return nil, releaseAgent, refusedBecause("request_effort_mismatch")
 				}
+				if route.Source == "native-selection+effort" &&
+					(scope.nativeTurn == nil || scope.nativeTurn.Model != route.Model || scope.nativeTurn.Effort != request.Effort) {
+					return nil, releaseAgent, refusedBecause("request_effort_mismatch")
+				}
 				if strings.HasPrefix(route.Source, "workflow-") {
 					entry.checked("workflow_selection")
 				}
@@ -546,7 +565,7 @@ func checkRequestHeaders(r *http.Request) (refusal, bool) {
 // No model turn and no inference: one JSON round trip, then the blocks the client reduces.
 // Nothing from the conversation travels with the query -- only the query does.
 func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
-	control *http.ResponseController, request *anthropic.Request, query bridge.SearchQuery, override ...bridge.Route) {
+	control *http.ResponseController, r *http.Request, request *anthropic.Request, query bridge.SearchQuery, override ...bridge.Route) {
 
 	searcher, ok := g.transport.(upstream.Searcher)
 	if !ok {
@@ -559,6 +578,16 @@ func (g *Gateway) searchFor(ctx context.Context, w http.ResponseWriter,
 	route, err := g.selection.ResolveRoute(request, override...)
 	if err != nil {
 		g.refuseCategory(w, http.StatusBadRequest, routeCategory(err))
+		return
+	}
+	pair := bridge.Pair{Model: route.Model, Effort: route.Effort}
+	if !g.routePermitted(r, pair) {
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_MODEL_POLICY")
+		return
+	}
+	startup := g.pendingStartup(r)
+	if startup != nil && !g.matchesStartup(startup, request, pair) {
+		g.refuseCategory(w, http.StatusBadRequest, "NATIVE_STARTUP_SELECTION_MISMATCH")
 		return
 	}
 	body, err := json.Marshal(bridge.BuildSearchRequest(route.Model, query))

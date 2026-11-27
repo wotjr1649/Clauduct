@@ -153,7 +153,7 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer release()
-	fields, err := wire.Fields(raw, []string{"event", "sessionId", "agentId", "transcriptPath", "trigger", "source"})
+	fields, err := wire.Fields(raw, []string{"event", "sessionId", "agentId", "transcriptPath", "trigger", "source", "cwd"})
 	var event struct {
 		Event      string `json:"event"`
 		Session    string `json:"sessionId"`
@@ -161,6 +161,7 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 		Transcript string `json:"transcriptPath"`
 		Trigger    string `json:"trigger"`
 		Source     string `json:"source"`
+		Cwd        string `json:"cwd"`
 	}
 	if err != nil || len(fields) < 2 || json.Unmarshal(raw, &event) != nil ||
 		!correlationShape.MatchString(event.Session) || (event.Agent != "" && !correlationShape.MatchString(event.Agent)) ||
@@ -203,7 +204,7 @@ func (g *Gateway) handleContextEvent(w http.ResponseWriter, r *http.Request) {
 			g.refuseCategory(w, 400, "CONTEXT_JOURNAL_UNVERIFIED")
 			return
 		}
-		if err := g.registerSessionProfile(event.Session, event.Source, process); err != nil {
+		if err := g.registerSessionProfile(event.Session, event.Source, event.Cwd, process); err != nil {
 			g.refuseSessionProfile(w, event.Session, err)
 			return
 		}

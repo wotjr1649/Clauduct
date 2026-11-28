@@ -317,7 +317,7 @@ clauduct --update --yes  # 무인
 digest가 하나라도 어긋나면 디스크는 손도 대지 않았다고 말하고 끝난다. 릴리스 API가 자기 digest를
 싣고 있으면 그것과도 대조한다 — 둘이 일치하는 것은 값이 적지만, **둘이 다르면 멈출 이유**다.
 
-교체 대상은 `clauduct.exe`이고, 릴리스의 `SHA256SUMS`가 `clauduct-probe.exe`를 적었으면 그것도 같이다(v0.6.11부터). 둘 다 내려받아 digest를 확인한 뒤 설치 폴더 아래의 전용 디렉터리에 준비하고, 그 이름과 각 SHA-256을 `clauduct.exe.update-journal`에 기록한다. 하드 링크로 기존 파일을 `*.old`에 보존하면서 기존 파일 이름에 새 파일을 놓는다. 하드 링크를 지원하지 않는 볼륨에서는 설치 절차로 두 파일을 갱신한다. probe 교체가 실패하면 exe를 원래대로 되돌린다.
+교체 대상은 `clauduct.exe`이고, 릴리스의 `SHA256SUMS`가 `clauduct-probe.exe`를 적었으면 그것도 같이다(v0.6.11부터). 둘 다 내려받아 digest를 확인한 뒤 설치 폴더 아래의 전용 디렉터리에 준비하고, 그 이름과 각 SHA-256을 `clauduct.exe.update-journal`에 기록한다. 하드 링크로 기존 파일을 `*.old`에 보존하면서 기존 파일 이름에 새 파일을 놓는다. 하드 링크를 지원하지 않는 볼륨에서는 교체 전에 멈추고 기존 쌍을 그대로 둔 채 릴리스에서 재설치하도록 안내한다. probe 교체가 실패하면 exe를 원래대로 되돌린다.
 probe를 적지 않은 릴리스면 남아 있던 probe를 지우고 확인 질문 전에 그렇게 말한다. **v0.6.10 이하에서 처음 업데이트하면** `clauduct.exe`만 바뀐다. launch는 probe 없이 동작하고, 진단 도구가 필요하면 그 `clauduct.exe`의 `clauduct --update`를 한 번 더 실행해 probe를 놓는다(`install.ps1`은 한 번에 둘 다 놓는다).
 
 교체가 끝난 뒤 0.3.x가 남긴 `clauduct-hook.exe`·`clauduct-dev.exe`를 지우고, 실행 중이거나 읽기 전용이라 못 지운 것은 이름을 알린다. 이미 최신이면 그 둘도 건드리지 않는다. 지울 사본은 확인 질문 전에 이름으로 보여주므로 업데이트 전에 시작한 세션은 다시 시작한다.
@@ -444,6 +444,6 @@ v0.3.1 writer가 만든 bytes를 그대로 v0.3.0 reader에 넣어 확인했다.
 | 자동 업데이트 | 배경에서 도는 것은 없다. 사용자가 부르는 `clauduct --update`는 있다(5.1절) |
 | Windows 외 대상 | `internal/platform`에 windows 태그 파일 하나뿐이다. 다른 대상은 이식이 아니라 **새 설계**다 |
 | 서명 | **없고, 넣지 않기로 했다**(5.0.1절). 이유는 비용이 아니라 효과다 — 2024년 이후 어떤 인증서도 SmartScreen을 즉시 통과시키지 못한다 |
-| 공개 CI의 테스트 | v0.6.9부터 credential 없는 합성 protocol contract test(`internal/protocol`의 anthropic·bridge·codex, `internal/stream`, `internal/wire`)를 돌린다(#271). 그 밖에 Windows gofmt·vet·build·PowerShell 7 AST/최소 버전과 httpguard의 Linux·macOS build를 본다. 나머지 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
+| 공개 CI의 테스트 | v0.6.9부터 credential 없는 합성 protocol contract test(`internal/protocol`의 anthropic·bridge·codex, `internal/stream`, `internal/wire`)를 돌린다(#271). 그 밖에 Windows gofmt·vet·build·PowerShell 7 AST/최소 버전과 httpguard의 Linux·macOS build를 본다. v0.6.19부터 govulncheck·Staticcheck도 돌며, 기존 진단 25건은 소스 위치에 결속한 기준선(`.github/tests/staticcheck-baseline.csv`)으로 관리한다. 나머지 테스트·race·문서 인용 검사는 출하 전 로컬 검사로만 돈다 |
 
 **미실행은 통과가 아니다.** 각 항목은 없다고 적혀 있지 괜찮다고 적혀 있지 않다.

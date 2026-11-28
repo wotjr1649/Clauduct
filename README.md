@@ -11,6 +11,7 @@ Go 실행기 `clauduct.exe`에 hook과 `--dev` 명령이 들어 있습니다. �
 
 최신 정식 출시는 [v0.6.18](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.18)입니다.
 변경·출하 검사와 알려진 제한은 [릴리스 문서](docs/v2/RELEASE-v0.6.18.md)에 있습니다.
+출하 준비 중인 v0.6.19는 설정 파일 형식(v2)이 바뀌므로 업데이트 전에 [릴리스 문서](docs/v2/RELEASE-v0.6.19.md)의 업그레이드 안내를 읽어 주세요.
 이전 정식 출시는 [v0.6.17](https://github.com/wotjr1649/Clauduct/releases/tag/v0.6.17)입니다.
 
 이전 Node 구현(v1, `clauduct-node`)은 v0.3.3에서 저장소에서 은퇴했습니다. 마지막 소스와 문서는
@@ -159,7 +160,7 @@ native의 `S` 선택은 현재 세션에 적용하고, UUID 재개에서는 마�
 
 v0.3.2까지의 증거는 [docs/v2/VALIDATION.md](https://github.com/wotjr1649/Clauduct/blob/1b1c5e19b3f33fda63254b2da7c9d0b372553481/docs/v2/VALIDATION.md)가 소유합니다. 요구 ID, 게이트, 실행한 검사와
 **실행하지 않은 검사**를 함께 적습니다. v0.3.3부터 전체 회귀와 검증 기록은 로컬에서 관리합니다.
-공개 CI는 v0.6.9부터 공개한 합성 protocol contract test와 gofmt·vet·빌드, 설치·제거 스크립트의 PowerShell 7 문법과 최소 버전을 검사합니다.
+공개 CI는 v0.6.9부터 공개한 합성 protocol contract test와 gofmt·vet·빌드, 설치·제거 스크립트의 PowerShell 7 문법과 최소 버전을 검사하고, v0.6.19부터 govulncheck와 Staticcheck도 실행합니다.
 
 Claude 공식 문서는 gateway를 통한 non-Claude 모델 라우팅을 공식 지원하지 않는다고 명시합니다.
 이것은 제3자 호환 구현이며 "공식 지원"이나 "전체 기능 100% 보장"으로 설명하지 않습니다.
